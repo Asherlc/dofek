@@ -13,25 +13,25 @@ const ZWIFT_API_BASE = "https://us-or-rly101.zwift.com";
 export { ZWIFT_AUTH_URL, ZWIFT_API_BASE };
 
 export class ZwiftClient {
-  private accessToken: string;
-  private athleteId: number;
-  private fetchFn: typeof globalThis.fetch;
+  #accessToken: string;
+  #athleteId: number;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(
     accessToken: string,
     athleteId: number,
     fetchFn: typeof globalThis.fetch = globalThis.fetch,
   ) {
-    this.accessToken = accessToken;
-    this.athleteId = athleteId;
-    this.fetchFn = fetchFn;
+    this.#accessToken = accessToken;
+    this.#athleteId = athleteId;
+    this.#fetchFn = fetchFn;
   }
 
-  private async get<T>(path: string): Promise<T> {
+  async #get<T>(path: string): Promise<T> {
     const url = `${ZWIFT_API_BASE}${path}`;
-    const response = await this.fetchFn(url, {
+    const response = await this.#fetchFn(url, {
       headers: {
-        Authorization: `Bearer ${this.accessToken}`,
+        Authorization: `Bearer ${this.#accessToken}`,
         Accept: "application/json",
       },
     });
@@ -45,23 +45,23 @@ export class ZwiftClient {
   }
 
   async getProfile(): Promise<ZwiftProfile> {
-    return this.get<ZwiftProfile>(`/api/profiles/${this.athleteId}`);
+    return this.#get<ZwiftProfile>(`/api/profiles/${this.#athleteId}`);
   }
 
   async getActivities(start = 0, limit = 20): Promise<ZwiftActivitySummary[]> {
-    return this.get<ZwiftActivitySummary[]>(
-      `/api/profiles/${this.athleteId}/activities?start=${start}&limit=${limit}`,
+    return this.#get<ZwiftActivitySummary[]>(
+      `/api/profiles/${this.#athleteId}/activities?start=${start}&limit=${limit}`,
     );
   }
 
   async getActivityDetail(activityId: number): Promise<ZwiftActivityDetail> {
-    return this.get<ZwiftActivityDetail>(`/api/activities/${activityId}?fetchSnapshots=true`);
+    return this.#get<ZwiftActivityDetail>(`/api/activities/${activityId}?fetchSnapshots=true`);
   }
 
   async getFitnessData(url: string): Promise<ZwiftFitnessData> {
-    const response = await this.fetchFn(url, {
+    const response = await this.#fetchFn(url, {
       headers: {
-        Authorization: `Bearer ${this.accessToken}`,
+        Authorization: `Bearer ${this.#accessToken}`,
         Accept: "application/json",
       },
     });
@@ -73,7 +73,7 @@ export class ZwiftClient {
   }
 
   async getPowerCurve(): Promise<ZwiftPowerCurve> {
-    return this.get<ZwiftPowerCurve>("/api/power-curve/power-profile");
+    return this.#get<ZwiftPowerCurve>("/api/power-curve/power-profile");
   }
 
   static async signIn(

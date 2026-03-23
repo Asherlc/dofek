@@ -407,15 +407,15 @@ describe("BodySpecProvider", () => {
 
     it("returns null for 404 errors", async () => {
       const result = await catchNotFound(
-        Promise.reject(new Error("BodySpec API error (404): Not Found")),
+        Promise.reject(new Error("API error 404 on /test: Not Found")),
       );
       expect(result).toBeNull();
     });
 
     it("rethrows non-404 errors", async () => {
       await expect(
-        catchNotFound(Promise.reject(new Error("BodySpec API error (500): Internal Server Error"))),
-      ).rejects.toThrow("BodySpec API error (500): Internal Server Error");
+        catchNotFound(Promise.reject(new Error("API error 500 on /test: Internal Server Error"))),
+      ).rejects.toThrow("500");
     });
 
     it("rethrows network errors", async () => {
@@ -817,7 +817,7 @@ describe("BodySpecProvider", () => {
       const err = result.errors[0];
       expect(err).toBeDefined();
       if (!err) return;
-      expect(err.message).toContain("BODYSPEC_CLIENT_ID");
+      expect(err.message).toContain("OAuth config required to refresh BodySpec tokens");
     });
 
     it("handles token refresh failure when no refresh token", async () => {

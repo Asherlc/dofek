@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { selectRecentDailyLoad } from "@dofek/training/training";
 import type { NextWorkoutRecommendation } from "dofek-server/types";
 import { useRouter } from "expo-router";
 import {
@@ -18,10 +17,11 @@ import { OnboardingWelcome } from "../../components/OnboardingWelcome";
 import { RecoveryRing } from "../../components/charts/RecoveryRing";
 import { SleepBar } from "../../components/charts/SleepBar";
 import { StrainGauge } from "../../components/charts/StrainGauge";
-import { formatDurationMinutes, formatSleepDebtInline } from "../../lib/format";
-import { scoreColor, scoreLabel, trendDirection as computeTrend } from "../../lib/scoring";
+import { formatDurationMinutes, formatNumber, formatSleepDebtInline, isToday, isYesterday } from "@dofek/format/format";
+import { readinessLevelColor, scoreColor, scoreLabel, StrainZone, trendColor, trendDirection as computeTrend } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
-import { convertTemperature, convertWeight, temperatureLabel, useUnitSystem, weightLabel } from "../../lib/units";
+import { useUnitConverter } from "../../lib/units";
+import { useAutoSync } from "../../lib/useAutoSync";
 import { useOnboarding } from "../../lib/useOnboarding";
 import { ActivityRowSchema } from "../../types/api";
 import { colors, statusColors } from "../../theme";
@@ -36,31 +36,6 @@ function todayString(): string {
 }
 
 const RECENT_ACTIVITY_PAGE_SIZE = 3;
-
-/** Strain zone label for weekly report */
-function strainZoneLabel(zone: string): string {
-  if (zone === "optimal") return "Optimal";
-  if (zone === "overreaching") return "Overreaching";
-  if (zone === "restoring") return "Restoring";
-  return zone;
-}
-
-/** Color for strain zone */
-function strainZoneColor(zone: string): string {
-  if (zone === "optimal") return statusColors.positive;
-  if (zone === "overreaching") return statusColors.danger;
-  if (zone === "restoring") return statusColors.info;
-  return colors.textSecondary;
-}
-
-/** Color for healthspan status */
-function healthspanStatusColor(status: string): string {
-  if (status === "excellent") return statusColors.positive;
-  if (status === "good") return statusColors.positive;
-  if (status === "fair") return statusColors.warning;
-  if (status === "poor") return statusColors.danger;
-  return colors.textSecondary;
-}
 
 /** Trend arrow for healthspan */
 function trendArrow(trend: string | null): string {
@@ -78,15 +53,6 @@ function recommendationTypeColor(
   return colors.blue;
 }
 
-function readinessLevelColor(
-  level: NextWorkoutRecommendation["readiness"]["level"],
-): string {
-  if (level === "high") return colors.positive;
-  if (level === "moderate") return colors.warning;
-  if (level === "low") return colors.danger;
-  return colors.textSecondary;
-}
-
 function capitalize(value: string): string {
   return value.slice(0, 1).toUpperCase() + value.slice(1);
 }
@@ -94,10 +60,10 @@ function capitalize(value: string): string {
 export default function OverviewScreen() {
   const router = useRouter();
   const onboarding = useOnboarding();
-  const unitSystem = useUnitSystem();
-  const [days, setDays] = useState(7);
+  const units = useUnitConverter();
+  const [days, setDays] = useState(30);
   const [recentActivityPage, setRecentActivityPage] = useState(0);
-  const showDetailedSections = false;
+  const showDetailedSections = true;
 
   // Fetch readiness/recovery score
   const readinessQuery = trpc.recovery.readinessScore.useQuery({ days });
@@ -108,13 +74,17 @@ export default function OverviewScreen() {
   const sleepQuery = trpc.recovery.sleepAnalytics.useQuery({ days });
   const sleepResult = sleepQuery.data;
   const nightly = sleepResult?.nightly ?? [];
-  const lastNight = nightly[nightly.length - 1];
+  const mostRecentNight = nightly[nightly.length - 1];
+  const lastNight = (() => {
+    if (!mostRecentNight) return undefined;
+    const date = new Date(mostRecentNight.date);
+    return isToday(date) || isYesterday(date) ? mostRecentNight : undefined;
+  })();
   const sleepDebt = sleepResult?.sleepDebt ?? 0;
 
   // Fetch workload ratio for strain
   const workloadQuery = trpc.recovery.workloadRatio.useQuery({ days });
-  const workloadData = workloadQuery.data ?? [];
-  const displayedWorkload = selectRecentDailyLoad(workloadData);
+  const workloadResult = workloadQuery.data;
 
   // Fetch HRV trend
   const hrvQuery = trpc.recovery.hrvVariability.useQuery({ days: Math.max(days, 14) });
@@ -147,6 +117,9 @@ export default function OverviewScreen() {
   // Health metrics (latest)
   const dailyMetricsQuery = trpc.dailyMetrics.trends.useQuery({ days });
   const metrics = dailyMetricsQuery.data;
+
+  // Auto-sync when data is stale (API providers + HealthKit)
+  useAutoSync(metrics?.latest_date);
 
   // Weekly report
   const weeklyReportQuery = trpc.weeklyReport.report.useQuery({ weeks: Math.max(Math.ceil(days / 7), 1) });
@@ -181,7 +154,7 @@ export default function OverviewScreen() {
   const stepsData = stepsQuery.data ?? [];
 
   const recoveryScore = todayReadiness?.readinessScore ?? null;
-  const dailyStrain = displayedWorkload?.dailyLoad ?? 0;
+  const dailyStrain = workloadResult?.displayedStrain ?? 0;
 
   const isLoading =
     readinessQuery.isLoading ||
@@ -191,9 +164,11 @@ export default function OverviewScreen() {
   // Derive data for new sections
   const currentWeek = weeklyReport?.current;
 
-  const latestNutrition = nutritionData.length > 0
-    ? nutritionData[nutritionData.length - 1]
-    : null;
+  const latestNutrition = (() => {
+    const last = nutritionData.length > 0 ? nutritionData[nutritionData.length - 1] : null;
+    if (!last) return null;
+    return isToday(new Date(`${last.date}T00:00:00`)) ? last : null;
+  })();
 
   const latestWeight = weightData.length > 0
     ? weightData[weightData.length - 1]
@@ -215,7 +190,7 @@ export default function OverviewScreen() {
 
   const skinTempTrend = stepsData
     .filter((d: Record<string, unknown>) => d.skin_temp_c != null)
-    .map((d: Record<string, unknown>) => convertTemperature(Number(d.skin_temp_c), unitSystem));
+    .map((d: Record<string, unknown>) => units.convertTemperature(Number(d.skin_temp_c)));
 
   return (
     <ScrollView
@@ -317,8 +292,8 @@ export default function OverviewScreen() {
                   score={todayReadiness.components.sleepScore}
                 />
                 <ComponentRow
-                  label="Training Balance"
-                  score={todayReadiness.components.loadBalanceScore}
+                  label="Respiratory Rate"
+                  score={todayReadiness.components.respiratoryRateScore}
                 />
               </View>
             </View>
@@ -368,7 +343,7 @@ export default function OverviewScreen() {
               title="Stress"
               value={
                 stressData?.latestScore != null
-                  ? stressData.latestScore.toFixed(1)
+                  ? formatNumber(stressData.latestScore)
                   : "--"
               }
               unit="/ 3"
@@ -401,8 +376,8 @@ export default function OverviewScreen() {
             {metrics?.latest_skin_temp != null && (
               <MetricCard
                 title="Skin Temperature"
-                value={convertTemperature(metrics.latest_skin_temp, unitSystem).toFixed(1)}
-                unit={temperatureLabel(unitSystem)}
+                value={formatNumber(units.convertTemperature(metrics.latest_skin_temp))}
+                unit={units.temperatureLabel}
                 trend={skinTempTrend}
                 color={colors.orange}
                 trendDirection={
@@ -443,7 +418,7 @@ export default function OverviewScreen() {
                       avgPower={activity.avg_power ?? null}
                       distanceKm={activity.distance_meters ? activity.distance_meters / 1000 : null}
                       calories={activity.calories ?? null}
-                      unitSystem={unitSystem}
+                      units={units}
                     />
                   </TouchableOpacity>
                 ))}
@@ -501,7 +476,18 @@ export default function OverviewScreen() {
           {/* Health Status Bar — horizontal scrolling mini metrics */}
           {showDetailedSections && metrics != null && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Health Status</Text>
+              <Text style={styles.sectionTitle}>
+                {(() => {
+                  if (!metrics.latest_date) return "Health Status";
+                  const today = new Date().toLocaleDateString("en-CA");
+                  if (metrics.latest_date === today) return "Health Status";
+                  const dateLabel = new Date(`${metrics.latest_date}T00:00:00`).toLocaleDateString(
+                    "en-US",
+                    { weekday: "short", month: "short", day: "numeric" },
+                  );
+                  return `Health Status (${dateLabel})`;
+                })()}
+              </Text>
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -533,8 +519,8 @@ export default function OverviewScreen() {
                 />
                 <MiniMetricCard
                   label="Skin Temp"
-                  value={metrics.latest_skin_temp != null ? convertTemperature(metrics.latest_skin_temp, unitSystem).toFixed(1) : "--"}
-                  unit={temperatureLabel(unitSystem)}
+                  value={metrics.latest_skin_temp != null ? formatNumber(units.convertTemperature(metrics.latest_skin_temp)) : "--"}
+                  unit={units.temperatureLabel}
                 />
               </ScrollView>
             </View>
@@ -545,17 +531,22 @@ export default function OverviewScreen() {
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Weekly Report</Text>
               <View style={styles.weeklyReportContent}>
-                <View style={styles.weeklyReportRow}>
-                  <Text style={styles.weeklyLabel}>Strain Balance</Text>
-                  <Text
-                    style={[
-                      styles.weeklyValue,
-                      { color: strainZoneColor(currentWeek.strainZone) },
-                    ]}
-                  >
-                    {strainZoneLabel(currentWeek.strainZone)}
-                  </Text>
-                </View>
+                {(() => {
+                  const zone = new StrainZone(currentWeek.strainZone);
+                  return (
+                    <View style={styles.weeklyReportRow}>
+                      <Text style={styles.weeklyLabel}>Strain Balance</Text>
+                      <Text
+                        style={[
+                          styles.weeklyValue,
+                          { color: zone.color },
+                        ]}
+                      >
+                        {zone.label}
+                      </Text>
+                    </View>
+                  );
+                })()}
                 <View style={styles.weeklyReportRow}>
                   <Text style={styles.weeklyLabel}>Sleep vs Baseline</Text>
                   <Text
@@ -595,7 +586,7 @@ export default function OverviewScreen() {
           )}
 
           {/* Next Workout */}
-          {nextWorkout != null && (
+          {nextWorkout != null && isToday(new Date(nextWorkout.generatedAt)) && (
             <View style={styles.card}>
               <View style={styles.nextWorkoutHeader}>
                 <View style={styles.nextWorkoutTitleWrap}>
@@ -720,12 +711,7 @@ export default function OverviewScreen() {
                       style={[
                         styles.healthspanTrend,
                         {
-                          color:
-                            healthspan.trend === "improving"
-                              ? statusColors.positive
-                              : healthspan.trend === "declining"
-                                ? statusColors.danger
-                                : colors.textSecondary,
+                          color: trendColor(healthspan.trend),
                         },
                       ]}
                     >
@@ -798,9 +784,9 @@ export default function OverviewScreen() {
               <View style={styles.weightRow}>
                 <View>
                   <Text style={styles.weightValue}>
-                    {convertWeight(latestWeight.smoothedWeight, unitSystem).toFixed(1)}
+                    {formatNumber(units.convertWeight(latestWeight.smoothedWeight))}
                   </Text>
-                  <Text style={styles.weightUnit}>{weightLabel(unitSystem)}</Text>
+                  <Text style={styles.weightUnit}>{units.weightLabel}</Text>
                 </View>
                 {weightData.length >= 2 && (
                   <WeightSparkline

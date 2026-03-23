@@ -80,11 +80,7 @@ describe("TrainerRoadProvider", () => {
     expect(result.errors[0]?.message).toContain("username not found");
   });
 
-  it("sync returns error when cookie expired and no env credentials", async () => {
-    const originalEnv = { ...process.env };
-    delete process.env.TRAINERROAD_USERNAME;
-    delete process.env.TRAINERROAD_PASSWORD;
-
+  it("sync returns error when cookie expired", async () => {
     const mockDb = {
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
@@ -115,8 +111,6 @@ describe("TrainerRoadProvider", () => {
 
     const provider = new TrainerRoadProvider();
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
-    expect(result.errors[0]?.message).toContain("cookie expired");
-
-    process.env = { ...originalEnv };
+    expect(result.errors[0]?.message).toContain("re-authenticate via Settings");
   });
 });

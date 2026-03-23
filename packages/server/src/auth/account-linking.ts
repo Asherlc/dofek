@@ -1,6 +1,8 @@
 import type { Database } from "dofek/db";
 import { DEFAULT_USER_ID } from "dofek/db/schema";
 import { sql } from "drizzle-orm";
+import { z } from "zod";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 
 export interface ProviderIdentity {
@@ -22,6 +24,7 @@ export interface ResolveUserResult {
  * 1. If loggedInUserId is provided, link to that user (account linking flow).
  * 2. Lookup existing auth_account by (providerName, providerAccountId).
  * 3. Lookup user_profile by email match (email-based auto-linking).
+ * 3.5. Cross-provider email match: check if another auth_account has the same email.
  * 4. If no accounts exist at all, claim DEFAULT_USER_ID (first-user migration).
  * 5. Create a new user_profile.
  *
@@ -43,7 +46,9 @@ export async function resolveOrCreateUser(
   }
 
   // 2. Existing auth_account for this exact provider identity
-  const existingAccount = await db.execute<{ user_id: string }>(
+  const existingAccount = await executeWithSchema(
+    db,
+    z.object({ user_id: z.string() }),
     sql`SELECT user_id FROM fitness.auth_account
         WHERE auth_provider = ${providerName} AND provider_account_id = ${identity.providerAccountId}
         LIMIT 1`,
@@ -56,7 +61,9 @@ export async function resolveOrCreateUser(
 
   // 3. Email-based auto-linking: find an existing user with the same email
   if (identity.email) {
-    const emailMatch = await db.execute<{ id: string }>(
+    const emailMatch = await executeWithSchema(
+      db,
+      z.object({ id: z.string() }),
       sql`SELECT id FROM fitness.user_profile
           WHERE LOWER(email) = LOWER(${identity.email})
           LIMIT 1`,
@@ -69,10 +76,32 @@ export async function resolveOrCreateUser(
       );
       return { userId: matchedUser.id, isNewUser: false };
     }
+
+    // 3.5. Cross-provider email match: check if another auth_account has the same email.
+    //      Catches the case where the user has different emails on different providers
+    //      (e.g., Google email != Strava email) but previously connected a provider
+    //      using this email.
+    const crossProviderMatch = await executeWithSchema(
+      db,
+      z.object({ user_id: z.string() }),
+      sql`SELECT user_id FROM fitness.auth_account
+          WHERE LOWER(email) = LOWER(${identity.email})
+          LIMIT 1`,
+    );
+    const crossMatched = crossProviderMatch[0];
+    if (crossProviderMatch.length > 0 && crossMatched) {
+      await upsertAuthAccount(db, crossMatched.user_id, providerName, identity);
+      logger.info(
+        `[auth] Cross-provider linked ${providerName} to user ${crossMatched.user_id} by auth_account email ${identity.email}`,
+      );
+      return { userId: crossMatched.user_id, isNewUser: false };
+    }
   }
 
   // 4. First-ever user: claim the default user profile
-  const accountCount = await db.execute<{ count: string }>(
+  const accountCount = await executeWithSchema(
+    db,
+    z.object({ count: z.string() }),
     sql`SELECT COUNT(*)::text AS count FROM fitness.auth_account`,
   );
   const countRow = accountCount[0];
@@ -95,7 +124,9 @@ export async function resolveOrCreateUser(
   }
 
   // 5. New user: create a user profile
-  const newUser = await db.execute<{ id: string }>(
+  const newUser = await executeWithSchema(
+    db,
+    z.object({ id: z.string() }),
     sql`INSERT INTO fitness.user_profile (name, email)
         VALUES (${identity.name ?? "User"}, ${identity.email})
         RETURNING id`,

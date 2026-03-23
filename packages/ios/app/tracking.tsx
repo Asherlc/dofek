@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Alert,
   ScrollView,
@@ -12,8 +12,6 @@ import {
 import { z } from "zod";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
-import { MEAL_OPTIONS } from "@dofek/nutrition/meal";
-import type { MealType } from "@dofek/nutrition/meal";
 
 const lifeEventSchema = z.object({
   id: z.string(),
@@ -25,8 +23,6 @@ const lifeEventSchema = z.object({
   notes: z.string().nullable(),
 });
 type LifeEvent = z.infer<typeof lifeEventSchema>;
-
-// ── Life Events ──
 
 type EventCategory = "diet" | "supplement" | "injury" | "lifestyle" | "training" | "other";
 
@@ -56,34 +52,6 @@ function todayString(): string {
   return `${y}-${m}-${d}`;
 }
 
-// ── Supplements ──
-
-const UNITS = ["mg", "g", "mcg", "IU", "ml", "oz"] as const;
-const FORMS = ["capsule", "softgel", "tablet", "powder", "liquid", "gummy", "drop"] as const;
-
-const supplementSchema = z.object({
-  name: z.string(),
-  amount: z.number().optional(),
-  unit: z.string().optional(),
-  form: z.string().optional(),
-  meal: z.enum(["breakfast", "lunch", "dinner", "snack", "other"]).optional(),
-  description: z.string().optional(),
-});
-type Supplement = z.infer<typeof supplementSchema>;
-
-function formatDose(supp: Supplement): string {
-  const parts: string[] = [];
-  if (supp.amount != null && supp.unit) {
-    parts.push(`${supp.amount}${supp.unit}`);
-  }
-  if (supp.form) {
-    parts.push(supp.form);
-  }
-  return parts.join(" \u00B7 ");
-}
-
-// ── Picker component (reusable) ──
-
 function ChipPicker<T extends string>({
   options,
   value,
@@ -111,20 +79,383 @@ function ChipPicker<T extends string>({
   );
 }
 
-// ── Main screen ──
-
 export default function TrackingScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>Tracking</Text>
+      <Text style={styles.title}>Journal</Text>
+      <JournalSection />
+      <Text style={[styles.title, { marginTop: 32 }]}>Life Events</Text>
       <LifeEventsSection />
-      <View style={styles.sectionSpacer} />
-      <SupplementsSection />
     </ScrollView>
   );
 }
 
-// ── Life Events Section ──
+// ---- Journal Section ----
+
+const journalEntrySchema = z.object({
+  id: z.string(),
+  date: z.string(),
+  provider_id: z.string(),
+  question_slug: z.string(),
+  display_name: z.string(),
+  category: z.string(),
+  data_type: z.string(),
+  unit: z.string().nullable(),
+  answer_text: z.string().nullable(),
+  answer_numeric: z.coerce.number().nullable(),
+  impact_score: z.coerce.number().nullable(),
+});
+type JournalEntry = z.infer<typeof journalEntrySchema>;
+
+const journalQuestionSchema = z.object({
+  slug: z.string(),
+  display_name: z.string(),
+  category: z.string(),
+  data_type: z.string(),
+  unit: z.string().nullable(),
+  sort_order: z.coerce.number(),
+});
+
+const CATEGORY_LABELS: Record<string, string> = {
+  substance: "Substances",
+  activity: "Activities",
+  wellness: "Wellness",
+  nutrition: "Nutrition",
+  custom: "Custom",
+};
+
+const CATEGORY_ORDER = ["wellness", "activity", "substance", "nutrition", "custom"];
+
+function JournalSection() {
+  const [showForm, setShowForm] = useState(false);
+  const [days, setDays] = useState(30);
+
+  const utils = trpc.useUtils();
+  const entriesQuery = trpc.journal.entries.useQuery({ days });
+  const deleteMutation = trpc.journal.delete.useMutation({
+    onSuccess: () => utils.journal.entries.invalidate(),
+    onError: (error) => Alert.alert("Error", error.message),
+  });
+
+  const entries = useMemo(() => {
+    if (!entriesQuery.data) return [];
+    return z.array(journalEntrySchema).parse(entriesQuery.data);
+  }, [entriesQuery.data]);
+
+  // Group by date
+  const grouped = useMemo(() => {
+    const map = new Map<string, JournalEntry[]>();
+    for (const entry of entries) {
+      const existing = map.get(entry.date) ?? [];
+      existing.push(entry);
+      map.set(entry.date, existing);
+    }
+    return [...map.entries()].sort(([a], [b]) => b.localeCompare(a));
+  }, [entries]);
+
+  function handleDelete(id: string) {
+    Alert.alert("Delete Entry", "Are you sure you want to delete this journal entry?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: () => deleteMutation.mutate({ id }) },
+    ]);
+  }
+
+  return (
+    <View>
+      <View style={styles.sectionHeader}>
+        <View style={styles.chipRow}>
+          {[7, 30, 90].map((d) => (
+            <TouchableOpacity
+              key={d}
+              style={[styles.chip, days === d && styles.chipSelected]}
+              onPress={() => setDays(d)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.chipText, days === d && styles.chipTextSelected]}>{d}d</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <TouchableOpacity
+          style={styles.addButton}
+          onPress={() => setShowForm(!showForm)}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.addButtonText}>{showForm ? "Cancel" : "+ Add Entry"}</Text>
+        </TouchableOpacity>
+      </View>
+
+      {showForm && (
+        <AddJournalEntryForm
+          onSuccess={() => {
+            setShowForm(false);
+            utils.journal.entries.invalidate();
+          }}
+        />
+      )}
+
+      {entriesQuery.isLoading && <Text style={styles.loadingText}>Loading...</Text>}
+
+      {!entriesQuery.isLoading && entries.length === 0 && (
+        <Text style={styles.emptyText}>No journal entries yet.</Text>
+      )}
+
+      {grouped.map(([date, dayEntries]) => (
+        <JournalDayGroup key={date} date={date} entries={dayEntries} onDelete={handleDelete} />
+      ))}
+    </View>
+  );
+}
+
+function JournalDayGroup({
+  date,
+  entries,
+  onDelete,
+}: { date: string; entries: JournalEntry[]; onDelete: (id: string) => void }) {
+  const dateDisplay = new Date(`${date}T12:00:00`).toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+
+  const byCategory = useMemo(() => {
+    const map = new Map<string, JournalEntry[]>();
+    for (const entry of entries) {
+      const existing = map.get(entry.category) ?? [];
+      existing.push(entry);
+      map.set(entry.category, existing);
+    }
+    return CATEGORY_ORDER.filter((c) => map.has(c)).map((c) => ({
+      category: c,
+      entries: map.get(c) ?? [],
+    }));
+  }, [entries]);
+
+  return (
+    <View style={{ marginBottom: 12 }}>
+      <Text style={styles.cardSub}>{dateDisplay}</Text>
+      <View style={styles.card}>
+        {byCategory.map(({ category, entries: catEntries }) => (
+          <View key={category} style={{ marginBottom: 8 }}>
+            <Text style={{ fontSize: 11, fontWeight: "600", color: colors.textTertiary, marginBottom: 4 }}>
+              {CATEGORY_LABELS[category] ?? category}
+            </Text>
+            {catEntries.map((entry) => (
+              <View key={entry.id} style={styles.cardRow}>
+                <View style={styles.cardContent}>
+                  <Text style={styles.cardLabel}>{entry.display_name}</Text>
+                  <JournalAnswerDisplay entry={entry} />
+                </View>
+                {entry.impact_score !== null && (
+                  <Text
+                    style={{
+                      fontSize: 11,
+                      color: entry.impact_score >= 0 ? colors.accent : colors.danger,
+                      marginRight: 8,
+                    }}
+                  >
+                    {entry.impact_score > 0 ? "+" : ""}
+                    {entry.impact_score.toFixed(1)}
+                  </Text>
+                )}
+                {entry.provider_id === "dofek" && (
+                  <TouchableOpacity
+                    style={styles.deleteButton}
+                    onPress={() => onDelete(entry.id)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.deleteButtonText}>Delete</Text>
+                  </TouchableOpacity>
+                )}
+                {entry.provider_id !== "dofek" && (
+                  <Text style={{ fontSize: 11, color: colors.textTertiary }}>{entry.provider_id}</Text>
+                )}
+              </View>
+            ))}
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function JournalAnswerDisplay({ entry }: { entry: JournalEntry }) {
+  if (entry.data_type === "boolean") {
+    const isYes = entry.answer_numeric !== null && entry.answer_numeric > 0;
+    return (
+      <Text
+        style={{
+          fontSize: 12,
+          fontWeight: "600",
+          color: isYes ? colors.accent : colors.textTertiary,
+        }}
+      >
+        {isYes ? "Yes" : "No"}
+      </Text>
+    );
+  }
+
+  if (entry.data_type === "numeric" && entry.answer_numeric !== null) {
+    return (
+      <Text style={{ fontSize: 13, color: colors.textSecondary }}>
+        {entry.answer_numeric}
+        {entry.unit ? ` ${entry.unit}` : ""}
+      </Text>
+    );
+  }
+
+  if (entry.answer_text) {
+    return (
+      <Text style={{ fontSize: 13, color: colors.textSecondary, fontStyle: "italic" }}>
+        {entry.answer_text}
+      </Text>
+    );
+  }
+
+  return null;
+}
+
+function AddJournalEntryForm({ onSuccess }: { onSuccess: () => void }) {
+  const questionsQuery = trpc.journal.questions.useQuery();
+  const createMutation = trpc.journal.create.useMutation({
+    onSuccess,
+    onError: (error) => Alert.alert("Error", error.message),
+  });
+
+  const questions = useMemo(() => {
+    if (!questionsQuery.data) return [];
+    return z.array(journalQuestionSchema).parse(questionsQuery.data);
+  }, [questionsQuery.data]);
+
+  const [selectedSlug, setSelectedSlug] = useState("");
+  const [date, setDate] = useState(todayString());
+  const [answerNumeric, setAnswerNumeric] = useState("");
+  const [answerText, setAnswerText] = useState("");
+  const [booleanValue, setBooleanValue] = useState(false);
+
+  const selectedQuestion = useMemo(
+    () => questions.find((q) => q.slug === selectedSlug),
+    [questions, selectedSlug],
+  );
+
+  function handleSubmit() {
+    if (!selectedSlug) {
+      Alert.alert("Missing field", "Select a question.");
+      return;
+    }
+    if (!date.trim()) {
+      Alert.alert("Missing field", "Date is required.");
+      return;
+    }
+
+    let numericValue: number | null = null;
+    let textValue: string | null = null;
+
+    if (selectedQuestion?.data_type === "boolean") {
+      numericValue = booleanValue ? 1 : 0;
+    } else if (selectedQuestion?.data_type === "numeric") {
+      numericValue = answerNumeric ? Number(answerNumeric) : null;
+    } else {
+      textValue = answerText || null;
+    }
+
+    createMutation.mutate({
+      date: date.trim(),
+      questionSlug: selectedSlug,
+      answerNumeric: numericValue,
+      answerText: textValue,
+    });
+  }
+
+  return (
+    <View style={styles.formCard}>
+      <Text style={styles.formLabel}>Date (YYYY-MM-DD)</Text>
+      <TextInput
+        style={styles.input}
+        value={date}
+        onChangeText={setDate}
+        placeholder="2026-03-22"
+        placeholderTextColor={colors.textTertiary}
+        keyboardType="numbers-and-punctuation"
+      />
+
+      <Text style={styles.formLabel}>Question</Text>
+      <View style={styles.chipRow}>
+        {questions.map((q) => (
+          <TouchableOpacity
+            key={q.slug}
+            style={[styles.chip, selectedSlug === q.slug && styles.chipSelected]}
+            onPress={() => {
+              setSelectedSlug(selectedSlug === q.slug ? "" : q.slug);
+              setAnswerNumeric("");
+              setAnswerText("");
+              setBooleanValue(false);
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.chipText, selectedSlug === q.slug && styles.chipTextSelected]}>
+              {q.display_name}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {selectedQuestion && (
+        <>
+          <Text style={styles.formLabel}>Answer</Text>
+
+          {selectedQuestion.data_type === "boolean" && (
+            <View style={styles.toggleRow}>
+              <Text style={{ fontSize: 14, color: colors.text }}>
+                {booleanValue ? "Yes" : "No"}
+              </Text>
+              <Switch
+                value={booleanValue}
+                onValueChange={setBooleanValue}
+                trackColor={{ false: colors.surfaceSecondary, true: colors.accent }}
+                thumbColor={colors.text}
+              />
+            </View>
+          )}
+
+          {selectedQuestion.data_type === "numeric" && (
+            <TextInput
+              style={styles.input}
+              value={answerNumeric}
+              onChangeText={setAnswerNumeric}
+              placeholder={selectedQuestion.unit ? `Value (${selectedQuestion.unit})` : "Value"}
+              placeholderTextColor={colors.textTertiary}
+              keyboardType="decimal-pad"
+            />
+          )}
+
+          {selectedQuestion.data_type === "text" && (
+            <TextInput
+              style={styles.input}
+              value={answerText}
+              onChangeText={setAnswerText}
+              placeholder="Your answer..."
+              placeholderTextColor={colors.textTertiary}
+              multiline
+            />
+          )}
+        </>
+      )}
+
+      <TouchableOpacity
+        style={[styles.saveButton, createMutation.isPending && styles.saveButtonDisabled]}
+        onPress={handleSubmit}
+        activeOpacity={0.8}
+        disabled={createMutation.isPending}
+      >
+        <Text style={styles.saveButtonText}>
+          {createMutation.isPending ? "Saving..." : "Save Entry"}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// ---- Life Events Section ----
 
 function LifeEventsSection() {
   const [showForm, setShowForm] = useState(false);
@@ -155,7 +486,6 @@ function LifeEventsSection() {
   return (
     <View>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Life Events</Text>
         <TouchableOpacity
           style={styles.addButton}
           onPress={() => setShowForm(!showForm)}
@@ -207,8 +537,6 @@ function LifeEventsSection() {
     </View>
   );
 }
-
-// ── Add Event Form ──
 
 function AddEventForm({
   onSubmit,
@@ -324,432 +652,34 @@ function AddEventForm({
   );
 }
 
-// ── Supplements Section ──
-
-function SupplementsSection() {
-  const [showForm, setShowForm] = useState(false);
-
-  const utils = trpc.useUtils();
-  const stack = trpc.supplements.list.useQuery();
-  const saveMutation = trpc.supplements.save.useMutation({
-    onSuccess: () => utils.supplements.list.invalidate(),
-    onError: (error) => Alert.alert("Error", error.message),
-  });
-
-  const supplements = z.array(supplementSchema).parse(stack.data ?? []);
-
-  function handleSave(updated: Supplement[]) {
-    saveMutation.mutate({ supplements: updated });
-  }
-
-  function handleAdd(supp: Supplement) {
-    handleSave([...supplements, supp]);
-    setShowForm(false);
-  }
-
-  function handleDelete(index: number) {
-    Alert.alert("Remove Supplement", "Are you sure you want to remove this supplement?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Remove",
-        style: "destructive",
-        onPress: () => handleSave(supplements.filter((_, i) => i !== index)),
-      },
-    ]);
-  }
-
-  function handleReorder(from: number, to: number) {
-    const updated = [...supplements];
-    const [moved] = updated.splice(from, 1);
-    if (moved) updated.splice(to, 0, moved);
-    handleSave(updated);
-  }
-
-  return (
-    <View>
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Supplements</Text>
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={() => setShowForm(!showForm)}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.addButtonText}>{showForm ? "Cancel" : "+ Add Supplement"}</Text>
-        </TouchableOpacity>
-      </View>
-
-      {showForm && <AddSupplementForm onSubmit={handleAdd} loading={saveMutation.isPending} />}
-
-      {stack.isLoading && <Text style={styles.loadingText}>Loading...</Text>}
-
-      {supplements.length === 0 && !stack.isLoading && (
-        <Text style={styles.emptyText}>
-          No supplements configured. Add your daily stack and it will be synced as nutrition data.
-        </Text>
-      )}
-
-      {supplements.map((supp, index) => {
-        const dose = formatDose(supp);
-        const mealLabel = MEAL_OPTIONS.find((m) => m.value === supp.meal)?.label;
-        return (
-          <View key={`${supp.name}-${index}`} style={styles.card}>
-            <View style={styles.cardRow}>
-              {/* Reorder arrows */}
-              <View style={styles.reorderColumn}>
-                {index > 0 && (
-                  <TouchableOpacity
-                    onPress={() => handleReorder(index, index - 1)}
-                    activeOpacity={0.6}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    <Text style={styles.reorderArrow}>{"\u25B2"}</Text>
-                  </TouchableOpacity>
-                )}
-                {index < supplements.length - 1 && (
-                  <TouchableOpacity
-                    onPress={() => handleReorder(index, index + 1)}
-                    activeOpacity={0.6}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    <Text style={styles.reorderArrow}>{"\u25BC"}</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-
-              <View style={styles.cardContent}>
-                <Text style={styles.cardLabel}>{supp.name}</Text>
-                {dose ? <Text style={styles.cardSub}>{dose}</Text> : null}
-                {mealLabel ? <Text style={styles.cardMeal}>{mealLabel}</Text> : null}
-              </View>
-
-              <TouchableOpacity
-                style={styles.deleteButton}
-                onPress={() => handleDelete(index)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.deleteButtonText}>Delete</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        );
-      })}
-
-      {saveMutation.isError && (
-        <Text style={styles.errorText}>Failed to save: {saveMutation.error.message}</Text>
-      )}
-    </View>
-  );
-}
-
-// ── Add Supplement Form ──
-
-function AddSupplementForm({
-  onSubmit,
-  loading,
-}: {
-  onSubmit: (supp: Supplement) => void;
-  loading: boolean;
-}) {
-  const [name, setName] = useState("");
-  const [amount, setAmount] = useState("");
-  const [unit, setUnit] = useState<(typeof UNITS)[number]>("mg");
-  const [form, setForm] = useState<(typeof FORMS)[number] | "">("");
-  const [meal, setMeal] = useState<MealType | "">("");
-
-  function handleSubmit() {
-    if (!name.trim()) {
-      Alert.alert("Missing field", "Supplement name is required.");
-      return;
-    }
-
-    const supp: Supplement = { name: name.trim() };
-
-    const parsedAmount = Number.parseFloat(amount);
-    if (!Number.isNaN(parsedAmount) && parsedAmount > 0) {
-      supp.amount = parsedAmount;
-      supp.unit = unit;
-    }
-
-    if (form) supp.form = form;
-    if (meal) supp.meal = meal;
-
-    // Build description from dose info
-    const descParts: string[] = [];
-    if (supp.amount != null && supp.unit) descParts.push(`${supp.amount}${supp.unit}`);
-    if (supp.form) descParts.push(supp.form);
-    if (descParts.length > 0) supp.description = descParts.join(" ");
-
-    onSubmit(supp);
-  }
-
-  return (
-    <View style={styles.formCard}>
-      <Text style={styles.formLabel}>Name</Text>
-      <TextInput
-        style={styles.input}
-        value={name}
-        onChangeText={setName}
-        placeholder="e.g., Creatine Monohydrate"
-        placeholderTextColor={colors.textTertiary}
-      />
-
-      <View style={styles.doseRow}>
-        <View style={styles.doseField}>
-          <Text style={styles.formLabel}>Amount</Text>
-          <TextInput
-            style={styles.input}
-            value={amount}
-            onChangeText={setAmount}
-            placeholder="5000"
-            placeholderTextColor={colors.textTertiary}
-            keyboardType="numeric"
-          />
-        </View>
-        <View style={styles.doseField}>
-          <Text style={styles.formLabel}>Unit</Text>
-          <ChipPicker
-            options={UNITS.map((u) => ({ value: u, label: u }))}
-            value={unit}
-            onChange={(v) => {
-              if (v) setUnit(v as (typeof UNITS)[number]);
-            }}
-          />
-        </View>
-      </View>
-
-      <Text style={styles.formLabel}>Form</Text>
-      <ChipPicker
-        options={FORMS.map((f) => ({ value: f, label: f }))}
-        value={form}
-        onChange={(v) => setForm(v as (typeof FORMS)[number] | "")}
-      />
-
-      <Text style={styles.formLabel}>Meal</Text>
-      <ChipPicker
-        options={MEAL_OPTIONS.map((m) => ({ value: m.value, label: m.label }))}
-        value={meal}
-        onChange={(v) => setMeal(v as MealType | "")}
-      />
-
-      <TouchableOpacity
-        style={[styles.saveButton, loading && styles.saveButtonDisabled]}
-        onPress={handleSubmit}
-        activeOpacity={0.8}
-        disabled={loading}
-      >
-        <Text style={styles.saveButtonText}>{loading ? "Saving..." : "Add Supplement"}</Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
-// ── Styles ──
-
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  content: {
-    padding: 16,
-    paddingTop: 24,
-    paddingBottom: 40,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: colors.text,
-    marginBottom: 16,
-  },
-
-  // ── Sections ──
-  sectionHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: colors.text,
-  },
-  sectionSpacer: {
-    height: 28,
-  },
-
-  // ── Cards ──
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 8,
-  },
-  cardRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  cardContent: {
-    flex: 1,
-    marginRight: 8,
-  },
-  cardLabel: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: colors.text,
-  },
-  cardSub: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  cardNotes: {
-    fontSize: 12,
-    color: colors.textTertiary,
-    marginTop: 4,
-    fontStyle: "italic",
-  },
-  cardMeal: {
-    fontSize: 12,
-    color: colors.textTertiary,
-    marginTop: 2,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  eventEmoji: {
-    fontSize: 24,
-    marginRight: 12,
-  },
-
-  // ── Buttons ──
-  addButton: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.surfaceSecondary,
-  },
-  addButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.accent,
-  },
-  deleteButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  deleteButtonText: {
-    fontSize: 13,
-    color: colors.danger,
-    fontWeight: "500",
-  },
-  saveButton: {
-    backgroundColor: colors.accent,
-    borderRadius: 10,
-    paddingVertical: 14,
-    alignItems: "center",
-    marginTop: 16,
-  },
-  saveButtonDisabled: {
-    opacity: 0.5,
-  },
-  saveButtonText: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: "700",
-  },
-
-  // ── Reorder ──
-  reorderColumn: {
-    marginRight: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 2,
-  },
-  reorderArrow: {
-    fontSize: 12,
-    color: colors.textTertiary,
-  },
-
-  // ── Forms ──
-  formCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-  },
-  formLabel: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: colors.textSecondary,
-    marginBottom: 6,
-    marginTop: 12,
-  },
-  input: {
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 16,
-    color: colors.text,
-  },
-  toggleRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginTop: 12,
-  },
-
-  // ── Chips ──
-  chipRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: colors.surfaceSecondary,
-  },
-  chipSelected: {
-    backgroundColor: colors.accent,
-  },
-  chipText: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    fontWeight: "500",
-  },
-  chipTextSelected: {
-    color: colors.text,
-  },
-
-  // ── Dose row ──
-  doseRow: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  doseField: {
-    flex: 1,
-  },
-
-  // ── Status text ──
-  loadingText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    textAlign: "center",
-    paddingVertical: 16,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: colors.textTertiary,
-    textAlign: "center",
-    paddingVertical: 16,
-  },
-  errorText: {
-    fontSize: 13,
-    color: colors.danger,
-    marginTop: 8,
-  },
+  container: { flex: 1, backgroundColor: colors.background },
+  content: { padding: 16, paddingTop: 24, paddingBottom: 40 },
+  title: { fontSize: 28, fontWeight: "800", color: colors.text, marginBottom: 16 },
+  sectionHeader: { flexDirection: "row", justifyContent: "flex-end", alignItems: "center", marginBottom: 12 },
+  card: { backgroundColor: colors.surface, borderRadius: 12, padding: 14, marginBottom: 8 },
+  cardRow: { flexDirection: "row", alignItems: "center" },
+  cardContent: { flex: 1, marginRight: 8 },
+  cardLabel: { fontSize: 16, fontWeight: "600", color: colors.text },
+  cardSub: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
+  cardNotes: { fontSize: 12, color: colors.textTertiary, marginTop: 4, fontStyle: "italic" },
+  eventEmoji: { fontSize: 24, marginRight: 12 },
+  addButton: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.surfaceSecondary },
+  addButtonText: { fontSize: 14, fontWeight: "600", color: colors.accent },
+  deleteButton: { paddingHorizontal: 12, paddingVertical: 6 },
+  deleteButtonText: { fontSize: 13, color: colors.danger, fontWeight: "500" },
+  saveButton: { backgroundColor: colors.accent, borderRadius: 10, paddingVertical: 14, alignItems: "center", marginTop: 16 },
+  saveButtonDisabled: { opacity: 0.5 },
+  saveButtonText: { color: colors.text, fontSize: 16, fontWeight: "700" },
+  formCard: { backgroundColor: colors.surface, borderRadius: 12, padding: 16, marginBottom: 12 },
+  formLabel: { fontSize: 13, fontWeight: "600", color: colors.textSecondary, marginBottom: 6, marginTop: 12 },
+  input: { backgroundColor: colors.surfaceSecondary, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10, fontSize: 16, color: colors.text },
+  toggleRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 12 },
+  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  chip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, backgroundColor: colors.surfaceSecondary },
+  chipSelected: { backgroundColor: colors.accent },
+  chipText: { fontSize: 13, color: colors.textSecondary, fontWeight: "500" },
+  chipTextSelected: { color: colors.text },
+  loadingText: { fontSize: 14, color: colors.textSecondary, textAlign: "center", paddingVertical: 16 },
+  emptyText: { fontSize: 14, color: colors.textTertiary, textAlign: "center", paddingVertical: 16 },
 });

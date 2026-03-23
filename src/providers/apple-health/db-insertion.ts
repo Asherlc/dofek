@@ -1,5 +1,5 @@
-import { selectDailyHrv } from "@dofek/hrv";
-import { sql } from "drizzle-orm";
+import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
+import { eq, sql } from "drizzle-orm";
 import type { SyncDatabase } from "../../db/index.ts";
 import {
   activity,
@@ -10,6 +10,7 @@ import {
   metricStream,
   nutritionDaily,
   sleepSession,
+  sleepStage,
 } from "../../db/schema.ts";
 import { logger } from "../../logger.ts";
 import type { HealthRecord } from "./records.ts";
@@ -41,19 +42,13 @@ export async function insertWithDuplicateDiag<T extends Record<string, unknown>>
   rows: T[],
   doInsert: (rows: T[]) => Promise<unknown>,
 ): Promise<void> {
-  try {
-    await doInsert(rows);
-  } catch (err) {
-    if (err instanceof Error && err.message.includes("cannot affect row a second time")) {
-      const uniqueRows = deduplicateByKey(rows, conflictKey);
-      logger.warn(
-        `[apple_health] Deduplicated ${label} batch: ${rows.length} → ${uniqueRows.length} rows (${rows.length - uniqueRows.length} duplicates removed)`,
-      );
-      await doInsert(uniqueRows);
-      return;
-    }
-    throw err;
+  const uniqueRows = deduplicateByKey(rows, conflictKey);
+  if (uniqueRows.length < rows.length) {
+    logger.warn(
+      `[apple_health] Deduplicated ${label} batch: ${rows.length} → ${uniqueRows.length} rows (${rows.length - uniqueRows.length} duplicates removed)`,
+    );
   }
+  await doInsert(uniqueRows);
 }
 
 // Records that map to metric_stream (granular time-series)
@@ -64,6 +59,7 @@ export const METRIC_STREAM_TYPES: Record<string, string> = {
   HKQuantityTypeIdentifierBloodGlucose: "bloodGlucose",
   HKQuantityTypeIdentifierEnvironmentalAudioExposure: "audioExposure",
   HKQuantityTypeIdentifierHeadphoneAudioExposure: "audioExposure",
+  HKQuantityTypeIdentifierAppleSleepingWristTemperature: "skinTemperature",
 };
 
 // Records that map to body_measurement
@@ -169,6 +165,9 @@ export async function upsertMetricStreamBatch(
         break;
       case "audioExposure":
         rows.push({ ...base, audioExposure: record.value });
+        break;
+      case "skinTemperature":
+        rows.push({ ...base, skinTemperature: record.value });
         break;
     }
   }
@@ -287,41 +286,54 @@ export async function upsertDailyMetricsBatch(
   providerId: string,
   records: HealthRecord[],
 ): Promise<number> {
-  // Aggregate by date -- sum steps/energy, select overnight HRV, take latest for other point-in-time values
-  const byDate = new Map<string, Map<string, number>>();
-  const hrvSamplesByDate = new Map<string, Array<{ value: number; startDate: Date }>>();
+  // Aggregate by (date, source) -- each source device gets its own row.
+  // Deduplication happens at query time in the v_daily_metrics materialized view.
+  const byDateSource = new Map<string, Map<string, number>>();
+  const heartRateVariabilitySamplesByDateSource = new Map<
+    string,
+    Array<{ value: number; startDate: Date }>
+  >();
   for (const r of records) {
     if (!DAILY_METRIC_TYPES.has(r.type)) continue;
     const dateKey = dateToString(r.startDate);
-    if (!byDate.has(dateKey)) byDate.set(dateKey, new Map());
-    const day = byDate.get(dateKey) ?? new Map();
+    const sourceName = r.sourceName ?? null;
+    const compoundKey = `${dateKey}\0${sourceName}`;
+    if (!byDateSource.has(compoundKey)) byDateSource.set(compoundKey, new Map());
+    const day = byDateSource.get(compoundKey) ?? new Map();
 
     if (ADDITIVE_DAILY_TYPES.has(r.type)) {
       day.set(r.type, (day.get(r.type) ?? 0) + r.value);
     } else if (r.type === "HKQuantityTypeIdentifierHeartRateVariabilitySDNN") {
-      const daySamples = hrvSamplesByDate.get(dateKey) ?? [];
+      const daySamples = heartRateVariabilitySamplesByDateSource.get(compoundKey) ?? [];
       daySamples.push({ value: r.value, startDate: r.startDate });
-      hrvSamplesByDate.set(dateKey, daySamples);
+      heartRateVariabilitySamplesByDateSource.set(compoundKey, daySamples);
     } else {
       // Point-in-time: keep latest
       day.set(r.type, r.value);
     }
   }
 
-  // Select overnight HRV for each date using shared logic
-  for (const [dateKey, hrvSamples] of hrvSamplesByDate) {
-    const day = byDate.get(dateKey);
-    const selected = selectDailyHrv(hrvSamples);
+  // Select overnight HRV for each (date, source) using shared logic
+  for (const [
+    compoundKey,
+    heartRateVariabilitySamples,
+  ] of heartRateVariabilitySamplesByDateSource) {
+    const day = byDateSource.get(compoundKey);
+    const selected = selectDailyHeartRateVariability(heartRateVariabilitySamples);
     if (day && selected !== null) {
       day.set("HKQuantityTypeIdentifierHeartRateVariabilitySDNN", selected);
     }
   }
 
   const rows: { row: typeof dailyMetrics.$inferInsert }[] = [];
-  for (const [dateKey, metrics] of byDate) {
+  for (const [compoundKey, metrics] of byDateSource) {
+    const separatorIndex = compoundKey.indexOf("\0");
+    const dateKey = compoundKey.slice(0, separatorIndex);
+    const sourceName = compoundKey.slice(separatorIndex + 1);
     const row: typeof dailyMetrics.$inferInsert = {
       date: dateKey,
       providerId,
+      sourceName,
     };
 
     for (const [type, value] of metrics) {
@@ -388,14 +400,14 @@ export async function upsertDailyMetricsBatch(
     const batch = insertRows.slice(i, i + 500);
     await insertWithDuplicateDiag(
       "daily_metrics",
-      (row) => `${row.date}:${row.providerId}`,
+      (row) => `${row.date}:${row.providerId}:${row.sourceName}`,
       batch,
       (b) =>
         db
           .insert(dailyMetrics)
           .values(b)
           .onConflictDoUpdate({
-            target: [dailyMetrics.date, dailyMetrics.providerId],
+            target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
             set: {
               // Point-in-time metrics: prefer new value, fall back to existing
               restingHr: sql`coalesce(excluded.resting_hr, ${dailyMetrics.restingHr})`,
@@ -408,8 +420,6 @@ export async function upsertDailyMetricsBatch(
               walkingDoubleSupportPct: sql`coalesce(excluded.walking_double_support_pct, ${dailyMetrics.walkingDoubleSupportPct})`,
               walkingAsymmetryPct: sql`coalesce(excluded.walking_asymmetry_pct, ${dailyMetrics.walkingAsymmetryPct})`,
               walkingSteadiness: sql`coalesce(excluded.walking_steadiness, ${dailyMetrics.walkingSteadiness})`,
-              environmentalAudioExposure: sql`coalesce(excluded.environmental_audio_exposure, ${dailyMetrics.environmentalAudioExposure})`,
-              headphoneAudioExposure: sql`coalesce(excluded.headphone_audio_exposure, ${dailyMetrics.headphoneAudioExposure})`,
               skinTempC: sql`coalesce(excluded.skin_temp_c, ${dailyMetrics.skinTempC})`,
               // Additive metrics: accumulate across batches (import.ts clears before import)
               steps: sql`coalesce(${dailyMetrics.steps}, 0) + coalesce(excluded.steps, 0)`,
@@ -425,6 +435,63 @@ export async function upsertDailyMetricsBatch(
     );
   }
   return insertRows.length;
+}
+
+/**
+ * Aggregate SpO2 readings from metric_stream into daily_metrics.spo2_avg.
+ * Apple Health stores SpO2 as fractions (0-1) in metric_stream; this converts
+ * the daily average to a percentage (0-100) for consistency with other providers
+ * (WHOOP, Oura, Garmin) that report SpO2 as a percentage.
+ */
+export async function aggregateSpO2ToDailyMetrics(
+  db: SyncDatabase,
+  providerId: string,
+  since: Date,
+): Promise<void> {
+  await db.execute(
+    sql`INSERT INTO fitness.daily_metrics (date, provider_id, user_id, source_name, spo2_avg)
+        SELECT
+          (recorded_at AT TIME ZONE 'UTC')::date AS date,
+          provider_id,
+          user_id,
+          source_name,
+          AVG(spo2) * 100 AS spo2_avg
+        FROM fitness.metric_stream
+        WHERE provider_id = ${providerId}
+          AND spo2 IS NOT NULL
+          AND recorded_at >= ${since.toISOString()}::timestamptz
+        GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id, source_name
+        ON CONFLICT (date, provider_id, source_name) DO UPDATE SET
+          spo2_avg = EXCLUDED.spo2_avg`,
+  );
+}
+
+/**
+ * Aggregate wrist temperature readings from metric_stream into daily_metrics.skin_temp_c.
+ * Apple Watch reports sleeping wrist temperature in °C; this computes the daily
+ * average and stores it alongside other daily metrics.
+ */
+export async function aggregateSkinTempToDailyMetrics(
+  db: SyncDatabase,
+  providerId: string,
+  since: Date,
+): Promise<void> {
+  await db.execute(
+    sql`INSERT INTO fitness.daily_metrics (date, provider_id, user_id, source_name, skin_temp_c)
+        SELECT
+          (recorded_at AT TIME ZONE 'UTC')::date AS date,
+          provider_id,
+          user_id,
+          source_name,
+          AVG(skin_temperature) AS skin_temp_c
+        FROM fitness.metric_stream
+        WHERE provider_id = ${providerId}
+          AND skin_temperature IS NOT NULL
+          AND recorded_at >= ${since.toISOString()}::timestamptz
+        GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id, source_name
+        ON CONFLICT (date, provider_id, source_name) DO UPDATE SET
+          skin_temp_c = EXCLUDED.skin_temp_c`,
+  );
 }
 
 export async function upsertNutritionBatch(
@@ -700,6 +767,15 @@ export async function upsertSleepBatch(
   }
   const inBedRecords = [...inBedDedup.values()];
 
+  // Map Apple Health stage names to canonical stage names
+  const APPLE_HEALTH_STAGE_MAP: Record<string, "deep" | "light" | "rem" | "awake"> = {
+    deep: "deep",
+    core: "light",
+    asleep: "light",
+    rem: "rem",
+    awake: "awake",
+  };
+
   // Build all sleep session rows, then upsert in parallel
   const sleepRows = inBedRecords.map((bed) => {
     const stages = stageRecords.filter(
@@ -728,16 +804,15 @@ export async function upsertSleepBatch(
       }
     }
 
-    const totalSleepMinutes = deepMinutes + remMinutes + lightMinutes;
     const externalId = `ah:sleep:${bed.startDate.toISOString()}`;
 
     return {
       bed,
+      stages,
       deepMinutes,
       remMinutes,
       lightMinutes,
       awakeMinutes,
-      totalSleepMinutes,
       externalId,
     };
   });
@@ -749,14 +824,10 @@ export async function upsertSleepBatch(
     startedAt: s.bed.startDate,
     endedAt: s.bed.endDate,
     durationMinutes: s.bed.durationMinutes,
-    deepMinutes: s.deepMinutes || undefined,
-    remMinutes: s.remMinutes || undefined,
-    lightMinutes: s.lightMinutes || undefined,
-    awakeMinutes: s.awakeMinutes || undefined,
-    efficiencyPct:
-      s.bed.durationMinutes > 0
-        ? Math.round((s.totalSleepMinutes / s.bed.durationMinutes) * 100) / 100
-        : undefined,
+    deepMinutes: s.deepMinutes,
+    remMinutes: s.remMinutes,
+    lightMinutes: s.lightMinutes,
+    awakeMinutes: s.awakeMinutes,
     sleepType: null,
     sourceName: s.bed.sourceName,
   }));
@@ -786,5 +857,47 @@ export async function upsertSleepBatch(
           }),
     );
   }
+
+  // Second pass: look up session IDs and insert stage intervals
+  const sessionsWithStages = sleepRows.filter((s) => s.stages.length > 0);
+  if (sessionsWithStages.length > 0) {
+    const sessionIds = await db
+      .select({ id: sleepSession.id, externalId: sleepSession.externalId })
+      .from(sleepSession)
+      .where(
+        sql`${sleepSession.providerId} = ${providerId}
+          AND ${sleepSession.externalId} IN (${sql.join(
+            sessionsWithStages.map((s) => sql`${s.externalId}`),
+            sql`, `,
+          )})`,
+      );
+
+    const idByExternalId = new Map(sessionIds.map((r) => [r.externalId, r.id]));
+
+    for (const row of sessionsWithStages) {
+      const sessionId = idByExternalId.get(row.externalId);
+      if (!sessionId) continue;
+
+      const stageRows = row.stages
+        .map((s) => {
+          const stage = APPLE_HEALTH_STAGE_MAP[s.stage];
+          if (!stage) return null;
+          return {
+            sessionId,
+            stage,
+            startedAt: s.startDate,
+            endedAt: s.endDate,
+            sourceName: s.sourceName,
+          };
+        })
+        .filter((s): s is NonNullable<typeof s> => s !== null);
+
+      if (stageRows.length > 0) {
+        await db.delete(sleepStage).where(eq(sleepStage.sessionId, sessionId));
+        await db.insert(sleepStage).values(stageRows);
+      }
+    }
+  }
+
   return insertRows.length;
 }

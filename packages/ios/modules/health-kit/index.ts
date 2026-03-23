@@ -1,3 +1,4 @@
+import type { EventSubscription } from "expo-modules-core";
 import HealthKitModule from "./src/HealthKitModule";
 
 export interface HealthKitSample {
@@ -31,10 +32,25 @@ export interface SleepSample {
 	sourceName: string;
 }
 
+export interface DailyStatistic {
+	date: string; // YYYY-MM-DD (local timezone)
+	value: number;
+}
+
 export interface SyncResult {
 	samplesCount: number;
 	startDate: string;
 	endDate: string;
+}
+
+/** Check whether HealthKit authorization has already been requested.
+ * Returns "unnecessary" if the user has already been asked,
+ * "shouldRequest" if permissions still need to be requested,
+ * or "unavailable"/"unknown" for edge cases. */
+export async function getRequestStatus(): Promise<
+	"unnecessary" | "shouldRequest" | "unavailable" | "unknown"
+> {
+	return HealthKitModule.getRequestStatus();
 }
 
 /** Request HealthKit read/write permissions for all data types we need */
@@ -78,6 +94,17 @@ export async function querySleepSamples(
 	return HealthKitModule.querySleepSamples(startDate, endDate);
 }
 
+/** Query deduplicated daily statistics for a cumulative quantity type.
+ * Uses HKStatisticsCollectionQuery which properly handles source deduplication
+ * (e.g., iPhone + Apple Watch both counting steps for the same time period). */
+export async function queryDailyStatistics(
+	typeIdentifier: string,
+	startDate: string,
+	endDate: string,
+): Promise<DailyStatistic[]> {
+	return HealthKitModule.queryDailyStatistics(typeIdentifier, startDate, endDate);
+}
+
 /** Write dietary energy consumed sample to HealthKit */
 export async function writeDietaryEnergy(
 	calories: number,
@@ -103,9 +130,28 @@ export async function queryAnchoredSamples(
 	return HealthKitModule.queryAnchoredSamples(typeIdentifier, anchor);
 }
 
+/** Check if background delivery was previously enabled on this device */
+export function isBackgroundDeliveryEnabled(): boolean {
+	return HealthKitModule.isBackgroundDeliveryEnabled();
+}
+
 /** Register for background delivery of a HealthKit type */
 export async function enableBackgroundDelivery(
 	typeIdentifier: string,
 ): Promise<boolean> {
 	return HealthKitModule.enableBackgroundDelivery(typeIdentifier);
+}
+
+/** Set up HKObserverQuery instances for all read types.
+ * When new samples arrive, fires an "onHealthKitSampleUpdate" event. */
+export async function setupBackgroundObservers(): Promise<boolean> {
+	return HealthKitModule.setupBackgroundObservers();
+}
+
+/** Listen for HealthKit sample update events from background observers.
+ * Returns a subscription that can be removed with `.remove()`. */
+export function addSampleUpdateListener(
+	callback: (event: { typeIdentifier: string }) => void,
+): EventSubscription {
+	return HealthKitModule.addListener("onHealthKitSampleUpdate", callback);
 }

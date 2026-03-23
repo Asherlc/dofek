@@ -60,46 +60,8 @@ function fakeActivity(overrides: Partial<FakeTrainerRoadActivity> = {}): FakeTra
   };
 }
 
-function trainerroadHandlers(
-  activities: FakeTrainerRoadActivity[],
-  opts?: { signInError?: boolean },
-) {
+function trainerroadHandlers(activities: FakeTrainerRoadActivity[]) {
   return [
-    // Login page (GET for CSRF token)
-    http.get("https://www.trainerroad.com/app/login", () => {
-      return new HttpResponse(
-        '<input name="__RequestVerificationToken" value="fake-csrf-token" />',
-        {
-          status: 200,
-          headers: {
-            "Set-Cookie": "AntiForgeryCookie=abc123; path=/",
-          },
-        },
-      );
-    }),
-
-    // Login POST
-    http.post("https://www.trainerroad.com/app/login", () => {
-      if (opts?.signInError) {
-        return new HttpResponse("Login failed", { status: 200 });
-      }
-      return new HttpResponse("", {
-        status: 302,
-        headers: {
-          Location: "/app/dashboard",
-          "Set-Cookie": "SharedTrainerRoadAuth=new-auth-cookie; path=/; HttpOnly",
-        },
-      });
-    }),
-
-    // Member info (used during signIn to get username)
-    http.get("https://www.trainerroad.com/app/api/member-info", () => {
-      return HttpResponse.json({
-        MemberId: 12345,
-        Username: "testuser",
-      });
-    }),
-
     // Activities API
     http.get("https://www.trainerroad.com/app/api/calendar/activities/:username", () => {
       return HttpResponse.json(activities);
@@ -198,54 +160,21 @@ describe("TrainerRoadProvider.sync() (integration)", () => {
     expect(updated?.name).toBe("Baxter Updated");
   });
 
-  it("re-authenticates when cookie is expired using env credentials", async () => {
+  it("returns error when cookie is expired", async () => {
     await saveTokens(ctx.db, "trainerroad", {
       accessToken: "expired-cookie",
       refreshToken: null,
       expiresAt: new Date("2025-01-01T00:00:00Z"), // expired
       scopes: "username:testuser",
     });
-
-    process.env.TRAINERROAD_USERNAME = "test@example.com";
-    process.env.TRAINERROAD_PASSWORD = "test-password";
-
-    const trActivities = [fakeActivity({ Id: 6001, WorkoutName: "Post-reauth workout" })];
-    server.use(...trainerroadHandlers(trActivities));
-
-    const provider = new TrainerRoadProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
-
-    expect(result.errors).toHaveLength(0);
-    expect(result.recordsSynced).toBe(1);
-
-    // Verify tokens were saved after re-auth
-    const { loadTokens } = await import("../db/tokens.ts");
-    const tokens = await loadTokens(ctx.db, "trainerroad");
-    expect(tokens?.accessToken).toBe("new-auth-cookie");
-    expect(tokens?.scopes).toBe("username:testuser");
-
-    delete process.env.TRAINERROAD_USERNAME;
-    delete process.env.TRAINERROAD_PASSWORD;
-  });
-
-  it("returns error when cookie expired and no env vars for re-auth", async () => {
-    await saveTokens(ctx.db, "trainerroad", {
-      accessToken: "expired-cookie",
-      refreshToken: null,
-      expiresAt: new Date("2025-01-01T00:00:00Z"), // expired
-      scopes: "username:testuser",
-    });
-
-    // Ensure env vars are not set
-    delete process.env.TRAINERROAD_USERNAME;
-    delete process.env.TRAINERROAD_PASSWORD;
 
     const provider = new TrainerRoadProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).toContain("TRAINERROAD_USERNAME");
-    expect(result.errors[0]?.message).toContain("TRAINERROAD_PASSWORD");
+    expect(result.errors[0]?.message).toContain(
+      "TrainerRoad session expired — please re-authenticate via Settings",
+    );
     expect(result.recordsSynced).toBe(0);
   });
 

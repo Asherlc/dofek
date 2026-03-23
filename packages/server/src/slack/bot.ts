@@ -5,6 +5,7 @@ import type { SocketModeClient } from "@slack/socket-mode";
 const { App, ExpressReceiver, SocketModeReceiver } = bolt;
 
 import type { Database } from "dofek/db";
+import { NUTRIENT_SQL_COLUMNS } from "dofek/db/nutrient-columns";
 import { sql } from "drizzle-orm";
 import type express from "express";
 import { z } from "zod";
@@ -14,6 +15,7 @@ import {
   refineNutritionItems,
 } from "../lib/ai-nutrition.ts";
 import { queryCache } from "../lib/cache.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import { formatConfirmationMessage, formatSavedMessage } from "./formatting.ts";
 
@@ -117,7 +119,9 @@ function extractEntryIdsFromThread(
 async function resolveUserByEmail(db: Database, email: string | null): Promise<string> {
   if (email) {
     // Check auth_account first (Google/Apple login creates these)
-    const existingByAuthEmail = await db.execute<{ user_id: string }>(
+    const existingByAuthEmail = await executeWithSchema(
+      db,
+      z.object({ user_id: z.string() }),
       sql`SELECT user_id FROM fitness.auth_account
           WHERE LOWER(email) = LOWER(${email})
           LIMIT 1`,
@@ -129,7 +133,9 @@ async function resolveUserByEmail(db: Database, email: string | null): Promise<s
     }
 
     // Also check user_profile.email (web login updates this for DEFAULT_USER_ID)
-    const existingByProfileEmail = await db.execute<{ id: string }>(
+    const existingByProfileEmail = await executeWithSchema(
+      db,
+      z.object({ id: z.string() }),
       sql`SELECT id FROM fitness.user_profile
           WHERE LOWER(email) = LOWER(${email})
           LIMIT 1`,
@@ -176,7 +182,9 @@ async function lookupOrCreateUserId(
   }
 
   // Check for existing Slack auth link
-  const existing = await db.execute<{ user_id: string }>(
+  const existing = await executeWithSchema(
+    db,
+    z.object({ user_id: z.string() }),
     sql`SELECT user_id FROM fitness.auth_account
         WHERE auth_provider = 'slack' AND provider_account_id = ${slackUserId}
         LIMIT 1`,
@@ -187,7 +195,9 @@ async function lookupOrCreateUserId(
     // with the same email but a different user_id, the Slack link is stale
     // (e.g., Slack bot ran before the user logged in on the web).
     if (email) {
-      const canonical = await db.execute<{ user_id: string }>(
+      const canonical = await executeWithSchema(
+        db,
+        z.object({ user_id: z.string() }),
         sql`SELECT user_id FROM fitness.auth_account
             WHERE LOWER(email) = LOWER(${email}) AND auth_provider != 'slack'
             LIMIT 1`,
@@ -254,53 +264,61 @@ async function saveUnconfirmedFoodEntries(
 
   const ids: string[] = [];
   for (const item of items) {
-    const rows = await db.execute<{ id: string }>(
-      sql`INSERT INTO fitness.food_entry (
-            user_id, provider_id, date, meal, food_name, food_description, category,
-            calories, protein_g, carbs_g, fat_g, fiber_g,
-            saturated_fat_g, sugar_g, sodium_mg,
-            polyunsaturated_fat_g, monounsaturated_fat_g, trans_fat_g, cholesterol_mg,
-            potassium_mg, calcium_mg, iron_mg, magnesium_mg, zinc_mg,
-            selenium_mcg, copper_mg, manganese_mg, chromium_mcg, iodine_mcg,
-            vitamin_a_mcg, vitamin_c_mg, vitamin_d_mcg, vitamin_e_mg, vitamin_k_mcg,
-            vitamin_b1_mg, vitamin_b2_mg, vitamin_b3_mg, vitamin_b5_mg,
-            vitamin_b6_mg, vitamin_b7_mcg, vitamin_b9_mcg, vitamin_b12_mcg,
-            omega3_mg, omega6_mg,
-            confirmed
+    const rows = await executeWithSchema(
+      db,
+      z.object({ id: z.string() }),
+      sql`WITH new_nutrition AS (
+            INSERT INTO fitness.nutrition_data (
+              ${sql.raw(NUTRIENT_SQL_COLUMNS)}
+            ) VALUES (
+              ${item.calories}, ${item.proteinG},
+              ${item.carbsG}, ${item.fatG},
+              ${item.saturatedFatG}, ${item.polyunsaturatedFatG ?? null},
+              ${item.monounsaturatedFatG ?? null}, ${item.transFatG ?? null},
+              ${item.cholesterolMg ?? null}, ${item.sodiumMg},
+              ${item.potassiumMg ?? null}, ${item.fiberG}, ${item.sugarG},
+              ${item.vitaminAMcg ?? null}, ${item.vitaminCMg ?? null},
+              ${item.vitaminDMcg ?? null}, ${item.vitaminEMg ?? null},
+              ${item.vitaminKMcg ?? null},
+              ${item.vitaminB1Mg ?? null}, ${item.vitaminB2Mg ?? null},
+              ${item.vitaminB3Mg ?? null}, ${item.vitaminB5Mg ?? null},
+              ${item.vitaminB6Mg ?? null},
+              ${item.vitaminB7Mcg ?? null}, ${item.vitaminB9Mcg ?? null},
+              ${item.vitaminB12Mcg ?? null},
+              ${item.calciumMg ?? null}, ${item.ironMg ?? null},
+              ${item.magnesiumMg ?? null}, ${item.zincMg ?? null},
+              ${item.seleniumMcg ?? null},
+              ${item.copperMg ?? null}, ${item.manganeseMg ?? null},
+              ${item.chromiumMcg ?? null}, ${item.iodineMcg ?? null},
+              ${item.omega3Mg ?? null}, ${item.omega6Mg ?? null}
+            ) RETURNING id
+          )
+          INSERT INTO fitness.food_entry (
+            user_id, provider_id, date, meal, food_name, food_description,
+            category, nutrition_data_id, confirmed
           ) VALUES (
             ${userId}, ${DOFEK_PROVIDER_ID}, ${date}::date,
             ${item.meal}, ${item.foodName}, ${item.foodDescription},
-            ${item.category}, ${item.calories}, ${item.proteinG},
-            ${item.carbsG}, ${item.fatG}, ${item.fiberG},
-            ${item.saturatedFatG}, ${item.sugarG}, ${item.sodiumMg},
-            ${item.polyunsaturatedFatG ?? null}, ${item.monounsaturatedFatG ?? null},
-            ${item.transFatG ?? null}, ${item.cholesterolMg ?? null},
-            ${item.potassiumMg ?? null}, ${item.calciumMg ?? null},
-            ${item.ironMg ?? null}, ${item.magnesiumMg ?? null},
-            ${item.zincMg ?? null}, ${item.seleniumMcg ?? null},
-            ${item.copperMg ?? null}, ${item.manganeseMg ?? null},
-            ${item.chromiumMcg ?? null}, ${item.iodineMcg ?? null},
-            ${item.vitaminAMcg ?? null}, ${item.vitaminCMg ?? null},
-            ${item.vitaminDMcg ?? null}, ${item.vitaminEMg ?? null},
-            ${item.vitaminKMcg ?? null}, ${item.vitaminB1Mg ?? null},
-            ${item.vitaminB2Mg ?? null}, ${item.vitaminB3Mg ?? null},
-            ${item.vitaminB5Mg ?? null}, ${item.vitaminB6Mg ?? null},
-            ${item.vitaminB7Mcg ?? null}, ${item.vitaminB9Mcg ?? null},
-            ${item.vitaminB12Mcg ?? null}, ${item.omega3Mg ?? null},
-            ${item.omega6Mg ?? null},
-            false
+            ${item.category}, (SELECT id FROM new_nutrition), false
           ) RETURNING id`,
     );
     const row = rows[0];
-    if (row) ids.push(row.id);
+    if (row) {
+      ids.push(row.id);
+    } else {
+      logger.warn(`[slack] INSERT RETURNING returned no id for "${item.foodName}"`);
+    }
   }
+  logger.info(`[slack] Saved ${ids.length} unconfirmed entries: ${ids.join(",")}`);
   return ids;
 }
 
 /** Confirm food entries by setting confirmed = true */
 async function confirmFoodEntries(db: Database, entryIds: string[]): Promise<number> {
   if (entryIds.length === 0) return 0;
-  const result = await db.execute<{ id: string }>(
+  const result = await executeWithSchema(
+    db,
+    z.object({ id: z.string() }),
     sql`UPDATE fitness.food_entry
         SET confirmed = true
         WHERE id IN (${sqlIdList(entryIds)})
@@ -310,13 +328,18 @@ async function confirmFoodEntries(db: Database, entryIds: string[]): Promise<num
   return result.length;
 }
 
-/** Delete unconfirmed food entries */
+/** Delete unconfirmed food entries and their nutrition_data */
 async function deleteUnconfirmedEntries(db: Database, entryIds: string[]): Promise<void> {
   if (entryIds.length === 0) return;
   await db.execute(
-    sql`DELETE FROM fitness.food_entry
-        WHERE id IN (${sqlIdList(entryIds)})
-          AND confirmed = false`,
+    sql`WITH deleted AS (
+          DELETE FROM fitness.food_entry
+          WHERE id IN (${sqlIdList(entryIds)})
+            AND confirmed = false
+          RETURNING nutrition_data_id
+        )
+        DELETE FROM fitness.nutrition_data
+        WHERE id IN (SELECT nutrition_data_id FROM deleted WHERE nutrition_data_id IS NOT NULL)`,
   );
 }
 
@@ -394,20 +417,22 @@ function registerHandlers(app: AppType, db: Database) {
 
           if (previousEntryIds) {
             // Load the previous items from the database for refinement context
-            const previousRows = await db.execute<{
-              food_name: string;
-              food_description: string | null;
-              category: NutritionItemWithMeal["category"] | null;
-              calories: number | null;
-              protein_g: number | null;
-              carbs_g: number | null;
-              fat_g: number | null;
-              fiber_g: number | null;
-              saturated_fat_g: number | null;
-              sugar_g: number | null;
-              sodium_mg: number | null;
-              meal: string | null;
-            }>(
+            const previousRows = await executeWithSchema(
+              db,
+              z.object({
+                food_name: z.string(),
+                food_description: z.string().nullable(),
+                category: z.string().nullable(),
+                calories: z.coerce.number().nullable(),
+                protein_g: z.coerce.number().nullable(),
+                carbs_g: z.coerce.number().nullable(),
+                fat_g: z.coerce.number().nullable(),
+                fiber_g: z.coerce.number().nullable(),
+                saturated_fat_g: z.coerce.number().nullable(),
+                sugar_g: z.coerce.number().nullable(),
+                sodium_mg: z.coerce.number().nullable(),
+                meal: z.string().nullable(),
+              }),
               sql`SELECT food_name, food_description, category, calories,
                          protein_g, carbs_g, fat_g, fiber_g,
                          saturated_fat_g, sugar_g, sodium_mg, meal
@@ -621,12 +646,41 @@ function registerHandlers(app: AppType, db: Database) {
     if (!("value" in action) || !action.value) return;
 
     const entryIds = action.value.split(",").filter(Boolean);
+    logger.info(
+      `[slack] confirm_food action: entryIds=${JSON.stringify(entryIds)}, buttonValue=${action.value.substring(0, 100)}`,
+    );
+
+    if (entryIds.length === 0) {
+      logger.warn("[slack] confirm_food: no entry IDs in button value");
+      if (body.channel?.id && body.message?.ts) {
+        await client.chat.update({
+          channel: body.channel.id,
+          ts: body.message.ts,
+          text: "These entries were already saved.",
+          blocks: [],
+        });
+      }
+      return;
+    }
 
     try {
+      // Confirm any unconfirmed entries (idempotent — retries are harmless)
       const confirmedCount = await confirmFoodEntries(db, entryIds);
+      logger.info(`[slack] confirmFoodEntries updated ${confirmedCount} rows`);
 
-      if (confirmedCount === 0) {
-        // Entries were already confirmed or deleted
+      // Always load items to show the success message, even if entries were
+      // already confirmed by a prior delivery (Socket Mode retry).
+      const rows = await executeWithSchema(
+        db,
+        z.object({ food_name: z.string(), calories: z.coerce.number().nullable() }),
+        sql`SELECT food_name, calories
+            FROM fitness.food_entry
+            WHERE id IN (${sqlIdList(entryIds)})`,
+      );
+
+      if (rows.length === 0) {
+        // Entries were deleted or IDs are invalid
+        logger.warn(`[slack] confirm_food: no entries found for IDs ${entryIds.join(",")}`);
         if (body.channel?.id && body.message?.ts) {
           await client.chat.update({
             channel: body.channel.id,
@@ -637,16 +691,6 @@ function registerHandlers(app: AppType, db: Database) {
         }
         return;
       }
-
-      // Load items for the saved message display
-      const rows = await db.execute<{
-        food_name: string;
-        calories: number | null;
-      }>(
-        sql`SELECT food_name, calories
-            FROM fitness.food_entry
-            WHERE id IN (${sqlIdList(entryIds)})`,
-      );
 
       const items = rows.map((r) => ({
         foodName: r.food_name,
@@ -664,8 +708,9 @@ function registerHandlers(app: AppType, db: Database) {
       }
 
       // Invalidate cached food/nutrition queries so the UI reflects the new entries.
-      // We need the user_id from the entries to scope the invalidation.
-      const userRow = await db.execute<{ user_id: string }>(
+      const userRow = await executeWithSchema(
+        db,
+        z.object({ user_id: z.string() }),
         sql`SELECT DISTINCT user_id FROM fitness.food_entry WHERE id IN (${sqlIdList(entryIds)}) LIMIT 1`,
       );
       if (userRow[0]) {
@@ -673,7 +718,7 @@ function registerHandlers(app: AppType, db: Database) {
         await queryCache.invalidateByPrefix(`${userRow[0].user_id}:nutrition.`);
       }
 
-      logger.info(`[slack] Confirmed ${confirmedCount} food entries`);
+      logger.info(`[slack] Confirmed ${confirmedCount} food entries (${rows.length} total)`);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error(`[slack] Failed to confirm food entries: ${errorMessage}`);
@@ -814,6 +859,12 @@ function registerSocketModeDiagnostics(client: SocketModeClient): void {
   client.on("unable_to_socket_mode_start", (payload) => {
     logger.error(`[slack] Socket Mode failed to start: ${formatSocketDiagnosticPayload(payload)}`);
   });
+  // Log all incoming Slack events at the WebSocket level — helps diagnose
+  // when Slack stops delivering events despite showing "connected".
+  client.on("slack_event", (args: { type?: string; body?: { event?: { type?: string } } }) => {
+    const eventType = args.body?.event?.type ?? args.type ?? "unknown";
+    logger.info(`[slack] Socket Mode received raw event: ${eventType}`);
+  });
 }
 
 /**
@@ -848,11 +899,13 @@ export function createSlackBot(db: Database): SlackBotResult | null {
           throw new Error("Missing teamId in Slack event");
         }
         logger.info(`[slack] authorize: looking up installation for team ${teamId}`);
-        const rows = await db.execute<{
-          bot_token: string;
-          bot_id: string | null;
-          bot_user_id: string | null;
-        }>(
+        const rows = await executeWithSchema(
+          db,
+          z.object({
+            bot_token: z.string(),
+            bot_id: z.string().nullable(),
+            bot_user_id: z.string().nullable(),
+          }),
           sql`SELECT bot_token, bot_id, bot_user_id
               FROM fitness.slack_installation
               WHERE team_id = ${teamId}
@@ -888,6 +941,11 @@ export function createSlackBot(db: Database): SlackBotResult | null {
 
   if (botToken && appToken) {
     const receiver = new SocketModeReceiver({ appToken });
+    // Increase pong timeout from default 5s — small servers can't always
+    // respond in time, causing frequent disconnects and lost action events.
+    // SocketModeReceiver doesn't expose clientPingTimeout, and the property
+    // is TS-private (but runtime-writable), so we use Object.assign.
+    Object.assign(receiver.client, { clientPingTimeoutMS: 30_000 });
     registerSocketModeDiagnostics(receiver.client);
 
     const app = new App({
@@ -924,6 +982,20 @@ export async function startSlackBot(db: Database, expressApp?: express.Express):
     } else if (result.mode === "socket") {
       await result.app.start();
       logger.info("[slack] Slack bot connected (Socket Mode)");
+
+      // Graceful shutdown: close the Socket Mode WebSocket before the process
+      // exits so Slack immediately cleans up this connection.  Without this,
+      // container restarts (e.g. Watchtower) leave stale connections and Slack
+      // may route events to dead sockets, causing dropped messages.
+      process.once("SIGTERM", async () => {
+        logger.info("[slack] Shutting down Socket Mode connection (SIGTERM)");
+        try {
+          await result.app.stop();
+        } catch (stopError) {
+          const msg = stopError instanceof Error ? stopError.message : String(stopError);
+          logger.error(`[slack] Error stopping Slack bot: ${msg}`);
+        }
+      });
     } else if (result.mode === "http") {
       logger.warn("[slack] HTTP mode requires Express app reference — pass it to startSlackBot()");
     }

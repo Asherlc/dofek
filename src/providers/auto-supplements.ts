@@ -1,8 +1,9 @@
-import { asc } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import type { SyncDatabase } from "../db/index.ts";
-import { foodEntry, supplement } from "../db/schema.ts";
+import { NUTRIENT_FIELDS, nutrientColumnsToValues } from "../db/nutrient-columns.ts";
+import { foodEntry, nutritionData } from "../db/schema.ts";
 import { ensureProvider } from "../db/tokens.ts";
-import type { Provider, SyncError, SyncResult } from "./types.ts";
+import type { SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // Entry builder
@@ -16,48 +17,26 @@ function slugify(name: string): string {
     .replace(/(^-|-$)/g, "");
 }
 
-/** Nutrient keys shared between supplement table and food_entry schema */
-const NUTRIENT_KEYS = [
-  "calories",
-  "proteinG",
-  "carbsG",
-  "fatG",
-  "saturatedFatG",
-  "polyunsaturatedFatG",
-  "monounsaturatedFatG",
-  "transFatG",
-  "cholesterolMg",
-  "sodiumMg",
-  "potassiumMg",
-  "fiberG",
-  "sugarG",
-  "vitaminAMcg",
-  "vitaminCMg",
-  "vitaminDMcg",
-  "vitaminEMg",
-  "vitaminKMcg",
-  "vitaminB1Mg",
-  "vitaminB2Mg",
-  "vitaminB3Mg",
-  "vitaminB5Mg",
-  "vitaminB6Mg",
-  "vitaminB7Mcg",
-  "vitaminB9Mcg",
-  "vitaminB12Mcg",
-  "calciumMg",
-  "ironMg",
-  "magnesiumMg",
-  "zincMg",
-  "seleniumMcg",
-  "copperMg",
-  "manganeseMg",
-  "chromiumMcg",
-  "iodineMcg",
-  "omega3Mg",
-  "omega6Mg",
-] as const;
-
-type SupplementRow = typeof supplement.$inferSelect;
+/** A supplement row joined with its nutrition data from v_supplement_with_nutrition */
+export interface SupplementWithNutrition {
+  id: string;
+  userId: string;
+  user_id: string;
+  name: string;
+  amount: number | null;
+  unit: string | null;
+  form: string | null;
+  description: string | null;
+  meal: "breakfast" | "lunch" | "dinner" | "snack" | "other" | null;
+  sort_order: number;
+  nutrition_data_id: string | null;
+  // Nutrient fields from the join (snake_case from view)
+  calories: number | null;
+  protein_g: number | null;
+  carbs_g: number | null;
+  fat_g: number | null;
+  [key: string]: unknown;
+}
 
 const mealValues = ["breakfast", "lunch", "dinner", "snack", "other"] as const;
 
@@ -78,20 +57,18 @@ export interface DailySupplementEntry {
  * Build food_entry rows for each supplement × each date.
  */
 export function buildDailyEntries(
-  supplements: SupplementRow[],
+  supplements: SupplementWithNutrition[],
   dates: string[],
 ): DailySupplementEntry[] {
   const entries: DailySupplementEntry[] = [];
 
   for (const date of dates) {
     for (const supp of supplements) {
-      const nutrients: Record<string, number | null> = Object.fromEntries(
-        NUTRIENT_KEYS.map((key) => [key, supp[key] ?? null]),
-      );
+      const nutrients = nutrientColumnsToValues(supp);
       entries.push({
         providerId: "auto-supplements",
-        externalId: `auto:${slugify(supp.name)}:${supp.userId}:${date}`,
-        userId: supp.userId,
+        externalId: `auto:${slugify(supp.name)}:${supp.user_id}:${date}`,
+        userId: supp.user_id,
         date,
         meal: supp.meal ?? "other",
         foodName: supp.name,
@@ -129,7 +106,7 @@ function datesInRange(since: Date): string[] {
   return dates;
 }
 
-export class AutoSupplementsProvider implements Provider {
+export class AutoSupplementsProvider implements SyncProvider {
   readonly id = PROVIDER_ID;
   readonly name = PROVIDER_NAME;
 
@@ -142,11 +119,10 @@ export class AutoSupplementsProvider implements Provider {
     const start = Date.now();
     const errors: SyncError[] = [];
 
-    // Query all users' supplements from the DB
-    const allSupplements = await db
-      .select()
-      .from(supplement)
-      .orderBy(asc(supplement.userId), asc(supplement.sortOrder));
+    // Query all users' supplements with their nutrition data via the view
+    const allSupplements = await db.execute<SupplementWithNutrition>(
+      sql`SELECT * FROM fitness.v_supplement_with_nutrition ORDER BY user_id ASC, sort_order ASC`,
+    );
 
     if (allSupplements.length === 0) {
       return { provider: PROVIDER_ID, recordsSynced: 0, errors, duration: Date.now() - start };
@@ -163,28 +139,52 @@ export class AutoSupplementsProvider implements Provider {
     let synced = 0;
     for (const entry of entries) {
       try {
-        await db
-          .insert(foodEntry)
-          .values({
-            providerId: entry.providerId,
-            externalId: entry.externalId,
-            userId: entry.userId,
-            date: entry.date,
-            meal: entry.meal,
-            foodName: entry.foodName,
-            foodDescription: entry.foodDescription,
-            category: "supplement",
-            numberOfUnits: entry.numberOfUnits,
-            ...entry.nutrients,
-          })
-          .onConflictDoUpdate({
-            target: [foodEntry.providerId, foodEntry.externalId],
-            set: {
+        // Check if food_entry already exists to avoid orphaning nutrition_data rows
+        const existing = await db
+          .select({ nutritionDataId: foodEntry.nutritionDataId })
+          .from(foodEntry)
+          .where(
+            sql`${foodEntry.providerId} = ${entry.providerId} AND ${foodEntry.externalId} = ${entry.externalId}`,
+          );
+
+        if (existing.length > 0 && existing[0]?.nutritionDataId) {
+          // Update existing nutrition_data in-place using raw SQL
+          const setClauses = NUTRIENT_FIELDS.map(
+            (f) => sql`${sql.identifier(f.column)} = ${entry.nutrients[f.key] ?? null}`,
+          );
+          await db.execute(
+            sql`UPDATE fitness.nutrition_data SET ${sql.join(setClauses, sql`, `)}
+                WHERE id = ${existing[0].nutritionDataId}`,
+          );
+          // Update food_entry metadata
+          await db.execute(
+            sql`UPDATE fitness.food_entry
+                SET food_name = ${entry.foodName}, food_description = ${entry.foodDescription}
+                WHERE provider_id = ${entry.providerId} AND external_id = ${entry.externalId}`,
+          );
+        } else {
+          // Insert new nutrition_data + food_entry
+          const [ndRow] = await db
+            .insert(nutritionData)
+            .values(entry.nutrients)
+            .returning({ id: nutritionData.id });
+
+          await db
+            .insert(foodEntry)
+            .values({
+              providerId: entry.providerId,
+              externalId: entry.externalId,
+              userId: entry.userId,
+              date: entry.date,
+              meal: entry.meal,
               foodName: entry.foodName,
               foodDescription: entry.foodDescription,
-              ...entry.nutrients,
-            },
-          });
+              category: "supplement",
+              numberOfUnits: entry.numberOfUnits,
+              nutritionDataId: ndRow?.id,
+            })
+            .onConflictDoNothing();
+        }
         synced++;
       } catch (e) {
         errors.push({

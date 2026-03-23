@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { UnitContext } from "../../lib/unitContext.ts";
 import type { UnitSystem } from "../../lib/units.ts";
-import { convertPace } from "../../lib/units.ts";
+import { UnitConverter } from "../../lib/units.ts";
 
 const capturedOptions: Array<Record<string, unknown>> = [];
 
@@ -119,7 +119,7 @@ describe("RunningTab", () => {
       if (!Array.isArray(series) || !series[0]) return;
       const data = series[0].data;
       const firstPace = data[0][1];
-      const expectedPace = convertPace(240, "imperial");
+      const expectedPace = new UnitConverter("imperial").convertPace(240);
       expect(firstPace).toBeCloseTo(expectedPace, 1);
 
       const tooltip = paceCurveOption.tooltip;

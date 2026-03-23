@@ -5,6 +5,7 @@ import { bodyRouter } from "./routers/body.ts";
 import { bodyAnalyticsRouter } from "./routers/body-analytics.ts";
 import { calendarRouter } from "./routers/calendar.ts";
 import { correlationRouter } from "./routers/correlation.ts";
+import { credentialAuthRouter } from "./routers/credential-auth.ts";
 import { cyclingAdvancedRouter } from "./routers/cycling-advanced.ts";
 import { dailyMetricsRouter } from "./routers/daily-metrics.ts";
 import { durationCurvesRouter } from "./routers/duration-curves.ts";
@@ -16,6 +17,7 @@ import { healthspanRouter } from "./routers/healthspan.ts";
 import { hikingRouter } from "./routers/hiking.ts";
 import { insightsRouter } from "./routers/insights.ts";
 import { intervalsRouter } from "./routers/intervals.ts";
+import { journalRouter } from "./routers/journal.ts";
 import { lifeEventsRouter } from "./routers/life-events.ts";
 import { nutritionRouter } from "./routers/nutrition.ts";
 import { nutritionAnalyticsRouter } from "./routers/nutrition-analytics.ts";
@@ -53,6 +55,7 @@ export const appRouter = router({
   nutrition: nutritionRouter,
   nutritionAnalytics: nutritionAnalyticsRouter,
   insights: insightsRouter,
+  journal: journalRouter,
   lifeEvents: lifeEventsRouter,
   supplements: supplementsRouter,
   providerDetail: providerDetailRouter,
@@ -61,6 +64,7 @@ export const appRouter = router({
   trends: trendsRouter,
   calendar: calendarRouter,
   correlation: correlationRouter,
+  credentialAuth: credentialAuthRouter,
   pmc: pmcRouter,
   power: powerRouter,
   durationCurves: durationCurvesRouter,

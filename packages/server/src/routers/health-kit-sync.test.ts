@@ -63,7 +63,7 @@ describe("healthKitSyncRouter", () => {
       ];
 
       const daily = aggregateDailyMetricSamples(samples);
-      const jan15 = daily.get("2024-01-15");
+      const jan15 = daily.get("2024-01-15\x00iPhone");
 
       // Should use the first reading (45ms overnight), NOT average (71.7ms)
       // or last-write-wins (120ms Breathe session)
@@ -82,7 +82,7 @@ describe("healthKitSyncRouter", () => {
       ];
 
       const daily = aggregateDailyMetricSamples(samples);
-      const jan15 = daily.get("2024-01-15");
+      const jan15 = daily.get("2024-01-15\x00iPhone");
 
       expect(jan15?.hrv).toBe(52);
     });
@@ -128,6 +128,54 @@ describe("healthKitSyncRouter", () => {
 
       expect(result.inserted).toBe(2);
       expect(result.errors).toEqual([]);
+    });
+
+    it("aggregates a single pre-deduplicated statistics sample per day (no double-counting)", () => {
+      // When iOS uses HKStatisticsCollectionQuery, it sends one sample per day
+      // per type with the deduplicated total. Verify the accumulator produces
+      // the correct value (not doubled or split across batches).
+      const samples = [
+        makeSample({
+          type: "HKQuantityTypeIdentifierStepCount",
+          value: 8500,
+          startDate: "2024-01-15T12:00:00Z",
+          endDate: "2024-01-15T12:00:00Z",
+          uuid: "stat:steps:2024-01-15",
+        }),
+        makeSample({
+          type: "HKQuantityTypeIdentifierActiveEnergyBurned",
+          value: 450,
+          startDate: "2024-01-15T12:00:00Z",
+          endDate: "2024-01-15T12:00:00Z",
+          uuid: "stat:energy:2024-01-15",
+        }),
+      ];
+
+      const daily = aggregateDailyMetricSamples(samples);
+      const jan15 = daily.get("2024-01-15\x00iPhone");
+
+      expect(jan15?.steps).toBe(8500);
+      expect(jan15?.activeEnergyKcal).toBe(450);
+    });
+
+    it("does not double-count when raw samples from multiple sources are replaced by statistics", () => {
+      // Before the fix, iPhone (2800 steps) + Apple Watch (3000 steps) raw
+      // samples would sum to 5800. With statistics, only one deduplicated
+      // total (3000) is sent.
+      const samples = [
+        makeSample({
+          type: "HKQuantityTypeIdentifierStepCount",
+          value: 3000,
+          startDate: "2024-01-15T12:00:00Z",
+          endDate: "2024-01-15T12:00:00Z",
+          uuid: "stat:steps:2024-01-15",
+        }),
+      ];
+
+      const daily = aggregateDailyMetricSamples(samples);
+      const jan15 = daily.get("2024-01-15\x00iPhone");
+
+      expect(jan15?.steps).toBe(3000);
     });
 
     it("processes point-in-time daily metric samples", async () => {
@@ -237,6 +285,86 @@ describe("healthKitSyncRouter", () => {
       });
 
       expect(result.inserted).toBe(1);
+    });
+
+    it("refreshes v_daily_metrics materialized view after processing skin temp samples", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+      });
+
+      await caller.pushQuantitySamples({
+        samples: [
+          makeSample({
+            type: "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
+            value: 34.5,
+            unit: "degC",
+            uuid: "skin-temp-1",
+          }),
+        ],
+      });
+
+      const refreshCall = execute.mock.calls.find((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return (
+          serialized.includes("REFRESH MATERIALIZED VIEW") && serialized.includes("v_daily_metrics")
+        );
+      });
+      expect(refreshCall).toBeDefined();
+    });
+
+    it("refreshes v_daily_metrics after processing SpO2 samples", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+      });
+
+      await caller.pushQuantitySamples({
+        samples: [
+          makeSample({
+            type: "HKQuantityTypeIdentifierOxygenSaturation",
+            value: 0.97,
+            unit: "%",
+            uuid: "spo2-1",
+          }),
+        ],
+      });
+
+      const refreshCall = execute.mock.calls.find((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return (
+          serialized.includes("REFRESH MATERIALIZED VIEW") && serialized.includes("v_daily_metrics")
+        );
+      });
+      expect(refreshCall).toBeDefined();
+    });
+
+    it("does not refresh v_daily_metrics when no metric stream samples present", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+      });
+
+      await caller.pushQuantitySamples({
+        samples: [
+          makeSample({
+            type: "HKQuantityTypeIdentifierStepCount",
+            value: 5000,
+            uuid: "steps-only",
+          }),
+        ],
+      });
+
+      const refreshCall = execute.mock.calls.find((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return (
+          serialized.includes("REFRESH MATERIALIZED VIEW") && serialized.includes("v_daily_metrics")
+        );
+      });
+      expect(refreshCall).toBeUndefined();
     });
 
     it("reports errors when processing fails", async () => {
@@ -429,6 +557,22 @@ describe("healthKitSyncRouter", () => {
       });
 
       expect(result.inserted).toBe(1);
+
+      // Verify the computed stage minutes in the INSERT SQL
+      // deep: 22:30-23:30 = 60, REM: 23:30-01:00 = 90,
+      // light (core): 01:00-04:00 = 180, awake: 04:00-04:15 = 15
+      const insertCall = execute.mock.calls.find((call: unknown[]) => {
+        const s = JSON.stringify(call[0]);
+        return s.includes("sleep_session") && s.includes("INSERT");
+      });
+      expect(insertCall).toBeDefined();
+      const sqlValues = JSON.stringify(insertCall?.[0]);
+      // Stage minutes appear as query parameter values in order:
+      // deep_minutes, rem_minutes, light_minutes, awake_minutes
+      expect(sqlValues).toContain(",60,"); // deep_minutes = 60
+      expect(sqlValues).toContain(",90,"); // rem_minutes = 90
+      expect(sqlValues).toContain(",180,"); // light_minutes = 180
+      expect(sqlValues).toContain(",15,"); // awake_minutes = 15
     });
 
     it("includes duration_minutes and sleep_type in SQL", async () => {
@@ -450,10 +594,10 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      // Find the sleep INSERT call (not the ensureProvider call)
+      // Find the sleep INSERT call (not the ensureProvider or DELETE call)
       const sleepCall = execute.mock.calls.find((call: unknown[]) => {
         const serialized = JSON.stringify(call[0]);
-        return serialized.includes("sleep_session");
+        return serialized.includes("sleep_session") && serialized.includes("INSERT");
       });
       expect(sleepCall).toBeDefined();
       const serialized = JSON.stringify(sleepCall?.[0]);
@@ -483,11 +627,85 @@ describe("healthKitSyncRouter", () => {
       // HealthKit has no native nap flag; raw sleep_type is stored as null.
       const sleepCall = execute.mock.calls.find((call: unknown[]) => {
         const serialized = JSON.stringify(call[0]);
-        return serialized.includes("sleep_session");
+        return serialized.includes("sleep_session") && serialized.includes("INSERT");
       });
       expect(sleepCall).toBeDefined();
       const serialized = JSON.stringify(sleepCall?.[0]);
       expect(serialized).toContain("sleep_type");
+    });
+
+    it("stores per-source rows for multi-source data (dedup at query time)", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+      });
+
+      const result = await caller.pushSleepSamples({
+        samples: [
+          // iPhone writes inBed + asleep (unspecified)
+          {
+            uuid: "iphone-inbed",
+            startDate: "2024-01-15T22:00:00Z",
+            endDate: "2024-01-16T06:00:00Z",
+            value: "inBed",
+            sourceName: "iPhone",
+          },
+          {
+            uuid: "iphone-asleep",
+            startDate: "2024-01-15T22:20:00Z",
+            endDate: "2024-01-16T05:50:00Z",
+            value: "asleep",
+            sourceName: "iPhone",
+          },
+          // Apple Watch writes granular stages
+          {
+            uuid: "watch-core",
+            startDate: "2024-01-15T22:30:00Z",
+            endDate: "2024-01-16T01:00:00Z",
+            value: "asleepCore",
+            sourceName: "Apple Watch",
+          },
+          {
+            uuid: "watch-deep",
+            startDate: "2024-01-16T01:00:00Z",
+            endDate: "2024-01-16T02:30:00Z",
+            value: "asleepDeep",
+            sourceName: "Apple Watch",
+          },
+          {
+            uuid: "watch-rem",
+            startDate: "2024-01-16T02:30:00Z",
+            endDate: "2024-01-16T04:00:00Z",
+            value: "asleepREM",
+            sourceName: "Apple Watch",
+          },
+          {
+            uuid: "watch-core-2",
+            startDate: "2024-01-16T04:00:00Z",
+            endDate: "2024-01-16T05:30:00Z",
+            value: "asleepCore",
+            sourceName: "Apple Watch",
+          },
+          {
+            uuid: "watch-awake",
+            startDate: "2024-01-16T05:30:00Z",
+            endDate: "2024-01-16T05:45:00Z",
+            value: "awake",
+            sourceName: "Apple Watch",
+          },
+        ],
+      });
+
+      // Should insert 2 rows — one per source. The v_sleep view handles dedup.
+      expect(result.inserted).toBe(2);
+
+      // Both sources should have INSERT calls with source-specific external_ids
+      const insertCalls = execute.mock.calls.filter((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return serialized.includes("sleep_session") && serialized.includes("INSERT");
+      });
+      expect(insertCalls).toHaveLength(2);
     });
 
     it("derives a sleep session when only stage samples are present", async () => {

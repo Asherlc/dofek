@@ -28,6 +28,13 @@ export interface WhoopRecoveryRecord {
   updated_at: string;
   score_state: string;
   score?: WhoopRecoveryScore;
+  // BFF v0 flat fields (fields at top level instead of nested under `score`)
+  recovery_score?: number;
+  resting_heart_rate?: number;
+  hrv_rmssd?: number; // seconds (not milliseconds)
+  spo2_percentage?: number;
+  skin_temp_celsius?: number;
+  calibrating?: boolean;
 }
 
 export interface WhoopSleepStageSummary {
@@ -62,8 +69,10 @@ export interface WhoopSleepRecord {
   user_id: number;
   created_at: string;
   updated_at: string;
-  start: string;
-  end: string;
+  // BFF v0 may use `during` (Postgres range) instead of separate start/end
+  start?: string;
+  end?: string;
+  during?: string; // Postgres range format: "['start','end')"
   timezone_offset: string;
   nap: boolean;
   score_state: string;
@@ -124,6 +133,8 @@ export interface WhoopWeightliftingSet {
   time_in_seconds: number;
   during: string;
   complete: boolean;
+  strap_location?: string | null;
+  strap_location_laterality?: string | null;
 }
 
 export interface WhoopExerciseDetails {

@@ -18,7 +18,7 @@ export function LinkedAccountsPanel() {
   }, []);
 
   if (linkedAccounts.isLoading) {
-    return <p className="text-sm text-zinc-500">Loading linked accounts...</p>;
+    return <p className="text-sm text-subtle">Loading linked accounts...</p>;
   }
 
   const accounts = linkedAccounts.data ?? [];
@@ -36,26 +36,26 @@ export function LinkedAccountsPanel() {
   return (
     <div className="space-y-4">
       {accounts.length === 0 ? (
-        <p className="text-sm text-zinc-500">No linked accounts</p>
+        <p className="text-sm text-subtle">No linked accounts</p>
       ) : (
         <ul className="space-y-2">
           {accounts.map((account) => (
             <li
               key={account.id}
-              className="flex items-center justify-between py-2 px-3 rounded bg-zinc-800/50"
+              className="flex items-center justify-between py-2 px-3 rounded bg-surface-hover"
             >
               <div className="flex items-center gap-3">
                 <ProviderLogo provider={account.authProvider} size={28} />
                 <div>
-                  <p className="text-sm text-zinc-200">{providerLabel(account.authProvider)}</p>
-                  {account.email && <p className="text-xs text-zinc-500">{account.email}</p>}
+                  <p className="text-sm text-foreground">{providerLabel(account.authProvider)}</p>
+                  {account.email && <p className="text-xs text-subtle">{account.email}</p>}
                 </div>
               </div>
               <button
                 type="button"
                 disabled={accounts.length < 2 || unlinkMutation.isPending}
                 onClick={() => unlinkMutation.mutate({ accountId: account.id })}
-                className="text-xs text-red-400 hover:text-red-300 disabled:text-zinc-600 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                className="text-xs text-red-400 hover:text-red-300 disabled:text-dim disabled:cursor-not-allowed transition-colors cursor-pointer"
                 title={
                   accounts.length < 2
                     ? "Cannot unlink your only login method"
@@ -71,13 +71,13 @@ export function LinkedAccountsPanel() {
 
       {canAddMore && (
         <div>
-          <h3 className="text-xs font-medium text-zinc-500 uppercase mb-2">Add Login Method</h3>
+          <h3 className="text-xs font-medium text-subtle uppercase mb-2">Add Login Method</h3>
           <div className="flex flex-wrap gap-2">
             {unlinkableIdentity.map((id) => (
               <a
                 key={id}
                 href={`/auth/link/${id}`}
-                className="text-xs px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 hover:border-zinc-600 text-zinc-300 transition-colors"
+                className="text-xs px-3 py-1.5 rounded bg-accent/10 hover:bg-surface-hover border border-border-strong hover:border-border-strong text-foreground transition-colors"
               >
                 {providerLabel(id)}
               </a>
@@ -86,7 +86,7 @@ export function LinkedAccountsPanel() {
               <a
                 key={id}
                 href={`/auth/link/data/${id}`}
-                className="text-xs px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 hover:border-zinc-600 text-zinc-300 transition-colors"
+                className="text-xs px-3 py-1.5 rounded bg-accent/10 hover:bg-surface-hover border border-border-strong hover:border-border-strong text-foreground transition-colors"
               >
                 {providerLabel(id)}
               </a>

@@ -41,14 +41,14 @@ describe("PersonalizationPanel", () => {
     },
     effective: {
       exponentialMovingAverage: { chronicTrainingLoadDays: 42, acuteTrainingLoadDays: 7 },
-      readinessWeights: { hrv: 0.4, restingHr: 0.2, sleep: 0.3, loadBalance: 0.1 },
+      readinessWeights: { hrv: 0.4, restingHr: 0.2, sleep: 0.3, respiratoryRate: 0.1 },
       sleepTarget: { minutes: 480 },
       stressThresholds: { hrvThresholds: [40, 50, 60] },
       trainingImpulseConstants: { genderFactor: 1.0, exponent: 1.9 },
     },
     defaults: {
       exponentialMovingAverage: { chronicTrainingLoadDays: 42, acuteTrainingLoadDays: 7 },
-      readinessWeights: { hrv: 0.3, restingHr: 0.2, sleep: 0.3, loadBalance: 0.2 },
+      readinessWeights: { hrv: 0.3, restingHr: 0.2, sleep: 0.3, respiratoryRate: 0.2 },
       sleepTarget: { minutes: 480 },
       stressThresholds: { hrvThresholds: [35, 45, 55] },
       trainingImpulseConstants: { genderFactor: 1.0, exponent: 1.9 },

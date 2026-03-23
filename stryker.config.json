@@ -14,6 +14,8 @@
     "packages/scoring/src/**/*.ts",
     "packages/nutrition/src/**/*.ts",
     "packages/training/src/**/*.ts",
+    "packages/recovery/src/**/*.ts",
+    "packages/zones/src/**/*.ts",
     "packages/stats/src/**/*.ts",
     "packages/onboarding/src/**/*.ts",
     "packages/providers-meta/src/**/*.ts",
@@ -44,11 +46,12 @@
     ".context/**"
   ],
   "testRunnerNodeArgs": ["--import", "tsx"],
+  "dryRunTimeoutMinutes": 10,
   "timeoutMS": 30000,
   "thresholds": {
     "high": 90,
     "low": 80,
-    "break": 40
+    "break": 50
   },
   "reporters": ["clear-text", "html", "progress"],
   "concurrency": 4

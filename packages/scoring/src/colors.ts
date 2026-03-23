@@ -6,45 +6,58 @@
  * Tailwind utility classes remain platform-specific (web only).
  */
 
-/** Status colors for scores, alerts, and thresholds */
+/** Status colors for scores, alerts, and thresholds.
+ *  Darkened one shade vs originals for contrast on light sage background. */
 export const statusColors = {
   /** Positive / good / green — scores ≥67, optimal zones */
-  positive: "#22c55e",
+  positive: "#16a34a",
   /** Warning / moderate / yellow — scores 34-66, caution zones */
-  warning: "#eab308",
+  warning: "#ca8a04",
   /** Danger / poor / red — scores <34, injury risk */
-  danger: "#ef4444",
+  danger: "#dc2626",
   /** Informational / neutral / blue */
-  info: "#3b82f6",
+  info: "#2563eb",
   /** Orange — elevated warnings (e.g. high ramp rate) */
-  elevated: "#f97316",
+  elevated: "#ea580c",
 } as const;
 
-/** Chart series colors for consistent multi-series plots */
+/** Chart series colors for consistent multi-series plots.
+ *  Adjusted for contrast on light (#eef3ed) background. */
 export const chartColors = {
-  teal: "#5AC8FA",
+  teal: "#0ea5e9",
   purple: "#5E35B1",
-  blue: "#42A5F5",
-  green: "#34C759",
-  orange: "#FF8A65",
-  emerald: "#10b981",
-  pink: "#ec4899",
-  amber: "#f59e0b",
+  blue: "#2563eb",
+  green: "#16a34a",
+  orange: "#ea580c",
+  emerald: "#059669",
+  pink: "#db2777",
+  amber: "#d97706",
 } as const;
 
-/** iOS-specific dark theme surface colors (not used in web Tailwind) */
+/** Light sage/mint theme surface colors */
 export const surfaceColors = {
-  background: "#000",
-  surface: "#1c1c1e",
-  surfaceSecondary: "#2a2a2e",
-  accent: "#007AFF",
+  background: "#eef3ed",
+  surface: "#f5f9f5",
+  surfaceSecondary: "#e8ede7",
+  accent: "#2d7a56",
 } as const;
 
-/** Text colors for dark theme */
+/** Text colors for sage/mint light theme */
 export const textColors = {
-  primary: "#fff",
-  secondary: "#8e8e93",
-  tertiary: "#636366",
+  primary: "#1a2e1a",
+  secondary: "#4a6a4a",
+  tertiary: "#6b8a6b",
   /** Neutral gray — used for stable/unchanged trends */
-  neutral: "#71717a",
+  neutral: "#8aaa8a",
+} as const;
+
+/** Chart chrome colors for ECharts tooltips, axes, and grid lines */
+export const chartThemeColors = {
+  gridLine: "rgba(74, 158, 122, 0.12)",
+  axisLine: "rgba(74, 158, 122, 0.25)",
+  axisLabel: "#6b8a6b",
+  tooltipBackground: "#ffffff",
+  tooltipBorder: "rgba(74, 158, 122, 0.2)",
+  tooltipText: "#1a2e1a",
+  legendText: "#4a6a4a",
 } as const;

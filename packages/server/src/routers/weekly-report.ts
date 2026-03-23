@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 /** Strain balance category based on ACWR-like load distribution */
@@ -60,7 +60,7 @@ export const weeklyReportRouter = router({
 
       // Fetch weekly aggregates: training load, sleep, readiness, vitals
       const weeklyReportRowSchema = z.object({
-        week_start: z.string(),
+        week_start: dateStringSchema,
         total_hours: z.coerce.number(),
         activity_count: z.coerce.number(),
         avg_daily_load: z.coerce.number(),

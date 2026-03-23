@@ -48,6 +48,9 @@ export function App() {
           </UnitProvider>
         </QueryClientProvider>
       </trpc.Provider>
+      <div className="fixed bottom-1 right-1 font-mono text-[10px] text-dim opacity-30 hover:opacity-100 select-all transition-opacity">
+        {__COMMIT_HASH__}
+      </div>
     </ErrorBoundary>
   );
 }

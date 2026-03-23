@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   mapStravaActivityType,
   parseStravaActivity,
@@ -464,7 +464,7 @@ describe("StravaClient.getActivity", () => {
       });
     };
 
-    const client = new StravaClient("token", mockFetch);
+    const client = new StravaClient("token", mockFetch, 0);
     const result = await client.getActivity(12345678);
     expect(result.device_name).toBe("Garmin Edge 530");
     expect(result.id).toBe(12345678);
@@ -475,7 +475,7 @@ describe("StravaClient.getActivity", () => {
       return Response.json(sampleActivity);
     };
 
-    const client = new StravaClient("token", mockFetch);
+    const client = new StravaClient("token", mockFetch, 0);
     const result = await client.getActivity(12345678);
     expect(result.device_name).toBeUndefined();
   });
@@ -487,9 +487,10 @@ describe("StravaClient — error handling", () => {
       return new Response("Rate Limit Exceeded", { status: 429 });
     };
 
-    const client = new StravaClient("token", mockFetch);
-    await expect(client.getActivities(0)).rejects.toBeInstanceOf(StravaRateLimitError);
-    await expect(client.getActivities(0)).rejects.toThrow("(429)");
+    const client = new StravaClient("token", mockFetch, 0);
+    const err = await client.getActivities(0).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(StravaRateLimitError);
+    expect(err).toHaveProperty("message", expect.stringContaining("(429)"));
   });
 
   it("throws generic error on non-OK, non-429 response", async () => {
@@ -497,7 +498,7 @@ describe("StravaClient — error handling", () => {
       return new Response("Server Error", { status: 500 });
     };
 
-    const client = new StravaClient("token", mockFetch);
+    const client = new StravaClient("token", mockFetch, 0);
     await expect(client.getActivities(0)).rejects.toThrow("Strava API error (500): Server Error");
   });
 
@@ -509,9 +510,10 @@ describe("StravaClient — error handling", () => {
       });
     };
 
-    const client = new StravaClient("token", mockFetch);
-    await expect(client.getActivities(0)).rejects.toThrow(StravaNotFoundError);
-    await expect(client.getActivities(0)).rejects.toThrow("/athlete/activities");
+    const client = new StravaClient("token", mockFetch, 0);
+    const err = await client.getActivities(0).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(StravaNotFoundError);
+    expect(err).toHaveProperty("message", expect.stringContaining("/athlete/activities"));
   });
 
   it("throws StravaNotFoundError for JSON 404 responses", async () => {
@@ -522,9 +524,10 @@ describe("StravaClient — error handling", () => {
       });
     };
 
-    const client = new StravaClient("token", mockFetch);
-    await expect(client.getActivities(0)).rejects.toThrow(StravaNotFoundError);
-    await expect(client.getActivities(0)).rejects.toThrow("/athlete/activities");
+    const client = new StravaClient("token", mockFetch, 0);
+    const err = await client.getActivities(0).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(StravaNotFoundError);
+    expect(err).toHaveProperty("message", expect.stringContaining("/athlete/activities"));
   });
 
   it("throws StravaUnauthorizedError for 401 responses", async () => {
@@ -535,9 +538,10 @@ describe("StravaClient — error handling", () => {
       });
     };
 
-    const client = new StravaClient("token", mockFetch);
-    await expect(client.getActivities(0)).rejects.toThrow(StravaUnauthorizedError);
-    await expect(client.getActivities(0)).rejects.toThrow("unauthorized (401)");
+    const client = new StravaClient("token", mockFetch, 0);
+    const err = await client.getActivities(0).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(StravaUnauthorizedError);
+    expect(err).toHaveProperty("message", expect.stringContaining("unauthorized (401)"));
   });
 
   it("throws StravaUnauthorizedError for 403 responses", async () => {
@@ -545,9 +549,10 @@ describe("StravaClient — error handling", () => {
       return new Response("Forbidden", { status: 403 });
     };
 
-    const client = new StravaClient("token", mockFetch);
-    await expect(client.getActivities(0)).rejects.toThrow(StravaUnauthorizedError);
-    await expect(client.getActivities(0)).rejects.toThrow("unauthorized (403)");
+    const client = new StravaClient("token", mockFetch, 0);
+    const err = await client.getActivities(0).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(StravaUnauthorizedError);
+    expect(err).toHaveProperty("message", expect.stringContaining("unauthorized (403)"));
   });
 
   it("formats JSON error payloads in generic API errors", async () => {
@@ -558,7 +563,7 @@ describe("StravaClient — error handling", () => {
       });
     };
 
-    const client = new StravaClient("token", mockFetch);
+    const client = new StravaClient("token", mockFetch, 0);
     await expect(client.getActivities(0)).rejects.toThrow(
       'Strava API error (500): {"message":"bad request"}',
     );
@@ -572,7 +577,7 @@ describe("StravaClient — error handling", () => {
       });
     };
 
-    const client = new StravaClient("token", mockFetch);
+    const client = new StravaClient("token", mockFetch, 0);
     await expect(client.getActivities(0)).rejects.toThrow(
       "Strava API error (500): (HTML error page)",
     );
@@ -584,10 +589,62 @@ describe("StravaClient — error handling", () => {
       return new Response(longText, { status: 500 });
     };
 
-    const client = new StravaClient("token", mockFetch);
+    const client = new StravaClient("token", mockFetch, 0);
     await expect(client.getActivities(0)).rejects.toThrow(
       `Strava API error (500): ${"x".repeat(200)}…`,
     );
+  });
+});
+
+describe("StravaClient — request throttling", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("enforces minimum delay between consecutive API requests", async () => {
+    const callTimestamps: number[] = [];
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      callTimestamps.push(Date.now());
+      return Response.json([]);
+    };
+
+    const client = new StravaClient("token", mockFetch);
+
+    // First request — should go immediately
+    const p1 = client.getActivities(0);
+    await vi.advanceTimersByTimeAsync(0);
+    await p1;
+
+    // Second request — should be delayed by the throttle interval
+    const p2 = client.getActivities(0);
+    // Advance past the throttle delay
+    await vi.advanceTimersByTimeAsync(10_000);
+    await p2;
+
+    expect(callTimestamps).toHaveLength(2);
+    const first = callTimestamps[0] ?? 0;
+    const second = callTimestamps[1] ?? 0;
+    expect(second - first).toBeGreaterThanOrEqual(10_000);
+  });
+
+  it("does not delay the first request", async () => {
+    const callTimestamps: number[] = [];
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      callTimestamps.push(Date.now());
+      return Response.json([]);
+    };
+
+    const client = new StravaClient("token", mockFetch);
+    const p = client.getActivities(0);
+    await vi.advanceTimersByTimeAsync(0);
+    await p;
+
+    // First call should happen at time 0 (no throttle delay)
+    expect(callTimestamps).toHaveLength(1);
   });
 });
 

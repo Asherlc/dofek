@@ -1,11 +1,12 @@
 import { createHmac, randomBytes } from "node:crypto";
+import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { getOAuthRedirectUri } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { foodEntry } from "../db/schema.ts";
+import { foodEntry, nutritionData } from "../db/schema.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
-import type { Provider, SyncError, SyncResult } from "./types.ts";
+import type { SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // OAuth 1.0 HMAC-SHA1 signing
@@ -108,42 +109,45 @@ export interface FatSecretFoodEntry {
 }
 
 export interface FatSecretFoodEntriesResponse {
-  food_entries: {
+  food_entries?: {
     food_entry: FatSecretFoodEntry[];
-  };
+  } | null;
 }
 
-const fatSecretFoodEntriesResponseSchema = z.object({
-  food_entries: z.object({
-    food_entry: z.array(
-      z.object({
-        food_entry_id: z.string(),
-        food_entry_name: z.string(),
-        food_entry_description: z.string(),
-        food_id: z.string(),
-        serving_id: z.string(),
-        number_of_units: z.string(),
-        meal: z.string(),
-        date_int: z.string(),
-        calories: z.string(),
-        carbohydrate: z.string(),
-        protein: z.string(),
-        fat: z.string(),
-        saturated_fat: z.string().optional(),
-        polyunsaturated_fat: z.string().optional(),
-        monounsaturated_fat: z.string().optional(),
-        cholesterol: z.string().optional(),
-        sodium: z.string().optional(),
-        potassium: z.string().optional(),
-        fiber: z.string().optional(),
-        sugar: z.string().optional(),
-        vitamin_a: z.string().optional(),
-        vitamin_c: z.string().optional(),
-        calcium: z.string().optional(),
-        iron: z.string().optional(),
-      }),
-    ),
-  }),
+export const fatSecretFoodEntriesResponseSchema = z.object({
+  food_entries: z
+    .object({
+      food_entry: z.array(
+        z.object({
+          food_entry_id: z.string(),
+          food_entry_name: z.string(),
+          food_entry_description: z.string(),
+          food_id: z.string(),
+          serving_id: z.string(),
+          number_of_units: z.string(),
+          meal: z.string(),
+          date_int: z.string(),
+          calories: z.string(),
+          carbohydrate: z.string(),
+          protein: z.string(),
+          fat: z.string(),
+          saturated_fat: z.string().optional(),
+          polyunsaturated_fat: z.string().optional(),
+          monounsaturated_fat: z.string().optional(),
+          cholesterol: z.string().optional(),
+          sodium: z.string().optional(),
+          potassium: z.string().optional(),
+          fiber: z.string().optional(),
+          sugar: z.string().optional(),
+          vitamin_a: z.string().optional(),
+          vitamin_c: z.string().optional(),
+          calcium: z.string().optional(),
+          iron: z.string().optional(),
+        }),
+      ),
+    })
+    .nullable()
+    .optional(),
 });
 
 // ============================================================
@@ -495,13 +499,13 @@ async function exchangeForAccessToken(
 // Provider
 // ============================================================
 
-export class FatSecretProvider implements Provider {
+export class FatSecretProvider implements SyncProvider {
   readonly id = "fatsecret";
   readonly name = "FatSecret";
 
-  private consumerKey: string;
-  private consumerSecret: string;
-  private fetchFn: FetchFn;
+  #consumerKey: string;
+  #consumerSecret: string;
+  #fetchFn: FetchFn;
 
   constructor(fetchFn: FetchFn = globalThis.fetch) {
     const consumerKey = process.env.FATSECRET_CONSUMER_KEY;
@@ -509,9 +513,9 @@ export class FatSecretProvider implements Provider {
     if (!consumerKey || !consumerSecret) {
       throw new Error("FATSECRET_CONSUMER_KEY and FATSECRET_CONSUMER_SECRET are required");
     }
-    this.consumerKey = consumerKey;
-    this.consumerSecret = consumerSecret;
-    this.fetchFn = fetchFn;
+    this.#consumerKey = consumerKey;
+    this.#consumerSecret = consumerSecret;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -524,9 +528,9 @@ export class FatSecretProvider implements Provider {
    * in the existing oauthToken table (OAuth 1.0 tokens don't expire).
    */
   authSetup() {
-    const consumerKey = this.consumerKey;
-    const consumerSecret = this.consumerSecret;
-    const fetchFn = this.fetchFn;
+    const consumerKey = this.#consumerKey;
+    const consumerSecret = this.#consumerSecret;
+    const fetchFn = this.#fetchFn;
 
     return {
       // OAuth 1.0 uses a different flow, but we provide these for CLI compatibility
@@ -582,8 +586,8 @@ export class FatSecretProvider implements Provider {
 
     if (!tokens.refreshToken) throw new Error("No token secret stored for FatSecret");
     const creds: OAuth1Credentials = {
-      consumerKey: this.consumerKey,
-      consumerSecret: this.consumerSecret,
+      consumerKey: this.#consumerKey,
+      consumerSecret: this.#consumerSecret,
       token: tokens.accessToken,
       tokenSecret: tokens.refreshToken, // OAuth 1.0 token secret stored as refreshToken
     };
@@ -601,45 +605,66 @@ export class FatSecretProvider implements Provider {
           "food_entries.get.v2",
           { date: dateInt },
           creds,
-          this.fetchFn,
+          this.#fetchFn,
         );
         const response = fatSecretFoodEntriesResponseSchema.parse(rawResponse);
 
         const entries = parseFoodEntries(response);
 
         if (entries.length > 0) {
-          const rows = entries.map((e) => ({
-            providerId: this.id,
-            externalId: e.externalId,
-            date: e.date,
-            meal: e.meal,
-            foodName: e.foodName,
-            foodDescription: e.foodDescription,
-            category: inferCategory(e.foodName),
-            providerFoodId: e.fatsecretFoodId,
-            providerServingId: e.fatsecretServingId,
-            numberOfUnits: e.numberOfUnits,
-            calories: e.calories,
-            proteinG: e.proteinG,
-            carbsG: e.carbsG,
-            fatG: e.fatG,
-            saturatedFatG: e.saturatedFatG,
-            polyunsaturatedFatG: e.polyunsaturatedFatG,
-            monounsaturatedFatG: e.monounsaturatedFatG,
-            cholesterolMg: e.cholesterolMg,
-            sodiumMg: e.sodiumMg,
-            potassiumMg: e.potassiumMg,
-            fiberG: e.fiberG,
-            sugarG: e.sugarG,
-            vitaminAMcg: e.vitaminAMcg,
-            vitaminCMg: e.vitaminCMg,
-            calciumMg: e.calciumMg,
-            ironMg: e.ironMg,
-            raw: { ...e },
-          }));
+          for (const e of entries) {
+            // Skip if food_entry already exists (onConflictDoNothing would leave
+            // a new nutrition_data row orphaned with no FK pointing to it)
+            const existing = await db
+              .select({ id: foodEntry.id })
+              .from(foodEntry)
+              .where(
+                sql`${foodEntry.providerId} = ${this.id} AND ${foodEntry.externalId} = ${e.externalId}`,
+              );
+            if (existing.length > 0) continue;
 
-          await db.insert(foodEntry).values(rows).onConflictDoNothing();
-          recordsSynced += rows.length;
+            // Insert nutrition_data + food_entry for new entries
+            const [ndRow] = await db
+              .insert(nutritionData)
+              .values({
+                calories: e.calories,
+                proteinG: e.proteinG,
+                carbsG: e.carbsG,
+                fatG: e.fatG,
+                saturatedFatG: e.saturatedFatG,
+                polyunsaturatedFatG: e.polyunsaturatedFatG,
+                monounsaturatedFatG: e.monounsaturatedFatG,
+                cholesterolMg: e.cholesterolMg,
+                sodiumMg: e.sodiumMg,
+                potassiumMg: e.potassiumMg,
+                fiberG: e.fiberG,
+                sugarG: e.sugarG,
+                vitaminAMcg: e.vitaminAMcg,
+                vitaminCMg: e.vitaminCMg,
+                calciumMg: e.calciumMg,
+                ironMg: e.ironMg,
+              })
+              .returning({ id: nutritionData.id });
+
+            await db
+              .insert(foodEntry)
+              .values({
+                providerId: this.id,
+                externalId: e.externalId,
+                date: e.date,
+                meal: e.meal,
+                foodName: e.foodName,
+                foodDescription: e.foodDescription,
+                category: inferCategory(e.foodName),
+                providerFoodId: e.fatsecretFoodId,
+                providerServingId: e.fatsecretServingId,
+                numberOfUnits: e.numberOfUnits,
+                nutritionDataId: ndRow?.id,
+                raw: { ...e },
+              })
+              .onConflictDoNothing();
+          }
+          recordsSynced += entries.length;
         }
       } catch (err) {
         // FatSecret returns an error for days with no entries — not a real error

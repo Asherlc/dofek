@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 // ── RDA Reference Data ───────────────────────────────────────────────
@@ -112,7 +112,7 @@ export const nutritionAnalyticsRouter = router({
       ).join(",\n");
 
       const dailyAggregates = RECOMMENDED_DAILY_ALLOWANCES.map(
-        (rda) => `SUM(${rda.column}) AS daily_${rda.column}`,
+        (rda) => `SUM(nd.${rda.column}) AS daily_${rda.column}`,
       ).join(",\n");
 
       // Use sql`` tagged template for user-controlled values (userId, days) to prevent injection.
@@ -122,13 +122,14 @@ export const nutritionAnalyticsRouter = router({
         z.record(z.string(), z.coerce.number().nullable()),
         sql`WITH daily_totals AS (
               SELECT
-                date,
+                fe.date,
                 ${sql.raw(dailyAggregates)}
-              FROM fitness.food_entry
-              WHERE user_id = ${ctx.userId}
-                AND confirmed = true
-                AND date > CURRENT_DATE - ${input.days}::int
-              GROUP BY date
+              FROM fitness.food_entry fe
+              JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id
+              WHERE fe.user_id = ${ctx.userId}
+                AND fe.confirmed = true
+                AND fe.date > CURRENT_DATE - ${input.days}::int
+              GROUP BY fe.date
             )
             SELECT ${sql.raw(columnAverages)}
             FROM daily_totals`,
@@ -161,7 +162,7 @@ export const nutritionAnalyticsRouter = router({
       const queryDays = input.days + 7; // extra for rolling average warmup
 
       const caloricBalanceRowSchema = z.object({
-        date: z.string(),
+        date: dateStringSchema,
         calories_in: z.coerce.number(),
         active_energy: z.coerce.number(),
         basal_energy: z.coerce.number(),
@@ -240,7 +241,7 @@ export const nutritionAnalyticsRouter = router({
     .query(async ({ ctx, input }): Promise<AdaptiveTdeeResult> => {
       // Get daily calorie intake and weight measurements
       const adaptiveTdeeRowSchema = z.object({
-        date: z.string(),
+        date: dateStringSchema,
         calories_in: z.coerce.number(),
         weight_kg: z.coerce.number().nullable(),
       });
@@ -364,7 +365,7 @@ export const nutritionAnalyticsRouter = router({
     .input(z.object({ days: z.number().default(30) }))
     .query(async ({ ctx, input }): Promise<MacroRatioRow[]> => {
       const macroRatioRowSchema = z.object({
-        date: z.string(),
+        date: dateStringSchema,
         protein_g: z.coerce.number(),
         carbs_g: z.coerce.number(),
         fat_g: z.coerce.number(),

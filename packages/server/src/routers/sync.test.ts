@@ -6,15 +6,19 @@ const {
   mockGetJob,
   mockGetJobs,
   mockGetAllProviders,
+  mockGetSyncProviders,
   mockRegisterProvider,
   mockLoggerWarn,
+  mockInvalidateByPrefix,
 } = vi.hoisted(() => ({
   mockAdd: vi.fn().mockResolvedValue({ id: "job-123" }),
   mockGetJob: vi.fn(),
   mockGetJobs: vi.fn().mockResolvedValue([]),
   mockGetAllProviders: vi.fn(() => []),
+  mockGetSyncProviders: vi.fn(() => []),
   mockRegisterProvider: vi.fn(),
   mockLoggerWarn: vi.fn(),
+  mockInvalidateByPrefix: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Mock trpc
@@ -40,11 +44,33 @@ vi.mock("dofek/jobs/queues", () => ({
 
 vi.mock("dofek/providers/registry", () => ({
   getAllProviders: mockGetAllProviders,
+  getSyncProviders: mockGetSyncProviders,
   registerProvider: mockRegisterProvider,
+}));
+
+vi.mock("dofek/providers/types", () => ({
+  isSyncProvider: (p: { importOnly?: boolean }) => p.importOnly !== true,
 }));
 
 vi.mock("../lib/start-worker.ts", () => ({
   startWorker: vi.fn(),
+}));
+
+vi.mock("../lib/cache.ts", () => ({
+  queryCache: {
+    invalidateByPrefix: mockInvalidateByPrefix,
+    get: vi.fn().mockResolvedValue(undefined),
+    set: vi.fn().mockResolvedValue(undefined),
+    invalidateAll: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+
+vi.mock("../lib/typed-sql.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/typed-sql.ts")>()),
+  executeWithSchema: vi.fn(
+    async (db: { execute: (q: unknown) => Promise<unknown[]> }, _schema: unknown, query: unknown) =>
+      db.execute(query),
+  ),
 }));
 
 vi.mock("../logger.ts", () => ({
@@ -147,20 +173,18 @@ describe("syncRouter", () => {
           id: "whoop",
           name: "WHOOP",
           validate: () => null,
-          authSetup: undefined,
+          authSetup: () => undefined,
         },
         {
           id: "strong-csv",
           name: "Strong CSV",
           validate: () => null,
-          authSetup: undefined,
           importOnly: true,
         },
         {
           id: "cronometer-csv",
           name: "Cronometer CSV",
           validate: () => null,
-          authSetup: undefined,
           importOnly: true,
         },
       ]);
@@ -183,18 +207,16 @@ describe("syncRouter", () => {
       expect(result).toHaveLength(4);
       expect(result.find((p: { id: string }) => p.id === "peloton")).toBeUndefined();
 
-      // Wahoo: needs OAuth, authorized (has token)
+      // Wahoo: OAuth provider, authorized (has token)
       const wahoo = result.find((p: { id: string }) => p.id === "wahoo");
-      expect(wahoo?.needsOAuth).toBe(true);
-      expect(wahoo?.needsCustomAuth).toBe(false);
+      expect(wahoo?.authType).toBe("oauth");
       expect(wahoo?.authorized).toBe(true);
       expect(wahoo?.lastSyncedAt).toBe("2024-01-01");
       expect(wahoo?.importOnly).toBe(false);
 
-      // WHOOP: needs custom auth, not authorized (no token)
+      // WHOOP: custom auth, not authorized (no token)
       const whoop = result.find((p: { id: string }) => p.id === "whoop");
-      expect(whoop?.needsCustomAuth).toBe(true);
-      expect(whoop?.needsOAuth).toBe(false);
+      expect(whoop?.authType).toBe("custom:whoop");
       expect(whoop?.authorized).toBe(false);
 
       // Strong CSV: import only
@@ -227,7 +249,7 @@ describe("syncRouter", () => {
 
       const result = await caller.providers();
       expect(result).toHaveLength(1);
-      expect(result[0]?.needsOAuth).toBe(false);
+      expect(result[0]?.authType).toBe("none");
     });
   });
 
@@ -243,7 +265,12 @@ describe("syncRouter", () => {
         .mockResolvedValueOnce({ id: "job-wahoo" });
 
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) },
+        db: {
+          execute: vi
+            .fn()
+            // tokens query — no auth needed for these providers (no authSetup)
+            .mockResolvedValueOnce([]),
+        },
         userId: "user-1",
       });
 
@@ -266,16 +293,71 @@ describe("syncRouter", () => {
       });
     });
 
+    it("excludes unconnected providers from sync-all fan-out", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "strava",
+          name: "Strava",
+          validate: () => null,
+          authSetup: () => ({ oauthConfig: { authUrl: "https://example.com" } }),
+        },
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          validate: () => null,
+          authSetup: () => ({ oauthConfig: { authUrl: "https://example.com" } }),
+        },
+        {
+          id: "whoop",
+          name: "WHOOP",
+          validate: () => null,
+          authSetup: () => ({
+            oauthConfig: { clientId: "whoop", authorizeUrl: "", tokenUrl: "", redirectUri: "" },
+            automatedLogin: async () => ({}),
+          }),
+        },
+        {
+          id: "intervals",
+          name: "Intervals.icu",
+          validate: () => null,
+        },
+      ]);
+      // Only strava has tokens
+      mockAdd
+        .mockResolvedValueOnce({ id: "job-strava" })
+        .mockResolvedValueOnce({ id: "job-intervals" });
+
+      const caller = createCaller({
+        db: {
+          execute: vi
+            .fn()
+            // tokens query — only strava has tokens
+            .mockResolvedValueOnce([{ provider_id: "strava" }]),
+        },
+        userId: "user-1",
+      });
+
+      const result = await caller.triggerSync({});
+      // wahoo has authSetup but no token — excluded
+      // whoop has authSetup but no token — excluded
+      // strava has authSetup and has token — included
+      // intervals has no authSetup — included (no auth needed)
+      expect(result.providerJobs).toEqual([
+        { providerId: "strava", jobId: "job-strava" },
+        { providerId: "intervals", jobId: "job-intervals" },
+      ]);
+      expect(mockAdd).toHaveBeenCalledTimes(2);
+    });
+
     it("excludes import-only providers from sync-all fan-out", async () => {
       mockGetAllProviders.mockReturnValue([
         { id: "strava", name: "Strava", validate: () => null },
-        { id: "strong-csv", name: "Strong", validate: () => null, importOnly: true },
-        { id: "cronometer-csv", name: "Cronometer", validate: () => null, importOnly: true },
+        { id: "strong-csv", name: "Strong CSV", validate: () => null, importOnly: true },
       ]);
       mockAdd.mockResolvedValueOnce({ id: "job-strava" });
 
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) },
+        db: { execute: vi.fn().mockResolvedValueOnce([]) },
         userId: "user-1",
       });
 
@@ -342,6 +424,7 @@ describe("syncRouter", () => {
 
     it("throws for unknown provider", async () => {
       mockGetAllProviders.mockReturnValue([]);
+      mockGetSyncProviders.mockReturnValue([]);
 
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
@@ -577,6 +660,60 @@ describe("syncRouter", () => {
       expect(result).toBeNull();
     });
 
+    it("invalidates server-side cache when job completes", async () => {
+      mockGetJob.mockResolvedValueOnce({
+        data: { userId: "user-1" },
+        getState: vi.fn().mockResolvedValue("completed"),
+        progress: { providers: {} },
+      });
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+
+      await caller.syncStatus({ jobId: "done-job" });
+
+      expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:sync.providers");
+      expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:sync.providerStats");
+      expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:sync.logs");
+    });
+
+    it("invalidates server-side cache when job fails", async () => {
+      mockGetJob.mockResolvedValueOnce({
+        data: { userId: "user-1" },
+        getState: vi.fn().mockResolvedValue("failed"),
+        failedReason: "Connection timeout",
+        progress: {},
+      });
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+
+      await caller.syncStatus({ jobId: "failed-job" });
+
+      expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:sync.providers");
+    });
+
+    it("does not invalidate cache for active jobs", async () => {
+      mockGetJob.mockResolvedValueOnce({
+        data: { userId: "user-1" },
+        getState: vi.fn().mockResolvedValue("active"),
+        progress: { providers: { wahoo: { status: "running" } } },
+      });
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+
+      await caller.syncStatus({ jobId: "active-job" });
+
+      expect(mockInvalidateByPrefix).not.toHaveBeenCalled();
+    });
+
     it("returns empty providers when progress has no providers", async () => {
       mockGetJob.mockResolvedValueOnce({
         data: { userId: "user-1" },
@@ -765,6 +902,7 @@ describe("syncRouter", () => {
               health_events: "1",
               metric_stream: "100",
               nutrition_daily: "7",
+              lab_panels: "2",
               lab_results: "4",
               journal_entries: "6",
             },
@@ -786,6 +924,7 @@ describe("syncRouter", () => {
           healthEvents: 1,
           metricStream: 100,
           nutritionDaily: 7,
+          labPanels: 2,
           labResults: 4,
           journalEntries: 6,
         },

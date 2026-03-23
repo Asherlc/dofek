@@ -241,27 +241,43 @@ describe("Router data coverage", () => {
     for (let i = 0; i < 10; i++) {
       const dateOffset = i;
       await testCtx.db.execute(
-        sql`INSERT INTO fitness.food_entry (
+        sql`WITH nd AS (
+              INSERT INTO fitness.nutrition_data (
+                calories, protein_g, carbs_g, fat_g, fiber_g,
+                vitamin_c_mg, calcium_mg, iron_mg
+              ) VALUES (
+                350, 12, 55, 8, 6,
+                15, 200, 4
+              )
+              RETURNING id
+            )
+            INSERT INTO fitness.food_entry (
               user_id, provider_id, date, meal, food_name, food_description,
-              calories, protein_g, carbs_g, fat_g, fiber_g,
-              vitamin_c_mg, calcium_mg, iron_mg, confirmed
+              nutrition_data_id, confirmed
             ) VALUES (
               ${DEFAULT_USER_ID}, 'dofek',
               CURRENT_DATE - ${dateOffset}::int,
               'breakfast', ${`Oatmeal ${i}`}, 'Steel-cut oats with berries',
-              350, 12, 55, 8, 6,
-              15, 200, 4, true
+              (SELECT id FROM nd), true
             )`,
       );
       await testCtx.db.execute(
-        sql`INSERT INTO fitness.food_entry (
+        sql`WITH nd AS (
+              INSERT INTO fitness.nutrition_data (
+                calories, protein_g, carbs_g, fat_g
+              ) VALUES (
+                500, 35, 20, 25
+              )
+              RETURNING id
+            )
+            INSERT INTO fitness.food_entry (
               user_id, provider_id, date, meal, food_name,
-              calories, protein_g, carbs_g, fat_g, confirmed
+              nutrition_data_id, confirmed
             ) VALUES (
               ${DEFAULT_USER_ID}, 'dofek',
               CURRENT_DATE - ${dateOffset}::int,
               'lunch', ${`Chicken Salad ${i}`},
-              500, 35, 20, 25, true
+              (SELECT id FROM nd), true
             )`,
       );
     }
@@ -767,6 +783,7 @@ describe("Router data coverage", () => {
             healthEvents: number;
             metricStream: number;
             nutritionDaily: number;
+            labPanels: number;
             labResults: number;
             journalEntries: number;
           }[]
@@ -1301,12 +1318,24 @@ describe("Router data coverage", () => {
       expect(result.length).toBeGreaterThan(0);
     });
 
-    it("workloadRatio returns acute/chronic ratio", async () => {
-      const result = await query<
-        { date: string; acuteLoad: number; chronicLoad: number; ratio: number | null }[]
-      >("recovery.workloadRatio", { days: 90 });
+    it("workloadRatio returns acute/chronic ratio with displayed strain", async () => {
+      const result = await query<{
+        timeSeries: {
+          date: string;
+          dailyLoad: number;
+          strain: number;
+          acuteLoad: number;
+          chronicLoad: number;
+          workloadRatio: number | null;
+        }[];
+        displayedStrain: number;
+        displayedDate: string | null;
+      }>("recovery.workloadRatio", { days: 90 });
 
-      expect(Array.isArray(result)).toBe(true);
+      expect(Array.isArray(result.timeSeries)).toBe(true);
+      expect(typeof result.displayedStrain).toBe("number");
+      expect(result.displayedStrain).toBeGreaterThanOrEqual(0);
+      expect(result.displayedStrain).toBeLessThanOrEqual(21);
     });
 
     it("readinessScore returns composite score", async () => {

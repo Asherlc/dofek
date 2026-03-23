@@ -1,10 +1,18 @@
+import { createActivityTypeMapper, POLAR_SPORT_MAP } from "@dofek/training/training";
+import { eq } from "drizzle-orm";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { activity, dailyMetrics, sleepSession } from "../db/schema.ts";
+import { activity, dailyMetrics, sleepSession, sleepStage } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import type {
+  ProviderAuthSetup,
+  SyncError,
+  SyncOptions,
+  SyncProvider,
+  SyncResult,
+} from "./types.ts";
 
 // ============================================================
 // Polar AccessLink API types
@@ -71,54 +79,11 @@ export interface PolarNightlyRecharge {
 // Sport mapping
 // ============================================================
 
-const POLAR_SPORT_MAP: Record<string, string> = {
-  running: "running",
-  cycling: "cycling",
-  swimming: "swimming",
-  walking: "walking",
-  hiking: "hiking",
-  strength_training: "strength",
-  yoga: "yoga",
-  pilates: "pilates",
-  cross_country_skiing: "cross country skiing",
-  rowing: "rowing",
-  elliptical: "elliptical",
-  mountain_biking: "mountain biking",
-  trail_running: "trail running",
-  cross_training: "cross training",
-  group_exercise: "group exercise",
-  stretching: "stretching",
-  dance: "dance",
-  martial_arts: "martial arts",
-  tennis: "tennis",
-  basketball: "basketball",
-  soccer: "soccer",
-  golf: "golf",
-  ice_hockey: "ice hockey",
-  skiing: "skiing",
-  snowboarding: "snowboarding",
-  skating: "skating",
-  rock_climbing: "rock climbing",
-  surfing: "surfing",
-  kayaking: "kayaking",
-  functional_training: "functional fitness",
-  bootcamp: "bootcamp",
-  boxing: "boxing",
-  core: "core",
-  aqua_fitness: "aqua fitness",
-  circuit_training: "circuit training",
-  triathlon: "triathlon",
-  indoor_cycling: "cycling",
-  indoor_rowing: "rowing",
-  indoor_running: "running",
-  indoor_walking: "walking",
-  treadmill_running: "running",
-  stair_climbing: "stairmaster",
-};
+const mapPolarType = createActivityTypeMapper(POLAR_SPORT_MAP);
 
 export function mapPolarSport(sport: string): string {
   const key = sport.toLowerCase();
-  return POLAR_SPORT_MAP[key] ?? "other";
+  return mapPolarType(key);
 }
 
 // ============================================================
@@ -181,7 +146,12 @@ export interface ParsedPolarSleep {
   deepMinutes: number;
   remMinutes: number;
   awakeMinutes: number;
-  efficiencyPct: number;
+}
+
+export interface ParsedPolarSleepStage {
+  stage: "deep" | "light" | "rem" | "awake";
+  startedAt: Date;
+  endedAt: Date;
 }
 
 export function parsePolarSleep(sleep: PolarSleep): ParsedPolarSleep {
@@ -193,10 +163,6 @@ export function parsePolarSleep(sleep: PolarSleep): ParsedPolarSleep {
   const remMinutes = Math.round(sleep.rem_sleep / 60);
   const awakeMinutes = Math.round(sleep.total_interruption_duration / 60);
 
-  const totalSleepSeconds = sleep.light_sleep + sleep.deep_sleep + sleep.rem_sleep;
-  const totalInBedSeconds = (endedAt.getTime() - startedAt.getTime()) / 1000;
-  const efficiencyPct = totalInBedSeconds > 0 ? (totalSleepSeconds / totalInBedSeconds) * 100 : 0;
-
   return {
     externalId: sleep.date,
     startedAt,
@@ -206,8 +172,68 @@ export function parsePolarSleep(sleep: PolarSleep): ParsedPolarSleep {
     deepMinutes,
     remMinutes,
     awakeMinutes,
-    efficiencyPct,
   };
+}
+
+// Polar hypnogram stage codes (from Polar API documentation):
+// 1 = deep, 2 = light, 3 = REM, 4 = interrupted (awake), 5 = awake (at sleep boundary)
+const POLAR_HYPNOGRAM_STAGE_MAP: Record<number, "deep" | "light" | "rem" | "awake"> = {
+  1: "deep",
+  2: "light",
+  3: "rem",
+  4: "awake",
+  5: "awake",
+};
+
+export function parsePolarSleepStages(
+  sleepStartTime: string,
+  hypnogram: Record<string, number>,
+): ParsedPolarSleepStage[] {
+  const startMs = new Date(sleepStartTime).getTime();
+  const entries = Object.entries(hypnogram)
+    .map(([minuteStr, stageValue]) => ({
+      minute: Number(minuteStr),
+      stage: POLAR_HYPNOGRAM_STAGE_MAP[stageValue],
+    }))
+    .filter(
+      (e): e is { minute: number; stage: "deep" | "light" | "rem" | "awake" } => e.stage != null,
+    )
+    .sort((a, b) => a.minute - b.minute);
+
+  const first = entries[0];
+  if (!first) return [];
+
+  // Merge consecutive identical stages into intervals.
+  // Each hypnogram entry represents one minute starting at that offset.
+  const stages: ParsedPolarSleepStage[] = [];
+  let currentStage = first.stage;
+  let currentStart = first.minute;
+  let previousMinute = first.minute;
+
+  for (let i = 1; i < entries.length; i++) {
+    const entry = entries[i];
+    if (!entry) continue;
+    // Start a new interval if stage changed or there's a gap
+    if (entry.stage !== currentStage || entry.minute !== previousMinute + 1) {
+      stages.push({
+        stage: currentStage,
+        startedAt: new Date(startMs + currentStart * 60000),
+        endedAt: new Date(startMs + (previousMinute + 1) * 60000),
+      });
+      currentStage = entry.stage;
+      currentStart = entry.minute;
+    }
+    previousMinute = entry.minute;
+  }
+
+  // Push final interval
+  stages.push({
+    stage: currentStage,
+    startedAt: new Date(startMs + currentStart * 60000),
+    endedAt: new Date(startMs + (previousMinute + 1) * 60000),
+  });
+
+  return stages;
 }
 
 export interface ParsedPolarDailyMetrics {
@@ -275,18 +301,18 @@ export class PolarUnauthorizedError extends Error {
 }
 
 export class PolarClient {
-  private accessToken: string;
-  private fetchFn: typeof globalThis.fetch;
+  #accessToken: string;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.accessToken = accessToken;
-    this.fetchFn = fetchFn;
+    this.#accessToken = accessToken;
+    this.#fetchFn = fetchFn;
   }
 
-  private async get<T>(path: string): Promise<T> {
-    const response = await this.fetchFn(`${POLAR_API_BASE}${path}`, {
+  async #get<T>(path: string): Promise<T> {
+    const response = await this.#fetchFn(`${POLAR_API_BASE}${path}`, {
       headers: {
-        Authorization: `Bearer ${this.accessToken}`,
+        Authorization: `Bearer ${this.#accessToken}`,
         Accept: "application/json",
       },
     });
@@ -318,19 +344,19 @@ export class PolarClient {
   }
 
   async getExercises(): Promise<PolarExercise[]> {
-    return this.get<PolarExercise[]>("/exercises");
+    return this.#get<PolarExercise[]>("/exercises");
   }
 
   async getSleep(): Promise<PolarSleep[]> {
-    return this.get<PolarSleep[]>("/sleep");
+    return this.#get<PolarSleep[]>("/sleep");
   }
 
   async getDailyActivity(): Promise<PolarDailyActivity[]> {
-    return this.get<PolarDailyActivity[]>("/activity");
+    return this.#get<PolarDailyActivity[]>("/activity");
   }
 
   async getNightlyRecharge(): Promise<PolarNightlyRecharge[]> {
-    return this.get<PolarNightlyRecharge[]>("/nightly-recharge");
+    return this.#get<PolarNightlyRecharge[]>("/nightly-recharge");
   }
 }
 
@@ -338,13 +364,13 @@ export class PolarClient {
 // Provider implementation
 // ============================================================
 
-export class PolarProvider implements Provider {
+export class PolarProvider implements SyncProvider {
   readonly id = "polar";
   readonly name = "Polar";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -363,7 +389,7 @@ export class PolarProvider implements Provider {
     };
   }
 
-  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
     const tokens = await loadTokens(db, this.id);
     if (!tokens) {
       throw new Error("No OAuth tokens found for Polar. Run: health-data auth polar");
@@ -372,7 +398,7 @@ export class PolarProvider implements Provider {
     return tokens;
   }
 
-  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -381,47 +407,36 @@ export class PolarProvider implements Provider {
 
     let tokens: TokenSet;
     try {
-      tokens = await this.resolveTokens(db);
+      tokens = await this.#resolveTokens(db);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
-    const client = new PolarClient(tokens.accessToken, this.fetchFn);
+    const client = new PolarClient(tokens.accessToken, this.#fetchFn);
 
     // --- Sync exercises (activities) ---
     try {
-      const exerciseCount = await withSyncLog(db, this.id, "exercises", async () => {
-        const exercises = await client.getExercises();
-        let count = 0;
+      const exerciseCount = await withSyncLog(
+        db,
+        this.id,
+        "exercises",
+        async () => {
+          const exercises = await client.getExercises();
+          let count = 0;
 
-        for (const exercise of exercises) {
-          // Skip exercises before our sync window
-          if (new Date(exercise.start_time) < since) continue;
+          for (const exercise of exercises) {
+            // Skip exercises before our sync window
+            if (new Date(exercise.start_time) < since) continue;
 
-          const parsed = parsePolarExercise(exercise);
+            const parsed = parsePolarExercise(exercise);
 
-          try {
-            await db
-              .insert(activity)
-              .values({
-                providerId: this.id,
-                externalId: parsed.externalId,
-                activityType: parsed.activityType,
-                name: parsed.name,
-                startedAt: parsed.startedAt,
-                endedAt: parsed.endedAt,
-                raw: {
-                  durationSeconds: parsed.durationSeconds,
-                  distanceMeters: parsed.distanceMeters,
-                  calories: parsed.calories,
-                  avgHeartRate: parsed.avgHeartRate,
-                  maxHeartRate: parsed.maxHeartRate,
-                },
-              })
-              .onConflictDoUpdate({
-                target: [activity.providerId, activity.externalId],
-                set: {
+            try {
+              await db
+                .insert(activity)
+                .values({
+                  providerId: this.id,
+                  externalId: parsed.externalId,
                   activityType: parsed.activityType,
                   name: parsed.name,
                   startedAt: parsed.startedAt,
@@ -433,20 +448,37 @@ export class PolarProvider implements Provider {
                     avgHeartRate: parsed.avgHeartRate,
                     maxHeartRate: parsed.maxHeartRate,
                   },
-                },
+                })
+                .onConflictDoUpdate({
+                  target: [activity.providerId, activity.externalId],
+                  set: {
+                    activityType: parsed.activityType,
+                    name: parsed.name,
+                    startedAt: parsed.startedAt,
+                    endedAt: parsed.endedAt,
+                    raw: {
+                      durationSeconds: parsed.durationSeconds,
+                      distanceMeters: parsed.distanceMeters,
+                      calories: parsed.calories,
+                      avgHeartRate: parsed.avgHeartRate,
+                      maxHeartRate: parsed.maxHeartRate,
+                    },
+                  },
+                });
+              count++;
+            } catch (err) {
+              errors.push({
+                message: `Exercise ${exercise.id}: ${err instanceof Error ? err.message : String(err)}`,
+                externalId: exercise.id,
+                cause: err,
               });
-            count++;
-          } catch (err) {
-            errors.push({
-              message: `Exercise ${exercise.id}: ${err instanceof Error ? err.message : String(err)}`,
-              externalId: exercise.id,
-              cause: err,
-            });
+            }
           }
-        }
 
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += exerciseCount;
     } catch (err) {
       if (err instanceof PolarUnauthorizedError) {
@@ -470,33 +502,25 @@ export class PolarProvider implements Provider {
 
     // --- Sync sleep ---
     try {
-      const sleepCount = await withSyncLog(db, this.id, "sleep", async () => {
-        const sleepRecords = await client.getSleep();
-        let count = 0;
+      const sleepCount = await withSyncLog(
+        db,
+        this.id,
+        "sleep",
+        async () => {
+          const sleepRecords = await client.getSleep();
+          let count = 0;
 
-        for (const sleepRecord of sleepRecords) {
-          if (new Date(sleepRecord.sleep_start_time) < since) continue;
+          for (const sleepRecord of sleepRecords) {
+            if (new Date(sleepRecord.sleep_start_time) < since) continue;
 
-          const parsed = parsePolarSleep(sleepRecord);
+            const parsed = parsePolarSleep(sleepRecord);
 
-          try {
-            await db
-              .insert(sleepSession)
-              .values({
-                providerId: this.id,
-                externalId: parsed.externalId,
-                startedAt: parsed.startedAt,
-                endedAt: parsed.endedAt,
-                durationMinutes: parsed.durationMinutes,
-                lightMinutes: parsed.lightMinutes,
-                deepMinutes: parsed.deepMinutes,
-                remMinutes: parsed.remMinutes,
-                awakeMinutes: parsed.awakeMinutes,
-                efficiencyPct: parsed.efficiencyPct,
-              })
-              .onConflictDoUpdate({
-                target: [sleepSession.providerId, sleepSession.externalId],
-                set: {
+            try {
+              const [session] = await db
+                .insert(sleepSession)
+                .values({
+                  providerId: this.id,
+                  externalId: parsed.externalId,
                   startedAt: parsed.startedAt,
                   endedAt: parsed.endedAt,
                   durationMinutes: parsed.durationMinutes,
@@ -504,21 +528,50 @@ export class PolarProvider implements Provider {
                   deepMinutes: parsed.deepMinutes,
                   remMinutes: parsed.remMinutes,
                   awakeMinutes: parsed.awakeMinutes,
-                  efficiencyPct: parsed.efficiencyPct,
-                },
-              });
-            count++;
-          } catch (err) {
-            errors.push({
-              message: `Sleep ${sleepRecord.date}: ${err instanceof Error ? err.message : String(err)}`,
-              externalId: sleepRecord.date,
-              cause: err,
-            });
-          }
-        }
+                })
+                .onConflictDoUpdate({
+                  target: [sleepSession.providerId, sleepSession.externalId],
+                  set: {
+                    startedAt: parsed.startedAt,
+                    endedAt: parsed.endedAt,
+                    durationMinutes: parsed.durationMinutes,
+                    lightMinutes: parsed.lightMinutes,
+                    deepMinutes: parsed.deepMinutes,
+                    remMinutes: parsed.remMinutes,
+                    awakeMinutes: parsed.awakeMinutes,
+                  },
+                })
+                .returning({ id: sleepSession.id });
 
-        return { recordCount: count, result: count };
-      });
+              const stages = sleepRecord.hypnogram
+                ? parsePolarSleepStages(sleepRecord.sleep_start_time, sleepRecord.hypnogram)
+                : [];
+              if (session && stages.length > 0) {
+                await db.delete(sleepStage).where(eq(sleepStage.sessionId, session.id));
+                await db.insert(sleepStage).values(
+                  stages.map((s) => ({
+                    sessionId: session.id,
+                    stage: s.stage,
+                    startedAt: s.startedAt,
+                    endedAt: s.endedAt,
+                  })),
+                );
+              }
+
+              count++;
+            } catch (err) {
+              errors.push({
+                message: `Sleep ${sleepRecord.date}: ${err instanceof Error ? err.message : String(err)}`,
+                externalId: sleepRecord.date,
+                cause: err,
+              });
+            }
+          }
+
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += sleepCount;
     } catch (err) {
       if (err instanceof PolarUnauthorizedError) {
@@ -541,59 +594,65 @@ export class PolarProvider implements Provider {
 
     // --- Sync daily activity + nightly recharge ---
     try {
-      const dailyCount = await withSyncLog(db, this.id, "daily_activity", async () => {
-        const [dailyActivities, nightlyRecharges] = await Promise.all([
-          client.getDailyActivity(),
-          client.getNightlyRecharge(),
-        ]);
+      const dailyCount = await withSyncLog(
+        db,
+        this.id,
+        "daily_activity",
+        async () => {
+          const [dailyActivities, nightlyRecharges] = await Promise.all([
+            client.getDailyActivity(),
+            client.getNightlyRecharge(),
+          ]);
 
-        // Index nightly recharge by date for O(1) lookup
-        const rechargeByDate = new Map<string, PolarNightlyRecharge>();
-        for (const recharge of nightlyRecharges) {
-          rechargeByDate.set(recharge.date, recharge);
-        }
+          // Index nightly recharge by date for O(1) lookup
+          const rechargeByDate = new Map<string, PolarNightlyRecharge>();
+          for (const recharge of nightlyRecharges) {
+            rechargeByDate.set(recharge.date, recharge);
+          }
 
-        let count = 0;
-        for (const daily of dailyActivities) {
-          if (new Date(daily.date) < since) continue;
+          let count = 0;
+          for (const daily of dailyActivities) {
+            if (new Date(daily.date) < since) continue;
 
-          const recharge = rechargeByDate.get(daily.date) ?? null;
-          const parsed = parsePolarDailyActivity(daily, recharge);
+            const recharge = rechargeByDate.get(daily.date) ?? null;
+            const parsed = parsePolarDailyActivity(daily, recharge);
 
-          try {
-            await db
-              .insert(dailyMetrics)
-              .values({
-                date: parsed.date,
-                providerId: this.id,
-                steps: parsed.steps,
-                activeEnergyKcal: parsed.activeEnergyKcal,
-                restingHr: parsed.restingHr,
-                hrv: parsed.hrv,
-                respiratoryRateAvg: parsed.respiratoryRateAvg,
-              })
-              .onConflictDoUpdate({
-                target: [dailyMetrics.date, dailyMetrics.providerId],
-                set: {
+            try {
+              await db
+                .insert(dailyMetrics)
+                .values({
+                  date: parsed.date,
+                  providerId: this.id,
                   steps: parsed.steps,
                   activeEnergyKcal: parsed.activeEnergyKcal,
                   restingHr: parsed.restingHr,
                   hrv: parsed.hrv,
                   respiratoryRateAvg: parsed.respiratoryRateAvg,
-                },
+                })
+                .onConflictDoUpdate({
+                  target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
+                  set: {
+                    steps: parsed.steps,
+                    activeEnergyKcal: parsed.activeEnergyKcal,
+                    restingHr: parsed.restingHr,
+                    hrv: parsed.hrv,
+                    respiratoryRateAvg: parsed.respiratoryRateAvg,
+                  },
+                });
+              count++;
+            } catch (err) {
+              errors.push({
+                message: `Daily ${daily.date}: ${err instanceof Error ? err.message : String(err)}`,
+                externalId: daily.date,
+                cause: err,
               });
-            count++;
-          } catch (err) {
-            errors.push({
-              message: `Daily ${daily.date}: ${err instanceof Error ? err.message : String(err)}`,
-              externalId: daily.date,
-              cause: err,
-            });
+            }
           }
-        }
 
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += dailyCount;
     } catch (err) {
       if (err instanceof PolarUnauthorizedError) {

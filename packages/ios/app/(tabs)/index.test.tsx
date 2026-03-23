@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from "react";
 import { render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 let mockTrendsData: Record<string, unknown> | undefined;
 let mockDailyMetricsData: Record<string, unknown>[];
@@ -31,7 +31,33 @@ vi.mock("../../lib/trpc", () => ({
     nutrition: { daily: q(() => []) },
     bodyAnalytics: { smoothedWeight: q(() => []) },
     anomalyDetection: { check: q() },
+    sync: {
+      triggerSync: { useMutation: () => ({ mutateAsync: vi.fn().mockResolvedValue({ jobId: "auto-sync-job" }) }) },
+      activeSyncs: { useQuery: () => ({ data: [], isLoading: false }) },
+    },
+    useUtils: () => ({
+      invalidate: vi.fn(),
+      client: {
+        healthKitSync: {
+          pushQuantitySamples: { mutate: vi.fn().mockResolvedValue({ inserted: 0, errors: [] }) },
+          pushWorkouts: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
+          pushSleepSamples: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
+        },
+      },
+      sync: {
+        syncStatus: { fetch: vi.fn().mockResolvedValue({ status: "done", providers: {} }) },
+      },
+    }),
   },
+}));
+
+vi.mock("../../modules/health-kit", () => ({
+  isAvailable: () => false,
+  getRequestStatus: vi.fn().mockResolvedValue("unavailable"),
+  queryDailyStatistics: vi.fn().mockResolvedValue([]),
+  queryQuantitySamples: vi.fn().mockResolvedValue([]),
+  queryWorkouts: vi.fn().mockResolvedValue([]),
+  querySleepSamples: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("../../lib/useOnboarding", () => ({
@@ -47,7 +73,7 @@ vi.mock("../../lib/units", async () => {
   const actual = await vi.importActual<typeof import("../../lib/units")>("../../lib/units");
   return {
     ...actual,
-    useUnitSystem: () => "metric" as const,
+    useUnitConverter: () => new actual.UnitConverter("metric"),
   };
 });
 
@@ -81,6 +107,40 @@ vi.mock("../../theme", () => ({
   },
 }));
 
+describe("Health Status stale date indicator", () => {
+  beforeEach(() => {
+    mockTrendsData = undefined;
+    mockDailyMetricsData = [];
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("shows 'Health Status' when data is from today", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-21T10:00:00"));
+    mockTrendsData = { latest_date: "2026-03-21", latest_steps: 5000 };
+
+    const { default: OverviewScreen } = await import("./index");
+    render(<OverviewScreen />);
+
+    expect(screen.getByText("Health Status")).toBeDefined();
+  });
+
+  it("shows date in title when data is stale", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-21T10:00:00"));
+    mockTrendsData = { latest_date: "2026-03-20", latest_steps: 2895 };
+
+    const { default: OverviewScreen } = await import("./index");
+    render(<OverviewScreen />);
+
+    const staleTitle = screen.getByText(/Health Status \(.*Mar.*20\)/);
+    expect(staleTitle).toBeDefined();
+  });
+});
+
 describe("OverviewScreen SpO2 and Skin Temperature cards", () => {
   beforeEach(() => {
     mockTrendsData = undefined;
@@ -94,9 +154,10 @@ describe("OverviewScreen SpO2 and Skin Temperature cards", () => {
     const { default: OverviewScreen } = await import("./index");
     render(<OverviewScreen />);
 
-    expect(screen.getByText("Blood Oxygen")).toBeTruthy();
-    expect(screen.getByText("98")).toBeTruthy();
-    expect(screen.getByText("%")).toBeTruthy();
+    // May appear in both key metrics and Health Status Bar
+    expect(screen.getAllByText("Blood Oxygen").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("98").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("%").length).toBeGreaterThanOrEqual(1);
   });
 
   it("renders Skin Temperature card when latest_skin_temp is present", async () => {
@@ -106,26 +167,32 @@ describe("OverviewScreen SpO2 and Skin Temperature cards", () => {
     const { default: OverviewScreen } = await import("./index");
     render(<OverviewScreen />);
 
-    expect(screen.getByText("Skin Temperature")).toBeTruthy();
+    expect(screen.getAllByText("Skin Temperature").length).toBeGreaterThanOrEqual(1);
   });
 
-  it("does not render Blood Oxygen card when latest_spo2 is null", async () => {
+  it("does not render Blood Oxygen key metrics card when latest_spo2 is null", async () => {
     mockTrendsData = { latest_spo2: null };
     mockDailyMetricsData = [];
 
     const { default: OverviewScreen } = await import("./index");
     render(<OverviewScreen />);
 
-    expect(screen.queryByText("Blood Oxygen")).toBeNull();
+    // The key metrics card (with the large value) should not render when null,
+    // but the Health Status Bar mini-metric still shows the label with "--" fallback
+    const elements = screen.queryAllByText("Blood Oxygen");
+    // Should only appear in the Health Status Bar, not as a key metrics card
+    expect(elements.length).toBeLessThanOrEqual(1);
   });
 
-  it("does not render Skin Temperature card when latest_skin_temp is null", async () => {
+  it("does not render Skin Temperature key metrics card when latest_skin_temp is null", async () => {
     mockTrendsData = { latest_skin_temp: null };
     mockDailyMetricsData = [];
 
     const { default: OverviewScreen } = await import("./index");
     render(<OverviewScreen />);
 
-    expect(screen.queryByText("Skin Temperature")).toBeNull();
+    // Same as above — only the Health Status Bar mini-metric should appear
+    const elements = screen.queryAllByText("Skin Temperature");
+    expect(elements.length).toBeLessThanOrEqual(1);
   });
 });

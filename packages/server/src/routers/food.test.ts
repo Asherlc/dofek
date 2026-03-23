@@ -13,6 +13,17 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
+vi.mock("../lib/typed-sql.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/typed-sql.ts")>()),
+  executeWithSchema: vi.fn(
+    async (
+      db: { execute: (query: unknown) => Promise<unknown[]> },
+      _schema: unknown,
+      query: unknown,
+    ) => db.execute(query),
+  ),
+}));
+
 vi.mock("../lib/ai-nutrition.ts", () => ({
   analyzeNutrition: vi.fn().mockResolvedValue({
     foodName: "Apple",
@@ -96,10 +107,11 @@ describe("foodRouter", () => {
 
   describe("create", () => {
     it("creates a food entry", async () => {
-      const created = { id: "new-1", food_name: "Test Food" };
+      const created = { id: "new-1", food_name: "Test Food", calories: 200 };
       const execute = vi.fn();
       execute.mockResolvedValueOnce([]); // ensureDofekProvider
-      execute.mockResolvedValueOnce([created]); // INSERT
+      execute.mockResolvedValueOnce([{ id: "new-1" }]); // CTE INSERT RETURNING id
+      execute.mockResolvedValueOnce([created]); // SELECT FROM view
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
@@ -174,10 +186,11 @@ describe("foodRouter", () => {
 
   describe("quickAdd", () => {
     it("creates a quick food entry", async () => {
-      const created = { id: "qa-1", food_name: "Quick Food" };
+      const created = { id: "qa-1", food_name: "Quick Food", calories: 500 };
       const execute = vi.fn();
       execute.mockResolvedValueOnce([]); // ensureDofekProvider
-      execute.mockResolvedValueOnce([created]); // INSERT
+      execute.mockResolvedValueOnce([{ id: "qa-1" }]); // CTE INSERT RETURNING id
+      execute.mockResolvedValueOnce([created]); // SELECT FROM view
       const caller = createCaller({
         db: { execute },
         userId: "user-1",

@@ -1,11 +1,17 @@
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
-import { exchangeCodeForTokens, refreshAccessToken } from "../auth/oauth.ts";
+import { exchangeCodeForTokens } from "../auth/oauth.ts";
+import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
-import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
-import { logger } from "../logger.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import { ensureProvider } from "../db/tokens.ts";
+import type {
+  ProviderAuthSetup,
+  SyncError,
+  SyncOptions,
+  SyncProvider,
+  SyncResult,
+} from "./types.ts";
 
 // ============================================================
 // Komoot API types
@@ -127,13 +133,13 @@ export function komootOAuthConfig(): OAuthConfig | null {
 // Provider implementation
 // ============================================================
 
-export class KomootProvider implements Provider {
+export class KomootProvider implements SyncProvider {
   readonly id = "komoot";
   readonly name = "Komoot";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -145,7 +151,7 @@ export class KomootProvider implements Provider {
   authSetup(): ProviderAuthSetup {
     const config = komootOAuthConfig();
     if (!config) throw new Error("KOMOOT_CLIENT_ID and CLIENT_SECRET required");
-    const fetchFn = this.fetchFn;
+    const fetchFn = this.#fetchFn;
     return {
       oauthConfig: config,
       exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn),
@@ -153,20 +159,17 @@ export class KomootProvider implements Provider {
     };
   }
 
-  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
-    const tokens = await loadTokens(db, this.id);
-    if (!tokens) throw new Error("No OAuth tokens for Komoot. Run: health-data auth komoot");
-    if (tokens.expiresAt > new Date()) return tokens;
-
-    logger.info("[komoot] Token expired, refreshing...");
-    const config = komootOAuthConfig();
-    if (!config || !tokens.refreshToken) throw new Error("Cannot refresh Komoot tokens");
-    const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);
-    await saveTokens(db, this.id, refreshed);
-    return refreshed;
+  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+    return resolveOAuthTokens({
+      db,
+      providerId: this.id,
+      providerName: this.name,
+      getOAuthConfig: () => komootOAuthConfig(),
+      fetchFn: this.#fetchFn,
+    });
   }
 
-  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -175,7 +178,7 @@ export class KomootProvider implements Provider {
 
     let accessToken: string;
     try {
-      const tokens = await this.resolveTokens(db);
+      const tokens = await this.#resolveTokens(db);
       accessToken = tokens.accessToken;
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
@@ -183,69 +186,75 @@ export class KomootProvider implements Provider {
     }
 
     try {
-      const activityCount = await withSyncLog(db, this.id, "activity", async () => {
-        let count = 0;
-        let page = 0;
-        let totalPages = 1;
-        const startDate = since.toISOString();
+      const activityCount = await withSyncLog(
+        db,
+        this.id,
+        "activity",
+        async () => {
+          let count = 0;
+          let page = 0;
+          let totalPages = 1;
+          const startDate = since.toISOString();
 
-        while (page < totalPages) {
-          const url = `${KOMOOT_API_BASE}/users/me/tours/?type=RECORDED&start_date=${startDate}&page=${page}&limit=50&sort_field=date&sort_direction=desc`;
-          const response = await this.fetchFn(url, {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              Accept: "application/hal+json",
-            },
-          });
+          while (page < totalPages) {
+            const url = `${KOMOOT_API_BASE}/users/me/tours/?type=RECORDED&start_date=${startDate}&page=${page}&limit=50&sort_field=date&sort_direction=desc`;
+            const response = await this.#fetchFn(url, {
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                Accept: "application/hal+json",
+              },
+            });
 
-          if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`Komoot API error (${response.status}): ${text}`);
-          }
+            if (!response.ok) {
+              const text = await response.text();
+              throw new Error(`Komoot API error (${response.status}): ${text}`);
+            }
 
-          const data: KomootToursResponse = await response.json();
-          totalPages = data.page.totalPages;
-          const tours = data._embedded?.tours ?? [];
+            const data: KomootToursResponse = await response.json();
+            totalPages = data.page.totalPages;
+            const tours = data._embedded?.tours ?? [];
 
-          for (const raw of tours) {
-            const parsed = parseKomootTour(raw);
-            try {
-              await db
-                .insert(activity)
-                .values({
-                  providerId: this.id,
-                  externalId: parsed.externalId,
-                  activityType: parsed.activityType,
-                  name: parsed.name,
-                  startedAt: parsed.startedAt,
-                  endedAt: parsed.endedAt,
-                  raw: parsed.raw,
-                })
-                .onConflictDoUpdate({
-                  target: [activity.providerId, activity.externalId],
-                  set: {
+            for (const raw of tours) {
+              const parsed = parseKomootTour(raw);
+              try {
+                await db
+                  .insert(activity)
+                  .values({
+                    providerId: this.id,
+                    externalId: parsed.externalId,
                     activityType: parsed.activityType,
                     name: parsed.name,
                     startedAt: parsed.startedAt,
                     endedAt: parsed.endedAt,
                     raw: parsed.raw,
-                  },
+                  })
+                  .onConflictDoUpdate({
+                    target: [activity.providerId, activity.externalId],
+                    set: {
+                      activityType: parsed.activityType,
+                      name: parsed.name,
+                      startedAt: parsed.startedAt,
+                      endedAt: parsed.endedAt,
+                      raw: parsed.raw,
+                    },
+                  });
+                count++;
+              } catch (err) {
+                errors.push({
+                  message: err instanceof Error ? err.message : String(err),
+                  externalId: parsed.externalId,
+                  cause: err,
                 });
-              count++;
-            } catch (err) {
-              errors.push({
-                message: err instanceof Error ? err.message : String(err),
-                externalId: parsed.externalId,
-                cause: err,
-              });
+              }
             }
+
+            page++;
           }
 
-          page++;
-        }
-
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += activityCount;
     } catch (err) {
       errors.push({

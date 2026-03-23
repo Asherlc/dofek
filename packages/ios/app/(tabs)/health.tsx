@@ -1,18 +1,25 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import { useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth-context";
 import { colors } from "../../theme";
 import {
   enableBackgroundDelivery,
+  getRequestStatus,
   isAvailable,
+  isBackgroundDeliveryEnabled,
+  queryDailyStatistics,
   queryQuantitySamples,
   querySleepSamples,
-  type WorkoutSample,
   queryWorkouts,
   requestPermissions,
 } from "../../modules/health-kit";
 import { trpc } from "../../lib/trpc";
+import {
+  ADDITIVE_QUANTITY_TYPES,
+  NON_ADDITIVE_QUANTITY_TYPES,
+  syncHealthKitToServer,
+} from "../../lib/health-kit-sync";
 
 interface SyncStatus {
   lastSync: Date | null;
@@ -31,50 +38,23 @@ const SYNC_RANGE_OPTIONS: Array<{ label: string; value: number | null }> = [
 
 const HEALTHKIT_BACKFILL_COMPLETED_KEY = "healthkit_backfill_completed";
 
-const QUANTITY_TYPES = [
-  "HKQuantityTypeIdentifierBodyMass",
-  "HKQuantityTypeIdentifierBodyFatPercentage",
-  "HKQuantityTypeIdentifierHeartRate",
-  "HKQuantityTypeIdentifierRestingHeartRate",
-  "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
-  "HKQuantityTypeIdentifierStepCount",
-  "HKQuantityTypeIdentifierActiveEnergyBurned",
-  "HKQuantityTypeIdentifierBasalEnergyBurned",
-  "HKQuantityTypeIdentifierDistanceWalkingRunning",
-  "HKQuantityTypeIdentifierFlightsClimbed",
-  "HKQuantityTypeIdentifierAppleExerciseTime",
-  "HKQuantityTypeIdentifierVO2Max",
-  "HKQuantityTypeIdentifierOxygenSaturation",
-  "HKQuantityTypeIdentifierRespiratoryRate",
-];
-
-function daysAgo(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  return d.toISOString();
-}
-
-function normalizeWorkoutsForSync(workouts: WorkoutSample[]): WorkoutSample[] {
-  return workouts.map((workout) => ({
-    ...workout,
-    totalEnergyBurned: workout.totalEnergyBurned ?? null,
-    totalDistance: workout.totalDistance ?? null,
-  }));
-}
+const ALL_QUANTITY_TYPES = [...ADDITIVE_QUANTITY_TYPES, ...NON_ADDITIVE_QUANTITY_TYPES];
 
 const NAV_LINKS = [
+  { route: "/sleep" as const, label: "Sleep", emoji: "\uD83C\uDF19", description: "Sleep stages, debt & patterns" },
   { route: "/correlation" as const, label: "Correlation Explorer", emoji: "\u{1F50D}", description: "See how any two metrics relate" },
-  { route: "/training" as const, label: "Training", emoji: "\u{1F3CB}\u{FE0F}", description: "Performance, endurance & recovery" },
-  { route: "/providers" as const, label: "Data Sources", emoji: "🔗", description: "Manage providers & sync history" },
-  { route: "/tracking" as const, label: "Tracking", emoji: "📋", description: "Life events & supplements" },
-  { route: "/settings" as const, label: "Settings", emoji: "⚙️", description: "Accounts, units & export" },
+  { route: "/providers" as const, label: "Data Sources", emoji: "\uD83D\uDD17", description: "Manage providers & sync history" },
+  { route: "/tracking" as const, label: "Tracking", emoji: "\uD83D\uDCCB", description: "Life events" },
+  { route: "/settings" as const, label: "Settings", emoji: "\u2699\uFE0F", description: "Accounts, units & export" },
 ];
 
 export default function HealthScreen() {
   const router = useRouter();
   const { user, serverUrl, logout } = useAuth();
   const [permissionsGranted, setPermissionsGranted] = useState(false);
-  const [backgroundEnabled, setBackgroundEnabled] = useState(false);
+  const [backgroundEnabled, setBackgroundEnabled] = useState(() =>
+    isAvailable() ? isBackgroundDeliveryEnabled() : false,
+  );
   const [status, setStatus] = useState<SyncStatus>({
     lastSync: null,
     syncing: false,
@@ -95,12 +75,23 @@ export default function HealthScreen() {
         ? 7
         : null; // first time = All
 
-  const pushQuantity = trpc.healthKitSync.pushQuantitySamples.useMutation();
-  const pushWorkouts = trpc.healthKitSync.pushWorkouts.useMutation();
-  const pushSleep = trpc.healthKitSync.pushSleepSamples.useMutation();
+  const trpcClient = trpc.useUtils().client;
   const setBackfillComplete = trpc.settings.set.useMutation();
 
   const available = isAvailable();
+
+  useEffect(() => {
+    if (!available) return;
+    getRequestStatus()
+      .then((status) => {
+        if (status === "unnecessary") {
+          setPermissionsGranted(true);
+        }
+      })
+      .catch(() => {
+        // Fall through — show Request Permissions button as fallback
+      });
+  }, [available]);
 
   async function handleRequestPermissions() {
     try {
@@ -122,53 +113,18 @@ export default function HealthScreen() {
     setStatus((prev) => ({ ...prev, syncing: true, lastResult: null, progress: null }));
 
     try {
-      const startDate = effectiveSyncRange === null
-        ? new Date(0).toISOString()
-        : daysAgo(effectiveSyncRange);
-      const endDate = new Date().toISOString();
-
-      // Sync quantity samples
-      const allSamples = [];
-      for (let i = 0; i < QUANTITY_TYPES.length; i++) {
-        const typeId = QUANTITY_TYPES[i];
-        const shortName = typeId.replace("HKQuantityTypeIdentifier", "");
-        setStatus((prev) => ({
-          ...prev,
-          progress: `Querying ${shortName}... (${i + 1}/${QUANTITY_TYPES.length})`,
-        }));
-        const samples = await queryQuantitySamples(typeId, startDate, endDate);
-        allSamples.push(...samples);
-      }
-
-      let totalInserted = 0;
-      const errors: string[] = [];
-
-      if (allSamples.length > 0) {
-        setStatus((prev) => ({ ...prev, progress: `Pushing ${allSamples.length} samples...` }));
-        // Push in batches of 500
-        for (let i = 0; i < allSamples.length; i += 500) {
-          const batch = allSamples.slice(i, i + 500);
-          const result = await pushQuantity.mutateAsync({ samples: batch });
-          totalInserted += result.inserted;
-          errors.push(...result.errors);
-        }
-      }
-
-      // Sync workouts
-      setStatus((prev) => ({ ...prev, progress: "Querying workouts..." }));
-      const workouts = normalizeWorkoutsForSync(await queryWorkouts(startDate, endDate));
-      if (workouts.length > 0) {
-        const result = await pushWorkouts.mutateAsync({ workouts });
-        totalInserted += result.inserted;
-      }
-
-      // Sync sleep
-      setStatus((prev) => ({ ...prev, progress: "Querying sleep..." }));
-      const sleepSamples = await querySleepSamples(startDate, endDate);
-      if (sleepSamples.length > 0) {
-        const result = await pushSleep.mutateAsync({ samples: sleepSamples });
-        totalInserted += result.inserted;
-      }
+      const result = await syncHealthKitToServer({
+        trpcClient,
+        healthKit: {
+          queryDailyStatistics,
+          queryQuantitySamples,
+          queryWorkouts,
+          querySleepSamples,
+        },
+        syncRangeDays: effectiveSyncRange,
+        onProgress: (message) =>
+          setStatus((prev) => ({ ...prev, progress: message })),
+      });
 
       // Mark backfill as completed after successful all-time sync
       if (effectiveSyncRange === null) {
@@ -178,9 +134,9 @@ export default function HealthScreen() {
         });
       }
 
-      const resultMessage = errors.length > 0
-        ? `Synced ${totalInserted} records with ${errors.length} errors`
-        : `Synced ${totalInserted} records`;
+      const resultMessage = result.errors.length > 0
+        ? `Synced ${result.inserted} records with ${result.errors.length} errors`
+        : `Synced ${result.inserted} records`;
 
       setStatus({
         lastSync: new Date(),
@@ -197,11 +153,11 @@ export default function HealthScreen() {
         progress: null,
       }));
     }
-  }, [pushQuantity, pushWorkouts, pushSleep, setBackfillComplete, effectiveSyncRange]);
+  }, [trpcClient, setBackfillComplete, effectiveSyncRange]);
 
   async function handleEnableBackground() {
     try {
-      for (const typeId of QUANTITY_TYPES) {
+      for (const typeId of ALL_QUANTITY_TYPES) {
         await enableBackgroundDelivery(typeId);
       }
       setBackgroundEnabled(true);

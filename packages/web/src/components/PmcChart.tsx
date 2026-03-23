@@ -4,10 +4,12 @@ import {
   FORM_ZONE_GREY,
   FORM_ZONE_OPTIMAL,
   FORM_ZONE_TRANSITION,
-  formZoneColor,
+  FormZone,
 } from "@dofek/scoring/scoring";
 import type { PmcDataPoint, TssModelInfo } from "dofek-server/types";
-import ReactECharts from "echarts-for-react";
+import { chartColors, chartThemeColors, dofekTooltip } from "../lib/chartTheme.ts";
+import { formatNumber } from "../lib/format.ts";
+import { DofekChart } from "./DofekChart.tsx";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface PmcChartProps {
@@ -17,26 +19,28 @@ interface PmcChartProps {
 }
 
 /** Colors matching intervals.icu */
-const COLOR_FITNESS = "#3b82f6"; // blue
+const COLOR_FITNESS = chartColors.blue; // blue
 const COLOR_FATIGUE = "#8b5cf6"; // purple (intervals.icu uses purple, not pink)
 
 function ModelBadge({ model }: { model: TssModelInfo }) {
   if (model.type === "learned") {
     return (
-      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-emerald-900/40 text-emerald-400 border border-emerald-800/50">
-        <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400" />
-        Learned model (fit={model.r2?.toFixed(2)}, {model.pairedActivities} paired activities
+      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-accent/10 text-accent border border-accent/30">
+        <span className="inline-block w-1.5 h-1.5 rounded-full bg-accent" />
+        Learned model (fit={model.r2 != null ? formatNumber(model.r2, 2) : "?"},{" "}
+        {model.pairedActivities} paired activities
         {model.ftp != null && `, threshold ${model.ftp}W`})
       </span>
     );
   }
 
   return (
-    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-zinc-800 text-zinc-400 border border-zinc-700/50">
-      <span className="inline-block w-1.5 h-1.5 rounded-full bg-zinc-500" />
+    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-accent/10 text-muted border border-border-strong/50">
+      <span className="inline-block w-1.5 h-1.5 rounded-full bg-subtle" />
       Generic heart rate model
-      {model.pairedActivities > 0 && ` (${model.pairedActivities} paired activities — need 10+)`}
-      {model.ftp != null && ` · threshold ${model.ftp}W`}
+      {model.pairedActivities > 0 &&
+        ` (${model.pairedActivities} paired activities \u2014 need 10+)`}
+      {model.ftp != null && ` \u00b7 threshold ${model.ftp}W`}
     </span>
   );
 }
@@ -49,7 +53,7 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center h-[420px]">
-        <span className="text-zinc-600 text-sm">No training load data</span>
+        <span className="text-dim text-sm">No training load data</span>
       </div>
     );
   }
@@ -64,7 +68,6 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
     : "";
 
   const option = {
-    backgroundColor: "transparent",
     grid: [
       { top: 10, right: 15, bottom: "42%", left: 50 },
       { top: "64%", right: 15, bottom: 30, left: 50 },
@@ -72,11 +75,7 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
     axisPointer: {
       link: [{ xAxisIndex: "all" }],
     },
-    tooltip: {
-      trigger: "axis" as const,
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
+    tooltip: dofekTooltip({
       formatter(
         params: Array<{
           seriesName: string;
@@ -103,27 +102,27 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
 
         return [
           `<strong>${label}</strong>`,
-          `<span style="color:#71717a">Load:</span> ${load.toFixed(1)}`,
-          `<span style="color:${COLOR_FITNESS}">Fitness:</span> ${fitness.toFixed(1)}`,
-          `<span style="color:${COLOR_FATIGUE}">Fatigue:</span> ${fatigue.toFixed(1)}`,
-          `<span style="color:${formZoneColor(form)}">Form:</span> ${form.toFixed(1)}`,
+          `<span style="color:${chartThemeColors.axisLabel}">Load:</span> ${formatNumber(load)}`,
+          `<span style="color:${COLOR_FITNESS}">Fitness:</span> ${formatNumber(fitness)}`,
+          `<span style="color:${COLOR_FATIGUE}">Fatigue:</span> ${formatNumber(fatigue)}`,
+          `<span style="color:${new FormZone(form).color}">Form:</span> ${formatNumber(form)}`,
         ].join("<br/>");
       },
-    },
+    }),
     xAxis: [
       {
         type: "time" as const,
         gridIndex: 0,
         axisLabel: { show: false },
-        axisLine: { lineStyle: { color: "#3f3f46" } },
+        axisLine: { lineStyle: { color: chartThemeColors.axisLine } },
         axisTick: { show: false },
         splitLine: { show: false },
       },
       {
         type: "time" as const,
         gridIndex: 1,
-        axisLabel: { color: "#71717a", fontSize: 11 },
-        axisLine: { lineStyle: { color: "#3f3f46" } },
+        axisLabel: { color: chartThemeColors.axisLabel, fontSize: 11 },
+        axisLine: { lineStyle: { color: chartThemeColors.axisLine } },
         splitLine: { show: false },
       },
     ],
@@ -132,18 +131,18 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
         type: "value" as const,
         gridIndex: 0,
         name: "Training Load",
-        nameTextStyle: { color: "#52525b", fontSize: 10 },
-        splitLine: { lineStyle: { color: "#27272a" } },
-        axisLabel: { color: "#71717a", fontSize: 11 },
+        nameTextStyle: { color: chartThemeColors.axisLabel, fontSize: 10 },
+        splitLine: { lineStyle: { color: chartThemeColors.gridLine } },
+        axisLabel: { color: chartThemeColors.axisLabel, fontSize: 11 },
         axisLine: { show: false },
       },
       {
         type: "value" as const,
         gridIndex: 1,
         name: "Form",
-        nameTextStyle: { color: "#52525b", fontSize: 10 },
-        splitLine: { lineStyle: { color: "#27272a" } },
-        axisLabel: { color: "#71717a", fontSize: 11 },
+        nameTextStyle: { color: chartThemeColors.axisLabel, fontSize: 10 },
+        splitLine: { lineStyle: { color: chartThemeColors.gridLine } },
+        axisLabel: { color: chartThemeColors.axisLabel, fontSize: 11 },
         axisLine: { show: false },
       },
       // Hidden axis for load bars so they don't compress the CTL/ATL scale
@@ -168,7 +167,7 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
       ],
     },
     series: [
-      // ── Top pane: Load dots (scatter on hidden y-axis) ──
+      // Top pane: Load dots (scatter on hidden y-axis)
       {
         name: "Load",
         type: "scatter",
@@ -179,7 +178,7 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
         symbolSize: 4,
         z: 2,
       },
-      // ── Top pane: Fitness (CTL) — area chart with fill ──
+      // Top pane: Fitness (CTL) - area chart with fill
       {
         name: "Fitness",
         type: "line",
@@ -195,13 +194,13 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
           ? {
               silent: true,
               symbol: "none",
-              lineStyle: { color: "#71717a", type: "dashed" as const, width: 1 },
+              lineStyle: { color: chartThemeColors.axisLabel, type: "dashed" as const, width: 1 },
               label: { show: false },
               data: [{ yAxis: lastPoint.ctl }],
             }
           : undefined,
       },
-      // ── Top pane: Fatigue (ATL) line ──
+      // Top pane: Fatigue (ATL) line
       {
         name: "Fatigue",
         type: "line",
@@ -213,7 +212,7 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
         itemStyle: { color: COLOR_FATIGUE },
         z: 4,
       },
-      // ── Bottom pane: Form (TSB) line — colored per zone by visualMap ──
+      // Bottom pane: Form (TSB) line - colored per zone by visualMap
       {
         name: "Form",
         type: "line",
@@ -263,37 +262,37 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
       )}
       <div className="flex">
         <div className="flex-1 min-w-0">
-          <ReactECharts option={option} style={{ height: 420 }} notMerge={true} />
+          <DofekChart option={option} height={420} />
         </div>
         {/* Right-side current values, matching intervals.icu */}
         {lastPoint && (
           <div className="flex flex-col w-[100px] pl-2 shrink-0">
-            {/* Top pane values — positioned in top ~55% */}
+            {/* Top pane values - positioned in top ~55% */}
             <div className="flex flex-col items-end justify-center gap-1" style={{ height: "58%" }}>
-              <span className="text-zinc-500 text-[10px] leading-tight text-right">{lastDate}</span>
+              <span className="text-subtle text-[10px] leading-tight text-right">{lastDate}</span>
               <div className="text-right">
-                <div className="text-zinc-500 text-[10px]">Fitness</div>
+                <div className="text-subtle text-[10px]">Fitness</div>
                 <div className="text-sm font-semibold" style={{ color: COLOR_FITNESS }}>
                   {Math.round(lastPoint.ctl)}
                 </div>
               </div>
               <div className="text-right">
-                <div className="text-zinc-500 text-[10px]">Fatigue</div>
+                <div className="text-subtle text-[10px]">Fatigue</div>
                 <div className="text-sm font-semibold" style={{ color: COLOR_FATIGUE }}>
                   {Math.round(lastPoint.atl)}
                 </div>
               </div>
               <div className="text-right">
-                <div className="text-zinc-500 text-[10px]">Form</div>
+                <div className="text-subtle text-[10px]">Form</div>
                 <div
                   className="text-sm font-semibold"
-                  style={{ color: formZoneColor(lastPoint.tsb) }}
+                  style={{ color: new FormZone(lastPoint.tsb).color }}
                 >
                   {Math.round(lastPoint.tsb)}
                 </div>
               </div>
             </div>
-            {/* Bottom pane zone labels — positioned in bottom ~42% */}
+            {/* Bottom pane zone labels - positioned in bottom ~42% */}
             <div
               className="flex flex-col items-end justify-center gap-0.5 text-[10px]"
               style={{ height: "42%" }}

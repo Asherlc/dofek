@@ -8,8 +8,8 @@ vi.mock("../auth/session.ts", () => ({
   validateSession: vi.fn(() => Promise.resolve(null)),
 }));
 
-vi.mock("../lib/server-utils.ts", () => ({
-  errorMessage: vi.fn((err: unknown) => (err instanceof Error ? err.message : String(err))),
+vi.mock("../lib/start-worker.ts", () => ({
+  startWorker: vi.fn(),
 }));
 
 vi.mock("../logger.ts", () => ({
@@ -18,6 +18,25 @@ vi.mock("../logger.ts", () => ({
 
 vi.mock("dofek/db", () => ({
   createDatabaseFromEnv: vi.fn(() => ({})),
+}));
+
+// Mock BullMQ queue
+const mockJob = {
+  id: "42",
+  data: { userId: "user-1", outputPath: "/tmp/dofek-export-42.zip" },
+  progress: { percentage: 0, message: "Starting export..." },
+  getState: vi.fn().mockResolvedValue("active"),
+  remove: vi.fn().mockResolvedValue(undefined),
+  failedReason: "",
+};
+
+const mockQueue = {
+  add: vi.fn().mockResolvedValue(mockJob),
+  getJob: vi.fn().mockResolvedValue(mockJob),
+};
+
+vi.mock("dofek/jobs/queues", () => ({
+  createExportQueue: vi.fn(() => mockQueue),
 }));
 
 import type { AddressInfo } from "node:net";
@@ -68,6 +87,11 @@ async function request(
 describe("createExportRouter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockJob.data = { userId: "user-1", outputPath: "/tmp/dofek-export-42.zip" };
+    mockJob.progress = { percentage: 0, message: "Starting export..." };
+    mockJob.getState.mockResolvedValue("active");
+    mockQueue.add.mockResolvedValue(mockJob);
+    mockQueue.getJob.mockResolvedValue(mockJob);
   });
 
   describe("POST /api/export", () => {
@@ -85,60 +109,96 @@ describe("createExportRouter", () => {
       const res = await request(app, "post", "/api/export");
       expect(res.status).toBe(401);
     });
+
+    it("enqueues a BullMQ job and returns jobId", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
+      vi.mocked(validateSession).mockResolvedValue({ userId: "user-1" });
+      const { app } = createTestApp();
+
+      const res = await request(app, "post", "/api/export");
+      expect(res.status).toBe(200);
+      const data = JSON.parse(res.body);
+      expect(data.status).toBe("processing");
+      expect(data.jobId).toBe("42");
+      expect(mockQueue.add).toHaveBeenCalledWith(
+        "export",
+        expect.objectContaining({
+          userId: "user-1",
+          outputPath: expect.stringContaining("dofek-export-"),
+        }),
+      );
+    });
   });
 
   describe("GET /api/export/status/:jobId", () => {
     it("returns 401 when not authenticated", async () => {
-      // First create a job while authenticated
-      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
-      vi.mocked(validateSession).mockResolvedValue({ userId: "user-1" });
-      const { app } = createTestApp();
-      const postRes = await request(app, "post", "/api/export");
-      const { jobId } = JSON.parse(postRes.body);
-
-      // Now try to access status without auth
       vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
-      const statusRes = await request(app, "get", `/api/export/status/${jobId}`);
-      expect(statusRes.status).toBe(401);
-    });
-
-    it("returns 403 when job belongs to another user", async () => {
-      // Create a job as user-1
-      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
-      vi.mocked(validateSession).mockResolvedValue({ userId: "user-1" });
       const { app } = createTestApp();
-      const postRes = await request(app, "post", "/api/export");
-      const { jobId } = JSON.parse(postRes.body);
-
-      // Try to access status as user-2
-      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-2");
-      vi.mocked(validateSession).mockResolvedValue({ userId: "user-2" });
-      const statusRes = await request(app, "get", `/api/export/status/${jobId}`);
-      expect(statusRes.status).toBe(403);
+      const res = await request(app, "get", "/api/export/status/42");
+      expect(res.status).toBe(401);
     });
 
     it("returns 404 for unknown job", async () => {
       vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
       vi.mocked(validateSession).mockResolvedValue({ userId: "user-1" });
+      mockQueue.getJob.mockResolvedValue(null);
       const { app } = createTestApp();
-      const res = await request(app, "get", "/api/export/status/unknown-job");
+      const res = await request(app, "get", "/api/export/status/unknown");
       expect(res.status).toBe(404);
     });
-  });
 
-  describe("POST /api/export (with valid session)", () => {
-    it("starts export and returns processing status", async () => {
-      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
-      vi.mocked(validateSession).mockResolvedValue({
-        userId: "user-1",
-        expiresAt: new Date("2027-01-01"),
-      });
+    it("returns 403 when job belongs to another user", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-2");
+      vi.mocked(validateSession).mockResolvedValue({ userId: "user-2" });
+      mockJob.data = { userId: "user-1", outputPath: "/tmp/test.zip" };
       const { app } = createTestApp();
-      const res = await request(app, "post", "/api/export");
+      const res = await request(app, "get", "/api/export/status/42");
+      expect(res.status).toBe(403);
+    });
+
+    it("returns processing status with progress", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
+      vi.mocked(validateSession).mockResolvedValue({ userId: "user-1" });
+      mockJob.progress = { percentage: 50, message: "Exporting activities.json..." };
+      mockJob.getState.mockResolvedValue("active");
+      const { app } = createTestApp();
+
+      const res = await request(app, "get", "/api/export/status/42");
       expect(res.status).toBe(200);
       const data = JSON.parse(res.body);
       expect(data.status).toBe("processing");
-      expect(data.jobId).toBeDefined();
+      expect(data.progress).toBe(50);
+      expect(data.message).toBe("Exporting activities.json...");
+    });
+
+    it("returns done status with download URL when completed", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
+      vi.mocked(validateSession).mockResolvedValue({ userId: "user-1" });
+      mockJob.progress = { percentage: 100, message: "Export complete" };
+      mockJob.getState.mockResolvedValue("completed");
+      const { app } = createTestApp();
+
+      const res = await request(app, "get", "/api/export/status/42");
+      expect(res.status).toBe(200);
+      const data = JSON.parse(res.body);
+      expect(data.status).toBe("done");
+      expect(data.downloadUrl).toBe("/api/export/download/42");
+    });
+
+    it("returns error status when job failed", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
+      vi.mocked(validateSession).mockResolvedValue({ userId: "user-1" });
+      mockJob.getState.mockResolvedValue("failed");
+      mockJob.failedReason = "DB connection lost";
+      const { app } = createTestApp();
+
+      const res = await request(app, "get", "/api/export/status/42");
+      expect(res.status).toBe(200);
+      const data = JSON.parse(res.body);
+      expect(data.status).toBe("error");
+      expect(data.message).toBe("DB connection lost");
+
+      mockJob.failedReason = "";
     });
   });
 
@@ -146,7 +206,7 @@ describe("createExportRouter", () => {
     it("returns 401 when not authenticated", async () => {
       vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
       const { app } = createTestApp();
-      const res = await request(app, "get", "/api/export/download/some-job");
+      const res = await request(app, "get", "/api/export/download/42");
       expect(res.status).toBe(401);
     });
 
@@ -154,79 +214,46 @@ describe("createExportRouter", () => {
       vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
       vi.mocked(validateSession).mockResolvedValue(null);
       const { app } = createTestApp();
-      const res = await request(app, "get", "/api/export/download/some-job");
+      const res = await request(app, "get", "/api/export/download/42");
       expect(res.status).toBe(401);
     });
 
-    it("returns 404 for unknown job with valid session", async () => {
+    it("returns 404 for unknown job", async () => {
       vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
-      vi.mocked(validateSession).mockResolvedValue({
-        userId: "user-1",
-        expiresAt: new Date("2027-01-01"),
-      });
+      vi.mocked(validateSession).mockResolvedValue({ userId: "user-1" });
+      mockQueue.getJob.mockResolvedValue(null);
       const { app } = createTestApp();
-      const res = await request(app, "get", "/api/export/download/unknown-job");
+      const res = await request(app, "get", "/api/export/download/unknown");
       expect(res.status).toBe(404);
     });
-  });
 
-  describe("GET /api/export/status/:jobId (after export starts)", () => {
-    it("returns job status for known job", async () => {
-      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
-      vi.mocked(validateSession).mockResolvedValue({
-        userId: "user-1",
-        expiresAt: new Date("2027-01-01"),
-      });
-      const { app } = createTestApp();
-
-      // Start an export to create a job
-      const postRes = await request(app, "post", "/api/export");
-      const { jobId } = JSON.parse(postRes.body);
-
-      // Check status — job exists and returns a known status
-      const statusRes = await request(app, "get", `/api/export/status/${jobId}`);
-      expect(statusRes.status).toBe(200);
-      const data = JSON.parse(statusRes.body);
-      // Status will be "processing" or "error" depending on timing of background task
-      expect(["processing", "error"]).toContain(data.status);
-    });
-  });
-
-  describe("GET /api/export/download/:jobId (forbidden/not ready)", () => {
     it("returns 403 when job belongs to another user", async () => {
-      // Start export as user-1
-      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
-      vi.mocked(validateSession).mockResolvedValue({
-        userId: "user-1",
-        expiresAt: new Date("2027-01-01"),
-      });
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-2");
+      vi.mocked(validateSession).mockResolvedValue({ userId: "user-2" });
       const { app } = createTestApp();
-      const postRes = await request(app, "post", "/api/export");
-      const { jobId } = JSON.parse(postRes.body);
-
-      // Try to download as user-2
-      vi.mocked(validateSession).mockResolvedValue({
-        userId: "user-2",
-        expiresAt: new Date("2027-01-01"),
-      });
-      const res = await request(app, "get", `/api/export/download/${jobId}`);
+      const res = await request(app, "get", "/api/export/download/42");
       expect(res.status).toBe(403);
     });
 
     it("returns 400 when export is not done yet", async () => {
       vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
-      vi.mocked(validateSession).mockResolvedValue({
-        userId: "user-1",
-        expiresAt: new Date("2027-01-01"),
-      });
+      vi.mocked(validateSession).mockResolvedValue({ userId: "user-1" });
+      mockJob.getState.mockResolvedValue("active");
       const { app } = createTestApp();
-      const postRes = await request(app, "post", "/api/export");
-      const { jobId } = JSON.parse(postRes.body);
-
-      // Try to download while still processing
-      const res = await request(app, "get", `/api/export/download/${jobId}`);
+      const res = await request(app, "get", "/api/export/download/42");
       expect(res.status).toBe(400);
       expect(JSON.parse(res.body).error).toBe("Export not ready");
+    });
+
+    it("returns 404 when export file is missing", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
+      vi.mocked(validateSession).mockResolvedValue({ userId: "user-1" });
+      mockJob.getState.mockResolvedValue("completed");
+      mockJob.data = { userId: "user-1", outputPath: "/tmp/nonexistent.zip" };
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/api/export/download/42");
+      expect(res.status).toBe(404);
+      expect(JSON.parse(res.body).error).toBe("Export file not found");
     });
   });
 });

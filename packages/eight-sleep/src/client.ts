@@ -9,25 +9,25 @@ export const EIGHT_SLEEP_CLIENT_SECRET =
   "f0954a3ed5763ba3d06834c73731a32f15f168f47d4f164751275def86db0c76";
 
 export class EightSleepClient {
-  private accessToken: string;
-  private userId: string;
-  private fetchFn: typeof globalThis.fetch;
+  #accessToken: string;
+  #userId: string;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(
     accessToken: string,
     userId: string,
     fetchFn: typeof globalThis.fetch = globalThis.fetch,
   ) {
-    this.accessToken = accessToken;
-    this.userId = userId;
-    this.fetchFn = fetchFn;
+    this.#accessToken = accessToken;
+    this.#userId = userId;
+    this.#fetchFn = fetchFn;
   }
 
-  private async get<T>(baseUrl: string, path: string): Promise<T> {
+  async #get<T>(baseUrl: string, path: string): Promise<T> {
     const url = `${baseUrl}${path}`;
-    const response = await this.fetchFn(url, {
+    const response = await this.#fetchFn(url, {
       headers: {
-        Authorization: `Bearer ${this.accessToken}`,
+        Authorization: `Bearer ${this.#accessToken}`,
         "Content-Type": "application/json",
         "User-Agent": "okhttp/4.9.3",
         Accept: "application/json",
@@ -55,9 +55,9 @@ export class EightSleepClient {
       "include-all-sessions": "true",
       "model-version": "v2",
     });
-    return this.get<EightSleepTrendsResponse>(
+    return this.#get<EightSleepTrendsResponse>(
       CLIENT_API_BASE,
-      `/users/${this.userId}/trends?${params}`,
+      `/users/${this.#userId}/trends?${params}`,
     );
   }
 

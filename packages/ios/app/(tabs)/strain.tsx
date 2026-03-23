@@ -1,7 +1,6 @@
 import {
   collapseWeeklyVolumeActivityTypes,
   formatActivityTypeLabel,
-  selectRecentDailyLoad,
 } from "@dofek/training/training";
 import { useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
@@ -10,21 +9,22 @@ import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { DaySelector } from "../../components/DaySelector";
 import { StrainGauge } from "../../components/charts/StrainGauge";
 import { SparkLine } from "../../components/charts/SparkLine";
-import { aggregateWeeklyVolume, workloadRatioColor, workloadRatioHint } from "../../lib/scoring";
+import { aggregateWeeklyVolume, WorkloadRatio } from "../../lib/scoring";
 import type { WeekSummary } from "../../lib/scoring";
+import { formatNumber } from "@dofek/format/format";
 import { trpc } from "../../lib/trpc";
-import { useUnitSystem } from "../../lib/units";
-import type { ActivityRow, WorkloadRow } from "../../types/api";
+import { useUnitConverter } from "../../lib/units";
+import type { ActivityRow, WorkloadRatioRow } from "../../types/api";
 import { ActivityRowSchema, WeeklyVolumeRowSchema } from "../../types/api";
 import { colors } from "../../theme";
 
 export default function StrainScreen() {
   const [days, setDays] = useState(30);
-  const unitSystem = useUnitSystem();
+  const units = useUnitConverter();
   const workloadQuery = trpc.recovery.workloadRatio.useQuery({ days });
-  const workloadData = workloadQuery.data ?? [];
+  const workloadResult = workloadQuery.data;
+  const workloadData = workloadResult?.timeSeries ?? [];
   const todayWorkload = workloadData[workloadData.length - 1];
-  const displayedWorkload = selectRecentDailyLoad(workloadData);
 
   const activitiesQuery = trpc.training.activityStats.useQuery({ days });
   const activities = ActivityRowSchema.array().catch([]).parse(activitiesQuery.data ?? []);
@@ -43,21 +43,23 @@ export default function StrainScreen() {
     .sort((a, b) => b[1] - a[1])
     .map(([activityType, hours]) => ({ activityType, hours }));
 
-  const dailyStrain = displayedWorkload?.dailyLoad ?? 0;
+  const dailyStrain = workloadResult?.displayedStrain ?? 0;
   const acuteLoad = todayWorkload?.acuteLoad ?? 0;
   const chronicLoad = todayWorkload?.chronicLoad ?? 0;
   const workloadRatio = todayWorkload?.workloadRatio;
+  const workloadRatioScore = new WorkloadRatio(workloadRatio ?? null);
+  const displayedDate = workloadResult?.displayedDate;
   const strainDateLabel =
-    displayedWorkload == null
+    displayedDate == null
       ? "No training load yet"
-      : displayedWorkload.date === todayWorkload?.date
+      : displayedDate === todayWorkload?.date
         ? "Today"
-        : `Last training day: ${new Date(displayedWorkload.date).toLocaleDateString("en-US", {
+        : `Last training day: ${new Date(displayedDate).toLocaleDateString("en-US", {
             month: "short",
             day: "numeric",
           })}`;
 
-  const strainTrend = workloadData.slice(-14).map((d) => d.dailyLoad);
+  const strainTrend = workloadData.slice(-14).map((d) => d.strain);
 
   const isLoading = workloadQuery.isLoading;
 
@@ -86,13 +88,13 @@ export default function StrainScreen() {
             <View style={styles.loadGrid}>
               <View style={styles.loadItem}>
                 <Text style={styles.loadValue}>
-                  {acuteLoad.toFixed(1)}
+                  {formatNumber(acuteLoad)}
                 </Text>
                 <Text style={styles.loadLabel}>Acute (7 day)</Text>
               </View>
               <View style={styles.loadItem}>
                 <Text style={styles.loadValue}>
-                  {chronicLoad.toFixed(1)}
+                  {formatNumber(chronicLoad)}
                 </Text>
                 <Text style={styles.loadLabel}>Chronic (28 day)</Text>
               </View>
@@ -101,18 +103,18 @@ export default function StrainScreen() {
                   style={[
                     styles.loadValue,
                     {
-                      color: workloadRatioColor(workloadRatio ?? null),
+                      color: workloadRatioScore.color,
                     },
                   ]}
                 >
-                  {workloadRatio != null ? workloadRatio.toFixed(2) : "--"}
+                  {workloadRatio != null ? formatNumber(workloadRatio, 2) : "--"}
                 </Text>
                 <Text style={styles.loadLabel}>Workload Ratio</Text>
               </View>
             </View>
             {workloadRatio != null && (
               <Text style={styles.ratioHint}>
-                {workloadRatioHint(workloadRatio)}
+                {workloadRatioScore.hint}
               </Text>
             )}
           </View>
@@ -163,7 +165,7 @@ export default function StrainScreen() {
                       />
                     </View>
                     <Text style={styles.volumeHours}>
-                      {week.hours.toFixed(1)}h
+                      {formatNumber(week.hours)}h
                     </Text>
                   </View>
                 ))}
@@ -172,7 +174,7 @@ export default function StrainScreen() {
                 <View style={styles.activityTypeSummary}>
                   {activityTypeTotals.map((entry) => (
                     <Text key={entry.activityType} style={styles.activityTypeSummaryItem}>
-                      {formatActivityTypeLabel(entry.activityType)}: {entry.hours.toFixed(1)}h
+                      {formatActivityTypeLabel(entry.activityType)}: {formatNumber(entry.hours)}h
                     </Text>
                   ))}
                 </View>
@@ -197,7 +199,7 @@ export default function StrainScreen() {
                     avgPower={activity.avg_power ?? null}
                     distanceKm={activity.distance_meters ? activity.distance_meters / 1000 : null}
                     calories={activity.calories ?? null}
-                    unitSystem={unitSystem}
+                    units={units}
                   />
                 ))}
               </View>

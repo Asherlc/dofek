@@ -21,7 +21,11 @@ export default defineConfig({
         test: {
           ...sharedTestConfig,
           name: "unit",
-          include: ["src/**/*.test.ts", "packages/*/src/**/*.test.{ts,tsx}"],
+          include: [
+            "src/**/*.test.ts",
+            "packages/*/src/**/*.test.{ts,tsx}",
+            "scripts/**/*.test.ts",
+          ],
           exclude: ["**/*.integration.test.ts", "packages/ios/**"],
         },
       },
@@ -36,7 +40,7 @@ export default defineConfig({
     ],
     coverage: {
       provider: "v8",
-      reporter: ["text", "json-summary"],
+      reporter: ["text", "json-summary", "lcov"],
       include: ["src/**/*.ts", "packages/*/src/**/*.ts"],
       exclude: [
         "**/*.test.ts",

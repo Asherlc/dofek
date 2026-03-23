@@ -1,8 +1,43 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DEFAULT_USER_ID, foodEntry, supplement, userProfile } from "../db/schema.ts";
+import {
+  DEFAULT_USER_ID,
+  foodEntry,
+  nutritionData,
+  supplement,
+  userProfile,
+} from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { AutoSupplementsProvider } from "./auto-supplements.ts";
+
+// ============================================================
+// Helpers
+// ============================================================
+
+/** Insert a supplement with its nutrition data in a single transaction. */
+async function insertSupplementWithNutrition(
+  db: TestContext["db"],
+  suppValues: {
+    userId: string;
+    name: string;
+    sortOrder: number;
+    meal?: "breakfast" | "lunch" | "dinner" | "snack" | "other";
+  },
+  nutrients: Record<string, number | null>,
+) {
+  const [ndRow] = await db
+    .insert(nutritionData)
+    .values(nutrients)
+    .returning({ id: nutritionData.id });
+
+  await db
+    .insert(supplement)
+    .values({
+      ...suppValues,
+      nutritionDataId: ndRow?.id,
+    })
+    .onConflictDoNothing();
+}
 
 // ============================================================
 // Integration tests for sync() with real DB
@@ -25,23 +60,16 @@ describe("AutoSupplementsProvider — sync() with DB (integration)", () => {
   });
 
   it("inserts supplement entries into the database", async () => {
-    // Insert supplement definitions for the default user
-    await ctx.db.insert(supplement).values([
-      {
-        userId: DEFAULT_USER_ID,
-        name: "Vitamin D3",
-        sortOrder: 0,
-        vitaminDMcg: 50,
-      },
-      {
-        userId: DEFAULT_USER_ID,
-        name: "Fish Oil",
-        sortOrder: 1,
-        calories: 10,
-        omega3Mg: 1000,
-        meal: "breakfast",
-      },
-    ]);
+    await insertSupplementWithNutrition(
+      ctx.db,
+      { userId: DEFAULT_USER_ID, name: "Vitamin D3", sortOrder: 0 },
+      { vitaminDMcg: 50 },
+    );
+    await insertSupplementWithNutrition(
+      ctx.db,
+      { userId: DEFAULT_USER_ID, name: "Fish Oil", sortOrder: 1, meal: "breakfast" },
+      { calories: 10, omega3Mg: 1000 },
+    );
 
     const provider = new AutoSupplementsProvider();
 
@@ -72,16 +100,11 @@ describe("AutoSupplementsProvider — sync() with DB (integration)", () => {
   });
 
   it("upserts on re-sync (updates existing entries)", async () => {
-    // Insert a supplement
-    await ctx.db
-      .insert(supplement)
-      .values({
-        userId: DEFAULT_USER_ID,
-        name: "Magnesium",
-        sortOrder: 0,
-        magnesiumMg: 400,
-      })
-      .onConflictDoNothing();
+    await insertSupplementWithNutrition(
+      ctx.db,
+      { userId: DEFAULT_USER_ID, name: "Magnesium", sortOrder: 0 },
+      { magnesiumMg: 400 },
+    );
 
     const provider = new AutoSupplementsProvider();
     const today = new Date();
@@ -113,16 +136,11 @@ describe("AutoSupplementsProvider — sync() with DB (integration)", () => {
   });
 
   it("handles multiple days in range", async () => {
-    // Insert a unique supplement for this test
-    await ctx.db
-      .insert(supplement)
-      .values({
-        userId: DEFAULT_USER_ID,
-        name: "TestMultiDay",
-        sortOrder: 0,
-        calories: 5,
-      })
-      .onConflictDoNothing();
+    await insertSupplementWithNutrition(
+      ctx.db,
+      { userId: DEFAULT_USER_ID, name: "TestMultiDay", sortOrder: 0 },
+      { calories: 5 },
+    );
 
     const provider = new AutoSupplementsProvider();
 
@@ -147,13 +165,11 @@ describe("AutoSupplementsProvider — sync() with DB (integration)", () => {
       .values({ id: secondUserId, name: "Second User" })
       .onConflictDoNothing();
 
-    // Insert supplements for second user
-    await ctx.db.insert(supplement).values({
-      userId: secondUserId,
-      name: "User2 Zinc",
-      sortOrder: 0,
-      zincMg: 15,
-    });
+    await insertSupplementWithNutrition(
+      ctx.db,
+      { userId: secondUserId, name: "User2 Zinc", sortOrder: 0 },
+      { zincMg: 15 },
+    );
 
     const provider = new AutoSupplementsProvider();
     const today = new Date();
@@ -169,7 +185,13 @@ describe("AutoSupplementsProvider — sync() with DB (integration)", () => {
       .where(eq(foodEntry.providerId, "auto-supplements"));
     const user2Entry = rows.find((r) => r.foodName === "User2 Zinc" && r.userId === secondUserId);
     expect(user2Entry).toBeDefined();
-    expect(user2Entry?.zincMg).toBe(15);
+
+    // Verify nutrition data was synced by checking via the view
+    const viewRows = await ctx.db.execute<{ zinc_mg: number | null }>(
+      sql`SELECT zinc_mg FROM fitness.v_food_entry_with_nutrition
+          WHERE food_name = 'User2 Zinc' AND user_id = ${secondUserId} LIMIT 1`,
+    );
+    expect(viewRows[0]?.zinc_mg).toBe(15);
   });
 
   it("returns empty result when no supplements exist in DB", async () => {

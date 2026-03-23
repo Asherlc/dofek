@@ -4,10 +4,13 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const TEST_SERVER_URL = "https://test.dofek.example.com";
+const mockGetRequestStatus = vi.fn();
 const mockRequestPermissions = vi.fn();
+const mockQueryDailyStatistics = vi.fn();
 const mockQueryQuantitySamples = vi.fn();
 const mockQueryWorkouts = vi.fn();
 const mockQuerySleepSamples = vi.fn();
+const mockIsBackgroundDeliveryEnabled = vi.fn();
 const mockEnableBackgroundDelivery = vi.fn();
 const mockPushQuantityMutate = vi.fn();
 const mockPushWorkoutsMutate = vi.fn();
@@ -50,10 +53,13 @@ vi.mock("expo-router", () => ({
 
 vi.mock("../../modules/health-kit", () => ({
 	isAvailable: () => true,
+	getRequestStatus: mockGetRequestStatus,
 	requestPermissions: mockRequestPermissions,
+	queryDailyStatistics: mockQueryDailyStatistics,
 	queryQuantitySamples: mockQueryQuantitySamples,
 	queryWorkouts: mockQueryWorkouts,
 	querySleepSamples: mockQuerySleepSamples,
+	isBackgroundDeliveryEnabled: mockIsBackgroundDeliveryEnabled,
 	enableBackgroundDelivery: mockEnableBackgroundDelivery,
 }));
 
@@ -71,6 +77,15 @@ vi.mock("../../lib/trpc", () => ({
 			get: { useQuery: (...args: unknown[]) => mockSettingsGet(...args) },
 			set: { useMutation: () => ({ mutateAsync: mockSettingsSetMutate }) },
 		},
+		useUtils: () => ({
+			client: {
+				healthKitSync: {
+					pushQuantitySamples: { mutate: mockPushQuantityMutate },
+					pushWorkouts: { mutate: mockPushWorkoutsMutate },
+					pushSleepSamples: { mutate: mockPushSleepMutate },
+				},
+			},
+		}),
 	},
 }));
 
@@ -100,7 +115,12 @@ vi.mock("../../lib/auth-context", () => ({
 
 describe("HealthScreen", () => {
 	beforeEach(() => {
+		mockGetRequestStatus.mockReset();
+		mockGetRequestStatus.mockResolvedValue("shouldRequest");
+		mockIsBackgroundDeliveryEnabled.mockReset();
+		mockIsBackgroundDeliveryEnabled.mockReturnValue(false);
 		mockRequestPermissions.mockReset();
+		mockQueryDailyStatistics.mockReset();
 		mockQueryQuantitySamples.mockReset();
 		mockQueryWorkouts.mockReset();
 		mockQuerySleepSamples.mockReset();
@@ -111,6 +131,7 @@ describe("HealthScreen", () => {
 		mockSettingsGet.mockReset();
 		mockSettingsSetMutate.mockReset();
 
+		mockQueryDailyStatistics.mockResolvedValue([]);
 		mockQueryQuantitySamples.mockResolvedValue([]);
 		mockQueryWorkouts.mockResolvedValue([]);
 		mockQuerySleepSamples.mockResolvedValue([]);
@@ -119,6 +140,25 @@ describe("HealthScreen", () => {
 		mockPushSleepMutate.mockResolvedValue({ inserted: 0 });
 		// Default: backfill already completed
 		mockSettingsGet.mockReturnValue({ data: { value: true }, isLoading: false });
+	});
+
+	it("hides request permissions button when permissions already granted", async () => {
+		mockGetRequestStatus.mockResolvedValue("unnecessary");
+		const { default: HealthScreen } = await import("./health");
+		render(<HealthScreen />);
+		await waitFor(() => {
+			expect(screen.getByText("HealthKit permissions granted.")).toBeTruthy();
+		});
+		expect(screen.queryByText("Request Permissions")).toBeNull();
+	});
+
+	it("shows request permissions button when permissions not yet requested", async () => {
+		mockGetRequestStatus.mockResolvedValue("shouldRequest");
+		const { default: HealthScreen } = await import("./health");
+		render(<HealthScreen />);
+		await waitFor(() => {
+			expect(screen.getByText("Request Permissions")).toBeTruthy();
+		});
 	});
 
 	it("renders the server URL from auth context", async () => {
@@ -181,11 +221,12 @@ describe("HealthScreen", () => {
 		fireEvent.click(screen.getByText("Sync Now"));
 
 		await waitFor(() => {
-			expect(mockQueryQuantitySamples).toHaveBeenCalled();
+			// Additive types are queried first via queryDailyStatistics
+			expect(mockQueryDailyStatistics).toHaveBeenCalled();
 		});
 
 		// The start date should be ~30 days ago, not 7
-		const firstCallStartDate = mockQueryQuantitySamples.mock.calls[0][1] as string;
+		const firstCallStartDate = mockQueryDailyStatistics.mock.calls[0][1] as string;
 		const startDate = new Date(firstCallStartDate);
 		const thirtyDaysAgo = new Date();
 		thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -202,10 +243,11 @@ describe("HealthScreen", () => {
 		fireEvent.click(screen.getByText("Sync Now"));
 
 		await waitFor(() => {
-			expect(mockQueryQuantitySamples).toHaveBeenCalled();
+			// Additive types are queried first via queryDailyStatistics
+			expect(mockQueryDailyStatistics).toHaveBeenCalled();
 		});
 
-		const firstCallStartDate = mockQueryQuantitySamples.mock.calls[0][1] as string;
+		const firstCallStartDate = mockQueryDailyStatistics.mock.calls[0][1] as string;
 		const startDate = new Date(firstCallStartDate);
 		// Epoch: 1970-01-01T00:00:00.000Z
 		expect(startDate.getTime()).toBe(0);
@@ -249,6 +291,15 @@ describe("HealthScreen", () => {
 		expect(mockSettingsSetMutate).not.toHaveBeenCalled();
 	});
 
+	it("shows background delivery as enabled when previously enabled on device", async () => {
+		mockIsBackgroundDeliveryEnabled.mockReturnValue(true);
+		const { default: HealthScreen } = await import("./health");
+		render(<HealthScreen />);
+		expect(screen.getByText("Background Delivery Enabled")).toBeTruthy();
+		const button = screen.getByText("Background Delivery Enabled").closest("button");
+		expect(button).toHaveProperty("disabled", true);
+	});
+
 	it("shows enabled state after enabling background delivery", async () => {
 		mockEnableBackgroundDelivery.mockResolvedValue(true);
 		const { default: HealthScreen } = await import("./health");
@@ -263,6 +314,23 @@ describe("HealthScreen", () => {
 		// Button should be disabled after enabling
 		const button = screen.getByText("Background Delivery Enabled").closest("button");
 		expect(button).toHaveProperty("disabled", true);
+	});
+
+	it("queries skin temperature from HealthKit during sync", async () => {
+		const { default: HealthScreen } = await import("./health");
+		render(<HealthScreen />);
+		fireEvent.click(screen.getByText("Sync Now"));
+
+		await waitFor(() => {
+			expect(mockQueryQuantitySamples).toHaveBeenCalled();
+		});
+
+		const queriedTypes = mockQueryQuantitySamples.mock.calls.map(
+			(call: unknown[]) => call[0] as string,
+		);
+		expect(queriedTypes).toContain(
+			"HKQuantityTypeIdentifierAppleSleepingWristTemperature",
+		);
 	});
 
 	it("normalizes missing workout optional fields to null before sync", async () => {

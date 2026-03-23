@@ -5,7 +5,13 @@ import { bodyMeasurement } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import type {
+  ProviderAuthSetup,
+  SyncError,
+  SyncOptions,
+  SyncProvider,
+  SyncResult,
+} from "./types.ts";
 
 // ============================================================
 // Withings API types
@@ -206,21 +212,21 @@ export async function refreshWithingsToken(
 // ============================================================
 
 export class WithingsClient {
-  private accessToken: string;
-  private fetchFn: typeof globalThis.fetch;
+  #accessToken: string;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.accessToken = accessToken;
-    this.fetchFn = fetchFn;
+    this.#accessToken = accessToken;
+    this.#fetchFn = fetchFn;
   }
 
-  private async post<T>(path: string, params: Record<string, string>): Promise<T> {
+  async #post<T>(path: string, params: Record<string, string>): Promise<T> {
     const body = new URLSearchParams(params);
 
-    const response = await this.fetchFn(`${WITHINGS_API_BASE}${path}`, {
+    const response = await this.#fetchFn(`${WITHINGS_API_BASE}${path}`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${this.accessToken}`,
+        Authorization: `Bearer ${this.#accessToken}`,
         "Content-Type": "application/x-www-form-urlencoded",
       },
       body: body.toString(),
@@ -244,7 +250,7 @@ export class WithingsClient {
     enddate: number,
     offset = 0,
   ): Promise<{ measuregrps: WithingsMeasureGroup[]; more: number; offset: number }> {
-    return this.post("/measure", {
+    return this.#post("/measure", {
       action: "getmeas",
       meastype: [
         MEAS_WEIGHT,
@@ -271,13 +277,13 @@ export class WithingsClient {
 // Provider implementation
 // ============================================================
 
-export class WithingsProvider implements Provider {
+export class WithingsProvider implements SyncProvider {
   readonly id = "withings";
   readonly name = "Withings";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -296,7 +302,7 @@ export class WithingsProvider implements Provider {
     };
   }
 
-  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
     const tokens = await loadTokens(db, this.id);
     if (!tokens) {
       throw new Error("No OAuth tokens found for Withings. Run: health-data auth withings");
@@ -313,12 +319,12 @@ export class WithingsProvider implements Provider {
         "WITHINGS_CLIENT_ID and WITHINGS_CLIENT_SECRET are required to refresh tokens",
       );
     if (!tokens.refreshToken) throw new Error("No refresh token for Withings");
-    const refreshed = await refreshWithingsToken(config, tokens.refreshToken, this.fetchFn);
+    const refreshed = await refreshWithingsToken(config, tokens.refreshToken, this.#fetchFn);
     await saveTokens(db, this.id, refreshed);
     return refreshed;
   }
 
-  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -327,56 +333,48 @@ export class WithingsProvider implements Provider {
 
     let tokens: TokenSet;
     try {
-      tokens = await this.resolveTokens(db);
+      tokens = await this.#resolveTokens(db);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
-    const client = new WithingsClient(tokens.accessToken, this.fetchFn);
+    const client = new WithingsClient(tokens.accessToken, this.#fetchFn);
     const sinceUnix = Math.floor(since.getTime() / 1000);
     const nowUnix = Math.floor(Date.now() / 1000);
 
     try {
-      const measCount = await withSyncLog(db, this.id, "body_measurement", async () => {
-        let count = 0;
-        let offset = 0;
-        let more = 1;
+      const measCount = await withSyncLog(
+        db,
+        this.id,
+        "body_measurement",
+        async () => {
+          let count = 0;
+          let offset = 0;
+          let more = 1;
 
-        while (more) {
-          const response = await client.getMeas(sinceUnix, nowUnix, offset);
+          while (more) {
+            const response = await client.getMeas(sinceUnix, nowUnix, offset);
 
-          for (const group of response.measuregrps) {
-            const parsed = parseMeasureGroup(group);
+            for (const group of response.measuregrps) {
+              const parsed = parseMeasureGroup(group);
 
-            // Skip empty groups (objectives or unknown types)
-            if (
-              parsed.weightKg === undefined &&
-              parsed.systolicBp === undefined &&
-              parsed.temperatureC === undefined
-            ) {
-              continue;
-            }
+              // Skip empty groups (objectives or unknown types)
+              if (
+                parsed.weightKg === undefined &&
+                parsed.systolicBp === undefined &&
+                parsed.temperatureC === undefined
+              ) {
+                continue;
+              }
 
-            try {
-              await db
-                .insert(bodyMeasurement)
-                .values({
-                  providerId: this.id,
-                  externalId: parsed.externalId,
-                  recordedAt: parsed.recordedAt,
-                  weightKg: parsed.weightKg,
-                  bodyFatPct: parsed.bodyFatPct,
-                  muscleMassKg: parsed.muscleMassKg,
-                  boneMassKg: parsed.boneMassKg,
-                  systolicBp: parsed.systolicBp,
-                  diastolicBp: parsed.diastolicBp,
-                  heartPulse: parsed.heartPulse,
-                  temperatureC: parsed.temperatureC,
-                })
-                .onConflictDoUpdate({
-                  target: [bodyMeasurement.providerId, bodyMeasurement.externalId],
-                  set: {
+              try {
+                await db
+                  .insert(bodyMeasurement)
+                  .values({
+                    providerId: this.id,
+                    externalId: parsed.externalId,
+                    recordedAt: parsed.recordedAt,
                     weightKg: parsed.weightKg,
                     bodyFatPct: parsed.bodyFatPct,
                     muscleMassKg: parsed.muscleMassKg,
@@ -385,24 +383,38 @@ export class WithingsProvider implements Provider {
                     diastolicBp: parsed.diastolicBp,
                     heartPulse: parsed.heartPulse,
                     temperatureC: parsed.temperatureC,
-                  },
+                  })
+                  .onConflictDoUpdate({
+                    target: [bodyMeasurement.providerId, bodyMeasurement.externalId],
+                    set: {
+                      weightKg: parsed.weightKg,
+                      bodyFatPct: parsed.bodyFatPct,
+                      muscleMassKg: parsed.muscleMassKg,
+                      boneMassKg: parsed.boneMassKg,
+                      systolicBp: parsed.systolicBp,
+                      diastolicBp: parsed.diastolicBp,
+                      heartPulse: parsed.heartPulse,
+                      temperatureC: parsed.temperatureC,
+                    },
+                  });
+                count++;
+              } catch (err) {
+                errors.push({
+                  message: err instanceof Error ? err.message : String(err),
+                  externalId: parsed.externalId,
+                  cause: err,
                 });
-              count++;
-            } catch (err) {
-              errors.push({
-                message: err instanceof Error ? err.message : String(err),
-                externalId: parsed.externalId,
-                cause: err,
-              });
+              }
             }
+
+            more = response.more;
+            offset = response.offset;
           }
 
-          more = response.more;
-          offset = response.offset;
-        }
-
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += measCount;
     } catch (err) {
       errors.push({

@@ -368,8 +368,8 @@ describe("xertOAuthConfig", () => {
     expect(config?.clientSecret).toBe("custom-secret");
   });
 
-  it("uses custom OAUTH_REDIRECT_URI when set", () => {
-    process.env.OAUTH_REDIRECT_URI = "https://example.com/callback";
+  it("uses custom OAUTH_REDIRECT_URI_unencrypted when set", () => {
+    process.env.OAUTH_REDIRECT_URI_unencrypted = "https://example.com/callback";
     const config = xertOAuthConfig();
     expect(config?.redirectUri).toBe("https://example.com/callback");
   });
@@ -389,14 +389,20 @@ describe("XertProvider.authSetup()", () => {
     process.env = { ...originalEnv };
   });
 
-  it("returns auth setup with public OAuth config", () => {
+  it("returns auth setup with automatedLogin (credential provider)", () => {
     delete process.env.XERT_CLIENT_ID;
     delete process.env.XERT_CLIENT_SECRET;
     const provider = new XertProvider();
     const setup = provider.authSetup();
     expect(setup.oauthConfig.clientId).toBe("xert_public");
-    expect(setup.exchangeCode).toBeTypeOf("function");
+    expect(setup.automatedLogin).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toContain("xertonline.com");
+  });
+
+  it("exchangeCode throws (not supported for credential providers)", async () => {
+    const provider = new XertProvider();
+    const setup = provider.authSetup();
+    await expect(setup.exchangeCode("code")).rejects.toThrow();
   });
 
   it("always works even without env vars", () => {

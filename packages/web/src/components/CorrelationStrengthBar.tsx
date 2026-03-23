@@ -1,3 +1,5 @@
+import { formatSigned } from "../lib/format.ts";
+
 interface CorrelationStrengthBarProps {
   rho: number;
 }
@@ -9,9 +11,9 @@ export function CorrelationStrengthBar({ rho }: CorrelationStrengthBarProps) {
 
   return (
     <div className="flex items-center gap-2">
-      <div className="relative h-3 flex-1 rounded-full bg-zinc-800 overflow-hidden">
+      <div className="relative h-3 flex-1 rounded-full bg-accent/10 overflow-hidden">
         {/* Center line */}
-        <div className="absolute left-1/2 top-0 bottom-0 w-px bg-zinc-600" />
+        <div className="absolute left-1/2 top-0 bottom-0 w-px bg-border-strong" />
         {/* Fill bar */}
         <div
           className={`absolute top-0 bottom-0 ${isPositive ? "bg-emerald-500/70" : "bg-rose-500/70"}`}
@@ -27,8 +29,7 @@ export function CorrelationStrengthBar({ rho }: CorrelationStrengthBarProps) {
           isPositive ? "text-emerald-400" : "text-rose-400"
         }`}
       >
-        {clampedRho >= 0 ? "+" : ""}
-        {clampedRho.toFixed(2)}
+        {formatSigned(clampedRho, 2)}
       </span>
     </div>
   );

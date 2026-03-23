@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
-import { formatDurationMinutes } from "../../lib/format";
+import { formatDurationMinutes } from "@dofek/format/format";
 import { colors } from "../../theme";
 
 interface SleepBarProps {
@@ -21,6 +21,35 @@ const STAGE_COLORS = {
   awake: "#FF8A65", // orange
 };
 
+/**
+ * Round percentages so they sum to exactly 100.
+ * This prevents impossible displays like "97% light + 4% awake = 101%".
+ *
+ * Approach: round each value normally, then adjust the largest value to
+ * absorb any rounding drift. The largest stage is least visually affected
+ * by a 1-point adjustment.
+ */
+export function normalizePercentages(values: number[]): number[] {
+  const total = values.reduce((sum, v) => sum + v, 0);
+  if (total === 0) return values.map(() => 0);
+
+  // Scale so values sum to 100, then round each
+  const scale = 100 / total;
+  const rounded = values.map((v) => Math.round(v * scale));
+  const diff = rounded.reduce((sum, v) => sum + v, 0) - 100;
+
+  if (diff !== 0) {
+    // Adjust the largest value — least noticeable visually
+    let maxIndex = 0;
+    for (let i = 1; i < rounded.length; i++) {
+      if (rounded[i] > rounded[maxIndex]) maxIndex = i;
+    }
+    rounded[maxIndex] -= diff;
+  }
+
+  return rounded;
+}
+
 export function SleepBar({
   durationMinutes,
   deepPercentage,
@@ -29,11 +58,14 @@ export function SleepBar({
   awakePercentage,
   showLegend = true,
 }: SleepBarProps) {
+  const rawPercentages = [deepPercentage, remPercentage, lightPercentage, awakePercentage];
+  const displayPercentages = normalizePercentages(rawPercentages);
+
   const stages = [
-    { key: "deep", label: "Deep", percentage: deepPercentage, color: STAGE_COLORS.deep },
-    { key: "rem", label: "REM Sleep", percentage: remPercentage, color: STAGE_COLORS.rem },
-    { key: "light", label: "Light", percentage: lightPercentage, color: STAGE_COLORS.light },
-    { key: "awake", label: "Awake", percentage: awakePercentage, color: STAGE_COLORS.awake },
+    { key: "deep", label: "Deep", percentage: deepPercentage, displayPct: displayPercentages[0] ?? 0, color: STAGE_COLORS.deep },
+    { key: "rem", label: "REM Sleep", percentage: remPercentage, displayPct: displayPercentages[1] ?? 0, color: STAGE_COLORS.rem },
+    { key: "light", label: "Light", percentage: lightPercentage, displayPct: displayPercentages[2] ?? 0, color: STAGE_COLORS.light },
+    { key: "awake", label: "Awake", percentage: awakePercentage, displayPct: displayPercentages[3] ?? 0, color: STAGE_COLORS.awake },
   ];
 
   return (
@@ -41,13 +73,13 @@ export function SleepBar({
       <Text style={styles.duration}>{formatDurationMinutes(durationMinutes)}</Text>
       <View style={styles.bar}>
         {stages.map((stage) =>
-          stage.percentage > 0 ? (
+          stage.displayPct > 0 ? (
             <View
               key={stage.key}
               style={[
                 styles.segment,
                 {
-                  flex: stage.percentage,
+                  flex: stage.displayPct,
                   backgroundColor: stage.color,
                 },
               ]}
@@ -61,7 +93,7 @@ export function SleepBar({
             <View key={stage.key} style={styles.legendItem}>
               <View style={[styles.legendDot, { backgroundColor: stage.color }]} />
               <Text style={styles.legendLabel}>
-                {stage.label} {Math.round(stage.percentage)}%
+                {stage.label} {stage.displayPct}%
               </Text>
             </View>
           ))}

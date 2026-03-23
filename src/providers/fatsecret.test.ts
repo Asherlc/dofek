@@ -3,6 +3,7 @@ import {
   buildOAuth1Header,
   type FatSecretFoodEntriesResponse,
   FatSecretProvider,
+  fatSecretFoodEntriesResponseSchema,
   inferCategory,
   parseFoodEntries,
 } from "./fatsecret.ts";
@@ -300,6 +301,13 @@ describe("FatSecret Provider", () => {
       expect(parseFoodEntries(response)).toHaveLength(0);
     });
 
+    it("returns empty array when food_entries is null", () => {
+      const response: FatSecretFoodEntriesResponse = {
+        food_entries: null,
+      };
+      expect(parseFoodEntries(response)).toHaveLength(0);
+    });
+
     it("maps unknown meal to 'other'", () => {
       const response: FatSecretFoodEntriesResponse = {
         food_entries: {
@@ -324,6 +332,25 @@ describe("FatSecret Provider", () => {
 
       const entries = parseFoodEntries(response);
       expect(entries[0]?.meal).toBe("other");
+    });
+  });
+
+  describe("fatSecretFoodEntriesResponseSchema — empty day responses", () => {
+    it("accepts response with no food_entries key (empty day)", () => {
+      const result = fatSecretFoodEntriesResponseSchema.parse({});
+      expect(result.food_entries).toBeUndefined();
+      expect(parseFoodEntries(result)).toHaveLength(0);
+    });
+
+    it("accepts response with food_entries: null", () => {
+      const result = fatSecretFoodEntriesResponseSchema.parse({ food_entries: null });
+      expect(result.food_entries).toBeNull();
+      expect(parseFoodEntries(result)).toHaveLength(0);
+    });
+
+    it("accepts response with valid food entries", () => {
+      const result = fatSecretFoodEntriesResponseSchema.parse(singleEntryResponse);
+      expect(result.food_entries?.food_entry).toHaveLength(1);
     });
   });
 

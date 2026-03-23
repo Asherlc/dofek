@@ -1,15 +1,28 @@
+import * as Sentry from "@sentry/node";
 import { Worker } from "bullmq";
 import { createDatabaseFromEnv } from "../db/index.ts";
 import { jobContext, logger } from "../logger.ts";
+import { processExportJob } from "./process-export-job.ts";
 import { processImportJob } from "./process-import-job.ts";
+import { processScheduledSyncJob } from "./process-scheduled-sync-job.ts";
 import { processSyncJob } from "./process-sync-job.ts";
 import {
+  EXPORT_QUEUE,
+  type ExportJobData,
   getRedisConnection,
   IMPORT_QUEUE,
   type ImportJobData,
+  SCHEDULED_SYNC_QUEUE,
+  type ScheduledSyncJobData,
   SYNC_QUEUE,
   type SyncJobData,
 } from "./queues.ts";
+import { setupScheduledSync } from "./scheduled-sync.ts";
+
+const sentryDsn = process.env.SENTRY_DSN || process.env.SENTRY_DSN_unencrypted;
+if (sentryDsn) {
+  Sentry.init({ dsn: sentryDsn, skipOpenTelemetrySetup: true });
+}
 
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -26,6 +39,16 @@ const syncWorker = new Worker<SyncJobData>(
 const importWorker = new Worker<ImportJobData>(
   IMPORT_QUEUE,
   (job) => jobContext.run(job, () => processImportJob(job, db)),
+  { connection },
+);
+const exportWorker = new Worker<ExportJobData>(
+  EXPORT_QUEUE,
+  (job) => jobContext.run(job, () => processExportJob(job, db)),
+  { connection },
+);
+const scheduledSyncWorker = new Worker<ScheduledSyncJobData>(
+  SCHEDULED_SYNC_QUEUE,
+  (job) => jobContext.run(job, () => processScheduledSyncJob(job, db)),
   { connection },
 );
 
@@ -49,7 +72,7 @@ function startIdleTimer() {
   }, IDLE_TIMEOUT_MS);
 }
 
-for (const worker of [syncWorker, importWorker]) {
+for (const worker of [syncWorker, importWorker, exportWorker, scheduledSyncWorker]) {
   worker.on("active", () => {
     activeJobs++;
     resetIdleTimer();
@@ -62,17 +85,27 @@ for (const worker of [syncWorker, importWorker]) {
 
   worker.on("failed", (_job, err) => {
     activeJobs--;
+    Sentry.captureException(err);
     logger.error(`[worker] Job failed: ${err.message}`);
     if (activeJobs <= 0) startIdleTimer();
   });
 
   worker.on("error", (err) => {
+    Sentry.captureException(err);
     logger.error(`[worker] Worker error: ${err.message}`);
   });
 }
 
 // Start idle timer immediately (exit if no jobs arrive within timeout)
 startIdleTimer();
+
+// Set up periodic sync for API providers
+const syncIntervalMinutes = process.env.SYNC_INTERVAL_MINUTES
+  ? Number(process.env.SYNC_INTERVAL_MINUTES)
+  : 30;
+setupScheduledSync(syncIntervalMinutes).catch((err) => {
+  logger.error(`[worker] Failed to set up scheduled sync: ${err}`);
+});
 
 // ── Graceful shutdown ──
 
@@ -82,7 +115,12 @@ async function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
   logger.info("[worker] Shutting down gracefully...");
-  await Promise.all([syncWorker.close(), importWorker.close()]);
+  await Promise.all([
+    syncWorker.close(),
+    importWorker.close(),
+    exportWorker.close(),
+    scheduledSyncWorker.close(),
+  ]);
   logger.info("[worker] Shutdown complete.");
   process.exit(0);
 }
@@ -95,6 +133,7 @@ process.on("SIGINT", shutdown);
 // processor's try/catch (e.g., from concurrent batch inserts via postgres.js).
 // Log the error but keep the worker alive so it can process the next job.
 process.on("unhandledRejection", (err) => {
+  Sentry.captureException(err);
   logger.error(`[worker] Unhandled rejection (worker still running): ${err}`);
 });
 

@@ -1,8 +1,10 @@
+import { pearsonCorrelation } from "@dofek/stats/correlation";
+
 export interface ReadinessWeightsInput {
   hrvScore: number;
   rhrScore: number;
   sleepScore: number;
-  loadBalanceScore: number;
+  respiratoryRateScore: number;
   /** Next-day HRV z-score (positive = good recovery) */
   nextDayHrvZScore: number;
 }
@@ -11,7 +13,7 @@ export interface ReadinessWeightsFitResult {
   hrv: number;
   restingHr: number;
   sleep: number;
-  loadBalance: number;
+  respiratoryRate: number;
   sampleCount: number;
   /** Pearson correlation between weighted score and next-day HRV z-score */
   correlation: number;
@@ -37,7 +39,7 @@ export function fitReadinessWeights(
   if (data.length < MIN_DAYS) return null;
 
   let bestCorrelation = 0;
-  let bestWeights = { hrv: 0.4, restingHr: 0.2, sleep: 0.2, loadBalance: 0.2 };
+  let bestWeights = { hrv: 0.4, restingHr: 0.2, sleep: 0.2, respiratoryRate: 0.2 };
 
   // Grid search: all 4-tuples summing to 1.0, each >= MIN_WEIGHT, step 0.05
   const weightValues: number[] = [];
@@ -49,14 +51,14 @@ export function fitReadinessWeights(
     for (const wRhr of weightValues) {
       if (wHrv + wRhr > 1 - 2 * MIN_WEIGHT + 0.001) continue;
       for (const wSleep of weightValues) {
-        const wLoad = Math.round((1 - wHrv - wRhr - wSleep) * 100) / 100;
-        if (wLoad < MIN_WEIGHT - 0.001) continue;
-        if (Math.abs(wHrv + wRhr + wSleep + wLoad - 1.0) > 0.01) continue;
+        const wResp = Math.round((1 - wHrv - wRhr - wSleep) * 100) / 100;
+        if (wResp < MIN_WEIGHT - 0.001) continue;
+        if (Math.abs(wHrv + wRhr + wSleep + wResp - 1.0) > 0.01) continue;
 
-        const correlation = computeWeightedCorrelation(data, wHrv, wRhr, wSleep, wLoad);
+        const correlation = computeWeightedCorrelation(data, wHrv, wRhr, wSleep, wResp);
         if (correlation > bestCorrelation) {
           bestCorrelation = correlation;
-          bestWeights = { hrv: wHrv, restingHr: wRhr, sleep: wSleep, loadBalance: wLoad };
+          bestWeights = { hrv: wHrv, restingHr: wRhr, sleep: wSleep, respiratoryRate: wResp };
         }
       }
     }
@@ -76,7 +78,7 @@ function computeWeightedCorrelation(
   wHrv: number,
   wRhr: number,
   wSleep: number,
-  wLoad: number,
+  wResp: number,
 ): number {
   const scores: number[] = [];
   const outcomes: number[] = [];
@@ -86,37 +88,10 @@ function computeWeightedCorrelation(
       wHrv * row.hrvScore +
       wRhr * row.rhrScore +
       wSleep * row.sleepScore +
-      wLoad * row.loadBalanceScore;
+      wResp * row.respiratoryRateScore;
     scores.push(weighted);
     outcomes.push(row.nextDayHrvZScore);
   }
 
-  return pearsonCorrelation(scores, outcomes);
-}
-
-function pearsonCorrelation(xs: number[], ys: number[]): number {
-  const n = xs.length;
-  if (n === 0) return 0;
-
-  let sumX = 0;
-  let sumY = 0;
-  let sumXY = 0;
-  let sumX2 = 0;
-  let sumY2 = 0;
-
-  for (let i = 0; i < n; i++) {
-    const x = xs[i] ?? 0;
-    const y = ys[i] ?? 0;
-    sumX += x;
-    sumY += y;
-    sumXY += x * y;
-    sumX2 += x * x;
-    sumY2 += y * y;
-  }
-
-  const numerator = n * sumXY - sumX * sumY;
-  const denominator = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
-
-  if (denominator === 0) return 0;
-  return numerator / denominator;
+  return pearsonCorrelation(scores, outcomes).r;
 }

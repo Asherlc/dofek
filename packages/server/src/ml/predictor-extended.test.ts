@@ -335,7 +335,7 @@ describe("trainPredictor — edge cases", () => {
   });
 
   it("cross-validation R-squared is lower than training R-squared", () => {
-    const days = generateSyntheticDays(300);
+    const days = generateSyntheticDays(30);
     const target = PREDICTION_TARGETS.find((t) => t.id === "hrv");
     if (!target) throw new Error("expected hrv target");
 

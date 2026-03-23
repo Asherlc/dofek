@@ -1,6 +1,8 @@
 import { rampRateColor } from "@dofek/scoring/scoring";
 import type { RampRateWeek } from "dofek-server/types";
-import ReactECharts from "echarts-for-react";
+import { dofekAxis, dofekGrid, dofekTooltip } from "../lib/chartTheme.ts";
+import { formatNumber } from "../lib/format.ts";
+import { DofekChart } from "./DofekChart.tsx";
 
 interface RampRateChartProps {
   data: RampRateWeek[];
@@ -16,13 +18,8 @@ interface RampRateWeekData {
 
 export function buildRampRateOption(data: RampRateWeekData[]) {
   return {
-    backgroundColor: "transparent",
-    grid: { top: 50, right: 20, bottom: 50, left: 55 },
-    tooltip: {
-      trigger: "axis" as const,
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
+    grid: dofekGrid("single", { top: 50, bottom: 50, left: 55 }),
+    tooltip: dofekTooltip({
       formatter(params: Array<{ dataIndex: number; value: [string, number]; marker: string }>) {
         if (!params.length) return "";
         const first = params[0];
@@ -38,23 +35,12 @@ export function buildRampRateOption(data: RampRateWeekData[]) {
         });
         return [
           `<strong>${dateLabel}</strong>`,
-          `Ramp Rate: <span style="color:${color}">${d.rampRate.toFixed(2)}</span>`,
+          `Ramp Rate: <span style="color:${color}">${formatNumber(d.rampRate, 2)}</span>`,
         ].join("<br/>");
       },
-    },
-    xAxis: {
-      type: "time" as const,
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
-    },
-    yAxis: {
-      type: "value" as const,
-      name: "Ramp Rate (fitness/week)",
-      splitLine: { lineStyle: { color: "#27272a" } },
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { show: false },
-      nameTextStyle: { color: "#71717a", fontSize: 11 },
-    },
+    }),
+    xAxis: dofekAxis.time(),
+    yAxis: dofekAxis.value({ name: "Ramp Rate (fitness/week)" }),
     series: [
       {
         name: "Ramp Rate",
@@ -87,24 +73,7 @@ export function RampRateChart({
   recommendation,
   loading,
 }: RampRateChartProps) {
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[300px]">
-        <span className="text-zinc-600 text-sm">Loading ramp rate data...</span>
-      </div>
-    );
-  }
-
-  if (data.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-[300px]">
-        <span className="text-zinc-600 text-sm">No ramp rate data available</span>
-      </div>
-    );
-  }
-
-  const option = buildRampRateOption(data);
-
+  const option = data.length > 0 ? buildRampRateOption(data) : {};
   const badgeColor = rampRateColor(currentRampRate);
 
   return (
@@ -118,11 +87,17 @@ export function RampRateChart({
             backgroundColor: `${badgeColor}15`,
           }}
         >
-          Current: {currentRampRate.toFixed(2)}
+          Current: {formatNumber(currentRampRate, 2)}
         </span>
-        <span className="text-xs text-zinc-500">{recommendation}</span>
+        <span className="text-xs text-subtle">{recommendation}</span>
       </div>
-      <ReactECharts option={option} style={{ height: 300 }} notMerge={true} />
+      <DofekChart
+        option={option}
+        loading={loading}
+        empty={data.length === 0}
+        height={300}
+        emptyMessage="No ramp rate data available"
+      />
     </div>
   );
 }

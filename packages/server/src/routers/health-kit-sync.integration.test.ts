@@ -70,7 +70,7 @@ describe("HealthKit sync router", () => {
       // Verify in DB
       const rows = await testCtx.db.execute(
         sql`SELECT * FROM fitness.body_measurement
-            WHERE provider_id = 'apple_health_kit'
+            WHERE provider_id = 'apple_health'
               AND external_id = 'hk:body-mass-uuid-1'`,
       );
       expect(rows.length).toBe(1);
@@ -97,7 +97,7 @@ describe("HealthKit sync router", () => {
 
       const rows = await testCtx.db.execute(
         sql`SELECT * FROM fitness.body_measurement
-            WHERE provider_id = 'apple_health_kit'
+            WHERE provider_id = 'apple_health'
               AND external_id = 'hk:body-fat-uuid-1'`,
       );
       expect(rows.length).toBe(1);
@@ -158,7 +158,7 @@ describe("HealthKit sync router", () => {
       // Check aggregated daily metrics
       const rows = await testCtx.db.execute(
         sql`SELECT * FROM fitness.daily_metrics
-            WHERE provider_id = 'apple_health_kit'
+            WHERE provider_id = 'apple_health'
               AND date = '2025-06-02'`,
       );
       expect(rows.length).toBe(1);
@@ -201,7 +201,7 @@ describe("HealthKit sync router", () => {
 
       const rows = await testCtx.db.execute(
         sql`SELECT hrv FROM fitness.daily_metrics
-            WHERE provider_id = 'apple_health_kit'
+            WHERE provider_id = 'apple_health'
               AND date = '2025-06-02'`,
       );
       expect(rows.length).toBe(1);
@@ -229,7 +229,7 @@ describe("HealthKit sync router", () => {
 
       const rows = await testCtx.db.execute(
         sql`SELECT * FROM fitness.daily_metrics
-            WHERE provider_id = 'apple_health_kit'
+            WHERE provider_id = 'apple_health'
               AND date = '2025-06-03'`,
       );
       expect(rows.length).toBe(1);
@@ -268,7 +268,7 @@ describe("HealthKit sync router", () => {
 
       const rows = await testCtx.db.execute(
         sql`SELECT * FROM fitness.metric_stream
-            WHERE provider_id = 'apple_health_kit'
+            WHERE provider_id = 'apple_health'
             ORDER BY recorded_at`,
       );
       expect(rows.length).toBeGreaterThanOrEqual(2);
@@ -279,6 +279,96 @@ describe("HealthKit sync router", () => {
       const spo2Row = rows.find((r: Record<string, unknown>) => r.spo2 !== null);
       expect(spo2Row).toBeDefined();
       expect(spo2Row?.spo2).toBeCloseTo(0.98, 2);
+    });
+
+    it("aggregates SpO2 from metric_stream into daily_metrics as percentage", async () => {
+      // Push multiple SpO2 readings for the same day (stored as fractions 0-1)
+      const result = await mutate("healthKitSync.pushQuantitySamples", {
+        samples: [
+          {
+            type: "HKQuantityTypeIdentifierOxygenSaturation",
+            value: 0.96,
+            unit: "%",
+            startDate: "2025-07-01T08:00:00Z",
+            endDate: "2025-07-01T08:00:00Z",
+            sourceName: "Apple Watch",
+            sourceBundle: "com.apple.health",
+            uuid: "spo2-agg-uuid-1",
+          },
+          {
+            type: "HKQuantityTypeIdentifierOxygenSaturation",
+            value: 0.98,
+            unit: "%",
+            startDate: "2025-07-01T14:00:00Z",
+            endDate: "2025-07-01T14:00:00Z",
+            sourceName: "Apple Watch",
+            sourceBundle: "com.apple.health",
+            uuid: "spo2-agg-uuid-2",
+          },
+          {
+            type: "HKQuantityTypeIdentifierOxygenSaturation",
+            value: 0.97,
+            unit: "%",
+            startDate: "2025-07-01T20:00:00Z",
+            endDate: "2025-07-01T20:00:00Z",
+            sourceName: "Apple Watch",
+            sourceBundle: "com.apple.health",
+            uuid: "spo2-agg-uuid-3",
+          },
+        ],
+      });
+
+      expect(result.result.data.inserted).toBe(3);
+      expect(result.result.data.errors).toEqual([]);
+
+      // Verify daily_metrics.spo2_avg is populated as percentage (0-100 scale)
+      const rows = await testCtx.db.execute(
+        sql`SELECT spo2_avg FROM fitness.daily_metrics
+            WHERE provider_id = 'apple_health'
+              AND date = '2025-07-01'`,
+      );
+      expect(rows.length).toBe(1);
+      // Average of 0.96, 0.98, 0.97 = 0.97 → 97% on 0-100 scale
+      expect(rows[0]?.spo2_avg).toBeCloseTo(97, 0);
+    });
+
+    it("aggregates wrist temperature from metric_stream into daily_metrics", async () => {
+      const result = await mutate("healthKitSync.pushQuantitySamples", {
+        samples: [
+          {
+            type: "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
+            value: 33.2,
+            unit: "degC",
+            startDate: "2025-07-02T02:00:00Z",
+            endDate: "2025-07-02T02:00:00Z",
+            sourceName: "Apple Watch",
+            sourceBundle: "com.apple.health",
+            uuid: "wrist-temp-uuid-1",
+          },
+          {
+            type: "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
+            value: 33.6,
+            unit: "degC",
+            startDate: "2025-07-02T04:00:00Z",
+            endDate: "2025-07-02T04:00:00Z",
+            sourceName: "Apple Watch",
+            sourceBundle: "com.apple.health",
+            uuid: "wrist-temp-uuid-2",
+          },
+        ],
+      });
+
+      expect(result.result.data.inserted).toBe(2);
+      expect(result.result.data.errors).toEqual([]);
+
+      // Verify daily_metrics.skin_temp_c is populated (average of 33.2 and 33.6 = 33.4)
+      const rows = await testCtx.db.execute(
+        sql`SELECT skin_temp_c FROM fitness.daily_metrics
+            WHERE provider_id = 'apple_health'
+              AND date = '2025-07-02'`,
+      );
+      expect(rows.length).toBe(1);
+      expect(rows[0]?.skin_temp_c).toBeCloseTo(33.4, 1);
     });
   });
 
@@ -303,7 +393,7 @@ describe("HealthKit sync router", () => {
 
       const rows = await testCtx.db.execute(
         sql`SELECT * FROM fitness.health_event
-            WHERE provider_id = 'apple_health_kit'
+            WHERE provider_id = 'apple_health'
               AND external_id = 'hk:unknown-uuid-1'`,
       );
       expect(rows.length).toBe(1);
@@ -334,7 +424,7 @@ describe("HealthKit sync router", () => {
 
       const rows = await testCtx.db.execute(
         sql`SELECT * FROM fitness.activity
-            WHERE provider_id = 'apple_health_kit'
+            WHERE provider_id = 'apple_health'
               AND external_id = 'hk:workout:workout-uuid-1'`,
       );
       expect(rows.length).toBe(1);
@@ -362,7 +452,7 @@ describe("HealthKit sync router", () => {
 
       const rows = await testCtx.db.execute(
         sql`SELECT * FROM fitness.activity
-            WHERE provider_id = 'apple_health_kit'
+            WHERE provider_id = 'apple_health'
               AND external_id = 'hk:workout:workout-uuid-unknown'`,
       );
       expect(rows.length).toBe(1);
@@ -416,14 +506,16 @@ describe("HealthKit sync router", () => {
 
       const rows = await testCtx.db.execute(
         sql`SELECT * FROM fitness.sleep_session
-            WHERE provider_id = 'apple_health_kit'
-              AND external_id = 'hk:sleep:sleep-inbed-1'`,
+            WHERE provider_id = 'apple_health'
+              AND external_id = 'hk:sleep:sleep-inbed-1:Apple Watch'`,
       );
       expect(rows.length).toBe(1);
       expect(rows[0]?.deep_minutes).toBe(60);
       expect(rows[0]?.rem_minutes).toBe(60);
       expect(rows[0]?.light_minutes).toBe(240);
       expect(rows[0]?.awake_minutes).toBe(15);
+      // Efficiency is not stored — derived in v_sleep view
+      expect(rows[0]?.efficiency_pct).toBeNull();
     });
 
     it("derives a session from stage-only samples when inBed is missing", async () => {
@@ -464,14 +556,16 @@ describe("HealthKit sync router", () => {
 
       const rows = await testCtx.db.execute(
         sql`SELECT * FROM fitness.sleep_session
-            WHERE provider_id = 'apple_health_kit'
-              AND external_id = 'hk:sleep:stage-only-light-1'`,
+            WHERE provider_id = 'apple_health'
+              AND external_id = 'hk:sleep:stage-only-light-1:Apple Watch'`,
       );
       expect(rows.length).toBe(1);
       expect(rows[0]?.deep_minutes).toBe(180);
       expect(rows[0]?.rem_minutes).toBe(60);
       expect(rows[0]?.light_minutes).toBe(180);
       expect(rows[0]?.awake_minutes).toBe(15);
+      // Efficiency is not stored — derived in v_sleep view
+      expect(rows[0]?.efficiency_pct).toBeNull();
     });
   });
 
@@ -495,7 +589,7 @@ describe("HealthKit sync router", () => {
 
       const rows = await testCtx.db.execute(
         sql`SELECT * FROM fitness.body_measurement
-            WHERE provider_id = 'apple_health_kit'
+            WHERE provider_id = 'apple_health'
               AND external_id = 'hk:dedup-body-uuid-1'`,
       );
       expect(rows.length).toBe(1);
@@ -521,7 +615,7 @@ describe("HealthKit sync router", () => {
 
       const rows = await testCtx.db.execute(
         sql`SELECT * FROM fitness.activity
-            WHERE provider_id = 'apple_health_kit'
+            WHERE provider_id = 'apple_health'
               AND external_id = 'hk:workout:dedup-workout-uuid-1'`,
       );
       expect(rows.length).toBe(1);
@@ -550,8 +644,8 @@ describe("HealthKit sync router", () => {
 
       const rows = await testCtx.db.execute(
         sql`SELECT * FROM fitness.sleep_session
-            WHERE provider_id = 'apple_health_kit'
-              AND external_id = 'hk:sleep:dedup-sleep-inbed-1'`,
+            WHERE provider_id = 'apple_health'
+              AND external_id = 'hk:sleep:dedup-sleep-inbed-1:Apple Watch'`,
       );
       expect(rows.length).toBe(1);
     });

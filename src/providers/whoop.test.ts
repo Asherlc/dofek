@@ -464,6 +464,50 @@ describe("WHOOP Provider — parsing", () => {
       expect(result.restingHr).toBeUndefined();
       expect(result.hrv).toBeUndefined();
     });
+
+    it("parses BFF v0 flat recovery format (state: complete, fields at top level)", () => {
+      // This is the actual shape returned by the WHOOP BFF API in production.
+      // Fields are flat (not nested under `score`) and use different key names.
+      const bffRecovery: WhoopRecoveryRecord = {
+        cycle_id: 93845,
+        sleep_id: 10235,
+        user_id: 10129,
+        created_at: "2026-03-19T11:25:44.774Z",
+        updated_at: "2026-03-19T14:25:44.774Z",
+        score_state: "complete",
+        recovery_score: 88,
+        resting_heart_rate: 57,
+        hrv_rmssd: 0.077110276,
+        spo2_percentage: 96.5,
+        skin_temp_celsius: 34.2,
+        calibrating: false,
+      };
+      const result = parseRecovery(bffRecovery);
+      expect(result.restingHr).toBe(57);
+      expect(result.hrv).toBeCloseTo(77.1, 0);
+      expect(result.spo2).toBeCloseTo(96.5);
+      expect(result.skinTemp).toBeCloseTo(34.2);
+    });
+
+    it("parses BFF v0 recovery with missing optional fields", () => {
+      const bffRecovery: WhoopRecoveryRecord = {
+        cycle_id: 93846,
+        sleep_id: 10236,
+        user_id: 10129,
+        created_at: "2026-03-20T11:25:44.774Z",
+        updated_at: "2026-03-20T14:25:44.774Z",
+        score_state: "complete",
+        recovery_score: 72,
+        resting_heart_rate: 60,
+        hrv_rmssd: 0.055,
+        calibrating: false,
+      };
+      const result = parseRecovery(bffRecovery);
+      expect(result.restingHr).toBe(60);
+      expect(result.hrv).toBeCloseTo(55, 0);
+      expect(result.spo2).toBeUndefined();
+      expect(result.skinTemp).toBeUndefined();
+    });
   });
 
   describe("parseSleep", () => {
@@ -1728,14 +1772,17 @@ describe("WhoopProvider.sync() — journal sync", () => {
 
     // Verify journal entry inserts
     const valuesCallArgs = getValuesCallArgs(db);
-    const caffeineInsert = findValuesRecord(valuesCallArgs, (rec) => rec.question === "caffeine");
+    const caffeineInsert = findValuesRecord(
+      valuesCallArgs,
+      (rec) => rec.questionSlug === "caffeine",
+    );
     expect(caffeineInsert).toBeDefined();
     expect(caffeineInsert?.providerId).toBe("whoop");
     expect(caffeineInsert?.date).toBe("2026-03-01");
     expect(caffeineInsert?.answerNumeric).toBe(2);
     expect(caffeineInsert?.impactScore).toBe(0.3);
 
-    const alcoholInsert = findValuesRecord(valuesCallArgs, (rec) => rec.question === "alcohol");
+    const alcoholInsert = findValuesRecord(valuesCallArgs, (rec) => rec.questionSlug === "alcohol");
     expect(alcoholInsert).toBeDefined();
     expect(alcoholInsert?.answerText).toBe("none");
     expect(alcoholInsert?.impactScore).toBe(-0.1);

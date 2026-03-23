@@ -1,3 +1,4 @@
+import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { Link } from "@tanstack/react-router";
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -6,6 +7,7 @@ import { formatRelativeTime, formatTime } from "../lib/dates.ts";
 import { pollSyncJob } from "../lib/poll-sync-job.ts";
 import { trpc } from "../lib/trpc.ts";
 import { ProviderLogo } from "./ProviderLogo.tsx";
+import { ProviderStatsBreakdown } from "./ProviderStatsBreakdown.tsx";
 
 const oauthBroadcastMessage = z.object({
   type: z.literal("complete"),
@@ -39,9 +41,13 @@ export function DataSourcesPanel() {
   const activeSyncs = trpc.sync.activeSyncs.useQuery(undefined, { staleTime: 0 });
   const resumedJobIds = useRef(new Set<string>());
 
-  // Custom auth modal state
+  // Auth modal state
   const [whoopAuthOpen, setWhoopAuthOpen] = useState(false);
   const [garminAuthOpen, setGarminAuthOpen] = useState(false);
+  const [credentialAuthProvider, setCredentialAuthProvider] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
   const updateState = useCallback(
     (id: string, state: ProviderState) => setProviderStates((prev) => ({ ...prev, [id]: state })),
@@ -56,9 +62,7 @@ export function DataSourcesPanel() {
         fetchStatus: (id) => trpcUtils.sync.syncStatus.fetch({ jobId: id }, { staleTime: 0 }),
         updateState,
         onComplete: () => {
-          trpcUtils.sync.providers.invalidate();
-          trpcUtils.sync.providerStats.invalidate();
-          trpcUtils.sync.logs.invalidate();
+          trpcUtils.invalidate();
         },
       }),
     [trpcUtils, updateState],
@@ -233,23 +237,28 @@ export function DataSourcesPanel() {
   }, [trpcUtils, handleSync]);
 
   const handleProviderClick = useCallback(
-    (
-      p: { id: string; needsOAuth: boolean; needsCustomAuth?: boolean; authorized: boolean },
-      fullSync = false,
-    ) => {
-      if (p.needsCustomAuth && !p.authorized) {
-        if (p.id === "garmin") {
-          setGarminAuthOpen(true);
-        } else {
+    (p: { id: string; name: string; authType: string; authorized: boolean }, fullSync = false) => {
+      if (p.authorized) {
+        handleSync(p.id, fullSync);
+        return;
+      }
+      switch (p.authType) {
+        case "oauth":
+        case "oauth1":
+          window.open(`/auth/provider/${p.id}`, "_blank");
+          break;
+        case "credential":
+          setCredentialAuthProvider({ id: p.id, name: p.name });
+          break;
+        case "custom:whoop":
           setWhoopAuthOpen(true);
-        }
-        return;
+          break;
+        case "custom:garmin":
+          setGarminAuthOpen(true);
+          break;
+        default:
+          handleSync(p.id, fullSync);
       }
-      if (p.needsOAuth && !p.authorized) {
-        window.open(`/auth/provider/${p.id}`, "_blank");
-        return;
-      }
-      handleSync(p.id, fullSync);
     },
     [handleSync],
   );
@@ -307,7 +316,7 @@ export function DataSourcesPanel() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium text-zinc-300">Data Sources</h3>
+        <h3 className="text-sm font-medium text-foreground">Data Sources</h3>
         {enabledSyncable.length > 1 && (
           <div className="flex gap-2">
             <button
@@ -317,7 +326,7 @@ export function DataSourcesPanel() {
               className={`text-xs px-3 py-1 rounded transition-colors ${
                 syncAllMode === "sync"
                   ? "bg-emerald-600 text-white"
-                  : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50"
+                  : "bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50"
               }`}
             >
               {syncAllMode === "sync" ? "Syncing..." : "Sync All"}
@@ -329,7 +338,7 @@ export function DataSourcesPanel() {
               className={`text-xs px-3 py-1 rounded transition-colors ${
                 syncAllMode === "full"
                   ? "bg-emerald-600 text-white"
-                  : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700 disabled:opacity-50"
+                  : "bg-accent/10 text-muted hover:bg-surface-hover disabled:opacity-50"
               }`}
             >
               {syncAllMode === "full" ? "Full Syncing..." : "Full Sync All"}
@@ -341,7 +350,7 @@ export function DataSourcesPanel() {
       {providers.isLoading ? (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {["skeleton-1", "skeleton-2", "skeleton-3"].map((id) => (
-            <div key={id} className="h-24 rounded-lg bg-zinc-800/50 animate-pulse" />
+            <div key={id} className="h-24 rounded-lg bg-skeleton animate-pulse" />
           ))}
         </div>
       ) : (
@@ -363,7 +372,8 @@ export function DataSourcesPanel() {
 
             const p = entry.provider;
             const state = providerStates[p.id] ?? { status: "idle" };
-            const needsAuth = (p.needsOAuth || p.needsCustomAuth) && !p.authorized;
+            const needsAuth =
+              p.authType !== "none" && p.authType !== "file-import" && !p.authorized;
             const providerStats = statsByProvider.get(p.id);
             const recentLogs = (logsByProvider.get(p.id) ?? []).slice(0, 5);
 
@@ -404,24 +414,24 @@ export function DataSourcesPanel() {
           }}
         />
       )}
+
+      {/* Generic Credential Auth Modal */}
+      {credentialAuthProvider && (
+        <CredentialAuthModal
+          providerId={credentialAuthProvider.id}
+          providerName={credentialAuthProvider.name}
+          onClose={() => setCredentialAuthProvider(null)}
+          onSuccess={() => {
+            setCredentialAuthProvider(null);
+            trpcUtils.sync.providers.invalidate();
+          }}
+        />
+      )}
     </div>
   );
 }
 
 // ── Sync Provider Card (unified: controls + stats) ──
-
-interface ProviderStats {
-  activities: number;
-  dailyMetrics: number;
-  sleepSessions: number;
-  bodyMeasurements: number;
-  foodEntries: number;
-  healthEvents: number;
-  metricStream: number;
-  nutritionDaily: number;
-  labResults: number;
-  journalEntries: number;
-}
 
 interface SyncLogEntry {
   status: string;
@@ -448,36 +458,8 @@ function SyncProviderCard({
   onSync: () => void;
   onFullSync: () => void;
 }) {
-  const totalRecords = stats
-    ? stats.activities +
-      stats.dailyMetrics +
-      stats.sleepSessions +
-      stats.bodyMeasurements +
-      stats.foodEntries +
-      stats.healthEvents +
-      stats.metricStream +
-      stats.nutritionDaily +
-      stats.labResults +
-      stats.journalEntries
-    : 0;
-
-  const breakdown = stats
-    ? [
-        { label: "Activities", count: stats.activities },
-        { label: "Metric Stream", count: stats.metricStream },
-        { label: "Daily Metrics", count: stats.dailyMetrics },
-        { label: "Sleep", count: stats.sleepSessions },
-        { label: "Body", count: stats.bodyMeasurements },
-        { label: "Food", count: stats.foodEntries },
-        { label: "Nutrition", count: stats.nutritionDaily },
-        { label: "Events", count: stats.healthEvents },
-        { label: "Lab Results", count: stats.labResults },
-        { label: "Journal", count: stats.journalEntries },
-      ].filter((b) => b.count > 0)
-    : [];
-
   return (
-    <div className="flex flex-col rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-3 transition-colors">
+    <div className="flex flex-col rounded-lg border border-border bg-surface px-4 py-3 transition-colors">
       {/* Header with sync trigger */}
       <button
         type="button"
@@ -492,62 +474,44 @@ function SyncProviderCard({
         ) : (
           <StatusDot status={state.status} />
         )}
-        <span className="text-sm font-medium text-zinc-200">{provider.name}</span>
+        <span className="text-sm font-medium text-foreground">{provider.name}</span>
         {needsAuth && <span className="text-xs text-blue-400">Connect</span>}
-        {state.status === "syncing" && <span className="text-xs text-zinc-500">...</span>}
+        {state.status === "syncing" && <span className="text-xs text-subtle">...</span>}
       </button>
 
       {/* Progress bar during sync */}
       {state.status === "syncing" && (
         <div className="mt-2">
           {state.percentage != null && (
-            <div className="w-full h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+            <div className="w-full h-1.5 rounded-full bg-accent/10 overflow-hidden">
               <div
                 className="h-full rounded-full bg-emerald-500 transition-all duration-300"
                 style={{ width: `${state.percentage}%` }}
               />
             </div>
           )}
-          {state.message && (
-            <span className="text-xs text-zinc-500 mt-1 block">{state.message}</span>
-          )}
+          {state.message && <span className="text-xs text-subtle mt-1 block">{state.message}</span>}
         </div>
       )}
 
       {/* Status message */}
       {state.message && state.status !== "syncing" && (
-        <span className="text-xs text-zinc-500 mt-1">{state.message}</span>
+        <span className="text-xs text-subtle mt-1">{state.message}</span>
       )}
-      {state.status !== "syncing" && !state.message && provider.lastSyncedAt && (
-        <span className="text-xs text-zinc-600 mt-1">
-          Last sync: {formatRelativeTime(provider.lastSyncedAt)}
-        </span>
-      )}
+      {state.status !== "syncing" &&
+        !state.message &&
+        provider.lastSyncedAt &&
+        formatRelativeTime(provider.lastSyncedAt) && (
+          <span className="text-xs text-dim mt-1">
+            Last sync: {formatRelativeTime(provider.lastSyncedAt)}
+          </span>
+        )}
 
       {/* Stats summary */}
-      {totalRecords > 0 && (
-        <div className="mt-2 pt-2 border-t border-zinc-800/50">
-          <div className="flex items-baseline gap-2">
-            <span className="text-lg font-bold text-zinc-100 tabular-nums">
-              {totalRecords.toLocaleString()}
-            </span>
-            <span className="text-xs text-zinc-500">records</span>
-          </div>
-          {breakdown.length > 1 && (
-            <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-1">
-              {breakdown.map((b) => (
-                <div key={b.label} className="flex justify-between text-xs">
-                  <span className="text-zinc-500">{b.label}</span>
-                  <span className="text-zinc-400 tabular-nums">{b.count.toLocaleString()}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      {stats && <ProviderStatsBreakdown stats={stats} />}
 
       {/* Recent sync dots + full sync button + details link */}
-      <div className="flex items-center justify-between mt-2 pt-2 border-t border-zinc-800/50">
+      <div className="flex items-center justify-between mt-2 pt-2 border-t border-border/50">
         <div className="flex items-center gap-1">
           {recentLogs.map((l) => (
             <span
@@ -558,16 +522,14 @@ function SyncProviderCard({
               title={`${l.status} — ${formatTime(l.syncedAt)}`}
             />
           ))}
-          {recentLogs.length === 0 && (
-            <span className="text-xs text-zinc-600">No sync history</span>
-          )}
+          {recentLogs.length === 0 && <span className="text-xs text-dim">No sync history</span>}
         </div>
         <div className="flex items-center gap-3">
           {!needsAuth && state.status !== "syncing" && (
             <button
               type="button"
               onClick={onFullSync}
-              className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+              className="text-xs text-dim hover:text-muted transition-colors"
             >
               Full sync
             </button>
@@ -575,11 +537,114 @@ function SyncProviderCard({
           <Link
             to="/providers/$id"
             params={{ id: provider.id }}
-            className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+            className="text-xs text-dim hover:text-muted transition-colors"
           >
             Details
           </Link>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Generic Credential Auth Modal ──
+
+function CredentialAuthModal({
+  providerId,
+  providerName,
+  onClose,
+  onSuccess,
+}: {
+  providerId: string;
+  providerName: string;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const emailRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    emailRef.current?.focus();
+  }, []);
+
+  const signInMutation = trpc.credentialAuth.signIn.useMutation();
+
+  const handleSignIn = useCallback(
+    async (e: React.FormEvent<HTMLFormElement>) => {
+      e.preventDefault();
+      setError("");
+      setLoading(true);
+      try {
+        await signInMutation.mutateAsync({ providerId, username, password });
+        onSuccess();
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : "Sign in failed");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [providerId, username, password, signInMutation, onSuccess],
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="bg-surface-solid border border-border-strong rounded-xl p-6 w-full max-w-sm shadow-2xl">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-semibold text-foreground">Connect {providerName}</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-subtle hover:text-foreground text-lg leading-none p-1"
+            aria-label="Close"
+          >
+            &times;
+          </button>
+        </div>
+
+        {error && (
+          <div className="mb-3 text-xs text-red-400 bg-red-400/10 rounded px-3 py-2">{error}</div>
+        )}
+
+        <form onSubmit={handleSignIn} className="space-y-3">
+          <div>
+            <label htmlFor={`${providerId}-email`} className="block text-xs text-muted mb-1">
+              Email
+            </label>
+            <input
+              ref={emailRef}
+              id={`${providerId}-email`}
+              type="email"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              required
+              className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
+              placeholder="you@example.com"
+            />
+          </div>
+          <div>
+            <label htmlFor={`${providerId}-password`} className="block text-xs text-muted mb-1">
+              Password
+            </label>
+            <input
+              id={`${providerId}-password`}
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-2 text-sm font-medium rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+          >
+            {loading ? "Signing in..." : "Sign In"}
+          </button>
+        </form>
       </div>
     </div>
   );
@@ -619,13 +684,13 @@ function GarminAuthModal({ onClose, onSuccess }: { onClose: () => void; onSucces
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-full max-w-sm shadow-2xl">
+      <div className="bg-surface-solid border border-border-strong rounded-xl p-6 w-full max-w-sm shadow-2xl">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-zinc-200">Connect Garmin</h3>
+          <h3 className="text-sm font-semibold text-foreground">Connect Garmin</h3>
           <button
             type="button"
             onClick={onClose}
-            className="text-zinc-500 hover:text-zinc-300 text-lg leading-none p-1"
+            className="text-subtle hover:text-foreground text-lg leading-none p-1"
             aria-label="Close"
           >
             &times;
@@ -638,7 +703,7 @@ function GarminAuthModal({ onClose, onSuccess }: { onClose: () => void; onSucces
 
         <form onSubmit={handleSignIn} className="space-y-3">
           <div>
-            <label htmlFor="garmin-email" className="block text-xs text-zinc-400 mb-1">
+            <label htmlFor="garmin-email" className="block text-xs text-muted mb-1">
               Email
             </label>
             <input
@@ -648,12 +713,12 @@ function GarminAuthModal({ onClose, onSuccess }: { onClose: () => void; onSucces
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
-              className="w-full px-3 py-2 text-sm bg-zinc-800 border border-zinc-700 rounded text-zinc-200 focus:outline-none focus:border-zinc-500"
+              className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
               placeholder="you@example.com"
             />
           </div>
           <div>
-            <label htmlFor="garmin-password" className="block text-xs text-zinc-400 mb-1">
+            <label htmlFor="garmin-password" className="block text-xs text-muted mb-1">
               Password
             </label>
             <input
@@ -662,7 +727,7 @@ function GarminAuthModal({ onClose, onSuccess }: { onClose: () => void; onSucces
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className="w-full px-3 py-2 text-sm bg-zinc-800 border border-zinc-700 rounded text-zinc-200 focus:outline-none focus:border-zinc-500"
+              className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
             />
           </div>
           <button
@@ -749,13 +814,13 @@ function WhoopAuthModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-full max-w-sm shadow-2xl">
+      <div className="bg-surface-solid border border-border-strong rounded-xl p-6 w-full max-w-sm shadow-2xl">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-zinc-200">Connect WHOOP</h3>
+          <h3 className="text-sm font-semibold text-foreground">Connect WHOOP</h3>
           <button
             type="button"
             onClick={onClose}
-            className="text-zinc-500 hover:text-zinc-300 text-lg leading-none p-1"
+            className="text-subtle hover:text-foreground text-lg leading-none p-1"
             aria-label="Close"
           >
             &times;
@@ -769,7 +834,7 @@ function WhoopAuthModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
         {step === "credentials" && (
           <form onSubmit={handleSignIn} className="space-y-3">
             <div>
-              <label htmlFor="whoop-email" className="block text-xs text-zinc-400 mb-1">
+              <label htmlFor="whoop-email" className="block text-xs text-muted mb-1">
                 Email
               </label>
               <input
@@ -779,12 +844,12 @@ function WhoopAuthModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 required
-                className="w-full px-3 py-2 text-sm bg-zinc-800 border border-zinc-700 rounded text-zinc-200 focus:outline-none focus:border-zinc-500"
+                className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
                 placeholder="you@example.com"
               />
             </div>
             <div>
-              <label htmlFor="whoop-password" className="block text-xs text-zinc-400 mb-1">
+              <label htmlFor="whoop-password" className="block text-xs text-muted mb-1">
                 Password
               </label>
               <input
@@ -793,7 +858,7 @@ function WhoopAuthModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="w-full px-3 py-2 text-sm bg-zinc-800 border border-zinc-700 rounded text-zinc-200 focus:outline-none focus:border-zinc-500"
+                className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
               />
             </div>
             <button
@@ -808,11 +873,11 @@ function WhoopAuthModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
 
         {step === "verify" && (
           <form onSubmit={handleVerify} className="space-y-3">
-            <p className="text-xs text-zinc-400">
+            <p className="text-xs text-muted">
               WHOOP sent a verification code to your phone. Enter it below.
             </p>
             <div>
-              <label htmlFor="whoop-code" className="block text-xs text-zinc-400 mb-1">
+              <label htmlFor="whoop-code" className="block text-xs text-muted mb-1">
                 Verification Code
               </label>
               <input
@@ -824,7 +889,7 @@ function WhoopAuthModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
                 required
                 inputMode="numeric"
                 pattern="[0-9]*"
-                className="w-full px-3 py-2 text-sm bg-zinc-800 border border-zinc-700 rounded text-zinc-200 focus:outline-none focus:border-zinc-500 text-center tracking-widest text-lg"
+                className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent text-center tracking-widest text-lg"
                 placeholder="000000"
               />
             </div>
@@ -840,7 +905,7 @@ function WhoopAuthModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
 
         {step === "saving" && (
           <div className="text-center py-4">
-            <div className="text-sm text-zinc-300">Saving credentials...</div>
+            <div className="text-sm text-foreground">Saving credentials...</div>
           </div>
         )}
       </div>
@@ -852,7 +917,7 @@ function WhoopAuthModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
 
 function StatusDot({ status }: { status: SyncStatus }) {
   const colors = {
-    idle: "bg-zinc-600",
+    idle: "bg-dim",
     syncing: "bg-amber-400 animate-pulse",
     done: "bg-emerald-400",
     error: "bg-red-400",
@@ -901,34 +966,6 @@ function FileImportZone({
   });
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const totalRecords = stats
-    ? stats.activities +
-      stats.dailyMetrics +
-      stats.sleepSessions +
-      stats.bodyMeasurements +
-      stats.foodEntries +
-      stats.healthEvents +
-      stats.metricStream +
-      stats.nutritionDaily +
-      stats.labResults +
-      stats.journalEntries
-    : 0;
-
-  const breakdown = stats
-    ? [
-        { label: "Activities", count: stats.activities },
-        { label: "Metric Stream", count: stats.metricStream },
-        { label: "Daily Metrics", count: stats.dailyMetrics },
-        { label: "Sleep", count: stats.sleepSessions },
-        { label: "Body", count: stats.bodyMeasurements },
-        { label: "Food", count: stats.foodEntries },
-        { label: "Nutrition", count: stats.nutritionDaily },
-        { label: "Events", count: stats.healthEvents },
-        { label: "Lab Results", count: stats.labResults },
-        { label: "Journal", count: stats.journalEntries },
-      ].filter((b) => b.count > 0)
-    : [];
 
   const pollStatus = useCallback(
     async (jobId: string) => {
@@ -1077,11 +1114,11 @@ function FileImportZone({
   );
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-3">
+    <div className="rounded-lg border border-border bg-surface px-4 py-3">
       <div className="flex items-center gap-2 mb-2">
         {providerId && <ProviderLogo provider={providerId} size={18} />}
         <StatusDot status={state.status} />
-        <span className="text-sm font-medium text-zinc-200">{title}</span>
+        <span className="text-sm font-medium text-foreground">{title}</span>
       </div>
       <button
         type="button"
@@ -1102,7 +1139,7 @@ function FileImportZone({
         className={`rounded border-2 border-dashed p-3 text-center cursor-pointer transition-colors ${
           dragOver
             ? "border-blue-500 bg-blue-500/10"
-            : "border-zinc-700 hover:border-zinc-600 bg-zinc-900/30"
+            : "border-border-strong hover:border-border-strong bg-surface/30"
         }`}
       >
         <input
@@ -1114,9 +1151,9 @@ function FileImportZone({
         />
         {state.status === "syncing" ? (
           <div>
-            <div className="text-xs text-zinc-500">{state.message}</div>
+            <div className="text-xs text-subtle">{state.message}</div>
             {state.progress != null && (
-              <div className="mt-2 w-full h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+              <div className="mt-2 w-full h-1.5 rounded-full bg-accent/10 overflow-hidden">
                 <div
                   className="h-full rounded-full bg-emerald-500 transition-all duration-300"
                   style={{ width: `${state.progress}%` }}
@@ -1125,7 +1162,7 @@ function FileImportZone({
             )}
           </div>
         ) : (
-          <div className="text-xs text-zinc-600">{description}</div>
+          <div className="text-xs text-dim">{description}</div>
         )}
       </button>
       {state.status !== "idle" && state.status !== "syncing" && (
@@ -1137,29 +1174,10 @@ function FileImportZone({
       )}
 
       {/* Stats summary */}
-      {totalRecords > 0 && (
-        <div className="mt-2 pt-2 border-t border-zinc-800/50">
-          <div className="flex items-baseline gap-2">
-            <span className="text-lg font-bold text-zinc-100 tabular-nums">
-              {totalRecords.toLocaleString()}
-            </span>
-            <span className="text-xs text-zinc-500">records</span>
-          </div>
-          {breakdown.length > 1 && (
-            <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-1">
-              {breakdown.map((b) => (
-                <div key={b.label} className="flex justify-between text-xs">
-                  <span className="text-zinc-500">{b.label}</span>
-                  <span className="text-zinc-400 tabular-nums">{b.count.toLocaleString()}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      {stats && <ProviderStatsBreakdown stats={stats} />}
 
       {/* Recent sync dots + details link */}
-      <div className="flex items-center justify-between mt-2 pt-2 border-t border-zinc-800/50">
+      <div className="flex items-center justify-between mt-2 pt-2 border-t border-border/50">
         <div className="flex items-center gap-1">
           {recentLogs.map((l) => (
             <span
@@ -1175,7 +1193,7 @@ function FileImportZone({
           <Link
             to="/providers/$id"
             params={{ id: providerId }}
-            className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+            className="text-xs text-dim hover:text-muted transition-colors"
           >
             Details
           </Link>

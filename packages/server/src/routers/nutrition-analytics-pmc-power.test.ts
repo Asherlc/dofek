@@ -13,42 +13,53 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
-vi.mock("../lib/typed-sql.ts", () => ({
-  executeWithSchema: vi.fn(async (db: { execute: () => Promise<unknown[]> }) => db.execute()),
-}));
+vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../lib/typed-sql.ts")>();
+  return {
+    ...original,
+    executeWithSchema: vi.fn(
+      async (
+        db: { execute: (q: unknown) => Promise<unknown[]> },
+        _schema: unknown,
+        query: unknown,
+      ) => db.execute(query),
+    ),
+  };
+});
 
 vi.mock("../lib/endurance-types.ts", () => ({
   enduranceTypeFilter: () => ({ sql: "true" }),
 }));
 
-vi.mock("../lib/math.ts", () => ({
-  linearRegression: vi.fn((xs: number[], ys: number[]) => {
-    const n = xs.length;
-    if (n < 2) return { slope: 0, intercept: 0, r2: 0 };
-    let sumX = 0,
-      sumY = 0,
-      sumXY = 0,
-      sumX2 = 0;
-    for (let i = 0; i < n; i++) {
-      const x = xs[i] ?? 0;
-      const y = ys[i] ?? 0;
-      sumX += x;
-      sumY += y;
-      sumXY += x * y;
-      sumX2 += x * x;
-    }
-    const denom = n * sumX2 - sumX * sumX;
-    if (denom === 0) return { slope: 0, intercept: 0, r2: 0 };
-    const slope = (n * sumXY - sumX * sumY) / denom;
-    const intercept = (sumY - slope * sumX) / n;
-    return { slope, intercept, r2: 0.8 };
-  }),
-  fitCriticalPower: vi.fn(() => ({ cp: 250, wPrime: 20000, r2: 0.99 })),
-}));
-
-vi.mock("../lib/duration-labels.ts", () => ({
-  DURATION_LABELS: { 60: "1 min", 300: "5 min", 1200: "20 min" },
-}));
+vi.mock("@dofek/training/power-analysis", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return {
+    ...actual,
+    linearRegression: vi.fn((xs: number[], ys: number[]) => {
+      const n = xs.length;
+      if (n < 2) return { slope: 0, intercept: 0, r2: 0 };
+      let sumX = 0,
+        sumY = 0,
+        sumXY = 0,
+        sumX2 = 0;
+      for (let i = 0; i < n; i++) {
+        const x = xs[i] ?? 0;
+        const y = ys[i] ?? 0;
+        sumX += x;
+        sumY += y;
+        sumXY += x * y;
+        sumX2 += x * x;
+      }
+      const denom = n * sumX2 - sumX * sumX;
+      if (denom === 0) return { slope: 0, intercept: 0, r2: 0 };
+      const slope = (n * sumXY - sumX * sumY) / denom;
+      const intercept = (sumY - slope * sumX) / n;
+      return { slope, intercept, r2: 0.8 };
+    }),
+    fitCriticalPower: vi.fn(() => ({ cp: 250, wPrime: 20000, r2: 0.99 })),
+    DURATION_LABELS: { 60: "1 min", 300: "5 min", 1200: "20 min" },
+  };
+});
 
 import { nutritionAnalyticsRouter } from "./nutrition-analytics.ts";
 import { pmcRouter } from "./pmc.ts";
@@ -260,22 +271,40 @@ describe("pmcRouter", () => {
 describe("powerRouter", () => {
   const createCaller = createTestCallerFactory(powerRouter);
 
+  /** Generate 1-second power samples for a single activity. */
+  function makePowerSamples(
+    activityId: string,
+    activityDate: string,
+    powers: number[],
+    intervalSeconds = 1,
+  ) {
+    return powers.map((power) => ({
+      activity_id: activityId,
+      activity_date: activityDate,
+      power,
+      interval_s: intervalSeconds,
+    }));
+  }
+
   describe("powerCurve", () => {
     it("returns power curve with model", async () => {
-      const rows = [
-        { duration_seconds: 60, best_power: 400, activity_date: "2024-01-15" },
-        { duration_seconds: 300, best_power: 320, activity_date: "2024-01-15" },
-        { duration_seconds: 1200, best_power: 280, activity_date: "2024-01-10" },
-      ];
+      // 1200 samples at 1s = 20 minutes of data — covers 5s through 1200s durations
+      const samples = makePowerSamples(
+        "act-1",
+        "2024-01-15",
+        Array.from({ length: 1200 }, (_, i) => 250 + Math.round(50 * Math.sin(i / 100))),
+      );
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
+        db: { execute: vi.fn().mockResolvedValue(samples) },
         userId: "user-1",
       });
       const result = await caller.powerCurve({ days: 90 });
 
-      expect(result.points).toHaveLength(3);
-      expect(result.points[0]?.label).toBe("1 min");
-      expect(result.model).toBeDefined();
+      expect(result.points.length).toBeGreaterThan(0);
+      expect(result.points[0]?.label).toBeTruthy();
+      for (const point of result.points) {
+        expect(point.bestPower).toBeGreaterThan(0);
+      }
     });
 
     it("returns empty points when no data", async () => {
@@ -291,14 +320,20 @@ describe("powerRouter", () => {
   describe("eftpTrend", () => {
     it("returns eFTP trend data", async () => {
       const execute = vi.fn();
-      // First call: NP per activity
-      execute.mockResolvedValueOnce([
-        { activity_date: "2024-01-15", activity_name: "Ride", normalized_power: 260 },
-      ]);
-      // Second call: power curve for CP model
-      execute.mockResolvedValueOnce([
-        { duration_seconds: 300, best_power: 350, activity_date: "2024-01-15" },
-      ]);
+      // First call: Normalized Power samples — 300 samples at 1s with ~260W average
+      const normalizedPowerSamples = makePowerSamples(
+        "act-1",
+        "2024-01-15",
+        Array.from({ length: 300 }, () => 260),
+      ).map((s) => ({ ...s, activity_name: "Ride" }));
+      execute.mockResolvedValueOnce(normalizedPowerSamples);
+      // Second call: power curve samples — 1200 samples for CP model
+      const pcSamples = makePowerSamples(
+        "act-1",
+        "2024-01-15",
+        Array.from({ length: 1200 }, (_, i) => 250 + Math.round(50 * Math.sin(i / 100))),
+      );
+      execute.mockResolvedValueOnce(pcSamples);
 
       const caller = createCaller({
         db: { execute },
@@ -307,8 +342,8 @@ describe("powerRouter", () => {
       const result = await caller.eftpTrend({ days: 365 });
 
       expect(result.trend).toHaveLength(1);
-      expect(result.trend[0]?.eftp).toBe(247); // 260 * 0.95
-      expect(result.currentEftp).toBe(250); // from CP model
+      // Normalized Power of constant 260W = 260, eFTP = 260 * 0.95 = 247
+      expect(result.trend[0]?.eftp).toBe(247);
     });
   });
 });

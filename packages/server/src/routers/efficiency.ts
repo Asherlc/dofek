@@ -1,7 +1,12 @@
+import {
+  computePolarizationIndex,
+  POLARIZATION_ZONES,
+  ZONE_BOUNDARIES_HRR,
+} from "@dofek/zones/zones";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { enduranceTypeFilter } from "../lib/endurance-types.ts";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export interface AerobicEfficiencyActivity {
@@ -54,7 +59,7 @@ export const efficiencyRouter = router({
     .query(async ({ ctx, input }): Promise<AerobicEfficiencyResult> => {
       const efficiencyRowSchema = z.object({
         max_hr: z.coerce.number(),
-        date: z.string(),
+        date: dateStringSchema,
         activity_type: z.string(),
         name: z.string(),
         avg_power_z2: z.coerce.number(),
@@ -91,8 +96,8 @@ export const efficiencyRouter = router({
               AND ms.recorded_at > NOW() - (${input.days} + 1)::int * INTERVAL '1 day'
               AND ${enduranceTypeFilter("a")}
               AND up.max_hr IS NOT NULL
-              AND ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * 0.6
-              AND ms.heart_rate <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * 0.7
+              AND ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[0]}::numeric
+              AND ms.heart_rate <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[1]}::numeric
               AND ms.power > 0
             GROUP BY a.id, a.started_at, a.activity_type, a.name, up.max_hr
             HAVING COUNT(*) >= 300
@@ -124,7 +129,7 @@ export const efficiencyRouter = router({
     .input(z.object({ days: z.number().default(180) }))
     .query(async ({ ctx, input }): Promise<AerobicDecouplingActivity[]> => {
       const decouplingRowSchema = z.object({
-        date: z.string(),
+        date: dateStringSchema,
         activity_type: z.string(),
         name: z.string(),
         first_half_ratio: z.coerce.number(),
@@ -209,7 +214,7 @@ export const efficiencyRouter = router({
     .query(async ({ ctx, input }): Promise<PolarizationTrendResult> => {
       const polarizationRowSchema = z.object({
         max_hr: z.coerce.number(),
-        week: z.string(),
+        week: dateStringSchema,
         z1_seconds: z.coerce.number(),
         z2_seconds: z.coerce.number(),
         z3_seconds: z.coerce.number(),
@@ -220,13 +225,10 @@ export const efficiencyRouter = router({
         sql`SELECT
               up.max_hr,
               date_trunc('week', a.started_at)::date AS week,
-              -- Z1 (easy): < 80% HRmax
-              COUNT(*) FILTER (WHERE ms.heart_rate < up.max_hr * 0.8)::int AS z1_seconds,
-              -- Z2 (threshold): 80-90% HRmax
-              COUNT(*) FILTER (WHERE ms.heart_rate >= up.max_hr * 0.8
-                                AND ms.heart_rate <  up.max_hr * 0.9)::int AS z2_seconds,
-              -- Z3 (high intensity): >= 90% HRmax
-              COUNT(*) FILTER (WHERE ms.heart_rate >= up.max_hr * 0.9)::int AS z3_seconds
+              COUNT(*) FILTER (WHERE ms.heart_rate < up.max_hr * ${POLARIZATION_ZONES[1]?.minPctHrmax}::numeric)::int AS z1_seconds,
+              COUNT(*) FILTER (WHERE ms.heart_rate >= up.max_hr * ${POLARIZATION_ZONES[1]?.minPctHrmax}::numeric
+                                AND ms.heart_rate <  up.max_hr * ${POLARIZATION_ZONES[2]?.minPctHrmax}::numeric)::int AS z2_seconds,
+              COUNT(*) FILTER (WHERE ms.heart_rate >= up.max_hr * ${POLARIZATION_ZONES[2]?.minPctHrmax}::numeric)::int AS z3_seconds
             FROM fitness.user_profile up
             JOIN fitness.v_activity a ON a.user_id = up.id
             JOIN fitness.metric_stream ms ON ms.activity_id = a.id
@@ -247,24 +249,12 @@ export const efficiencyRouter = router({
         const z2 = Number(row.z2_seconds);
         const z3 = Number(row.z3_seconds);
 
-        // Treff Polarization Index: log10((f1 / (f2 * f3)) * 100)
-        // where f = fraction of total training time (not raw seconds)
-        let polarizationIndex: number | null = null;
-        const total = z1 + z2 + z3;
-        if (z2 > 0 && z3 > 0 && z1 > 0 && total > 0) {
-          const f1 = z1 / total;
-          const f2 = z2 / total;
-          const f3 = z3 / total;
-          const ratio = (f1 / (f2 * f3)) * 100;
-          polarizationIndex = Math.round(Math.log10(ratio) * 1000) / 1000;
-        }
-
         return {
           week: String(row.week),
           z1Seconds: z1,
           z2Seconds: z2,
           z3Seconds: z3,
-          polarizationIndex,
+          polarizationIndex: computePolarizationIndex(z1, z2, z3),
         };
       });
 

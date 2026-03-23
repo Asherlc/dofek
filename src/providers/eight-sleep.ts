@@ -10,9 +10,14 @@ import {
 import type { SyncDatabase } from "../db/index.ts";
 import { bodyMeasurement, dailyMetrics, metricStream, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
-import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
-import { logger } from "../logger.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import { ensureProvider, loadTokens } from "../db/tokens.ts";
+import type {
+  ProviderAuthSetup,
+  SyncError,
+  SyncOptions,
+  SyncProvider,
+  SyncResult,
+} from "./types.ts";
 
 // ============================================================
 // Helper: format date as YYYY-MM-DD
@@ -28,13 +33,13 @@ function formatDate(date: Date): string {
 
 const AUTH_API_BASE = "https://auth-api.8slp.net/v1";
 
-export class EightSleepProvider implements Provider {
+export class EightSleepProvider implements SyncProvider {
   readonly id = "eight-sleep";
   readonly name = "Eight Sleep";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -43,7 +48,7 @@ export class EightSleepProvider implements Provider {
   }
 
   authSetup(): ProviderAuthSetup {
-    const fetchFn = this.fetchFn;
+    const fetchFn = this.#fetchFn;
     return {
       oauthConfig: {
         clientId: EIGHT_SLEEP_CLIENT_ID,
@@ -68,7 +73,7 @@ export class EightSleepProvider implements Provider {
     };
   }
 
-  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -89,28 +94,11 @@ export class EightSleepProvider implements Provider {
         throw new Error("Eight Sleep user ID not found — re-authenticate");
       }
 
-      // Re-authenticate if token expired (Eight Sleep has no refresh tokens)
+      // Eight Sleep has no refresh tokens — user must re-authenticate when expired
       if (stored.expiresAt <= new Date()) {
-        const email = process.env.EIGHT_SLEEP_USERNAME;
-        const password = process.env.EIGHT_SLEEP_PASSWORD;
-        if (!email || !password) {
-          throw new Error(
-            "Eight Sleep token expired and EIGHT_SLEEP_USERNAME/EIGHT_SLEEP_PASSWORD not set for re-auth",
-          );
-        }
-        logger.info("[eight-sleep] Token expired, re-authenticating...");
-        const result = await EightSleepClient.signIn(email, password, this.fetchFn);
-        const tokens = {
-          accessToken: result.accessToken,
-          refreshToken: null,
-          expiresAt: new Date(Date.now() + result.expiresIn * 1000),
-          scopes: `userId:${result.userId}`,
-        };
-        await saveTokens(db, this.id, tokens);
-        client = new EightSleepClient(result.accessToken, result.userId, this.fetchFn);
-      } else {
-        client = new EightSleepClient(stored.accessToken, userId, this.fetchFn);
+        throw new Error("Eight Sleep token expired — please re-authenticate via Settings");
       }
+      client = new EightSleepClient(stored.accessToken, userId, this.#fetchFn);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
@@ -135,30 +123,21 @@ export class EightSleepProvider implements Provider {
 
     // 1. Sync sleep sessions
     try {
-      const sleepCount = await withSyncLog(db, this.id, "sleep", async () => {
-        let count = 0;
-        for (const day of trendDays) {
-          if (!day.presenceStart || !day.presenceEnd) continue;
-          const parsed = parseEightSleepTrendDay(day);
-          try {
-            await db
-              .insert(sleepSession)
-              .values({
-                providerId: this.id,
-                externalId: parsed.externalId,
-                startedAt: parsed.startedAt,
-                endedAt: parsed.endedAt,
-                durationMinutes: parsed.durationMinutes,
-                deepMinutes: parsed.deepMinutes,
-                remMinutes: parsed.remMinutes,
-                lightMinutes: parsed.lightMinutes,
-                awakeMinutes: parsed.awakeMinutes,
-                efficiencyPct: parsed.efficiencyPct,
-                sleepType: parsed.sleepType,
-              })
-              .onConflictDoUpdate({
-                target: [sleepSession.providerId, sleepSession.externalId],
-                set: {
+      const sleepCount = await withSyncLog(
+        db,
+        this.id,
+        "sleep",
+        async () => {
+          let count = 0;
+          for (const day of trendDays) {
+            if (!day.presenceStart || !day.presenceEnd) continue;
+            const parsed = parseEightSleepTrendDay(day);
+            try {
+              await db
+                .insert(sleepSession)
+                .values({
+                  providerId: this.id,
+                  externalId: parsed.externalId,
                   startedAt: parsed.startedAt,
                   endedAt: parsed.endedAt,
                   durationMinutes: parsed.durationMinutes,
@@ -166,21 +145,34 @@ export class EightSleepProvider implements Provider {
                   remMinutes: parsed.remMinutes,
                   lightMinutes: parsed.lightMinutes,
                   awakeMinutes: parsed.awakeMinutes,
-                  efficiencyPct: parsed.efficiencyPct,
                   sleepType: parsed.sleepType,
-                },
+                })
+                .onConflictDoUpdate({
+                  target: [sleepSession.providerId, sleepSession.externalId],
+                  set: {
+                    startedAt: parsed.startedAt,
+                    endedAt: parsed.endedAt,
+                    durationMinutes: parsed.durationMinutes,
+                    deepMinutes: parsed.deepMinutes,
+                    remMinutes: parsed.remMinutes,
+                    lightMinutes: parsed.lightMinutes,
+                    awakeMinutes: parsed.awakeMinutes,
+                    sleepType: parsed.sleepType,
+                  },
+                });
+              count++;
+            } catch (err) {
+              errors.push({
+                message: err instanceof Error ? err.message : String(err),
+                externalId: parsed.externalId,
+                cause: err,
               });
-            count++;
-          } catch (err) {
-            errors.push({
-              message: err instanceof Error ? err.message : String(err),
-              externalId: parsed.externalId,
-              cause: err,
-            });
+            }
           }
-        }
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += sleepCount;
     } catch (err) {
       errors.push({
@@ -191,42 +183,48 @@ export class EightSleepProvider implements Provider {
 
     // 2. Sync daily metrics (HRV, resting HR, respiratory rate, bed temp)
     try {
-      const dailyCount = await withSyncLog(db, this.id, "daily_metrics", async () => {
-        let count = 0;
-        for (const day of trendDays) {
-          const parsed = parseEightSleepDailyMetrics(day);
-          // Skip if no quality data
-          if (!parsed.restingHr && !parsed.hrv && !parsed.respiratoryRateAvg) continue;
-          try {
-            await db
-              .insert(dailyMetrics)
-              .values({
-                date: parsed.date,
-                providerId: this.id,
-                restingHr: parsed.restingHr ? Math.round(parsed.restingHr) : undefined,
-                hrv: parsed.hrv,
-                respiratoryRateAvg: parsed.respiratoryRateAvg,
-                skinTempC: parsed.skinTempC,
-              })
-              .onConflictDoUpdate({
-                target: [dailyMetrics.date, dailyMetrics.providerId],
-                set: {
+      const dailyCount = await withSyncLog(
+        db,
+        this.id,
+        "daily_metrics",
+        async () => {
+          let count = 0;
+          for (const day of trendDays) {
+            const parsed = parseEightSleepDailyMetrics(day);
+            // Skip if no quality data
+            if (!parsed.restingHr && !parsed.hrv && !parsed.respiratoryRateAvg) continue;
+            try {
+              await db
+                .insert(dailyMetrics)
+                .values({
+                  date: parsed.date,
+                  providerId: this.id,
                   restingHr: parsed.restingHr ? Math.round(parsed.restingHr) : undefined,
                   hrv: parsed.hrv,
                   respiratoryRateAvg: parsed.respiratoryRateAvg,
                   skinTempC: parsed.skinTempC,
-                },
+                })
+                .onConflictDoUpdate({
+                  target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
+                  set: {
+                    restingHr: parsed.restingHr ? Math.round(parsed.restingHr) : undefined,
+                    hrv: parsed.hrv,
+                    respiratoryRateAvg: parsed.respiratoryRateAvg,
+                    skinTempC: parsed.skinTempC,
+                  },
+                });
+              count++;
+            } catch (err) {
+              errors.push({
+                message: `daily ${parsed.date}: ${err instanceof Error ? err.message : String(err)}`,
+                cause: err,
               });
-            count++;
-          } catch (err) {
-            errors.push({
-              message: `daily ${parsed.date}: ${err instanceof Error ? err.message : String(err)}`,
-              cause: err,
-            });
+            }
           }
-        }
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += dailyCount;
     } catch (err) {
       errors.push({
@@ -237,38 +235,44 @@ export class EightSleepProvider implements Provider {
 
     // 3. Sync body temperature as body measurements
     try {
-      const bodyCount = await withSyncLog(db, this.id, "body_measurement", async () => {
-        let count = 0;
-        for (const day of trendDays) {
-          const roomTemp = day.sleepQualityScore?.tempRoomC?.average;
-          const bedTemp = day.sleepQualityScore?.tempBedC?.average;
-          if (!roomTemp && !bedTemp) continue;
+      const bodyCount = await withSyncLog(
+        db,
+        this.id,
+        "body_measurement",
+        async () => {
+          let count = 0;
+          for (const day of trendDays) {
+            const roomTemp = day.sleepQualityScore?.tempRoomC?.average;
+            const bedTemp = day.sleepQualityScore?.tempBedC?.average;
+            if (!roomTemp && !bedTemp) continue;
 
-          const externalId = `eightsleep-temp-${day.day}`;
-          try {
-            await db
-              .insert(bodyMeasurement)
-              .values({
-                providerId: this.id,
+            const externalId = `eightsleep-temp-${day.day}`;
+            try {
+              await db
+                .insert(bodyMeasurement)
+                .values({
+                  providerId: this.id,
+                  externalId,
+                  recordedAt: new Date(day.presenceStart || `${day.day}T00:00:00Z`),
+                  temperatureC: bedTemp,
+                })
+                .onConflictDoUpdate({
+                  target: [bodyMeasurement.providerId, bodyMeasurement.externalId],
+                  set: { temperatureC: bedTemp },
+                });
+              count++;
+            } catch (err) {
+              errors.push({
+                message: err instanceof Error ? err.message : String(err),
                 externalId,
-                recordedAt: new Date(day.presenceStart || `${day.day}T00:00:00Z`),
-                temperatureC: bedTemp,
-              })
-              .onConflictDoUpdate({
-                target: [bodyMeasurement.providerId, bodyMeasurement.externalId],
-                set: { temperatureC: bedTemp },
+                cause: err,
               });
-            count++;
-          } catch (err) {
-            errors.push({
-              message: err instanceof Error ? err.message : String(err),
-              externalId,
-              cause: err,
-            });
+            }
           }
-        }
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += bodyCount;
     } catch (err) {
       errors.push({
@@ -279,33 +283,39 @@ export class EightSleepProvider implements Provider {
 
     // 4. Sync HR time series from sessions
     try {
-      const hrCount = await withSyncLog(db, this.id, "hr_stream", async () => {
-        let totalRecords = 0;
-        const BATCH_SIZE = 500;
+      const hrCount = await withSyncLog(
+        db,
+        this.id,
+        "hr_stream",
+        async () => {
+          let totalRecords = 0;
+          const BATCH_SIZE = 500;
 
-        for (const day of trendDays) {
-          if (!day.sessions?.length) continue;
-          const samples = parseEightSleepHeartRateSamples(day.sessions);
-          if (samples.length === 0) continue;
+          for (const day of trendDays) {
+            if (!day.sessions?.length) continue;
+            const samples = parseEightSleepHeartRateSamples(day.sessions);
+            if (samples.length === 0) continue;
 
-          for (let i = 0; i < samples.length; i += BATCH_SIZE) {
-            const batch = samples.slice(i, i + BATCH_SIZE);
-            await db
-              .insert(metricStream)
-              .values(
-                batch.map((s) => ({
-                  providerId: this.id,
-                  recordedAt: s.recordedAt,
-                  heartRate: s.heartRate,
-                })),
-              )
-              .onConflictDoNothing();
+            for (let i = 0; i < samples.length; i += BATCH_SIZE) {
+              const batch = samples.slice(i, i + BATCH_SIZE);
+              await db
+                .insert(metricStream)
+                .values(
+                  batch.map((s) => ({
+                    providerId: this.id,
+                    recordedAt: s.recordedAt,
+                    heartRate: s.heartRate,
+                  })),
+                )
+                .onConflictDoNothing();
+            }
+            totalRecords += samples.length;
           }
-          totalRecords += samples.length;
-        }
 
-        return { recordCount: totalRecords, result: totalRecords };
-      });
+          return { recordCount: totalRecords, result: totalRecords };
+        },
+        options?.userId,
+      );
       recordsSynced += hrCount;
     } catch (err) {
       errors.push({

@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -148,14 +148,28 @@ describe("FatSecretProvider.sync() (integration)", () => {
     if (!chicken) throw new Error("expected entry-100");
     expect(chicken.foodName).toBe("Chicken Breast");
     expect(chicken.meal).toBe("lunch");
-    expect(chicken.calories).toBe(165);
-    expect(chicken.proteinG).toBeCloseTo(31);
-    expect(chicken.fatG).toBeCloseTo(3.6);
+
+    // Check nutrient data via the view
+    const viewRows = await ctx.db.execute<{
+      calories: number | null;
+      protein_g: number | null;
+      fat_g: number | null;
+      carbs_g: number | null;
+    }>(
+      sql`SELECT calories, protein_g, fat_g, carbs_g FROM fitness.v_food_entry_with_nutrition WHERE external_id = 'entry-100' LIMIT 1`,
+    );
+    expect(viewRows[0]?.calories).toBe(165);
+    expect(viewRows[0]?.protein_g).toBeCloseTo(31);
+    expect(viewRows[0]?.fat_g).toBeCloseTo(3.6);
 
     const rice = rows.find((r) => r.externalId === "entry-101");
     if (!rice) throw new Error("expected entry-101");
     expect(rice.foodName).toBe("Brown Rice");
-    expect(rice.carbsG).toBeCloseTo(45);
+
+    const riceView = await ctx.db.execute<{ carbs_g: number | null }>(
+      sql`SELECT carbs_g FROM fitness.v_food_entry_with_nutrition WHERE external_id = 'entry-101' LIMIT 1`,
+    );
+    expect(riceView[0]?.carbs_g).toBeCloseTo(45);
   });
 
   it("does not duplicate entries on re-sync", async () => {
@@ -226,6 +240,29 @@ describe("FatSecretProvider.sync() (integration)", () => {
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens found");
+    expect(result.recordsSynced).toBe(0);
+  });
+
+  it("handles null food_entries response for days with no data", async () => {
+    await saveTokens(ctx.db, "fatsecret", {
+      accessToken: "oauth1-token",
+      refreshToken: "oauth1-token-secret",
+      expiresAt: new Date("2099-01-01T00:00:00Z"),
+      scopes: null,
+    });
+
+    // FatSecret sometimes returns { food_entries: null } instead of an error
+    server.use(
+      http.get("https://platform.fatsecret.com/rest/server.api", () => {
+        return HttpResponse.json({ food_entries: null });
+      }),
+    );
+
+    const provider = new FatSecretProvider();
+    const since = new Date("2026-03-19T00:00:00Z");
+    const result = await provider.sync(ctx.db, since);
+
+    expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBe(0);
   });
 

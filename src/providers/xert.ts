@@ -1,18 +1,24 @@
+import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
-import { exchangeCodeForTokens, refreshAccessToken } from "../auth/oauth.ts";
+import { getOAuthRedirectUri } from "../auth/oauth.ts";
+import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
-import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
-import { logger } from "../logger.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import { ensureProvider } from "../db/tokens.ts";
+import type {
+  ProviderAuthSetup,
+  SyncError,
+  SyncOptions,
+  SyncProvider,
+  SyncResult,
+} from "./types.ts";
 
 // ============================================================
 // Xert API types
 // ============================================================
 
 const XERT_API_BASE = "https://www.xertonline.com";
-const DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
 
 interface XertActivity {
   id: number;
@@ -104,13 +110,71 @@ export function parseXertActivity(raw: XertActivity): ParsedXertActivity {
 }
 
 // ============================================================
-// OAuth configuration
+// Token response schema (Zod — runtime boundary)
+// ============================================================
+
+const XertTokenResponseSchema = z.object({
+  access_token: z.string(),
+  refresh_token: z.string().optional(),
+  expires_in: z.number().optional(),
+  token_type: z.string().optional(),
+});
+
+/** Default expiry when the provider omits `expires_in` — 1 year. */
+const DEFAULT_EXPIRES_IN_SECONDS = 365 * 24 * 60 * 60;
+
+/**
+ * Sign in to Xert using the password grant.
+ * Xert does not support the OAuth authorization code flow —
+ * it only supports `grant_type=password` with Basic auth.
+ */
+export async function signInToXert(
+  email: string,
+  password: string,
+  fetchFn: typeof globalThis.fetch = globalThis.fetch,
+): Promise<TokenSet> {
+  const clientId = process.env.XERT_CLIENT_ID ?? "xert_public";
+  const clientSecret = process.env.XERT_CLIENT_SECRET ?? "xert_public";
+
+  const params = new URLSearchParams({
+    grant_type: "password",
+    username: email,
+    password: password,
+  });
+
+  const response = await fetchFn(`${XERT_API_BASE}/oauth/token`, {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${btoa(`${clientId}:${clientSecret}`)}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: params.toString(),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Xert sign-in failed (${response.status}): ${text}`);
+  }
+
+  const data: unknown = await response.json();
+  const parsed = XertTokenResponseSchema.parse(data);
+
+  return {
+    accessToken: parsed.access_token,
+    refreshToken: parsed.refresh_token ?? null,
+    expiresAt: new Date(Date.now() + (parsed.expires_in ?? DEFAULT_EXPIRES_IN_SECONDS) * 1000),
+    scopes: null,
+  };
+}
+
+// ============================================================
+// OAuth configuration (used for token refresh)
 // ============================================================
 
 export function xertOAuthConfig(): OAuthConfig | null {
   const clientId = process.env.XERT_CLIENT_ID ?? "xert_public";
   const clientSecret = process.env.XERT_CLIENT_SECRET ?? "xert_public";
-  const redirectUri = process.env.OAUTH_REDIRECT_URI ?? DEFAULT_REDIRECT_URI;
+  const redirectUri = getOAuthRedirectUri();
 
   return {
     clientId,
@@ -127,13 +191,13 @@ export function xertOAuthConfig(): OAuthConfig | null {
 // Provider implementation
 // ============================================================
 
-export class XertProvider implements Provider {
+export class XertProvider implements SyncProvider {
   readonly id = "xert";
   readonly name = "Xert";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -145,28 +209,28 @@ export class XertProvider implements Provider {
   authSetup(): ProviderAuthSetup {
     const config = xertOAuthConfig();
     if (!config) throw new Error("Failed to create Xert OAuth config");
-    const fetchFn = this.fetchFn;
+    const fetchFn = this.#fetchFn;
     return {
       oauthConfig: config,
-      exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn),
+      automatedLogin: (email, password) => signInToXert(email, password, fetchFn),
+      exchangeCode: async () => {
+        throw new Error("Xert uses automated login, not OAuth code exchange");
+      },
       apiBaseUrl: XERT_API_BASE,
     };
   }
 
-  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
-    const tokens = await loadTokens(db, this.id);
-    if (!tokens) throw new Error("No OAuth tokens for Xert. Run: health-data auth xert");
-    if (tokens.expiresAt > new Date()) return tokens;
-
-    logger.info("[xert] Token expired, refreshing...");
-    const config = xertOAuthConfig();
-    if (!config || !tokens.refreshToken) throw new Error("Cannot refresh Xert tokens");
-    const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);
-    await saveTokens(db, this.id, refreshed);
-    return refreshed;
+  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+    return resolveOAuthTokens({
+      db,
+      providerId: this.id,
+      providerName: this.name,
+      getOAuthConfig: () => xertOAuthConfig(),
+      fetchFn: this.#fetchFn,
+    });
   }
 
-  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -175,7 +239,7 @@ export class XertProvider implements Provider {
 
     let accessToken: string;
     try {
-      const tokens = await this.resolveTokens(db);
+      const tokens = await this.#resolveTokens(db);
       accessToken = tokens.accessToken;
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
@@ -183,68 +247,74 @@ export class XertProvider implements Provider {
     }
 
     try {
-      const activityCount = await withSyncLog(db, this.id, "activity", async () => {
-        let count = 0;
-        let page = 0;
-        let hasMore = true;
-        const pageSize = 50;
+      const activityCount = await withSyncLog(
+        db,
+        this.id,
+        "activity",
+        async () => {
+          let count = 0;
+          let page = 0;
+          let hasMore = true;
+          const pageSize = 50;
 
-        while (hasMore) {
-          const url = `${XERT_API_BASE}/oauth/activity/?from=${Math.floor(since.getTime() / 1000)}&page=${page}&limit=${pageSize}`;
-          const response = await this.fetchFn(url, {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              Accept: "application/json",
-            },
-          });
+          while (hasMore) {
+            const url = `${XERT_API_BASE}/oauth/activity/?from=${Math.floor(since.getTime() / 1000)}&page=${page}&limit=${pageSize}`;
+            const response = await this.#fetchFn(url, {
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                Accept: "application/json",
+              },
+            });
 
-          if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`Xert API error (${response.status}): ${text}`);
-          }
+            if (!response.ok) {
+              const text = await response.text();
+              throw new Error(`Xert API error (${response.status}): ${text}`);
+            }
 
-          const data: XertActivity[] = await response.json();
-          hasMore = data.length >= pageSize;
+            const data: XertActivity[] = await response.json();
+            hasMore = data.length >= pageSize;
 
-          for (const rawActivity of data) {
-            const parsed = parseXertActivity(rawActivity);
-            try {
-              await db
-                .insert(activity)
-                .values({
-                  providerId: this.id,
-                  externalId: parsed.externalId,
-                  activityType: parsed.activityType,
-                  name: parsed.name,
-                  startedAt: parsed.startedAt,
-                  endedAt: parsed.endedAt,
-                  raw: parsed.raw,
-                })
-                .onConflictDoUpdate({
-                  target: [activity.providerId, activity.externalId],
-                  set: {
+            for (const rawActivity of data) {
+              const parsed = parseXertActivity(rawActivity);
+              try {
+                await db
+                  .insert(activity)
+                  .values({
+                    providerId: this.id,
+                    externalId: parsed.externalId,
                     activityType: parsed.activityType,
                     name: parsed.name,
                     startedAt: parsed.startedAt,
                     endedAt: parsed.endedAt,
                     raw: parsed.raw,
-                  },
+                  })
+                  .onConflictDoUpdate({
+                    target: [activity.providerId, activity.externalId],
+                    set: {
+                      activityType: parsed.activityType,
+                      name: parsed.name,
+                      startedAt: parsed.startedAt,
+                      endedAt: parsed.endedAt,
+                      raw: parsed.raw,
+                    },
+                  });
+                count++;
+              } catch (err) {
+                errors.push({
+                  message: err instanceof Error ? err.message : String(err),
+                  externalId: parsed.externalId,
+                  cause: err,
                 });
-              count++;
-            } catch (err) {
-              errors.push({
-                message: err instanceof Error ? err.message : String(err),
-                externalId: parsed.externalId,
-                cause: err,
-              });
+              }
             }
+
+            page++;
           }
 
-          page++;
-        }
-
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += activityCount;
     } catch (err) {
       errors.push({

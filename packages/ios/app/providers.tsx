@@ -1,18 +1,28 @@
+import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { File as ExpoFile } from "expo-file-system";
+import * as WebBrowser from "expo-web-browser";
 import { trpc } from "../lib/trpc";
 import { useAuth } from "../lib/auth-context";
 import { importSharedFile, type ShareImportProgress } from "../lib/share-import";
+import { ProviderStatsBreakdown } from "../components/ProviderStatsBreakdown";
 import { colors } from "../theme";
 import { formatRelativeTime } from "@dofek/format/format";
+
+function readBlobFromFileUri(fileUri: string): Promise<Blob> {
+  return Promise.resolve(new ExpoFile(fileUri));
+}
 
 type AuthStatus = "connected" | "not_connected" | "expired";
 
@@ -21,21 +31,11 @@ interface Provider {
   label: string;
   enabled: boolean;
   authStatus: AuthStatus;
+  authType: string;
   lastSyncAt: string | null;
+  importOnly: boolean;
 }
 
-interface ProviderStats {
-  activities: number;
-  sleepSessions: number;
-  bodyMeasurements: number;
-  foodEntries: number;
-  dailyMetrics: number;
-  healthEvents: number;
-  metricStream: number;
-  nutritionDaily: number;
-  labResults: number;
-  journalEntries: number;
-}
 
 interface SyncLog {
   id: string;
@@ -92,16 +92,6 @@ function importProviderLabel(providerId: string | undefined): string {
   }
 }
 
-function StatBadge({ label, count }: { label: string; count: number }) {
-  if (count === 0) return null;
-  return (
-    <View style={styles.statBadge}>
-      <Text style={styles.statBadgeCount}>{count.toLocaleString()}</Text>
-      <Text style={styles.statBadgeLabel}>{label}</Text>
-    </View>
-  );
-}
-
 export function ProviderCard({
   provider,
   stats,
@@ -109,6 +99,7 @@ export function ProviderCard({
   syncProgress,
   onSync,
   onFullSync,
+  onConnect,
   onPress,
 }: {
   provider: Provider;
@@ -117,6 +108,7 @@ export function ProviderCard({
   syncProgress: { percentage?: number; message?: string } | undefined;
   onSync: () => void;
   onFullSync: () => void;
+  onConnect: () => void;
   onPress: () => void;
 }) {
   const dotColor = statusDotColor(provider.authStatus);
@@ -128,20 +120,22 @@ export function ProviderCard({
           <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
           <Text style={styles.cardTitle}>{provider.label}</Text>
         </View>
-        <TouchableOpacity
-          style={[styles.syncButton, syncing && styles.syncButtonDisabled]}
-          onPress={onSync}
-          activeOpacity={0.7}
-          disabled={syncing || provider.authStatus !== "connected"}
-        >
-          {syncing ? (
-            <ActivityIndicator color={colors.text} size="small" />
-          ) : (
-            <Text style={styles.syncButtonText}>
-              {providerActionLabel(provider.authStatus)}
-            </Text>
-          )}
-        </TouchableOpacity>
+        {!provider.importOnly && (
+          <TouchableOpacity
+            style={[styles.syncButton, syncing && styles.syncButtonDisabled]}
+            onPress={provider.authStatus === "connected" ? onSync : onConnect}
+            activeOpacity={0.7}
+            disabled={syncing}
+          >
+            {syncing ? (
+              <ActivityIndicator color={colors.text} size="small" />
+            ) : (
+              <Text style={styles.syncButtonText}>
+                {providerActionLabel(provider.authStatus)}
+              </Text>
+            )}
+          </TouchableOpacity>
+        )}
       </View>
 
       {syncing && syncProgress ? (
@@ -164,15 +158,19 @@ export function ProviderCard({
         </View>
       ) : (
         <View style={styles.cardMeta}>
-          <Text style={styles.cardMetaText}>{statusLabel(provider.authStatus)}</Text>
-          {provider.lastSyncAt ? (
-            <Text style={styles.cardMetaText}>
-              Last sync: {formatRelativeTime(provider.lastSyncAt)}
-            </Text>
-          ) : (
-            <Text style={styles.cardMetaText}>Never synced</Text>
+          <Text style={styles.cardMetaText}>
+            {provider.importOnly ? "Import only" : statusLabel(provider.authStatus)}
+          </Text>
+          {!provider.importOnly && (
+            provider.lastSyncAt && formatRelativeTime(provider.lastSyncAt) ? (
+              <Text style={styles.cardMetaText}>
+                Last sync: {formatRelativeTime(provider.lastSyncAt)}
+              </Text>
+            ) : (
+              <Text style={styles.cardMetaText}>Never synced</Text>
+            )
           )}
-          {provider.authStatus === "connected" && !syncing && (
+          {provider.authStatus === "connected" && !syncing && !provider.importOnly && (
             <TouchableOpacity onPress={onFullSync} activeOpacity={0.7}>
               <Text style={styles.fullSyncLink}>Full sync</Text>
             </TouchableOpacity>
@@ -180,15 +178,7 @@ export function ProviderCard({
         </View>
       )}
 
-      {stats && (
-        <View style={styles.statsRow}>
-          <StatBadge label="activities" count={stats.activities} />
-          <StatBadge label="sleep" count={stats.sleepSessions} />
-          <StatBadge label="body" count={stats.bodyMeasurements} />
-          <StatBadge label="food" count={stats.foodEntries + stats.nutritionDaily} />
-          <StatBadge label="metrics" count={stats.dailyMetrics + stats.metricStream} />
-        </View>
-      )}
+      {stats && <ProviderStatsBreakdown stats={stats} />}
     </TouchableOpacity>
   );
 }
@@ -215,7 +205,7 @@ function SyncLogRow({ log }: { log: SyncLog }) {
           </Text>
           <Text style={styles.logDetailText}>{formatDuration(log.durationMs ?? 0)}</Text>
           <Text style={styles.logDetailText}>
-            {formatRelativeTime(log.syncedAt)}
+            {formatRelativeTime(log.syncedAt) ?? ""}
           </Text>
         </View>
         {isError && log.errorMessage ? (
@@ -238,6 +228,12 @@ export default function ProvidersScreen() {
   const syncMutation = trpc.sync.triggerSync.useMutation();
   const trpcUtils = trpc.useUtils();
   const activeSyncs = trpc.sync.activeSyncs.useQuery(undefined, { staleTime: 0 });
+
+  // Auth modal state
+  const [credentialAuthProvider, setCredentialAuthProvider] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
   // Track which providers are currently syncing (from active jobs or user-initiated)
   const [syncingProviders, setSyncingProviders] = useState<Set<string>>(new Set());
@@ -324,9 +320,7 @@ export default function ProvidersScreen() {
           if (pollingJobIds.current.size === 0) {
             setAnySyncing(false);
           }
-          trpcUtils.sync.providers.invalidate();
-          trpcUtils.sync.providerStats.invalidate();
-          trpcUtils.sync.logs.invalidate();
+          trpcUtils.invalidate();
           return;
         }
 
@@ -367,19 +361,19 @@ export default function ProvidersScreen() {
     if (!sessionToken) return;
     if (importedSharedUris.current.has(sharedFileUri)) return;
     importedSharedUris.current.add(sharedFileUri);
-    router.replace("/providers");
 
     void (async () => {
       try {
-        await importSharedFile({
-          fileUri: sharedFileUri,
-          serverUrl,
-          sessionToken,
-          onProgress: setSharedImportState,
-        });
-        trpcUtils.sync.providers.invalidate();
-        trpcUtils.sync.providerStats.invalidate();
-        trpcUtils.sync.logs.invalidate();
+        await importSharedFile(
+          {
+            fileUri: sharedFileUri,
+            serverUrl,
+            sessionToken,
+            onProgress: setSharedImportState,
+          },
+          { readBlob: readBlobFromFileUri },
+        );
+        trpcUtils.invalidate();
       } catch (error: unknown) {
         setSharedImportState({
           status: "error",
@@ -388,7 +382,7 @@ export default function ProvidersScreen() {
         });
       }
     })();
-  }, [sharedFileUri, router, serverUrl, sessionToken, trpcUtils]);
+  }, [sharedFileUri, serverUrl, sessionToken, trpcUtils]);
 
   const handleSyncProvider = useCallback(
     async (providerId: string, fullSync = false) => {
@@ -449,12 +443,30 @@ export default function ProvidersScreen() {
     }
   }, [syncMutation, providers.data, pollJob]);
 
+  const handleConnect = useCallback(
+    async (provider: { id: string; label: string; authType: string }) => {
+      switch (provider.authType) {
+        case "oauth":
+        case "oauth1":
+          await WebBrowser.openBrowserAsync(`${serverUrl}/auth/provider/${provider.id}`);
+          trpcUtils.sync.providers.invalidate();
+          break;
+        case "credential":
+          setCredentialAuthProvider({ id: provider.id, name: provider.label });
+          break;
+      }
+    },
+    [serverUrl, trpcUtils],
+  );
+
   const providerList: Provider[] = (providers.data ?? []).map((p) => ({
     id: p.id,
     label: p.name,
     enabled: p.authorized && !p.importOnly,
     authStatus: p.authorized ? "connected" : "not_connected",
+    authType: p.authType,
     lastSyncAt: p.lastSyncedAt,
+    importOnly: p.importOnly,
   }));
   const statsMap: Record<string, ProviderStats> = {};
   for (const s of stats.data ?? []) {
@@ -551,6 +563,7 @@ export default function ProvidersScreen() {
             syncProgress={syncProgress[provider.id]}
             onSync={() => handleSyncProvider(provider.id)}
             onFullSync={() => handleSyncProvider(provider.id, true)}
+            onConnect={() => handleConnect(provider)}
             onPress={() => router.push(`/providers/${provider.id}`)}
           />
         ))
@@ -571,7 +584,109 @@ export default function ProvidersScreen() {
           ))}
         </View>
       )}
+      {/* Credential Auth Modal */}
+      {credentialAuthProvider && (
+        <CredentialAuthModal
+          providerId={credentialAuthProvider.id}
+          providerName={credentialAuthProvider.name}
+          onClose={() => setCredentialAuthProvider(null)}
+          onSuccess={() => {
+            setCredentialAuthProvider(null);
+            trpcUtils.sync.providers.invalidate();
+          }}
+        />
+      )}
     </ScrollView>
+  );
+}
+
+// ── Generic Credential Auth Modal ──
+
+function CredentialAuthModal({
+  providerId,
+  providerName,
+  onClose,
+  onSuccess,
+}: {
+  providerId: string;
+  providerName: string;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const emailRef = useRef<TextInput>(null);
+
+  useEffect(() => {
+    emailRef.current?.focus();
+  }, []);
+
+  const signInMutation = trpc.credentialAuth.signIn.useMutation();
+
+  const handleSignIn = useCallback(async () => {
+    setError("");
+    setLoading(true);
+    try {
+      await signInMutation.mutateAsync({ providerId, username, password });
+      onSuccess();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Sign in failed");
+    } finally {
+      setLoading(false);
+    }
+  }, [providerId, username, password, signInMutation, onSuccess]);
+
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Connect {providerName}</Text>
+            <TouchableOpacity onPress={onClose} activeOpacity={0.7}>
+              <Text style={styles.modalClose}>{"\u00D7"}</Text>
+            </TouchableOpacity>
+          </View>
+
+          {error ? (
+            <View style={styles.errorBanner}>
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          ) : null}
+
+          <TextInput
+            ref={emailRef}
+            style={styles.input}
+            placeholder="Email"
+            placeholderTextColor={colors.textTertiary}
+            value={username}
+            onChangeText={setUsername}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Password"
+            placeholderTextColor={colors.textTertiary}
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+          />
+          <TouchableOpacity
+            style={[styles.signInButton, loading && styles.signInButtonDisabled]}
+            onPress={handleSignIn}
+            activeOpacity={0.7}
+            disabled={loading || !username || !password}
+          >
+            <Text style={styles.signInButtonText}>
+              {loading ? "Signing in..." : "Sign In"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -765,34 +880,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
 
-  // Stats row
-  statsRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    marginTop: 10,
-    paddingTop: 10,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.surfaceSecondary,
-  },
-  statBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: colors.surfaceSecondary,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  statBadgeCount: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: colors.text,
-  },
-  statBadgeLabel: {
-    fontSize: 12,
-    color: colors.textSecondary,
-  },
 
   // Sync history logs
   logRow: {
@@ -836,5 +923,71 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     textAlign: "center",
     paddingVertical: 8,
+  },
+
+  // Credential Auth Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  modalContent: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 20,
+    width: "100%",
+    maxWidth: 340,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.text,
+  },
+  modalClose: {
+    fontSize: 22,
+    color: colors.textSecondary,
+    paddingHorizontal: 4,
+  },
+  errorBanner: {
+    backgroundColor: "rgba(239, 68, 68, 0.1)",
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 12,
+  },
+  errorText: {
+    fontSize: 13,
+    color: colors.danger,
+  },
+  input: {
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: colors.text,
+    marginBottom: 10,
+  },
+  signInButton: {
+    backgroundColor: colors.accent,
+    borderRadius: 8,
+    paddingVertical: 14,
+    alignItems: "center",
+    marginTop: 4,
+  },
+  signInButtonDisabled: {
+    opacity: 0.5,
+  },
+  signInButtonText: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "600",
   },
 });

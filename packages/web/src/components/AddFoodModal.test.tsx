@@ -4,6 +4,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { AddFoodModal } from "./AddFoodModal.tsx";
 
 const analyzeMutateMock = vi.fn();
+const historyFetchMock = vi.fn().mockResolvedValue([]);
+
+/** Stable reference returned by useUtils() so the useEffect dep array does not churn */
+const stableUtils = {
+  food: {
+    search: {
+      fetch: historyFetchMock,
+    },
+  },
+};
 
 function getInputByLabel(label: RegExp): HTMLInputElement {
   const element = screen.getByLabelText(label);
@@ -23,6 +33,7 @@ vi.mock("../lib/trpc.ts", () => ({
         }),
       },
     },
+    useUtils: () => stableUtils,
   },
 }));
 
@@ -31,9 +42,50 @@ describe("AddFoodModal", () => {
     cleanup();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    historyFetchMock.mockClear().mockResolvedValue([]);
   });
 
-  it("shows Open Food Facts suggestions and applies selected nutrition details", async () => {
+  it("shows history results from tRPC search when typing", async () => {
+    historyFetchMock.mockResolvedValue([
+      {
+        food_name: "Chicken Breast",
+        food_description: "6 oz grilled",
+        category: "meat",
+        calories: 280,
+        protein_g: 53,
+        carbs_g: 0,
+        fat_g: 6,
+        fiber_g: 0,
+        number_of_units: 1,
+      },
+    ]);
+
+    render(<AddFoodModal isOpen onClose={vi.fn()} onSubmit={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText(/What did you eat\?/i), {
+      target: { value: "chicken" },
+    });
+
+    await waitFor(() => {
+      expect(historyFetchMock).toHaveBeenCalledWith({ query: "chicken", limit: 8 });
+    });
+
+    const suggestion = await screen.findByText("Chicken Breast");
+    expect(screen.getByText("Your History")).toBeTruthy();
+
+    fireEvent.click(suggestion);
+
+    expect(getInputByLabel(/What did you eat\?/i).value).toBe("Chicken Breast");
+    expect(getInputByLabel(/Calories/i).value).toBe("280");
+    expect(getInputByLabel(/Serving description/i).value).toBe("6 oz grilled");
+    expect(getInputByLabel(/Protein \(g\)/i).value).toBe("53");
+    expect(getInputByLabel(/Carbs \(g\)/i).value).toBe("0");
+    expect(getInputByLabel(/Fat \(g\)/i).value).toBe("6");
+  });
+
+  it("shows Open Food Facts results when Search Food Database button is clicked", async () => {
+    historyFetchMock.mockResolvedValue([]);
+
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -63,11 +115,17 @@ describe("AddFoodModal", () => {
       target: { value: "burger" },
     });
 
+    // Wait for the "Search Food Database" button to appear (query >= 2 chars)
+    const searchButton = await screen.findByText("Search Food Database");
+    fireEvent.click(searchButton);
+
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
     const suggestion = await screen.findByText("Seeded Burger Buns (Baker Co)");
+    expect(screen.getByText("Food Database")).toBeTruthy();
+
     fireEvent.click(suggestion);
 
     const requestedUrl = String(fetchMock.mock.calls[0]?.[0] ?? "");

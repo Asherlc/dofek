@@ -659,7 +659,7 @@ describe("FitbitClient — error handling", () => {
     );
 
     const client = new FitbitClient("bad-token");
-    await expect(client.getActivities("2026-03-01")).rejects.toThrow("Fitbit API error (401)");
+    await expect(client.getActivities("2026-03-01")).rejects.toThrow("API error 401");
   });
 
   it("throws on non-OK sleep response", async () => {
@@ -670,7 +670,7 @@ describe("FitbitClient — error handling", () => {
     );
 
     const client = new FitbitClient("token");
-    await expect(client.getSleepLogs("2026-03-01")).rejects.toThrow("Fitbit API error (500)");
+    await expect(client.getSleepLogs("2026-03-01")).rejects.toThrow("API error 500");
   });
 
   it("throws on non-OK weight log response", async () => {
@@ -684,7 +684,7 @@ describe("FitbitClient — error handling", () => {
     );
 
     const client = new FitbitClient("token");
-    await expect(client.getWeightLogs("2026-03-01")).rejects.toThrow("Fitbit API error (429)");
+    await expect(client.getWeightLogs("2026-03-01")).rejects.toThrow("API error 429");
   });
 
   it("throws on non-OK daily summary response", async () => {
@@ -695,7 +695,7 @@ describe("FitbitClient — error handling", () => {
     );
 
     const client = new FitbitClient("token");
-    await expect(client.getDailySummary("2026-03-01")).rejects.toThrow("Fitbit API error (403)");
+    await expect(client.getDailySummary("2026-03-01")).rejects.toThrow("API error 403");
   });
 });
 

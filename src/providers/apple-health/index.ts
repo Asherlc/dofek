@@ -3,6 +3,8 @@
 export { getStringAttrs, parseHealthDate } from "./dates.ts";
 export {
   ALL_ROUTED_TYPES,
+  aggregateSkinTempToDailyMetrics,
+  aggregateSpO2ToDailyMetrics,
   BODY_MEASUREMENT_TYPES,
   DAILY_METRIC_TYPES,
   linkUnassignedHeartRateToActivities,

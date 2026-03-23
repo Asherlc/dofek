@@ -1,11 +1,17 @@
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
-import { exchangeCodeForTokens, refreshAccessToken } from "../auth/oauth.ts";
+import { exchangeCodeForTokens } from "../auth/oauth.ts";
+import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
-import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
-import { logger } from "../logger.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import { ensureProvider } from "../db/tokens.ts";
+import type {
+  ProviderAuthSetup,
+  SyncError,
+  SyncOptions,
+  SyncProvider,
+  SyncResult,
+} from "./types.ts";
 
 // ============================================================
 // Decathlon API types
@@ -136,13 +142,13 @@ export function decathlonOAuthConfig(): OAuthConfig | null {
 // Provider implementation
 // ============================================================
 
-export class DecathlonProvider implements Provider {
+export class DecathlonProvider implements SyncProvider {
   readonly id = "decathlon";
   readonly name = "Decathlon";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -154,7 +160,7 @@ export class DecathlonProvider implements Provider {
   authSetup(): ProviderAuthSetup {
     const config = decathlonOAuthConfig();
     if (!config) throw new Error("DECATHLON_CLIENT_ID and CLIENT_SECRET required");
-    const fetchFn = this.fetchFn;
+    const fetchFn = this.#fetchFn;
     return {
       oauthConfig: config,
       exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn),
@@ -162,20 +168,17 @@ export class DecathlonProvider implements Provider {
     };
   }
 
-  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
-    const tokens = await loadTokens(db, this.id);
-    if (!tokens) throw new Error("No OAuth tokens for Decathlon. Run: health-data auth decathlon");
-    if (tokens.expiresAt > new Date()) return tokens;
-
-    logger.info("[decathlon] Token expired, refreshing...");
-    const config = decathlonOAuthConfig();
-    if (!config || !tokens.refreshToken) throw new Error("Cannot refresh Decathlon tokens");
-    const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);
-    await saveTokens(db, this.id, refreshed);
-    return refreshed;
+  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+    return resolveOAuthTokens({
+      db,
+      providerId: this.id,
+      providerName: this.name,
+      getOAuthConfig: () => decathlonOAuthConfig(),
+      fetchFn: this.#fetchFn,
+    });
   }
 
-  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -184,7 +187,7 @@ export class DecathlonProvider implements Provider {
 
     let accessToken: string;
     try {
-      const tokens = await this.resolveTokens(db);
+      const tokens = await this.#resolveTokens(db);
       accessToken = tokens.accessToken;
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
@@ -194,66 +197,72 @@ export class DecathlonProvider implements Provider {
     const clientId = process.env.DECATHLON_CLIENT_ID;
 
     try {
-      const activityCount = await withSyncLog(db, this.id, "activity", async () => {
-        let count = 0;
-        let nextUrl: string | undefined =
-          `${DECATHLON_API_BASE}/activities?after=${since.toISOString()}&limit=50`;
+      const activityCount = await withSyncLog(
+        db,
+        this.id,
+        "activity",
+        async () => {
+          let count = 0;
+          let nextUrl: string | undefined =
+            `${DECATHLON_API_BASE}/activities?after=${since.toISOString()}&limit=50`;
 
-        while (nextUrl) {
-          const response = await this.fetchFn(nextUrl, {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              Accept: "application/json",
-              ...(clientId ? { "x-api-key": clientId } : {}),
-            },
-          });
+          while (nextUrl) {
+            const response = await this.#fetchFn(nextUrl, {
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                Accept: "application/json",
+                ...(clientId ? { "x-api-key": clientId } : {}),
+              },
+            });
 
-          if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`Decathlon API error (${response.status}): ${text}`);
-          }
+            if (!response.ok) {
+              const text = await response.text();
+              throw new Error(`Decathlon API error (${response.status}): ${text}`);
+            }
 
-          const data: DecathlonActivitiesResponse = await response.json();
-          const activities = data.data ?? [];
-          nextUrl = data.links?.next;
+            const data: DecathlonActivitiesResponse = await response.json();
+            const activities = data.data ?? [];
+            nextUrl = data.links?.next;
 
-          for (const raw of activities) {
-            const parsed = parseDecathlonActivity(raw);
-            try {
-              await db
-                .insert(activity)
-                .values({
-                  providerId: this.id,
-                  externalId: parsed.externalId,
-                  activityType: parsed.activityType,
-                  name: parsed.name,
-                  startedAt: parsed.startedAt,
-                  endedAt: parsed.endedAt,
-                  raw: parsed.raw,
-                })
-                .onConflictDoUpdate({
-                  target: [activity.providerId, activity.externalId],
-                  set: {
+            for (const raw of activities) {
+              const parsed = parseDecathlonActivity(raw);
+              try {
+                await db
+                  .insert(activity)
+                  .values({
+                    providerId: this.id,
+                    externalId: parsed.externalId,
                     activityType: parsed.activityType,
                     name: parsed.name,
                     startedAt: parsed.startedAt,
                     endedAt: parsed.endedAt,
                     raw: parsed.raw,
-                  },
+                  })
+                  .onConflictDoUpdate({
+                    target: [activity.providerId, activity.externalId],
+                    set: {
+                      activityType: parsed.activityType,
+                      name: parsed.name,
+                      startedAt: parsed.startedAt,
+                      endedAt: parsed.endedAt,
+                      raw: parsed.raw,
+                    },
+                  });
+                count++;
+              } catch (err) {
+                errors.push({
+                  message: err instanceof Error ? err.message : String(err),
+                  externalId: parsed.externalId,
+                  cause: err,
                 });
-              count++;
-            } catch (err) {
-              errors.push({
-                message: err instanceof Error ? err.message : String(err),
-                externalId: parsed.externalId,
-                cause: err,
-              });
+              }
             }
           }
-        }
 
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += activityCount;
     } catch (err) {
       errors.push({

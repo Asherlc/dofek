@@ -12,6 +12,7 @@ vi.mock("./routers/body.ts", () => ({ bodyRouter: mockRouter }));
 vi.mock("./routers/body-analytics.ts", () => ({ bodyAnalyticsRouter: mockRouter }));
 vi.mock("./routers/calendar.ts", () => ({ calendarRouter: mockRouter }));
 vi.mock("./routers/correlation.ts", () => ({ correlationRouter: mockRouter }));
+vi.mock("./routers/credential-auth.ts", () => ({ credentialAuthRouter: mockRouter }));
 vi.mock("./routers/cycling-advanced.ts", () => ({ cyclingAdvancedRouter: mockRouter }));
 vi.mock("./routers/daily-metrics.ts", () => ({ dailyMetricsRouter: mockRouter }));
 vi.mock("./routers/duration-curves.ts", () => ({ durationCurvesRouter: mockRouter }));
@@ -23,6 +24,7 @@ vi.mock("./routers/healthspan.ts", () => ({ healthspanRouter: mockRouter }));
 vi.mock("./routers/hiking.ts", () => ({ hikingRouter: mockRouter }));
 vi.mock("./routers/insights.ts", () => ({ insightsRouter: mockRouter }));
 vi.mock("./routers/intervals.ts", () => ({ intervalsRouter: mockRouter }));
+vi.mock("./routers/journal.ts", () => ({ journalRouter: mockRouter }));
 vi.mock("./routers/life-events.ts", () => ({ lifeEventsRouter: mockRouter }));
 vi.mock("./routers/nutrition.ts", () => ({ nutritionRouter: mockRouter }));
 vi.mock("./routers/nutrition-analytics.ts", () => ({ nutritionAnalyticsRouter: mockRouter }));
@@ -102,6 +104,7 @@ describe("appRouter", () => {
       "trends",
       "calendar",
       "correlation",
+      "credentialAuth",
       "pmc",
       "power",
       "durationCurves",
@@ -122,6 +125,7 @@ describe("appRouter", () => {
       "weeklyReport",
       "sportSettings",
       "intervals",
+      "journal",
     ];
 
     // The router definition record should have entries for each sub-router

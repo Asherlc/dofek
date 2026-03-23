@@ -93,20 +93,9 @@ describe("Eight Sleep Provider", () => {
       expect(result.awakeMinutes).toBe(60);
     });
 
-    it("calculates sleep efficiency correctly", () => {
+    it("does not include efficiencyPct (derived in v_sleep view)", () => {
       const result = parseEightSleepTrendDay(sampleTrendDay);
-      // efficiency = sleepDuration / presenceDuration = 25200 / 28800 ≈ 87.5% → 88%
-      expect(result.efficiencyPct).toBe(88);
-    });
-
-    it("handles zero presence duration", () => {
-      const zeroDuration = {
-        ...sampleTrendDay,
-        presenceDuration: 0,
-        sleepDuration: 0,
-      };
-      const result = parseEightSleepTrendDay(zeroDuration);
-      expect(result.efficiencyPct).toBe(0);
+      expect(result).not.toHaveProperty("efficiencyPct");
     });
   });
 

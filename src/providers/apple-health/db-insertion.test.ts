@@ -48,10 +48,20 @@ function createMockDb(returningData: Record<string, unknown>[] = []): {
   const insertFn = vi.fn();
   insertFn.mockImplementation(() => makeChainable());
 
+  const selectChain = {
+    from: vi.fn().mockReturnValue({
+      where: vi.fn().mockResolvedValue([]),
+    }),
+  };
+
+  const deleteChain = {
+    where: vi.fn().mockResolvedValue(undefined),
+  };
+
   const db: SyncDatabase = {
-    select: vi.fn(),
+    select: vi.fn().mockReturnValue(selectChain),
     insert: insertFn,
-    delete: vi.fn(),
+    delete: vi.fn().mockReturnValue(deleteChain),
     execute: vi.fn(),
   };
 
@@ -1165,7 +1175,7 @@ describe("upsertSleepBatch", () => {
     });
   });
 
-  it("calculates sleep efficiency as totalSleep / duration", async () => {
+  it("does not store efficiencyPct (derived in v_sleep view)", async () => {
     const { db, capture } = createMockDb();
     const bedStart = new Date("2024-03-01T23:00:00Z");
     const bedEnd = new Date("2024-03-02T07:00:00Z");
@@ -1187,16 +1197,7 @@ describe("upsertSleepBatch", () => {
     ];
 
     await upsertSleepBatch(db, "p1", records);
-    // efficiency = (120 + 240) / 480 * 100 = 75, then /100 = 0.75
-    expect(capture.values[0]?.[0]).toMatchObject({ efficiencyPct: 0.75 });
-  });
-
-  it("sets efficiency to undefined for zero-duration sessions", async () => {
-    const { db, capture } = createMockDb();
-    const records = [makeSleep({ durationMinutes: 0 })];
-
-    await upsertSleepBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toHaveProperty("efficiencyPct", undefined);
+    expect(capture.values[0]?.[0]).not.toHaveProperty("efficiencyPct");
   });
 
   it("stores null sleep_type for short sessions", async () => {
@@ -1226,16 +1227,16 @@ describe("upsertSleepBatch", () => {
     });
   });
 
-  it("uses undefined instead of 0 for zero stage durations", async () => {
+  it("stores 0 for zero stage durations instead of undefined", async () => {
     const { db, capture } = createMockDb();
     // No stage records — all durations are 0
     const records = [makeSleep()];
 
     await upsertSleepBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toHaveProperty("deepMinutes", undefined);
-    expect(capture.values[0]?.[0]).toHaveProperty("remMinutes", undefined);
-    expect(capture.values[0]?.[0]).toHaveProperty("lightMinutes", undefined);
-    expect(capture.values[0]?.[0]).toHaveProperty("awakeMinutes", undefined);
+    expect(capture.values[0]?.[0]).toHaveProperty("deepMinutes", 0);
+    expect(capture.values[0]?.[0]).toHaveProperty("remMinutes", 0);
+    expect(capture.values[0]?.[0]).toHaveProperty("lightMinutes", 0);
+    expect(capture.values[0]?.[0]).toHaveProperty("awakeMinutes", 0);
   });
 
   it("only includes stage records within the inBed time window", async () => {
@@ -1271,7 +1272,7 @@ describe("upsertSleepBatch", () => {
     await upsertSleepBatch(db, "p1", records);
     // Only the 60min deep inside the window should be counted
     expect(capture.values[0]?.[0]).toMatchObject({ deepMinutes: 60 });
-    expect(capture.values[0]?.[0]).toHaveProperty("remMinutes", undefined);
+    expect(capture.values[0]?.[0]).toHaveProperty("remMinutes", 0);
   });
 
   it("returns 0 for empty records", async () => {
@@ -1329,8 +1330,8 @@ describe("upsertBodyMeasurementBatch — deduplication", () => {
   });
 });
 
-describe("upsertDailyMetricsBatch — deduplication", () => {
-  it("aggregates daily metrics for the same date into one row", async () => {
+describe("upsertDailyMetricsBatch — per-source rows", () => {
+  it("stores separate rows per source for the same date", async () => {
     const { db, capture } = createMockDb();
 
     // Two step count records on the same day from different sources
@@ -1352,10 +1353,38 @@ describe("upsertDailyMetricsBatch — deduplication", () => {
     ];
 
     const count = await upsertDailyMetricsBatch(db, "apple_health", records);
-    // Both records are on the same day → aggregated into 1 row
-    expect(count).toBe(1);
+    // Different sources → separate rows (dedup happens at query time in the view)
+    expect(count).toBe(2);
     expect(capture.values).toHaveLength(1);
-    expect(capture.values[0]).toHaveLength(1);
+    expect(capture.values[0]).toHaveLength(2);
+    const sourceNames = capture.values[0]?.map((r: Record<string, unknown>) => r.sourceName).sort();
+    expect(sourceNames).toEqual(["Apple Watch", "iPhone"]);
+  });
+
+  it("sums records from the same source on the same day", async () => {
+    const { db, capture } = createMockDb();
+
+    const records = [
+      makeRecord({
+        type: "HKQuantityTypeIdentifierStepCount",
+        sourceName: "Apple Watch",
+        value: 2000,
+        startDate: new Date("2024-06-01T10:00:00Z"),
+        endDate: new Date("2024-06-01T10:30:00Z"),
+      }),
+      makeRecord({
+        type: "HKQuantityTypeIdentifierStepCount",
+        sourceName: "Apple Watch",
+        value: 3000,
+        startDate: new Date("2024-06-01T14:00:00Z"),
+        endDate: new Date("2024-06-01T14:30:00Z"),
+      }),
+    ];
+
+    const count = await upsertDailyMetricsBatch(db, "apple_health", records);
+    // Same source → summed into one row
+    expect(count).toBe(1);
+    expect(capture.values[0]?.[0]).toMatchObject({ steps: 5000, sourceName: "Apple Watch" });
   });
 });
 
@@ -1427,8 +1456,8 @@ describe("upsertNutritionBatch — deduplication", () => {
 // Safety-net dedup: insertWithDuplicateDiag retries with deduplicated batch
 // ---------------------------------------------------------------------------
 
-describe("insertWithDuplicateDiag — dedup and retry", () => {
-  it("deduplicates and retries when batch has duplicate conflict keys", async () => {
+describe("insertWithDuplicateDiag — upfront dedup", () => {
+  it("deduplicates before inserting when batch has duplicate conflict keys", async () => {
     const insertCalls: Record<string, unknown>[][] = [];
 
     const rows: Record<string, unknown>[] = [
@@ -1438,9 +1467,6 @@ describe("insertWithDuplicateDiag — dedup and retry", () => {
 
     const doInsert = vi.fn(async (batch: Record<string, unknown>[]) => {
       insertCalls.push(batch);
-      if (insertCalls.length === 1) {
-        throw new Error("ON CONFLICT DO UPDATE command cannot affect row a second time");
-      }
     });
 
     await insertWithDuplicateDiag(
@@ -1450,19 +1476,31 @@ describe("insertWithDuplicateDiag — dedup and retry", () => {
       doInsert,
     );
 
-    expect(doInsert).toHaveBeenCalledTimes(2);
-    // First call gets both rows (including duplicate)
-    expect(insertCalls[0]).toHaveLength(2);
-    // Second call gets deduplicated rows (last one wins)
-    expect(insertCalls[1]).toHaveLength(1);
-    expect(insertCalls[1]?.[0]).toEqual({
+    // Only one call with deduplicated rows
+    expect(doInsert).toHaveBeenCalledTimes(1);
+    expect(insertCalls[0]).toHaveLength(1);
+    expect(insertCalls[0]?.[0]).toEqual({
       providerId: "apple_health",
       externalId: "dup-key",
       weightKg: 81,
     });
   });
 
-  it("re-throws non-duplicate errors", async () => {
+  it("passes through rows unchanged when no duplicates", async () => {
+    const rows: Record<string, unknown>[] = [
+      { id: 1, name: "a" },
+      { id: 2, name: "b" },
+    ];
+
+    const doInsert = vi.fn(async () => {});
+
+    await insertWithDuplicateDiag("test", (row) => String(row.id), rows, doInsert);
+
+    expect(doInsert).toHaveBeenCalledTimes(1);
+    expect(doInsert).toHaveBeenCalledWith(rows);
+  });
+
+  it("propagates insert errors", async () => {
     const doInsert = vi.fn(async () => {
       throw new Error("connection reset");
     });

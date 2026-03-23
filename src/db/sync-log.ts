@@ -8,6 +8,8 @@ export interface SyncLogEntry {
   recordCount?: number;
   errorMessage?: string;
   durationMs?: number;
+  /** User ID for this sync log entry. When omitted, falls back to the DB default (DEFAULT_USER_ID). */
+  userId?: string;
 }
 
 /**
@@ -21,6 +23,7 @@ export async function logSync(db: SyncDatabase, entry: SyncLogEntry): Promise<vo
     recordCount: entry.recordCount ?? 0,
     errorMessage: entry.errorMessage,
     durationMs: entry.durationMs,
+    userId: entry.userId,
   });
 }
 
@@ -33,6 +36,7 @@ export async function withSyncLog<T>(
   providerId: string,
   dataType: string,
   fn: () => Promise<{ recordCount: number; result: T }>,
+  userId?: string,
 ): Promise<T> {
   const start = Date.now();
   try {
@@ -43,6 +47,7 @@ export async function withSyncLog<T>(
       status: "success",
       recordCount,
       durationMs: Date.now() - start,
+      userId,
     });
     return result;
   } catch (err) {
@@ -52,6 +57,7 @@ export async function withSyncLog<T>(
       status: "error",
       errorMessage: err instanceof Error ? err.message : String(err),
       durationMs: Date.now() - start,
+      userId,
     });
     throw err;
   }

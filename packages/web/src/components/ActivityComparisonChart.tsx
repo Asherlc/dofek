@@ -1,67 +1,45 @@
 import type { ActivityComparisonRow } from "dofek-server/types";
-import ReactECharts from "echarts-for-react";
+import {
+  dofekAxis,
+  dofekGrid,
+  dofekLegend,
+  dofekSeries,
+  dofekTooltip,
+  seriesColor,
+} from "../lib/chartTheme.ts";
 import { formatPace } from "../lib/format.ts";
-import { useUnitSystem } from "../lib/unitContext.ts";
-import { convertPace, paceLabel } from "../lib/units.ts";
+import { useUnitConverter } from "../lib/unitContext.ts";
+import { DofekChart } from "./DofekChart.tsx";
 
 interface ActivityComparisonChartProps {
   data: ActivityComparisonRow[];
   loading?: boolean;
 }
 
-const SERIES_COLORS = [
-  "#22c55e",
-  "#3b82f6",
-  "#f59e0b",
-  "#ef4444",
-  "#8b5cf6",
-  "#ec4899",
-  "#14b8a6",
-  "#f97316",
-];
-
 export function ActivityComparisonChart({ data, loading }: ActivityComparisonChartProps) {
-  const { unitSystem } = useUnitSystem();
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[280px]">
-        <span className="text-zinc-600 text-sm">Loading activity comparison data...</span>
-      </div>
-    );
-  }
-
-  if (data.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-[100px]">
-        <span className="text-zinc-600 text-sm">
-          No repeated routes found (need 2+ instances with the same name)
-        </span>
-      </div>
-    );
-  }
+  const units = useUnitConverter();
 
   const series = data.map((route, index) => ({
-    name: route.activityName,
-    type: "line" as const,
-    data: route.instances.map((instance) => [
-      instance.date,
-      convertPace(instance.averagePaceMinPerKm * 60, unitSystem),
-    ]),
-    symbol: "circle",
-    symbolSize: 8,
-    lineStyle: { color: SERIES_COLORS[index % SERIES_COLORS.length], width: 2 },
-    itemStyle: { color: SERIES_COLORS[index % SERIES_COLORS.length] },
+    ...dofekSeries.line(
+      route.activityName,
+      route.instances.map((instance) => [
+        instance.date,
+        units.convertPace(instance.averagePaceMinPerKm * 60),
+      ]),
+      {
+        color: seriesColor(index),
+        smooth: false,
+        symbol: "circle",
+        symbolSize: 8,
+      },
+    ),
     connectNulls: true,
   }));
 
   const option = {
-    backgroundColor: "transparent",
-    grid: { top: 40, right: 20, bottom: 30, left: 65 },
-    tooltip: {
+    grid: dofekGrid("single", { top: 40, left: 65 }),
+    tooltip: dofekTooltip({
       trigger: "item",
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
       formatter: (params: Record<string, unknown>) => {
         const rawValue = Array.isArray(params.value) ? params.value : ["", 0];
         const date = String(rawValue[0] ?? "");
@@ -70,44 +48,36 @@ export function ActivityComparisonChart({ data, loading }: ActivityComparisonCha
         return [
           `<strong>${seriesName}</strong>`,
           `Date: ${date}`,
-          `Pace: ${formatPace(pace)} ${paceLabel(unitSystem)}`,
+          `Pace: ${formatPace(pace)} ${units.paceLabel}`,
         ].join("<br/>");
       },
-    },
-    legend: {
-      textStyle: { color: "#a1a1aa", fontSize: 11 },
-      top: 0,
-      type: "scroll",
-    },
-    xAxis: {
-      type: "time",
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
-      splitLine: { show: false },
-    },
+    }),
+    legend: dofekLegend(true, { type: "scroll" }),
+    xAxis: dofekAxis.time(),
     yAxis: {
-      type: "value",
-      name: `Pace (min${paceLabel(unitSystem)})`,
+      ...dofekAxis.value({ name: `Pace (min${units.paceLabel})` }),
       inverse: true,
-      splitLine: { lineStyle: { color: "#27272a" } },
       axisLabel: {
-        color: "#71717a",
-        fontSize: 11,
+        ...dofekAxis.value().axisLabel,
         formatter: (value: number) => formatPace(value),
       },
-      axisLine: { show: true, lineStyle: { color: "#3f3f46" } },
-      nameTextStyle: { color: "#71717a", fontSize: 11 },
     },
     series,
   };
 
   return (
     <div>
-      <h3 className="text-xs font-medium text-zinc-500 mb-2">
+      <h3 className="text-xs font-medium text-subtle mb-2">
         Repeated Route Comparison (lower = faster)
       </h3>
-      <ReactECharts option={option} style={{ height: 280 }} notMerge={true} />
-      <p className="text-xs text-zinc-700 mt-1">
+      <DofekChart
+        option={option}
+        loading={loading}
+        empty={data.length === 0}
+        height={280}
+        emptyMessage="No repeated routes found (need 2+ instances with the same name)"
+      />
+      <p className="text-xs text-dim mt-1">
         Each line tracks pace over time for a repeated route. Y-axis is inverted so lower (faster)
         pace appears higher.
       </p>

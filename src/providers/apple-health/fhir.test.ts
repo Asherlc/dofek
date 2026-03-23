@@ -3,6 +3,7 @@ import {
   buildPanelMap,
   type FhirDiagnosticReport,
   type FhirObservation,
+  parseFhirDiagnosticReport,
   parseFhirObservation,
 } from "./fhir.ts";
 
@@ -156,6 +157,83 @@ describe("FHIR Lab Result Parsing", () => {
       const result = parseFhirObservation(obs, "Test");
       expect(result.loincCode).toBeUndefined();
       expect(result.testName).toBe("Custom Test");
+    });
+  });
+
+  describe("parseFhirDiagnosticReport", () => {
+    it("parses a DiagnosticReport into a ParsedLabPanel", () => {
+      const result = parseFhirDiagnosticReport(diagnosticReport, "Quest Diagnostics");
+
+      expect(result.externalId).toBe("dr-lipid-001");
+      expect(result.name).toBe("Lipid Panel");
+      expect(result.loincCode).toBe("57698-3");
+      expect(result.status).toBe("final");
+      expect(result.sourceName).toBe("Quest Diagnostics");
+      expect(result.recordedAt).toEqual(new Date("2023-02-27T00:00:00-05:00"));
+      expect(result.issuedAt).toBeUndefined();
+      expect(result.observationIds).toEqual(["obs-chol-001", "obs-ldl-001"]);
+      expect(result.raw).toMatchObject({ resourceType: "DiagnosticReport", id: "dr-lipid-001" });
+    });
+
+    it("handles report with no result array", () => {
+      const report: FhirDiagnosticReport = {
+        resourceType: "DiagnosticReport",
+        id: "dr-empty",
+        status: "final",
+        code: { text: "Empty Panel" },
+        effectiveDateTime: "2023-01-01T00:00:00Z",
+      };
+      const result = parseFhirDiagnosticReport(report, "Test");
+      expect(result.observationIds).toEqual([]);
+      expect(result.name).toBe("Empty Panel");
+    });
+
+    it("falls back to issued when effectiveDateTime is missing", () => {
+      const report: FhirDiagnosticReport = {
+        resourceType: "DiagnosticReport",
+        id: "dr-issued-only",
+        code: { text: "Panel" },
+        issued: "2023-06-15T10:00:00Z",
+        result: [{ reference: "Observation/obs-1" }],
+      };
+      const result = parseFhirDiagnosticReport(report, "Test");
+      expect(result.recordedAt).toEqual(new Date("2023-06-15T10:00:00Z"));
+      expect(result.issuedAt).toEqual(new Date("2023-06-15T10:00:00Z"));
+    });
+
+    it("throws when both effectiveDateTime and issued are missing", () => {
+      const report: FhirDiagnosticReport = {
+        resourceType: "DiagnosticReport",
+        id: "dr-no-date",
+        code: { text: "Panel" },
+      };
+      expect(() => parseFhirDiagnosticReport(report, "Test")).toThrow(
+        "FHIR DiagnosticReport dr-no-date missing both effectiveDateTime and issued",
+      );
+    });
+
+    it("handles missing LOINC code", () => {
+      const report: FhirDiagnosticReport = {
+        resourceType: "DiagnosticReport",
+        id: "dr-no-loinc",
+        code: { text: "Custom Panel", coding: [{ system: "urn:local", code: "999" }] },
+        effectiveDateTime: "2023-01-01T00:00:00Z",
+      };
+      const result = parseFhirDiagnosticReport(report, "Test");
+      expect(result.loincCode).toBeUndefined();
+      expect(result.name).toBe("Custom Panel");
+    });
+
+    it("handles unknown status gracefully", () => {
+      const report: FhirDiagnosticReport = {
+        resourceType: "DiagnosticReport",
+        id: "dr-unknown-status",
+        status: "entered-in-error",
+        code: { text: "Panel" },
+        effectiveDateTime: "2023-01-01T00:00:00Z",
+      };
+      const result = parseFhirDiagnosticReport(report, "Test");
+      expect(result.status).toBeUndefined();
     });
   });
 

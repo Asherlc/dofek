@@ -1,34 +1,64 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <rect width="1024" height="1024" rx="224" fill="#0f1117"/>
-
   <defs>
-    <radialGradient id="glow" cx="50%" cy="50%" r="20%">
-      <stop offset="0%" stop-color="#fff" stop-opacity="0.2"/>
-      <stop offset="100%" stop-color="#fff" stop-opacity="0"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1a2e1a"/>
+      <stop offset="100%" stop-color="#1e3d2e"/>
+    </linearGradient>
+    <linearGradient id="grad" x1="0.15" y1="0.85" x2="0.85" y2="0.15">
+      <stop offset="0%" stop-color="#2d7a56"/>
+      <stop offset="50%" stop-color="#4a9e7a"/>
+      <stop offset="100%" stop-color="#86c4a0"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="30%">
+      <stop offset="0%" stop-color="#4a9e7a" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#4a9e7a" stop-opacity="0"/>
     </radialGradient>
   </defs>
 
-  <g transform="translate(512, 512)">
-    <!-- Subtle center glow -->
-    <circle r="100" fill="url(#glow)"/>
+  <rect width="1024" height="1024" rx="224" fill="url(#bg)"/>
+  <circle cx="512" cy="512" r="300" fill="url(#glow)"/>
 
-    <!-- Stream 1: Emerald — from top, sweeping clockwise -->
-    <path d="M -80 -380 C -280 -340, -280 -80, 0 0"
-          stroke="#10b981" stroke-width="46" fill="none" stroke-linecap="round"/>
+  <!-- Circuit traces -->
+  <g stroke="url(#grad)" stroke-width="12" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Left -->
+    <path d="M 210 345 H 310 V 408 H 405"/>
+    <path d="M 240 435 H 305 V 465 H 370"/>
+    <path d="M 240 575 H 305 V 548 H 370"/>
+    <path d="M 210 665 H 310 V 605 H 405"/>
+    <!-- Right -->
+    <path d="M 814 345 H 714 V 408 H 619"/>
+    <path d="M 784 435 H 719 V 465 H 654"/>
+    <path d="M 784 575 H 719 V 548 H 654"/>
+    <path d="M 814 665 H 714 V 605 H 619"/>
+  </g>
 
-    <!-- Stream 2: Teal — from right, sweeping clockwise -->
-    <path d="M 380 -80 C 340 -280, 80 -280, 0 0"
-          stroke="#5AC8FA" stroke-width="46" fill="none" stroke-linecap="round"/>
+  <!-- Brain folds -->
+  <g stroke="url(#grad)" stroke-width="16" fill="none" stroke-linecap="round">
+    <!-- Left hemisphere: 4 C-curves opening right -->
+    <path d="M 490 388 C 440 380, 408 398, 408 418 C 408 438, 440 448, 490 444"/>
+    <path d="M 490 454 C 418 448, 360 462, 360 488 C 360 514, 418 525, 490 520"/>
+    <path d="M 490 530 C 418 524, 365 538, 365 562 C 365 586, 418 598, 490 592"/>
+    <path d="M 490 602 C 440 596, 408 612, 408 632 C 408 652, 440 662, 490 658"/>
 
-    <!-- Stream 3: Orange — from bottom, sweeping clockwise -->
-    <path d="M 80 380 C 280 340, 280 80, 0 0"
-          stroke="#FF8A65" stroke-width="46" fill="none" stroke-linecap="round"/>
+    <!-- Right hemisphere: 4 C-curves opening left -->
+    <path d="M 534 388 C 584 380, 616 398, 616 418 C 616 438, 584 448, 534 444"/>
+    <path d="M 534 454 C 606 448, 664 462, 664 488 C 664 514, 606 525, 534 520"/>
+    <path d="M 534 530 C 606 524, 659 538, 659 562 C 659 586, 606 598, 534 592"/>
+    <path d="M 534 602 C 584 596, 616 612, 616 632 C 616 652, 584 662, 534 658"/>
 
-    <!-- Stream 4: Purple — from left, sweeping clockwise -->
-    <path d="M -380 80 C -340 280, -80 280, 0 0"
-          stroke="#7c3aed" stroke-width="46" fill="none" stroke-linecap="round"/>
+    <!-- Center circle -->
+    <circle cx="512" cy="512" r="26"/>
+  </g>
 
-    <!-- Center convergence point -->
-    <circle r="22" fill="#fff"/>
+  <!-- Endpoint nodes -->
+  <g fill="url(#grad)" stroke="none">
+    <circle cx="210" cy="345" r="14"/>
+    <circle cx="240" cy="435" r="14"/>
+    <circle cx="240" cy="575" r="14"/>
+    <circle cx="210" cy="665" r="14"/>
+    <circle cx="814" cy="345" r="14"/>
+    <circle cx="784" cy="435" r="14"/>
+    <circle cx="784" cy="575" r="14"/>
+    <circle cx="814" cy="665" r="14"/>
   </g>
 </svg>

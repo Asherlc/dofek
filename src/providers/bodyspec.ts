@@ -1,12 +1,19 @@
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
-import { exchangeCodeForTokens, getOAuthRedirectUri, refreshAccessToken } from "../auth/oauth.ts";
+import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
+import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { dexaScan, dexaScanRegion } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
-import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
-import { logger } from "../logger.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import { ensureProvider } from "../db/tokens.ts";
+import { ProviderHttpClient } from "./http-client.ts";
+import type {
+  ProviderAuthSetup,
+  SyncError,
+  SyncOptions,
+  SyncProvider,
+  SyncResult,
+} from "./types.ts";
 
 // ============================================================
 // BodySpec API types & Zod schemas
@@ -221,7 +228,7 @@ export async function catchNotFound<T>(promise: Promise<T>): Promise<T | null> {
   try {
     return await promise;
   } catch (err) {
-    if (err instanceof Error && err.message.includes("(404)")) return null;
+    if (err instanceof Error && /\b404\b/.test(err.message)) return null;
     throw err;
   }
 }
@@ -248,28 +255,9 @@ function bodySpecOAuthConfig(): OAuthConfig | null {
 // BodySpec API client
 // ============================================================
 
-class BodySpecClient {
-  private accessToken: string;
-  private fetchFn: typeof globalThis.fetch;
-
+class BodySpecClient extends ProviderHttpClient {
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.accessToken = accessToken;
-    this.fetchFn = fetchFn;
-  }
-
-  private async get<T>(path: string, schema: z.ZodType<T>): Promise<T> {
-    const response = await this.fetchFn(`${BODYSPEC_API_BASE}${path}`, {
-      headers: { Authorization: `Bearer ${this.accessToken}` },
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      const truncated = text.length > 200 ? `${text.slice(0, 200)}…` : text;
-      throw new Error(`BodySpec API error (${response.status}): ${truncated}`);
-    }
-
-    const json: unknown = await response.json();
-    return schema.parse(json);
+    super(accessToken, BODYSPEC_API_BASE, fetchFn);
   }
 
   async listResults(page = 1, pageSize = 100): Promise<BodySpecResultsListResponse> {
@@ -320,13 +308,13 @@ class BodySpecClient {
 // Provider implementation
 // ============================================================
 
-export class BodySpecProvider implements Provider {
+export class BodySpecProvider implements SyncProvider {
   readonly id = "bodyspec";
   readonly name = "BodySpec";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -340,35 +328,22 @@ export class BodySpecProvider implements Provider {
     if (!config) return undefined;
     return {
       oauthConfig: config,
-      exchangeCode: (code) => exchangeCodeForTokens(config, code, this.fetchFn),
+      exchangeCode: (code) => exchangeCodeForTokens(config, code, this.#fetchFn),
       apiBaseUrl: BODYSPEC_API_BASE,
     };
   }
 
-  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
-    const tokens = await loadTokens(db, this.id);
-    if (!tokens) {
-      throw new Error("No OAuth tokens found for BodySpec. Run: health-data auth bodyspec");
-    }
-
-    if (tokens.expiresAt > new Date()) {
-      return tokens;
-    }
-
-    logger.info("[bodyspec] Access token expired, refreshing...");
-    const config = bodySpecOAuthConfig();
-    if (!config) {
-      throw new Error(
-        "BODYSPEC_CLIENT_ID and BODYSPEC_CLIENT_SECRET are required to refresh tokens",
-      );
-    }
-    if (!tokens.refreshToken) throw new Error("No refresh token for BodySpec");
-    const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);
-    await saveTokens(db, this.id, refreshed);
-    return refreshed;
+  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+    return resolveOAuthTokens({
+      db,
+      providerId: this.id,
+      providerName: this.name,
+      getOAuthConfig: () => bodySpecOAuthConfig(),
+      fetchFn: this.#fetchFn,
+    });
   }
 
-  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -377,44 +352,50 @@ export class BodySpecProvider implements Provider {
 
     let tokens: TokenSet;
     try {
-      tokens = await this.resolveTokens(db);
+      tokens = await this.#resolveTokens(db);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
-    const client = new BodySpecClient(tokens.accessToken, this.fetchFn);
+    const client = new BodySpecClient(tokens.accessToken, this.#fetchFn);
 
     try {
-      const scanCount = await withSyncLog(db, this.id, "dexa_scan", async () => {
-        let count = 0;
-        let page = 1;
-        let hasMore = true;
+      const scanCount = await withSyncLog(
+        db,
+        this.id,
+        "dexa_scan",
+        async () => {
+          let count = 0;
+          let page = 1;
+          let hasMore = true;
 
-        while (hasMore) {
-          const listResponse = await client.listResults(page);
+          while (hasMore) {
+            const listResponse = await client.listResults(page);
 
-          for (const result of listResponse.results) {
-            const resultTime = new Date(result.start_time);
-            if (resultTime < since) continue;
+            for (const result of listResponse.results) {
+              const resultTime = new Date(result.start_time);
+              if (resultTime < since) continue;
 
-            try {
-              count += await this.syncResult(db, client, result.result_id, resultTime);
-            } catch (err) {
-              errors.push({
-                message: err instanceof Error ? err.message : String(err),
-                externalId: result.result_id,
-                cause: err,
-              });
+              try {
+                count += await this.#syncResult(db, client, result.result_id, resultTime);
+              } catch (err) {
+                errors.push({
+                  message: err instanceof Error ? err.message : String(err),
+                  externalId: result.result_id,
+                  cause: err,
+                });
+              }
             }
+
+            hasMore = listResponse.pagination.has_more;
+            page++;
           }
 
-          hasMore = listResponse.pagination.has_more;
-          page++;
-        }
-
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += scanCount;
     } catch (err) {
       errors.push({
@@ -431,7 +412,7 @@ export class BodySpecProvider implements Provider {
     };
   }
 
-  private async syncResult(
+  async #syncResult(
     db: SyncDatabase,
     client: BodySpecClient,
     resultId: string,

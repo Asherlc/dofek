@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { UnitConverter } from "../lib/units";
 import { ActivityCard } from "./ActivityCard";
 
 describe("ActivityCard", () => {
@@ -11,7 +12,7 @@ describe("ActivityCard", () => {
     avgHr: null,
     maxHr: null,
     avgPower: null,
-    unitSystem: "metric" as const,
+    units: new UnitConverter("metric"),
   };
 
   it("renders activity name", () => {
@@ -50,7 +51,7 @@ describe("ActivityCard", () => {
   });
 
   it("shows distance in miles when unit system is imperial", () => {
-    render(<ActivityCard {...baseProps} unitSystem="imperial" distanceKm={5.25} />);
+    render(<ActivityCard {...baseProps} units={new UnitConverter("imperial")} distanceKm={5.25} />);
     expect(screen.getByText("3.26")).toBeTruthy();
     expect(screen.getByText("Distance")).toBeTruthy();
     expect(screen.getByText("mi")).toBeTruthy();
@@ -87,6 +88,18 @@ describe("ActivityCard", () => {
   it("shows default icon for unknown activity types", () => {
     render(<ActivityCard {...baseProps} activityType="paddleboarding" />);
     expect(screen.getByText("\u{26A1}")).toBeTruthy();
+  });
+
+  it("parses postgres-style space-separated timestamps", () => {
+    render(
+      <ActivityCard
+        {...baseProps}
+        startedAt="2026-03-18 07:00:00+00"
+        endedAt="2026-03-18 07:45:00+00"
+      />,
+    );
+    // Should NOT show placeholders — timestamps are valid
+    expect(screen.queryByText("-- · --")).toBeNull();
   });
 
   it("falls back to placeholders for invalid timestamps", () => {

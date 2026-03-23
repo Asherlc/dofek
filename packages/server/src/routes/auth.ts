@@ -4,6 +4,7 @@ import { getOAuthRedirectUri } from "dofek/auth/oauth";
 import { DEFAULT_USER_ID } from "dofek/db/schema";
 import { sql } from "drizzle-orm";
 import { Router } from "express";
+import { z } from "zod";
 import { resolveOrCreateUser } from "../auth/account-linking.ts";
 import {
   clearOAuthFlowCookies,
@@ -30,6 +31,7 @@ import {
 } from "../auth/providers.ts";
 import { createSession, deleteSession, validateSession } from "../auth/session.ts";
 import { queryCache } from "../lib/cache.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 
 /**
@@ -105,31 +107,13 @@ async function startDataProviderOAuth(
     return;
   }
 
-  // Providers with automatedLogin (e.g. Peloton) — only for data intent
+  // Credential providers use the generic credentialAuth.signIn tRPC endpoint instead
   if (setup.automatedLogin && stateEntry.intent === "data") {
-    const envPrefix = providerId.toUpperCase();
-    const email = process.env[`${envPrefix}_USERNAME`];
-    const password = process.env[`${envPrefix}_PASSWORD`];
-    if (!email || !password) {
-      res.status(400).send(`${envPrefix}_USERNAME and ${envPrefix}_PASSWORD must be set`);
-      return;
-    }
-
-    logger.info(`[auth] Running automated login for ${providerId}...`);
-    const tokens = await setup.automatedLogin(email, password);
-    const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
-    await ensureProvider(db, provider.id, provider.name, setup.apiBaseUrl, stateEntry.userId);
-    await saveTokens(db, provider.id, tokens);
-    await queryCache.invalidateByPrefix(`${stateEntry.userId}:sync.providers`);
-
-    logger.info(`[auth] ${providerId} tokens saved. Expires: ${tokens.expiresAt.toISOString()}`);
-    res.send(
-      oauthSuccessHtml(
-        provider.name,
-        `Token expires: ${tokens.expiresAt.toISOString()}`,
-        provider.id,
-      ),
-    );
+    res
+      .status(400)
+      .send(
+        `Provider ${providerId} uses credential authentication — sign in via the Settings page`,
+      );
     return;
   }
 
@@ -384,12 +368,19 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       res.status(401).json({ error: "Session expired" });
       return;
     }
-    const rows = await db.execute<{ id: string; name: string; email: string | null }>(
+    const rows = await executeWithSchema(
+      db,
+      z.object({ id: z.string(), name: z.string(), email: z.string().nullable() }),
       sql`SELECT id, name, email FROM fitness.user_profile WHERE id = ${session.userId}`,
     );
     if (rows.length === 0) {
       res.status(401).json({ error: "User not found" });
       return;
+    }
+    const userAgent = req.headers["user-agent"] ?? "unknown";
+    const isMobile = userAgent.includes("Darwin") || userAgent.includes("CFNetwork");
+    if (isMobile) {
+      logger.info(`[auth] /me resolved userId=${session.userId} (mobile)`);
     }
     res.json(rows[0]);
   });
@@ -632,7 +623,9 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         const installerSlackUserId = tokenData.authed_user?.id;
         if (installerSlackUserId && slackState) {
           // Check for existing orphaned auth_account pointing to wrong user
-          const existingLink = await db.execute<{ user_id: string }>(
+          const existingLink = await executeWithSchema(
+            db,
+            z.object({ user_id: z.string() }),
             sql`SELECT user_id FROM fitness.auth_account
                 WHERE auth_provider = 'slack' AND provider_account_id = ${installerSlackUserId}
                 LIMIT 1`,

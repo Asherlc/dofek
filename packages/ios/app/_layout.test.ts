@@ -1,4 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@sentry/react-native", () => ({
+  init: vi.fn(),
+  captureException: vi.fn(),
+}));
+
 import { rootStackScreenOptions } from "./_layout";
 
 describe("rootStackScreenOptions", () => {

@@ -1,5 +1,7 @@
+import { zScoreToRecoveryScore } from "@dofek/scoring/scoring";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import type { Database } from "../db/typed-sql.ts";
 import { logger } from "../logger.ts";
 import type { ExponentialMovingAverageInput } from "./fit-ewma.ts";
 import { fitExponentialMovingAverage } from "./fit-ewma.ts";
@@ -13,10 +15,6 @@ import type { TrainingImpulseInput } from "./fit-trimp.ts";
 import { fitTrainingImpulseConstants } from "./fit-trimp.ts";
 import type { PersonalizedParams } from "./params.ts";
 import { savePersonalizedParams } from "./storage.ts";
-
-interface Database {
-  execute: (query: ReturnType<typeof sql>) => Promise<Record<string, unknown>[]>;
-}
 
 /**
  * Refit all personalized parameters for a user from their historical data.
@@ -134,7 +132,9 @@ export const readinessRowSchema = z.object({
   rhr_mean: z.coerce.number().nullable(),
   rhr_sd: z.coerce.number().nullable(),
   efficiency_pct: z.coerce.number().nullable(),
-  acwr: z.coerce.number().nullable(),
+  respiratory_rate: z.coerce.number().nullable(),
+  rr_mean: z.coerce.number().nullable(),
+  rr_sd: z.coerce.number().nullable(),
   next_day_hrv: z.coerce.number().nullable(),
   next_day_hrv_mean: z.coerce.number().nullable(),
   next_day_hrv_sd: z.coerce.number().nullable(),
@@ -166,17 +166,22 @@ export function parseReadinessRows(rows: Record<string, unknown>[]): ReadinessWe
 
     const zHrv = (Number(p.hrv) - Number(p.hrv_mean)) / Number(p.hrv_sd);
     const zRhr = (Number(p.resting_hr) - Number(p.rhr_mean)) / Number(p.rhr_sd);
-    const hrvScore = Math.max(0, Math.min(100, 50 + zHrv * 15));
-    const rhrScore = Math.max(0, Math.min(100, 50 + -zRhr * 15));
+    const hrvScore = zScoreToRecoveryScore(zHrv);
+    const rhrScore = zScoreToRecoveryScore(-zRhr);
     const sleepScore =
-      p.efficiency_pct != null ? Math.max(0, Math.min(100, Number(p.efficiency_pct))) : 50;
-    const loadBalanceScore =
-      p.acwr != null ? Math.max(0, Math.min(100, (1 - Math.abs(Number(p.acwr) - 1.0)) * 100)) : 50;
+      p.efficiency_pct != null ? Math.max(0, Math.min(100, Number(p.efficiency_pct))) : 62;
+
+    // Respiratory rate score: lower is better (like RHR), inverted z-score
+    let respiratoryRateScore = 62;
+    if (p.respiratory_rate != null && p.rr_mean != null && p.rr_sd != null && Number(p.rr_sd) > 0) {
+      const zRr = (Number(p.respiratory_rate) - Number(p.rr_mean)) / Number(p.rr_sd);
+      respiratoryRateScore = zScoreToRecoveryScore(-zRr);
+    }
 
     const nextDayHrvZScore =
       (Number(p.next_day_hrv) - Number(p.next_day_hrv_mean)) / Number(p.next_day_hrv_sd);
 
-    data.push({ hrvScore, rhrScore: rhrScore, sleepScore, loadBalanceScore, nextDayHrvZScore });
+    data.push({ hrvScore, rhrScore: rhrScore, sleepScore, respiratoryRateScore, nextDayHrvZScore });
   }
   return data;
 }
@@ -188,10 +193,13 @@ async function fitReadinessFromDb(db: Database, userId: string) {
             date,
             hrv,
             resting_hr,
-            AVG(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS hrv_mean,
-            STDDEV_POP(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS hrv_sd,
-            AVG(resting_hr) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS rhr_mean,
-            STDDEV_POP(resting_hr) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS rhr_sd
+            respiratory_rate_avg AS respiratory_rate,
+            AVG(hrv) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS hrv_mean,
+            STDDEV_POP(hrv) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS hrv_sd,
+            AVG(resting_hr) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rhr_mean,
+            STDDEV_POP(resting_hr) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rhr_sd,
+            AVG(respiratory_rate_avg) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_mean,
+            STDDEV_POP(respiratory_rate_avg) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_sd
           FROM fitness.v_daily_metrics
           WHERE user_id = ${userId}
             AND date > CURRENT_DATE - 425
@@ -213,46 +221,14 @@ async function fitReadinessFromDb(db: Database, userId: string) {
             AND is_nap = false
             AND started_at > NOW() - INTERVAL '425 days'
           ORDER BY COALESCE(ended_at, started_at + interval '8 hours')::date, started_at DESC
-        ),
-        date_series AS (
-          SELECT generate_series(CURRENT_DATE - 425, CURRENT_DATE, '1 day'::interval)::date AS date
-        ),
-        per_activity AS (
-          SELECT
-            asum.started_at::date AS date,
-            EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
-              * asum.avg_hr / NULLIF(asum.max_hr, 0) AS load
-          FROM fitness.activity_summary asum
-          WHERE asum.user_id = ${userId}
-            AND asum.started_at::date >= CURRENT_DATE - 425
-            AND asum.ended_at IS NOT NULL
-            AND asum.avg_hr IS NOT NULL
-        ),
-        activity_load AS (
-          SELECT date, SUM(load) AS daily_load FROM per_activity GROUP BY date
-        ),
-        daily AS (
-          SELECT ds.date, COALESCE(al.daily_load, 0) AS daily_load
-          FROM date_series ds LEFT JOIN activity_load al ON al.date = ds.date
-        ),
-        acwr_daily AS (
-          SELECT
-            date,
-            CASE
-              WHEN AVG(daily_load) OVER (ORDER BY date ROWS BETWEEN 27 PRECEDING AND CURRENT ROW) * 7 > 0
-              THEN SUM(daily_load) OVER (ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW)
-                   / (AVG(daily_load) OVER (ORDER BY date ROWS BETWEEN 27 PRECEDING AND CURRENT ROW) * 7)
-              ELSE NULL
-            END AS acwr
-          FROM daily
         )
         SELECT
           m.hrv, m.resting_hr, m.hrv_mean, m.hrv_sd, m.rhr_mean, m.rhr_sd,
-          s.efficiency_pct, ac.acwr,
+          m.respiratory_rate, m.rr_mean, m.rr_sd,
+          s.efficiency_pct,
           m.next_day_hrv, m.next_day_hrv_mean, m.next_day_hrv_sd
         FROM metrics m
         LEFT JOIN sleep_eff s ON s.date = m.date
-        LEFT JOIN acwr_daily ac ON ac.date = m.date
         WHERE m.date > CURRENT_DATE - 365
         ORDER BY m.date ASC`,
   );
@@ -279,7 +255,7 @@ export function parseSleepRows(rows: Record<string, unknown>[]): SleepTargetInpu
   return data;
 }
 
-async function fitSleepFromDb(db: Database, userId: string) {
+export async function fitSleepFromDb(db: Database, userId: string) {
   const rows = await db.execute(
     sql`WITH nightly AS (
           SELECT
@@ -292,14 +268,20 @@ async function fitSleepFromDb(db: Database, userId: string) {
         ),
         hrv_with_median AS (
           SELECT
-            date,
-            hrv,
-            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY hrv)
-              OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS median_hrv
-          FROM fitness.v_daily_metrics
-          WHERE user_id = ${userId}
-            AND date > CURRENT_DATE - 425
-            AND hrv IS NOT NULL
+            d.date,
+            d.hrv,
+            m.median_hrv
+          FROM fitness.v_daily_metrics d
+          CROSS JOIN LATERAL (
+            SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY d2.hrv) AS median_hrv
+            FROM fitness.v_daily_metrics d2
+            WHERE d2.user_id = d.user_id
+              AND d2.date BETWEEN d.date - 59 AND d.date
+              AND d2.hrv IS NOT NULL
+          ) m
+          WHERE d.user_id = ${userId}
+            AND d.date > CURRENT_DATE - 425
+            AND d.hrv IS NOT NULL
         )
         SELECT
           n.duration_minutes,

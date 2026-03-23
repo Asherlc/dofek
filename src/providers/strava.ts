@@ -1,15 +1,16 @@
+import { createActivityTypeMapper, STRAVA_ACTIVITY_TYPE_MAP } from "@dofek/training/training";
 import { sql } from "drizzle-orm";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
-import { exchangeCodeForTokens, getOAuthRedirectUri, refreshAccessToken } from "../auth/oauth.ts";
+import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
+import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity, metricStream } from "../db/schema.ts";
-import { loadTokens, saveTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
 import type {
-  Provider,
   ProviderAuthSetup,
   ProviderIdentity,
   SyncError,
+  SyncProvider,
   SyncResult,
 } from "./types.ts";
 
@@ -95,36 +96,10 @@ function isStreamKey(key: string): key is keyof StravaStreamSet {
 // Activity type mapping
 // ============================================================
 
-const ACTIVITY_TYPE_MAP: Record<string, string> = {
-  Ride: "cycling",
-  VirtualRide: "cycling",
-  MountainBikeRide: "cycling",
-  GravelRide: "cycling",
-  EBikeRide: "cycling",
-  Run: "running",
-  VirtualRun: "running",
-  TrailRun: "running",
-  Walk: "walking",
-  Hike: "hiking",
-  Swim: "swimming",
-  WeightTraining: "strength",
-  Yoga: "yoga",
-  Rowing: "rowing",
-  Canoeing: "rowing",
-  Kayaking: "rowing",
-  Elliptical: "elliptical",
-  NordicSki: "skiing",
-  AlpineSki: "skiing",
-  BackcountrySki: "skiing",
-  Snowboard: "skiing",
-  IceSkate: "skating",
-  RollerSki: "skiing",
-  Crossfit: "strength",
-  RockClimbing: "climbing",
-};
+const mapStravaType = createActivityTypeMapper(STRAVA_ACTIVITY_TYPE_MAP);
 
 export function mapStravaActivityType(sportType: string): string {
-  return ACTIVITY_TYPE_MAP[sportType] ?? "other";
+  return mapStravaType(sportType);
 }
 
 // ============================================================
@@ -243,16 +218,39 @@ export function stravaStreamsToMetricStream(
 
 const STRAVA_API_BASE = "https://www.strava.com/api/v3/";
 
-export class StravaClient {
-  private accessToken: string;
-  private fetchFn: typeof globalThis.fetch;
+/** Minimum delay between consecutive Strava API requests (ms).
+ *  Strava allows 100 requests per 15 minutes = 9s/request average.
+ *  10s provides a safety margin. */
+export const STRAVA_THROTTLE_MS = 10_000;
 
-  constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.accessToken = accessToken;
-    this.fetchFn = fetchFn;
+export class StravaClient {
+  #accessToken: string;
+  #fetchFn: typeof globalThis.fetch;
+  #lastRequestTime = 0;
+  #throttleMs: number;
+
+  constructor(
+    accessToken: string,
+    fetchFn: typeof globalThis.fetch = globalThis.fetch,
+    throttleMs = STRAVA_THROTTLE_MS,
+  ) {
+    this.#accessToken = accessToken;
+    this.#fetchFn = fetchFn;
+    this.#throttleMs = throttleMs;
   }
 
-  private async get<T>(path: string, params?: Record<string, string>): Promise<T> {
+  async #throttle(): Promise<void> {
+    if (this.#throttleMs <= 0) return;
+    const now = Date.now();
+    const elapsed = now - this.#lastRequestTime;
+    if (this.#lastRequestTime > 0 && elapsed < this.#throttleMs) {
+      await new Promise((resolve) => setTimeout(resolve, this.#throttleMs - elapsed));
+    }
+    this.#lastRequestTime = Date.now();
+  }
+
+  async #get<T>(path: string, params?: Record<string, string>): Promise<T> {
+    await this.#throttle();
     const url = new URL(path, STRAVA_API_BASE);
     if (params) {
       for (const [key, value] of Object.entries(params)) {
@@ -260,8 +258,8 @@ export class StravaClient {
       }
     }
 
-    const response = await this.fetchFn(url.toString(), {
-      headers: { Authorization: `Bearer ${this.accessToken}` },
+    const response = await this.#fetchFn(url.toString(), {
+      headers: { Authorization: `Bearer ${this.#accessToken}` },
     });
 
     if (response.status === 429) {
@@ -297,11 +295,11 @@ export class StravaClient {
   }
 
   async getActivity(activityId: number): Promise<StravaDetailedActivity> {
-    return this.get<StravaDetailedActivity>(`activities/${activityId}`);
+    return this.#get<StravaDetailedActivity>(`activities/${activityId}`);
   }
 
   async getActivities(after: number, page = 1, perPage = 30): Promise<StravaActivity[]> {
-    return this.get<StravaActivity[]>("athlete/activities", {
+    return this.#get<StravaActivity[]>("athlete/activities", {
       after: String(after),
       page: String(page),
       per_page: String(perPage),
@@ -322,7 +320,7 @@ export class StravaClient {
       "grade_smooth",
     ];
 
-    const response = await this.get<Array<{ type: string } & StravaStream>>(
+    const response = await this.#get<Array<{ type: string } & StravaStream>>(
       `activities/${activityId}/streams`,
       { keys: streamTypes.join(","), key_type: "time" },
     );
@@ -385,13 +383,18 @@ export function stravaOAuthConfig(): OAuthConfig | null {
   };
 }
 
-export class StravaProvider implements Provider {
+export class StravaProvider implements SyncProvider {
   readonly id = "strava";
   readonly name = "Strava";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
+  #throttleMs: number;
 
-  constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+  constructor(
+    fetchFn: typeof globalThis.fetch = globalThis.fetch,
+    throttleMs = STRAVA_THROTTLE_MS,
+  ) {
+    this.#fetchFn = fetchFn;
+    this.#throttleMs = throttleMs;
   }
 
   validate(): string | null {
@@ -408,7 +411,7 @@ export class StravaProvider implements Provider {
       exchangeCode: (code) => exchangeCodeForTokens(config, code),
       apiBaseUrl: STRAVA_API_BASE,
       getUserIdentity: async (accessToken: string): Promise<ProviderIdentity> => {
-        const response = await this.fetchFn(`${STRAVA_API_BASE}athlete`, {
+        const response = await this.#fetchFn(`${STRAVA_API_BASE}athlete`, {
           headers: { Authorization: `Bearer ${accessToken}` },
         });
         if (!response.ok) {
@@ -431,44 +434,35 @@ export class StravaProvider implements Provider {
     };
   }
 
-  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
-    const tokens = await loadTokens(db, this.id);
-    if (!tokens) {
-      throw new Error("No OAuth tokens found for Strava. Run: health-data auth strava");
-    }
-
-    if (tokens.expiresAt > new Date()) {
-      return tokens;
-    }
-
-    logger.info("[strava] Access token expired, refreshing...");
-    const config = stravaOAuthConfig();
-    if (!config)
-      throw new Error("STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET are required to refresh tokens");
-    if (!tokens.refreshToken) throw new Error("No refresh token for Strava");
-    const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);
-    await saveTokens(db, this.id, refreshed);
-    return refreshed;
+  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+    return resolveOAuthTokens({
+      db,
+      providerId: this.id,
+      providerName: this.name,
+      getOAuthConfig: () => stravaOAuthConfig(),
+      fetchFn: this.#fetchFn,
+    });
   }
 
   async sync(
     db: SyncDatabase,
     since: Date,
-    onProgress?: import("./types.ts").SyncProgressCallback,
+    options?: import("./types.ts").SyncOptions,
   ): Promise<SyncResult> {
+    const onProgress = options?.onProgress;
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
 
     let tokens: TokenSet;
     try {
-      tokens = await this.resolveTokens(db);
+      tokens = await this.#resolveTokens(db);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
-    const client = new StravaClient(tokens.accessToken, this.fetchFn);
+    const client = new StravaClient(tokens.accessToken, this.#fetchFn, this.#throttleMs);
 
     // Strava uses epoch seconds for the `after` parameter
     const afterEpoch = Math.floor(since.getTime() / 1000);

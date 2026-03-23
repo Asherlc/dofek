@@ -1,7 +1,14 @@
 import { sleepDebtColor } from "@dofek/scoring/scoring";
 import type { SleepNeedResult } from "dofek-server/types";
-import ReactECharts from "echarts-for-react";
-import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
+import {
+  chartThemeColors,
+  dofekAxis,
+  dofekGrid,
+  dofekSeries,
+  dofekTooltip,
+} from "../lib/chartTheme.ts";
+import { formatNumber } from "../lib/format.ts";
+import { DofekChart } from "./DofekChart.tsx";
 
 interface SleepNeedCardProps {
   data: SleepNeedResult | undefined;
@@ -15,15 +22,15 @@ function formatHoursMinutes(minutes: number): string {
 }
 
 export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
-  if (loading) {
-    return <ChartLoadingSkeleton height={320} />;
-  }
-
-  if (!data) {
+  if (loading || !data) {
     return (
-      <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-6 flex items-center justify-center h-[320px]">
-        <span className="text-zinc-600 text-sm">No sleep data</span>
-      </div>
+      <DofekChart
+        option={{}}
+        loading={loading}
+        empty={!data}
+        height={320}
+        emptyMessage="No sleep data"
+      />
     );
   }
 
@@ -32,13 +39,8 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
 
   // Recent nights bar chart
   const chartOption = {
-    backgroundColor: "transparent",
-    grid: { top: 20, right: 10, bottom: 30, left: 40 },
-    tooltip: {
-      trigger: "axis" as const,
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
+    grid: dofekGrid("single", { top: 20, right: 10, bottom: 30, left: 40 }),
+    tooltip: dofekTooltip({
       formatter: (
         params: {
           dataIndex: number;
@@ -63,72 +65,68 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
         }
         return html;
       },
-    },
-    xAxis: {
-      type: "category" as const,
+    }),
+    xAxis: dofekAxis.category({
       data: data.recentNights.map((n) =>
         new Date(n.date).toLocaleDateString("en-US", { weekday: "short" }),
       ),
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
-    },
-    yAxis: {
-      type: "value" as const,
+    }),
+    yAxis: dofekAxis.value({
       name: "hours",
-      axisLabel: {
-        color: "#71717a",
-        fontSize: 11,
-        formatter: (v: number) => `${(v / 60).toFixed(0)}h`,
-      },
-      splitLine: { lineStyle: { color: "#27272a" } },
-      axisLine: { show: false },
-      nameTextStyle: { color: "#71717a", fontSize: 11 },
-    },
+      axisLabel: { formatter: (v: number) => `${formatNumber(v / 60, 0)}h` },
+    }),
     series: [
       {
-        type: "bar",
-        data: data.recentNights.map((n) => ({
-          value: [n.date, n.actualMinutes],
-          itemStyle: {
-            color: n.actualMinutes >= n.neededMinutes ? "#22c55e" : "#ef4444",
-          },
-        })),
+        ...dofekSeries.bar(
+          "Actual",
+          data.recentNights.map((n) => ({
+            value: n.actualMinutes,
+            itemStyle: {
+              color: n.actualMinutes >= n.neededMinutes ? "#22c55e" : "#ef4444",
+            },
+          })),
+        ),
         barMaxWidth: 30,
       },
       {
-        type: "line",
-        data: data.recentNights.map((n) => [n.date, n.neededMinutes]),
-        symbol: "none",
-        lineStyle: { color: "#71717a", width: 1.5, type: "dashed" as const },
-        z: 5,
+        ...dofekSeries.line(
+          "Need",
+          data.recentNights.map((n) => n.neededMinutes),
+          {
+            color: chartThemeColors.axisLabel,
+            lineStyle: { type: "dashed" },
+            width: 1.5,
+            z: 5,
+          },
+        ),
       },
     ],
   };
 
   return (
-    <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-6">
+    <div className="card p-6">
       <div className="flex items-start justify-between mb-4">
         <div>
-          <h3 className="text-zinc-400 text-sm font-medium mb-1">Sleep Need Tonight</h3>
+          <h3 className="text-muted text-sm font-medium mb-1">Sleep Need Tonight</h3>
           <div className="flex items-baseline gap-2">
             <span className="text-4xl font-bold text-blue-400">{needHours}h</span>
-            <span className="text-zinc-500 text-sm">recommended</span>
+            <span className="text-subtle text-sm">recommended</span>
           </div>
         </div>
       </div>
 
       {/* Breakdown */}
       <div className="flex gap-4 mb-4 text-xs">
-        <div className="flex-1 bg-zinc-900 rounded-lg p-2">
-          <p className="text-zinc-500">Baseline</p>
-          <p className="text-zinc-200 font-medium">{baselineHours}h</p>
+        <div className="flex-1 bg-surface-solid rounded-lg p-2">
+          <p className="text-subtle">Baseline</p>
+          <p className="text-foreground font-medium">{baselineHours}h</p>
         </div>
-        <div className="flex-1 bg-zinc-900 rounded-lg p-2">
-          <p className="text-zinc-500">Strain Debt</p>
-          <p className="text-zinc-200 font-medium">+{data.strainDebtMinutes}m</p>
+        <div className="flex-1 bg-surface-solid rounded-lg p-2">
+          <p className="text-subtle">Strain Debt</p>
+          <p className="text-foreground font-medium">+{data.strainDebtMinutes}m</p>
         </div>
-        <div className="flex-1 bg-zinc-900 rounded-lg p-2">
-          <p className="text-zinc-500">Sleep Debt</p>
+        <div className="flex-1 bg-surface-solid rounded-lg p-2">
+          <p className="text-subtle">Sleep Debt</p>
           <p className="font-medium" style={{ color: sleepDebtColor(data.accumulatedDebtMinutes) }}>
             {formatHoursMinutes(data.accumulatedDebtMinutes)}
           </p>
@@ -138,8 +136,8 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
       {/* Recent nights chart */}
       {data.recentNights.length > 0 && (
         <div>
-          <p className="text-zinc-500 text-xs mb-1">Last 7 nights (dashed = need)</p>
-          <ReactECharts option={chartOption} style={{ height: 120 }} notMerge={true} />
+          <p className="text-subtle text-xs mb-1">Last 7 nights (dashed = need)</p>
+          <DofekChart option={chartOption} height={120} />
         </div>
       )}
     </div>

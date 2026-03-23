@@ -218,16 +218,24 @@ describe("Router coverage", () => {
     // ── Food entries for nutrition analytics ──
     for (let i = 0; i < 10; i++) {
       await testCtx.db.execute(
-        sql`INSERT INTO fitness.food_entry (
+        sql`WITH nd AS (
+              INSERT INTO fitness.nutrition_data (
+                calories, protein_g, carbs_g, fat_g, fiber_g,
+                vitamin_c_mg, calcium_mg, iron_mg
+              ) VALUES (
+                350, 12, 55, 8, 6,
+                15, 200, 4
+              )
+              RETURNING id
+            )
+            INSERT INTO fitness.food_entry (
               user_id, provider_id, date, meal, food_name,
-              calories, protein_g, carbs_g, fat_g, fiber_g,
-              vitamin_c_mg, calcium_mg, iron_mg, confirmed
+              nutrition_data_id, confirmed
             ) VALUES (
               ${DEFAULT_USER_ID}, 'dofek',
               CURRENT_DATE - ${i}::int,
               'breakfast', ${`Oatmeal ${i}`},
-              350, 12, 55, 8, 6,
-              15, 200, 4, true
+              (SELECT id FROM nd), true
             )`,
       );
     }
@@ -461,23 +469,33 @@ describe("Router coverage", () => {
       }
     });
 
-    it("workloadRatio returns acute:chronic workload ratio", async () => {
-      const result = await query<
-        {
+    it("workloadRatio returns acute:chronic workload ratio with displayed strain", async () => {
+      const result = await query<{
+        timeSeries: {
           date: string;
           dailyLoad: number;
+          strain: number;
           acuteLoad: number;
           chronicLoad: number;
           workloadRatio: number | null;
-        }[]
-      >("recovery.workloadRatio", { days: 90 });
+        }[];
+        displayedStrain: number;
+        displayedDate: string | null;
+      }>("recovery.workloadRatio", { days: 90 });
 
-      expect(Array.isArray(result)).toBe(true);
-      expect(result.length).toBeGreaterThan(0);
+      expect(Array.isArray(result.timeSeries)).toBe(true);
+      expect(result.timeSeries.length).toBeGreaterThan(0);
 
-      for (const row of result) {
+      expect(typeof result.displayedStrain).toBe("number");
+      expect(result.displayedStrain).toBeGreaterThanOrEqual(0);
+      expect(result.displayedStrain).toBeLessThanOrEqual(21);
+
+      for (const row of result.timeSeries) {
         expect(row.date).toBeTruthy();
         expect(typeof row.dailyLoad).toBe("number");
+        expect(typeof row.strain).toBe("number");
+        expect(row.strain).toBeGreaterThanOrEqual(0);
+        expect(row.strain).toBeLessThanOrEqual(21);
         expect(typeof row.acuteLoad).toBe("number");
         expect(typeof row.chronicLoad).toBe("number");
         expect(row.dailyLoad).toBeGreaterThanOrEqual(0);
@@ -489,6 +507,7 @@ describe("Router coverage", () => {
         nightly: {
           date: string;
           durationMinutes: number;
+          sleepMinutes: number;
           deepPct: number;
           remPct: number;
           lightPct: number;
@@ -504,6 +523,8 @@ describe("Router coverage", () => {
       for (const night of result.nightly) {
         expect(night.date).toBeTruthy();
         expect(night.durationMinutes).toBeGreaterThan(0);
+        // For non-Apple Health providers, sleepMinutes should equal durationMinutes
+        expect(night.sleepMinutes).toBe(night.durationMinutes);
         // Stage percentages should roughly sum to 100
         const totalPct = night.deepPct + night.remPct + night.lightPct + night.awakePct;
         expect(totalPct).toBeGreaterThan(90);
@@ -515,6 +536,59 @@ describe("Router coverage", () => {
       expect(typeof result.sleepDebt).toBe("number");
     });
 
+    it("sleepAnalytics computes sleepMinutes from stages for Apple Health", async () => {
+      // Insert apple_health provider
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.provider (id, name, user_id)
+            VALUES ('apple_health', 'Apple Health', ${DEFAULT_USER_ID})
+            ON CONFLICT DO NOTHING`,
+      );
+
+      // Insert an Apple Health sleep session where duration = in-bed time (480 min)
+      // but stages sum to less (deep + rem + light = 390 min, awake = 90 min)
+      const deep = 100;
+      const rem = 110;
+      const light = 180;
+      const awake = 90;
+      const inBedDuration = deep + rem + light + awake; // 480
+      const expectedSleepMinutes = deep + rem + light; // 390
+
+      // Use a future date so this is clearly the latest entry after all seeded data
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.sleep_session (
+              provider_id, user_id, started_at, ended_at,
+              duration_minutes, deep_minutes, rem_minutes, light_minutes,
+              awake_minutes, efficiency_pct, sleep_type
+            ) VALUES (
+              'apple_health', ${DEFAULT_USER_ID},
+              CURRENT_TIMESTAMP + INTERVAL '1 day',
+              CURRENT_TIMESTAMP + INTERVAL '1 day' + INTERVAL '8 hours',
+              ${inBedDuration}, ${deep}, ${rem}, ${light}, ${awake}, 81, 'sleep'
+            )`,
+      );
+
+      // Refresh materialized view so v_sleep picks up the new row
+      await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
+
+      // Clear cache so the query hits the DB
+      await queryCache.invalidateAll();
+
+      const result = await query<{
+        nightly: {
+          date: string;
+          durationMinutes: number;
+          sleepMinutes: number;
+        }[];
+        sleepDebt: number;
+      }>("recovery.sleepAnalytics", { days: 1 });
+
+      // Find the Apple Health night (latest entry)
+      const latest = result.nightly[result.nightly.length - 1];
+      expect(latest).toBeDefined();
+      expect(latest?.durationMinutes).toBe(inBedDuration);
+      expect(latest?.sleepMinutes).toBe(expectedSleepMinutes);
+    });
+
     it("readinessScore returns composite scores with component breakdown", async () => {
       const result = await query<
         {
@@ -524,7 +598,7 @@ describe("Router coverage", () => {
             hrvScore: number;
             restingHrScore: number;
             sleepScore: number;
-            loadBalanceScore: number;
+            respiratoryRateScore: number;
           };
         }[]
       >("recovery.readinessScore", { days: 30 });
@@ -543,8 +617,8 @@ describe("Router coverage", () => {
         expect(row.components.restingHrScore).toBeLessThanOrEqual(100);
         expect(row.components.sleepScore).toBeGreaterThanOrEqual(0);
         expect(row.components.sleepScore).toBeLessThanOrEqual(100);
-        expect(row.components.loadBalanceScore).toBeGreaterThanOrEqual(0);
-        expect(row.components.loadBalanceScore).toBeLessThanOrEqual(100);
+        expect(row.components.respiratoryRateScore).toBeGreaterThanOrEqual(0);
+        expect(row.components.respiratoryRateScore).toBeLessThanOrEqual(100);
       }
     });
   });
@@ -1105,6 +1179,7 @@ describe("Router coverage", () => {
             healthEvents: number;
             metricStream: number;
             nutritionDaily: number;
+            labPanels: number;
             labResults: number;
             journalEntries: number;
           }[]

@@ -1,5 +1,14 @@
 import type { PolarizationWeek } from "dofek-server/types";
-import ReactECharts from "echarts-for-react";
+import {
+  chartColors,
+  chartThemeColors,
+  dofekAxis,
+  dofekGrid,
+  dofekLegend,
+  dofekTooltip,
+} from "../lib/chartTheme.ts";
+import { formatNumber } from "../lib/format.ts";
+import { DofekChart } from "./DofekChart.tsx";
 
 interface PolarizationTrendChartProps {
   weeks: PolarizationWeek[];
@@ -57,14 +66,11 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
   const firstDate = weeks[0]?.week ?? "";
   const lastDate = weeks[weeks.length - 1]?.week ?? "";
 
+  const incompleteWeeks = weeks.filter((w) => w.polarizationIndex === null);
+
   return {
-    backgroundColor: "transparent",
-    grid: { top: 40, right: 20, bottom: 40, left: 55 },
-    tooltip: {
-      trigger: "axis",
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
+    grid: dofekGrid("single", { top: 40, bottom: 40, left: 55 }),
+    tooltip: dofekTooltip({
       formatter: (
         params: Array<{
           axisValue: string;
@@ -87,7 +93,7 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
         if (!w) return "";
 
         const pi = w.polarizationIndex;
-        const piStr = pi !== null ? pi.toFixed(3) : "N/A";
+        const piStr = pi !== null ? formatNumber(pi, 3) : "N/A";
         const dateLabel = new Date(w.week).toLocaleDateString("en-US", {
           month: "short",
           day: "numeric",
@@ -115,29 +121,9 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
           .filter((line): line is string => typeof line === "string")
           .join("<br/>");
       },
-    },
-    xAxis: {
-      type: "time" as const,
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
-    },
-    yAxis: {
-      type: "value",
-      name: "Polarization Index",
-      min: yMin,
-      max: yMax,
-      splitLine: { lineStyle: { color: "#27272a" } },
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { show: true, lineStyle: { color: "#3f3f46" } },
-      nameTextStyle: { color: "#71717a", fontSize: 11 },
-    },
-    visualMap: {
-      show: false,
-      pieces: [
-        { lte: 2.0, color: "#ef4444" },
-        { gt: 2.0, color: "#22c55e" },
-      ],
-    },
+    }),
+    xAxis: dofekAxis.time(),
+    yAxis: dofekAxis.value({ name: "Polarization Index", min: yMin, max: yMax }),
     series: [
       // Shaded green area above Threshold = 2.0
       {
@@ -169,74 +155,77 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
         tooltip: { show: false },
         z: 0,
       },
-      // Reference line at Threshold = 2.0
+      // Dashed threshold reference line at PI = 2.0
       {
-        name: "Threshold = 2.0",
+        name: "Threshold",
         type: "line",
-        markLine: {
-          silent: true,
-          symbol: "none",
-          lineStyle: { color: "#a1a1aa", type: "dashed", width: 1 },
-          data: [{ yAxis: 2.0 }],
-          label: {
-            formatter: "Threshold = 2.0",
-            color: "#a1a1aa",
-            fontSize: 10,
-          },
-          tooltip: { show: false },
-        },
-        data: [],
+        data: [
+          [firstDate, 2.0],
+          [lastDate, 2.0],
+        ],
+        symbol: "none",
+        lineStyle: { color: chartThemeColors.legendText, type: "dashed", width: 1 },
+        silent: true,
         tooltip: { show: false },
+        z: 1,
       },
-      // Actual PI line
+      // Actual PI data line with per-point coloring
       {
         name: "Polarization Index",
         type: "line",
-        data: weeks.map((w) => [w.week, w.polarizationIndex]),
+        data: weeks.map((w) => ({
+          value: [w.week, w.polarizationIndex],
+          itemStyle:
+            w.polarizationIndex !== null
+              ? { color: w.polarizationIndex >= 2.0 ? "#22c55e" : "#ef4444" }
+              : undefined,
+        })),
         connectNulls: false,
         smooth: true,
         symbol: "circle",
         symbolSize: 6,
-        lineStyle: { width: 2.5 },
+        lineStyle: { width: 2.5, color: chartThemeColors.legendText },
         itemStyle: { borderWidth: 2 },
         z: 10,
       },
+      // Weeks where PI couldn't be computed (missing zone coverage)
+      ...(incompleteWeeks.length > 0
+        ? [
+            {
+              name: "Incomplete weeks",
+              type: "scatter" as const,
+              data: incompleteWeeks.map((w) => ({
+                value: [w.week, yMin],
+              })),
+              symbol: "diamond",
+              symbolSize: 8,
+              itemStyle: { color: chartColors.amber, opacity: 0.6 },
+              z: 5,
+            },
+          ]
+        : []),
     ],
-    legend: {
-      show: false,
-    },
+    legend: dofekLegend(false),
   };
 }
 
 export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTrendChartProps) {
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[280px]">
-        <span className="text-zinc-600 text-sm">Loading polarization data...</span>
-      </div>
-    );
-  }
-
-  if (weeks.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-[100px]">
-        <span className="text-zinc-600 text-sm">
-          Not enough HR data to compute polarization index
-        </span>
-      </div>
-    );
-  }
-
-  const option = buildPolarizationTrendOption(weeks);
+  const option = weeks.length > 0 ? buildPolarizationTrendOption(weeks) : {};
 
   return (
     <div>
-      <h3 className="text-xs font-medium text-zinc-500 mb-2">
+      <h3 className="text-xs font-medium text-subtle mb-2">
         Polarization Index (3-Zone Model)
-        {maxHr && <span className="text-zinc-700 ml-2">(max heart rate: {maxHr} bpm)</span>}
+        {maxHr && <span className="text-dim ml-2">(max heart rate: {maxHr} bpm)</span>}
       </h3>
-      <ReactECharts option={option} style={{ height: 280 }} notMerge={true} />
-      <p className="text-xs text-zinc-700 mt-1">
+      <DofekChart
+        option={option}
+        loading={loading}
+        empty={weeks.length === 0}
+        height={280}
+        emptyMessage="Not enough HR data to compute polarization index"
+      />
+      <p className="text-xs text-dim mt-1">
         Index above 2.0 = well-polarized training. Zone 1 = easy (&lt;80% max HR), Zone 2 =
         threshold (80-90% max HR), Zone 3 = high intensity (&ge;90% max HR).
       </p>

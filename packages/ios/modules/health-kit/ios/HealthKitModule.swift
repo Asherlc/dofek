@@ -3,12 +3,37 @@ import HealthKit
 
 public class HealthKitModule: Module {
     private let healthStore = HKHealthStore()
+    private var observerQueries: [HKObserverQuery] = []
 
     public func definition() -> ModuleDefinition {
         Name("HealthKit")
 
+        Events("onHealthKitSampleUpdate")
+
         Function("isAvailable") {
             return HKHealthStore.isHealthDataAvailable()
+        }
+
+        AsyncFunction("getRequestStatus") { (promise: Promise) in
+            guard HKHealthStore.isHealthDataAvailable() else {
+                promise.resolve("unavailable")
+                return
+            }
+            Task {
+                do {
+                    let status = try await self.healthStore.statusForAuthorizationRequest(toShare: writeTypes, read: readTypes)
+                    switch status {
+                    case .unnecessary:
+                        promise.resolve("unnecessary")
+                    case .shouldRequest:
+                        promise.resolve("shouldRequest")
+                    default:
+                        promise.resolve("unknown")
+                    }
+                } catch {
+                    promise.reject("HEALTHKIT_STATUS_ERROR", error.localizedDescription)
+                }
+            }
         }
 
         AsyncFunction("requestPermissions") { (promise: Promise) in
@@ -16,11 +41,12 @@ public class HealthKitModule: Module {
                 promise.resolve(false)
                 return
             }
-            self.healthStore.requestAuthorization(toShare: writeTypes, read: readTypes) { success, error in
-                if let error = error {
+            Task {
+                do {
+                    try await self.healthStore.requestAuthorization(toShare: writeTypes, read: readTypes)
+                    promise.resolve(true)
+                } catch {
                     promise.reject("HEALTHKIT_AUTH_ERROR", error.localizedDescription)
-                } else {
-                    promise.resolve(success)
                 }
             }
         }
@@ -46,7 +72,7 @@ public class HealthKitModule: Module {
                     return
                 }
                 let samples = (results as? [HKQuantitySample])?.map { sample -> [String: Any] in
-                    let unit = self.preferredUnit(for: sampleType)
+                    let unit = HealthKitQueries.preferredUnit(for: sampleType)
                     return [
                         "type": typeIdentifier,
                         "value": sample.quantity.doubleValue(for: unit),
@@ -165,11 +191,12 @@ public class HealthKitModule: Module {
             let quantity = HKQuantity(unit: .kilocalorie(), doubleValue: calories)
             let sample = HKQuantitySample(type: type, quantity: quantity, start: date, end: date)
 
-            self.healthStore.save(sample) { success, error in
-                if let error = error {
+            Task {
+                do {
+                    try await self.healthStore.save(sample)
+                    promise.resolve(true)
+                } catch {
                     promise.reject("WRITE_ERROR", error.localizedDescription)
-                } else {
-                    promise.resolve(success)
                 }
             }
         }
@@ -197,7 +224,7 @@ public class HealthKitModule: Module {
                 }
 
                 let samples = (added as? [HKQuantitySample])?.map { sample -> [String: Any] in
-                    let unit = self.preferredUnit(for: sampleType)
+                    let unit = HealthKitQueries.preferredUnit(for: sampleType)
                     return [
                         "type": typeIdentifier,
                         "value": sample.quantity.doubleValue(for: unit),
@@ -230,74 +257,112 @@ public class HealthKitModule: Module {
             self.healthStore.execute(query)
         }
 
+        AsyncFunction("queryDailyStatistics") { (typeIdentifier: String, startDateStr: String, endDateStr: String, promise: Promise) in
+            guard let quantityType = HKQuantityType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: typeIdentifier)) else {
+                promise.reject("INVALID_TYPE", "Unknown quantity type: \(typeIdentifier)")
+                return
+            }
+            guard let startDate = HealthKitQueries.parseDate(startDateStr),
+                  let endDate = HealthKitQueries.parseDate(endDateStr) else {
+                promise.reject("INVALID_DATE", "Invalid ISO 8601 date format")
+                return
+            }
+
+            let calendar = Calendar.current
+            let interval = DateComponents(day: 1)
+            let anchorDate = calendar.startOfDay(for: startDate)
+
+            let query = HKStatisticsCollectionQuery(
+                quantityType: quantityType,
+                quantitySamplePredicate: HealthKitQueries.datePredicate(start: startDate, end: endDate),
+                options: .cumulativeSum,
+                anchorDate: anchorDate,
+                intervalComponents: interval
+            )
+
+            query.initialResultsHandler = { _, results, error in
+                if let error = error {
+                    promise.reject("QUERY_ERROR", error.localizedDescription)
+                    return
+                }
+
+                guard let results = results else {
+                    promise.resolve([])
+                    return
+                }
+
+                let unit = HealthKitQueries.preferredUnit(for: quantityType)
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateFormat = "yyyy-MM-dd"
+                dateFormatter.timeZone = .current
+
+                var dailyValues: [[String: Any]] = []
+                results.enumerateStatistics(from: startDate, to: endDate) { statistics, _ in
+                    if let sum = statistics.sumQuantity() {
+                        dailyValues.append([
+                            "date": dateFormatter.string(from: statistics.startDate),
+                            "value": sum.doubleValue(for: unit),
+                        ])
+                    }
+                }
+
+                promise.resolve(dailyValues)
+            }
+
+            self.healthStore.execute(query)
+        }
+
+        Function("isBackgroundDeliveryEnabled") {
+            return UserDefaults.standard.bool(forKey: "healthkit_background_delivery_enabled")
+        }
+
         AsyncFunction("enableBackgroundDelivery") { (typeIdentifier: String, promise: Promise) in
             guard let sampleType = HKQuantityType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: typeIdentifier)) else {
                 promise.reject("INVALID_TYPE", "Unknown quantity type: \(typeIdentifier)")
                 return
             }
 
-            self.healthStore.enableBackgroundDelivery(for: sampleType, frequency: .hourly) { success, error in
-                if let error = error {
+            Task {
+                do {
+                    try await self.healthStore.enableBackgroundDelivery(for: sampleType, frequency: .hourly)
+                    UserDefaults.standard.set(true, forKey: "healthkit_background_delivery_enabled")
+                    promise.resolve(true)
+                } catch {
                     promise.reject("BG_DELIVERY_ERROR", error.localizedDescription)
-                } else {
-                    promise.resolve(success)
                 }
             }
         }
-    }
 
-    /// Return the preferred unit for a given quantity type
-    private func preferredUnit(for quantityType: HKQuantityType) -> HKUnit {
-        switch quantityType.identifier {
-        case HKQuantityTypeIdentifier.heartRate.rawValue,
-             HKQuantityTypeIdentifier.restingHeartRate.rawValue:
-            return HKUnit.count().unitDivided(by: .minute())
-        case HKQuantityTypeIdentifier.bodyMass.rawValue,
-             HKQuantityTypeIdentifier.leanBodyMass.rawValue:
-            return .gramUnit(with: .kilo)
-        case HKQuantityTypeIdentifier.bodyFatPercentage.rawValue,
-             HKQuantityTypeIdentifier.oxygenSaturation.rawValue,
-             HKQuantityTypeIdentifier.walkingDoubleSupportPercentage.rawValue,
-             HKQuantityTypeIdentifier.walkingAsymmetryPercentage.rawValue:
-            return .percent()
-        case HKQuantityTypeIdentifier.height.rawValue:
-            return .meterUnit(with: .centi)
-        case HKQuantityTypeIdentifier.heartRateVariabilitySDNN.rawValue:
-            return .secondUnit(with: .milli)
-        case HKQuantityTypeIdentifier.distanceWalkingRunning.rawValue,
-             HKQuantityTypeIdentifier.distanceCycling.rawValue:
-            return .meter()
-        case HKQuantityTypeIdentifier.activeEnergyBurned.rawValue,
-             HKQuantityTypeIdentifier.basalEnergyBurned.rawValue,
-             HKQuantityTypeIdentifier.dietaryEnergyConsumed.rawValue:
-            return .kilocalorie()
-        case HKQuantityTypeIdentifier.stepCount.rawValue,
-             HKQuantityTypeIdentifier.flightsClimbed.rawValue:
-            return .count()
-        case HKQuantityTypeIdentifier.appleExerciseTime.rawValue,
-             HKQuantityTypeIdentifier.appleStandTime.rawValue:
-            return .minute()
-        case HKQuantityTypeIdentifier.respiratoryRate.rawValue:
-            return HKUnit.count().unitDivided(by: .minute())
-        case HKQuantityTypeIdentifier.vo2Max.rawValue:
-            return HKUnit(from: "mL/kg*min")
-        case HKQuantityTypeIdentifier.walkingSpeed.rawValue:
-            return HKUnit.meter().unitDivided(by: .second())
-        case HKQuantityTypeIdentifier.walkingStepLength.rawValue:
-            return .meterUnit(with: .centi)
-        case HKQuantityTypeIdentifier.bodyTemperature.rawValue:
-            return .degreeCelsius()
-        case HKQuantityTypeIdentifier.bloodGlucose.rawValue:
-            return HKUnit(from: "mmol/L")
-        case HKQuantityTypeIdentifier.environmentalAudioExposure.rawValue,
-             HKQuantityTypeIdentifier.headphoneAudioExposure.rawValue:
-            return .decibelAWeightedSoundPressureLevel()
-        case HKQuantityTypeIdentifier.dietaryProtein.rawValue,
-             HKQuantityTypeIdentifier.dietaryCarbohydrates.rawValue,
-             HKQuantityTypeIdentifier.dietaryFatTotal.rawValue:
-            return .gram()
-        default:
-            return .count()
+        AsyncFunction("setupBackgroundObservers") { (promise: Promise) in
+            guard HKHealthStore.isHealthDataAvailable() else {
+                promise.resolve(false)
+                return
+            }
+
+            // Remove any existing observer queries
+            for query in self.observerQueries {
+                self.healthStore.stop(query)
+            }
+            self.observerQueries.removeAll()
+
+            // Set up an observer for each read type
+            for objectType in readTypes {
+                guard let sampleType = objectType as? HKSampleType else { continue }
+
+                let query = HKObserverQuery(sampleType: sampleType, predicate: nil) { [weak self] _, completionHandler, error in
+                    if error == nil {
+                        self?.sendEvent("onHealthKitSampleUpdate", [
+                            "typeIdentifier": sampleType.identifier,
+                        ])
+                    }
+                    completionHandler()
+                }
+                self.observerQueries.append(query)
+                self.healthStore.execute(query)
+            }
+
+            promise.resolve(true)
         }
     }
+
 }

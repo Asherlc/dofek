@@ -6,7 +6,6 @@ import {
   STRONG_PROVIDER_ID,
   StrongCsvProvider,
 } from "./strong-csv.ts";
-import { createMockDatabase } from "./test-helpers.ts";
 
 // ============================================================
 // Tests targeting uncovered CSV parsing paths in strong-csv.ts
@@ -175,11 +174,8 @@ describe("StrongCsvProvider", () => {
     expect(provider.validate()).toBeNull();
   });
 
-  it("sync returns zero records", async () => {
+  it("is an import-only provider", () => {
     const provider = new StrongCsvProvider();
-    const { db } = createMockDatabase();
-    const result = await provider.sync(db, new Date());
-    expect(result.recordsSynced).toBe(0);
-    expect(result.errors).toEqual([]);
+    expect(provider.importOnly).toBe(true);
   });
 });

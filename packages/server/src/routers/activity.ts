@@ -1,7 +1,66 @@
+import { mapHrZones } from "@dofek/zones/zones";
 import { TRPCError } from "@trpc/server";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+
+const activityListRowSchema = z
+  .object({
+    id: z.string(),
+    activity_type: z.string(),
+    started_at: timestampStringSchema,
+    ended_at: timestampStringSchema.nullable(),
+    name: z.string().nullable(),
+    provider_id: z.string(),
+    source_providers: z.array(z.string()),
+    avg_hr: z.number().nullable(),
+    max_hr: z.number().nullable(),
+    avg_power: z.number().nullable(),
+    distance_meters: z.number().nullable(),
+    calories: z.number().nullable(),
+    total_count: z.coerce.number(),
+  })
+  .passthrough();
+
+const activityDetailRowSchema = z.object({
+  id: z.string(),
+  activity_type: z.string(),
+  started_at: timestampStringSchema,
+  ended_at: timestampStringSchema.nullable(),
+  name: z.string().nullable(),
+  notes: z.string().nullable(),
+  provider_id: z.string(),
+  source_providers: z.array(z.string()),
+  avg_hr: z.number().nullable(),
+  max_hr: z.number().nullable(),
+  avg_power: z.number().nullable(),
+  max_power: z.number().nullable(),
+  avg_speed: z.number().nullable(),
+  max_speed: z.number().nullable(),
+  avg_cadence: z.number().nullable(),
+  total_distance: z.number().nullable(),
+  elevation_gain_m: z.number().nullable(),
+  elevation_loss_m: z.number().nullable(),
+  calories: z.number().nullable(),
+  sample_count: z.number().nullable(),
+});
+
+const streamPointRowSchema = z.object({
+  recorded_at: timestampStringSchema,
+  heart_rate: z.number().nullable(),
+  power: z.number().nullable(),
+  speed: z.number().nullable(),
+  cadence: z.number().nullable(),
+  altitude: z.number().nullable(),
+  lat: z.number().nullable(),
+  lng: z.number().nullable(),
+});
+
+const hrZoneRowSchema = z.object({
+  zone: z.coerce.number(),
+  seconds: z.coerce.number(),
+});
 
 export interface ActivityDetail {
   id: string;
@@ -37,17 +96,8 @@ export interface StreamPoint {
   lng: number | null;
 }
 
-export interface ActivityHrZone {
-  zone: number;
-  label: string;
-  minPct: number;
-  maxPct: number;
-  seconds: number;
-}
-
-export type ActivityHrZones = ActivityHrZone[];
-
-type ActivityListRow = Record<string, unknown> & { total_count: number };
+export type { ActivityHrZone } from "@dofek/zones/zones";
+export type ActivityHrZones = import("@dofek/zones/zones").ActivityHrZone[];
 
 export const activityRouter = router({
   list: cachedProtectedQuery(CacheTTL.MEDIUM)
@@ -59,19 +109,36 @@ export const activityRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const rows = await ctx.db.execute<ActivityListRow>(
-        sql`SELECT *, COUNT(*) OVER()::int AS total_count
-            FROM fitness.v_activity
-            WHERE user_id = ${ctx.userId}
-              AND started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
-            ORDER BY started_at DESC
+      const rows = await executeWithSchema(
+        ctx.db,
+        activityListRowSchema,
+        sql`SELECT
+              a.id,
+              a.activity_type,
+              a.started_at::text AS started_at,
+              a.ended_at::text AS ended_at,
+              a.name,
+              a.provider_id,
+              a.source_providers,
+              s.avg_hr,
+              s.max_hr,
+              s.avg_power,
+              s.total_distance AS distance_meters,
+              COALESCE(
+                (a.raw->>'calories')::REAL,
+                (a.raw->>'totalEnergyBurned')::REAL,
+                (a.raw->>'total_energy_burned')::REAL
+              ) AS calories,
+              COUNT(*) OVER()::int AS total_count
+            FROM fitness.v_activity a
+            LEFT JOIN fitness.activity_summary s ON s.activity_id = a.id
+            WHERE a.user_id = ${ctx.userId}
+              AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+            ORDER BY a.started_at DESC
             LIMIT ${input.limit} OFFSET ${input.offset}`,
       );
-      const totalCount = rows.length > 0 ? Number(rows[0]?.total_count) : 0;
-      const items = rows.map((row) => {
-        const { total_count, ...rest } = row;
-        return rest;
-      });
+      const totalCount = rows.length > 0 ? (rows[0]?.total_count ?? 0) : 0;
+      const items = rows.map(({ total_count, ...rest }) => rest);
       return { items, totalCount };
     }),
 
@@ -82,28 +149,9 @@ export const activityRouter = router({
   byId: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }): Promise<ActivityDetail> => {
-      const rows = await ctx.db.execute<{
-        id: string;
-        activity_type: string;
-        started_at: string;
-        ended_at: string | null;
-        name: string | null;
-        notes: string | null;
-        provider_id: string;
-        source_providers: string[];
-        avg_hr: number | null;
-        max_hr: number | null;
-        avg_power: number | null;
-        max_power: number | null;
-        avg_speed: number | null;
-        max_speed: number | null;
-        avg_cadence: number | null;
-        total_distance: number | null;
-        elevation_gain_m: number | null;
-        elevation_loss_m: number | null;
-        calories: number | null;
-        sample_count: number | null;
-      }>(
+      const rows = await executeWithSchema(
+        ctx.db,
+        activityDetailRowSchema,
         sql`SELECT
               a.id,
               a.activity_type,
@@ -155,16 +203,9 @@ export const activityRouter = router({
       }),
     )
     .query(async ({ ctx, input }): Promise<StreamPoint[]> => {
-      const rows = await ctx.db.execute<{
-        recorded_at: string;
-        heart_rate: number | null;
-        power: number | null;
-        speed: number | null;
-        cadence: number | null;
-        altitude: number | null;
-        lat: number | null;
-        lng: number | null;
-      }>(
+      const rows = await executeWithSchema(
+        ctx.db,
+        streamPointRowSchema,
         sql`WITH numbered AS (
               SELECT ms.*, ROW_NUMBER() OVER (ORDER BY ms.recorded_at) AS rn,
                      COUNT(*) OVER () AS total
@@ -198,10 +239,9 @@ export const activityRouter = router({
   hrZones: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }): Promise<ActivityHrZones> => {
-      const rows = await ctx.db.execute<{
-        zone: number;
-        seconds: number;
-      }>(
+      const rows = await executeWithSchema(
+        ctx.db,
+        hrZoneRowSchema,
         sql`WITH params AS (
               SELECT
                 up.max_hr,
@@ -324,24 +364,5 @@ export function mapStreamPoint(row: {
   };
 }
 
-/** Map raw HR zone rows to the full 5-zone structure. Exported for unit testing. */
-export function mapHrZones(rows: { zone: number; seconds: number }[]): ActivityHrZones {
-  const zoneLabels = [
-    { zone: 1, label: "Recovery", minPct: 50, maxPct: 60 },
-    { zone: 2, label: "Aerobic", minPct: 60, maxPct: 70 },
-    { zone: 3, label: "Tempo", minPct: 70, maxPct: 80 },
-    { zone: 4, label: "Threshold", minPct: 80, maxPct: 90 },
-    { zone: 5, label: "Anaerobic", minPct: 90, maxPct: 100 },
-  ];
-
-  return zoneLabels.map((zl) => {
-    const row = rows.find((r) => Number(r.zone) === zl.zone);
-    return {
-      zone: zl.zone,
-      label: zl.label,
-      minPct: zl.minPct,
-      maxPct: zl.maxPct,
-      seconds: row ? Number(row.seconds) : 0,
-    };
-  });
-}
+// Re-export mapHrZones for backward compatibility with consumers
+export { mapHrZones } from "@dofek/zones/zones";

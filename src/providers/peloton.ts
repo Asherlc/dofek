@@ -6,14 +6,14 @@ import {
   exchangeCodeForTokens,
   generateCodeChallenge,
   generateCodeVerifier,
-  refreshAccessToken,
 } from "../auth/oauth.ts";
+import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity, metricStream } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
-import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { ensureProvider } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // Peloton API types
@@ -180,16 +180,16 @@ export function parsePerformanceGraph(
 const PELOTON_API_BASE = "https://api.onepeloton.com";
 
 export class PelotonClient {
-  private accessToken: string;
-  private userId: string | null = null;
-  private fetchFn: typeof globalThis.fetch;
+  #accessToken: string;
+  #userId: string | null = null;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.accessToken = accessToken;
-    this.fetchFn = fetchFn;
+    this.#accessToken = accessToken;
+    this.#fetchFn = fetchFn;
   }
 
-  private async get<T>(path: string, params?: Record<string, string>): Promise<T> {
+  async #get<T>(path: string, params?: Record<string, string>): Promise<T> {
     const url = new URL(path, PELOTON_API_BASE);
     if (params) {
       for (const [key, value] of Object.entries(params)) {
@@ -197,9 +197,9 @@ export class PelotonClient {
       }
     }
 
-    const response = await this.fetchFn(url.toString(), {
+    const response = await this.#fetchFn(url.toString(), {
       headers: {
-        Authorization: `Bearer ${this.accessToken}`,
+        Authorization: `Bearer ${this.#accessToken}`,
         "peloton-platform": "web",
       },
     });
@@ -213,15 +213,15 @@ export class PelotonClient {
   }
 
   async getUserId(): Promise<string> {
-    if (this.userId) return this.userId;
-    const me = await this.get<{ id: string }>("/api/me");
-    this.userId = me.id;
+    if (this.#userId) return this.#userId;
+    const me = await this.#get<{ id: string }>("/api/me");
+    this.#userId = me.id;
     return me.id;
   }
 
   async getWorkouts(page = 0, limit = 20): Promise<PelotonWorkoutListResponse> {
     const userId = await this.getUserId();
-    return this.get<PelotonWorkoutListResponse>(`/api/user/${userId}/workouts`, {
+    return this.#get<PelotonWorkoutListResponse>(`/api/user/${userId}/workouts`, {
       page: String(page),
       limit: String(limit),
       sort_by: "-created_at",
@@ -230,7 +230,7 @@ export class PelotonClient {
   }
 
   async getPerformanceGraph(workoutId: string, everyN = 5): Promise<PelotonPerformanceGraph> {
-    return this.get<PelotonPerformanceGraph>(`/api/workout/${workoutId}/performance_graph`, {
+    return this.#get<PelotonPerformanceGraph>(`/api/workout/${workoutId}/performance_graph`, {
       every_n: String(everyN),
     });
   }
@@ -305,23 +305,23 @@ function getSetCookieHeaders(headers: Headers): string[] {
  * Simple cookie jar that tracks cookies per domain.
  */
 class CookieJar {
-  private cookies = new Map<string, Map<string, string>>();
+  #cookies = new Map<string, Map<string, string>>();
 
   addFromResponse(url: string, headers: Headers): void {
     const domain = new URL(url).hostname;
-    const existing = this.cookies.get(domain) ?? new Map();
+    const existing = this.#cookies.get(domain) ?? new Map();
     for (const header of getSetCookieHeaders(headers)) {
       const match = header.match(/^([^=]+)=([^;]*)/);
       if (match) existing.set(match[1], match[2]);
     }
-    this.cookies.set(domain, existing);
+    this.#cookies.set(domain, existing);
   }
 
   getForUrl(url: string): string {
     const hostname = new URL(url).hostname;
     const parts: string[] = [];
     // Include cookies from matching domains (exact + parent domain)
-    for (const [domain, cookies] of this.cookies) {
+    for (const [domain, cookies] of this.#cookies) {
       if (hostname === domain || hostname.endsWith(`.${domain}`)) {
         for (const [name, value] of cookies) {
           parts.push(`${name}=${value}`);
@@ -494,13 +494,13 @@ export async function pelotonAutomatedLogin(
   return exchangeCodeForTokens(config, authCode, fetchFn, { codeVerifier });
 }
 
-export class PelotonProvider implements Provider {
+export class PelotonProvider implements SyncProvider {
   readonly id = "peloton";
   readonly name = "Peloton";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -514,7 +514,7 @@ export class PelotonProvider implements Provider {
     const config = pelotonOAuthConfig();
     const codeVerifier = generateCodeVerifier();
     const codeChallenge = generateCodeChallenge(codeVerifier);
-    const fetchFn = this.fetchFn;
+    const fetchFn = this.#fetchFn;
 
     return {
       oauthConfig: config,
@@ -525,178 +525,177 @@ export class PelotonProvider implements Provider {
     };
   }
 
-  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
-    const tokens = await loadTokens(db, this.id);
-    if (!tokens) {
-      throw new Error("No OAuth tokens found for Peloton. Run: pnpm dev auth peloton");
-    }
-
-    if (tokens.expiresAt > new Date()) {
-      return tokens;
-    }
-
-    logger.info("[peloton] Access token expired, refreshing...");
-    const config = pelotonOAuthConfig();
-    if (!tokens.refreshToken) throw new Error("No refresh token for Peloton");
-    const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);
-    await saveTokens(db, this.id, refreshed);
-    return refreshed;
+  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+    return resolveOAuthTokens({
+      db,
+      providerId: this.id,
+      providerName: this.name,
+      getOAuthConfig: () => pelotonOAuthConfig(),
+      fetchFn: this.#fetchFn,
+    });
   }
 
   async sync(
     db: SyncDatabase,
     since: Date,
-    onProgress?: import("./types.ts").SyncProgressCallback,
+    options?: import("./types.ts").SyncOptions,
   ): Promise<SyncResult> {
+    const { onProgress, userId } = options ?? {};
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
 
     let tokens: TokenSet;
     try {
-      tokens = await this.resolveTokens(db);
+      tokens = await this.#resolveTokens(db);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
-    const client = new PelotonClient(tokens.accessToken, this.fetchFn);
+    const client = new PelotonClient(tokens.accessToken, this.#fetchFn);
     await ensureProvider(db, this.id, this.name, PELOTON_API_BASE);
 
     // Single-pass: fetch workouts, then for each fetch performance graph,
     // enrich the activity with summary stats, and insert both activity + streams.
-    const syncResult = await withSyncLog(db, this.id, "workouts", async () => {
-      let workoutCount = 0;
-      let streamCount = 0;
-      let page = 0;
-      let hasMore = true;
+    const syncResult = await withSyncLog(
+      db,
+      this.id,
+      "workouts",
+      async () => {
+        let workoutCount = 0;
+        let streamCount = 0;
+        let page = 0;
+        let hasMore = true;
 
-      while (hasMore) {
-        const response = await client.getWorkouts(page);
-        const totalWorkouts = response.total;
+        while (hasMore) {
+          const response = await client.getWorkouts(page);
+          const totalWorkouts = response.total;
 
-        for (const workout of response.data) {
-          if (workout.status !== "COMPLETE") continue;
+          for (const workout of response.data) {
+            if (workout.status !== "COMPLETE") continue;
 
-          const startedAt = new Date(workout.start_time * 1000);
-          if (startedAt < since) {
-            hasMore = false;
-            break;
-          }
+            const startedAt = new Date(workout.start_time * 1000);
+            if (startedAt < since) {
+              hasMore = false;
+              break;
+            }
 
-          const parsed = parseWorkout(workout);
+            const parsed = parseWorkout(workout);
 
-          // Upsert the activity first so we have an ID for metric_stream
-          let activityId: string | null = null;
-          try {
-            const [row] = await db
-              .insert(activity)
-              .values({
-                providerId: this.id,
-                externalId: parsed.externalId,
-                activityType: parsed.activityType,
-                startedAt: parsed.startedAt,
-                endedAt: parsed.endedAt,
-                name: parsed.name,
-                raw: parsed.raw,
-              })
-              .onConflictDoUpdate({
-                target: [activity.providerId, activity.externalId],
-                set: {
+            // Upsert the activity first so we have an ID for metric_stream
+            let activityId: string | null = null;
+            try {
+              const [row] = await db
+                .insert(activity)
+                .values({
+                  providerId: this.id,
+                  externalId: parsed.externalId,
                   activityType: parsed.activityType,
                   startedAt: parsed.startedAt,
                   endedAt: parsed.endedAt,
                   name: parsed.name,
                   raw: parsed.raw,
-                },
-              })
-              .returning({ id: activity.id });
+                })
+                .onConflictDoUpdate({
+                  target: [activity.providerId, activity.externalId],
+                  set: {
+                    activityType: parsed.activityType,
+                    startedAt: parsed.startedAt,
+                    endedAt: parsed.endedAt,
+                    name: parsed.name,
+                    raw: parsed.raw,
+                  },
+                })
+                .returning({ id: activity.id });
 
-            activityId = row?.id ?? null;
-            workoutCount++;
-            // no-mutate: Progress reporting is UX-only and can't fail in a testable way
-            if (onProgress && totalWorkouts > 0) {
-              // no-mutate
-              onProgress(
-                Math.round((workoutCount / totalWorkouts) * 100),
-                `${workoutCount}/${totalWorkouts} workouts`,
-              );
-            }
-          } catch (err) {
-            errors.push({
-              message: err instanceof Error ? err.message : String(err),
-              externalId: parsed.externalId,
-              cause: err,
-            });
-          }
-
-          // Fetch performance graph for time-series + summary enrichment
-          try {
-            const everyN = 5;
-            const graph = await client.getPerformanceGraph(workout.id, everyN);
-            const series = parsePerformanceGraph(graph, everyN);
-
-            // Insert time-series metric_stream rows linked to the activity
-            const hrSeries = series.find((s) => s.slug === "heart_rate");
-            const powerSeries = series.find((s) => s.slug === "output");
-            const cadenceSeries = series.find((s) => s.slug === "cadence");
-            const speedSeries = series.find((s) => s.slug === "speed");
-
-            const sampleCount =
-              hrSeries?.values.length ??
-              powerSeries?.values.length ??
-              cadenceSeries?.values.length ??
-              0;
-
-            if (sampleCount > 0 && activityId) {
-              // Delete existing metric_stream rows for this activity to avoid duplicates
-              await db
-                .delete(metricStream)
-                .where(
-                  sqlAnd(
-                    sqlEq(metricStream.activityId, activityId),
-                    sqlEq(metricStream.providerId, this.id),
-                  ),
+              activityId = row?.id ?? null;
+              workoutCount++;
+              // no-mutate: Progress reporting is UX-only and can't fail in a testable way
+              if (onProgress && totalWorkouts > 0) {
+                // no-mutate
+                onProgress(
+                  Math.round((workoutCount / totalWorkouts) * 100),
+                  `${workoutCount}/${totalWorkouts} workouts`,
                 );
-
-              const rows = [];
-              for (let i = 0; i < sampleCount; i++) {
-                const recordedAt = new Date(startedAt.getTime() + i * everyN * 1000);
-                rows.push({
-                  providerId: this.id,
-                  activityId,
-                  recordedAt,
-                  heartRate: hrSeries?.values[i] ?? null,
-                  power: powerSeries?.values[i] ?? null,
-                  cadence: cadenceSeries?.values[i] ?? null,
-                  speed: speedSeries?.values[i] ?? null,
-                });
               }
-
-              for (let j = 0; j < rows.length; j += 500) {
-                const chunk = rows.slice(j, j + 500);
-                await db.insert(metricStream).values(chunk);
-              }
-
-              streamCount += rows.length;
+            } catch (err) {
+              errors.push({
+                message: err instanceof Error ? err.message : String(err),
+                externalId: parsed.externalId,
+                cause: err,
+              });
             }
-          } catch (err) {
-            // Performance graph failure is non-fatal — still save the workout
-            errors.push({
-              message: `Performance graph for ${workout.id}: ${err instanceof Error ? err.message : String(err)}`,
-              externalId: workout.id,
-              cause: err,
-            });
+
+            // Fetch performance graph for time-series + summary enrichment
+            try {
+              const everyN = 5;
+              const graph = await client.getPerformanceGraph(workout.id, everyN);
+              const series = parsePerformanceGraph(graph, everyN);
+
+              // Insert time-series metric_stream rows linked to the activity
+              const hrSeries = series.find((s) => s.slug === "heart_rate");
+              const powerSeries = series.find((s) => s.slug === "output");
+              const cadenceSeries = series.find((s) => s.slug === "cadence");
+              const speedSeries = series.find((s) => s.slug === "speed");
+
+              const sampleCount =
+                hrSeries?.values.length ??
+                powerSeries?.values.length ??
+                cadenceSeries?.values.length ??
+                0;
+
+              if (sampleCount > 0 && activityId) {
+                // Delete existing metric_stream rows for this activity to avoid duplicates
+                await db
+                  .delete(metricStream)
+                  .where(
+                    sqlAnd(
+                      sqlEq(metricStream.activityId, activityId),
+                      sqlEq(metricStream.providerId, this.id),
+                    ),
+                  );
+
+                const rows = [];
+                for (let i = 0; i < sampleCount; i++) {
+                  const recordedAt = new Date(startedAt.getTime() + i * everyN * 1000);
+                  rows.push({
+                    providerId: this.id,
+                    activityId,
+                    recordedAt,
+                    heartRate: hrSeries?.values[i] ?? null,
+                    power: powerSeries?.values[i] ?? null,
+                    cadence: cadenceSeries?.values[i] ?? null,
+                    speed: speedSeries?.values[i] ?? null,
+                  });
+                }
+
+                for (let j = 0; j < rows.length; j += 500) {
+                  const chunk = rows.slice(j, j + 500);
+                  await db.insert(metricStream).values(chunk);
+                }
+
+                streamCount += rows.length;
+              }
+            } catch (err) {
+              // Performance graph failure is non-fatal — still save the workout
+              errors.push({
+                message: `Performance graph for ${workout.id}: ${err instanceof Error ? err.message : String(err)}`,
+                externalId: workout.id,
+                cause: err,
+              });
+            }
           }
+
+          hasMore = hasMore && response.show_next;
+          page++;
         }
 
-        hasMore = hasMore && response.show_next;
-        page++;
-      }
-
-      logger.info(`[peloton] ${workoutCount} workouts, ${streamCount} metric stream rows`);
-      return { recordCount: workoutCount + streamCount, result: workoutCount + streamCount };
-    });
+        logger.info(`[peloton] ${workoutCount} workouts, ${streamCount} metric stream rows`);
+        return { recordCount: workoutCount + streamCount, result: workoutCount + streamCount };
+      },
+      userId,
+    );
 
     recordsSynced += syncResult;
 

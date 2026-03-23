@@ -12,6 +12,8 @@
  * - HIIT capping: max 2-3x/week with 48h spacing
  */
 
+import { computeHrRange as computeHrRangeFromZones } from "@dofek/zones/zones";
+
 // ── Types ────────────────────────────────────────────────────────────
 
 export type WorkoutType =
@@ -357,17 +359,7 @@ function computeHrRange(
   input: RecommendationInput,
   zone: number,
 ): { min: number; max: number } | null {
-  if (input.userMaxHr == null || input.userRestingHr == null) return null;
-
-  const reserve = input.userMaxHr - input.userRestingHr;
-  const zoneThresholds = [0, 0.6, 0.7, 0.8, 0.9, 1.0];
-  const low = zoneThresholds[zone - 1] ?? 0;
-  const high = zoneThresholds[zone] ?? 1.0;
-
-  return {
-    min: Math.round(input.userRestingHr + reserve * low),
-    max: Math.round(input.userRestingHr + reserve * high),
-  };
+  return computeHrRangeFromZones(input.userMaxHr, input.userRestingHr, zone);
 }
 
 function pickMuscleGroupFocus(freshGroups: string[]): string[] {

@@ -3,7 +3,6 @@ import { type ReactNode, useCallback, useMemo, useState } from "react";
 import { z } from "zod";
 import { ActivityList } from "../components/ActivityList.tsx";
 import { AnomalyAlertBanner } from "../components/AnomalyAlertBanner.tsx";
-import { AppHeader } from "../components/AppHeader.tsx";
 import { BodyRecompositionChart } from "../components/BodyRecompositionChart.tsx";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { CorrelationCard, type Insight } from "../components/CorrelationCard.tsx";
@@ -13,17 +12,22 @@ import { HrvBaselineChart } from "../components/HrvBaselineChart.tsx";
 import { NextWorkoutCard } from "../components/NextWorkoutCard.tsx";
 import { NutritionChart } from "../components/NutritionChart.tsx";
 import { OnboardingWelcome } from "../components/OnboardingWelcome.tsx";
+import { PageLayout } from "../components/PageLayout.tsx";
 import { SleepChart } from "../components/SleepChart.tsx";
 import { SleepNeedCard } from "../components/SleepNeedCard.tsx";
 import { SmoothedWeightChart } from "../components/SmoothedWeightChart.tsx";
+import { StrainCard } from "../components/StrainCard.tsx";
 import { StressChart } from "../components/StressChart.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { TimeSeriesChart } from "../components/TimeSeriesChart.tsx";
 import { WeeklyReportCard } from "../components/WeeklyReportCard.tsx";
+import { useAutoSync } from "../hooks/useAutoSync.ts";
+import { useScrollReveal } from "../hooks/useScrollReveal.ts";
+import { chartColors } from "../lib/chartTheme.ts";
 import { useDashboardLayout } from "../lib/dashboardLayoutContext.ts";
 import { trpc } from "../lib/trpc.ts";
-import { useUnitSystem } from "../lib/unitContext.ts";
-import { convertTemperature, temperatureLabel } from "../lib/units.ts";
+import { useUnitConverter } from "../lib/unitContext.ts";
+import type { UnitConverter } from "../lib/units.ts";
 import { useOnboarding } from "../lib/useOnboarding.ts";
 import { assertRows } from "../lib/utils.ts";
 
@@ -98,8 +102,21 @@ const activityRowSchema = z.object({
   calories: z.number().nullable().optional(),
 });
 
+export function healthMonitorSubtitle(latestDate: string | null | undefined): string {
+  if (!latestDate) return "Today's values vs. rolling average";
+  const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in local tz
+  if (latestDate === today) return "Today's values vs. rolling average";
+  const dateLabel = new Date(`${latestDate}T00:00:00`).toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+  });
+  return `Latest values from ${dateLabel} — not yet updated today`;
+}
+
 /** Sections that render side-by-side in a 2-column grid. The key is the "primary" (left) section. */
 const GRID_PAIRS: Record<string, string> = {
+  strain: "nextWorkout",
   weeklyReport: "sleepNeed",
   stress: "healthspan",
   spo2Temp: "steps",
@@ -107,21 +124,66 @@ const GRID_PAIRS: Record<string, string> = {
 
 /** Reverse lookup: secondary -> primary */
 const GRID_PAIR_SECONDARY: Record<string, string> = {
+  nextWorkout: "strain",
   sleepNeed: "weeklyReport",
   healthspan: "stress",
   steps: "spo2Temp",
 };
 
+type DailyMetricRow = z.infer<typeof dailyMetricRowSchema>;
+
+export function spo2TempSectionConfig(
+  hasSpO2: boolean,
+  hasSkinTemp: boolean,
+  units: UnitConverter,
+): { title: string; subtitle: string; yAxis: { name: string; min?: number }[] } {
+  if (hasSpO2 && hasSkinTemp) {
+    return {
+      title: "SpO2 & Skin Temperature",
+      subtitle: "Blood oxygen saturation and wrist skin temperature over time",
+      yAxis: [{ name: "SpO2 (%)", min: 90 }, { name: units.temperatureLabel }],
+    };
+  }
+  if (hasSpO2) {
+    return {
+      title: "Blood Oxygen (SpO2)",
+      subtitle: "Blood oxygen saturation over time",
+      yAxis: [{ name: "SpO2 (%)", min: 90 }],
+    };
+  }
+  return {
+    title: "Skin Temperature",
+    subtitle: "Wrist skin temperature over time",
+    yAxis: [{ name: units.temperatureLabel }],
+  };
+}
+
+export function buildSkinTempSeries(metrics: DailyMetricRow[], units: UnitConverter) {
+  return {
+    name: "Skin Temp",
+    data: metrics.map((d): [string, number | null] => [
+      d.date,
+      d.skin_temp_c != null ? units.convertTemperature(d.skin_temp_c) : null,
+    ]),
+    color: chartColors.amber,
+    yAxisIndex: 1 as const,
+  };
+}
+
 export const DASHBOARD_SECTION_IDS = new Set([
   "healthMonitor",
+  "strain",
+  "weeklyReport",
+  "sleepNeed",
   "nextWorkout",
   "spo2Temp",
   "steps",
+  "sleep",
   "activities",
 ]);
 
 export function Dashboard() {
-  const { unitSystem } = useUnitSystem();
+  const units = useUnitConverter();
   const { layout, toggleCollapsed, toggleHidden, moveSection } = useDashboardLayout();
   const [days, setDaysRaw] = useState(30);
   const [activityPage, setActivityPage] = useState(0);
@@ -147,6 +209,7 @@ export function Dashboard() {
   const stressData = trpc.stress.scores.useQuery({ days });
   const weeklyReport = trpc.weeklyReport.report.useQuery({ weeks: Math.ceil(days / 7) });
   const nextWorkout = trpc.training.nextWorkout.useQuery();
+  const workloadRatio = trpc.recovery.workloadRatio.useQuery({ days });
   const healthspan = trpc.healthspan.score.useQuery({ weeks: Math.max(Math.ceil(days / 7), 4) });
   const anomalyCheck = trpc.anomalyDetection.check.useQuery({});
   const smoothedWeight = trpc.bodyAnalytics.smoothedWeight.useQuery({ days: Math.max(days, 90) });
@@ -154,6 +217,9 @@ export function Dashboard() {
   const trendData: TrendRow | undefined = trends.data
     ? trendRowSchema.parse(trends.data)
     : undefined;
+
+  // Auto-sync when data is stale (API providers only — HealthKit requires iOS)
+  useAutoSync(trendData?.latest_date);
 
   const topInsights = useMemo(() => {
     const all: Insight[] = insightsQuery.data ?? [];
@@ -175,7 +241,7 @@ export function Dashboard() {
         lowerBetter: true,
       },
       {
-        label: "HRV",
+        label: "Heart Rate Variability (HRV)",
         value: trendData.latest_hrv,
         avg: trendData.avg_hrv,
         stddev: trendData.stddev_hrv,
@@ -205,17 +271,20 @@ export function Dashboard() {
       },
       trendData.latest_skin_temp != null && {
         label: "Skin Temp",
-        value: convertTemperature(trendData.latest_skin_temp, unitSystem),
+        value: units.convertTemperature(trendData.latest_skin_temp),
         avg:
           trendData.avg_skin_temp != null
-            ? convertTemperature(trendData.avg_skin_temp, unitSystem)
+            ? units.convertTemperature(trendData.avg_skin_temp)
             : null,
-        stddev: trendData.stddev_skin_temp,
-        unit: temperatureLabel(unitSystem),
+        stddev:
+          trendData.stddev_skin_temp != null
+            ? units.scaleTemperatureStddev(trendData.stddev_skin_temp)
+            : null,
+        unit: units.temperatureLabel,
       },
     ];
     return entries.filter((entry): entry is MetricEntry => entry !== false);
-  }, [trendData, unitSystem]);
+  }, [trendData, units]);
 
   const metrics = assertRows(dailyMetrics.data, dailyMetricRowSchema);
 
@@ -226,29 +295,21 @@ export function Dashboard() {
     () => ({
       name: "SpO2",
       data: metrics.map((d): [string, number | null] => [d.date, d.spo2_avg]),
-      color: "#3b82f6",
+      color: chartColors.blue,
       areaStyle: true,
     }),
     [metrics],
   );
 
-  const skinTempSeries = useMemo(
-    () => ({
-      name: "Skin Temp",
-      data: metrics.map((d): [string, number | null] => [
-        d.date,
-        d.skin_temp_c != null ? convertTemperature(d.skin_temp_c, unitSystem) : null,
-      ]),
-      color: "#f59e0b",
-    }),
-    [metrics, unitSystem],
-  );
+  const skinTempSeries = useMemo(() => buildSkinTempSeries(metrics, units), [metrics, units]);
+
+  const spo2TempConfig = spo2TempSectionConfig(hasSpO2, hasSkinTemp, units);
 
   const stepsSeries = useMemo(
     () => ({
       name: "Steps",
       data: metrics.map((d): [string, number | null] => [d.date, d.steps]),
-      color: "#8b5cf6",
+      color: chartColors.purple,
       areaStyle: true,
     }),
     [metrics],
@@ -258,7 +319,7 @@ export function Dashboard() {
   const sectionContent: Record<string, { title: string; subtitle: string; content: ReactNode }> = {
     healthMonitor: {
       title: "Health Monitor",
-      subtitle: "Today's values vs. rolling average",
+      subtitle: healthMonitorSubtitle(trendData?.latest_date),
       content: <HealthStatusBar metrics={healthMetrics} loading={trends.isLoading} />,
     },
     topInsights: {
@@ -266,8 +327,8 @@ export function Dashboard() {
       subtitle: "Strongest correlations in your data",
       content: insightsQuery.isLoading ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="h-48 rounded-lg bg-zinc-800 animate-pulse" />
-          <div className="h-48 rounded-lg bg-zinc-800 animate-pulse" />
+          <div className="h-48 rounded-lg bg-skeleton animate-pulse" />
+          <div className="h-48 rounded-lg bg-skeleton animate-pulse" />
         </div>
       ) : topInsights.length > 0 ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -276,7 +337,7 @@ export function Dashboard() {
           ))}
         </div>
       ) : (
-        <p className="text-sm text-zinc-500">
+        <p className="text-sm text-subtle">
           Not enough data to surface insights yet. Check back after a few more days of tracking.
         </p>
       ),
@@ -285,6 +346,11 @@ export function Dashboard() {
       title: "Weekly Performance",
       subtitle: "Strain balance, sleep vs average, key vitals",
       content: <WeeklyReportCard data={weeklyReport.data} loading={weeklyReport.isLoading} />,
+    },
+    strain: {
+      title: "Strain",
+      subtitle: "Current training strain on a 0-21 scale with acute/chronic workload balance",
+      content: <StrainCard data={workloadRatio.data} loading={workloadRatio.isLoading} />,
     },
     nextWorkout: {
       title: "Next Workout",
@@ -300,7 +366,7 @@ export function Dashboard() {
       title: "Stress Monitor",
       subtitle: "Daily stress from HR/HRV deviation vs personal baseline",
       content: (
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
+        <div className="card p-2 sm:p-4">
           <StressChart data={stressData.data} loading={stressData.isLoading} />
         </div>
       ),
@@ -314,21 +380,26 @@ export function Dashboard() {
       title: "Heart Rate Variability & Resting HR",
       subtitle: "60-day baseline band with 7-day rolling average",
       content: (
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
+        <div className="card p-2 sm:p-4">
           <HrvBaselineChart data={hrvBaseline.data ?? []} loading={hrvBaseline.isLoading} />
         </div>
       ),
     },
     spo2Temp: {
-      title: "SpO2 & Skin Temperature",
-      subtitle: "Blood oxygen saturation and wrist skin temperature over time",
+      title: spo2TempConfig.title,
+      subtitle: spo2TempConfig.subtitle,
       content:
         hasSpO2 || hasSkinTemp ? (
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
+          <div className="card p-2 sm:p-4">
             <TimeSeriesChart
-              series={[...(hasSpO2 ? [spo2Series] : []), ...(hasSkinTemp ? [skinTempSeries] : [])]}
+              series={[
+                ...(hasSpO2 ? [spo2Series] : []),
+                ...(hasSkinTemp
+                  ? [hasSpO2 ? skinTempSeries : { ...skinTempSeries, yAxisIndex: 0 as const }]
+                  : []),
+              ]}
               height={200}
-              yAxis={[{ name: "SpO2 (%)", min: 90 }, { name: temperatureLabel(unitSystem) }]}
+              yAxis={spo2TempConfig.yAxis}
               loading={dailyMetrics.isLoading}
             />
           </div>
@@ -338,7 +409,7 @@ export function Dashboard() {
       title: "Daily Steps",
       subtitle: "Total daily step count over time",
       content: (
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
+        <div className="card p-2 sm:p-4">
           <TimeSeriesChart
             series={[stepsSeries]}
             height={200}
@@ -352,7 +423,7 @@ export function Dashboard() {
       title: "Sleep",
       subtitle: `Stage breakdown (${days} days)`,
       content: (
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
+        <div className="card p-2 sm:p-4">
           <SleepChart
             data={assertRows(sleepData.data, sleepRowSchema)}
             loading={sleepData.isLoading}
@@ -364,7 +435,7 @@ export function Dashboard() {
       title: "Nutrition",
       subtitle: `Calories & macros (${days} days)`,
       content: (
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
+        <div className="card p-2 sm:p-4">
           <NutritionChart
             data={assertRows(nutritionData.data, nutritionDailyRowSchema)}
             loading={nutritionData.isLoading}
@@ -377,9 +448,9 @@ export function Dashboard() {
       subtitle: "Smoothed weight trend and fat/lean mass recomposition",
       content: (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
+          <div className="card p-2 sm:p-4">
             <div className="mb-2 flex items-center gap-2">
-              <h3 className="text-xs font-medium text-zinc-500 uppercase">Weight Trend</h3>
+              <h3 className="text-xs font-medium text-subtle uppercase">Weight Trend</h3>
               <ChartDescriptionTooltip description="This chart shows your smoothed body weight trend over time to highlight your underlying direction." />
             </div>
             <SmoothedWeightChart
@@ -387,9 +458,9 @@ export function Dashboard() {
               loading={smoothedWeight.isLoading}
             />
           </div>
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
+          <div className="card p-2 sm:p-4">
             <div className="mb-2 flex items-center gap-2">
-              <h3 className="text-xs font-medium text-zinc-500 uppercase">Recomposition</h3>
+              <h3 className="text-xs font-medium text-subtle uppercase">Recomposition</h3>
               <ChartDescriptionTooltip description="This chart shows how fat mass and lean mass have changed so you can track body recomposition, not just scale weight." />
             </div>
             <BodyRecompositionChart data={bodyRecomp.data ?? []} loading={bodyRecomp.isLoading} />
@@ -401,7 +472,7 @@ export function Dashboard() {
       title: "Recent Activities",
       subtitle: `Last ${days} days`,
       content: (
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
+        <div className="card p-2 sm:p-4">
           <ActivityList
             activities={assertRows(activities.data?.items, activityRowSchema)}
             loading={activities.isLoading}
@@ -418,6 +489,7 @@ export function Dashboard() {
   // Build the ordered list of sections to render, skipping hidden and already-rendered (pair secondaries)
   const rendered = new Set<string>();
   const orderedElements: ReactNode[] = [];
+  let sectionIndex = 0;
 
   for (const id of layout.order) {
     if (!DASHBOARD_SECTION_IDS.has(id)) continue;
@@ -436,6 +508,8 @@ export function Dashboard() {
     rendered.add(id);
     if (pairId) rendered.add(pairId);
 
+    const currentIndex = sectionIndex++;
+
     if (pairId && pairSection && !pairHidden) {
       // Render as a grid pair
       const resolvedPairId = pairId;
@@ -450,6 +524,7 @@ export function Dashboard() {
             onMoveUp={() => moveSection(id, "up")}
             onMoveDown={() => moveSection(id, "down")}
             onHide={() => toggleHidden(id)}
+            staggerIndex={currentIndex}
           >
             {section.content}
           </CollapsibleSection>
@@ -462,6 +537,7 @@ export function Dashboard() {
             onMoveUp={() => moveSection(resolvedPairId, "up")}
             onMoveDown={() => moveSection(resolvedPairId, "down")}
             onHide={() => toggleHidden(resolvedPairId)}
+            staggerIndex={currentIndex + 1}
           >
             {pairSection.content}
           </CollapsibleSection>
@@ -480,6 +556,7 @@ export function Dashboard() {
           onMoveUp={() => moveSection(id, "up")}
           onMoveDown={() => moveSection(id, "down")}
           onHide={() => toggleHidden(id)}
+          staggerIndex={currentIndex}
         >
           {section.content}
         </CollapsibleSection>,
@@ -488,48 +565,46 @@ export function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 overflow-x-hidden">
-      <AppHeader>
+    <PageLayout
+      headerChildren={
         <div className="flex items-center gap-2 sm:gap-4 shrink-0">
-          <p className="text-xs text-zinc-500 hidden sm:block">
+          <p className="text-xs text-subtle hidden sm:block">
             {trendData?.latest_date
               ? `Latest: ${new Date(trendData.latest_date).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}`
               : ""}
           </p>
           <TimeRangeSelector days={days} onChange={setDays} />
         </div>
-      </AppHeader>
+      }
+    >
+      {/* Onboarding — shown to new users with no connected providers */}
+      {onboarding.showOnboarding && (
+        <OnboardingWelcome onDismiss={onboarding.dismiss} providers={onboarding.providers} />
+      )}
 
-      <main className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-6 space-y-6 sm:space-y-8">
-        {/* Onboarding — shown to new users with no connected providers */}
-        {onboarding.showOnboarding && (
-          <OnboardingWelcome onDismiss={onboarding.dismiss} providers={onboarding.providers} />
-        )}
+      {/* Anomaly Alert — always at the top, not reorderable */}
+      <AnomalyAlertBanner
+        anomalies={anomalyCheck.data?.anomalies ?? []}
+        loading={anomalyCheck.isLoading}
+      />
 
-        {/* Anomaly Alert — always at the top, not reorderable */}
-        <AnomalyAlertBanner
-          anomalies={anomalyCheck.data?.anomalies ?? []}
-          loading={anomalyCheck.isLoading}
-        />
+      <section>
+        <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-1">
+          Detailed Views
+        </h2>
+        <p className="text-xs text-dim mb-3">
+          Deep dives are available in dedicated pages, not on the dashboard.
+        </p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          <DashboardLink to="/training" label="Training" />
+          <DashboardLink to="/sleep" label="Sleep" />
+          <DashboardLink to="/nutrition" label="Nutrition" />
+          <DashboardLink to="/body" label="Body" />
+        </div>
+      </section>
 
-        <section>
-          <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-1">
-            Detailed Views
-          </h2>
-          <p className="text-xs text-zinc-600 mb-3">
-            Deep dives are available in dedicated pages, not on the dashboard.
-          </p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-            <DashboardLink to="/training" label="Training" />
-            <DashboardLink to="/nutrition" label="Nutrition" />
-            <DashboardLink to="/insights" label="Insights" />
-            <DashboardLink to="/tracking" label="Tracking" />
-          </div>
-        </section>
-
-        {orderedElements}
-      </main>
-    </div>
+      {orderedElements}
+    </PageLayout>
   );
 }
 
@@ -537,7 +612,7 @@ function DashboardLink({ to, label }: { to: string; label: string }) {
   return (
     <Link
       to={to}
-      className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-300 hover:text-zinc-100 hover:border-zinc-700 transition-colors"
+      className="card px-3 py-2 text-sm text-foreground hover:text-foreground hover:border-border-strong transition-colors"
     >
       {label}
     </Link>
@@ -553,6 +628,7 @@ function CollapsibleSection({
   onMoveDown,
   onHide,
   children,
+  staggerIndex = 0,
 }: {
   id?: string;
   title: string;
@@ -563,28 +639,28 @@ function CollapsibleSection({
   onMoveDown?: () => void;
   onHide?: () => void;
   children: React.ReactNode;
+  staggerIndex?: number;
 }) {
+  const revealRef = useScrollReveal<HTMLElement>(staggerIndex);
   return (
-    <section className="group/section">
+    <section ref={revealRef} className="group/section reveal">
       <div className="mb-3 flex items-center gap-2 min-h-[44px]">
         <button
           type="button"
           onClick={onToggle}
           className="flex items-center gap-2 group cursor-pointer text-left flex-1"
         >
-          <span
-            className={`text-zinc-600 text-xs transition-transform ${collapsed ? "" : "rotate-90"}`}
-          >
+          <span className={`text-dim text-xs transition-transform ${collapsed ? "" : "rotate-90"}`}>
             ▶
           </span>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider group-hover:text-zinc-300 transition-colors">
+              <h2 className="text-sm font-medium text-muted uppercase tracking-wider group-hover:text-foreground transition-colors">
                 {title}
               </h2>
               {subtitle && <ChartDescriptionTooltip description={subtitle} />}
             </div>
-            {subtitle && <p className="text-xs text-zinc-600 mt-0.5">{subtitle}</p>}
+            {subtitle && <p className="text-xs text-dim mt-0.5">{subtitle}</p>}
           </div>
         </button>
 
@@ -594,7 +670,7 @@ function CollapsibleSection({
             <button
               type="button"
               onClick={onMoveUp}
-              className="p-1 text-zinc-600 hover:text-zinc-300 transition-colors cursor-pointer"
+              className="p-1 text-dim hover:text-foreground transition-colors cursor-pointer"
               title="Move up"
             >
               <svg
@@ -617,7 +693,7 @@ function CollapsibleSection({
             <button
               type="button"
               onClick={onMoveDown}
-              className="p-1 text-zinc-600 hover:text-zinc-300 transition-colors cursor-pointer"
+              className="p-1 text-dim hover:text-foreground transition-colors cursor-pointer"
               title="Move down"
             >
               <svg
@@ -639,7 +715,7 @@ function CollapsibleSection({
             <button
               type="button"
               onClick={onHide}
-              className="p-1 text-zinc-600 hover:text-zinc-300 transition-colors cursor-pointer"
+              className="p-1 text-dim hover:text-foreground transition-colors cursor-pointer"
               title="Hide section"
             >
               <svg

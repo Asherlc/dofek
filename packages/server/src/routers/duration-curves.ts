@@ -1,21 +1,20 @@
+import { DURATION_LABELS, linearRegression } from "@dofek/training/power-analysis";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { DURATION_LABELS } from "../lib/duration-labels.ts";
 import { enduranceTypeFilter } from "../lib/endurance-types.ts";
-import { linearRegression } from "../lib/math.ts";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 const hrCurveRowSchema = z.object({
   duration_seconds: z.coerce.number(),
   best_hr: z.coerce.number(),
-  activity_date: z.string(),
+  activity_date: dateStringSchema,
 });
 
 const paceCurveRowSchema = z.object({
   duration_seconds: z.coerce.number(),
   best_pace: z.coerce.number(),
-  activity_date: z.string(),
+  activity_date: dateStringSchema,
 });
 
 export interface CriticalHeartRateModel {

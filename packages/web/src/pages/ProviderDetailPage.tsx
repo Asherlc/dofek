@@ -1,25 +1,26 @@
+import { DATA_TYPE_LABELS, type ProviderStats } from "@dofek/providers/provider-stats";
 import { Link, useParams } from "@tanstack/react-router";
-import { useCallback, useState } from "react";
-import { AppHeader } from "../components/AppHeader.tsx";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { z } from "zod";
+import { PageLayout } from "../components/PageLayout.tsx";
 import { ProviderLogo } from "../components/ProviderLogo.tsx";
+import { ProviderStatsBreakdown } from "../components/ProviderStatsBreakdown.tsx";
 import { formatRelativeTime, formatTime } from "../lib/dates.ts";
+import { formatNumber } from "../lib/format.ts";
 import { pollSyncJob } from "../lib/poll-sync-job.ts";
 import { trpc } from "../lib/trpc.ts";
 
-const DATA_TYPES = [
-  { key: "activities", label: "Activities" },
-  { key: "dailyMetrics", label: "Daily Metrics" },
-  { key: "sleepSessions", label: "Sleep" },
-  { key: "bodyMeasurements", label: "Body" },
-  { key: "foodEntries", label: "Food" },
-  { key: "healthEvents", label: "Events" },
-  { key: "metricStream", label: "Metric Stream" },
-  { key: "nutritionDaily", label: "Nutrition" },
-  { key: "labResults", label: "Lab Results" },
-  { key: "journalEntries", label: "Journal" },
-] as const;
+const oauthBroadcastMessage = z.object({
+  type: z.literal("complete"),
+  providerId: z.string().optional(),
+});
 
-type DataType = (typeof DATA_TYPES)[number]["key"];
+const oauthPostMessage = z.object({
+  type: z.literal("oauth-complete"),
+  providerId: z.string().optional(),
+});
+
+type DataType = (typeof DATA_TYPE_LABELS)[number]["key"];
 
 function formatProviderName(id: string): string {
   return id
@@ -87,6 +88,41 @@ export function ProviderDetailPage() {
     [providerId, syncMutation, trpcUtils],
   );
 
+  const handleReauthorize = useCallback(() => {
+    window.open(`/auth/provider/${providerId}`, "_blank");
+  }, [providerId]);
+
+  // Listen for OAuth completion (re-authorize flow)
+  const lastOAuthHandledAt = useRef(0);
+  useEffect(() => {
+    const onOAuthComplete = () => {
+      const now = Date.now();
+      if (now - lastOAuthHandledAt.current < 2000) return;
+      lastOAuthHandledAt.current = now;
+      trpcUtils.sync.providers.invalidate();
+    };
+    let channel: BroadcastChannel | undefined;
+    try {
+      channel = new BroadcastChannel("oauth-complete");
+      channel.onmessage = (event: MessageEvent) => {
+        const parsed = oauthBroadcastMessage.safeParse(event.data);
+        if (parsed.success) onOAuthComplete();
+      };
+    } catch {
+      /* BroadcastChannel not supported */
+    }
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      const parsed = oauthPostMessage.safeParse(event.data);
+      if (parsed.success) onOAuthComplete();
+    };
+    window.addEventListener("message", onMessage);
+    return () => {
+      channel?.close();
+      window.removeEventListener("message", onMessage);
+    };
+  }, [trpcUtils]);
+
   const handleDisconnect = useCallback(async () => {
     await disconnectMutation.mutateAsync({ providerId });
     trpcUtils.sync.providers.invalidate();
@@ -96,57 +132,57 @@ export function ProviderDetailPage() {
 
   if (providers.isLoading) {
     return (
-      <div className="min-h-screen bg-zinc-950 text-zinc-100">
-        <AppHeader />
-        <main className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-6">
-          <div className="h-32 rounded-lg bg-zinc-800/50 animate-pulse" />
-        </main>
-      </div>
+      <PageLayout>
+        <div className="h-32 rounded-lg bg-skeleton animate-pulse" />
+      </PageLayout>
     );
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 overflow-x-hidden">
-      <AppHeader />
-      <main className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-6 space-y-6">
-        {/* Breadcrumb */}
-        <div className="flex items-center gap-2 text-xs text-zinc-500">
-          <Link to="/providers" className="hover:text-zinc-300">
-            Providers
-          </Link>
-          <span>/</span>
-          <span className="text-zinc-300">{provider?.name ?? formatProviderName(providerId)}</span>
-        </div>
+    <PageLayout>
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-2 text-xs text-subtle">
+        <Link to="/providers" className="hover:text-foreground">
+          Providers
+        </Link>
+        <span>/</span>
+        <span className="text-foreground">{provider?.name ?? formatProviderName(providerId)}</span>
+      </div>
 
-        {/* Provider header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <ProviderLogo provider={providerId} size={32} />
-            <div>
-              <h1 className="text-xl font-semibold">
-                {provider?.name ?? formatProviderName(providerId)}
-              </h1>
-              {provider && (
-                <div className="flex items-center gap-2 mt-0.5">
-                  {provider.authorized ? (
-                    <span className="text-xs text-emerald-400">Connected</span>
-                  ) : (
-                    <span className="text-xs text-zinc-500">Not connected</span>
-                  )}
-                  {provider.lastSyncedAt && (
-                    <span className="text-xs text-zinc-600">
+      {/* Provider header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <ProviderLogo provider={providerId} size={32} />
+          <div>
+            <h1 className="text-xl font-semibold">
+              {provider?.name ?? formatProviderName(providerId)}
+            </h1>
+            {provider && (
+              <div className="flex items-center gap-2 mt-0.5">
+                {provider.importOnly ? (
+                  <span className="text-xs text-subtle">Import only</span>
+                ) : provider.authorized ? (
+                  <span className="text-xs text-emerald-400">Connected</span>
+                ) : (
+                  <span className="text-xs text-subtle">Not connected</span>
+                )}
+                {!provider.importOnly &&
+                  provider.lastSyncedAt &&
+                  formatRelativeTime(provider.lastSyncedAt) && (
+                    <span className="text-xs text-dim">
                       Last sync: {formatRelativeTime(provider.lastSyncedAt)}
                     </span>
                   )}
-                </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
+      </div>
 
-        {/* Sync controls */}
-        <section className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 space-y-3">
-          <h2 className="text-sm font-medium text-zinc-300">Sync Controls</h2>
+      {/* Sync controls */}
+      {!provider?.importOnly && (
+        <section className="card p-4 space-y-3">
+          <h2 className="text-sm font-medium text-foreground">Sync Controls</h2>
           <div className="flex flex-wrap items-end gap-3">
             <button
               type="button"
@@ -160,13 +196,13 @@ export function ProviderDetailPage() {
               type="button"
               onClick={() => handleSync(true)}
               disabled={syncStatus === "syncing"}
-              className="px-3 py-1.5 text-xs rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50 transition-colors"
+              className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
             >
               Full Sync
             </button>
             <div className="flex items-end gap-1.5">
               <div>
-                <label htmlFor="since-days" className="block text-xs text-zinc-500 mb-1">
+                <label htmlFor="since-days" className="block text-xs text-subtle mb-1">
                   Days back
                 </label>
                 <input
@@ -176,22 +212,31 @@ export function ProviderDetailPage() {
                   max="3650"
                   value={sinceDays}
                   onChange={(e) => setSinceDays(e.target.value)}
-                  className="w-20 px-2 py-1.5 text-xs bg-zinc-800 border border-zinc-700 rounded text-zinc-200 focus:outline-none focus:border-zinc-500"
+                  className="w-20 px-2 py-1.5 text-xs bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-border-strong"
                 />
               </div>
               <button
                 type="button"
                 onClick={() => handleSync(false, Number(sinceDays))}
                 disabled={syncStatus === "syncing" || !sinceDays}
-                className="px-3 py-1.5 text-xs rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50 transition-colors"
+                className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
               >
                 Sync Range
               </button>
             </div>
-            <div className="ml-auto">
+            <div className="ml-auto flex items-center gap-3">
+              {provider?.authType === "oauth" && provider.authorized && (
+                <button
+                  type="button"
+                  onClick={handleReauthorize}
+                  className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover transition-colors"
+                >
+                  Re-authorize
+                </button>
+              )}
               {showDisconnectConfirm ? (
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-zinc-400">Are you sure?</span>
+                  <span className="text-xs text-muted">Are you sure?</span>
                   <button
                     type="button"
                     onClick={handleDisconnect}
@@ -203,7 +248,7 @@ export function ProviderDetailPage() {
                   <button
                     type="button"
                     onClick={() => setShowDisconnectConfirm(false)}
-                    className="px-3 py-1.5 text-xs rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors"
+                    className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover transition-colors"
                   >
                     Cancel
                   </button>
@@ -212,7 +257,7 @@ export function ProviderDetailPage() {
                 <button
                   type="button"
                   onClick={() => setShowDisconnectConfirm(true)}
-                  className="px-3 py-1.5 text-xs rounded bg-zinc-800 text-red-400 hover:bg-zinc-700 transition-colors"
+                  className="px-3 py-1.5 text-xs rounded bg-accent/10 text-red-400 hover:bg-surface-hover transition-colors"
                 >
                   Disconnect
                 </button>
@@ -220,79 +265,22 @@ export function ProviderDetailPage() {
             </div>
           </div>
           {syncMessage && (
-            <div
-              className={`text-xs ${syncStatus === "error" ? "text-red-400" : "text-emerald-400"}`}
-            >
+            <div className={`text-xs ${syncStatus === "error" ? "text-red-400" : "text-accent"}`}>
               {syncMessage}
             </div>
           )}
         </section>
+      )}
 
-        {/* Stats overview */}
-        {providerStats && <StatsOverview stats={providerStats} />}
+      {/* Stats overview */}
+      {providerStats && <ProviderStatsBreakdown stats={providerStats} variant="full" />}
 
-        {/* Sync history */}
-        <SyncHistory providerId={providerId} />
+      {/* Sync history */}
+      <SyncHistory providerId={providerId} />
 
-        {/* Records browser */}
-        <RecordsBrowser providerId={providerId} stats={providerStats} />
-      </main>
-    </div>
-  );
-}
-
-// ── Stats Overview ──
-
-interface ProviderStatsData {
-  activities: number;
-  dailyMetrics: number;
-  sleepSessions: number;
-  bodyMeasurements: number;
-  foodEntries: number;
-  healthEvents: number;
-  metricStream: number;
-  nutritionDaily: number;
-  labResults: number;
-  journalEntries: number;
-}
-
-function StatsOverview({ stats }: { stats: ProviderStatsData }) {
-  const breakdown = [
-    { label: "Activities", count: stats.activities },
-    { label: "Metric Stream", count: stats.metricStream },
-    { label: "Daily Metrics", count: stats.dailyMetrics },
-    { label: "Sleep", count: stats.sleepSessions },
-    { label: "Body", count: stats.bodyMeasurements },
-    { label: "Food", count: stats.foodEntries },
-    { label: "Nutrition", count: stats.nutritionDaily },
-    { label: "Events", count: stats.healthEvents },
-    { label: "Lab Results", count: stats.labResults },
-    { label: "Journal", count: stats.journalEntries },
-  ].filter((b) => b.count > 0);
-
-  const total = breakdown.reduce((sum, b) => sum + b.count, 0);
-
-  if (total === 0) return null;
-
-  return (
-    <section className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
-      <div className="flex items-baseline gap-2 mb-3">
-        <span className="text-2xl font-bold text-zinc-100 tabular-nums">
-          {total.toLocaleString()}
-        </span>
-        <span className="text-sm text-zinc-500">total records</span>
-      </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        {breakdown.map((b) => (
-          <div key={b.label} className="text-center">
-            <div className="text-lg font-semibold text-zinc-200 tabular-nums">
-              {b.count.toLocaleString()}
-            </div>
-            <div className="text-xs text-zinc-500">{b.label}</div>
-          </div>
-        ))}
-      </div>
-    </section>
+      {/* Records browser */}
+      <RecordsBrowser providerId={providerId} stats={providerStats} />
+    </PageLayout>
   );
 }
 
@@ -312,20 +300,18 @@ function SyncHistory({ providerId }: { providerId: string }) {
 
   return (
     <section>
-      <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-2">
-        Sync History
-      </h2>
+      <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">Sync History</h2>
 
       {logs.isLoading ? (
-        <div className="text-xs text-zinc-500">Loading logs...</div>
+        <div className="text-xs text-subtle">Loading logs...</div>
       ) : rows.length === 0 ? (
-        <div className="text-xs text-zinc-500">No sync history yet.</div>
+        <div className="text-xs text-subtle">No sync history yet.</div>
       ) : (
         <>
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900 overflow-x-auto">
+          <div className="card overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="border-b border-zinc-800 text-zinc-500">
+                <tr className="border-b border-border text-subtle">
                   <th scope="col" className="text-left px-4 py-2 font-medium">
                     Time
                   </th>
@@ -350,12 +336,12 @@ function SyncHistory({ providerId }: { providerId: string }) {
                 {rows.map((row) => (
                   <tr
                     key={row.id}
-                    className="border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-colors"
+                    className="border-b border-border/50 hover:bg-surface-hover transition-colors"
                   >
-                    <td className="px-4 py-2 text-zinc-400 whitespace-nowrap">
+                    <td className="px-4 py-2 text-muted whitespace-nowrap">
                       {formatTime(row.syncedAt)}
                     </td>
-                    <td className="px-4 py-2 text-zinc-400">{row.dataType}</td>
+                    <td className="px-4 py-2 text-muted">{row.dataType}</td>
                     <td className="px-4 py-2">
                       <span
                         className={`inline-flex items-center gap-1.5 ${
@@ -370,11 +356,11 @@ function SyncHistory({ providerId }: { providerId: string }) {
                         {row.status}
                       </span>
                     </td>
-                    <td className="px-4 py-2 text-right text-zinc-300 tabular-nums">
+                    <td className="px-4 py-2 text-right text-foreground tabular-nums">
                       {row.recordCount ?? "—"}
                     </td>
-                    <td className="px-4 py-2 text-right text-zinc-400 tabular-nums">
-                      {row.durationMs != null ? `${(row.durationMs / 1000).toFixed(1)}s` : "—"}
+                    <td className="px-4 py-2 text-right text-muted tabular-nums">
+                      {row.durationMs != null ? `${formatNumber(row.durationMs / 1000)}s` : "—"}
                     </td>
                     <td className="px-4 py-2 text-red-400/80 max-w-xs truncate">
                       {row.errorMessage ?? ""}
@@ -391,16 +377,16 @@ function SyncHistory({ providerId }: { providerId: string }) {
               type="button"
               onClick={() => setPage((p) => Math.max(0, p - 1))}
               disabled={page === 0}
-              className="text-xs px-3 py-1 rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50 transition-colors"
+              className="text-xs px-3 py-1 rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
             >
               Previous
             </button>
-            <span className="text-xs text-zinc-500">Page {page + 1}</span>
+            <span className="text-xs text-subtle">Page {page + 1}</span>
             <button
               type="button"
               onClick={() => setPage((p) => p + 1)}
               disabled={rows.length < pageSize}
-              className="text-xs px-3 py-1 rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50 transition-colors"
+              className="text-xs px-3 py-1 rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
             >
               Next
             </button>
@@ -413,7 +399,7 @@ function SyncHistory({ providerId }: { providerId: string }) {
 
 // ── Records Browser ──
 
-function getStatCount(stats: ProviderStatsData, key: DataType): number {
+function getStatCount(stats: ProviderStats, key: DataType): number {
   return stats[key];
 }
 
@@ -422,9 +408,9 @@ function RecordsBrowser({
   stats,
 }: {
   providerId: string;
-  stats: ProviderStatsData | undefined;
+  stats: ProviderStats | undefined;
 }) {
-  const availableTypes = DATA_TYPES.filter((dt) => {
+  const availableTypes = DATA_TYPE_LABELS.filter((dt) => {
     if (!stats) return true;
     return getStatCount(stats, dt.key) > 0;
   });
@@ -434,15 +420,15 @@ function RecordsBrowser({
   if (availableTypes.length === 0) {
     return (
       <section>
-        <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-2">Records</h2>
-        <div className="text-xs text-zinc-500">No records yet for this provider.</div>
+        <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">Records</h2>
+        <div className="text-xs text-subtle">No records yet for this provider.</div>
       </section>
     );
   }
 
   return (
     <section>
-      <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-2">Records</h2>
+      <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">Records</h2>
 
       {/* Tabs */}
       <div className="flex flex-wrap gap-1 mb-3">
@@ -453,13 +439,13 @@ function RecordsBrowser({
             onClick={() => setActiveTab(dt.key)}
             className={`px-3 py-1.5 text-xs rounded transition-colors ${
               activeTab === dt.key
-                ? "bg-zinc-700 text-zinc-100"
-                : "bg-zinc-800/50 text-zinc-500 hover:text-zinc-300"
+                ? "bg-accent/15 text-foreground"
+                : "bg-accent/10 text-subtle hover:text-foreground"
             }`}
           >
             {dt.label}
             {stats && (
-              <span className="ml-1 text-zinc-600">
+              <span className="ml-1 text-dim">
                 ({getStatCount(stats, dt.key).toLocaleString()})
               </span>
             )}
@@ -497,11 +483,11 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
   }
 
   if (records.isLoading) {
-    return <div className="text-xs text-zinc-500">Loading records...</div>;
+    return <div className="text-xs text-subtle">Loading records...</div>;
   }
 
   if (rows.length === 0) {
-    return <div className="text-xs text-zinc-500">No records found.</div>;
+    return <div className="text-xs text-subtle">No records found.</div>;
   }
 
   // Get column names from the first row, excluding raw data and internal fields
@@ -521,10 +507,10 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
 
   return (
     <>
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900 overflow-x-auto">
+      <div className="card overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
-            <tr className="border-b border-zinc-800 text-zinc-500">
+            <tr className="border-b border-border text-subtle">
               {visibleColumns.map((col) => (
                 <th
                   key={col}
@@ -545,13 +531,13 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
             {rows.map((row, idx) => (
               <tr
                 key={String(row.id ?? row.date ?? idx)}
-                className="border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-colors cursor-pointer"
+                className="border-b border-border/50 hover:bg-surface-hover transition-colors cursor-pointer"
                 onClick={() => setSelectedRecord(row)}
               >
                 {visibleColumns.map((col) => (
                   <td
                     key={col}
-                    className="px-3 py-2 text-zinc-300 whitespace-nowrap max-w-xs truncate"
+                    className="px-3 py-2 text-foreground whitespace-nowrap max-w-xs truncate"
                   >
                     {formatCellValue(row[col])}
                   </td>
@@ -564,7 +550,7 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
                         e.stopPropagation();
                         setSelectedRecord(row);
                       }}
-                      className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+                      className="text-xs text-dim hover:text-muted transition-colors"
                     >
                       View
                     </button>
@@ -582,16 +568,16 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
           type="button"
           onClick={() => setPage((p) => Math.max(0, p - 1))}
           disabled={page === 0}
-          className="text-xs px-3 py-1 rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50 transition-colors"
+          className="text-xs px-3 py-1 rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
         >
           Previous
         </button>
-        <span className="text-xs text-zinc-500">Page {page + 1}</span>
+        <span className="text-xs text-subtle">Page {page + 1}</span>
         <button
           type="button"
           onClick={() => setPage((p) => p + 1)}
           disabled={rows.length < pageSize}
-          className="text-xs px-3 py-1 rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50 transition-colors"
+          className="text-xs px-3 py-1 rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
         >
           Next
         </button>
@@ -631,13 +617,13 @@ export function RecordDetailModal({
         onClick={onClose}
         aria-label="Close dialog"
       />
-      <div className="relative bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl">
+      <div className="relative bg-surface-solid border border-border-strong rounded-xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-zinc-200">Record Detail</h3>
+          <h3 className="text-sm font-semibold text-foreground">Record Detail</h3>
           <button
             type="button"
             onClick={onClose}
-            className="text-zinc-500 hover:text-zinc-300 text-lg leading-none p-1"
+            className="text-subtle hover:text-foreground text-lg leading-none p-1"
             aria-label="Close"
           >
             &times;
@@ -646,14 +632,12 @@ export function RecordDetailModal({
 
         {/* Populated fields */}
         <div className="mb-4">
-          <h4 className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">
-            Fields
-          </h4>
-          <div className="rounded-lg border border-zinc-800 bg-zinc-950 divide-y divide-zinc-800/50">
+          <h4 className="text-xs font-medium text-muted uppercase tracking-wider mb-2">Fields</h4>
+          <div className="rounded-lg border border-border bg-page divide-y divide-border/50">
             {populatedFields.map(([key, value]) => (
               <div key={key} className="flex gap-4 px-3 py-1.5 text-xs">
-                <span className="text-zinc-500 shrink-0 w-48">{formatColumnName(key)}</span>
-                <span className="text-zinc-300 break-all whitespace-pre-wrap min-w-0">
+                <span className="text-subtle shrink-0 w-48">{formatColumnName(key)}</span>
+                <span className="text-foreground break-all whitespace-pre-wrap min-w-0">
                   {formatCellValue(value)}
                 </span>
               </div>
@@ -664,10 +648,10 @@ export function RecordDetailModal({
         {/* Null fields — collapsed by default */}
         {nullFields.length > 0 && (
           <details className="mb-4">
-            <summary className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2 cursor-pointer hover:text-zinc-400">
+            <summary className="text-xs font-medium text-subtle uppercase tracking-wider mb-2 cursor-pointer hover:text-muted">
               Empty Fields ({nullFields.length})
             </summary>
-            <div className="text-xs text-zinc-600 flex flex-wrap gap-x-4 gap-y-0.5 mt-1">
+            <div className="text-xs text-dim flex flex-wrap gap-x-4 gap-y-0.5 mt-1">
               {nullFields.map(([key]) => (
                 <span key={key}>{formatColumnName(key)}</span>
               ))}
@@ -678,10 +662,10 @@ export function RecordDetailModal({
         {/* Raw provider data */}
         {raw && (
           <details open>
-            <summary className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2 cursor-pointer hover:text-zinc-300">
+            <summary className="text-xs font-medium text-muted uppercase tracking-wider mb-2 cursor-pointer hover:text-foreground">
               Raw Provider Data
             </summary>
-            <pre className="text-xs text-zinc-400 bg-zinc-950 rounded-lg p-3 overflow-x-auto overflow-y-auto max-h-[60vh]">
+            <pre className="text-xs text-muted bg-page rounded-lg p-3 overflow-x-auto overflow-y-auto max-h-[60vh]">
               {JSON.stringify(raw, null, 2)}
             </pre>
           </details>

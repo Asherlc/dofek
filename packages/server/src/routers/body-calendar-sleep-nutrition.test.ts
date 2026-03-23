@@ -13,6 +13,20 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
+vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../lib/typed-sql.ts")>();
+  return {
+    ...original,
+    executeWithSchema: vi.fn(
+      async (
+        db: { execute: (q: unknown) => Promise<unknown[]> },
+        _schema: unknown,
+        query: unknown,
+      ) => db.execute(query),
+    ),
+  };
+});
+
 import { bodyRouter } from "./body.ts";
 import { calendarRouter } from "./calendar.ts";
 import { nutritionRouter } from "./nutrition.ts";
@@ -53,7 +67,7 @@ describe("calendarRouter", () => {
         {
           date: "2024-01-15",
           activity_count: 2,
-          total_minutes: "120",
+          total_minutes: 120,
           activity_types: ["cycling", "running"],
         },
       ];
@@ -79,21 +93,29 @@ describe("calendarRouter", () => {
 });
 
 describe("sleepRouter", () => {
+  const sleepRow = {
+    started_at: "2024-01-01T22:00:00Z",
+    duration_minutes: 480,
+    deep_minutes: 90,
+    rem_minutes: 110,
+    light_minutes: 250,
+    awake_minutes: 30,
+    efficiency_pct: 93.5,
+  };
+
   describe("list", () => {
     it("returns sleep rows", async () => {
-      const rows = [{ id: "1", started_at: "2024-01-01T22:00:00Z", duration_minutes: 480 }];
-      const caller = makeCaller(sleepRouter, rows);
+      const caller = makeCaller(sleepRouter, [sleepRow]);
       const result = await caller.list({ days: 30 });
-      expect(result).toEqual(rows);
+      expect(result).toEqual([sleepRow]);
     });
   });
 
   describe("latest", () => {
     it("returns latest sleep record", async () => {
-      const rows = [{ id: "1", started_at: "2024-01-01T22:00:00Z" }];
-      const caller = makeCaller(sleepRouter, rows);
+      const caller = makeCaller(sleepRouter, [sleepRow]);
       const result = await caller.latest();
-      expect(result).toEqual(rows[0]);
+      expect(result).toEqual(sleepRow);
     });
 
     it("returns null when no sleep data", async () => {

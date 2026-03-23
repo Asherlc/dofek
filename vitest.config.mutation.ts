@@ -16,6 +16,8 @@ export default defineConfig({
       "packages/scoring/src/**/*.test.ts",
       "packages/nutrition/src/**/*.test.ts",
       "packages/training/src/**/*.test.ts",
+      "packages/recovery/src/**/*.test.ts",
+      "packages/zones/src/**/*.test.ts",
       "packages/stats/src/**/*.test.ts",
       "packages/onboarding/src/**/*.test.ts",
       "packages/providers-meta/src/**/*.test.ts",

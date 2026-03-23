@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/node";
 import type { SyncDatabase } from "../db/index.ts";
 import { logSync } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
@@ -33,9 +34,9 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
   const { ensureProvidersRegistered } = await import("./provider-registration.ts");
   await ensureProvidersRegistered();
 
-  const { getAllProviders } = await import("../providers/index.ts");
+  const { getSyncProviders } = await import("../providers/index.ts");
 
-  let providers = getAllProviders().filter((p) => p.validate() === null);
+  let providers = getSyncProviders().filter((p) => p.validate() === null);
   if (providerId) {
     const specific = providers.find((p) => p.id === providerId);
     if (!specific) throw new Error(`Unknown provider: ${providerId}`);
@@ -63,12 +64,15 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
 
     try {
       logger.info(`[worker] Starting ${provider.name}...`);
-      const result = await provider.sync(db, since, (percentage, message) => {
-        providerStatus[provider.id] = { status: "running", message };
-        job.updateProgress({
-          providers: providerStatus,
-          percentage: computePercentage(completedCount, percentage, totalProviders),
-        });
+      const result = await provider.sync(db, since, {
+        onProgress: (percentage, message) => {
+          providerStatus[provider.id] = { status: "running", message };
+          job.updateProgress({
+            providers: providerStatus,
+            percentage: computePercentage(completedCount, percentage, totalProviders),
+          });
+        },
+        userId: job.data.userId,
       });
       completedCount++;
       const hasErrors = result.errors.length > 0;
@@ -87,6 +91,9 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
       if (hasErrors) {
         for (const err of result.errors) {
           logger.error(`[worker] ${provider.name} sync error: ${err.message}`);
+          Sentry.captureException(err.cause ?? new Error(err.message), {
+            tags: { provider: provider.id },
+          });
         }
       }
 
@@ -97,10 +104,12 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         recordCount: result.recordsSynced,
         errorMessage: hasErrors ? result.errors.map((e) => e.message).join("; ") : undefined,
         durationMs: Date.now() - syncStart,
+        userId: job.data.userId,
       });
     } catch (err: unknown) {
       completedCount++;
       const message = err instanceof Error ? err.message : String(err);
+      Sentry.captureException(err, { tags: { provider: provider.id } });
       providerStatus[provider.id] = { status: "error", message };
       await job.updateProgress({
         providers: providerStatus,
@@ -113,6 +122,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         status: "error",
         errorMessage: message,
         durationMs: Date.now() - syncStart,
+        userId: job.data.userId,
       });
     }
   }

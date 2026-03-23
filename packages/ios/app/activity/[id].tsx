@@ -18,16 +18,15 @@ import Svg, {
   Text as SvgText,
 } from "react-native-svg";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
-import { formatDurationRange } from "../../lib/format";
+import { formatDurationRange, formatNumber } from "@dofek/format/format";
+import { HEART_RATE_ZONE_COLORS } from "@dofek/zones/zones";
 import { trpc } from "../../lib/trpc";
-import { convertDistance, convertElevation, convertSpeed, distanceLabel, elevationLabel, speedLabel, useUnitSystem } from "../../lib/units";
+import { useUnitConverter } from "../../lib/units";
 import { colors } from "../../theme";
 
 const CHART_WIDTH = 340;
 const CHART_HEIGHT = 180;
 const CHART_PADDING = { top: 20, right: 16, bottom: 28, left: 44 };
-
-const ZONE_COLORS = ["#22c55e", "#84cc16", "#eab308", "#f97316", "#ef4444"];
 
 const CHART_COLORS = {
   heartRate: "#ef4444",
@@ -309,7 +308,7 @@ function HrZonesChart({ zones }: { zones: HrZone[] }) {
           const percentage = totalSeconds > 0 ? zone.seconds / totalSeconds : 0;
           const barWidth = Math.max(percentage * barAreaWidth, 2);
           const y = i * (barHeight + gap);
-          const zoneColor = ZONE_COLORS[i] ?? "#71717a";
+          const zoneColor = HEART_RATE_ZONE_COLORS[i] ?? "#71717a";
 
           return (
             <G key={zone.zone}>
@@ -426,7 +425,7 @@ const statsStyles = StyleSheet.create({
 
 export default function ActivityDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const unitSystem = useUnitSystem();
+  const units = useUnitConverter();
 
   const detail = trpc.activity.byId.useQuery(
     { id: id ?? "" },
@@ -478,13 +477,13 @@ export default function ActivityDetailScreen() {
   if (activity.totalDistance != null) {
     stats.push({
       label: "Distance",
-      value: `${convertDistance(activity.totalDistance / 1000, unitSystem).toFixed(1)} ${distanceLabel(unitSystem)}`,
+      value: `${formatNumber(units.convertDistance(activity.totalDistance / 1000))} ${units.distanceLabel}`,
     });
   }
   if (activity.elevationGain != null) {
     stats.push({
       label: "Elevation Gain",
-      value: `${Math.round(convertElevation(activity.elevationGain, unitSystem))} ${elevationLabel(unitSystem)}`,
+      value: `${Math.round(units.convertElevation(activity.elevationGain))} ${units.elevationLabel}`,
     });
   }
   if (activity.avgHr != null) {
@@ -514,7 +513,7 @@ export default function ActivityDetailScreen() {
   if (activity.avgSpeed != null) {
     stats.push({
       label: "Avg Speed",
-      value: `${convertSpeed(activity.avgSpeed * 3.6, unitSystem).toFixed(1)} ${speedLabel(unitSystem)}`,
+      value: `${formatNumber(units.convertSpeed(activity.avgSpeed * 3.6))} ${units.speedLabel}`,
     });
   }
   if (activity.avgCadence != null) {
@@ -577,10 +576,10 @@ export default function ActivityDetailScreen() {
       {/* Elevation Profile */}
       {hasAltitude && (
         <AreaChart
-          data={points.map((p) => ({ value: p.altitude != null ? convertElevation(p.altitude, unitSystem) : null }))}
+          data={points.map((p) => ({ value: p.altitude != null ? units.convertElevation(p.altitude) : null }))}
           color={CHART_COLORS.altitude}
           label="Elevation Profile"
-          unit={elevationLabel(unitSystem)}
+          unit={units.elevationLabel}
         />
       )}
 

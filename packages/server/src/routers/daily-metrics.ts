@@ -1,7 +1,27 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+
+const dailyMetricsViewRowSchema = z.object({
+  date: dateStringSchema,
+  user_id: z.string(),
+  resting_hr: z.number().nullable(),
+  hrv: z.number().nullable(),
+  vo2max: z.number().nullable(),
+  spo2_avg: z.number().nullable(),
+  respiratory_rate_avg: z.number().nullable(),
+  skin_temp_c: z.number().nullable(),
+  steps: z.number().nullable(),
+  active_energy_kcal: z.number().nullable(),
+  basal_energy_kcal: z.number().nullable(),
+  distance_km: z.number().nullable(),
+  flights_climbed: z.number().nullable(),
+  exercise_minutes: z.number().nullable(),
+  stand_hours: z.number().nullable(),
+  walking_speed: z.number().nullable(),
+  source_providers: z.array(z.string()),
+});
 
 export interface HrvBaselineRow {
   date: string;
@@ -20,17 +40,20 @@ export const dailyMetricsRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const rows = await ctx.db.execute(
+      return executeWithSchema(
+        ctx.db,
+        dailyMetricsViewRowSchema,
         sql`SELECT * FROM fitness.v_daily_metrics
             WHERE user_id = ${ctx.userId}
               AND date > CURRENT_DATE - ${input.days}::int
             ORDER BY date ASC`,
       );
-      return rows;
     }),
 
   latest: cachedProtectedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
-    const rows = await ctx.db.execute(
+    const rows = await executeWithSchema(
+      ctx.db,
+      dailyMetricsViewRowSchema,
       sql`SELECT * FROM fitness.v_daily_metrics WHERE user_id = ${ctx.userId} ORDER BY date DESC LIMIT 1`,
     );
     return rows[0] ?? null;
@@ -44,7 +67,7 @@ export const dailyMetricsRouter = router({
     )
     .query(async ({ ctx, input }) => {
       const hrvBaselineRowSchema = z.object({
-        date: z.string(),
+        date: dateStringSchema,
         hrv: z.coerce.number().nullable(),
         resting_hr: z.coerce.number().nullable(),
         mean_60d: z.coerce.number().nullable(),
@@ -94,7 +117,7 @@ export const dailyMetricsRouter = router({
         latest_steps: z.coerce.number().nullable(),
         latest_active_energy: z.coerce.number().nullable(),
         latest_skin_temp: z.coerce.number().nullable(),
-        latest_date: z.string().nullable(),
+        latest_date: dateStringSchema.nullable(),
       });
       const rows = await executeWithSchema(
         ctx.db,

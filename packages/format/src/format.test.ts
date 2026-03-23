@@ -5,12 +5,17 @@ import {
   formatDurationMinutes,
   formatDurationRange,
   formatHour,
+  formatNumber,
   formatPace,
+  formatPercent,
   formatRelativeTime,
+  formatSigned,
   formatSleepDebt,
   formatSleepDebtInline,
   formatTime,
   isToday,
+  isYesterday,
+  parseValidDate,
 } from "./format.ts";
 
 describe("formatDateYmd", () => {
@@ -79,6 +84,18 @@ describe("formatDurationRange", () => {
   it("returns -- when end timestamp is invalid", () => {
     expect(formatDurationRange("2024-01-01T10:00:00Z", "not-a-date")).toBe("--");
   });
+
+  it("handles postgres-style space-separated timestamps", () => {
+    expect(formatDurationRange("2024-01-01 10:00:00+00", "2024-01-01 11:30:00+00")).toBe("1h 30m");
+  });
+
+  it("returns 0m for identical timestamps (kills < 0 → <= 0 mutant)", () => {
+    expect(formatDurationRange("2024-01-01T10:00:00Z", "2024-01-01T10:00:00Z")).toBe("0m");
+  });
+
+  it("returns -- when end is before start (negative duration)", () => {
+    expect(formatDurationRange("2024-01-01T11:00:00Z", "2024-01-01T10:00:00Z")).toBe("--");
+  });
 });
 
 describe("formatSleepDebt", () => {
@@ -108,32 +125,53 @@ describe("formatSleepDebt", () => {
 });
 
 describe("formatHour", () => {
-  it("formats midnight (0) as 12:00 AM", () => {
-    expect(formatHour(0)).toBe("12:00 AM");
+  it("formats midnight (0) as 12:00 AM in en-US", () => {
+    expect(formatHour(0, "en-US")).toBe("12:00 AM");
   });
 
-  it("formats 1am", () => {
-    expect(formatHour(1)).toBe("1:00 AM");
+  it("formats 1am in en-US", () => {
+    expect(formatHour(1, "en-US")).toBe("1:00 AM");
   });
 
-  it("formats 11am", () => {
-    expect(formatHour(11)).toBe("11:00 AM");
+  it("formats 11am in en-US", () => {
+    expect(formatHour(11, "en-US")).toBe("11:00 AM");
   });
 
-  it("formats noon (12) as 12:00 PM", () => {
-    expect(formatHour(12)).toBe("12:00 PM");
+  it("formats noon (12) as 12:00 PM in en-US", () => {
+    expect(formatHour(12, "en-US")).toBe("12:00 PM");
   });
 
-  it("formats 1pm", () => {
-    expect(formatHour(13)).toBe("1:00 PM");
+  it("formats 1pm in en-US", () => {
+    expect(formatHour(13, "en-US")).toBe("1:00 PM");
   });
 
-  it("formats decimal hours with minutes", () => {
-    expect(formatHour(22.5)).toBe("10:30 PM");
+  it("formats decimal hours with minutes in en-US", () => {
+    expect(formatHour(22.5, "en-US")).toBe("10:30 PM");
   });
 
-  it("pads minutes to 2 digits", () => {
-    expect(formatHour(9.083)).toBe("9:05 AM");
+  it("pads minutes to 2 digits in en-US", () => {
+    expect(formatHour(9.083, "en-US")).toBe("9:05 AM");
+  });
+
+  it("uses 24-hour format for de-DE locale", () => {
+    expect(formatHour(22.5, "de-DE")).toBe("22:30");
+  });
+
+  it("formats midnight in 24-hour locale", () => {
+    expect(formatHour(0, "de-DE")).toBe("0:00");
+  });
+
+  it("wraps 25 to 1:00 AM (kills % 24 removal)", () => {
+    expect(formatHour(25, "en-US")).toBe("1:00 AM");
+  });
+
+  it("wraps 24 to 12:00 AM (midnight)", () => {
+    expect(formatHour(24, "en-US")).toBe("12:00 AM");
+  });
+
+  it("uses device locale when no locale specified", () => {
+    // Should not throw regardless of environment locale
+    expect(() => formatHour(12)).not.toThrow();
   });
 });
 
@@ -174,6 +212,37 @@ describe("isToday", () => {
     const sameDay = new Date();
     sameDay.setMonth(sameDay.getMonth() - 1);
     expect(isToday(sameDay)).toBe(false);
+  });
+});
+
+describe("isYesterday", () => {
+  it("returns true for yesterday", () => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    expect(isYesterday(yesterday)).toBe(true);
+  });
+
+  it("returns false for today", () => {
+    expect(isYesterday(new Date())).toBe(false);
+  });
+
+  it("returns false for two days ago", () => {
+    const twoDaysAgo = new Date();
+    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+    expect(isYesterday(twoDaysAgo)).toBe(false);
+  });
+
+  it("returns false for tomorrow", () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    expect(isYesterday(tomorrow)).toBe(false);
+  });
+
+  it("returns false for same day different year", () => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setFullYear(yesterday.getFullYear() - 1);
+    expect(isYesterday(yesterday)).toBe(false);
   });
 });
 
@@ -222,6 +291,36 @@ describe("formatRelativeTime", () => {
     const ago = new Date(Date.now() - 3 * 86400000).toISOString();
     expect(formatRelativeTime(ago)).toBe("3d ago");
   });
+
+  it("handles Date objects (postgres-js on Linux/ARM returns Date for timestamps)", () => {
+    const ago = new Date(Date.now() - 5 * 60000);
+    expect(formatRelativeTime(ago)).toBe("5m ago");
+  });
+
+  it("handles postgres-style timestamp strings without T separator", () => {
+    // postgres-js may return timestamps like "2024-01-15 10:30:00+00" (no T)
+    // Hermes (React Native) and older Safari cannot parse this format
+    const now = new Date();
+    const fiveMinAgo = new Date(now.getTime() - 5 * 60000);
+    const pgFormat = fiveMinAgo.toISOString().replace("T", " ").replace("Z", "+00");
+    expect(formatRelativeTime(pgFormat)).toBe("5m ago");
+  });
+
+  it("handles postgres-style timestamp strings with microseconds", () => {
+    // Production postgres returns: "2026-03-20 19:40:29.678162+00"
+    const now = new Date();
+    const twoHoursAgo = new Date(now.getTime() - 2 * 3600000);
+    const pgFormat = twoHoursAgo.toISOString().replace("T", " ").replace("Z", "162+00");
+    expect(formatRelativeTime(pgFormat)).toBe("2h ago");
+  });
+
+  it("returns null for completely invalid input", () => {
+    expect(formatRelativeTime("not-a-date")).toBeNull();
+  });
+
+  it("returns null for empty string", () => {
+    expect(formatRelativeTime("")).toBeNull();
+  });
 });
 
 describe("formatPace", () => {
@@ -249,6 +348,14 @@ describe("formatPace", () => {
   it("formats sub-minute pace", () => {
     expect(formatPace(45)).toBe("0:45");
   });
+
+  it("formats 0 pace", () => {
+    expect(formatPace(0)).toBe("0:00");
+  });
+
+  it("formats exactly 60 seconds as 1:00", () => {
+    expect(formatPace(60)).toBe("1:00");
+  });
 });
 
 describe("formatTime", () => {
@@ -261,5 +368,143 @@ describe("formatTime", () => {
 
   it("returns -- for invalid timestamps", () => {
     expect(formatTime("not-a-date")).toBe("--");
+  });
+
+  it("returns -- for empty string", () => {
+    expect(formatTime("")).toBe("--");
+  });
+
+  it("handles postgres-style space-separated timestamps", () => {
+    const result = formatTime("2024-03-15 14:30:00+00");
+    expect(result).toContain("Mar");
+    expect(result).toContain("15");
+  });
+});
+
+describe("formatNumber", () => {
+  it("formats with default 1 decimal", () => {
+    expect(formatNumber(Math.PI)).toBe("3.1");
+  });
+
+  it("formats with 0 decimals", () => {
+    expect(formatNumber(3.7, 0)).toBe("4");
+  });
+
+  it("formats with 2 decimals", () => {
+    expect(formatNumber(1.456, 2)).toBe("1.46");
+  });
+
+  it("formats with 3 decimals", () => {
+    expect(formatNumber(0.12345, 3)).toBe("0.123");
+  });
+
+  it("handles zero", () => {
+    expect(formatNumber(0)).toBe("0.0");
+  });
+
+  it("handles negative numbers", () => {
+    expect(formatNumber(-2.567, 1)).toBe("-2.6");
+  });
+
+  it("returns -- for NaN", () => {
+    expect(formatNumber(Number.NaN)).toBe("--");
+  });
+
+  it("returns -- for Infinity", () => {
+    expect(formatNumber(Number.POSITIVE_INFINITY)).toBe("--");
+  });
+
+  it("returns -- for negative Infinity", () => {
+    expect(formatNumber(Number.NEGATIVE_INFINITY)).toBe("--");
+  });
+});
+
+describe("formatPercent", () => {
+  it("formats a ratio as percentage with default 0 decimals", () => {
+    expect(formatPercent(0.75)).toBe("75%");
+  });
+
+  it("formats with 1 decimal", () => {
+    expect(formatPercent(0.756, 1)).toBe("75.6%");
+  });
+
+  it("handles 0", () => {
+    expect(formatPercent(0)).toBe("0%");
+  });
+
+  it("handles 1 (100%)", () => {
+    expect(formatPercent(1)).toBe("100%");
+  });
+
+  it("handles values already in percentage scale", () => {
+    expect(formatPercent(75.6, 1)).toBe("7560.0%");
+  });
+
+  it("returns -- for NaN", () => {
+    expect(formatPercent(Number.NaN)).toBe("--");
+  });
+});
+
+describe("formatSigned", () => {
+  it("prepends + for positive numbers", () => {
+    expect(formatSigned(2.5, 1)).toBe("+2.5");
+  });
+
+  it("prepends - for negative numbers", () => {
+    expect(formatSigned(-2.5, 1)).toBe("-2.5");
+  });
+
+  it("formats zero without sign", () => {
+    expect(formatSigned(0, 1)).toBe("0.0");
+  });
+
+  it("formats zero with 0 decimals without + prefix (kills > 0 → >= 0 mutant)", () => {
+    expect(formatSigned(0, 0)).toBe("0");
+    expect(formatSigned(0, 0)).not.toMatch(/^\+/);
+  });
+
+  it("returns -- for NaN", () => {
+    expect(formatSigned(Number.NaN)).toBe("--");
+  });
+
+  it("returns -- for Infinity", () => {
+    expect(formatSigned(Number.POSITIVE_INFINITY)).toBe("--");
+    expect(formatSigned(Number.NEGATIVE_INFINITY)).toBe("--");
+  });
+
+  it("prepends + for small positive values", () => {
+    expect(formatSigned(0.1, 1)).toBe("+0.1");
+    expect(formatSigned(0.1, 1)[0]).toBe("+");
+  });
+});
+
+describe("parseValidDate", () => {
+  it("parses valid ISO 8601 strings", () => {
+    const date = parseValidDate("2024-01-15T10:30:00Z");
+    expect(date).toBeInstanceOf(Date);
+    expect(date?.toISOString()).toBe("2024-01-15T10:30:00.000Z");
+  });
+
+  it("returns null for empty string", () => {
+    expect(parseValidDate("")).toBeNull();
+  });
+
+  it("returns null for invalid string", () => {
+    expect(parseValidDate("not-a-date")).toBeNull();
+  });
+
+  it("parses postgres-style space-separated timestamps", () => {
+    const date = parseValidDate("2024-01-15 10:30:00+00");
+    expect(date).toBeInstanceOf(Date);
+  });
+
+  it("handles postgres timestamps with microseconds", () => {
+    const date = parseValidDate("2026-03-20 19:40:29.678162+00");
+    expect(date).toBeInstanceOf(Date);
+  });
+
+  it("handles bare timezone offsets without colon", () => {
+    const date = parseValidDate("2026-03-20 19:40:29+05");
+    expect(date).toBeInstanceOf(Date);
   });
 });

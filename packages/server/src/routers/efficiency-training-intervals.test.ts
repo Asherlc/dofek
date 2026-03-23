@@ -13,6 +13,20 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
+vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../lib/typed-sql.ts")>();
+  return {
+    ...original,
+    executeWithSchema: vi.fn(
+      async (
+        db: { execute: (q: unknown) => Promise<unknown[]> },
+        _schema: unknown,
+        query: unknown,
+      ) => db.execute(query),
+    ),
+  };
+});
+
 vi.mock("../lib/endurance-types.ts", () => ({
   enduranceTypeFilter: () => ({ sql: "true" }),
 }));
@@ -24,10 +38,10 @@ vi.mock("dofek/personalization/storage", () => ({
 vi.mock("dofek/personalization/params", () => ({
   getEffectiveParams: vi.fn(() => ({
     readinessWeights: {
-      hrv: 0.4,
+      hrv: 0.5,
       restingHr: 0.2,
-      sleep: 0.2,
-      loadBalance: 0.2,
+      sleep: 0.15,
+      respiratoryRate: 0.15,
     },
   })),
 }));
@@ -150,8 +164,18 @@ describe("trainingRouter", () => {
       expect(result).toEqual(rows);
     });
 
-    it("coerces string hours from Postgres numeric type", async () => {
-      // Postgres ROUND(...)::numeric returns strings via the pg driver
+    it("coerces PostgreSQL numeric strings to numbers via Zod schema", async () => {
+      // PostgreSQL ROUND(...)::numeric returns strings like "5.50".
+      // The weeklyVolumeRowSchema uses z.coerce.number() to convert them.
+      const { executeWithSchema } = await import("../lib/typed-sql.ts");
+      const mockExecuteWithSchema = vi.mocked(executeWithSchema);
+
+      mockExecuteWithSchema.mockImplementationOnce(async (_db, schema, query) => {
+        const dbTyped: { execute: (q: unknown) => Promise<unknown[]> } = _db;
+        const rawRows = await dbTyped.execute(query);
+        return rawRows.map((row) => schema.parse(row));
+      });
+
       const rows = [{ week: "2024-01-15", activity_type: "cycling", count: 3, hours: "5.50" }];
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },

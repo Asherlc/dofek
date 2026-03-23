@@ -38,6 +38,9 @@
           "recovery": 20,
           "dailyActivity": 15
         },
+        "%iPhone%": {
+          "dailyActivity": 50
+        },
         "Wahoo TICKR%": {
           "activity": 5,
           "recovery": 5

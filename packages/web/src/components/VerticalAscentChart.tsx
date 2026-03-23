@@ -1,7 +1,8 @@
 import type { VerticalAscentRow } from "dofek-server/types";
-import ReactECharts from "echarts-for-react";
-import { useUnitSystem } from "../lib/unitContext.ts";
-import { convertElevation, elevationLabel } from "../lib/units.ts";
+import { chartColors, dofekAxis, dofekGrid, dofekTooltip } from "../lib/chartTheme.ts";
+import { formatNumber } from "../lib/format.ts";
+import { useUnitConverter } from "../lib/unitContext.ts";
+import { DofekChart } from "./DofekChart.tsx";
 
 interface VerticalAscentChartProps {
   data: VerticalAscentRow[];
@@ -9,45 +10,41 @@ interface VerticalAscentChartProps {
 }
 
 export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps) {
-  const { unitSystem } = useUnitSystem();
+  const units = useUnitConverter();
+
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[300px]">
-        <span className="text-zinc-600 text-sm">Loading vertical ascent data...</span>
-      </div>
-    );
+    return <DofekChart option={{}} loading={true} height={300} />;
   }
 
   if (data.length === 0) {
     return (
-      <div className="flex items-center justify-center h-[300px]">
-        <span className="text-zinc-600 text-sm">No activities with altitude data available</span>
-      </div>
+      <DofekChart
+        option={{}}
+        empty={true}
+        height={300}
+        emptyMessage="No activities with altitude data available"
+      />
     );
   }
 
   // Scale bubble size by elevation gain
-  const maxGain = Math.max(...data.map((d) => convertElevation(d.elevationGainMeters, unitSystem)));
+  const maxGain = Math.max(...data.map((d) => units.convertElevation(d.elevationGainMeters)));
   const minSize = 8;
   const maxSize = 40;
 
-  const eLabel = elevationLabel(unitSystem);
+  const eLabel = units.elevationLabel;
   const scatterData = data.map((d) => ({
-    value: [d.date, convertElevation(d.verticalAscentRate, unitSystem)],
+    value: [d.date, units.convertElevation(d.verticalAscentRate)],
     name: d.activityName,
-    elevationGain: convertElevation(d.elevationGainMeters, unitSystem),
+    elevationGain: units.convertElevation(d.elevationGainMeters),
     symbolSize:
       maxGain > 0 ? minSize + (d.elevationGainMeters / maxGain) * (maxSize - minSize) : minSize,
   }));
 
   const option = {
-    backgroundColor: "transparent",
-    grid: { top: 40, right: 20, bottom: 30, left: 55 },
-    tooltip: {
-      trigger: "item" as const,
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
+    grid: dofekGrid("single", { top: 40, bottom: 30 }),
+    tooltip: dofekTooltip({
+      trigger: "item",
       formatter: (params: Record<string, unknown>) => {
         const rawData = params.data;
         if (!rawData || typeof rawData !== "object" || !("name" in rawData)) return "";
@@ -64,25 +61,13 @@ export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps)
         return [
           `<strong>${itemData.name}</strong>`,
           `Date: ${new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`,
-          `VAM: ${vam.toFixed(0)} ${eLabel}/h`,
-          `Elevation Gain: ${itemData.elevationGain.toFixed(0)} ${eLabel}`,
+          `VAM: ${formatNumber(vam, 0)} ${eLabel}/h`,
+          `Elevation Gain: ${formatNumber(itemData.elevationGain, 0)} ${eLabel}`,
         ].join("<br/>");
       },
-    },
-    xAxis: {
-      type: "time" as const,
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
-      splitLine: { show: false },
-    },
-    yAxis: {
-      type: "value" as const,
-      name: `VAM (${eLabel}/h)`,
-      splitLine: { lineStyle: { color: "#27272a" } },
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { show: true, lineStyle: { color: "#3f3f46" } },
-      nameTextStyle: { color: "#71717a", fontSize: 11 },
-    },
+    }),
+    xAxis: dofekAxis.time(),
+    yAxis: dofekAxis.value({ name: `VAM (${eLabel}/h)` }),
     series: [
       {
         name: "Vertical Ascent Rate",
@@ -106,7 +91,7 @@ export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps)
           return minSize;
         },
         itemStyle: {
-          color: "#8b5cf6",
+          color: chartColors.purple,
           opacity: 0.7,
         },
       },
@@ -115,8 +100,8 @@ export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps)
 
   return (
     <div>
-      <ReactECharts option={option} style={{ height: 300 }} notMerge={true} />
-      <p className="text-xs text-zinc-600 mt-1">
+      <DofekChart option={option} height={300} />
+      <p className="text-xs text-dim mt-1">
         Bubble size indicates elevation gain. Higher VAM = stronger climbing performance.
       </p>
     </div>

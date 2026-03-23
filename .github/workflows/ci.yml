@@ -7,7 +7,7 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   REGISTRY: ghcr.io
@@ -76,14 +76,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec vitest run --project unit --reporter=blob --coverage.enabled --coverage.reporter=json --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0
-      - run: mv .vitest-reports/blob.json .vitest-reports/unit.json
-      - uses: actions/upload-artifact@v4
-        with:
-          name: blob-unit
-          path: .vitest-reports/
-          include-hidden-files: true
-          retention-days: 1
+      - run: pnpm exec vitest run --project unit
 
   test-integration:
     name: Integration Tests
@@ -122,20 +115,39 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec vitest run --project integration --reporter=blob --coverage.enabled --coverage.reporter=json --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0
+      - run: pnpm exec vitest run --project integration --reporter=verbose
         timeout-minutes: 10
-      - run: mv .vitest-reports/blob.json .vitest-reports/integration.json
-      - uses: actions/upload-artifact@v4
-        with:
-          name: blob-integration
-          path: .vitest-reports/
-          include-hidden-files: true
-          retention-days: 1
 
   coverage:
     name: Coverage
     needs: [test-unit, test-integration]
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: timescale/timescaledb:latest-pg16
+        env:
+          POSTGRES_DB: test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      TEST_DATABASE_URL: postgres://test:test@localhost:5432/test
+      REDIS_URL: redis://localhost:6379
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -144,15 +156,34 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - uses: actions/download-artifact@v4
+      - run: pnpm exec vitest run --coverage
+      - name: Coverage summary
+        if: always()
+        run: |
+          node -e "
+            const r = require('./coverage/coverage-summary.json').total;
+            const fmt = (m) => m.pct.toFixed(2) + '%';
+            const lines = [
+              '## Coverage Summary',
+              '',
+              '| Metric | Coverage |',
+              '|--------|----------|',
+              '| Lines | ' + fmt(r.lines) + ' |',
+              '| Branches | ' + fmt(r.branches) + ' |',
+              '| Functions | ' + fmt(r.functions) + ' |',
+              '| Statements | ' + fmt(r.statements) + ' |',
+            ];
+            require('fs').appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n') + '\n');
+          "
+      - uses: codecov/codecov-action@v5
         with:
-          pattern: blob-*
-          path: .vitest-reports/
-          merge-multiple: true
-      - run: pnpm exec vitest --merge-reports --coverage
+          files: coverage/lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   test-ios:
     name: iOS Tests
+    needs: check-ios-changes
+    if: needs.check-ios-changes.outputs.changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -166,6 +197,8 @@ jobs:
 
   build-ios:
     name: iOS Metro Bundle
+    needs: check-ios-changes
+    if: needs.check-ios-changes.outputs.changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -178,13 +211,58 @@ jobs:
       - name: Verify iOS Metro bundle
         run: cd packages/ios && pnpm expo export --platform ios --clear
 
-  test-e2e-web:
-    name: E2E Tests (Web)
+  lint-ios-podspecs:
+    name: iOS Podspec Lint
+    needs: check-ios-changes
+    if: needs.check-ios-changes.outputs.changed == 'true'
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-    env:
-      DOCKER_BUILDKIT: "1"
-      COMPOSE_DOCKER_CLI_BUILD: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate podspec deployment targets
+        run: |
+          APP_TARGET=$(python3 -c "import json; print(json.load(open('packages/ios/app.json'))['expo']['ios']['deploymentTarget'])")
+          echo "App deployment target: iOS $APP_TARGET"
+          FAILED=0
+          for spec in packages/ios/modules/*/ios/*.podspec; do
+            SPEC_TARGET=$(grep -oP "s\.platform\s*=\s*:ios,\s*'\K[^']+" "$spec")
+            echo "  $(basename "$spec"): iOS $SPEC_TARGET"
+            if [ "$(printf '%s\n' "$APP_TARGET" "$SPEC_TARGET" | sort -V | head -1)" != "$APP_TARGET" ]; then
+              echo "  ERROR: podspec targets iOS $SPEC_TARGET which is below app target iOS $APP_TARGET"
+              FAILED=1
+            fi
+          done
+          exit $FAILED
+
+  check-ios-changes:
+    name: Check iOS Changes
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.check.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: check
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- packages/ios/)
+            if [ -n "$CHANGED" ]; then
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              echo "iOS files changed:"
+              echo "$CHANGED"
+            else
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+              echo "No iOS changes detected, skipping native build"
+            fi
+          fi
+
+  build-ios-native:
+    name: iOS Native Build
+    needs: check-ios-changes
+    if: needs.check-ios-changes.outputs.changed == 'true'
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -192,15 +270,74 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - name: Parallel setup — Docker build + deps install
+      - run: pnpm install --frozen-lockfile
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: packages/ios/ios/Pods
+          key: pods-${{ hashFiles('packages/ios/ios/Podfile.lock') }}
+          restore-keys: pods-
+      - name: Install CocoaPods dependencies
+        run: cd packages/ios/ios && pod install
+      - name: Build for simulator
         run: |
-          docker compose -f docker-compose.e2e.yml build &
-          DOCKER_PID=$!
-          pnpm install --frozen-lockfile
-          pnpm exec cypress install
-          wait $DOCKER_PID
+          xcodebuild build \
+            -workspace packages/ios/ios/Dofek.xcworkspace \
+            -scheme Dofek \
+            -sdk iphonesimulator \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            | tail -20
+        timeout-minutes: 20
+
+  ios-gate:
+    name: iOS Native Gate
+    needs: [check-ios-changes, test-ios, build-ios, lint-ios-podspecs, build-ios-native, test-swift]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check iOS job results
+        run: |
+          for result in \
+            "${{ needs.check-ios-changes.result }}" \
+            "${{ needs.test-ios.result }}" \
+            "${{ needs.build-ios.result }}" \
+            "${{ needs.lint-ios-podspecs.result }}" \
+            "${{ needs.build-ios-native.result }}" \
+            "${{ needs.test-swift.result }}"; do
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              echo "An iOS job failed or was cancelled"
+              exit 1
+            fi
+          done
+
+  test-e2e-web:
+    name: E2E Tests (Web)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec cypress install
+      - uses: docker/setup-buildx-action@v3
+      - name: Build E2E images with cache
+        uses: docker/bake-action@v5
+        with:
+          files: docker-compose.e2e.yml
+          targets: |
+            server
+            client
+          load: true
+          set: |
+            *.cache-from=type=gha,scope=e2e
+            *.cache-to=type=gha,mode=max,scope=e2e
       - name: Start e2e stack
-        run: docker compose -f docker-compose.e2e.yml up -d --wait
+        run: docker compose -f docker-compose.e2e.yml up -d --wait --no-build
       - run: pnpm e2e:web:run
       - uses: actions/upload-artifact@v4
         if: failure()
@@ -215,7 +352,6 @@ jobs:
   mutation:
     name: Mutation Testing
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -230,11 +366,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: reports/stryker-incremental.json
-          key: stryker-v2-${{ github.head_ref }}-${{ github.sha }}
+          key: stryker-v2-${{ github.head_ref || 'main' }}-${{ github.sha }}
           restore-keys: |
-            stryker-v2-${{ github.head_ref }}-
-            stryker-v2-main
+            stryker-v2-${{ github.head_ref || 'main' }}-
+            stryker-v2-main-
       - name: Get changed files
+        if: github.event_name == 'pull_request'
         id: changed
         run: |
           # Filter to .ts source files, excluding tests, config, etc.
@@ -261,14 +398,92 @@ jobs:
           done
           echo "files=$FILES" >> "$GITHUB_OUTPUT"
           echo "Mutating changed files: $FILES"
-      - name: Run Stryker
-        if: steps.changed.outputs.files != ''
+      - name: Run Stryker (changed files)
+        if: github.event_name == 'pull_request' && steps.changed.outputs.files != ''
         run: pnpm test:mutation --mutate "${{ steps.changed.outputs.files }}"
+      - name: Run Stryker (full suite)
+        if: github.event_name == 'push'
+        run: pnpm test:mutation
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: mutation-report
           path: reports/mutation/
+          retention-days: 7
+
+  test-swift:
+    name: Swift Tests
+    needs: check-ios-changes
+    if: needs.check-ios-changes.outputs.changed == 'true'
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: packages/ios/modules/health-kit/.build
+          key: swift-build-v1-${{ hashFiles('packages/ios/modules/health-kit/Package.swift') }}
+          restore-keys: swift-build-v1-
+      - name: Run Swift tests with coverage
+        run: |
+          cd packages/ios/modules/health-kit
+          bash scripts/check-coverage.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: swift-coverage
+          path: packages/ios/modules/health-kit/.build/debug/codecov/
+          retention-days: 7
+
+  mutation-swift:
+    name: Swift Mutation Testing
+    needs: check-ios-changes
+    runs-on: macos-14
+    if: github.event_name == 'pull_request' && needs.check-ios-changes.outputs.changed == 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/cache@v4
+        with:
+          path: packages/ios/modules/health-kit/.build
+          key: swift-build-v1-${{ hashFiles('packages/ios/modules/health-kit/Package.swift') }}
+          restore-keys: swift-build-v1-
+      - name: Install Muter
+        run: brew install muter-mutation-testing/formulae/muter
+      - name: Get changed Swift files
+        id: changed
+        run: |
+          # Filter to mutatable Swift source files, strip prefix for Muter's working directory
+          CHANGED=$(git diff --name-only origin/main...HEAD \
+            | { grep '\.swift$' || true; } \
+            | { grep -v 'Tests/' || true; } \
+            | { grep -v 'HealthKitModule.swift' || true; } \
+            | { grep -v 'Package.swift' || true; } \
+            | sed 's|^packages/ios/modules/health-kit/||' \
+            | tr '\n' ',' \
+            | sed 's/,$//')
+          echo "files=$CHANGED" >> "$GITHUB_OUTPUT"
+          echo "Mutating changed Swift files: $CHANGED"
+      - name: Run Muter
+        if: steps.changed.outputs.files != ''
+        working-directory: packages/ios/modules/health-kit
+        timeout-minutes: 30
+        run: |
+          muter --files-to-mutate "${{ steps.changed.outputs.files }}" || {
+            EXIT_CODE=$?
+            # Exit 255 = "no mutatable code found" — expected for incremental runs
+            # when changed files have no patterns Muter's operators can target
+            if [ $EXIT_CODE -eq 255 ]; then
+              echo "Muter found no mutatable code in changed files — skipping."
+              exit 0
+            fi
+            exit $EXIT_CODE
+          }
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: muter-report
+          path: packages/ios/modules/health-kit/muter_logs/
           retention-days: 7
 
   ios-release:
@@ -360,8 +575,11 @@ jobs:
 
   docker:
     name: Docker (${{ matrix.target }})
-    needs: [lint, typecheck, knip, coverage, test-e2e-web, test-ios, build-ios]
+    needs: [lint, typecheck, knip, coverage, test-e2e-web, ios-gate]
     if: github.ref == 'refs/heads/main'
+    concurrency:
+      group: docker
+      cancel-in-progress: false
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
@@ -396,5 +614,6 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: COMMIT_HASH=${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.target }}
           cache-to: type=gha,mode=max,scope=${{ matrix.target }}

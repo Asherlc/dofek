@@ -1,21 +1,16 @@
+import { StrainScore } from "@dofek/scoring/scoring";
 import { StyleSheet, Text, View } from "react-native";
 import Svg, { Circle } from "react-native-svg";
+import { formatNumber } from "@dofek/format/format";
 import { colors } from "../../theme";
 
 interface StrainGaugeProps {
-  /** Daily strain/load value */
+  /** Strain score on 0-21 scale */
   strain: number;
-  /** Max strain for scaling (default 21 like Whoop) */
+  /** Max strain for gauge scaling (default 21) */
   maxStrain?: number;
   /** Size in dp */
   size?: number;
-}
-
-function strainColor(fraction: number): string {
-  if (fraction >= 0.75) return colors.accent; // high strain - blue
-  if (fraction >= 0.5) return colors.teal; // medium-high
-  if (fraction >= 0.25) return colors.green; // moderate
-  return colors.textSecondary; // light
 }
 
 export function StrainGauge({
@@ -28,7 +23,7 @@ export function StrainGauge({
   const circumference = 2 * Math.PI * radius;
   const fraction = Math.min(strain / maxStrain, 1);
   const strokeDashoffset = circumference * (1 - fraction);
-  const color = strainColor(fraction);
+  const color = new StrainScore(strain).color;
   const center = size / 2;
 
   return (
@@ -57,7 +52,7 @@ export function StrainGauge({
         />
       </Svg>
       <View style={styles.labelContainer}>
-        <Text style={[styles.value, { color }]}>{strain.toFixed(1)}</Text>
+        <Text style={[styles.value, { color }]}>{formatNumber(strain)}</Text>
         <Text style={styles.label}>Strain</Text>
       </View>
     </View>

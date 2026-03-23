@@ -524,7 +524,7 @@ describe("PelotonProvider.sync — onProgress callback", () => {
     const onProgress = vi.fn();
 
     const provider = new PelotonProvider(mockFetch);
-    await provider.sync(mockDb, since, onProgress);
+    await provider.sync(mockDb, since, { onProgress });
 
     expect(onProgress).toHaveBeenCalledTimes(2);
     // First call: 1/2 workouts → 50%
@@ -543,7 +543,7 @@ describe("PelotonProvider.sync — onProgress callback", () => {
     const onProgress = vi.fn();
 
     const provider = new PelotonProvider(mockFetch);
-    await provider.sync(mockDb, new Date("2026-01-01"), onProgress);
+    await provider.sync(mockDb, new Date("2026-01-01"), { onProgress });
 
     expect(onProgress).not.toHaveBeenCalled();
   });

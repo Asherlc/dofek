@@ -1,69 +1,79 @@
+import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
-import { exchangeCodeForTokens, refreshAccessToken } from "../auth/oauth.ts";
+import { exchangeCodeForTokens } from "../auth/oauth.ts";
+import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity, dailyMetrics, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
-import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
-import { logger } from "../logger.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import { ensureProvider } from "../db/tokens.ts";
+import { ProviderHttpClient } from "./http-client.ts";
+import type {
+  ProviderAuthSetup,
+  SyncError,
+  SyncOptions,
+  SyncProvider,
+  SyncResult,
+} from "./types.ts";
 
 // ============================================================
-// COROS API types
+// COROS API Zod schemas
 // ============================================================
 
 const COROS_API_BASE = "https://open.coros.com";
 const DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
 
-interface CorosWorkout {
-  labelId: string;
-  mode: number;
-  subMode: number;
-  startTime: number; // UNIX seconds
-  endTime: number; // UNIX seconds
-  duration: number; // seconds
-  distance: number; // meters
-  avgHeartRate: number;
-  maxHeartRate: number;
-  avgSpeed: number; // m/s
-  maxSpeed: number; // m/s
-  totalCalories: number;
-  avgCadence?: number;
-  avgPower?: number;
-  maxPower?: number;
-  totalAscent?: number;
-  totalDescent?: number;
-  avgStrokeRate?: number;
-  fitUrl?: string;
-}
+const corosWorkoutSchema = z.object({
+  labelId: z.string(),
+  mode: z.number(),
+  subMode: z.number(),
+  startTime: z.number(),
+  endTime: z.number(),
+  duration: z.number(),
+  distance: z.number(),
+  avgHeartRate: z.number(),
+  maxHeartRate: z.number(),
+  avgSpeed: z.number(),
+  maxSpeed: z.number(),
+  totalCalories: z.number(),
+  avgCadence: z.number().optional(),
+  avgPower: z.number().optional(),
+  maxPower: z.number().optional(),
+  totalAscent: z.number().optional(),
+  totalDescent: z.number().optional(),
+  avgStrokeRate: z.number().optional(),
+  fitUrl: z.string().optional(),
+});
 
-interface CorosWorkoutsResponse {
-  data: CorosWorkout[];
-  message: string;
-  result: string;
-}
+type CorosWorkout = z.infer<typeof corosWorkoutSchema>;
 
-interface CorosDailyData {
-  date: string; // YYYYMMDD
-  steps?: number;
-  distance?: number;
-  calories?: number;
-  restingHr?: number;
-  avgHr?: number;
-  maxHr?: number;
-  sleepDuration?: number; // minutes
-  deepSleep?: number; // minutes
-  lightSleep?: number; // minutes
-  remSleep?: number; // minutes
-  awakeDuration?: number; // minutes
-  spo2Avg?: number;
-  hrv?: number;
-}
+const corosWorkoutsResponseSchema = z.object({
+  data: z.array(corosWorkoutSchema),
+  message: z.string(),
+  result: z.string(),
+});
 
-interface CorosDailyResponse {
-  data: CorosDailyData[];
-  message: string;
-  result: string;
-}
+const corosDailyDataSchema = z.object({
+  date: z.string(),
+  steps: z.number().optional(),
+  distance: z.number().optional(),
+  calories: z.number().optional(),
+  restingHr: z.number().optional(),
+  avgHr: z.number().optional(),
+  maxHr: z.number().optional(),
+  sleepDuration: z.number().optional(),
+  deepSleep: z.number().optional(),
+  lightSleep: z.number().optional(),
+  remSleep: z.number().optional(),
+  awakeDuration: z.number().optional(),
+  spo2Avg: z.number().optional(),
+  hrv: z.number().optional(),
+});
+
+const corosDailyResponseSchema = z.object({
+  data: z.array(corosDailyDataSchema),
+  message: z.string(),
+  result: z.string(),
+});
 
 // ============================================================
 // Parsed types
@@ -156,16 +166,50 @@ function formatDateCompact(date: Date): string {
 }
 
 // ============================================================
+// COROS API client
+// ============================================================
+
+export class CorosClient extends ProviderHttpClient {
+  constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
+    super(accessToken, COROS_API_BASE, fetchFn);
+  }
+
+  protected override getHeaders(): Record<string, string> {
+    return { ...super.getHeaders(), Accept: "application/json" };
+  }
+
+  async getWorkouts(
+    sinceDate: string,
+    toDate: string,
+  ): Promise<z.infer<typeof corosWorkoutsResponseSchema>> {
+    return this.get(
+      `/v2/coros/sport/list?startDate=${sinceDate}&endDate=${toDate}`,
+      corosWorkoutsResponseSchema,
+    );
+  }
+
+  async getDailyData(
+    sinceDate: string,
+    toDate: string,
+  ): Promise<z.infer<typeof corosDailyResponseSchema>> {
+    return this.get(
+      `/v2/coros/daily/list?startDate=${sinceDate}&endDate=${toDate}`,
+      corosDailyResponseSchema,
+    );
+  }
+}
+
+// ============================================================
 // Provider implementation
 // ============================================================
 
-export class CorosProvider implements Provider {
+export class CorosProvider implements SyncProvider {
   readonly id = "coros";
   readonly name = "COROS";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -177,7 +221,7 @@ export class CorosProvider implements Provider {
   authSetup(): ProviderAuthSetup {
     const config = corosOAuthConfig();
     if (!config) throw new Error("COROS_CLIENT_ID and CLIENT_SECRET required");
-    const fetchFn = this.fetchFn;
+    const fetchFn = this.#fetchFn;
     return {
       oauthConfig: config,
       exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn),
@@ -185,45 +229,27 @@ export class CorosProvider implements Provider {
     };
   }
 
-  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
-    const tokens = await loadTokens(db, this.id);
-    if (!tokens) throw new Error("No OAuth tokens for COROS. Run: health-data auth coros");
-    if (tokens.expiresAt > new Date()) return tokens;
-
-    logger.info("[coros] Token expired, refreshing...");
-    const config = corosOAuthConfig();
-    if (!config || !tokens.refreshToken) throw new Error("Cannot refresh COROS tokens");
-    const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);
-    await saveTokens(db, this.id, refreshed);
-    return refreshed;
-  }
-
-  private async apiGet<T>(accessToken: string, path: string): Promise<T> {
-    const url = `${COROS_API_BASE}${path}`;
-    const response = await this.fetchFn(url, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Accept: "application/json",
-      },
+  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+    return resolveOAuthTokens({
+      db,
+      providerId: this.id,
+      providerName: this.name,
+      getOAuthConfig: () => corosOAuthConfig(),
+      fetchFn: this.#fetchFn,
     });
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`COROS API error (${response.status}): ${text}`);
-    }
-    return response.json();
   }
 
-  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
 
     await ensureProvider(db, this.id, this.name, COROS_API_BASE);
 
-    let accessToken: string;
+    let client: CorosClient;
     try {
-      const tokens = await this.resolveTokens(db);
-      accessToken = tokens.accessToken;
+      const tokens = await this.#resolveTokens(db);
+      client = new CorosClient(tokens.accessToken, this.#fetchFn);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
@@ -234,49 +260,52 @@ export class CorosProvider implements Provider {
 
     // 1. Sync workouts
     try {
-      const activityCount = await withSyncLog(db, this.id, "activity", async () => {
-        const data = await this.apiGet<CorosWorkoutsResponse>(
-          accessToken,
-          `/v2/coros/sport/list?startDate=${sinceDate}&endDate=${toDate}`,
-        );
-        let count = 0;
+      const activityCount = await withSyncLog(
+        db,
+        this.id,
+        "activity",
+        async () => {
+          const data = await client.getWorkouts(sinceDate, toDate);
+          let count = 0;
 
-        for (const raw of data.data ?? []) {
-          const parsed = parseCorosWorkout(raw);
-          try {
-            await db
-              .insert(activity)
-              .values({
-                providerId: this.id,
-                externalId: parsed.externalId,
-                activityType: parsed.activityType,
-                name: parsed.name,
-                startedAt: parsed.startedAt,
-                endedAt: parsed.endedAt,
-                raw: parsed.raw,
-              })
-              .onConflictDoUpdate({
-                target: [activity.providerId, activity.externalId],
-                set: {
+          for (const raw of data.data ?? []) {
+            const parsed = parseCorosWorkout(raw);
+            try {
+              await db
+                .insert(activity)
+                .values({
+                  providerId: this.id,
+                  externalId: parsed.externalId,
                   activityType: parsed.activityType,
                   name: parsed.name,
                   startedAt: parsed.startedAt,
                   endedAt: parsed.endedAt,
                   raw: parsed.raw,
-                },
+                })
+                .onConflictDoUpdate({
+                  target: [activity.providerId, activity.externalId],
+                  set: {
+                    activityType: parsed.activityType,
+                    name: parsed.name,
+                    startedAt: parsed.startedAt,
+                    endedAt: parsed.endedAt,
+                    raw: parsed.raw,
+                  },
+                });
+              count++;
+            } catch (err) {
+              errors.push({
+                message: err instanceof Error ? err.message : String(err),
+                externalId: parsed.externalId,
+                cause: err,
               });
-            count++;
-          } catch (err) {
-            errors.push({
-              message: err instanceof Error ? err.message : String(err),
-              externalId: parsed.externalId,
-              cause: err,
-            });
+            }
           }
-        }
 
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += activityCount;
     } catch (err) {
       errors.push({
@@ -287,82 +316,85 @@ export class CorosProvider implements Provider {
 
     // 2. Sync daily data (sleep, HR, steps)
     try {
-      const dailyCount = await withSyncLog(db, this.id, "daily_metrics", async () => {
-        const data = await this.apiGet<CorosDailyResponse>(
-          accessToken,
-          `/v2/coros/daily/list?startDate=${sinceDate}&endDate=${toDate}`,
-        );
-        let count = 0;
+      const dailyCount = await withSyncLog(
+        db,
+        this.id,
+        "daily_metrics",
+        async () => {
+          const data = await client.getDailyData(sinceDate, toDate);
+          let count = 0;
 
-        for (const raw of data.data ?? []) {
-          const dateStr = `${raw.date.slice(0, 4)}-${raw.date.slice(4, 6)}-${raw.date.slice(6, 8)}`;
-          try {
-            // Daily metrics
-            if (raw.steps || raw.restingHr || raw.hrv) {
-              await db
-                .insert(dailyMetrics)
-                .values({
-                  date: dateStr,
-                  providerId: this.id,
-                  steps: raw.steps,
-                  restingHr: raw.restingHr,
-                  hrv: raw.hrv,
-                  spo2Avg: raw.spo2Avg,
-                  activeEnergyKcal: raw.calories,
-                  distanceKm: raw.distance ? raw.distance / 1000 : undefined,
-                })
-                .onConflictDoUpdate({
-                  target: [dailyMetrics.date, dailyMetrics.providerId],
-                  set: {
+          for (const raw of data.data ?? []) {
+            const dateStr = `${raw.date.slice(0, 4)}-${raw.date.slice(4, 6)}-${raw.date.slice(6, 8)}`;
+            try {
+              // Daily metrics
+              if (raw.steps || raw.restingHr || raw.hrv) {
+                await db
+                  .insert(dailyMetrics)
+                  .values({
+                    date: dateStr,
+                    providerId: this.id,
                     steps: raw.steps,
                     restingHr: raw.restingHr,
                     hrv: raw.hrv,
                     spo2Avg: raw.spo2Avg,
                     activeEnergyKcal: raw.calories,
                     distanceKm: raw.distance ? raw.distance / 1000 : undefined,
-                  },
-                });
-              count++;
-            }
+                  })
+                  .onConflictDoUpdate({
+                    target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
+                    set: {
+                      steps: raw.steps,
+                      restingHr: raw.restingHr,
+                      hrv: raw.hrv,
+                      spo2Avg: raw.spo2Avg,
+                      activeEnergyKcal: raw.calories,
+                      distanceKm: raw.distance ? raw.distance / 1000 : undefined,
+                    },
+                  });
+                count++;
+              }
 
-            // Sleep
-            if (raw.sleepDuration) {
-              const externalId = `coros-sleep-${raw.date}`;
-              await db
-                .insert(sleepSession)
-                .values({
-                  providerId: this.id,
-                  externalId,
-                  startedAt: new Date(`${dateStr}T00:00:00Z`),
-                  endedAt: new Date(`${dateStr}T08:00:00Z`),
-                  durationMinutes: raw.sleepDuration,
-                  deepMinutes: raw.deepSleep,
-                  lightMinutes: raw.lightSleep,
-                  remMinutes: raw.remSleep,
-                  awakeMinutes: raw.awakeDuration,
-                })
-                .onConflictDoUpdate({
-                  target: [sleepSession.providerId, sleepSession.externalId],
-                  set: {
+              // Sleep
+              if (raw.sleepDuration) {
+                const externalId = `coros-sleep-${raw.date}`;
+                await db
+                  .insert(sleepSession)
+                  .values({
+                    providerId: this.id,
+                    externalId,
+                    startedAt: new Date(`${dateStr}T00:00:00Z`),
+                    endedAt: new Date(`${dateStr}T08:00:00Z`),
                     durationMinutes: raw.sleepDuration,
                     deepMinutes: raw.deepSleep,
                     lightMinutes: raw.lightSleep,
                     remMinutes: raw.remSleep,
                     awakeMinutes: raw.awakeDuration,
-                  },
-                });
-              count++;
+                  })
+                  .onConflictDoUpdate({
+                    target: [sleepSession.providerId, sleepSession.externalId],
+                    set: {
+                      durationMinutes: raw.sleepDuration,
+                      deepMinutes: raw.deepSleep,
+                      lightMinutes: raw.lightSleep,
+                      remMinutes: raw.remSleep,
+                      awakeMinutes: raw.awakeDuration,
+                    },
+                  });
+                count++;
+              }
+            } catch (err) {
+              errors.push({
+                message: `daily ${dateStr}: ${err instanceof Error ? err.message : String(err)}`,
+                cause: err,
+              });
             }
-          } catch (err) {
-            errors.push({
-              message: `daily ${dateStr}: ${err instanceof Error ? err.message : String(err)}`,
-              cause: err,
-            });
           }
-        }
 
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += dailyCount;
     } catch (err) {
       errors.push({

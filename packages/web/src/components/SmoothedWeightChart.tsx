@@ -1,8 +1,16 @@
-import ReactECharts from "echarts-for-react";
 import type { SmoothedWeightRow } from "../../../server/src/routers/body-analytics.ts";
-import { useUnitSystem } from "../lib/unitContext.ts";
-import { convertWeight, weightLabel } from "../lib/units.ts";
-import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
+import {
+  chartColors,
+  chartThemeColors,
+  dofekAxis,
+  dofekGrid,
+  dofekLegend,
+  dofekSeries,
+  dofekTooltip,
+} from "../lib/chartTheme.ts";
+import { formatNumber } from "../lib/format.ts";
+import { useUnitConverter } from "../lib/unitContext.ts";
+import { DofekChart } from "./DofekChart.tsx";
 
 interface SmoothedWeightChartProps {
   data: SmoothedWeightRow[];
@@ -10,87 +18,65 @@ interface SmoothedWeightChartProps {
 }
 
 export function SmoothedWeightChart({ data, loading }: SmoothedWeightChartProps) {
-  const { unitSystem } = useUnitSystem();
+  const units = useUnitConverter();
+
   if (loading) {
-    return <ChartLoadingSkeleton height={250} />;
+    return <DofekChart option={{}} loading={true} height={250} />;
   }
 
   if (data.length === 0) {
     return (
-      <div className="flex items-center justify-center h-[250px]">
-        <span className="text-zinc-600 text-sm">No weight data available</span>
-      </div>
+      <DofekChart option={{}} empty={true} height={250} emptyMessage="No weight data available" />
     );
   }
 
   const latestWeeklyChange = data[data.length - 1]?.weeklyChange;
 
   const option = {
-    backgroundColor: "transparent",
-    grid: { top: 30, right: 50, bottom: 30, left: 50 },
-    tooltip: {
-      trigger: "axis" as const,
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
-    },
-    legend: {
-      top: 0,
-      textStyle: { color: "#71717a", fontSize: 11 },
-    },
-    xAxis: {
-      type: "time" as const,
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
-      splitLine: { show: false },
-    },
+    grid: dofekGrid("dualAxis", { top: 30, bottom: 30 }),
+    tooltip: dofekTooltip(),
+    legend: dofekLegend(true),
+    xAxis: dofekAxis.time(),
     yAxis: [
-      {
-        type: "value" as const,
-        name: weightLabel(unitSystem),
-        min: "dataMin" as const,
-        axisLabel: { color: "#71717a", fontSize: 11 },
-        splitLine: { lineStyle: { color: "#27272a" } },
-        nameTextStyle: { color: "#71717a", fontSize: 11 },
-      },
-      {
-        type: "value" as const,
-        name: `${weightLabel(unitSystem)}/week`,
-        position: "right" as const,
-        axisLabel: { color: "#71717a", fontSize: 11 },
-        splitLine: { show: false },
-        nameTextStyle: { color: "#71717a", fontSize: 11 },
-      },
+      dofekAxis.value({ name: units.weightLabel, min: "dataMin" }),
+      dofekAxis.value({
+        name: `${units.weightLabel}/week`,
+        position: "right",
+        showSplitLine: false,
+      }),
     ],
     series: [
+      dofekSeries.scatter(
+        "Raw Weight",
+        data.map((d) => [d.date, units.convertWeight(d.rawWeight)]),
+        {
+          color: chartThemeColors.axisLabel,
+          symbolSize: 4,
+          itemStyle: { opacity: 0.5 },
+        },
+      ),
       {
-        name: "Raw Weight",
-        type: "scatter",
-        data: data.map((d) => [d.date, convertWeight(d.rawWeight, unitSystem)]),
-        symbolSize: 4,
-        itemStyle: { color: "#71717a", opacity: 0.5 },
+        ...dofekSeries.line(
+          "Trend",
+          data.map((d) => [d.date, units.convertWeight(d.smoothedWeight)]),
+          {
+            color: chartColors.teal,
+            width: 3,
+          },
+        ),
       },
       {
-        name: "Trend",
-        type: "line",
-        data: data.map((d) => [d.date, convertWeight(d.smoothedWeight, unitSystem)]),
-        smooth: true,
-        symbol: "none",
-        lineStyle: { color: "#06b6d4", width: 3 },
-        itemStyle: { color: "#06b6d4" },
-      },
-      {
-        name: "Weekly Change",
-        type: "bar",
-        yAxisIndex: 1,
-        data: data
-          .filter((d) => d.weeklyChange != null)
-          .map((d) => [d.date, convertWeight(d.weeklyChange ?? 0, unitSystem)]),
+        ...dofekSeries.bar(
+          "Weekly Change",
+          data
+            .filter((d) => d.weeklyChange != null)
+            .map((d) => [d.date, units.convertWeight(d.weeklyChange ?? 0)]),
+          { yAxisIndex: 1, barWidth: "60%" },
+        ),
         itemStyle: {
           color: (params: { value: [string, number] }) =>
             params.value[1] >= 0 ? "rgba(34,197,94,0.4)" : "rgba(239,68,68,0.4)",
         },
-        barWidth: "60%",
       },
     ],
   };
@@ -100,15 +86,15 @@ export function SmoothedWeightChart({ data, loading }: SmoothedWeightChartProps)
       {latestWeeklyChange != null && (
         <div className="flex items-baseline gap-2">
           <span
-            className={`text-lg font-semibold ${latestWeeklyChange > 0 ? "text-green-400" : latestWeeklyChange < 0 ? "text-red-400" : "text-zinc-400"}`}
+            className={`text-lg font-semibold ${latestWeeklyChange > 0 ? "text-green-400" : latestWeeklyChange < 0 ? "text-red-400" : "text-muted"}`}
           >
             {latestWeeklyChange > 0 ? "+" : ""}
-            {convertWeight(latestWeeklyChange, unitSystem).toFixed(1)} {weightLabel(unitSystem)}
+            {formatNumber(units.convertWeight(latestWeeklyChange))} {units.weightLabel}
             /week
           </span>
         </div>
       )}
-      <ReactECharts option={option} style={{ height: 250 }} />
+      <DofekChart option={option} height={250} />
     </div>
   );
 }

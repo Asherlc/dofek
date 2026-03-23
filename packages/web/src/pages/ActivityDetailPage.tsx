@@ -1,25 +1,23 @@
+import type { ActivityHrZone } from "@dofek/zones/zones";
+import { HEART_RATE_ZONE_COLORS } from "@dofek/zones/zones";
 import { Link, useParams } from "@tanstack/react-router";
-import ReactECharts from "echarts-for-react";
 import { useEffect, useRef } from "react";
-import type {
-  ActivityDetail,
-  ActivityHrZone,
-  StreamPoint,
-} from "../../../server/src/routers/activity.ts";
-import { AppHeader } from "../components/AppHeader.tsx";
+import type { ActivityDetail, StreamPoint } from "../../../server/src/routers/activity.ts";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
+import { DofekChart } from "../components/DofekChart.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
-import { trpc } from "../lib/trpc.ts";
-import { useUnitSystem } from "../lib/unitContext.ts";
-import type { UnitSystem } from "../lib/units.ts";
+import { PageLayout } from "../components/PageLayout.tsx";
 import {
-  convertDistance,
-  convertElevation,
-  convertSpeed,
-  distanceLabel,
-  elevationLabel,
-  speedLabel,
-} from "../lib/units.ts";
+  chartThemeColors,
+  dofekAxis,
+  dofekGrid,
+  dofekLegend,
+  dofekTooltip,
+} from "../lib/chartTheme.ts";
+import { formatNumber } from "../lib/format.ts";
+import { trpc } from "../lib/trpc.ts";
+import { useUnitConverter } from "../lib/unitContext.ts";
+import type { UnitConverter } from "../lib/units.ts";
 
 const CHART_COLORS = {
   heartRate: "#ef4444",
@@ -29,38 +27,32 @@ const CHART_COLORS = {
   altitude: "#6b7280",
 };
 
-const ZONE_COLORS = ["#22c55e", "#84cc16", "#eab308", "#f97316", "#ef4444"];
-
 export function ActivityDetailPage() {
   const { id } = useParams({ from: "/activity/$id" });
 
-  const { unitSystem } = useUnitSystem();
+  const units = useUnitConverter();
   const detail = trpc.activity.byId.useQuery({ id });
   const stream = trpc.activity.stream.useQuery({ id, maxPoints: 500 });
   const hrZones = trpc.activity.hrZones.useQuery({ id });
 
   if (detail.isLoading) {
     return (
-      <div className="min-h-screen bg-zinc-950 text-zinc-100">
-        <AppHeader />
-        <main className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-6">
-          <ChartLoadingSkeleton height={400} />
-        </main>
-      </div>
+      <PageLayout>
+        <ChartLoadingSkeleton height={400} />
+      </PageLayout>
     );
   }
 
   if (detail.error || !detail.data) {
     return (
-      <div className="min-h-screen bg-zinc-950 text-zinc-100">
-        <AppHeader />
-        <main className="mx-auto max-w-7xl px-3 sm:px-6 py-8 text-center">
-          <p className="text-zinc-400 mb-4">Activity not found</p>
-          <Link to="/dashboard" className="text-emerald-500 hover:text-emerald-400 text-sm">
+      <PageLayout>
+        <div className="py-8 text-center">
+          <p className="text-muted mb-4">Activity not found</p>
+          <Link to="/dashboard" className="text-accent hover:text-accent-secondary text-sm">
             Back to dashboard
           </Link>
-        </main>
-      </div>
+        </div>
+      </PageLayout>
     );
   }
 
@@ -75,76 +67,67 @@ export function ActivityDetailPage() {
   const hasAltitude = points.some((p) => p.altitude != null);
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 overflow-x-hidden">
-      <AppHeader />
-      <main className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-6 space-y-6">
-        <div className="flex items-center gap-2 text-xs text-zinc-500">
-          <Link to="/dashboard" className="hover:text-zinc-300">
-            Dashboard
-          </Link>
-          <span>/</span>
-          <span className="text-zinc-300">{activity.name ?? activity.activityType}</span>
-        </div>
+    <PageLayout>
+      <div className="flex items-center gap-2 text-xs text-subtle">
+        <Link to="/dashboard" className="hover:text-foreground">
+          Dashboard
+        </Link>
+        <span>/</span>
+        <span className="text-foreground">{activity.name ?? activity.activityType}</span>
+      </div>
 
-        <ActivityHeader activity={activity} unitSystem={unitSystem} />
+      <ActivityHeader activity={activity} units={units} />
 
-        {hasGps && (
+      {hasGps && (
+        <Section
+          title="Route Map"
+          description="This map shows your recorded route, including start and finish locations."
+        >
+          <RouteMap points={points} />
+        </Section>
+      )}
+
+      {(hasHr || hasPower || hasSpeed || hasCadence) && (
+        <Section
+          title="Performance"
+          description="This chart overlays heart rate, power, speed, and cadence so you can see how effort changed during the workout."
+        >
+          <MetricsChart
+            points={points}
+            hasHr={hasHr}
+            hasPower={hasPower}
+            hasSpeed={hasSpeed}
+            hasCadence={hasCadence}
+            loading={stream.isLoading}
+            units={units}
+          />
+        </Section>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {hasAltitude && (
           <Section
-            title="Route Map"
-            description="This map shows your recorded route, including start and finish locations."
+            title="Elevation Profile"
+            description="This chart shows how your elevation changed over time during the activity."
           >
-            <RouteMap points={points} />
+            <ElevationChart points={points} loading={stream.isLoading} units={units} />
           </Section>
         )}
 
-        {(hasHr || hasPower || hasSpeed || hasCadence) && (
+        {zones.length > 0 && (
           <Section
-            title="Performance"
-            description="This chart overlays heart rate, power, speed, and cadence so you can see how effort changed during the workout."
+            title="Heart Rate Zones"
+            description="This chart shows how much time you spent in each heart rate zone."
           >
-            <MetricsChart
-              points={points}
-              hasHr={hasHr}
-              hasPower={hasPower}
-              hasSpeed={hasSpeed}
-              hasCadence={hasCadence}
-              loading={stream.isLoading}
-              unitSystem={unitSystem}
-            />
+            <HrZonesChart zones={zones} loading={hrZones.isLoading} />
           </Section>
         )}
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {hasAltitude && (
-            <Section
-              title="Elevation Profile"
-              description="This chart shows how your elevation changed over time during the activity."
-            >
-              <ElevationChart points={points} loading={stream.isLoading} unitSystem={unitSystem} />
-            </Section>
-          )}
-
-          {zones.length > 0 && (
-            <Section
-              title="Heart Rate Zones"
-              description="This chart shows how much time you spent in each heart rate zone."
-            >
-              <HrZonesChart zones={zones} loading={hrZones.isLoading} />
-            </Section>
-          )}
-        </div>
-      </main>
-    </div>
+      </div>
+    </PageLayout>
   );
 }
 
-function ActivityHeader({
-  activity,
-  unitSystem,
-}: {
-  activity: ActivityDetail;
-  unitSystem: UnitSystem;
-}) {
+function ActivityHeader({ activity, units }: { activity: ActivityDetail; units: UnitConverter }) {
   const durationMin =
     activity.startedAt && activity.endedAt
       ? Math.round(
@@ -164,14 +147,14 @@ function ActivityHeader({
   if (activity.totalDistance != null)
     stats.push({
       label: "Distance",
-      value: `${convertDistance(activity.totalDistance / 1000, unitSystem).toFixed(1)} ${distanceLabel(unitSystem)}`,
+      value: `${formatNumber(units.convertDistance(activity.totalDistance / 1000))} ${units.distanceLabel}`,
     });
   if (activity.calories != null)
     stats.push({ label: "Calories", value: `${Math.round(activity.calories)} kcal` });
   if (activity.elevationGain != null)
     stats.push({
       label: "Elevation Gain",
-      value: `${Math.round(convertElevation(activity.elevationGain, unitSystem))} ${elevationLabel(unitSystem)}`,
+      value: `${Math.round(units.convertElevation(activity.elevationGain))} ${units.elevationLabel}`,
     });
   if (activity.avgHr != null)
     stats.push({ label: "Avg Heart Rate", value: `${Math.round(activity.avgHr)} bpm` });
@@ -184,7 +167,7 @@ function ActivityHeader({
   if (activity.avgSpeed != null)
     stats.push({
       label: "Avg Speed",
-      value: `${convertSpeed(activity.avgSpeed * 3.6, unitSystem).toFixed(1)} ${speedLabel(unitSystem)}`,
+      value: `${formatNumber(units.convertSpeed(activity.avgSpeed * 3.6))} ${units.speedLabel}`,
     });
   if (activity.avgCadence != null)
     stats.push({ label: "Avg Cadence", value: `${Math.round(activity.avgCadence)} rpm` });
@@ -192,12 +175,12 @@ function ActivityHeader({
   return (
     <div>
       <div className="flex items-baseline gap-3 mb-1">
-        <h1 className="text-xl font-semibold text-zinc-100">
+        <h1 className="text-xl font-semibold text-foreground">
           {activity.name ?? activity.activityType}
         </h1>
-        <span className="text-xs text-zinc-500 capitalize">{activity.activityType}</span>
+        <span className="text-xs text-subtle capitalize">{activity.activityType}</span>
       </div>
-      <p className="text-sm text-zinc-500 mb-4">
+      <p className="text-sm text-subtle mb-4">
         {new Date(activity.startedAt).toLocaleDateString(undefined, {
           weekday: "long",
           year: "numeric",
@@ -214,8 +197,8 @@ function ActivityHeader({
       {stats.length > 0 && (
         <div className="flex flex-wrap gap-4">
           {stats.map((s) => (
-            <div key={s.label} className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3">
-              <div className="text-xs text-zinc-500 mb-0.5">{s.label}</div>
+            <div key={s.label} className="card px-4 py-3">
+              <div className="text-xs text-subtle mb-0.5">{s.label}</div>
               <div className="text-lg font-medium tabular-nums">{s.value}</div>
             </div>
           ))}
@@ -307,7 +290,7 @@ function MetricsChart({
   hasSpeed,
   hasCadence,
   loading,
-  unitSystem,
+  units,
 }: {
   points: StreamPoint[];
   hasHr: boolean;
@@ -315,7 +298,7 @@ function MetricsChart({
   hasSpeed: boolean;
   hasCadence: boolean;
   loading: boolean;
-  unitSystem: UnitSystem;
+  units: UnitConverter;
 }) {
   if (loading) return <ChartLoadingSkeleton height={300} />;
   if (points.length === 0) return null;
@@ -326,14 +309,14 @@ function MetricsChart({
   let axisIndex = 0;
 
   if (hasHr) {
-    yAxes.push({
-      type: "value",
-      name: "Heart Rate (bpm)",
-      position: "left",
-      axisLabel: { color: CHART_COLORS.heartRate, fontSize: 11 },
-      nameTextStyle: { color: CHART_COLORS.heartRate, fontSize: 10 },
-      splitLine: { show: axisIndex === 0, lineStyle: { color: "#27272a" } },
-    });
+    yAxes.push(
+      dofekAxis.value({
+        name: "Heart Rate (bpm)",
+        position: "left",
+        showSplitLine: axisIndex === 0,
+        axisLabel: { color: CHART_COLORS.heartRate },
+      }),
+    );
     series.push({
       name: "Heart Rate",
       type: "line",
@@ -347,14 +330,14 @@ function MetricsChart({
   }
 
   if (hasPower) {
-    yAxes.push({
-      type: "value",
-      name: "Power (W)",
-      position: axisIndex === 0 ? "left" : "right",
-      axisLabel: { color: CHART_COLORS.power, fontSize: 11 },
-      nameTextStyle: { color: CHART_COLORS.power, fontSize: 10 },
-      splitLine: { show: axisIndex === 0, lineStyle: { color: "#27272a" } },
-    });
+    yAxes.push(
+      dofekAxis.value({
+        name: "Power (W)",
+        position: axisIndex === 0 ? "left" : "right",
+        showSplitLine: axisIndex === 0,
+        axisLabel: { color: CHART_COLORS.power },
+      }),
+    );
     series.push({
       name: "Power",
       type: "line",
@@ -369,20 +352,20 @@ function MetricsChart({
 
   if (hasSpeed) {
     yAxes.push({
-      type: "value",
-      name: `Speed (${speedLabel(unitSystem)})`,
-      position: axisIndex === 0 ? "left" : "right",
+      ...dofekAxis.value({
+        name: `Speed (${units.speedLabel})`,
+        position: axisIndex === 0 ? "left" : "right",
+        showSplitLine: axisIndex === 0,
+        axisLabel: { color: CHART_COLORS.speed },
+      }),
       offset: axisIndex > 1 ? (axisIndex - 1) * 60 : 0,
-      axisLabel: { color: CHART_COLORS.speed, fontSize: 11 },
-      nameTextStyle: { color: CHART_COLORS.speed, fontSize: 10 },
-      splitLine: { show: axisIndex === 0, lineStyle: { color: "#27272a" } },
     });
     series.push({
       name: "Speed",
       type: "line",
       yAxisIndex: axisIndex,
       data: points.map((p) =>
-        p.speed != null ? +convertSpeed(p.speed * 3.6, unitSystem).toFixed(1) : null,
+        p.speed != null ? +formatNumber(units.convertSpeed(p.speed * 3.6)) : null,
       ),
       showSymbol: false,
       lineStyle: { width: 1.5, color: CHART_COLORS.speed },
@@ -393,13 +376,13 @@ function MetricsChart({
 
   if (hasCadence) {
     yAxes.push({
-      type: "value",
-      name: "Cadence (rpm)",
-      position: axisIndex === 0 ? "left" : "right",
+      ...dofekAxis.value({
+        name: "Cadence (rpm)",
+        position: axisIndex === 0 ? "left" : "right",
+        showSplitLine: axisIndex === 0,
+        axisLabel: { color: CHART_COLORS.cadence },
+      }),
       offset: axisIndex > 1 ? (axisIndex - 1) * 60 : 0,
-      axisLabel: { color: CHART_COLORS.cadence, fontSize: 11 },
-      nameTextStyle: { color: CHART_COLORS.cadence, fontSize: 10 },
-      splitLine: { show: axisIndex === 0, lineStyle: { color: "#27272a" } },
     });
     series.push({
       name: "Cadence",
@@ -416,18 +399,9 @@ function MetricsChart({
   const rightAxisCount = yAxes.filter((_, i) => i > 0).length;
 
   const option = {
-    backgroundColor: "transparent",
     grid: { top: 40, right: 60 + Math.max(0, rightAxisCount - 1) * 60, bottom: 60, left: 60 },
-    tooltip: {
-      trigger: "axis",
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
-    },
-    legend: {
-      top: 0,
-      textStyle: { color: "#a1a1aa", fontSize: 11 },
-    },
+    tooltip: dofekTooltip(),
+    legend: dofekLegend(true),
     dataZoom: [
       { type: "inside", xAxisIndex: 0, start: 0, end: 100 },
       {
@@ -437,41 +411,37 @@ function MetricsChart({
         end: 100,
         height: 20,
         bottom: 10,
-        borderColor: "#3f3f46",
-        backgroundColor: "#18181b",
+        borderColor: chartThemeColors.tooltipBorder,
+        backgroundColor: chartThemeColors.tooltipBackground,
         fillerColor: "rgba(34,197,94,0.15)",
         handleStyle: { color: "#22c55e" },
-        textStyle: { color: "#71717a" },
+        textStyle: { color: chartThemeColors.axisLabel },
       },
     ],
-    xAxis: {
-      type: "category",
+    xAxis: dofekAxis.category({
       data: times,
       axisLabel: {
-        color: "#71717a",
-        fontSize: 11,
         formatter: (v: string) => {
           const d = new Date(v);
           return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
         },
       },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
-    },
+    }),
     yAxis: yAxes,
     series,
   };
 
-  return <ReactECharts option={option} style={{ height: 350 }} />;
+  return <DofekChart option={option} height={350} />;
 }
 
 function ElevationChart({
   points,
   loading,
-  unitSystem,
+  units,
 }: {
   points: StreamPoint[];
   loading: boolean;
-  unitSystem: UnitSystem;
+  units: UnitConverter;
 }) {
   if (loading) return <ChartLoadingSkeleton height={200} />;
 
@@ -479,44 +449,29 @@ function ElevationChart({
   if (elevPoints.length === 0) return null;
 
   const option = {
-    backgroundColor: "transparent",
-    grid: { top: 10, right: 20, bottom: 30, left: 50 },
-    tooltip: {
-      trigger: "axis",
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
+    grid: dofekGrid("single", { top: 10, right: 20, bottom: 30, left: 50 }),
+    tooltip: dofekTooltip({
       formatter: (params: Array<{ value: number; dataIndex: number }>) => {
         const p = params[0];
         if (!p) return "";
-        return `Elevation: ${Math.round(convertElevation(p.value, unitSystem))} ${elevationLabel(unitSystem)}`;
+        return `Elevation: ${Math.round(units.convertElevation(p.value))} ${units.elevationLabel}`;
       },
-    },
-    xAxis: {
-      type: "category",
+    }),
+    xAxis: dofekAxis.category({
       data: elevPoints.map((p) => p.recordedAt),
       axisLabel: {
-        color: "#71717a",
-        fontSize: 11,
         formatter: (v: string) => {
           const d = new Date(v);
           return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
         },
       },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
-    },
-    yAxis: {
-      type: "value",
-      name: `Elevation (${elevationLabel(unitSystem)})`,
-      nameTextStyle: { color: "#71717a", fontSize: 10 },
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      splitLine: { lineStyle: { color: "#27272a" } },
-    },
+    }),
+    yAxis: dofekAxis.value({ name: `Elevation (${units.elevationLabel})` }),
     series: [
       {
         type: "line",
         data: elevPoints.map((p) =>
-          p.altitude != null ? Math.round(convertElevation(p.altitude, unitSystem)) : null,
+          p.altitude != null ? Math.round(units.convertElevation(p.altitude)) : null,
         ),
         showSymbol: false,
         lineStyle: { width: 1.5, color: CHART_COLORS.altitude },
@@ -537,7 +492,7 @@ function ElevationChart({
     ],
   };
 
-  return <ReactECharts option={option} style={{ height: 200 }} />;
+  return <DofekChart option={option} height={200} />;
 }
 
 function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: boolean }) {
@@ -547,7 +502,7 @@ function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: bo
   if (totalSeconds === 0) {
     return (
       <div className="flex items-center justify-center h-[200px]">
-        <span className="text-zinc-600 text-sm">No heart rate zone data</span>
+        <span className="text-dim text-sm">No heart rate zone data</span>
       </div>
     );
   }
@@ -559,55 +514,42 @@ function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: bo
   };
 
   const option = {
-    backgroundColor: "transparent",
-    grid: { top: 10, right: 80, bottom: 30, left: 100 },
-    tooltip: {
-      trigger: "axis",
+    grid: dofekGrid("single", { top: 10, right: 80, bottom: 30, left: 100 }),
+    tooltip: dofekTooltip({
       axisPointer: { type: "shadow" },
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
       formatter: (params: Array<{ name: string; value: number; dataIndex: number }>) => {
         const p = params[0];
         if (!p) return "";
         const zone = zones[p.dataIndex];
         if (!zone) return "";
         const percentage =
-          totalSeconds > 0 ? ((zone.seconds / totalSeconds) * 100).toFixed(1) : "0";
+          totalSeconds > 0 ? formatNumber((zone.seconds / totalSeconds) * 100) : "0";
         return `<b>${zone.label}</b> (${zone.minPct}–${zone.maxPct}% HRR)<br/>
           ${formatTime(zone.seconds)} (${percentage}%)`;
       },
-    },
-    xAxis: {
-      type: "value",
-      axisLabel: {
-        color: "#71717a",
-        fontSize: 11,
-        formatter: (v: number) => formatTime(v),
-      },
-      splitLine: { lineStyle: { color: "#27272a" } },
-    },
-    yAxis: {
-      type: "category",
+    }),
+    xAxis: dofekAxis.value({
+      axisLabel: { formatter: (v: number) => formatTime(v) },
+    }),
+    yAxis: dofekAxis.category({
       data: zones.map((z) => `Z${z.zone} ${z.label}`),
-      axisLabel: { color: "#a1a1aa", fontSize: 11 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
-    },
+    }),
     series: [
       {
         type: "bar",
         data: zones.map((z, i) => ({
           value: z.seconds,
-          itemStyle: { color: ZONE_COLORS[i] ?? "#71717a" },
+          itemStyle: { color: HEART_RATE_ZONE_COLORS[i] ?? chartThemeColors.axisLabel },
         })),
         barWidth: "60%",
         label: {
           show: true,
           position: "right",
-          color: "#a1a1aa",
+          color: chartThemeColors.axisLabel,
           fontSize: 11,
           formatter: (p: { value: number }) => {
-            const percentage = totalSeconds > 0 ? ((p.value / totalSeconds) * 100).toFixed(0) : "0";
+            const percentage =
+              totalSeconds > 0 ? formatNumber((p.value / totalSeconds) * 100, 0) : "0";
             return `${percentage}%`;
           },
         },
@@ -615,7 +557,7 @@ function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: bo
     ],
   };
 
-  return <ReactECharts option={option} style={{ height: 200 }} />;
+  return <DofekChart option={option} height={200} />;
 }
 
 function Section({
@@ -630,10 +572,10 @@ function Section({
   return (
     <section>
       <div className="mb-2 flex items-center gap-2">
-        <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">{title}</h2>
+        <h2 className="text-sm font-medium text-muted uppercase tracking-wider">{title}</h2>
         <ChartDescriptionTooltip description={description} />
       </div>
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4" title={description}>
+      <div className="card p-4" title={description}>
         {children}
       </div>
     </section>

@@ -3,10 +3,11 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensio
 import Svg, { Rect, Text as SvgText, Path } from "react-native-svg";
 import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
 import { trpc } from "../lib/trpc";
-import { convertDistance, convertElevation, convertPace, convertWeight, distanceLabel, elevationLabel, paceLabel, useUnitSystem, weightLabel } from "../lib/units";
+import { useUnitConverter } from "../lib/units";
 import { colors } from "../theme";
-import { scoreColor, scoreLabel, workloadRatioColor, workloadRatioHint, rampRateColor, formZoneColor, FORM_ZONE_COLORS } from "@dofek/scoring/scoring";
+import { scoreColor, scoreLabel, WorkloadRatio, rampRateColor, FormZone, FORM_ZONE_COLORS } from "@dofek/scoring/scoring";
 import { formatPace } from "@dofek/format/format";
+import { formatNumber, formatSigned } from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
 
 // ── Types ──
@@ -53,9 +54,9 @@ function sparklinePath(data: number[], width: number, height: number): string {
     .join(" ");
 }
 
-function formatNumber(value: number | null | undefined, decimals = 0): string {
+function formatNullable(value: number | null | undefined, decimals = 0): string {
   if (value == null || Number.isNaN(value)) return "--";
-  return value.toFixed(decimals);
+  return formatNumber(value, decimals);
 }
 
 function Sparkline({ data, width, height, color }: { data: number[]; width: number; height: number; color: string }) {
@@ -198,21 +199,21 @@ function OverviewTab({ days }: { days: number }) {
       <View style={styles.summaryRow}>
         <View style={styles.summaryCard}>
           <Text style={styles.summaryLabel}>Fitness</Text>
-          <Text style={[styles.summaryValue, { color: colors.blue }]}>{formatNumber(latest?.ctl, 1)}</Text>
+          <Text style={[styles.summaryValue, { color: colors.blue }]}>{formatNullable(latest?.ctl, 1)}</Text>
         </View>
         <View style={styles.summaryCard}>
           <Text style={styles.summaryLabel}>Fatigue</Text>
-          <Text style={[styles.summaryValue, { color: colors.purple }]}>{formatNumber(latest?.atl, 1)}</Text>
+          <Text style={[styles.summaryValue, { color: colors.purple }]}>{formatNullable(latest?.atl, 1)}</Text>
         </View>
         <View style={styles.summaryCard}>
           <Text style={styles.summaryLabel}>Form</Text>
           <Text
             style={[
               styles.summaryValue,
-              { color: latest?.tsb != null ? formZoneColor(latest.tsb) : colors.textSecondary },
+              { color: latest?.tsb != null ? new FormZone(latest.tsb).color : colors.textSecondary },
             ]}
           >
-            {formatNumber(latest?.tsb, 1)}
+            {formatNullable(latest?.tsb, 1)}
           </Text>
         </View>
       </View>
@@ -228,7 +229,7 @@ function OverviewTab({ days }: { days: number }) {
           <Text style={styles.bigValue}>{Math.round(model.ftp)} W</Text>
           {model.r2 != null && (
             <Text style={styles.cardSubtext}>
-              Model fit: {(model.r2 * 100).toFixed(0)}% (from {model.pairedActivities} samples)
+              Model fit: {formatNumber(model.r2 * 100, 0)}% (from {model.pairedActivities} samples)
             </Text>
           )}
         </View>
@@ -272,8 +273,11 @@ function OverviewTab({ days }: { days: number }) {
 // ── Tab 2: Endurance ──
 
 function EnduranceTab({ days }: { days: number }) {
+  const { width: screenWidth } = useWindowDimensions();
+  const chartWidth = screenWidth - 64;
   const polarization = trpc.efficiency.polarizationTrend.useQuery({ days });
   const ramp = trpc.cyclingAdvanced.rampRate.useQuery({ days });
+  const monotony = trpc.cyclingAdvanced.trainingMonotony.useQuery({ days });
 
   if (polarization.isLoading || ramp.isLoading) return <LoadingText />;
 
@@ -301,7 +305,7 @@ function EnduranceTab({ days }: { days: number }) {
             const total = week.z1Seconds + week.z2Seconds + week.z3Seconds || 1;
             const hasPolarizationIndex = week.polarizationIndex !== null;
             const polarizationIndexText = week.polarizationIndex !== null
-              ? `Polarization score ${week.polarizationIndex.toFixed(2)}`
+              ? `Polarization score ${formatNumber(week.polarizationIndex, 2)}`
               : missingZonesLabel(week);
             return (
               <View key={week.week} style={styles.polarizationRow}>
@@ -347,12 +351,54 @@ function EnduranceTab({ days }: { days: number }) {
           textStyle={styles.cardTitle}
         />
         <Text style={[styles.bigValue, { color: currentRampRate != null ? rampRateColor(Math.abs(currentRampRate)) : colors.text }]}>
-          {currentRampRate != null ? `${currentRampRate > 0 ? "+" : ""}${currentRampRate.toFixed(1)}%` : "--"}
+          {currentRampRate != null ? `${formatSigned(currentRampRate)}%` : "--"}
         </Text>
         <Text style={styles.cardSubtext}>Weekly training load change rate</Text>
       </View>
 
-      {polarizationWeeks.length === 0 && currentRampRate == null && (
+      {/* Training Monotony & Strain */}
+      {(() => {
+        const monotonyData = monotony.data ?? [];
+        if (monotonyData.length === 0) return null;
+        const latest = monotonyData[monotonyData.length - 1];
+        const monotonyColor = latest && latest.monotony > 2.0 ? statusColors.danger : latest && latest.monotony > 1.5 ? statusColors.warning : statusColors.positive;
+        return (
+          <View style={styles.card}>
+            <ChartTitleWithTooltip
+              title="Training Monotony & Strain"
+              description="Monotony measures how repetitive your training load is. High monotony (>2.0) with high load increases overtraining risk."
+              textStyle={styles.cardTitle}
+            />
+            <View style={styles.summaryRow}>
+              <View style={styles.summaryCard}>
+                <Text style={styles.summaryLabel}>Monotony</Text>
+                <Text style={[styles.summaryValue, { color: monotonyColor }]}>
+                  {latest ? latest.monotony.toFixed(2) : "--"}
+                </Text>
+              </View>
+              <View style={styles.summaryCard}>
+                <Text style={styles.summaryLabel}>Strain</Text>
+                <Text style={[styles.summaryValue, { color: colors.purple }]}>
+                  {latest ? Math.round(latest.strain) : "--"}
+                </Text>
+              </View>
+            </View>
+            {monotonyData.length > 1 && (
+              <View style={styles.chartContainer}>
+                <BarChart
+                  data={monotonyData.map((w) => w.monotony)}
+                  width={chartWidth}
+                  height={60}
+                  color={colors.teal}
+                  labels={monotonyData.map((w) => w.week.slice(5))}
+                />
+              </View>
+            )}
+          </View>
+        );
+      })()}
+
+      {polarizationWeeks.length === 0 && currentRampRate == null && (monotony.data ?? []).length === 0 && (
         <EmptyText message="No endurance data available for this period." />
       )}
     </View>
@@ -420,21 +466,21 @@ function CyclingTab({ days }: { days: number }) {
           <View style={styles.summaryRow}>
             <View style={styles.summaryCard}>
               <Text style={styles.summaryLabel}>Fitness</Text>
-              <Text style={[styles.summaryValue, { color: colors.blue }]}>{formatNumber(latestPmc.ctl, 1)}</Text>
+              <Text style={[styles.summaryValue, { color: colors.blue }]}>{formatNullable(latestPmc.ctl, 1)}</Text>
             </View>
             <View style={styles.summaryCard}>
               <Text style={styles.summaryLabel}>Fatigue</Text>
-              <Text style={[styles.summaryValue, { color: colors.purple }]}>{formatNumber(latestPmc.atl, 1)}</Text>
+              <Text style={[styles.summaryValue, { color: colors.purple }]}>{formatNullable(latestPmc.atl, 1)}</Text>
             </View>
             <View style={styles.summaryCard}>
               <Text style={styles.summaryLabel}>Form</Text>
               <Text
                 style={[
                   styles.summaryValue,
-                  { color: formZoneColor(latestPmc.tsb) },
+                  { color: new FormZone(latestPmc.tsb).color },
                 ]}
               >
-                {formatNumber(latestPmc.tsb, 1)}
+                {formatNullable(latestPmc.tsb, 1)}
               </Text>
             </View>
           </View>
@@ -490,13 +536,131 @@ function CyclingTab({ days }: { days: number }) {
               <Text style={[styles.summaryValue, { color: colors.orange }]}>{Math.round(model.wPrime / 1000)} kJ</Text>
             </View>
           </View>
-          <Text style={styles.cardSubtext}>Model fit: {(model.r2 * 100).toFixed(0)}%</Text>
+          <Text style={styles.cardSubtext}>Model fit: {formatNumber(model.r2 * 100, 0)}%</Text>
         </View>
       )}
 
       {points.length === 0 && (
         <EmptyText message="No cycling power data available for this period." />
       )}
+
+      {/* Aerobic Efficiency */}
+      <AerobicEfficiencySection days={days} chartWidth={chartWidth} />
+
+      {/* Vertical Ascent Rate */}
+      <VerticalAscentSection days={days} />
+
+      {/* Activity Variability */}
+      <ActivityVariabilitySection days={days} />
+    </View>
+  );
+}
+
+function AerobicEfficiencySection({ days, chartWidth }: { days: number; chartWidth: number }) {
+  const query = trpc.efficiency.aerobicEfficiency.useQuery({ days });
+  if (query.isLoading) return null;
+  const activities = query.data?.activities ?? [];
+  if (activities.length === 0) return null;
+
+  const efValues = activities.map((a) => a.efficiencyFactor);
+  const latest = activities[activities.length - 1];
+
+  return (
+    <View style={styles.card}>
+      <ChartTitleWithTooltip
+        title="Aerobic Efficiency"
+        description="Efficiency factor: power output divided by heart rate during Zone 2 work. Higher means more aerobic fitness."
+        textStyle={styles.cardTitle}
+      />
+      <Text style={[styles.bigValue, { color: colors.teal }]}>
+        {latest ? latest.efficiencyFactor.toFixed(2) : "--"}
+      </Text>
+      <Text style={styles.cardSubtext}>
+        {latest ? `${latest.name} — ${latest.date}` : ""}
+      </Text>
+      {efValues.length > 1 && (
+        <View style={styles.sparklineContainer}>
+          <Sparkline data={efValues} width={chartWidth} height={40} color={colors.teal} />
+        </View>
+      )}
+    </View>
+  );
+}
+
+function VerticalAscentSection({ days }: { days: number }) {
+  const query = trpc.cyclingAdvanced.verticalAscentRate.useQuery({ days });
+  if (query.isLoading) return null;
+  const rows = query.data ?? [];
+  if (rows.length === 0) return null;
+
+  const latest = rows[rows.length - 1];
+
+  return (
+    <View style={styles.card}>
+      <ChartTitleWithTooltip
+        title="Vertical Ascent Rate"
+        description="Climbing speed on steep segments (grade > 3%). Measured in meters per hour of climbing."
+        textStyle={styles.cardTitle}
+      />
+      <Text style={[styles.bigValue, { color: colors.orange }]}>
+        {latest ? `${Math.round(latest.verticalAscentRate)} m/hr` : "--"}
+      </Text>
+      <Text style={styles.cardSubtext}>
+        {latest ? `${latest.activityName} — ${Math.round(latest.elevationGainMeters)} m gained in ${latest.climbingMinutes} min` : ""}
+      </Text>
+      {rows.length > 2 && (
+        <View style={{ marginTop: 8, gap: 4 }}>
+          {rows.slice(-5).reverse().map((row, i) => (
+            <View key={`${row.date}-${i}`} style={{ flexDirection: "row", justifyContent: "space-between" }}>
+              <Text style={{ fontSize: 12, color: colors.textSecondary }}>{row.activityName}</Text>
+              <Text style={{ fontSize: 12, color: colors.text, fontWeight: "600", fontVariant: ["tabular-nums"] }}>
+                {Math.round(row.verticalAscentRate)} m/hr
+              </Text>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+function ActivityVariabilitySection({ days }: { days: number }) {
+  const query = trpc.cyclingAdvanced.activityVariability.useQuery({ days, limit: 10, offset: 0 });
+  if (query.isLoading) return null;
+  const rows = query.data?.rows ?? [];
+  if (rows.length === 0) return null;
+
+  return (
+    <View style={styles.card}>
+      <ChartTitleWithTooltip
+        title="Activity Variability"
+        description="Variability Index (VI) shows how variable your power was — higher means more surging. Intensity Factor (IF) shows how hard you rode relative to your Functional Threshold Power (FTP)."
+        textStyle={styles.cardTitle}
+      />
+      <View style={{ gap: 6, marginTop: 4 }}>
+        <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+          <Text style={{ fontSize: 11, color: colors.textTertiary, flex: 1 }}>Activity</Text>
+          <Text style={{ fontSize: 11, color: colors.textTertiary, width: 50, textAlign: "right" }}>Norm. Power</Text>
+          <Text style={{ fontSize: 11, color: colors.textTertiary, width: 50, textAlign: "right" }}>Var. Index</Text>
+          <Text style={{ fontSize: 11, color: colors.textTertiary, width: 50, textAlign: "right" }}>Int. Factor</Text>
+        </View>
+        {rows.map((row, i) => (
+          <View key={`${row.date}-${i}`} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+            <Text style={{ fontSize: 12, color: colors.textSecondary, flex: 1 }} numberOfLines={1}>
+              {row.activityName}
+            </Text>
+            <Text style={{ fontSize: 12, color: colors.text, fontWeight: "600", fontVariant: ["tabular-nums"], width: 50, textAlign: "right" }}>
+              {Math.round(row.normalizedPower)}
+            </Text>
+            <Text style={{ fontSize: 12, color: colors.text, fontWeight: "600", fontVariant: ["tabular-nums"], width: 50, textAlign: "right" }}>
+              {row.variabilityIndex.toFixed(2)}
+            </Text>
+            <Text style={{ fontSize: 12, color: colors.text, fontWeight: "600", fontVariant: ["tabular-nums"], width: 50, textAlign: "right" }}>
+              {row.intensityFactor.toFixed(2)}
+            </Text>
+          </View>
+        ))}
+      </View>
     </View>
   );
 }
@@ -526,18 +690,63 @@ function PowerCard({ label, watts }: { label: string; watts: number | undefined 
 function RunningTab({ days }: { days: number }) {
   const { width: screenWidth } = useWindowDimensions();
   const chartWidth = screenWidth - 64;
-  const unitSystem = useUnitSystem();
+  const units = useUnitConverter();
 
   const paceTrend = trpc.running.paceTrend.useQuery({ days });
   const dynamics = trpc.running.dynamics.useQuery({ days });
+  const paceCurve = trpc.durationCurves.paceCurve.useQuery({ days });
 
   if (paceTrend.isLoading || dynamics.isLoading) return <LoadingText />;
 
   const paceData = paceTrend.data ?? [];
   const dynamicsData = dynamics.data ?? [];
+  const paceCurvePoints = paceCurve.data?.points ?? [];
+
+  // Pick key durations for pace bests cards
+  const targetDurations = [300, 600, 1800, 3600]; // 5m, 10m, 30m, 60m
+  const durationLabels = ["5 min", "10 min", "30 min", "60 min"];
 
   return (
     <View>
+      {/* Pace Duration Curve - Best pace at key durations */}
+      {paceCurvePoints.length > 0 && (
+        <View>
+          <ChartTitleWithTooltip
+            title="Pace Bests"
+            description="Your best sustained pace at key durations. Lower pace (faster speed) is better."
+            textStyle={styles.sectionTitle}
+          />
+          <View style={styles.summaryRow}>
+            {targetDurations.slice(0, 2).map((dur, i) => {
+              const point = paceCurvePoints.find((p) => p.durationSeconds === dur);
+              const pace = point ? units.convertPace(point.bestPaceSecondsPerKm) : null;
+              return (
+                <View key={dur} style={styles.summaryCard}>
+                  <Text style={styles.summaryLabel}>{durationLabels[i]}</Text>
+                  <Text style={[styles.summaryValue, { color: colors.green }]}>
+                    {pace != null ? `${formatPace(pace)} ${units.paceLabel}` : "--"}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+          <View style={styles.summaryRow}>
+            {targetDurations.slice(2).map((dur, i) => {
+              const point = paceCurvePoints.find((p) => p.durationSeconds === dur);
+              const pace = point ? units.convertPace(point.bestPaceSecondsPerKm) : null;
+              return (
+                <View key={dur} style={styles.summaryCard}>
+                  <Text style={styles.summaryLabel}>{durationLabels[i + 2]}</Text>
+                  <Text style={[styles.summaryValue, { color: colors.green }]}>
+                    {pace != null ? `${formatPace(pace)} ${units.paceLabel}` : "--"}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      )}
+
       {/* Pace Trend */}
       {paceData.length > 0 && (
         <View>
@@ -551,10 +760,10 @@ function RunningTab({ days }: { days: number }) {
                 </View>
                 <View style={{ alignItems: "flex-end" }}>
                   <Text style={[styles.bigValue, { fontSize: 20, color: colors.green }]}>
-                    {formatPace(convertPace(run.paceSecondsPerKm, unitSystem))} {paceLabel(unitSystem)}
+                    {formatPace(units.convertPace(run.paceSecondsPerKm))} {units.paceLabel}
                   </Text>
                   <Text style={styles.cardSubtext}>
-                    {convertDistance(run.distanceKm, unitSystem).toFixed(1)} {distanceLabel(unitSystem)} · {run.durationMinutes} min
+                    {formatNumber(units.convertDistance(run.distanceKm))} {units.distanceLabel} · {run.durationMinutes} min
                   </Text>
                 </View>
               </View>
@@ -576,13 +785,13 @@ function RunningTab({ days }: { days: number }) {
                 <View style={{ gap: 8, marginTop: 8 }}>
                   <FormRow label="Cadence" value={`${latest.cadence} spm`} />
                   {latest.strideLengthMeters != null && (
-                    <FormRow label="Stride Length" value={`${latest.strideLengthMeters.toFixed(2)} m`} />
+                    <FormRow label="Stride Length" value={`${formatNumber(latest.strideLengthMeters, 2)} m`} />
                   )}
                   {latest.stanceTimeMs != null && (
                     <FormRow label="Ground Contact" value={`${Math.round(latest.stanceTimeMs)} ms`} />
                   )}
                   {latest.verticalOscillationMm != null && (
-                    <FormRow label="Vertical Oscillation" value={`${latest.verticalOscillationMm.toFixed(1)} mm`} />
+                    <FormRow label="Vertical Oscillation" value={`${formatNumber(latest.verticalOscillationMm)} mm`} />
                   )}
                 </View>
               </View>
@@ -631,13 +840,14 @@ function FormRow({ label, value }: { label: string; value: string }) {
 function StrengthTab({ days }: { days: number }) {
   const { width: screenWidth } = useWindowDimensions();
   const chartWidth = screenWidth - 64;
-  const unitSystem = useUnitSystem();
+  const units = useUnitConverter();
 
   const volume = trpc.strength.volumeOverTime.useQuery({ days });
   const oneRepMax = trpc.strength.estimatedOneRepMax.useQuery({ days });
   const overload = trpc.strength.progressiveOverload.useQuery({ days });
+  const muscleGroup = trpc.strength.muscleGroupVolume.useQuery({ days });
 
-  if (volume.isLoading || oneRepMax.isLoading || overload.isLoading) return <LoadingText />;
+  if (volume.isLoading || oneRepMax.isLoading || overload.isLoading || muscleGroup.isLoading) return <LoadingText />;
 
   const volumeData = volume.data ?? [];
   const oneRepMaxData = oneRepMax.data ?? [];
@@ -655,7 +865,7 @@ function StrengthTab({ days }: { days: number }) {
           />
           <View style={styles.chartContainer}>
             <BarChart
-              data={volumeData.map((w) => convertWeight(w.totalVolumeKg, unitSystem))}
+              data={volumeData.map((w) => units.convertWeight(w.totalVolumeKg))}
               width={chartWidth}
               height={100}
               color={colors.purple}
@@ -679,7 +889,7 @@ function StrengthTab({ days }: { days: number }) {
               <View key={exercise.exerciseName} style={styles.card}>
                 <Text style={styles.cardTitle}>{exercise.exerciseName}</Text>
                 <Text style={styles.bigValue}>
-                  {latestEstimate ? `${Math.round(convertWeight(latestEstimate.estimatedMax, unitSystem))} ${weightLabel(unitSystem)}` : "--"}
+                  {latestEstimate ? `${Math.round(units.convertWeight(latestEstimate.estimatedMax))} ${units.weightLabel}` : "--"}
                 </Text>
                 {exercise.history.length > 1 && (
                   <View style={styles.sparklineContainer}>
@@ -707,7 +917,7 @@ function StrengthTab({ days }: { days: number }) {
                   <View style={styles.overloadInfo}>
                     <Text style={styles.cardTitle}>{exercise.exerciseName}</Text>
                     <Text style={styles.cardSubtext}>
-                      Slope: {exercise.slopeKgPerWeek > 0 ? "+" : ""}{convertWeight(exercise.slopeKgPerWeek, unitSystem).toFixed(1)} {weightLabel(unitSystem)}/week
+                      Slope: {formatSigned(units.convertWeight(exercise.slopeKgPerWeek))} {units.weightLabel}/week
                     </Text>
                   </View>
                   <View style={styles.overloadChange}>
@@ -724,7 +934,55 @@ function StrengthTab({ days }: { days: number }) {
         </View>
       )}
 
-      {volumeData.length === 0 && oneRepMaxData.length === 0 && overloadData.length === 0 && (
+      {/* Muscle Group Volume */}
+      {(() => {
+        const muscleGroups = muscleGroup.data ?? [];
+        if (muscleGroups.length === 0) return null;
+
+        // Aggregate total sets per muscle group across all weeks
+        const totals = muscleGroups
+          .map((mg) => ({
+            name: mg.muscleGroup,
+            totalSets: mg.weeklyData.reduce((sum, w) => sum + w.sets, 0),
+          }))
+          .sort((a, b) => b.totalSets - a.totalSets);
+
+        const maxSets = totals[0]?.totalSets ?? 1;
+
+        return (
+          <View style={styles.card}>
+            <ChartTitleWithTooltip
+              title="Muscle Group Volume"
+              description="Total sets per muscle group over the selected period. Helps identify imbalances in training."
+              textStyle={styles.cardTitle}
+            />
+            <View style={{ gap: 8, marginTop: 4 }}>
+              {totals.map((mg) => (
+                <View key={mg.name} style={{ gap: 2 }}>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                    <Text style={{ fontSize: 12, color: colors.textSecondary }}>{mg.name}</Text>
+                    <Text style={{ fontSize: 12, color: colors.text, fontWeight: "600", fontVariant: ["tabular-nums"] }}>
+                      {mg.totalSets} sets
+                    </Text>
+                  </View>
+                  <View style={{ height: 6, borderRadius: 3, backgroundColor: colors.surfaceSecondary, overflow: "hidden" }}>
+                    <View
+                      style={{
+                        height: "100%",
+                        borderRadius: 3,
+                        backgroundColor: colors.purple,
+                        width: `${(mg.totalSets / maxSets) * 100}%`,
+                      }}
+                    />
+                  </View>
+                </View>
+              ))}
+            </View>
+          </View>
+        );
+      })()}
+
+      {volumeData.length === 0 && oneRepMaxData.length === 0 && overloadData.length === 0 && (muscleGroup.data ?? []).length === 0 && (
         <EmptyText message="No strength data available for this period." />
       )}
     </View>
@@ -736,7 +994,7 @@ function StrengthTab({ days }: { days: number }) {
 function HikingTab({ days }: { days: number }) {
   const { width: screenWidth } = useWindowDimensions();
   const chartWidth = screenWidth - 64;
-  const unitSystem = useUnitSystem();
+  const units = useUnitConverter();
 
   const gap = trpc.hiking.gradeAdjustedPace.useQuery({ days });
   const elevation = trpc.hiking.elevationProfile.useQuery({ days: Math.max(days, 365) });
@@ -766,13 +1024,13 @@ function HikingTab({ days }: { days: number }) {
                 <Text style={styles.tableCellSecondary}>{hike.date}</Text>
               </View>
               <Text style={[styles.tableCell, { flex: 1 }]}>
-                {convertDistance(hike.distanceKm, unitSystem).toFixed(1)} {distanceLabel(unitSystem)}
+                {formatNumber(units.convertDistance(hike.distanceKm))} {units.distanceLabel}
               </Text>
               <Text style={[styles.tableCell, { flex: 1 }]}>
-                {(convertPace(hike.gradeAdjustedPaceMinPerKm * 60, unitSystem) / 60).toFixed(1)} min{paceLabel(unitSystem)}
+                {formatNumber(units.convertPace(hike.gradeAdjustedPaceMinPerKm * 60) / 60)} min{units.paceLabel}
               </Text>
               <Text style={[styles.tableCell, { flex: 1 }]}>
-                {Math.round(convertElevation(hike.elevationGainMeters, unitSystem))} {elevationLabel(unitSystem)}
+                {Math.round(units.convertElevation(hike.elevationGainMeters))} {units.elevationLabel}
               </Text>
             </View>
           ))}
@@ -789,7 +1047,7 @@ function HikingTab({ days }: { days: number }) {
           />
           <View style={styles.chartContainer}>
             <BarChart
-              data={elevationData.map((w) => convertElevation(w.elevationGainMeters, unitSystem))}
+              data={elevationData.map((w) => units.convertElevation(w.elevationGainMeters))}
               width={chartWidth}
               height={100}
               color={colors.green}
@@ -819,7 +1077,7 @@ function RecoveryTab({ days }: { days: number }) {
   if (readiness.isLoading || workload.isLoading || hrv.isLoading) return <LoadingText />;
 
   const readinessData = readiness.data ?? [];
-  const workloadData = workload.data ?? [];
+  const workloadData = workload.data?.timeSeries ?? [];
   const hrvData = hrv.data ?? [];
 
   const latestReadiness = readinessData[readinessData.length - 1];
@@ -850,7 +1108,7 @@ function RecoveryTab({ days }: { days: number }) {
               { label: "Heart Rate Variability", value: latestReadiness.components.hrvScore },
               { label: "Resting Heart Rate", value: latestReadiness.components.restingHrScore },
               { label: "Sleep", value: latestReadiness.components.sleepScore },
-              { label: "Load Balance", value: latestReadiness.components.loadBalanceScore },
+              { label: "Respiratory Rate", value: latestReadiness.components.respiratoryRateScore },
             ].map((comp) => (
               <View key={comp.label} style={styles.componentRow}>
                 <Text style={styles.componentLabel}>{comp.label}</Text>
@@ -875,21 +1133,24 @@ function RecoveryTab({ days }: { days: number }) {
       )}
 
       {/* Workload Ratio */}
-      {latestWorkload && latestWorkload.workloadRatio != null && (
-        <View style={styles.card}>
-          <ChartTitleWithTooltip
-            title="Acute:Chronic Workload Ratio"
-            description="This ratio compares short-term load against longer-term load to highlight undertraining or overload risk."
-            textStyle={styles.cardTitle}
-          />
-          <Text style={[styles.bigValue, { color: workloadRatioColor(latestWorkload.workloadRatio) }]}>
-            {latestWorkload.workloadRatio.toFixed(2)}
-          </Text>
-          <Text style={[styles.cardSubtext, { color: workloadRatioColor(latestWorkload.workloadRatio) }]}>
-            {workloadRatioHint(latestWorkload.workloadRatio)}
-          </Text>
-        </View>
-      )}
+      {latestWorkload && latestWorkload.workloadRatio != null && (() => {
+        const ratio = new WorkloadRatio(latestWorkload.workloadRatio);
+        return (
+          <View style={styles.card}>
+            <ChartTitleWithTooltip
+              title="Acute:Chronic Workload Ratio"
+              description="This ratio compares short-term load against longer-term load to highlight undertraining or overload risk."
+              textStyle={styles.cardTitle}
+            />
+            <Text style={[styles.bigValue, { color: ratio.color }]}>
+              {formatNumber(latestWorkload.workloadRatio, 2)}
+            </Text>
+            <Text style={[styles.cardSubtext, { color: ratio.color }]}>
+              {ratio.hint}
+            </Text>
+          </View>
+        );
+      })()}
 
       {/* HRV Trends */}
       {hrvData.length > 1 && (

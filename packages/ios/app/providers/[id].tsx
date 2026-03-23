@@ -1,33 +1,27 @@
-import { useLocalSearchParams } from "expo-router";
-import { useState } from "react";
+import type { ProviderStats } from "@dofek/providers/provider-stats";
+import { DATA_TYPE_LABELS } from "@dofek/providers/provider-stats";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
+  Linking,
   Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { formatRelativeTime, formatTime } from "@dofek/format/format";
+import { useAuth } from "../../lib/auth-context";
+import { ProviderStatsBreakdown } from "../../components/ProviderStatsBreakdown";
 import { trpc } from "../../lib/trpc";
 import { colors } from "../../theme";
 
-const DATA_TYPES = [
-  { key: "activities", label: "Activities" },
-  { key: "dailyMetrics", label: "Daily Metrics" },
-  { key: "sleepSessions", label: "Sleep" },
-  { key: "bodyMeasurements", label: "Body" },
-  { key: "foodEntries", label: "Food" },
-  { key: "healthEvents", label: "Events" },
-  { key: "metricStream", label: "Metric Stream" },
-  { key: "nutritionDaily", label: "Nutrition" },
-  { key: "labResults", label: "Lab Results" },
-  { key: "journalEntries", label: "Journal" },
-] as const;
-
-type DataType = (typeof DATA_TYPES)[number]["key"];
+type DataType = (typeof DATA_TYPE_LABELS)[number]["key"];
 
 function formatProviderName(id: string): string {
   return id
@@ -461,107 +455,6 @@ const recordStyles = StyleSheet.create({
   },
 });
 
-// ── Stats Overview ──
-
-interface ProviderStatsData {
-  activities: number;
-  dailyMetrics: number;
-  sleepSessions: number;
-  bodyMeasurements: number;
-  foodEntries: number;
-  healthEvents: number;
-  metricStream: number;
-  nutritionDaily: number;
-  labResults: number;
-  journalEntries: number;
-}
-
-function getStatCount(stats: ProviderStatsData, key: DataType): number {
-  return stats[key];
-}
-
-function StatsOverview({ stats }: { stats: ProviderStatsData }) {
-  const breakdown = [
-    { label: "Activities", count: stats.activities },
-    { label: "Metric Stream", count: stats.metricStream },
-    { label: "Daily Metrics", count: stats.dailyMetrics },
-    { label: "Sleep", count: stats.sleepSessions },
-    { label: "Body", count: stats.bodyMeasurements },
-    { label: "Food", count: stats.foodEntries },
-    { label: "Nutrition", count: stats.nutritionDaily },
-    { label: "Events", count: stats.healthEvents },
-    { label: "Lab Results", count: stats.labResults },
-    { label: "Journal", count: stats.journalEntries },
-  ].filter((b) => b.count > 0);
-
-  const total = breakdown.reduce((sum, b) => sum + b.count, 0);
-
-  if (total === 0) return null;
-
-  return (
-    <View style={statsStyles.container}>
-      <View style={statsStyles.totalRow}>
-        <Text style={statsStyles.totalCount}>{total.toLocaleString()}</Text>
-        <Text style={statsStyles.totalLabel}>total records</Text>
-      </View>
-      <View style={statsStyles.grid}>
-        {breakdown.map((b) => (
-          <View key={b.label} style={statsStyles.statItem}>
-            <Text style={statsStyles.statCount}>
-              {b.count.toLocaleString()}
-            </Text>
-            <Text style={statsStyles.statLabel}>{b.label}</Text>
-          </View>
-        ))}
-      </View>
-    </View>
-  );
-}
-
-const statsStyles = StyleSheet.create({
-  container: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 16,
-  },
-  totalRow: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    gap: 6,
-    marginBottom: 12,
-  },
-  totalCount: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: colors.text,
-    fontVariant: ["tabular-nums"],
-  },
-  totalLabel: {
-    fontSize: 13,
-    color: colors.textTertiary,
-  },
-  grid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 12,
-  },
-  statItem: {
-    alignItems: "center",
-    minWidth: 60,
-  },
-  statCount: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: colors.text,
-    fontVariant: ["tabular-nums"],
-  },
-  statLabel: {
-    fontSize: 11,
-    color: colors.textTertiary,
-    marginTop: 2,
-  },
-});
-
 // ── Sync History ──
 
 function SyncHistory({ providerId }: { providerId: string }) {
@@ -749,11 +642,11 @@ function RecordsBrowser({
   stats,
 }: {
   providerId: string;
-  stats: ProviderStatsData | undefined;
+  stats: ProviderStats | undefined;
 }) {
-  const availableTypes = DATA_TYPES.filter((dt) => {
+  const availableTypes = DATA_TYPE_LABELS.filter((dt) => {
     if (!stats) return true;
-    return getStatCount(stats, dt.key) > 0;
+    return stats[dt.key] > 0;
   });
 
   const [activeTab, setActiveTab] = useState<DataType>(
@@ -799,7 +692,7 @@ function RecordsBrowser({
               ]}
             >
               {dt.label}
-              {stats ? ` (${getStatCount(stats, dt.key).toLocaleString()})` : ""}
+              {stats ? ` (${stats[dt.key].toLocaleString()})` : ""}
             </Text>
           </TouchableOpacity>
         ))}
@@ -839,9 +732,20 @@ const tabStyles = StyleSheet.create({
 
 export default function ProviderDetailScreen() {
   const { id: providerId } = useLocalSearchParams<{ id: string }>();
+  const { serverUrl } = useAuth();
+  const router = useRouter();
+  const trpcUtils = trpc.useUtils();
 
   const providers = trpc.sync.providers.useQuery();
   const stats = trpc.sync.providerStats.useQuery();
+  const syncMutation = trpc.sync.triggerSync.useMutation();
+  const disconnectMutation = trpc.providerDetail.disconnect.useMutation();
+
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [syncProgress, setSyncProgress] = useState<number | null>(null);
+  const [customDays, setCustomDays] = useState("30");
+  const pollingRef = useRef(false);
 
   const provider = (providers.data ?? []).find(
     (p: { id: string }) => p.id === providerId,
@@ -849,6 +753,103 @@ export default function ProviderDetailScreen() {
   const providerStats = (stats.data ?? []).find(
     (s: { providerId: string }) => s.providerId === providerId,
   );
+
+  const pollSyncJob = useCallback(
+    async (jobId: string) => {
+      if (pollingRef.current) return;
+      pollingRef.current = true;
+
+      const poll = async (): Promise<void> => {
+        let status: Awaited<ReturnType<typeof trpcUtils.sync.syncStatus.fetch>>;
+        try {
+          status = await trpcUtils.sync.syncStatus.fetch({ jobId }, { staleTime: 0 });
+        } catch {
+          pollingRef.current = false;
+          setIsSyncing(false);
+          setSyncMessage("Sync failed");
+          return;
+        }
+
+        if (!status) {
+          pollingRef.current = false;
+          setIsSyncing(false);
+          return;
+        }
+
+        setSyncProgress(status.percentage);
+        const providerStatus = providerId ? status.providers[providerId] : null;
+        if (providerStatus?.message) {
+          setSyncMessage(providerStatus.message);
+        }
+
+        if (status.status === "done" || status.status === "error") {
+          pollingRef.current = false;
+          setIsSyncing(false);
+          setSyncMessage(status.status === "done" ? "Sync complete" : "Sync failed");
+          trpcUtils.sync.providers.invalidate();
+          trpcUtils.sync.providerStats.invalidate();
+          trpcUtils.sync.logs.invalidate();
+          return;
+        }
+
+        await new Promise((r) => setTimeout(r, 1000));
+        return poll();
+      };
+
+      return poll();
+    },
+    [trpcUtils, providerId],
+  );
+
+  const handleSync = useCallback(
+    async (sinceDays: number | undefined) => {
+      if (!providerId || isSyncing) return;
+      setIsSyncing(true);
+      setSyncMessage("Starting sync...");
+      setSyncProgress(0);
+      try {
+        const { jobId } = await syncMutation.mutateAsync({
+          providerId,
+          sinceDays,
+        });
+        await pollSyncJob(jobId);
+      } catch {
+        setIsSyncing(false);
+        setSyncMessage("Failed to start sync");
+      }
+    },
+    [providerId, isSyncing, syncMutation, pollSyncJob],
+  );
+
+  const handleDisconnect = useCallback(() => {
+    if (!providerId) return;
+    Alert.alert(
+      "Disconnect Provider",
+      "This will permanently delete all synced data from this provider. This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Disconnect",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await disconnectMutation.mutateAsync({ providerId });
+              trpcUtils.sync.providers.invalidate();
+              trpcUtils.sync.providerStats.invalidate();
+              router.back();
+            } catch {
+              Alert.alert("Error", "Failed to disconnect provider");
+            }
+          },
+        },
+      ],
+    );
+  }, [providerId, disconnectMutation, trpcUtils, router]);
+
+  const handleReauthorize = useCallback(() => {
+    if (!providerId) return;
+    Linking.openURL(`${serverUrl}/auth/provider/${providerId}`);
+  }, [providerId, serverUrl]);
 
   if (providers.isLoading || !providerId) {
     return (
@@ -863,7 +864,7 @@ export default function ProviderDetailScreen() {
       {/* Provider header */}
       <View style={styles.headerCard}>
         <View style={styles.headerRow}>
-          <View>
+          <View style={styles.headerInfo}>
             <Text style={styles.providerName}>
               {provider?.name ?? formatProviderName(providerId)}
             </Text>
@@ -874,7 +875,7 @@ export default function ProviderDetailScreen() {
                 ) : (
                   <Text style={styles.statusDisconnected}>Not connected</Text>
                 )}
-                {provider.lastSyncedAt && (
+                {provider.lastSyncedAt && formatRelativeTime(provider.lastSyncedAt) && (
                   <Text style={styles.lastSync}>
                     Last sync: {formatRelativeTime(provider.lastSyncedAt)}
                   </Text>
@@ -882,11 +883,86 @@ export default function ProviderDetailScreen() {
               </View>
             )}
           </View>
+          {provider?.needsOAuth && provider.authorized && (
+            <TouchableOpacity
+              style={styles.reauthorizeButton}
+              onPress={handleReauthorize}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.reauthorizeButtonText}>Re-authorize</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
+      {/* Sync controls */}
+      {provider?.authorized && !provider.importOnly && (
+        <View style={styles.syncControlsCard}>
+          <Text style={styles.syncControlsTitle}>Sync Controls</Text>
+          <View style={styles.syncButtonRow}>
+            <TouchableOpacity
+              style={[styles.syncButton, isSyncing && styles.syncButtonDisabled]}
+              onPress={() => handleSync(7)}
+              activeOpacity={0.7}
+              disabled={isSyncing}
+            >
+              <Text style={styles.syncButtonText}>Sync Last 7 Days</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.syncButton, isSyncing && styles.syncButtonDisabled]}
+              onPress={() => handleSync(undefined)}
+              activeOpacity={0.7}
+              disabled={isSyncing}
+            >
+              <Text style={styles.syncButtonText}>Full Sync</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.customSyncRow}>
+            <TextInput
+              style={styles.customDaysInput}
+              value={customDays}
+              onChangeText={setCustomDays}
+              keyboardType="number-pad"
+              placeholder="Days"
+              placeholderTextColor={colors.textTertiary}
+            />
+            <TouchableOpacity
+              style={[styles.syncButton, styles.syncRangeButton, isSyncing && styles.syncButtonDisabled]}
+              onPress={() => {
+                const days = Number.parseInt(customDays, 10);
+                if (days >= 1 && days <= 3650) {
+                  handleSync(days);
+                }
+              }}
+              activeOpacity={0.7}
+              disabled={isSyncing}
+            >
+              <Text style={styles.syncButtonText}>Sync Range</Text>
+            </TouchableOpacity>
+          </View>
+          {isSyncing && (
+            <View style={styles.syncProgressContainer}>
+              <View style={styles.syncProgressTrack}>
+                <View
+                  style={[
+                    styles.syncProgressFill,
+                    { width: `${syncProgress ?? 0}%` },
+                  ]}
+                />
+              </View>
+              {syncMessage != null && (
+                <Text style={styles.syncMessageText}>{syncMessage}</Text>
+              )}
+            </View>
+          )}
+          {!isSyncing && syncMessage != null && (
+            <Text style={styles.syncMessageText}>{syncMessage}</Text>
+          )}
+        </View>
+      )}
+
       {/* Stats overview */}
-      {providerStats && <StatsOverview stats={providerStats} />}
+      {providerStats && <ProviderStatsBreakdown stats={providerStats} variant="full" />}
 
       {/* Sync history */}
       <Text style={styles.sectionTitle}>Sync History</Text>
@@ -894,6 +970,17 @@ export default function ProviderDetailScreen() {
 
       {/* Records browser */}
       <RecordsBrowser providerId={providerId} stats={providerStats} />
+
+      {/* Disconnect */}
+      {provider?.authorized && (
+        <TouchableOpacity
+          style={styles.disconnectButton}
+          onPress={handleDisconnect}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.disconnectButtonText}>Disconnect Provider</Text>
+        </TouchableOpacity>
+      )}
     </ScrollView>
   );
 }
@@ -922,7 +1009,22 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     gap: 12,
+  },
+  headerInfo: {
+    flex: 1,
+  },
+  reauthorizeButton: {
+    backgroundColor: colors.surfaceSecondary,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  reauthorizeButtonText: {
+    fontSize: 13,
+    color: colors.text,
+    fontWeight: "500",
   },
   providerName: {
     fontSize: 20,
@@ -953,5 +1055,87 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 0.5,
+  },
+
+  // Sync controls
+  syncControlsCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 16,
+    gap: 12,
+  },
+  syncControlsTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  syncButtonRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  syncButton: {
+    flex: 1,
+    backgroundColor: colors.accent,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  syncButtonDisabled: {
+    opacity: 0.5,
+  },
+  syncButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.text,
+  },
+  customSyncRow: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "center",
+  },
+  customDaysInput: {
+    flex: 1,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: colors.text,
+  },
+  syncRangeButton: {
+    flex: 0,
+    paddingHorizontal: 16,
+  },
+  syncProgressContainer: {
+    gap: 4,
+  },
+  syncProgressTrack: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.surfaceSecondary,
+    overflow: "hidden",
+  },
+  syncProgressFill: {
+    height: "100%",
+    borderRadius: 2,
+    backgroundColor: colors.accent,
+  },
+  syncMessageText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+
+  // Disconnect
+  disconnectButton: {
+    backgroundColor: "rgba(239, 68, 68, 0.15)",
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+    marginTop: 8,
+  },
+  disconnectButtonText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#ef4444",
   },
 });

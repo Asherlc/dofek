@@ -6,7 +6,6 @@ import {
   parseCronometerCsv,
   parseOptionalNumber,
 } from "./cronometer-csv.ts";
-import { createMockDatabase } from "./test-helpers.ts";
 
 // ============================================================
 // Tests targeting uncovered CSV parsing paths in cronometer-csv.ts
@@ -196,11 +195,8 @@ describe("CronometerCsvProvider", () => {
     expect(provider.validate()).toBeNull();
   });
 
-  it("sync returns zero records", async () => {
+  it("is an import-only provider", () => {
     const provider = new CronometerCsvProvider();
-    const { db } = createMockDatabase();
-    const result = await provider.sync(db, new Date());
-    expect(result.recordsSynced).toBe(0);
-    expect(result.errors).toEqual([]);
+    expect(provider.importOnly).toBe(true);
   });
 });

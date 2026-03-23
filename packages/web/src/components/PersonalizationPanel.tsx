@@ -1,3 +1,4 @@
+import { formatNumber } from "../lib/format.ts";
 import { trpc } from "../lib/trpc.ts";
 
 const PARAM_LABELS: Record<string, { label: string; description: string }> = {
@@ -46,7 +47,7 @@ export function PersonalizationPanel() {
     return (
       <div className="space-y-3">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-16 rounded bg-zinc-800/50 animate-pulse" />
+          <div key={i} className="h-16 rounded bg-skeleton animate-pulse" />
         ))}
       </div>
     );
@@ -64,15 +65,13 @@ export function PersonalizationPanel() {
       {/* Status header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div
-            className={`w-2 h-2 rounded-full ${data.isPersonalized ? "bg-emerald-400" : "bg-zinc-600"}`}
-          />
-          <span className="text-sm text-zinc-300">
+          <div className={`w-2 h-2 rounded-full ${data.isPersonalized ? "bg-accent" : "bg-dim"}`} />
+          <span className="text-sm text-foreground">
             {data.isPersonalized ? "Personalized" : "Using defaults"}
           </span>
         </div>
         {data.fittedAt && (
-          <span className="text-xs text-zinc-500">
+          <span className="text-xs text-subtle">
             Last updated {new Date(data.fittedAt).toLocaleDateString()}
           </span>
         )}
@@ -104,9 +103,9 @@ export function PersonalizationPanel() {
             hrv: number;
             restingHr: number;
             sleep: number;
-            loadBalance: number;
+            respiratoryRate: number;
           }) =>
-            `Heart Rate Variability ${Math.round(v.hrv * 100)}%, Resting Heart Rate ${Math.round(v.restingHr * 100)}%, Sleep ${Math.round(v.sleep * 100)}%, Load ${Math.round(v.loadBalance * 100)}%`
+            `Heart Rate Variability ${Math.round(v.hrv * 100)}%, Resting Heart Rate ${Math.round(v.restingHr * 100)}%, Sleep ${Math.round(v.sleep * 100)}%, Respiratory Rate ${Math.round(v.respiratoryRate * 100)}%`
           }
           renderQuality={
             data.parameters.readinessWeights
@@ -137,7 +136,7 @@ export function PersonalizationPanel() {
             hrvThresholds: [number, number, number];
             rhrThresholds: [number, number, number];
           }) =>
-            `Heart Rate Variability: ${v.hrvThresholds.map((t) => t.toFixed(1)).join(", ")} · Resting Heart Rate: ${v.rhrThresholds.map((t) => t.toFixed(1)).join(", ")}`
+            `Heart Rate Variability: ${v.hrvThresholds.map((t) => formatNumber(t)).join(", ")} · Resting Heart Rate: ${v.rhrThresholds.map((t) => formatNumber(t)).join(", ")}`
           }
           renderQuality={
             data.parameters.stressThresholds
@@ -168,7 +167,7 @@ export function PersonalizationPanel() {
           type="button"
           onClick={() => refitMutation.mutate()}
           disabled={refitMutation.isPending}
-          className="text-xs font-medium text-emerald-400 hover:text-emerald-300 border border-emerald-700 rounded px-3 py-1.5 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          className="text-xs font-medium text-accent hover:text-accent-secondary border border-accent rounded px-3 py-1.5 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {refitMutation.isPending ? "Refitting..." : "Refit Now"}
         </button>
@@ -177,7 +176,7 @@ export function PersonalizationPanel() {
             type="button"
             onClick={() => resetMutation.mutate()}
             disabled={resetMutation.isPending}
-            className="text-xs text-zinc-400 hover:text-zinc-200 border border-zinc-700 rounded px-3 py-1.5 transition-colors cursor-pointer disabled:opacity-50"
+            className="text-xs text-muted hover:text-foreground border border-border-strong rounded px-3 py-1.5 transition-colors cursor-pointer disabled:opacity-50"
           >
             Reset to Defaults
           </button>
@@ -206,23 +205,21 @@ function ParamCard<T>({
   const isPersonalized = personalized !== null;
 
   return (
-    <div className="rounded-md bg-zinc-800/50 px-3 py-2.5 space-y-1">
+    <div className="rounded-md bg-accent/10 px-3 py-2.5 space-y-1">
       <div className="flex items-center justify-between">
-        <span className="text-sm font-medium text-zinc-200">{meta?.label ?? paramKey}</span>
+        <span className="text-sm font-medium text-foreground">{meta?.label ?? paramKey}</span>
         <span
-          className={`text-[10px] font-medium uppercase tracking-wider ${isPersonalized ? "text-emerald-400" : "text-zinc-600"}`}
+          className={`text-[10px] font-medium uppercase tracking-wider ${isPersonalized ? "text-accent" : "text-dim"}`}
         >
           {isPersonalized ? "Learned" : "Default"}
         </span>
       </div>
-      <p className="text-xs text-zinc-500">{meta?.description}</p>
-      <p className="text-sm text-zinc-300 font-mono">{renderValue(effective)}</p>
+      <p className="text-xs text-subtle">{meta?.description}</p>
+      <p className="text-sm text-foreground font-mono">{renderValue(effective)}</p>
       {isPersonalized && renderQuality && (
-        <p className="text-[11px] text-zinc-500">Quality: {renderQuality}</p>
+        <p className="text-[11px] text-subtle">Quality: {renderQuality}</p>
       )}
-      {isPersonalized && (
-        <p className="text-[11px] text-zinc-600">Default: {renderValue(defaults)}</p>
-      )}
+      {isPersonalized && <p className="text-[11px] text-dim">Default: {renderValue(defaults)}</p>}
     </div>
   );
 }

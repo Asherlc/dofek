@@ -2,9 +2,15 @@ import { parseVeloHeroWorkout, VeloHeroClient } from "velohero-client";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
-import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import type {
+  ProviderAuthSetup,
+  SyncError,
+  SyncOptions,
+  SyncProvider,
+  SyncResult,
+} from "./types.ts";
 
 const VELOHERO_BASE_URL = "https://app.velohero.com";
 
@@ -20,13 +26,13 @@ function formatDate(date: Date): string {
 // Provider implementation
 // ============================================================
 
-export class VeloHeroProvider implements Provider {
+export class VeloHeroProvider implements SyncProvider {
   readonly id = "velohero";
   readonly name = "VeloHero";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -35,7 +41,7 @@ export class VeloHeroProvider implements Provider {
   }
 
   authSetup(): ProviderAuthSetup {
-    const fetchFn = this.fetchFn;
+    const fetchFn = this.#fetchFn;
     return {
       oauthConfig: {
         clientId: "",
@@ -60,7 +66,7 @@ export class VeloHeroProvider implements Provider {
     };
   }
 
-  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -75,28 +81,11 @@ export class VeloHeroProvider implements Provider {
         throw new Error("VeloHero not connected — authenticate via the web UI");
       }
 
-      // Re-authenticate if token expired (session cookies expire)
+      // VeloHero sessions expire — user must re-authenticate when expired
       if (stored.expiresAt <= new Date()) {
-        const username = process.env.VELOHERO_USERNAME;
-        const password = process.env.VELOHERO_PASSWORD;
-        if (!username || !password) {
-          throw new Error(
-            "VeloHero session expired and VELOHERO_USERNAME/VELOHERO_PASSWORD not set for re-auth",
-          );
-        }
-        logger.info("[velohero] Session expired, re-authenticating...");
-        const result = await VeloHeroClient.signIn(username, password, this.fetchFn);
-        const tokens = {
-          accessToken: result.sessionCookie,
-          refreshToken: null,
-          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-          scopes: `userId:${result.userId}`,
-        };
-        await saveTokens(db, this.id, tokens);
-        client = new VeloHeroClient(result.sessionCookie, this.fetchFn);
-      } else {
-        client = new VeloHeroClient(stored.accessToken, this.fetchFn);
+        throw new Error("VeloHero session expired — please re-authenticate via Settings");
       }
+      client = new VeloHeroClient(stored.accessToken, this.#fetchFn);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
@@ -107,49 +96,55 @@ export class VeloHeroProvider implements Provider {
     const toDate = formatDate(new Date());
 
     try {
-      const activityCount = await withSyncLog(db, this.id, "activity", async () => {
-        let count = 0;
+      const activityCount = await withSyncLog(
+        db,
+        this.id,
+        "activity",
+        async () => {
+          let count = 0;
 
-        logger.info(`[velohero] Fetching workouts from ${sinceDate} to ${toDate}`);
-        const workouts = await client.getWorkouts(sinceDate, toDate);
-        logger.info(`[velohero] Fetched ${workouts.length} workouts`);
+          logger.info(`[velohero] Fetching workouts from ${sinceDate} to ${toDate}`);
+          const workouts = await client.getWorkouts(sinceDate, toDate);
+          logger.info(`[velohero] Fetched ${workouts.length} workouts`);
 
-        for (const workout of workouts) {
-          const parsed = parseVeloHeroWorkout(workout);
-          try {
-            await db
-              .insert(activity)
-              .values({
-                providerId: this.id,
-                externalId: parsed.externalId,
-                activityType: parsed.activityType,
-                name: parsed.name,
-                startedAt: parsed.startedAt,
-                endedAt: parsed.endedAt,
-                raw: parsed.raw,
-              })
-              .onConflictDoUpdate({
-                target: [activity.providerId, activity.externalId],
-                set: {
+          for (const workout of workouts) {
+            const parsed = parseVeloHeroWorkout(workout);
+            try {
+              await db
+                .insert(activity)
+                .values({
+                  providerId: this.id,
+                  externalId: parsed.externalId,
                   activityType: parsed.activityType,
                   name: parsed.name,
                   startedAt: parsed.startedAt,
                   endedAt: parsed.endedAt,
                   raw: parsed.raw,
-                },
+                })
+                .onConflictDoUpdate({
+                  target: [activity.providerId, activity.externalId],
+                  set: {
+                    activityType: parsed.activityType,
+                    name: parsed.name,
+                    startedAt: parsed.startedAt,
+                    endedAt: parsed.endedAt,
+                    raw: parsed.raw,
+                  },
+                });
+              count++;
+            } catch (err) {
+              errors.push({
+                message: err instanceof Error ? err.message : String(err),
+                externalId: parsed.externalId,
+                cause: err,
               });
-            count++;
-          } catch (err) {
-            errors.push({
-              message: err instanceof Error ? err.message : String(err),
-              externalId: parsed.externalId,
-              cause: err,
-            });
+            }
           }
-        }
 
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += activityCount;
     } catch (err) {
       errors.push({

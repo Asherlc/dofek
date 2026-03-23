@@ -65,8 +65,6 @@ interface DailyMetricsViewRow extends Record<string, unknown> {
   exercise_minutes: number | null;
   stand_hours: number | null;
   walking_speed: number | string | null;
-  environmental_audio_exposure: number | string | null;
-  headphone_audio_exposure: number | string | null;
   source_providers: string[];
 }
 
@@ -186,6 +184,75 @@ describe("Deduplication materialized views", () => {
     expect(yoga).toBeDefined();
     expect(yoga?.provider_id).toBe("whoop");
     expect(yoga?.source_providers).toHaveLength(1);
+  });
+
+  it("v_activity dedupes overlapping activities with different activity types", async () => {
+    // Same outdoor ride recorded by Wahoo as "cycling" and RideWithGPS as "other"
+    await ensureProvider(ctx.db, "ride-with-gps", "RideWithGPS");
+    await ctx.db.insert(activity).values([
+      {
+        providerId: "wahoo",
+        externalId: "wahoo-ride-cross-type",
+        activityType: "cycling",
+        startedAt: new Date("2026-03-14T18:16:28Z"),
+        endedAt: new Date("2026-03-14T19:47:39Z"),
+        name: "Cycling",
+      },
+      {
+        providerId: "ride-with-gps",
+        externalId: "rwgps-ride-cross-type",
+        activityType: "other",
+        startedAt: new Date("2026-03-14T18:16:28Z"),
+        endedAt: new Date("2026-03-14T19:47:38Z"),
+        name: "03/14/26",
+      },
+    ]);
+
+    await refreshDedupViews(ctx.db);
+
+    const rows = await ctx.db.execute<ActivityViewRow>(
+      sql`SELECT * FROM fitness.v_activity WHERE started_at::date = '2026-03-14'`,
+    );
+
+    // Should merge into 1 activity — Wahoo wins (priority 10)
+    expect(rows.length).toBe(1);
+    expect(rows[0]?.provider_id).toBe("wahoo");
+    expect(rows[0]?.activity_type).toBe("cycling");
+    expect(rows[0]?.source_providers).toContain("wahoo");
+    expect(rows[0]?.source_providers).toContain("ride-with-gps");
+  });
+
+  it("v_activity dedupes WHOOP and Apple Health with different type names", async () => {
+    // WHOOP records "commuting", Apple Health republishes it as "other"
+    await ctx.db.insert(activity).values([
+      {
+        providerId: "whoop",
+        externalId: "whoop-commute-cross-type",
+        activityType: "commuting",
+        startedAt: new Date("2026-03-12T15:21:00Z"),
+        endedAt: new Date("2026-03-12T15:36:00Z"),
+      },
+      {
+        providerId: "apple_health",
+        externalId: "ah-whoop-commute-cross-type",
+        activityType: "other",
+        startedAt: new Date("2026-03-12T15:21:00Z"),
+        endedAt: new Date("2026-03-12T15:36:00Z"),
+        sourceName: "WHOOP",
+      },
+    ]);
+
+    await refreshDedupViews(ctx.db);
+
+    const rows = await ctx.db.execute<ActivityViewRow>(
+      sql`SELECT * FROM fitness.v_activity
+          WHERE started_at >= '2026-03-12T15:00:00Z' AND started_at < '2026-03-12T16:00:00Z'`,
+    );
+
+    // Should merge into 1 activity — WHOOP wins (priority 30 < 90)
+    expect(rows.length).toBe(1);
+    expect(rows[0]?.provider_id).toBe("whoop");
+    expect(rows[0]?.activity_type).toBe("commuting");
   });
 
   it("v_activity keeps non-overlapping same-type activities separate", async () => {
@@ -539,6 +606,45 @@ describe("Deduplication materialized views", () => {
       expect(mainSleep[0]?.provider_id).toBe("whoop");
     });
 
+    it("v_daily_metrics picks Apple Watch over iPhone for steps within apple_health", async () => {
+      // Same date, same provider (apple_health), different source_name values.
+      // Apple Watch has daily_activity_priority 15 (from provider-level config),
+      // iPhone has daily_activity_priority 50 (from device_priority pattern).
+      // The view should pick Apple Watch's step count.
+      await ctx.db.insert(dailyMetrics).values([
+        {
+          date: "2026-03-18",
+          providerId: "apple_health",
+          sourceName: "Apple Watch",
+          steps: 4200,
+          activeEnergyKcal: 280,
+          distanceKm: 3.1,
+        },
+        {
+          date: "2026-03-18",
+          providerId: "apple_health",
+          sourceName: "iPhone",
+          steps: 3800,
+          activeEnergyKcal: 250,
+          distanceKm: 2.9,
+        },
+      ]);
+
+      await refreshDedupViews(ctx.db);
+
+      const rows = await ctx.db.execute<DailyMetricsViewRow>(
+        sql`SELECT * FROM fitness.v_daily_metrics WHERE date = '2026-03-18'`,
+      );
+
+      expect(rows.length).toBe(1);
+      const day = rows[0];
+      expect(day).toBeDefined();
+      // Apple Watch (activity priority 15) beats iPhone (activity priority 50)
+      expect(day?.steps).toBe(4200);
+      expect(Number(day?.active_energy_kcal)).toBeCloseTo(280);
+      expect(Number(day?.distance_km)).toBeCloseTo(3.1);
+    });
+
     it("v_activity uses device priority: Apple Health + Wahoo TICKR beats WHOOP", async () => {
       // Apple Health with source_name="Wahoo TICKR" should get device priority (5)
       // which beats WHOOP's provider-level activity priority (30)
@@ -608,6 +714,146 @@ describe("Deduplication materialized views", () => {
       expect(rows.length).toBe(1);
       // WHOOP (30) beats Apple Health (90) when no device match
       expect(rows[0]?.provider_id).toBe("whoop");
+    });
+  });
+
+  describe("v_sleep efficiency derivation", () => {
+    it("derives efficiency for Apple Health as (deep + rem + light) / duration", async () => {
+      await ctx.db.insert(sleepSession).values({
+        providerId: "apple_health",
+        externalId: "ah-eff-derive",
+        startedAt: new Date("2026-04-01T23:00:00Z"),
+        endedAt: new Date("2026-04-02T07:00:00Z"),
+        durationMinutes: 480,
+        deepMinutes: 90,
+        remMinutes: 90,
+        lightMinutes: 120,
+        awakeMinutes: 15,
+        efficiencyPct: null,
+        sleepType: "sleep",
+      });
+
+      await refreshDedupViews(ctx.db);
+
+      const rows = await ctx.db.execute<SleepViewRow>(
+        sql`SELECT * FROM fitness.v_sleep WHERE started_at::date = '2026-04-01'`,
+      );
+
+      const mainSleep = rows.filter((r) => !r.is_nap);
+      expect(mainSleep.length).toBe(1);
+      // (90 + 90 + 120) / 480 * 100 = 62.5
+      expect(Number(mainSleep[0]?.efficiency_pct)).toBeCloseTo(62.5, 1);
+    });
+
+    it("derives efficiency for Eight Sleep as duration / (duration + awake)", async () => {
+      await ensureProvider(ctx.db, "eight-sleep", "Eight Sleep");
+
+      await ctx.db.insert(sleepSession).values({
+        providerId: "eight-sleep",
+        externalId: "es-eff-derive",
+        startedAt: new Date("2026-04-02T23:00:00Z"),
+        endedAt: new Date("2026-04-03T07:00:00Z"),
+        durationMinutes: 420,
+        deepMinutes: 100,
+        remMinutes: 90,
+        lightMinutes: 230,
+        awakeMinutes: 60,
+        efficiencyPct: null,
+        sleepType: "sleep",
+      });
+
+      await refreshDedupViews(ctx.db);
+
+      const rows = await ctx.db.execute<SleepViewRow>(
+        sql`SELECT * FROM fitness.v_sleep WHERE started_at::date = '2026-04-02'`,
+      );
+
+      const mainSleep = rows.filter((r) => !r.is_nap);
+      expect(mainSleep.length).toBe(1);
+      // 420 / (420 + 60) * 100 = 87.5
+      expect(Number(mainSleep[0]?.efficiency_pct)).toBeCloseTo(87.5, 1);
+    });
+
+    it("derives efficiency for Polar as duration / (duration + awake)", async () => {
+      await ensureProvider(ctx.db, "polar", "Polar");
+
+      await ctx.db.insert(sleepSession).values({
+        providerId: "polar",
+        externalId: "polar-eff-derive",
+        startedAt: new Date("2026-04-03T23:00:00Z"),
+        endedAt: new Date("2026-04-04T07:00:00Z"),
+        durationMinutes: 360,
+        deepMinutes: 100,
+        remMinutes: 90,
+        lightMinutes: 170,
+        awakeMinutes: 40,
+        efficiencyPct: null,
+        sleepType: "sleep",
+      });
+
+      await refreshDedupViews(ctx.db);
+
+      const rows = await ctx.db.execute<SleepViewRow>(
+        sql`SELECT * FROM fitness.v_sleep WHERE started_at::date = '2026-04-03'`,
+      );
+
+      const mainSleep = rows.filter((r) => !r.is_nap);
+      expect(mainSleep.length).toBe(1);
+      // 360 / (360 + 40) * 100 = 90.0
+      expect(Number(mainSleep[0]?.efficiency_pct)).toBeCloseTo(90.0, 1);
+    });
+
+    it("uses stored efficiency_pct when present (Whoop)", async () => {
+      await ctx.db.insert(sleepSession).values({
+        providerId: "whoop",
+        externalId: "whoop-eff-stored",
+        startedAt: new Date("2026-04-04T23:00:00Z"),
+        endedAt: new Date("2026-04-05T06:30:00Z"),
+        durationMinutes: 420,
+        deepMinutes: 110,
+        remMinutes: 80,
+        lightMinutes: 200,
+        awakeMinutes: 30,
+        efficiencyPct: 93.2,
+        sleepType: "sleep",
+      });
+
+      await refreshDedupViews(ctx.db);
+
+      const rows = await ctx.db.execute<SleepViewRow>(
+        sql`SELECT * FROM fitness.v_sleep WHERE started_at::date = '2026-04-04'`,
+      );
+
+      const mainSleep = rows.filter((r) => !r.is_nap);
+      expect(mainSleep.length).toBe(1);
+      // Stored value used as-is
+      expect(Number(mainSleep[0]?.efficiency_pct)).toBeCloseTo(93.2, 1);
+    });
+
+    it("returns null efficiency when awake_minutes is null", async () => {
+      await ctx.db.insert(sleepSession).values({
+        providerId: "apple_health",
+        externalId: "ah-eff-no-awake",
+        startedAt: new Date("2026-04-05T23:00:00Z"),
+        endedAt: new Date("2026-04-06T07:00:00Z"),
+        durationMinutes: 480,
+        deepMinutes: null,
+        remMinutes: null,
+        lightMinutes: null,
+        awakeMinutes: null,
+        efficiencyPct: null,
+        sleepType: "sleep",
+      });
+
+      await refreshDedupViews(ctx.db);
+
+      const rows = await ctx.db.execute<SleepViewRow>(
+        sql`SELECT * FROM fitness.v_sleep WHERE started_at::date = '2026-04-05'`,
+      );
+
+      const mainSleep = rows.filter((r) => !r.is_nap);
+      expect(mainSleep.length).toBe(1);
+      expect(mainSleep[0]?.efficiency_pct).toBeNull();
     });
   });
 });

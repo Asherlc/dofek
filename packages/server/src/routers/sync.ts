@@ -1,11 +1,15 @@
 import { createSyncQueue } from "dofek/jobs/queues";
+import { ProviderModel } from "dofek/providers/provider-model";
 import { getAllProviders, registerProvider } from "dofek/providers/registry";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { queryCache } from "../lib/cache.ts";
 import { startWorker } from "../lib/start-worker.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
+const tokenRowSchema = z.object({ provider_id: z.string() });
 // ── Input schemas ──
 export const triggerSyncInput = z.object({
   providerId: z.string().optional(),
@@ -135,19 +139,27 @@ export const syncRouter = router({
     const all = getAllProviders();
 
     // Batch: load all tokens + last sync times in 2 queries instead of 2N
+    const lastSyncRowSchema = z.object({
+      provider_id: z.string(),
+      last_synced: z.string(),
+    });
     const [allTokens, lastSyncs] = await Promise.all([
-      ctx.db.execute<{ provider_id: string }>(
+      executeWithSchema(
+        ctx.db,
+        tokenRowSchema,
         sql`SELECT DISTINCT ot.provider_id
             FROM fitness.oauth_token ot
             JOIN fitness.provider p ON p.id = ot.provider_id
             WHERE p.user_id = ${ctx.userId}`,
       ),
-      ctx.db.execute<{ provider_id: string; last_synced: string }>(sql`
-        SELECT provider_id, MAX(synced_at) AS last_synced
-        FROM fitness.sync_log
-        WHERE user_id = ${ctx.userId}
-        GROUP BY provider_id
-      `),
+      executeWithSchema(
+        ctx.db,
+        lastSyncRowSchema,
+        sql`SELECT provider_id, MAX(synced_at) AS last_synced
+            FROM fitness.sync_log
+            WHERE user_id = ${ctx.userId}
+            GROUP BY provider_id`,
+      ),
     ]);
 
     const tokenSet = new Set(allTokens.map((r) => r.provider_id));
@@ -156,26 +168,20 @@ export const syncRouter = router({
     return all
       .filter((p) => p.validate() === null)
       .map((p) => {
-        let setup: ReturnType<NonNullable<typeof p.authSetup>> | undefined;
-        try {
-          setup = p.authSetup?.();
-        } catch {
-          /* credentials not configured */
-        }
-        const needsOAuth = !!setup?.oauthConfig;
-        const needsCustomAuth = p.id === "whoop" || p.id === "garmin";
-        const needsAuth = needsOAuth || needsCustomAuth;
-        const authorized = needsAuth ? tokenSet.has(p.id) : true;
-        const lastSyncedAt = lastSyncMap.get(p.id) ?? null;
+        // Providers with their own custom tRPC auth routers (MFA, special clients)
+        const CUSTOM_AUTH_PROVIDERS: Record<string, string> = {
+          whoop: "custom:whoop",
+          garmin: "custom:garmin",
+        };
 
+        const model = new ProviderModel(p, tokenSet, lastSyncMap, CUSTOM_AUTH_PROVIDERS);
         return {
-          id: p.id,
-          name: p.name,
-          needsOAuth,
-          needsCustomAuth,
-          authorized,
-          lastSyncedAt,
-          importOnly: p.importOnly === true,
+          id: model.id,
+          name: model.name,
+          authType: model.authType,
+          authorized: model.isConnected,
+          lastSyncedAt: model.lastSyncedAt,
+          importOnly: model.importOnly,
         };
       });
   }),
@@ -187,7 +193,7 @@ export const syncRouter = router({
     const providerIds: string[] = [];
 
     // Validate provider exists and is configured before enqueuing.
-    // For "sync all", fan out into one BullMQ job per configured provider.
+    // For "sync all", fan out into one BullMQ job per connected provider.
     if (input.providerId) {
       const provider = getAllProviders().find((p) => p.id === input.providerId);
       if (!provider) throw new Error(`Unknown provider: ${input.providerId}`);
@@ -195,11 +201,24 @@ export const syncRouter = router({
       if (validation) throw new Error(`Provider not configured: ${validation}`);
       providerIds.push(provider.id);
     } else {
-      providerIds.push(
-        ...getAllProviders()
-          .filter((provider) => provider.validate() === null && !provider.importOnly)
-          .map((provider) => provider.id),
+      // Check which providers have tokens to determine connectivity
+      const allTokens = await executeWithSchema(
+        ctx.db,
+        tokenRowSchema,
+        sql`SELECT DISTINCT ot.provider_id
+            FROM fitness.oauth_token ot
+            JOIN fitness.provider p ON p.id = ot.provider_id
+            WHERE p.user_id = ${ctx.userId}`,
       );
+      const tokenSet = new Set(allTokens.map((r) => r.provider_id));
+
+      for (const provider of getAllProviders()) {
+        if (provider.validate() !== null) continue;
+        const model = new ProviderModel(provider, tokenSet);
+        if (model.importOnly || !model.isConnected) continue;
+        providerIds.push(model.id);
+      }
+
       if (providerIds.length === 0) throw new Error("No configured providers available for sync");
     }
 
@@ -254,6 +273,14 @@ export const syncRouter = router({
     });
     const parsed = progressSchema.safeParse(job.progress);
     const progress = parsed.success ? parsed.data : undefined;
+
+    // When a sync job finishes, invalidate the server-side cache so the next
+    // providers fetch returns fresh timestamps instead of stale cached data.
+    if (state === "completed" || state === "failed") {
+      await queryCache.invalidateByPrefix(`${ctx.userId}:sync.providers`);
+      await queryCache.invalidateByPrefix(`${ctx.userId}:sync.providerStats`);
+      await queryCache.invalidateByPrefix(`${ctx.userId}:sync.logs`);
+    }
 
     return {
       status: mapBullMqStateToSyncStatus(state),
@@ -334,19 +361,24 @@ export const syncRouter = router({
 
   /** Per-provider record counts broken down by table */
   providerStats: cachedProtectedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
-    const rows = await ctx.db.execute<{
-      provider_id: string;
-      activities: string;
-      daily_metrics: string;
-      sleep_sessions: string;
-      body_measurements: string;
-      food_entries: string;
-      health_events: string;
-      metric_stream: string;
-      nutrition_daily: string;
-      lab_results: string;
-      journal_entries: string;
-    }>(sql`
+    const providerStatsRowSchema = z.object({
+      provider_id: z.string(),
+      activities: z.string(),
+      daily_metrics: z.string(),
+      sleep_sessions: z.string(),
+      body_measurements: z.string(),
+      food_entries: z.string(),
+      health_events: z.string(),
+      metric_stream: z.string(),
+      nutrition_daily: z.string(),
+      lab_panels: z.string(),
+      lab_results: z.string(),
+      journal_entries: z.string(),
+    });
+    const rows = await executeWithSchema(
+      ctx.db,
+      providerStatsRowSchema,
+      sql`
       SELECT
         p.id AS provider_id,
         COALESCE(a.cnt, 0)::text AS activities,
@@ -357,6 +389,7 @@ export const syncRouter = router({
         COALESCE(he.cnt, 0)::text AS health_events,
         COALESCE(ms.cnt, 0)::text AS metric_stream,
         COALESCE(nd.cnt, 0)::text AS nutrition_daily,
+        COALESCE(lp.cnt, 0)::text AS lab_panels,
         COALESCE(lr.cnt, 0)::text AS lab_results,
         COALESCE(je.cnt, 0)::text AS journal_entries
       FROM fitness.provider p
@@ -368,10 +401,12 @@ export const syncRouter = router({
       LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.health_event WHERE user_id = ${ctx.userId} GROUP BY provider_id) he ON he.provider_id = p.id
       LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.metric_stream WHERE user_id = ${ctx.userId} GROUP BY provider_id) ms ON ms.provider_id = p.id
       LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.nutrition_daily WHERE user_id = ${ctx.userId} GROUP BY provider_id) nd ON nd.provider_id = p.id
+      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.lab_panel WHERE user_id = ${ctx.userId} GROUP BY provider_id) lp ON lp.provider_id = p.id
       LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.lab_result WHERE user_id = ${ctx.userId} GROUP BY provider_id) lr ON lr.provider_id = p.id
       LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.journal_entry WHERE user_id = ${ctx.userId} GROUP BY provider_id) je ON je.provider_id = p.id
       ORDER BY p.id
-    `);
+    `,
+    );
     return mapProviderStats(rows);
   }),
 });
@@ -387,6 +422,7 @@ function mapProviderStats(
     health_events: string;
     metric_stream: string;
     nutrition_daily: string;
+    lab_panels: string;
     lab_results: string;
     journal_entries: string;
   }>,
@@ -401,6 +437,7 @@ function mapProviderStats(
     healthEvents: Number(r.health_events),
     metricStream: Number(r.metric_stream),
     nutritionDaily: Number(r.nutrition_daily),
+    labPanels: Number(r.lab_panels),
     labResults: Number(r.lab_results),
     journalEntries: Number(r.journal_entries),
   }));

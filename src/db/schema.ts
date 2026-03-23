@@ -13,6 +13,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { buildNutrientColumns } from "./nutrient-columns.ts";
 
 // All tables live in the 'fitness' schema
 const fitness = pgSchema("fitness");
@@ -100,7 +101,9 @@ export const exercise = fitness.table(
     id: uuid("id").primaryKey().defaultRandom(),
     name: text("name").notNull(),
     muscleGroup: text("muscle_group"),
+    muscleGroups: text("muscle_groups").array(),
     equipment: text("equipment"),
+    exerciseType: text("exercise_type"),
     movement: text("movement"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -202,6 +205,11 @@ export const strengthWorkout = fitness.table(
     endedAt: timestamp("ended_at", { withTimezone: true }),
     name: text("name"),
     notes: text("notes"),
+    rawMskStrainScore: real("raw_msk_strain_score"),
+    scaledMskStrainScore: real("scaled_msk_strain_score"),
+    cardioStrainScore: real("cardio_strain_score"),
+    cardioStrainContributionPercent: real("cardio_strain_contribution_percent"),
+    mskStrainContributionPercent: real("msk_strain_contribution_percent"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -226,6 +234,8 @@ export const strengthSet = fitness.table(
     reps: integer("reps"),
     distanceMeters: real("distance_meters"),
     durationSeconds: integer("duration_seconds"),
+    strapLocation: text("strap_location"),
+    strapLocationLaterality: text("strap_location_laterality"),
     rpe: real("rpe"),
     notes: text("notes"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -255,6 +265,7 @@ export const activity = fitness.table(
     name: text("name"),
     notes: text("notes"),
     perceivedExertion: real("perceived_exertion"),
+    percentRecorded: real("percent_recorded"),
     sourceName: text("source_name"),
     raw: jsonb("raw"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -394,6 +405,7 @@ export const metricStream = fitness.table(
 export const dailyMetrics = fitness.table(
   "daily_metrics",
   {
+    id: uuid("id").primaryKey().defaultRandom(),
     date: date("date").notNull(),
     providerId: text("provider_id")
       .notNull()
@@ -414,15 +426,12 @@ export const dailyMetrics = fitness.table(
     cyclingDistanceKm: real("cycling_distance_km"),
     flightsClimbed: integer("flights_climbed"),
     exerciseMinutes: integer("exercise_minutes"),
-    mindfulMinutes: integer("mindful_minutes"),
     walkingSpeed: real("walking_speed"), // m/s
     walkingStepLength: real("walking_step_length"), // cm
     walkingDoubleSupportPct: real("walking_double_support_pct"), // percent
     walkingAsymmetryPct: real("walking_asymmetry_pct"), // percent
     walkingSteadiness: real("walking_steadiness"), // 0-1
     standHours: integer("stand_hours"),
-    environmentalAudioExposure: real("environmental_audio_exposure"), // dBASPL avg
-    headphoneAudioExposure: real("headphone_audio_exposure"), // dBASPL avg
     skinTempC: real("skin_temp_c"), // celsius (WHOOP)
     stressHighMinutes: integer("stress_high_minutes"), // minutes of high stress (Oura)
     recoveryHighMinutes: integer("recovery_high_minutes"), // minutes of high recovery (Oura)
@@ -431,7 +440,8 @@ export const dailyMetrics = fitness.table(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    primaryKey({ columns: [table.date, table.providerId] }),
+    // Business uniqueness: NULLS NOT DISTINCT index created in migration 0039
+    // (Drizzle doesn't support NULLS NOT DISTINCT natively)
     index("daily_metrics_user_provider_idx").on(table.userId, table.providerId),
   ],
 );
@@ -461,6 +471,10 @@ export const sleepSession = fitness.table(
     awakeMinutes: integer("awake_minutes"),
     efficiencyPct: real("efficiency_pct"),
     sleepType: text("sleep_type"),
+    sleepNeedBaselineMinutes: integer("sleep_need_baseline_minutes"),
+    sleepNeedFromDebtMinutes: integer("sleep_need_from_debt_minutes"),
+    sleepNeedFromStrainMinutes: integer("sleep_need_from_strain_minutes"),
+    sleepNeedFromNapMinutes: integer("sleep_need_from_nap_minutes"),
     sourceName: text("source_name"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -469,6 +483,33 @@ export const sleepSession = fitness.table(
     index("sleep_session_user_provider_idx").on(table.userId, table.providerId),
   ],
 );
+
+export const sleepStage = fitness.table(
+  "sleep_stage",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sessionId: uuid("session_id")
+      .notNull()
+      .references(() => sleepSession.id, { onDelete: "cascade" }),
+    stage: text("stage").notNull(), // "deep", "light", "rem", "awake"
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    endedAt: timestamp("ended_at", { withTimezone: true }).notNull(),
+    sourceName: text("source_name"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("sleep_stage_session_idx").on(table.sessionId, table.startedAt)],
+);
+
+// ============================================================
+// Nutrition data — shared nutrient values for food entries and supplements
+// ============================================================
+
+export const nutritionData = fitness.table("nutrition_data", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  ...buildNutrientColumns(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 // ============================================================
 // Supplements — per-user supplement stack definitions
@@ -488,47 +529,7 @@ export const supplement = fitness.table(
     description: text("description"),
     meal: mealEnum("meal"),
     sortOrder: integer("sort_order").notNull().default(0),
-    // Macronutrients
-    calories: integer("calories"),
-    proteinG: real("protein_g"),
-    carbsG: real("carbs_g"),
-    fatG: real("fat_g"),
-    // Fat breakdown
-    saturatedFatG: real("saturated_fat_g"),
-    polyunsaturatedFatG: real("polyunsaturated_fat_g"),
-    monounsaturatedFatG: real("monounsaturated_fat_g"),
-    transFatG: real("trans_fat_g"),
-    // Other macros
-    cholesterolMg: real("cholesterol_mg"),
-    sodiumMg: real("sodium_mg"),
-    potassiumMg: real("potassium_mg"),
-    fiberG: real("fiber_g"),
-    sugarG: real("sugar_g"),
-    // Micronutrients
-    vitaminAMcg: real("vitamin_a_mcg"),
-    vitaminCMg: real("vitamin_c_mg"),
-    vitaminDMcg: real("vitamin_d_mcg"),
-    vitaminEMg: real("vitamin_e_mg"),
-    vitaminKMcg: real("vitamin_k_mcg"),
-    vitaminB1Mg: real("vitamin_b1_mg"),
-    vitaminB2Mg: real("vitamin_b2_mg"),
-    vitaminB3Mg: real("vitamin_b3_mg"),
-    vitaminB5Mg: real("vitamin_b5_mg"),
-    vitaminB6Mg: real("vitamin_b6_mg"),
-    vitaminB7Mcg: real("vitamin_b7_mcg"),
-    vitaminB9Mcg: real("vitamin_b9_mcg"),
-    vitaminB12Mcg: real("vitamin_b12_mcg"),
-    calciumMg: real("calcium_mg"),
-    ironMg: real("iron_mg"),
-    magnesiumMg: real("magnesium_mg"),
-    zincMg: real("zinc_mg"),
-    seleniumMcg: real("selenium_mcg"),
-    copperMg: real("copper_mg"),
-    manganeseMg: real("manganese_mg"),
-    chromiumMcg: real("chromium_mcg"),
-    iodineMcg: real("iodine_mcg"),
-    omega3Mg: real("omega3_mg"),
-    omega6Mg: real("omega6_mg"),
+    nutritionDataId: uuid("nutrition_data_id").references(() => nutritionData.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -591,47 +592,7 @@ export const foodEntry = fitness.table(
     barcode: text("barcode"),
     servingUnit: text("serving_unit"),
     servingWeightGrams: real("serving_weight_grams"),
-    // Macronutrients
-    calories: integer("calories"),
-    proteinG: real("protein_g"),
-    carbsG: real("carbs_g"),
-    fatG: real("fat_g"),
-    // Fat breakdown
-    saturatedFatG: real("saturated_fat_g"),
-    polyunsaturatedFatG: real("polyunsaturated_fat_g"),
-    monounsaturatedFatG: real("monounsaturated_fat_g"),
-    transFatG: real("trans_fat_g"),
-    // Other macros
-    cholesterolMg: real("cholesterol_mg"),
-    sodiumMg: real("sodium_mg"),
-    potassiumMg: real("potassium_mg"),
-    fiberG: real("fiber_g"),
-    sugarG: real("sugar_g"),
-    // Micronutrients
-    vitaminAMcg: real("vitamin_a_mcg"),
-    vitaminCMg: real("vitamin_c_mg"),
-    vitaminDMcg: real("vitamin_d_mcg"),
-    vitaminEMg: real("vitamin_e_mg"),
-    vitaminKMcg: real("vitamin_k_mcg"),
-    vitaminB1Mg: real("vitamin_b1_mg"),
-    vitaminB2Mg: real("vitamin_b2_mg"),
-    vitaminB3Mg: real("vitamin_b3_mg"),
-    vitaminB5Mg: real("vitamin_b5_mg"),
-    vitaminB6Mg: real("vitamin_b6_mg"),
-    vitaminB7Mcg: real("vitamin_b7_mcg"),
-    vitaminB9Mcg: real("vitamin_b9_mcg"),
-    vitaminB12Mcg: real("vitamin_b12_mcg"),
-    calciumMg: real("calcium_mg"),
-    ironMg: real("iron_mg"),
-    magnesiumMg: real("magnesium_mg"),
-    zincMg: real("zinc_mg"),
-    seleniumMcg: real("selenium_mcg"),
-    copperMg: real("copper_mg"),
-    manganeseMg: real("manganese_mg"),
-    chromiumMcg: real("chromium_mcg"),
-    iodineMcg: real("iodine_mcg"),
-    omega3Mg: real("omega3_mg"),
-    omega6Mg: real("omega6_mg"),
+    nutritionDataId: uuid("nutrition_data_id").references(() => nutritionData.id),
     // Raw API response
     raw: jsonb("raw"),
     confirmed: boolean("confirmed").notNull().default(true),
@@ -646,8 +607,36 @@ export const foodEntry = fitness.table(
 );
 
 // ============================================================
-// Lab results (clinical records from Apple Health / FHIR)
+// Lab panels & results (clinical records from Apple Health / FHIR)
 // ============================================================
+
+export const labPanel = fitness.table(
+  "lab_panel",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id),
+    userId: uuid("user_id")
+      .notNull()
+      .default(DEFAULT_USER_ID)
+      .references(() => userProfile.id),
+    externalId: text("external_id"),
+    name: text("name").notNull(),
+    loincCode: text("loinc_code"),
+    status: labResultStatusEnum("status"),
+    sourceName: text("source_name"),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+    issuedAt: timestamp("issued_at", { withTimezone: true }),
+    raw: jsonb("raw"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("lab_panel_provider_external_idx").on(table.providerId, table.externalId),
+    index("lab_panel_recorded_idx").on(table.recordedAt),
+    index("lab_panel_user_provider_idx").on(table.userId, table.providerId),
+  ],
+);
 
 export const labResult = fitness.table(
   "lab_result",
@@ -660,6 +649,7 @@ export const labResult = fitness.table(
       .notNull()
       .default(DEFAULT_USER_ID)
       .references(() => userProfile.id),
+    panelId: uuid("panel_id").references(() => labPanel.id),
     externalId: text("external_id"),
     testName: text("test_name").notNull(),
     loincCode: text("loinc_code"),
@@ -669,7 +659,6 @@ export const labResult = fitness.table(
     referenceRangeLow: real("reference_range_low"),
     referenceRangeHigh: real("reference_range_high"),
     referenceRangeText: text("reference_range_text"),
-    panelName: text("panel_name"),
     status: labResultStatusEnum("status"),
     sourceName: text("source_name"),
     recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
@@ -682,6 +671,7 @@ export const labResult = fitness.table(
     index("lab_result_recorded_idx").on(table.recordedAt),
     index("lab_result_loinc_idx").on(table.loincCode),
     index("lab_result_test_name_idx").on(table.testName),
+    index("lab_result_panel_idx").on(table.panelId),
     index("lab_result_user_provider_idx").on(table.userId, table.providerId),
   ],
 );
@@ -831,8 +821,18 @@ export const syncLog = fitness.table(
 );
 
 // ============================================================
-// Journal entries — daily behavioral self-reports (WHOOP journal, etc.)
+// Journal — normalized questions + daily self-report answers
 // ============================================================
+
+export const journalQuestion = fitness.table("journal_question", {
+  slug: text("slug").primaryKey(),
+  displayName: text("display_name").notNull(),
+  category: text("category").notNull(),
+  dataType: text("data_type").notNull(),
+  unit: text("unit"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 export const journalEntry = fitness.table(
   "journal_entry",
@@ -846,20 +846,24 @@ export const journalEntry = fitness.table(
       .notNull()
       .default(DEFAULT_USER_ID)
       .references(() => userProfile.id),
-    question: text("question").notNull(),
+    questionSlug: text("question_slug")
+      .notNull()
+      .references(() => journalQuestion.slug),
     answerText: text("answer_text"),
     answerNumeric: real("answer_numeric"),
     impactScore: real("impact_score"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex("journal_entry_provider_date_question_idx").on(
-      table.providerId,
+    uniqueIndex("journal_entry_user_date_question_provider_idx").on(
+      table.userId,
       table.date,
-      table.question,
+      table.questionSlug,
+      table.providerId,
     ),
     index("journal_entry_date_idx").on(table.date),
     index("journal_entry_user_provider_idx").on(table.userId, table.providerId),
+    index("journal_entry_question_slug_idx").on(table.questionSlug),
   ],
 );
 

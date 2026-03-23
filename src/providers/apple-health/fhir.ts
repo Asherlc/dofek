@@ -72,6 +72,19 @@ function isLabResultStatus(s: string): s is LabResultStatus {
   return VALID_LAB_STATUSES.includes(s);
 }
 
+export interface ParsedLabPanel {
+  externalId: string;
+  name: string;
+  loincCode?: string;
+  status?: LabResultStatus;
+  sourceName: string;
+  recordedAt: Date;
+  issuedAt?: Date;
+  raw: Record<string, unknown>;
+  /** FHIR IDs of Observations referenced by this panel */
+  observationIds: string[];
+}
+
 export interface ParsedLabResult {
   externalId: string;
   testName: string;
@@ -147,7 +160,33 @@ export function parseFhirObservation(obs: FhirObservation, sourceName: string): 
 }
 
 /**
+ * Parse a FHIR DiagnosticReport into a ParsedLabPanel.
+ */
+export function parseFhirDiagnosticReport(
+  report: FhirDiagnosticReport,
+  sourceName: string,
+): ParsedLabPanel {
+  const dateStr = report.effectiveDateTime ?? report.issued;
+  if (!dateStr) {
+    throw new Error(`FHIR DiagnosticReport ${report.id} missing both effectiveDateTime and issued`);
+  }
+
+  return {
+    externalId: report.id,
+    name: getDisplayName(report.code),
+    loincCode: extractLoincCode(report.code),
+    status: report.status && isLabResultStatus(report.status) ? report.status : undefined,
+    sourceName,
+    recordedAt: new Date(dateStr),
+    issuedAt: report.issued ? new Date(report.issued) : undefined,
+    raw: { ...report },
+    observationIds: (report.result ?? []).map((ref) => ref.reference.replace(/^Observation\//, "")),
+  };
+}
+
+/**
  * Build a map from Observation FHIR ID -> panel name, using DiagnosticReports.
+ * @deprecated Use parseFhirDiagnosticReport instead — panels are now stored as first-class rows.
  */
 export function buildPanelMap(reports: FhirDiagnosticReport[]): Map<string, string> {
   const map = new Map<string, string>();

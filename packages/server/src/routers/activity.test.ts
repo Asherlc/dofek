@@ -17,6 +17,20 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
+vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../lib/typed-sql.ts")>();
+  return {
+    ...original,
+    executeWithSchema: vi.fn(
+      async (
+        db: { execute: (q: unknown) => Promise<unknown[]> },
+        _schema: unknown,
+        query: unknown,
+      ) => db.execute(query),
+    ),
+  };
+});
+
 import { activityRouter } from "./activity.ts";
 
 const createCaller = createTestCallerFactory(activityRouter);
@@ -31,12 +45,70 @@ function makeCaller(rows: Record<string, unknown>[] = []) {
 describe("activityRouter", () => {
   describe("list", () => {
     it("returns paginated items with totalCount", async () => {
-      const rows = [{ id: "a1", started_at: "2024-01-01", total_count: 5 }];
+      const rows = [
+        {
+          id: "a1",
+          started_at: "2024-01-01 10:00:00+00",
+          ended_at: "2024-01-01 11:00:00+00",
+          activity_type: "cycling",
+          name: "Morning Ride",
+          provider_id: "wahoo",
+          source_providers: ["wahoo"],
+          avg_hr: 150,
+          max_hr: 180,
+          avg_power: 200,
+          total_distance: 30000,
+          calories: 450,
+          distance_meters: 30000,
+          total_count: 5,
+        },
+      ];
       const caller = makeCaller(rows);
       const result = await caller.list({ days: 30, limit: 20, offset: 0 });
-      expect(result).toEqual({
-        items: [{ id: "a1", started_at: "2024-01-01" }],
-        totalCount: 5,
+      expect(result.totalCount).toBe(5);
+      expect(result.items).toHaveLength(1);
+      const item = result.items[0];
+      expect(item).not.toHaveProperty("total_count");
+      expect(item).toMatchObject({
+        id: "a1",
+        started_at: "2024-01-01 10:00:00+00",
+        activity_type: "cycling",
+        avg_hr: 150,
+        max_hr: 180,
+        avg_power: 200,
+        distance_meters: 30000,
+        calories: 450,
+      });
+    });
+
+    it("returns stats from activity_summary join", async () => {
+      const rows = [
+        {
+          id: "a1",
+          started_at: "2024-01-15 14:30:00+00",
+          ended_at: "2024-01-15 15:15:00+00",
+          activity_type: "running",
+          name: "Easy Run",
+          provider_id: "apple_health",
+          source_providers: ["apple_health"],
+          avg_hr: 142,
+          max_hr: 165,
+          avg_power: null,
+          total_distance: 5200,
+          calories: 380,
+          distance_meters: 5200,
+          total_count: 1,
+        },
+      ];
+      const caller = makeCaller(rows);
+      const result = await caller.list({ days: 30, limit: 20, offset: 0 });
+      const item = result.items[0];
+      expect(item).toMatchObject({
+        avg_hr: 142,
+        max_hr: 165,
+        avg_power: null,
+        distance_meters: 5200,
+        calories: 380,
       });
     });
 
@@ -202,7 +274,7 @@ describe("activityRouter", () => {
         maxPct: 60,
         seconds: 600,
       });
-      expect(result[4]).toMatchObject({ zone: 5, label: "Anaerobic" });
+      expect(result[4]).toMatchObject({ zone: 5, label: "VO2max" });
     });
 
     it("defaults missing zones to 0 seconds", async () => {
@@ -358,7 +430,7 @@ describe("mapHrZones", () => {
       { zone: 2, label: "Aerobic", minPct: 60, maxPct: 70, seconds: 600 },
       { zone: 3, label: "Tempo", minPct: 70, maxPct: 80, seconds: 900 },
       { zone: 4, label: "Threshold", minPct: 80, maxPct: 90, seconds: 300 },
-      { zone: 5, label: "Anaerobic", minPct: 90, maxPct: 100, seconds: 60 },
+      { zone: 5, label: "VO2max", minPct: 90, maxPct: 100, seconds: 60 },
     ]);
   });
 

@@ -92,13 +92,13 @@ async function refreshCookie(
 // ============================================================
 
 export class TrainingPeaksConnectClient {
-  private accessToken: string;
-  private fetchFn: typeof globalThis.fetch;
-  private lastRequestTime = 0;
+  #accessToken: string;
+  #fetchFn: typeof globalThis.fetch;
+  #lastRequestTime = 0;
 
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.accessToken = accessToken;
-    this.fetchFn = fetchFn;
+    this.#accessToken = accessToken;
+    this.#fetchFn = fetchFn;
   }
 
   // ---- Static auth methods ----
@@ -108,17 +108,17 @@ export class TrainingPeaksConnectClient {
 
   // ---- Private helpers ----
 
-  private async throttle(): Promise<void> {
+  async #throttle(): Promise<void> {
     const now = Date.now();
-    const elapsed = now - this.lastRequestTime;
+    const elapsed = now - this.#lastRequestTime;
     if (elapsed < REQUEST_DELAY_MS) {
       await new Promise((resolve) => setTimeout(resolve, REQUEST_DELAY_MS - elapsed));
     }
-    this.lastRequestTime = Date.now();
+    this.#lastRequestTime = Date.now();
   }
 
-  private async get<T>(base: string, path: string, params?: Record<string, string>): Promise<T> {
-    await this.throttle();
+  async #get<T>(base: string, path: string, params?: Record<string, string>): Promise<T> {
+    await this.#throttle();
 
     const url = new URL(`${base}${path}`);
     if (params) {
@@ -127,9 +127,9 @@ export class TrainingPeaksConnectClient {
       }
     }
 
-    const response = await this.fetchFn(url.toString(), {
+    const response = await this.#fetchFn(url.toString(), {
       headers: {
-        Authorization: `Bearer ${this.accessToken}`,
+        Authorization: `Bearer ${this.#accessToken}`,
         Accept: "application/json",
         Origin: TP_APP_ORIGIN,
       },
@@ -144,13 +144,13 @@ export class TrainingPeaksConnectClient {
     return result;
   }
 
-  private async post<T>(base: string, path: string, body: unknown): Promise<T> {
-    await this.throttle();
+  async #post<T>(base: string, path: string, body: unknown): Promise<T> {
+    await this.#throttle();
 
-    const response = await this.fetchFn(`${base}${path}`, {
+    const response = await this.#fetchFn(`${base}${path}`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${this.accessToken}`,
+        Authorization: `Bearer ${this.#accessToken}`,
         "Content-Type": "application/json",
         Accept: "application/json",
         Origin: TP_APP_ORIGIN,
@@ -170,7 +170,7 @@ export class TrainingPeaksConnectClient {
   // ---- User profile ----
 
   async getUser(): Promise<TrainingPeaksUser> {
-    return this.get<TrainingPeaksUser>(TP_API_BASE, "/users/v3/user");
+    return this.#get<TrainingPeaksUser>(TP_API_BASE, "/users/v3/user");
   }
 
   // ---- Workouts ----
@@ -184,7 +184,7 @@ export class TrainingPeaksConnectClient {
     startDate: string,
     endDate: string,
   ): Promise<TrainingPeaksWorkout[]> {
-    return this.get<TrainingPeaksWorkout[]>(
+    return this.#get<TrainingPeaksWorkout[]>(
       TP_API_BASE,
       `/fitness/v6/athletes/${athleteId}/workouts/${startDate}/${endDate}`,
     );
@@ -192,7 +192,7 @@ export class TrainingPeaksConnectClient {
 
   /** Get a single workout by ID. */
   async getWorkout(athleteId: number, workoutId: number): Promise<TrainingPeaksWorkout> {
-    return this.get<TrainingPeaksWorkout>(
+    return this.#get<TrainingPeaksWorkout>(
       TP_API_BASE,
       `/fitness/v6/athletes/${athleteId}/workouts/${workoutId}`,
     );
@@ -223,7 +223,7 @@ export class TrainingPeaksConnectClient {
       workoutTypes: options.workoutTypes ?? [],
     };
 
-    return this.post<TrainingPeaksPmcEntry[]>(
+    return this.#post<TrainingPeaksPmcEntry[]>(
       TP_API_BASE,
       `/fitness/v1/athletes/${athleteId}/reporting/performancedata/${startDate}/${endDate}`,
       body,
@@ -248,7 +248,7 @@ export class TrainingPeaksConnectClient {
     if (startDate) params.startDate = startDate;
     if (endDate) params.endDate = endDate;
 
-    return this.get<TrainingPeaksPersonalRecord[]>(
+    return this.#get<TrainingPeaksPersonalRecord[]>(
       TP_API_BASE,
       `/personalrecord/v2/athletes/${athleteId}/${sport}`,
       params,
@@ -262,7 +262,7 @@ export class TrainingPeaksConnectClient {
     startDate: string,
     endDate: string,
   ): Promise<TrainingPeaksCalendarNote[]> {
-    return this.get<TrainingPeaksCalendarNote[]>(
+    return this.#get<TrainingPeaksCalendarNote[]>(
       TP_API_BASE,
       `/fitness/v1/athletes/${athleteId}/calendarNote/${startDate}/${endDate}`,
     );
@@ -278,7 +278,7 @@ export class TrainingPeaksConnectClient {
     workoutId: number,
     athleteId: number,
   ): Promise<TrainingPeaksWorkoutAnalysis> {
-    return this.post<TrainingPeaksWorkoutAnalysis>(
+    return this.#post<TrainingPeaksWorkoutAnalysis>(
       TP_ANALYSIS_BASE,
       "/workout-analysis/v1/analyze",
       { workoutId, viewingPersonId: athleteId },
