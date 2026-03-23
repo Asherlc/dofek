@@ -891,6 +891,26 @@ export const lifeEvents = fitness.table(
 );
 
 // ============================================================
+// Shared health reports
+// ============================================================
+
+export const sharedReport = fitness.table(
+  "shared_report",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfile.id),
+    shareToken: text("share_token").notNull().unique(),
+    reportType: text("report_type").notNull(), // 'weekly', 'monthly', 'healthspan'
+    reportData: jsonb("report_data").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("shared_report_user_idx").on(table.userId)],
+);
+
+// ============================================================
 // Menstrual cycle tracking
 // ============================================================
 

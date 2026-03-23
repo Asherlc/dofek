@@ -14,6 +14,7 @@ import { efficiencyRouter } from "./routers/efficiency.ts";
 import { foodRouter } from "./routers/food.ts";
 import { garminAuthRouter } from "./routers/garmin-auth.ts";
 import { healthKitSyncRouter } from "./routers/health-kit-sync.ts";
+import { healthReportRouter } from "./routers/health-report.ts";
 import { healthspanRouter } from "./routers/healthspan.ts";
 import { hikingRouter } from "./routers/hiking.ts";
 import { insightsRouter } from "./routers/insights.ts";
@@ -85,6 +86,7 @@ export const appRouter = router({
   running: runningRouter,
   settings: settingsRouter,
   stress: stressRouter,
+  healthReport: healthReportRouter,
   healthspan: healthspanRouter,
   menstrualCycle: menstrualCycleRouter,
   monthlyReport: monthlyReportRouter,
