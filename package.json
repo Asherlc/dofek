@@ -70,15 +70,15 @@
     "server": "./scripts/with-env.sh tsx src/server.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "test:ios": "vitest run --project ios",
-    "test:ios:watch": "vitest --watch --project ios",
+    "test:mobile": "vitest run --project mobile",
+    "test:mobile:watch": "vitest --watch --project mobile",
     "e2e:web:up": "docker compose -f docker-compose.e2e.yml up -d --build --wait",
     "e2e:web:down": "docker compose -f docker-compose.e2e.yml down -v",
     "e2e:web:run": "pnpm exec cypress run",
     "e2e:web:open": "pnpm exec cypress open",
     "e2e:web": "pnpm e2e:web:up && pnpm e2e:web:run; pnpm e2e:web:down",
-    "ios": "pnpm --filter dofek-ios start",
-    "ios:device": "pnpm --filter dofek-ios ios:device"
+    "mobile": "pnpm --filter dofek-mobile start",
+    "mobile:device": "pnpm --filter dofek-mobile ios:device"
   },
   "dependencies": {
     "@bull-board/api": "^6.20.5",

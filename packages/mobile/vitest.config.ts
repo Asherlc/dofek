@@ -13,7 +13,7 @@ export default defineProject({
     fileParallelism: true,
     pool: "forks",
     retry: 2,
-    name: "ios",
+    name: "mobile",
     include: ["**/*.test.{ts,tsx}"],
     exclude: ["**/*.integration.test.ts", "**/node_modules/**"],
     setupFiles: ["test-setup.ts"],

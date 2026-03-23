@@ -180,10 +180,10 @@ jobs:
           files: coverage/lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
 
-  test-ios:
-    name: iOS Tests
-    needs: check-ios-changes
-    if: needs.check-ios-changes.outputs.changed == 'true'
+  test-mobile:
+    name: Mobile Tests
+    needs: check-mobile-changes
+    if: needs.check-mobile-changes.outputs.changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -193,12 +193,12 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec vitest run --project ios
+      - run: pnpm exec vitest run --project mobile
 
-  build-ios:
-    name: iOS Metro Bundle
-    needs: check-ios-changes
-    if: needs.check-ios-changes.outputs.changed == 'true'
+  build-mobile:
+    name: Mobile Metro Bundle
+    needs: check-mobile-changes
+    if: needs.check-mobile-changes.outputs.changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -209,21 +209,21 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Verify iOS Metro bundle
-        run: cd packages/ios && pnpm expo export --platform ios --clear
+        run: cd packages/mobile && pnpm expo export --platform ios --clear
 
   lint-ios-podspecs:
     name: iOS Podspec Lint
-    needs: check-ios-changes
-    if: needs.check-ios-changes.outputs.changed == 'true'
+    needs: check-mobile-changes
+    if: needs.check-mobile-changes.outputs.changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Validate podspec deployment targets
         run: |
-          APP_TARGET=$(python3 -c "import json; print(json.load(open('packages/ios/app.json'))['expo']['ios']['deploymentTarget'])")
+          APP_TARGET=$(python3 -c "import json; print(json.load(open('packages/mobile/app.json'))['expo']['ios']['deploymentTarget'])")
           echo "App deployment target: iOS $APP_TARGET"
           FAILED=0
-          for spec in packages/ios/modules/*/ios/*.podspec; do
+          for spec in packages/mobile/modules/*/ios/*.podspec; do
             SPEC_TARGET=$(grep -oP "s\.platform\s*=\s*:ios,\s*'\K[^']+" "$spec")
             echo "  $(basename "$spec"): iOS $SPEC_TARGET"
             if [ "$(printf '%s\n' "$APP_TARGET" "$SPEC_TARGET" | sort -V | head -1)" != "$APP_TARGET" ]; then
@@ -233,8 +233,8 @@ jobs:
           done
           exit $FAILED
 
-  check-ios-changes:
-    name: Check iOS Changes
+  check-mobile-changes:
+    name: Check Mobile Changes
     runs-on: ubuntu-latest
     outputs:
       changed: ${{ steps.check.outputs.changed }}
@@ -247,7 +247,7 @@ jobs:
           if [ "${{ github.event_name }}" = "push" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
-            CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- packages/ios/)
+            CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- packages/mobile/)
             if [ -n "$CHANGED" ]; then
               echo "changed=true" >> "$GITHUB_OUTPUT"
               echo "iOS files changed:"
@@ -260,8 +260,8 @@ jobs:
 
   build-ios-native:
     name: iOS Native Build
-    needs: check-ios-changes
-    if: needs.check-ios-changes.outputs.changed == 'true'
+    needs: check-mobile-changes
+    if: needs.check-mobile-changes.outputs.changed == 'true'
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -274,15 +274,15 @@ jobs:
       - name: Cache CocoaPods
         uses: actions/cache@v4
         with:
-          path: packages/ios/ios/Pods
-          key: pods-${{ hashFiles('packages/ios/ios/Podfile.lock') }}
+          path: packages/mobile/ios/Pods
+          key: pods-${{ hashFiles('packages/mobile/ios/Podfile.lock') }}
           restore-keys: pods-
       - name: Install CocoaPods dependencies
-        run: cd packages/ios/ios && pod install
+        run: cd packages/mobile/ios && pod install
       - name: Build for simulator
         run: |
           xcodebuild build \
-            -workspace packages/ios/ios/Dofek.xcworkspace \
+            -workspace packages/mobile/ios/Dofek.xcworkspace \
             -scheme Dofek \
             -sdk iphonesimulator \
             -configuration Debug \
@@ -293,16 +293,16 @@ jobs:
 
   ios-gate:
     name: iOS Native Gate
-    needs: [check-ios-changes, test-ios, build-ios, lint-ios-podspecs, build-ios-native, test-swift]
+    needs: [check-mobile-changes, test-mobile, build-mobile, lint-ios-podspecs, build-ios-native, test-swift]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Check iOS job results
         run: |
           for result in \
-            "${{ needs.check-ios-changes.result }}" \
-            "${{ needs.test-ios.result }}" \
-            "${{ needs.build-ios.result }}" \
+            "${{ needs.check-mobile-changes.result }}" \
+            "${{ needs.test-mobile.result }}" \
+            "${{ needs.build-mobile.result }}" \
             "${{ needs.lint-ios-podspecs.result }}" \
             "${{ needs.build-ios-native.result }}" \
             "${{ needs.test-swift.result }}"; do
@@ -388,7 +388,7 @@ jobs:
             | { grep -v 'drizzle/' || true; } \
             | { grep -v 'src/db/schema\.ts$' || true; } \
             | { grep -v 'scripts/' || true; } \
-            | { grep -v 'packages/ios/' || true; })
+            | { grep -v 'packages/mobile/' || true; })
           FILES=""
           for f in $CANDIDATES; do
             LINES=$(git diff --numstat origin/main...HEAD -- "$f" | awk '{print $1+$2}')
@@ -413,40 +413,40 @@ jobs:
 
   test-swift:
     name: Swift Tests
-    needs: check-ios-changes
-    if: needs.check-ios-changes.outputs.changed == 'true'
+    needs: check-mobile-changes
+    if: needs.check-mobile-changes.outputs.changed == 'true'
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
         with:
-          path: packages/ios/modules/health-kit/.build
-          key: swift-build-v1-${{ hashFiles('packages/ios/modules/health-kit/Package.swift') }}
+          path: packages/mobile/modules/health-kit/.build
+          key: swift-build-v1-${{ hashFiles('packages/mobile/modules/health-kit/Package.swift') }}
           restore-keys: swift-build-v1-
       - name: Run Swift tests with coverage
         run: |
-          cd packages/ios/modules/health-kit
+          cd packages/mobile/modules/health-kit
           bash scripts/check-coverage.sh
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: swift-coverage
-          path: packages/ios/modules/health-kit/.build/debug/codecov/
+          path: packages/mobile/modules/health-kit/.build/debug/codecov/
           retention-days: 7
 
   mutation-swift:
     name: Swift Mutation Testing
-    needs: check-ios-changes
+    needs: check-mobile-changes
     runs-on: macos-14
-    if: github.event_name == 'pull_request' && needs.check-ios-changes.outputs.changed == 'true'
+    if: github.event_name == 'pull_request' && needs.check-mobile-changes.outputs.changed == 'true'
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - uses: actions/cache@v4
         with:
-          path: packages/ios/modules/health-kit/.build
-          key: swift-build-v1-${{ hashFiles('packages/ios/modules/health-kit/Package.swift') }}
+          path: packages/mobile/modules/health-kit/.build
+          key: swift-build-v1-${{ hashFiles('packages/mobile/modules/health-kit/Package.swift') }}
           restore-keys: swift-build-v1-
       - name: Install Muter
         run: brew install muter-mutation-testing/formulae/muter
@@ -459,14 +459,14 @@ jobs:
             | { grep -v 'Tests/' || true; } \
             | { grep -v 'HealthKitModule.swift' || true; } \
             | { grep -v 'Package.swift' || true; } \
-            | sed 's|^packages/ios/modules/health-kit/||' \
+            | sed 's|^packages/mobile/modules/health-kit/||' \
             | tr '\n' ',' \
             | sed 's/,$//')
           echo "files=$CHANGED" >> "$GITHUB_OUTPUT"
           echo "Mutating changed Swift files: $CHANGED"
       - name: Run Muter
         if: steps.changed.outputs.files != ''
-        working-directory: packages/ios/modules/health-kit
+        working-directory: packages/mobile/modules/health-kit
         timeout-minutes: 30
         run: |
           muter --files-to-mutate "${{ steps.changed.outputs.files }}" || {
@@ -483,12 +483,12 @@ jobs:
         if: failure()
         with:
           name: muter-report
-          path: packages/ios/modules/health-kit/muter_logs/
+          path: packages/mobile/modules/health-kit/muter_logs/
           retention-days: 7
 
   ios-release:
     name: iOS TestFlight
-    needs: [lint, typecheck, knip, coverage, test-ios, build-ios]
+    needs: [lint, typecheck, knip, coverage, test-mobile, build-mobile]
     if: github.ref == 'refs/heads/main'
     runs-on: macos-15
     timeout-minutes: 60
@@ -508,11 +508,11 @@ jobs:
       - name: Cache CocoaPods
         uses: actions/cache@v4
         with:
-          path: packages/ios/ios/Pods
-          key: pods-${{ hashFiles('packages/ios/ios/Podfile.lock') }}
+          path: packages/mobile/ios/Pods
+          key: pods-${{ hashFiles('packages/mobile/ios/Podfile.lock') }}
 
       - name: Install CocoaPods
-        run: cd packages/ios/ios && pod install
+        run: cd packages/mobile/ios && pod install
 
       - name: Setup code signing
         env:
@@ -539,12 +539,12 @@ jobs:
 
       - name: Set build number
         run: |
-          cd packages/ios/ios
+          cd packages/mobile/ios
           agvtool new-version -all ${{ github.run_number }}
 
       - name: Build archive
         run: |
-          cd packages/ios/ios
+          cd packages/mobile/ios
           xcodebuild archive \
             -workspace Dofek.xcworkspace \
             -scheme Dofek \
@@ -556,13 +556,14 @@ jobs:
             -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
             -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
             CODE_SIGN_STYLE=Automatic \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
             DEVELOPMENT_TEAM=68LEL35DQ9
 
       - name: Export & upload to TestFlight
         run: |
           xcodebuild -exportArchive \
             -archivePath $RUNNER_TEMP/Dofek.xcarchive \
-            -exportOptionsPlist packages/ios/ios/ExportOptions.plist \
+            -exportOptionsPlist packages/mobile/ios/ExportOptions.plist \
             -exportPath $RUNNER_TEMP/export \
             -allowProvisioningUpdates \
             -authenticationKeyPath ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8 \
@@ -575,7 +576,7 @@ jobs:
 
   ota-deploy:
     name: OTA Deploy
-    needs: [lint, typecheck, knip, coverage, build-ios]
+    needs: [lint, typecheck, knip, coverage, build-mobile]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
@@ -588,7 +589,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Export iOS bundle
-        run: cd packages/ios && pnpm expo export --platform ios --clear
+        run: cd packages/mobile && pnpm expo export --platform ios --clear
 
       - name: Generate metadata and stage release
         run: |
@@ -598,18 +599,18 @@ jobs:
 
           # Generate metadata.json
           node --experimental-transform-types scripts/generate-ota-metadata.ts \
-            --dist packages/ios/dist \
+            --dist packages/mobile/dist \
             --runtime-version 1.0 \
             --output "$STAGING_DIR/metadata.json"
 
           # Copy bundle files
-          find packages/ios/dist -name '*.hbc' -o -name '*.js' | while read -r f; do
+          find packages/mobile/dist -name '*.hbc' -o -name '*.js' | while read -r f; do
             cp "$f" "$STAGING_DIR/bundles/"
           done
 
           # Copy asset files
-          if [ -d packages/ios/dist/assets ]; then
-            cp packages/ios/dist/assets/* "$STAGING_DIR/assets/" 2>/dev/null || true
+          if [ -d packages/mobile/dist/assets ]; then
+            cp packages/mobile/dist/assets/* "$STAGING_DIR/assets/" 2>/dev/null || true
           fi
 
           echo "RELEASE_DIR=$RELEASE_DIR" >> "$GITHUB_ENV"
