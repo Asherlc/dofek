@@ -135,7 +135,9 @@ export function StressChart({ data, loading }: StressChartProps) {
             const weekDate = new Date(latestWeek.weekStart);
             const now = new Date();
             const startOfThisWeek = new Date(now);
-            startOfThisWeek.setDate(now.getDate() - now.getDay());
+            const dayOfWeek = now.getDay();
+            const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+            startOfThisWeek.setDate(now.getDate() - mondayOffset);
             startOfThisWeek.setHours(0, 0, 0, 0);
             if (weekDate < startOfThisWeek) return null;
             return (

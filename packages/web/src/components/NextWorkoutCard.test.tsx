@@ -109,6 +109,13 @@ describe("NextWorkoutCard", () => {
     expect(screen.getByText(/Chest, Triceps/)).toBeDefined();
   });
 
+  it("renders empty state when generatedAt is not today", () => {
+    const staleDate = new Date();
+    staleDate.setDate(staleDate.getDate() - 2);
+    render(<NextWorkoutCard data={makeRecommendation({ generatedAt: staleDate.toISOString() })} />);
+    expect(screen.getByText(/Not enough data for a workout recommendation/)).toBeDefined();
+  });
+
   it("opens detail modal on button click", () => {
     const { container } = render(<NextWorkoutCard data={makeRecommendation()} />);
     fireEvent.click(screen.getByText("View Detailed Plan"));

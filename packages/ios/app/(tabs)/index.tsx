@@ -586,7 +586,7 @@ export default function OverviewScreen() {
           )}
 
           {/* Next Workout */}
-          {nextWorkout != null && (
+          {nextWorkout != null && isToday(new Date(nextWorkout.generatedAt)) && (
             <View style={styles.card}>
               <View style={styles.nextWorkoutHeader}>
                 <View style={styles.nextWorkoutTitleWrap}>
