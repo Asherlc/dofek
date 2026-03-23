@@ -54,5 +54,5 @@
     "break": 60
   },
   "reporters": ["clear-text", "html", "progress"],
-  "concurrency": 8
+  "concurrency": 4
 }
