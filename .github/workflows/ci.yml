@@ -549,7 +549,10 @@ jobs:
             -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
             -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
             CODE_SIGN_STYLE=Automatic \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
             DEVELOPMENT_TEAM=68LEL35DQ9
+          # CODE_SIGN_IDENTITY is required: CI keychain only has a distribution cert,
+          # so Xcode must be told to use it. Do not remove — see PRs #471, #473, #475.
 
       - name: Export & upload to TestFlight
         run: |
