@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Alert,
   ScrollView,
@@ -82,11 +82,380 @@ function ChipPicker<T extends string>({
 export default function TrackingScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>Life Events</Text>
+      <Text style={styles.title}>Journal</Text>
+      <JournalSection />
+      <Text style={[styles.title, { marginTop: 32 }]}>Life Events</Text>
       <LifeEventsSection />
     </ScrollView>
   );
 }
+
+// ---- Journal Section ----
+
+const journalEntrySchema = z.object({
+  id: z.string(),
+  date: z.string(),
+  provider_id: z.string(),
+  question_slug: z.string(),
+  display_name: z.string(),
+  category: z.string(),
+  data_type: z.string(),
+  unit: z.string().nullable(),
+  answer_text: z.string().nullable(),
+  answer_numeric: z.coerce.number().nullable(),
+  impact_score: z.coerce.number().nullable(),
+});
+type JournalEntry = z.infer<typeof journalEntrySchema>;
+
+const journalQuestionSchema = z.object({
+  slug: z.string(),
+  display_name: z.string(),
+  category: z.string(),
+  data_type: z.string(),
+  unit: z.string().nullable(),
+  sort_order: z.coerce.number(),
+});
+
+const CATEGORY_LABELS: Record<string, string> = {
+  substance: "Substances",
+  activity: "Activities",
+  wellness: "Wellness",
+  nutrition: "Nutrition",
+  custom: "Custom",
+};
+
+const CATEGORY_ORDER = ["wellness", "activity", "substance", "nutrition", "custom"];
+
+function JournalSection() {
+  const [showForm, setShowForm] = useState(false);
+  const [days, setDays] = useState(30);
+
+  const utils = trpc.useUtils();
+  const entriesQuery = trpc.journal.entries.useQuery({ days });
+  const deleteMutation = trpc.journal.delete.useMutation({
+    onSuccess: () => utils.journal.entries.invalidate(),
+    onError: (error) => Alert.alert("Error", error.message),
+  });
+
+  const entries = useMemo(() => {
+    if (!entriesQuery.data) return [];
+    return z.array(journalEntrySchema).parse(entriesQuery.data);
+  }, [entriesQuery.data]);
+
+  // Group by date
+  const grouped = useMemo(() => {
+    const map = new Map<string, JournalEntry[]>();
+    for (const entry of entries) {
+      const existing = map.get(entry.date) ?? [];
+      existing.push(entry);
+      map.set(entry.date, existing);
+    }
+    return [...map.entries()].sort(([a], [b]) => b.localeCompare(a));
+  }, [entries]);
+
+  function handleDelete(id: string) {
+    Alert.alert("Delete Entry", "Are you sure you want to delete this journal entry?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: () => deleteMutation.mutate({ id }) },
+    ]);
+  }
+
+  return (
+    <View>
+      <View style={styles.sectionHeader}>
+        <View style={styles.chipRow}>
+          {[7, 30, 90].map((d) => (
+            <TouchableOpacity
+              key={d}
+              style={[styles.chip, days === d && styles.chipSelected]}
+              onPress={() => setDays(d)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.chipText, days === d && styles.chipTextSelected]}>{d}d</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <TouchableOpacity
+          style={styles.addButton}
+          onPress={() => setShowForm(!showForm)}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.addButtonText}>{showForm ? "Cancel" : "+ Add Entry"}</Text>
+        </TouchableOpacity>
+      </View>
+
+      {showForm && (
+        <AddJournalEntryForm
+          onSuccess={() => {
+            setShowForm(false);
+            utils.journal.entries.invalidate();
+          }}
+        />
+      )}
+
+      {entriesQuery.isLoading && <Text style={styles.loadingText}>Loading...</Text>}
+
+      {!entriesQuery.isLoading && entries.length === 0 && (
+        <Text style={styles.emptyText}>No journal entries yet.</Text>
+      )}
+
+      {grouped.map(([date, dayEntries]) => (
+        <JournalDayGroup key={date} date={date} entries={dayEntries} onDelete={handleDelete} />
+      ))}
+    </View>
+  );
+}
+
+function JournalDayGroup({
+  date,
+  entries,
+  onDelete,
+}: { date: string; entries: JournalEntry[]; onDelete: (id: string) => void }) {
+  const dateDisplay = new Date(`${date}T12:00:00`).toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+
+  const byCategory = useMemo(() => {
+    const map = new Map<string, JournalEntry[]>();
+    for (const entry of entries) {
+      const existing = map.get(entry.category) ?? [];
+      existing.push(entry);
+      map.set(entry.category, existing);
+    }
+    return CATEGORY_ORDER.filter((c) => map.has(c)).map((c) => ({
+      category: c,
+      entries: map.get(c) ?? [],
+    }));
+  }, [entries]);
+
+  return (
+    <View style={{ marginBottom: 12 }}>
+      <Text style={styles.cardSub}>{dateDisplay}</Text>
+      <View style={styles.card}>
+        {byCategory.map(({ category, entries: catEntries }) => (
+          <View key={category} style={{ marginBottom: 8 }}>
+            <Text style={{ fontSize: 11, fontWeight: "600", color: colors.textTertiary, marginBottom: 4 }}>
+              {CATEGORY_LABELS[category] ?? category}
+            </Text>
+            {catEntries.map((entry) => (
+              <View key={entry.id} style={styles.cardRow}>
+                <View style={styles.cardContent}>
+                  <Text style={styles.cardLabel}>{entry.display_name}</Text>
+                  <JournalAnswerDisplay entry={entry} />
+                </View>
+                {entry.impact_score !== null && (
+                  <Text
+                    style={{
+                      fontSize: 11,
+                      color: entry.impact_score >= 0 ? colors.accent : colors.danger,
+                      marginRight: 8,
+                    }}
+                  >
+                    {entry.impact_score > 0 ? "+" : ""}
+                    {entry.impact_score.toFixed(1)}
+                  </Text>
+                )}
+                {entry.provider_id === "dofek" && (
+                  <TouchableOpacity
+                    style={styles.deleteButton}
+                    onPress={() => onDelete(entry.id)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.deleteButtonText}>Delete</Text>
+                  </TouchableOpacity>
+                )}
+                {entry.provider_id !== "dofek" && (
+                  <Text style={{ fontSize: 11, color: colors.textTertiary }}>{entry.provider_id}</Text>
+                )}
+              </View>
+            ))}
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function JournalAnswerDisplay({ entry }: { entry: JournalEntry }) {
+  if (entry.data_type === "boolean") {
+    const isYes = entry.answer_numeric !== null && entry.answer_numeric > 0;
+    return (
+      <Text
+        style={{
+          fontSize: 12,
+          fontWeight: "600",
+          color: isYes ? colors.accent : colors.textTertiary,
+        }}
+      >
+        {isYes ? "Yes" : "No"}
+      </Text>
+    );
+  }
+
+  if (entry.data_type === "numeric" && entry.answer_numeric !== null) {
+    return (
+      <Text style={{ fontSize: 13, color: colors.textSecondary }}>
+        {entry.answer_numeric}
+        {entry.unit ? ` ${entry.unit}` : ""}
+      </Text>
+    );
+  }
+
+  if (entry.answer_text) {
+    return (
+      <Text style={{ fontSize: 13, color: colors.textSecondary, fontStyle: "italic" }}>
+        {entry.answer_text}
+      </Text>
+    );
+  }
+
+  return null;
+}
+
+function AddJournalEntryForm({ onSuccess }: { onSuccess: () => void }) {
+  const questionsQuery = trpc.journal.questions.useQuery();
+  const createMutation = trpc.journal.create.useMutation({
+    onSuccess,
+    onError: (error) => Alert.alert("Error", error.message),
+  });
+
+  const questions = useMemo(() => {
+    if (!questionsQuery.data) return [];
+    return z.array(journalQuestionSchema).parse(questionsQuery.data);
+  }, [questionsQuery.data]);
+
+  const [selectedSlug, setSelectedSlug] = useState("");
+  const [date, setDate] = useState(todayString());
+  const [answerNumeric, setAnswerNumeric] = useState("");
+  const [answerText, setAnswerText] = useState("");
+  const [booleanValue, setBooleanValue] = useState(false);
+
+  const selectedQuestion = useMemo(
+    () => questions.find((q) => q.slug === selectedSlug),
+    [questions, selectedSlug],
+  );
+
+  function handleSubmit() {
+    if (!selectedSlug) {
+      Alert.alert("Missing field", "Select a question.");
+      return;
+    }
+    if (!date.trim()) {
+      Alert.alert("Missing field", "Date is required.");
+      return;
+    }
+
+    let numericValue: number | null = null;
+    let textValue: string | null = null;
+
+    if (selectedQuestion?.data_type === "boolean") {
+      numericValue = booleanValue ? 1 : 0;
+    } else if (selectedQuestion?.data_type === "numeric") {
+      numericValue = answerNumeric ? Number(answerNumeric) : null;
+    } else {
+      textValue = answerText || null;
+    }
+
+    createMutation.mutate({
+      date: date.trim(),
+      questionSlug: selectedSlug,
+      answerNumeric: numericValue,
+      answerText: textValue,
+    });
+  }
+
+  return (
+    <View style={styles.formCard}>
+      <Text style={styles.formLabel}>Date (YYYY-MM-DD)</Text>
+      <TextInput
+        style={styles.input}
+        value={date}
+        onChangeText={setDate}
+        placeholder="2026-03-22"
+        placeholderTextColor={colors.textTertiary}
+        keyboardType="numbers-and-punctuation"
+      />
+
+      <Text style={styles.formLabel}>Question</Text>
+      <View style={styles.chipRow}>
+        {questions.map((q) => (
+          <TouchableOpacity
+            key={q.slug}
+            style={[styles.chip, selectedSlug === q.slug && styles.chipSelected]}
+            onPress={() => {
+              setSelectedSlug(selectedSlug === q.slug ? "" : q.slug);
+              setAnswerNumeric("");
+              setAnswerText("");
+              setBooleanValue(false);
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.chipText, selectedSlug === q.slug && styles.chipTextSelected]}>
+              {q.display_name}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {selectedQuestion && (
+        <>
+          <Text style={styles.formLabel}>Answer</Text>
+
+          {selectedQuestion.data_type === "boolean" && (
+            <View style={styles.toggleRow}>
+              <Text style={{ fontSize: 14, color: colors.text }}>
+                {booleanValue ? "Yes" : "No"}
+              </Text>
+              <Switch
+                value={booleanValue}
+                onValueChange={setBooleanValue}
+                trackColor={{ false: colors.surfaceSecondary, true: colors.accent }}
+                thumbColor={colors.text}
+              />
+            </View>
+          )}
+
+          {selectedQuestion.data_type === "numeric" && (
+            <TextInput
+              style={styles.input}
+              value={answerNumeric}
+              onChangeText={setAnswerNumeric}
+              placeholder={selectedQuestion.unit ? `Value (${selectedQuestion.unit})` : "Value"}
+              placeholderTextColor={colors.textTertiary}
+              keyboardType="decimal-pad"
+            />
+          )}
+
+          {selectedQuestion.data_type === "text" && (
+            <TextInput
+              style={styles.input}
+              value={answerText}
+              onChangeText={setAnswerText}
+              placeholder="Your answer..."
+              placeholderTextColor={colors.textTertiary}
+              multiline
+            />
+          )}
+        </>
+      )}
+
+      <TouchableOpacity
+        style={[styles.saveButton, createMutation.isPending && styles.saveButtonDisabled]}
+        onPress={handleSubmit}
+        activeOpacity={0.8}
+        disabled={createMutation.isPending}
+      >
+        <Text style={styles.saveButtonText}>
+          {createMutation.isPending ? "Saving..." : "Save Entry"}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// ---- Life Events Section ----
 
 function LifeEventsSection() {
   const [showForm, setShowForm] = useState(false);

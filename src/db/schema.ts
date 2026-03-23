@@ -821,8 +821,18 @@ export const syncLog = fitness.table(
 );
 
 // ============================================================
-// Journal entries — daily behavioral self-reports (WHOOP journal, etc.)
+// Journal — normalized questions + daily self-report answers
 // ============================================================
+
+export const journalQuestion = fitness.table("journal_question", {
+  slug: text("slug").primaryKey(),
+  displayName: text("display_name").notNull(),
+  category: text("category").notNull(),
+  dataType: text("data_type").notNull(),
+  unit: text("unit"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 export const journalEntry = fitness.table(
   "journal_entry",
@@ -836,20 +846,24 @@ export const journalEntry = fitness.table(
       .notNull()
       .default(DEFAULT_USER_ID)
       .references(() => userProfile.id),
-    question: text("question").notNull(),
+    questionSlug: text("question_slug")
+      .notNull()
+      .references(() => journalQuestion.slug),
     answerText: text("answer_text"),
     answerNumeric: real("answer_numeric"),
     impactScore: real("impact_score"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex("journal_entry_provider_date_question_idx").on(
-      table.providerId,
+    uniqueIndex("journal_entry_user_date_question_provider_idx").on(
+      table.userId,
       table.date,
-      table.question,
+      table.questionSlug,
+      table.providerId,
     ),
     index("journal_entry_date_idx").on(table.date),
     index("journal_entry_user_provider_idx").on(table.userId, table.providerId),
+    index("journal_entry_question_slug_idx").on(table.questionSlug),
   ],
 );
 

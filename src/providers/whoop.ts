@@ -20,6 +20,7 @@ import {
   exercise,
   exerciseAlias,
   journalEntry,
+  journalQuestion,
   metricStream,
   sleepSession,
   strengthSet,
@@ -1064,18 +1065,38 @@ export class WhoopProvider implements SyncProvider {
           const entries = parseJournalResponse(raw);
           let count = 0;
           for (const entry of entries) {
+            // Ensure the question exists in the reference table
+            await db
+              .insert(journalQuestion)
+              .values({
+                slug: entry.question,
+                displayName: entry.question
+                  .replace(/_/g, " ")
+                  .replace(/\b\w/g, (c) => c.toUpperCase()),
+                category: "custom",
+                dataType: "numeric",
+              })
+              .onConflictDoNothing();
+
+            const userId = options?.userId ?? "00000000-0000-0000-0000-000000000001";
             await db
               .insert(journalEntry)
               .values({
                 date: entry.date.toISOString().split("T")[0] ?? "",
                 providerId: this.id,
-                question: entry.question,
+                userId,
+                questionSlug: entry.question,
                 answerText: entry.answerText,
                 answerNumeric: entry.answerNumeric,
                 impactScore: entry.impactScore,
               })
               .onConflictDoUpdate({
-                target: [journalEntry.providerId, journalEntry.date, journalEntry.question],
+                target: [
+                  journalEntry.userId,
+                  journalEntry.date,
+                  journalEntry.questionSlug,
+                  journalEntry.providerId,
+                ],
                 set: {
                   answerText: entry.answerText,
                   answerNumeric: entry.answerNumeric,
