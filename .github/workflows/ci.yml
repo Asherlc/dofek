@@ -509,17 +509,20 @@ jobs:
 
       - name: Setup code signing
         env:
-          CERTIFICATE_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERT_BASE64 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERT_PASSWORD }}
+          DEV_CERT_BASE64: ${{ secrets.IOS_DEVELOPMENT_CERT_BASE64 }}
+          DEV_CERT_PASSWORD: ${{ secrets.IOS_DEVELOPMENT_CERT_PASSWORD }}
+          DIST_CERT_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERT_BASE64 }}
+          DIST_CERT_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERT_PASSWORD }}
         run: |
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
           KEYCHAIN_PASSWORD=$(uuidgen)
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          CERT_PATH=$RUNNER_TEMP/certificate.p12
-          echo -n "$CERTIFICATE_BASE64" | base64 --decode > "$CERT_PATH"
-          security import "$CERT_PATH" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          echo -n "$DEV_CERT_BASE64" | base64 --decode > $RUNNER_TEMP/dev-cert.p12
+          security import $RUNNER_TEMP/dev-cert.p12 -P "$DEV_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          echo -n "$DIST_CERT_BASE64" | base64 --decode > $RUNNER_TEMP/dist-cert.p12
+          security import $RUNNER_TEMP/dist-cert.p12 -P "$DIST_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security list-keychain -d user -s "$KEYCHAIN_PATH"
 
@@ -548,11 +551,7 @@ jobs:
             -authenticationKeyPath ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8 \
             -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
             -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
-            CODE_SIGN_STYLE=Automatic \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
             DEVELOPMENT_TEAM=68LEL35DQ9
-          # CODE_SIGN_IDENTITY is required: CI keychain only has a distribution cert,
-          # so Xcode must be told to use it. Do not remove — see PRs #471, #473, #475.
 
       - name: Export & upload to TestFlight
         run: |
