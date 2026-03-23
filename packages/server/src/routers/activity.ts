@@ -252,7 +252,7 @@ export const activityRouter = router({
                 FROM fitness.v_daily_metrics dm
                 WHERE dm.user_id = up.id
                   AND dm.date <= (
-                    SELECT a.started_at::date FROM fitness.v_activity a
+                    SELECT (a.started_at AT TIME ZONE ${ctx.timezone})::date FROM fitness.v_activity a
                     WHERE a.id = ${input.id} AND a.user_id = ${ctx.userId}
                   )
                   AND dm.resting_hr IS NOT NULL

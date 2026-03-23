@@ -25,14 +25,14 @@ function makeDb(rows: Record<string, unknown>[]) {
 describe("checkAnomalies", () => {
   it("returns empty when no data", async () => {
     const db = makeDb([]);
-    const result = await checkAnomalies(db, "user-1");
+    const result = await checkAnomalies(db, "user-1", "UTC");
     expect(result.anomalies).toEqual([]);
     expect(result.checkedMetrics).toEqual([]);
   });
 
   it("returns empty when row has null date", async () => {
     const db = makeDb([{ date: null }]);
-    const result = await checkAnomalies(db, "user-1");
+    const result = await checkAnomalies(db, "user-1", "UTC");
     expect(result.anomalies).toEqual([]);
   });
 
@@ -54,7 +54,7 @@ describe("checkAnomalies", () => {
         sleep_count: null,
       },
     ]);
-    const result = await checkAnomalies(db, "user-1");
+    const result = await checkAnomalies(db, "user-1", "UTC");
 
     expect(result.checkedMetrics).toContain("resting_hr");
     expect(result.anomalies).toHaveLength(1);
@@ -80,7 +80,7 @@ describe("checkAnomalies", () => {
         sleep_count: null,
       },
     ]);
-    const result = await checkAnomalies(db, "user-1");
+    const result = await checkAnomalies(db, "user-1", "UTC");
 
     expect(result.anomalies).toHaveLength(1);
     expect(result.anomalies[0]?.severity).toBe("warning");
@@ -104,7 +104,7 @@ describe("checkAnomalies", () => {
         sleep_count: null,
       },
     ]);
-    const result = await checkAnomalies(db, "user-1");
+    const result = await checkAnomalies(db, "user-1", "UTC");
     expect(result.checkedMetrics).not.toContain("resting_hr");
   });
 
@@ -126,7 +126,7 @@ describe("checkAnomalies", () => {
         sleep_count: null,
       },
     ]);
-    const result = await checkAnomalies(db, "user-1");
+    const result = await checkAnomalies(db, "user-1", "UTC");
 
     expect(result.checkedMetrics).toContain("hrv");
     expect(result.anomalies).toHaveLength(1);
@@ -152,7 +152,7 @@ describe("checkAnomalies", () => {
         sleep_count: 20,
       },
     ]);
-    const result = await checkAnomalies(db, "user-1");
+    const result = await checkAnomalies(db, "user-1", "UTC");
 
     expect(result.checkedMetrics).toContain("sleep_duration");
     expect(result.anomalies).toHaveLength(1);
@@ -178,7 +178,7 @@ describe("checkAnomalies", () => {
         sleep_count: 20,
       },
     ]);
-    const result = await checkAnomalies(db, "user-1");
+    const result = await checkAnomalies(db, "user-1", "UTC");
 
     expect(result.checkedMetrics).toHaveLength(3);
     expect(result.anomalies).toHaveLength(0);
@@ -202,7 +202,7 @@ describe("checkAnomalies", () => {
         sleep_count: null,
       },
     ]);
-    const result = await checkAnomalies(db, "user-1");
+    const result = await checkAnomalies(db, "user-1", "UTC");
     expect(result.checkedMetrics).not.toContain("resting_hr");
   });
 });

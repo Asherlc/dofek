@@ -864,11 +864,12 @@ async function aggregateSpO2ToDailyMetrics(
   db: Database,
   userId: string,
   bounds: { startAt: string; endAt: string },
+  timezone: string,
 ): Promise<void> {
   await db.execute(
     sql`INSERT INTO fitness.daily_metrics (date, provider_id, user_id, source_name, spo2_avg)
         SELECT
-          (recorded_at AT TIME ZONE 'UTC')::date AS date,
+          (recorded_at AT TIME ZONE ${timezone})::date AS date,
           provider_id,
           user_id,
           source_name,
@@ -879,7 +880,7 @@ async function aggregateSpO2ToDailyMetrics(
           AND spo2 IS NOT NULL
           AND recorded_at >= ${bounds.startAt}::timestamptz
           AND recorded_at <= ${bounds.endAt}::timestamptz
-        GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id, source_name
+        GROUP BY 1, provider_id, user_id, source_name
         ON CONFLICT (date, provider_id, source_name) DO UPDATE SET
           spo2_avg = EXCLUDED.spo2_avg`,
   );
@@ -894,11 +895,12 @@ async function aggregateSkinTempToDailyMetrics(
   db: Database,
   userId: string,
   bounds: { startAt: string; endAt: string },
+  timezone: string,
 ): Promise<void> {
   await db.execute(
     sql`INSERT INTO fitness.daily_metrics (date, provider_id, user_id, source_name, skin_temp_c)
         SELECT
-          (recorded_at AT TIME ZONE 'UTC')::date AS date,
+          (recorded_at AT TIME ZONE ${timezone})::date AS date,
           provider_id,
           user_id,
           source_name,
@@ -909,7 +911,7 @@ async function aggregateSkinTempToDailyMetrics(
           AND skin_temperature IS NOT NULL
           AND recorded_at >= ${bounds.startAt}::timestamptz
           AND recorded_at <= ${bounds.endAt}::timestamptz
-        GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id, source_name
+        GROUP BY 1, provider_id, user_id, source_name
         ON CONFLICT (date, provider_id, source_name) DO UPDATE SET
           skin_temp_c = EXCLUDED.skin_temp_c`,
   );
@@ -979,7 +981,7 @@ export const healthKitSyncRouter = router({
               (s) => s.type === "HKQuantityTypeIdentifierOxygenSaturation",
             );
             if (hasSpo2) {
-              await aggregateSpO2ToDailyMetrics(ctx.db, ctx.userId, bounds);
+              await aggregateSpO2ToDailyMetrics(ctx.db, ctx.userId, bounds, ctx.timezone);
               aggregatedDailyMetrics = true;
             }
             const skinTempSamples = metricStreamSamples.filter(
@@ -989,7 +991,7 @@ export const healthKitSyncRouter = router({
               logger.info(
                 `[apple_health] Received ${skinTempSamples.length} skin temperature samples, aggregating to daily_metrics`,
               );
-              await aggregateSkinTempToDailyMetrics(ctx.db, ctx.userId, bounds);
+              await aggregateSkinTempToDailyMetrics(ctx.db, ctx.userId, bounds, ctx.timezone);
               aggregatedDailyMetrics = true;
             }
           }

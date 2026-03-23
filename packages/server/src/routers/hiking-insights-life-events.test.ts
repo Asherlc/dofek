@@ -3,7 +3,7 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const t = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  const t = initTRPC.context<{ db: unknown; userId: string | null; timezone: string }>().create();
   return {
     router: t.router,
     protectedProcedure: t.procedure,
@@ -46,6 +46,7 @@ describe("hikingRouter", () => {
     return createCaller({
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
+      timezone: "UTC",
     });
   }
 
@@ -210,6 +211,7 @@ describe("insightsRouter", () => {
     const caller = createCaller({
       db: { execute },
       userId: "user-1",
+      timezone: "UTC",
     });
     const result = await caller.compute({ days: 90 });
 
@@ -226,6 +228,7 @@ describe("lifeEventsRouter", () => {
     return createCaller({
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
+      timezone: "UTC",
     });
   }
 
@@ -317,6 +320,7 @@ describe("lifeEventsRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.analyze({
         id: "00000000-0000-0000-0000-000000000001",

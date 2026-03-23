@@ -54,7 +54,7 @@ export const sleepNeedRouter = router({
         sleepNeedRowSchema,
         sql`WITH sleep_nights AS (
               SELECT
-                started_at::date AS date,
+                (started_at AT TIME ZONE ${ctx.timezone})::date AS date,
                 COALESCE(duration_minutes, EXTRACT(EPOCH FROM (ended_at - started_at)) / 60)::int AS duration_minutes
               FROM fitness.v_sleep
               WHERE user_id = ${ctx.userId}
@@ -91,7 +91,7 @@ export const sleepNeedRouter = router({
               ), 0) AS load
               FROM fitness.activity_summary asum
               WHERE asum.user_id = ${ctx.userId}
-                AND asum.started_at::date = CURRENT_DATE - 1
+                AND (asum.started_at AT TIME ZONE ${ctx.timezone})::date = CURRENT_DATE - 1
                 AND asum.ended_at IS NOT NULL
                 AND asum.avg_hr IS NOT NULL
             )

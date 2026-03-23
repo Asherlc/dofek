@@ -3,7 +3,7 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const t = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  const t = initTRPC.context<{ db: unknown; userId: string | null; timezone: string }>().create();
   return {
     router: t.router,
     protectedProcedure: t.procedure,
@@ -370,6 +370,7 @@ describe("healthspanRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.score({ weeks: 12 });
 
@@ -398,6 +399,7 @@ describe("healthspanRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.score({ weeks: 12 });
 
@@ -458,6 +460,7 @@ describe("healthspanRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.score({ weeks: 12 });
 
@@ -488,6 +491,7 @@ describe("healthspanRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.score({ weeks: 12 });
 
@@ -516,6 +520,7 @@ describe("healthspanRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.score({ weeks: 12 });
 
@@ -543,6 +548,7 @@ describe("healthspanRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.score({ weeks: 12 });
 
@@ -583,6 +589,7 @@ describe("healthspanRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.score({ weeks: 12 });
       expect(result.trend).toBe("improving");
@@ -612,6 +619,7 @@ describe("healthspanRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.score({ weeks: 12 });
       expect(result.trend).toBe("declining");
@@ -641,6 +649,7 @@ describe("healthspanRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.score({ weeks: 12 });
       expect(result.trend).toBe("stable");
@@ -669,6 +678,7 @@ describe("healthspanRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.score({ weeks: 12 });
       expect(result.trend).toBeNull();
@@ -695,6 +705,7 @@ describe("healthspanRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.score({ weeks: 12 });
 
@@ -725,6 +736,7 @@ describe("healthspanRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.score({ weeks: 12 });
 

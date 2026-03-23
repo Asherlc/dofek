@@ -130,7 +130,9 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       createContext: async ({ req }): Promise<Context> => {
         const sessionId = getSessionIdFromRequest(req);
         const session = sessionId ? await validateSession(db, sessionId) : null;
-        return { db, userId: session?.userId ?? null };
+        const rawTimezone = req.headers["x-timezone"];
+        const timezone = typeof rawTimezone === "string" ? rawTimezone : "UTC";
+        return { db, userId: session?.userId ?? null, timezone };
       },
       allowMethodOverride: true,
     }),

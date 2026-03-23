@@ -3,7 +3,7 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const t = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  const t = initTRPC.context<{ db: unknown; userId: string | null; timezone: string }>().create();
   return {
     router: t.router,
     protectedProcedure: t.procedure,
@@ -56,6 +56,7 @@ describe("trendsRouter", () => {
     return createCaller({
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
+      timezone: "UTC",
     });
   }
 
@@ -145,6 +146,7 @@ describe("weeklyReportRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.report({ weeks: 12 });
 
@@ -180,6 +182,7 @@ describe("weeklyReportRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.report({ weeks: 12 });
 
@@ -209,6 +212,7 @@ describe("whoopAuthRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.signIn({ username: "test@example.com", password: "pass" });
 
@@ -227,6 +231,7 @@ describe("whoopAuthRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.signIn({ username: "test@example.com", password: "pass" });
 
@@ -240,6 +245,7 @@ describe("whoopAuthRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       await expect(
@@ -263,6 +269,7 @@ describe("whoopAuthRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       // Step 1: sign in to get challengeId
@@ -282,6 +289,7 @@ describe("whoopAuthRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.saveTokens({

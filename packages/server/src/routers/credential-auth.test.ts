@@ -33,7 +33,7 @@ vi.mock("../lib/cache.ts", () => ({
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const t = initTRPC.context<{ db: unknown; userId: string }>().create();
+  const t = initTRPC.context<{ db: unknown; userId: string; timezone: string }>().create();
   return {
     router: t.router,
     protectedProcedure: t.procedure,
@@ -93,7 +93,7 @@ describe("credentialAuthRouter", () => {
       mockInvalidateByPrefix.mockResolvedValue(undefined);
 
       const mockDb = { execute: vi.fn() };
-      const caller = createCaller({ db: mockDb, userId: "user-abc" });
+      const caller = createCaller({ db: mockDb, userId: "user-abc", timezone: "UTC" });
 
       const result = await caller.signIn({
         providerId: "eight-sleep",
@@ -118,7 +118,11 @@ describe("credentialAuthRouter", () => {
       mockGetAllProviders.mockReturnValue([]);
       mockEnsureProvidersRegistered.mockResolvedValue(undefined);
 
-      const caller = createCaller({ db: { execute: vi.fn() }, userId: "user-abc" });
+      const caller = createCaller({
+        db: { execute: vi.fn() },
+        userId: "user-abc",
+        timezone: "UTC",
+      });
 
       await expect(
         caller.signIn({ providerId: "nonexistent", username: "a", password: "b" }),
@@ -149,7 +153,11 @@ describe("credentialAuthRouter", () => {
       mockGetAllProviders.mockReturnValue([provider]);
       mockEnsureProvidersRegistered.mockResolvedValue(undefined);
 
-      const caller = createCaller({ db: { execute: vi.fn() }, userId: "user-abc" });
+      const caller = createCaller({
+        db: { execute: vi.fn() },
+        userId: "user-abc",
+        timezone: "UTC",
+      });
 
       await expect(
         caller.signIn({ providerId: "strava", username: "a", password: "b" }),
@@ -177,7 +185,11 @@ describe("credentialAuthRouter", () => {
       mockGetAllProviders.mockReturnValue([provider]);
       mockEnsureProvidersRegistered.mockResolvedValue(undefined);
 
-      const caller = createCaller({ db: { execute: vi.fn() }, userId: "user-abc" });
+      const caller = createCaller({
+        db: { execute: vi.fn() },
+        userId: "user-abc",
+        timezone: "UTC",
+      });
 
       await expect(
         caller.signIn({ providerId: "eight-sleep", username: "bad", password: "wrong" }),
@@ -189,7 +201,11 @@ describe("credentialAuthRouter", () => {
       mockGetAllProviders.mockReturnValue([provider]);
       mockEnsureProvidersRegistered.mockResolvedValue(undefined);
 
-      const caller = createCaller({ db: { execute: vi.fn() }, userId: "user-abc" });
+      const caller = createCaller({
+        db: { execute: vi.fn() },
+        userId: "user-abc",
+        timezone: "UTC",
+      });
 
       await expect(
         caller.signIn({ providerId: "no-auth", username: "a", password: "b" }),

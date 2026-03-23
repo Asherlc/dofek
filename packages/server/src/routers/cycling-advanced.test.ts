@@ -3,7 +3,7 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const t = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  const t = initTRPC.context<{ db: unknown; userId: string | null; timezone: string }>().create();
   return {
     router: t.router,
     protectedProcedure: t.procedure,
@@ -47,6 +47,7 @@ function makeCaller(rows: Record<string, unknown>[] = []) {
   return createCaller({
     db: { execute: vi.fn().mockResolvedValue(rows) },
     userId: "user-1",
+    timezone: "UTC",
   });
 }
 
@@ -287,7 +288,7 @@ describe("cyclingAdvancedRouter", () => {
 
     it("executes a non-empty SQL query", async () => {
       const execute = vi.fn().mockResolvedValue([{ day: "2026-03-11", trimp: 75 }]);
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
 
       await caller.rampRate({ days: 90 });
 
@@ -342,7 +343,7 @@ describe("cyclingAdvancedRouter", () => {
       const execute = vi
         .fn()
         .mockResolvedValue([{ week: "2024-01-08", monotony: 1.2, strain: 200, weekly_load: 150 }]);
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
 
       await caller.trainingMonotony({ days: 90 });
 
@@ -369,6 +370,7 @@ describe("cyclingAdvancedRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.activityVariability({ days: 90 });
 
@@ -388,7 +390,7 @@ describe("cyclingAdvancedRouter", () => {
         { date: "2024-01-15", name: "Ride", np: 280, avg_power: 250, total_count: 1 },
       ]);
 
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
       const result = await caller.activityVariability({ days: 90 });
 
       // VI = 280/250 = 1.12
@@ -404,7 +406,7 @@ describe("cyclingAdvancedRouter", () => {
         { date: "2024-01-15", name: "Zwift Race", np: 190, avg_power: 180, total_count: 1 },
       ]);
 
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
       const result = await caller.activityVariability({ days: 90 });
 
       expect(result.rows[0]?.activityName).toBe("Zwift Race");
@@ -420,7 +422,7 @@ describe("cyclingAdvancedRouter", () => {
         { date: "2024-01-16", name: "Ride 2", np: 240, avg_power: 210, total_count: 5 },
       ]);
 
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
       const result = await caller.activityVariability({ days: 90, limit: 2, offset: 0 });
 
       expect(result.rows).toHaveLength(2);
@@ -432,7 +434,7 @@ describe("cyclingAdvancedRouter", () => {
       execute.mockResolvedValueOnce([{ ftp: 250 }]);
       execute.mockResolvedValueOnce([]);
 
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
       const result = await caller.activityVariability({ days: 90, limit: 20, offset: 200 });
 
       expect(result).toEqual({ rows: [], totalCount: 0 });
@@ -445,7 +447,7 @@ describe("cyclingAdvancedRouter", () => {
         { date: "2024-01-15", name: "Ride", np: 230, avg_power: 200, total_count: 1 },
       ]);
 
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
       const result = await caller.activityVariability({ days: 90, limit: 20, offset: 0 });
 
       expect(result).toEqual({ rows: [], totalCount: 0 });
@@ -516,7 +518,7 @@ describe("cyclingAdvancedRouter", () => {
         .mockResolvedValue([
           { date: "2024-01-15", name: "Climb", elevation_gain: 500, climbing_seconds: 3600 },
         ]);
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
 
       await caller.verticalAscentRate({ days: 90 });
 
@@ -558,7 +560,7 @@ describe("cyclingAdvancedRouter", () => {
           avg_pedal_smoothness: 22.1,
         },
       ]);
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
 
       await caller.pedalDynamics({ days: 90 });
 
