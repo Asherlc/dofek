@@ -35,6 +35,7 @@ const isAuthenticated = trpc.middleware(({ ctx, next }) => {
   return next({ ctx: authenticatedCtx });
 });
 
+export const publicProcedure = trpc.procedure;
 export const protectedProcedure = trpc.procedure.use(isAuthenticated);
 
 export const CacheTTL = {

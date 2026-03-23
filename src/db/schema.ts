@@ -1003,6 +1003,72 @@ export const lifeEvents = fitness.table(
 );
 
 // ============================================================
+// Breathwork sessions
+// ============================================================
+
+export const breathworkSession = fitness.table(
+  "breathwork_session",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfile.id),
+    techniqueId: text("technique_id").notNull(),
+    rounds: integer("rounds").notNull(),
+    durationSeconds: integer("duration_seconds").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("breathwork_session_user_idx").on(table.userId),
+    index("breathwork_session_started_at_idx").on(table.startedAt.desc()),
+  ],
+);
+
+// ============================================================
+// Shared health reports
+// ============================================================
+
+export const sharedReport = fitness.table(
+  "shared_report",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfile.id),
+    shareToken: text("share_token").notNull().unique(),
+    reportType: text("report_type").notNull(), // 'weekly', 'monthly', 'healthspan'
+    reportData: jsonb("report_data").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("shared_report_user_idx").on(table.userId)],
+);
+
+// ============================================================
+// Menstrual cycle tracking
+// ============================================================
+
+export const menstrualPeriod = fitness.table(
+  "menstrual_period",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfile.id),
+    startDate: date("start_date").notNull(),
+    endDate: date("end_date"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("menstrual_period_user_start_idx").on(table.userId, table.startDate),
+    index("menstrual_period_user_idx").on(table.userId),
+  ],
+);
+
+// ============================================================
 // DEXA scans (BodySpec, etc.)
 // ============================================================
 

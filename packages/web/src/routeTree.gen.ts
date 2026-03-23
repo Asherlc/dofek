@@ -18,11 +18,17 @@ import { Route as ProvidersRouteImport } from './routes/providers'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as PredictionsRouteImport } from './routes/predictions'
 import { Route as NutritionRouteImport } from './routes/nutrition'
+import { Route as MonthlyReportRouteImport } from './routes/monthly-report'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as InsightsRouteImport } from './routes/insights'
+import { Route as HealthReportRouteImport } from './routes/health-report'
 import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as CycleRouteImport } from './routes/cycle'
 import { Route as CorrelationRouteImport } from './routes/correlation'
+import { Route as CoachRouteImport } from './routes/coach'
+import { Route as BreathworkRouteImport } from './routes/breathwork'
 import { Route as BodyRouteImport } from './routes/body'
+import { Route as BehaviorImpactRouteImport } from './routes/behavior-impact'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TrainingIndexRouteImport } from './routes/training/index'
 import { Route as ProvidersIndexRouteImport } from './routes/providers/index'
@@ -83,6 +89,11 @@ const NutritionRoute = NutritionRouteImport.update({
   path: '/nutrition',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MonthlyReportRoute = MonthlyReportRouteImport.update({
+  id: '/monthly-report',
+  path: '/monthly-report',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -93,9 +104,19 @@ const InsightsRoute = InsightsRouteImport.update({
   path: '/insights',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HealthReportRoute = HealthReportRouteImport.update({
+  id: '/health-report',
+  path: '/health-report',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CycleRoute = CycleRouteImport.update({
+  id: '/cycle',
+  path: '/cycle',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CorrelationRoute = CorrelationRouteImport.update({
@@ -103,9 +124,24 @@ const CorrelationRoute = CorrelationRouteImport.update({
   path: '/correlation',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CoachRoute = CoachRouteImport.update({
+  id: '/coach',
+  path: '/coach',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BreathworkRoute = BreathworkRouteImport.update({
+  id: '/breathwork',
+  path: '/breathwork',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const BodyRoute = BodyRouteImport.update({
   id: '/body',
   path: '/body',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BehaviorImpactRoute = BehaviorImpactRouteImport.update({
+  id: '/behavior-impact',
+  path: '/behavior-impact',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -181,11 +217,17 @@ const ActivityIdRoute = ActivityIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/behavior-impact': typeof BehaviorImpactRoute
   '/body': typeof BodyRoute
+  '/breathwork': typeof BreathworkRoute
+  '/coach': typeof CoachRoute
   '/correlation': typeof CorrelationRoute
+  '/cycle': typeof CycleRoute
   '/dashboard': typeof DashboardRoute
+  '/health-report': typeof HealthReportRoute
   '/insights': typeof InsightsRoute
   '/login': typeof LoginRoute
+  '/monthly-report': typeof MonthlyReportRoute
   '/nutrition': typeof NutritionRouteWithChildren
   '/predictions': typeof PredictionsRoute
   '/privacy': typeof PrivacyRoute
@@ -211,11 +253,17 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/behavior-impact': typeof BehaviorImpactRoute
   '/body': typeof BodyRoute
+  '/breathwork': typeof BreathworkRoute
+  '/coach': typeof CoachRoute
   '/correlation': typeof CorrelationRoute
+  '/cycle': typeof CycleRoute
   '/dashboard': typeof DashboardRoute
+  '/health-report': typeof HealthReportRoute
   '/insights': typeof InsightsRoute
   '/login': typeof LoginRoute
+  '/monthly-report': typeof MonthlyReportRoute
   '/predictions': typeof PredictionsRoute
   '/privacy': typeof PrivacyRoute
   '/settings': typeof SettingsRoute
@@ -239,11 +287,17 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/behavior-impact': typeof BehaviorImpactRoute
   '/body': typeof BodyRoute
+  '/breathwork': typeof BreathworkRoute
+  '/coach': typeof CoachRoute
   '/correlation': typeof CorrelationRoute
+  '/cycle': typeof CycleRoute
   '/dashboard': typeof DashboardRoute
+  '/health-report': typeof HealthReportRoute
   '/insights': typeof InsightsRoute
   '/login': typeof LoginRoute
+  '/monthly-report': typeof MonthlyReportRoute
   '/nutrition': typeof NutritionRouteWithChildren
   '/predictions': typeof PredictionsRoute
   '/privacy': typeof PrivacyRoute
@@ -271,11 +325,17 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/behavior-impact'
     | '/body'
+    | '/breathwork'
+    | '/coach'
     | '/correlation'
+    | '/cycle'
     | '/dashboard'
+    | '/health-report'
     | '/insights'
     | '/login'
+    | '/monthly-report'
     | '/nutrition'
     | '/predictions'
     | '/privacy'
@@ -301,11 +361,17 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/behavior-impact'
     | '/body'
+    | '/breathwork'
+    | '/coach'
     | '/correlation'
+    | '/cycle'
     | '/dashboard'
+    | '/health-report'
     | '/insights'
     | '/login'
+    | '/monthly-report'
     | '/predictions'
     | '/privacy'
     | '/settings'
@@ -328,11 +394,17 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/behavior-impact'
     | '/body'
+    | '/breathwork'
+    | '/coach'
     | '/correlation'
+    | '/cycle'
     | '/dashboard'
+    | '/health-report'
     | '/insights'
     | '/login'
+    | '/monthly-report'
     | '/nutrition'
     | '/predictions'
     | '/privacy'
@@ -359,11 +431,17 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  BehaviorImpactRoute: typeof BehaviorImpactRoute
   BodyRoute: typeof BodyRoute
+  BreathworkRoute: typeof BreathworkRoute
+  CoachRoute: typeof CoachRoute
   CorrelationRoute: typeof CorrelationRoute
+  CycleRoute: typeof CycleRoute
   DashboardRoute: typeof DashboardRoute
+  HealthReportRoute: typeof HealthReportRoute
   InsightsRoute: typeof InsightsRoute
   LoginRoute: typeof LoginRoute
+  MonthlyReportRoute: typeof MonthlyReportRoute
   NutritionRoute: typeof NutritionRouteWithChildren
   PredictionsRoute: typeof PredictionsRoute
   PrivacyRoute: typeof PrivacyRoute
@@ -441,6 +519,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof NutritionRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/monthly-report': {
+      id: '/monthly-report'
+      path: '/monthly-report'
+      fullPath: '/monthly-report'
+      preLoaderRoute: typeof MonthlyReportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -455,11 +540,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InsightsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/health-report': {
+      id: '/health-report'
+      path: '/health-report'
+      fullPath: '/health-report'
+      preLoaderRoute: typeof HealthReportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dashboard': {
       id: '/dashboard'
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cycle': {
+      id: '/cycle'
+      path: '/cycle'
+      fullPath: '/cycle'
+      preLoaderRoute: typeof CycleRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/correlation': {
@@ -469,11 +568,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CorrelationRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/coach': {
+      id: '/coach'
+      path: '/coach'
+      fullPath: '/coach'
+      preLoaderRoute: typeof CoachRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/breathwork': {
+      id: '/breathwork'
+      path: '/breathwork'
+      fullPath: '/breathwork'
+      preLoaderRoute: typeof BreathworkRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/body': {
       id: '/body'
       path: '/body'
       fullPath: '/body'
       preLoaderRoute: typeof BodyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/behavior-impact': {
+      id: '/behavior-impact'
+      path: '/behavior-impact'
+      fullPath: '/behavior-impact'
+      preLoaderRoute: typeof BehaviorImpactRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -633,11 +753,17 @@ const TrainingRouteWithChildren = TrainingRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  BehaviorImpactRoute: BehaviorImpactRoute,
   BodyRoute: BodyRoute,
+  BreathworkRoute: BreathworkRoute,
+  CoachRoute: CoachRoute,
   CorrelationRoute: CorrelationRoute,
+  CycleRoute: CycleRoute,
   DashboardRoute: DashboardRoute,
+  HealthReportRoute: HealthReportRoute,
   InsightsRoute: InsightsRoute,
   LoginRoute: LoginRoute,
+  MonthlyReportRoute: MonthlyReportRoute,
   NutritionRoute: NutritionRouteWithChildren,
   PredictionsRoute: PredictionsRoute,
   PrivacyRoute: PrivacyRoute,

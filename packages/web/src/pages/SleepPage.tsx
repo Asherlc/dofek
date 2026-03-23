@@ -10,6 +10,7 @@ import { PageLayout } from "../components/PageLayout.tsx";
 import { PageSection } from "../components/PageSection.tsx";
 import { SleepChart } from "../components/SleepChart.tsx";
 import { SleepNeedCard } from "../components/SleepNeedCard.tsx";
+import { SleepPerformanceCard } from "../components/SleepPerformanceCard.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { trpc } from "../lib/trpc.ts";
 import { assertRows } from "../lib/utils.ts";
@@ -34,6 +35,7 @@ export function SleepPage() {
   const sleepData = trpc.sleep.list.useQuery({ days });
   const latestStages = trpc.sleep.latestStages.useQuery();
   const sleepNeed = trpc.sleepNeed.calculate.useQuery();
+  const sleepPerformance = trpc.sleepNeed.performance.useQuery();
   const insightsQuery = trpc.insights.compute.useQuery({ days: Math.max(days, 90) });
 
   const sleepInsights = useMemo(() => {
@@ -49,8 +51,11 @@ export function SleepPage() {
       title="Sleep"
       subtitle="Sleep stages, debt, and patterns over time"
     >
-      {/* Sleep Coach */}
-      <SleepNeedCard data={sleepNeed.data} loading={sleepNeed.isLoading} />
+      {/* Sleep Performance Score + Bedtime Recommendation */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <SleepPerformanceCard data={sleepPerformance.data} loading={sleepPerformance.isLoading} />
+        <SleepNeedCard data={sleepNeed.data} loading={sleepNeed.isLoading} />
+      </div>
 
       {/* Sleep Stage Chart */}
       <PageSection title="Sleep Stages">

@@ -6,6 +6,7 @@ import { AnomalyAlertBanner } from "../components/AnomalyAlertBanner.tsx";
 import { BodyRecompositionChart } from "../components/BodyRecompositionChart.tsx";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { CorrelationCard, type Insight } from "../components/CorrelationCard.tsx";
+import { DailyOverview } from "../components/DailyOverview.tsx";
 import { HealthStatusBar } from "../components/HealthStatusBar.tsx";
 import { HealthspanScoreCard } from "../components/HealthspanScoreCard.tsx";
 import { HrvBaselineChart } from "../components/HrvBaselineChart.tsx";
@@ -211,6 +212,9 @@ export function Dashboard() {
   const nextWorkout = trpc.training.nextWorkout.useQuery();
   const workloadRatio = trpc.recovery.workloadRatio.useQuery({ days });
   const healthspan = trpc.healthspan.score.useQuery({ weeks: Math.max(Math.ceil(days / 7), 4) });
+  const readinessData = trpc.recovery.readinessScore.useQuery({ days });
+  const strainTarget = trpc.recovery.strainTarget.useQuery({ days });
+  const sleepPerformance = trpc.sleepNeed.performance.useQuery();
   const anomalyCheck = trpc.anomalyDetection.check.useQuery({});
   const smoothedWeight = trpc.bodyAnalytics.smoothedWeight.useQuery({ days: Math.max(days, 90) });
   const bodyRecomp = trpc.bodyAnalytics.recomposition.useQuery({ days: Math.max(days, 180) });
@@ -350,7 +354,13 @@ export function Dashboard() {
     strain: {
       title: "Strain",
       subtitle: "Current training strain on a 0-21 scale with acute/chronic workload balance",
-      content: <StrainCard data={workloadRatio.data} loading={workloadRatio.isLoading} />,
+      content: (
+        <StrainCard
+          data={workloadRatio.data}
+          strainTarget={strainTarget.data}
+          loading={workloadRatio.isLoading}
+        />
+      ),
     },
     nextWorkout: {
       title: "Next Workout",
@@ -586,6 +596,14 @@ export function Dashboard() {
       <AnomalyAlertBanner
         anomalies={anomalyCheck.data?.anomalies ?? []}
         loading={anomalyCheck.isLoading}
+      />
+
+      {/* Daily Overview — prominent at-a-glance scores */}
+      <DailyOverview
+        readiness={readinessData.data}
+        workloadRatio={workloadRatio.data}
+        sleepPerformance={sleepPerformance.data}
+        loading={readinessData.isLoading || workloadRatio.isLoading || sleepPerformance.isLoading}
       />
 
       <section>
