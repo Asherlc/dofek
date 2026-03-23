@@ -211,8 +211,8 @@ jobs:
       - name: Verify iOS Metro bundle
         run: cd packages/mobile && pnpm expo export --platform ios --clear
 
-  lint-mobile-podspecs:
-    name: Mobile Podspec Lint
+  lint-ios-podspecs:
+    name: iOS Podspec Lint
     needs: check-mobile-changes
     if: needs.check-mobile-changes.outputs.changed == 'true'
     runs-on: ubuntu-latest
@@ -258,8 +258,8 @@ jobs:
             fi
           fi
 
-  build-mobile-native:
-    name: Mobile Native Build
+  build-ios-native:
+    name: iOS Native Build
     needs: check-mobile-changes
     if: needs.check-mobile-changes.outputs.changed == 'true'
     runs-on: macos-15
@@ -291,9 +291,9 @@ jobs:
             | tail -20
         timeout-minutes: 20
 
-  mobile-gate:
-    name: Mobile Native Gate
-    needs: [check-mobile-changes, test-mobile, build-mobile, lint-mobile-podspecs, build-mobile-native, test-swift]
+  ios-gate:
+    name: iOS Native Gate
+    needs: [check-mobile-changes, test-mobile, build-mobile, lint-ios-podspecs, build-ios-native, test-swift]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -303,8 +303,8 @@ jobs:
             "${{ needs.check-mobile-changes.result }}" \
             "${{ needs.test-mobile.result }}" \
             "${{ needs.build-mobile.result }}" \
-            "${{ needs.lint-mobile-podspecs.result }}" \
-            "${{ needs.build-mobile-native.result }}" \
+            "${{ needs.lint-ios-podspecs.result }}" \
+            "${{ needs.build-ios-native.result }}" \
             "${{ needs.test-swift.result }}"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
               echo "An iOS job failed or was cancelled"
@@ -486,7 +486,7 @@ jobs:
           path: packages/mobile/modules/health-kit/muter_logs/
           retention-days: 7
 
-  mobile-release:
+  ios-release:
     name: iOS TestFlight
     needs: [lint, typecheck, knip, coverage, test-mobile, build-mobile]
     if: github.ref == 'refs/heads/main'
@@ -639,7 +639,7 @@ jobs:
 
   docker:
     name: Docker (${{ matrix.target }})
-    needs: [lint, typecheck, knip, coverage, test-e2e-web, mobile-gate]
+    needs: [lint, typecheck, knip, coverage, test-e2e-web, ios-gate]
     if: github.ref == 'refs/heads/main'
     concurrency:
       group: docker
