@@ -2,8 +2,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import express from "express";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { createUpdatesRouter } from "./updates.ts";
 
@@ -78,7 +78,10 @@ function writeMetadata(metadata: Record<string, unknown>) {
 
 function createTestApp(dir: string = updatesDir) {
   const app = express();
-  app.use("/updates", createUpdatesRouter({ updatesDir: dir, publicUrl: PUBLIC_URL, logger: silentLogger }));
+  app.use(
+    "/updates",
+    createUpdatesRouter({ updatesDir: dir, publicUrl: PUBLIC_URL, logger: silentLogger }),
+  );
   return app;
 }
 
