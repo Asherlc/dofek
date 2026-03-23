@@ -4,7 +4,6 @@ CREATE TABLE IF NOT EXISTS fitness.menstrual_period (
   user_id UUID NOT NULL REFERENCES fitness.user_profile(id),
   start_date DATE NOT NULL,
   end_date DATE,
-  cycle_length INTEGER,
   notes TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

@@ -1,5 +1,5 @@
 import { StrainScore, scoreColor, scoreLabel } from "@dofek/scoring/scoring";
-import type { ReadinessRow, SleepNeedResult, WorkloadRatioResult } from "dofek-server/types";
+import type { ReadinessRow, SleepPerformanceInfo, WorkloadRatioResult } from "dofek-server/types";
 import { useEffect, useState } from "react";
 import { useCountUp } from "../hooks/useCountUp.ts";
 import { chartThemeColors } from "../lib/chartTheme.ts";
@@ -7,7 +7,7 @@ import { chartThemeColors } from "../lib/chartTheme.ts";
 interface DailyOverviewProps {
   readiness: ReadinessRow[] | undefined;
   workloadRatio: WorkloadRatioResult | undefined;
-  sleepNeed: SleepNeedResult | undefined;
+  sleepPerformance: SleepPerformanceInfo | null | undefined;
   loading?: boolean;
 }
 
@@ -120,33 +120,22 @@ function StrainRing({ strain }: { strain: number }) {
   );
 }
 
-function SleepRing({ sleepNeed }: { sleepNeed: SleepNeedResult }) {
-  const lastNight = sleepNeed.recentNights[sleepNeed.recentNights.length - 1];
-  const actualMinutes = lastNight?.actualMinutes ?? 0;
-  const neededMinutes = sleepNeed.totalNeedMinutes;
-  const performance = neededMinutes > 0 ? Math.round((actualMinutes / neededMinutes) * 100) : 0;
-  const clampedPerformance = Math.min(performance, 100);
+function SleepRing({ performance }: { performance: SleepPerformanceInfo }) {
+  const { score, tier, actualMinutes } = performance;
+  const clampedScore = Math.min(score, 100);
 
-  const color = performance >= 90 ? "#22c55e" : performance >= 70 ? "#eab308" : "#ef4444";
-
-  const tier =
-    performance >= 90
-      ? "Peak"
-      : performance >= 70
-        ? "Perform"
-        : performance >= 50
-          ? "Get By"
-          : "Low";
+  // Map tier to color (rendering logic)
+  const color = tier === "Peak" ? "#22c55e" : tier === "Perform" ? "#eab308" : "#ef4444";
 
   const actualHours = Math.floor(actualMinutes / 60);
   const actualMins = Math.round(actualMinutes % 60);
-  const displayPerformance = useCountUp(clampedPerformance, 800);
+  const displayScore = useCountUp(clampedScore, 800);
 
   return (
     <div className="flex flex-col items-center gap-2">
-      <ScoreRing value={clampedPerformance} maxValue={100} color={color}>
+      <ScoreRing value={clampedScore} maxValue={100} color={color}>
         <span className="text-3xl font-bold font-mono tabular-nums" style={{ color }}>
-          {displayPerformance}
+          {displayScore}
           <span className="text-lg">%</span>
         </span>
         <span className="text-[10px] font-semibold uppercase tracking-widest text-subtle">
@@ -175,14 +164,16 @@ function RingSkeleton() {
 export function DailyOverview({
   readiness,
   workloadRatio,
-  sleepNeed,
+  sleepPerformance,
   loading,
 }: DailyOverviewProps) {
   const latestReadiness = readiness?.length ? readiness[readiness.length - 1] : undefined;
   const recoveryScore = latestReadiness?.readinessScore ?? null;
   const strain = workloadRatio?.displayedStrain ?? 0;
   const hasAnyData =
-    recoveryScore != null || (workloadRatio?.timeSeries?.length ?? 0) > 0 || sleepNeed != null;
+    recoveryScore != null ||
+    (workloadRatio?.timeSeries?.length ?? 0) > 0 ||
+    sleepPerformance != null;
 
   if (loading) {
     return (
@@ -231,8 +222,8 @@ export function DailyOverview({
           </div>
         )}
 
-        {sleepNeed != null && sleepNeed.recentNights.length > 0 ? (
-          <SleepRing sleepNeed={sleepNeed} />
+        {sleepPerformance != null ? (
+          <SleepRing performance={sleepPerformance} />
         ) : (
           <div className="flex flex-col items-center gap-2">
             <ScoreRing value={0} maxValue={100} color={chartThemeColors.gridLine}>

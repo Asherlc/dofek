@@ -101,8 +101,15 @@ function CyclePage() {
                         <span className="text-sm text-dim ml-1">to {period.endDate}</span>
                       )}
                     </div>
-                    {period.cycleLength != null && (
-                      <span className="text-xs text-muted">{period.cycleLength} day cycle</span>
+                    {period.endDate && (
+                      <span className="text-xs text-muted">
+                        {Math.round(
+                          (new Date(period.endDate).getTime() -
+                            new Date(period.startDate).getTime()) /
+                            86400000,
+                        )}{" "}
+                        days
+                      </span>
                     )}
                   </div>
                 ))}

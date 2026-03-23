@@ -214,6 +214,7 @@ export function Dashboard() {
   const healthspan = trpc.healthspan.score.useQuery({ weeks: Math.max(Math.ceil(days / 7), 4) });
   const readinessData = trpc.recovery.readinessScore.useQuery({ days });
   const strainTarget = trpc.recovery.strainTarget.useQuery({ days });
+  const sleepPerformance = trpc.sleepNeed.performance.useQuery();
   const anomalyCheck = trpc.anomalyDetection.check.useQuery({});
   const smoothedWeight = trpc.bodyAnalytics.smoothedWeight.useQuery({ days: Math.max(days, 90) });
   const bodyRecomp = trpc.bodyAnalytics.recomposition.useQuery({ days: Math.max(days, 180) });
@@ -601,8 +602,8 @@ export function Dashboard() {
       <DailyOverview
         readiness={readinessData.data}
         workloadRatio={workloadRatio.data}
-        sleepNeed={sleepNeed.data}
-        loading={readinessData.isLoading || workloadRatio.isLoading || sleepNeed.isLoading}
+        sleepPerformance={sleepPerformance.data}
+        loading={readinessData.isLoading || workloadRatio.isLoading || sleepPerformance.isLoading}
       />
 
       <section>

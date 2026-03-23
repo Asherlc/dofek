@@ -82,14 +82,12 @@ describe("menstrualCycleRouter", () => {
           id: "p1",
           start_date: "2026-01-15",
           end_date: "2026-01-20",
-          cycle_length: 28,
           notes: null,
         },
         {
           id: "p2",
           start_date: "2026-02-12",
           end_date: "2026-02-17",
-          cycle_length: 28,
           notes: null,
         },
       ];
@@ -112,7 +110,6 @@ describe("menstrualCycleRouter", () => {
         id: "new-id",
         start_date: "2026-03-01",
         end_date: null,
-        cycle_length: null,
         notes: null,
       };
 

@@ -34,12 +34,13 @@ const mockWorkloadRatio = {
   ],
 };
 
-const mockSleepNeed = {
-  totalNeedMinutes: 480,
-  baselineMinutes: 450,
-  strainDebtMinutes: 10,
-  accumulatedDebtMinutes: 30,
-  recentNights: [{ date: "2026-03-21", actualMinutes: 420, neededMinutes: 480, debtMinutes: 60 }],
+const mockSleepPerformance = {
+  score: 82,
+  tier: "Perform" as const,
+  actualMinutes: 420,
+  neededMinutes: 480,
+  efficiency: 88,
+  recommendedBedtime: "22:30",
 };
 
 describe("DailyOverview", () => {
@@ -48,7 +49,7 @@ describe("DailyOverview", () => {
       <DailyOverview
         readiness={undefined}
         workloadRatio={undefined}
-        sleepNeed={undefined}
+        sleepPerformance={undefined}
         loading={true}
       />,
     );
@@ -61,7 +62,7 @@ describe("DailyOverview", () => {
       <DailyOverview
         readiness={undefined}
         workloadRatio={undefined}
-        sleepNeed={undefined}
+        sleepPerformance={undefined}
         loading={false}
       />,
     );
@@ -73,7 +74,7 @@ describe("DailyOverview", () => {
       <DailyOverview
         readiness={mockReadiness}
         workloadRatio={mockWorkloadRatio}
-        sleepNeed={mockSleepNeed}
+        sleepPerformance={mockSleepPerformance}
         loading={false}
       />,
     );
@@ -87,7 +88,7 @@ describe("DailyOverview", () => {
       <DailyOverview
         readiness={mockReadiness}
         workloadRatio={mockWorkloadRatio}
-        sleepNeed={mockSleepNeed}
+        sleepPerformance={mockSleepPerformance}
         loading={false}
       />,
     );
@@ -99,7 +100,7 @@ describe("DailyOverview", () => {
       <DailyOverview
         readiness={mockReadiness}
         workloadRatio={mockWorkloadRatio}
-        sleepNeed={mockSleepNeed}
+        sleepPerformance={mockSleepPerformance}
         loading={false}
       />,
     );
@@ -111,7 +112,7 @@ describe("DailyOverview", () => {
       <DailyOverview
         readiness={[]}
         workloadRatio={mockWorkloadRatio}
-        sleepNeed={mockSleepNeed}
+        sleepPerformance={mockSleepPerformance}
         loading={false}
       />,
     );

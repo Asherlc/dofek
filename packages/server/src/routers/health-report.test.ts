@@ -6,6 +6,7 @@ vi.mock("../trpc.ts", async () => {
   const t = initTRPC.context<{ db: unknown; userId: string | null }>().create();
   return {
     router: t.router,
+    publicProcedure: t.procedure,
     protectedProcedure: t.procedure,
     cachedProtectedQuery: () => t.procedure,
     cachedProtectedQueryLight: () => t.procedure,

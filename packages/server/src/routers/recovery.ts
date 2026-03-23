@@ -629,7 +629,7 @@ export const recoveryRouter = router({
         if (daysAgo < acuteWindow) acuteLoad += row.daily_load;
         if (daysAgo < chronicWindow) chronicLoad += row.daily_load;
         if (row.date === today) {
-          currentStrain = new StrainScore(row.daily_load).value;
+          currentStrain = StrainScore.fromRawLoad(row.daily_load).value;
         }
       }
       acuteLoad /= acuteWindow;

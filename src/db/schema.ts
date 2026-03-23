@@ -947,7 +947,6 @@ export const menstrualPeriod = fitness.table(
       .references(() => userProfile.id),
     startDate: date("start_date").notNull(),
     endDate: date("end_date"),
-    cycleLength: integer("cycle_length"), // computed from distance to next period start
     notes: text("notes"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

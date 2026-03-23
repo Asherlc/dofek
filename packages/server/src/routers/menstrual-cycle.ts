@@ -15,7 +15,6 @@ const periodHistoryRowSchema = z.object({
   id: z.string(),
   start_date: dateStringSchema,
   end_date: dateStringSchema.nullable(),
-  cycle_length: z.coerce.number().nullable(),
   notes: z.string().nullable(),
 });
 
@@ -23,7 +22,6 @@ const periodMutationRowSchema = z.object({
   id: z.string(),
   start_date: dateStringSchema,
   end_date: dateStringSchema.nullable(),
-  cycle_length: z.coerce.number().nullable(),
   notes: z.string().nullable(),
 });
 
@@ -40,14 +38,17 @@ export const menstrualCycleRouter = router({
       const rows = await executeWithSchema(
         ctx.db,
         currentPhaseRowSchema,
-        sql`SELECT
-              mp.start_date,
-              AVG(mp.cycle_length) AS avg_cycle_length
-            FROM fitness.menstrual_period mp
-            WHERE mp.user_id = ${ctx.userId}
-              AND mp.start_date <= CURRENT_DATE
-            GROUP BY mp.start_date
-            ORDER BY mp.start_date DESC
+        sql`WITH cycles AS (
+              SELECT start_date,
+                     start_date - LAG(start_date) OVER (ORDER BY start_date) AS cycle_days
+              FROM fitness.menstrual_period
+              WHERE user_id = ${ctx.userId}
+                AND start_date <= CURRENT_DATE
+            )
+            SELECT start_date,
+                   (SELECT AVG(cycle_days) FROM cycles WHERE cycle_days IS NOT NULL)::numeric AS avg_cycle_length
+            FROM cycles
+            ORDER BY start_date DESC
             LIMIT 1`,
       );
 
@@ -98,7 +99,7 @@ export const menstrualCycleRouter = router({
             ON CONFLICT (user_id, start_date) DO UPDATE SET
               end_date = EXCLUDED.end_date,
               notes = EXCLUDED.notes
-            RETURNING id, start_date, end_date, cycle_length, notes`,
+            RETURNING id, start_date, end_date, notes`,
       );
       const row = rows[0];
       if (!row) return null;
@@ -106,7 +107,6 @@ export const menstrualCycleRouter = router({
         id: row.id,
         startDate: row.start_date,
         endDate: row.end_date,
-        cycleLength: row.cycle_length != null ? Number(row.cycle_length) : null,
         notes: row.notes,
       };
     }),
@@ -118,7 +118,7 @@ export const menstrualCycleRouter = router({
       const rows = await executeWithSchema(
         ctx.db,
         periodHistoryRowSchema,
-        sql`SELECT id, start_date, end_date, cycle_length, notes
+        sql`SELECT id, start_date, end_date, notes
             FROM fitness.menstrual_period
             WHERE user_id = ${ctx.userId}
               AND start_date >= CURRENT_DATE - (${input.months}::int || ' months')::interval
@@ -129,7 +129,6 @@ export const menstrualCycleRouter = router({
         id: row.id,
         startDate: row.start_date,
         endDate: row.end_date,
-        cycleLength: row.cycle_length != null ? Number(row.cycle_length) : null,
         notes: row.notes,
       }));
     }),

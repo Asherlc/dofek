@@ -33,6 +33,7 @@ const isAuthenticated = t.middleware(({ ctx, next }) => {
   return next({ ctx: authenticatedCtx });
 });
 
+export const publicProcedure = t.procedure;
 export const protectedProcedure = t.procedure.use(isAuthenticated);
 
 export const CacheTTL = {

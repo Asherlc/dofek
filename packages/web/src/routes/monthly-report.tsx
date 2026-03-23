@@ -72,7 +72,7 @@ function MonthCard({
         )}
         {month.avgHrv != null && (
           <div>
-            <span className="text-xs text-muted block">Avg HRV</span>
+            <span className="text-xs text-muted block">Avg Heart Rate Variability</span>
             <span className="text-lg font-semibold tabular-nums">{month.avgHrv} ms</span>
           </div>
         )}

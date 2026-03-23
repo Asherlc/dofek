@@ -2,7 +2,13 @@ import { randomBytes } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
-import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
+import {
+  CacheTTL,
+  cachedProtectedQuery,
+  protectedProcedure,
+  publicProcedure,
+  router,
+} from "../trpc.ts";
 
 /** Generate a URL-safe share token */
 function generateShareToken(): string {
@@ -65,7 +71,7 @@ export const healthReportRouter = router({
     }),
 
   /** Get a shared report by token — anyone with the link can view */
-  getShared: protectedProcedure
+  getShared: publicProcedure
     .input(z.object({ token: z.string().min(1) }))
     .query(async ({ ctx, input }) => {
       const rows = await executeWithSchema(
