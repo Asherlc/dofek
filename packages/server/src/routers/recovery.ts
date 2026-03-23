@@ -1,7 +1,4 @@
-import {
-  type ReadinessComponents,
-  ReadinessScore,
-} from "@dofek/recovery/readiness";
+import { type ReadinessComponents, ReadinessScore } from "@dofek/recovery/readiness";
 import { computeSleepConsistencyScore } from "@dofek/recovery/sleep-consistency";
 import { StrainScore, zScoreToRecoveryScore } from "@dofek/scoring/scoring";
 import { computeStrainTarget } from "@dofek/scoring/strain-target";
