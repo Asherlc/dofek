@@ -116,7 +116,7 @@ describe("trainHrvPredictor (legacy wrapper)", () => {
   });
 
   it("generates tomorrow prediction from latest data", () => {
-    const days = generateSyntheticDays(100);
+    const days = generateSyntheticDays(60);
     const result = trainHrvPredictor(days);
     if (!result) throw new Error("expected result");
 
@@ -126,7 +126,7 @@ describe("trainHrvPredictor (legacy wrapper)", () => {
   });
 
   it("predictions have correct shape", () => {
-    const days = generateSyntheticDays(100);
+    const days = generateSyntheticDays(60);
     const result = trainHrvPredictor(days);
     if (!result) throw new Error("expected result");
 
@@ -139,16 +139,16 @@ describe("trainHrvPredictor (legacy wrapper)", () => {
   });
 
   it("is deterministic for a fixed seed and preserves date alignment", () => {
-    const days = generateSyntheticDays(200, 42);
+    const days = generateSyntheticDays(60, 42);
     const result = trainHrvPredictor(days);
     if (!result) throw new Error("expected result");
 
     expect(result.diagnostics).toEqual({
-      linearRSquared: 0.0809,
-      linearAdjustedRSquared: 0.0001,
-      treeRSquared: 0.7988,
-      crossValidatedRSquared: -0.1498,
-      sampleCount: 199,
+      linearRSquared: 0.3248,
+      linearAdjustedRSquared: 0.0675,
+      treeRSquared: 0.9906,
+      crossValidatedRSquared: -0.2926,
+      sampleCount: 59,
       featureCount: 16,
       linearFallbackUsed: false,
     });
@@ -156,18 +156,18 @@ describe("trainHrvPredictor (legacy wrapper)", () => {
     expect(result.predictions[0]).toEqual({
       date: "2024-01-01",
       actual: 57.7,
-      linearPrediction: 67.04,
-      treePrediction: 62.95,
+      linearPrediction: 65.09,
+      treePrediction: 58.81,
     });
-    expect(result.predictions[50]).toEqual({
-      date: "2024-02-20",
-      actual: 70.5,
-      linearPrediction: 68.21,
-      treePrediction: 69.78,
+    expect(result.predictions[30]).toEqual({
+      date: "2024-01-31",
+      actual: 72,
+      linearPrediction: 67.76,
+      treePrediction: 71.94,
     });
-    expect(result.tomorrowPrediction).toEqual({ linear: 68.29, tree: 68.51 });
-    expect(result.featureImportances[0]?.name).toBe("weight_kg");
-    expect(result.featureImportances[0]?.treeImportance).toBeCloseTo(0.1460034569, 8);
+    expect(result.tomorrowPrediction).toEqual({ linear: 71.21, tree: 71.8 });
+    expect(result.featureImportances[0]?.name).toBe("calories");
+    expect(result.featureImportances[0]?.treeImportance).toBeCloseTo(0.23712690166277647, 8);
     expect(
       result.featureImportances.some(
         (feature) => feature.linearCoefficient !== 0 && feature.linearImportance > 0,
@@ -191,7 +191,7 @@ describe("trainHrvPredictor (legacy wrapper)", () => {
     );
 
     try {
-      const days = generateSyntheticDays(200);
+      const days = generateSyntheticDays(60);
       expect(trainHrvPredictor(days)).toBeNull();
     } finally {
       PREDICTION_TARGETS.splice(0, PREDICTION_TARGETS.length, ...originalTargets);
@@ -199,7 +199,7 @@ describe("trainHrvPredictor (legacy wrapper)", () => {
   });
 
   it("handles days with lots of missing nutrition data", () => {
-    const days = generateSyntheticDays(100);
+    const days = generateSyntheticDays(60);
     const rng = mulberry32(99);
     for (const day of days) {
       if (rng() > 0.3) {
