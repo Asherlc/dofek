@@ -12,7 +12,7 @@ const svg = readFileSync(svgPath);
 const targets = [
   // iOS app icon (1024x1024, no rounded corners — iOS applies its own mask)
   {
-    path: resolve(root, "packages/ios/assets/icon.png"),
+    path: resolve(root, "packages/mobile/assets/icon.png"),
     size: 1024,
     removeRoundedRect: true,
   },

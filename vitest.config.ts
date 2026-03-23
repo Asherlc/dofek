@@ -26,10 +26,10 @@ export default defineConfig({
             "packages/*/src/**/*.test.{ts,tsx}",
             "scripts/**/*.test.ts",
           ],
-          exclude: ["**/*.integration.test.ts", "packages/ios/**"],
+          exclude: ["**/*.integration.test.ts", "packages/mobile/**"],
         },
       },
-      "packages/ios/vitest.config.ts",
+      "packages/mobile/vitest.config.ts",
       {
         test: {
           ...sharedTestConfig,

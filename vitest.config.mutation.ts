@@ -31,11 +31,11 @@ export default defineConfig({
       "packages/zwift-client/src/**/*.test.ts",
       "packages/whoop-whoop/src/**/*.test.ts",
       "packages/trainingpeaks-connect/src/**/*.test.ts",
-      "packages/ios/**/*.test.{ts,tsx}",
+      "packages/mobile/**/*.test.{ts,tsx}",
     ],
     exclude: ["**/*.integration.test.ts", "**/node_modules/**"],
-    setupFiles: ["packages/ios/test-setup.ts"],
-    environmentMatchGlobs: [["packages/ios/**", "jsdom"]],
+    setupFiles: ["packages/mobile/test-setup.ts"],
+    environmentMatchGlobs: [["packages/mobile/**", "jsdom"]],
   },
   resolve: {
     alias: {
