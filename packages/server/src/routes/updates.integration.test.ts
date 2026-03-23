@@ -2,17 +2,17 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-
-vi.mock("../logger.ts", () => ({
-  logger: { info: vi.fn(), error: vi.fn() },
-}));
-
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import express from "express";
 import { z } from "zod";
 import { createUpdatesRouter } from "./updates.ts";
 
 const PUBLIC_URL = "https://dofek.asherlc.com";
+
+const silentLogger = {
+  info: () => {},
+  error: () => {},
+};
 
 const manifestSchema = z.object({
   id: z.string(),
@@ -78,7 +78,7 @@ function writeMetadata(metadata: Record<string, unknown>) {
 
 function createTestApp(dir: string = updatesDir) {
   const app = express();
-  app.use("/updates", createUpdatesRouter({ updatesDir: dir, publicUrl: PUBLIC_URL }));
+  app.use("/updates", createUpdatesRouter({ updatesDir: dir, publicUrl: PUBLIC_URL, logger: silentLogger }));
   return app;
 }
 
@@ -126,10 +126,6 @@ describe("createUpdatesRouter", () => {
       `dofek-updates-test-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     );
     mkdirSync(updatesDir, { recursive: true });
-  });
-
-  beforeEach(() => {
-    vi.clearAllMocks();
   });
 
   afterAll(async () => {
@@ -270,6 +266,23 @@ describe("createUpdatesRouter", () => {
     expect(res.headers.get("expo-protocol-version")).toBe("1");
   });
 
+  it("returns 204 when metadata.json contains malformed JSON", async () => {
+    const badDir = join(
+      tmpdir(),
+      `dofek-updates-malformed-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    );
+    const currentDir = join(badDir, "current");
+    mkdirSync(currentDir, { recursive: true });
+    writeFileSync(join(currentDir, "metadata.json"), "{not valid json!!!");
+    const app = createTestApp(badDir);
+    const res = await request(app, "/updates/manifest", {
+      "expo-protocol-version": "1",
+      "expo-platform": "ios",
+      "expo-runtime-version": "1.0",
+    });
+    expect(res.status).toBe(204);
+  });
+
   it("returns 204 when metadata.json has invalid shape", async () => {
     const badDir = join(
       tmpdir(),
@@ -332,6 +345,7 @@ describe("createUpdatesRouter", () => {
       createUpdatesRouter({
         updatesDir,
         publicUrl: "https://dofek.asherlc.com/",
+        logger: silentLogger,
       }),
     );
 

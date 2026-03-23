@@ -2,7 +2,12 @@ import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { Router } from "express";
 import { z } from "zod";
-import { logger } from "../logger.ts";
+import { logger as defaultLogger } from "../logger.ts";
+
+interface Logger {
+  info(message: string): void;
+  error(message: string): void;
+}
 
 const metadataAssetSchema = z.object({
   hash: z.string(),
@@ -31,8 +36,13 @@ interface MetadataCache {
   mtimeMs: number;
 }
 
-export function createUpdatesRouter(deps: { updatesDir: string; publicUrl: string }): Router {
+export function createUpdatesRouter(deps: {
+  updatesDir: string;
+  publicUrl: string;
+  logger?: Logger;
+}): Router {
   const router = Router();
+  const logger = deps.logger ?? defaultLogger;
   let cache: MetadataCache | null = null;
 
   async function loadMetadata(): Promise<Metadata | null> {
@@ -51,7 +61,17 @@ export function createUpdatesRouter(deps: { updatesDir: string; publicUrl: strin
     }
 
     const raw = await readFile(metadataPath, "utf-8");
-    const parsed = metadataSchema.safeParse(JSON.parse(raw));
+
+    let json: unknown;
+    try {
+      json = JSON.parse(raw);
+    } catch {
+      logger.error("[updates] Malformed JSON in metadata.json");
+      cache = null;
+      return null;
+    }
+
+    const parsed = metadataSchema.safeParse(json);
 
     if (!parsed.success) {
       logger.error(`[updates] Invalid metadata.json: ${parsed.error.message}`);
