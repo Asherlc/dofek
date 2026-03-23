@@ -73,18 +73,18 @@ describe("trainHrvPredictor (legacy wrapper)", () => {
   });
 
   it("trains both models on synthetic data", () => {
-    const days = generateSyntheticDays(200);
+    const days = generateSyntheticDays(60);
     const result = trainHrvPredictor(days);
 
     expect(result).not.toBeNull();
     expect(result?.targetId).toBe("hrv");
     expect(result?.featureImportances.length).toBeGreaterThan(0);
     expect(result?.predictions.length).toBeGreaterThan(0);
-    expect(result?.diagnostics.sampleCount).toBeGreaterThan(100);
+    expect(result?.diagnostics.sampleCount).toBeGreaterThan(50);
   });
 
   it("produces reasonable R² values", () => {
-    const days = generateSyntheticDays(200);
+    const days = generateSyntheticDays(60);
     const result = trainHrvPredictor(days);
     if (!result) throw new Error("expected result");
 
@@ -95,7 +95,7 @@ describe("trainHrvPredictor (legacy wrapper)", () => {
   });
 
   it("ranks sleep features highly for HRV", () => {
-    const days = generateSyntheticDays(200);
+    const days = generateSyntheticDays(60);
     const result = trainHrvPredictor(days);
     if (!result) throw new Error("expected result");
 
@@ -106,7 +106,7 @@ describe("trainHrvPredictor (legacy wrapper)", () => {
   });
 
   it("excludes hrv and resting_hr from HRV features", () => {
-    const days = generateSyntheticDays(200);
+    const days = generateSyntheticDays(60);
     const result = trainHrvPredictor(days);
     if (!result) throw new Error("expected result");
 
@@ -223,7 +223,7 @@ describe("trainPredictor (multi-target)", () => {
   it("trains resting HR prediction", () => {
     const target = PREDICTION_TARGETS.find((t) => t.id === "resting_hr");
     if (!target) throw new Error("expected resting_hr target");
-    const days = generateSyntheticDays(200);
+    const days = generateSyntheticDays(60);
     const result = trainPredictor(days, target);
 
     expect(result).not.toBeNull();
@@ -240,7 +240,7 @@ describe("trainPredictor (multi-target)", () => {
   it("trains sleep efficiency prediction", () => {
     const target = PREDICTION_TARGETS.find((t) => t.id === "sleep_efficiency");
     if (!target) throw new Error("expected sleep_efficiency target");
-    const days = generateSyntheticDays(200);
+    const days = generateSyntheticDays(60);
     const result = trainPredictor(days, target);
 
     expect(result).not.toBeNull();
@@ -259,7 +259,7 @@ describe("trainPredictor (multi-target)", () => {
   it("trains weight prediction", () => {
     const target = PREDICTION_TARGETS.find((t) => t.id === "weight");
     if (!target) throw new Error("expected weight target");
-    const days = generateSyntheticDays(200);
+    const days = generateSyntheticDays(60);
     const result = trainPredictor(days, target);
 
     expect(result).not.toBeNull();

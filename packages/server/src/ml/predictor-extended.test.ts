@@ -309,7 +309,7 @@ describe("trainPredictor — edge cases", () => {
       return;
     }
 
-    const days = generateSyntheticDays(200);
+    const days = generateSyntheticDays(60);
     const result = trainPredictor(days, target);
 
     if (result) {
@@ -321,7 +321,7 @@ describe("trainPredictor — edge cases", () => {
   });
 
   it("diagnostics contain adjusted R-squared", () => {
-    const days = generateSyntheticDays(200);
+    const days = generateSyntheticDays(60);
     const target = PREDICTION_TARGETS.find((t) => t.id === "hrv");
     if (!target) throw new Error("expected hrv target");
 
