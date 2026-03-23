@@ -255,8 +255,9 @@ describe("trainPredictor (multi-target)", () => {
   });
 
   it("includes target metadata in results", () => {
+    // Shared dataset — generating once avoids redundant work across 4 targets
+    const days = generateSyntheticDays(60);
     for (const target of PREDICTION_TARGETS) {
-      const days = generateSyntheticDays(100);
       const result = trainPredictor(days, target);
       if (!result) continue;
 
