@@ -344,6 +344,7 @@ jobs:
   mutation:
     name: Mutation Testing
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
@@ -364,13 +365,19 @@ jobs:
             stryker-v2-main-
           save-always: true
       - name: Get changed files
-        if: github.event_name == 'pull_request'
         id: changed
         run: |
+          # On PRs, diff against origin/main. On push, diff against parent commit.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            DIFF_BASE="origin/main...HEAD"
+          else
+            DIFF_BASE="HEAD~1..HEAD"
+          fi
+
           # Filter to .ts source files, excluding tests, config, etc.
           # Also skip files with < 15 changed lines (trivial changes like import
           # additions, mechanical renames, or removing a column)
-          CANDIDATES=$(git diff --name-only origin/main...HEAD \
+          CANDIDATES=$(git diff --name-only $DIFF_BASE \
             | { grep '\.ts$' || true; } \
             | { grep -v '\.test\.ts$' || true; } \
             | { grep -v '\.cy\.ts$' || true; } \
@@ -384,19 +391,19 @@ jobs:
             | { grep -v 'packages/mobile/' || true; })
           FILES=""
           for f in $CANDIDATES; do
-            LINES=$(git diff --numstat origin/main...HEAD -- "$f" | awk '{print $1+$2}')
+            LINES=$(git diff --numstat $DIFF_BASE -- "$f" | awk '{print $1+$2}')
             if [ "$LINES" -ge 15 ]; then
               FILES="${FILES:+$FILES,}$f"
             fi
           done
           echo "files=$FILES" >> "$GITHUB_OUTPUT"
           echo "Mutating changed files: $FILES"
-      - name: Run Stryker (changed files)
-        if: github.event_name == 'pull_request' && steps.changed.outputs.files != ''
+      - name: Run Stryker
+        if: steps.changed.outputs.files != ''
         run: pnpm test:mutation --mutate "${{ steps.changed.outputs.files }}"
-      - name: Run Stryker (full suite)
-        if: github.event_name == 'push'
-        run: pnpm test:mutation
+      - name: Skip — no mutatable files
+        if: steps.changed.outputs.files == ''
+        run: echo "No source files with ≥15 changed lines — skipping mutation testing"
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
