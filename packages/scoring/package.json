@@ -9,6 +9,7 @@
     "./tokens": "./src/tokens.ts",
     "./strain-target": "./src/strain-target.ts",
     "./sleep-performance": "./src/sleep-performance.ts",
-    "./healthspan-years": "./src/healthspan-years.ts"
+    "./healthspan-years": "./src/healthspan-years.ts",
+    "./menstrual-cycle": "./src/menstrual-cycle.ts"
   }
 }

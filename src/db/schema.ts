@@ -891,6 +891,29 @@ export const lifeEvents = fitness.table(
 );
 
 // ============================================================
+// Menstrual cycle tracking
+// ============================================================
+
+export const menstrualPeriod = fitness.table(
+  "menstrual_period",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfile.id),
+    startDate: date("start_date").notNull(),
+    endDate: date("end_date"),
+    cycleLength: integer("cycle_length"), // computed from distance to next period start
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("menstrual_period_user_start_idx").on(table.userId, table.startDate),
+    index("menstrual_period_user_idx").on(table.userId),
+  ],
+);
+
+// ============================================================
 // DEXA scans (BodySpec, etc.)
 // ============================================================
 
