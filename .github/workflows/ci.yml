@@ -578,8 +578,7 @@ jobs:
             -authenticationKeyPath ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8 \
             -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
             -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
-            DEVELOPMENT_TEAM=68LEL35DQ9 \
-            SWIFT_STRICT_CONCURRENCY=minimal
+            DEVELOPMENT_TEAM=68LEL35DQ9
 
       - name: Export & upload to TestFlight
         run: |
