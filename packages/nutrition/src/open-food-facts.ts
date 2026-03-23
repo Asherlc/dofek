@@ -90,10 +90,11 @@ export class OpenFoodFactsClient {
     return Math.round(converted * 10) / 10;
   }
 
-  async lookupBarcode(barcode: string): Promise<FoodDatabaseResult | null> {
+  async lookupBarcode(barcode: string, signal?: AbortSignal): Promise<FoodDatabaseResult | null> {
     try {
       const response = await fetch(
         `${BASE_URL}/api/v2/product/${barcode}.json?fields=code,product_name,brands,serving_size,nutriments,image_front_small_url,lang,product_name_${this.#localePreferences.languageCode}`,
+        { signal },
       );
       if (!response.ok) return null;
 
@@ -108,14 +109,24 @@ export class OpenFoodFactsClient {
     }
   }
 
-  async searchFoods(query: string, limit = 20): Promise<FoodDatabaseResult[]> {
+  async searchFoods(
+    query: string,
+    limit = 20,
+    signal?: AbortSignal,
+  ): Promise<FoodDatabaseResult[]> {
     try {
-      const localizedResults = await this.#runSearch(query, limit);
-      if (localizedResults.length > 0 || !this.#localePreferences.countryTag) {
-        return localizedResults;
+      if (!this.#localePreferences.countryTag) {
+        return await this.#runSearch(query, limit, undefined, signal);
       }
-      // Fallback to global search if country-filtered results are empty.
-      return this.#runSearch(query, limit, { ...this.#localePreferences, countryTag: null });
+
+      // Run localized and global searches in parallel to avoid sequential latency.
+      const [localizedResults, globalResults] = await Promise.all([
+        this.#runSearch(query, limit, undefined, signal),
+        this.#runSearch(query, limit, { ...this.#localePreferences, countryTag: null }, signal),
+      ]);
+
+      // Prefer localized results; fall back to global if empty.
+      return localizedResults.length > 0 ? localizedResults : globalResults;
     } catch {
       return [];
     }
@@ -212,6 +223,7 @@ export class OpenFoodFactsClient {
     query: string,
     limit: number,
     localeOverride?: SearchLocalePreferences,
+    signal?: AbortSignal,
   ): Promise<FoodDatabaseResult[]> {
     const localePreferences = localeOverride ?? this.#localePreferences;
     const localizedNameField = `product_name_${localePreferences.languageCode}`;
@@ -241,7 +253,7 @@ export class OpenFoodFactsClient {
       params.set("countries_tags_en", localePreferences.countryTag);
     }
 
-    const response = await fetch(`${BASE_URL}/cgi/search.pl?${params}`);
+    const response = await fetch(`${BASE_URL}/cgi/search.pl?${params}`, { signal });
     if (!response.ok) return [];
 
     const data: unknown = await response.json();

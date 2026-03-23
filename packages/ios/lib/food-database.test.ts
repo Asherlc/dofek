@@ -33,14 +33,19 @@ describe("searchFoods", () => {
     const client = new OpenFoodFactsClient("en-US");
     await client.searchFoods("hamburger", 5);
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const requestedUrl = String(fetchMock.mock.calls[0]?.[0] ?? "");
-    const parsedUrl = new URL(requestedUrl);
+    // searchFoods fires localized + global searches in parallel
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const localizedUrl = new URL(String(fetchMock.mock.calls[0]?.[0] ?? ""));
+    const globalUrl = new URL(String(fetchMock.mock.calls[1]?.[0] ?? ""));
 
-    expect(parsedUrl.searchParams.get("lc")).toBe("en");
-    expect(parsedUrl.searchParams.get("countries_tags_en")).toBe("united-states");
-    expect(parsedUrl.searchParams.get("search_terms")).toBe("hamburger");
-    expect(parsedUrl.searchParams.get("page_size")).toBe("5");
+    // Localized call includes country filter
+    expect(localizedUrl.searchParams.get("lc")).toBe("en");
+    expect(localizedUrl.searchParams.get("countries_tags_en")).toBe("united-states");
+    expect(localizedUrl.searchParams.get("search_terms")).toBe("hamburger");
+    expect(localizedUrl.searchParams.get("page_size")).toBe("5");
+
+    // Global call omits country filter
+    expect(globalUrl.searchParams.get("countries_tags_en")).toBeNull();
   });
 
   it("falls back to global search when country-filtered results are empty", async () => {

@@ -3,7 +3,9 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const trpc = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  const trpc = initTRPC
+    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .create();
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
@@ -70,6 +72,7 @@ describe("efficiencyRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.aerobicEfficiency({ days: 180 });
 
@@ -82,6 +85,7 @@ describe("efficiencyRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.aerobicEfficiency({ days: 180 });
       expect(result.maxHr).toBeNull();
@@ -105,6 +109,7 @@ describe("efficiencyRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.aerobicDecoupling({ days: 180 });
 
@@ -127,6 +132,7 @@ describe("efficiencyRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.polarizationTrend({ days: 180 });
 
@@ -142,6 +148,7 @@ describe("efficiencyRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.polarizationTrend({ days: 180 });
 
@@ -159,6 +166,7 @@ describe("trainingRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.weeklyVolume({ days: 90 });
       expect(result).toEqual(rows);
@@ -180,6 +188,7 @@ describe("trainingRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.weeklyVolume({ days: 90 });
       expect(result[0]?.hours).toBe(5.5);
@@ -203,6 +212,7 @@ describe("trainingRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.hrZones({ days: 90 });
       expect(result.maxHr).toBe(190);
@@ -213,6 +223,7 @@ describe("trainingRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.hrZones({ days: 90 });
       expect(result.maxHr).toBeNull();
@@ -226,6 +237,7 @@ describe("trainingRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.activityStats({ days: 90 });
       expect(result).toEqual(rows);
@@ -268,7 +280,7 @@ describe("trainingRouter", () => {
         .mockResolvedValueOnce([{ hiit_count_7d: 1, last_hiit_date: dateDaysAgo(1) }])
         .mockResolvedValueOnce([]);
 
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
       const result = await caller.nextWorkout();
 
       expect(result.recommendationType).toBe("rest");
@@ -308,7 +320,7 @@ describe("trainingRouter", () => {
         .mockResolvedValueOnce([{ hiit_count_7d: 1, last_hiit_date: dateDaysAgo(3) }])
         .mockResolvedValueOnce([{ training_date: dateDaysAgo(1) }]);
 
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
       const result = await caller.nextWorkout();
 
       expect(result.recommendationType).toBe("strength");
@@ -345,7 +357,7 @@ describe("trainingRouter", () => {
         .mockResolvedValueOnce([{ hiit_count_7d: 2, last_hiit_date: dateDaysAgo(2) }])
         .mockResolvedValueOnce([{ training_date: dateDaysAgo(0) }]);
 
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
       const result = await caller.nextWorkout();
 
       expect(result.recommendationType).toBe("cardio");
@@ -389,7 +401,7 @@ describe("trainingRouter", () => {
         .mockResolvedValueOnce([{ hiit_count_7d: 1, last_hiit_date: dateDaysAgo(3) }])
         .mockResolvedValueOnce([{ training_date: dateDaysAgo(0) }]);
 
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
       const result = await caller.nextWorkout();
 
       expect(result.recommendationType).toBe("cardio");
@@ -408,6 +420,7 @@ describe("intervalsRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.byActivity({
         activityId: "00000000-0000-0000-0000-000000000001",
@@ -421,6 +434,7 @@ describe("intervalsRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.detect({
         activityId: "00000000-0000-0000-0000-000000000001",
@@ -490,6 +504,7 @@ describe("intervalsRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.detect({
         activityId: "00000000-0000-0000-0000-000000000001",
@@ -539,6 +554,7 @@ describe("intervalsRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.detect({
         activityId: "00000000-0000-0000-0000-000000000001",

@@ -153,6 +153,18 @@ export function AddFoodModal({
     onClose();
   }
 
+  const handleCloseRef = useRef(handleClose);
+  handleCloseRef.current = handleClose;
+
+  useEffect(() => {
+    if (!isOpen) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") handleCloseRef.current();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [isOpen]);
+
   function handleAnalyze() {
     if (!foodName.trim()) return;
     setAiError(null);
@@ -227,6 +239,8 @@ export function AddFoodModal({
     setSearchingOpenFoodFacts(false);
     openFoodFactsRequestCounterRef.current += 1;
 
+    const controller = new AbortController();
+
     const timer = setTimeout(() => {
       trpcUtils.food.search
         .fetch({ query, limit: 8 })
@@ -244,6 +258,7 @@ export function AddFoodModal({
 
     return () => {
       clearTimeout(timer);
+      controller.abort();
     };
   }, [foodName, isOpen, trpcUtils.food.search]);
 
@@ -262,9 +277,6 @@ export function AddFoodModal({
         tabIndex={-1}
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
         onClick={handleClose}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") handleClose();
-        }}
         aria-label="Close modal overlay"
       />
 

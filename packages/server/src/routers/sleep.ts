@@ -31,7 +31,7 @@ export const sleepRouter = router({
         ctx.db,
         sleepListRowSchema,
         sql`SELECT
-              to_char(started_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS started_at,
+              to_char(started_at AT TIME ZONE ${ctx.timezone}, 'YYYY-MM-DD"T"HH24:MI:SS') AS started_at,
               duration_minutes,
               deep_minutes,
               rem_minutes,

@@ -4,7 +4,9 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const trpc = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  const trpc = initTRPC
+    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .create();
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
@@ -217,6 +219,7 @@ describe("providerDetailRouter", () => {
       const caller = createCaller({
         db: { select: mockSelect, execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.logs({ providerId: "strava", limit: 20, offset: 0 });
@@ -252,6 +255,7 @@ describe("providerDetailRouter", () => {
       const caller = createCaller({
         db: { select: mockSelect, execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.logs({ providerId: "strava", limit: 20, offset: 0 });
@@ -285,6 +289,7 @@ describe("providerDetailRouter", () => {
       const caller = createCaller({
         db: { select: mockSelect, execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.logs({ providerId: "strava", limit: 20, offset: 0 });
@@ -307,6 +312,7 @@ describe("providerDetailRouter", () => {
       const caller = createCaller({
         db: { select: mockSelect, execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       await caller.logs({ providerId: "strava" });
@@ -331,6 +337,7 @@ describe("providerDetailRouter", () => {
           ]),
         },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.records({
@@ -349,6 +356,7 @@ describe("providerDetailRouter", () => {
       const caller = createCaller({
         db: { execute: mockExecute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       await caller.records({ providerId: "test-provider", dataType });
@@ -371,6 +379,7 @@ describe("providerDetailRouter", () => {
       const caller = createCaller({
         db: { execute: mockExecute },
         userId: "user-42",
+        timezone: "UTC",
       });
 
       await caller.records({ providerId: "strava", dataType: "activities", limit: 10, offset: 5 });
@@ -388,6 +397,7 @@ describe("providerDetailRouter", () => {
       const caller = createCaller({
         db: { execute: mockExecute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       await caller.records({ providerId: "strava", dataType: "activities" });
@@ -404,6 +414,7 @@ describe("providerDetailRouter", () => {
       const caller = createCaller({
         db: { execute: mockExecute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       await caller.records({ providerId: "strava", dataType: "activities" });
@@ -433,6 +444,7 @@ describe("providerDetailRouter", () => {
           ]),
         },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.recordDetail({
@@ -449,6 +461,7 @@ describe("providerDetailRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.recordDetail({
@@ -467,6 +480,7 @@ describe("providerDetailRouter", () => {
       const caller = createCaller({
         db: { execute: mockExecute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       await caller.recordDetail({
@@ -491,6 +505,7 @@ describe("providerDetailRouter", () => {
       const caller = createCaller({
         db: { execute: mockExecute },
         userId: "user-42",
+        timezone: "UTC",
       });
 
       await caller.recordDetail({
@@ -511,6 +526,7 @@ describe("providerDetailRouter", () => {
       const caller = createCaller({
         db: { execute: mockExecute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       await caller.recordDetail({
@@ -545,6 +561,7 @@ describe("providerDetailRouter", () => {
           transaction: mockTransaction,
         },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.disconnect({ providerId: "strava" });
@@ -567,6 +584,7 @@ describe("providerDetailRouter", () => {
       const caller = createCaller({
         db: { execute: mockExecute, transaction: mockTransaction },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       await caller.disconnect({ providerId: "strava" });
@@ -590,6 +608,7 @@ describe("providerDetailRouter", () => {
       const caller = createCaller({
         db: { execute: mockExecute, transaction: mockTransaction },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       await caller.disconnect({ providerId: "strava" });
@@ -621,6 +640,7 @@ describe("providerDetailRouter", () => {
       const caller = createCaller({
         db: { execute: mockExecute, transaction: mockTransaction },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       await caller.disconnect({ providerId: "my-provider" });
@@ -642,6 +662,7 @@ describe("providerDetailRouter", () => {
           transaction: vi.fn(),
         },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       await expect(caller.disconnect({ providerId: "unknown" })).rejects.toThrow(
@@ -656,6 +677,7 @@ describe("providerDetailRouter", () => {
       const caller = createCaller({
         db: { execute: mockExecute, transaction: mockTransaction },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       await expect(caller.disconnect({ providerId: "unknown" })).rejects.toThrow();

@@ -17,6 +17,7 @@ import { logger } from "./logger.ts";
 import { appRouter } from "./router.ts";
 import { createAuthRouter } from "./routes/auth.ts";
 import { createExportRouter } from "./routes/export.ts";
+import { createUpdatesRouter } from "./routes/updates.ts";
 import { createUploadRouter } from "./routes/upload.ts";
 import { startSlackBot } from "./slack/bot.ts";
 import type { Context } from "./trpc.ts";
@@ -112,6 +113,13 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
   // ── Route modules ──
   app.use("/api/upload", createUploadRouter({ getImportQueue, db }));
   app.use("/api/export", createExportRouter(db));
+  app.use(
+    "/api/updates",
+    createUpdatesRouter({
+      updatesDir: process.env.UPDATES_DIR ?? "/app/updates",
+      publicUrl: process.env.PUBLIC_URL ?? "https://dofek.asherlc.com",
+    }),
+  );
   app.use(createAuthRouter(db));
 
   // tRPC API
@@ -122,7 +130,9 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       createContext: async ({ req }): Promise<Context> => {
         const sessionId = getSessionIdFromRequest(req);
         const session = sessionId ? await validateSession(db, sessionId) : null;
-        return { db, userId: session?.userId ?? null };
+        const rawTimezone = req.headers["x-timezone"];
+        const timezone = typeof rawTimezone === "string" ? rawTimezone : "UTC";
+        return { db, userId: session?.userId ?? null, timezone };
       },
       allowMethodOverride: true,
     }),

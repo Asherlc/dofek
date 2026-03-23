@@ -177,7 +177,7 @@ export default function AddFoodScreen() {
   const [searchingOpenFoodFacts, setSearchingOpenFoodFacts] = useState(false);
 
   // ── Search logic (history only for fast typeahead) ──
-  const performSearch = useCallback(async (query: string) => {
+  const performSearch = useCallback(async (query: string, signal?: AbortSignal) => {
     if (query.length < 2) {
       setSearchResults([]);
       setSearching(false);
@@ -194,6 +194,7 @@ export default function AddFoodScreen() {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeaders },
       body: JSON.stringify({ "0": { query, limit: 5 } }),
+      signal,
     })
       .then((r) => r.json())
       .then((data) => {
@@ -248,16 +249,25 @@ export default function AddFoodScreen() {
     }
   }, [searchQuery, foodClient]);
 
-  // Debounced search
+  // Debounced search with abort support
+  const searchAbortRef = useRef<AbortController>();
+
   useEffect(() => {
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    if (searchAbortRef.current) searchAbortRef.current.abort();
+
     if (searchQuery.length < 2) {
       setSearchResults([]);
       return;
     }
-    searchTimeout.current = setTimeout(() => performSearch(searchQuery), 300);
+
+    const controller = new AbortController();
+    searchAbortRef.current = controller;
+
+    searchTimeout.current = setTimeout(() => performSearch(searchQuery, controller.signal), 300);
     return () => {
       if (searchTimeout.current) clearTimeout(searchTimeout.current);
+      controller.abort();
     };
   }, [searchQuery, performSearch]);
 

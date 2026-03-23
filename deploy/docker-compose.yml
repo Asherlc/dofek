@@ -17,6 +17,8 @@ services:
   client:
     image: ${DOFEK_CLIENT_IMAGE:-ghcr.io/asherlc/dofek-client:latest}
     restart: unless-stopped
+    volumes:
+      - /opt/dofek/updates:/usr/share/nginx/html/updates:ro
     depends_on:
       - web
 
@@ -49,6 +51,8 @@ services:
       - DATABASE_URL=postgres://health:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/health
       - REDIS_URL=redis://redis:6379
       - JOB_FILES_DIR=/app/job-files
+      - UPDATES_DIR=/app/updates
+      - PUBLIC_URL=https://dofek.asherlc.com
       - PORT=3000
       - NODE_ENV=production
       - OTEL_SERVICE_NAME=dofek-web
@@ -57,6 +61,7 @@ services:
       - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://o4511073249067008.ingest.us.sentry.io/api/4511073388593152/integration/otlp/v1/traces?sentry_key=b421c7fde44434a032c86e3357cae397
     volumes:
       - job_files:/app/job-files
+      - /opt/dofek/updates:/app/updates:ro
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       migrate:

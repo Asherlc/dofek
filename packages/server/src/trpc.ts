@@ -14,6 +14,8 @@ import { dbQuerySemaphore } from "./lib/semaphore.ts";
 export interface Context {
   db: Database;
   userId: string | null;
+  /** IANA timezone from client (e.g. "America/Los_Angeles"). Falls back to "UTC". */
+  timezone: string;
 }
 
 /** Context after auth middleware — userId is guaranteed non-null. */

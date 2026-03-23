@@ -3,7 +3,9 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const trpc = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  const trpc = initTRPC
+    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .create();
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
@@ -61,6 +63,7 @@ describe("recoveryRouter", () => {
     return createCaller({
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
+      timezone: "UTC",
     });
   }
 
@@ -490,6 +493,7 @@ describe("settingsRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.get({ key: "theme" });
       expect(result).toEqual({ key: "theme", value: "dark" });
@@ -500,6 +504,7 @@ describe("settingsRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.get({ key: "nonexistent" });
       expect(result).toBeNull();
@@ -516,6 +521,7 @@ describe("settingsRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.getAll();
       expect(result).toHaveLength(2);
@@ -532,6 +538,7 @@ describe("settingsRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.set({ key: "theme", value: "light" });
       expect(result).toEqual({ key: "theme", value: "light" });
@@ -553,6 +560,7 @@ describe("settingsRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
       await expect(caller.set({ key: "theme", value: "dark" })).rejects.toThrow(
         "Failed to upsert setting",
@@ -572,6 +580,7 @@ describe("settingsRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn(), transaction: mockTransaction },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.deleteAllUserData();
@@ -617,6 +626,7 @@ describe("settingsRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.slackStatus();
       expect(result).toHaveProperty("configured");
@@ -631,6 +641,7 @@ describe("settingsRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.slackStatus();
       expect(result.connected).toBe(true);
@@ -644,6 +655,7 @@ describe("settingsRouter", () => {
         const caller = createCaller({
           db: { execute: vi.fn().mockResolvedValue([]) },
           userId: "user-1",
+          timezone: "UTC",
         });
         const result = await caller.slackStatus();
         expect(result.configured).toBe(true);
@@ -660,6 +672,7 @@ describe("settingsRouter", () => {
         const caller = createCaller({
           db: { execute: vi.fn().mockResolvedValue([]) },
           userId: "user-1",
+          timezone: "UTC",
         });
         const result = await caller.slackStatus();
         expect(result.configured).toBe(true);
@@ -675,6 +688,7 @@ describe("settingsRouter", () => {
         const caller = createCaller({
           db: { execute: vi.fn().mockResolvedValue([]) },
           userId: "user-1",
+          timezone: "UTC",
         });
         const result = await caller.slackStatus();
         expect(result.configured).toBe(false);
@@ -690,6 +704,7 @@ describe("settingsRouter", () => {
         const caller = createCaller({
           db: { execute: vi.fn().mockResolvedValue([]) },
           userId: "user-1",
+          timezone: "UTC",
         });
         const result = await caller.slackStatus();
         expect(result.configured).toBe(false);
@@ -720,6 +735,7 @@ describe("sleepNeedRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.calculate();
 
@@ -742,6 +758,7 @@ describe("sleepNeedRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.calculate();
 
@@ -754,6 +771,7 @@ describe("sleepNeedRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.calculate();
 
@@ -772,6 +790,7 @@ describe("sportSettingsRouter", () => {
     return createCaller({
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
+      timezone: "UTC",
     });
   }
 

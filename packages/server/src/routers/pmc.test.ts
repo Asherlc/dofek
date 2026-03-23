@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const trpc = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  const trpc = initTRPC
+    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .create();
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
@@ -47,6 +49,7 @@ describe("pmcRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.chart({ days: 180 });
       expect(result.data).toEqual([]);
@@ -78,7 +81,7 @@ describe("pmcRouter", () => {
       ]);
       execute.mockResolvedValueOnce([]);
 
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
       const result = await caller.chart({ days: 180 });
 
       expect(result.model.type).toBe("generic");
@@ -112,7 +115,7 @@ describe("pmcRouter", () => {
       ]);
       execute.mockResolvedValueOnce([]);
 
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
       const result = await caller.chart({ days: 180 });
 
       // Find the activity day and verify load matches expected hrTSS
@@ -152,7 +155,7 @@ describe("pmcRouter", () => {
       }));
       execute.mockResolvedValueOnce(npRows);
 
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
       const result = await caller.chart({ days: 180 });
 
       // FTP = round(best_avg_power * 0.95) = round(290 * 0.95) = 276
@@ -184,7 +187,7 @@ describe("pmcRouter", () => {
       ]);
       execute.mockResolvedValueOnce([]);
 
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
       const result = await caller.chart({ days: 180 });
 
       for (const point of result.data) {
@@ -220,7 +223,7 @@ describe("pmcRouter", () => {
       ]);
       execute.mockResolvedValueOnce([]);
 
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
       const result = await caller.chart({ days: 180 });
 
       // First data point should be at or near the activity (CTL starts building)
@@ -253,7 +256,7 @@ describe("pmcRouter", () => {
       ]);
       execute.mockResolvedValueOnce([]);
 
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
       const result = await caller.chart({ days: 180 });
 
       for (const point of result.data) {
@@ -294,7 +297,7 @@ describe("pmcRouter", () => {
       ]);
       execute.mockResolvedValueOnce([]);
 
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
       const result = await caller.chart({ days: 180 });
 
       // Combined load should be sum of both activities' hrTSS

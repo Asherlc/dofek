@@ -173,9 +173,9 @@ export const healthspanRouter = router({
         rawRowSchema,
         sql`WITH sleep_data AS (
               SELECT
-                started_at::date AS date,
+                (started_at AT TIME ZONE ${ctx.timezone})::date AS date,
                 duration_minutes,
-                EXTRACT(HOUR FROM started_at) * 60 + EXTRACT(MINUTE FROM started_at) AS bedtime_minutes
+                EXTRACT(HOUR FROM started_at AT TIME ZONE ${ctx.timezone}) * 60 + EXTRACT(MINUTE FROM started_at AT TIME ZONE ${ctx.timezone}) AS bedtime_minutes
               FROM fitness.v_sleep
               WHERE user_id = ${ctx.userId}
                 AND is_nap = false
@@ -237,7 +237,7 @@ export const healthspanRouter = router({
                   SELECT dm.resting_hr
                   FROM fitness.v_daily_metrics dm
                   WHERE dm.user_id = up2.id
-                    AND dm.date <= a.started_at::date
+                    AND dm.date <= (a.started_at AT TIME ZONE ${ctx.timezone})::date
                     AND dm.resting_hr IS NOT NULL
                   ORDER BY dm.date DESC
                   LIMIT 1

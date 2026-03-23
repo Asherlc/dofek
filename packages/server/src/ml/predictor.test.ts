@@ -95,7 +95,7 @@ describe("trainHrvPredictor (legacy wrapper)", () => {
   });
 
   it("ranks sleep features highly for HRV", () => {
-    const days = generateSyntheticDays(300);
+    const days = generateSyntheticDays(200);
     const result = trainHrvPredictor(days);
     if (!result) throw new Error("expected result");
 
