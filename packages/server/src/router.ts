@@ -1,4 +1,5 @@
 import { activityRouter } from "./routers/activity.ts";
+import { aiCoachRouter } from "./routers/ai-coach.ts";
 import { anomalyDetectionRouter } from "./routers/anomaly-detection.ts";
 import { authRouter } from "./routers/auth.ts";
 import { behaviorImpactRouter } from "./routers/behavior-impact.ts";
@@ -49,6 +50,7 @@ import { router } from "./trpc.ts";
 
 export const appRouter = router({
   activity: activityRouter,
+  aiCoach: aiCoachRouter,
   anomalyDetection: anomalyDetectionRouter,
   behaviorImpact: behaviorImpactRouter,
   breathwork: breathworkRouter,
