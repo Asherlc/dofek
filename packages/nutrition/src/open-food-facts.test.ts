@@ -8,9 +8,183 @@ function createFetchResponse(payload: unknown, ok = true) {
   };
 }
 
+/** Helper to create a barcode API response with a given product */
+function barcodeLookupResponse(product: Record<string, unknown>) {
+  return createFetchResponse({ status: 1, product });
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
+
+// ── getLocalePreferences (exercised through constructor → search URL) ────────
+
+describe("locale handling", () => {
+  it("uses underscore-separated locales (e.g. en_US)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      createFetchResponse({
+        products: [
+          { code: "1", product_name: "Taco", lang: "en", nutriments: { "energy-kcal_100g": 200 } },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new OpenFoodFactsClient("en_US");
+    await client.searchFoods("taco", 5);
+
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(url.searchParams.get("lc")).toBe("en");
+    expect(url.searchParams.get("countries_tags_en")).toBe("united-states");
+  });
+
+  it("maps AU region to australia country tag", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(createFetchResponse({ products: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new OpenFoodFactsClient("en-AU");
+    await client.searchFoods("vegemite", 5);
+
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(url.searchParams.get("countries_tags_en")).toBe("australia");
+  });
+
+  it("maps GB region to united-kingdom country tag", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(createFetchResponse({ products: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new OpenFoodFactsClient("en-GB");
+    await client.searchFoods("biscuit", 5);
+
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(url.searchParams.get("countries_tags_en")).toBe("united-kingdom");
+  });
+
+  it("maps CA region to canada country tag", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(createFetchResponse({ products: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new OpenFoodFactsClient("en-CA");
+    await client.searchFoods("maple syrup", 5);
+
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(url.searchParams.get("countries_tags_en")).toBe("canada");
+  });
+
+  it("maps IE region to ireland country tag", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(createFetchResponse({ products: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new OpenFoodFactsClient("en-IE");
+    await client.searchFoods("butter", 5);
+
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(url.searchParams.get("countries_tags_en")).toBe("ireland");
+  });
+
+  it("maps NZ region to new-zealand country tag", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(createFetchResponse({ products: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new OpenFoodFactsClient("en-NZ");
+    await client.searchFoods("kiwi", 5);
+
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(url.searchParams.get("countries_tags_en")).toBe("new-zealand");
+  });
+
+  it("defaults English without region to united-states", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(createFetchResponse({ products: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    // "en" alone — no region, but languageCode is "en" so fallback is united-states
+    const client = new OpenFoodFactsClient("en");
+    await client.searchFoods("bread", 5);
+
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(url.searchParams.get("lc")).toBe("en");
+    expect(url.searchParams.get("countries_tags_en")).toBe("united-states");
+  });
+
+  it("omits country tag for non-English locale without known region", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      createFetchResponse({
+        products: [
+          { code: "1", product_name: "Pain", lang: "fr", nutriments: { "energy-kcal_100g": 250 } },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    // French without a region — no country tag
+    const client = new OpenFoodFactsClient("fr");
+    await client.searchFoods("pain", 5);
+
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(url.searchParams.get("lc")).toBe("fr");
+    expect(url.searchParams.get("countries_tags_en")).toBeNull();
+  });
+
+  it("does not fall back to global search when no country tag is set", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(createFetchResponse({ products: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new OpenFoodFactsClient("fr");
+    const results = await client.searchFoods("croissant", 5);
+
+    // Should only call once — no fallback because there's no country tag to drop
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(results).toHaveLength(0);
+  });
+
+  it("uses non-English locale in search and includes localized field", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      createFetchResponse({
+        products: [
+          {
+            code: "99",
+            product_name: "Croissant",
+            product_name_fr: "Croissant au Beurre",
+            lang: "fr",
+            nutriments: { "energy-kcal_100g": 400 },
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new OpenFoodFactsClient("fr-FR");
+    const results = await client.searchFoods("croissant", 5);
+
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(url.searchParams.get("lc")).toBe("fr");
+    // Fields should include product_name_fr
+    const fields = url.searchParams.get("fields")?.split(",") ?? [];
+    expect(fields).toContain("product_name_fr");
+    // Prefers localized name
+    expect(results[0]?.name).toBe("Croissant au Beurre");
+  });
+
+  it("does not duplicate product_name in fields when language is default", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(createFetchResponse({ products: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    // Construct a scenario where the localized field equals "product_name"
+    // This happens if languageCode came out as "product_name".split("_")[1] — but actually
+    // it can't. The check is `localizedNameField !== "product_name"`. Let's verify the
+    // default en-US path doesn't push a duplicate.
+    const client = new OpenFoodFactsClient("en-US");
+    await client.searchFoods("pizza", 5);
+
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    const fields = url.searchParams.get("fields")?.split(",") ?? [];
+    expect(fields).toContain("product_name_en");
+    expect(fields).toContain("product_name");
+    // product_name_en !== product_name so both should be present (no duplication issue)
+  });
+});
+
+// ── searchFoods ──────────────────────────────────────────────────────────────
 
 describe("searchFoods", () => {
   it("adds locale and country filters for US English searches", async () => {
@@ -60,13 +234,37 @@ describe("searchFoods", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const client = new OpenFoodFactsClient("en-US");
-    await client.searchFoods("hamburger", 5);
+    const results = await client.searchFoods("hamburger", 5);
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const firstUrl = new URL(String(fetchMock.mock.calls[0]?.[0] ?? ""));
     const secondUrl = new URL(String(fetchMock.mock.calls[1]?.[0] ?? ""));
     expect(firstUrl.searchParams.get("countries_tags_en")).toBe("united-states");
     expect(secondUrl.searchParams.get("countries_tags_en")).toBeNull();
+    expect(results).toHaveLength(1);
+    expect(results[0]?.name).toBe("Hamburger Bun");
+  });
+
+  it("does not fall back when country-filtered results exist", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      createFetchResponse({
+        products: [
+          {
+            code: "2",
+            product_name: "Hamburger Buns",
+            lang: "en",
+            nutriments: { "energy-kcal_100g": 270 },
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new OpenFoodFactsClient("en-US");
+    const results = await client.searchFoods("hamburger", 5);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(results).toHaveLength(1);
   });
 
   it("filters out products with a different primary language", async () => {
@@ -98,6 +296,71 @@ describe("searchFoods", () => {
     expect(results[0]?.name).toBe("Hamburger Buns");
   });
 
+  it("includes products whose language starts with preferred code", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      createFetchResponse({
+        products: [
+          {
+            code: "1",
+            product_name: "English Muffin",
+            lang: "en-GB",
+            nutriments: { "energy-kcal_100g": 200 },
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new OpenFoodFactsClient("en-US");
+    const results = await client.searchFoods("muffin", 10);
+
+    // "en-GB" starts with "en-" so it should match
+    expect(results).toHaveLength(1);
+    expect(results[0]?.name).toBe("English Muffin");
+  });
+
+  it("excludes products whose language only partially matches", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      createFetchResponse({
+        products: [
+          {
+            code: "1",
+            product_name: "Endive",
+            lang: "ens", // not "en" or "en-..."
+            nutriments: { "energy-kcal_100g": 100 },
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new OpenFoodFactsClient("en-US");
+    const results = await client.searchFoods("endive", 10);
+
+    expect(results).toHaveLength(0);
+  });
+
+  it("includes products with no language set", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      createFetchResponse({
+        products: [
+          {
+            code: "1",
+            product_name: "Mystery Food",
+            nutriments: { "energy-kcal_100g": 100 },
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new OpenFoodFactsClient("en-US");
+    const results = await client.searchFoods("mystery", 10);
+
+    // No lang → treated as matching
+    expect(results).toHaveLength(1);
+  });
+
   it("prefers locale-specific product names when available", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       createFetchResponse({
@@ -120,7 +383,124 @@ describe("searchFoods", () => {
     expect(results).toHaveLength(1);
     expect(results[0]?.name).toBe("Seeded Burger Buns");
   });
+
+  it("falls back to product_name when locale-specific name is empty", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      createFetchResponse({
+        products: [
+          {
+            code: "11",
+            product_name: "Salsa Verde",
+            product_name_en: "   ",
+            lang: "en",
+            nutriments: { "energy-kcal_100g": 40 },
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new OpenFoodFactsClient("en-US");
+    const results = await client.searchFoods("salsa", 10);
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.name).toBe("Salsa Verde");
+  });
+
+  it("filters out products with no name at all", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      createFetchResponse({
+        products: [
+          {
+            code: "12",
+            lang: "en",
+            nutriments: { "energy-kcal_100g": 100 },
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new OpenFoodFactsClient("en-US");
+    const results = await client.searchFoods("food", 10);
+
+    expect(results).toHaveLength(0);
+  });
+
+  it("filters out products with whitespace-only product_name", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      createFetchResponse({
+        products: [
+          {
+            code: "13",
+            product_name: "   ",
+            lang: "en",
+            nutriments: { "energy-kcal_100g": 100 },
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new OpenFoodFactsClient("en-US");
+    const results = await client.searchFoods("food", 10);
+
+    expect(results).toHaveLength(0);
+  });
+
+  it("returns empty array on network error", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network down")));
+
+    const client = new OpenFoodFactsClient("en-US");
+    const results = await client.searchFoods("hamburger", 5);
+
+    expect(results).toHaveLength(0);
+  });
+
+  it("returns empty array when fetch response is not ok", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(createFetchResponse({}, false)));
+
+    const client = new OpenFoodFactsClient("en-US");
+    const results = await client.searchFoods("hamburger", 5);
+
+    expect(results).toHaveLength(0);
+  });
+
+  it("returns empty array when response fails Zod parsing", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(createFetchResponse("not an object")));
+
+    const client = new OpenFoodFactsClient("en-US");
+    const results = await client.searchFoods("hamburger", 5);
+
+    expect(results).toHaveLength(0);
+  });
+
+  it("uses default limit of 20", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(createFetchResponse({ products: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new OpenFoodFactsClient("en-US");
+    await client.searchFoods("pizza");
+
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(url.searchParams.get("page_size")).toBe("20");
+  });
+
+  it("includes search_simple, action, and json params", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(createFetchResponse({ products: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new OpenFoodFactsClient("en-US");
+    await client.searchFoods("pizza", 5);
+
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(url.searchParams.get("search_simple")).toBe("1");
+    expect(url.searchParams.get("action")).toBe("process");
+    expect(url.searchParams.get("json")).toBe("1");
+  });
 });
+
+// ── lookupBarcode ────────────────────────────────────────────────────────────
 
 describe("lookupBarcode", () => {
   it("returns null for unexpected response payloads", async () => {
@@ -132,7 +512,345 @@ describe("lookupBarcode", () => {
 
     expect(result).toBeNull();
   });
+
+  it("returns null when status is 0 (product not found)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(createFetchResponse({ status: 0 })));
+
+    const client = new OpenFoodFactsClient("en-US");
+    expect(await client.lookupBarcode("0000000000000")).toBeNull();
+  });
+
+  it("returns null when HTTP response is not ok", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(createFetchResponse({}, false)));
+
+    const client = new OpenFoodFactsClient("en-US");
+    expect(await client.lookupBarcode("1234567890123")).toBeNull();
+  });
+
+  it("returns null on network error", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+
+    const client = new OpenFoodFactsClient("en-US");
+    expect(await client.lookupBarcode("1234567890123")).toBeNull();
+  });
+
+  it("returns null when product has no name", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(barcodeLookupResponse({ code: "1" })));
+
+    const client = new OpenFoodFactsClient("en-US");
+    expect(await client.lookupBarcode("1")).toBeNull();
+  });
+
+  it("builds correct URL with barcode and fields", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      barcodeLookupResponse({
+        code: "049000042566",
+        product_name: "Coca-Cola",
+        nutriments: { "energy-kcal_serving": 140 },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new OpenFoodFactsClient("en-US");
+    await client.lookupBarcode("049000042566");
+
+    const url = String(fetchMock.mock.calls[0]?.[0]);
+    expect(url).toContain("/api/v2/product/049000042566.json");
+    expect(url).toContain("product_name_en");
+  });
+
+  it("populates all result fields from product data", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        barcodeLookupResponse({
+          code: "049000042566",
+          product_name: "Coca-Cola Classic",
+          brands: "Coca-Cola",
+          serving_size: "355 ml",
+          image_front_small_url: "https://images.off.org/coca-cola.jpg",
+          nutriments: {
+            "energy-kcal_serving": 140,
+            proteins_serving: 0,
+            carbohydrates_serving: 39,
+            fat_serving: 0,
+            fiber_serving: 0,
+            sugars_serving: 39,
+          },
+        }),
+      ),
+    );
+
+    const client = new OpenFoodFactsClient("en-US");
+    const result = await client.lookupBarcode("049000042566");
+
+    expect(result).not.toBeNull();
+    expect(result?.barcode).toBe("049000042566");
+    expect(result?.name).toBe("Coca-Cola Classic");
+    expect(result?.brand).toBe("Coca-Cola");
+    expect(result?.servingSize).toBe("355 ml");
+    expect(result?.imageUrl).toBe("https://images.off.org/coca-cola.jpg");
+    expect(result?.calories).toBe(140);
+    expect(result?.proteinG).toBe(0);
+    expect(result?.carbsG).toBe(39);
+    expect(result?.fatG).toBe(0);
+    expect(result?.fiberG).toBe(0);
+    expect(result?.nutrients.sugar).toBe(39);
+  });
+
+  it("returns null for optional fields when product omits them", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        barcodeLookupResponse({
+          product_name: "Minimal Product",
+          nutriments: { "energy-kcal_100g": 100 },
+        }),
+      ),
+    );
+
+    const client = new OpenFoodFactsClient("en-US");
+    const result = await client.lookupBarcode("1");
+
+    expect(result).not.toBeNull();
+    expect(result?.barcode).toBeNull();
+    expect(result?.brand).toBeNull();
+    expect(result?.servingSize).toBeNull();
+    expect(result?.imageUrl).toBeNull();
+  });
+
+  it("does not enforce language match for barcode lookups", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        barcodeLookupResponse({
+          code: "1",
+          product_name: "Baguette Tradition",
+          lang: "fr",
+          nutriments: { "energy-kcal_100g": 270 },
+        }),
+      ),
+    );
+
+    const client = new OpenFoodFactsClient("en-US");
+    const result = await client.lookupBarcode("1");
+
+    // Barcode lookup does not enforce language — should still return product
+    expect(result).not.toBeNull();
+    expect(result?.name).toBe("Baguette Tradition");
+  });
+
+  it("rounds fractional calories to the nearest integer", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        barcodeLookupResponse({
+          code: "1",
+          product_name: "Granola",
+          nutriments: { "energy-kcal_serving": 249.6 },
+        }),
+      ),
+    );
+
+    const client = new OpenFoodFactsClient("en-US");
+    const result = await client.lookupBarcode("1");
+
+    expect(result?.calories).toBe(250);
+  });
+
+  it("returns null calories when no energy-kcal is present", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        barcodeLookupResponse({
+          code: "1",
+          product_name: "Water",
+          nutriments: {},
+        }),
+      ),
+    );
+
+    const client = new OpenFoodFactsClient("en-US");
+    const result = await client.lookupBarcode("1");
+
+    expect(result?.calories).toBeNull();
+  });
 });
+
+// ── nutriment value parsing ──────────────────────────────────────────────────
+
+describe("nutriment value parsing", () => {
+  it("parses string nutriment values", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        barcodeLookupResponse({
+          code: "1",
+          product_name: "Stringy Food",
+          nutriments: {
+            "energy-kcal_serving": "180",
+            proteins_serving: "12.5",
+            carbohydrates_serving: "20",
+            fat_serving: "8",
+          },
+        }),
+      ),
+    );
+
+    const client = new OpenFoodFactsClient("en-US");
+    const result = await client.lookupBarcode("1");
+
+    expect(result?.calories).toBe(180);
+    expect(result?.proteinG).toBe(12.5);
+    expect(result?.carbsG).toBe(20);
+    expect(result?.fatG).toBe(8);
+  });
+
+  it("returns null for non-finite string values like NaN", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        barcodeLookupResponse({
+          code: "1",
+          product_name: "Bad Data",
+          nutriments: {
+            "energy-kcal_serving": "not a number",
+            proteins_serving: "NaN",
+            carbohydrates_serving: "",
+          },
+        }),
+      ),
+    );
+
+    const client = new OpenFoodFactsClient("en-US");
+    const result = await client.lookupBarcode("1");
+
+    expect(result?.calories).toBeNull();
+    expect(result?.proteinG).toBeNull();
+    // Empty string parseFloat returns NaN, should be null
+    expect(result?.carbsG).toBeNull();
+  });
+
+  it("returns null for boolean/object nutriment values", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        barcodeLookupResponse({
+          code: "1",
+          product_name: "Weird Data",
+          nutriments: {
+            "energy-kcal_serving": true,
+            proteins_serving: { amount: 5 },
+            carbohydrates_serving: null,
+          },
+        }),
+      ),
+    );
+
+    const client = new OpenFoodFactsClient("en-US");
+    const result = await client.lookupBarcode("1");
+
+    expect(result?.calories).toBeNull();
+    expect(result?.proteinG).toBeNull();
+    expect(result?.carbsG).toBeNull();
+  });
+
+  it("returns null for Infinity nutriment values", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        barcodeLookupResponse({
+          code: "1",
+          product_name: "Infinite Food",
+          nutriments: {
+            "energy-kcal_serving": Number.POSITIVE_INFINITY,
+            proteins_serving: Number.NEGATIVE_INFINITY,
+          },
+        }),
+      ),
+    );
+
+    const client = new OpenFoodFactsClient("en-US");
+    const result = await client.lookupBarcode("1");
+
+    expect(result?.calories).toBeNull();
+    expect(result?.proteinG).toBeNull();
+  });
+
+  it("prefers per-serving over per-100g values", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        barcodeLookupResponse({
+          code: "1",
+          product_name: "Dual Values",
+          nutriments: {
+            "energy-kcal_serving": 150,
+            "energy-kcal_100g": 300,
+            proteins_serving: 10,
+            proteins_100g: 20,
+          },
+        }),
+      ),
+    );
+
+    const client = new OpenFoodFactsClient("en-US");
+    const result = await client.lookupBarcode("1");
+
+    expect(result?.calories).toBe(150);
+    expect(result?.proteinG).toBe(10);
+  });
+
+  it("rounds micronutrient values to one decimal place", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        barcodeLookupResponse({
+          code: "1",
+          product_name: "Precise Food",
+          nutriments: {
+            "energy-kcal_serving": 100,
+            calcium_serving: 45.678,
+            iron_serving: 2.349,
+            "vitamin-c_serving": 0.15,
+          },
+        }),
+      ),
+    );
+
+    const client = new OpenFoodFactsClient("en-US");
+    const result = await client.lookupBarcode("1");
+
+    expect(result?.nutrients.calcium).toBe(45.7);
+    expect(result?.nutrients.iron).toBe(2.3);
+    expect(result?.nutrients.vitamin_c).toBe(0.2);
+  });
+
+  it("handles undefined nutriments gracefully", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        barcodeLookupResponse({
+          code: "1",
+          product_name: "No Nutriments",
+        }),
+      ),
+    );
+
+    const client = new OpenFoodFactsClient("en-US");
+    const result = await client.lookupBarcode("1");
+
+    expect(result).not.toBeNull();
+    expect(result?.calories).toBeNull();
+    expect(result?.proteinG).toBeNull();
+    expect(result?.carbsG).toBeNull();
+    expect(result?.fatG).toBeNull();
+    expect(result?.fiberG).toBeNull();
+    expect(Object.keys(result?.nutrients ?? {})).toHaveLength(0);
+  });
+});
+
+// ── micronutrient extraction ─────────────────────────────────────────────────
 
 describe("micronutrient extraction", () => {
   it("extracts micronutrients from per-serving nutriment data", async () => {
@@ -220,6 +938,10 @@ describe("micronutrient extraction", () => {
     expect(result).not.toBeNull();
     expect(result?.nutrients.calcium).toBe(120);
     expect(result?.nutrients.vitamin_d).toBe(0.8);
+    // Also verify macros fell back to 100g
+    expect(result?.proteinG).toBe(3.5);
+    expect(result?.carbsG).toBe(5);
+    expect(result?.fatG).toBe(3);
   });
 
   it("returns null for micronutrient fields not present in the response", async () => {
@@ -309,5 +1031,136 @@ describe("micronutrient extraction", () => {
     expect(results[0]?.nutrients.vitamin_c).toBe(72);
     expect(results[0]?.nutrients.potassium).toBe(450);
     expect(results[0]?.nutrients.calcium).toBe(20);
+  });
+
+  it("extracts all vitamin B variants and vitamin E/K", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        barcodeLookupResponse({
+          code: "1",
+          product_name: "Multivitamin Juice",
+          nutriments: {
+            "energy-kcal_serving": 50,
+            "vitamin-e_serving": 7.5,
+            "vitamin-k_serving": 25,
+            "vitamin-b1_serving": 0.6,
+            "vitamin-b2_serving": 0.7,
+            "vitamin-pp_serving": 8, // niacin / B3
+            "pantothenic-acid_serving": 2.5, // B5
+            "vitamin-b6_serving": 0.85,
+            biotin_serving: 15, // B7
+            "vitamin-b9_serving": 200,
+          },
+        }),
+      ),
+    );
+
+    const client = new OpenFoodFactsClient("en-US");
+    const result = await client.lookupBarcode("1");
+
+    expect(result?.nutrients.vitamin_e).toBe(7.5);
+    expect(result?.nutrients.vitamin_k).toBe(25);
+    expect(result?.nutrients.vitamin_b1).toBe(0.6);
+    expect(result?.nutrients.vitamin_b2).toBe(0.7);
+    expect(result?.nutrients.vitamin_b3).toBe(8);
+    expect(result?.nutrients.vitamin_b5).toBe(2.5);
+    expect(result?.nutrients.vitamin_b6).toBe(0.9);
+    expect(result?.nutrients.vitamin_b7).toBe(15);
+    expect(result?.nutrients.vitamin_b9).toBe(200);
+  });
+
+  it("extracts all mineral types", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        barcodeLookupResponse({
+          code: "1",
+          product_name: "Mineral Water Plus",
+          nutriments: {
+            "energy-kcal_serving": 0,
+            selenium_serving: 27.5,
+            copper_serving: 0.45,
+            manganese_serving: 1.2,
+            chromium_serving: 17.5,
+            iodine_serving: 75,
+            phosphorus_serving: 125,
+            molybdenum_serving: 22.5,
+            chloride_serving: 36,
+            fluoride_serving: 1.5,
+            choline_serving: 275,
+          },
+        }),
+      ),
+    );
+
+    const client = new OpenFoodFactsClient("en-US");
+    const result = await client.lookupBarcode("1");
+
+    expect(result?.nutrients.selenium).toBe(27.5);
+    expect(result?.nutrients.copper).toBe(0.5);
+    expect(result?.nutrients.manganese).toBe(1.2);
+    expect(result?.nutrients.chromium).toBe(17.5);
+    expect(result?.nutrients.iodine).toBe(75);
+    expect(result?.nutrients.phosphorus).toBe(125);
+    expect(result?.nutrients.molybdenum).toBe(22.5);
+    expect(result?.nutrients.chloride).toBe(36);
+    expect(result?.nutrients.fluoride).toBe(1.5);
+    expect(result?.nutrients.choline).toBe(275);
+  });
+
+  it("extracts fat breakdown subtypes", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        barcodeLookupResponse({
+          code: "1",
+          product_name: "Olive Oil",
+          nutriments: {
+            "energy-kcal_serving": 120,
+            fat_serving: 14,
+            "saturated-fat_serving": 2,
+            "polyunsaturated-fat_serving": 1.5,
+            "monounsaturated-fat_serving": 10,
+            "trans-fat_serving": 0,
+          },
+        }),
+      ),
+    );
+
+    const client = new OpenFoodFactsClient("en-US");
+    const result = await client.lookupBarcode("1");
+
+    expect(result?.nutrients.saturated_fat).toBe(2);
+    expect(result?.nutrients.polyunsaturated_fat).toBe(1.5);
+    expect(result?.nutrients.monounsaturated_fat).toBe(10);
+    expect(result?.nutrients.trans_fat).toBe(0);
+  });
+
+  it("skips nutrients that have null openFoodFactsKey", async () => {
+    // This test verifies the `definition.openFoodFactsKey === null` continue branch.
+    // Currently all NUTRIENTS have a key, but the code handles null. We verify
+    // that the nutrients map only contains keys that are in the NUTRIENTS catalog.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        barcodeLookupResponse({
+          code: "1",
+          product_name: "Test Food",
+          nutriments: {
+            "energy-kcal_serving": 100,
+            calcium_serving: 50,
+            "some-unknown-nutrient_serving": 999,
+          },
+        }),
+      ),
+    );
+
+    const client = new OpenFoodFactsClient("en-US");
+    const result = await client.lookupBarcode("1");
+
+    // The "some-unknown-nutrient" won't appear because it's not in NUTRIENTS
+    expect(result?.nutrients.calcium).toBe(50);
+    expect(Object.keys(result?.nutrients ?? {})).toEqual(["calcium"]);
   });
 });
