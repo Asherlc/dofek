@@ -362,6 +362,7 @@ jobs:
           restore-keys: |
             stryker-v2-${{ github.head_ref || 'main' }}-
             stryker-v2-main-
+          save-always: true
       - name: Get changed files
         if: github.event_name == 'pull_request'
         id: changed
