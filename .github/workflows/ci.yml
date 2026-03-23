@@ -344,6 +344,7 @@ jobs:
   mutation:
     name: Mutation Testing
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
@@ -363,9 +364,9 @@ jobs:
             stryker-v2-${{ github.head_ref || 'main' }}-
             stryker-v2-main-
           save-always: true
-      - name: Get changed files
+      - name: Get changed files (PR)
         if: github.event_name == 'pull_request'
-        id: changed
+        id: changed-pr
         run: |
           # Filter to .ts source files, excluding tests, config, etc.
           # Also skip files with < 15 changed lines (trivial changes like import
@@ -391,12 +392,38 @@ jobs:
           done
           echo "files=$FILES" >> "$GITHUB_OUTPUT"
           echo "Mutating changed files: $FILES"
-      - name: Run Stryker (changed files)
-        if: github.event_name == 'pull_request' && steps.changed.outputs.files != ''
-        run: pnpm test:mutation --mutate "${{ steps.changed.outputs.files }}"
-      - name: Run Stryker (full suite)
+      - name: Get changed files (push)
         if: github.event_name == 'push'
-        run: pnpm test:mutation
+        id: changed-push
+        run: |
+          # On push to main, only mutate files changed in this push
+          # (the incremental cache handles previously-seen mutations)
+          CANDIDATES=$(git diff --name-only HEAD~1...HEAD \
+            | { grep '\.ts$' || true; } \
+            | { grep -v '\.test\.ts$' || true; } \
+            | { grep -v '\.cy\.ts$' || true; } \
+            | { grep -v 'test-helpers\.ts$' || true; } \
+            | { grep -v '\.d\.ts$' || true; } \
+            | { grep -v '\.gen\.ts$' || true; } \
+            | { grep -v '\.config\.' || true; } \
+            | { grep -v 'drizzle/' || true; } \
+            | { grep -v 'src/db/schema\.ts$' || true; } \
+            | { grep -v 'scripts/' || true; } \
+            | { grep -v 'packages/mobile/' || true; })
+          FILES=""
+          for f in $CANDIDATES; do
+            if [ -f "$f" ]; then
+              FILES="${FILES:+$FILES,}$f"
+            fi
+          done
+          echo "files=$FILES" >> "$GITHUB_OUTPUT"
+          echo "Mutating changed files: $FILES"
+      - name: Run Stryker (PR — changed files)
+        if: github.event_name == 'pull_request' && steps.changed-pr.outputs.files != ''
+        run: pnpm test:mutation --mutate "${{ steps.changed-pr.outputs.files }}"
+      - name: Run Stryker (push — changed files)
+        if: github.event_name == 'push' && steps.changed-push.outputs.files != ''
+        run: pnpm test:mutation --mutate "${{ steps.changed-push.outputs.files }}"
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
