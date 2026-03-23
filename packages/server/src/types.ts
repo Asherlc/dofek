@@ -50,6 +50,7 @@ export type {
   SleepAnalyticsResult,
   SleepConsistencyRow,
   SleepNightlyRow,
+  StrainTargetResult,
   WorkloadRatioResult,
   WorkloadRatioRow,
 } from "./routers/recovery.ts";

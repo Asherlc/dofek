@@ -1,6 +1,7 @@
 import { type ReadinessComponents, ReadinessScore } from "@dofek/recovery/readiness";
 import { computeSleepConsistencyScore } from "@dofek/recovery/sleep-consistency";
 import { StrainScore, zScoreToRecoveryScore } from "@dofek/scoring/scoring";
+import { computeStrainTarget } from "@dofek/scoring/strain-target";
 import { selectRecentDailyLoad } from "@dofek/training/training";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
@@ -65,6 +66,14 @@ export interface ReadinessRow {
   date: string;
   readinessScore: number;
   components: ReadinessComponents;
+}
+
+export interface StrainTargetResult {
+  targetStrain: number;
+  currentStrain: number;
+  progressPercent: number;
+  zone: "Push" | "Maintain" | "Recovery";
+  explanation: string;
 }
 
 export const recoveryRouter = router({
@@ -521,5 +530,102 @@ export const recoveryRouter = router({
       }
 
       return results;
+    }),
+
+  /**
+   * Daily strain target based on current readiness and training loads.
+   * Returns a recommended strain level and progress toward it.
+   */
+  strainTarget: cachedProtectedQuery(CacheTTL.MEDIUM)
+    .input(z.object({ days: z.number().default(30) }))
+    .query(async ({ ctx, input }): Promise<StrainTargetResult> => {
+      // Get readiness score
+      const readinessRows = await executeWithSchema(
+        ctx.db,
+        sql`
+          SELECT date, resting_hr, hrv, spo2_avg, respiratory_rate_avg
+          FROM fitness.daily_metrics
+          WHERE user_id = ${ctx.userId}
+          ORDER BY date DESC
+          LIMIT 1
+        `,
+        z.object({
+          date: dateStringSchema,
+          resting_hr: z.number().nullable(),
+          hrv: z.number().nullable(),
+          spo2_avg: z.number().nullable(),
+          respiratory_rate_avg: z.number().nullable(),
+        }),
+      );
+
+      // Get daily loads for ACWR
+      const loads = await executeWithSchema(
+        ctx.db,
+        sql`${selectRecentDailyLoad(ctx.userId, input.days)}`,
+        z.object({
+          date: dateStringSchema,
+          daily_load: z.number(),
+        }),
+      );
+
+      // Compute readiness if we have metrics
+      let readinessScore = 50; // default moderate
+      if (readinessRows.length > 0) {
+        const m = readinessRows[0];
+        const params = getEffectiveParams(await loadPersonalizedParams(ctx.db, ctx.userId));
+        const sleepRows = await executeWithSchema(
+          ctx.db,
+          sql`
+            SELECT efficiency_pct
+            FROM fitness.sleep_session
+            WHERE user_id = ${ctx.userId}
+              AND sleep_type = 'sleep'
+            ORDER BY started_at DESC
+            LIMIT 1
+          `,
+          z.object({ efficiency_pct: z.number().nullable() }),
+        );
+
+        const score = new ReadinessScore({
+          hrv: m.hrv,
+          restingHr: m.resting_hr,
+          sleepEfficiency: sleepRows[0]?.efficiency_pct ?? null,
+          respiratoryRate: m.respiratory_rate_avg,
+          params,
+        });
+        readinessScore = score.score;
+      }
+
+      // Compute acute and chronic loads
+      const today = new Date().toISOString().slice(0, 10);
+      const acuteWindow = 7;
+      const chronicWindow = 28;
+      let acuteLoad = 0;
+      let chronicLoad = 0;
+      let currentStrain = 0;
+
+      for (const row of loads) {
+        const daysAgo = Math.floor(
+          (new Date(today).getTime() - new Date(row.date).getTime()) / 86400000,
+        );
+        if (daysAgo < acuteWindow) acuteLoad += row.daily_load;
+        if (daysAgo < chronicWindow) chronicLoad += row.daily_load;
+        if (row.date === today) {
+          currentStrain = new StrainScore(row.daily_load).value;
+        }
+      }
+      acuteLoad /= acuteWindow;
+      chronicLoad /= chronicWindow;
+
+      const target = computeStrainTarget(readinessScore, chronicLoad, acuteLoad);
+
+      return {
+        targetStrain: target.targetStrain,
+        currentStrain: Math.round(currentStrain * 10) / 10,
+        progressPercent:
+          target.targetStrain > 0 ? Math.round((currentStrain / target.targetStrain) * 100) : 0,
+        zone: target.zone,
+        explanation: target.explanation,
+      };
     }),
 });

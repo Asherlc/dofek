@@ -6,6 +6,7 @@
   "exports": {
     "./scoring": "./src/scoring.ts",
     "./colors": "./src/colors.ts",
-    "./tokens": "./src/tokens.ts"
+    "./tokens": "./src/tokens.ts",
+    "./strain-target": "./src/strain-target.ts"
   }
 }
