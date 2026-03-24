@@ -1738,9 +1738,7 @@ describe("WhoopProvider.sync() — sleep sync", () => {
     expect(sleepInsert).toBeUndefined();
 
     // Warning should be logged
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Skipping sleep 55555"),
-    );
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Skipping sleep 55555"));
 
     warnSpy.mockRestore();
   });
