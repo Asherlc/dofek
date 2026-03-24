@@ -1790,3 +1790,528 @@ describe("OuraProvider.sync()", () => {
     expect(db.values).not.toHaveBeenCalled();
   });
 });
+
+// ============================================================
+// Webhook method tests
+// ============================================================
+
+describe("OuraProvider.registerWebhook()", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("registers all 8 data types with correct request parameters", async () => {
+    process.env.OURA_CLIENT_ID = "test-client-id";
+    process.env.OURA_CLIENT_SECRET = "test-client-secret";
+
+    const requestBodies: Array<Record<string, unknown>> = [];
+    const requestHeaders: Array<Record<string, string>> = [];
+
+    const mockFetch: typeof globalThis.fetch = async (
+      _input: RequestInfo | URL,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      const headers = init?.headers;
+      if (headers && typeof headers === "object" && !Array.isArray(headers)) {
+        requestHeaders.push(z.record(z.string()).parse(headers));
+      }
+      if (init?.body) {
+        const bodyParsed = z.record(z.unknown()).parse(JSON.parse(String(init.body)));
+        requestBodies.push(bodyParsed);
+      }
+      return Response.json({ id: "sub-first-type" });
+    };
+
+    const provider = new OuraProvider(mockFetch);
+    const result = await provider.registerWebhook("https://example.com/wh", "verify-me");
+
+    expect(result.subscriptionId).toBe("sub-first-type");
+    expect(result.expiresAt).toBeInstanceOf(Date);
+
+    // Should have made 8 POST requests (one per data type)
+    expect(requestBodies).toHaveLength(8);
+
+    const dataTypes = requestBodies.map((b) => b.data_type);
+    expect(dataTypes).toContain("daily_activity");
+    expect(dataTypes).toContain("daily_readiness");
+    expect(dataTypes).toContain("daily_sleep");
+    expect(dataTypes).toContain("workout");
+    expect(dataTypes).toContain("session");
+    expect(dataTypes).toContain("daily_spo2");
+    expect(dataTypes).toContain("daily_stress");
+    expect(dataTypes).toContain("daily_resilience");
+
+    // Verify each request has correct callback_url and verification_token
+    for (const body of requestBodies) {
+      expect(body.callback_url).toBe("https://example.com/wh");
+      expect(body.verification_token).toBe("verify-me");
+      expect(body.event_type).toBe(`create.${body.data_type}`);
+    }
+
+    // Verify client credentials are in headers
+    for (const headers of requestHeaders) {
+      expect(headers["x-client-id"]).toBe("test-client-id");
+      expect(headers["x-client-secret"]).toBe("test-client-secret");
+    }
+  });
+
+  it("handles 409 conflict (already registered) gracefully", async () => {
+    process.env.OURA_CLIENT_ID = "test-client-id";
+    process.env.OURA_CLIENT_SECRET = "test-client-secret";
+
+    let callCount = 0;
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      callCount++;
+      if (callCount === 1) {
+        return Response.json({ id: "sub-001" });
+      }
+      // All subsequent return 409 (already registered)
+      return new Response("Conflict", { status: 409 });
+    };
+
+    const provider = new OuraProvider(mockFetch);
+    const result = await provider.registerWebhook("https://example.com/wh", "verify-me");
+
+    // Should use the first successful ID
+    expect(result.subscriptionId).toBe("sub-001");
+    // All 8 types should have been attempted
+    expect(callCount).toBe(8);
+  });
+
+  it("throws on non-409 error response", async () => {
+    process.env.OURA_CLIENT_ID = "test-client-id";
+    process.env.OURA_CLIENT_SECRET = "test-client-secret";
+
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response("Forbidden", { status: 403 });
+    };
+
+    const provider = new OuraProvider(mockFetch);
+    await expect(provider.registerWebhook("https://example.com/wh", "verify-me")).rejects.toThrow(
+      "Oura webhook registration for daily_activity failed (403)",
+    );
+  });
+
+  it("throws when env vars are missing", async () => {
+    delete process.env.OURA_CLIENT_ID;
+    delete process.env.OURA_CLIENT_SECRET;
+
+    const provider = new OuraProvider();
+    await expect(provider.registerWebhook("https://example.com/wh", "verify-me")).rejects.toThrow(
+      "OURA_CLIENT_ID and OURA_CLIENT_SECRET are required",
+    );
+  });
+
+  it("falls back to default subscription ID when no successful response returns an id", async () => {
+    process.env.OURA_CLIENT_ID = "test-client-id";
+    process.env.OURA_CLIENT_SECRET = "test-client-secret";
+
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      // All return 409 (already registered)
+      return new Response("Conflict", { status: 409 });
+    };
+
+    const provider = new OuraProvider(mockFetch);
+    const result = await provider.registerWebhook("https://example.com/wh", "verify-me");
+
+    expect(result.subscriptionId).toBe("oura-multi-subscription");
+  });
+});
+
+describe("OuraProvider.unregisterWebhook()", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("sends DELETE request with correct URL and credentials", async () => {
+    process.env.OURA_CLIENT_ID = "test-client-id";
+    process.env.OURA_CLIENT_SECRET = "test-client-secret";
+
+    let capturedUrl = "";
+    let capturedMethod = "";
+    let capturedHeaders: Record<string, string> = {};
+
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      capturedUrl = input.toString();
+      capturedMethod = init?.method ?? "GET";
+      if (init?.headers && typeof init.headers === "object" && !Array.isArray(init.headers)) {
+        capturedHeaders = z.record(z.string()).parse(init.headers);
+      }
+      return new Response(null, { status: 204 });
+    };
+
+    const provider = new OuraProvider(mockFetch);
+    await provider.unregisterWebhook("sub-123");
+
+    expect(capturedUrl).toBe("https://api.ouraring.com/v2/webhook/subscription/sub-123");
+    expect(capturedMethod).toBe("DELETE");
+    expect(capturedHeaders["x-client-id"]).toBe("test-client-id");
+    expect(capturedHeaders["x-client-secret"]).toBe("test-client-secret");
+  });
+
+  it("is a no-op when env vars are missing", async () => {
+    delete process.env.OURA_CLIENT_ID;
+    delete process.env.OURA_CLIENT_SECRET;
+
+    let fetchCalled = false;
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      fetchCalled = true;
+      return new Response(null, { status: 204 });
+    };
+
+    const provider = new OuraProvider(mockFetch);
+    await provider.unregisterWebhook("sub-123");
+
+    expect(fetchCalled).toBe(false);
+  });
+});
+
+describe("OuraProvider.verifyWebhookSignature()", () => {
+  it("always returns true (verification done at registration time)", () => {
+    const provider = new OuraProvider();
+    const result = provider.verifyWebhookSignature(Buffer.from("test"), {}, "secret");
+    expect(result).toBe(true);
+  });
+});
+
+describe("OuraProvider.parseWebhookPayload()", () => {
+  it("parses a single event with data_type and user_id", () => {
+    const provider = new OuraProvider();
+    const body = {
+      event_type: "create.daily_activity",
+      data_type: "daily_activity",
+      user_id: "oura-user-123",
+    };
+
+    const events = provider.parseWebhookPayload(body);
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.ownerExternalId).toBe("oura-user-123");
+    expect(events[0]?.eventType).toBe("create");
+    expect(events[0]?.objectType).toBe("daily_activity");
+  });
+
+  it("returns empty array for verification challenge payload", () => {
+    const provider = new OuraProvider();
+    const body = { verification_token: "some-token" };
+
+    const events = provider.parseWebhookPayload(body);
+
+    expect(events).toHaveLength(0);
+  });
+
+  it("returns empty array for invalid payload", () => {
+    const provider = new OuraProvider();
+
+    expect(provider.parseWebhookPayload(null)).toHaveLength(0);
+    expect(provider.parseWebhookPayload("string")).toHaveLength(0);
+    expect(provider.parseWebhookPayload({ invalid: true })).toHaveLength(0);
+  });
+
+  it("parses events for each supported data type", () => {
+    const provider = new OuraProvider();
+    const dataTypes = [
+      "daily_activity",
+      "daily_readiness",
+      "daily_sleep",
+      "workout",
+      "session",
+      "daily_spo2",
+      "daily_stress",
+      "daily_resilience",
+    ];
+
+    for (const dataType of dataTypes) {
+      const body = { data_type: dataType, user_id: "user-1" };
+      const events = provider.parseWebhookPayload(body);
+      expect(events).toHaveLength(1);
+      expect(events[0]?.objectType).toBe(dataType);
+    }
+  });
+});
+
+describe("OuraProvider.handleValidationChallenge()", () => {
+  it("always returns null (Oura uses POST for verification)", () => {
+    const provider = new OuraProvider();
+    expect(provider.handleValidationChallenge({}, "token")).toBeNull();
+    expect(provider.handleValidationChallenge({ verify: "token" }, "token")).toBeNull();
+  });
+});
+
+describe("OuraProvider.syncWebhookEvent()", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  function setupEnv() {
+    process.env.OURA_CLIENT_ID = "test-id";
+    process.env.OURA_CLIENT_SECRET = "test-secret";
+  }
+
+  it("syncs workouts when data_type is workout", async () => {
+    setupEnv();
+    const workout = fakeWorkout();
+    const mockFetch = createMockApiFetch({ workouts: [workout] });
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const event: import("./types.ts").WebhookEvent = {
+      ownerExternalId: "user-1",
+      eventType: "create",
+      objectType: "workout",
+    };
+
+    const result = await provider.syncWebhookEvent(db, event);
+
+    expect(result.provider).toBe("oura");
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(1);
+
+    const val = findValuesCall(
+      db,
+      (v) => v.externalId === "workout-001" && v.providerId === "oura",
+    );
+    expect(val.activityType).toBe("running");
+    expect(val.name).toBe("Morning Run");
+  });
+
+  it("syncs sessions when data_type is session", async () => {
+    setupEnv();
+    const session = fakeSession();
+    const mockFetch = createMockApiFetch({ sessions: [session] });
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const event: import("./types.ts").WebhookEvent = {
+      ownerExternalId: "user-1",
+      eventType: "create",
+      objectType: "session",
+    };
+
+    const result = await provider.syncWebhookEvent(db, event);
+
+    expect(result.provider).toBe("oura");
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(1);
+
+    const val = findValuesCall(
+      db,
+      (v) => v.externalId === "session-001" && v.providerId === "oura",
+    );
+    expect(val.activityType).toBe("meditation");
+    expect(val.name).toBe("meditation");
+  });
+
+  it("syncs sleep when data_type is daily_sleep", async () => {
+    setupEnv();
+    const sleep = fakeSleepDoc();
+    const mockFetch = createMockApiFetch({ sleep: [sleep] });
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const event: import("./types.ts").WebhookEvent = {
+      ownerExternalId: "user-1",
+      eventType: "create",
+      objectType: "daily_sleep",
+    };
+
+    const result = await provider.syncWebhookEvent(db, event);
+
+    expect(result.provider).toBe("oura");
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(1);
+
+    const val = findValuesCall(db, (v) => v.externalId === "sleep-001" && v.providerId === "oura");
+    expect(val.durationMinutes).toBe(480);
+    expect(val.efficiencyPct).toBe(87);
+    expect(val.sleepType).toBe("long_sleep");
+  });
+
+  it("syncs sleep when data_type is sleep (alias)", async () => {
+    setupEnv();
+    const sleep = fakeSleepDoc();
+    const mockFetch = createMockApiFetch({ sleep: [sleep] });
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const event: import("./types.ts").WebhookEvent = {
+      ownerExternalId: "user-1",
+      eventType: "create",
+      objectType: "sleep",
+    };
+
+    const result = await provider.syncWebhookEvent(db, event);
+
+    expect(result.provider).toBe("oura");
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(1);
+  });
+
+  it("syncs daily_stress healthEvents and daily metrics", async () => {
+    setupEnv();
+    const stress = fakeStress();
+    const readiness = fakeReadiness();
+    const dailyActivity = fakeActivity();
+    const mockFetch = createMockApiFetch({
+      stress: [stress],
+      readiness: [readiness],
+      dailyActivity: [dailyActivity],
+    });
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const event: import("./types.ts").WebhookEvent = {
+      ownerExternalId: "user-1",
+      eventType: "create",
+      objectType: "daily_stress",
+    };
+
+    const result = await provider.syncWebhookEvent(db, event);
+
+    expect(result.provider).toBe("oura");
+    expect(result.errors).toHaveLength(0);
+    // Should sync stress healthEvents + daily metrics composite
+    expect(result.recordsSynced).toBeGreaterThanOrEqual(2);
+  });
+
+  it("syncs daily_resilience healthEvents and daily metrics", async () => {
+    setupEnv();
+    const resilience = fakeResilience();
+    const readiness = fakeReadiness();
+    const dailyActivity = fakeActivity();
+    const mockFetch = createMockApiFetch({
+      resilience: [resilience],
+      readiness: [readiness],
+      dailyActivity: [dailyActivity],
+    });
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const event: import("./types.ts").WebhookEvent = {
+      ownerExternalId: "user-1",
+      eventType: "create",
+      objectType: "daily_resilience",
+    };
+
+    const result = await provider.syncWebhookEvent(db, event);
+
+    expect(result.provider).toBe("oura");
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBeGreaterThanOrEqual(2);
+  });
+
+  it("syncs only daily metrics for daily_activity", async () => {
+    setupEnv();
+    const dailyActivity = fakeActivity();
+    const readiness = fakeReadiness();
+    const mockFetch = createMockApiFetch({
+      dailyActivity: [dailyActivity],
+      readiness: [readiness],
+    });
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const event: import("./types.ts").WebhookEvent = {
+      ownerExternalId: "user-1",
+      eventType: "create",
+      objectType: "daily_activity",
+    };
+
+    const result = await provider.syncWebhookEvent(db, event);
+
+    expect(result.provider).toBe("oura");
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
+  });
+
+  it("syncs only daily metrics for daily_readiness", async () => {
+    setupEnv();
+    const readiness = fakeReadiness();
+    const mockFetch = createMockApiFetch({ readiness: [readiness] });
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const event: import("./types.ts").WebhookEvent = {
+      ownerExternalId: "user-1",
+      eventType: "create",
+      objectType: "daily_readiness",
+    };
+
+    const result = await provider.syncWebhookEvent(db, event);
+
+    expect(result.provider).toBe("oura");
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
+  });
+
+  it("syncs only daily metrics for daily_spo2", async () => {
+    setupEnv();
+    const spo2 = fakeSpO2();
+    const mockFetch = createMockApiFetch({ spo2: [spo2] });
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const event: import("./types.ts").WebhookEvent = {
+      ownerExternalId: "user-1",
+      eventType: "create",
+      objectType: "daily_spo2",
+    };
+
+    const result = await provider.syncWebhookEvent(db, event);
+
+    expect(result.provider).toBe("oura");
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
+  });
+
+  it("returns empty result for unknown data_type", async () => {
+    setupEnv();
+    const mockFetch = createMockApiFetch();
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const event: import("./types.ts").WebhookEvent = {
+      ownerExternalId: "user-1",
+      eventType: "create",
+      objectType: "unknown_data_type",
+    };
+
+    const result = await provider.syncWebhookEvent(db, event);
+
+    expect(result.provider).toBe("oura");
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it("returns error when token resolution fails", async () => {
+    setupEnv();
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValueOnce(null);
+
+    const mockFetch = createMockApiFetch();
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const event: import("./types.ts").WebhookEvent = {
+      ownerExternalId: "user-1",
+      eventType: "create",
+      objectType: "workout",
+    };
+
+    const result = await provider.syncWebhookEvent(db, event);
+
+    expect(result.provider).toBe("oura");
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("No OAuth tokens found for Oura");
+  });
+});
