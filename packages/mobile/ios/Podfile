@@ -59,22 +59,5 @@ target 'Dofek' do
       :mac_catalyst_enabled => false,
       :ccache_enabled => ccache_enabled?(podfile_properties),
     )
-
-    # Xcode 16.4 defaults to Swift 6 language mode, which treats concurrency
-    # violations as hard errors. expo-modules-core (and other pods) haven't
-    # adopted Swift 6 concurrency yet. SWIFT_STRICT_CONCURRENCY alone isn't
-    # enough — Swift 6 has hard errors (e.g. removed @MainActor(unsafe),
-    # stricter Sendable enforcement) that require Swift 5 language mode.
-    installer.pods_project.targets.each do |target|
-      target.build_configurations.each do |bc|
-        bc.build_settings['SWIFT_STRICT_CONCURRENCY'] = 'minimal'
-        # Some podspecs (expo-modules-core) declare Swift 6 but don't compile
-        # under it on Xcode 16.4. Force Swift 5 for any pod that declares 6.
-        sv = bc.build_settings['SWIFT_VERSION']
-        if sv && sv.to_s.start_with?('6')
-          bc.build_settings['SWIFT_VERSION'] = '5.0'
-        end
-      end
-    end
   end
 end

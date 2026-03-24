@@ -254,7 +254,7 @@ jobs:
     name: iOS Native Build
     needs: check-mobile-changes
     if: needs.check-mobile-changes.outputs.changed == 'true'
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -510,7 +510,7 @@ jobs:
     name: iOS TestFlight
     needs: [lint, typecheck, knip, coverage, test-mobile, build-mobile]
     if: github.ref == 'refs/heads/main'
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 60
     env:
       APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
