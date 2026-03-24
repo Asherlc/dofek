@@ -145,9 +145,9 @@ describe("FitbitProvider webhook methods", () => {
     expect(
       provider.verifyWebhookSignature(body, { "x-fitbit-signature": validSignature }, secret),
     ).toBe(true);
-    expect(
-      provider.verifyWebhookSignature(body, { "x-fitbit-signature": "wrong" }, secret),
-    ).toBe(false);
+    expect(provider.verifyWebhookSignature(body, { "x-fitbit-signature": "wrong" }, secret)).toBe(
+      false,
+    );
     expect(provider.verifyWebhookSignature(body, {}, secret)).toBe(false);
   });
 
@@ -247,11 +247,7 @@ describe("PolarProvider webhook methods", () => {
     const validSignature = hmac.digest("hex");
 
     expect(
-      provider.verifyWebhookSignature(
-        body,
-        { "polar-webhook-signature": validSignature },
-        secret,
-      ),
+      provider.verifyWebhookSignature(body, { "polar-webhook-signature": validSignature }, secret),
     ).toBe(true);
     expect(
       provider.verifyWebhookSignature(body, { "polar-webhook-signature": "bad" }, secret),
@@ -358,11 +354,7 @@ describe("SuuntoProvider webhook methods", () => {
     const validSignature = hmac.digest("hex");
 
     expect(
-      provider.verifyWebhookSignature(
-        body,
-        { "x-hmac-sha256-signature": validSignature },
-        secret,
-      ),
+      provider.verifyWebhookSignature(body, { "x-hmac-sha256-signature": validSignature }, secret),
     ).toBe(true);
   });
 });

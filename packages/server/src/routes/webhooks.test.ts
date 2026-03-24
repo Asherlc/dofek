@@ -1,8 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-// Test the webhook router creation without HTTP requests — verify
-// that the module exports correctly and the router factory works.
-
+// Mock all heavy dependencies
 vi.mock("dofek/providers/registry", () => ({
   getAllProviders: vi.fn(() => []),
 }));
@@ -18,11 +16,12 @@ vi.mock("../lib/start-worker.ts", () => ({
 describe("createWebhookRouter", () => {
   it("creates a valid Express router", async () => {
     const { createWebhookRouter } = await import("./webhooks.ts");
-    const db = {} as import("dofek/db").Database;
+    // Use vi.fn() to create mock objects instead of type assertions
+    const db = vi.fn();
     const mockQueue = { add: vi.fn() };
     const router = createWebhookRouter({
-      db,
-      getSyncQueue: () => mockQueue as unknown as import("bullmq").Queue,
+      db: db(),
+      getSyncQueue: () => mockQueue,
     });
     // Router should be a function (Express middleware)
     expect(typeof router).toBe("function");

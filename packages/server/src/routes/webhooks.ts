@@ -13,7 +13,8 @@
  * 6. Returns 200 immediately (providers expect fast responses)
  */
 
-import type { WebhookEvent } from "dofek/providers/types";
+import { randomBytes } from "node:crypto";
+import type { WebhookEvent, WebhookProvider } from "dofek/providers/types";
 import { sql } from "drizzle-orm";
 import { Router, raw } from "express";
 import { z } from "zod";
@@ -242,4 +243,59 @@ export function createWebhookRouter({ db, getSyncQueue }: WebhookRouterDeps): Ro
   });
 
   return router;
+}
+
+/**
+ * Register a webhook subscription for a provider after OAuth connection.
+ * For app-level webhooks (Strava, Fitbit): checks if subscription already exists, skips if so.
+ * For per-user webhooks (Withings): creates a subscription per provider connection.
+ */
+export async function registerWebhookForProvider(
+  db: import("dofek/db").Database,
+  provider: WebhookProvider,
+): Promise<void> {
+  const publicUrl = process.env.PUBLIC_URL ?? "https://dofek.asherlc.com";
+  const callbackUrl = `${publicUrl}/api/webhooks/${provider.id}`;
+
+  // For app-level webhooks, check if we already have an active subscription
+  if (provider.webhookScope === "app") {
+    const existing = await executeWithSchema(
+      db,
+      z.object({ id: z.string() }),
+      sql`SELECT id FROM fitness.webhook_subscription
+          WHERE provider_name = ${provider.id} AND status = 'active'
+          LIMIT 1`,
+    );
+    if (existing.length > 0) {
+      logger.info(`[webhook] ${provider.id}: app-level subscription already exists, skipping`);
+      return;
+    }
+  }
+
+  const verifyToken = randomBytes(32).toString("hex");
+
+  const result = await provider.registerWebhook(callbackUrl, verifyToken);
+
+  await db.execute(
+    sql`INSERT INTO fitness.webhook_subscription (
+          provider_name, subscription_external_id, verify_token,
+          signing_secret, status, expires_at, metadata
+        ) VALUES (
+          ${provider.id},
+          ${result.subscriptionId},
+          ${verifyToken},
+          ${result.signingSecret ?? null},
+          'active',
+          ${result.expiresAt ?? null},
+          ${JSON.stringify({ callbackUrl })}::jsonb
+        )
+        ON CONFLICT (provider_id) DO UPDATE SET
+          subscription_external_id = EXCLUDED.subscription_external_id,
+          verify_token = EXCLUDED.verify_token,
+          signing_secret = EXCLUDED.signing_secret,
+          status = 'active',
+          expires_at = EXCLUDED.expires_at,
+          metadata = EXCLUDED.metadata,
+          updated_at = NOW()`,
+  );
 }
