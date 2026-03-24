@@ -180,6 +180,12 @@ export interface WebhookEvent {
   objectType: string;
   /** External ID of the changed object (if available) */
   objectId?: string;
+  /**
+   * Provider-specific metadata carried through to syncWebhookEvent().
+   * Can include the full payload (Wahoo, Concept2, Suunto), a date (Fitbit),
+   * a time range (Withings), or any other context needed for targeted sync.
+   */
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -231,6 +237,19 @@ export interface WebhookProvider extends SyncProvider {
    * Each event identifies the affected user and what changed.
    */
   parseWebhookPayload(body: unknown): WebhookEvent[];
+
+  /**
+   * Process a single webhook event efficiently — fetch/upsert only the
+   * specific data that changed, instead of running a full sync().
+   *
+   * Returns a SyncResult describing what was synced.
+   * If not implemented, the webhook router falls back to a full sync().
+   */
+  syncWebhookEvent?(
+    db: SyncDatabase,
+    event: WebhookEvent,
+    options?: SyncOptions,
+  ): Promise<SyncResult>;
 
   /**
    * Handle provider-specific validation challenges (e.g., Strava's hub.challenge).

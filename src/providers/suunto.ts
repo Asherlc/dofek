@@ -47,6 +47,32 @@ interface SuuntoWorkoutsResponse {
   payload: SuuntoWorkout[];
 }
 
+/**
+ * Zod schema for validating SuuntoWorkout data from webhook payloads.
+ * Used at the runtime boundary where TypeScript types can't guarantee shape.
+ */
+const suuntoWorkoutSchema = z.object({
+  workoutKey: z.string(),
+  activityId: z.number(),
+  workoutName: z.string().optional(),
+  startTime: z.number(),
+  stopTime: z.number(),
+  totalTime: z.number(),
+  totalDistance: z.number(),
+  totalAscent: z.number(),
+  totalDescent: z.number(),
+  avgSpeed: z.number(),
+  maxSpeed: z.number(),
+  energyConsumption: z.number(),
+  stepCount: z.number(),
+  hrdata: z
+    .object({
+      workoutAvgHR: z.number(),
+      workoutMaxHR: z.number(),
+    })
+    .optional(),
+});
+
 // ============================================================
 // Parsed types
 // ============================================================
@@ -183,7 +209,7 @@ export class SuuntoProvider implements WebhookProvider {
   }
 
   parseWebhookPayload(body: unknown): WebhookEvent[] {
-    // Suunto sends workout notifications with user info
+    // Suunto WORKOUT_CREATED webhooks include the full workout summary inline
     const parsed = z
       .object({
         type: z.string().optional(),
@@ -201,8 +227,78 @@ export class SuuntoProvider implements WebhookProvider {
         eventType: "create",
         objectType: event.type ?? "workout",
         objectId: event.workout_id ?? undefined,
+        metadata: { payload: body },
       },
     ];
+  }
+
+  async syncWebhookEvent(
+    db: SyncDatabase,
+    event: WebhookEvent,
+    options?: SyncOptions,
+  ): Promise<SyncResult> {
+    const start = Date.now();
+    const errors: SyncError[] = [];
+    let recordsSynced = 0;
+
+    if (event.objectType !== "workout") {
+      return { provider: this.id, recordsSynced: 0, errors: [], duration: Date.now() - start };
+    }
+
+    // Extract and validate the workout data from the webhook metadata
+    const workoutResult = suuntoWorkoutSchema.safeParse(event.metadata?.payload);
+    if (!workoutResult.success) {
+      errors.push({
+        message: `Invalid workout in webhook metadata: ${workoutResult.error.message}`,
+      });
+      return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
+    }
+
+    await ensureProvider(db, this.id, this.name, SUUNTO_API_BASE);
+
+    const parsed = parseSuuntoWorkout(workoutResult.data);
+
+    try {
+      await withSyncLog(
+        db,
+        this.id,
+        "activity",
+        async () => {
+          await db
+            .insert(activity)
+            .values({
+              providerId: this.id,
+              externalId: parsed.externalId,
+              activityType: parsed.activityType,
+              name: parsed.name,
+              startedAt: parsed.startedAt,
+              endedAt: parsed.endedAt,
+              raw: parsed.raw,
+            })
+            .onConflictDoUpdate({
+              target: [activity.providerId, activity.externalId],
+              set: {
+                activityType: parsed.activityType,
+                name: parsed.name,
+                startedAt: parsed.startedAt,
+                endedAt: parsed.endedAt,
+                raw: parsed.raw,
+              },
+            });
+          return { recordCount: 1, result: 1 };
+        },
+        options?.userId,
+      );
+      recordsSynced = 1;
+    } catch (err) {
+      errors.push({
+        message: err instanceof Error ? err.message : String(err),
+        externalId: parsed.externalId,
+        cause: err,
+      });
+    }
+
+    return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
   }
 
   authSetup(): ProviderAuthSetup {

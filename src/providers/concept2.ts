@@ -1,3 +1,4 @@
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens } from "../auth/oauth.ts";
@@ -218,11 +219,13 @@ export class Concept2Provider implements WebhookProvider {
 
   parseWebhookPayload(body: unknown): WebhookEvent[] {
     // Concept2 sends: { event: "result-added"|"result-updated"|"result-deleted", result: { ... } }
+    // Use a permissive record schema for the result to capture the full payload.
+    // The full result is re-validated against concept2ResultSchema in syncWebhookEvent().
     const parsed = z
       .object({
         event: z.string(),
         user_id: z.coerce.string(),
-        result: z.object({ id: z.coerce.string() }).optional(),
+        result: z.object({ id: z.coerce.string() }).passthrough().optional(),
       })
       .safeParse(body);
 
@@ -235,14 +238,98 @@ export class Concept2Provider implements WebhookProvider {
       "result-deleted": "delete",
     };
 
+    const resultId = event.result?.id;
+
     return [
       {
         ownerExternalId: String(event.user_id),
         eventType: eventTypeMap[event.event] ?? "update",
         objectType: "result",
-        objectId: event.result?.id ? String(event.result.id) : undefined,
+        objectId: resultId ?? undefined,
+        metadata: event.result ? { payload: event.result } : undefined,
       },
     ];
+  }
+
+  async syncWebhookEvent(
+    db: SyncDatabase,
+    event: WebhookEvent,
+    options?: SyncOptions,
+  ): Promise<SyncResult> {
+    const start = Date.now();
+    const errors: SyncError[] = [];
+    let recordsSynced = 0;
+
+    if (event.objectType !== "result") {
+      return { provider: this.id, recordsSynced: 0, errors: [], duration: Date.now() - start };
+    }
+
+    // Handle delete events
+    if (event.eventType === "delete" && event.objectId) {
+      await db
+        .delete(activity)
+        .where(and(eq(activity.providerId, this.id), eq(activity.externalId, event.objectId)));
+      return { provider: this.id, recordsSynced: 0, errors: [], duration: Date.now() - start };
+    }
+
+    // Extract the full result from webhook metadata
+    const rawPayload = event.metadata?.payload;
+    if (!rawPayload) {
+      return { provider: this.id, recordsSynced: 0, errors: [], duration: Date.now() - start };
+    }
+
+    const parseResult = concept2ResultSchema.safeParse(rawPayload);
+    if (!parseResult.success) {
+      errors.push({
+        message: `Failed to parse webhook result payload: ${parseResult.error.message}`,
+      });
+      return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
+    }
+
+    await ensureProvider(db, this.id, this.name, CONCEPT2_API_BASE);
+
+    try {
+      const activityCount = await withSyncLog(
+        db,
+        this.id,
+        "activity",
+        async () => {
+          const parsed = parseConcept2Result(parseResult.data);
+          await db
+            .insert(activity)
+            .values({
+              providerId: this.id,
+              externalId: parsed.externalId,
+              activityType: parsed.activityType,
+              name: parsed.name,
+              startedAt: parsed.startedAt,
+              endedAt: parsed.endedAt,
+              raw: parsed.raw,
+            })
+            .onConflictDoUpdate({
+              target: [activity.providerId, activity.externalId],
+              set: {
+                activityType: parsed.activityType,
+                name: parsed.name,
+                startedAt: parsed.startedAt,
+                endedAt: parsed.endedAt,
+                raw: parsed.raw,
+              },
+            });
+          return { recordCount: 1, result: 1 };
+        },
+        options?.userId,
+      );
+      recordsSynced += activityCount;
+    } catch (err) {
+      errors.push({
+        message: `activity: ${err instanceof Error ? err.message : String(err)}`,
+        externalId: event.objectId,
+        cause: err,
+      });
+    }
+
+    return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
   }
 
   authSetup(): ProviderAuthSetup {

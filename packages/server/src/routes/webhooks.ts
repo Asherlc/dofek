@@ -174,9 +174,9 @@ export function createWebhookRouter({ db, getSyncQueue }: WebhookRouterDeps): Ro
         return;
       }
 
-      // Resolve external owner IDs → internal user+provider and enqueue syncs
+      // Resolve external owner IDs → internal user+provider and process events
       const queue = getSyncQueue();
-      let enqueued = 0;
+      let processed = 0;
 
       for (const event of events) {
         try {
@@ -204,15 +204,35 @@ export function createWebhookRouter({ db, getSyncQueue }: WebhookRouterDeps): Ro
 
           const { provider_id, user_id } = row;
 
+          // If the provider supports targeted webhook sync, use it directly
+          // instead of enqueueing a full sync job. This is much more efficient
+          // (e.g., 2 API calls for Strava instead of 41, or 0 for Wahoo).
+          if (provider.syncWebhookEvent) {
+            try {
+              const result = await provider.syncWebhookEvent(db, event, { userId: user_id });
+              logger.info(
+                `[webhook] ${providerName}: synced ${result.recordsSynced} records for ${event.eventType} ${event.objectType} (${result.duration}ms)`,
+              );
+              processed++;
+              continue;
+            } catch (err) {
+              logger.warn(
+                `[webhook] ${providerName}: targeted sync failed, falling back to full sync: ${err}`,
+              );
+              // Fall through to enqueue a full sync as fallback
+            }
+          }
+
+          // Fallback: enqueue a full 1-day sync via BullMQ
           await queue.add("sync", {
             providerId: provider_id,
             sinceDays: 1,
             userId: user_id,
           });
-          enqueued++;
+          processed++;
 
           logger.info(
-            `[webhook] ${providerName}: enqueued sync for user ${user_id} (${event.eventType} ${event.objectType})`,
+            `[webhook] ${providerName}: enqueued full sync for user ${user_id} (${event.eventType} ${event.objectType})`,
           );
         } catch (err) {
           logger.error(
@@ -221,8 +241,8 @@ export function createWebhookRouter({ db, getSyncQueue }: WebhookRouterDeps): Ro
         }
       }
 
-      // Spin up the worker container if needed
-      if (enqueued > 0) {
+      // Spin up the worker container if fallback sync jobs were enqueued
+      if (processed > 0 && !provider.syncWebhookEvent) {
         try {
           const { startWorker } = await import("../lib/start-worker.ts");
           await startWorker();
@@ -232,7 +252,7 @@ export function createWebhookRouter({ db, getSyncQueue }: WebhookRouterDeps): Ro
       }
 
       logger.info(
-        `[webhook] ${providerName}: processed ${events.length} events, enqueued ${enqueued} syncs`,
+        `[webhook] ${providerName}: processed ${events.length} events, ${processed} synced`,
       );
       res.status(200).send("OK");
     } catch (err) {

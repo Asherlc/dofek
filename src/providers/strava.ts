@@ -1,5 +1,5 @@
 import { createActivityTypeMapper, STRAVA_ACTIVITY_TYPE_MAP } from "@dofek/training/training";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
@@ -11,6 +11,7 @@ import type {
   ProviderAuthSetup,
   ProviderIdentity,
   SyncError,
+  SyncOptions,
   SyncResult,
   WebhookEvent,
   WebhookProvider,
@@ -549,6 +550,123 @@ export class StravaProvider implements WebhookProvider {
       getOAuthConfig: () => stravaOAuthConfig(),
       fetchFn: this.#fetchFn,
     });
+  }
+
+  /**
+   * Sync a single activity from a webhook event.
+   * Makes 2 API calls (detail + streams) instead of a full sync's 1 + 2N.
+   */
+  async syncWebhookEvent(
+    db: SyncDatabase,
+    event: WebhookEvent,
+    options?: SyncOptions,
+  ): Promise<SyncResult> {
+    const start = Date.now();
+    const errors: SyncError[] = [];
+    let recordsSynced = 0;
+
+    if (event.objectType !== "activity" || !event.objectId) {
+      return { provider: this.id, recordsSynced: 0, errors: [], duration: Date.now() - start };
+    }
+
+    const activityExternalId = Number(event.objectId);
+
+    // Handle delete events — remove the activity and its streams
+    if (event.eventType === "delete") {
+      const deleted = await db
+        .delete(activity)
+        .where(
+          sql`${activity.providerId} = ${this.id} AND ${activity.externalId} = ${event.objectId}`,
+        )
+        .returning({ id: activity.id });
+      const deletedRow = deleted[0];
+      if (deletedRow) {
+        await db.delete(metricStream).where(eq(metricStream.activityId, deletedRow.id));
+        logger.info(`[strava] Deleted activity ${event.objectId} via webhook`);
+      }
+      return { provider: this.id, recordsSynced: 0, errors: [], duration: Date.now() - start };
+    }
+
+    let tokens: TokenSet;
+    try {
+      tokens = await this.#resolveTokens(db);
+    } catch (err) {
+      errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
+      return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
+    }
+
+    const client = new StravaClient(tokens.accessToken, this.#fetchFn, this.#throttleMs);
+
+    // Fetch the single activity detail (1 API call)
+    const detail = await client.getActivity(activityExternalId);
+    const parsed = parseStravaActivity(detail);
+
+    // Upsert the activity row
+    const [row] = await db
+      .insert(activity)
+      .values({
+        providerId: this.id,
+        externalId: parsed.externalId,
+        activityType: parsed.activityType,
+        startedAt: parsed.startedAt,
+        endedAt: parsed.endedAt,
+        name: parsed.name,
+        sourceName: detail.device_name,
+        raw: detail,
+      })
+      .onConflictDoUpdate({
+        target: [activity.providerId, activity.externalId],
+        set: {
+          activityType: parsed.activityType,
+          startedAt: parsed.startedAt,
+          endedAt: parsed.endedAt,
+          name: parsed.name,
+          sourceName: detail.device_name,
+          raw: detail,
+        },
+      })
+      .returning({ id: activity.id });
+
+    recordsSynced++;
+    const activityId = row?.id;
+    if (!activityId) {
+      return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
+    }
+
+    // Fetch streams for sensor data (1 API call)
+    try {
+      const streams = await client.getActivityStreams(activityExternalId);
+      const metricRows = stravaStreamsToMetricStream(
+        streams,
+        this.id,
+        activityId,
+        parsed.startedAt,
+      );
+
+      if (metricRows.length > 0) {
+        // Delete existing streams then re-insert (metric_stream has no unique constraint)
+        await db.delete(metricStream).where(eq(metricStream.activityId, activityId));
+        for (let i = 0; i < metricRows.length; i += 500) {
+          await db.insert(metricStream).values(metricRows.slice(i, i + 500));
+        }
+        logger.info(
+          `[strava] Webhook: inserted ${metricRows.length} metric_stream records for activity ${event.objectId}`,
+        );
+      }
+    } catch (streamErr) {
+      if (streamErr instanceof StravaNotFoundError) {
+        logger.info(`[strava] No streams for activity ${event.objectId} (404)`);
+      } else {
+        errors.push({
+          message: `Streams for activity ${event.objectId}: ${streamErr instanceof Error ? streamErr.message : String(streamErr)}`,
+          externalId: event.objectId,
+          cause: streamErr,
+        });
+      }
+    }
+
+    logger.info(`[strava] Webhook: synced activity ${event.objectId} (${event.eventType})`);
+    return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
   }
 
   async sync(

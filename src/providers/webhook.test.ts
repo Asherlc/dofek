@@ -108,8 +108,10 @@ describe("FitbitProvider webhook methods", () => {
       ownerExternalId: "ABC123",
       eventType: "update",
       objectType: "activities",
+      metadata: { date: "2024-01-15" },
     });
     expect(events[1]?.objectType).toBe("sleep");
+    expect(events[1]?.metadata).toEqual({ date: "2024-01-15" });
   });
 
   it("parseWebhookPayload returns empty for non-array", async () => {
@@ -270,13 +272,18 @@ describe("WahooProvider webhook methods", () => {
     const events = provider.parseWebhookPayload({
       event_type: "workout_summary.created",
       user: { id: 42 },
-      workout_summary: { id: 99 },
+      workout_summary: {
+        id: 99,
+        created_at: "2024-01-15T10:00:00Z",
+        updated_at: "2024-01-15T10:00:00Z",
+      },
     });
 
     expect(events).toHaveLength(1);
     expect(events[0]?.ownerExternalId).toBe("42");
     expect(events[0]?.objectType).toBe("workout");
     expect(events[0]?.objectId).toBe("99");
+    expect(events[0]?.metadata).toBeDefined();
   });
 });
 
@@ -330,6 +337,7 @@ describe("Concept2Provider webhook methods", () => {
       eventType: "create",
       objectType: "result",
       objectId: "456",
+      metadata: { payload: { id: "456" } },
     });
   });
 });

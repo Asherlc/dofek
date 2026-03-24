@@ -423,6 +423,7 @@ export class FitbitProvider implements WebhookProvider {
         ownerExternalId: result.data.ownerId,
         eventType: "update" as const,
         objectType: result.data.collectionType,
+        metadata: result.data.date ? { date: result.data.date } : undefined,
       }));
   }
 
@@ -762,6 +763,288 @@ export class FitbitProvider implements WebhookProvider {
         message: `body_measurement: ${err instanceof Error ? err.message : String(err)}`,
         cause: err,
       });
+    }
+
+    return {
+      provider: this.id,
+      recordsSynced,
+      errors,
+      duration: Date.now() - start,
+    };
+  }
+
+  /**
+   * Sync only the specific collection that changed, as indicated by the webhook event.
+   * Maps Fitbit collectionType → targeted sync:
+   *   "activities" → activities + daily metrics for that date
+   *   "sleep" → sleep logs starting from that date
+   *   "body" → weight logs starting from that date
+   */
+  async syncWebhookEvent(
+    db: SyncDatabase,
+    event: WebhookEvent,
+    options?: SyncOptions,
+  ): Promise<SyncResult> {
+    const start = Date.now();
+    const errors: SyncError[] = [];
+    let recordsSynced = 0;
+
+    let tokens: TokenSet;
+    try {
+      tokens = await this.#resolveTokens(db);
+    } catch (err) {
+      errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
+      return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
+    }
+
+    const client = new FitbitClient(tokens.accessToken, this.#fetchFn);
+    const eventDate =
+      typeof event.metadata?.date === "string" ? event.metadata.date : formatDate(new Date());
+
+    switch (event.objectType) {
+      case "activities": {
+        // Sync activities starting from the webhook date
+        try {
+          const activityCount = await withSyncLog(
+            db,
+            this.id,
+            "activity",
+            async () => {
+              let count = 0;
+              let offset = 0;
+              let hasMore = true;
+
+              while (hasMore) {
+                const response = await client.getActivities(eventDate, offset);
+
+                for (const raw of response.activities) {
+                  const parsed = parseFitbitActivity(raw);
+                  try {
+                    await db
+                      .insert(activity)
+                      .values({
+                        providerId: this.id,
+                        externalId: parsed.externalId,
+                        activityType: parsed.activityType,
+                        startedAt: parsed.startedAt,
+                        endedAt: parsed.endedAt,
+                        name: parsed.name,
+                        raw: raw,
+                      })
+                      .onConflictDoUpdate({
+                        target: [activity.providerId, activity.externalId],
+                        set: {
+                          activityType: parsed.activityType,
+                          startedAt: parsed.startedAt,
+                          endedAt: parsed.endedAt,
+                          name: parsed.name,
+                          raw: raw,
+                        },
+                      });
+                    count++;
+                  } catch (err) {
+                    errors.push({
+                      message: err instanceof Error ? err.message : String(err),
+                      externalId: parsed.externalId,
+                      cause: err,
+                    });
+                  }
+                }
+
+                hasMore = response.pagination.next !== "";
+                offset += response.pagination.limit;
+              }
+
+              return { recordCount: count, result: count };
+            },
+            options?.userId,
+          );
+          recordsSynced += activityCount;
+        } catch (err) {
+          errors.push({
+            message: `activity: ${err instanceof Error ? err.message : String(err)}`,
+            cause: err,
+          });
+        }
+
+        // Also sync daily summary for the event date (activities affect daily metrics)
+        try {
+          const dailyCount = await withSyncLog(
+            db,
+            this.id,
+            "daily_metrics",
+            async () => {
+              const response = await client.getDailySummary(eventDate);
+              const parsed = parseFitbitDailySummary(eventDate, response);
+
+              await db
+                .insert(dailyMetrics)
+                .values({
+                  date: parsed.date,
+                  providerId: this.id,
+                  steps: parsed.steps,
+                  restingHr: parsed.restingHr,
+                  activeEnergyKcal: parsed.activeEnergyKcal,
+                  exerciseMinutes: parsed.exerciseMinutes,
+                  distanceKm: parsed.distanceKm,
+                  flightsClimbed: parsed.flightsClimbed,
+                })
+                .onConflictDoUpdate({
+                  target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
+                  set: {
+                    steps: parsed.steps,
+                    restingHr: parsed.restingHr,
+                    activeEnergyKcal: parsed.activeEnergyKcal,
+                    exerciseMinutes: parsed.exerciseMinutes,
+                    distanceKm: parsed.distanceKm,
+                    flightsClimbed: parsed.flightsClimbed,
+                  },
+                });
+
+              return { recordCount: 1, result: 1 };
+            },
+            options?.userId,
+          );
+          recordsSynced += dailyCount;
+        } catch (err) {
+          errors.push({
+            message: `daily_metrics ${eventDate}: ${err instanceof Error ? err.message : String(err)}`,
+            cause: err,
+          });
+        }
+        break;
+      }
+
+      case "sleep": {
+        try {
+          const sleepCount = await withSyncLog(
+            db,
+            this.id,
+            "sleep",
+            async () => {
+              let count = 0;
+              let offset = 0;
+              let hasMore = true;
+
+              while (hasMore) {
+                const response = await client.getSleepLogs(eventDate, offset);
+
+                for (const raw of response.sleep) {
+                  const parsed = parseFitbitSleep(raw);
+                  try {
+                    await db
+                      .insert(sleepSession)
+                      .values({
+                        providerId: this.id,
+                        externalId: parsed.externalId,
+                        startedAt: parsed.startedAt,
+                        endedAt: parsed.endedAt,
+                        durationMinutes: parsed.durationMinutes,
+                        deepMinutes: parsed.deepMinutes,
+                        remMinutes: parsed.remMinutes,
+                        lightMinutes: parsed.lightMinutes,
+                        awakeMinutes: parsed.awakeMinutes,
+                        efficiencyPct: parsed.efficiencyPct,
+                        sleepType: parsed.sleepType,
+                      })
+                      .onConflictDoUpdate({
+                        target: [sleepSession.providerId, sleepSession.externalId],
+                        set: {
+                          startedAt: parsed.startedAt,
+                          endedAt: parsed.endedAt,
+                          durationMinutes: parsed.durationMinutes,
+                          deepMinutes: parsed.deepMinutes,
+                          remMinutes: parsed.remMinutes,
+                          lightMinutes: parsed.lightMinutes,
+                          awakeMinutes: parsed.awakeMinutes,
+                          efficiencyPct: parsed.efficiencyPct,
+                          sleepType: parsed.sleepType,
+                        },
+                      });
+                    count++;
+                  } catch (err) {
+                    errors.push({
+                      message: err instanceof Error ? err.message : String(err),
+                      externalId: parsed.externalId,
+                      cause: err,
+                    });
+                  }
+                }
+
+                hasMore = response.pagination.next !== "";
+                offset += response.pagination.limit;
+              }
+
+              return { recordCount: count, result: count };
+            },
+            options?.userId,
+          );
+          recordsSynced += sleepCount;
+        } catch (err) {
+          errors.push({
+            message: `sleep: ${err instanceof Error ? err.message : String(err)}`,
+            cause: err,
+          });
+        }
+        break;
+      }
+
+      case "body": {
+        try {
+          const weightCount = await withSyncLog(
+            db,
+            this.id,
+            "body_measurement",
+            async () => {
+              let count = 0;
+              const response = await client.getWeightLogs(eventDate);
+
+              for (const raw of response.weight) {
+                const parsed = parseFitbitWeightLog(raw);
+                try {
+                  await db
+                    .insert(bodyMeasurement)
+                    .values({
+                      providerId: this.id,
+                      externalId: parsed.externalId,
+                      recordedAt: parsed.recordedAt,
+                      weightKg: parsed.weightKg,
+                      bodyFatPct: parsed.bodyFatPct,
+                    })
+                    .onConflictDoUpdate({
+                      target: [bodyMeasurement.providerId, bodyMeasurement.externalId],
+                      set: {
+                        weightKg: parsed.weightKg,
+                        bodyFatPct: parsed.bodyFatPct,
+                      },
+                    });
+                  count++;
+                } catch (err) {
+                  errors.push({
+                    message: err instanceof Error ? err.message : String(err),
+                    externalId: parsed.externalId,
+                    cause: err,
+                  });
+                }
+              }
+
+              return { recordCount: count, result: count };
+            },
+            options?.userId,
+          );
+          recordsSynced += weightCount;
+        } catch (err) {
+          errors.push({
+            message: `body_measurement: ${err instanceof Error ? err.message : String(err)}`,
+            cause: err,
+          });
+        }
+        break;
+      }
+
+      default:
+        // Unknown collection type — no-op, return empty result
+        break;
     }
 
     return {
