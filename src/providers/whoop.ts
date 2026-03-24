@@ -121,7 +121,7 @@ export interface ParsedSleep {
   sleepNeedFromNapMinutes?: number;
 }
 
-export function parseSleep(record: WhoopSleepRecord): ParsedSleep {
+export function parseSleep(record: WhoopSleepRecord): ParsedSleep | null {
   // BFF v0 uses `during` range; fall back to legacy `start`/`end`
   let startedAt: Date;
   let endedAt: Date;
@@ -134,11 +134,8 @@ export function parseSleep(record: WhoopSleepRecord): ParsedSleep {
     endedAt = new Date(record.end ?? "");
   }
 
-  if (Number.isNaN(startedAt.getTime())) {
-    throw new Error(`Invalid start timestamp: ${JSON.stringify(record.start ?? record.during)}`);
-  }
-  if (Number.isNaN(endedAt.getTime())) {
-    throw new Error(`Invalid end timestamp: ${JSON.stringify(record.end ?? record.during)}`);
+  if (Number.isNaN(startedAt.getTime()) || Number.isNaN(endedAt.getTime())) {
+    return null;
   }
 
   const stages = record.score?.stage_summary;
@@ -721,6 +718,10 @@ export class WhoopProvider implements SyncProvider {
               try {
                 const sleepData = await client.getSleep(sleepId);
                 const parsed = parseSleep(sleepData);
+                if (!parsed) {
+                  logger.warn(`[whoop] Skipping sleep ${sleepId}: missing timestamp data`);
+                  continue;
+                }
 
                 await db
                   .insert(sleepSession)

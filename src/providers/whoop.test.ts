@@ -513,15 +513,16 @@ describe("WHOOP Provider — parsing", () => {
   describe("parseSleep", () => {
     it("maps sleep fields to sleep session", () => {
       const result = parseSleep(sampleSleep);
-      expect(result.externalId).toBe("10235");
-      expect(result.startedAt).toEqual(new Date("2026-02-28T23:00:00Z"));
-      expect(result.endedAt).toEqual(new Date("2026-03-01T06:30:00Z"));
-      expect(result.deepMinutes).toBe(120); // 7200000ms / 60000
-      expect(result.remMinutes).toBe(90);
-      expect(result.lightMinutes).toBe(180);
-      expect(result.awakeMinutes).toBe(30);
-      expect(result.efficiencyPct).toBeCloseTo(91.7);
-      expect(result.isNap).toBe(false);
+      expect(result).not.toBeNull();
+      expect(result?.externalId).toBe("10235");
+      expect(result?.startedAt).toEqual(new Date("2026-02-28T23:00:00Z"));
+      expect(result?.endedAt).toEqual(new Date("2026-03-01T06:30:00Z"));
+      expect(result?.deepMinutes).toBe(120); // 7200000ms / 60000
+      expect(result?.remMinutes).toBe(90);
+      expect(result?.lightMinutes).toBe(180);
+      expect(result?.awakeMinutes).toBe(30);
+      expect(result?.efficiencyPct).toBeCloseTo(91.7);
+      expect(result?.isNap).toBe(false);
     });
 
     it("defaults all stage times to 0 when score is missing", () => {
@@ -530,17 +531,18 @@ describe("WHOOP Provider — parsing", () => {
         score: undefined,
       };
       const result = parseSleep(noScore);
-      expect(result.durationMinutes).toBe(0);
-      expect(result.deepMinutes).toBe(0);
-      expect(result.remMinutes).toBe(0);
-      expect(result.lightMinutes).toBe(0);
-      expect(result.awakeMinutes).toBe(0);
-      expect(result.efficiencyPct).toBeUndefined();
+      expect(result).not.toBeNull();
+      expect(result?.durationMinutes).toBe(0);
+      expect(result?.deepMinutes).toBe(0);
+      expect(result?.remMinutes).toBe(0);
+      expect(result?.lightMinutes).toBe(0);
+      expect(result?.awakeMinutes).toBe(0);
+      expect(result?.efficiencyPct).toBeUndefined();
     });
 
     it("marks naps as isNap=true", () => {
       const nap: WhoopSleepRecord = { ...sampleSleep, nap: true };
-      expect(parseSleep(nap).isNap).toBe(true);
+      expect(parseSleep(nap)?.isNap).toBe(true);
     });
   });
 
