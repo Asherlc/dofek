@@ -5,17 +5,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 let mockTrendsData: Record<string, unknown> | undefined;
 let mockDailyMetricsData: Record<string, unknown>[];
+let mockReadinessLoading = false;
+let mockWorkloadLoading = false;
+let mockSleepLoading = false;
 
 function q(getData: () => unknown = () => undefined) {
   return { useQuery: () => ({ data: getData(), isLoading: false }) };
 }
 
+function loadableQuery(getData: () => unknown, getLoading: () => boolean) {
+  return { useQuery: () => ({ data: getLoading() ? undefined : getData(), isLoading: getLoading() }) };
+}
+
 vi.mock("../../lib/trpc", () => ({
   trpc: {
     recovery: {
-      readinessScore: q(() => []),
-      sleepAnalytics: q(),
-      workloadRatio: q(() => []),
+      readinessScore: loadableQuery(() => [], () => mockReadinessLoading),
+      sleepAnalytics: loadableQuery(() => undefined, () => mockSleepLoading),
+      workloadRatio: loadableQuery(() => [], () => mockWorkloadLoading),
       hrvVariability: q(() => []),
     },
     stress: { scores: q() },
@@ -111,6 +118,9 @@ describe("Health Status stale date indicator", () => {
   beforeEach(() => {
     mockTrendsData = undefined;
     mockDailyMetricsData = [];
+    mockReadinessLoading = false;
+    mockWorkloadLoading = false;
+    mockSleepLoading = false;
   });
 
   afterEach(() => {
@@ -145,6 +155,9 @@ describe("OverviewScreen SpO2 and Skin Temperature cards", () => {
   beforeEach(() => {
     mockTrendsData = undefined;
     mockDailyMetricsData = [];
+    mockReadinessLoading = false;
+    mockWorkloadLoading = false;
+    mockSleepLoading = false;
   });
 
   it("renders Blood Oxygen card when latest_spo2 is present", async () => {
@@ -194,5 +207,69 @@ describe("OverviewScreen SpO2 and Skin Temperature cards", () => {
     // Same as above — only the Health Status Bar mini-metric should appear
     const elements = screen.queryAllByText("Skin Temperature");
     expect(elements.length).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("OverviewScreen independent loading states", () => {
+  beforeEach(() => {
+    mockTrendsData = undefined;
+    mockDailyMetricsData = [];
+    mockReadinessLoading = false;
+    mockWorkloadLoading = false;
+    mockSleepLoading = false;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("shows loading placeholder for recovery ring while readiness is loading", async () => {
+    mockReadinessLoading = true;
+
+    const { default: OverviewScreen } = await import("./index");
+    render(<OverviewScreen />);
+
+    // Recovery ring should show "..." loading placeholder
+    expect(screen.getAllByText("...").length).toBeGreaterThanOrEqual(1);
+    // Strain section should still render (not loading)
+    expect(screen.getAllByText("Strain").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("shows loading placeholder for strain gauge while workload is loading", async () => {
+    mockWorkloadLoading = true;
+
+    const { default: OverviewScreen } = await import("./index");
+    render(<OverviewScreen />);
+
+    // Strain gauge should show "..." loading placeholder
+    expect(screen.getAllByText("...").length).toBeGreaterThanOrEqual(1);
+    // Recovery section should still render (not loading)
+    expect(screen.getAllByText("Recovery").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("hides sleep summary section while sleep analytics is loading", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-21T10:00:00"));
+    mockSleepLoading = true;
+
+    const { default: OverviewScreen } = await import("./index");
+    render(<OverviewScreen />);
+
+    // Sleep summary card ("Last Night") should not render while loading
+    expect(screen.queryByText("Last Night")).toBeNull();
+    // Recovery and Strain should still render (not loading)
+    expect(screen.getAllByText("Recovery").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Strain").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("renders all rings when no queries are loading", async () => {
+    const { default: OverviewScreen } = await import("./index");
+    render(<OverviewScreen />);
+
+    // All section titles should render
+    expect(screen.getAllByText("Recovery").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Strain").length).toBeGreaterThanOrEqual(1);
+    // No loading placeholders
+    expect(screen.queryByText("...")).toBeNull();
   });
 });
