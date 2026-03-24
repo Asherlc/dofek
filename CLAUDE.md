@@ -2,7 +2,7 @@
 
 > **Canonical agent guidelines.** CLAUDE.md is the source of truth. Other agent config files (GEMINI.md, etc.) are symlinked to it.
 
-Provider-agnostic fitness/health data pipeline. Syncs data from various providers (Wahoo, Intervals.icu, etc.) into a TimescaleDB database for Grafana dashboards.
+Provider-agnostic fitness/health data pipeline. Syncs data from various providers (Wahoo, WHOOP, Garmin, Peloton, etc.) into a TimescaleDB database with a built-in web dashboard and iOS app.
 
 ## Stack
 - TypeScript + Drizzle ORM
@@ -95,7 +95,7 @@ src/                         — Root package: sync runner, providers, DB schema
   db/schema.ts               — Drizzle schema (source of truth for DB)
   db/index.ts                — DB connection
   providers/types.ts         — Provider plugin interface
-  providers/                 — Provider implementations
+  providers/                 — Provider implementations (30 providers)
   index.ts                   — CLI entry point (enqueues sync via BullMQ)
 packages/
   format/src/                — @dofek/format: date, duration, number, unit formatting
@@ -103,9 +103,13 @@ packages/
   nutrition/src/             — @dofek/nutrition: meal types, auto-meal detection
   training/src/              — @dofek/training: activity types, weekly volume
   stats/src/                 — @dofek/stats: correlation, regression analysis
+  recovery/src/              — @dofek/recovery: recovery metrics and scoring
   onboarding/src/            — @dofek/onboarding: onboarding flow logic
   providers-meta/src/        — @dofek/providers: provider display labels
-  server/src/                — dofek-server: Express + tRPC API (Node)
+  zones/src/                 — @dofek/zones: HR/power zone calculations
+  auth/src/                  — @dofek/auth: shared authentication logic
+  heart-rate-variability/src/ — @dofek/heart-rate-variability: HRV analysis
+  server/src/                — dofek-server: Express + tRPC API + BullMQ jobs (Node)
     routers/                 — tRPC route handlers
     index.ts                 — Express server entry point
   web/src/                   — dofek-web: Vite + React SPA (browser)
@@ -117,7 +121,16 @@ packages/
     components/              — React Native components (SVG charts)
     lib/                     — Auth, tRPC client, HealthKit integration
     modules/health-kit/      — Native Swift HealthKit module
+  whoop-whoop/               — RE'd WHOOP internal API client
+  eight-sleep/               — RE'd Eight Sleep internal API client
+  zwift-client/              — RE'd Zwift internal API client
+  trainerroad-client/        — RE'd TrainerRoad internal API client
+  velohero-client/           — RE'd VeloHero API client
+  garmin-connect/            — RE'd Garmin Connect SSO + API client
+  trainingpeaks-connect/     — RE'd TrainingPeaks internal API client
+cypress/                     — E2E tests (Cypress)
 drizzle/                     — SQL migrations
+deploy/                      — Terraform + Docker Compose + Caddy + DNS
 Dockerfile                   — Multi-stage: server + client targets
 nginx.conf                   — Nginx config (static files + API proxy)
 ```
