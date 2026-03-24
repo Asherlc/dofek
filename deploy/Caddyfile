@@ -1,4 +1,4 @@
-{$domain} {
+{$domain}, dofek.fit, www.dofek.fit, dofek.live, www.dofek.live {
     reverse_proxy client:80
 }
 
