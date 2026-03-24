@@ -9,7 +9,9 @@ interface DailyOverviewProps {
   readiness: ReadinessRow[] | undefined;
   workloadRatio: WorkloadRatioResult | undefined;
   sleepPerformance: SleepPerformanceInfo | null | undefined;
-  loading?: boolean;
+  readinessLoading?: boolean;
+  workloadLoading?: boolean;
+  sleepLoading?: boolean;
 }
 
 function ScoreRing({
@@ -166,7 +168,9 @@ export function DailyOverview({
   readiness,
   workloadRatio,
   sleepPerformance,
-  loading,
+  readinessLoading,
+  workloadLoading,
+  sleepLoading,
 }: DailyOverviewProps) {
   const latestReadiness = readiness?.length ? readiness[readiness.length - 1] : undefined;
   const readinessIsToday = latestReadiness
@@ -183,31 +187,24 @@ export function DailyOverview({
     return isToday(d) || isYesterday(d);
   })();
   const freshSleepPerformance = sleepIsFresh ? sleepPerformance : null;
+
+  const allLoaded = !readinessLoading && !workloadLoading && !sleepLoading;
   const hasAnyData =
     recoveryScore != null ||
     (workloadRatio?.timeSeries?.length ?? 0) > 0 ||
     freshSleepPerformance != null;
 
-  if (loading) {
-    return (
-      <div className="card p-6">
-        <div className="flex items-center justify-center gap-8 sm:gap-12">
-          <RingSkeleton />
-          <RingSkeleton />
-          <RingSkeleton />
-        </div>
-      </div>
-    );
-  }
-
-  if (!hasAnyData) {
+  // Hide the entire section only once all queries have resolved and none have data
+  if (allLoaded && !hasAnyData) {
     return null;
   }
 
   return (
     <div className="card p-6">
       <div className="flex items-center justify-center gap-6 sm:gap-10 lg:gap-14 flex-wrap">
-        {recoveryScore != null ? (
+        {readinessLoading ? (
+          <RingSkeleton />
+        ) : recoveryScore != null ? (
           <ReadinessRing score={recoveryScore} />
         ) : (
           <div className="flex flex-col items-center gap-2">
@@ -221,7 +218,9 @@ export function DailyOverview({
           </div>
         )}
 
-        {(workloadRatio?.timeSeries?.length ?? 0) > 0 ? (
+        {workloadLoading ? (
+          <RingSkeleton />
+        ) : (workloadRatio?.timeSeries?.length ?? 0) > 0 ? (
           <StrainRing strain={strain} />
         ) : (
           <div className="flex flex-col items-center gap-2">
@@ -235,7 +234,9 @@ export function DailyOverview({
           </div>
         )}
 
-        {freshSleepPerformance != null ? (
+        {sleepLoading ? (
+          <RingSkeleton />
+        ) : freshSleepPerformance != null ? (
           <SleepRing performance={freshSleepPerformance} />
         ) : (
           <div className="flex flex-col items-center gap-2">
