@@ -359,6 +359,62 @@ describe("WahooClient — error handling", () => {
   });
 });
 
+describe("WahooClient — Zod coercion of string/null numeric fields", () => {
+  it("coerces string numeric fields and null values from the Wahoo API", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return Response.json({
+        workouts: [
+          {
+            id: 1,
+            workout_type_id: 0,
+            starts: "2026-03-01T10:00:00Z",
+            created_at: "2026-03-01T10:00:00Z",
+            updated_at: "2026-03-01T10:00:00Z",
+            workout_summary: {
+              id: 101,
+              ascent_accum: "350.5",
+              cadence_avg: null,
+              calories_accum: "1500",
+              distance_accum: "42000.0",
+              duration_active_accum: "5400",
+              duration_paused_accum: "120",
+              duration_total_accum: "5520",
+              heart_rate_avg: "145.3",
+              power_bike_np_last: null,
+              power_bike_tss_last: null,
+              power_avg: null,
+              speed_avg: "7.78",
+              work_accum: null,
+              created_at: "2026-03-01T10:00:00Z",
+              updated_at: "2026-03-01T10:30:00Z",
+            },
+          },
+        ],
+        total: 1,
+        page: 1,
+        per_page: 30,
+        order: "desc",
+        sort: "starts",
+      });
+    };
+
+    const client = new WahooClient("token", mockFetch);
+    const result = await client.getWorkouts();
+    const summary = result.workouts[0]?.workout_summary;
+
+    expect(summary?.ascent_accum).toBe(350.5);
+    expect(summary?.cadence_avg).toBeUndefined();
+    expect(summary?.calories_accum).toBe(1500);
+    expect(summary?.distance_accum).toBe(42000.0);
+    expect(summary?.duration_active_accum).toBe(5400);
+    expect(summary?.heart_rate_avg).toBe(145.3);
+    expect(summary?.power_bike_np_last).toBeUndefined();
+    expect(summary?.power_avg).toBeUndefined();
+    expect(summary?.speed_avg).toBe(7.78);
+    expect(summary?.work_accum).toBeUndefined();
+  });
+});
+
 describe("WahooClient — Zod runtime validation", () => {
   it("rejects a workout list response with missing required fields", async () => {
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
