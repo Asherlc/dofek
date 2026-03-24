@@ -12,6 +12,7 @@ import { SleepChart } from "../components/SleepChart.tsx";
 import { SleepNeedCard } from "../components/SleepNeedCard.tsx";
 import { SleepPerformanceCard } from "../components/SleepPerformanceCard.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
+import { formatDateForQuery } from "../lib/dates.ts";
 import { trpc } from "../lib/trpc.ts";
 import { assertRows } from "../lib/utils.ts";
 
@@ -31,12 +32,13 @@ function isSleepInsight(metric: string): boolean {
 
 export function SleepPage() {
   const [days, setDays] = useState(30);
+  const endDate = useMemo(() => formatDateForQuery(), []);
 
-  const sleepData = trpc.sleep.list.useQuery({ days });
+  const sleepData = trpc.sleep.list.useQuery({ days, endDate });
   const latestStages = trpc.sleep.latestStages.useQuery();
-  const sleepNeed = trpc.sleepNeed.calculate.useQuery();
-  const sleepPerformance = trpc.sleepNeed.performance.useQuery();
-  const insightsQuery = trpc.insights.compute.useQuery({ days: Math.max(days, 90) });
+  const sleepNeed = trpc.sleepNeed.calculate.useQuery({ endDate });
+  const sleepPerformance = trpc.sleepNeed.performance.useQuery({ endDate });
+  const insightsQuery = trpc.insights.compute.useQuery({ days: Math.max(days, 90), endDate });
 
   const sleepInsights = useMemo(() => {
     const all: Insight[] = insightsQuery.data ?? [];

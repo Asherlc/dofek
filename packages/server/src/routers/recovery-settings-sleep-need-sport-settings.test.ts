@@ -735,7 +735,7 @@ describe("sleepNeedRouter", () => {
         userId: "user-1",
         timezone: "UTC",
       });
-      const result = await caller.calculate();
+      const result = await caller.calculate({});
 
       expect(result.baselineMinutes).toBe(480); // default 8hr
       expect(result.totalNeedMinutes).toBeGreaterThanOrEqual(480);
@@ -758,7 +758,7 @@ describe("sleepNeedRouter", () => {
         userId: "user-1",
         timezone: "UTC",
       });
-      const result = await caller.calculate();
+      const result = await caller.calculate({});
 
       expect(result.baselineMinutes).toBe(460);
       expect(result.strainDebtMinutes).toBe(10); // 50/5 = 10
@@ -771,7 +771,7 @@ describe("sleepNeedRouter", () => {
         userId: "user-1",
         timezone: "UTC",
       });
-      const result = await caller.calculate();
+      const result = await caller.calculate({});
 
       expect(result.baselineMinutes).toBe(480);
       expect(result.recentNights).toEqual([]);

@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { dateWindowInput, timestampWindowStart } from "../lib/date-window.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
@@ -21,11 +22,7 @@ const sleepStageRowSchema = z.object({
 
 export const sleepRouter = router({
   list: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(
-      z.object({
-        days: z.number().default(30),
-      }),
-    )
+    .input(dateWindowInput)
     .query(async ({ ctx, input }) => {
       return executeWithSchema(
         ctx.db,
@@ -40,7 +37,7 @@ export const sleepRouter = router({
               efficiency_pct
             FROM fitness.v_sleep
             WHERE user_id = ${ctx.userId}
-              AND started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+              AND started_at > ${timestampWindowStart(input.endDate, input.days)}
             ORDER BY started_at ASC`,
       );
     }),
