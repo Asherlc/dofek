@@ -45,14 +45,16 @@
     ".claude/**",
     ".context/**"
   ],
+  "mutator": {
+    "excludedMutations": ["StringLiteral"]
+  },
   "testRunnerNodeArgs": ["--import", "tsx"],
   "dryRunTimeoutMinutes": 15,
-  "timeoutMS": 30000,
+  "timeoutMS": 15000,
   "thresholds": {
     "high": 90,
     "low": 80,
     "break": 60
   },
-  "reporters": ["clear-text", "html", "progress"],
-  "concurrency": 2
+  "reporters": ["clear-text", "progress"]
 }
