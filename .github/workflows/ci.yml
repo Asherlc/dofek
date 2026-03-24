@@ -659,6 +659,47 @@ jobs:
 
           echo "OTA update deployed: $RELEASE_DIR"
 
+  deploy-config:
+    name: Deploy Config
+    needs: [lint, typecheck, knip, coverage]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Check for config changes
+        id: changes
+        run: |
+          CHANGED=$(git diff --name-only HEAD~1...HEAD -- \
+            deploy/Caddyfile \
+            deploy/docker-compose.yml \
+            deploy/otel-collector-config.yaml)
+          if [ -n "$CHANGED" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Config files changed:"
+            echo "$CHANGED"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No config changes, skipping deploy"
+          fi
+      - name: Deploy config to server
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+          scp deploy/docker-compose.yml root@"$SERVER_HOST":/opt/dofek/docker-compose.yml
+          scp deploy/Caddyfile root@"$SERVER_HOST":/opt/dofek/Caddyfile
+          scp deploy/otel-collector-config.yaml root@"$SERVER_HOST":/opt/dofek/otel-collector-config.yaml
+
+          ssh root@"$SERVER_HOST" "cd /opt/dofek && docker compose up -d"
+
   docker:
     name: Docker (${{ matrix.target }})
     needs: [lint, typecheck, knip, coverage, test-e2e-web, ios-gate]
