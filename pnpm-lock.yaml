@@ -230,7 +230,7 @@ importers:
         specifier: workspace:*
         version: link:../zones
       '@sentry/cli':
-        specifier: ^3.3.3
+        specifier: 3.3.3
         version: 3.3.3
       '@sentry/react-native':
         specifier: ^8.5.0
