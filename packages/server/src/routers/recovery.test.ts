@@ -1025,7 +1025,7 @@ describe("recoveryRouter.strainTarget", () => {
   });
 
   it("computes current strain from today's load", async () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = "2026-03-23";
     const executeMock = vi.fn();
     // First call: readinessRows
     executeMock.mockResolvedValueOnce([]);
@@ -1036,14 +1036,14 @@ describe("recoveryRouter.strainTarget", () => {
       db: { execute: executeMock },
       userId: "user-1",
     });
-    const result = await caller.strainTarget({});
+    const result = await caller.strainTarget({ endDate: today });
 
     // currentStrain should be derived from today's load
     expect(result.currentStrain).toBeGreaterThan(0);
   });
 
   it("computes progressPercent as ratio of current to target", async () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = "2026-03-23";
     const executeMock = vi.fn();
     executeMock.mockResolvedValueOnce([]);
     executeMock.mockResolvedValueOnce([{ date: today, daily_load: 50 }]);
@@ -1052,7 +1052,7 @@ describe("recoveryRouter.strainTarget", () => {
       db: { execute: executeMock },
       userId: "user-1",
     });
-    const result = await caller.strainTarget({});
+    const result = await caller.strainTarget({ endDate: today });
 
     expect(result.progressPercent).toBeGreaterThan(0);
     // progressPercent = round(currentStrain / targetStrain * 100)
@@ -1155,9 +1155,9 @@ describe("recoveryRouter.strainTarget", () => {
   });
 
   it("accumulates acute and chronic loads from date window", async () => {
-    const today = new Date().toISOString().slice(0, 10);
-    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-    const twoDaysAgo = new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10);
+    const today = "2026-03-23";
+    const yesterday = "2026-03-22";
+    const twoDaysAgo = "2026-03-21";
 
     const executeMock = vi.fn();
     executeMock.mockResolvedValueOnce([]);
@@ -1171,7 +1171,7 @@ describe("recoveryRouter.strainTarget", () => {
       db: { execute: executeMock },
       userId: "user-1",
     });
-    const result = await caller.strainTarget({});
+    const result = await caller.strainTarget({ endDate: today });
 
     // All three days are within the 7-day acute window
     // acuteLoad = (100 + 150 + 80) / 7
@@ -1180,7 +1180,7 @@ describe("recoveryRouter.strainTarget", () => {
   });
 
   it("rounds currentStrain to 1 decimal place", async () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = "2026-03-23";
     const executeMock = vi.fn();
     executeMock.mockResolvedValueOnce([]);
     executeMock.mockResolvedValueOnce([{ date: today, daily_load: 75.3 }]);
@@ -1189,7 +1189,7 @@ describe("recoveryRouter.strainTarget", () => {
       db: { execute: executeMock },
       userId: "user-1",
     });
-    const result = await caller.strainTarget({});
+    const result = await caller.strainTarget({ endDate: today });
 
     const decimals = result.currentStrain.toString().split(".")[1];
     expect(!decimals || decimals.length <= 1).toBe(true);

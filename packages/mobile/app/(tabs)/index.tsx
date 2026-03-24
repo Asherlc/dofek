@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import type { NextWorkoutRecommendation } from "dofek-server/types";
 import { useRouter } from "expo-router";
 import {
@@ -11,13 +11,12 @@ import {
 import Svg, { Polyline } from "react-native-svg";
 import { ActivityCard } from "../../components/ActivityCard";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
-import { DaySelector } from "../../components/DaySelector";
 import { MetricCard } from "../../components/MetricCard";
 import { OnboardingWelcome } from "../../components/OnboardingWelcome";
 import { RecoveryRing } from "../../components/charts/RecoveryRing";
 import { SleepBar } from "../../components/charts/SleepBar";
 import { StrainGauge } from "../../components/charts/StrainGauge";
-import { formatDurationMinutes, formatNumber, formatSleepDebtInline, isToday, isYesterday } from "@dofek/format/format";
+import { formatDateYmd, formatDurationMinutes, formatNumber, formatSleepDebtInline, isToday, isYesterday } from "@dofek/format/format";
 import { readinessLevelColor, scoreColor, scoreLabel, StrainZone, trendColor, trendDirection as computeTrend } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
@@ -61,12 +60,13 @@ export default function OverviewScreen() {
   const router = useRouter();
   const onboarding = useOnboarding();
   const units = useUnitConverter();
-  const [days, setDays] = useState(30);
+  const days = 30;
   const [recentActivityPage, setRecentActivityPage] = useState(0);
   const showDetailedSections = true;
+  const endDate = useMemo(() => formatDateYmd(), []);
 
   // Fetch readiness/recovery score
-  const readinessQuery = trpc.recovery.readinessScore.useQuery({ days });
+  const readinessQuery = trpc.recovery.readinessScore.useQuery({ days, endDate });
   const readinessData = readinessQuery.data ?? [];
   const latestReadiness = readinessData[readinessData.length - 1];
   const todayReadiness = latestReadiness && isToday(new Date(`${latestReadiness.date}T00:00:00`))
@@ -86,7 +86,7 @@ export default function OverviewScreen() {
   const sleepDebt = sleepResult?.sleepDebt ?? 0;
 
   // Fetch workload ratio for strain
-  const workloadQuery = trpc.recovery.workloadRatio.useQuery({ days });
+  const workloadQuery = trpc.recovery.workloadRatio.useQuery({ days, endDate });
   const workloadResult = workloadQuery.data;
 
   // Fetch HRV trend
@@ -95,19 +95,16 @@ export default function OverviewScreen() {
   const latestHrv = hrvData[hrvData.length - 1];
 
   // Fetch stress
-  const stressQuery = trpc.stress.scores.useQuery({ days });
+  const stressQuery = trpc.stress.scores.useQuery({ days, endDate });
   const stressData = stressQuery.data;
 
   // Fetch recent activities
   const activitiesQuery = trpc.activity.list.useQuery({
     days,
+    endDate,
     limit: RECENT_ACTIVITY_PAGE_SIZE,
     offset: recentActivityPage * RECENT_ACTIVITY_PAGE_SIZE,
   });
-
-  useEffect(() => {
-    setRecentActivityPage(0);
-  }, [days]);
 
   const recentActivities = ActivityRowSchema.array()
     .catch([])
@@ -118,42 +115,42 @@ export default function OverviewScreen() {
   );
 
   // Health metrics (latest)
-  const dailyMetricsQuery = trpc.dailyMetrics.trends.useQuery({ days });
+  const dailyMetricsQuery = trpc.dailyMetrics.trends.useQuery({ days, endDate });
   const metrics = dailyMetricsQuery.data;
 
   // Auto-sync when data is stale (API providers + HealthKit)
   useAutoSync(metrics?.latest_date);
 
   // Weekly report
-  const weeklyReportQuery = trpc.weeklyReport.report.useQuery({ weeks: Math.max(Math.ceil(days / 7), 1) });
+  const weeklyReportQuery = trpc.weeklyReport.report.useQuery({ weeks: Math.max(Math.ceil(days / 7), 1), endDate });
   const weeklyReport = weeklyReportQuery.data;
 
   // Next workout recommendation
-  const nextWorkoutQuery = trpc.training.nextWorkout.useQuery();
+  const nextWorkoutQuery = trpc.training.nextWorkout.useQuery({ endDate });
   const nextWorkout = nextWorkoutQuery.data;
 
   // Sleep need
-  const sleepNeedQuery = trpc.sleepNeed.calculate.useQuery();
+  const sleepNeedQuery = trpc.sleepNeed.calculate.useQuery({ endDate });
   const sleepNeed = sleepNeedQuery.data;
 
   // Healthspan
-  const healthspanQuery = trpc.healthspan.score.useQuery({ weeks: Math.max(Math.ceil(days / 7), 4) });
+  const healthspanQuery = trpc.healthspan.score.useQuery({ weeks: Math.max(Math.ceil(days / 7), 4), endDate });
   const healthspan = healthspanQuery.data;
 
   // Nutrition
-  const nutritionQuery = trpc.nutrition.daily.useQuery({ days });
+  const nutritionQuery = trpc.nutrition.daily.useQuery({ days, endDate });
   const nutritionData = nutritionQuery.data ?? [];
 
   // Body analytics
-  const weightQuery = trpc.bodyAnalytics.smoothedWeight.useQuery({ days: Math.max(days, 90) });
+  const weightQuery = trpc.bodyAnalytics.smoothedWeight.useQuery({ days: Math.max(days, 90), endDate });
   const weightData = weightQuery.data ?? [];
 
   // Anomaly detection
-  const anomalyQuery = trpc.anomalyDetection.check.useQuery();
+  const anomalyQuery = trpc.anomalyDetection.check.useQuery({ endDate });
   const anomalies = anomalyQuery.data;
 
   // Steps (from daily metrics)
-  const stepsQuery = trpc.dailyMetrics.list.useQuery({ days });
+  const stepsQuery = trpc.dailyMetrics.list.useQuery({ days, endDate });
   const stepsData = stepsQuery.data ?? [];
 
   const recoveryScore = todayReadiness?.readinessScore ?? null;
@@ -162,10 +159,9 @@ export default function OverviewScreen() {
     : false;
   const dailyStrain = strainIsToday ? (workloadResult?.displayedStrain ?? 0) : 0;
 
-  const isLoading =
-    readinessQuery.isLoading ||
-    sleepQuery.isLoading ||
-    workloadQuery.isLoading;
+  const readinessLoading = readinessQuery.isLoading;
+  const workloadLoading = workloadQuery.isLoading;
+  const sleepAnalyticsLoading = sleepQuery.isLoading;
 
   // Derive data for new sections
   const currentWeek = weeklyReport?.current;
@@ -225,8 +221,6 @@ export default function OverviewScreen() {
 
       <Text style={styles.date}>{todayString()}</Text>
 
-      <DaySelector days={days} onChange={setDays} />
-
       <View style={styles.detailsHintCard}>
         <Text style={styles.detailsHintText}>
           Detailed analytics are available in Sleep, Strain, Food, Trends, Training, and Insights.
@@ -243,93 +237,97 @@ export default function OverviewScreen() {
         <Text style={styles.quickAddLabel}>Log Food</Text>
       </TouchableOpacity>
 
-      {isLoading ? (
-        <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Loading your data...</Text>
+      {/* Recovery + Strain rings — each loads independently */}
+      <View style={styles.ringsRow}>
+        <View style={styles.ringSection}>
+          <ChartTitleWithTooltip
+            title="Recovery"
+            description="This ring visualizes your readiness score based on recovery-related signals."
+            textStyle={styles.sectionLabel}
+          />
+          {readinessLoading ? (
+            <View style={[styles.emptyRing, { width: 180, height: 180, opacity: 0.4 }]}>
+              <Text style={styles.emptyRingText}>...</Text>
+            </View>
+          ) : recoveryScore != null ? (
+            <RecoveryRing score={recoveryScore} size={180} />
+          ) : (
+            <View style={[styles.emptyRing, { width: 180, height: 180 }]}>
+              <Text style={styles.emptyRingText}>--</Text>
+              <Text style={styles.emptyRingSubtext}>No data yet</Text>
+            </View>
+          )}
         </View>
-      ) : (
-        <>
-          {/* Recovery + Strain rings */}
-          <View style={styles.ringsRow}>
-            <View style={styles.ringSection}>
-              <ChartTitleWithTooltip
-                title="Recovery"
-                description="This ring visualizes your readiness score based on recovery-related signals."
-                textStyle={styles.sectionLabel}
-              />
-              {recoveryScore != null ? (
-                <RecoveryRing score={recoveryScore} size={180} />
-              ) : (
-                <View style={[styles.emptyRing, { width: 180, height: 180 }]}>
-                  <Text style={styles.emptyRingText}>--</Text>
-                  <Text style={styles.emptyRingSubtext}>No data yet</Text>
-                </View>
-              )}
+        <View style={styles.ringSection}>
+          <ChartTitleWithTooltip
+            title="Strain"
+            description="This gauge shows your most recent daily training strain relative to your recent baseline."
+            textStyle={styles.sectionLabel}
+          />
+          {workloadLoading ? (
+            <View style={[styles.emptyRing, { width: 120, height: 120, opacity: 0.4 }]}>
+              <Text style={styles.emptyRingText}>...</Text>
             </View>
-            <View style={styles.ringSection}>
-              <ChartTitleWithTooltip
-                title="Strain"
-                description="This gauge shows your most recent daily training strain relative to your recent baseline."
-                textStyle={styles.sectionLabel}
-              />
-              <StrainGauge strain={dailyStrain} size={120} />
-            </View>
+          ) : (
+            <StrainGauge strain={dailyStrain} size={120} />
+          )}
+        </View>
+      </View>
+
+      {/* Recovery components breakdown */}
+      {showDetailedSections && todayReadiness?.components && (
+        <View style={styles.card}>
+          <ChartTitleWithTooltip
+            title="Recovery Breakdown"
+            description="These bars break your readiness score into heart rate variability, resting heart rate, sleep quality, and training balance."
+            textStyle={styles.cardTitle}
+          />
+          <View style={styles.componentGrid}>
+            <ComponentRow
+              label="Heart Rate Variability"
+              score={todayReadiness.components.hrvScore}
+            />
+            <ComponentRow
+              label="Resting Heart Rate"
+              score={todayReadiness.components.restingHrScore}
+            />
+            <ComponentRow
+              label="Sleep Quality"
+              score={todayReadiness.components.sleepScore}
+            />
+            <ComponentRow
+              label="Respiratory Rate"
+              score={todayReadiness.components.respiratoryRateScore}
+            />
           </View>
+        </View>
+      )}
 
-          {/* Recovery components breakdown */}
-          {showDetailedSections && todayReadiness?.components && (
-            <View style={styles.card}>
-              <ChartTitleWithTooltip
-                title="Recovery Breakdown"
-                description="These bars break your readiness score into heart rate variability, resting heart rate, sleep quality, and training balance."
-                textStyle={styles.cardTitle}
-              />
-              <View style={styles.componentGrid}>
-                <ComponentRow
-                  label="Heart Rate Variability"
-                  score={todayReadiness.components.hrvScore}
-                />
-                <ComponentRow
-                  label="Resting Heart Rate"
-                  score={todayReadiness.components.restingHrScore}
-                />
-                <ComponentRow
-                  label="Sleep Quality"
-                  score={todayReadiness.components.sleepScore}
-                />
-                <ComponentRow
-                  label="Respiratory Rate"
-                  score={todayReadiness.components.respiratoryRateScore}
-                />
-              </View>
-            </View>
+      {/* Sleep summary */}
+      {!sleepAnalyticsLoading && showDetailedSections && lastNight && (
+        <View style={styles.card}>
+          <ChartTitleWithTooltip
+            title="Last Night"
+            description="This sleep stage bar shows how your total sleep was split across deep, REM, light, and awake time."
+            textStyle={styles.cardTitle}
+          />
+          <SleepBar
+            durationMinutes={lastNight.durationMinutes}
+            deepPercentage={lastNight.deepPct}
+            remPercentage={lastNight.remPct}
+            lightPercentage={lastNight.lightPct}
+            awakePercentage={lastNight.awakePct}
+          />
+          {sleepDebt > 0 && (
+            <Text style={styles.sleepDebt}>
+              {formatSleepDebtInline(sleepDebt)}
+            </Text>
           )}
+        </View>
+      )}
 
-          {/* Sleep summary */}
-          {showDetailedSections && lastNight && (
-            <View style={styles.card}>
-              <ChartTitleWithTooltip
-                title="Last Night"
-                description="This sleep stage bar shows how your total sleep was split across deep, REM, light, and awake time."
-                textStyle={styles.cardTitle}
-              />
-              <SleepBar
-                durationMinutes={lastNight.durationMinutes}
-                deepPercentage={lastNight.deepPct}
-                remPercentage={lastNight.remPct}
-                lightPercentage={lastNight.lightPct}
-                awakePercentage={lastNight.awakePct}
-              />
-              {sleepDebt > 0 && (
-                <Text style={styles.sleepDebt}>
-                  {formatSleepDebtInline(sleepDebt)}
-                </Text>
-              )}
-            </View>
-          )}
-
-          {/* Key metrics row */}
-          <View style={styles.metricsGrid}>
+      {/* Key metrics row */}
+      <View style={styles.metricsGrid}>
             <MetricCard
               title="Heart Rate Variability"
               value={latestHrv?.hrv != null ? String(Math.round(latestHrv.hrv)) : "--"}
@@ -804,8 +802,6 @@ export default function OverviewScreen() {
               </View>
             </View>
           )}
-        </>
-      )}
     </ScrollView>
   );
 }

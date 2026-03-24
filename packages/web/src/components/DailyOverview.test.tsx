@@ -53,7 +53,9 @@ describe("DailyOverview", () => {
         readiness={undefined}
         workloadRatio={undefined}
         sleepPerformance={undefined}
-        loading={true}
+        readinessLoading={true}
+        workloadLoading={true}
+        sleepLoading={true}
       />,
     );
     const skeletons = document.querySelectorAll(".animate-pulse");
@@ -66,7 +68,9 @@ describe("DailyOverview", () => {
         readiness={undefined}
         workloadRatio={undefined}
         sleepPerformance={undefined}
-        loading={false}
+        readinessLoading={false}
+        workloadLoading={false}
+        sleepLoading={false}
       />,
     );
     expect(container.innerHTML).toBe("");
@@ -78,7 +82,9 @@ describe("DailyOverview", () => {
         readiness={mockReadiness}
         workloadRatio={mockWorkloadRatio}
         sleepPerformance={mockSleepPerformance}
-        loading={false}
+        readinessLoading={false}
+        workloadLoading={false}
+        sleepLoading={false}
       />,
     );
     expect(screen.getByText("75")).toBeTruthy();
@@ -92,7 +98,9 @@ describe("DailyOverview", () => {
         readiness={mockReadiness}
         workloadRatio={mockWorkloadRatio}
         sleepPerformance={mockSleepPerformance}
-        loading={false}
+        readinessLoading={false}
+        workloadLoading={false}
+        sleepLoading={false}
       />,
     );
     expect(screen.getByText("Strain")).toBeTruthy();
@@ -104,7 +112,9 @@ describe("DailyOverview", () => {
         readiness={mockReadiness}
         workloadRatio={mockWorkloadRatio}
         sleepPerformance={mockSleepPerformance}
-        loading={false}
+        readinessLoading={false}
+        workloadLoading={false}
+        sleepLoading={false}
       />,
     );
     expect(screen.getByText("Sleep")).toBeTruthy();
@@ -116,11 +126,33 @@ describe("DailyOverview", () => {
         readiness={[]}
         workloadRatio={mockWorkloadRatio}
         sleepPerformance={mockSleepPerformance}
-        loading={false}
+        readinessLoading={false}
+        workloadLoading={false}
+        sleepLoading={false}
       />,
     );
     const noDatas = screen.getAllByText("No data");
     expect(noDatas.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("renders data for ready rings while still-loading rings show skeleton", () => {
+    render(
+      <DailyOverview
+        readiness={mockReadiness}
+        workloadRatio={undefined}
+        sleepPerformance={mockSleepPerformance}
+        readinessLoading={false}
+        workloadLoading={true}
+        sleepLoading={false}
+      />,
+    );
+    // Recovery ring should render its score
+    expect(screen.getByText("75")).toBeTruthy();
+    // Sleep ring should render
+    expect(screen.getByText("Sleep")).toBeTruthy();
+    // Strain ring should show a skeleton pulse
+    const skeletons = document.querySelectorAll(".animate-pulse");
+    expect(skeletons.length).toBe(2); // circle + label skeleton
   });
 
   it("shows placeholders when data is from yesterday (not synced today)", () => {
@@ -165,7 +197,9 @@ describe("DailyOverview", () => {
           recommendedBedtime: "22:30",
           sleepDate: yesterdayStr,
         }}
-        loading={false}
+        readinessLoading={false}
+        workloadLoading={false}
+        sleepLoading={false}
       />,
     );
     // Recovery should show "No data" since readiness is from yesterday

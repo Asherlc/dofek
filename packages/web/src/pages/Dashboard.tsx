@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { type ReactNode, useCallback, useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { z } from "zod";
 import { ActivityList } from "../components/ActivityList.tsx";
 import { AnomalyAlertBanner } from "../components/AnomalyAlertBanner.tsx";
@@ -19,13 +19,13 @@ import { SleepNeedCard } from "../components/SleepNeedCard.tsx";
 import { SmoothedWeightChart } from "../components/SmoothedWeightChart.tsx";
 import { StrainCard } from "../components/StrainCard.tsx";
 import { StressChart } from "../components/StressChart.tsx";
-import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { TimeSeriesChart } from "../components/TimeSeriesChart.tsx";
 import { WeeklyReportCard } from "../components/WeeklyReportCard.tsx";
 import { useAutoSync } from "../hooks/useAutoSync.ts";
 import { useScrollReveal } from "../hooks/useScrollReveal.ts";
 import { chartColors } from "../lib/chartTheme.ts";
 import { useDashboardLayout } from "../lib/dashboardLayoutContext.ts";
+import { formatDateForQuery } from "../lib/dates.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import type { UnitConverter } from "../lib/units.ts";
@@ -186,38 +186,45 @@ export const DASHBOARD_SECTION_IDS = new Set([
 export function Dashboard() {
   const units = useUnitConverter();
   const { layout, toggleCollapsed, toggleHidden, moveSection } = useDashboardLayout();
-  const [days, setDaysRaw] = useState(30);
+  const days = 30;
   const [activityPage, setActivityPage] = useState(0);
   const activityPageSize = 20;
-  const setDays = useCallback((d: number) => {
-    setDaysRaw(d);
-    setActivityPage(0);
-  }, []);
   const onboarding = useOnboarding();
+  const endDate = useMemo(() => formatDateForQuery(), []);
 
-  const trends = trpc.dailyMetrics.trends.useQuery({ days });
-  const dailyMetrics = trpc.dailyMetrics.list.useQuery({ days });
+  const trends = trpc.dailyMetrics.trends.useQuery({ days, endDate });
+  const dailyMetrics = trpc.dailyMetrics.list.useQuery({ days, endDate });
   const activities = trpc.activity.list.useQuery({
     days,
+    endDate,
     limit: activityPageSize,
     offset: activityPage * activityPageSize,
   });
-  const sleepData = trpc.sleep.list.useQuery({ days });
-  const hrvBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({ days });
-  const nutritionData = trpc.nutrition.daily.useQuery({ days });
-  const insightsQuery = trpc.insights.compute.useQuery({ days });
-  const sleepNeed = trpc.sleepNeed.calculate.useQuery();
-  const stressData = trpc.stress.scores.useQuery({ days });
-  const weeklyReport = trpc.weeklyReport.report.useQuery({ weeks: Math.ceil(days / 7) });
-  const nextWorkout = trpc.training.nextWorkout.useQuery();
-  const workloadRatio = trpc.recovery.workloadRatio.useQuery({ days });
-  const healthspan = trpc.healthspan.score.useQuery({ weeks: Math.max(Math.ceil(days / 7), 4) });
-  const readinessData = trpc.recovery.readinessScore.useQuery({ days });
-  const strainTarget = trpc.recovery.strainTarget.useQuery({ days });
-  const sleepPerformance = trpc.sleepNeed.performance.useQuery();
-  const anomalyCheck = trpc.anomalyDetection.check.useQuery({});
-  const smoothedWeight = trpc.bodyAnalytics.smoothedWeight.useQuery({ days: Math.max(days, 90) });
-  const bodyRecomp = trpc.bodyAnalytics.recomposition.useQuery({ days: Math.max(days, 180) });
+  const sleepData = trpc.sleep.list.useQuery({ days, endDate });
+  const hrvBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({ days, endDate });
+  const nutritionData = trpc.nutrition.daily.useQuery({ days, endDate });
+  const insightsQuery = trpc.insights.compute.useQuery({ days, endDate });
+  const sleepNeed = trpc.sleepNeed.calculate.useQuery({ endDate });
+  const stressData = trpc.stress.scores.useQuery({ days, endDate });
+  const weeklyReport = trpc.weeklyReport.report.useQuery({ weeks: Math.ceil(days / 7), endDate });
+  const nextWorkout = trpc.training.nextWorkout.useQuery({ endDate });
+  const workloadRatio = trpc.recovery.workloadRatio.useQuery({ days, endDate });
+  const healthspan = trpc.healthspan.score.useQuery({
+    weeks: Math.max(Math.ceil(days / 7), 4),
+    endDate,
+  });
+  const readinessData = trpc.recovery.readinessScore.useQuery({ days, endDate });
+  const strainTarget = trpc.recovery.strainTarget.useQuery({ days, endDate });
+  const sleepPerformance = trpc.sleepNeed.performance.useQuery({ endDate });
+  const anomalyCheck = trpc.anomalyDetection.check.useQuery({ endDate });
+  const smoothedWeight = trpc.bodyAnalytics.smoothedWeight.useQuery({
+    days: Math.max(days, 90),
+    endDate,
+  });
+  const bodyRecomp = trpc.bodyAnalytics.recomposition.useQuery({
+    days: Math.max(days, 180),
+    endDate,
+  });
   const trendData: TrendRow | undefined = trends.data
     ? trendRowSchema.parse(trends.data)
     : undefined;
@@ -577,14 +584,16 @@ export function Dashboard() {
   return (
     <PageLayout
       headerChildren={
-        <div className="flex items-center gap-2 sm:gap-4 shrink-0">
-          <p className="text-xs text-subtle hidden sm:block">
-            {trendData?.latest_date
-              ? `Latest: ${new Date(trendData.latest_date).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}`
-              : ""}
+        trendData?.latest_date ? (
+          <p className="text-xs text-subtle hidden sm:block shrink-0">
+            Latest:{" "}
+            {new Date(trendData.latest_date).toLocaleDateString("en-US", {
+              weekday: "long",
+              month: "long",
+              day: "numeric",
+            })}
           </p>
-          <TimeRangeSelector days={days} onChange={setDays} />
-        </div>
+        ) : undefined
       }
     >
       {/* Onboarding — shown to new users with no connected providers */}
@@ -603,7 +612,9 @@ export function Dashboard() {
         readiness={readinessData.data}
         workloadRatio={workloadRatio.data}
         sleepPerformance={sleepPerformance.data}
-        loading={readinessData.isLoading || workloadRatio.isLoading || sleepPerformance.isLoading}
+        readinessLoading={readinessData.isLoading}
+        workloadLoading={workloadRatio.isLoading}
+        sleepLoading={sleepPerformance.isLoading}
       />
 
       <section>

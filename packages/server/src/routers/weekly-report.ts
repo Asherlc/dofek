@@ -1,5 +1,11 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import {
+  dateWindowEnd,
+  dateWindowStart,
+  endDateSchema,
+  timestampWindowStart,
+} from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
@@ -40,7 +46,7 @@ export interface WeeklyReportResult {
  * Classify a week's average daily load relative to chronic baseline.
  * Whoop uses strain zones: restoring (<80% chronic), optimal (80-130%), overreaching (>130%).
  */
-function classifyStrainZone(weekAvgLoad: number, chronicAvgLoad: number): StrainZone {
+export function classifyStrainZone(weekAvgLoad: number, chronicAvgLoad: number): StrainZone {
   if (chronicAvgLoad <= 0) return "optimal";
   const ratio = weekAvgLoad / chronicAvgLoad;
   if (ratio < 0.8) return "restoring";
@@ -54,7 +60,7 @@ export const weeklyReportRouter = router({
    * Aggregates strain balance, sleep performance, readiness, and key vitals per ISO week.
    */
   report: cachedProtectedQuery(CacheTTL.LONG)
-    .input(z.object({ weeks: z.number().min(1).max(52).default(12) }))
+    .input(z.object({ weeks: z.number().min(1).max(52).default(12), endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<WeeklyReportResult> => {
       const totalDays = input.weeks * 7 + 28; // extra for chronic baseline
 
@@ -76,8 +82,8 @@ export const weeklyReportRouter = router({
         weeklyReportRowSchema,
         sql`WITH date_series AS (
               SELECT generate_series(
-                CURRENT_DATE - ${totalDays}::int,
-                CURRENT_DATE,
+                ${dateWindowStart(input.endDate, totalDays)},
+                ${dateWindowEnd(input.endDate)},
                 '1 day'::interval
               )::date AS date
             ),
@@ -89,7 +95,7 @@ export const weeklyReportRouter = router({
                   * asum.avg_hr / NULLIF(asum.max_hr, 0) AS load
               FROM fitness.activity_summary asum
               WHERE asum.user_id = ${ctx.userId}
-                AND (asum.started_at AT TIME ZONE ${ctx.timezone})::date >= CURRENT_DATE - ${totalDays}::int
+                AND (asum.started_at AT TIME ZONE ${ctx.timezone})::date >= ${dateWindowStart(input.endDate, totalDays)}
                 AND asum.ended_at IS NOT NULL
                 AND asum.avg_hr IS NOT NULL
             ),
@@ -114,7 +120,7 @@ export const weeklyReportRouter = router({
               FROM fitness.v_sleep
               WHERE user_id = ${ctx.userId}
                 AND is_nap = false
-                AND started_at > NOW() - ${totalDays}::int * INTERVAL '1 day'
+                AND started_at > ${timestampWindowStart(input.endDate, totalDays)}
             ),
             metrics_daily AS (
               SELECT
@@ -123,7 +129,7 @@ export const weeklyReportRouter = router({
                 hrv
               FROM fitness.v_daily_metrics
               WHERE user_id = ${ctx.userId}
-                AND date > CURRENT_DATE - ${totalDays}::int
+                AND date > ${dateWindowStart(input.endDate, totalDays)}
             ),
             weekly AS (
               SELECT

@@ -7,6 +7,12 @@ import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import {
+  dateWindowEnd,
+  dateWindowStart,
+  endDateSchema,
+  timestampWindowStart,
+} from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
@@ -203,7 +209,7 @@ export const recoveryRouter = router({
    * Acute = 7-day sum, Chronic = 28-day average of daily load.
    */
   workloadRatio: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(z.object({ days: z.number().default(90) }))
+    .input(z.object({ days: z.number().default(90), endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<WorkloadRatioResult> => {
       const queryDays = input.days + 28;
       const workloadRowSchema = z.object({
@@ -218,8 +224,8 @@ export const recoveryRouter = router({
         workloadRowSchema,
         sql`WITH date_series AS (
               SELECT generate_series(
-                CURRENT_DATE - ${queryDays}::int,
-                CURRENT_DATE,
+                ${dateWindowStart(input.endDate, queryDays)},
+                ${dateWindowEnd(input.endDate)},
                 '1 day'::interval
               )::date AS date
             ),
@@ -231,7 +237,7 @@ export const recoveryRouter = router({
                   / NULLIF(asum.max_hr, 0) AS load
               FROM fitness.activity_summary asum
               WHERE asum.user_id = ${ctx.userId}
-                AND (asum.started_at AT TIME ZONE ${ctx.timezone})::date >= CURRENT_DATE - ${queryDays}::int
+                AND (asum.started_at AT TIME ZONE ${ctx.timezone})::date >= ${dateWindowStart(input.endDate, queryDays)}
                 AND asum.ended_at IS NOT NULL
                 AND asum.avg_hr IS NOT NULL
             ),
@@ -267,7 +273,7 @@ export const recoveryRouter = router({
                 ELSE NULL
               END AS workload_ratio
             FROM with_windows
-            WHERE date > CURRENT_DATE - ${input.days}::int
+            WHERE date > ${dateWindowStart(input.endDate, input.days)}
             ORDER BY date ASC`,
       );
 
@@ -392,7 +398,7 @@ export const recoveryRouter = router({
    * Uses asymmetric sigmoid mapping instead of linear z-score for more natural scaling.
    */
   readinessScore: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(z.object({ days: z.number().default(30) }))
+    .input(z.object({ days: z.number().default(30), endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<ReadinessRow[]> => {
       // Load personalized readiness weights
       const storedParams = await loadPersonalizedParams(ctx.db, ctx.userId);
@@ -432,7 +438,7 @@ export const recoveryRouter = router({
                 STDDEV_POP(respiratory_rate_avg) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_sd_30d
               FROM fitness.v_daily_metrics
               WHERE user_id = ${ctx.userId}
-                AND date > CURRENT_DATE - ${queryDays}::int
+                AND date > ${dateWindowStart(input.endDate, queryDays)}
             ),
             sleep_eff AS (
               SELECT DISTINCT ON (local_date)
@@ -444,7 +450,7 @@ export const recoveryRouter = router({
                 FROM fitness.v_sleep
                 WHERE user_id = ${ctx.userId}
                   AND is_nap = false
-                  AND started_at > NOW() - ${queryDays}::int * INTERVAL '1 day'
+                  AND started_at > ${timestampWindowStart(input.endDate, queryDays)}
               ) sleep_sub
               ORDER BY local_date, started_at DESC
             )
@@ -464,7 +470,7 @@ export const recoveryRouter = router({
             LEFT JOIN sleep_eff s ON s.date = m.date
             ORDER BY m.date ASC`,
       );
-      const cutoffDate = new Date();
+      const cutoffDate = new Date(input.endDate);
       cutoffDate.setDate(cutoffDate.getDate() - input.days);
       const cutoffStr = cutoffDate.toISOString().split("T")[0] ?? "";
 
@@ -543,7 +549,7 @@ export const recoveryRouter = router({
    * Returns a recommended strain level and progress toward it.
    */
   strainTarget: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(z.object({ days: z.number().default(30) }))
+    .input(z.object({ days: z.number().default(30), endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<StrainTargetResult> => {
       // Get readiness score
       const readinessRows = await executeWithSchema(
@@ -579,7 +585,7 @@ export const recoveryRouter = router({
             ) AS daily_load
           FROM fitness.v_activity asum
           WHERE asum.user_id = ${ctx.userId}
-            AND asum.started_at::date >= CURRENT_DATE - ${input.days}::int
+            AND asum.started_at::date >= ${dateWindowStart(input.endDate, input.days)}
             AND asum.ended_at IS NOT NULL
             AND asum.avg_hr IS NOT NULL
           GROUP BY asum.started_at::date
@@ -626,7 +632,7 @@ export const recoveryRouter = router({
       }
 
       // Compute acute and chronic loads
-      const today = new Date().toISOString().slice(0, 10);
+      const today = input.endDate;
       const acuteWindow = 7;
       const chronicWindow = 28;
       let acuteLoad = 0;

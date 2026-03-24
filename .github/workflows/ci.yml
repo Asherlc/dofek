@@ -52,6 +52,19 @@ jobs:
           wait $pid3 || fail=1
           exit $fail
 
+  sherif:
+    name: Sherif
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec sherif
+
   knip:
     name: Knip
     runs-on: ubuntu-latest
@@ -254,7 +267,7 @@ jobs:
     name: iOS Native Build
     needs: check-mobile-changes
     if: needs.check-mobile-changes.outputs.changed == 'true'
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -526,11 +539,12 @@ jobs:
     name: iOS TestFlight
     needs: [lint, typecheck, knip, coverage, test-mobile, build-mobile]
     if: github.ref == 'refs/heads/main'
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 60
     env:
       APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
       APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -674,6 +688,57 @@ jobs:
           ssh root@"$SERVER_HOST" 'cd /opt/dofek/updates && ls -dt 20*/ | tail -n +11 | xargs rm -rf'
 
           echo "OTA update deployed: $RELEASE_DIR"
+
+  deploy-config:
+    name: Deploy Config
+    needs: [lint, typecheck, knip, coverage]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Check for config changes
+        id: changes
+        run: |
+          CHANGED=$(git diff --name-only HEAD~1...HEAD -- \
+            deploy/Caddyfile \
+            deploy/docker-compose.yml \
+            deploy/otel-collector-config.yaml)
+          if [ -n "$CHANGED" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Config files changed:"
+            echo "$CHANGED"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No config changes, skipping deploy"
+          fi
+      - name: Setup Terraform
+        if: steps.changes.outputs.changed == 'true'
+        uses: hashicorp/setup-terraform@v4
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+      - name: Setup SSH
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          eval "$(ssh-agent -s)"
+          ssh-add ~/.ssh/id_ed25519
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> "$GITHUB_ENV"
+      - name: Terraform Apply
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: deploy/deploy-config
+        env:
+          TF_VAR_server_ip: ${{ secrets.SERVER_HOST }}
+        run: |
+          terraform init
+          terraform apply -auto-approve
 
   docker:
     name: Docker (${{ matrix.target }})

@@ -1,6 +1,7 @@
 import { scoreToYearsDelta } from "@dofek/scoring/healthspan-years";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { dateWindowStart, endDateSchema, timestampWindowStart } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
@@ -147,7 +148,7 @@ export const healthspanRouter = router({
    * Updates weekly from rolling 4-week data windows.
    */
   score: cachedProtectedQuery(CacheTTL.LONG)
-    .input(z.object({ weeks: z.number().min(4).max(52).default(12) }))
+    .input(z.object({ weeks: z.number().min(4).max(52).default(12), endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<HealthspanResult> => {
       const totalDays = input.weeks * 7;
 
@@ -184,7 +185,7 @@ export const healthspanRouter = router({
               FROM fitness.v_sleep
               WHERE user_id = ${ctx.userId}
                 AND is_nap = false
-                AND started_at > NOW() - ${totalDays}::int * INTERVAL '1 day'
+                AND started_at > ${timestampWindowStart(input.endDate, totalDays)}
             ),
             sleep_agg AS (
               SELECT
@@ -201,7 +202,7 @@ export const healthspanRouter = router({
                  ORDER BY date DESC LIMIT 1) AS latest_vo2max
               FROM fitness.v_daily_metrics
               WHERE user_id = ${ctx.userId}
-                AND date > CURRENT_DATE - ${totalDays}::int
+                AND date > ${dateWindowStart(input.endDate, totalDays)}
             ),
             hr_zone_time AS (
               SELECT
@@ -248,7 +249,7 @@ export const healthspanRouter = router({
                   LIMIT 1
                 ) rhr ON true
                 WHERE up2.id = ${ctx.userId}
-                  AND a.started_at > NOW() - ${totalDays}::int * INTERVAL '1 day'
+                  AND a.started_at > ${timestampWindowStart(input.endDate, totalDays)}
                   AND ms.heart_rate IS NOT NULL
                   AND up2.max_hr IS NOT NULL
               ) hr_samples
@@ -257,7 +258,7 @@ export const healthspanRouter = router({
               SELECT NULLIF(COUNT(*), 0)::real / GREATEST(${totalDays}::real / 7, 1) AS sessions_per_week
               FROM fitness.strength_workout
               WHERE user_id = ${ctx.userId}
-                AND started_at > NOW() - ${totalDays}::int * INTERVAL '1 day'
+                AND started_at > ${timestampWindowStart(input.endDate, totalDays)}
             ),
             body_latest AS (
               SELECT weight_kg, body_fat_pct
@@ -275,7 +276,7 @@ export const healthspanRouter = router({
                 AVG(vo2max) AS avg_vo2max
               FROM fitness.v_daily_metrics
               WHERE user_id = ${ctx.userId}
-                AND date > CURRENT_DATE - ${totalDays}::int
+                AND date > ${dateWindowStart(input.endDate, totalDays)}
               GROUP BY date_trunc('week', date)
               ORDER BY week_start ASC
             )

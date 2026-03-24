@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { endDateSchema, timestampWindowStart } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
@@ -37,7 +38,7 @@ export const bodyAnalyticsRouter = router({
    * real trend. Similar to MacroFactor / Happy Scale approach.
    */
   smoothedWeight: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(z.object({ days: z.number().default(90) }))
+    .input(z.object({ days: z.number().default(90), endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<SmoothedWeightRow[]> => {
       const weightRowSchema = z.object({
         date: dateStringSchema,
@@ -57,7 +58,7 @@ export const bodyAnalyticsRouter = router({
               FROM fitness.v_body_measurement
               WHERE user_id = ${ctx.userId}
                 AND weight_kg IS NOT NULL
-                AND recorded_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+                AND recorded_at > ${timestampWindowStart(input.endDate, input.days)}
             ) sub
             ORDER BY local_date, recorded_at DESC`,
       );
@@ -111,7 +112,7 @@ export const bodyAnalyticsRouter = router({
    * from measurements that have both weight and body fat data.
    */
   recomposition: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(z.object({ days: z.number().default(180) }))
+    .input(z.object({ days: z.number().default(180), endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<BodyRecompositionRow[]> => {
       const recompRowSchema = z.object({
         date: dateStringSchema,
@@ -132,7 +133,7 @@ export const bodyAnalyticsRouter = router({
               WHERE user_id = ${ctx.userId}
                 AND weight_kg IS NOT NULL
                 AND body_fat_pct IS NOT NULL
-                AND recorded_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+                AND recorded_at > ${timestampWindowStart(input.endDate, input.days)}
             ) sub
             ORDER BY local_date, recorded_at DESC`,
       );

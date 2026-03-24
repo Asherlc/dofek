@@ -5,6 +5,7 @@ import {
 } from "@dofek/scoring/sleep-performance";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { dateWindowStart, endDateSchema, timestampWindowStart } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
@@ -51,8 +52,9 @@ export const sleepNeedRouter = router({
    * Sleep Need Calculator — like Whoop's Sleep Coach.
    * Computes personalized sleep need and accumulated debt.
    */
-  calculate: cachedProtectedQuery(CacheTTL.SHORT).query(
-    async ({ ctx }): Promise<SleepNeedResult> => {
+  calculate: cachedProtectedQuery(CacheTTL.SHORT)
+    .input(z.object({ endDate: endDateSchema }))
+    .query(async ({ ctx, input }): Promise<SleepNeedResult> => {
       const sleepNeedRowSchema = z.object({
         date: dateStringSchema,
         duration_minutes: z.coerce.number(),
@@ -73,7 +75,7 @@ export const sleepNeedRouter = router({
               FROM fitness.v_sleep
               WHERE user_id = ${ctx.userId}
                 AND is_nap = false
-                AND started_at > NOW() - INTERVAL '90 days'
+                AND started_at > ${timestampWindowStart(input.endDate, 90)}
               ORDER BY started_at ASC
             ),
             daily_hrv AS (
@@ -82,7 +84,7 @@ export const sleepNeedRouter = router({
                 hrv
               FROM fitness.v_daily_metrics
               WHERE user_id = ${ctx.userId}
-                AND date > CURRENT_DATE - 90
+                AND date > ${dateWindowStart(input.endDate, 90)}
                 AND hrv IS NOT NULL
             ),
             sleep_with_next_hrv AS (
@@ -105,7 +107,7 @@ export const sleepNeedRouter = router({
               ), 0) AS load
               FROM fitness.activity_summary asum
               WHERE asum.user_id = ${ctx.userId}
-                AND (asum.started_at AT TIME ZONE ${ctx.timezone})::date = CURRENT_DATE - 1
+                AND (asum.started_at AT TIME ZONE ${ctx.timezone})::date = ${sql`${input.endDate}::date - 1`}
                 AND asum.ended_at IS NOT NULL
                 AND asum.avg_hr IS NOT NULL
             )
@@ -172,15 +174,15 @@ export const sleepNeedRouter = router({
         totalNeedMinutes,
         recentNights,
       };
-    },
-  ),
+    }),
 
   /**
    * Sleep performance score for last night: how well did you sleep relative to need.
    * Returns score (0-100), tier (Peak/Perform/Get By/Low), and recommended bedtime.
    */
-  performance: cachedProtectedQuery(CacheTTL.MEDIUM).query(
-    async ({ ctx }): Promise<SleepPerformanceInfo | null> => {
+  performance: cachedProtectedQuery(CacheTTL.MEDIUM)
+    .input(z.object({ endDate: endDateSchema }))
+    .query(async ({ ctx, input }): Promise<SleepPerformanceInfo | null> => {
       // Get last night's sleep
       const tz = ctx.timezone;
       const sleepRows = await executeWithSchema(
@@ -218,7 +220,7 @@ export const sleepNeedRouter = router({
           FROM fitness.sleep_session
           WHERE user_id = ${ctx.userId}
             AND sleep_type = 'sleep'
-            AND started_at > NOW() - INTERVAL '90 days'
+            AND started_at > ${timestampWindowStart(input.endDate, 90)}
             AND duration_minutes IS NOT NULL
         `,
       );
@@ -236,6 +238,5 @@ export const sleepNeedRouter = router({
         recommendedBedtime,
         sleepDate: lastSleep.sleep_date,
       };
-    },
-  ),
+    }),
 });

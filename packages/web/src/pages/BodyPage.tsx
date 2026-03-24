@@ -16,6 +16,7 @@ import { StressChart } from "../components/StressChart.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { TimeSeriesChart } from "../components/TimeSeriesChart.tsx";
 import { chartColors } from "../lib/chartTheme.ts";
+import { formatDateForQuery } from "../lib/dates.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import type { UnitConverter } from "../lib/units.ts";
@@ -82,14 +83,21 @@ function buildSkinTempSeries(
 export function BodyPage() {
   const units = useUnitConverter();
   const [days, setDays] = useState(30);
+  const endDate = useMemo(() => formatDateForQuery(), []);
 
-  const trends = trpc.dailyMetrics.trends.useQuery({ days });
-  const dailyMetrics = trpc.dailyMetrics.list.useQuery({ days });
-  const hrvBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({ days });
-  const stressData = trpc.stress.scores.useQuery({ days });
-  const smoothedWeight = trpc.bodyAnalytics.smoothedWeight.useQuery({ days: Math.max(days, 90) });
-  const bodyRecomp = trpc.bodyAnalytics.recomposition.useQuery({ days: Math.max(days, 180) });
-  const insightsQuery = trpc.insights.compute.useQuery({ days: Math.max(days, 90) });
+  const trends = trpc.dailyMetrics.trends.useQuery({ days, endDate });
+  const dailyMetrics = trpc.dailyMetrics.list.useQuery({ days, endDate });
+  const hrvBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({ days, endDate });
+  const stressData = trpc.stress.scores.useQuery({ days, endDate });
+  const smoothedWeight = trpc.bodyAnalytics.smoothedWeight.useQuery({
+    days: Math.max(days, 90),
+    endDate,
+  });
+  const bodyRecomp = trpc.bodyAnalytics.recomposition.useQuery({
+    days: Math.max(days, 180),
+    endDate,
+  });
+  const insightsQuery = trpc.insights.compute.useQuery({ days: Math.max(days, 90), endDate });
 
   const trendData = trends.data ? trendRowSchema.parse(trends.data) : undefined;
   const metrics = assertRows(dailyMetrics.data, dailyMetricRowSchema);

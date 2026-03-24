@@ -11,6 +11,7 @@ import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { dateWindowStart, endDateSchema, timestampWindowStart } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
@@ -35,7 +36,7 @@ export const stressRouter = router({
    * Mirrors Whoop's 0-3 stress scale with cumulative weekly tracking.
    */
   scores: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(z.object({ days: z.number().default(90) }))
+    .input(z.object({ days: z.number().default(90), endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<StressResult> => {
       const queryDays = input.days + 60; // extra for baseline windows
 
@@ -63,7 +64,7 @@ export const stressRouter = router({
                 STDDEV_POP(resting_hr) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS rhr_sd_60d
               FROM fitness.v_daily_metrics
               WHERE user_id = ${ctx.userId}
-                AND date > CURRENT_DATE - ${queryDays}::int
+                AND date > ${dateWindowStart(input.endDate, queryDays)}
               ORDER BY date ASC
             ),
             sleep_eff AS (
@@ -76,7 +77,7 @@ export const stressRouter = router({
                 FROM fitness.v_sleep
                 WHERE user_id = ${ctx.userId}
                   AND is_nap = false
-                  AND started_at > NOW() - ${queryDays}::int * INTERVAL '1 day'
+                  AND started_at > ${timestampWindowStart(input.endDate, queryDays)}
               ) sleep_sub
               ORDER BY local_date, started_at DESC
             )
@@ -91,7 +92,7 @@ export const stressRouter = router({
               s.efficiency_pct
             FROM metrics m
             LEFT JOIN sleep_eff s ON s.date = m.date
-            WHERE m.date > CURRENT_DATE - ${input.days}::int
+            WHERE m.date > ${dateWindowStart(input.endDate, input.days)}
             ORDER BY m.date ASC`,
       );
 
