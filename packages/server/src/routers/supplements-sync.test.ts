@@ -343,5 +343,89 @@ describe("supplementsRouter", () => {
       expect(insertedValues.vitaminDMcg).toBe(125);
       expect(insertedValues.calories).toBe(0);
     });
+
+    it("passes all truthy nutrient values through without coercing to null", async () => {
+      const { db, mocks } = createMockDb();
+      const caller = createCaller({ db, userId: "user-1", timezone: "UTC" });
+
+      const allNutrients = {
+        name: "Complete",
+        calories: 10,
+        proteinG: 0.5,
+        carbsG: 1.1,
+        fatG: 0.2,
+        saturatedFatG: 0.1,
+        polyunsaturatedFatG: 0.05,
+        monounsaturatedFatG: 0.04,
+        transFatG: 0.01,
+        cholesterolMg: 0.3,
+        sodiumMg: 5,
+        potassiumMg: 10,
+        fiberG: 0.1,
+        sugarG: 0.2,
+        vitaminAMcg: 900,
+        vitaminCMg: 90,
+        vitaminDMcg: 125,
+        vitaminEMg: 15,
+        vitaminKMcg: 120,
+        vitaminB1Mg: 1.2,
+        vitaminB2Mg: 1.3,
+        vitaminB3Mg: 16,
+        vitaminB5Mg: 5,
+        vitaminB6Mg: 1.7,
+        vitaminB7Mcg: 30,
+        vitaminB9Mcg: 400,
+        vitaminB12Mcg: 2.4,
+        calciumMg: 1000,
+        ironMg: 18,
+        magnesiumMg: 400,
+        zincMg: 11,
+        seleniumMcg: 55,
+        copperMg: 0.9,
+        manganeseMg: 2.3,
+        chromiumMcg: 35,
+        iodineMcg: 150,
+        omega3Mg: 500,
+        omega6Mg: 200,
+      };
+
+      await caller.save({ supplements: [allNutrients] });
+
+      const insertedValues = mocks.mockInsertValues.mock.calls[0]?.[0];
+      // Verify every truthy nutrient value is passed through (not coerced to null)
+      for (const [key, value] of Object.entries(allNutrients)) {
+        if (key === "name") continue;
+        expect(insertedValues[key], `nutrient ${key} should be ${value}`).toBe(value);
+      }
+    });
+
+    it("passes optional non-nutrient fields through to supplement insert", async () => {
+      const { db, mocks } = createMockDb();
+      const caller = createCaller({ db, userId: "user-1", timezone: "UTC" });
+
+      await caller.save({
+        supplements: [
+          {
+            name: "Fish Oil",
+            amount: 2,
+            unit: "caps",
+            form: "softgel",
+            description: "Omega-3",
+            meal: "breakfast",
+          },
+        ],
+      });
+
+      // The supplement insert is done via tx.execute with a SQL template
+      const sqlCall = mocks.mockExecute.mock.calls[0]?.[0];
+      // The sql tagged template returns { strings, values }
+      // Values order: userId, name, amount, unit, form, description, meal, sortIndex, ndId
+      expect(sqlCall.values).toContain("Fish Oil");
+      expect(sqlCall.values).toContain(2);
+      expect(sqlCall.values).toContain("caps");
+      expect(sqlCall.values).toContain("softgel");
+      expect(sqlCall.values).toContain("Omega-3");
+      expect(sqlCall.values).toContain("breakfast");
+    });
   });
 });
