@@ -673,6 +673,56 @@ jobs:
 
           echo "OTA update deployed: $RELEASE_DIR"
 
+  deploy-config:
+    name: Deploy Config
+    needs: [lint, typecheck, knip, coverage]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Check for config changes
+        id: changes
+        run: |
+          CHANGED=$(git diff --name-only HEAD~1...HEAD -- \
+            deploy/Caddyfile \
+            deploy/docker-compose.yml \
+            deploy/otel-collector-config.yaml)
+          if [ -n "$CHANGED" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Config files changed:"
+            echo "$CHANGED"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No config changes, skipping deploy"
+          fi
+      - name: Setup Terraform
+        if: steps.changes.outputs.changed == 'true'
+        uses: hashicorp/setup-terraform@v4
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+      - name: Setup SSH
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          eval "$(ssh-agent -s)"
+          ssh-add ~/.ssh/id_ed25519
+      - name: Terraform Apply
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: deploy/deploy-config
+        env:
+          TF_VAR_server_ip: ${{ secrets.SERVER_HOST }}
+        run: |
+          terraform init
+          terraform apply -auto-approve
+
   docker:
     name: Docker (${{ matrix.target }})
     needs: [lint, typecheck, knip, coverage, test-e2e-web, ios-gate]

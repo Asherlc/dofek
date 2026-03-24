@@ -8,3 +8,8 @@ deploy-config/.terraform/
 deploy-config/.terraform.lock.hcl
 deploy-config/*.tfstate
 deploy-config/*.tfstate.backup
+dns/.terraform/
+dns/.terraform.lock.hcl
+dns/*.tfstate
+dns/*.tfstate.backup
+dns/terraform.tfvars
