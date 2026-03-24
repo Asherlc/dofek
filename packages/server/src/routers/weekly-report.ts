@@ -46,7 +46,7 @@ export interface WeeklyReportResult {
  * Classify a week's average daily load relative to chronic baseline.
  * Whoop uses strain zones: restoring (<80% chronic), optimal (80-130%), overreaching (>130%).
  */
-function classifyStrainZone(weekAvgLoad: number, chronicAvgLoad: number): StrainZone {
+export function classifyStrainZone(weekAvgLoad: number, chronicAvgLoad: number): StrainZone {
   if (chronicAvgLoad <= 0) return "optimal";
   const ratio = weekAvgLoad / chronicAvgLoad;
   if (ratio < 0.8) return "restoring";
