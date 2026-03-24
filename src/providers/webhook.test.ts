@@ -858,3 +858,344 @@ describe("CorosProvider register/unregister", () => {
     expect(provider.parseWebhookPayload({ sportDataList: [] })).toHaveLength(0);
   });
 });
+
+// ── More precise string/object assertions to kill StringLiteral/ObjectLiteral mutants ──
+
+describe("StravaProvider webhook — precise assertions", () => {
+  it("parseWebhookPayload returns exact event structure for create", async () => {
+    const { StravaProvider } = await import("./strava.ts");
+    const provider = new StravaProvider(async () => new Response(), 0);
+
+    const events = provider.parseWebhookPayload({
+      aspect_type: "create",
+      event_time: 1234567890,
+      object_id: 12345,
+      object_type: "activity",
+      owner_id: 67890,
+      subscription_id: 1,
+    });
+
+    expect(events).toHaveLength(1);
+    const event = events[0];
+    expect(event?.ownerExternalId).toBe("67890");
+    expect(event?.eventType).toBe("create");
+    expect(event?.objectType).toBe("activity");
+    expect(event?.objectId).toBe("12345");
+    // Strava parseWebhookPayload should NOT include metadata
+    expect(event?.metadata).toBeUndefined();
+  });
+
+  it("parseWebhookPayload defaults to update when aspect_type is unrecognized", async () => {
+    const { StravaProvider } = await import("./strava.ts");
+    const provider = new StravaProvider(async () => new Response(), 0);
+
+    const events = provider.parseWebhookPayload({
+      aspect_type: "unknown_aspect",
+      object_type: "activity",
+      owner_id: 42,
+    });
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.eventType).toBe("update");
+  });
+
+  it("parseWebhookPayload defaults to update when aspect_type is missing", async () => {
+    const { StravaProvider } = await import("./strava.ts");
+    const provider = new StravaProvider(async () => new Response(), 0);
+
+    const events = provider.parseWebhookPayload({
+      object_type: "activity",
+      owner_id: 42,
+    });
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.eventType).toBe("update");
+  });
+
+  it("parseWebhookPayload returns objectId as undefined when object_id is missing", async () => {
+    const { StravaProvider } = await import("./strava.ts");
+    const provider = new StravaProvider(async () => new Response(), 0);
+
+    const events = provider.parseWebhookPayload({
+      aspect_type: "create",
+      object_type: "activity",
+      owner_id: 42,
+    });
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.objectId).toBeUndefined();
+  });
+
+  it("parseWebhookPayload passes through object_type as-is", async () => {
+    const { StravaProvider } = await import("./strava.ts");
+    const provider = new StravaProvider(async () => new Response(), 0);
+
+    const events = provider.parseWebhookPayload({
+      aspect_type: "create",
+      object_type: "athlete",
+      owner_id: 42,
+    });
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.objectType).toBe("athlete");
+  });
+
+  it("handleValidationChallenge returns null when hub.mode is not subscribe", async () => {
+    const { StravaProvider } = await import("./strava.ts");
+    const provider = new StravaProvider(async () => new Response(), 0);
+
+    const result = provider.handleValidationChallenge(
+      { "hub.mode": "unsubscribe", "hub.challenge": "abc", "hub.verify_token": "mytoken" },
+      "mytoken",
+    );
+    expect(result).toBeNull();
+  });
+
+  it("handleValidationChallenge returns null when hub.challenge is missing", async () => {
+    const { StravaProvider } = await import("./strava.ts");
+    const provider = new StravaProvider(async () => new Response(), 0);
+
+    const result = provider.handleValidationChallenge(
+      { "hub.mode": "subscribe", "hub.verify_token": "mytoken" },
+      "mytoken",
+    );
+    expect(result).toBeNull();
+  });
+
+  it("id is exactly 'strava'", async () => {
+    const { StravaProvider } = await import("./strava.ts");
+    const provider = new StravaProvider(async () => new Response(), 0);
+    expect(provider.id).toBe("strava");
+  });
+
+  it("name is exactly 'Strava'", async () => {
+    const { StravaProvider } = await import("./strava.ts");
+    const provider = new StravaProvider(async () => new Response(), 0);
+    expect(provider.name).toBe("Strava");
+  });
+
+  it("webhookScope is exactly 'app'", async () => {
+    const { StravaProvider } = await import("./strava.ts");
+    const provider = new StravaProvider(async () => new Response(), 0);
+    expect(provider.webhookScope).toBe("app");
+  });
+});
+
+describe("WahooProvider webhook — precise assertions", () => {
+  it("parseWebhookPayload returns eventType 'update' for workout_summary.updated", async () => {
+    const { WahooProvider } = await import("./wahoo.ts");
+    const provider = new WahooProvider(async () => new Response());
+
+    const events = provider.parseWebhookPayload({
+      event_type: "workout_summary.updated",
+      user: { id: 100 },
+      workout_summary: {
+        id: 55,
+        created_at: "2026-03-01T10:00:00Z",
+        updated_at: "2026-03-01T10:00:00Z",
+      },
+    });
+
+    expect(events).toHaveLength(1);
+    const event = events[0];
+    expect(event?.ownerExternalId).toBe("100");
+    expect(event?.eventType).toBe("update");
+    expect(event?.objectType).toBe("workout");
+    expect(event?.objectId).toBe("55");
+    expect(event?.metadata).toBeDefined();
+    expect(event?.metadata).toHaveProperty("payload");
+  });
+
+  it("parseWebhookPayload returns eventType 'create' for workout_summary.created", async () => {
+    const { WahooProvider } = await import("./wahoo.ts");
+    const provider = new WahooProvider(async () => new Response());
+
+    const events = provider.parseWebhookPayload({
+      event_type: "workout_summary.created",
+      user: { id: 10 },
+    });
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.eventType).toBe("create");
+  });
+
+  it("parseWebhookPayload returns objectId as undefined when workout_summary is absent", async () => {
+    const { WahooProvider } = await import("./wahoo.ts");
+    const provider = new WahooProvider(async () => new Response());
+
+    const events = provider.parseWebhookPayload({
+      user: { id: 10 },
+    });
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.objectId).toBeUndefined();
+    expect(events[0]?.objectType).toBe("workout");
+  });
+
+  it("parseWebhookPayload returns empty array for invalid payload structure", async () => {
+    const { WahooProvider } = await import("./wahoo.ts");
+    const provider = new WahooProvider(async () => new Response());
+
+    expect(provider.parseWebhookPayload({ bad: true })).toHaveLength(0);
+    expect(provider.parseWebhookPayload(undefined)).toHaveLength(0);
+    expect(provider.parseWebhookPayload(42)).toHaveLength(0);
+  });
+
+  it("id is exactly 'wahoo'", async () => {
+    const { WahooProvider } = await import("./wahoo.ts");
+    const provider = new WahooProvider(async () => new Response());
+    expect(provider.id).toBe("wahoo");
+  });
+
+  it("name is exactly 'Wahoo'", async () => {
+    const { WahooProvider } = await import("./wahoo.ts");
+    const provider = new WahooProvider(async () => new Response());
+    expect(provider.name).toBe("Wahoo");
+  });
+
+  it("webhookScope is exactly 'app'", async () => {
+    const { WahooProvider } = await import("./wahoo.ts");
+    const provider = new WahooProvider(async () => new Response());
+    expect(provider.webhookScope).toBe("app");
+  });
+});
+
+describe("SuuntoProvider webhook — precise assertions", () => {
+  it("parseWebhookPayload returns exact event structure", async () => {
+    const { SuuntoProvider } = await import("./suunto.ts");
+    const provider = new SuuntoProvider(async () => new Response());
+
+    const events = provider.parseWebhookPayload({
+      type: "WORKOUT_CREATED",
+      username: "user@example.com",
+      workout_id: "w-123",
+    });
+
+    expect(events).toHaveLength(1);
+    const event = events[0];
+    expect(event?.ownerExternalId).toBe("user@example.com");
+    expect(event?.eventType).toBe("create");
+    expect(event?.objectType).toBe("WORKOUT_CREATED");
+    expect(event?.objectId).toBe("w-123");
+    expect(event?.metadata).toBeDefined();
+    expect(event?.metadata).toHaveProperty("payload");
+  });
+
+  it("parseWebhookPayload uses type as objectType and falls back to 'workout' when type is missing", async () => {
+    const { SuuntoProvider } = await import("./suunto.ts");
+    const provider = new SuuntoProvider(async () => new Response());
+
+    const events = provider.parseWebhookPayload({
+      username: "user@example.com",
+    });
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.objectType).toBe("workout");
+  });
+
+  it("parseWebhookPayload returns objectId as undefined when workout_id is missing", async () => {
+    const { SuuntoProvider } = await import("./suunto.ts");
+    const provider = new SuuntoProvider(async () => new Response());
+
+    const events = provider.parseWebhookPayload({
+      username: "user@example.com",
+      type: "WORKOUT_CREATED",
+    });
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.objectId).toBeUndefined();
+  });
+
+  it("parseWebhookPayload returns empty for invalid payload", async () => {
+    const { SuuntoProvider } = await import("./suunto.ts");
+    const provider = new SuuntoProvider(async () => new Response());
+
+    expect(provider.parseWebhookPayload(null)).toHaveLength(0);
+    expect(provider.parseWebhookPayload({})).toHaveLength(0);
+    expect(provider.parseWebhookPayload("string")).toHaveLength(0);
+    expect(provider.parseWebhookPayload(42)).toHaveLength(0);
+  });
+
+  it("parseWebhookPayload always returns eventType 'create'", async () => {
+    const { SuuntoProvider } = await import("./suunto.ts");
+    const provider = new SuuntoProvider(async () => new Response());
+
+    const events = provider.parseWebhookPayload({
+      type: "WORKOUT_DELETED",
+      username: "test",
+    });
+
+    // Suunto always returns "create" regardless of type
+    expect(events[0]?.eventType).toBe("create");
+  });
+
+  it("id is exactly 'suunto'", async () => {
+    const { SuuntoProvider } = await import("./suunto.ts");
+    const provider = new SuuntoProvider(async () => new Response());
+    expect(provider.id).toBe("suunto");
+  });
+
+  it("name is exactly 'Suunto'", async () => {
+    const { SuuntoProvider } = await import("./suunto.ts");
+    const provider = new SuuntoProvider(async () => new Response());
+    expect(provider.name).toBe("Suunto");
+  });
+
+  it("webhookScope is exactly 'app'", async () => {
+    const { SuuntoProvider } = await import("./suunto.ts");
+    const provider = new SuuntoProvider(async () => new Response());
+    expect(provider.webhookScope).toBe("app");
+  });
+
+  it("verifyWebhookSignature rejects length-mismatched signatures", async () => {
+    const { SuuntoProvider } = await import("./suunto.ts");
+    const provider = new SuuntoProvider(async () => new Response());
+    // Short signature vs expected 64-char hex — timingSafeEqual throws on length mismatch
+    expect(
+      provider.verifyWebhookSignature(
+        Buffer.from("body"),
+        { "x-hmac-sha256-signature": "ab" },
+        "secret",
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("isWebhookProvider — additional type guard tests", () => {
+  it("returns true for providers with registerWebhook as a function", () => {
+    const webhookProvider = {
+      id: "test-wh",
+      name: "Test Webhook",
+      validate: () => null,
+      sync: async () => ({ provider: "test-wh", recordsSynced: 0, errors: [], duration: 0 }),
+      registerWebhook: async () => ({ subscriptionId: "sub" }),
+      unregisterWebhook: async () => {},
+      verifyWebhookSignature: () => true,
+      parseWebhookPayload: () => [],
+      webhookScope: "app" as const,
+    };
+    expect(isWebhookProvider(webhookProvider)).toBe(true);
+  });
+
+  it("returns false for import-only providers", () => {
+    const importProvider = {
+      id: "csv",
+      name: "CSV",
+      validate: () => null,
+      importOnly: true as const,
+    };
+    expect(isWebhookProvider(importProvider)).toBe(false);
+  });
+
+  it("returns false when registerWebhook is not a function", () => {
+    // Simulate a malformed provider via Object.assign to avoid type assertion
+    const badProvider = {
+      id: "bad",
+      name: "Bad",
+      validate: () => null,
+      sync: async () => ({ provider: "bad", recordsSynced: 0, errors: [], duration: 0 }),
+    };
+    Object.assign(badProvider, { registerWebhook: "not-a-function" });
+    expect(isWebhookProvider(badProvider)).toBe(false);
+  });
+});

@@ -1189,3 +1189,209 @@ describe("StravaProvider.unregisterWebhook", () => {
     await provider.unregisterWebhook("42");
   });
 });
+
+// ============================================================
+// Additional precise assertions for mutation killing
+// ============================================================
+
+describe("StravaProvider — precise webhook string/object assertions", () => {
+  it("parseWebhookPayload maps all three Strava aspect_types correctly", async () => {
+    const provider = new StravaProvider(async () => new Response(), 0);
+
+    for (const [aspect, expected] of [
+      ["create", "create"],
+      ["update", "update"],
+      ["delete", "delete"],
+    ] as const) {
+      const events = provider.parseWebhookPayload({
+        aspect_type: aspect,
+        object_type: "activity",
+        owner_id: 1,
+        object_id: 100,
+      });
+      expect(events[0]?.eventType).toBe(expected);
+    }
+  });
+
+  it("parseWebhookPayload converts owner_id number to string", async () => {
+    const provider = new StravaProvider(async () => new Response(), 0);
+    const events = provider.parseWebhookPayload({
+      aspect_type: "create",
+      object_type: "activity",
+      owner_id: 0, // edge case: zero
+    });
+    expect(events).toHaveLength(1);
+    expect(events[0]?.ownerExternalId).toBe("0");
+  });
+
+  it("parseWebhookPayload converts object_id number to string", async () => {
+    const provider = new StravaProvider(async () => new Response(), 0);
+    const events = provider.parseWebhookPayload({
+      aspect_type: "create",
+      object_type: "activity",
+      owner_id: 1,
+      object_id: 42,
+    });
+    expect(events[0]?.objectId).toBe("42");
+  });
+
+  it("parseWebhookPayload treats object_id=0 as falsy (undefined)", async () => {
+    const provider = new StravaProvider(async () => new Response(), 0);
+    const events = provider.parseWebhookPayload({
+      aspect_type: "create",
+      object_type: "activity",
+      owner_id: 1,
+      object_id: 0, // zero is falsy — ternary produces undefined
+    });
+    expect(events[0]?.objectId).toBeUndefined();
+  });
+
+  it("handleValidationChallenge echoes back the exact challenge string", async () => {
+    const provider = new StravaProvider(async () => new Response(), 0);
+    const result = provider.handleValidationChallenge(
+      {
+        "hub.mode": "subscribe",
+        "hub.challenge": "specific-challenge-123",
+        "hub.verify_token": "tok",
+      },
+      "tok",
+    );
+    expect(result).toEqual({ "hub.challenge": "specific-challenge-123" });
+  });
+
+  it("handleValidationChallenge compares token exactly (not substring)", async () => {
+    const provider = new StravaProvider(async () => new Response(), 0);
+    // Partial match should fail
+    const result = provider.handleValidationChallenge(
+      { "hub.mode": "subscribe", "hub.challenge": "abc", "hub.verify_token": "tok" },
+      "token-longer",
+    );
+    expect(result).toBeNull();
+  });
+
+  it("registerWebhook sends correct form parameters", async () => {
+    const originalEnv = { ...process.env };
+    process.env.STRAVA_CLIENT_ID = "my-client-id";
+    process.env.STRAVA_CLIENT_SECRET = "my-client-secret";
+
+    let capturedBody: URLSearchParams | undefined;
+    const mockFetch: typeof globalThis.fetch = async (_url, init): Promise<Response> => {
+      capturedBody = new URLSearchParams(String(init?.body));
+      return Response.json({ id: 1 });
+    };
+
+    const provider = new StravaProvider(mockFetch, 0);
+    await provider.registerWebhook("https://example.com/callback", "my-verify-token");
+
+    expect(capturedBody?.get("client_id")).toBe("my-client-id");
+    expect(capturedBody?.get("client_secret")).toBe("my-client-secret");
+    expect(capturedBody?.get("callback_url")).toBe("https://example.com/callback");
+    expect(capturedBody?.get("verify_token")).toBe("my-verify-token");
+
+    process.env = { ...originalEnv };
+  });
+
+  it("registerWebhook POST URL is exactly the Strava push subscriptions endpoint", async () => {
+    const originalEnv = { ...process.env };
+    process.env.STRAVA_CLIENT_ID = "id";
+    process.env.STRAVA_CLIENT_SECRET = "secret";
+
+    let capturedUrl = "";
+    const mockFetch: typeof globalThis.fetch = async (url): Promise<Response> => {
+      capturedUrl = String(url);
+      return Response.json({ id: 1 });
+    };
+
+    const provider = new StravaProvider(mockFetch, 0);
+    await provider.registerWebhook("https://example.com/cb", "tok");
+    expect(capturedUrl).toBe("https://www.strava.com/api/v3/push_subscriptions");
+
+    process.env = { ...originalEnv };
+  });
+
+  it("registerWebhook includes Content-Type header", async () => {
+    const originalEnv = { ...process.env };
+    process.env.STRAVA_CLIENT_ID = "id";
+    process.env.STRAVA_CLIENT_SECRET = "secret";
+
+    let capturedHeaders: HeadersInit | undefined;
+    const mockFetch: typeof globalThis.fetch = async (_url, init): Promise<Response> => {
+      capturedHeaders = init?.headers;
+      return Response.json({ id: 1 });
+    };
+
+    const provider = new StravaProvider(mockFetch, 0);
+    await provider.registerWebhook("https://example.com/cb", "tok");
+    expect(capturedHeaders).toEqual(
+      expect.objectContaining({ "Content-Type": "application/x-www-form-urlencoded" }),
+    );
+
+    process.env = { ...originalEnv };
+  });
+
+  it("unregisterWebhook includes client_id and client_secret as query params", async () => {
+    const originalEnv = { ...process.env };
+    process.env.STRAVA_CLIENT_ID = "my-id";
+    process.env.STRAVA_CLIENT_SECRET = "my-secret";
+
+    let capturedUrl = "";
+    const mockFetch: typeof globalThis.fetch = async (url): Promise<Response> => {
+      capturedUrl = String(url);
+      return new Response(null, { status: 200 });
+    };
+
+    const provider = new StravaProvider(mockFetch, 0);
+    await provider.unregisterWebhook("sub-42");
+
+    const parsed = new URL(capturedUrl);
+    expect(parsed.searchParams.get("client_id")).toBe("my-id");
+    expect(parsed.searchParams.get("client_secret")).toBe("my-secret");
+    expect(parsed.pathname).toContain("push_subscriptions/sub-42");
+
+    process.env = { ...originalEnv };
+  });
+
+  it("syncWebhookEvent returns provider as 'strava' for all paths", async () => {
+    const provider = new StravaProvider(async () => new Response(), 0);
+    const mockDb = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn(),
+    };
+
+    // Non-activity path
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "1",
+      eventType: "create",
+      objectType: "athlete",
+    });
+    expect(result.provider).toBe("strava");
+    expect(result.duration).toBeGreaterThanOrEqual(0);
+    expect(result.errors).toEqual([]);
+  });
+
+  it("syncWebhookEvent delete path returns provider 'strava'", async () => {
+    const mockDelete = vi.fn().mockReturnValue({
+      where: vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([]),
+      }),
+    });
+    const mockDb = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: mockDelete,
+      execute: vi.fn(),
+    };
+
+    const provider = new StravaProvider(async () => new Response(), 0);
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "1",
+      eventType: "delete",
+      objectType: "activity",
+      objectId: "999",
+    });
+    expect(result.provider).toBe("strava");
+    expect(result.recordsSynced).toBe(0);
+  });
+});

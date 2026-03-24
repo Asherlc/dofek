@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Provider, ProviderAuthSetup } from "./types.ts";
-import { getProviderAuthType } from "./types.ts";
+import { getProviderAuthType, isSyncProvider, isWebhookProvider } from "./types.ts";
 
 function stubProvider(overrides: Partial<Provider> = {}): Provider {
   return {
@@ -117,5 +117,79 @@ describe("getProviderAuthType", () => {
     const { UltrahumanProvider } = await import("./ultrahuman.ts");
     const provider = new UltrahumanProvider();
     expect(getProviderAuthType(provider)).toBe("none");
+  });
+});
+
+describe("isWebhookProvider", () => {
+  it("returns false for a plain SyncProvider without registerWebhook", () => {
+    const provider = stubProvider();
+    expect(isWebhookProvider(provider)).toBe(false);
+  });
+
+  it("returns true when registerWebhook is a function", () => {
+    // Use a real WebhookProvider-like object to test the type guard
+    const webhookProvider: Provider = {
+      id: "wh-test",
+      name: "WH Test",
+      validate: () => null,
+      sync: async () => ({ provider: "wh-test", recordsSynced: 0, errors: [], duration: 0 }),
+    };
+    // Add webhook methods to simulate a WebhookProvider at runtime
+    Object.assign(webhookProvider, {
+      registerWebhook: async () => ({ subscriptionId: "sub" }),
+      unregisterWebhook: async () => {},
+      verifyWebhookSignature: () => true,
+      parseWebhookPayload: () => [],
+      webhookScope: "app",
+    });
+    expect(isWebhookProvider(webhookProvider)).toBe(true);
+  });
+
+  it("returns false for ImportProvider", () => {
+    const importProvider: Provider = {
+      id: "csv-import",
+      name: "CSV Import",
+      validate: () => null,
+      importOnly: true,
+    };
+    expect(isWebhookProvider(importProvider)).toBe(false);
+  });
+
+  it("returns false when registerWebhook property exists but is not a function", () => {
+    const provider: Provider = {
+      id: "broken",
+      name: "Broken",
+      validate: () => null,
+      sync: async () => ({ provider: "broken", recordsSynced: 0, errors: [], duration: 0 }),
+    };
+    // Simulate a malformed provider with registerWebhook as a string
+    Object.assign(provider, { registerWebhook: "string-not-function" });
+    expect(isWebhookProvider(provider)).toBe(false);
+  });
+});
+
+describe("isSyncProvider", () => {
+  it("returns true for a regular SyncProvider", () => {
+    const provider = stubProvider();
+    expect(isSyncProvider(provider)).toBe(true);
+  });
+
+  it("returns false for an ImportProvider with importOnly: true", () => {
+    const importProvider: Provider = {
+      id: "csv",
+      name: "CSV",
+      validate: () => null,
+      importOnly: true,
+    };
+    expect(isSyncProvider(importProvider)).toBe(false);
+  });
+
+  it("returns true for a provider without importOnly property", () => {
+    const provider = stubProvider();
+    expect(isSyncProvider(provider)).toBe(true);
+    // Verify type guard works: after narrowing, sync is accessible
+    if (isSyncProvider(provider)) {
+      expect(typeof provider.sync).toBe("function");
+    }
   });
 });

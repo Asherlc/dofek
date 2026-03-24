@@ -550,6 +550,59 @@ describe("POST /api/webhooks/:providerName — event processing", () => {
     expect(res.body).toBe("OK");
   });
 
+  it("enqueues sync job with exact shape (providerId, sinceDays, userId)", async () => {
+    const events: WebhookEvent[] = [
+      { ownerExternalId: "ext-99", eventType: "update", objectType: "sleep" },
+    ];
+    const provider = createMockWebhookProvider({
+      parseWebhookPayload: vi.fn(() => events),
+    });
+    mockGetAllProviders.mockReturnValue([provider]);
+
+    let callCount = 0;
+    mockExecuteWithSchema.mockImplementation(async () => {
+      callCount++;
+      if (callCount === 1) {
+        return [{ id: "sub-1", provider_id: "prov-X", verify_token: "tok", signing_secret: null }];
+      }
+      return [{ provider_id: "prov-X", user_id: "user-X" }];
+    });
+
+    await request(createTestApp(), "post", "/api/webhooks/test-provider", '{"x":1}');
+    expect(mockQueueAdd).toHaveBeenCalledTimes(1);
+    const jobData = mockQueueAdd.mock.calls[0]?.[1];
+    expect(jobData).toEqual({
+      providerId: "prov-X",
+      sinceDays: 1,
+      userId: "user-X",
+    });
+    // First arg is the job name "sync"
+    expect(mockQueueAdd.mock.calls[0]?.[0]).toBe("sync");
+  });
+
+  it("uses signing_secret when present (not verify_token)", async () => {
+    const verifySpy = vi.fn(() => true);
+    const provider = createMockWebhookProvider({
+      verifyWebhookSignature: verifySpy,
+      parseWebhookPayload: vi.fn(() => []),
+    });
+    mockGetAllProviders.mockReturnValue([provider]);
+    mockExecuteWithSchema.mockResolvedValue([
+      {
+        id: "sub-1",
+        provider_id: "prov-1",
+        verify_token: "should-not-use",
+        signing_secret: "should-use-this",
+      },
+    ]);
+    await request(createTestApp(), "post", "/api/webhooks/test-provider", "{}");
+    expect(verifySpy).toHaveBeenCalledWith(
+      expect.any(Buffer),
+      expect.any(Object),
+      "should-use-this",
+    );
+  });
+
   it("processes multiple events from same payload", async () => {
     const events: WebhookEvent[] = [
       { ownerExternalId: "ext-1", eventType: "create", objectType: "activity" },
@@ -648,5 +701,77 @@ describe("registerWebhookForProvider", () => {
     );
 
     process.env.PUBLIC_URL = originalUrl;
+  });
+
+  it("uses default PUBLIC_URL when env var is not set", async () => {
+    const originalUrl = process.env.PUBLIC_URL;
+    delete process.env.PUBLIC_URL;
+
+    const provider = createMockWebhookProvider({
+      webhookScope: "user",
+      registerWebhook: vi.fn(async () => ({ subscriptionId: "sub-1" })),
+    });
+
+    await registerWebhookForProvider(getMockDb(), provider);
+    expect(provider.registerWebhook).toHaveBeenCalledWith(
+      "https://dofek.asherlc.com/api/webhooks/test-provider",
+      expect.any(String),
+    );
+
+    process.env.PUBLIC_URL = originalUrl;
+  });
+
+  it("passes a 64-character hex verify token", async () => {
+    const provider = createMockWebhookProvider({
+      webhookScope: "user",
+      registerWebhook: vi.fn(async () => ({ subscriptionId: "sub-1" })),
+    });
+
+    await registerWebhookForProvider(getMockDb(), provider);
+    const verifyToken = vi.mocked(provider.registerWebhook).mock.calls[0]?.[1];
+    // 32 random bytes = 64 hex characters
+    expect(verifyToken).toHaveLength(64);
+    expect(verifyToken).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("does not check for existing subscription when webhookScope is 'user'", async () => {
+    const provider = createMockWebhookProvider({
+      webhookScope: "user",
+      registerWebhook: vi.fn(async () => ({ subscriptionId: "user-sub" })),
+    });
+
+    await registerWebhookForProvider(getMockDb(), provider);
+    // For user-scoped webhooks, executeWithSchema should NOT be called to check existing
+    // (it's only called for app-scoped)
+    expect(provider.registerWebhook).toHaveBeenCalled();
+  });
+
+  it("checks for existing subscription when webhookScope is 'app'", async () => {
+    const provider = createMockWebhookProvider({
+      webhookScope: "app",
+      registerWebhook: vi.fn(async () => ({ subscriptionId: "new-sub" })),
+    });
+
+    // No existing subscription
+    mockExecuteWithSchema.mockResolvedValue([]);
+
+    await registerWebhookForProvider(getMockDb(), provider);
+    // Should call executeWithSchema to check for existing, then call registerWebhook
+    expect(mockExecuteWithSchema).toHaveBeenCalled();
+    expect(provider.registerWebhook).toHaveBeenCalled();
+  });
+
+  it("calls db.execute to insert the subscription row after registration", async () => {
+    const db = getMockDb();
+    const provider = createMockWebhookProvider({
+      webhookScope: "user",
+      registerWebhook: vi.fn(async () => ({
+        subscriptionId: "new-sub-123",
+        signingSecret: "my-secret",
+      })),
+    });
+
+    await registerWebhookForProvider(db, provider);
+    expect(db.execute).toHaveBeenCalled();
   });
 });

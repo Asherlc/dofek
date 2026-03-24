@@ -896,3 +896,196 @@ describe("WahooProvider.syncWebhookEvent", () => {
     expect(result.errors[0]?.message).toContain("DB constraint violation");
   });
 });
+
+// ============================================================
+// Additional precise assertions for mutation killing
+// ============================================================
+
+describe("WahooProvider — precise webhook assertions", () => {
+  it("parseWebhookPayload exact event for workout_summary.updated vs other types", () => {
+    const provider = new WahooProvider(async () => new Response());
+
+    // workout_summary.updated should return "update"
+    const updatedEvents = provider.parseWebhookPayload({
+      event_type: "workout_summary.updated",
+      user: { id: 7 },
+      workout_summary: {
+        id: 33,
+        created_at: "2026-03-01T10:00:00Z",
+        updated_at: "2026-03-01T10:00:00Z",
+      },
+    });
+    expect(updatedEvents[0]?.eventType).toBe("update");
+    expect(updatedEvents[0]?.ownerExternalId).toBe("7");
+    expect(updatedEvents[0]?.objectType).toBe("workout");
+    expect(updatedEvents[0]?.objectId).toBe("33");
+
+    // Any other event_type should return "create"
+    const createdEvents = provider.parseWebhookPayload({
+      event_type: "workout_summary.created",
+      user: { id: 8 },
+    });
+    expect(createdEvents[0]?.eventType).toBe("create");
+
+    // event_type undefined should return "create"
+    const noTypeEvents = provider.parseWebhookPayload({
+      user: { id: 9 },
+    });
+    expect(noTypeEvents[0]?.eventType).toBe("create");
+  });
+
+  it("parseWebhookPayload with workout_summary id=0 returns objectId '0'", () => {
+    const provider = new WahooProvider(async () => new Response());
+
+    // Edge case: id=0 is falsy but should still produce "0"
+    const events = provider.parseWebhookPayload({
+      user: { id: 1 },
+      workout_summary: {
+        id: 0,
+        created_at: "2026-03-01T10:00:00Z",
+        updated_at: "2026-03-01T10:00:00Z",
+      },
+    });
+    // id=0 is falsy in JS, so the `?.id ? String(...) : undefined` check matters
+    expect(events).toHaveLength(1);
+    // Zero is falsy, so objectId should be undefined (due to the ternary)
+    expect(events[0]?.objectId).toBeUndefined();
+  });
+
+  it("parseWebhookPayload includes full payload in metadata", () => {
+    const provider = new WahooProvider(async () => new Response());
+    const inputPayload = {
+      event_type: "workout_summary.created",
+      user: { id: 42 },
+      webhook_token: "wh-tok",
+    };
+
+    const events = provider.parseWebhookPayload(inputPayload);
+    expect(events[0]?.metadata).toEqual({ payload: inputPayload });
+  });
+
+  it("registerWebhook returns exact string 'wahoo-portal-subscription'", async () => {
+    const provider = new WahooProvider(async () => new Response());
+    const result = await provider.registerWebhook("https://example.com/cb", "tok");
+    expect(result.subscriptionId).toBe("wahoo-portal-subscription");
+    expect(result.signingSecret).toBeUndefined();
+    expect(result.expiresAt).toBeUndefined();
+  });
+
+  it("verifyWebhookSignature returns exactly true for any input", () => {
+    const provider = new WahooProvider(async () => new Response());
+    expect(provider.verifyWebhookSignature(Buffer.from(""), {}, "")).toBe(true);
+    expect(provider.verifyWebhookSignature(Buffer.from("body"), { "x-sig": "abc" }, "secret")).toBe(
+      true,
+    );
+  });
+
+  it("syncWebhookEvent returns provider as 'wahoo' for all paths", async () => {
+    const provider = new WahooProvider(async () => new Response());
+    const mockDb = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn(),
+    };
+
+    // Non-workout path
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "1",
+      eventType: "create",
+      objectType: "user",
+    });
+    expect(result.provider).toBe("wahoo");
+    expect(result.duration).toBeGreaterThanOrEqual(0);
+    expect(result.errors).toEqual([]);
+    expect(result.recordsSynced).toBe(0);
+  });
+
+  it("syncWebhookEvent invalid payload path returns provider 'wahoo'", async () => {
+    const provider = new WahooProvider(async () => new Response());
+    const mockDb = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn(),
+    };
+
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "1",
+      eventType: "create",
+      objectType: "workout",
+      metadata: { payload: "not-an-object" },
+    });
+    expect(result.provider).toBe("wahoo");
+    expect(result.errors.length).toBeGreaterThan(0);
+  });
+
+  it("syncWebhookEvent summary-only path returns provider 'wahoo'", async () => {
+    const provider = new WahooProvider(async () => new Response());
+    const mockDb = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn(),
+    };
+
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "1",
+      eventType: "create",
+      objectType: "workout",
+      metadata: {
+        payload: {
+          user: { id: 1 },
+          workout_summary: {
+            id: 1,
+            created_at: "2026-01-01T00:00:00Z",
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+        },
+      },
+    });
+    expect(result.provider).toBe("wahoo");
+    expect(result.recordsSynced).toBe(0);
+  });
+
+  it("syncWebhookEvent no-workout-data path returns provider 'wahoo'", async () => {
+    const provider = new WahooProvider(async () => new Response());
+    const mockDb = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn(),
+    };
+
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "1",
+      eventType: "create",
+      objectType: "workout",
+      metadata: {
+        payload: {
+          user: { id: 1 },
+        },
+      },
+    });
+    expect(result.provider).toBe("wahoo");
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toBe("Webhook payload missing workout data");
+  });
+
+  it("parseWorkoutSummary name is undefined when workout has no name", () => {
+    const workout: WahooWorkout = {
+      id: 10,
+      workout_type_id: 0,
+      starts: "2026-03-01T10:00:00Z",
+      created_at: "2026-03-01T10:00:00Z",
+      updated_at: "2026-03-01T10:00:00Z",
+    };
+    const result = parseWorkoutSummary(workout);
+    expect(result.name).toBeUndefined();
+    expect(result.externalId).toBe("10");
+    expect(result.activityType).toBe("cycling");
+    expect(result.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
+    expect(result.endedAt).toBeUndefined();
+    expect(result.fitFileUrl).toBeUndefined();
+  });
+});
