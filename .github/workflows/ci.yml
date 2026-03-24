@@ -714,6 +714,7 @@ jobs:
           ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
           eval "$(ssh-agent -s)"
           ssh-add ~/.ssh/id_ed25519
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> "$GITHUB_ENV"
       - name: Terraform Apply
         if: steps.changes.outputs.changed == 'true'
         working-directory: deploy/deploy-config
