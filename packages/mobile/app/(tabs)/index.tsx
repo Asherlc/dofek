@@ -68,7 +68,10 @@ export default function OverviewScreen() {
   // Fetch readiness/recovery score
   const readinessQuery = trpc.recovery.readinessScore.useQuery({ days });
   const readinessData = readinessQuery.data ?? [];
-  const todayReadiness = readinessData[readinessData.length - 1];
+  const latestReadiness = readinessData[readinessData.length - 1];
+  const todayReadiness = latestReadiness && isToday(new Date(`${latestReadiness.date}T00:00:00`))
+    ? latestReadiness
+    : undefined;
 
   // Fetch sleep analytics for last night
   const sleepQuery = trpc.recovery.sleepAnalytics.useQuery({ days });
@@ -154,7 +157,10 @@ export default function OverviewScreen() {
   const stepsData = stepsQuery.data ?? [];
 
   const recoveryScore = todayReadiness?.readinessScore ?? null;
-  const dailyStrain = workloadResult?.displayedStrain ?? 0;
+  const strainIsToday = workloadResult?.displayedDate
+    ? isToday(new Date(`${workloadResult.displayedDate}T00:00:00`))
+    : false;
+  const dailyStrain = strainIsToday ? (workloadResult?.displayedStrain ?? 0) : 0;
 
   const isLoading =
     readinessQuery.isLoading ||
