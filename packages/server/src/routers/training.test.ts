@@ -135,6 +135,27 @@ describe("pickStrengthSplit", () => {
   it("returns full-body for unrecognized muscles", () => {
     expect(pickStrengthSplit(["forearms"])).toBe("Full-body strength");
   });
+  it("counts legs in lower set", () => {
+    expect(pickStrengthSplit(["legs", "glutes"])).toBe("Lower-body strength");
+  });
+  it("counts calves in lower set", () => {
+    expect(pickStrengthSplit(["calves", "quadriceps"])).toBe("Lower-body strength");
+  });
+  it("counts shoulders in push set", () => {
+    expect(pickStrengthSplit(["shoulders"])).toBe("Upper-body push");
+  });
+  it("counts triceps in push set", () => {
+    expect(pickStrengthSplit(["triceps"])).toBe("Upper-body push");
+  });
+  it("counts biceps in pull set", () => {
+    expect(pickStrengthSplit(["biceps"])).toBe("Upper-body pull");
+  });
+  it("counts traps in pull set", () => {
+    expect(pickStrengthSplit(["traps"])).toBe("Upper-body pull");
+  });
+  it("counts glutes in lower set", () => {
+    expect(pickStrengthSplit(["glutes", "hamstrings"])).toBe("Lower-body strength");
+  });
 });
 
 describe("computeTrainingStreak", () => {
@@ -457,6 +478,38 @@ describe("pickCardioFocus", () => {
         lowIntensityPct: 0.43,
       }),
     ).toBe("z2");
+  });
+
+  it("does not trigger moderate branch at exactly 0.3 — falls to intervals (kills >= mutant)", () => {
+    // moderateIntensityPct=0.3, condition is > 0.3, so 0.3 is NOT > 0.3
+    // Falls through: highIntensityPct=0.1 < 0.2 AND lowIntensityPct=0.7 > 0.6 → intervals
+    // If mutated to >=: 0.3 >= 0.3 = true → z2 (wrong)
+    expect(
+      pickCardioFocus({
+        ...baseInput,
+        readinessScore: 80,
+        highIntensityPct: 0.1,
+        moderateIntensityPct: 0.3,
+        lowIntensityPct: 0.7,
+      }),
+    ).toBe("intervals");
+  });
+
+  it("does not z2 at exactly readiness 65 when intensity needs intervals (kills < → <= mutant)", () => {
+    // readinessScore=65, READINESS_HIGH_THRESHOLD=65, condition is < 65
+    // 65 is NOT < 65, so passes through to zone-based logic
+    // highIntensityPct=0.1 < 0.2 AND lowIntensityPct=0.7 > 0.6 → intervals
+    // If mutated to <=: 65 <= 65 = true → z2 (wrong)
+    expect(
+      pickCardioFocus({
+        ...baseInput,
+        readinessLevel: "high",
+        readinessScore: 65,
+        highIntensityPct: 0.1,
+        moderateIntensityPct: 0.1,
+        lowIntensityPct: 0.7,
+      }),
+    ).toBe("intervals");
   });
 });
 

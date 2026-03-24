@@ -285,9 +285,10 @@ describe("collapseWeeklyVolumeActivityTypes", () => {
     expect(otherRows[0]?.count).toBe(3);
   });
 
-  it("returns empty array for empty input", () => {
-    const result = collapseWeeklyVolumeActivityTypes([]);
-    expect(result).toEqual([]);
+  it("returns the same array reference for empty input (kills early-return guard removal)", () => {
+    const input: { week: string; activity_type: string; count: number; hours: number }[] = [];
+    const result = collapseWeeklyVolumeActivityTypes(input);
+    expect(result).toBe(input);
   });
 
   it("accumulates hours for duplicate types (kills ?? vs && mutant)", () => {

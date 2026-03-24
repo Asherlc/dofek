@@ -407,6 +407,114 @@ describe("trainingRouter", () => {
       expect(result.cardio?.focus).toBe("intervals");
       expect(result.cardio?.targetZones).toContain("Z4");
     });
+
+    it("includes readiness score and level in response (kills ObjectLiteral mutation)", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([
+          {
+            date: dateDaysAgo(0),
+            hrv: 50,
+            resting_hr: 60,
+            hrv_mean_60d: 50,
+            hrv_sd_60d: 10,
+            rhr_mean_60d: 60,
+            rhr_sd_60d: 6,
+          },
+        ])
+        .mockResolvedValueOnce([{ efficiency_pct: 70 }])
+        .mockResolvedValueOnce([{ acwr: 1.1 }])
+        .mockResolvedValueOnce([{ muscle_group: "chest", last_trained_date: dateDaysAgo(0) }])
+        .mockResolvedValueOnce([
+          {
+            strength_7d: 3,
+            endurance_7d: 4,
+            last_strength_date: dateDaysAgo(0),
+            last_endurance_date: dateDaysAgo(2),
+          },
+        ])
+        .mockResolvedValueOnce([{ zone1: 3000, zone2: 2200, zone3: 900, zone4: 500, zone5: 150 }])
+        .mockResolvedValueOnce([{ hiit_count_7d: 2, last_hiit_date: dateDaysAgo(2) }])
+        .mockResolvedValueOnce([{ training_date: dateDaysAgo(0) }]);
+
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
+      const result = await caller.nextWorkout({ endDate: TEST_END_DATE });
+
+      expect(result.readiness).toBeDefined();
+      expect(result.readiness?.score).toBeTypeOf("number");
+      expect(result.readiness?.level).toBeTypeOf("string");
+      expect(result.readiness?.level).toBe("moderate");
+    });
+
+    it("includes HIIT cap rationale when cap reached", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([
+          {
+            date: dateDaysAgo(0),
+            hrv: 50,
+            resting_hr: 60,
+            hrv_mean_60d: 50,
+            hrv_sd_60d: 10,
+            rhr_mean_60d: 60,
+            rhr_sd_60d: 6,
+          },
+        ])
+        .mockResolvedValueOnce([{ efficiency_pct: 70 }])
+        .mockResolvedValueOnce([{ acwr: 1.1 }])
+        .mockResolvedValueOnce([{ muscle_group: "chest", last_trained_date: dateDaysAgo(0) }])
+        .mockResolvedValueOnce([
+          {
+            strength_7d: 3,
+            endurance_7d: 4,
+            last_strength_date: dateDaysAgo(0),
+            last_endurance_date: dateDaysAgo(2),
+          },
+        ])
+        .mockResolvedValueOnce([{ zone1: 3000, zone2: 2200, zone3: 900, zone4: 500, zone5: 150 }])
+        .mockResolvedValueOnce([{ hiit_count_7d: 3, last_hiit_date: dateDaysAgo(2) }])
+        .mockResolvedValueOnce([{ training_date: dateDaysAgo(0) }]);
+
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
+      const result = await caller.nextWorkout({ endDate: TEST_END_DATE });
+
+      expect(result.rationale.some((r: string) => r.includes("HIIT cap"))).toBe(true);
+    });
+
+    it("includes HIIT spacing rationale when HIIT was recent", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([
+          {
+            date: dateDaysAgo(0),
+            hrv: 50,
+            resting_hr: 60,
+            hrv_mean_60d: 50,
+            hrv_sd_60d: 10,
+            rhr_mean_60d: 60,
+            rhr_sd_60d: 6,
+          },
+        ])
+        .mockResolvedValueOnce([{ efficiency_pct: 70 }])
+        .mockResolvedValueOnce([{ acwr: 1.1 }])
+        .mockResolvedValueOnce([{ muscle_group: "chest", last_trained_date: dateDaysAgo(0) }])
+        .mockResolvedValueOnce([
+          {
+            strength_7d: 3,
+            endurance_7d: 4,
+            last_strength_date: dateDaysAgo(0),
+            last_endurance_date: dateDaysAgo(2),
+          },
+        ])
+        .mockResolvedValueOnce([{ zone1: 3000, zone2: 2200, zone3: 900, zone4: 500, zone5: 150 }])
+        .mockResolvedValueOnce([{ hiit_count_7d: 1, last_hiit_date: dateDaysAgo(0) }])
+        .mockResolvedValueOnce([{ training_date: dateDaysAgo(0) }]);
+
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
+      const result = await caller.nextWorkout({ endDate: TEST_END_DATE });
+
+      expect(result.rationale.some((r: string) => r.includes("48 hours"))).toBe(true);
+    });
   });
 });
 
