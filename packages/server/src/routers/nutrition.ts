@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { dateWindowInput, dateWindowStart } from "../lib/date-window.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
@@ -18,18 +19,14 @@ const nutritionDailyRowSchema = z.object({
 
 export const nutritionRouter = router({
   daily: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(
-      z.object({
-        days: z.number().default(30),
-      }),
-    )
+    .input(dateWindowInput)
     .query(async ({ ctx, input }) => {
       const rows = await executeWithSchema(
         ctx.db,
         nutritionDailyRowSchema,
         sql`SELECT * FROM fitness.nutrition_daily
             WHERE user_id = ${ctx.userId}
-              AND date > CURRENT_DATE - ${input.days}::int
+              AND date > ${dateWindowStart(input.endDate, input.days)}
             ORDER BY date ASC`,
       );
       return rows;

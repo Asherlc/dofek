@@ -243,8 +243,9 @@ describe("trainingRouter", () => {
   });
 
   describe("nextWorkout", () => {
+    const TEST_END_DATE = "2026-03-15";
     function dateDaysAgo(days: number): string {
-      const d = new Date();
+      const d = new Date(`${TEST_END_DATE}T00:00:00Z`);
       d.setUTCDate(d.getUTCDate() - days);
       return d.toISOString().slice(0, 10);
     }
@@ -279,7 +280,7 @@ describe("trainingRouter", () => {
         .mockResolvedValueOnce([]);
 
       const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
-      const result = await caller.nextWorkout();
+      const result = await caller.nextWorkout({ endDate: TEST_END_DATE });
 
       expect(result.recommendationType).toBe("rest");
       expect(result.cardio?.focus).toBe("recovery");
@@ -319,7 +320,7 @@ describe("trainingRouter", () => {
         .mockResolvedValueOnce([{ training_date: dateDaysAgo(1) }]);
 
       const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
-      const result = await caller.nextWorkout();
+      const result = await caller.nextWorkout({ endDate: TEST_END_DATE });
 
       expect(result.recommendationType).toBe("strength");
       expect(result.strength).not.toBeNull();
@@ -356,7 +357,7 @@ describe("trainingRouter", () => {
         .mockResolvedValueOnce([{ training_date: dateDaysAgo(0) }]);
 
       const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
-      const result = await caller.nextWorkout();
+      const result = await caller.nextWorkout({ endDate: TEST_END_DATE });
 
       expect(result.recommendationType).toBe("cardio");
       expect(result.cardio?.focus).toBe("z2");
@@ -400,7 +401,7 @@ describe("trainingRouter", () => {
         .mockResolvedValueOnce([{ training_date: dateDaysAgo(0) }]);
 
       const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
-      const result = await caller.nextWorkout();
+      const result = await caller.nextWorkout({ endDate: TEST_END_DATE });
 
       expect(result.recommendationType).toBe("cardio");
       expect(result.cardio?.focus).toBe("intervals");

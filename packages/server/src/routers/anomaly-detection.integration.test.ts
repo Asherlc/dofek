@@ -34,7 +34,7 @@ describe("Anomaly detection", () => {
   describe("checkAnomalies", () => {
     it("returns empty anomalies and checkedMetrics on empty database", async () => {
       const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
-      const result = await checkAnomalies(testCtx.db, DEFAULT_USER_ID, "UTC");
+      const result = await checkAnomalies(testCtx.db, DEFAULT_USER_ID, "UTC", "2026-03-13");
 
       expect(result.anomalies).toEqual([]);
       expect(result.checkedMetrics).toEqual([]);

@@ -372,7 +372,7 @@ describe("healthspanRouter", () => {
         userId: "user-1",
         timezone: "UTC",
       });
-      const result = await caller.score({ weeks: 12 });
+      const result = await caller.score({ weeks: 12, endDate: "2026-03-15" });
 
       expect(result.healthspanScore).toBeNull();
       expect(result.metrics).toEqual([]);
@@ -401,7 +401,7 @@ describe("healthspanRouter", () => {
         userId: "user-1",
         timezone: "UTC",
       });
-      const result = await caller.score({ weeks: 12 });
+      const result = await caller.score({ weeks: 12, endDate: "2026-03-15" });
 
       expect(result.metrics).toHaveLength(9);
 
@@ -462,7 +462,7 @@ describe("healthspanRouter", () => {
         userId: "user-1",
         timezone: "UTC",
       });
-      const result = await caller.score({ weeks: 12 });
+      const result = await caller.score({ weeks: 12, endDate: "2026-03-15" });
 
       expect(result.healthspanScore).toBeNull();
       expect(result.metrics).toHaveLength(9);
@@ -493,7 +493,7 @@ describe("healthspanRouter", () => {
         userId: "user-1",
         timezone: "UTC",
       });
-      const result = await caller.score({ weeks: 12 });
+      const result = await caller.score({ weeks: 12, endDate: "2026-03-15" });
 
       // Only 2 metrics have real data — below minimum threshold
       expect(result.healthspanScore).toBeNull();
@@ -522,7 +522,7 @@ describe("healthspanRouter", () => {
         userId: "user-1",
         timezone: "UTC",
       });
-      const result = await caller.score({ weeks: 12 });
+      const result = await caller.score({ weeks: 12, endDate: "2026-03-15" });
 
       // 3 metrics with real data: sleep duration (100), sleep consistency (78), resting HR (90)
       const expected = Math.round((100 + 78 + 90) / 3);
@@ -550,7 +550,7 @@ describe("healthspanRouter", () => {
         userId: "user-1",
         timezone: "UTC",
       });
-      const result = await caller.score({ weeks: 12 });
+      const result = await caller.score({ weeks: 12, endDate: "2026-03-15" });
 
       const sleepDur = result.metrics.find((m) => m.name === "Sleep Duration");
       expect(sleepDur?.status).toBe("excellent");
@@ -591,7 +591,7 @@ describe("healthspanRouter", () => {
         userId: "user-1",
         timezone: "UTC",
       });
-      const result = await caller.score({ weeks: 12 });
+      const result = await caller.score({ weeks: 12, endDate: "2026-03-15" });
       expect(result.trend).toBe("improving");
     });
 
@@ -621,7 +621,7 @@ describe("healthspanRouter", () => {
         userId: "user-1",
         timezone: "UTC",
       });
-      const result = await caller.score({ weeks: 12 });
+      const result = await caller.score({ weeks: 12, endDate: "2026-03-15" });
       expect(result.trend).toBe("declining");
     });
 
@@ -651,7 +651,7 @@ describe("healthspanRouter", () => {
         userId: "user-1",
         timezone: "UTC",
       });
-      const result = await caller.score({ weeks: 12 });
+      const result = await caller.score({ weeks: 12, endDate: "2026-03-15" });
       expect(result.trend).toBe("stable");
     });
 
@@ -680,7 +680,7 @@ describe("healthspanRouter", () => {
         userId: "user-1",
         timezone: "UTC",
       });
-      const result = await caller.score({ weeks: 12 });
+      const result = await caller.score({ weeks: 12, endDate: "2026-03-15" });
       expect(result.trend).toBeNull();
     });
 
@@ -707,7 +707,7 @@ describe("healthspanRouter", () => {
         userId: "user-1",
         timezone: "UTC",
       });
-      const result = await caller.score({ weeks: 12 });
+      const result = await caller.score({ weeks: 12, endDate: "2026-03-15" });
 
       expect(result.history).toHaveLength(1);
       // rhrScore=90, stepsScore=100, vo2Score=100 → avg=97
@@ -738,7 +738,7 @@ describe("healthspanRouter", () => {
         userId: "user-1",
         timezone: "UTC",
       });
-      const result = await caller.score({ weeks: 12 });
+      const result = await caller.score({ weeks: 12, endDate: "2026-03-15" });
 
       const lean = result.metrics.find((m) => m.name === "Lean Body Mass");
       expect(lean?.score).toBe(scoreLeanMassPct(75)); // 70

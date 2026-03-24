@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { NextWorkoutRecommendation } from "dofek-server/types";
 import { useRouter } from "expo-router";
 import {
@@ -17,7 +17,7 @@ import { OnboardingWelcome } from "../../components/OnboardingWelcome";
 import { RecoveryRing } from "../../components/charts/RecoveryRing";
 import { SleepBar } from "../../components/charts/SleepBar";
 import { StrainGauge } from "../../components/charts/StrainGauge";
-import { formatDurationMinutes, formatNumber, formatSleepDebtInline, isToday, isYesterday } from "@dofek/format/format";
+import { formatDateYmd, formatDurationMinutes, formatNumber, formatSleepDebtInline, isToday, isYesterday } from "@dofek/format/format";
 import { readinessLevelColor, scoreColor, scoreLabel, StrainZone, trendColor, trendDirection as computeTrend } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
@@ -64,9 +64,10 @@ export default function OverviewScreen() {
   const [days, setDays] = useState(30);
   const [recentActivityPage, setRecentActivityPage] = useState(0);
   const showDetailedSections = true;
+  const endDate = useMemo(() => formatDateYmd(), []);
 
   // Fetch readiness/recovery score
-  const readinessQuery = trpc.recovery.readinessScore.useQuery({ days });
+  const readinessQuery = trpc.recovery.readinessScore.useQuery({ days, endDate });
   const readinessData = readinessQuery.data ?? [];
   const latestReadiness = readinessData[readinessData.length - 1];
   const todayReadiness = latestReadiness && isToday(new Date(`${latestReadiness.date}T00:00:00`))
@@ -86,7 +87,7 @@ export default function OverviewScreen() {
   const sleepDebt = sleepResult?.sleepDebt ?? 0;
 
   // Fetch workload ratio for strain
-  const workloadQuery = trpc.recovery.workloadRatio.useQuery({ days });
+  const workloadQuery = trpc.recovery.workloadRatio.useQuery({ days, endDate });
   const workloadResult = workloadQuery.data;
 
   // Fetch HRV trend
@@ -95,12 +96,13 @@ export default function OverviewScreen() {
   const latestHrv = hrvData[hrvData.length - 1];
 
   // Fetch stress
-  const stressQuery = trpc.stress.scores.useQuery({ days });
+  const stressQuery = trpc.stress.scores.useQuery({ days, endDate });
   const stressData = stressQuery.data;
 
   // Fetch recent activities
   const activitiesQuery = trpc.activity.list.useQuery({
     days,
+    endDate,
     limit: RECENT_ACTIVITY_PAGE_SIZE,
     offset: recentActivityPage * RECENT_ACTIVITY_PAGE_SIZE,
   });
@@ -118,42 +120,42 @@ export default function OverviewScreen() {
   );
 
   // Health metrics (latest)
-  const dailyMetricsQuery = trpc.dailyMetrics.trends.useQuery({ days });
+  const dailyMetricsQuery = trpc.dailyMetrics.trends.useQuery({ days, endDate });
   const metrics = dailyMetricsQuery.data;
 
   // Auto-sync when data is stale (API providers + HealthKit)
   useAutoSync(metrics?.latest_date);
 
   // Weekly report
-  const weeklyReportQuery = trpc.weeklyReport.report.useQuery({ weeks: Math.max(Math.ceil(days / 7), 1) });
+  const weeklyReportQuery = trpc.weeklyReport.report.useQuery({ weeks: Math.max(Math.ceil(days / 7), 1), endDate });
   const weeklyReport = weeklyReportQuery.data;
 
   // Next workout recommendation
-  const nextWorkoutQuery = trpc.training.nextWorkout.useQuery();
+  const nextWorkoutQuery = trpc.training.nextWorkout.useQuery({ endDate });
   const nextWorkout = nextWorkoutQuery.data;
 
   // Sleep need
-  const sleepNeedQuery = trpc.sleepNeed.calculate.useQuery();
+  const sleepNeedQuery = trpc.sleepNeed.calculate.useQuery({ endDate });
   const sleepNeed = sleepNeedQuery.data;
 
   // Healthspan
-  const healthspanQuery = trpc.healthspan.score.useQuery({ weeks: Math.max(Math.ceil(days / 7), 4) });
+  const healthspanQuery = trpc.healthspan.score.useQuery({ weeks: Math.max(Math.ceil(days / 7), 4), endDate });
   const healthspan = healthspanQuery.data;
 
   // Nutrition
-  const nutritionQuery = trpc.nutrition.daily.useQuery({ days });
+  const nutritionQuery = trpc.nutrition.daily.useQuery({ days, endDate });
   const nutritionData = nutritionQuery.data ?? [];
 
   // Body analytics
-  const weightQuery = trpc.bodyAnalytics.smoothedWeight.useQuery({ days: Math.max(days, 90) });
+  const weightQuery = trpc.bodyAnalytics.smoothedWeight.useQuery({ days: Math.max(days, 90), endDate });
   const weightData = weightQuery.data ?? [];
 
   // Anomaly detection
-  const anomalyQuery = trpc.anomalyDetection.check.useQuery();
+  const anomalyQuery = trpc.anomalyDetection.check.useQuery({ endDate });
   const anomalies = anomalyQuery.data;
 
   // Steps (from daily metrics)
-  const stepsQuery = trpc.dailyMetrics.list.useQuery({ days });
+  const stepsQuery = trpc.dailyMetrics.list.useQuery({ days, endDate });
   const stepsData = stepsQuery.data ?? [];
 
   const recoveryScore = todayReadiness?.readinessScore ?? null;

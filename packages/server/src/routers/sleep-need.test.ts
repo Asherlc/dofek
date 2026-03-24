@@ -40,7 +40,7 @@ describe("sleepNeedRouter", () => {
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
-      const result = await caller.calculate();
+      const result = await caller.calculate({ endDate: "2026-03-15" });
 
       expect(result.baselineMinutes).toBe(480);
       expect(result.strainDebtMinutes).toBe(0);
@@ -64,7 +64,7 @@ describe("sleepNeedRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
-      const result = await caller.calculate();
+      const result = await caller.calculate({ endDate: "2026-03-15" });
 
       // Average of 450, 455, 460, 465, 470, 475, 480, 485, 490, 495 = 472.5
       expect(result.baselineMinutes).toBe(473); // rounded
@@ -84,7 +84,7 @@ describe("sleepNeedRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
-      const result = await caller.calculate();
+      const result = await caller.calculate({ endDate: "2026-03-15" });
 
       expect(result.baselineMinutes).toBe(480);
     });
@@ -115,7 +115,7 @@ describe("sleepNeedRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
-      const result = await caller.calculate();
+      const result = await caller.calculate({ endDate: "2026-03-15" });
 
       // Only good nights (420 min each) count for baseline
       expect(result.baselineMinutes).toBe(420);
@@ -137,7 +137,7 @@ describe("sleepNeedRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
-      const result = await caller.calculate();
+      const result = await caller.calculate({ endDate: "2026-03-15" });
 
       // Only 1 good night < 7 -> baseline defaults to 480
       // strainDebt = Math.min(60, Math.round(200 / 5)) = Math.min(60, 40) = 40
@@ -160,7 +160,7 @@ describe("sleepNeedRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
-      const result = await caller.calculate();
+      const result = await caller.calculate({ endDate: "2026-03-15" });
 
       expect(result.strainDebtMinutes).toBe(60);
     });
@@ -189,7 +189,7 @@ describe("sleepNeedRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
-      const result = await caller.calculate();
+      const result = await caller.calculate({ endDate: "2026-03-15" });
 
       // yesterdayLoad = rows[0].yesterday_load = 150
       // strainDebt = min(60, round(150/5)) = min(60, 30) = 30
@@ -201,7 +201,7 @@ describe("sleepNeedRouter", () => {
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
-      const result = await caller.calculate();
+      const result = await caller.calculate({ endDate: "2026-03-15" });
 
       expect(result.strainDebtMinutes).toBe(0);
     });
@@ -221,7 +221,7 @@ describe("sleepNeedRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
-      const result = await caller.calculate();
+      const result = await caller.calculate({ endDate: "2026-03-15" });
 
       // baseline = avg of 20 good nights at 430 = 430
       // last14: all 430, deficit per night = 430 - 430 = 0
@@ -263,7 +263,7 @@ describe("sleepNeedRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
-      const result = await caller.calculate();
+      const result = await caller.calculate({ endDate: "2026-03-15" });
 
       // Baseline = avg of 21 good nights = (7*480 + 7*420 + 7*520) / 21 = (3360+2940+3640)/21 = 9940/21 ≈ 473
       // last14: 7 nights at 420, 7 at 520
@@ -287,7 +287,7 @@ describe("sleepNeedRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
-      const result = await caller.calculate();
+      const result = await caller.calculate({ endDate: "2026-03-15" });
 
       // baseline = avg of 14 good nights at 400 = 400 (>= 7 good nights)
       // strainDebt = min(60, round(100/5)) = 20
@@ -315,7 +315,7 @@ describe("sleepNeedRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
-      const result = await caller.calculate();
+      const result = await caller.calculate({ endDate: "2026-03-15" });
 
       expect(result.recentNights).toHaveLength(7);
       // baseline = 450 (14 good nights at 450)
@@ -341,7 +341,7 @@ describe("sleepNeedRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
-      const result = await caller.calculate();
+      const result = await caller.calculate({ endDate: "2026-03-15" });
 
       // Last 7 should be dates 08 through 14
       expect(result.recentNights[0]?.date).toBe("2026-03-08");
@@ -362,7 +362,7 @@ describe("sleepNeedRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
-      const result = await caller.calculate();
+      const result = await caller.calculate({ endDate: "2026-03-15" });
 
       // baseline = 420, actual = 420, debt = 0
       // All at 420 so no debt
@@ -396,7 +396,7 @@ describe("sleepNeedRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
-      const result = await caller.calculate();
+      const result = await caller.calculate({ endDate: "2026-03-15" });
 
       // baseline = (8*480 + 2*520)/10 = (3840 + 1040)/10 = 488
       // Recent nights at 520 have debtMinutes = max(0, 488-520) = 0
@@ -431,7 +431,7 @@ describe("sleepNeedRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
-      const result = await caller.calculate();
+      const result = await caller.calculate({ endDate: "2026-03-15" });
 
       // Only 7 good nights with duration > 0 at 480 each
       expect(result.baselineMinutes).toBe(480);
@@ -450,7 +450,7 @@ describe("sleepNeedRouter", () => {
         db: { execute: executeMock },
         userId: "user-1",
       });
-      const result = await caller.performance();
+      const result = await caller.performance({ endDate: "2026-03-15" });
 
       expect(result).toBeNull();
     });
@@ -463,7 +463,7 @@ describe("sleepNeedRouter", () => {
         db: { execute: executeMock },
         userId: "user-1",
       });
-      const result = await caller.performance();
+      const result = await caller.performance({ endDate: "2026-03-15" });
 
       expect(result).toBeNull();
     });
@@ -479,7 +479,7 @@ describe("sleepNeedRouter", () => {
         db: { execute: executeMock },
         userId: "user-1",
       });
-      const result = await caller.performance();
+      const result = await caller.performance({ endDate: "2026-03-15" });
 
       expect(result).not.toBeNull();
       expect(result?.actualMinutes).toBe(450);
@@ -500,7 +500,7 @@ describe("sleepNeedRouter", () => {
         db: { execute: executeMock },
         userId: "user-1",
       });
-      const result = await caller.performance();
+      const result = await caller.performance({ endDate: "2026-03-15" });
 
       expect(result).not.toBeNull();
       expect(result?.efficiency).toBe(85);
@@ -515,7 +515,7 @@ describe("sleepNeedRouter", () => {
         db: { execute: executeMock },
         userId: "user-1",
       });
-      const result = await caller.performance();
+      const result = await caller.performance({ endDate: "2026-03-15" });
 
       expect(result).not.toBeNull();
       expect(result?.neededMinutes).toBe(480);
@@ -530,7 +530,7 @@ describe("sleepNeedRouter", () => {
         db: { execute: executeMock },
         userId: "user-1",
       });
-      const result = await caller.performance();
+      const result = await caller.performance({ endDate: "2026-03-15" });
 
       expect(result).not.toBeNull();
       expect(result?.neededMinutes).toBe(480);
@@ -545,7 +545,7 @@ describe("sleepNeedRouter", () => {
         db: { execute: executeMock },
         userId: "user-1",
       });
-      const result = await caller.performance();
+      const result = await caller.performance({ endDate: "2026-03-15" });
 
       expect(result?.recommendedBedtime).toMatch(/^\d{2}:\d{2}$/);
       // For 480 min need + 15 min fall-asleep, from 07:00 wake time:
@@ -562,7 +562,7 @@ describe("sleepNeedRouter", () => {
         db: { execute: executeMock },
         userId: "user-1",
       });
-      const result = await caller.performance();
+      const result = await caller.performance({ endDate: "2026-03-15" });
 
       expect(result?.neededMinutes).toBe(468);
       expect(Number.isInteger(result?.neededMinutes)).toBe(true);

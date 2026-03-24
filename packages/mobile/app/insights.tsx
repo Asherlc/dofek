@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from "react";
 import { LayoutAnimation, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
-import { formatNumber, formatSigned } from "@dofek/format/format";
+import { formatDateYmd, formatNumber, formatSigned } from "@dofek/format/format";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
 import { statusColors } from "@dofek/scoring/colors";
@@ -205,7 +205,8 @@ export default function InsightsScreen() {
     });
   }, []);
 
-  const query = trpc.insights.compute.useQuery({ days });
+  const endDate = useMemo(() => formatDateYmd(), []);
+  const query = trpc.insights.compute.useQuery({ days, endDate });
   const insights = query.data ?? [];
 
   // Filter by confidence

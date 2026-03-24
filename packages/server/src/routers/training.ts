@@ -4,6 +4,12 @@ import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import {
+  dateWindowEnd,
+  dateWindowStart,
+  endDateSchema,
+  timestampWindowStart,
+} from "../lib/date-window.ts";
 import { enduranceTypeFilter } from "../lib/endurance-types.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
@@ -185,26 +191,28 @@ export const trainingRouter = router({
    * Suggests the next workout type based on readiness, weekly balance, and freshness.
    * Returns both a short dashboard blurb and more prescriptive detail for a modal.
    */
-  nextWorkout: cachedProtectedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
-    const storedParams = await loadPersonalizedParams(ctx.db, ctx.userId);
-    const weights = getEffectiveParams(storedParams).readinessWeights;
+  nextWorkout: cachedProtectedQuery(CacheTTL.SHORT)
+    .input(z.object({ endDate: endDateSchema }))
+    .query(async ({ ctx, input }) => {
+      const storedParams = await loadPersonalizedParams(ctx.db, ctx.userId);
+      const weights = getEffectiveParams(storedParams).readinessWeights;
 
-    const readinessMetricSchema = z.object({
-      date: dateStringSchema,
-      hrv: z.coerce.number().nullable(),
-      resting_hr: z.coerce.number().nullable(),
-      respiratory_rate: z.coerce.number().nullable(),
-      hrv_mean_30d: z.coerce.number().nullable(),
-      hrv_sd_30d: z.coerce.number().nullable(),
-      rhr_mean_30d: z.coerce.number().nullable(),
-      rhr_sd_30d: z.coerce.number().nullable(),
-      rr_mean_30d: z.coerce.number().nullable(),
-      rr_sd_30d: z.coerce.number().nullable(),
-    });
-    const latestMetrics = await executeWithSchema(
-      ctx.db,
-      readinessMetricSchema,
-      sql`WITH latest AS (
+      const readinessMetricSchema = z.object({
+        date: dateStringSchema,
+        hrv: z.coerce.number().nullable(),
+        resting_hr: z.coerce.number().nullable(),
+        respiratory_rate: z.coerce.number().nullable(),
+        hrv_mean_30d: z.coerce.number().nullable(),
+        hrv_sd_30d: z.coerce.number().nullable(),
+        rhr_mean_30d: z.coerce.number().nullable(),
+        rhr_sd_30d: z.coerce.number().nullable(),
+        rr_mean_30d: z.coerce.number().nullable(),
+        rr_sd_30d: z.coerce.number().nullable(),
+      });
+      const latestMetrics = await executeWithSchema(
+        ctx.db,
+        readinessMetricSchema,
+        sql`WITH latest AS (
             SELECT
               date,
               hrv,
@@ -239,34 +247,34 @@ export const trainingRouter = router({
             WHERE dm.user_id = ${ctx.userId}
               AND dm.date BETWEEN latest.date - 29 AND latest.date
           ) baseline`,
-    );
-    const latestMetric = latestMetrics[0];
+      );
+      const latestMetric = latestMetrics[0];
 
-    const sleepRowSchema = z.object({
-      efficiency_pct: z.coerce.number().nullable(),
-    });
-    const sleepRows = await executeWithSchema(
-      ctx.db,
-      sleepRowSchema,
-      sql`SELECT efficiency_pct
+      const sleepRowSchema = z.object({
+        efficiency_pct: z.coerce.number().nullable(),
+      });
+      const sleepRows = await executeWithSchema(
+        ctx.db,
+        sleepRowSchema,
+        sql`SELECT efficiency_pct
           FROM fitness.v_sleep
           WHERE user_id = ${ctx.userId}
             AND is_nap = false
           ORDER BY COALESCE(ended_at, started_at + interval '8 hours') DESC
           LIMIT 1`,
-    );
-    const latestSleepEfficiency = sleepRows[0]?.efficiency_pct ?? null;
+      );
+      const latestSleepEfficiency = sleepRows[0]?.efficiency_pct ?? null;
 
-    const acwrRowSchema = z.object({
-      acwr: z.coerce.number().nullable(),
-    });
-    const acwrRows = await executeWithSchema(
-      ctx.db,
-      acwrRowSchema,
-      sql`WITH date_series AS (
+      const acwrRowSchema = z.object({
+        acwr: z.coerce.number().nullable(),
+      });
+      const acwrRows = await executeWithSchema(
+        ctx.db,
+        acwrRowSchema,
+        sql`WITH date_series AS (
             SELECT generate_series(
-              CURRENT_DATE - 28,
-              CURRENT_DATE,
+              ${dateWindowStart(input.endDate, 28)},
+              ${dateWindowEnd(input.endDate)},
               '1 day'::interval
             )::date AS date
           ),
@@ -278,7 +286,7 @@ export const trainingRouter = router({
                 / NULLIF(asum.max_hr, 0) AS load
             FROM fitness.activity_summary asum
             WHERE asum.user_id = ${ctx.userId}
-              AND (asum.started_at AT TIME ZONE ${ctx.timezone})::date >= CURRENT_DATE - 28
+              AND (asum.started_at AT TIME ZONE ${ctx.timezone})::date >= ${dateWindowStart(input.endDate, 28)}
               AND asum.ended_at IS NOT NULL
               AND asum.avg_hr IS NOT NULL
           ),
@@ -311,17 +319,17 @@ export const trainingRouter = router({
           FROM with_windows
           ORDER BY date DESC
           LIMIT 1`,
-    );
-    const acwr = acwrRows[0]?.acwr ?? null;
+      );
+      const acwr = acwrRows[0]?.acwr ?? null;
 
-    const muscleFreshnessSchema = z.object({
-      muscle_group: z.string(),
-      last_trained_date: dateStringSchema,
-    });
-    const muscleFreshnessRows = await executeWithSchema(
-      ctx.db,
-      muscleFreshnessSchema,
-      sql`SELECT
+      const muscleFreshnessSchema = z.object({
+        muscle_group: z.string(),
+        last_trained_date: dateStringSchema,
+      });
+      const muscleFreshnessRows = await executeWithSchema(
+        ctx.db,
+        muscleFreshnessSchema,
+        sql`SELECT
             e.muscle_group,
             MAX((sw.started_at AT TIME ZONE ${ctx.timezone})::date)::text AS last_trained_date
           FROM fitness.strength_set ss
@@ -330,27 +338,27 @@ export const trainingRouter = router({
           WHERE sw.user_id = ${ctx.userId}
             AND e.muscle_group IS NOT NULL
           GROUP BY e.muscle_group`,
-    );
+      );
 
-    const balanceSchema = z.object({
-      strength_7d: z.coerce.number(),
-      endurance_7d: z.coerce.number(),
-      last_strength_date: dateStringSchema.nullable(),
-      last_endurance_date: dateStringSchema.nullable(),
-    });
-    const balanceRows = await executeWithSchema(
-      ctx.db,
-      balanceSchema,
-      sql`WITH strength_data AS (
+      const balanceSchema = z.object({
+        strength_7d: z.coerce.number(),
+        endurance_7d: z.coerce.number(),
+        last_strength_date: dateStringSchema.nullable(),
+        last_endurance_date: dateStringSchema.nullable(),
+      });
+      const balanceRows = await executeWithSchema(
+        ctx.db,
+        balanceSchema,
+        sql`WITH strength_data AS (
             SELECT
-              COUNT(*) FILTER (WHERE started_at > NOW() - INTERVAL '7 days')::int AS strength_7d,
+              COUNT(*) FILTER (WHERE started_at > ${timestampWindowStart(input.endDate, 7)})::int AS strength_7d,
               MAX((started_at AT TIME ZONE ${ctx.timezone})::date)::text AS last_strength_date
             FROM fitness.strength_workout
             WHERE user_id = ${ctx.userId}
           ),
           endurance_data AS (
             SELECT
-              COUNT(*) FILTER (WHERE started_at > NOW() - INTERVAL '7 days')::int AS endurance_7d,
+              COUNT(*) FILTER (WHERE started_at > ${timestampWindowStart(input.endDate, 7)})::int AS endurance_7d,
               MAX((started_at AT TIME ZONE ${ctx.timezone})::date)::text AS last_endurance_date
             FROM fitness.v_activity
             WHERE user_id = ${ctx.userId}
@@ -363,25 +371,25 @@ export const trainingRouter = router({
             e.last_endurance_date
           FROM strength_data s
           CROSS JOIN endurance_data e`,
-    );
-    const balance = balanceRows[0] ?? {
-      strength_7d: 0,
-      endurance_7d: 0,
-      last_strength_date: null,
-      last_endurance_date: null,
-    };
+      );
+      const balance = balanceRows[0] ?? {
+        strength_7d: 0,
+        endurance_7d: 0,
+        last_strength_date: null,
+        last_endurance_date: null,
+      };
 
-    const zoneTotalsSchema = z.object({
-      zone1: z.coerce.number(),
-      zone2: z.coerce.number(),
-      zone3: z.coerce.number(),
-      zone4: z.coerce.number(),
-      zone5: z.coerce.number(),
-    });
-    const zoneTotalsRows = await executeWithSchema(
-      ctx.db,
-      zoneTotalsSchema,
-      sql`SELECT
+      const zoneTotalsSchema = z.object({
+        zone1: z.coerce.number(),
+        zone2: z.coerce.number(),
+        zone3: z.coerce.number(),
+        zone4: z.coerce.number(),
+        zone5: z.coerce.number(),
+      });
+      const zoneTotalsRows = await executeWithSchema(
+        ctx.db,
+        zoneTotalsSchema,
+        sql`SELECT
             COUNT(*) FILTER (WHERE ms.heart_rate < rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[0]}::numeric)::int AS zone1,
             COUNT(*) FILTER (WHERE ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[0]}::numeric
                               AND ms.heart_rate <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[1]}::numeric)::int AS zone2,
@@ -403,22 +411,22 @@ export const trainingRouter = router({
             LIMIT 1
           ) rhr ON true
           WHERE up.id = ${ctx.userId}
-            AND a.started_at > NOW() - INTERVAL '14 days'
-            AND ms.recorded_at > NOW() - INTERVAL '15 days'
+            AND a.started_at > ${timestampWindowStart(input.endDate, 14)}
+            AND ms.recorded_at > ${timestampWindowStart(input.endDate, 15)}
             AND ${enduranceTypeFilter("a")}
             AND up.max_hr IS NOT NULL
             AND ms.heart_rate IS NOT NULL`,
-    );
-    const zoneTotals = zoneTotalsRows[0] ?? { zone1: 0, zone2: 0, zone3: 0, zone4: 0, zone5: 0 };
+      );
+      const zoneTotals = zoneTotalsRows[0] ?? { zone1: 0, zone2: 0, zone3: 0, zone4: 0, zone5: 0 };
 
-    const hiitLoadSchema = z.object({
-      hiit_count_7d: z.coerce.number(),
-      last_hiit_date: dateStringSchema.nullable(),
-    });
-    const hiitLoadRows = await executeWithSchema(
-      ctx.db,
-      hiitLoadSchema,
-      sql`WITH per_activity AS (
+      const hiitLoadSchema = z.object({
+        hiit_count_7d: z.coerce.number(),
+        last_hiit_date: dateStringSchema.nullable(),
+      });
+      const hiitLoadRows = await executeWithSchema(
+        ctx.db,
+        hiitLoadSchema,
+        sql`WITH per_activity AS (
             SELECT
               a.id,
               (a.started_at AT TIME ZONE ${ctx.timezone})::date AS activity_date,
@@ -436,7 +444,7 @@ export const trainingRouter = router({
               LIMIT 1
             ) rhr ON true
             WHERE up.id = ${ctx.userId}
-              AND a.started_at > NOW() - INTERVAL '21 days'
+              AND a.started_at > ${timestampWindowStart(input.endDate, 21)}
               AND ${enduranceTypeFilter("a")}
               AND up.max_hr IS NOT NULL
               AND ms.heart_rate IS NOT NULL
@@ -446,7 +454,7 @@ export const trainingRouter = router({
             SUM(
               CASE
                 WHEN had_high_intensity
-                  AND activity_date > CURRENT_DATE - 7
+                  AND activity_date > ${dateWindowStart(input.endDate, 7)}
                 THEN 1
                 ELSE 0
               END
@@ -458,260 +466,268 @@ export const trainingRouter = router({
               END
             )::text AS last_hiit_date
           FROM per_activity`,
-    );
-    const hiitLoad = hiitLoadRows[0] ?? { hiit_count_7d: 0, last_hiit_date: null };
+      );
+      const hiitLoad = hiitLoadRows[0] ?? { hiit_count_7d: 0, last_hiit_date: null };
 
-    const trainingDaySchema = z.object({
-      training_date: dateStringSchema,
-    });
-    const trainingDays = await executeWithSchema(
-      ctx.db,
-      trainingDaySchema,
-      sql`WITH combined AS (
+      const trainingDaySchema = z.object({
+        training_date: dateStringSchema,
+      });
+      const trainingDays = await executeWithSchema(
+        ctx.db,
+        trainingDaySchema,
+        sql`WITH combined AS (
             SELECT DISTINCT (started_at AT TIME ZONE ${ctx.timezone})::date AS training_date
             FROM fitness.v_activity
             WHERE user_id = ${ctx.userId}
-              AND started_at > NOW() - INTERVAL '14 days'
+              AND started_at > ${timestampWindowStart(input.endDate, 14)}
             UNION
             SELECT DISTINCT (started_at AT TIME ZONE ${ctx.timezone})::date AS training_date
             FROM fitness.strength_workout
             WHERE user_id = ${ctx.userId}
-              AND started_at > NOW() - INTERVAL '14 days'
+              AND started_at > ${timestampWindowStart(input.endDate, 14)}
           )
           SELECT training_date::text
           FROM combined
           ORDER BY training_date DESC`,
-    );
+      );
 
-    let hrvScore = 62;
-    if (
-      latestMetric?.hrv != null &&
-      latestMetric.hrv_mean_30d != null &&
-      latestMetric.hrv_sd_30d != null &&
-      latestMetric.hrv_sd_30d > 0
-    ) {
-      const hrvZ = (latestMetric.hrv - latestMetric.hrv_mean_30d) / latestMetric.hrv_sd_30d;
-      hrvScore = zScoreToRecoveryScore(hrvZ);
-    }
+      let hrvScore = 62;
+      if (
+        latestMetric?.hrv != null &&
+        latestMetric.hrv_mean_30d != null &&
+        latestMetric.hrv_sd_30d != null &&
+        latestMetric.hrv_sd_30d > 0
+      ) {
+        const hrvZ = (latestMetric.hrv - latestMetric.hrv_mean_30d) / latestMetric.hrv_sd_30d;
+        hrvScore = zScoreToRecoveryScore(hrvZ);
+      }
 
-    let restingHrScore = 62;
-    if (
-      latestMetric?.resting_hr != null &&
-      latestMetric.rhr_mean_30d != null &&
-      latestMetric.rhr_sd_30d != null &&
-      latestMetric.rhr_sd_30d > 0
-    ) {
-      const rhrZ = (latestMetric.resting_hr - latestMetric.rhr_mean_30d) / latestMetric.rhr_sd_30d;
-      restingHrScore = zScoreToRecoveryScore(-rhrZ);
-    }
+      let restingHrScore = 62;
+      if (
+        latestMetric?.resting_hr != null &&
+        latestMetric.rhr_mean_30d != null &&
+        latestMetric.rhr_sd_30d != null &&
+        latestMetric.rhr_sd_30d > 0
+      ) {
+        const rhrZ =
+          (latestMetric.resting_hr - latestMetric.rhr_mean_30d) / latestMetric.rhr_sd_30d;
+        restingHrScore = zScoreToRecoveryScore(-rhrZ);
+      }
 
-    const sleepScore =
-      latestSleepEfficiency != null ? clamp(Math.round(latestSleepEfficiency), 0, 100) : 62;
+      const sleepScore =
+        latestSleepEfficiency != null ? clamp(Math.round(latestSleepEfficiency), 0, 100) : 62;
 
-    let respiratoryRateScore = 62;
-    if (
-      latestMetric?.respiratory_rate != null &&
-      latestMetric.rr_mean_30d != null &&
-      latestMetric.rr_sd_30d != null &&
-      latestMetric.rr_sd_30d > 0
-    ) {
-      const rrZ =
-        (latestMetric.respiratory_rate - latestMetric.rr_mean_30d) / latestMetric.rr_sd_30d;
-      respiratoryRateScore = zScoreToRecoveryScore(-rrZ);
-    }
+      let respiratoryRateScore = 62;
+      if (
+        latestMetric?.respiratory_rate != null &&
+        latestMetric.rr_mean_30d != null &&
+        latestMetric.rr_sd_30d != null &&
+        latestMetric.rr_sd_30d > 0
+      ) {
+        const rrZ =
+          (latestMetric.respiratory_rate - latestMetric.rr_mean_30d) / latestMetric.rr_sd_30d;
+        respiratoryRateScore = zScoreToRecoveryScore(-rrZ);
+      }
 
-    const readinessScoreRaw = latestMetric
-      ? hrvScore * weights.hrv +
-        restingHrScore * weights.restingHr +
-        sleepScore * weights.sleep +
-        respiratoryRateScore * weights.respiratoryRate
-      : null;
-    const readinessScore = readinessScoreRaw != null ? Math.round(readinessScoreRaw) : null;
-    const readinessLevel = getReadinessLevel(readinessScore);
+      const readinessScoreRaw = latestMetric
+        ? hrvScore * weights.hrv +
+          restingHrScore * weights.restingHr +
+          sleepScore * weights.sleep +
+          respiratoryRateScore * weights.respiratoryRate
+        : null;
+      const readinessScore = readinessScoreRaw != null ? Math.round(readinessScoreRaw) : null;
+      const readinessLevel = getReadinessLevel(readinessScore);
 
-    const todayDate = new Date().toISOString().slice(0, 10);
-    const lastStrengthDaysAgo = daysAgoFromDate(balance.last_strength_date, todayDate);
-    const lastEnduranceDaysAgo = daysAgoFromDate(balance.last_endurance_date, todayDate);
+      const todayDate = input.endDate;
+      const lastStrengthDaysAgo = daysAgoFromDate(balance.last_strength_date, todayDate);
+      const lastEnduranceDaysAgo = daysAgoFromDate(balance.last_endurance_date, todayDate);
 
-    const freshMuscles = muscleFreshnessRows
-      .map((row) => ({
-        name: normalizeMuscleName(row.muscle_group),
-        daysAgo: daysAgoFromDate(row.last_trained_date, todayDate),
-      }))
-      .filter((row): row is { name: string; daysAgo: number } => row.daysAgo != null)
-      .sort((a, b) => b.daysAgo - a.daysAgo);
-    const focusMuscles = uniqueStrings(
-      freshMuscles.filter((m) => m.daysAgo >= 2).map((m) => m.name),
-    );
-    const orderedFocusMuscles = (
-      focusMuscles.length > 0 ? focusMuscles : uniqueStrings(freshMuscles.map((m) => m.name))
-    ).slice(0, 3);
+      const freshMuscles = muscleFreshnessRows
+        .map((row) => ({
+          name: normalizeMuscleName(row.muscle_group),
+          daysAgo: daysAgoFromDate(row.last_trained_date, todayDate),
+        }))
+        .filter((row): row is { name: string; daysAgo: number } => row.daysAgo != null)
+        .sort((a, b) => b.daysAgo - a.daysAgo);
+      const focusMuscles = uniqueStrings(
+        freshMuscles.filter((m) => m.daysAgo >= 2).map((m) => m.name),
+      );
+      const orderedFocusMuscles = (
+        focusMuscles.length > 0 ? focusMuscles : uniqueStrings(freshMuscles.map((m) => m.name))
+      ).slice(0, 3);
 
-    const totalZoneSamples =
-      zoneTotals.zone1 + zoneTotals.zone2 + zoneTotals.zone3 + zoneTotals.zone4 + zoneTotals.zone5;
-    const highIntensitySamples = zoneTotals.zone4 + zoneTotals.zone5;
-    const moderateSamples = zoneTotals.zone3;
-    const lowSamples = zoneTotals.zone1 + zoneTotals.zone2;
-    const highIntensityPct = totalZoneSamples > 0 ? highIntensitySamples / totalZoneSamples : 0;
-    const lowIntensityPct = totalZoneSamples > 0 ? lowSamples / totalZoneSamples : 0;
-    const moderateIntensityPct = totalZoneSamples > 0 ? moderateSamples / totalZoneSamples : 0;
-    const daysSinceLastHiit = daysAgoFromDate(hiitLoad.last_hiit_date, todayDate);
+      const totalZoneSamples =
+        zoneTotals.zone1 +
+        zoneTotals.zone2 +
+        zoneTotals.zone3 +
+        zoneTotals.zone4 +
+        zoneTotals.zone5;
+      const highIntensitySamples = zoneTotals.zone4 + zoneTotals.zone5;
+      const moderateSamples = zoneTotals.zone3;
+      const lowSamples = zoneTotals.zone1 + zoneTotals.zone2;
+      const highIntensityPct = totalZoneSamples > 0 ? highIntensitySamples / totalZoneSamples : 0;
+      const lowIntensityPct = totalZoneSamples > 0 ? lowSamples / totalZoneSamples : 0;
+      const moderateIntensityPct = totalZoneSamples > 0 ? moderateSamples / totalZoneSamples : 0;
+      const daysSinceLastHiit = daysAgoFromDate(hiitLoad.last_hiit_date, todayDate);
 
-    const consecutiveTrainingDays = computeTrainingStreak(trainingDays.map((d) => d.training_date));
-    const strengthSessions7d = balance.strength_7d;
-    const enduranceSessions7d = balance.endurance_7d;
+      const consecutiveTrainingDays = computeTrainingStreak(
+        trainingDays.map((d) => d.training_date),
+      );
+      const strengthSessions7d = balance.strength_7d;
+      const enduranceSessions7d = balance.endurance_7d;
 
-    const rationale: string[] = [];
-    if (readinessScore != null) {
-      rationale.push(`Readiness score is ${readinessScore}/100 (${readinessLevel}).`);
-    } else {
-      rationale.push("Readiness score unavailable; using workload and recency only.");
-    }
-    rationale.push(
-      `Last 7 days: ${strengthSessions7d} strength and ${enduranceSessions7d} cardio sessions.`,
-    );
+      const rationale: string[] = [];
+      if (readinessScore != null) {
+        rationale.push(`Readiness score is ${readinessScore}/100 (${readinessLevel}).`);
+      } else {
+        rationale.push("Readiness score unavailable; using workload and recency only.");
+      }
+      rationale.push(
+        `Last 7 days: ${strengthSessions7d} strength and ${enduranceSessions7d} cardio sessions.`,
+      );
 
-    if (consecutiveTrainingDays >= 6) {
-      rationale.push(`Training streak is ${consecutiveTrainingDays} consecutive days.`);
-    }
-    if (hiitLoad.hiit_count_7d > 0) {
-      rationale.push(`Hard cardio sessions in last 7 days: ${hiitLoad.hiit_count_7d}.`);
-    }
+      if (consecutiveTrainingDays >= 6) {
+        rationale.push(`Training streak is ${consecutiveTrainingDays} consecutive days.`);
+      }
+      if (hiitLoad.hiit_count_7d > 0) {
+        rationale.push(`Hard cardio sessions in last 7 days: ${hiitLoad.hiit_count_7d}.`);
+      }
 
-    const acwrHighRisk = acwr != null && acwr > ACWR_HIGH_RISK_THRESHOLD;
-    const limitedReadiness = readinessScore != null && readinessScore < READINESS_LIMITED_THRESHOLD;
-    const preferRest = readinessLevel === "low" || consecutiveTrainingDays >= 6 || acwrHighRisk;
-    const strengthUnderTarget = strengthSessions7d < 2;
-    const cardioUnderTarget = enduranceSessions7d < 3;
-    const strengthReady =
-      orderedFocusMuscles.length > 0 || lastStrengthDaysAgo == null || lastStrengthDaysAgo >= 2;
+      const acwrHighRisk = acwr != null && acwr > ACWR_HIGH_RISK_THRESHOLD;
+      const limitedReadiness =
+        readinessScore != null && readinessScore < READINESS_LIMITED_THRESHOLD;
+      const preferRest = readinessLevel === "low" || consecutiveTrainingDays >= 6 || acwrHighRisk;
+      const strengthUnderTarget = strengthSessions7d < 2;
+      const cardioUnderTarget = enduranceSessions7d < 3;
+      const strengthReady =
+        orderedFocusMuscles.length > 0 || lastStrengthDaysAgo == null || lastStrengthDaysAgo >= 2;
 
-    if (preferRest) {
-      return {
-        generatedAt: new Date().toISOString(),
-        recommendationType: "rest",
-        title: "Recovery Day",
-        shortBlurb:
-          "Take a lighter day: 20-40 min easy Z1 movement plus mobility. Resume harder work tomorrow if readiness rebounds.",
-        readiness: { score: readinessScore, level: readinessLevel },
-        rationale,
-        details: [
-          "Keep intensity low (easy walk, spin, or light swim).",
-          "Add 10-15 minutes of mobility and soft tissue work.",
-          "Prioritize sleep tonight to support adaptation.",
-        ],
-        strength: null,
-        cardio: {
-          focus: "recovery",
-          durationMinutes: 30,
-          targetZones: ["Z1"],
-          structure: "20-40 min easy movement, conversational effort only.",
-          lastEnduranceDaysAgo,
-        },
-      } satisfies NextWorkoutRecommendation;
-    }
+      if (preferRest) {
+        return {
+          generatedAt: new Date().toISOString(),
+          recommendationType: "rest",
+          title: "Recovery Day",
+          shortBlurb:
+            "Take a lighter day: 20-40 min easy Z1 movement plus mobility. Resume harder work tomorrow if readiness rebounds.",
+          readiness: { score: readinessScore, level: readinessLevel },
+          rationale,
+          details: [
+            "Keep intensity low (easy walk, spin, or light swim).",
+            "Add 10-15 minutes of mobility and soft tissue work.",
+            "Prioritize sleep tonight to support adaptation.",
+          ],
+          strength: null,
+          cardio: {
+            focus: "recovery",
+            durationMinutes: 30,
+            targetZones: ["Z1"],
+            structure: "20-40 min easy movement, conversational effort only.",
+            lastEnduranceDaysAgo,
+          },
+        } satisfies NextWorkoutRecommendation;
+      }
 
-    if (limitedReadiness) {
-      rationale.push("Readiness is below high-performance threshold; keep intensity low today.");
+      if (limitedReadiness) {
+        rationale.push("Readiness is below high-performance threshold; keep intensity low today.");
+        return {
+          generatedAt: new Date().toISOString(),
+          recommendationType: "cardio",
+          title: "Easy Aerobic Session",
+          shortBlurb: "Keep today easy: 30-45 min in Z1-Z2 to support recovery and aerobic base.",
+          readiness: { score: readinessScore, level: readinessLevel },
+          rationale,
+          details: [
+            "Keep effort conversational and avoid hard surges.",
+            "Stay in Z1-Z2 for 30-45 minutes.",
+            "Treat this as recovery-supportive training, not a hard session.",
+          ],
+          strength: null,
+          cardio: {
+            focus: "z2",
+            durationMinutes: 40,
+            targetZones: ["Z1", "Z2"],
+            structure: "30-45 min steady easy aerobic work.",
+            lastEnduranceDaysAgo,
+          },
+        } satisfies NextWorkoutRecommendation;
+      }
+
+      const shouldDoStrength =
+        strengthReady &&
+        (strengthUnderTarget ||
+          (!cardioUnderTarget && (lastStrengthDaysAgo ?? 99) >= (lastEnduranceDaysAgo ?? 99)));
+
+      if (shouldDoStrength) {
+        const split = pickStrengthSplit(orderedFocusMuscles);
+        rationale.push(
+          orderedFocusMuscles.length > 0
+            ? `Most recovered muscle groups: ${orderedFocusMuscles.join(", ")}.`
+            : "No muscle-group freshness data; using balanced full-body guidance.",
+        );
+
+        return {
+          generatedAt: new Date().toISOString(),
+          recommendationType: "strength",
+          title: "Strength Session",
+          shortBlurb: `Prioritize ${split.toLowerCase()} today. Aim for 45-70 min with controlled effort and good technique.`,
+          readiness: { score: readinessScore, level: readinessLevel },
+          rationale,
+          details: [
+            `Warm up 8-10 min, then train ${split.toLowerCase()} exercises.`,
+            "Use 3-4 working sets per exercise in the 6-12 rep range.",
+            "Stop 1-3 reps before failure on most sets to manage fatigue.",
+          ],
+          strength: {
+            focusMuscles: orderedFocusMuscles,
+            split,
+            targetSets: "10-16 hard sets total",
+            lastStrengthDaysAgo,
+          },
+          cardio: null,
+        } satisfies NextWorkoutRecommendation;
+      }
+
+      const cardioFocus = pickCardioFocus({
+        readinessLevel,
+        readinessScore,
+        highIntensityPct,
+        lowIntensityPct,
+        moderateIntensityPct,
+        totalZoneSamples,
+        hiitCount7d: hiitLoad.hiit_count_7d,
+        daysSinceLastHiit,
+      });
+      const cardioPrescription = cardioPlan(cardioFocus);
+      rationale.push(
+        totalZoneSamples > 0
+          ? `Recent intensity split: ${Math.round(lowIntensityPct * 100)}% low, ${Math.round(moderateIntensityPct * 100)}% moderate, ${Math.round(highIntensityPct * 100)}% high.`
+          : "No recent HR zone data; defaulting to conservative cardio guidance.",
+      );
+      if (hiitLoad.hiit_count_7d >= MAX_HIIT_PER_WEEK) {
+        rationale.push(`HIIT cap reached (${MAX_HIIT_PER_WEEK}/week), so today stays aerobic.`);
+      }
+      if (daysSinceLastHiit != null && daysSinceLastHiit < HIIT_SPACING_DAYS) {
+        rationale.push("Less than 48 hours since the last hard cardio session.");
+      }
+
       return {
         generatedAt: new Date().toISOString(),
         recommendationType: "cardio",
-        title: "Easy Aerobic Session",
-        shortBlurb: "Keep today easy: 30-45 min in Z1-Z2 to support recovery and aerobic base.",
+        title: cardioPrescription.title,
+        shortBlurb: cardioPrescription.shortBlurb,
         readiness: { score: readinessScore, level: readinessLevel },
         rationale,
-        details: [
-          "Keep effort conversational and avoid hard surges.",
-          "Stay in Z1-Z2 for 30-45 minutes.",
-          "Treat this as recovery-supportive training, not a hard session.",
-        ],
+        details: cardioPrescription.details,
         strength: null,
         cardio: {
-          focus: "z2",
-          durationMinutes: 40,
-          targetZones: ["Z1", "Z2"],
-          structure: "30-45 min steady easy aerobic work.",
+          focus: cardioFocus,
+          durationMinutes: cardioPrescription.durationMinutes,
+          targetZones: cardioPrescription.targetZones,
+          structure: cardioPrescription.structure,
           lastEnduranceDaysAgo,
         },
       } satisfies NextWorkoutRecommendation;
-    }
-
-    const shouldDoStrength =
-      strengthReady &&
-      (strengthUnderTarget ||
-        (!cardioUnderTarget && (lastStrengthDaysAgo ?? 99) >= (lastEnduranceDaysAgo ?? 99)));
-
-    if (shouldDoStrength) {
-      const split = pickStrengthSplit(orderedFocusMuscles);
-      rationale.push(
-        orderedFocusMuscles.length > 0
-          ? `Most recovered muscle groups: ${orderedFocusMuscles.join(", ")}.`
-          : "No muscle-group freshness data; using balanced full-body guidance.",
-      );
-
-      return {
-        generatedAt: new Date().toISOString(),
-        recommendationType: "strength",
-        title: "Strength Session",
-        shortBlurb: `Prioritize ${split.toLowerCase()} today. Aim for 45-70 min with controlled effort and good technique.`,
-        readiness: { score: readinessScore, level: readinessLevel },
-        rationale,
-        details: [
-          `Warm up 8-10 min, then train ${split.toLowerCase()} exercises.`,
-          "Use 3-4 working sets per exercise in the 6-12 rep range.",
-          "Stop 1-3 reps before failure on most sets to manage fatigue.",
-        ],
-        strength: {
-          focusMuscles: orderedFocusMuscles,
-          split,
-          targetSets: "10-16 hard sets total",
-          lastStrengthDaysAgo,
-        },
-        cardio: null,
-      } satisfies NextWorkoutRecommendation;
-    }
-
-    const cardioFocus = pickCardioFocus({
-      readinessLevel,
-      readinessScore,
-      highIntensityPct,
-      lowIntensityPct,
-      moderateIntensityPct,
-      totalZoneSamples,
-      hiitCount7d: hiitLoad.hiit_count_7d,
-      daysSinceLastHiit,
-    });
-    const cardioPrescription = cardioPlan(cardioFocus);
-    rationale.push(
-      totalZoneSamples > 0
-        ? `Recent intensity split: ${Math.round(lowIntensityPct * 100)}% low, ${Math.round(moderateIntensityPct * 100)}% moderate, ${Math.round(highIntensityPct * 100)}% high.`
-        : "No recent HR zone data; defaulting to conservative cardio guidance.",
-    );
-    if (hiitLoad.hiit_count_7d >= MAX_HIIT_PER_WEEK) {
-      rationale.push(`HIIT cap reached (${MAX_HIIT_PER_WEEK}/week), so today stays aerobic.`);
-    }
-    if (daysSinceLastHiit != null && daysSinceLastHiit < HIIT_SPACING_DAYS) {
-      rationale.push("Less than 48 hours since the last hard cardio session.");
-    }
-
-    return {
-      generatedAt: new Date().toISOString(),
-      recommendationType: "cardio",
-      title: cardioPrescription.title,
-      shortBlurb: cardioPrescription.shortBlurb,
-      readiness: { score: readinessScore, level: readinessLevel },
-      rationale,
-      details: cardioPrescription.details,
-      strength: null,
-      cardio: {
-        focus: cardioFocus,
-        durationMinutes: cardioPrescription.durationMinutes,
-        targetZones: cardioPrescription.targetZones,
-        structure: cardioPrescription.structure,
-        lastEnduranceDaysAgo,
-      },
-    } satisfies NextWorkoutRecommendation;
-  }),
+    }),
 });
 
 // Exported for unit testing — these are pure helpers with no side effects.

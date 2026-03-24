@@ -43,7 +43,7 @@ describe("bodyAnalyticsRouter", () => {
   describe("smoothedWeight", () => {
     it("returns empty array when no data", async () => {
       const caller = makeCaller([]);
-      const result = await caller.smoothedWeight({ days: 90 });
+      const result = await caller.smoothedWeight({ days: 90, endDate: "2026-03-15" });
       expect(result).toEqual([]);
     });
 
@@ -59,7 +59,7 @@ describe("bodyAnalyticsRouter", () => {
         { date: "2024-01-08", weight_kg: 79.8 },
       ];
       const caller = makeCaller(rows);
-      const result = await caller.smoothedWeight({ days: 90 });
+      const result = await caller.smoothedWeight({ days: 90, endDate: "2026-03-15" });
 
       expect(result).toHaveLength(8);
       expect(result[0]?.rawWeight).toBe(80);
@@ -76,7 +76,7 @@ describe("bodyAnalyticsRouter", () => {
   describe("recomposition", () => {
     it("returns empty array when no data", async () => {
       const caller = makeCaller([]);
-      const result = await caller.recomposition({ days: 180 });
+      const result = await caller.recomposition({ days: 180, endDate: "2026-03-15" });
       expect(result).toEqual([]);
     });
 
@@ -86,7 +86,7 @@ describe("bodyAnalyticsRouter", () => {
         { date: "2024-01-02", weight_kg: 80, body_fat_pct: 19.5 },
       ];
       const caller = makeCaller(rows);
-      const result = await caller.recomposition({ days: 180 });
+      const result = await caller.recomposition({ days: 180, endDate: "2026-03-15" });
 
       expect(result).toHaveLength(2);
       expect(result[0]?.fatMassKg).toBe(16);

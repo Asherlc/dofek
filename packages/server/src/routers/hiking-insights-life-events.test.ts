@@ -213,7 +213,7 @@ describe("insightsRouter", () => {
       userId: "user-1",
       timezone: "UTC",
     });
-    const result = await caller.compute({ days: 90 });
+    const result = await caller.compute({ days: 90, endDate: "2026-03-15" });
 
     expect(result).toEqual({ insights: ["test-insight"] });
     // Should call execute 5 times (metrics, sleep, activities, nutrition, bodyComp)
