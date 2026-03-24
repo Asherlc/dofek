@@ -193,6 +193,27 @@ function findValuesBatch(
   return undefined;
 }
 
+/**
+ * Extract all first-argument values from db.onConflictDoUpdate mock calls.
+ * Each call[0] is the options object passed to `.onConflictDoUpdate(...)`.
+ */
+function getOnConflictArgs(db: ReturnType<typeof makeChainableMock>): unknown[] {
+  return db.onConflictDoUpdate.mock.calls.map((call: unknown[]) => call[0]);
+}
+
+/**
+ * Find an onConflictDoUpdate call matching a predicate.
+ */
+function findOnConflictRecord(
+  args: unknown[],
+  predicate: (rec: Record<string, unknown>) => boolean,
+): Record<string, unknown> | undefined {
+  for (const arg of args) {
+    if (isRecord(arg) && predicate(arg)) return arg;
+  }
+  return undefined;
+}
+
 // ============================================================
 // Pure parsing unit tests (no DB, no network)
 // ============================================================
@@ -859,12 +880,59 @@ describe("WhoopProvider.sync() — workout collection from cycles", () => {
     });
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
-    db.onConflictDoUpdate = vi.fn().mockReturnValue(db);
-    db.returning = vi.fn().mockResolvedValue([]);
     const result = await provider.sync(db, new Date("2026-03-01"));
 
     expect(result.provider).toBe("whoop");
     expect(result.recordsSynced).toBeGreaterThanOrEqual(0);
+
+    // Verify the activity values contain correct fields from the workout
+    const valuesCallArgs = getValuesCallArgs(db);
+    const activityInsert = findValuesRecord(
+      valuesCallArgs,
+      (rec) => rec.externalId === "w-1" && rec.activityType !== undefined,
+    );
+    expect(activityInsert).toBeDefined();
+    expect(activityInsert?.providerId).toBe("whoop");
+    expect(activityInsert?.activityType).toBe("running"); // sport_id 0 = running
+    expect(activityInsert?.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
+    expect(activityInsert?.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
+    expect(activityInsert?.percentRecorded).toBeUndefined(); // no percent_recorded in test data
+    // Verify raw data contains strain, HR, calories, duration
+    expect(activityInsert?.raw).toBeDefined();
+    expect(isRecord(activityInsert?.raw)).toBe(true);
+    if (isRecord(activityInsert?.raw)) {
+      expect(activityInsert.raw.strain).toBe(10);
+      expect(activityInsert.raw.avgHeartRate).toBe(150);
+      expect(activityInsert.raw.maxHeartRate).toBe(180);
+      expect(activityInsert.raw.calories).toBe(478); // 2000 kJ / 4.184
+      expect(activityInsert.raw.durationSeconds).toBe(3600);
+    }
+
+    // Verify onConflictDoUpdate was called with correct target and set for the activity upsert
+    const conflictArgs = getOnConflictArgs(db);
+    expect(conflictArgs.length).toBeGreaterThanOrEqual(1);
+    const activityConflict = findOnConflictRecord(conflictArgs, (rec) => {
+      return isRecord(rec.set) && "activityType" in rec.set && "percentRecorded" in rec.set;
+    });
+    expect(activityConflict).toBeDefined();
+    // target should be an array (providerId + externalId columns)
+    expect(Array.isArray(activityConflict?.target)).toBe(true);
+    if (Array.isArray(activityConflict?.target)) {
+      expect(activityConflict.target.length).toBe(2);
+    }
+    // set should contain all updatable fields
+    expect(isRecord(activityConflict?.set)).toBe(true);
+    if (isRecord(activityConflict?.set)) {
+      expect(activityConflict.set.activityType).toBe("running");
+      expect(activityConflict.set.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
+      expect(activityConflict.set.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
+      expect(activityConflict.set.raw).toBeDefined();
+      if (isRecord(activityConflict.set.raw)) {
+        expect(activityConflict.set.raw.strain).toBe(10);
+        expect(activityConflict.set.raw.avgHeartRate).toBe(150);
+        expect(activityConflict.set.raw.maxHeartRate).toBe(180);
+      }
+    }
   });
 });
 
@@ -1702,6 +1770,67 @@ describe("WhoopProvider.sync() — HR stream sync", () => {
     expect(hrBatch?.[0]?.recordedAt).toEqual(new Date(1709251200000));
     expect(hrBatch?.[1]?.heartRate).toBe(75);
     expect(hrBatch?.[2]?.heartRate).toBe(78);
+
+    // Verify onConflictDoNothing was called for HR inserts
+    expect(db.onConflictDoNothing).toHaveBeenCalled();
+
+    // Verify withSyncLog was called with "hr_stream" as the type
+    const { withSyncLog } = await import("../db/sync-log.ts");
+    const syncLogCalls = vi.mocked(withSyncLog).mock.calls;
+    const hrStreamCall = syncLogCalls.find((call: unknown[]) => call[2] === "hr_stream");
+    expect(hrStreamCall).toBeDefined();
+    expect(hrStreamCall?.[1]).toBe("whoop"); // provider id
+  });
+
+  it("batches HR data into chunks of 500", async () => {
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValueOnce({
+      accessToken: "test",
+      refreshToken: "test-refresh",
+      expiresAt: new Date("2027-01-01"),
+      scopes: "userId:42",
+    });
+
+    // Generate 750 HR values to force 2 batches (500 + 250)
+    const hrValues: { time: number; data: number }[] = [];
+    for (let i = 0; i < 750; i++) {
+      hrValues.push({ time: 1709251200000 + i * 6000, data: 60 + (i % 40) });
+    }
+
+    const mockFetch = makeSyncMockFetch({
+      cycles: [],
+      hrValues,
+      journalData: [],
+      weightliftingData: null,
+    });
+    const provider = new WhoopProvider(mockFetch);
+    const db = makeChainableMock();
+    db.onConflictDoUpdate = vi.fn().mockReturnValue(db);
+    db.returning = vi.fn().mockResolvedValue([]);
+    const since = new Date(Date.now() - 1000);
+    const result = await provider.sync(db, since);
+
+    expect(result.provider).toBe("whoop");
+    expect(result.recordsSynced).toBeGreaterThanOrEqual(750);
+
+    // Find all HR batch inserts (arrays of records with heartRate)
+    const valuesCallArgs = getValuesCallArgs(db);
+    const hrBatches = valuesCallArgs.filter(
+      (arg) => isRecordArray(arg) && typeof arg[0]?.heartRate === "number",
+    );
+
+    // Should have at least 2 batches: 500 + 250
+    expect(hrBatches.length).toBeGreaterThanOrEqual(2);
+    // First batch should be exactly 500 (BATCH_SIZE)
+    expect(hrBatches[0]).toHaveLength(500);
+    // Second batch should be exactly 250 (remaining)
+    expect(hrBatches[1]).toHaveLength(250);
+    // Total should be 750
+    const totalHrRecords = hrBatches.reduce(
+      (sum: number, batch: unknown) => sum + (Array.isArray(batch) ? batch.length : 0),
+      0,
+    );
+    expect(totalHrRecords).toBe(750);
   });
 
   it("handles empty HR data", async () => {
@@ -1762,13 +1891,14 @@ describe("WhoopProvider.sync() — journal sync", () => {
     });
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
-    db.onConflictDoUpdate = vi.fn().mockReturnValue(db);
-    db.returning = vi.fn().mockResolvedValue([]);
     const result = await provider.sync(db, new Date("2026-03-01"));
 
     expect(result.provider).toBe("whoop");
     // Journal phase should produce 2 records (2 answers)
     expect(result.recordsSynced).toBeGreaterThanOrEqual(2);
+    // Duration should be a small positive number (Date.now() - start), not huge (Date.now() + start)
+    expect(result.duration).toBeGreaterThanOrEqual(0);
+    expect(result.duration).toBeLessThan(30000); // less than 30s for a test
 
     // Verify journal entry inserts
     const valuesCallArgs = getValuesCallArgs(db);
@@ -1781,11 +1911,142 @@ describe("WhoopProvider.sync() — journal sync", () => {
     expect(caffeineInsert?.date).toBe("2026-03-01");
     expect(caffeineInsert?.answerNumeric).toBe(2);
     expect(caffeineInsert?.impactScore).toBe(0.3);
+    // Verify userId is set to the default fallback UUID
+    expect(caffeineInsert?.userId).toBe("00000000-0000-0000-0000-000000000001");
 
     const alcoholInsert = findValuesRecord(valuesCallArgs, (rec) => rec.questionSlug === "alcohol");
     expect(alcoholInsert).toBeDefined();
     expect(alcoholInsert?.answerText).toBe("none");
     expect(alcoholInsert?.impactScore).toBe(-0.1);
+    expect(alcoholInsert?.userId).toBe("00000000-0000-0000-0000-000000000001");
+
+    // Verify journalQuestion inserts with correct category, dataType, and displayName
+    const caffeineQuestion = findValuesRecord(
+      valuesCallArgs,
+      (rec) => rec.slug === "caffeine" && rec.category !== undefined,
+    );
+    expect(caffeineQuestion).toBeDefined();
+    expect(caffeineQuestion?.category).toBe("custom");
+    expect(caffeineQuestion?.dataType).toBe("numeric");
+    // displayName should be "Caffeine" (snake_case → Title Case)
+    expect(caffeineQuestion?.displayName).toBe("Caffeine");
+
+    const alcoholQuestion = findValuesRecord(
+      valuesCallArgs,
+      (rec) => rec.slug === "alcohol" && rec.category !== undefined,
+    );
+    expect(alcoholQuestion).toBeDefined();
+    expect(alcoholQuestion?.category).toBe("custom");
+    expect(alcoholQuestion?.dataType).toBe("numeric");
+    expect(alcoholQuestion?.displayName).toBe("Alcohol");
+
+    // Verify onConflictDoUpdate was called for journal entries with correct target and set
+    const conflictArgs = getOnConflictArgs(db);
+    const journalConflict = findOnConflictRecord(conflictArgs, (rec) => {
+      return (
+        isRecord(rec.set) &&
+        "answerText" in rec.set &&
+        "answerNumeric" in rec.set &&
+        "impactScore" in rec.set
+      );
+    });
+    expect(journalConflict).toBeDefined();
+    // target should have 4 columns: userId, date, questionSlug, providerId
+    expect(Array.isArray(journalConflict?.target)).toBe(true);
+    if (Array.isArray(journalConflict?.target)) {
+      expect(journalConflict.target.length).toBe(4);
+    }
+    // set should have the updatable fields
+    expect(isRecord(journalConflict?.set)).toBe(true);
+    if (isRecord(journalConflict?.set)) {
+      expect("answerText" in journalConflict.set).toBe(true);
+      expect("answerNumeric" in journalConflict.set).toBe(true);
+      expect("impactScore" in journalConflict.set).toBe(true);
+    }
+  });
+
+  it("formats multi-word snake_case question names to Title Case", async () => {
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValueOnce({
+      accessToken: "test",
+      refreshToken: "test-refresh",
+      expiresAt: new Date("2027-01-01"),
+      scopes: "userId:42",
+    });
+
+    const journalData = [
+      {
+        date: "2026-03-01",
+        answers: [{ name: "sleep_quality", value: 8 }],
+      },
+    ];
+
+    const mockFetch = makeSyncMockFetch({
+      cycles: [],
+      hrValues: [],
+      journalData,
+      weightliftingData: null,
+    });
+    const provider = new WhoopProvider(mockFetch);
+    const db = makeChainableMock();
+    db.onConflictDoUpdate = vi.fn().mockReturnValue(db);
+    db.returning = vi.fn().mockResolvedValue([]);
+    const result = await provider.sync(db, new Date("2026-03-01"));
+
+    expect(result.provider).toBe("whoop");
+    expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
+
+    // Verify displayName converts snake_case to Title Case via replace(/_/g, " ") then \b\w → toUpperCase
+    const valuesCallArgs = getValuesCallArgs(db);
+    const questionInsert = findValuesRecord(
+      valuesCallArgs,
+      (rec) => rec.slug === "sleep_quality" && rec.category !== undefined,
+    );
+    expect(questionInsert).toBeDefined();
+    expect(questionInsert?.displayName).toBe("Sleep Quality");
+    expect(questionInsert?.category).toBe("custom");
+    expect(questionInsert?.dataType).toBe("numeric");
+  });
+
+  it("uses provided userId from sync options", async () => {
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValueOnce({
+      accessToken: "test",
+      refreshToken: "test-refresh",
+      expiresAt: new Date("2027-01-01"),
+      scopes: "userId:42",
+    });
+
+    const journalData = [
+      {
+        date: "2026-03-01",
+        answers: [{ name: "caffeine", value: 1 }],
+      },
+    ];
+
+    const mockFetch = makeSyncMockFetch({
+      cycles: [],
+      hrValues: [],
+      journalData,
+      weightliftingData: null,
+    });
+    const provider = new WhoopProvider(mockFetch);
+    const db = makeChainableMock();
+    db.onConflictDoUpdate = vi.fn().mockReturnValue(db);
+    db.returning = vi.fn().mockResolvedValue([]);
+    const customUserId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    const result = await provider.sync(db, new Date("2026-03-01"), { userId: customUserId });
+
+    expect(result.provider).toBe("whoop");
+
+    // Verify the journal entry was inserted with the custom userId, not the default
+    const valuesCallArgs = getValuesCallArgs(db);
+    const journalInsert = findValuesRecord(
+      valuesCallArgs,
+      (rec) => rec.questionSlug === "caffeine" && rec.userId !== undefined,
+    );
+    expect(journalInsert).toBeDefined();
+    expect(journalInsert?.userId).toBe(customUserId);
   });
 
   it("records error when journal fetch fails", async () => {
@@ -1947,6 +2208,56 @@ describe("WhoopProvider.sync() — strength sync", () => {
     expect(strengthWorkoutInsert?.providerId).toBe("whoop");
     expect(strengthWorkoutInsert?.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
     expect(strengthWorkoutInsert?.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
+    // Verify name field uses ?? null (weightliftingData.name is undefined, so should be null)
+    expect(strengthWorkoutInsert?.name).toBeNull();
+
+    // Verify onConflictDoUpdate was called for strength_workout with correct target and set
+    const conflictArgs = getOnConflictArgs(db);
+    const strengthConflict = findOnConflictRecord(conflictArgs, (rec) => {
+      return isRecord(rec.set) && "rawMskStrainScore" in rec.set && "startedAt" in rec.set;
+    });
+    expect(strengthConflict).toBeDefined();
+    // target should be an array (providerId + externalId)
+    expect(Array.isArray(strengthConflict?.target)).toBe(true);
+    if (Array.isArray(strengthConflict?.target)) {
+      expect(strengthConflict.target.length).toBe(2);
+    }
+    // set should contain the updatable fields
+    expect(isRecord(strengthConflict?.set)).toBe(true);
+    if (isRecord(strengthConflict?.set)) {
+      expect(strengthConflict.set.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
+      expect(strengthConflict.set.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
+      expect(strengthConflict.set.name).toBeNull();
+      expect(strengthConflict.set.rawMskStrainScore).toBe(0);
+      expect(strengthConflict.set.scaledMskStrainScore).toBe(0);
+      expect(strengthConflict.set.cardioStrainScore).toBe(0);
+    }
+
+    // Verify returning was called with { id: ... } argument
+    expect(db.returning).toHaveBeenCalled();
+    const returningCallArgs = db.returning.mock.calls;
+    // Find the returning call with an id field
+    const returningWithId = returningCallArgs.find(
+      (call: unknown[]) => isRecord(call[0]) && "id" in call[0],
+    );
+    expect(returningWithId).toBeDefined();
+    if (Array.isArray(returningWithId) && returningWithId.length > 0) {
+      expect(returningWithId[0]).toHaveProperty("id");
+    }
+
+    // Verify exercise alias insert happened
+    const exerciseAliasInsert = findValuesRecord(
+      valuesCallArgs,
+      (rec) =>
+        rec.exerciseId === "exercise-uuid-1" &&
+        rec.providerExerciseId === "BENCHPRESS" &&
+        rec.providerId === "whoop",
+    );
+    expect(exerciseAliasInsert).toBeDefined();
+    expect(exerciseAliasInsert?.providerExerciseName).toBe("Bench Press");
+
+    // Verify onConflictDoNothing was called (for exercise and exercise alias)
+    expect(db.onConflictDoNothing).toHaveBeenCalled();
 
     // Verify exercise upsert
     const exerciseInsert = findValuesRecord(
@@ -1954,6 +2265,8 @@ describe("WhoopProvider.sync() — strength sync", () => {
       (rec) => rec.name === "Bench Press" && rec.equipment === "BARBELL",
     );
     expect(exerciseInsert).toBeDefined();
+    expect(exerciseInsert?.muscleGroups).toEqual(["CHEST"]);
+    expect(exerciseInsert?.exerciseType).toBe("STRENGTH");
 
     // Verify strength set batch insert (2 complete sets)
     const setInsert = findValuesBatch(
@@ -1970,6 +2283,235 @@ describe("WhoopProvider.sync() — strength sync", () => {
     expect(setInsert?.[1]?.weightKg).toBe(60);
     expect(setInsert?.[1]?.reps).toBe(8);
     expect(setInsert?.[1]?.setIndex).toBe(1);
+    // Verify setRows.length > 0 actually triggered the insert (2 sets is > 0)
+    expect(setInsert).toHaveLength(2);
+
+    // Verify delete was called (to clear old sets before re-inserting)
+    expect(db.delete).toHaveBeenCalled();
+  });
+
+  it("uses workout name from weightlifting data when available", async () => {
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValueOnce({
+      accessToken: "test",
+      refreshToken: "test-refresh",
+      expiresAt: new Date("2027-01-01"),
+      scopes: "userId:42",
+    });
+
+    const cycles = [
+      {
+        days: ["2026-03-01"],
+        recovery: null,
+        sleep: null,
+        workouts: [
+          {
+            activity_id: "w-named-1",
+            during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
+            timezone_offset: "-05:00",
+            sport_id: 0,
+            score: 8,
+            average_heart_rate: 125,
+            max_heart_rate: 155,
+            kilojoules: 1200,
+          },
+        ],
+      },
+    ];
+
+    const weightliftingData: WhoopWeightliftingWorkoutResponse = {
+      activity_id: "w-named-1",
+      user_id: 42,
+      name: "Morning Push Day",
+      during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
+      total_effective_volume_kg: 0,
+      raw_msk_strain_score: 5.2,
+      scaled_msk_strain_score: 3.1,
+      cardio_strain_score: 2.0,
+      cardio_strain_contribution_percent: 40,
+      msk_strain_contribution_percent: 60,
+      zone_durations: {
+        zone0_to10_duration: 0,
+        zone10_to20_duration: 0,
+        zone20_to30_duration: 0,
+        zone30_to40_duration: 0,
+        zone40_to50_duration: 0,
+        zone50_to60_duration: 0,
+        zone60_to70_duration: 0,
+        zone70_to80_duration: 0,
+        zone80_to90_duration: 0,
+        zone90_to100_duration: 0,
+      },
+      workout_groups: [
+        {
+          workout_exercises: [
+            {
+              sets: [
+                {
+                  weight_kg: 40,
+                  number_of_reps: 12,
+                  msk_total_volume_kg: 480,
+                  time_in_seconds: 0,
+                  during: "['2026-03-01T10:05:00Z','2026-03-01T10:05:30Z')",
+                  complete: true,
+                },
+              ],
+              exercise_details: {
+                exercise_id: "DUMBBELL_PRESS",
+                name: "Dumbbell Press",
+                equipment: "DUMBBELL",
+                exercise_type: "STRENGTH",
+                muscle_groups: ["CHEST"],
+                volume_input_format: "REPS",
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const mockFetch = makeSyncMockFetch({
+      cycles,
+      weightliftingData,
+      journalData: [],
+      hrValues: [],
+    });
+    const provider = new WhoopProvider(mockFetch);
+    const db = makeChainableMock();
+    db.onConflictDoUpdate.mockReturnValueOnce(db).mockReturnValueOnce(db);
+    db.returning.mockResolvedValueOnce([{ id: "workout-uuid-named" }]);
+    db.limit.mockResolvedValueOnce([{ id: "exercise-uuid-named" }]);
+    const result = await provider.sync(db, new Date("2026-03-01"));
+
+    expect(result.provider).toBe("whoop");
+    expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
+
+    // Verify the strength_workout insert has the workout name (not null)
+    const valuesCallArgs = getValuesCallArgs(db);
+    const namedWorkoutInsert = findValuesRecord(
+      valuesCallArgs,
+      (rec) => rec.externalId === "w-named-1" && "name" in rec && rec.startedAt !== undefined,
+    );
+    expect(namedWorkoutInsert).toBeDefined();
+    // name should be "Morning Push Day" (not null, not && null)
+    expect(namedWorkoutInsert?.name).toBe("Morning Push Day");
+    expect(namedWorkoutInsert?.rawMskStrainScore).toBe(5.2);
+    expect(namedWorkoutInsert?.scaledMskStrainScore).toBe(3.1);
+    expect(namedWorkoutInsert?.mskStrainContributionPercent).toBe(60);
+
+    // Verify the onConflictDoUpdate set also has the name
+    const conflictArgs = getOnConflictArgs(db);
+    const namedConflict = findOnConflictRecord(conflictArgs, (rec) => {
+      return isRecord(rec.set) && rec.set.name === "Morning Push Day";
+    });
+    expect(namedConflict).toBeDefined();
+  });
+
+  it("skips exercise/set processing when returning yields no workoutId", async () => {
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValueOnce({
+      accessToken: "test",
+      refreshToken: "test-refresh",
+      expiresAt: new Date("2027-01-01"),
+      scopes: "userId:42",
+    });
+
+    const cycles = [
+      {
+        days: ["2026-03-01"],
+        recovery: null,
+        sleep: null,
+        workouts: [
+          {
+            activity_id: "w-no-id",
+            during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
+            timezone_offset: "-05:00",
+            sport_id: 0,
+            score: 5,
+            average_heart_rate: 120,
+            max_heart_rate: 150,
+            kilojoules: 1000,
+          },
+        ],
+      },
+    ];
+
+    const weightliftingData: WhoopWeightliftingWorkoutResponse = {
+      activity_id: "w-no-id",
+      user_id: 42,
+      during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
+      total_effective_volume_kg: 0,
+      raw_msk_strain_score: 0,
+      scaled_msk_strain_score: 0,
+      cardio_strain_score: 0,
+      cardio_strain_contribution_percent: 0,
+      msk_strain_contribution_percent: 0,
+      zone_durations: {
+        zone0_to10_duration: 0,
+        zone10_to20_duration: 0,
+        zone20_to30_duration: 0,
+        zone30_to40_duration: 0,
+        zone40_to50_duration: 0,
+        zone50_to60_duration: 0,
+        zone60_to70_duration: 0,
+        zone70_to80_duration: 0,
+        zone80_to90_duration: 0,
+        zone90_to100_duration: 0,
+      },
+      workout_groups: [
+        {
+          workout_exercises: [
+            {
+              sets: [
+                {
+                  weight_kg: 50,
+                  number_of_reps: 10,
+                  msk_total_volume_kg: 500,
+                  time_in_seconds: 0,
+                  during: "['2026-03-01T10:05:00Z','2026-03-01T10:05:30Z')",
+                  complete: true,
+                },
+              ],
+              exercise_details: {
+                exercise_id: "SQUAT",
+                name: "Squat",
+                equipment: "BARBELL",
+                exercise_type: "STRENGTH",
+                muscle_groups: ["LEGS"],
+                volume_input_format: "REPS",
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const mockFetch = makeSyncMockFetch({
+      cycles,
+      weightliftingData,
+      journalData: [],
+      hrValues: [],
+    });
+    const provider = new WhoopProvider(mockFetch);
+    const db = makeChainableMock();
+    // Activity workout insert gets one conflict, strength_workout gets another
+    db.onConflictDoUpdate.mockReturnValueOnce(db).mockReturnValueOnce(db);
+    // returning() yields empty array → row?.id is undefined → !workoutId is true → skip
+    db.returning.mockResolvedValueOnce([]);
+    const result = await provider.sync(db, new Date("2026-03-01"));
+
+    expect(result.provider).toBe("whoop");
+    // No set inserts should happen since workoutId was not returned
+    const valuesCallArgs = getValuesCallArgs(db);
+    const setBatch = findValuesBatch(
+      valuesCallArgs,
+      (arr) => typeof arr[0]?.weightKg === "number" && typeof arr[0]?.setIndex === "number",
+    );
+    expect(setBatch).toBeUndefined();
+    // No exercise lookup should happen either (no select().from().where().limit() for exercise)
+    // The test should complete without errors from the strength sync
+    const strengthErrors = result.errors.filter((e) => e.message.includes("Strength"));
+    expect(strengthErrors).toHaveLength(0);
   });
 
   it("skips workouts with no weightlifting data (404)", async () => {
