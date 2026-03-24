@@ -1,5 +1,7 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { createActivityTypeMapper, POLAR_SPORT_MAP } from "@dofek/training/training";
 import { eq } from "drizzle-orm";
+import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
@@ -10,8 +12,9 @@ import type {
   ProviderAuthSetup,
   SyncError,
   SyncOptions,
-  SyncProvider,
   SyncResult,
+  WebhookEvent,
+  WebhookProvider,
 } from "./types.ts";
 
 // ============================================================
@@ -364,9 +367,10 @@ export class PolarClient {
 // Provider implementation
 // ============================================================
 
-export class PolarProvider implements SyncProvider {
+export class PolarProvider implements WebhookProvider {
   readonly id = "polar";
   readonly name = "Polar";
+  readonly webhookScope = "app" as const;
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
@@ -377,6 +381,105 @@ export class PolarProvider implements SyncProvider {
     if (!process.env.POLAR_CLIENT_ID) return "POLAR_CLIENT_ID is not set";
     if (!process.env.POLAR_CLIENT_SECRET) return "POLAR_CLIENT_SECRET is not set";
     return null;
+  }
+
+  // ── Webhook implementation ──
+
+  async registerWebhook(
+    callbackUrl: string,
+    _verifyToken: string,
+  ): Promise<{ subscriptionId: string; signingSecret?: string; expiresAt?: Date }> {
+    const clientId = process.env.POLAR_CLIENT_ID;
+    const clientSecret = process.env.POLAR_CLIENT_SECRET;
+    if (!clientId || !clientSecret) {
+      throw new Error("POLAR_CLIENT_ID and POLAR_CLIENT_SECRET are required");
+    }
+
+    const response = await this.#fetchFn("https://www.polaraccesslink.com/v3/webhooks", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
+      },
+      body: JSON.stringify({
+        events: [
+          { event: "EXERCISE", url: callbackUrl },
+          { event: "SLEEP", url: callbackUrl },
+          { event: "CONTINUOUS_HEART_RATE", url: callbackUrl },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Polar webhook registration failed (${response.status}): ${text}`);
+    }
+
+    const data: { data?: { id?: string; signature_secret_key?: string } } = await response.json();
+    return {
+      subscriptionId: data.data?.id ?? "polar-webhook",
+      signingSecret: data.data?.signature_secret_key,
+    };
+  }
+
+  async unregisterWebhook(subscriptionId: string): Promise<void> {
+    const clientId = process.env.POLAR_CLIENT_ID;
+    const clientSecret = process.env.POLAR_CLIENT_SECRET;
+    if (!clientId || !clientSecret) return;
+
+    await this.#fetchFn(`https://www.polaraccesslink.com/v3/webhooks/${subscriptionId}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
+      },
+    });
+  }
+
+  verifyWebhookSignature(
+    rawBody: Buffer,
+    headers: Record<string, string | string[] | undefined>,
+    signingSecret: string,
+  ): boolean {
+    const signature = headers["polar-webhook-signature"];
+    if (!signature || typeof signature !== "string") return false;
+
+    const hmac = createHmac("sha256", signingSecret);
+    hmac.update(rawBody);
+    const expected = hmac.digest("hex");
+    try {
+      return timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+    } catch {
+      return false;
+    }
+  }
+
+  parseWebhookPayload(body: unknown): WebhookEvent[] {
+    const parsed = z
+      .object({
+        event: z.string(),
+        user_id: z.coerce.string(),
+        entity_id: z.string().optional(),
+        timestamp: z.string().optional(),
+      })
+      .safeParse(body);
+
+    if (!parsed.success) return [];
+    const event = parsed.data;
+
+    const eventTypeMap: Record<string, string> = {
+      EXERCISE: "activity",
+      SLEEP: "sleep",
+      CONTINUOUS_HEART_RATE: "heart_rate",
+    };
+
+    return [
+      {
+        ownerExternalId: String(event.user_id),
+        eventType: "create",
+        objectType: eventTypeMap[event.event] ?? event.event.toLowerCase(),
+        objectId: event.entity_id,
+      },
+    ];
   }
 
   authSetup(): ProviderAuthSetup {

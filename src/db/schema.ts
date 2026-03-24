@@ -148,6 +148,39 @@ export const oauthToken = fitness.table("oauth_token", {
 });
 
 // ============================================================
+// Webhook subscriptions
+// ============================================================
+
+export const webhookSubscription = fitness.table(
+  "webhook_subscription",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Provider ID (e.g., "strava", "fitbit"). For app-level webhooks, provider_id is NULL. */
+    providerId: text("provider_id").references(() => provider.id),
+    /** Provider name for app-level subscriptions where there's no per-user provider row */
+    providerName: text("provider_name").notNull(),
+    /** Subscription ID from the provider's API (for unsubscribe) */
+    subscriptionExternalId: text("subscription_external_id"),
+    /** Random token used for validation challenges */
+    verifyToken: text("verify_token").notNull(),
+    /** HMAC key or signing secret from the provider (for signature verification) */
+    signingSecret: text("signing_secret"),
+    /** Current subscription state */
+    status: text("status").notNull().default("active"),
+    /** When this subscription expires (Oura requires renewal) */
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    /** Provider-specific metadata (JSON) */
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("webhook_subscription_provider_id_idx").on(table.providerId),
+    index("webhook_subscription_provider_name_idx").on(table.providerName),
+  ],
+);
+
+// ============================================================
 // Body composition
 // ============================================================
 

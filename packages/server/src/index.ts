@@ -19,6 +19,7 @@ import { createAuthRouter } from "./routes/auth.ts";
 import { createExportRouter } from "./routes/export.ts";
 import { createUpdatesRouter } from "./routes/updates.ts";
 import { createUploadRouter } from "./routes/upload.ts";
+import { createWebhookRouter } from "./routes/webhooks.ts";
 import { startSlackBot } from "./slack/bot.ts";
 import type { Context } from "./trpc.ts";
 
@@ -111,6 +112,8 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
   });
 
   // ── Route modules ──
+  // Webhook routes must be mounted before json() middleware — they use raw body for HMAC verification
+  app.use("/api/webhooks", createWebhookRouter({ db, getSyncQueue }));
   app.use("/api/upload", createUploadRouter({ getImportQueue, db }));
   app.use("/api/export", createExportRouter(db));
   app.use(

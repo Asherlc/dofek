@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { getOAuthRedirectUri } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
@@ -9,8 +10,9 @@ import type {
   ProviderAuthSetup,
   SyncError,
   SyncOptions,
-  SyncProvider,
   SyncResult,
+  WebhookEvent,
+  WebhookProvider,
 } from "./types.ts";
 
 // ============================================================
@@ -277,9 +279,10 @@ export class WithingsClient {
 // Provider implementation
 // ============================================================
 
-export class WithingsProvider implements SyncProvider {
+export class WithingsProvider implements WebhookProvider {
   readonly id = "withings";
   readonly name = "Withings";
+  readonly webhookScope = "user" as const;
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
@@ -290,6 +293,65 @@ export class WithingsProvider implements SyncProvider {
     if (!process.env.WITHINGS_CLIENT_ID) return "WITHINGS_CLIENT_ID is not set";
     if (!process.env.WITHINGS_CLIENT_SECRET) return "WITHINGS_CLIENT_SECRET is not set";
     return null;
+  }
+
+  // ── Webhook implementation ──
+
+  async registerWebhook(
+    callbackUrl: string,
+    _verifyToken: string,
+  ): Promise<{ subscriptionId: string; signingSecret?: string; expiresAt?: Date }> {
+    // Withings notification subscriptions are per-user and require the user's access token.
+    // Registration happens via POST to /notify?action=subscribe.
+    // This is a stub — actual per-user registration happens during sync setup.
+    return { subscriptionId: "withings-user-subscription" };
+  }
+
+  async unregisterWebhook(_subscriptionId: string): Promise<void> {
+    // Per-user subscriptions are revoked when the user disconnects
+  }
+
+  verifyWebhookSignature(
+    _rawBody: Buffer,
+    _headers: Record<string, string | string[] | undefined>,
+    _signingSecret: string,
+  ): boolean {
+    // Withings does not sign webhook payloads.
+    // Verification happens via the callback URL validation during subscription.
+    return true;
+  }
+
+  parseWebhookPayload(body: unknown): WebhookEvent[] {
+    // Withings sends form-encoded data that Express raw middleware captures.
+    // The payload contains: userid, appli (data type), startdate, enddate
+    const parsed = z
+      .object({
+        userid: z.coerce.string(),
+        appli: z.number().optional(),
+        startdate: z.number().optional(),
+        enddate: z.number().optional(),
+      })
+      .safeParse(body);
+
+    if (!parsed.success) return [];
+    const event = parsed.data;
+
+    // appli codes: 1=weight, 4=blood_pressure, 16=activity, 44=sleep, 54=spo2
+    const appliTypeMap: Record<number, string> = {
+      1: "weight",
+      4: "blood_pressure",
+      16: "activity",
+      44: "sleep",
+      54: "spo2",
+    };
+
+    return [
+      {
+        ownerExternalId: String(event.userid),
+        eventType: "update",
+        objectType: event.appli ? (appliTypeMap[event.appli] ?? "unknown") : "unknown",
+      },
+    ];
   }
 
   authSetup(): ProviderAuthSetup {
