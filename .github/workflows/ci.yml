@@ -344,7 +344,7 @@ jobs:
   mutation:
     name: Mutation Testing
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -382,8 +382,7 @@ jobs:
             | { grep -v 'drizzle/' || true; } \
             | { grep -v 'src/db/schema\.ts$' || true; } \
             | { grep -v 'scripts/' || true; } \
-            | { grep -v 'packages/mobile/' || true; } \
-            | { grep -v 'src/ml/' || true; })
+            | { grep -v 'packages/mobile/' || true; })
           FILES=""
           for f in $CANDIDATES; do
             LINES=$(git diff --numstat origin/main...HEAD -- "$f" | awk '{print $1+$2}')
@@ -410,8 +409,7 @@ jobs:
             | { grep -v 'drizzle/' || true; } \
             | { grep -v 'src/db/schema\.ts$' || true; } \
             | { grep -v 'scripts/' || true; } \
-            | { grep -v 'packages/mobile/' || true; } \
-            | { grep -v 'src/ml/' || true; })
+            | { grep -v 'packages/mobile/' || true; })
           FILES=""
           for f in $CANDIDATES; do
             if [ -f "$f" ]; then
