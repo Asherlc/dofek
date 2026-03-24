@@ -683,7 +683,12 @@ jobs:
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "No config changes, skipping deploy"
           fi
-      - name: Deploy config to server
+      - name: Setup Terraform
+        if: steps.changes.outputs.changed == 'true'
+        uses: hashicorp/setup-terraform@v4
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+      - name: Setup SSH
         if: steps.changes.outputs.changed == 'true'
         env:
           SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
@@ -693,12 +698,16 @@ jobs:
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-
-          scp deploy/docker-compose.yml root@"$SERVER_HOST":/opt/dofek/docker-compose.yml
-          scp deploy/Caddyfile root@"$SERVER_HOST":/opt/dofek/Caddyfile
-          scp deploy/otel-collector-config.yaml root@"$SERVER_HOST":/opt/dofek/otel-collector-config.yaml
-
-          ssh root@"$SERVER_HOST" "cd /opt/dofek && docker compose up -d"
+          eval "$(ssh-agent -s)"
+          ssh-add ~/.ssh/id_ed25519
+      - name: Terraform Apply
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: deploy/deploy-config
+        env:
+          TF_VAR_server_ip: ${{ secrets.SERVER_HOST }}
+        run: |
+          terraform init
+          terraform apply -auto-approve
 
   docker:
     name: Docker (${{ matrix.target }})
