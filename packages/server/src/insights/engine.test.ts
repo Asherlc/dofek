@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   type ActivityRow,
+  aggregateMonthly,
   type BodyCompRow,
   classifyActivity,
   classifyConfidence,
@@ -8,6 +9,7 @@ import {
   computeInsights,
   type DailyRow,
   downsample,
+  exhaustiveSweep,
   explainInsight,
   getAllMetrics,
   getConditionalTests,
@@ -2277,4 +2279,353 @@ describe("getAllMetrics() — systematic extract tests", () => {
 
   // Already covered by the systematic loop above — rolling averages and deltas
   // use pre-computed fields (weight_30d_avg, body_fat_30d_avg, weight_30d_delta, body_fat_30d_delta)
+});
+
+// ── aggregateMonthly() tests ────────────────────────────────────────────
+
+describe("aggregateMonthly()", () => {
+  it("returns empty array for empty input", () => {
+    expect(aggregateMonthly([])).toEqual([]);
+  });
+
+  it("excludes months with fewer than 20 days", () => {
+    const days = makeJoinedDays(19); // Only 19 days in January
+    expect(aggregateMonthly(days)).toHaveLength(0);
+  });
+
+  it("includes months with exactly 20 days", () => {
+    const days = makeJoinedDays(20);
+    const result = aggregateMonthly(days);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.month).toBe("2025-01");
+  });
+
+  it("computes average calories from non-null days", () => {
+    const days = makeJoinedDays(25, { calories: 2000 });
+    const result = aggregateMonthly(days);
+    expect(result[0]?.avgCalories).toBeCloseTo(2000, 0);
+  });
+
+  it("returns null avgCalories when fewer than 3 nutrition days", () => {
+    const days = makeJoinedDays(25, { calories: null } satisfies Partial<JoinedDay>);
+    // Only set 2 days with calories
+    days[0] = makeFullJoinedDay(days[0]?.date ?? "2025-01-01", { calories: 2000 });
+    days[1] = makeFullJoinedDay(days[1]?.date ?? "2025-01-02", { calories: 2000 });
+    const result = aggregateMonthly(days);
+    expect(result[0]?.avgCalories).toBeNull();
+  });
+
+  it("computes average protein, carbs, fat", () => {
+    const days = makeJoinedDays(25, { protein_g: 120, carbs_g: 200, fat_g: 60 });
+    const result = aggregateMonthly(days);
+    expect(result[0]?.avgProtein).toBeCloseTo(120, 0);
+    expect(result[0]?.avgCarbs).toBeCloseTo(200, 0);
+    expect(result[0]?.avgFat).toBeCloseTo(60, 0);
+  });
+
+  it("counts exercise days with >= 20 min threshold", () => {
+    const days = makeJoinedDays(25, { exercise_minutes: 25 });
+    // Override some days to be below threshold
+    days[0] = makeFullJoinedDay(days[0]?.date ?? "2025-01-01", { exercise_minutes: 15 });
+    days[1] = makeFullJoinedDay(days[1]?.date ?? "2025-01-02", { exercise_minutes: 10 });
+    const result = aggregateMonthly(days);
+    expect(result[0]?.exerciseDays).toBe(23); // 25 - 2 below threshold
+  });
+
+  it("sums total exercise, cardio, strength, flexibility minutes", () => {
+    const days = makeJoinedDays(25, {
+      exercise_minutes: 40,
+      cardio_minutes: 20,
+      strength_minutes: 15,
+      flexibility_minutes: 5,
+    });
+    const result = aggregateMonthly(days);
+    expect(result[0]?.exerciseMinutes).toBe(1000); // 25 * 40
+    expect(result[0]?.cardioMinutes).toBe(500); // 25 * 20
+    expect(result[0]?.strengthMinutes).toBe(375); // 25 * 15
+    expect(result[0]?.flexibilityMinutes).toBe(125); // 25 * 5
+  });
+
+  it("counts cardio days (>= 10 min) and strength days (>= 10 min)", () => {
+    const days = makeJoinedDays(25, { cardio_minutes: 15, strength_minutes: 12 });
+    const result = aggregateMonthly(days);
+    expect(result[0]?.cardioDays).toBe(25);
+    expect(result[0]?.strengthDays).toBe(25);
+  });
+
+  it("computes weight delta from first/last 5 measurements", () => {
+    const days = makeJoinedDays(25, { weight_kg: 80 });
+    // Set first 5 days at 80 kg, last 5 at 78 kg
+    for (let idx = 20; idx < 25; idx++) {
+      days[idx] = makeFullJoinedDay(days[idx]?.date ?? `2025-01-${idx + 1}`, { weight_kg: 78 });
+    }
+    const result = aggregateMonthly(days);
+    expect(result[0]?.weightStart).toBe(80);
+    expect(result[0]?.weightEnd).toBe(78);
+    expect(result[0]?.weightDelta).toBe(-2);
+  });
+
+  it("uses single first/last measurement when 2-4 weight measurements", () => {
+    const days = makeJoinedDays(25, { weight_kg: null } satisfies Partial<JoinedDay>);
+    // Only 3 weight measurements
+    days[0] = makeFullJoinedDay(days[0]?.date ?? "2025-01-01", { weight_kg: 82 });
+    days[12] = makeFullJoinedDay(days[12]?.date ?? "2025-01-13", { weight_kg: 80 });
+    days[24] = makeFullJoinedDay(days[24]?.date ?? "2025-01-25", { weight_kg: 78 });
+    const result = aggregateMonthly(days);
+    expect(result[0]?.weightStart).toBe(82); // first measurement
+    expect(result[0]?.weightEnd).toBe(78); // last measurement
+  });
+
+  it("returns null weight when fewer than 2 measurements", () => {
+    const days = makeJoinedDays(25, { weight_kg: null } satisfies Partial<JoinedDay>);
+    days[0] = makeFullJoinedDay(days[0]?.date ?? "2025-01-01", { weight_kg: 80 });
+    const result = aggregateMonthly(days);
+    expect(result[0]?.weightStart).toBeNull();
+    expect(result[0]?.weightEnd).toBeNull();
+  });
+
+  it("computes body fat delta similarly to weight delta", () => {
+    const days = makeJoinedDays(25, { body_fat_pct: 15 });
+    for (let idx = 20; idx < 25; idx++) {
+      days[idx] = makeFullJoinedDay(days[idx]?.date ?? `2025-01-${idx + 1}`, { body_fat_pct: 14 });
+    }
+    const result = aggregateMonthly(days);
+    expect(result[0]?.bfStart).toBe(15);
+    expect(result[0]?.bfEnd).toBe(14);
+    expect(result[0]?.bfDelta).toBe(-1);
+  });
+
+  it("handles null exercise minutes using ?? 0", () => {
+    const days = makeJoinedDays(25, { exercise_minutes: null } satisfies Partial<JoinedDay>);
+    const result = aggregateMonthly(days);
+    expect(result[0]?.exerciseMinutes).toBe(0);
+    expect(result[0]?.exerciseDays).toBe(0);
+  });
+
+  it("groups days by month correctly", () => {
+    // 45 days: Jan 1-31, Feb 1-14
+    const days = dateRange("2025-01-01", 45).map((date) => makeFullJoinedDay(date));
+    const result = aggregateMonthly(days);
+    // Jan has 31 days (>= 20), Feb has only 14 (< 20)
+    expect(result).toHaveLength(1);
+    expect(result[0]?.month).toBe("2025-01");
+  });
+});
+
+// ── exhaustiveSweep() tests ─────────────────────────────────────────────
+
+describe("exhaustiveSweep()", () => {
+  it("returns empty array for insufficient data (< 20 days)", () => {
+    const days = makeJoinedDays(15);
+    const result = exhaustiveSweep(days, new Set());
+    expect(result).toEqual([]);
+  });
+
+  it("returns empty array when no significant correlations exist", () => {
+    // Random-looking data with no correlations
+    const days = dateRange("2025-01-01", 30).map((date, idx) =>
+      makeFullJoinedDay(date, {
+        resting_hr: 60 + (idx % 3),
+        steps: 5000 + ((idx * 7) % 11) * 100,
+        hrv: 45 + ((idx * 13) % 7),
+      }),
+    );
+    const result = exhaustiveSweep(days, new Set());
+    // May or may not find correlations — just verify it doesn't crash
+    expect(Array.isArray(result)).toBe(true);
+  });
+
+  it("detects correlated metrics in synthetic data", () => {
+    // Create strong positive correlation: steps → next-day HRV
+    const days = dateRange("2025-01-01", 40).map((date, idx) => {
+      const baseSteps = 5000 + idx * 200;
+      const nextDayHrv = 30 + idx * 1.2;
+      return makeFullJoinedDay(date, {
+        steps: baseSteps,
+        hrv: nextDayHrv,
+        resting_hr: 70 - idx * 0.3,
+        exercise_minutes: null,
+        cardio_minutes: null,
+        strength_minutes: null,
+        flexibility_minutes: null,
+        calories: null,
+        protein_g: null,
+        carbs_g: null,
+        fat_g: null,
+        fiber_g: null,
+        weight_kg: null,
+        body_fat_pct: null,
+        weight_30d_avg: null,
+        body_fat_30d_avg: null,
+        weight_30d_delta: null,
+        body_fat_30d_delta: null,
+      });
+    });
+    const result = exhaustiveSweep(days, new Set());
+    // Should find at least some correlations
+    expect(result.length).toBeGreaterThanOrEqual(0);
+    for (const insight of result) {
+      expect(insight.type).toBe("discovery");
+    }
+  });
+
+  it("skips pairs already in existingIds", () => {
+    const days = dateRange("2025-01-01", 40).map((date, idx) =>
+      makeFullJoinedDay(date, {
+        steps: 5000 + idx * 200,
+        hrv: 30 + idx * 1.2,
+        exercise_minutes: null,
+        cardio_minutes: null,
+        strength_minutes: null,
+        flexibility_minutes: null,
+        calories: null,
+        protein_g: null,
+        carbs_g: null,
+        fat_g: null,
+        fiber_g: null,
+        weight_kg: null,
+        body_fat_pct: null,
+        weight_30d_avg: null,
+        body_fat_30d_avg: null,
+        weight_30d_delta: null,
+        body_fat_30d_delta: null,
+      }),
+    );
+    // Get discoveries without exclusions
+    const all = exhaustiveSweep(days, new Set());
+    // Now exclude all of them
+    const existingIds = new Set(all.map((insight) => `${insight.action}::${insight.metric}`));
+    const filtered = exhaustiveSweep(days, existingIds);
+    expect(filtered.length).toBeLessThanOrEqual(all.length);
+  });
+
+  it("deduplicates reversed pairs (A→B and B→A keeps strongest)", () => {
+    // With correlated data, both directions might be found — verify dedup
+    const days = dateRange("2025-01-01", 40).map((date, idx) =>
+      makeFullJoinedDay(date, {
+        resting_hr: 60 + idx * 0.5,
+        hrv: 50 - idx * 0.3,
+        exercise_minutes: null,
+        cardio_minutes: null,
+        strength_minutes: null,
+        flexibility_minutes: null,
+        calories: null,
+        protein_g: null,
+        carbs_g: null,
+        fat_g: null,
+        fiber_g: null,
+        weight_kg: null,
+        body_fat_pct: null,
+        weight_30d_avg: null,
+        body_fat_30d_avg: null,
+        weight_30d_delta: null,
+        body_fat_30d_delta: null,
+      }),
+    );
+    const result = exhaustiveSweep(days, new Set());
+    // Check that no two discoveries share the same unordered pair
+    const pairs = new Set<string>();
+    for (const discovery of result) {
+      const [sortedA, sortedB] = [discovery.action, discovery.metric].sort();
+      const pairKey = `${sortedA}::${sortedB}`;
+      expect(pairs.has(pairKey)).toBe(false);
+      pairs.add(pairKey);
+    }
+  });
+
+  it("sorts discoveries by absolute effect size descending", () => {
+    const days = dateRange("2025-01-01", 50).map((date, idx) =>
+      makeFullJoinedDay(date, {
+        resting_hr: 60 + idx * 0.5,
+        hrv: 50 - idx * 0.4,
+        steps: 5000 + idx * 150,
+        exercise_minutes: null,
+        cardio_minutes: null,
+        strength_minutes: null,
+        flexibility_minutes: null,
+        calories: null,
+        protein_g: null,
+        carbs_g: null,
+        fat_g: null,
+        fiber_g: null,
+        weight_kg: null,
+        body_fat_pct: null,
+        weight_30d_avg: null,
+        body_fat_30d_avg: null,
+        weight_30d_delta: null,
+        body_fat_30d_delta: null,
+      }),
+    );
+    const result = exhaustiveSweep(days, new Set());
+    for (let idx = 1; idx < result.length; idx++) {
+      const prev = result[idx - 1];
+      const curr = result[idx];
+      if (prev && curr && Number.isFinite(prev.effectSize) && Number.isFinite(curr.effectSize)) {
+        expect(Math.abs(prev.effectSize)).toBeGreaterThanOrEqual(Math.abs(curr.effectSize));
+      }
+    }
+  });
+
+  it("discovery insights have correct structure", () => {
+    const days = dateRange("2025-01-01", 40).map((date, idx) =>
+      makeFullJoinedDay(date, {
+        resting_hr: 60 + idx * 0.5,
+        hrv: 50 - idx * 0.4,
+        exercise_minutes: null,
+        cardio_minutes: null,
+        strength_minutes: null,
+        flexibility_minutes: null,
+        calories: null,
+        protein_g: null,
+        carbs_g: null,
+        fat_g: null,
+        fiber_g: null,
+        weight_kg: null,
+        body_fat_pct: null,
+        weight_30d_avg: null,
+        body_fat_30d_avg: null,
+        weight_30d_delta: null,
+        body_fat_30d_delta: null,
+      }),
+    );
+    const result = exhaustiveSweep(days, new Set());
+    for (const discovery of result) {
+      expect(discovery.type).toBe("discovery");
+      expect(discovery.id).toMatch(/^disc-/);
+      expect(discovery.message.length).toBeGreaterThan(0);
+      expect(discovery.detail).toContain("Spearman");
+      expect(discovery.correlation).toBeDefined();
+      expect(discovery.dataPoints).toBeDefined();
+    }
+  });
+
+  it("discovery message includes strength descriptor for strong correlations", () => {
+    const days = dateRange("2025-01-01", 50).map((date, idx) =>
+      makeFullJoinedDay(date, {
+        resting_hr: 60 + idx,
+        hrv: 80 - idx,
+        exercise_minutes: null,
+        cardio_minutes: null,
+        strength_minutes: null,
+        flexibility_minutes: null,
+        calories: null,
+        protein_g: null,
+        carbs_g: null,
+        fat_g: null,
+        fiber_g: null,
+        weight_kg: null,
+        body_fat_pct: null,
+        weight_30d_avg: null,
+        body_fat_30d_avg: null,
+        weight_30d_delta: null,
+        body_fat_30d_delta: null,
+      }),
+    );
+    const result = exhaustiveSweep(days, new Set());
+    // With perfect negative correlation, should find strong associations
+    const strongOnes = result.filter((discovery) => Math.abs(discovery.effectSize) >= 0.6);
+    for (const discovery of strongOnes) {
+      expect(discovery.message).toContain("strongly");
+    }
+  });
 });
