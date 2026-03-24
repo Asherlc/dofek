@@ -134,6 +134,9 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
         const timezone = typeof rawTimezone === "string" ? rawTimezone : "UTC";
         return { db, userId: session?.userId ?? null, timezone };
       },
+      onError: ({ path, error }) => {
+        logger.error(`[trpc] ${path}: ${error.message}`);
+      },
       allowMethodOverride: true,
     }),
   );
