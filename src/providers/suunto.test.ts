@@ -613,3 +613,82 @@ describe("parseSuuntoWorkout — precise raw object assertions", () => {
     expect(parsed.name).toBe("Suunto walking");
   });
 });
+
+// ============================================================
+// SUUNTO_API_BASE and DEFAULT_REDIRECT_URI — assert exact string values
+// ============================================================
+
+describe("suuntoOAuthConfig — exact URL values", () => {
+  const originalEnv = { ...process.env };
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("uses cloudapi-oauth.suunto.com for authorizeUrl", () => {
+    process.env.SUUNTO_CLIENT_ID = "id";
+    process.env.SUUNTO_CLIENT_SECRET = "secret";
+    const config = suuntoOAuthConfig();
+    expect(config?.authorizeUrl).toBe("https://cloudapi-oauth.suunto.com/oauth/authorize");
+  });
+
+  it("uses cloudapi-oauth.suunto.com for tokenUrl", () => {
+    process.env.SUUNTO_CLIENT_ID = "id";
+    process.env.SUUNTO_CLIENT_SECRET = "secret";
+    const config = suuntoOAuthConfig();
+    expect(config?.tokenUrl).toBe("https://cloudapi-oauth.suunto.com/oauth/token");
+  });
+
+  it("defaults redirectUri to localhost:9876 when OAUTH_REDIRECT_URI is not set", () => {
+    process.env.SUUNTO_CLIENT_ID = "id";
+    process.env.SUUNTO_CLIENT_SECRET = "secret";
+    delete process.env.OAUTH_REDIRECT_URI;
+    const config = suuntoOAuthConfig();
+    expect(config?.redirectUri).toBe("https://localhost:9876/callback");
+  });
+
+  it("uses OAUTH_REDIRECT_URI when set", () => {
+    process.env.SUUNTO_CLIENT_ID = "id";
+    process.env.SUUNTO_CLIENT_SECRET = "secret";
+    process.env.OAUTH_REDIRECT_URI = "https://custom.example.com/cb";
+    const config = suuntoOAuthConfig();
+    expect(config?.redirectUri).toBe("https://custom.example.com/cb");
+  });
+
+  it("includes workout scope", () => {
+    process.env.SUUNTO_CLIENT_ID = "id";
+    process.env.SUUNTO_CLIENT_SECRET = "secret";
+    const config = suuntoOAuthConfig();
+    expect(config?.scopes).toEqual(["workout"]);
+  });
+});
+
+describe("SuuntoProvider.authSetup — apiBaseUrl", () => {
+  const originalEnv = { ...process.env };
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("returns exact Suunto API base URL", () => {
+    process.env.SUUNTO_CLIENT_ID = "id";
+    process.env.SUUNTO_CLIENT_SECRET = "secret";
+    process.env.SUUNTO_SUBSCRIPTION_KEY = "key";
+    const provider = new SuuntoProvider();
+    const setup = provider.authSetup();
+    expect(setup.apiBaseUrl).toBe("https://cloudapi.suunto.com");
+  });
+
+  it("exchangeCode is a function", () => {
+    process.env.SUUNTO_CLIENT_ID = "id";
+    process.env.SUUNTO_CLIENT_SECRET = "secret";
+    const provider = new SuuntoProvider();
+    const setup = provider.authSetup();
+    expect(setup.exchangeCode).toBeTypeOf("function");
+  });
+
+  it("throws when env vars are missing", () => {
+    delete process.env.SUUNTO_CLIENT_ID;
+    delete process.env.SUUNTO_CLIENT_SECRET;
+    const provider = new SuuntoProvider();
+    expect(() => provider.authSetup()).toThrow("SUUNTO_CLIENT_ID");
+  });
+});

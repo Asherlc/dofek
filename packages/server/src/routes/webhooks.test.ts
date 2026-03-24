@@ -200,6 +200,33 @@ describe("GET /api/webhooks/:providerName — validation challenges", () => {
     expect(JSON.parse(res.body)).toEqual({ "hub.challenge": "abc123" });
   });
 
+  it("passes query parameters as string values to handleValidationChallenge", async () => {
+    const challengeSpy = vi.fn(() => ({ ok: true }));
+    const provider = createMockWebhookProvider({
+      handleValidationChallenge: challengeSpy,
+    });
+    mockGetAllProviders.mockReturnValue([provider]);
+    mockExecuteWithSchema.mockResolvedValue([
+      { id: "sub-1", provider_id: "test-provider", verify_token: "my-token", signing_secret: null },
+    ]);
+    // Pass query params to verify they are stringified
+    const res = await request(
+      createTestApp(),
+      "get",
+      "/api/webhooks/test-provider?hub.mode=subscribe&hub.challenge=test-challenge&hub.verify_token=my-token",
+    );
+    expect(res.status).toBe(200);
+    // Verify handleValidationChallenge was called with stringified query params
+    expect(challengeSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        "hub.mode": "subscribe",
+        "hub.challenge": "test-challenge",
+        "hub.verify_token": "my-token",
+      }),
+      "my-token",
+    );
+  });
+
   it("returns 500 on internal error", async () => {
     const provider = createMockWebhookProvider({
       handleValidationChallenge: vi.fn(() => {

@@ -118,6 +118,38 @@ describe("getProviderAuthType", () => {
     const provider = new UltrahumanProvider();
     expect(getProviderAuthType(provider)).toBe("none");
   });
+
+  it("returns 'oauth' when setup has oauthConfig but nothing else", () => {
+    // Ensures the oauthConfig check on line 289 actually fires and returns 'oauth'
+    // (if oauthConfig were mutated away, this would return 'none' instead)
+    const setup: ProviderAuthSetup = {
+      oauthConfig: dummyOAuthConfig,
+      exchangeCode: async () => ({
+        accessToken: "tok",
+        refreshToken: null,
+        expiresAt: new Date(),
+        scopes: null,
+      }),
+    };
+    const provider = stubProvider({ authSetup: () => setup });
+    // Must be 'oauth', NOT 'none'
+    expect(getProviderAuthType(provider)).toBe("oauth");
+  });
+
+  it("returns exact string 'none' (not empty) when no auth setup exists", () => {
+    const provider = stubProvider({ authSetup: undefined });
+    const result = getProviderAuthType(provider);
+    expect(result).toBe("none");
+    expect(result).not.toBe("");
+    expect(result.length).toBe(4);
+  });
+
+  it("returns exact string 'file-import' for import-only providers", () => {
+    const provider = stubProvider({ importOnly: true });
+    const result = getProviderAuthType(provider);
+    expect(result).toBe("file-import");
+    expect(result).not.toBe("");
+  });
 });
 
 describe("isWebhookProvider", () => {

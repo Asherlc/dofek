@@ -3,6 +3,7 @@ import {
   mapStravaActivityType,
   parseStravaActivity,
   parseStravaActivityList,
+  STRAVA_THROTTLE_MS,
   type StravaActivity,
   StravaClient,
   type StravaDetailedActivity,
@@ -376,7 +377,7 @@ describe("stravaOAuthConfig", () => {
     expect(config).not.toBeNull();
     expect(config?.clientId).toBe("test-id");
     expect(config?.clientSecret).toBe("test-secret");
-    expect(config?.scopes).toContain("activity:read_all");
+    expect(config?.scopes).toEqual(["read", "activity:read_all"]);
     expect(config?.scopeSeparator).toBe(",");
   });
 
@@ -393,7 +394,7 @@ describe("stravaOAuthConfig", () => {
     process.env.STRAVA_CLIENT_SECRET = "test-secret";
     delete process.env.OAUTH_REDIRECT_URI_unencrypted;
     const config = stravaOAuthConfig();
-    expect(config?.redirectUri).toContain("dofek");
+    expect(config?.redirectUri).toBe("https://dofek.asherlc.com/callback");
   });
 });
 
@@ -440,8 +441,9 @@ describe("StravaProvider.authSetup()", () => {
     const setup = provider.authSetup();
     expect(setup.oauthConfig.clientId).toBe("test-id");
     expect(setup.exchangeCode).toBeTypeOf("function");
-    expect(setup.apiBaseUrl).toContain("strava.com");
-    expect(setup.oauthConfig.authorizeUrl).toContain("/authorize");
+    expect(setup.apiBaseUrl).toBe("https://www.strava.com/api/v3/");
+    expect(setup.oauthConfig.authorizeUrl).toBe("https://www.strava.com/oauth/authorize");
+    expect(setup.oauthConfig.tokenUrl).toBe("https://www.strava.com/oauth/token");
     expect(setup.oauthConfig.scopes).toEqual(["read", "activity:read_all"]);
   });
 
@@ -706,7 +708,7 @@ describe("StravaProvider.getUserIdentity()", () => {
     const setup = provider.authSetup();
     if (!setup.getUserIdentity) throw new Error("getUserIdentity not defined");
     const identity = await setup.getUserIdentity("test-token");
-    expect(calledUrl).toContain("https://www.strava.com/api/v3/athlete");
+    expect(calledUrl).toBe("https://www.strava.com/api/v3/athlete");
     expect(calledHeaders).toEqual(expect.objectContaining({ Authorization: "Bearer test-token" }));
     expect(identity.providerAccountId).toBe("12345");
     expect(identity.email).toBe("athlete@test.com");
@@ -1393,5 +1395,232 @@ describe("StravaProvider — precise webhook string/object assertions", () => {
     });
     expect(result.provider).toBe("strava");
     expect(result.recordsSynced).toBe(0);
+  });
+});
+
+// ============================================================
+// getActivityStreams — exercises STREAM_KEYS and isStreamKey
+// ============================================================
+
+describe("StravaClient.getActivityStreams", () => {
+  it("maps all recognized stream types from the API response to StravaStreamSet keys", async () => {
+    // Strava returns an array of stream objects; getActivityStreams converts them
+    // to a keyed StravaStreamSet using isStreamKey (which checks STREAM_KEYS).
+    const apiResponse = [
+      { type: "time", data: [0, 1], series_type: "time", resolution: "high", original_size: 2 },
+      {
+        type: "heartrate",
+        data: [130, 135],
+        series_type: "time",
+        resolution: "high",
+        original_size: 2,
+      },
+      {
+        type: "watts",
+        data: [200, 210],
+        series_type: "time",
+        resolution: "high",
+        original_size: 2,
+      },
+      {
+        type: "cadence",
+        data: [85, 88],
+        series_type: "time",
+        resolution: "high",
+        original_size: 2,
+      },
+      {
+        type: "velocity_smooth",
+        data: [8.5, 8.7],
+        series_type: "time",
+        resolution: "high",
+        original_size: 2,
+      },
+      {
+        type: "latlng",
+        data: [
+          [40.7, -74.0],
+          [40.71, -74.01],
+        ],
+        series_type: "time",
+        resolution: "high",
+        original_size: 2,
+      },
+      {
+        type: "altitude",
+        data: [15.2, 15.5],
+        series_type: "time",
+        resolution: "high",
+        original_size: 2,
+      },
+      {
+        type: "distance",
+        data: [0, 8.5],
+        series_type: "time",
+        resolution: "high",
+        original_size: 2,
+      },
+      { type: "temp", data: [22, 23], series_type: "time", resolution: "high", original_size: 2 },
+      {
+        type: "grade_smooth",
+        data: [0.5, 1.0],
+        series_type: "time",
+        resolution: "high",
+        original_size: 2,
+      },
+    ];
+
+    const mockFetch: typeof globalThis.fetch = async (
+      input: string | URL | Request,
+    ): Promise<Response> => {
+      const url = String(input);
+      expect(url).toContain("activities/12345/streams");
+      return Response.json(apiResponse);
+    };
+
+    const client = new StravaClient("token", mockFetch, 0);
+    const streams = await client.getActivityStreams(12345);
+
+    // Verify all 10 STREAM_KEYS are present in the result
+    expect(streams.time).toBeDefined();
+    expect(streams.time?.data).toEqual([0, 1]);
+    expect(streams.heartrate).toBeDefined();
+    expect(streams.heartrate?.data).toEqual([130, 135]);
+    expect(streams.watts).toBeDefined();
+    expect(streams.watts?.data).toEqual([200, 210]);
+    expect(streams.cadence).toBeDefined();
+    expect(streams.cadence?.data).toEqual([85, 88]);
+    expect(streams.velocity_smooth).toBeDefined();
+    expect(streams.velocity_smooth?.data).toEqual([8.5, 8.7]);
+    expect(streams.latlng).toBeDefined();
+    expect(streams.latlng?.data).toEqual([
+      [40.7, -74.0],
+      [40.71, -74.01],
+    ]);
+    expect(streams.altitude).toBeDefined();
+    expect(streams.altitude?.data).toEqual([15.2, 15.5]);
+    expect(streams.distance).toBeDefined();
+    expect(streams.distance?.data).toEqual([0, 8.5]);
+    expect(streams.temp).toBeDefined();
+    expect(streams.temp?.data).toEqual([22, 23]);
+    expect(streams.grade_smooth).toBeDefined();
+    expect(streams.grade_smooth?.data).toEqual([0.5, 1.0]);
+  });
+
+  it("filters out unknown stream types via isStreamKey", async () => {
+    const apiResponse = [
+      { type: "time", data: [0], series_type: "time", resolution: "high", original_size: 1 },
+      {
+        type: "unknown_stream",
+        data: [42],
+        series_type: "time",
+        resolution: "high",
+        original_size: 1,
+      },
+    ];
+
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return Response.json(apiResponse);
+    };
+
+    const client = new StravaClient("token", mockFetch, 0);
+    const streams = await client.getActivityStreams(1);
+
+    expect(streams.time).toBeDefined();
+    // unknown_stream should not appear in the result
+    expect(Object.keys(streams)).toEqual(["time"]);
+  });
+
+  it("sends request to correct Strava API URL with query params", async () => {
+    let capturedUrl = "";
+    const mockFetch: typeof globalThis.fetch = async (
+      input: string | URL | Request,
+    ): Promise<Response> => {
+      capturedUrl = String(input);
+      return Response.json([]);
+    };
+
+    const client = new StravaClient("token", mockFetch, 0);
+    await client.getActivityStreams(99999);
+
+    // Verify base URL is the Strava API
+    expect(capturedUrl).toContain("https://www.strava.com/api/v3/");
+    expect(capturedUrl).toContain("activities/99999/streams");
+    expect(capturedUrl).toContain("keys=");
+    // Verify all stream keys are requested
+    for (const key of [
+      "time",
+      "heartrate",
+      "watts",
+      "cadence",
+      "velocity_smooth",
+      "latlng",
+      "altitude",
+      "distance",
+      "temp",
+      "grade_smooth",
+    ]) {
+      expect(capturedUrl).toContain(key);
+    }
+  });
+});
+
+// ============================================================
+// STRAVA_API_BASE — assert exact URL used by StravaClient
+// ============================================================
+
+describe("StravaClient — API base URL", () => {
+  it("uses https://www.strava.com/api/v3/ as the base URL for all requests", async () => {
+    let capturedUrl = "";
+    const mockFetch: typeof globalThis.fetch = async (
+      input: string | URL | Request,
+    ): Promise<Response> => {
+      capturedUrl = String(input);
+      return Response.json([]);
+    };
+
+    const client = new StravaClient("token", mockFetch, 0);
+    await client.getActivities(0);
+
+    expect(capturedUrl).toMatch(/^https:\/\/www\.strava\.com\/api\/v3\//);
+  });
+
+  it("getActivity fetches the exact Strava activities endpoint", async () => {
+    let capturedUrl = "";
+    const mockFetch: typeof globalThis.fetch = async (
+      input: string | URL | Request,
+    ): Promise<Response> => {
+      capturedUrl = String(input);
+      return Response.json(sampleActivity);
+    };
+
+    const client = new StravaClient("token", mockFetch, 0);
+    await client.getActivity(42);
+    expect(capturedUrl).toBe("https://www.strava.com/api/v3/activities/42");
+  });
+
+  it("sends Authorization Bearer header with access token", async () => {
+    let capturedHeaders: HeadersInit | undefined;
+    const mockFetch: typeof globalThis.fetch = async (
+      _input: string | URL | Request,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      capturedHeaders = init?.headers;
+      return Response.json([]);
+    };
+
+    const client = new StravaClient("my-secret-token", mockFetch, 0);
+    await client.getActivities(0);
+    expect(capturedHeaders).toEqual({ Authorization: "Bearer my-secret-token" });
+  });
+});
+
+// ============================================================
+// STRAVA_THROTTLE_MS export value
+// ============================================================
+
+describe("STRAVA_THROTTLE_MS", () => {
+  it("is exactly 10000ms", () => {
+    expect(STRAVA_THROTTLE_MS).toBe(10_000);
   });
 });

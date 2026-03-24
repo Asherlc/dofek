@@ -267,7 +267,7 @@ describe("wahooOAuthConfig", () => {
     process.env.WAHOO_CLIENT_SECRET = "test-secret";
     delete process.env.OAUTH_REDIRECT_URI_unencrypted;
     const config = wahooOAuthConfig();
-    expect(config?.redirectUri).toContain("dofek");
+    expect(config?.redirectUri).toBe("https://dofek.asherlc.com/callback");
   });
 });
 
@@ -314,7 +314,7 @@ describe("WahooProvider.authSetup()", () => {
     const setup = provider.authSetup();
     expect(setup.oauthConfig.clientId).toBe("test-id");
     expect(setup.exchangeCode).toBeTypeOf("function");
-    expect(setup.apiBaseUrl).toContain("wahooligan.com");
+    expect(setup.apiBaseUrl).toBe("https://api.wahooligan.com");
   });
 
   it("throws when env vars are missing", () => {
@@ -322,6 +322,52 @@ describe("WahooProvider.authSetup()", () => {
     delete process.env.WAHOO_CLIENT_SECRET;
     const provider = new WahooProvider();
     expect(() => provider.authSetup()).toThrow("WAHOO_CLIENT_ID");
+  });
+});
+
+describe("WahooClient — API base URL", () => {
+  it("uses https://api.wahooligan.com as the base URL for workouts endpoint", async () => {
+    let capturedUrl = "";
+    const mockFetch: typeof globalThis.fetch = async (
+      input: string | URL | Request,
+    ): Promise<Response> => {
+      capturedUrl = String(input);
+      return Response.json({
+        workouts: [],
+        total: 0,
+        page: 1,
+        per_page: 30,
+        order: "desc",
+        sort: "starts",
+      });
+    };
+
+    const client = new WahooClient("token", mockFetch);
+    await client.getWorkouts();
+    expect(capturedUrl).toMatch(/^https:\/\/api\.wahooligan\.com\//);
+    expect(capturedUrl).toContain("/v1/workouts");
+  });
+
+  it("sends Authorization Bearer header with access token", async () => {
+    let capturedHeaders: HeadersInit | undefined;
+    const mockFetch: typeof globalThis.fetch = async (
+      _input: string | URL | Request,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      capturedHeaders = init?.headers;
+      return Response.json({
+        workouts: [],
+        total: 0,
+        page: 1,
+        per_page: 30,
+        order: "desc",
+        sort: "starts",
+      });
+    };
+
+    const client = new WahooClient("my-token", mockFetch);
+    await client.getWorkouts();
+    expect(capturedHeaders).toEqual(expect.objectContaining({ Authorization: "Bearer my-token" }));
   });
 });
 
@@ -1087,5 +1133,118 @@ describe("WahooProvider — precise webhook assertions", () => {
     expect(result.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
     expect(result.endedAt).toBeUndefined();
     expect(result.fitFileUrl).toBeUndefined();
+  });
+
+  it("syncWebhookEvent FIT file error includes externalId and original error message", async () => {
+    const mockInsert = makeWahooInsertMock();
+    const mockDelete = vi.fn().mockReturnValue({
+      where: vi.fn().mockResolvedValue(undefined),
+    });
+    const mockDb = {
+      select: vi.fn(),
+      insert: mockInsert,
+      delete: mockDelete,
+      execute: vi.fn(),
+    };
+
+    // FIT file URL download throws a custom error
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response("Server Error", { status: 500 });
+    };
+
+    const provider = new WahooProvider(mockFetch);
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "42",
+      eventType: "create",
+      objectType: "workout",
+      objectId: "99",
+      metadata: {
+        payload: {
+          user: { id: 42 },
+          workout: {
+            id: 42,
+            workout_type_id: 0,
+            starts: "2026-03-01T08:00:00Z",
+            created_at: "2026-03-01T10:00:00Z",
+            updated_at: "2026-03-01T10:00:00Z",
+            workout_summary: {
+              id: 101,
+              created_at: "2026-03-01T10:00:00Z",
+              updated_at: "2026-03-01T10:00:00Z",
+              file: { url: "https://cdn.wahoo.com/bad.fit" },
+            },
+          },
+        },
+      },
+    });
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(1);
+    // Assert exact error format: "FIT file for <externalId>: <message>"
+    expect(result.errors[0]?.message).toMatch(/^FIT file for 42: /);
+    expect(result.errors[0]?.externalId).toBe("42");
+    expect(result.errors[0]?.cause).toBeDefined();
+  });
+
+  it("syncWebhookEvent outer catch includes externalId from parsed workout", async () => {
+    // Simulate the outer catch by having the activity insert itself throw
+    const mockInsert = vi.fn().mockReturnValue({
+      values: vi.fn().mockReturnValue({
+        onConflictDoUpdate: vi.fn().mockReturnValue({
+          returning: vi.fn().mockRejectedValue(new Error("outer fail")),
+        }),
+      }),
+    });
+    const mockDb = {
+      select: vi.fn(),
+      insert: mockInsert,
+      delete: vi.fn(),
+      execute: vi.fn(),
+    };
+
+    const provider = new WahooProvider(async () => new Response());
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "42",
+      eventType: "create",
+      objectType: "workout",
+      objectId: "99",
+      metadata: {
+        payload: {
+          user: { id: 42 },
+          workout: {
+            id: 77,
+            workout_type_id: 1,
+            starts: "2026-03-01T08:00:00Z",
+            created_at: "2026-03-01T10:00:00Z",
+            updated_at: "2026-03-01T10:00:00Z",
+          },
+        },
+      },
+    });
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("outer fail");
+    expect(result.errors[0]?.externalId).toBe("77");
+  });
+
+  it("wahooOAuthConfig includes exact API URLs using WAHOO_API_BASE", () => {
+    const originalEnv = { ...process.env };
+    process.env.WAHOO_CLIENT_ID = "id";
+    process.env.WAHOO_CLIENT_SECRET = "secret";
+    const config = wahooOAuthConfig();
+    expect(config?.authorizeUrl).toBe("https://api.wahooligan.com/oauth/authorize");
+    expect(config?.tokenUrl).toBe("https://api.wahooligan.com/oauth/token");
+    expect(config?.scopes).toEqual(["user_read", "workouts_read", "offline_data"]);
+    process.env = { ...originalEnv };
+  });
+
+  it("WahooProvider.authSetup apiBaseUrl matches exact Wahoo API base", () => {
+    const originalEnv = { ...process.env };
+    process.env.WAHOO_CLIENT_ID = "id";
+    process.env.WAHOO_CLIENT_SECRET = "secret";
+    const provider = new WahooProvider();
+    const setup = provider.authSetup();
+    expect(setup.apiBaseUrl).toBe("https://api.wahooligan.com");
+    process.env = { ...originalEnv };
   });
 });
