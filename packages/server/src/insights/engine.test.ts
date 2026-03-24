@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   type ActivityRow,
   type BodyCompRow,
-  type CausalRole,
   classifyActivity,
   classifyConfidence,
   classifyCorrelationConfidence,
@@ -10,7 +9,9 @@ import {
   type DailyRow,
   downsample,
   explainInsight,
+  getAllMetrics,
   getConditionalTests,
+  getCorrelationPairs,
   type Insight,
   type InsightsConfig,
   isValidCausalDirection,
@@ -1884,4 +1885,396 @@ describe("explainInsight()", () => {
     const result = explainInsight(bodyCompInsight);
     expect(result.length).toBeGreaterThan(0);
   });
+
+  it("generates explanation for discovery type insights", () => {
+    const discoveryInsight: Omit<Insight, "explanation"> = {
+      id: "disc_test",
+      type: "discovery",
+      confidence: "emerging",
+      action: "daily steps",
+      metric: "resting heart rate",
+      message: "",
+      effectSize: -0.45,
+      pValue: 0.02,
+      detail: "Spearman ρ = -0.45, n = 35",
+      whenTrue: { mean: 0, median: 0, stddev: 0, p25: 0, p75: 0, n: 0 },
+      whenFalse: { mean: 0, median: 0, stddev: 0, p25: 0, p75: 0, n: 0 },
+      dataPoints: [],
+    };
+    const result = explainInsight(discoveryInsight);
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  it("formats small differences with 1 decimal place", () => {
+    const smallDiff: Omit<Insight, "explanation"> = {
+      ...baseConditional,
+      whenTrue: { mean: 60.5, median: 60, stddev: 2, p25: 59, p75: 62, n: 20 },
+      whenFalse: { mean: 62, median: 62, stddev: 2, p25: 61, p75: 63, n: 20 },
+    };
+    const result = explainInsight(smallDiff);
+    expect(result).toContain("1.5");
+  });
+
+  it("formats large differences as integers", () => {
+    const largeDiff: Omit<Insight, "explanation"> = {
+      ...baseConditional,
+      action: "10,000+ steps",
+      metric: "daily steps",
+      whenTrue: { mean: 12000, median: 12000, stddev: 500, p25: 11500, p75: 12500, n: 20 },
+      whenFalse: { mean: 8000, median: 8000, stddev: 500, p25: 7500, p75: 8500, n: 20 },
+    };
+    const result = explainInsight(largeDiff);
+    // Large diffs (>=10) should be rounded to integers
+    expect(result).toContain("4000");
+  });
+
+  it("handles action starting with digit", () => {
+    const result = explainInsight({ ...baseConditional, action: "7+ hours of sleep" });
+    expect(result).toContain("you have 7+");
+  });
+
+  it("handles action ending with 'day'", () => {
+    const result = explainInsight({ ...baseConditional, action: "cardio day" });
+    expect(result).toContain("it's a cardio day");
+  });
+});
+
+// ── Systematic conditional test boundary tests ─────────────────────────
+
+/** Create a full JoinedDay with all fields populated */
+function makeFullJoinedDay(date: string, overrides: Partial<JoinedDay> = {}): JoinedDay {
+  return {
+    date,
+    resting_hr: 60,
+    hrv: 50,
+    spo2_avg: 98,
+    steps: 8000,
+    active_energy_kcal: 400,
+    skin_temp_c: 36.5,
+    sleep_duration_min: 480,
+    deep_min: 90,
+    rem_min: 100,
+    sleep_efficiency: 92,
+    exercise_minutes: 45,
+    cardio_minutes: 30,
+    strength_minutes: 10,
+    flexibility_minutes: 5,
+    calories: 2200,
+    protein_g: 150,
+    carbs_g: 250,
+    fat_g: 70,
+    fiber_g: 25,
+    weight_kg: 80,
+    body_fat_pct: 15,
+    resting_hr_7d: 60,
+    hrv_7d: 50,
+    weight_30d_avg: 80,
+    body_fat_30d_avg: 15,
+    weight_30d_delta: -0.5,
+    body_fat_30d_delta: -0.2,
+    ...overrides,
+  };
+}
+
+/** Create N days of JoinedDay data for testing */
+function makeJoinedDays(count: number, overrides: Partial<JoinedDay> = {}): JoinedDay[] {
+  return dateRange("2025-01-01", count).map((date) => makeFullJoinedDay(date, overrides));
+}
+
+describe("getConditionalTests() — systematic splitFn boundary tests", () => {
+  const tests = getConditionalTests();
+
+  // Map of test IDs to their split field and threshold
+  const simpleSplitTests: Array<{ id: string; field: keyof JoinedDay; threshold: number }> = [
+    { id: "sleep-7h-hrv", field: "sleep_duration_min", threshold: 420 },
+    { id: "sleep-7h-rhr", field: "sleep_duration_min", threshold: 420 },
+    { id: "deep-60-hrv", field: "deep_min", threshold: 60 },
+    { id: "exercise-30-sleep", field: "exercise_minutes", threshold: 30 },
+    { id: "exercise-30-hrv", field: "exercise_minutes", threshold: 30 },
+    { id: "steps-10k-hrv", field: "steps", threshold: 10000 },
+    { id: "active-500-sleep-eff", field: "active_energy_kcal", threshold: 500 },
+    { id: "rem-90-hrv", field: "rem_min", threshold: 90 },
+    { id: "cardio-sleep", field: "cardio_minutes", threshold: 20 },
+    { id: "cardio-deep-sleep", field: "cardio_minutes", threshold: 20 },
+    { id: "cardio-sleep-eff", field: "cardio_minutes", threshold: 20 },
+    { id: "strength-sleep", field: "strength_minutes", threshold: 15 },
+    { id: "strength-deep-sleep", field: "strength_minutes", threshold: 15 },
+    { id: "yoga-sleep-eff", field: "flexibility_minutes", threshold: 15 },
+    { id: "yoga-hrv", field: "flexibility_minutes", threshold: 15 },
+    { id: "cardio-hrv", field: "cardio_minutes", threshold: 20 },
+    { id: "strength-hrv", field: "strength_minutes", threshold: 15 },
+    { id: "high-protein-hrv", field: "protein_g", threshold: 100 },
+    { id: "high-cal-sleep", field: "calories", threshold: 2500 },
+  ];
+
+  for (const { id, field, threshold } of simpleSplitTests) {
+    const testDef = tests.find((td) => td.id === id);
+    if (!testDef) continue;
+
+    it(`${id}: splitFn returns true when ${field} = ${threshold} (at threshold)`, () => {
+      const day = makeFullJoinedDay("2025-01-15", { [field]: threshold });
+      expect(testDef.splitFn(day, [day], 0)).toBe(true);
+    });
+
+    it(`${id}: splitFn returns false when ${field} = ${threshold - 1} (below threshold)`, () => {
+      const day = makeFullJoinedDay("2025-01-15", { [field]: threshold - 1 });
+      expect(testDef.splitFn(day, [day], 0)).toBe(false);
+    });
+
+    it(`${id}: splitFn returns null when ${field} is null`, () => {
+      const day = makeFullJoinedDay("2025-01-15", { [field]: null } satisfies Partial<JoinedDay>);
+      expect(testDef.splitFn(day, [day], 0)).toBeNull();
+    });
+  }
+
+  // Test valueFn for next-day lookups (i+1 pattern)
+  const nextDayValueTests: Array<{ id: string; field: keyof JoinedDay }> = [
+    { id: "sleep-7h-hrv", field: "hrv" },
+    { id: "sleep-7h-rhr", field: "resting_hr" },
+    { id: "deep-60-hrv", field: "hrv" },
+    { id: "exercise-30-sleep", field: "sleep_duration_min" },
+    { id: "exercise-30-hrv", field: "hrv" },
+    { id: "steps-10k-hrv", field: "hrv" },
+    { id: "active-500-sleep-eff", field: "sleep_efficiency" },
+    { id: "rem-90-hrv", field: "hrv" },
+    { id: "cardio-sleep", field: "sleep_duration_min" },
+    { id: "cardio-deep-sleep", field: "deep_min" },
+    { id: "cardio-sleep-eff", field: "sleep_efficiency" },
+    { id: "strength-sleep", field: "sleep_duration_min" },
+    { id: "strength-deep-sleep", field: "deep_min" },
+    { id: "yoga-sleep-eff", field: "sleep_efficiency" },
+    { id: "yoga-hrv", field: "hrv" },
+    { id: "cardio-hrv", field: "hrv" },
+    { id: "strength-hrv", field: "hrv" },
+    { id: "high-protein-hrv", field: "hrv" },
+    { id: "high-cal-sleep", field: "sleep_duration_min" },
+  ];
+
+  for (const { id, field } of nextDayValueTests) {
+    const testDef = tests.find((td) => td.id === id);
+    if (!testDef) continue;
+
+    it(`${id}: valueFn returns next day's ${field}`, () => {
+      const today = makeFullJoinedDay("2025-01-15");
+      const tomorrow = makeFullJoinedDay("2025-01-16", { [field]: 99 });
+      const allDays = [today, tomorrow];
+      const result = testDef.valueFn(today, allDays, 0);
+      expect(result).toBe(99);
+    });
+
+    it(`${id}: valueFn returns null when no next day`, () => {
+      const today = makeFullJoinedDay("2025-01-15");
+      const result = testDef.valueFn(today, [today], 0);
+      expect(result).toBeNull();
+    });
+  }
+
+  // Test monthly scoped splitFns
+  it("exercise-monthly-weight: returns true when >= 12 exercise days in 30-day window", () => {
+    const testDef = tests.find((td) => td.id === "exercise-monthly-weight");
+    const days = makeJoinedDays(30, { exercise_minutes: 25 }); // All 30 days have exercise
+    const day29 = days[29] ?? makeFullJoinedDay("2025-01-30");
+    expect(testDef?.splitFn(day29, days, 29)).toBe(true);
+  });
+
+  it("exercise-monthly-weight: returns false when < 12 exercise days", () => {
+    const testDef = tests.find((td) => td.id === "exercise-monthly-weight");
+    const days = makeJoinedDays(30, { exercise_minutes: 5 }); // Below 20 min threshold
+    const day29 = days[29] ?? makeFullJoinedDay("2025-01-30");
+    expect(testDef?.splitFn(day29, days, 29)).toBe(false);
+  });
+
+  it("exercise-monthly-weight: returns null when i < 29", () => {
+    const testDef = tests.find((td) => td.id === "exercise-monthly-weight");
+    const days = makeJoinedDays(30);
+    const day28 = days[28] ?? makeFullJoinedDay("2025-01-29");
+    expect(testDef?.splitFn(day28, days, 28)).toBeNull();
+  });
+
+  it("sleep-consistent-hrv: returns true when sleep variation < 30 min", () => {
+    const testDef = tests.find((td) => td.id === "sleep-consistent-hrv");
+    // 7 days of consistent sleep (all 480 min ± small variation)
+    const days = makeJoinedDays(8, { sleep_duration_min: 480 });
+    const day7 = days[7] ?? makeFullJoinedDay("2025-01-08");
+    expect(testDef?.splitFn(day7, days, 7)).toBe(true);
+  });
+
+  it("sleep-consistent-hrv: returns false when sleep variation >= 30 min", () => {
+    const testDef = tests.find((td) => td.id === "sleep-consistent-hrv");
+    const days = makeJoinedDays(8);
+    // Make sleep highly variable
+    for (let idx = 0; idx < days.length; idx++) {
+      const existingDay = days[idx];
+      if (existingDay) {
+        days[idx] = makeFullJoinedDay(existingDay.date, {
+          sleep_duration_min: idx % 2 === 0 ? 300 : 600,
+        });
+      }
+    }
+    const day7 = days[7] ?? makeFullJoinedDay("2025-01-08");
+    expect(testDef?.splitFn(day7, days, 7)).toBe(false);
+  });
+
+  it("sleep-consistent-hrv: returns null when i < 7", () => {
+    const testDef = tests.find((td) => td.id === "sleep-consistent-hrv");
+    const days = makeJoinedDays(8);
+    const day6 = days[6] ?? makeFullJoinedDay("2025-01-07");
+    expect(testDef?.splitFn(day6, days, 6)).toBeNull();
+  });
+
+  it("sleep-consistent-hrv: returns null when < 5 non-null durations in week", () => {
+    const testDef = tests.find((td) => td.id === "sleep-consistent-hrv");
+    const days = makeJoinedDays(8, { sleep_duration_min: null } satisfies Partial<JoinedDay>);
+    // Only 2 days with sleep data
+    days[6] = makeFullJoinedDay(days[6]?.date ?? "2025-01-07", { sleep_duration_min: 480 });
+    days[7] = makeFullJoinedDay(days[7]?.date ?? "2025-01-08", { sleep_duration_min: 480 });
+    const day7 = days[7] ?? makeFullJoinedDay("2025-01-08");
+    expect(testDef?.splitFn(day7, days, 7)).toBeNull();
+  });
+});
+
+// ── Systematic correlation pair extract tests ────────────────────────────
+
+describe("getCorrelationPairs() — systematic extract tests", () => {
+  const pairs = getCorrelationPairs();
+
+  it("returns a non-empty array with unique ids", () => {
+    expect(pairs.length).toBeGreaterThan(0);
+    const ids = pairs.map((pair) => pair.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("all pairs have non-empty xName and yName", () => {
+    for (const pair of pairs) {
+      expect(pair.xName.length).toBeGreaterThan(0);
+      expect(pair.yName.length).toBeGreaterThan(0);
+    }
+  });
+
+  // Simple same-day extract pairs
+  const simplePairs: Array<{ id: string; xField: keyof JoinedDay }> = [
+    { id: "sleep-dur-hrv", xField: "sleep_duration_min" },
+    { id: "steps-hrv", xField: "steps" },
+    { id: "active-kcal-sleep", xField: "active_energy_kcal" },
+    { id: "deep-sleep-hrv", xField: "deep_min" },
+    { id: "exercise-dur-sleep-eff", xField: "exercise_minutes" },
+    { id: "rhr-hrv", xField: "resting_hr" },
+    { id: "protein-hrv", xField: "protein_g" },
+    { id: "calories-sleep", xField: "calories" },
+  ];
+
+  for (const { id, xField } of simplePairs) {
+    const pair = pairs.find((pd) => pd.id === id);
+    if (!pair) continue;
+
+    it(`${id}: xFn extracts ${xField} from day`, () => {
+      const day = makeFullJoinedDay("2025-01-15", { [xField]: 42 });
+      expect(pair.xFn(day, [day], 0)).toBe(42);
+    });
+
+    it(`${id}: xFn returns null when ${xField} is null`, () => {
+      const day = makeFullJoinedDay("2025-01-15", { [xField]: null } satisfies Partial<JoinedDay>);
+      expect(pair.xFn(day, [day], 0)).toBeNull();
+    });
+  }
+
+  // Monthly rolling average pairs
+  it("calories-30d-weight-delta: xFn computes 30-day rolling avg calories", () => {
+    const pair = pairs.find((pd) => pd.id === "calories-30d-weight-delta");
+    const days = makeJoinedDays(30, { calories: 2000 });
+    const day29 = days[29] ?? makeFullJoinedDay("2025-01-30");
+    const result = pair?.xFn(day29, days, 29);
+    expect(result).toBeCloseTo(2000, 0);
+  });
+
+  it("exercise-30d-weight-delta: xFn returns null when i < 29", () => {
+    const pair = pairs.find((pd) => pd.id === "exercise-30d-weight-delta");
+    const days = makeJoinedDays(30);
+    const day28 = days[28] ?? makeFullJoinedDay("2025-01-29");
+    expect(pair?.xFn(day28, days, 28)).toBeNull();
+  });
+
+  it("exercise-30d-weight-delta: xFn sums exercise minutes over 30 days", () => {
+    const pair = pairs.find((pd) => pd.id === "exercise-30d-weight-delta");
+    const days = makeJoinedDays(30, { exercise_minutes: 30 });
+    const day29 = days[29] ?? makeFullJoinedDay("2025-01-30");
+    const result = pair?.xFn(day29, days, 29);
+    expect(result).toBe(900); // 30 days × 30 min
+  });
+
+  it("exercise-30d-weight-delta: xFn returns null when total exercise is 0", () => {
+    const pair = pairs.find((pd) => pd.id === "exercise-30d-weight-delta");
+    const days = makeJoinedDays(30, { exercise_minutes: 0 });
+    const day29 = days[29] ?? makeFullJoinedDay("2025-01-30");
+    expect(pair?.xFn(day29, days, 29)).toBeNull();
+  });
+});
+
+// ── getAllMetrics() tests ────────────────────────────────────────────────
+
+describe("getAllMetrics() — systematic extract tests", () => {
+  const metrics = getAllMetrics();
+
+  it("returns a non-empty array with unique keys", () => {
+    expect(metrics.length).toBeGreaterThan(0);
+    const keys = metrics.map((metric) => metric.key);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it("all metrics have valid role values", () => {
+    const validRoles = new Set(["action", "outcome", "bidirectional"]);
+    for (const metric of metrics) {
+      expect(validRoles.has(metric.role)).toBe(true);
+    }
+  });
+
+  it("all metrics have non-empty labels", () => {
+    for (const metric of metrics) {
+      expect(metric.label.length).toBeGreaterThan(0);
+    }
+  });
+
+  // Test extract functions for key metrics
+  const simpleExtractMetrics: Array<{ key: string; field: keyof JoinedDay; expected: number }> = [
+    { key: "resting_hr", field: "resting_hr", expected: 60 },
+    { key: "hrv", field: "hrv", expected: 50 },
+    { key: "spo2", field: "spo2_avg", expected: 98 },
+    { key: "skin_temp", field: "skin_temp_c", expected: 36.5 },
+    { key: "steps", field: "steps", expected: 8000 },
+    { key: "active_kcal", field: "active_energy_kcal", expected: 400 },
+    { key: "exercise", field: "exercise_minutes", expected: 45 },
+    { key: "calories", field: "calories", expected: 2200 },
+    { key: "protein", field: "protein_g", expected: 150 },
+    { key: "carbs", field: "carbs_g", expected: 250 },
+    { key: "fat", field: "fat_g", expected: 70 },
+    { key: "fiber", field: "fiber_g", expected: 25 },
+    { key: "sleep_dur", field: "sleep_duration_min", expected: 480 },
+    { key: "deep_sleep", field: "deep_min", expected: 90 },
+    { key: "rem_sleep", field: "rem_min", expected: 100 },
+    { key: "sleep_eff", field: "sleep_efficiency", expected: 92 },
+    { key: "weight", field: "weight_kg", expected: 80 },
+    { key: "body_fat", field: "body_fat_pct", expected: 15 },
+    { key: "weight_30d", field: "weight_30d_avg", expected: 80 },
+    { key: "bf_30d", field: "body_fat_30d_avg", expected: 15 },
+    { key: "weight_delta", field: "weight_30d_delta", expected: -0.5 },
+    { key: "bf_delta", field: "body_fat_30d_delta", expected: -0.2 },
+  ];
+
+  for (const { key, field, expected } of simpleExtractMetrics) {
+    const metric = metrics.find((md) => md.key === key);
+    if (!metric) continue;
+
+    it(`${key}: extract returns ${field} value`, () => {
+      const day = makeFullJoinedDay("2025-01-15");
+      expect(metric.extract(day, [day], 0)).toBe(expected);
+    });
+
+    it(`${key}: extract returns null when ${field} is null`, () => {
+      const day = makeFullJoinedDay("2025-01-15", { [field]: null } satisfies Partial<JoinedDay>);
+      expect(metric.extract(day, [day], 0)).toBeNull();
+    });
+  }
+
+  // Already covered by the systematic loop above — rolling averages and deltas
+  // use pre-computed fields (weight_30d_avg, body_fat_30d_avg, weight_30d_delta, body_fat_30d_delta)
 });
