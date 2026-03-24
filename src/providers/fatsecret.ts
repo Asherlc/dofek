@@ -597,6 +597,15 @@ export class FatSecretProvider implements SyncProvider {
     const current = new Date(since);
     current.setHours(0, 0, 0, 0);
 
+    // Cap lookback to 2 years — FatSecret syncs day-by-day, so unbounded ranges
+    // generate thousands of API calls for empty days
+    const maxLookback = new Date();
+    maxLookback.setFullYear(maxLookback.getFullYear() - 2);
+    maxLookback.setHours(0, 0, 0, 0);
+    if (current < maxLookback) {
+      current.setTime(maxLookback.getTime());
+    }
+
     while (current <= today) {
       const dateInt = Math.floor(current.getTime() / 86400000).toString();
 
@@ -667,9 +676,14 @@ export class FatSecretProvider implements SyncProvider {
           recordsSynced += entries.length;
         }
       } catch (err) {
-        // FatSecret returns an error for days with no entries — not a real error
-        const msg = err instanceof Error ? err.message : String(err);
-        if (!msg.includes("No entries found")) {
+        // FatSecret returns an error for days with no entries — not a real error.
+        // The API may return "No entries found" (HTTP error) or an unexpected response
+        // shape that fails Zod validation on the food_entries key (empty day variant).
+        const isNoEntriesMessage = err instanceof Error && err.message.includes("No entries found");
+        const isFoodEntriesZodError =
+          err instanceof z.ZodError && err.errors.some((issue) => issue.path[0] === "food_entries");
+        if (!isNoEntriesMessage && !isFoodEntriesZodError) {
+          const msg = err instanceof Error ? err.message : String(err);
           errors.push({ message: `Date ${current.toISOString().split("T")[0]}: ${msg}` });
         }
       }
