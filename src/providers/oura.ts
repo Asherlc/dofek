@@ -13,8 +13,9 @@ import type {
   ProviderIdentity,
   SyncError,
   SyncOptions,
-  SyncProvider,
   SyncResult,
+  WebhookEvent,
+  WebhookProvider,
 } from "./types.ts";
 
 // ============================================================
@@ -600,9 +601,10 @@ const HEALTH_EVENT_BATCH_SIZE = 1000;
 // Provider implementation
 // ============================================================
 
-export class OuraProvider implements SyncProvider {
+export class OuraProvider implements WebhookProvider {
   readonly id = "oura";
   readonly name = "Oura";
+  readonly webhookScope = "app" as const;
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
@@ -612,6 +614,123 @@ export class OuraProvider implements SyncProvider {
   validate(): string | null {
     if (!process.env.OURA_CLIENT_ID) return "OURA_CLIENT_ID is not set";
     if (!process.env.OURA_CLIENT_SECRET) return "OURA_CLIENT_SECRET is not set";
+    return null;
+  }
+
+  // ── Webhook implementation ──
+
+  async registerWebhook(
+    callbackUrl: string,
+    verifyToken: string,
+  ): Promise<{ subscriptionId: string; signingSecret?: string; expiresAt?: Date }> {
+    const clientId = process.env.OURA_CLIENT_ID;
+    const clientSecret = process.env.OURA_CLIENT_SECRET;
+    if (!clientId || !clientSecret) {
+      throw new Error("OURA_CLIENT_ID and OURA_CLIENT_SECRET are required");
+    }
+
+    // Oura requires one subscription per data type. We register for all supported types.
+    const dataTypes = [
+      "daily_activity",
+      "daily_readiness",
+      "daily_sleep",
+      "workout",
+      "session",
+      "daily_spo2",
+      "daily_stress",
+      "daily_resilience",
+    ];
+
+    let subscriptionId = "";
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // ~30 days
+
+    for (const dataType of dataTypes) {
+      const response = await this.#fetchFn("https://api.ouraring.com/v2/webhook/subscription", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-client-id": clientId,
+          "x-client-secret": clientSecret,
+        },
+        body: JSON.stringify({
+          callback_url: callbackUrl,
+          verification_token: verifyToken,
+          event_type: `create.${dataType}`,
+          data_type: dataType,
+        }),
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        // 409 means subscription already exists — continue
+        if (response.status !== 409) {
+          throw new Error(
+            `Oura webhook registration for ${dataType} failed (${response.status}): ${text}`,
+          );
+        }
+      } else {
+        const data: { id?: string } = await response.json();
+        if (data.id && !subscriptionId) subscriptionId = data.id;
+      }
+    }
+
+    return { subscriptionId: subscriptionId || "oura-multi-subscription", expiresAt };
+  }
+
+  async unregisterWebhook(subscriptionId: string): Promise<void> {
+    const clientId = process.env.OURA_CLIENT_ID;
+    const clientSecret = process.env.OURA_CLIENT_SECRET;
+    if (!clientId || !clientSecret) return;
+
+    await this.#fetchFn(`https://api.ouraring.com/v2/webhook/subscription/${subscriptionId}`, {
+      method: "DELETE",
+      headers: {
+        "x-client-id": clientId,
+        "x-client-secret": clientSecret,
+      },
+    });
+  }
+
+  verifyWebhookSignature(
+    _rawBody: Buffer,
+    _headers: Record<string, string | string[] | undefined>,
+    _signingSecret: string,
+  ): boolean {
+    // Oura verifies via the verification_token challenge at registration time.
+    // Incoming events are trusted after successful registration.
+    return true;
+  }
+
+  parseWebhookPayload(body: unknown): WebhookEvent[] {
+    // Oura sends a single event or a verification challenge
+    const verificationCheck = z.object({ verification_token: z.string() }).safeParse(body);
+
+    // Verification challenge — not a real event
+    if (verificationCheck.success) return [];
+
+    const parsed = z
+      .object({
+        event_type: z.string().optional(),
+        data_type: z.string(),
+        user_id: z.string(),
+      })
+      .safeParse(body);
+
+    if (!parsed.success) return [];
+    const event = parsed.data;
+
+    return [
+      {
+        ownerExternalId: event.user_id,
+        eventType: "create",
+        objectType: event.data_type,
+      },
+    ];
+  }
+
+  handleValidationChallenge(_query: Record<string, string>, _verifyToken: string): unknown | null {
+    // Oura uses POST for verification (sends verification_token in body).
+    // This is handled in the POST path — parseWebhookPayload returns empty for verification.
     return null;
   }
 

@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import {
@@ -18,8 +19,9 @@ import type {
   ProviderIdentity,
   SyncError,
   SyncOptions,
-  SyncProvider,
   SyncResult,
+  WebhookEvent,
+  WebhookProvider,
 } from "./types.ts";
 
 // ============================================================
@@ -352,9 +354,10 @@ function formatDate(date: Date): string {
 // Provider implementation
 // ============================================================
 
-export class FitbitProvider implements SyncProvider {
+export class FitbitProvider implements WebhookProvider {
   readonly id = "fitbit";
   readonly name = "Fitbit";
+  readonly webhookScope = "app" as const;
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
@@ -365,6 +368,72 @@ export class FitbitProvider implements SyncProvider {
     if (!process.env.FITBIT_CLIENT_ID) return "FITBIT_CLIENT_ID is not set";
     if (!process.env.FITBIT_CLIENT_SECRET) return "FITBIT_CLIENT_SECRET is not set";
     return null;
+  }
+
+  // ── Webhook implementation ──
+
+  async registerWebhook(
+    callbackUrl: string,
+    verifyToken: string,
+  ): Promise<{ subscriptionId: string; signingSecret?: string; expiresAt?: Date }> {
+    // Fitbit requires a subscriber endpoint to be registered via the developer portal.
+    // The subscriber verification code is configured there, not via API.
+    // This method is a no-op — registration happens in the Fitbit developer portal.
+    // The verifyToken is stored in our DB and matched against FITBIT_SUBSCRIBER_VERIFICATION_CODE.
+    return {
+      subscriptionId: "fitbit-app-subscription",
+      signingSecret: verifyToken,
+    };
+  }
+
+  async unregisterWebhook(_subscriptionId: string): Promise<void> {
+    // Fitbit subscriptions are managed via the developer portal
+  }
+
+  verifyWebhookSignature(
+    rawBody: Buffer,
+    headers: Record<string, string | string[] | undefined>,
+    signingSecret: string,
+  ): boolean {
+    // Fitbit signs payloads with HMAC-SHA1 using "{subscriber_verification_code}&" as key
+    const signature = headers["x-fitbit-signature"];
+    if (!signature || typeof signature !== "string") return false;
+
+    const hmac = createHmac("sha1", `${signingSecret}&`);
+    hmac.update(rawBody);
+    const expected = hmac.digest("base64");
+    return signature === expected;
+  }
+
+  parseWebhookPayload(body: unknown): WebhookEvent[] {
+    // Fitbit sends an array of notification objects
+    if (!Array.isArray(body)) return [];
+
+    const itemSchema = z.object({
+      collectionType: z.string(),
+      ownerId: z.string(),
+      date: z.string().optional(),
+      subscriptionId: z.string().optional(),
+    });
+
+    return body
+      .map((n: unknown) => itemSchema.safeParse(n))
+      .filter((result): result is z.SafeParseSuccess<z.infer<typeof itemSchema>> => result.success)
+      .map((result) => ({
+        ownerExternalId: result.data.ownerId,
+        eventType: "update" as const,
+        objectType: result.data.collectionType,
+      }));
+  }
+
+  handleValidationChallenge(query: Record<string, string>, verifyToken: string): unknown | null {
+    // Fitbit sends: GET callback?verify=VERIFICATION_CODE
+    const verify = query.verify;
+    if (!verify) return null;
+    if (verify !== verifyToken) return null;
+    // Return 204 No Content (the webhook router will see a non-null return and send 200/json)
+    // Fitbit expects 204, but we handle that in the router
+    return "";
   }
 
   authSetup(): ProviderAuthSetup {

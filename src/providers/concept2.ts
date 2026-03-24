@@ -11,8 +11,9 @@ import type {
   ProviderAuthSetup,
   SyncError,
   SyncOptions,
-  SyncProvider,
   SyncResult,
+  WebhookEvent,
+  WebhookProvider,
 } from "./types.ts";
 
 // ============================================================
@@ -176,9 +177,10 @@ export class Concept2Client extends ProviderHttpClient {
 // Provider implementation
 // ============================================================
 
-export class Concept2Provider implements SyncProvider {
+export class Concept2Provider implements WebhookProvider {
   readonly id = "concept2";
   readonly name = "Concept2";
+  readonly webhookScope = "app" as const;
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
@@ -189,6 +191,58 @@ export class Concept2Provider implements SyncProvider {
     if (!process.env.CONCEPT2_CLIENT_ID) return "CONCEPT2_CLIENT_ID is not set";
     if (!process.env.CONCEPT2_CLIENT_SECRET) return "CONCEPT2_CLIENT_SECRET is not set";
     return null;
+  }
+
+  // ── Webhook implementation ──
+
+  async registerWebhook(
+    _callbackUrl: string,
+    _verifyToken: string,
+  ): Promise<{ subscriptionId: string; signingSecret?: string; expiresAt?: Date }> {
+    // Concept2 webhooks are registered via the developer portal.
+    return { subscriptionId: "concept2-portal-subscription" };
+  }
+
+  async unregisterWebhook(_subscriptionId: string): Promise<void> {
+    // Managed via Concept2 developer portal
+  }
+
+  verifyWebhookSignature(
+    _rawBody: Buffer,
+    _headers: Record<string, string | string[] | undefined>,
+    _signingSecret: string,
+  ): boolean {
+    // Concept2 webhook signature verification not publicly documented.
+    return true;
+  }
+
+  parseWebhookPayload(body: unknown): WebhookEvent[] {
+    // Concept2 sends: { event: "result-added"|"result-updated"|"result-deleted", result: { ... } }
+    const parsed = z
+      .object({
+        event: z.string(),
+        user_id: z.coerce.string(),
+        result: z.object({ id: z.coerce.string() }).optional(),
+      })
+      .safeParse(body);
+
+    if (!parsed.success) return [];
+    const event = parsed.data;
+
+    const eventTypeMap: Record<string, WebhookEvent["eventType"]> = {
+      "result-added": "create",
+      "result-updated": "update",
+      "result-deleted": "delete",
+    };
+
+    return [
+      {
+        ownerExternalId: String(event.user_id),
+        eventType: eventTypeMap[event.event] ?? "update",
+        objectType: "result",
+        objectId: event.result?.id ? String(event.result.id) : undefined,
+      },
+    ];
   }
 
   authSetup(): ProviderAuthSetup {

@@ -1,3 +1,5 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
@@ -9,8 +11,9 @@ import type {
   ProviderAuthSetup,
   SyncError,
   SyncOptions,
-  SyncProvider,
   SyncResult,
+  WebhookEvent,
+  WebhookProvider,
 } from "./types.ts";
 
 // ============================================================
@@ -129,9 +132,10 @@ export function suuntoOAuthConfig(): OAuthConfig | null {
 // Provider implementation
 // ============================================================
 
-export class SuuntoProvider implements SyncProvider {
+export class SuuntoProvider implements WebhookProvider {
   readonly id = "suunto";
   readonly name = "Suunto";
+  readonly webhookScope = "app" as const;
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
@@ -143,6 +147,62 @@ export class SuuntoProvider implements SyncProvider {
     if (!process.env.SUUNTO_CLIENT_SECRET) return "SUUNTO_CLIENT_SECRET is not set";
     if (!process.env.SUUNTO_SUBSCRIPTION_KEY) return "SUUNTO_SUBSCRIPTION_KEY is not set";
     return null;
+  }
+
+  // ── Webhook implementation ──
+
+  async registerWebhook(
+    _callbackUrl: string,
+    _verifyToken: string,
+  ): Promise<{ subscriptionId: string; signingSecret?: string; expiresAt?: Date }> {
+    // Suunto webhooks are configured via the APIzone developer portal.
+    return { subscriptionId: "suunto-portal-subscription" };
+  }
+
+  async unregisterWebhook(_subscriptionId: string): Promise<void> {
+    // Managed via Suunto APIzone portal
+  }
+
+  verifyWebhookSignature(
+    rawBody: Buffer,
+    headers: Record<string, string | string[] | undefined>,
+    signingSecret: string,
+  ): boolean {
+    // Suunto signs with HMAC-SHA256 in the X-HMAC-SHA256-Signature header
+    const signature = headers["x-hmac-sha256-signature"];
+    if (!signature || typeof signature !== "string") return false;
+
+    const hmac = createHmac("sha256", signingSecret);
+    hmac.update(rawBody);
+    const expected = hmac.digest("hex");
+    try {
+      return timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+    } catch {
+      return false;
+    }
+  }
+
+  parseWebhookPayload(body: unknown): WebhookEvent[] {
+    // Suunto sends workout notifications with user info
+    const parsed = z
+      .object({
+        type: z.string().optional(),
+        username: z.string(),
+        workout_id: z.coerce.string().optional(),
+      })
+      .safeParse(body);
+
+    if (!parsed.success) return [];
+    const event = parsed.data;
+
+    return [
+      {
+        ownerExternalId: event.username,
+        eventType: "create",
+        objectType: event.type ?? "workout",
+        objectId: event.workout_id ?? undefined,
+      },
+    ];
   }
 
   authSetup(): ProviderAuthSetup {

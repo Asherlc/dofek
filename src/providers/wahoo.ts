@@ -12,8 +12,9 @@ import type {
   ProviderAuthSetup,
   ProviderIdentity,
   SyncError,
-  SyncProvider,
   SyncResult,
+  WebhookEvent,
+  WebhookProvider,
 } from "./types.ts";
 
 // ============================================================
@@ -220,9 +221,10 @@ export function wahooOAuthConfig(): OAuthConfig | null {
   };
 }
 
-export class WahooProvider implements SyncProvider {
+export class WahooProvider implements WebhookProvider {
   readonly id = "wahoo";
   readonly name = "Wahoo";
+  readonly webhookScope = "app" as const;
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
@@ -233,6 +235,54 @@ export class WahooProvider implements SyncProvider {
     if (!process.env.WAHOO_CLIENT_ID) return "WAHOO_CLIENT_ID is not set";
     if (!process.env.WAHOO_CLIENT_SECRET) return "WAHOO_CLIENT_SECRET is not set";
     return null;
+  }
+
+  // ── Webhook implementation ──
+
+  async registerWebhook(
+    _callbackUrl: string,
+    _verifyToken: string,
+  ): Promise<{ subscriptionId: string; signingSecret?: string; expiresAt?: Date }> {
+    // Wahoo webhooks are registered via the developer portal, not via API.
+    // Configure the webhook URL at https://developers.wahooligan.com
+    return { subscriptionId: "wahoo-portal-subscription" };
+  }
+
+  async unregisterWebhook(_subscriptionId: string): Promise<void> {
+    // Managed via Wahoo developer portal
+  }
+
+  verifyWebhookSignature(
+    _rawBody: Buffer,
+    _headers: Record<string, string | string[] | undefined>,
+    _signingSecret: string,
+  ): boolean {
+    // Wahoo webhook signature verification is not publicly documented.
+    // Webhooks are registered via the developer portal with a specific URL.
+    return true;
+  }
+
+  parseWebhookPayload(body: unknown): WebhookEvent[] {
+    const parsed = z
+      .object({
+        event_type: z.string().optional(),
+        webhook_token: z.string().optional(),
+        user: z.object({ id: z.number() }),
+        workout_summary: z.object({ id: z.number() }).optional(),
+      })
+      .safeParse(body);
+
+    if (!parsed.success) return [];
+    const event = parsed.data;
+
+    return [
+      {
+        ownerExternalId: String(event.user.id),
+        eventType: event.event_type === "workout_summary.updated" ? "update" : "create",
+        objectType: "workout",
+        objectId: event.workout_summary?.id ? String(event.workout_summary.id) : undefined,
+      },
+    ];
   }
 
   authSetup(): ProviderAuthSetup {
