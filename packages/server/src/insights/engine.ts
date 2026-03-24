@@ -100,7 +100,7 @@ export interface Insight {
 // ── Confidence classification ─────────────────────────────────────────────
 
 /** Classify confidence for conditional tests (Cohen's d effect size) */
-function classifyConfidence(d: number, minN: number, pValue?: number): ConfidenceLevel {
+export function classifyConfidence(d: number, minN: number, pValue?: number): ConfidenceLevel {
   const absD = Math.abs(d);
   // Require statistical significance (p < 0.05) for "strong"
   if (absD >= 0.8 && minN >= 30 && (pValue == null || pValue < 0.05)) return "strong";
@@ -113,7 +113,7 @@ function classifyConfidence(d: number, minN: number, pValue?: number): Confidenc
 const MONTHLY_WINDOW_SIZE = 30;
 
 /** Classify confidence for correlation-based insights (Spearman rho) */
-function classifyCorrelationConfidence(rho: number, n: number): ConfidenceLevel {
+export function classifyCorrelationConfidence(rho: number, n: number): ConfidenceLevel {
   const absRho = Math.abs(rho);
   if (absRho >= 0.5 && n >= 30) return "strong";
   if (absRho >= 0.35 && n >= 15) return "emerging";
@@ -124,7 +124,7 @@ function classifyCorrelationConfidence(rho: number, n: number): ConfidenceLevel 
 const MAX_DATA_POINTS = 200;
 
 /** Evenly downsample an array to at most `max` elements */
-function downsample<T>(arr: T[], max: number): T[] {
+export function downsample<T>(arr: T[], max: number): T[] {
   if (arr.length <= max) return arr;
   const step = arr.length / max;
   const result: T[] = [];
@@ -178,7 +178,7 @@ export interface JoinedDay {
   body_fat_30d_delta: number | null;
 }
 
-function classifyActivity(type: string): "cardio" | "strength" | "flexibility" | "other" {
+export function classifyActivity(type: string): "cardio" | "strength" | "flexibility" | "other" {
   const typeLower = type.toLowerCase();
   if (
     [
@@ -344,7 +344,7 @@ export function joinByDate(
 
 // ── Rolling average helper ────────────────────────────────────────────────
 
-function rollingAvg(
+export function rollingAvg(
   joined: JoinedDay[],
   idx: number,
   days: number,
@@ -361,7 +361,7 @@ function rollingAvg(
 
 // ── Conditional analysis ──────────────────────────────────────────────────
 
-interface ConditionalTest {
+export interface ConditionalTest {
   id: string;
   action: string;
   metric: string;
@@ -370,7 +370,7 @@ interface ConditionalTest {
   valueFn: (day: JoinedDay, allDays: JoinedDay[], idx: number) => number | null;
 }
 
-function getConditionalTests(): ConditionalTest[] {
+export function getConditionalTests(): ConditionalTest[] {
   return [
     // ── Sleep → recovery ──
     {
@@ -623,7 +623,7 @@ function getConditionalTests(): ConditionalTest[] {
 
 // ── Correlation pairs ─────────────────────────────────────────────────────
 
-interface CorrelationPair {
+export interface CorrelationPair {
   id: string;
   xName: string;
   yName: string;
@@ -631,7 +631,7 @@ interface CorrelationPair {
   yFn: (day: JoinedDay, allDays: JoinedDay[], idx: number) => number | null;
 }
 
-function getCorrelationPairs(): CorrelationPair[] {
+export function getCorrelationPairs(): CorrelationPair[] {
   return [
     // ── Sleep/recovery ──
     {
@@ -775,16 +775,16 @@ function getCorrelationPairs(): CorrelationPair[] {
  * - "outcome": measured outputs (HRV, resting HR, body comp) — valid as Y (response)
  * - "bidirectional": can be either (sleep — affected by actions, but also affects outcomes)
  */
-type CausalRole = "action" | "outcome" | "bidirectional";
+export type CausalRole = "action" | "outcome" | "bidirectional";
 
-interface MetricDef {
+export interface MetricDef {
   key: string;
   label: string;
   role: CausalRole;
   extract: (day: JoinedDay, allDays: JoinedDay[], idx: number) => number | null;
 }
 
-function getAllMetrics(): MetricDef[] {
+export function getAllMetrics(): MetricDef[] {
   return [
     // Outcome variables — things that happen to you, not controllable
     { key: "resting_hr", label: "resting HR", role: "outcome", extract: (d) => d.resting_hr },
@@ -863,7 +863,7 @@ function getAllMetrics(): MetricDef[] {
  * - action→outcome is always valid
  * - bidirectional can be either side
  */
-function isValidCausalDirection(xRole: CausalRole, yRole: CausalRole, lag: number): boolean {
+export function isValidCausalDirection(xRole: CausalRole, yRole: CausalRole, lag: number): boolean {
   // outcome→action: always invalid (backwards causality)
   if (xRole === "outcome" && yRole === "action") return false;
   // outcome→outcome: only same-day (lag 0) — not lagged prediction
@@ -875,7 +875,7 @@ const MAX_LAG = 2;
 const MIN_SAMPLES = 20;
 const MIN_RHO = 0.15;
 
-function exhaustiveSweep(joined: JoinedDay[], existingIds: Set<string>): Insight[] {
+export function exhaustiveSweep(joined: JoinedDay[], existingIds: Set<string>): Insight[] {
   const metrics = getAllMetrics();
   const candidates: Array<{
     id: string;
@@ -1056,7 +1056,7 @@ function exhaustiveSweep(joined: JoinedDay[], existingIds: Set<string>): Insight
 
 // ── Monthly aggregation for body comp / nutrition ─────────────────────────
 
-interface MonthlyAgg {
+export interface MonthlyAgg {
   month: string; // YYYY-MM
   avgCalories: number | null;
   avgProtein: number | null;
@@ -1078,7 +1078,7 @@ interface MonthlyAgg {
   bfDelta: number | null;
 }
 
-function aggregateMonthly(joined: JoinedDay[]): MonthlyAgg[] {
+export function aggregateMonthly(joined: JoinedDay[]): MonthlyAgg[] {
   const byMonth = new Map<string, JoinedDay[]>();
   for (const d of joined) {
     const month = d.date.slice(0, 7);
@@ -1291,7 +1291,7 @@ function getMonthlyCorrelations(): MonthlyCorrelationPair[] {
   ];
 }
 
-function computeMonthlyInsights(joined: JoinedDay[]): Insight[] {
+export function computeMonthlyInsights(joined: JoinedDay[]): Insight[] {
   const months = aggregateMonthly(joined);
   if (months.length < 5) return [];
 
@@ -1428,7 +1428,7 @@ function getContextVariables(): ContextVariable[] {
   ];
 }
 
-function findCorrelationConfounders(
+export function findCorrelationConfounders(
   xName: string,
   yName: string,
   xValues: number[],
@@ -1563,7 +1563,7 @@ function isRelatedToAction(actionLabel: string, cvLabel: string): boolean {
   return false;
 }
 
-function findConfounders(test: ConditionalTest, joined: JoinedDay[]): string[] {
+export function findConfounders(test: ConditionalTest, joined: JoinedDay[]): string[] {
   // Split the same way the test does
   const trueIndices: number[] = [];
   const falseIndices: number[] = [];
@@ -1669,7 +1669,7 @@ const metricUnits: Record<string, string> = {
   "exercise duration": "min",
 };
 
-function explainInsight(insight: Omit<Insight, "explanation">): string {
+export function explainInsight(insight: Omit<Insight, "explanation">): string {
   const { type, action, metric, effectSize, confidence } = insight;
   const unit = metricUnits[metric] ?? "";
 

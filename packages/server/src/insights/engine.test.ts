@@ -2,11 +2,22 @@ import { describe, expect, it } from "vitest";
 import {
   type ActivityRow,
   type BodyCompRow,
+  type CausalRole,
+  classifyActivity,
+  classifyConfidence,
+  classifyCorrelationConfidence,
   computeInsights,
   type DailyRow,
+  downsample,
+  explainInsight,
+  getConditionalTests,
+  type Insight,
   type InsightsConfig,
+  isValidCausalDirection,
+  type JoinedDay,
   joinByDate,
   type NutritionRow,
+  rollingAvg,
   type SleepRow,
 } from "./engine.ts";
 
@@ -1300,5 +1311,577 @@ describe("computeInsights()", () => {
         }
       }
     }
+  });
+});
+
+// ── classifyActivity() direct tests ──────────────────────────────────────
+
+describe("classifyActivity()", () => {
+  it.each([
+    "cycling",
+    "walking",
+    "hiking",
+    "running",
+    "swimming",
+    "cross_country_skiing",
+    "downhill_skiing",
+    "cardio",
+    "cross_training",
+    "tennis",
+    "climbing",
+  ])("classifies %s as cardio", (type) => {
+    expect(classifyActivity(type)).toBe("cardio");
+  });
+
+  it.each([
+    "strength_training",
+    "functional_strength",
+    "strength",
+  ])("classifies %s as strength", (type) => {
+    expect(classifyActivity(type)).toBe("strength");
+  });
+
+  it.each([
+    "yoga",
+    "stretching",
+    "preparation_and_recovery",
+  ])("classifies %s as flexibility", (type) => {
+    expect(classifyActivity(type)).toBe("flexibility");
+  });
+
+  it.each(["paddle_boarding", "dance", "unknown", ""])("classifies %s as other", (type) => {
+    expect(classifyActivity(type)).toBe("other");
+  });
+
+  it("is case-insensitive", () => {
+    expect(classifyActivity("CYCLING")).toBe("cardio");
+    expect(classifyActivity("Yoga")).toBe("flexibility");
+    expect(classifyActivity("STRENGTH")).toBe("strength");
+  });
+});
+
+// ── classifyConfidence() direct tests ────────────────────────────────────
+
+describe("classifyConfidence()", () => {
+  it("returns strong for absD>=0.8, n>=30, pValue<0.05", () => {
+    expect(classifyConfidence(0.8, 30, 0.04)).toBe("strong");
+    expect(classifyConfidence(-0.8, 30, 0.04)).toBe("strong");
+  });
+
+  it("returns strong when pValue is null (not required)", () => {
+    expect(classifyConfidence(0.8, 30)).toBe("strong");
+    expect(classifyConfidence(0.8, 30, undefined)).toBe("strong");
+  });
+
+  it("boundary: absD=0.79 → not strong", () => {
+    expect(classifyConfidence(0.79, 30, 0.04)).toBe("emerging");
+  });
+
+  it("boundary: n=29 → not strong", () => {
+    expect(classifyConfidence(0.8, 29, 0.04)).toBe("emerging");
+  });
+
+  it("boundary: pValue=0.05 → not strong (must be < 0.05)", () => {
+    expect(classifyConfidence(0.8, 30, 0.05)).toBe("emerging");
+  });
+
+  it("returns emerging for absD>=0.5, n>=15", () => {
+    expect(classifyConfidence(0.5, 15)).toBe("emerging");
+    expect(classifyConfidence(-0.5, 15)).toBe("emerging");
+  });
+
+  it("boundary: absD=0.49 → not emerging", () => {
+    expect(classifyConfidence(0.49, 15)).toBe("early");
+  });
+
+  it("boundary: n=14 → not emerging", () => {
+    expect(classifyConfidence(0.5, 14)).toBe("early");
+  });
+
+  it("returns early for absD>=0.3, n>=10", () => {
+    expect(classifyConfidence(0.3, 10)).toBe("early");
+    expect(classifyConfidence(-0.3, 10)).toBe("early");
+  });
+
+  it("boundary: absD=0.29 → insufficient", () => {
+    expect(classifyConfidence(0.29, 10)).toBe("insufficient");
+  });
+
+  it("boundary: n=9 → insufficient", () => {
+    expect(classifyConfidence(0.3, 9)).toBe("insufficient");
+  });
+
+  it("returns insufficient for small effect and small n", () => {
+    expect(classifyConfidence(0.1, 5)).toBe("insufficient");
+  });
+
+  it("negative d values use abs (strong negative)", () => {
+    expect(classifyConfidence(-1.0, 30, 0.01)).toBe("strong");
+  });
+});
+
+// ── classifyCorrelationConfidence() direct tests ────────────────────────
+
+describe("classifyCorrelationConfidence()", () => {
+  it("returns strong for absRho>=0.5, n>=30", () => {
+    expect(classifyCorrelationConfidence(0.5, 30)).toBe("strong");
+    expect(classifyCorrelationConfidence(-0.5, 30)).toBe("strong");
+  });
+
+  it("boundary: rho=0.49 → not strong", () => {
+    expect(classifyCorrelationConfidence(0.49, 30)).toBe("emerging");
+  });
+
+  it("boundary: n=29 → not strong", () => {
+    expect(classifyCorrelationConfidence(0.5, 29)).toBe("emerging");
+  });
+
+  it("returns emerging for absRho>=0.35, n>=15", () => {
+    expect(classifyCorrelationConfidence(0.35, 15)).toBe("emerging");
+  });
+
+  it("boundary: rho=0.34 → not emerging", () => {
+    expect(classifyCorrelationConfidence(0.34, 15)).toBe("early");
+  });
+
+  it("boundary: n=14 → not emerging", () => {
+    expect(classifyCorrelationConfidence(0.35, 14)).toBe("early");
+  });
+
+  it("returns early for absRho>=0.2, n>=10", () => {
+    expect(classifyCorrelationConfidence(0.2, 10)).toBe("early");
+  });
+
+  it("boundary: rho=0.19 → insufficient", () => {
+    expect(classifyCorrelationConfidence(0.19, 10)).toBe("insufficient");
+  });
+
+  it("boundary: n=9 → insufficient", () => {
+    expect(classifyCorrelationConfidence(0.2, 9)).toBe("insufficient");
+  });
+
+  it("handles negative rho with abs", () => {
+    expect(classifyCorrelationConfidence(-0.6, 30)).toBe("strong");
+  });
+});
+
+// ── downsample() direct tests ──────────────────────────────────────────
+
+describe("downsample()", () => {
+  it("returns original array when length <= max", () => {
+    expect(downsample([1, 2, 3], 5)).toEqual([1, 2, 3]);
+    expect(downsample([1, 2, 3], 3)).toEqual([1, 2, 3]);
+  });
+
+  it("downsamples to exactly max elements", () => {
+    const result = downsample([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 5);
+    expect(result.length).toBe(5);
+  });
+
+  it("preserves first element", () => {
+    const result = downsample([10, 20, 30, 40, 50, 60], 3);
+    expect(result[0]).toBe(10);
+  });
+
+  it("handles single element", () => {
+    expect(downsample([42], 1)).toEqual([42]);
+  });
+
+  it("handles empty array", () => {
+    expect(downsample([], 5)).toEqual([]);
+  });
+
+  it("evenly samples from large array", () => {
+    const arr = Array.from({ length: 1000 }, (_, idx) => idx);
+    const result = downsample(arr, 100);
+    expect(result.length).toBe(100);
+    // First item should be 0, items should be roughly evenly spaced
+    expect(result[0]).toBe(0);
+    expect(result[1]).toBe(10);
+  });
+});
+
+// ── isValidCausalDirection() direct tests ────────────────────────────────
+
+describe("isValidCausalDirection()", () => {
+  it("action→outcome is always valid", () => {
+    expect(isValidCausalDirection("action", "outcome", 0)).toBe(true);
+    expect(isValidCausalDirection("action", "outcome", 1)).toBe(true);
+    expect(isValidCausalDirection("action", "outcome", 2)).toBe(true);
+  });
+
+  it("outcome→action is always invalid", () => {
+    expect(isValidCausalDirection("outcome", "action", 0)).toBe(false);
+    expect(isValidCausalDirection("outcome", "action", 1)).toBe(false);
+  });
+
+  it("outcome→outcome at lag=0 is valid", () => {
+    expect(isValidCausalDirection("outcome", "outcome", 0)).toBe(true);
+  });
+
+  it("outcome→outcome at lag>0 is invalid", () => {
+    expect(isValidCausalDirection("outcome", "outcome", 1)).toBe(false);
+    expect(isValidCausalDirection("outcome", "outcome", 2)).toBe(false);
+  });
+
+  it("bidirectional→anything is valid", () => {
+    expect(isValidCausalDirection("bidirectional", "outcome", 0)).toBe(true);
+    expect(isValidCausalDirection("bidirectional", "action", 1)).toBe(true);
+    expect(isValidCausalDirection("bidirectional", "bidirectional", 2)).toBe(true);
+  });
+
+  it("action→action is valid", () => {
+    expect(isValidCausalDirection("action", "action", 0)).toBe(true);
+    expect(isValidCausalDirection("action", "action", 1)).toBe(true);
+  });
+});
+
+// ── rollingAvg() direct tests ──────────────────────────────────────────
+
+describe("rollingAvg()", () => {
+  const makeJoined = (values: (number | null)[]): JoinedDay[] =>
+    values.map((val, idx) => ({
+      ...makeDailyRow(`2025-01-${(idx + 1).toString().padStart(2, "0")}`, { resting_hr: val }),
+      sleep_duration_min: null,
+      deep_min: null,
+      rem_min: null,
+      sleep_efficiency: null,
+      exercise_minutes: null,
+      cardio_minutes: null,
+      strength_minutes: null,
+      flexibility_minutes: null,
+      calories: null,
+      protein_g: null,
+      carbs_g: null,
+      fat_g: null,
+      fiber_g: null,
+      weight_kg: null,
+      body_fat_pct: null,
+      resting_hr_7d: null,
+      hrv_7d: null,
+      weight_30d: null,
+      body_fat_30d: null,
+      weight_30d_delta: null,
+      body_fat_30d_delta: null,
+    }));
+
+  it("returns null when index < days-1 (not enough history)", () => {
+    const joined = makeJoined([60, 62, 64, 66, 68]);
+    expect(rollingAvg(joined, 2, 5, (day) => day.resting_hr)).toBeNull();
+  });
+
+  it("computes average at exact boundary (index = days-1)", () => {
+    const joined = makeJoined([60, 62, 64, 66, 68]);
+    const result = rollingAvg(joined, 4, 5, (day) => day.resting_hr);
+    expect(result).toBeCloseTo(64, 5);
+  });
+
+  it("returns null when not enough non-null values", () => {
+    const joined = makeJoined([null, null, null, null, 68]);
+    const result = rollingAvg(joined, 4, 5, (day) => day.resting_hr);
+    // Default required = max(3, ceil(5*0.1)) = 3, but only 1 value
+    expect(result).toBeNull();
+  });
+
+  it("uses custom minCount when provided", () => {
+    const joined = makeJoined([60, null, null, null, 68]);
+    // Only 2 non-null values
+    const withHighMin = rollingAvg(joined, 4, 5, (day) => day.resting_hr, 3);
+    expect(withHighMin).toBeNull();
+    const withLowMin = rollingAvg(joined, 4, 5, (day) => day.resting_hr, 2);
+    expect(withLowMin).toBeCloseTo(64, 5);
+  });
+
+  it("filters null values from average computation", () => {
+    const joined = makeJoined([60, null, 64, null, 68]);
+    const result = rollingAvg(joined, 4, 5, (day) => day.resting_hr, 2);
+    // Average of 60, 64, 68 = 64
+    expect(result).toBeCloseTo(64, 5);
+  });
+});
+
+// ── getConditionalTests() direct tests ──────────────────────────────────
+
+describe("getConditionalTests()", () => {
+  it("returns a non-empty array of tests", () => {
+    const tests = getConditionalTests();
+    expect(tests.length).toBeGreaterThan(0);
+  });
+
+  it("all tests have unique ids", () => {
+    const tests = getConditionalTests();
+    const ids = tests.map((testDef) => testDef.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("all tests have non-empty action and metric strings", () => {
+    const tests = getConditionalTests();
+    for (const testDef of tests) {
+      expect(testDef.action.length).toBeGreaterThan(0);
+      expect(testDef.metric.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("splitFn returns boolean or null for a minimal joined day", () => {
+    const tests = getConditionalTests();
+    const minimalDay: JoinedDay = {
+      ...makeDailyRow("2025-01-15"),
+      sleep_duration_min: 480,
+      deep_min: 90,
+      rem_min: 100,
+      sleep_efficiency: 92,
+      exercise_minutes: 60,
+      cardio_minutes: 30,
+      strength_minutes: 20,
+      flexibility_minutes: 10,
+      calories: 2200,
+      protein_g: 150,
+      carbs_g: 250,
+      fat_g: 70,
+      fiber_g: 25,
+      weight_kg: 80,
+      body_fat_pct: 15,
+      resting_hr_7d: 60,
+      hrv_7d: 50,
+      weight_30d: 80,
+      body_fat_30d: 15,
+      weight_30d_delta: 0,
+      body_fat_30d_delta: 0,
+    };
+    const allDays = [minimalDay];
+
+    for (const testDef of tests) {
+      const result = testDef.splitFn(minimalDay, allDays, 0);
+      expect(result === true || result === false || result === null).toBe(true);
+    }
+  });
+
+  it("valueFn returns number or null for a minimal joined day", () => {
+    const tests = getConditionalTests();
+    const minimalDay: JoinedDay = {
+      ...makeDailyRow("2025-01-15"),
+      sleep_duration_min: 480,
+      deep_min: 90,
+      rem_min: 100,
+      sleep_efficiency: 92,
+      exercise_minutes: 60,
+      cardio_minutes: 30,
+      strength_minutes: 20,
+      flexibility_minutes: 10,
+      calories: 2200,
+      protein_g: 150,
+      carbs_g: 250,
+      fat_g: 70,
+      fiber_g: 25,
+      weight_kg: 80,
+      body_fat_pct: 15,
+      resting_hr_7d: 60,
+      hrv_7d: 50,
+      weight_30d: 80,
+      body_fat_30d: 15,
+      weight_30d_delta: 0,
+      body_fat_30d_delta: 0,
+    };
+    const allDays = [minimalDay];
+
+    for (const testDef of tests) {
+      const result = testDef.valueFn(minimalDay, allDays, 0);
+      expect(result === null || typeof result === "number").toBe(true);
+    }
+  });
+
+  it("sleep threshold tests split at 420 minutes boundary", () => {
+    const tests = getConditionalTests();
+    const sleepTest = tests.find((testDef) => testDef.id === "sleep_7h_resting_hr");
+
+    const makeSplitDay = (sleepMin: number | null): JoinedDay => ({
+      ...makeDailyRow("2025-01-15"),
+      sleep_duration_min: sleepMin,
+      deep_min: null,
+      rem_min: null,
+      sleep_efficiency: null,
+      exercise_minutes: null,
+      cardio_minutes: null,
+      strength_minutes: null,
+      flexibility_minutes: null,
+      calories: null,
+      protein_g: null,
+      carbs_g: null,
+      fat_g: null,
+      fiber_g: null,
+      weight_kg: null,
+      body_fat_pct: null,
+      resting_hr_7d: 60,
+      hrv_7d: 50,
+      weight_30d: null,
+      body_fat_30d: null,
+      weight_30d_delta: null,
+      body_fat_30d_delta: null,
+    });
+
+    if (sleepTest) {
+      expect(sleepTest.splitFn(makeSplitDay(420), [], 0)).toBe(true);
+      expect(sleepTest.splitFn(makeSplitDay(419), [], 0)).toBe(false);
+      expect(sleepTest.splitFn(makeSplitDay(null), [], 0)).toBeNull();
+    }
+  });
+
+  it("steps threshold tests split at 10000 boundary", () => {
+    const tests = getConditionalTests();
+    const stepsTest = tests.find((testDef) => testDef.id === "steps_10k_resting_hr");
+
+    const makeSplitDay = (steps: number): JoinedDay => ({
+      ...makeDailyRow("2025-01-15", { steps }),
+      sleep_duration_min: null,
+      deep_min: null,
+      rem_min: null,
+      sleep_efficiency: null,
+      exercise_minutes: null,
+      cardio_minutes: null,
+      strength_minutes: null,
+      flexibility_minutes: null,
+      calories: null,
+      protein_g: null,
+      carbs_g: null,
+      fat_g: null,
+      fiber_g: null,
+      weight_kg: null,
+      body_fat_pct: null,
+      resting_hr_7d: 60,
+      hrv_7d: 50,
+      weight_30d: null,
+      body_fat_30d: null,
+      weight_30d_delta: null,
+      body_fat_30d_delta: null,
+    });
+
+    if (stepsTest) {
+      expect(stepsTest.splitFn(makeSplitDay(10000), [], 0)).toBe(true);
+      expect(stepsTest.splitFn(makeSplitDay(9999), [], 0)).toBe(false);
+    }
+  });
+
+  it("exercise threshold tests split at 30 minutes boundary", () => {
+    const tests = getConditionalTests();
+    const exerciseTest = tests.find((testDef) => testDef.id === "exercise_30m_resting_hr");
+
+    const makeSplitDay = (exerciseMin: number | null): JoinedDay => ({
+      ...makeDailyRow("2025-01-15"),
+      sleep_duration_min: null,
+      deep_min: null,
+      rem_min: null,
+      sleep_efficiency: null,
+      exercise_minutes: exerciseMin,
+      cardio_minutes: null,
+      strength_minutes: null,
+      flexibility_minutes: null,
+      calories: null,
+      protein_g: null,
+      carbs_g: null,
+      fat_g: null,
+      fiber_g: null,
+      weight_kg: null,
+      body_fat_pct: null,
+      resting_hr_7d: 60,
+      hrv_7d: 50,
+      weight_30d: null,
+      body_fat_30d: null,
+      weight_30d_delta: null,
+      body_fat_30d_delta: null,
+    });
+
+    if (exerciseTest) {
+      expect(exerciseTest.splitFn(makeSplitDay(30), [], 0)).toBe(true);
+      expect(exerciseTest.splitFn(makeSplitDay(29), [], 0)).toBe(false);
+      expect(exerciseTest.splitFn(makeSplitDay(null), [], 0)).toBeNull();
+    }
+  });
+});
+
+// ── explainInsight() direct tests ───────────────────────────────────────
+
+describe("explainInsight()", () => {
+  const baseConditional: Omit<Insight, "explanation"> = {
+    id: "test_id",
+    type: "conditional",
+    confidence: "strong",
+    action: "7+ hours of sleep",
+    metric: "resting heart rate",
+    message: "",
+    effectSize: -0.8,
+    pValue: 0.01,
+    detail: "Mean: 58 bpm (with) vs 62 bpm (without); n=40/35",
+    whenTrue: { mean: 58, median: 58, stddev: 2, p25: 57, p75: 59, n: 40 },
+    whenFalse: { mean: 62, median: 62, stddev: 2, p25: 61, p75: 63, n: 35 },
+  };
+
+  it("generates a non-empty explanation for conditional insights", () => {
+    const result = explainInsight(baseConditional);
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  it("uses confidence-based frequency word (strong → consistently)", () => {
+    const result = explainInsight({ ...baseConditional, confidence: "strong" });
+    expect(result).toContain("consistently");
+  });
+
+  it("uses 'generally' for emerging confidence", () => {
+    const result = explainInsight({ ...baseConditional, confidence: "emerging" });
+    expect(result).toContain("generally");
+  });
+
+  it("uses 'sometimes' for early confidence", () => {
+    const result = explainInsight({ ...baseConditional, confidence: "early" });
+    expect(result).toContain("sometimes");
+  });
+
+  it("includes direction (lower/higher) based on effect size", () => {
+    const lower = explainInsight({ ...baseConditional, effectSize: -0.8 });
+    expect(lower.toLowerCase()).toMatch(/lower/);
+
+    const higher = explainInsight({
+      ...baseConditional,
+      effectSize: 0.8,
+      whenTrue: { mean: 62, median: 62, stddev: 2, p25: 61, p75: 63, n: 40 },
+      whenFalse: { mean: 58, median: 58, stddev: 2, p25: 57, p75: 59, n: 35 },
+    });
+    expect(higher.toLowerCase()).toMatch(/higher/);
+  });
+
+  it("generates explanation for correlation insights", () => {
+    const correlationInsight: Omit<Insight, "explanation"> = {
+      id: "corr_test",
+      type: "correlation",
+      confidence: "strong",
+      action: "steps",
+      metric: "resting heart rate",
+      message: "",
+      effectSize: -0.6,
+      pValue: 0.001,
+      detail: "Spearman ρ = -0.60, n = 45",
+      whenTrue: { mean: 0, median: 0, stddev: 0, p25: 0, p75: 0, n: 0 },
+      whenFalse: { mean: 0, median: 0, stddev: 0, p25: 0, p75: 0, n: 0 },
+      dataPoints: [],
+    };
+    const result = explainInsight(correlationInsight);
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  it("handles body comp insights with weight change", () => {
+    const bodyCompInsight: Omit<Insight, "explanation"> = {
+      id: "body_test",
+      type: "conditional",
+      confidence: "emerging",
+      action: "high protein intake",
+      metric: "weight change (30-day)",
+      message: "",
+      effectSize: -0.5,
+      pValue: 0.03,
+      detail: "Mean: -0.3 kg/mo (with) vs 0.1 kg/mo (without)",
+      whenTrue: { mean: -0.3, median: -0.25, stddev: 0.1, p25: -0.35, p75: -0.2, n: 20 },
+      whenFalse: { mean: 0.1, median: 0.15, stddev: 0.1, p25: 0.05, p75: 0.2, n: 20 },
+    };
+    const result = explainInsight(bodyCompInsight);
+    expect(result.length).toBeGreaterThan(0);
   });
 });
