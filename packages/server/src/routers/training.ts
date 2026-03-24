@@ -841,7 +841,6 @@ export function pickCardioFocus(input: {
   if (input.highIntensityPct < 0.08 && input.lowIntensityPct > 0.75) return "hiit";
   if (input.highIntensityPct < HIGH_INTENSITY_RATIO_TARGET && input.lowIntensityPct > 0.6)
     return "intervals";
-  if (input.highIntensityPct > 0.25 || input.moderateIntensityPct > 0.3) return "z2";
   return "z2";
 }
 

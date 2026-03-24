@@ -354,5 +354,222 @@ describe("weeklyReportRouter", () => {
       // null avg_sleep_min → avgSleepMin = 0
       expect(result.current?.avgSleepMinutes).toBe(0);
     });
+
+    it("slices parsed to requested weeks (kills slice removal mutant)", async () => {
+      // Return 5 weeks of data but request only 2 — proves slice(-input.weeks) works
+      const rows = [
+        {
+          week_start: "2026-02-17",
+          total_hours: 1,
+          activity_count: 1,
+          avg_daily_load: 0.5,
+          avg_sleep_min: 400,
+          avg_resting_hr: 62,
+          avg_hrv: 40,
+          chronic_avg_load: 0.5,
+          prev_3wk_avg_sleep: 400,
+        },
+        {
+          week_start: "2026-02-24",
+          total_hours: 2,
+          activity_count: 2,
+          avg_daily_load: 1,
+          avg_sleep_min: 420,
+          avg_resting_hr: 60,
+          avg_hrv: 42,
+          chronic_avg_load: 0.8,
+          prev_3wk_avg_sleep: 400,
+        },
+        {
+          week_start: "2026-03-03",
+          total_hours: 3,
+          activity_count: 3,
+          avg_daily_load: 1.5,
+          avg_sleep_min: 440,
+          avg_resting_hr: 58,
+          avg_hrv: 44,
+          chronic_avg_load: 1,
+          prev_3wk_avg_sleep: 410,
+        },
+        {
+          week_start: "2026-03-10",
+          total_hours: 4,
+          activity_count: 4,
+          avg_daily_load: 2,
+          avg_sleep_min: 450,
+          avg_resting_hr: 57,
+          avg_hrv: 46,
+          chronic_avg_load: 1.3,
+          prev_3wk_avg_sleep: 420,
+        },
+        {
+          week_start: "2026-03-17",
+          total_hours: 5,
+          activity_count: 5,
+          avg_daily_load: 2.5,
+          avg_sleep_min: 460,
+          avg_resting_hr: 55,
+          avg_hrv: 48,
+          chronic_avg_load: 1.5,
+          prev_3wk_avg_sleep: 437,
+        },
+      ];
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue(rows) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+      const result = await caller.report({ weeks: 2, endDate: "2026-03-24" });
+
+      // Only 2 weeks returned (last 2 of 5)
+      expect(result.current?.weekStart).toBe("2026-03-17");
+      expect(result.history).toHaveLength(1);
+      expect(result.history[0]?.weekStart).toBe("2026-03-10");
+    });
+
+    it("history uses slice(0,-1) not slice(0,+1) (kills unary mutant)", async () => {
+      // 3 rows, weeks=3 → current = last, history = first 2
+      const rows = [
+        {
+          week_start: "2026-03-03",
+          total_hours: 3,
+          activity_count: 2,
+          avg_daily_load: 1,
+          avg_sleep_min: 420,
+          avg_resting_hr: 60,
+          avg_hrv: 45,
+          chronic_avg_load: 1,
+          prev_3wk_avg_sleep: 420,
+        },
+        {
+          week_start: "2026-03-10",
+          total_hours: 5,
+          activity_count: 4,
+          avg_daily_load: 2,
+          avg_sleep_min: 450,
+          avg_resting_hr: 58,
+          avg_hrv: 48,
+          chronic_avg_load: 1.5,
+          prev_3wk_avg_sleep: 420,
+        },
+        {
+          week_start: "2026-03-17",
+          total_hours: 7,
+          activity_count: 5,
+          avg_daily_load: 3,
+          avg_sleep_min: 480,
+          avg_resting_hr: 56,
+          avg_hrv: 50,
+          chronic_avg_load: 2,
+          prev_3wk_avg_sleep: 435,
+        },
+      ];
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue(rows) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+      const result = await caller.report({ weeks: 3, endDate: "2026-03-24" });
+
+      // With slice(0, -1): 2 history items. With slice(0, +1): only 1.
+      expect(result.history).toHaveLength(2);
+      expect(result.history[0]?.weekStart).toBe("2026-03-03");
+      expect(result.history[1]?.weekStart).toBe("2026-03-10");
+      expect(result.current?.weekStart).toBe("2026-03-17");
+    });
+
+    it("verifies full computed values for a single week (kills || 0, rounding, null-check mutants)", async () => {
+      const rows = [
+        {
+          week_start: "2026-03-17",
+          total_hours: 7.777,
+          activity_count: 5,
+          avg_daily_load: 4.56,
+          avg_sleep_min: 465,
+          avg_resting_hr: 57.89,
+          avg_hrv: 52.14,
+          chronic_avg_load: 3.78,
+          prev_3wk_avg_sleep: 450,
+        },
+      ];
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue(rows) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+      const result = await caller.report({ weeks: 1, endDate: "2026-03-24" });
+      const w = result.current;
+      expect(w).not.toBeNull();
+
+      // trainingHours: Math.round(7.777 * 10) / 10 = Math.round(77.77) / 10 = 78 / 10 = 7.8
+      expect(w?.trainingHours).toBe(7.8);
+      // avgDailyLoad: Math.round(4.56 * 10) / 10 = Math.round(45.6) / 10 = 46 / 10 = 4.6
+      expect(w?.avgDailyLoad).toBe(4.6);
+      // avgSleepMinutes: Math.round(465) = 465
+      expect(w?.avgSleepMinutes).toBe(465);
+      // sleepPerformancePct: Math.round((465 / 450) * 100) = Math.round(103.33) = 103
+      expect(w?.sleepPerformancePct).toBe(103);
+      // avgRestingHr: Math.round(57.89 * 10) / 10 = Math.round(578.9) / 10 = 579 / 10 = 57.9
+      expect(w?.avgRestingHr).toBe(57.9);
+      // avgHrv: Math.round(52.14 * 10) / 10 = Math.round(521.4) / 10 = 521 / 10 = 52.1
+      expect(w?.avgHrv).toBe(52.1);
+      // strainZone: 4.56 / 3.78 = 1.206 → between 0.8 and 1.3 → optimal
+      expect(w?.strainZone).toBe("optimal");
+      expect(w?.activityCount).toBe(5);
+    });
+
+    it("uses avgDailyLoad || 0 correctly when avg_daily_load is non-zero (kills && mutant)", async () => {
+      // With `Number(row.avg_daily_load) && 0`, a non-zero value becomes 0
+      const rows = [
+        {
+          week_start: "2026-03-17",
+          total_hours: 5,
+          activity_count: 3,
+          avg_daily_load: 2.5,
+          avg_sleep_min: 420,
+          avg_resting_hr: null,
+          avg_hrv: null,
+          chronic_avg_load: 2.5,
+          prev_3wk_avg_sleep: null,
+        },
+      ];
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue(rows) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+      const result = await caller.report({ weeks: 1, endDate: "2026-03-24" });
+      // With || 0: avgDailyLoad = 2.5. With && 0: avgDailyLoad = 0.
+      expect(result.current?.avgDailyLoad).toBe(2.5);
+      // strainZone depends on avgDailyLoad: 2.5 / 2.5 = 1.0 → optimal
+      // With && 0: 0 / 0 → chronicAvgLoad <= 0 → optimal (same). So test strainZone + load.
+      expect(result.current?.strainZone).toBe("optimal");
+    });
+
+    it("computes sleepPerformancePct using division not multiplication (kills / → * mutant)", async () => {
+      // sleepPerformancePct = Math.round((avgSleepMin / prev3wkSleep) * 100)
+      // With /: (360 / 400) * 100 = 90
+      // With *: (360 * 400) * 100 = 14400000
+      const rows = [
+        {
+          week_start: "2026-03-17",
+          total_hours: 3,
+          activity_count: 2,
+          avg_daily_load: 1,
+          avg_sleep_min: 360,
+          avg_resting_hr: null,
+          avg_hrv: null,
+          chronic_avg_load: 1,
+          prev_3wk_avg_sleep: 400,
+        },
+      ];
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue(rows) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+      const result = await caller.report({ weeks: 1, endDate: "2026-03-24" });
+      expect(result.current?.sleepPerformancePct).toBe(90);
+    });
   });
 });

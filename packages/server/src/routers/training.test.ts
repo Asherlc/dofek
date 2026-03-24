@@ -246,22 +246,6 @@ describe("pickCardioFocus", () => {
       "intervals",
     );
   });
-  it("returns z2 when high intensity is already high", () => {
-    expect(pickCardioFocus({ ...baseInput, highIntensityPct: 0.3, lowIntensityPct: 0.5 })).toBe(
-      "z2",
-    );
-  });
-  it("returns z2 when moderate intensity is high", () => {
-    expect(
-      pickCardioFocus({
-        ...baseInput,
-        highIntensityPct: 0.2,
-        moderateIntensityPct: 0.35,
-        lowIntensityPct: 0.45,
-      }),
-    ).toBe("z2");
-  });
-
   it("returns z2 (not intervals) when highIntensityPct is exactly at threshold 0.2", () => {
     // HIGH_INTENSITY_RATIO_TARGET = 0.2; condition is `< 0.2`, so 0.2 should NOT match intervals
     expect(pickCardioFocus({ ...baseInput, highIntensityPct: 0.2, lowIntensityPct: 0.7 })).toBe(
@@ -280,58 +264,6 @@ describe("pickCardioFocus", () => {
     expect(pickCardioFocus({ ...baseInput, highIntensityPct: 0.15, lowIntensityPct: 0.61 })).toBe(
       "intervals",
     );
-  });
-
-  it("returns z2 when highIntensityPct is exactly 0.25 (boundary, kills >= mutant)", () => {
-    // Condition is `> 0.25`, so exactly 0.25 should NOT match this branch
-    // Falls through to default z2
-    expect(
-      pickCardioFocus({
-        ...baseInput,
-        highIntensityPct: 0.25,
-        moderateIntensityPct: 0.2,
-        lowIntensityPct: 0.55,
-      }),
-    ).toBe("z2");
-  });
-
-  it("returns z2 when moderateIntensityPct is exactly 0.3 (boundary)", () => {
-    // Condition is `> 0.3`, so exactly 0.3 should NOT match
-    expect(
-      pickCardioFocus({
-        ...baseInput,
-        highIntensityPct: 0.22,
-        moderateIntensityPct: 0.3,
-        lowIntensityPct: 0.48,
-      }),
-    ).toBe("z2");
-  });
-
-  it("returns z2 when only highIntensityPct > 0.25 (kills || to && mutant)", () => {
-    // Only first condition true: highIntensityPct=0.26 > 0.25, moderateIntensityPct=0.2 <= 0.3
-    expect(
-      pickCardioFocus({
-        ...baseInput,
-        highIntensityPct: 0.26,
-        moderateIntensityPct: 0.2,
-        lowIntensityPct: 0.54,
-      }),
-    ).toBe("z2");
-  });
-
-  it("returns z2 when only moderateIntensityPct > 0.3 (kills || to && mutant)", () => {
-    // Only second condition true: highIntensityPct=0.22 <= 0.25, moderateIntensityPct=0.35 > 0.3
-    // But highIntensityPct < HIGH_INTENSITY_RATIO_TARGET (0.2)? No, 0.22 > 0.2. Let's use 0.21.
-    // Actually wait: 0.22 > 0.2, so line 813 check (< 0.2) is false. Line 815 checks > 0.25 || > 0.3.
-    // With only moderateIntensityPct > 0.3, it should still return z2 via ||.
-    expect(
-      pickCardioFocus({
-        ...baseInput,
-        highIntensityPct: 0.22,
-        moderateIntensityPct: 0.35,
-        lowIntensityPct: 0.43,
-      }),
-    ).toBe("z2");
   });
 
   it("returns z2 for readinessScore below threshold even with high readinessLevel", () => {
