@@ -232,6 +232,9 @@ importers:
       '@dofek/zones':
         specifier: workspace:*
         version: link:../zones
+      '@sentry/cli':
+        specifier: 3.3.3
+        version: 3.3.3
       '@sentry/react-native':
         specifier: 8.5.0
         version: 8.5.0(expo@55.0.6)(react-native@0.83.4(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.4))(react@19.2.4)
