@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { NextWorkoutRecommendation } from "dofek-server/types";
 import { useRouter } from "expo-router";
 import {
@@ -11,7 +11,6 @@ import {
 import Svg, { Polyline } from "react-native-svg";
 import { ActivityCard } from "../../components/ActivityCard";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
-import { DaySelector } from "../../components/DaySelector";
 import { MetricCard } from "../../components/MetricCard";
 import { OnboardingWelcome } from "../../components/OnboardingWelcome";
 import { RecoveryRing } from "../../components/charts/RecoveryRing";
@@ -61,7 +60,7 @@ export default function OverviewScreen() {
   const router = useRouter();
   const onboarding = useOnboarding();
   const units = useUnitConverter();
-  const [days, setDays] = useState(30);
+  const days = 30;
   const [recentActivityPage, setRecentActivityPage] = useState(0);
   const showDetailedSections = true;
   const endDate = useMemo(() => formatDateYmd(), []);
@@ -106,10 +105,6 @@ export default function OverviewScreen() {
     limit: RECENT_ACTIVITY_PAGE_SIZE,
     offset: recentActivityPage * RECENT_ACTIVITY_PAGE_SIZE,
   });
-
-  useEffect(() => {
-    setRecentActivityPage(0);
-  }, [days]);
 
   const recentActivities = ActivityRowSchema.array()
     .catch([])
@@ -226,8 +221,6 @@ export default function OverviewScreen() {
       )}
 
       <Text style={styles.date}>{todayString()}</Text>
-
-      <DaySelector days={days} onChange={setDays} />
 
       <View style={styles.detailsHintCard}>
         <Text style={styles.detailsHintText}>

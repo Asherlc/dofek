@@ -1,3 +1,13 @@
+terraform {
+  cloud {
+    organization = "dofek"
+
+    workspaces {
+      name = "deploy-config"
+    }
+  }
+}
+
 variable "server_ip" {
   description = "Server IP address to deploy config to"
   type        = string

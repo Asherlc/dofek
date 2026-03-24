@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { type ReactNode, useCallback, useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { z } from "zod";
 import { ActivityList } from "../components/ActivityList.tsx";
 import { AnomalyAlertBanner } from "../components/AnomalyAlertBanner.tsx";
@@ -19,7 +19,6 @@ import { SleepNeedCard } from "../components/SleepNeedCard.tsx";
 import { SmoothedWeightChart } from "../components/SmoothedWeightChart.tsx";
 import { StrainCard } from "../components/StrainCard.tsx";
 import { StressChart } from "../components/StressChart.tsx";
-import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { TimeSeriesChart } from "../components/TimeSeriesChart.tsx";
 import { WeeklyReportCard } from "../components/WeeklyReportCard.tsx";
 import { useAutoSync } from "../hooks/useAutoSync.ts";
@@ -187,13 +186,9 @@ export const DASHBOARD_SECTION_IDS = new Set([
 export function Dashboard() {
   const units = useUnitConverter();
   const { layout, toggleCollapsed, toggleHidden, moveSection } = useDashboardLayout();
-  const [days, setDaysRaw] = useState(30);
+  const days = 30;
   const [activityPage, setActivityPage] = useState(0);
   const activityPageSize = 20;
-  const setDays = useCallback((d: number) => {
-    setDaysRaw(d);
-    setActivityPage(0);
-  }, []);
   const onboarding = useOnboarding();
   const endDate = useMemo(() => formatDateForQuery(), []);
 
@@ -589,14 +584,16 @@ export function Dashboard() {
   return (
     <PageLayout
       headerChildren={
-        <div className="flex items-center gap-2 sm:gap-4 shrink-0">
-          <p className="text-xs text-subtle hidden sm:block">
-            {trendData?.latest_date
-              ? `Latest: ${new Date(trendData.latest_date).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}`
-              : ""}
+        trendData?.latest_date ? (
+          <p className="text-xs text-subtle hidden sm:block shrink-0">
+            Latest:{" "}
+            {new Date(trendData.latest_date).toLocaleDateString("en-US", {
+              weekday: "long",
+              month: "long",
+              day: "numeric",
+            })}
           </p>
-          <TimeRangeSelector days={days} onChange={setDays} />
-        </div>
+        ) : undefined
       }
     >
       {/* Onboarding — shown to new users with no connected providers */}

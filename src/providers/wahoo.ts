@@ -20,21 +20,30 @@ import type {
 // Wahoo API Zod schemas
 // ============================================================
 
+/**
+ * Wahoo's API returns numeric fields as strings or null — coerce to number
+ * or undefined so downstream code always sees `number | undefined`.
+ */
+const wahooNumeric = z.preprocess(
+  (val) => (val === null || val === undefined ? undefined : Number(val)),
+  z.number().optional(),
+);
+
 export const wahooWorkoutSummarySchema = z.object({
   id: z.number(),
-  ascent_accum: z.number().optional(),
-  cadence_avg: z.number().optional(),
-  calories_accum: z.number().optional(),
-  distance_accum: z.number().optional(),
-  duration_active_accum: z.number().optional(),
-  duration_paused_accum: z.number().optional(),
-  duration_total_accum: z.number().optional(),
-  heart_rate_avg: z.number().optional(),
-  power_bike_np_last: z.number().optional(),
-  power_bike_tss_last: z.number().optional(),
-  power_avg: z.number().optional(),
-  speed_avg: z.number().optional(),
-  work_accum: z.number().optional(),
+  ascent_accum: wahooNumeric,
+  cadence_avg: wahooNumeric,
+  calories_accum: wahooNumeric,
+  distance_accum: wahooNumeric,
+  duration_active_accum: wahooNumeric,
+  duration_paused_accum: wahooNumeric,
+  duration_total_accum: wahooNumeric,
+  heart_rate_avg: wahooNumeric,
+  power_bike_np_last: wahooNumeric,
+  power_bike_tss_last: wahooNumeric,
+  power_avg: wahooNumeric,
+  speed_avg: wahooNumeric,
+  work_accum: wahooNumeric,
   created_at: z.string(),
   updated_at: z.string(),
   file: z.object({ url: z.string() }).optional(),
