@@ -1172,7 +1172,7 @@ interface MonthlyCorrelationPair {
   yFn: (m: MonthlyAgg) => number | null;
 }
 
-function getMonthlyCorrelations(): MonthlyCorrelationPair[] {
+export function getMonthlyCorrelations(): MonthlyCorrelationPair[] {
   return [
     // Total calories → weight (not isocaloric — this is the total energy signal)
     {
