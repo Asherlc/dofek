@@ -157,10 +157,9 @@ export default function OverviewScreen() {
     : false;
   const dailyStrain = strainIsToday ? (workloadResult?.displayedStrain ?? 0) : 0;
 
-  const isLoading =
-    readinessQuery.isLoading ||
-    sleepQuery.isLoading ||
-    workloadQuery.isLoading;
+  const readinessLoading = readinessQuery.isLoading;
+  const workloadLoading = workloadQuery.isLoading;
+  const sleepAnalyticsLoading = sleepQuery.isLoading;
 
   // Derive data for new sections
   const currentWeek = weeklyReport?.current;
@@ -236,93 +235,97 @@ export default function OverviewScreen() {
         <Text style={styles.quickAddLabel}>Log Food</Text>
       </TouchableOpacity>
 
-      {isLoading ? (
-        <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Loading your data...</Text>
+      {/* Recovery + Strain rings — each loads independently */}
+      <View style={styles.ringsRow}>
+        <View style={styles.ringSection}>
+          <ChartTitleWithTooltip
+            title="Recovery"
+            description="This ring visualizes your readiness score based on recovery-related signals."
+            textStyle={styles.sectionLabel}
+          />
+          {readinessLoading ? (
+            <View style={[styles.emptyRing, { width: 180, height: 180, opacity: 0.4 }]}>
+              <Text style={styles.emptyRingText}>...</Text>
+            </View>
+          ) : recoveryScore != null ? (
+            <RecoveryRing score={recoveryScore} size={180} />
+          ) : (
+            <View style={[styles.emptyRing, { width: 180, height: 180 }]}>
+              <Text style={styles.emptyRingText}>--</Text>
+              <Text style={styles.emptyRingSubtext}>No data yet</Text>
+            </View>
+          )}
         </View>
-      ) : (
-        <>
-          {/* Recovery + Strain rings */}
-          <View style={styles.ringsRow}>
-            <View style={styles.ringSection}>
-              <ChartTitleWithTooltip
-                title="Recovery"
-                description="This ring visualizes your readiness score based on recovery-related signals."
-                textStyle={styles.sectionLabel}
-              />
-              {recoveryScore != null ? (
-                <RecoveryRing score={recoveryScore} size={180} />
-              ) : (
-                <View style={[styles.emptyRing, { width: 180, height: 180 }]}>
-                  <Text style={styles.emptyRingText}>--</Text>
-                  <Text style={styles.emptyRingSubtext}>No data yet</Text>
-                </View>
-              )}
+        <View style={styles.ringSection}>
+          <ChartTitleWithTooltip
+            title="Strain"
+            description="This gauge shows your most recent daily training strain relative to your recent baseline."
+            textStyle={styles.sectionLabel}
+          />
+          {workloadLoading ? (
+            <View style={[styles.emptyRing, { width: 120, height: 120, opacity: 0.4 }]}>
+              <Text style={styles.emptyRingText}>...</Text>
             </View>
-            <View style={styles.ringSection}>
-              <ChartTitleWithTooltip
-                title="Strain"
-                description="This gauge shows your most recent daily training strain relative to your recent baseline."
-                textStyle={styles.sectionLabel}
-              />
-              <StrainGauge strain={dailyStrain} size={120} />
-            </View>
+          ) : (
+            <StrainGauge strain={dailyStrain} size={120} />
+          )}
+        </View>
+      </View>
+
+      {/* Recovery components breakdown */}
+      {showDetailedSections && todayReadiness?.components && (
+        <View style={styles.card}>
+          <ChartTitleWithTooltip
+            title="Recovery Breakdown"
+            description="These bars break your readiness score into heart rate variability, resting heart rate, sleep quality, and training balance."
+            textStyle={styles.cardTitle}
+          />
+          <View style={styles.componentGrid}>
+            <ComponentRow
+              label="Heart Rate Variability"
+              score={todayReadiness.components.hrvScore}
+            />
+            <ComponentRow
+              label="Resting Heart Rate"
+              score={todayReadiness.components.restingHrScore}
+            />
+            <ComponentRow
+              label="Sleep Quality"
+              score={todayReadiness.components.sleepScore}
+            />
+            <ComponentRow
+              label="Respiratory Rate"
+              score={todayReadiness.components.respiratoryRateScore}
+            />
           </View>
+        </View>
+      )}
 
-          {/* Recovery components breakdown */}
-          {showDetailedSections && todayReadiness?.components && (
-            <View style={styles.card}>
-              <ChartTitleWithTooltip
-                title="Recovery Breakdown"
-                description="These bars break your readiness score into heart rate variability, resting heart rate, sleep quality, and training balance."
-                textStyle={styles.cardTitle}
-              />
-              <View style={styles.componentGrid}>
-                <ComponentRow
-                  label="Heart Rate Variability"
-                  score={todayReadiness.components.hrvScore}
-                />
-                <ComponentRow
-                  label="Resting Heart Rate"
-                  score={todayReadiness.components.restingHrScore}
-                />
-                <ComponentRow
-                  label="Sleep Quality"
-                  score={todayReadiness.components.sleepScore}
-                />
-                <ComponentRow
-                  label="Respiratory Rate"
-                  score={todayReadiness.components.respiratoryRateScore}
-                />
-              </View>
-            </View>
+      {/* Sleep summary */}
+      {!sleepAnalyticsLoading && showDetailedSections && lastNight && (
+        <View style={styles.card}>
+          <ChartTitleWithTooltip
+            title="Last Night"
+            description="This sleep stage bar shows how your total sleep was split across deep, REM, light, and awake time."
+            textStyle={styles.cardTitle}
+          />
+          <SleepBar
+            durationMinutes={lastNight.durationMinutes}
+            deepPercentage={lastNight.deepPct}
+            remPercentage={lastNight.remPct}
+            lightPercentage={lastNight.lightPct}
+            awakePercentage={lastNight.awakePct}
+          />
+          {sleepDebt > 0 && (
+            <Text style={styles.sleepDebt}>
+              {formatSleepDebtInline(sleepDebt)}
+            </Text>
           )}
+        </View>
+      )}
 
-          {/* Sleep summary */}
-          {showDetailedSections && lastNight && (
-            <View style={styles.card}>
-              <ChartTitleWithTooltip
-                title="Last Night"
-                description="This sleep stage bar shows how your total sleep was split across deep, REM, light, and awake time."
-                textStyle={styles.cardTitle}
-              />
-              <SleepBar
-                durationMinutes={lastNight.durationMinutes}
-                deepPercentage={lastNight.deepPct}
-                remPercentage={lastNight.remPct}
-                lightPercentage={lastNight.lightPct}
-                awakePercentage={lastNight.awakePct}
-              />
-              {sleepDebt > 0 && (
-                <Text style={styles.sleepDebt}>
-                  {formatSleepDebtInline(sleepDebt)}
-                </Text>
-              )}
-            </View>
-          )}
-
-          {/* Key metrics row */}
-          <View style={styles.metricsGrid}>
+      {/* Key metrics row */}
+      <View style={styles.metricsGrid}>
             <MetricCard
               title="Heart Rate Variability"
               value={latestHrv?.hrv != null ? String(Math.round(latestHrv.hrv)) : "--"}
@@ -797,8 +800,6 @@ export default function OverviewScreen() {
               </View>
             </View>
           )}
-        </>
-      )}
     </ScrollView>
   );
 }

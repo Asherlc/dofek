@@ -600,7 +600,9 @@ export function Dashboard() {
         readiness={readinessData.data}
         workloadRatio={workloadRatio.data}
         sleepPerformance={sleepPerformance.data}
-        loading={readinessData.isLoading || workloadRatio.isLoading || sleepPerformance.isLoading}
+        readinessLoading={readinessData.isLoading}
+        workloadLoading={workloadRatio.isLoading}
+        sleepLoading={sleepPerformance.isLoading}
       />
 
       <section>
