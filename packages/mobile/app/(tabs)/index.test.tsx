@@ -114,7 +114,7 @@ vi.mock("../../theme", () => ({
   },
 }));
 
-describe("Health Status stale date indicator", () => {
+describe("Health Status title", () => {
   beforeEach(() => {
     mockTrendsData = undefined;
     mockDailyMetricsData = [];
@@ -123,31 +123,13 @@ describe("Health Status stale date indicator", () => {
     mockSleepLoading = false;
   });
 
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("shows 'Health Status' when data is from today", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-03-21T10:00:00"));
-    mockTrendsData = { latest_date: "2026-03-21", latest_steps: 5000 };
-
-    const { default: OverviewScreen } = await import("./index");
-    render(<OverviewScreen />);
-
-    expect(screen.getByText("Health Status")).toBeDefined();
-  });
-
-  it("shows date in title when data is stale", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-03-21T10:00:00"));
+  it("always shows 'Health Status' regardless of data date", async () => {
     mockTrendsData = { latest_date: "2026-03-20", latest_steps: 2895 };
 
     const { default: OverviewScreen } = await import("./index");
     render(<OverviewScreen />);
 
-    const staleTitle = screen.getByText(/Health Status \(.*Mar.*20\)/);
-    expect(staleTitle).toBeDefined();
+    expect(screen.getByText("Health Status")).toBeDefined();
   });
 });
 
