@@ -45,6 +45,8 @@ PODS:
     - ExpoModulesCore
   - ExpoHead (5.0.7):
     - ExpoModulesCore
+  - ExpoHealthKit (0.1.0):
+    - ExpoModulesCore
   - ExpoKeepAwake (55.0.4):
     - ExpoModulesCore
   - ExpoLinking (7.0.5):
@@ -2106,6 +2108,7 @@ DEPENDENCIES:
   - "ExpoFileSystem (from `../../../node_modules/.pnpm/expo-file-system@55.0.11_expo@55.0.6_react-native@0.83.4_@babel+core@7.29.0_@types+react@19.2.14_react@19.2.4_/node_modules/expo-file-system/ios`)"
   - "ExpoFont (from `../../../node_modules/.pnpm/expo-font@55.0.4_expo@55.0.6_react-native@0.83.4_@babel+core@7.29.0_@types+react@19.2.14_react@19.2.4__react@19.2.4/node_modules/expo-font/ios`)"
   - "ExpoHead (from `../../../node_modules/.pnpm/expo-router@5.0.7_@types+react@19.2.14_expo-constants@55.0.7_expo-linking@7.0.5_expo@55_4fd7eb62c3e4d586475e495f1f7201e1/node_modules/expo-router/ios`)"
+  - ExpoHealthKit (from `../modules/health-kit/ios`)
   - "ExpoKeepAwake (from `../../../node_modules/.pnpm/expo-keep-awake@55.0.4_expo@55.0.6_react@19.2.4/node_modules/expo-keep-awake/ios`)"
   - "ExpoLinking (from `../../../node_modules/.pnpm/expo-linking@7.0.5_expo@55.0.6_react-native@0.83.4_@babel+core@7.29.0_@types+react@19.2.14_react@19.2.4__react@19.2.4/node_modules/expo-linking/ios`)"
   - "ExpoLogBox (from `../../../node_modules/.pnpm/@expo+log-box@55.0.7_@expo+dom-webview@55.0.3_expo@55.0.6_react-native@0.83.4_@babel+co_bea6c82a9705d21cc72b5bf4951f6201/node_modules/@expo/log-box`)"
@@ -2225,6 +2228,8 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/.pnpm/expo-font@55.0.4_expo@55.0.6_react-native@0.83.4_@babel+core@7.29.0_@types+react@19.2.14_react@19.2.4__react@19.2.4/node_modules/expo-font/ios"
   ExpoHead:
     :path: "../../../node_modules/.pnpm/expo-router@5.0.7_@types+react@19.2.14_expo-constants@55.0.7_expo-linking@7.0.5_expo@55_4fd7eb62c3e4d586475e495f1f7201e1/node_modules/expo-router/ios"
+  ExpoHealthKit:
+    :path: "../modules/health-kit/ios"
   ExpoKeepAwake:
     :path: "../../../node_modules/.pnpm/expo-keep-awake@55.0.4_expo@55.0.6_react@19.2.4/node_modules/expo-keep-awake/ios"
   ExpoLinking:
@@ -2417,6 +2422,7 @@ SPEC CHECKSUMS:
   ExpoFileSystem: ccbe192dde132e6e97bedcd51018a1642f4fa01c
   ExpoFont: 1aa465cf9f8ac6b670405becba8b15473581b2dd
   ExpoHead: af044f3e9c99e7d8d21bf653b4c2f2ef53a7f082
+  ExpoHealthKit: 09cdac5771e5ccb5fb39dce847fdb32fc8bdbed8
   ExpoKeepAwake: 7f3b28c361c37389b18841bb52a58003b39fcb33
   ExpoLinking: 8d12bee174ba0cdf31239706578e29e74a417402
   ExpoLogBox: 89b634d5a8a64c4a6a7caad8f9985a28463c7002
@@ -2509,6 +2515,6 @@ SPEC CHECKSUMS:
   Yoga: acd565934addf7423687593ec490bd4491b2a802
   ZXingObjC: 8898711ab495761b2dbbdec76d90164a6d7e14c5
 
-PODFILE CHECKSUM: cb913818f910b6be1a83678070c5ab6b9d3a31be
+PODFILE CHECKSUM: 4b04ab6703fa622dd9a929c3c4ba5dfb8bd443af
 
 COCOAPODS: 1.16.2
