@@ -460,6 +460,18 @@ jobs:
           path: reports/mutation/
           retention-days: 7
 
+  mutation-gate:
+    name: Mutation Testing
+    needs: [mutation-prep, mutation]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          if [ "${{ needs.mutation.result }}" = "failure" ] || [ "${{ needs.mutation.result }}" = "cancelled" ]; then
+            echo "Mutation testing failed or was cancelled"
+            exit 1
+          fi
+
   test-swift:
     name: Swift Tests
     needs: check-mobile-changes
