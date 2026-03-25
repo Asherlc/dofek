@@ -16,6 +16,11 @@ vi.mock("../logger.ts", () => ({
 }));
 
 // Mock dependencies — the mock functions are accessed via module-level refs
+const mockCaptureException = vi.fn();
+vi.mock("@sentry/node", () => ({
+  captureException: (...args: unknown[]) => mockCaptureException(...args),
+}));
+
 vi.mock("./provider-registration.ts", () => ({
   ensureProvidersRegistered: vi.fn().mockResolvedValue(undefined),
 }));
@@ -277,6 +282,33 @@ describe("processSyncJob", () => {
     // Verify each error is logged individually via Winston
     expect(mockLoggerError).toHaveBeenCalledWith("[worker] Partial sync error: bad record 1");
     expect(mockLoggerError).toHaveBeenCalledWith("[worker] Partial sync error: bad record 2");
+  });
+
+  it("reports accumulated sync errors to Sentry", async () => {
+    const syncError = new Error("Invalid start timestamp: undefined");
+    const provider = createMockProvider({
+      id: "whoop",
+      name: "WHOOP",
+      sync: vi.fn().mockResolvedValue({
+        provider: "whoop",
+        recordsSynced: 3,
+        errors: [
+          { message: "Sleep 123: Invalid start timestamp: undefined", cause: syncError },
+          { message: "Sleep 456: Invalid start timestamp: undefined" },
+        ],
+        duration: 50,
+      }),
+    });
+    mockGetSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    // Each error with a `cause` should be reported to Sentry
+    expect(mockCaptureException).toHaveBeenCalledWith(syncError, {
+      tags: { provider: "whoop" },
+    });
+    // Errors without a cause should still be reported (as a new Error)
+    expect(mockCaptureException).toHaveBeenCalledTimes(2);
   });
 
   it("calls ensureProvider for each synced provider", async () => {

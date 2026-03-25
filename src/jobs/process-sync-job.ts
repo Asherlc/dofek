@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/node";
 import type { SyncDatabase } from "../db/index.ts";
 import { logSync } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
@@ -90,6 +91,10 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
       if (hasErrors) {
         for (const err of result.errors) {
           logger.error(`[worker] ${provider.name} sync error: ${err.message}`);
+          const exception = err.cause instanceof Error ? err.cause : new Error(err.message);
+          Sentry.captureException(exception, {
+            tags: { provider: provider.id },
+          });
         }
       }
 
