@@ -340,7 +340,7 @@ describe("WhoopProvider.sync() (integration)", () => {
 
     const lift = rows.find((r) => r.externalId === "wl-2001-uuid");
     if (!lift) throw new Error("expected workout wl-2001-uuid");
-    expect(lift.activityType).toBe("weightlifting");
+    expect(lift.activityType).toBe("strength");
 
     const ride = rows.find((r) => r.externalId === "cy-2002-uuid");
     if (!ride) throw new Error("expected workout cy-2002-uuid");
