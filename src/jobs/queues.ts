@@ -1,5 +1,6 @@
 import type { ConnectionOptions } from "bullmq";
 import { Queue } from "bullmq";
+import type { ProviderSyncTier } from "./provider-queue-config.ts";
 
 // ── Job payload types ──
 
@@ -27,14 +28,29 @@ export interface ExportJobData {
 export interface ScheduledSyncJobData {
   /** Marker to distinguish from regular sync jobs */
   type: "scheduled-sync-all";
+  /** Which sync tier this scheduled run targets (omit to sync all tiers) */
+  syncTier?: ProviderSyncTier;
+  /** Interval in ms between scheduled runs (used for stagger delay computation) */
+  intervalMs?: number;
+}
+
+export interface PostSyncJobData {
+  userId: string;
 }
 
 // ── Queue names ──
 
 export const SYNC_QUEUE = "sync";
+export const SYNC_QUEUE_PREFIX = "sync";
 export const IMPORT_QUEUE = "import";
 export const EXPORT_QUEUE = "export";
 export const SCHEDULED_SYNC_QUEUE = "scheduled-sync";
+export const POST_SYNC_QUEUE = "post-sync";
+
+/** Get the per-provider queue name for a given provider ID. */
+export function providerSyncQueueName(providerId: string): string {
+  return `${SYNC_QUEUE_PREFIX}:${providerId}`;
+}
 
 // ── Shared Redis connection config ──
 
@@ -53,8 +69,19 @@ export function getRedisConnection(): ConnectionOptions {
 
 // ── Queue factories ──
 
+/** @deprecated Use createProviderSyncQueue() for new code. Kept for legacy queue drain. */
 export function createSyncQueue(connection?: ConnectionOptions): Queue<SyncJobData> {
   return new Queue(SYNC_QUEUE, { connection: connection ?? getRedisConnection() });
+}
+
+/** Create a per-provider sync queue (e.g., sync:strava, sync:garmin). */
+export function createProviderSyncQueue(
+  providerId: string,
+  connection?: ConnectionOptions,
+): Queue<SyncJobData> {
+  return new Queue(providerSyncQueueName(providerId), {
+    connection: connection ?? getRedisConnection(),
+  });
 }
 
 export function createImportQueue(connection?: ConnectionOptions): Queue<ImportJobData> {
@@ -69,4 +96,8 @@ export function createScheduledSyncQueue(
   connection?: ConnectionOptions,
 ): Queue<ScheduledSyncJobData> {
   return new Queue(SCHEDULED_SYNC_QUEUE, { connection: connection ?? getRedisConnection() });
+}
+
+export function createPostSyncQueue(connection?: ConnectionOptions): Queue<PostSyncJobData> {
+  return new Queue(POST_SYNC_QUEUE, { connection: connection ?? getRedisConnection() });
 }

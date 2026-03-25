@@ -1,19 +1,22 @@
-import { createSyncQueue } from "dofek/jobs/queues";
+import type { Job, Queue } from "bullmq";
+import { getConfiguredProviderIds } from "dofek/jobs/provider-queue-config";
+import {
+  createProviderSyncQueue,
+  createSyncQueue,
+  providerSyncQueueName,
+  type SyncJobData,
+} from "dofek/jobs/queues";
 import { ProviderModel } from "dofek/providers/provider-model";
 import { getAllProviders, registerProvider } from "dofek/providers/registry";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { queryCache } from "../lib/cache.ts";
 import { startWorker } from "../lib/start-worker.ts";
-import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
 const tokenRowSchema = z.object({ provider_id: z.string() });
-const lastSyncRowSchema = z.object({
-  provider_id: z.string(),
-  last_synced: timestampStringSchema,
-});
 
 // ── Input schemas ──
 export const triggerSyncInput = z.object({
@@ -117,12 +120,26 @@ async function doRegisterProviders() {
   }
 }
 
-// ── BullMQ sync queue (lazy init) ──
-let _syncQueue: ReturnType<typeof createSyncQueue> | null = null;
+// ── BullMQ sync queues (lazy init) ──
 
-function getSyncQueue() {
-  if (!_syncQueue) _syncQueue = createSyncQueue();
-  return _syncQueue;
+/** Cache of per-provider queue instances to avoid creating new connections per request. */
+const providerQueues = new Map<string, Queue<SyncJobData>>();
+
+function getProviderQueue(providerId: string): Queue<SyncJobData> {
+  let queue = providerQueues.get(providerId);
+  if (!queue) {
+    queue = createProviderSyncQueue(providerId);
+    providerQueues.set(providerId, queue);
+  }
+  return queue;
+}
+
+/** @deprecated Legacy queue for syncStatus/activeSyncs backward compat. */
+let _legacySyncQueue: ReturnType<typeof createSyncQueue> | null = null;
+
+function getLegacySyncQueue() {
+  if (!_legacySyncQueue) _legacySyncQueue = createSyncQueue();
+  return _legacySyncQueue;
 }
 
 /** Map BullMQ job state to the frontend SyncJobStatus shape */
@@ -144,7 +161,6 @@ export const syncRouter = router({
     const all = getAllProviders();
 
     // Batch: load all tokens + last sync times in 2 queries instead of 2N
-    const providerIdRowSchema = z.object({ provider_id: z.string() });
     const lastSyncRowSchema = z.object({
       provider_id: z.string(),
       last_synced: z.string(),
@@ -228,15 +244,20 @@ export const syncRouter = router({
       if (providerIds.length === 0) throw new Error("No configured providers available for sync");
     }
 
-    const queue = getSyncQueue();
     const providerJobs = await Promise.all(
       providerIds.map(async (providerId) => {
+        const queue = getProviderQueue(providerId);
         const job = await queue.add("sync", {
           providerId,
           sinceDays: input.sinceDays,
           userId: ctx.userId,
         });
-        return { providerId, jobId: toJobId(job.id, providerId) };
+        const jobId = toJobId(job.id, providerId);
+        return {
+          providerId,
+          jobId,
+          queueName: providerSyncQueueName(providerId),
+        };
       }),
     );
 
@@ -252,9 +273,17 @@ export const syncRouter = router({
   syncStatus: protectedProcedure.input(syncStatusInput).query(async ({ ctx, input }) => {
     if (!input.jobId) return null;
 
-    let job: Awaited<ReturnType<ReturnType<typeof getSyncQueue>["getJob"]>> | undefined;
+    // Search per-provider queues first, fall back to legacy queue
+    let job: Awaited<ReturnType<Queue<SyncJobData>["getJob"]>> | undefined;
     try {
-      job = await getSyncQueue().getJob(input.jobId);
+      for (const providerId of getConfiguredProviderIds()) {
+        job = await getProviderQueue(providerId).getJob(input.jobId);
+        if (job) break;
+      }
+      // Fall back to legacy queue for old jobs
+      if (!job) {
+        job = await getLegacySyncQueue().getJob(input.jobId);
+      }
     } catch {
       return null; // Redis unavailable
     }
@@ -299,9 +328,15 @@ export const syncRouter = router({
 
   /** Check for active sync jobs belonging to the current user */
   activeSyncs: protectedProcedure.query(async ({ ctx }) => {
-    let jobs: Awaited<ReturnType<ReturnType<typeof getSyncQueue>["getJobs"]>>;
+    // Collect jobs from all per-provider queues + legacy queue
+    let jobs: Job<SyncJobData>[];
     try {
-      jobs = await getSyncQueue().getJobs(["active", "waiting", "delayed"]);
+      const states: Array<"active" | "waiting" | "delayed"> = ["active", "waiting", "delayed"];
+      const jobArrays: Job<SyncJobData>[][] = await Promise.all([
+        ...getConfiguredProviderIds().map((id) => getProviderQueue(id).getJobs(states)),
+        getLegacySyncQueue().getJobs(states),
+      ]);
+      jobs = jobArrays.flat();
     } catch {
       return []; // Redis unavailable
     }
