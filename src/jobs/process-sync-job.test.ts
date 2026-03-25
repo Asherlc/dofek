@@ -2,6 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
 import type { SyncProvider, SyncResult } from "../providers/types.ts";
 
+const mockCaptureException = vi.fn();
+vi.mock("@sentry/node", () => ({
+  captureException: (...args: unknown[]) => mockCaptureException(...args),
+}));
+
 const mockLoggerInfo = vi.fn();
 const mockLoggerError = vi.fn();
 const mockLoggerWarn = vi.fn();
@@ -16,6 +21,7 @@ vi.mock("../logger.ts", () => ({
 }));
 
 // Mock dependencies — the mock functions are accessed via module-level refs
+
 vi.mock("./provider-registration.ts", () => ({
   ensureProvidersRegistered: vi.fn().mockResolvedValue(undefined),
 }));
@@ -277,6 +283,49 @@ describe("processSyncJob", () => {
     // Verify each error is logged individually via Winston
     expect(mockLoggerError).toHaveBeenCalledWith("[worker] Partial sync error: bad record 1");
     expect(mockLoggerError).toHaveBeenCalledWith("[worker] Partial sync error: bad record 2");
+  });
+
+  it("reports thrown sync errors to Sentry", async () => {
+    const thrownError = new Error("API timeout");
+    const provider = createMockProvider({
+      id: "broken",
+      name: "Broken",
+      sync: vi.fn().mockRejectedValue(thrownError),
+    });
+    mockGetSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    expect(mockCaptureException).toHaveBeenCalledWith(thrownError, {
+      tags: { provider: "broken" },
+    });
+  });
+
+  it("reports returned sync errors to Sentry", async () => {
+    const cause = new Error("original cause");
+    const provider = createMockProvider({
+      id: "partial",
+      name: "Partial",
+      sync: vi.fn().mockResolvedValue({
+        provider: "partial",
+        recordsSynced: 3,
+        errors: [{ message: "bad record 1", cause }, { message: "bad record 2" }],
+        duration: 50,
+      }),
+    });
+    mockGetSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    // First error: uses the cause as the exception
+    expect(mockCaptureException).toHaveBeenCalledWith(cause, {
+      tags: { provider: "partial" },
+    });
+    // Second error: creates an Error from the message
+    expect(mockCaptureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "bad record 2" }),
+      { tags: { provider: "partial" } },
+    );
   });
 
   it("calls ensureProvider for each synced provider", async () => {

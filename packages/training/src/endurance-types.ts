@@ -8,6 +8,15 @@
 
 export const ENDURANCE_ACTIVITY_TYPES = [
   "cycling",
+  "road_cycling",
+  "mountain_biking",
+  "gravel_cycling",
+  "indoor_cycling",
+  "virtual_cycling",
+  "e_bike_cycling",
+  "cyclocross",
+  "track_cycling",
+  "bmx",
   "running",
   "swimming",
   "walking",

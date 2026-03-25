@@ -49,15 +49,15 @@ export function welchTTest(a: number[], b: number[]): TTestResult {
   const se = Math.sqrt(v1 / n1 + v2 / n2);
   if (se === 0) return { t: 0, pValue: 1, df: n1 + n2 - 2 };
 
-  const t = (m1 - m2) / se;
+  const tStatistic = (m1 - m2) / se;
 
   // Welch-Satterthwaite degrees of freedom
   const num = (v1 / n1 + v2 / n2) ** 2;
   const denom = (v1 / n1) ** 2 / (n1 - 1) + (v2 / n2) ** 2 / (n2 - 1);
   const df = num / denom;
 
-  const pValue = 2 * tCDF(-Math.abs(t), df);
-  return { t, pValue, df };
+  const pValue = 2 * tCDF(-Math.abs(tStatistic), df);
+  return { t: tStatistic, pValue, df };
 }
 
 // ── Cohen's d effect size ─────────────────────────────────────────────────
@@ -82,8 +82,8 @@ export interface CorrelationResult {
 }
 
 export function spearmanCorrelation(x: number[], y: number[]): CorrelationResult {
-  const n = x.length;
-  if (n < 5) return { rho: 0, pValue: 1, n };
+  const sampleSize = x.length;
+  if (sampleSize < 5) return { rho: 0, pValue: 1, n: sampleSize };
 
   const rx: number[] = ranks(x, { method: "average" });
   const ry: number[] = ranks(y, { method: "average" });
@@ -92,25 +92,25 @@ export function spearmanCorrelation(x: number[], y: number[]): CorrelationResult
   return {
     rho: result.pcorr,
     pValue: result.pValue,
-    n,
+    n: sampleSize,
   };
 }
 
 // ── Benjamini-Hochberg FDR correction ─────────────────────────────────────
 
 export function benjaminiHochberg(pValues: number[], alpha: number = 0.05): boolean[] {
-  const m = pValues.length;
+  const numTests = pValues.length;
   const indexed = pValues.map((p, i) => ({ p, i })).sort((a, b) => a.p - b.p);
 
   let maxK = -1;
-  for (let k = 0; k < m; k++) {
+  for (let k = 0; k < numTests; k++) {
     const entry = indexed[k];
-    if (entry && entry.p <= ((k + 1) / m) * alpha) {
+    if (entry && entry.p <= ((k + 1) / numTests) * alpha) {
       maxK = k;
     }
   }
 
-  const significant = new Array(m).fill(false);
+  const significant = new Array(numTests).fill(false);
   if (maxK >= 0) {
     for (let k = 0; k <= maxK; k++) {
       const entry = indexed[k];
@@ -123,14 +123,14 @@ export function benjaminiHochberg(pValues: number[], alpha: number = 0.05): bool
 // ── Helpers ───────────────────────────────────────────────────────────────
 
 function variance(arr: number[]): number {
-  const m = mean(arr);
-  return arr.reduce((sum, v) => sum + (v - m) ** 2, 0) / (arr.length - 1);
+  const arrMean = mean(arr);
+  return arr.reduce((sum, v) => sum + (v - arrMean) ** 2, 0) / (arr.length - 1);
 }
 
 /** Student's t CDF via regularized incomplete beta function */
 function tCDF(t: number, df: number): number {
-  const x = df / (df + t * t);
-  return 0.5 * regularizedBeta(x, df / 2, 0.5);
+  const betaArg = df / (df + t * t);
+  return 0.5 * regularizedBeta(betaArg, df / 2, 0.5);
 }
 
 /** Regularized incomplete beta function I_x(a,b) via continued fraction (Lentz) */
@@ -177,7 +177,7 @@ function regularizedBeta(x: number, a: number, b: number): number {
 
 /** Log-gamma via Lanczos approximation */
 function lgamma(z: number): number {
-  const g = 7;
+  const lanczosG = 7;
   const coef = [
     0.99999999999980993, 676.5203681218851, -1259.1392167224028, 771.32342877765313,
     -176.61502916214059, 12.507343278686905, -0.13857109526572012, 9.9843695780195716e-6,
@@ -187,10 +187,15 @@ function lgamma(z: number): number {
     return Math.log(Math.PI / Math.sin(Math.PI * z)) - lgamma(1 - z);
   }
   z -= 1;
-  let x = coef[0] ?? 0;
-  for (let i = 1; i < g + 2; i++) {
-    x += (coef[i] ?? 0) / (z + i);
+  let seriesSum = coef[0] ?? 0;
+  for (let i = 1; i < lanczosG + 2; i++) {
+    seriesSum += (coef[i] ?? 0) / (z + i);
   }
-  const t = z + g + 0.5;
-  return 0.5 * Math.log(2 * Math.PI) + (z + 0.5) * Math.log(t) - t + Math.log(x);
+  const lanczosArg = z + lanczosG + 0.5;
+  return (
+    0.5 * Math.log(2 * Math.PI) +
+    (z + 0.5) * Math.log(lanczosArg) -
+    lanczosArg +
+    Math.log(seriesSum)
+  );
 }

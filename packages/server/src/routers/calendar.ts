@@ -29,7 +29,7 @@ export const calendarRouter = router({
         ctx.db,
         calendarRowSchema,
         sql`SELECT
-          a.started_at::date as date,
+          (a.started_at AT TIME ZONE ${ctx.timezone})::date as date,
           COUNT(*)::int as activity_count,
           ROUND(SUM(EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60)::numeric) as total_minutes,
           array_agg(DISTINCT a.activity_type) as activity_types
@@ -37,7 +37,7 @@ export const calendarRouter = router({
         WHERE a.user_id = ${ctx.userId}
           AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
           AND a.ended_at IS NOT NULL
-        GROUP BY a.started_at::date
+        GROUP BY 1
         ORDER BY date`,
       );
 

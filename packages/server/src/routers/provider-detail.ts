@@ -19,6 +19,7 @@ export const dataTypeEnum = z.enum([
   "healthEvents",
   "metricStream",
   "nutritionDaily",
+  "labPanels",
   "labResults",
   "journalEntries",
 ]);
@@ -52,6 +53,8 @@ export function tableInfo(dataType: DataType): {
       };
     case "nutritionDaily":
       return { table: "fitness.nutrition_daily", orderColumn: "date", idColumn: "date" };
+    case "labPanels":
+      return { table: "fitness.lab_panel", orderColumn: "recorded_at", idColumn: "id" };
     case "labResults":
       return { table: "fitness.lab_result", orderColumn: "recorded_at", idColumn: "id" };
     case "journalEntries":
@@ -70,6 +73,7 @@ export const DISCONNECT_CHILD_TABLES = [
   "fitness.nutrition_daily",
   "fitness.food_entry",
   "fitness.lab_result",
+  "fitness.lab_panel",
   "fitness.health_event",
   "fitness.journal_entry",
   "fitness.dexa_scan",
@@ -174,7 +178,7 @@ export const providerDetailRouter = router({
       }
 
       // Delete all child table rows referencing this provider, then the provider itself.
-      // No inter-child FK dependencies exist, so order only matters for the final provider delete.
+      // Order matters: lab_result references lab_panel, so lab_result is deleted first.
       const childTables = DISCONNECT_CHILD_TABLES;
 
       await ctx.db.transaction(async (tx) => {

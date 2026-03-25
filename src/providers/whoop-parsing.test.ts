@@ -131,28 +131,100 @@ describe("parseSleep — invalid timestamps", () => {
     };
   }
 
-  it("throws with descriptive message for empty start timestamp", () => {
-    expect(() => parseSleep(sleepRecord({ start: "" }))).toThrow("Invalid start timestamp");
+  it("returns null for empty start timestamp", () => {
+    expect(parseSleep(sleepRecord({ start: "" }))).toBeNull();
   });
 
-  it("throws with descriptive message for non-date start timestamp", () => {
-    expect(() => parseSleep(sleepRecord({ start: "not-a-date" }))).toThrow(
-      "Invalid start timestamp",
-    );
+  it("returns null for non-date start timestamp", () => {
+    expect(parseSleep(sleepRecord({ start: "not-a-date" }))).toBeNull();
   });
 
-  it("throws with descriptive message for empty end timestamp", () => {
-    expect(() => parseSleep(sleepRecord({ end: "" }))).toThrow("Invalid end timestamp");
+  it("returns null for empty end timestamp", () => {
+    expect(parseSleep(sleepRecord({ end: "" }))).toBeNull();
   });
 
-  it("includes the raw value in the error message", () => {
-    expect(() => parseSleep(sleepRecord({ start: "garbage" }))).toThrow('"garbage"');
+  it("returns null for garbage start timestamp", () => {
+    expect(parseSleep(sleepRecord({ start: "garbage" }))).toBeNull();
+  });
+
+  it("returns null when start/end are missing and no during is provided", () => {
+    expect(parseSleep(sleepRecord({ start: undefined, end: undefined }))).toBeNull();
   });
 
   it("succeeds with valid timestamps", () => {
     const parsed = parseSleep(sleepRecord());
-    expect(parsed.startedAt).toEqual(new Date("2026-02-28T23:00:00Z"));
-    expect(parsed.endedAt).toEqual(new Date("2026-03-01T07:00:00Z"));
+    expect(parsed).not.toBeNull();
+    expect(parsed?.startedAt).toEqual(new Date("2026-02-28T23:00:00Z"));
+    expect(parsed?.endedAt).toEqual(new Date("2026-03-01T07:00:00Z"));
+  });
+
+  it("parses 'during' Postgres range when start/end are missing", () => {
+    const parsed = parseSleep(
+      sleepRecord({
+        start: undefined,
+        end: undefined,
+        during: "['2026-02-28T23:00:00.000Z','2026-03-01T07:00:00.000Z')",
+      }),
+    );
+    expect(parsed).not.toBeNull();
+    expect(parsed?.startedAt).toEqual(new Date("2026-02-28T23:00:00.000Z"));
+    expect(parsed?.endedAt).toEqual(new Date("2026-03-01T07:00:00.000Z"));
+  });
+
+  it("prefers 'during' over start/end when both are present", () => {
+    const parsed = parseSleep(
+      sleepRecord({
+        start: "2026-01-01T00:00:00Z",
+        end: "2026-01-01T08:00:00Z",
+        during: "['2026-02-28T23:00:00.000Z','2026-03-01T07:00:00.000Z')",
+      }),
+    );
+    expect(parsed).not.toBeNull();
+    expect(parsed?.startedAt).toEqual(new Date("2026-02-28T23:00:00.000Z"));
+    expect(parsed?.endedAt).toEqual(new Date("2026-03-01T07:00:00.000Z"));
+  });
+
+  it("falls back to `during` field when start/end are missing", () => {
+    const record: WhoopSleepRecord = {
+      id: 500,
+      user_id: 10129,
+      created_at: "2026-03-01T06:00:00Z",
+      updated_at: "2026-03-01T06:30:00Z",
+      timezone_offset: "-05:00",
+      nap: false,
+      score_state: "SCORED",
+      during: "['2026-03-24T05:30:00.000Z','2026-03-24T13:15:00.000Z')",
+      score: {
+        stage_summary: {
+          total_in_bed_time_milli: 27900000,
+          total_awake_time_milli: 1800000,
+          total_no_data_time_milli: 0,
+          total_light_sleep_time_milli: 10800000,
+          total_slow_wave_sleep_time_milli: 7200000,
+          total_rem_sleep_time_milli: 8100000,
+          sleep_cycle_count: 4,
+          disturbance_count: 2,
+        },
+        sleep_needed: {
+          baseline_milli: 27000000,
+          need_from_sleep_debt_milli: 0,
+          need_from_recent_strain_milli: 1800000,
+          need_from_recent_nap_milli: 0,
+        },
+        respiratory_rate: 15.5,
+        sleep_performance_percentage: 96,
+        sleep_consistency_percentage: 85,
+        sleep_efficiency_percentage: 93.5,
+      },
+    };
+
+    const parsed = parseSleep(record);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.startedAt).toEqual(new Date("2026-03-24T05:30:00.000Z"));
+    expect(parsed?.endedAt).toEqual(new Date("2026-03-24T13:15:00.000Z"));
+    expect(parsed?.deepMinutes).toBe(120);
+    expect(parsed?.remMinutes).toBe(135);
+    expect(parsed?.lightMinutes).toBe(180);
   });
 });
 
@@ -171,14 +243,15 @@ describe("parseSleep — edge cases", () => {
     };
 
     const parsed = parseSleep(record);
-    expect(parsed.externalId).toBe("300");
-    expect(parsed.deepMinutes).toBe(0);
-    expect(parsed.remMinutes).toBe(0);
-    expect(parsed.lightMinutes).toBe(0);
-    expect(parsed.awakeMinutes).toBe(0);
-    expect(parsed.durationMinutes).toBe(0);
-    expect(parsed.efficiencyPct).toBeUndefined();
-    expect(parsed.isNap).toBe(false);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.externalId).toBe("300");
+    expect(parsed?.deepMinutes).toBe(0);
+    expect(parsed?.remMinutes).toBe(0);
+    expect(parsed?.lightMinutes).toBe(0);
+    expect(parsed?.awakeMinutes).toBe(0);
+    expect(parsed?.durationMinutes).toBe(0);
+    expect(parsed?.efficiencyPct).toBeUndefined();
+    expect(parsed?.isNap).toBe(false);
   });
 
   it("parses nap correctly", () => {
@@ -217,12 +290,13 @@ describe("parseSleep — edge cases", () => {
     };
 
     const parsed = parseSleep(record);
-    expect(parsed.isNap).toBe(true);
-    expect(parsed.deepMinutes).toBe(5);
-    expect(parsed.lightMinutes).toBe(15);
-    expect(parsed.remMinutes).toBe(5);
-    expect(parsed.awakeMinutes).toBe(5);
-    expect(parsed.efficiencyPct).toBeCloseTo(83.3);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.isNap).toBe(true);
+    expect(parsed?.deepMinutes).toBe(5);
+    expect(parsed?.lightMinutes).toBe(15);
+    expect(parsed?.remMinutes).toBe(5);
+    expect(parsed?.awakeMinutes).toBe(5);
+    expect(parsed?.efficiencyPct).toBeCloseTo(83.3);
   });
 });
 
@@ -312,7 +386,7 @@ describe("parseWorkout — edge cases", () => {
     expect(parseWorkout(makeRecord(33)).activityType).toBe("swimming");
     expect(parseWorkout(makeRecord(52)).activityType).toBe("hiking");
     expect(parseWorkout(makeRecord(63)).activityType).toBe("walking");
-    expect(parseWorkout(makeRecord(45)).activityType).toBe("weightlifting");
+    expect(parseWorkout(makeRecord(45)).activityType).toBe("strength");
     expect(parseWorkout(makeRecord(18)).activityType).toBe("rowing");
     expect(parseWorkout(makeRecord(65)).activityType).toBe("elliptical");
     expect(parseWorkout(makeRecord(29)).activityType).toBe("skiing");
@@ -903,10 +977,11 @@ describe("parseSleep — sleep need breakdown", () => {
     };
 
     const parsed = parseSleep(record);
-    expect(parsed.sleepNeedBaselineMinutes).toBe(480);
-    expect(parsed.sleepNeedFromDebtMinutes).toBe(30);
-    expect(parsed.sleepNeedFromStrainMinutes).toBe(15);
-    expect(parsed.sleepNeedFromNapMinutes).toBe(-10);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.sleepNeedBaselineMinutes).toBe(480);
+    expect(parsed?.sleepNeedFromDebtMinutes).toBe(30);
+    expect(parsed?.sleepNeedFromStrainMinutes).toBe(15);
+    expect(parsed?.sleepNeedFromNapMinutes).toBe(-10);
   });
 
   it("returns undefined sleep need when score is missing", () => {
@@ -923,10 +998,11 @@ describe("parseSleep — sleep need breakdown", () => {
     };
 
     const parsed = parseSleep(record);
-    expect(parsed.sleepNeedBaselineMinutes).toBeUndefined();
-    expect(parsed.sleepNeedFromDebtMinutes).toBeUndefined();
-    expect(parsed.sleepNeedFromStrainMinutes).toBeUndefined();
-    expect(parsed.sleepNeedFromNapMinutes).toBeUndefined();
+    expect(parsed).not.toBeNull();
+    expect(parsed?.sleepNeedBaselineMinutes).toBeUndefined();
+    expect(parsed?.sleepNeedFromDebtMinutes).toBeUndefined();
+    expect(parsed?.sleepNeedFromStrainMinutes).toBeUndefined();
+    expect(parsed?.sleepNeedFromNapMinutes).toBeUndefined();
   });
 });
 

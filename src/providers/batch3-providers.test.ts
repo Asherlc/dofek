@@ -14,7 +14,7 @@ describe("Xert Provider", () => {
     it("maps known sports", () => {
       expect(mapXertSport("Cycling")).toBe("cycling");
       expect(mapXertSport("Running")).toBe("running");
-      expect(mapXertSport("Virtual Cycling")).toBe("cycling");
+      expect(mapXertSport("Virtual Cycling")).toBe("virtual_cycling");
       expect(mapXertSport("Mountain Biking")).toBe("mountain_biking");
     });
 

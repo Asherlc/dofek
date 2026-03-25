@@ -2,6 +2,7 @@ import { chartColors, statusColors } from "@dofek/scoring/colors";
 import { readinessLevelColor } from "@dofek/scoring/scoring";
 import type { NextWorkoutRecommendation } from "dofek-server/types";
 import { useEffect, useState } from "react";
+import { isToday } from "../lib/format.ts";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface NextWorkoutCardProps {
@@ -26,7 +27,7 @@ export function NextWorkoutCard({ data, loading }: NextWorkoutCardProps) {
     return <ChartLoadingSkeleton height={260} />;
   }
 
-  if (!data) {
+  if (!data || !isToday(new Date(data.generatedAt))) {
     return (
       <div className="card p-6 flex items-center justify-center h-[260px]">
         <span className="text-dim text-sm">Not enough data for a workout recommendation</span>

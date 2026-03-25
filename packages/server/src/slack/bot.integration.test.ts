@@ -40,11 +40,16 @@ describe("Slack food entry confirmed flag", () => {
   /** Insert a food entry with the given confirmed status, return its id */
   async function insertEntry(confirmed: boolean, foodName = "Test Food"): Promise<string> {
     const rows = await testCtx.db.execute<{ id: string }>(
-      sql`INSERT INTO fitness.food_entry (
-            user_id, provider_id, date, meal, food_name, calories, confirmed
+      sql`WITH nd AS (
+            INSERT INTO fitness.nutrition_data (calories)
+            VALUES (500)
+            RETURNING id
+          )
+          INSERT INTO fitness.food_entry (
+            user_id, provider_id, date, meal, food_name, nutrition_data_id, confirmed
           ) VALUES (
             ${DEFAULT_USER_ID}, ${DOFEK_PROVIDER_ID}, '2025-06-15'::date,
-            'lunch', ${foodName}, 500, ${confirmed}
+            'lunch', ${foodName}, (SELECT id FROM nd), ${confirmed}
           ) RETURNING id`,
     );
     const row = rows[0];
@@ -72,9 +77,11 @@ describe("Slack food entry confirmed flag", () => {
       await insertEntry(true, "Confirmed 500cal");
 
       const rows = await testCtx.db.execute<{ total: string }>(
-        sql`SELECT SUM(calories)::text as total FROM fitness.food_entry
-            WHERE user_id = ${DEFAULT_USER_ID}
-              AND confirmed = true`,
+        sql`SELECT SUM(nd.calories)::text as total
+            FROM fitness.food_entry fe
+            JOIN fitness.nutrition_data nd ON nd.id = fe.nutrition_data_id
+            WHERE fe.user_id = ${DEFAULT_USER_ID}
+              AND fe.confirmed = true`,
       );
 
       expect(Number(rows[0]?.total)).toBe(500);
@@ -238,11 +245,16 @@ describe("Slack food entry confirmed flag", () => {
   describe("default confirmed value", () => {
     it("defaults to true when not specified (web UI / provider sync path)", async () => {
       const rows = await testCtx.db.execute<{ id: string; confirmed: boolean }>(
-        sql`INSERT INTO fitness.food_entry (
-              user_id, provider_id, date, meal, food_name, calories
+        sql`WITH nd AS (
+              INSERT INTO fitness.nutrition_data (calories)
+              VALUES (400)
+              RETURNING id
+            )
+            INSERT INTO fitness.food_entry (
+              user_id, provider_id, date, meal, food_name, nutrition_data_id
             ) VALUES (
               ${DEFAULT_USER_ID}, ${DOFEK_PROVIDER_ID}, '2025-06-15'::date,
-              'dinner', 'Web UI Entry', 400
+              'dinner', 'Web UI Entry', (SELECT id FROM nd)
             ) RETURNING id, confirmed`,
       );
 

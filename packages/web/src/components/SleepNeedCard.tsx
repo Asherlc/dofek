@@ -9,7 +9,6 @@ import {
 } from "../lib/chartTheme.ts";
 import { formatNumber } from "../lib/format.ts";
 import { DofekChart } from "./DofekChart.tsx";
-import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface SleepNeedCardProps {
   data: SleepNeedResult | undefined;
@@ -17,9 +16,9 @@ interface SleepNeedCardProps {
 }
 
 function formatHoursMinutes(minutes: number): string {
-  const h = Math.floor(minutes / 60);
-  const m = Math.round(minutes % 60);
-  return `${h}h ${m}m`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = Math.round(minutes % 60);
+  return `${hours}h ${remainingMinutes}m`;
 }
 
 export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {

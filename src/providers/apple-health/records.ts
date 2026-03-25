@@ -65,8 +65,8 @@ export function parseRouteLocation(attrs: Record<string, string>): RouteLocation
   if (Number.isNaN(lat) || Number.isNaN(lng)) return null;
 
   const optNum = (key: string): number | undefined => {
-    const v = parseFloat(attrs[key] ?? "");
-    return Number.isNaN(v) ? undefined : v;
+    const parsed = parseFloat(attrs[key] ?? "");
+    return Number.isNaN(parsed) ? undefined : parsed;
   };
 
   return {

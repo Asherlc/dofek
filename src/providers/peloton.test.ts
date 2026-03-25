@@ -146,7 +146,7 @@ const samplePerformanceGraph: PelotonPerformanceGraph = {
 describe("Peloton Provider", () => {
   describe("mapFitnessDiscipline", () => {
     it("maps cycling", () => {
-      expect(mapFitnessDiscipline("cycling")).toBe("cycling");
+      expect(mapFitnessDiscipline("cycling")).toBe("indoor_cycling");
     });
 
     it("maps running", () => {
@@ -207,7 +207,7 @@ describe("Peloton Provider", () => {
       const result = parseWorkout(sampleCyclingWorkout);
 
       expect(result.externalId).toBe("abc123def456");
-      expect(result.activityType).toBe("cycling");
+      expect(result.activityType).toBe("indoor_cycling");
       expect(result.startedAt).toEqual(new Date(1709280000 * 1000));
       expect(result.endedAt).toEqual(new Date(1709281800 * 1000));
       expect(result.name).toBe("30 min Power Zone Ride");

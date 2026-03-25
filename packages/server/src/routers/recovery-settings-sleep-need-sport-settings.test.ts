@@ -3,12 +3,14 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const t = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  const trpc = initTRPC
+    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .create();
   return {
-    router: t.router,
-    protectedProcedure: t.procedure,
-    cachedProtectedQuery: () => t.procedure,
-    cachedProtectedQueryLight: () => t.procedure,
+    router: trpc.router,
+    protectedProcedure: trpc.procedure,
+    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQueryLight: () => trpc.procedure,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -61,6 +63,7 @@ describe("recoveryRouter", () => {
     return createCaller({
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
+      timezone: "UTC",
     });
   }
 
@@ -360,11 +363,11 @@ describe("recoveryRouter", () => {
       const result = await caller.readinessScore({ days: 30 });
 
       expect(result.length).toBeGreaterThan(0);
-      const r = result[0];
-      expect(r.readinessScore).toBeGreaterThanOrEqual(0);
-      expect(r.readinessScore).toBeLessThanOrEqual(100);
-      expect(r.components).toHaveProperty("hrvScore");
-      expect(r.components).toHaveProperty("sleepScore");
+      const firstRow = result[0];
+      expect(firstRow.readinessScore).toBeGreaterThanOrEqual(0);
+      expect(firstRow.readinessScore).toBeLessThanOrEqual(100);
+      expect(firstRow.components).toHaveProperty("hrvScore");
+      expect(firstRow.components).toHaveProperty("sleepScore");
     });
 
     it("uses default scores for null metrics", async () => {
@@ -468,11 +471,11 @@ describe("recoveryRouter", () => {
       const result = await caller.readinessScore({ days: 30 });
 
       if (result.length > 0) {
-        const c = result[0]?.components;
-        expect(Number.isInteger(c?.hrvScore)).toBe(true);
-        expect(Number.isInteger(c?.restingHrScore)).toBe(true);
-        expect(Number.isInteger(c?.sleepScore)).toBe(true);
-        expect(Number.isInteger(c?.respiratoryRateScore)).toBe(true);
+        const components = result[0]?.components;
+        expect(Number.isInteger(components?.hrvScore)).toBe(true);
+        expect(Number.isInteger(components?.restingHrScore)).toBe(true);
+        expect(Number.isInteger(components?.sleepScore)).toBe(true);
+        expect(Number.isInteger(components?.respiratoryRateScore)).toBe(true);
       }
     });
   });
@@ -490,6 +493,7 @@ describe("settingsRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.get({ key: "theme" });
       expect(result).toEqual({ key: "theme", value: "dark" });
@@ -500,6 +504,7 @@ describe("settingsRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.get({ key: "nonexistent" });
       expect(result).toBeNull();
@@ -516,6 +521,7 @@ describe("settingsRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.getAll();
       expect(result).toHaveLength(2);
@@ -532,6 +538,7 @@ describe("settingsRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.set({ key: "theme", value: "light" });
       expect(result).toEqual({ key: "theme", value: "light" });
@@ -553,6 +560,7 @@ describe("settingsRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
       await expect(caller.set({ key: "theme", value: "dark" })).rejects.toThrow(
         "Failed to upsert setting",
@@ -572,6 +580,7 @@ describe("settingsRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn(), transaction: mockTransaction },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.deleteAllUserData();
@@ -617,6 +626,7 @@ describe("settingsRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.slackStatus();
       expect(result).toHaveProperty("configured");
@@ -631,6 +641,7 @@ describe("settingsRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.slackStatus();
       expect(result.connected).toBe(true);
@@ -644,6 +655,7 @@ describe("settingsRouter", () => {
         const caller = createCaller({
           db: { execute: vi.fn().mockResolvedValue([]) },
           userId: "user-1",
+          timezone: "UTC",
         });
         const result = await caller.slackStatus();
         expect(result.configured).toBe(true);
@@ -660,6 +672,7 @@ describe("settingsRouter", () => {
         const caller = createCaller({
           db: { execute: vi.fn().mockResolvedValue([]) },
           userId: "user-1",
+          timezone: "UTC",
         });
         const result = await caller.slackStatus();
         expect(result.configured).toBe(true);
@@ -675,6 +688,7 @@ describe("settingsRouter", () => {
         const caller = createCaller({
           db: { execute: vi.fn().mockResolvedValue([]) },
           userId: "user-1",
+          timezone: "UTC",
         });
         const result = await caller.slackStatus();
         expect(result.configured).toBe(false);
@@ -690,6 +704,7 @@ describe("settingsRouter", () => {
         const caller = createCaller({
           db: { execute: vi.fn().mockResolvedValue([]) },
           userId: "user-1",
+          timezone: "UTC",
         });
         const result = await caller.slackStatus();
         expect(result.configured).toBe(false);
@@ -720,8 +735,9 @@ describe("sleepNeedRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
-      const result = await caller.calculate();
+      const result = await caller.calculate({});
 
       expect(result.baselineMinutes).toBe(480); // default 8hr
       expect(result.totalNeedMinutes).toBeGreaterThanOrEqual(480);
@@ -742,8 +758,9 @@ describe("sleepNeedRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
-      const result = await caller.calculate();
+      const result = await caller.calculate({});
 
       expect(result.baselineMinutes).toBe(460);
       expect(result.strainDebtMinutes).toBe(10); // 50/5 = 10
@@ -754,8 +771,9 @@ describe("sleepNeedRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
-      const result = await caller.calculate();
+      const result = await caller.calculate({});
 
       expect(result.baselineMinutes).toBe(480);
       expect(result.recentNights).toHaveLength(7);
@@ -768,11 +786,10 @@ describe("sleepNeedRouter", () => {
     });
 
     it("always returns exactly 7 recent nights even with sparse data", async () => {
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
+      // endDate=2026-03-15, yesterday=2026-03-14
       const rows = [
         {
-          date: yesterday.toISOString().slice(0, 10),
+          date: "2026-03-14",
           duration_minutes: 420,
           next_day_hrv: 60,
           median_hrv: 55,
@@ -783,8 +800,9 @@ describe("sleepNeedRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
-      const result = await caller.calculate();
+      const result = await caller.calculate({ endDate: "2026-03-15" });
 
       expect(result.recentNights).toHaveLength(7);
       // 6 nights should have null actualMinutes, 1 should have data
@@ -795,11 +813,10 @@ describe("sleepNeedRouter", () => {
     });
 
     it("sets canRecommend=true when yesterday has sleep data", async () => {
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
+      // endDate=2026-03-15, yesterday=2026-03-14
       const rows = [
         {
-          date: yesterday.toISOString().slice(0, 10),
+          date: "2026-03-14",
           duration_minutes: 450,
           next_day_hrv: null,
           median_hrv: null,
@@ -810,19 +827,18 @@ describe("sleepNeedRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
-      const result = await caller.calculate();
+      const result = await caller.calculate({ endDate: "2026-03-15" });
 
       expect(result.canRecommend).toBe(true);
     });
 
     it("sets canRecommend=false when yesterday has no sleep data", async () => {
-      // Data from 3 days ago only — yesterday is missing
-      const threeDaysAgo = new Date();
-      threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+      // endDate=2026-03-15, yesterday=2026-03-14 — data only from 2026-03-12
       const rows = [
         {
-          date: threeDaysAgo.toISOString().slice(0, 10),
+          date: "2026-03-12",
           duration_minutes: 450,
           next_day_hrv: null,
           median_hrv: null,
@@ -833,8 +849,9 @@ describe("sleepNeedRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
-      const result = await caller.calculate();
+      const result = await caller.calculate({ endDate: "2026-03-15" });
 
       expect(result.canRecommend).toBe(false);
     });
@@ -843,8 +860,9 @@ describe("sleepNeedRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
-      const result = await caller.calculate();
+      const result = await caller.calculate({ endDate: "2026-03-15" });
 
       // Even null nights should have neededMinutes (the baseline)
       for (const night of result.recentNights) {
@@ -863,6 +881,7 @@ describe("sportSettingsRouter", () => {
     return createCaller({
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
+      timezone: "UTC",
     });
   }
 

@@ -13,7 +13,7 @@ packages:
   - packages/heart-rate-variability
   - packages/server
   - packages/web
-  - packages/ios
+  - packages/mobile
   - packages/whoop-whoop
   - packages/eight-sleep
   - packages/zwift-client

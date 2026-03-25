@@ -3,7 +3,7 @@ import { initTRPC } from "@trpc/server";
 import type { Context } from "../trpc.ts";
 
 // Create a real tRPC instance for testing (without caching/auth middleware)
-const t = initTRPC.context<Context>().create();
+const trpc = initTRPC.context<Context>().create();
 
 /**
  * Create a callerFactory function for a router.
@@ -14,5 +14,5 @@ const t = initTRPC.context<Context>().create();
  * time despite being equivalent at runtime.
  */
 export function createTestCallerFactory(router: AnyRouter) {
-  return t.createCallerFactory(router);
+  return trpc.createCallerFactory(router);
 }

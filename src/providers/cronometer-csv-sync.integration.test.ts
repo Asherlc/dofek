@@ -1,5 +1,7 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
+import { nutrientRowSchema } from "../db/nutrient-columns.ts";
 import { DEFAULT_USER_ID, foodEntry, nutritionDaily } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { CRONOMETER_PROVIDER_ID, importCronometerCsv } from "./cronometer-csv.ts";
@@ -34,6 +36,25 @@ const MULTI_DAY_CSV = `${CSV_HEADER}
 const SNACK_CSV = `${CSV_HEADER}
 2026-03-03,Snack,Almonds,1,oz,Nuts,164,6,6,14,3.5,1.1,3.5,8.9,0,0,0,200,1,0,0,0,7.3,0,0,0.3,1,0.1,0,14,25,0,76,1.1,77,0.9,1.2,0.3,0.6,0,0,0,3.5,1.5,0,0`;
 
+// Schema for querying v_food_entry_with_nutrition rows in tests
+const viewRowSchema = z
+  .object({
+    food_name: z.string(),
+    date: z.string(),
+    meal: z.string().nullable(),
+    number_of_units: z.coerce.number().nullable(),
+    serving_unit: z.string().nullable(),
+  })
+  .merge(nutrientRowSchema);
+
+/** Query the view for a specific food by name */
+async function queryFoodFromView(db: TestContext["db"], foodName: string) {
+  const rows = await db.execute<z.infer<typeof viewRowSchema>>(
+    sql`SELECT * FROM fitness.v_food_entry_with_nutrition WHERE food_name = ${foodName} LIMIT 1`,
+  );
+  return rows[0] ?? null;
+}
+
 // ============================================================
 // Tests
 // ============================================================
@@ -64,23 +85,24 @@ describe("importCronometerCsv() (integration)", () => {
 
     expect(rows).toHaveLength(3);
 
-    const oatmeal = rows.find((r) => r.foodName === "Oatmeal");
+    // Query through the view to check nutrient data
+    const oatmeal = await queryFoodFromView(ctx.db, "Oatmeal");
     if (!oatmeal) throw new Error("expected Oatmeal entry");
     expect(oatmeal.date).toBe("2026-03-01");
     expect(oatmeal.meal).toBe("breakfast");
     expect(oatmeal.calories).toBe(150);
-    expect(oatmeal.proteinG).toBeCloseTo(5);
-    expect(oatmeal.carbsG).toBeCloseTo(27);
-    expect(oatmeal.fatG).toBeCloseTo(3);
-    expect(oatmeal.fiberG).toBeCloseTo(4);
-    expect(oatmeal.numberOfUnits).toBe(1);
-    expect(oatmeal.servingUnit).toBe("cup");
+    expect(oatmeal.protein_g).toBeCloseTo(5);
+    expect(oatmeal.carbs_g).toBeCloseTo(27);
+    expect(oatmeal.fat_g).toBeCloseTo(3);
+    expect(oatmeal.fiber_g).toBeCloseTo(4);
+    expect(oatmeal.number_of_units).toBe(1);
+    expect(oatmeal.serving_unit).toBe("cup");
 
-    const chicken = rows.find((r) => r.foodName === "Chicken Breast");
+    const chicken = await queryFoodFromView(ctx.db, "Chicken Breast");
     if (!chicken) throw new Error("expected Chicken Breast entry");
     expect(chicken.meal).toBe("lunch");
     expect(chicken.calories).toBe(280);
-    expect(chicken.proteinG).toBeCloseTo(53);
+    expect(chicken.protein_g).toBeCloseTo(53);
   });
 
   it("aggregates daily nutrition totals into nutrition_daily", async () => {
@@ -149,26 +171,20 @@ describe("importCronometerCsv() (integration)", () => {
   it("stores micronutrient data", async () => {
     await importCronometerCsv(ctx.db, SIMPLE_CSV, DEFAULT_USER_ID);
 
-    const rows = await ctx.db.select().from(foodEntry).where(eq(foodEntry.foodName, "Banana"));
-
-    expect(rows).toHaveLength(1);
-    const banana = rows[0];
+    const banana = await queryFoodFromView(ctx.db, "Banana");
     if (!banana) throw new Error("expected Banana entry");
-    expect(banana.vitaminCMg).toBeCloseTo(8.7);
-    expect(banana.potassiumMg).toBeCloseTo(422);
-    expect(banana.magnesiumMg).toBeCloseTo(32);
+    expect(banana.vitamin_c_mg).toBeCloseTo(8.7);
+    expect(banana.potassium_mg).toBeCloseTo(422);
+    expect(banana.magnesium_mg).toBeCloseTo(32);
   });
 
   it("converts omega fatty acids from grams to milligrams", async () => {
     await importCronometerCsv(ctx.db, MULTI_DAY_CSV, DEFAULT_USER_ID);
 
-    const rows = await ctx.db.select().from(foodEntry).where(eq(foodEntry.foodName, "Salmon"));
-
-    expect(rows).toHaveLength(1);
-    const salmon = rows[0];
+    const salmon = await queryFoodFromView(ctx.db, "Salmon");
     if (!salmon) throw new Error("expected Salmon entry");
     // 2.3g omega-3 * 1000 = 2300 mg
-    expect(salmon.omega3Mg).toBeCloseTo(2300, 0);
+    expect(salmon.omega3_mg).toBeCloseTo(2300, 0);
   });
 
   it("returns empty result for empty CSV", async () => {
