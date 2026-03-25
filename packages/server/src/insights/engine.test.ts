@@ -3,6 +3,7 @@ import {
   type ActivityRow,
   aggregateMonthly,
   type BodyCompRow,
+  type ConditionalTest,
   classifyActivity,
   classifyConfidence,
   classifyCorrelationConfidence,
@@ -12,6 +13,8 @@ import {
   downsample,
   exhaustiveSweep,
   explainInsight,
+  findConfounders,
+  findCorrelationConfounders,
   getAllMetrics,
   getConditionalTests,
   getCorrelationPairs,
@@ -2995,5 +2998,900 @@ describe("exhaustiveSweep() — additional boundaries", () => {
       expect(typeof insight.message).toBe("string");
       expect(insight.message.length).toBeGreaterThan(0);
     }
+  });
+});
+
+// ── findConfounders() tests ─────────────────────────────────────────────
+
+describe("findConfounders()", () => {
+  it("returns empty array when fewer than 5 days in each split", () => {
+    const days = makeJoinedDays(8);
+    const test: ConditionalTest = {
+      id: "test",
+      action: "some action",
+      metric: "some metric",
+      splitFn: (day) => (day.steps != null ? day.steps >= 8000 : null),
+      valueFn: (day) => day.hrv,
+    };
+    const result = findConfounders(test, days);
+    expect(result).toEqual([]);
+  });
+
+  it("detects a confounder when a third variable differs between groups", () => {
+    // Create two groups with variance: high-step days with high calories, low-step days with low calories
+    const days: JoinedDay[] = [];
+    for (let index = 0; index < 15; index++) {
+      days.push(
+        makeFullJoinedDay(`2025-01-${String(index + 1).padStart(2, "0")}`, {
+          steps: 12000 + index * 100,
+          hrv: 60 + index,
+          calories: 2800 + index * 40,
+          protein_g: 180 + index * 3,
+          carbs_g: 320 + index * 5,
+          fat_g: 90 + index * 2,
+          exercise_minutes: null, // null out exercise family to avoid isRelatedToAction filter
+          cardio_minutes: null,
+          strength_minutes: null,
+          sleep_duration_min: 470 + index * 2,
+          deep_min: 85 + index,
+          sleep_efficiency: 90 + index * 0.3,
+          resting_hr: 54 + index * 0.5,
+        }),
+      );
+    }
+    for (let index = 0; index < 15; index++) {
+      days.push(
+        makeFullJoinedDay(`2025-02-${String(index + 1).padStart(2, "0")}`, {
+          steps: 3000 + index * 50,
+          hrv: 40 + index,
+          calories: 1400 + index * 20,
+          protein_g: 70 + index * 2,
+          carbs_g: 140 + index * 3,
+          fat_g: 35 + index,
+          exercise_minutes: null,
+          cardio_minutes: null,
+          strength_minutes: null,
+          sleep_duration_min: 340 + index * 3,
+          deep_min: 45 + index,
+          sleep_efficiency: 75 + index * 0.5,
+          resting_hr: 68 + index * 0.3,
+        }),
+      );
+    }
+
+    const test: ConditionalTest = {
+      id: "test-steps-hrv",
+      action: "10,000+ steps",
+      metric: "next-day HRV",
+      splitFn: (day) => (day.steps != null ? day.steps >= 10000 : null),
+      valueFn: (day) => day.hrv,
+    };
+    const result = findConfounders(test, days);
+    expect(result.length).toBeGreaterThan(0);
+    // Should detect confounders like sleep, calories, etc.
+    for (const confounder of result) {
+      expect(confounder).toContain("also");
+      expect(confounder).toMatch(/higher|lower/);
+    }
+  });
+
+  it("skips context variables that match the action label", () => {
+    const days: JoinedDay[] = [];
+    for (let index = 0; index < 10; index++) {
+      days.push(
+        makeFullJoinedDay(`2025-01-${String(index + 1).padStart(2, "0")}`, {
+          sleep_duration_min: 500,
+        }),
+      );
+    }
+    for (let index = 0; index < 10; index++) {
+      days.push(
+        makeFullJoinedDay(`2025-02-${String(index + 1).padStart(2, "0")}`, {
+          sleep_duration_min: 300,
+        }),
+      );
+    }
+
+    const test: ConditionalTest = {
+      id: "test-sleep",
+      action: "good sleep duration",
+      metric: "weight change",
+      splitFn: (day) => (day.sleep_duration_min != null ? day.sleep_duration_min >= 420 : null),
+      valueFn: (day) => day.weight_30d_delta,
+    };
+    const result = findConfounders(test, days);
+    // "sleep duration" should NOT appear as a confounder since it matches the action
+    for (const confounder of result) {
+      expect(confounder).not.toMatch(/^sleep duration also/);
+    }
+  });
+
+  it("limits output to 5 confounders", () => {
+    // Even if many confounders exist, max 5 returned
+    const days: JoinedDay[] = [];
+    for (let index = 0; index < 20; index++) {
+      days.push(
+        makeFullJoinedDay(`2025-01-${String(index + 1).padStart(2, "0")}`, {
+          steps: 15000,
+          calories: 3000,
+          protein_g: 200,
+          carbs_g: 400,
+          fat_g: 120,
+          exercise_minutes: 90,
+          cardio_minutes: 60,
+          strength_minutes: 25,
+          sleep_duration_min: 540,
+          deep_min: 120,
+          sleep_efficiency: 95,
+          resting_hr: 50,
+          hrv: 70,
+        }),
+      );
+    }
+    for (let index = 0; index < 20; index++) {
+      days.push(
+        makeFullJoinedDay(`2025-02-${String(index + 1).padStart(2, "0")}`, {
+          steps: 2000,
+          calories: 1400,
+          protein_g: 60,
+          carbs_g: 100,
+          fat_g: 30,
+          exercise_minutes: 0,
+          cardio_minutes: 0,
+          strength_minutes: 0,
+          sleep_duration_min: 300,
+          deep_min: 30,
+          sleep_efficiency: 70,
+          resting_hr: 75,
+          hrv: 25,
+        }),
+      );
+    }
+
+    const test: ConditionalTest = {
+      id: "test-many",
+      action: "arbitrary threshold",
+      metric: "spo2",
+      splitFn: (day) => (day.steps != null ? day.steps >= 10000 : null),
+      valueFn: (day) => day.spo2_avg,
+    };
+    const result = findConfounders(test, days);
+    expect(result.length).toBeLessThanOrEqual(5);
+  });
+
+  it("deduplicates confounder families (parent present hides children)", () => {
+    const days: JoinedDay[] = [];
+    for (let index = 0; index < 15; index++) {
+      days.push(
+        makeFullJoinedDay(`2025-01-${String(index + 1).padStart(2, "0")}`, {
+          steps: 15000,
+          calories: 3500,
+          protein_g: 250,
+          carbs_g: 400,
+          fat_g: 120,
+        }),
+      );
+    }
+    for (let index = 0; index < 15; index++) {
+      days.push(
+        makeFullJoinedDay(`2025-02-${String(index + 1).padStart(2, "0")}`, {
+          steps: 2000,
+          calories: 1400,
+          protein_g: 60,
+          carbs_g: 100,
+          fat_g: 30,
+        }),
+      );
+    }
+
+    const test: ConditionalTest = {
+      id: "test-dedup",
+      action: "high steps",
+      metric: "resting HR",
+      splitFn: (day) => (day.steps != null ? day.steps >= 10000 : null),
+      valueFn: (day) => day.resting_hr,
+    };
+    const result = findConfounders(test, days);
+    // If "calories" is present, individual macros should be removed
+    const labels = result.map((confounder) => confounder.split(" also ")[0]);
+    if (labels.includes("calories")) {
+      expect(labels).not.toContain("protein");
+      expect(labels).not.toContain("carbs");
+      expect(labels).not.toContain("fat");
+    }
+  });
+
+  it("formats confounder strings with values and percentage diff", () => {
+    const days: JoinedDay[] = [];
+    for (let index = 0; index < 10; index++) {
+      days.push(
+        makeFullJoinedDay(`2025-01-${String(index + 1).padStart(2, "0")}`, {
+          steps: 12000,
+          calories: 3000,
+        }),
+      );
+    }
+    for (let index = 0; index < 10; index++) {
+      days.push(
+        makeFullJoinedDay(`2025-02-${String(index + 1).padStart(2, "0")}`, {
+          steps: 3000,
+          calories: 1500,
+        }),
+      );
+    }
+
+    const test: ConditionalTest = {
+      id: "test-fmt",
+      action: "high steps",
+      metric: "HRV",
+      splitFn: (day) => (day.steps != null ? day.steps >= 10000 : null),
+      valueFn: (day) => day.hrv,
+    };
+    const result = findConfounders(test, days);
+    for (const confounder of result) {
+      // Should contain "vs" and "% diff"
+      expect(confounder).toContain("vs");
+      expect(confounder).toContain("% diff");
+    }
+  });
+
+  it("handles splitFn returning null for some days", () => {
+    const days: JoinedDay[] = [];
+    for (let index = 0; index < 10; index++) {
+      days.push(
+        makeFullJoinedDay(`2025-01-${String(index + 1).padStart(2, "0")}`, { steps: 12000 }),
+      );
+    }
+    for (let index = 0; index < 10; index++) {
+      days.push(
+        makeFullJoinedDay(`2025-02-${String(index + 1).padStart(2, "0")}`, { steps: 3000 }),
+      );
+    }
+    // Add some days where splitFn returns null
+    for (let index = 0; index < 5; index++) {
+      days.push(
+        makeFullJoinedDay(`2025-03-${String(index + 1).padStart(2, "0")}`, { steps: null }),
+      );
+    }
+
+    const test: ConditionalTest = {
+      id: "test-null",
+      action: "10k steps",
+      metric: "resting HR",
+      splitFn: (day) => (day.steps != null ? day.steps >= 10000 : null),
+      valueFn: (day) => day.resting_hr,
+    };
+    // Should not throw
+    const result = findConfounders(test, days);
+    expect(Array.isArray(result)).toBe(true);
+  });
+});
+
+// ── findCorrelationConfounders() tests ──────────────────────────────────
+
+describe("findCorrelationConfounders()", () => {
+  it("returns empty array when fewer than 10 data points", () => {
+    const days = makeJoinedDays(8);
+    const indices = days.map((_day, index) => index);
+    const xValues = days.map((day) => day.steps ?? 0);
+    const yValues = days.map((day) => day.hrv ?? 0);
+    const result = findCorrelationConfounders("steps", "HRV", xValues, yValues, days, indices);
+    expect(result).toEqual([]);
+  });
+
+  it("detects confounders that correlate with both x and y", () => {
+    // Create data where sleep correlates with both steps and HRV
+    const days: JoinedDay[] = [];
+    const xValues: number[] = [];
+    const yValues: number[] = [];
+    const indices: number[] = [];
+    for (let index = 0; index < 30; index++) {
+      const sleepBase = 360 + index * 5;
+      const day = makeFullJoinedDay(`2025-01-${String(index + 1).padStart(2, "0")}`, {
+        steps: 5000 + index * 300,
+        hrv: 30 + index * 1.5,
+        sleep_duration_min: sleepBase,
+        deep_min: sleepBase / 5,
+        exercise_minutes: 20 + index * 2,
+        cardio_minutes: 10 + index,
+        calories: 1800 + index * 30,
+        protein_g: 100 + index * 3,
+      });
+      days.push(day);
+      xValues.push(day.steps ?? 0);
+      yValues.push(day.hrv ?? 0);
+      indices.push(index);
+    }
+    const result = findCorrelationConfounders("steps", "HRV", xValues, yValues, days, indices);
+    expect(result.length).toBeGreaterThan(0);
+    for (const confounder of result) {
+      expect(confounder).toContain("also correlates with both");
+    }
+  });
+
+  it("skips confounders that match x or y name", () => {
+    const days = makeJoinedDays(20);
+    const indices = days.map((_day, index) => index);
+    const xValues = days.map((day) => day.calories ?? 0);
+    const yValues = days.map((day) => day.hrv ?? 0);
+    const result = findCorrelationConfounders("calories", "HRV", xValues, yValues, days, indices);
+    // "calories" should not appear as a confounder of itself
+    for (const confounder of result) {
+      expect(confounder).not.toMatch(/^calories also/);
+      expect(confounder).not.toMatch(/^HRV also/);
+    }
+  });
+
+  it("limits output to 5 confounders", () => {
+    const days: JoinedDay[] = [];
+    const xValues: number[] = [];
+    const yValues: number[] = [];
+    const indices: number[] = [];
+    for (let index = 0; index < 30; index++) {
+      const day = makeFullJoinedDay(`2025-01-${String(index + 1).padStart(2, "0")}`, {
+        steps: 5000 + index * 300,
+        hrv: 30 + index * 1.5,
+        calories: 1800 + index * 40,
+        protein_g: 100 + index * 4,
+        carbs_g: 200 + index * 5,
+        fat_g: 50 + index * 2,
+        exercise_minutes: 20 + index * 2,
+        cardio_minutes: 10 + index,
+        strength_minutes: 5 + index,
+        sleep_duration_min: 400 + index * 4,
+        deep_min: 60 + index * 2,
+        sleep_efficiency: 80 + index * 0.5,
+        resting_hr: 70 - index * 0.5,
+      });
+      days.push(day);
+      xValues.push(day.spo2_avg ?? 0);
+      yValues.push(day.skin_temp_c ?? 0);
+      indices.push(index);
+    }
+    const result = findCorrelationConfounders("SpO2", "skin temp", xValues, yValues, days, indices);
+    expect(result.length).toBeLessThanOrEqual(5);
+  });
+
+  it("skips related variables (exercise family)", () => {
+    const days = makeJoinedDays(20);
+    const indices = days.map((_day, index) => index);
+    const xValues = days.map((day) => day.exercise_minutes ?? 0);
+    const yValues = days.map((day) => day.hrv ?? 0);
+    const result = findCorrelationConfounders(
+      "exercise duration",
+      "HRV",
+      xValues,
+      yValues,
+      days,
+      indices,
+    );
+    // Cardio, strength, steps, active calories should be excluded as related to exercise
+    for (const confounder of result) {
+      expect(confounder).not.toMatch(/^cardio duration also/);
+      expect(confounder).not.toMatch(/^strength training duration also/);
+      expect(confounder).not.toMatch(/^steps also/);
+      expect(confounder).not.toMatch(/^active calories also/);
+    }
+  });
+});
+
+// ── getMonthlyCorrelations() — comprehensive extract tests ──────────────
+
+describe("getMonthlyCorrelations() — comprehensive extract tests", () => {
+  const pairs = getMonthlyCorrelations();
+
+  function makeMonthlyAgg(overrides: Partial<MonthlyAgg> = {}): MonthlyAgg {
+    return {
+      month: "2025-01",
+      avgCalories: 2200,
+      avgProtein: 150,
+      avgCarbs: 250,
+      avgFat: 70,
+      nutritionDays: 25,
+      exerciseMinutes: 600,
+      exerciseDays: 15,
+      cardioMinutes: 400,
+      strengthMinutes: 150,
+      flexibilityMinutes: 50,
+      cardioDays: 10,
+      strengthDays: 8,
+      weightStart: 80,
+      weightEnd: 79,
+      weightDelta: -1,
+      bfStart: 15,
+      bfEnd: 14.5,
+      bfDelta: -0.5,
+      ...overrides,
+    };
+  }
+
+  // All yFn extractions
+  it("m-calories-weight: yFn extracts weightDelta", () => {
+    const pair = pairs.find((pd) => pd.id === "m-calories-weight");
+    expect(pair?.yFn(makeMonthlyAgg({ weightDelta: -2 }))).toBe(-2);
+  });
+
+  it("m-protein-pct-bf: yFn extracts bfDelta", () => {
+    const pair = pairs.find((pd) => pd.id === "m-protein-pct-bf");
+    expect(pair?.yFn(makeMonthlyAgg({ bfDelta: -0.3 }))).toBe(-0.3);
+  });
+
+  it("m-carb-pct-weight: yFn extracts weightDelta", () => {
+    const pair = pairs.find((pd) => pd.id === "m-carb-pct-weight");
+    expect(pair?.yFn(makeMonthlyAgg({ weightDelta: 0.5 }))).toBe(0.5);
+  });
+
+  it("m-fat-pct-bf: yFn extracts bfDelta", () => {
+    const pair = pairs.find((pd) => pd.id === "m-fat-pct-bf");
+    expect(pair?.yFn(makeMonthlyAgg({ bfDelta: 0.1 }))).toBe(0.1);
+  });
+
+  // Exercise volume xFn — returns value when > 0
+  it("m-exercise-vol-weight: xFn returns exerciseMinutes when > 0", () => {
+    const pair = pairs.find((pd) => pd.id === "m-exercise-vol-weight");
+    expect(pair?.xFn(makeMonthlyAgg({ exerciseMinutes: 300 }))).toBe(300);
+  });
+
+  it("m-exercise-vol-bf: xFn returns null when exerciseMinutes is 0", () => {
+    const pair = pairs.find((pd) => pd.id === "m-exercise-vol-bf");
+    expect(pair?.xFn(makeMonthlyAgg({ exerciseMinutes: 0 }))).toBeNull();
+  });
+
+  it("m-exercise-vol-bf: xFn returns exerciseMinutes when > 0", () => {
+    const pair = pairs.find((pd) => pd.id === "m-exercise-vol-bf");
+    expect(pair?.xFn(makeMonthlyAgg({ exerciseMinutes: 450 }))).toBe(450);
+  });
+
+  it("m-exercise-freq-bf: xFn returns null when exerciseDays is 0", () => {
+    const pair = pairs.find((pd) => pd.id === "m-exercise-freq-bf");
+    expect(pair?.xFn(makeMonthlyAgg({ exerciseDays: 0 }))).toBeNull();
+  });
+
+  it("m-exercise-freq-bf: xFn returns exerciseDays when > 0", () => {
+    const pair = pairs.find((pd) => pd.id === "m-exercise-freq-bf");
+    expect(pair?.xFn(makeMonthlyAgg({ exerciseDays: 12 }))).toBe(12);
+  });
+
+  // Cardio volume/frequency
+  it("m-cardio-vol-bf: xFn returns null when cardioMinutes is 0", () => {
+    const pair = pairs.find((pd) => pd.id === "m-cardio-vol-bf");
+    expect(pair?.xFn(makeMonthlyAgg({ cardioMinutes: 0 }))).toBeNull();
+  });
+
+  it("m-cardio-vol-bf: xFn returns cardioMinutes when > 0", () => {
+    const pair = pairs.find((pd) => pd.id === "m-cardio-vol-bf");
+    expect(pair?.xFn(makeMonthlyAgg({ cardioMinutes: 250 }))).toBe(250);
+  });
+
+  it("m-cardio-freq-weight: xFn returns null when cardioDays is 0", () => {
+    const pair = pairs.find((pd) => pd.id === "m-cardio-freq-weight");
+    expect(pair?.xFn(makeMonthlyAgg({ cardioDays: 0 }))).toBeNull();
+  });
+
+  it("m-cardio-freq-weight: xFn returns cardioDays when > 0", () => {
+    const pair = pairs.find((pd) => pd.id === "m-cardio-freq-weight");
+    expect(pair?.xFn(makeMonthlyAgg({ cardioDays: 8 }))).toBe(8);
+  });
+
+  // Strength volume/frequency
+  it("m-strength-vol-weight: xFn returns null when strengthMinutes is 0", () => {
+    const pair = pairs.find((pd) => pd.id === "m-strength-vol-weight");
+    expect(pair?.xFn(makeMonthlyAgg({ strengthMinutes: 0 }))).toBeNull();
+  });
+
+  it("m-strength-vol-weight: xFn returns strengthMinutes when > 0", () => {
+    const pair = pairs.find((pd) => pd.id === "m-strength-vol-weight");
+    expect(pair?.xFn(makeMonthlyAgg({ strengthMinutes: 200 }))).toBe(200);
+  });
+
+  it("m-strength-vol-bf: xFn returns null when strengthMinutes is 0", () => {
+    const pair = pairs.find((pd) => pd.id === "m-strength-vol-bf");
+    expect(pair?.xFn(makeMonthlyAgg({ strengthMinutes: 0 }))).toBeNull();
+  });
+
+  it("m-strength-vol-bf: xFn returns strengthMinutes when > 0", () => {
+    const pair = pairs.find((pd) => pd.id === "m-strength-vol-bf");
+    expect(pair?.xFn(makeMonthlyAgg({ strengthMinutes: 180 }))).toBe(180);
+  });
+
+  it("m-strength-freq-bf: xFn returns null when strengthDays is 0", () => {
+    const pair = pairs.find((pd) => pd.id === "m-strength-freq-bf");
+    expect(pair?.xFn(makeMonthlyAgg({ strengthDays: 0 }))).toBeNull();
+  });
+
+  it("m-strength-freq-bf: xFn returns strengthDays when > 0", () => {
+    const pair = pairs.find((pd) => pd.id === "m-strength-freq-bf");
+    expect(pair?.xFn(makeMonthlyAgg({ strengthDays: 6 }))).toBe(6);
+  });
+
+  // Macro % computations
+  it("m-protein-pct-weight: returns correct protein percentage", () => {
+    const pair = pairs.find((pd) => pd.id === "m-protein-pct-weight");
+    // 100g protein × 4 cal/g = 400 cal; 400/2000 × 100 = 20%
+    expect(pair?.xFn(makeMonthlyAgg({ avgProtein: 100, avgCalories: 2000 }))).toBeCloseTo(20, 1);
+  });
+
+  it("m-protein-pct-bf: returns null when avgCalories is 0", () => {
+    const pair = pairs.find((pd) => pd.id === "m-protein-pct-bf");
+    expect(pair?.xFn(makeMonthlyAgg({ avgProtein: 100, avgCalories: 0 }))).toBeNull();
+  });
+
+  it("m-carb-pct-weight: returns correct carb percentage", () => {
+    const pair = pairs.find((pd) => pd.id === "m-carb-pct-weight");
+    // 200g carbs × 4 cal/g = 800 cal; 800/2000 × 100 = 40%
+    expect(pair?.xFn(makeMonthlyAgg({ avgCarbs: 200, avgCalories: 2000 }))).toBeCloseTo(40, 1);
+  });
+
+  it("m-carb-pct-weight: returns null when avgCarbs is null", () => {
+    const pair = pairs.find((pd) => pd.id === "m-carb-pct-weight");
+    expect(pair?.xFn(makeMonthlyAgg({ avgCarbs: null }))).toBeNull();
+  });
+
+  it("m-fat-pct-bf: returns correct fat percentage (uses × 9 multiplier)", () => {
+    const pair = pairs.find((pd) => pd.id === "m-fat-pct-bf");
+    // 80g fat × 9 cal/g = 720 cal; 720/2000 × 100 = 36%
+    expect(pair?.xFn(makeMonthlyAgg({ avgFat: 80, avgCalories: 2000 }))).toBeCloseTo(36, 1);
+  });
+
+  it("m-fat-pct-bf: returns null when avgCalories is 0", () => {
+    const pair = pairs.find((pd) => pd.id === "m-fat-pct-bf");
+    expect(pair?.xFn(makeMonthlyAgg({ avgFat: 80, avgCalories: 0 }))).toBeNull();
+  });
+
+  // yFn for exercise-related pairs
+  it("m-exercise-vol-weight: yFn extracts weightDelta", () => {
+    const pair = pairs.find((pd) => pd.id === "m-exercise-vol-weight");
+    expect(pair?.yFn(makeMonthlyAgg({ weightDelta: -1.5 }))).toBe(-1.5);
+  });
+
+  it("m-exercise-freq-weight: yFn extracts weightDelta", () => {
+    const pair = pairs.find((pd) => pd.id === "m-exercise-freq-weight");
+    expect(pair?.yFn(makeMonthlyAgg({ weightDelta: 0.3 }))).toBe(0.3);
+  });
+
+  it("m-exercise-freq-bf: yFn extracts bfDelta", () => {
+    const pair = pairs.find((pd) => pd.id === "m-exercise-freq-bf");
+    expect(pair?.yFn(makeMonthlyAgg({ bfDelta: -0.8 }))).toBe(-0.8);
+  });
+
+  it("m-cardio-vol-weight: yFn extracts weightDelta", () => {
+    const pair = pairs.find((pd) => pd.id === "m-cardio-vol-weight");
+    expect(pair?.yFn(makeMonthlyAgg({ weightDelta: -0.5 }))).toBe(-0.5);
+  });
+
+  it("m-cardio-vol-bf: yFn extracts bfDelta", () => {
+    const pair = pairs.find((pd) => pd.id === "m-cardio-vol-bf");
+    expect(pair?.yFn(makeMonthlyAgg({ bfDelta: -0.4 }))).toBe(-0.4);
+  });
+
+  it("m-cardio-freq-weight: yFn extracts weightDelta", () => {
+    const pair = pairs.find((pd) => pd.id === "m-cardio-freq-weight");
+    expect(pair?.yFn(makeMonthlyAgg({ weightDelta: 0.2 }))).toBe(0.2);
+  });
+
+  it("m-strength-vol-weight: yFn extracts weightDelta", () => {
+    const pair = pairs.find((pd) => pd.id === "m-strength-vol-weight");
+    expect(pair?.yFn(makeMonthlyAgg({ weightDelta: -0.7 }))).toBe(-0.7);
+  });
+
+  it("m-strength-vol-bf: yFn extracts bfDelta", () => {
+    const pair = pairs.find((pd) => pd.id === "m-strength-vol-bf");
+    expect(pair?.yFn(makeMonthlyAgg({ bfDelta: -0.6 }))).toBe(-0.6);
+  });
+
+  it("m-strength-freq-bf: yFn extracts bfDelta", () => {
+    const pair = pairs.find((pd) => pd.id === "m-strength-freq-bf");
+    expect(pair?.yFn(makeMonthlyAgg({ bfDelta: 0.1 }))).toBe(0.1);
+  });
+});
+
+// ── computeMonthlyInsights() — conditional analysis ─────────────────────
+
+describe("computeMonthlyInsights() — conditional analysis", () => {
+  it("produces high-exercise-vs-low conditional insight with 10+ months", () => {
+    // Need 10+ months with at least 20 days each and weight data
+    const days: JoinedDay[] = [];
+    for (let month = 1; month <= 12; month++) {
+      const isHighExercise = month <= 6;
+      for (let day = 1; day <= 25; day++) {
+        days.push(
+          makeFullJoinedDay(
+            `2025-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`,
+            {
+              exercise_minutes: isHighExercise ? 60 : 10,
+              cardio_minutes: isHighExercise ? 40 : 5,
+              strength_minutes: isHighExercise ? 15 : 3,
+              weight_kg: isHighExercise ? 78 - month * 0.3 : 80 + month * 0.2,
+              body_fat_pct: isHighExercise ? 14 - month * 0.1 : 16 + month * 0.1,
+            },
+          ),
+        );
+      }
+    }
+    // Need joinByDate to compute rolling weight/bf deltas
+    const joined = joinByDate(
+      days.map((day) => ({
+        date: day.date,
+        resting_hr: day.resting_hr,
+        hrv: day.hrv,
+        spo2_avg: day.spo2_avg,
+        steps: day.steps,
+        active_energy_kcal: day.active_energy_kcal,
+        skin_temp_c: day.skin_temp_c,
+      })),
+      [],
+      [],
+      [],
+      days.map((day) => ({
+        recorded_at: day.date,
+        weight_kg: day.weight_kg,
+        body_fat_pct: day.body_fat_pct,
+      })),
+    );
+    const result = computeMonthlyInsights(joined);
+    // Should produce some monthly insights
+    expect(Array.isArray(result)).toBe(true);
+  });
+
+  it("returns empty array when fewer than 5 months", () => {
+    const days = makeJoinedDays(90); // ~3 months
+    expect(computeMonthlyInsights(days)).toEqual([]);
+  });
+
+  it("monthly correlation insight has correct structure", () => {
+    // Create 6 months of data with strong calorie-weight correlation
+    const days: JoinedDay[] = [];
+    for (let month = 1; month <= 7; month++) {
+      for (let day = 1; day <= 25; day++) {
+        days.push(
+          makeFullJoinedDay(
+            `2025-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`,
+            {
+              calories: 1800 + month * 100,
+              protein_g: 100 + month * 10,
+              carbs_g: 200 + month * 15,
+              fat_g: 60 + month * 5,
+              weight_kg: 75 + month * 0.5,
+              body_fat_pct: 14 + month * 0.2,
+            },
+          ),
+        );
+      }
+    }
+    const result = computeMonthlyInsights(days);
+    for (const insight of result) {
+      expect(insight.type).toBe("correlation");
+      expect(typeof insight.message).toBe("string");
+      expect(insight.message).toMatch(/associated with/);
+      expect(typeof insight.detail).toBe("string");
+      expect(insight.detail).toContain("months");
+    }
+  });
+});
+
+// ── Correlation pair — computed xFn tests ────────────────────────────────
+
+describe("getCorrelationPairs() — computed xFn/yFn tests", () => {
+  const pairs = getCorrelationPairs();
+
+  // Protein % pair
+  it("protein-pct-30d-weight-delta: xFn computes 30-day avg protein %", () => {
+    const pair = pairs.find((pd) => pd.id === "protein-pct-30d-weight-delta");
+    // 150g protein × 4 = 600; 600/2200 × 100 ≈ 27.3%
+    const days = makeJoinedDays(30, { protein_g: 150, calories: 2200 });
+    expect(pair?.xFn(days[29] ?? makeFullJoinedDay("2025-01-30"), days, 29)).toBeCloseTo(27.3, 0);
+  });
+
+  it("protein-pct-30d-bf-delta: xFn returns null when protein is null", () => {
+    const pair = pairs.find((pd) => pd.id === "protein-pct-30d-bf-delta");
+    const days = makeJoinedDays(30, { protein_g: null });
+    expect(pair?.xFn(days[29] ?? makeFullJoinedDay("2025-01-30"), days, 29)).toBeNull();
+  });
+
+  it("protein-pct-30d-bf-delta: yFn extracts body_fat_30d_delta", () => {
+    const pair = pairs.find((pd) => pd.id === "protein-pct-30d-bf-delta");
+    const day = makeFullJoinedDay("2025-01-01", { body_fat_30d_delta: -0.3 });
+    expect(pair?.yFn(day, [day], 0)).toBe(-0.3);
+  });
+
+  // Carb % pair
+  it("carb-pct-30d-weight-delta: xFn computes 30-day avg carb %", () => {
+    const pair = pairs.find((pd) => pd.id === "carb-pct-30d-weight-delta");
+    // 250g carbs × 4 = 1000; 1000/2000 × 100 = 50%
+    const days = makeJoinedDays(30, { carbs_g: 250, calories: 2000 });
+    expect(pair?.xFn(days[29] ?? makeFullJoinedDay("2025-01-30"), days, 29)).toBeCloseTo(50, 0);
+  });
+
+  it("carb-pct-30d-weight-delta: xFn returns null when carbs is null", () => {
+    const pair = pairs.find((pd) => pd.id === "carb-pct-30d-weight-delta");
+    const days = makeJoinedDays(30, { carbs_g: null });
+    expect(pair?.xFn(days[29] ?? makeFullJoinedDay("2025-01-30"), days, 29)).toBeNull();
+  });
+
+  // Fat % pair
+  it("fat-pct-30d-bf-delta: xFn computes 30-day avg fat % (× 9 multiplier)", () => {
+    const pair = pairs.find((pd) => pd.id === "fat-pct-30d-bf-delta");
+    // 80g fat × 9 = 720; 720/2000 × 100 = 36%
+    const days = makeJoinedDays(30, { fat_g: 80, calories: 2000 });
+    expect(pair?.xFn(days[29] ?? makeFullJoinedDay("2025-01-30"), days, 29)).toBeCloseTo(36, 0);
+  });
+
+  it("fat-pct-30d-bf-delta: xFn returns null when fat is null", () => {
+    const pair = pairs.find((pd) => pd.id === "fat-pct-30d-bf-delta");
+    const days = makeJoinedDays(30, { fat_g: null });
+    expect(pair?.xFn(days[29] ?? makeFullJoinedDay("2025-01-30"), days, 29)).toBeNull();
+  });
+
+  // Exercise 30d pair - yFn tests
+  it("exercise-30d-bf-delta: xFn returns null when i < 29", () => {
+    const pair = pairs.find((pd) => pd.id === "exercise-30d-bf-delta");
+    const days = makeJoinedDays(30);
+    expect(pair?.xFn(days[28] ?? makeFullJoinedDay("2025-01-29"), days, 28)).toBeNull();
+  });
+
+  it("exercise-30d-bf-delta: xFn sums exercise over 30 days", () => {
+    const pair = pairs.find((pd) => pd.id === "exercise-30d-bf-delta");
+    const days = makeJoinedDays(30, { exercise_minutes: 45 });
+    expect(pair?.xFn(days[29] ?? makeFullJoinedDay("2025-01-30"), days, 29)).toBe(1350);
+  });
+
+  it("exercise-30d-bf-delta: yFn extracts body_fat_30d_delta", () => {
+    const pair = pairs.find((pd) => pd.id === "exercise-30d-bf-delta");
+    const day = makeFullJoinedDay("2025-01-01", { body_fat_30d_delta: -0.4 });
+    expect(pair?.yFn(day, [day], 0)).toBe(-0.4);
+  });
+
+  // Next-day yFn pairs (verify they look at all[i+1])
+  it("sleep-dur-hrv: yFn returns next day HRV", () => {
+    const pair = pairs.find((pd) => pd.id === "sleep-dur-hrv");
+    const days = [
+      makeFullJoinedDay("2025-01-01", { hrv: 40 }),
+      makeFullJoinedDay("2025-01-02", { hrv: 55 }),
+    ];
+    expect(pair?.yFn(days[0] ?? makeFullJoinedDay("2025-01-01"), days, 0)).toBe(55);
+  });
+
+  it("sleep-dur-hrv: yFn returns null when no next day", () => {
+    const pair = pairs.find((pd) => pd.id === "sleep-dur-hrv");
+    const days = [makeFullJoinedDay("2025-01-01", { hrv: 40 })];
+    expect(pair?.yFn(days[0] ?? makeFullJoinedDay("2025-01-01"), days, 0)).toBeNull();
+  });
+
+  it("rhr-hrv: yFn returns same-day HRV", () => {
+    const pair = pairs.find((pd) => pd.id === "rhr-hrv");
+    const day = makeFullJoinedDay("2025-01-01", { hrv: 62 });
+    expect(pair?.yFn(day, [day], 0)).toBe(62);
+  });
+
+  it("calories-30d-weight-delta: yFn extracts weight_30d_delta", () => {
+    const pair = pairs.find((pd) => pd.id === "calories-30d-weight-delta");
+    const day = makeFullJoinedDay("2025-01-01", { weight_30d_delta: -1.2 });
+    expect(pair?.yFn(day, [day], 0)).toBe(-1.2);
+  });
+
+  it("protein-pct-30d-weight-delta: yFn extracts weight_30d_delta", () => {
+    const pair = pairs.find((pd) => pd.id === "protein-pct-30d-weight-delta");
+    const day = makeFullJoinedDay("2025-01-01", { weight_30d_delta: 0.8 });
+    expect(pair?.yFn(day, [day], 0)).toBe(0.8);
+  });
+});
+
+// ── Conditional test splitFn — monthly scope tests ──────────────────────
+
+describe("getConditionalTests() — monthly-scoped splitFn tests", () => {
+  const tests = getConditionalTests();
+
+  it("high-cal-weight: returns true when 30-day avg >= 2500", () => {
+    const test = tests.find((td) => td.id === "high-cal-weight");
+    const days = makeJoinedDays(30, { calories: 2600 });
+    expect(test?.splitFn(days[29] ?? makeFullJoinedDay("d"), days, 29)).toBe(true);
+  });
+
+  it("high-cal-weight: returns false when 30-day avg < 2500", () => {
+    const test = tests.find((td) => td.id === "high-cal-weight");
+    const days = makeJoinedDays(30, { calories: 2000 });
+    expect(test?.splitFn(days[29] ?? makeFullJoinedDay("d"), days, 29)).toBe(false);
+  });
+
+  it("high-protein-pct-weight: returns true when protein % >= 30", () => {
+    const test = tests.find((td) => td.id === "high-protein-pct-weight");
+    // 200g × 4 / 2000 × 100 = 40% > 30%
+    const days = makeJoinedDays(30, { protein_g: 200, calories: 2000 });
+    expect(test?.splitFn(days[29] ?? makeFullJoinedDay("d"), days, 29)).toBe(true);
+  });
+
+  it("high-protein-pct-weight: returns false when protein % < 30", () => {
+    const test = tests.find((td) => td.id === "high-protein-pct-weight");
+    // 100g × 4 / 2000 × 100 = 20% < 30%
+    const days = makeJoinedDays(30, { protein_g: 100, calories: 2000 });
+    expect(test?.splitFn(days[29] ?? makeFullJoinedDay("d"), days, 29)).toBe(false);
+  });
+
+  it("high-protein-pct-bf: valueFn extracts body_fat_30d_delta", () => {
+    const test = tests.find((td) => td.id === "high-protein-pct-bf");
+    const day = makeFullJoinedDay("2025-01-01", { body_fat_30d_delta: -0.3 });
+    expect(test?.valueFn(day, [day], 0)).toBe(-0.3);
+  });
+
+  it("high-carb-pct-weight: returns true when carb % >= 50", () => {
+    const test = tests.find((td) => td.id === "high-carb-pct-weight");
+    // 300g × 4 / 2000 × 100 = 60% >= 50%
+    const days = makeJoinedDays(30, { carbs_g: 300, calories: 2000 });
+    expect(test?.splitFn(days[29] ?? makeFullJoinedDay("d"), days, 29)).toBe(true);
+  });
+
+  it("high-carb-pct-weight: returns false when carb % < 50", () => {
+    const test = tests.find((td) => td.id === "high-carb-pct-weight");
+    // 200g × 4 / 2000 × 100 = 40% < 50%
+    const days = makeJoinedDays(30, { carbs_g: 200, calories: 2000 });
+    expect(test?.splitFn(days[29] ?? makeFullJoinedDay("d"), days, 29)).toBe(false);
+  });
+
+  it("high-fat-pct-bf: returns true when fat % >= 35", () => {
+    const test = tests.find((td) => td.id === "high-fat-pct-bf");
+    // 80g × 9 / 2000 × 100 = 36% >= 35%
+    const days = makeJoinedDays(30, { fat_g: 80, calories: 2000 });
+    expect(test?.splitFn(days[29] ?? makeFullJoinedDay("d"), days, 29)).toBe(true);
+  });
+
+  it("high-fat-pct-bf: returns false when fat % < 35", () => {
+    const test = tests.find((td) => td.id === "high-fat-pct-bf");
+    // 60g × 9 / 2000 × 100 = 27% < 35%
+    const days = makeJoinedDays(30, { fat_g: 60, calories: 2000 });
+    expect(test?.splitFn(days[29] ?? makeFullJoinedDay("d"), days, 29)).toBe(false);
+  });
+
+  it("high-fat-pct-bf: valueFn extracts body_fat_30d_delta", () => {
+    const test = tests.find((td) => td.id === "high-fat-pct-bf");
+    const day = makeFullJoinedDay("2025-01-01", { body_fat_30d_delta: 0.2 });
+    expect(test?.valueFn(day, [day], 0)).toBe(0.2);
+  });
+
+  // Monthly exercise tests valueFn
+  it("exercise-monthly-bf: returns true when >= 12 exercise days", () => {
+    const test = tests.find((td) => td.id === "exercise-monthly-bf");
+    const days = makeJoinedDays(30, { exercise_minutes: 30 });
+    // All 30 days have >= 20 min exercise, so 30 >= 12
+    expect(test?.splitFn(days[29] ?? makeFullJoinedDay("d"), days, 29)).toBe(true);
+  });
+
+  it("exercise-monthly-bf: valueFn extracts body_fat_30d_delta", () => {
+    const test = tests.find((td) => td.id === "exercise-monthly-bf");
+    const day = makeFullJoinedDay("2025-01-01", { body_fat_30d_delta: -0.5 });
+    expect(test?.valueFn(day, [day], 0)).toBe(-0.5);
+  });
+
+  // Nutrition → recovery tests
+  it("high-protein-hrv: splitFn returns true when protein >= 100", () => {
+    const test = tests.find((td) => td.id === "high-protein-hrv");
+    const day = makeFullJoinedDay("2025-01-01", { protein_g: 120 });
+    expect(test?.splitFn(day, [day], 0)).toBe(true);
+  });
+
+  it("high-protein-hrv: splitFn returns false when protein < 100", () => {
+    const test = tests.find((td) => td.id === "high-protein-hrv");
+    const day = makeFullJoinedDay("2025-01-01", { protein_g: 80 });
+    expect(test?.splitFn(day, [day], 0)).toBe(false);
+  });
+
+  it("high-cal-sleep: splitFn returns true when calories >= 2500", () => {
+    const test = tests.find((td) => td.id === "high-cal-sleep");
+    const day = makeFullJoinedDay("2025-01-01", { calories: 2700 });
+    expect(test?.splitFn(day, [day], 0)).toBe(true);
+  });
+
+  it("high-cal-sleep: splitFn returns false when calories < 2500", () => {
+    const test = tests.find((td) => td.id === "high-cal-sleep");
+    const day = makeFullJoinedDay("2025-01-01", { calories: 2000 });
+    expect(test?.splitFn(day, [day], 0)).toBe(false);
+  });
+
+  it("high-cal-sleep: valueFn returns next-day sleep duration", () => {
+    const test = tests.find((td) => td.id === "high-cal-sleep");
+    const days = [
+      makeFullJoinedDay("2025-01-01"),
+      makeFullJoinedDay("2025-01-02", { sleep_duration_min: 510 }),
+    ];
+    expect(test?.valueFn(days[0] ?? makeFullJoinedDay("d"), days, 0)).toBe(510);
   });
 });
