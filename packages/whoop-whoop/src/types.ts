@@ -69,8 +69,10 @@ export interface WhoopSleepRecord {
   user_id: number;
   created_at: string;
   updated_at: string;
-  start: string;
-  end: string;
+  start?: string;
+  end?: string;
+  // BFF v0 uses `during` (Postgres range) instead of start/end
+  during?: string;
   timezone_offset: string;
   nap: boolean;
   score_state: string;
