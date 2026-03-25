@@ -669,6 +669,9 @@ describe("GarminProvider.sync()", () => {
     });
     mocks.parseConnectSleepStages.mockReturnValue([]);
 
+    // Track delete calls before sync to detect stage deletion
+    const deleteCallsBefore = db.delete.mock.calls.length;
+
     const result = await syncProvider(provider, db, new Date());
 
     expect(result.recordsSynced).toBe(1);
@@ -678,6 +681,16 @@ describe("GarminProvider.sync()", () => {
       (call) => Array.isArray(call[0]) && call[0][0]?.stage,
     );
     expect(stageInsertCall).toBeUndefined();
+
+    // Should NOT have called values with an empty array (stage guard: length > 0)
+    const emptyArrayInsert = db.values.mock.calls.find(
+      (call) => Array.isArray(call[0]) && call[0].length === 0,
+    );
+    expect(emptyArrayInsert).toBeUndefined();
+
+    // No additional delete calls should have been made for stages
+    // (only the sync cursor / provider deletes happen, not stage deletion)
+    expect(db.delete.mock.calls.length).toBe(deleteCallsBefore);
   });
 
   it("skips null sleep data from parseConnectSleep", async () => {
