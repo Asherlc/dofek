@@ -123,4 +123,47 @@ describe("queues", () => {
       });
     });
   });
+
+  describe("providerSyncQueueName", () => {
+    it("returns sync:{providerId} format", async () => {
+      const { providerSyncQueueName } = await import("./queues.ts");
+      expect(providerSyncQueueName("strava")).toBe("sync:strava");
+      expect(providerSyncQueueName("garmin")).toBe("sync:garmin");
+    });
+  });
+
+  describe("createProviderSyncQueue", () => {
+    it("creates a Queue with per-provider queue name", async () => {
+      const { createProviderSyncQueue } = await import("./queues.ts");
+
+      createProviderSyncQueue("strava", { host: "test", port: 1234 });
+
+      expect(MockQueue).toHaveBeenCalledWith("sync:strava", {
+        connection: { host: "test", port: 1234 },
+      });
+    });
+
+    it("uses default redis connection when none provided", async () => {
+      process.env.REDIS_URL = "redis://localhost:6379";
+      const { createProviderSyncQueue } = await import("./queues.ts");
+
+      createProviderSyncQueue("garmin");
+
+      expect(MockQueue).toHaveBeenCalledWith("sync:garmin", {
+        connection: expect.objectContaining({ host: "localhost", port: 6379 }),
+      });
+    });
+  });
+
+  describe("createPostSyncQueue", () => {
+    it("creates a Queue with the post-sync queue name", async () => {
+      const { createPostSyncQueue, POST_SYNC_QUEUE } = await import("./queues.ts");
+
+      createPostSyncQueue({ host: "test", port: 9999 });
+
+      expect(MockQueue).toHaveBeenCalledWith(POST_SYNC_QUEUE, {
+        connection: { host: "test", port: 9999 },
+      });
+    });
+  });
 });
