@@ -545,6 +545,35 @@ describe("GarminProvider.sync()", () => {
 
     // Verify stream samples were inserted (2 valid, 1 null-timestamp skipped)
     expect(db.onConflictDoNothing.mock.calls.length).toBeGreaterThanOrEqual(2);
+
+    // Verify the metric_stream values for the first sample (all fields present)
+    // Stream inserts have a recordedAt field (Date) to distinguish from other inserts
+    const streamCalls = db.values.mock.calls.filter(
+      (call) => call[0]?.recordedAt instanceof Date && "activityId" in (call[0] ?? {}),
+    );
+    expect(streamCalls.length).toBeGreaterThanOrEqual(2);
+    const firstSample = streamCalls[0]?.[0];
+    expect(firstSample.heartRate).toBe(150);
+    expect(firstSample.power).toBe(200);
+    expect(firstSample.cadence).toBe(85); // directRunCadence
+    expect(firstSample.speed).toBe(3.5);
+    expect(firstSample.altitude).toBe(100);
+    expect(firstSample.lat).toBe(37.7749);
+    expect(firstSample.lng).toBe(-122.4194);
+    expect(firstSample.temperature).toBe(18);
+    expect(firstSample.providerId).toBe("garmin");
+
+    // Verify the third sample uses directBikeCadence when directRunCadence is null
+    const bikeCadenceSample = streamCalls.find((call) => call[0]?.cadence === 90);
+    expect(bikeCadenceSample).toBeDefined();
+    // And all null fields become undefined
+    expect(bikeCadenceSample?.[0].heartRate).toBeUndefined();
+    expect(bikeCadenceSample?.[0].power).toBeUndefined();
+    expect(bikeCadenceSample?.[0].speed).toBeUndefined();
+    expect(bikeCadenceSample?.[0].altitude).toBeUndefined();
+    expect(bikeCadenceSample?.[0].lat).toBeUndefined();
+    expect(bikeCadenceSample?.[0].lng).toBeUndefined();
+    expect(bikeCadenceSample?.[0].temperature).toBeUndefined();
   });
 
   it("syncs sleep data", async () => {
@@ -573,6 +602,95 @@ describe("GarminProvider.sync()", () => {
     expect(sleepCall[0].lightMinutes).toBe(210);
     expect(sleepCall[0].remMinutes).toBe(120);
     expect(sleepCall[0].awakeMinutes).toBe(60);
+  });
+
+  it("inserts sleep stages when parseConnectSleepStages returns data", async () => {
+    mocks.client.getSleepData.mockResolvedValue({ sleepData: true });
+    mocks.parseConnectSleep.mockReturnValue({
+      externalId: "2026-03-01",
+      startedAt: new Date("2026-03-01T00:00:00Z"),
+      endedAt: new Date("2026-03-01T08:00:00Z"),
+      durationMinutes: 480,
+      deepMinutes: 90,
+      lightMinutes: 210,
+      remMinutes: 120,
+      awakeMinutes: 60,
+    });
+
+    const stages = [
+      {
+        stage: "deep",
+        startedAt: new Date("2026-03-01T01:00:00Z"),
+        endedAt: new Date("2026-03-01T02:30:00Z"),
+      },
+      {
+        stage: "light",
+        startedAt: new Date("2026-03-01T02:30:00Z"),
+        endedAt: new Date("2026-03-01T04:00:00Z"),
+      },
+      {
+        stage: "rem",
+        startedAt: new Date("2026-03-01T04:00:00Z"),
+        endedAt: new Date("2026-03-01T05:00:00Z"),
+      },
+    ];
+    mocks.parseConnectSleepStages.mockReturnValue(stages);
+
+    const result = await syncProvider(provider, db, new Date());
+
+    expect(result.recordsSynced).toBe(1);
+
+    // Verify sleep stages were inserted
+    // db.delete should have been called for existing stages, then db.insert for new ones
+    const stageInsertCall = db.values.mock.calls.find(
+      (call) => Array.isArray(call[0]) && call[0][0]?.stage === "deep",
+    );
+    expect(stageInsertCall).toBeDefined();
+    expect(stageInsertCall?.[0]).toHaveLength(3);
+    expect(stageInsertCall?.[0][0].sessionId).toBe("mock-session-id");
+    expect(stageInsertCall?.[0][0].stage).toBe("deep");
+    expect(stageInsertCall?.[0][1].stage).toBe("light");
+    expect(stageInsertCall?.[0][2].stage).toBe("rem");
+    expect(stageInsertCall?.[0][0].startedAt).toEqual(new Date("2026-03-01T01:00:00Z"));
+    expect(stageInsertCall?.[0][0].endedAt).toEqual(new Date("2026-03-01T02:30:00Z"));
+  });
+
+  it("does not insert stages when parseConnectSleepStages returns empty array", async () => {
+    mocks.client.getSleepData.mockResolvedValue({ sleepData: true });
+    mocks.parseConnectSleep.mockReturnValue({
+      externalId: "2026-03-01",
+      startedAt: new Date("2026-03-01T00:00:00Z"),
+      endedAt: new Date("2026-03-01T08:00:00Z"),
+      durationMinutes: 480,
+      deepMinutes: 90,
+      lightMinutes: 210,
+      remMinutes: 120,
+      awakeMinutes: 60,
+    });
+    mocks.parseConnectSleepStages.mockReturnValue([]);
+
+    // Track delete calls before sync to detect stage deletion
+    const deleteCallsBefore = db.delete.mock.calls.length;
+
+    const result = await syncProvider(provider, db, new Date());
+
+    expect(result.recordsSynced).toBe(1);
+
+    // Should NOT have inserted any stage arrays
+    const stageInsertCall = db.values.mock.calls.find(
+      (call) => Array.isArray(call[0]) && call[0][0]?.stage,
+    );
+    expect(stageInsertCall).toBeUndefined();
+
+    // Should NOT have called values with an empty array (stage guard: length > 0)
+    const emptyArrayInsert = db.values.mock.calls.find(
+      (call) => Array.isArray(call[0]) && call[0].length === 0,
+    );
+    expect(emptyArrayInsert).toBeUndefined();
+
+    // No additional delete calls should have been made for stages
+    // (only the sync cursor / provider deletes happen, not stage deletion)
+    expect(db.delete.mock.calls.length).toBe(deleteCallsBefore);
   });
 
   it("skips null sleep data from parseConnectSleep", async () => {
@@ -622,6 +740,25 @@ describe("GarminProvider.sync()", () => {
     expect(dailyCall[0].exerciseMinutes).toBe(45);
     expect(dailyCall[0].hrv).toBe(45);
     expect(dailyCall[0].vo2max).toBe(55);
+
+    // Verify the onConflictDoUpdate set clause has the same values
+    const conflictCall = db.onConflictDoUpdate.mock.calls.find(
+      (call) => call[0]?.set?.steps === 10000,
+    );
+    expect(conflictCall).toBeDefined();
+    expect(conflictCall?.[0].set.distanceKm).toBe(8.5);
+    expect(conflictCall?.[0].set.activeEnergyKcal).toBe(500);
+    expect(conflictCall?.[0].set.basalEnergyKcal).toBe(1800);
+    expect(conflictCall?.[0].set.restingHr).toBe(55);
+    expect(conflictCall?.[0].set.spo2Avg).toBe(97);
+    expect(conflictCall?.[0].set.respiratoryRateAvg).toBe(15);
+    expect(conflictCall?.[0].set.flightsClimbed).toBe(12);
+    expect(conflictCall?.[0].set.exerciseMinutes).toBe(45);
+    expect(conflictCall?.[0].set.hrv).toBe(45);
+    expect(conflictCall?.[0].set.vo2max).toBe(55);
+    // Verify target includes the expected conflict columns
+    expect(conflictCall?.[0].target).toBeDefined();
+    expect(conflictCall?.[0].target.length).toBe(3);
   });
 
   it("skips privacy-protected daily summaries", async () => {
