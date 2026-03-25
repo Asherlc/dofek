@@ -7,12 +7,14 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 // Mock tRPC infrastructure
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const t = initTRPC.context<{ db: unknown; userId: string | null; timezone: string }>().create();
+  const trpc = initTRPC
+    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .create();
   return {
-    router: t.router,
-    protectedProcedure: t.procedure,
-    cachedProtectedQuery: () => t.procedure,
-    cachedProtectedQueryLight: () => t.procedure,
+    router: trpc.router,
+    protectedProcedure: trpc.procedure,
+    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQueryLight: () => trpc.procedure,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -317,30 +319,30 @@ describe("mapActivityDetail", () => {
   };
 
   it("maps all fields correctly", () => {
-    const r = mapActivityDetail(fullRow);
-    expect(r.id).toBe("abc-123");
-    expect(r.activityType).toBe("cycling");
-    expect(r.startedAt).toBe("2026-03-01T10:00:00+00:00");
-    expect(r.endedAt).toBe("2026-03-01T11:30:00+00:00");
-    expect(r.name).toBe("Morning Ride");
-    expect(r.notes).toBe("Felt good");
-    expect(r.providerId).toBe("wahoo");
-    expect(r.sourceProviders).toEqual(["wahoo", "strava"]);
-    expect(r.avgHr).toBe(145);
-    expect(r.maxHr).toBe(175);
-    expect(r.avgPower).toBe(220);
-    expect(r.maxPower).toBe(450);
-    expect(r.avgSpeed).toBe(8.5);
-    expect(r.maxSpeed).toBe(15.2);
-    expect(r.avgCadence).toBe(85);
-    expect(r.totalDistance).toBe(42000);
-    expect(r.elevationGain).toBe(350);
-    expect(r.elevationLoss).toBe(340);
-    expect(r.sampleCount).toBe(5400);
+    const mapped = mapActivityDetail(fullRow);
+    expect(mapped.id).toBe("abc-123");
+    expect(mapped.activityType).toBe("cycling");
+    expect(mapped.startedAt).toBe("2026-03-01T10:00:00+00:00");
+    expect(mapped.endedAt).toBe("2026-03-01T11:30:00+00:00");
+    expect(mapped.name).toBe("Morning Ride");
+    expect(mapped.notes).toBe("Felt good");
+    expect(mapped.providerId).toBe("wahoo");
+    expect(mapped.sourceProviders).toEqual(["wahoo", "strava"]);
+    expect(mapped.avgHr).toBe(145);
+    expect(mapped.maxHr).toBe(175);
+    expect(mapped.avgPower).toBe(220);
+    expect(mapped.maxPower).toBe(450);
+    expect(mapped.avgSpeed).toBe(8.5);
+    expect(mapped.maxSpeed).toBe(15.2);
+    expect(mapped.avgCadence).toBe(85);
+    expect(mapped.totalDistance).toBe(42000);
+    expect(mapped.elevationGain).toBe(350);
+    expect(mapped.elevationLoss).toBe(340);
+    expect(mapped.sampleCount).toBe(5400);
   });
 
   it("returns null for all nullable fields when null", () => {
-    const r = mapActivityDetail({
+    const mapped = mapActivityDetail({
       ...fullRow,
       ended_at: null,
       name: null,
@@ -357,26 +359,26 @@ describe("mapActivityDetail", () => {
       elevation_loss_m: null,
       sample_count: null,
     });
-    expect(r.endedAt).toBeNull();
-    expect(r.name).toBeNull();
-    expect(r.notes).toBeNull();
-    expect(r.avgHr).toBeNull();
-    expect(r.maxHr).toBeNull();
-    expect(r.avgPower).toBeNull();
-    expect(r.maxPower).toBeNull();
-    expect(r.avgSpeed).toBeNull();
-    expect(r.maxSpeed).toBeNull();
-    expect(r.avgCadence).toBeNull();
-    expect(r.totalDistance).toBeNull();
-    expect(r.elevationGain).toBeNull();
-    expect(r.elevationLoss).toBeNull();
-    expect(r.sampleCount).toBeNull();
+    expect(mapped.endedAt).toBeNull();
+    expect(mapped.name).toBeNull();
+    expect(mapped.notes).toBeNull();
+    expect(mapped.avgHr).toBeNull();
+    expect(mapped.maxHr).toBeNull();
+    expect(mapped.avgPower).toBeNull();
+    expect(mapped.maxPower).toBeNull();
+    expect(mapped.avgSpeed).toBeNull();
+    expect(mapped.maxSpeed).toBeNull();
+    expect(mapped.avgCadence).toBeNull();
+    expect(mapped.totalDistance).toBeNull();
+    expect(mapped.elevationGain).toBeNull();
+    expect(mapped.elevationLoss).toBeNull();
+    expect(mapped.sampleCount).toBeNull();
   });
 });
 
 describe("mapStreamPoint", () => {
   it("maps all populated fields", () => {
-    const r = mapStreamPoint({
+    const mapped = mapStreamPoint({
       recorded_at: "2026-03-01T10:00:00Z",
       heart_rate: 145,
       power: 220,
@@ -386,18 +388,18 @@ describe("mapStreamPoint", () => {
       lat: 40.7128,
       lng: -74.006,
     });
-    expect(r.recordedAt).toBe("2026-03-01T10:00:00Z");
-    expect(r.heartRate).toBe(145);
-    expect(r.power).toBe(220);
-    expect(r.speed).toBe(8.5);
-    expect(r.cadence).toBe(85);
-    expect(r.altitude).toBe(350.5);
-    expect(r.lat).toBe(40.7128);
-    expect(r.lng).toBe(-74.006);
+    expect(mapped.recordedAt).toBe("2026-03-01T10:00:00Z");
+    expect(mapped.heartRate).toBe(145);
+    expect(mapped.power).toBe(220);
+    expect(mapped.speed).toBe(8.5);
+    expect(mapped.cadence).toBe(85);
+    expect(mapped.altitude).toBe(350.5);
+    expect(mapped.lat).toBe(40.7128);
+    expect(mapped.lng).toBe(-74.006);
   });
 
   it("returns null for all nullable fields when null", () => {
-    const r = mapStreamPoint({
+    const mapped = mapStreamPoint({
       recorded_at: "2026-03-01T10:00:00Z",
       heart_rate: null,
       power: null,
@@ -407,13 +409,13 @@ describe("mapStreamPoint", () => {
       lat: null,
       lng: null,
     });
-    expect(r.heartRate).toBeNull();
-    expect(r.power).toBeNull();
-    expect(r.speed).toBeNull();
-    expect(r.cadence).toBeNull();
-    expect(r.altitude).toBeNull();
-    expect(r.lat).toBeNull();
-    expect(r.lng).toBeNull();
+    expect(mapped.heartRate).toBeNull();
+    expect(mapped.power).toBeNull();
+    expect(mapped.speed).toBeNull();
+    expect(mapped.cadence).toBeNull();
+    expect(mapped.altitude).toBeNull();
+    expect(mapped.lat).toBeNull();
+    expect(mapped.lng).toBeNull();
   });
 });
 

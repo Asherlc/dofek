@@ -19,26 +19,26 @@ export interface HealthWorkout {
 export const WORKOUT_TYPE_MAP = APPLE_HEALTH_WORKOUT_TYPE_MAP;
 
 export function normalizeDuration(value: string, unit: string): number {
-  const v = parseFloat(value);
+  const numericValue = parseFloat(value);
   switch (unit) {
     case "min":
-      return v * 60;
+      return numericValue * 60;
     case "hr":
-      return v * 3600;
+      return numericValue * 3600;
     default:
-      return v; // assume seconds
+      return numericValue; // assume seconds
   }
 }
 
 export function normalizeDistance(value: string, unit: string): number {
-  const v = parseFloat(value);
+  const numericValue = parseFloat(value);
   switch (unit) {
     case "km":
-      return v * 1000;
+      return numericValue * 1000;
     case "mi":
-      return v * 1609.344;
+      return numericValue * 1609.344;
     default:
-      return v; // assume meters
+      return numericValue; // assume meters
   }
 }
 

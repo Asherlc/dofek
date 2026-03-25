@@ -219,6 +219,37 @@ export const bodyMeasurement = fitness.table(
 );
 
 // ============================================================
+// Body measurement type catalog + junction table
+// ============================================================
+
+export const measurementType = fitness.table("measurement_type", {
+  id: text("id").primaryKey(),
+  displayName: text("display_name").notNull(),
+  unit: text("unit"),
+  category: text("category").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isInteger: boolean("is_integer").notNull().default(false),
+});
+
+export const bodyMeasurementValue = fitness.table(
+  "body_measurement_value",
+  {
+    bodyMeasurementId: uuid("body_measurement_id")
+      .notNull()
+      .references(() => bodyMeasurement.id, { onDelete: "cascade" }),
+    measurementTypeId: text("measurement_type_id")
+      .notNull()
+      .references(() => measurementType.id),
+    value: real("value").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.bodyMeasurementId, table.measurementTypeId] }),
+    index("body_measurement_value_entry_idx").on(table.bodyMeasurementId),
+    index("body_measurement_value_type_idx").on(table.measurementTypeId),
+  ],
+);
+
+// ============================================================
 // Strength training
 // ============================================================
 
@@ -480,6 +511,38 @@ export const dailyMetrics = fitness.table(
 );
 
 // ============================================================
+// Daily metric type catalog + junction table
+// ============================================================
+
+export const dailyMetricType = fitness.table("daily_metric_type", {
+  id: text("id").primaryKey(),
+  displayName: text("display_name").notNull(),
+  unit: text("unit"),
+  category: text("category").notNull(),
+  priorityCategory: text("priority_category").notNull().default("activity"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isInteger: boolean("is_integer").notNull().default(false),
+});
+
+export const dailyMetricValue = fitness.table(
+  "daily_metric_value",
+  {
+    dailyMetricsId: uuid("daily_metrics_id")
+      .notNull()
+      .references(() => dailyMetrics.id, { onDelete: "cascade" }),
+    metricTypeId: text("metric_type_id")
+      .notNull()
+      .references(() => dailyMetricType.id),
+    value: real("value").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.dailyMetricsId, table.metricTypeId] }),
+    index("daily_metric_value_entry_idx").on(table.dailyMetricsId),
+    index("daily_metric_value_type_idx").on(table.metricTypeId),
+  ],
+);
+
+// ============================================================
 // Sleep
 // ============================================================
 
@@ -569,6 +632,55 @@ export const supplement = fitness.table(
   (table) => [
     uniqueIndex("supplement_user_name_idx").on(table.userId, table.name),
     index("supplement_user_idx").on(table.userId),
+  ],
+);
+
+// ============================================================
+// Nutrient catalog + junction tables
+// ============================================================
+
+export const nutrient = fitness.table("nutrient", {
+  id: text("id").primaryKey(),
+  displayName: text("display_name").notNull(),
+  unit: text("unit").notNull(),
+  category: text("category").notNull(),
+  rda: real("rda"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  openFoodFactsKey: text("open_food_facts_key"),
+  conversionFactor: real("conversion_factor").notNull().default(1),
+});
+
+export const foodEntryNutrient = fitness.table(
+  "food_entry_nutrient",
+  {
+    foodEntryId: uuid("food_entry_id")
+      .notNull()
+      .references(() => foodEntry.id, { onDelete: "cascade" }),
+    nutrientId: text("nutrient_id")
+      .notNull()
+      .references(() => nutrient.id),
+    amount: real("amount").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.foodEntryId, table.nutrientId] }),
+    index("food_entry_nutrient_entry_idx").on(table.foodEntryId),
+  ],
+);
+
+export const supplementNutrient = fitness.table(
+  "supplement_nutrient",
+  {
+    supplementId: uuid("supplement_id")
+      .notNull()
+      .references(() => supplement.id, { onDelete: "cascade" }),
+    nutrientId: text("nutrient_id")
+      .notNull()
+      .references(() => nutrient.id),
+    amount: real("amount").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.supplementId, table.nutrientId] }),
+    index("supplement_nutrient_supplement_idx").on(table.supplementId),
   ],
 );
 

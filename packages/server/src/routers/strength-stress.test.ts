@@ -3,12 +3,14 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const t = initTRPC.context<{ db: unknown; userId: string | null; timezone: string }>().create();
+  const trpc = initTRPC
+    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .create();
   return {
-    router: t.router,
-    protectedProcedure: t.procedure,
-    cachedProtectedQuery: () => t.procedure,
-    cachedProtectedQueryLight: () => t.procedure,
+    router: trpc.router,
+    protectedProcedure: trpc.procedure,
+    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQueryLight: () => trpc.procedure,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -227,10 +229,10 @@ describe("stressRouter", () => {
       // Create 7 days in same week
       const rows = [];
       for (let i = 0; i < 7; i++) {
-        const d = new Date("2024-01-15"); // Monday
-        d.setDate(d.getDate() + i);
+        const date = new Date("2024-01-15"); // Monday
+        date.setDate(date.getDate() + i);
         rows.push({
-          date: d.toISOString().slice(0, 10),
+          date: date.toISOString().slice(0, 10),
           hrv: 50 - i * 3,
           resting_hr: 58 + i,
           hrv_mean_60d: 60,
@@ -252,10 +254,10 @@ describe("stressRouter", () => {
       const rows = [];
       // First 7 days: high stress
       for (let i = 0; i < 7; i++) {
-        const d = new Date("2024-01-01");
-        d.setDate(d.getDate() + i);
+        const date = new Date("2024-01-01");
+        date.setDate(date.getDate() + i);
         rows.push({
-          date: d.toISOString().slice(0, 10),
+          date: date.toISOString().slice(0, 10),
           hrv: 35,
           resting_hr: 68,
           hrv_mean_60d: 60,
@@ -267,10 +269,10 @@ describe("stressRouter", () => {
       }
       // Next 7 days: no stress
       for (let i = 7; i < 14; i++) {
-        const d = new Date("2024-01-01");
-        d.setDate(d.getDate() + i);
+        const date = new Date("2024-01-01");
+        date.setDate(date.getDate() + i);
         rows.push({
-          date: d.toISOString().slice(0, 10),
+          date: date.toISOString().slice(0, 10),
           hrv: 70,
           resting_hr: 50,
           hrv_mean_60d: 60,

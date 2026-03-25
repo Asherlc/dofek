@@ -73,34 +73,34 @@ export class GradientBoostedTrees {
   }
 
   fit(X: number[][], y: number[]): void {
-    const n = X.length;
-    const p = X[0]?.length ?? 0;
+    const sampleCount = X.length;
+    const featureCount = X[0]?.length ?? 0;
 
-    if (n !== y.length) {
-      throw new Error(`X has ${n} rows but y has ${y.length} elements`);
+    if (sampleCount !== y.length) {
+      throw new Error(`X has ${sampleCount} rows but y has ${y.length} elements`);
     }
 
-    this.#nFeatures = p;
+    this.#nFeatures = featureCount;
     this.#basePrediction = mean(y);
     this.#trees = [];
 
     // Raw importances per feature (accumulated variance reduction)
-    const rawImportances = new Array<number>(p).fill(0);
+    const rawImportances = new Array<number>(featureCount).fill(0);
 
     // Initialize predictions to the base (mean)
-    const predictions = new Array<number>(n).fill(this.#basePrediction);
+    const predictions = new Array<number>(sampleCount).fill(this.#basePrediction);
 
     for (let iter = 0; iter < this.#config.nEstimators; iter++) {
       // Compute negative gradient (residuals for MSE loss)
       const residuals = y.map((yi, i) => (yi ?? 0) - (predictions[i] ?? 0));
 
       // Build a regression tree on residuals
-      const indices = Array.from({ length: n }, (_, i) => i);
+      const indices = Array.from({ length: sampleCount }, (_, i) => i);
       const tree = this.#buildTree(X, residuals, indices, 0, rawImportances);
       this.#trees.push(tree);
 
       // Update predictions
-      for (let i = 0; i < n; i++) {
+      for (let i = 0; i < sampleCount; i++) {
         predictions[i] =
           (predictions[i] ?? 0) + this.#config.learningRate * predictNode(tree, X[i] ?? []);
       }
@@ -115,7 +115,7 @@ export class GradientBoostedTrees {
     const yMean = mean(y);
     let ssRes = 0;
     let ssTot = 0;
-    for (let i = 0; i < n; i++) {
+    for (let i = 0; i < sampleCount; i++) {
       ssRes += ((y[i] ?? 0) - (predictions[i] ?? 0)) ** 2;
       ssTot += ((y[i] ?? 0) - yMean) ** 2;
     }
@@ -197,7 +197,7 @@ export class GradientBoostedTrees {
     y: number[],
     indices: number[],
   ): { featureIndex: number; threshold: number; gain: number } | null {
-    const n = indices.length;
+    const nodeSize = indices.length;
     const nFeatures = X[0]?.length ?? 0;
 
     const parentMean = meanOfIndices(y, indices);
@@ -220,7 +220,7 @@ export class GradientBoostedTrees {
       let leftCount = 0;
       let rightSum = 0;
       let rightSumSq = 0;
-      let rightCount = n;
+      let rightCount = nodeSize;
 
       for (const i of sorted) {
         const val = y[i] ?? 0;
@@ -228,10 +228,10 @@ export class GradientBoostedTrees {
         rightSumSq += val * val;
       }
 
-      for (let s = 0; s < n - 1; s++) {
-        const i = sorted[s];
-        if (i === undefined) continue;
-        const val = y[i] ?? 0;
+      for (let s = 0; s < nodeSize - 1; s++) {
+        const sortedIndex = sorted[s];
+        if (sortedIndex === undefined) continue;
+        const val = y[sortedIndex] ?? 0;
 
         leftSum += val;
         leftSumSq += val * val;
@@ -243,7 +243,7 @@ export class GradientBoostedTrees {
         // Skip if same feature value as next (can't split here)
         const nextI = sorted[s + 1];
         if (nextI === undefined) continue;
-        if ((X[i]?.[f] ?? 0) === (X[nextI]?.[f] ?? 0)) continue;
+        if ((X[sortedIndex]?.[f] ?? 0) === (X[nextI]?.[f] ?? 0)) continue;
 
         // Skip if either side would be too small
         if (leftCount < this.#config.minSamplesLeaf || rightCount < this.#config.minSamplesLeaf) {
@@ -253,13 +253,13 @@ export class GradientBoostedTrees {
         // Variance reduction
         const leftVar = leftSumSq / leftCount - (leftSum / leftCount) ** 2;
         const rightVar = rightSumSq / rightCount - (rightSum / rightCount) ** 2;
-        const weightedVar = (leftCount * leftVar + rightCount * rightVar) / n;
-        const gain = parentVariance / n - weightedVar;
+        const weightedVar = (leftCount * leftVar + rightCount * rightVar) / nodeSize;
+        const gain = parentVariance / nodeSize - weightedVar;
 
         if (gain > bestGain) {
           bestGain = gain;
           bestFeature = f;
-          bestThreshold = ((X[i]?.[f] ?? 0) + (X[nextI]?.[f] ?? 0)) / 2;
+          bestThreshold = ((X[sortedIndex]?.[f] ?? 0) + (X[nextI]?.[f] ?? 0)) / 2;
         }
       }
     }

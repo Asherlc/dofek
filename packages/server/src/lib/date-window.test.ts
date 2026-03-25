@@ -76,15 +76,15 @@ describe("dateWindowStart", () => {
   });
 
   it("produces different SQL for different endDates", () => {
-    const a = dateWindowStart("2026-03-23", 30);
-    const b = dateWindowStart("2026-01-01", 30);
-    expect(a).not.toEqual(b);
+    const windowA = dateWindowStart("2026-03-23", 30);
+    const windowB = dateWindowStart("2026-01-01", 30);
+    expect(windowA).not.toEqual(windowB);
   });
 
   it("produces different SQL for different days values", () => {
-    const a = dateWindowStart("2026-03-23", 30);
-    const b = dateWindowStart("2026-03-23", 7);
-    expect(a).not.toEqual(b);
+    const windowA = dateWindowStart("2026-03-23", 30);
+    const windowB = dateWindowStart("2026-03-23", 7);
+    expect(windowA).not.toEqual(windowB);
   });
 
   it("embeds both endDate and days in query chunks", () => {
@@ -103,9 +103,9 @@ describe("dateWindowEnd", () => {
   });
 
   it("produces different SQL for different endDates", () => {
-    const a = dateWindowEnd("2026-03-23");
-    const b = dateWindowEnd("2026-01-01");
-    expect(a).not.toEqual(b);
+    const windowA = dateWindowEnd("2026-03-23");
+    const windowB = dateWindowEnd("2026-01-01");
+    expect(windowA).not.toEqual(windowB);
   });
 
   it("embeds the endDate in query chunks", () => {
@@ -122,15 +122,15 @@ describe("timestampWindowStart", () => {
   });
 
   it("produces different SQL for different endDates", () => {
-    const a = timestampWindowStart("2026-03-23", 7);
-    const b = timestampWindowStart("2026-01-01", 7);
-    expect(a).not.toEqual(b);
+    const windowA = timestampWindowStart("2026-03-23", 7);
+    const windowB = timestampWindowStart("2026-01-01", 7);
+    expect(windowA).not.toEqual(windowB);
   });
 
   it("produces different SQL for different days values", () => {
-    const a = timestampWindowStart("2026-03-23", 7);
-    const b = timestampWindowStart("2026-03-23", 30);
-    expect(a).not.toEqual(b);
+    const windowA = timestampWindowStart("2026-03-23", 7);
+    const windowB = timestampWindowStart("2026-03-23", 30);
+    expect(windowA).not.toEqual(windowB);
   });
 
   it("embeds both endDate and days in query chunks", () => {

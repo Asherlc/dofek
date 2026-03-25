@@ -197,8 +197,8 @@ describe("computeTrainingStreak", () => {
   });
   it("handles long consecutive streak", () => {
     const dates = Array.from({ length: 10 }, (_, i) => {
-      const d = new Date(Date.UTC(2024, 0, 10 + i));
-      const [date] = d.toISOString().split("T");
+      const cursor = new Date(Date.UTC(2024, 0, 10 + i));
+      const [date] = cursor.toISOString().split("T");
       return date;
     });
     expect(computeTrainingStreak(dates)).toBe(10);

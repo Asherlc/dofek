@@ -641,9 +641,9 @@ describe("StravaClient — request throttling", () => {
     };
 
     const client = new StravaClient("token", mockFetch);
-    const p = client.getActivities(0);
+    const pendingRequest = client.getActivities(0);
     await vi.advanceTimersByTimeAsync(0);
-    await p;
+    await pendingRequest;
 
     // First call should happen at time 0 (no throttle delay)
     expect(callTimestamps).toHaveLength(1);
