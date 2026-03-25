@@ -28,3 +28,7 @@ project.xcworkspace
 
 # CocoaPods
 /Pods/
+
+# Prebuilt Sentry XCFramework (downloaded by scripts/download-sentry-xcframework.sh)
+/LocalPods/Sentry/Sentry.xcframework/
+/LocalPods/Sentry/Sources/
