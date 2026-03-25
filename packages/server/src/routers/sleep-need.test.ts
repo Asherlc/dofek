@@ -46,7 +46,12 @@ describe("sleepNeedRouter", () => {
       expect(result.strainDebtMinutes).toBe(0);
       expect(result.accumulatedDebtMinutes).toBe(0);
       expect(result.totalNeedMinutes).toBe(480);
-      expect(result.recentNights).toEqual([]);
+      // Calendar-based: always 7 nights (null for missing)
+      expect(result.recentNights).toHaveLength(7);
+      for (const night of result.recentNights) {
+        expect(night.actualMinutes).toBeNull();
+      }
+      expect(result.canRecommend).toBe(false);
     });
 
     it("computes baseline from good recovery nights when >= 7 good nights", async () => {
@@ -301,7 +306,10 @@ describe("sleepNeedRouter", () => {
       );
     });
 
-    it("recentNights shows last 7 nights with debt tracking", async () => {
+    it("recentNights shows last 7 calendar nights with debt tracking", async () => {
+      // Data covers 2026-03-01 through 2026-03-14, endDate is 2026-03-15
+      // Calendar: 2026-03-09 through 2026-03-15
+      // Data exists for 2026-03-09 through 2026-03-14, missing for 2026-03-15
       const rows = Array.from({ length: 14 }, (_, i) => ({
         date: `2026-03-${String(i + 1).padStart(2, "0")}`,
         duration_minutes: 450,
@@ -319,15 +327,17 @@ describe("sleepNeedRouter", () => {
 
       expect(result.recentNights).toHaveLength(7);
       // baseline = 450 (14 good nights at 450)
-      // Each night: actual=450, needed=450, debt=max(0, 450-450) = 0
-      for (const night of result.recentNights) {
+      // Calendar nights with data: actual=450, needed=450, debt=0
+      // Last night (2026-03-15) has no data → null
+      const withData = result.recentNights.filter((n) => n.actualMinutes !== null);
+      for (const night of withData) {
         expect(night.actualMinutes).toBe(450);
         expect(night.neededMinutes).toBe(450);
         expect(night.debtMinutes).toBe(0);
       }
     });
 
-    it("recentNights dates are the last 7 from the dataset", async () => {
+    it("recentNights dates are calendar dates ending at endDate", async () => {
       const rows = Array.from({ length: 14 }, (_, i) => ({
         date: `2026-03-${String(i + 1).padStart(2, "0")}`,
         duration_minutes: 450,
@@ -343,9 +353,9 @@ describe("sleepNeedRouter", () => {
       });
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
-      // Last 7 should be dates 08 through 14
-      expect(result.recentNights[0]?.date).toBe("2026-03-08");
-      expect(result.recentNights[6]?.date).toBe("2026-03-14");
+      // Calendar: endDate-6 through endDate = 2026-03-09 through 2026-03-15
+      expect(result.recentNights[0]?.date).toBe("2026-03-09");
+      expect(result.recentNights[6]?.date).toBe("2026-03-15");
     });
 
     it("recentNights computes positive debt when actual < baseline", async () => {
@@ -365,9 +375,11 @@ describe("sleepNeedRouter", () => {
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
       // baseline = 420, actual = 420, debt = 0
-      // All at 420 so no debt
+      // Only check nights that have data (some calendar dates may be null)
       for (const night of result.recentNights) {
-        expect(night.debtMinutes).toBe(0);
+        if (night.debtMinutes !== null) {
+          expect(night.debtMinutes).toBe(0);
+        }
       }
     });
 

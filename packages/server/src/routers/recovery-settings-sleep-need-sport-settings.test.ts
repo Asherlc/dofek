@@ -776,7 +776,98 @@ describe("sleepNeedRouter", () => {
       const result = await caller.calculate({});
 
       expect(result.baselineMinutes).toBe(480);
-      expect(result.recentNights).toEqual([]);
+      expect(result.recentNights).toHaveLength(7);
+      // All 7 nights should be null (calendar-based)
+      for (const night of result.recentNights) {
+        expect(night.actualMinutes).toBeNull();
+        expect(night.debtMinutes).toBeNull();
+      }
+      expect(result.canRecommend).toBe(false);
+    });
+
+    it("always returns exactly 7 recent nights even with sparse data", async () => {
+      // endDate=2026-03-15, yesterday=2026-03-14
+      const rows = [
+        {
+          date: "2026-03-14",
+          duration_minutes: 420,
+          next_day_hrv: 60,
+          median_hrv: 55,
+          good_recovery: true,
+          yesterday_load: 0,
+        },
+      ];
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue(rows) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+      const result = await caller.calculate({ endDate: "2026-03-15" });
+
+      expect(result.recentNights).toHaveLength(7);
+      // 6 nights should have null actualMinutes, 1 should have data
+      const withData = result.recentNights.filter((n) => n.actualMinutes !== null);
+      const withoutData = result.recentNights.filter((n) => n.actualMinutes === null);
+      expect(withData).toHaveLength(1);
+      expect(withoutData).toHaveLength(6);
+    });
+
+    it("sets canRecommend=true when yesterday has sleep data", async () => {
+      // endDate=2026-03-15, yesterday=2026-03-14
+      const rows = [
+        {
+          date: "2026-03-14",
+          duration_minutes: 450,
+          next_day_hrv: null,
+          median_hrv: null,
+          good_recovery: false,
+          yesterday_load: 0,
+        },
+      ];
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue(rows) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+      const result = await caller.calculate({ endDate: "2026-03-15" });
+
+      expect(result.canRecommend).toBe(true);
+    });
+
+    it("sets canRecommend=false when yesterday has no sleep data", async () => {
+      // endDate=2026-03-15, yesterday=2026-03-14 — data only from 2026-03-12
+      const rows = [
+        {
+          date: "2026-03-12",
+          duration_minutes: 450,
+          next_day_hrv: null,
+          median_hrv: null,
+          good_recovery: false,
+          yesterday_load: 0,
+        },
+      ];
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue(rows) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+      const result = await caller.calculate({ endDate: "2026-03-15" });
+
+      expect(result.canRecommend).toBe(false);
+    });
+
+    it("shows null nights with neededMinutes still set", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+      const result = await caller.calculate({ endDate: "2026-03-15" });
+
+      // Even null nights should have neededMinutes (the baseline)
+      for (const night of result.recentNights) {
+        expect(night.neededMinutes).toBe(480);
+      }
     });
   });
 });

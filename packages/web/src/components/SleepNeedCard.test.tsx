@@ -18,6 +18,7 @@ const mockData = {
   strainDebtMinutes: 12,
   accumulatedDebtMinutes: 90,
   totalNeedMinutes: 515,
+  canRecommend: true,
   recentNights: [
     { date: "2026-03-14", actualMinutes: 420, neededMinutes: 480, debtMinutes: 60 },
     { date: "2026-03-15", actualMinutes: 500, neededMinutes: 480, debtMinutes: 0 },
@@ -101,5 +102,40 @@ describe("SleepNeedCard", () => {
     expect(bars[1]?.itemStyle.color).toBe("#22c55e");
     // Night 2: 390 < 480 → red
     expect(bars[2]?.itemStyle.color).toBe("#ef4444");
+  });
+
+  it("renders placeholder bars for null nights (missing data)", () => {
+    capturedOption = null;
+    const dataWithGaps = {
+      ...mockData,
+      recentNights: [
+        { date: "2026-03-14", actualMinutes: 420, neededMinutes: 480, debtMinutes: 60 },
+        { date: "2026-03-15", actualMinutes: null, neededMinutes: 480, debtMinutes: null },
+        { date: "2026-03-16", actualMinutes: 390, neededMinutes: 480, debtMinutes: 90 },
+      ],
+    };
+    render(<SleepNeedCard data={dataWithGaps} />);
+    const bars = getBarSeriesData();
+    expect(bars).toHaveLength(3);
+    // Null night should have value 0 and muted color
+    expect(bars[1]?.value).toBe(0);
+    expect(bars[1]?.itemStyle.color).toBe("#3a3a3e");
+  });
+
+  it("shows missing data message when canRecommend is false", () => {
+    capturedOption = null;
+    const noRecommendData = {
+      ...mockData,
+      canRecommend: false,
+    };
+    render(<SleepNeedCard data={noRecommendData} />);
+    expect(screen.getByText(/last night/i)).toBeDefined();
+    expect(screen.queryByText(/recommended/)).toBeNull();
+  });
+
+  it("shows recommendation when canRecommend is true", () => {
+    capturedOption = null;
+    render(<SleepNeedCard data={mockData} />);
+    expect(screen.getByText(/recommended/)).toBeDefined();
   });
 });

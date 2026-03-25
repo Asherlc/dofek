@@ -182,17 +182,15 @@ export default function OverviewScreen() {
 
   const stepsAvg7d = stepsData.length > 0
     ? Math.round(
-        stepsData.reduce((sum: number, d: Record<string, unknown>) => sum + (Number(d.steps) || 0), 0) / stepsData.length,
+        stepsData.reduce((sum: number, d: Record<string, unknown>) => sum + (Number(d.steps) || 0), 0) / 7,
       )
     : null;
 
-  const spo2Trend = stepsData
-    .filter((d: Record<string, unknown>) => d.spo2_avg != null)
-    .map((d: Record<string, unknown>) => Number(d.spo2_avg));
+  const spo2Trend: (number | null)[] = stepsData
+    .map((d: Record<string, unknown>) => d.spo2_avg != null ? Number(d.spo2_avg) : null);
 
-  const skinTempTrend = stepsData
-    .filter((d: Record<string, unknown>) => d.skin_temp_c != null)
-    .map((d: Record<string, unknown>) => units.convertTemperature(Number(d.skin_temp_c)));
+  const skinTempTrend: (number | null)[] = stepsData
+    .map((d: Record<string, unknown>) => d.skin_temp_c != null ? units.convertTemperature(Number(d.skin_temp_c)) : null);
 
   return (
     <ScrollView
@@ -367,14 +365,12 @@ export default function OverviewScreen() {
                 unit="%"
                 trend={spo2Trend}
                 color={colors.blue}
-                trendDirection={
-                  spo2Trend.length >= 2
-                    ? computeTrend(
-                        spo2Trend[spo2Trend.length - 1] ?? 0,
-                        spo2Trend[spo2Trend.length - 2] ?? 0,
-                      )
-                    : undefined
-                }
+                trendDirection={(() => {
+                  const nonNull = spo2Trend.filter((v): v is number => v != null);
+                  return nonNull.length >= 2
+                    ? computeTrend(nonNull[nonNull.length - 1] ?? 0, nonNull[nonNull.length - 2] ?? 0)
+                    : undefined;
+                })()}
               />
             )}
             {metrics?.latest_skin_temp != null && (
@@ -384,14 +380,12 @@ export default function OverviewScreen() {
                 unit={units.temperatureLabel}
                 trend={skinTempTrend}
                 color={colors.orange}
-                trendDirection={
-                  skinTempTrend.length >= 2
-                    ? computeTrend(
-                        skinTempTrend[skinTempTrend.length - 1] ?? 0,
-                        skinTempTrend[skinTempTrend.length - 2] ?? 0,
-                      )
-                    : undefined
-                }
+                trendDirection={(() => {
+                  const nonNull = skinTempTrend.filter((v): v is number => v != null);
+                  return nonNull.length >= 2
+                    ? computeTrend(nonNull[nonNull.length - 1] ?? 0, nonNull[nonNull.length - 2] ?? 0)
+                    : undefined;
+                })()}
               />
             )}
           </View>
@@ -647,10 +641,18 @@ export default function OverviewScreen() {
           {showDetailedSections && sleepNeed != null && (
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Sleep Coach</Text>
-              <Text style={styles.sleepNeedTotal}>
-                {formatDurationMinutes(sleepNeed.totalNeedMinutes)}
-              </Text>
-              <Text style={styles.sleepNeedSubtitle}>recommended tonight</Text>
+              {sleepNeed.canRecommend ? (
+                <>
+                  <Text style={styles.sleepNeedTotal}>
+                    {formatDurationMinutes(sleepNeed.totalNeedMinutes)}
+                  </Text>
+                  <Text style={styles.sleepNeedSubtitle}>recommended tonight</Text>
+                </>
+              ) : (
+                <Text style={styles.sleepNeedMissing}>
+                  Need last night's sleep for recommendation
+                </Text>
+              )}
               <View style={styles.sleepNeedBreakdown}>
                 <View style={styles.sleepNeedRow}>
                   <Text style={styles.sleepNeedLabel}>Baseline need</Text>
@@ -1290,6 +1292,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textSecondary,
     marginTop: -8,
+  },
+  sleepNeedMissing: {
+    fontSize: 15,
+    color: colors.textTertiary,
+    marginTop: 4,
   },
   sleepNeedBreakdown: {
     gap: 6,
