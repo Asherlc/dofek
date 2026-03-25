@@ -1,5 +1,4 @@
-import { AppState, type AppStateStatus } from "react-native";
-import * as Device from "expo-device";
+import { AppState, type AppStateStatus, Platform } from "react-native";
 import {
 	getMotionAuthorizationStatus,
 	isAccelerometerRecordingAvailable,
@@ -44,7 +43,7 @@ export async function initBackgroundAccelerometerSync(
 		appStateSubscription = null;
 	}
 
-	const deviceId = `${Device.modelName ?? "iPhone"} (${Device.modelId ?? "unknown"})`;
+	const deviceId = `iPhone (${Platform.OS} ${Platform.Version})`;
 
 	// Sync whenever the app comes to foreground
 	appStateSubscription = AppState.addEventListener(
