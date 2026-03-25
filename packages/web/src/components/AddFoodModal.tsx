@@ -13,6 +13,8 @@ export interface FoodFormData {
   carbsG: number | null;
   fatG: number | null;
   foodDescription: string;
+  /** Micronutrient data keyed by nutrient id (e.g. 'vitamin_a' → 150) */
+  nutrients: Record<string, number>;
 }
 
 interface AddFoodModalProps {
@@ -46,6 +48,7 @@ function historyRowToFoodResult(row: {
     fatG: row.fat_g,
     fiberG: row.fiber_g,
     imageUrl: null,
+    nutrients: {},
   };
 }
 
@@ -75,6 +78,7 @@ export function AddFoodModal({
   const nameInputRef = useRef<HTMLInputElement>(null);
   const historyRequestCounterRef = useRef(0);
   const skipNextSearchRef = useRef(false);
+  const selectedFoodNutrients = useRef<Record<string, number>>({});
   const openFoodFactsRequestCounterRef = useRef(0);
   const browserLocale = typeof navigator !== "undefined" ? navigator.language : "en-US";
   const foodClient = useMemo(() => new OpenFoodFactsClient(browserLocale), [browserLocale]);
@@ -109,6 +113,7 @@ export function AddFoodModal({
     historyRequestCounterRef.current += 1;
     openFoodFactsRequestCounterRef.current += 1;
     skipNextSearchRef.current = false;
+    selectedFoodNutrients.current = {};
     setFoodName("");
     setCalories("");
     setProteinGrams("");
@@ -138,6 +143,7 @@ export function AddFoodModal({
       carbsG: carbsGrams ? Number.parseFloat(carbsGrams) : null,
       fatG: fatGrams ? Number.parseFloat(fatGrams) : null,
       foodDescription: servingDescription.trim(),
+      nutrients: selectedFoodNutrients.current,
     });
     resetForm();
   }
@@ -147,6 +153,18 @@ export function AddFoodModal({
     onClose();
   }
 
+  const handleCloseRef = useRef(handleClose);
+  handleCloseRef.current = handleClose;
+
+  useEffect(() => {
+    if (!isOpen) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") handleCloseRef.current();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [isOpen]);
+
   function handleAnalyze() {
     if (!foodName.trim()) return;
     setAiError(null);
@@ -155,6 +173,7 @@ export function AddFoodModal({
 
   function applySearchResult(result: FoodDatabaseResult) {
     skipNextSearchRef.current = true;
+    selectedFoodNutrients.current = result.nutrients;
     const selectedName = result.brand ? `${result.name} (${result.brand})` : result.name;
     setFoodName(selectedName);
     setServingDescription(result.servingSize ?? "");
@@ -220,6 +239,8 @@ export function AddFoodModal({
     setSearchingOpenFoodFacts(false);
     openFoodFactsRequestCounterRef.current += 1;
 
+    const controller = new AbortController();
+
     const timer = setTimeout(() => {
       trpcUtils.food.search
         .fetch({ query, limit: 8 })
@@ -237,6 +258,7 @@ export function AddFoodModal({
 
     return () => {
       clearTimeout(timer);
+      controller.abort();
     };
   }, [foodName, isOpen, trpcUtils.food.search]);
 
@@ -255,9 +277,6 @@ export function AddFoodModal({
         tabIndex={-1}
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
         onClick={handleClose}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") handleClose();
-        }}
         aria-label="Close modal overlay"
       />
 

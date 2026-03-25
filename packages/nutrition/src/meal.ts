@@ -10,10 +10,10 @@ export const MEAL_OPTIONS: ReadonlyArray<{ value: MealType; label: string }> = [
 
 /** Guess the current meal based on the hour of day. */
 export function autoMealType(hour?: number): MealType {
-  const h = hour ?? new Date().getHours();
-  if (h < 10) return "breakfast";
-  if (h < 14) return "lunch";
-  if (h < 17) return "snack";
+  const currentHour = hour ?? new Date().getHours();
+  if (currentHour < 10) return "breakfast";
+  if (currentHour < 14) return "lunch";
+  if (currentHour < 17) return "snack";
   return "dinner";
 }
 

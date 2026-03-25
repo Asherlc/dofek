@@ -1,4 +1,8 @@
-import { createActivityTypeMapper, OURA_ACTIVITY_TYPE_MAP } from "@dofek/training/training";
+import {
+  type CanonicalActivityType,
+  createActivityTypeMapper,
+  OURA_ACTIVITY_TYPE_MAP,
+} from "@dofek/training/training";
 import { z } from "zod";
 import type { OAuthConfig } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
@@ -7,14 +11,16 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity, dailyMetrics, healthEvent, metricStream, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
+import { logger } from "../logger.ts";
 import { ProviderHttpClient } from "./http-client.ts";
 import type {
   ProviderAuthSetup,
   ProviderIdentity,
   SyncError,
   SyncOptions,
-  SyncProvider,
   SyncResult,
+  WebhookEvent,
+  WebhookProvider,
 } from "./types.ts";
 
 // ============================================================
@@ -339,12 +345,22 @@ export function parseOuraDailyMetrics(
 
 const mapOuraType = createActivityTypeMapper(OURA_ACTIVITY_TYPE_MAP);
 
-export function mapOuraActivityType(ouraActivity: string): string {
+export function mapOuraActivityType(ouraActivity: string): CanonicalActivityType {
   const key = ouraActivity.toLowerCase();
-  const mapped = mapOuraType(key);
-  // Oura falls back to the lowercased activity name rather than "other"
-  // to preserve unrecognized Oura-specific types as-is
-  return mapped === "other" && key !== "other" ? key : mapped;
+  return mapOuraType(key);
+}
+
+const OURA_SESSION_TYPE_MAP: Record<string, CanonicalActivityType> = {
+  meditation: "meditation",
+  breathing: "breathwork",
+  nap: "other",
+  relaxation: "other",
+  rest: "other",
+  body_status: "other",
+};
+
+function mapOuraSessionType(sessionType: string): CanonicalActivityType {
+  return OURA_SESSION_TYPE_MAP[sessionType] ?? "other";
 }
 
 // ============================================================
@@ -589,6 +605,26 @@ async function fetchAllPages<T>(
   return allData;
 }
 
+/**
+ * Like fetchAllPages, but returns an empty array on 401 (missing OAuth scope).
+ * Use for endpoints that require optional OAuth scopes (stress, heart_health).
+ */
+export async function fetchAllPagesOptional<T>(
+  fetchPage: (nextToken?: string) => Promise<OuraListResponse<T>>,
+  endpointName: string,
+): Promise<T[]> {
+  try {
+    return await fetchAllPages(fetchPage);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes("API error 401")) {
+      logger.warn(`[oura] Skipping ${endpointName}: missing required OAuth scope`);
+      return [];
+    }
+    throw err;
+  }
+}
+
 // ============================================================
 // Batch size for metric stream inserts
 // ============================================================
@@ -600,9 +636,10 @@ const HEALTH_EVENT_BATCH_SIZE = 1000;
 // Provider implementation
 // ============================================================
 
-export class OuraProvider implements SyncProvider {
+export class OuraProvider implements WebhookProvider {
   readonly id = "oura";
   readonly name = "Oura";
+  readonly webhookScope = "app" as const;
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
@@ -612,6 +649,123 @@ export class OuraProvider implements SyncProvider {
   validate(): string | null {
     if (!process.env.OURA_CLIENT_ID) return "OURA_CLIENT_ID is not set";
     if (!process.env.OURA_CLIENT_SECRET) return "OURA_CLIENT_SECRET is not set";
+    return null;
+  }
+
+  // ── Webhook implementation ──
+
+  async registerWebhook(
+    callbackUrl: string,
+    verifyToken: string,
+  ): Promise<{ subscriptionId: string; signingSecret?: string; expiresAt?: Date }> {
+    const clientId = process.env.OURA_CLIENT_ID;
+    const clientSecret = process.env.OURA_CLIENT_SECRET;
+    if (!clientId || !clientSecret) {
+      throw new Error("OURA_CLIENT_ID and OURA_CLIENT_SECRET are required");
+    }
+
+    // Oura requires one subscription per data type. We register for all supported types.
+    const dataTypes = [
+      "daily_activity",
+      "daily_readiness",
+      "daily_sleep",
+      "workout",
+      "session",
+      "daily_spo2",
+      "daily_stress",
+      "daily_resilience",
+    ];
+
+    let subscriptionId = "";
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // ~30 days
+
+    for (const dataType of dataTypes) {
+      const response = await this.#fetchFn("https://api.ouraring.com/v2/webhook/subscription", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-client-id": clientId,
+          "x-client-secret": clientSecret,
+        },
+        body: JSON.stringify({
+          callback_url: callbackUrl,
+          verification_token: verifyToken,
+          event_type: `create.${dataType}`,
+          data_type: dataType,
+        }),
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        // 409 means subscription already exists — continue
+        if (response.status !== 409) {
+          throw new Error(
+            `Oura webhook registration for ${dataType} failed (${response.status}): ${text}`,
+          );
+        }
+      } else {
+        const data: { id?: string } = await response.json();
+        if (data.id && !subscriptionId) subscriptionId = data.id;
+      }
+    }
+
+    return { subscriptionId: subscriptionId || "oura-multi-subscription", expiresAt };
+  }
+
+  async unregisterWebhook(subscriptionId: string): Promise<void> {
+    const clientId = process.env.OURA_CLIENT_ID;
+    const clientSecret = process.env.OURA_CLIENT_SECRET;
+    if (!clientId || !clientSecret) return;
+
+    await this.#fetchFn(`https://api.ouraring.com/v2/webhook/subscription/${subscriptionId}`, {
+      method: "DELETE",
+      headers: {
+        "x-client-id": clientId,
+        "x-client-secret": clientSecret,
+      },
+    });
+  }
+
+  verifyWebhookSignature(
+    _rawBody: Buffer,
+    _headers: Record<string, string | string[] | undefined>,
+    _signingSecret: string,
+  ): boolean {
+    // Oura verifies via the verification_token challenge at registration time.
+    // Incoming events are trusted after successful registration.
+    return true;
+  }
+
+  parseWebhookPayload(body: unknown): WebhookEvent[] {
+    // Oura sends a single event or a verification challenge
+    const verificationCheck = z.object({ verification_token: z.string() }).safeParse(body);
+
+    // Verification challenge — not a real event
+    if (verificationCheck.success) return [];
+
+    const parsed = z
+      .object({
+        event_type: z.string().optional(),
+        data_type: z.string(),
+        user_id: z.string(),
+      })
+      .safeParse(body);
+
+    if (!parsed.success) return [];
+    const event = parsed.data;
+
+    return [
+      {
+        ownerExternalId: event.user_id,
+        eventType: "create",
+        objectType: event.data_type,
+      },
+    ];
+  }
+
+  handleValidationChallenge(_query: Record<string, string>, _verifyToken: string): unknown | null {
+    // Oura uses POST for verification (sends verification_token in body).
+    // This is handled in the POST path — parseWebhookPayload returns empty for verification.
     return null;
   }
 
@@ -813,12 +967,13 @@ export class OuraProvider implements SyncProvider {
 
           for (const s of allSessions) {
             try {
+              const sessionActivityType = mapOuraSessionType(s.type);
               await db
                 .insert(activity)
                 .values({
                   providerId: this.id,
                   externalId: s.id,
-                  activityType: s.type,
+                  activityType: sessionActivityType,
                   startedAt: new Date(s.start_datetime),
                   endedAt: new Date(s.end_datetime),
                   name: s.type,
@@ -827,7 +982,7 @@ export class OuraProvider implements SyncProvider {
                 .onConflictDoUpdate({
                   target: [activity.providerId, activity.externalId],
                   set: {
-                    activityType: s.type,
+                    activityType: sessionActivityType,
                     startedAt: new Date(s.start_datetime),
                     endedAt: new Date(s.end_datetime),
                     name: s.type,
@@ -912,8 +1067,9 @@ export class OuraProvider implements SyncProvider {
         this.id,
         "daily_stress",
         async () => {
-          const allStress = await fetchAllPages((nextToken) =>
-            client.getDailyStress(sinceDate, todayDate, nextToken),
+          const allStress = await fetchAllPagesOptional(
+            (nextToken) => client.getDailyStress(sinceDate, todayDate, nextToken),
+            "daily_stress",
           );
 
           const rows = allStress.map((s) => ({
@@ -957,8 +1113,9 @@ export class OuraProvider implements SyncProvider {
         this.id,
         "daily_resilience",
         async () => {
-          const allResilience = await fetchAllPages((nextToken) =>
-            client.getDailyResilience(sinceDate, todayDate, nextToken),
+          const allResilience = await fetchAllPagesOptional(
+            (nextToken) => client.getDailyResilience(sinceDate, todayDate, nextToken),
+            "daily_resilience",
           );
 
           let count = 0;
@@ -1000,8 +1157,9 @@ export class OuraProvider implements SyncProvider {
         this.id,
         "cardiovascular_age",
         async () => {
-          const allCvAge = await fetchAllPages((nextToken) =>
-            client.getDailyCardiovascularAge(sinceDate, todayDate, nextToken),
+          const allCvAge = await fetchAllPagesOptional(
+            (nextToken) => client.getDailyCardiovascularAge(sinceDate, todayDate, nextToken),
+            "cardiovascular_age",
           );
 
           let count = 0;
@@ -1231,10 +1389,17 @@ export class OuraProvider implements SyncProvider {
                 client.getDailyActivity(sinceDate, todayDate, nextToken),
               ),
               fetchAllPages((nextToken) => client.getDailySpO2(sinceDate, todayDate, nextToken)),
-              fetchAllPages((nextToken) => client.getVO2Max(sinceDate, todayDate, nextToken)),
-              fetchAllPages((nextToken) => client.getDailyStress(sinceDate, todayDate, nextToken)),
-              fetchAllPages((nextToken) =>
-                client.getDailyResilience(sinceDate, todayDate, nextToken),
+              fetchAllPagesOptional(
+                (nextToken) => client.getVO2Max(sinceDate, todayDate, nextToken),
+                "vO2_max",
+              ),
+              fetchAllPagesOptional(
+                (nextToken) => client.getDailyStress(sinceDate, todayDate, nextToken),
+                "daily_stress",
+              ),
+              fetchAllPagesOptional(
+                (nextToken) => client.getDailyResilience(sinceDate, todayDate, nextToken),
+                "daily_resilience",
               ),
             ]);
 
@@ -1344,5 +1509,502 @@ export class OuraProvider implements SyncProvider {
       errors,
       duration: Date.now() - start,
     };
+  }
+
+  // ── Webhook-triggered targeted sync ──
+
+  async syncWebhookEvent(
+    db: SyncDatabase,
+    event: WebhookEvent,
+    options?: SyncOptions,
+  ): Promise<SyncResult> {
+    const start = Date.now();
+    const errors: SyncError[] = [];
+    let recordsSynced = 0;
+
+    await ensureProvider(db, this.id, this.name, OURA_API_BASE);
+
+    let accessToken: string;
+    try {
+      accessToken = await this.#resolveAccessToken(db);
+    } catch (err) {
+      errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
+      return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
+    }
+
+    const client = new OuraClient(accessToken, this.#fetchFn);
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const sinceDate = formatDate(yesterday);
+    const todayDate = formatDate(new Date());
+    const dataType = event.objectType;
+
+    // Sync the specific data type that the webhook reported
+    switch (dataType) {
+      case "workout": {
+        try {
+          const count = await withSyncLog(
+            db,
+            this.id,
+            "workouts",
+            async () => {
+              let count = 0;
+              const allWorkouts = await fetchAllPages((nextToken) =>
+                client.getWorkouts(sinceDate, todayDate, nextToken),
+              );
+
+              for (const w of allWorkouts) {
+                try {
+                  await db
+                    .insert(activity)
+                    .values({
+                      providerId: this.id,
+                      externalId: w.id,
+                      activityType: mapOuraActivityType(w.activity),
+                      startedAt: new Date(w.start_datetime),
+                      endedAt: new Date(w.end_datetime),
+                      name: w.label,
+                      raw: w,
+                    })
+                    .onConflictDoUpdate({
+                      target: [activity.providerId, activity.externalId],
+                      set: {
+                        activityType: mapOuraActivityType(w.activity),
+                        startedAt: new Date(w.start_datetime),
+                        endedAt: new Date(w.end_datetime),
+                        name: w.label,
+                        raw: w,
+                      },
+                    });
+                  count++;
+                } catch (err) {
+                  errors.push({
+                    message: `workout ${w.id}: ${err instanceof Error ? err.message : String(err)}`,
+                    externalId: w.id,
+                    cause: err,
+                  });
+                }
+              }
+
+              return { recordCount: count, result: count };
+            },
+            options?.userId,
+          );
+          recordsSynced += count;
+        } catch (err) {
+          errors.push({
+            message: `workouts: ${err instanceof Error ? err.message : String(err)}`,
+            cause: err,
+          });
+        }
+        break;
+      }
+
+      case "session": {
+        try {
+          const count = await withSyncLog(
+            db,
+            this.id,
+            "sessions",
+            async () => {
+              let count = 0;
+              const allSessions = await fetchAllPages((nextToken) =>
+                client.getSessions(sinceDate, todayDate, nextToken),
+              );
+
+              for (const s of allSessions) {
+                try {
+                  const sessionActivityType = mapOuraSessionType(s.type);
+                  await db
+                    .insert(activity)
+                    .values({
+                      providerId: this.id,
+                      externalId: s.id,
+                      activityType: sessionActivityType,
+                      startedAt: new Date(s.start_datetime),
+                      endedAt: new Date(s.end_datetime),
+                      name: s.type,
+                      raw: s,
+                    })
+                    .onConflictDoUpdate({
+                      target: [activity.providerId, activity.externalId],
+                      set: {
+                        activityType: sessionActivityType,
+                        startedAt: new Date(s.start_datetime),
+                        endedAt: new Date(s.end_datetime),
+                        name: s.type,
+                        raw: s,
+                      },
+                    });
+                  count++;
+                } catch (err) {
+                  errors.push({
+                    message: `session ${s.id}: ${err instanceof Error ? err.message : String(err)}`,
+                    externalId: s.id,
+                    cause: err,
+                  });
+                }
+              }
+
+              return { recordCount: count, result: count };
+            },
+            options?.userId,
+          );
+          recordsSynced += count;
+        } catch (err) {
+          errors.push({
+            message: `sessions: ${err instanceof Error ? err.message : String(err)}`,
+            cause: err,
+          });
+        }
+        break;
+      }
+
+      case "sleep":
+      case "daily_sleep": {
+        try {
+          const count = await withSyncLog(
+            db,
+            this.id,
+            "sleep",
+            async () => {
+              let count = 0;
+              const allSleep = await fetchAllPages((nextToken) =>
+                client.getSleep(sinceDate, todayDate, nextToken),
+              );
+
+              for (const raw of allSleep) {
+                const parsed = parseOuraSleep(raw);
+                try {
+                  await db
+                    .insert(sleepSession)
+                    .values({
+                      providerId: this.id,
+                      externalId: parsed.externalId,
+                      startedAt: parsed.startedAt,
+                      endedAt: parsed.endedAt,
+                      durationMinutes: parsed.durationMinutes,
+                      deepMinutes: parsed.deepMinutes,
+                      remMinutes: parsed.remMinutes,
+                      lightMinutes: parsed.lightMinutes,
+                      awakeMinutes: parsed.awakeMinutes,
+                      efficiencyPct: parsed.efficiencyPct,
+                      sleepType: parsed.sleepType,
+                    })
+                    .onConflictDoUpdate({
+                      target: [sleepSession.providerId, sleepSession.externalId],
+                      set: {
+                        startedAt: parsed.startedAt,
+                        endedAt: parsed.endedAt,
+                        durationMinutes: parsed.durationMinutes,
+                        deepMinutes: parsed.deepMinutes,
+                        remMinutes: parsed.remMinutes,
+                        lightMinutes: parsed.lightMinutes,
+                        awakeMinutes: parsed.awakeMinutes,
+                        efficiencyPct: parsed.efficiencyPct,
+                        sleepType: parsed.sleepType,
+                      },
+                    });
+                  count++;
+                } catch (err) {
+                  errors.push({
+                    message: err instanceof Error ? err.message : String(err),
+                    externalId: parsed.externalId,
+                    cause: err,
+                  });
+                }
+              }
+
+              return { recordCount: count, result: count };
+            },
+            options?.userId,
+          );
+          recordsSynced += count;
+        } catch (err) {
+          errors.push({
+            message: `sleep: ${err instanceof Error ? err.message : String(err)}`,
+            cause: err,
+          });
+        }
+        break;
+      }
+
+      case "daily_stress": {
+        // Sync stress healthEvents
+        try {
+          const stressCount = await withSyncLog(
+            db,
+            this.id,
+            "daily_stress",
+            async () => {
+              const allStress = await fetchAllPages((nextToken) =>
+                client.getDailyStress(sinceDate, todayDate, nextToken),
+              );
+
+              const rows = allStress.map((s) => ({
+                providerId: this.id,
+                externalId: s.id,
+                type: "oura_daily_stress",
+                value: s.stress_high,
+                valueText: s.day_summary,
+                startDate: new Date(`${s.day}T00:00:00`),
+              }));
+
+              for (let i = 0; i < rows.length; i += HEALTH_EVENT_BATCH_SIZE) {
+                await db
+                  .insert(healthEvent)
+                  .values(rows.slice(i, i + HEALTH_EVENT_BATCH_SIZE))
+                  .onConflictDoUpdate({
+                    target: [healthEvent.providerId, healthEvent.externalId],
+                    set: {
+                      value: rows[i]?.value,
+                      valueText: rows[i]?.valueText,
+                    },
+                  });
+              }
+
+              return { recordCount: rows.length, result: rows.length };
+            },
+            options?.userId,
+          );
+          recordsSynced += stressCount;
+        } catch (err) {
+          errors.push({
+            message: `daily_stress: ${err instanceof Error ? err.message : String(err)}`,
+            cause: err,
+          });
+        }
+
+        // Also refresh daily metrics composite (stress columns merge into daily_metrics row)
+        recordsSynced += await this.#syncDailyMetrics(
+          db,
+          client,
+          sinceDate,
+          todayDate,
+          errors,
+          options,
+        );
+        break;
+      }
+
+      case "daily_resilience": {
+        // Sync resilience healthEvents
+        try {
+          const resilienceCount = await withSyncLog(
+            db,
+            this.id,
+            "daily_resilience",
+            async () => {
+              const allResilience = await fetchAllPages((nextToken) =>
+                client.getDailyResilience(sinceDate, todayDate, nextToken),
+              );
+
+              let count = 0;
+              for (const r of allResilience) {
+                await db
+                  .insert(healthEvent)
+                  .values({
+                    providerId: this.id,
+                    externalId: r.id,
+                    type: "oura_daily_resilience",
+                    valueText: r.level,
+                    startDate: new Date(`${r.day}T00:00:00`),
+                  })
+                  .onConflictDoUpdate({
+                    target: [healthEvent.providerId, healthEvent.externalId],
+                    set: {
+                      valueText: r.level,
+                    },
+                  });
+                count++;
+              }
+
+              return { recordCount: count, result: count };
+            },
+            options?.userId,
+          );
+          recordsSynced += resilienceCount;
+        } catch (err) {
+          errors.push({
+            message: `daily_resilience: ${err instanceof Error ? err.message : String(err)}`,
+            cause: err,
+          });
+        }
+
+        // Also refresh daily metrics composite (resilience columns merge into daily_metrics row)
+        recordsSynced += await this.#syncDailyMetrics(
+          db,
+          client,
+          sinceDate,
+          todayDate,
+          errors,
+          options,
+        );
+        break;
+      }
+
+      case "daily_activity":
+      case "daily_readiness":
+      case "daily_spo2": {
+        // These types only contribute to the daily_metrics composite row
+        recordsSynced += await this.#syncDailyMetrics(
+          db,
+          client,
+          sinceDate,
+          todayDate,
+          errors,
+          options,
+        );
+        break;
+      }
+
+      default: {
+        // Unknown data type — no-op, return empty result
+        break;
+      }
+    }
+
+    return {
+      provider: this.id,
+      recordsSynced,
+      errors,
+      duration: Date.now() - start,
+    };
+  }
+
+  /**
+   * Sync the composite daily metrics row (readiness + activity + SpO2 + VO2 max + stress + resilience merged by day).
+   * Extracted as a shared helper because multiple webhook data_types need to refresh this composite.
+   */
+  async #syncDailyMetrics(
+    db: SyncDatabase,
+    client: OuraClient,
+    sinceDate: string,
+    todayDate: string,
+    errors: SyncError[],
+    options?: SyncOptions,
+  ): Promise<number> {
+    try {
+      return await withSyncLog(
+        db,
+        this.id,
+        "daily_metrics",
+        async () => {
+          let count = 0;
+
+          const [allReadiness, allActivity, allSpO2, allVO2Max, allStress, allResilience] =
+            await Promise.all([
+              fetchAllPages((nextToken) =>
+                client.getDailyReadiness(sinceDate, todayDate, nextToken),
+              ),
+              fetchAllPages((nextToken) =>
+                client.getDailyActivity(sinceDate, todayDate, nextToken),
+              ),
+              fetchAllPages((nextToken) => client.getDailySpO2(sinceDate, todayDate, nextToken)),
+              fetchAllPages((nextToken) => client.getVO2Max(sinceDate, todayDate, nextToken)),
+              fetchAllPages((nextToken) => client.getDailyStress(sinceDate, todayDate, nextToken)),
+              fetchAllPages((nextToken) =>
+                client.getDailyResilience(sinceDate, todayDate, nextToken),
+              ),
+            ]);
+
+          // Index by day for merging
+          const readinessByDay = new Map<string, OuraDailyReadiness>();
+          for (const r of allReadiness) readinessByDay.set(r.day, r);
+
+          const activityByDay = new Map<string, OuraDailyActivity>();
+          for (const a of allActivity) activityByDay.set(a.day, a);
+
+          const spo2ByDay = new Map<string, OuraDailySpO2>();
+          for (const s of allSpO2) spo2ByDay.set(s.day, s);
+
+          const vo2maxByDay = new Map<string, OuraVO2Max>();
+          for (const v of allVO2Max) vo2maxByDay.set(v.day, v);
+
+          const stressByDay = new Map<string, OuraDailyStress>();
+          for (const s of allStress) stressByDay.set(s.day, s);
+
+          const resilienceByDay = new Map<string, OuraDailyResilience>();
+          for (const r of allResilience) resilienceByDay.set(r.day, r);
+
+          // Union of all days
+          const allDays = new Set([
+            ...readinessByDay.keys(),
+            ...activityByDay.keys(),
+            ...spo2ByDay.keys(),
+            ...vo2maxByDay.keys(),
+            ...stressByDay.keys(),
+            ...resilienceByDay.keys(),
+          ]);
+
+          for (const day of allDays) {
+            const readiness = readinessByDay.get(day) ?? null;
+            const activityDoc = activityByDay.get(day) ?? null;
+            const spo2 = spo2ByDay.get(day) ?? null;
+            const vo2max = vo2maxByDay.get(day) ?? null;
+            const stress = stressByDay.get(day) ?? null;
+            const resilience = resilienceByDay.get(day) ?? null;
+            const parsed = parseOuraDailyMetrics(
+              readiness,
+              activityDoc,
+              spo2,
+              vo2max,
+              stress,
+              resilience,
+            );
+
+            try {
+              await db
+                .insert(dailyMetrics)
+                .values({
+                  date: parsed.date,
+                  providerId: this.id,
+                  steps: parsed.steps,
+                  restingHr: parsed.restingHr,
+                  hrv: parsed.hrv,
+                  activeEnergyKcal: parsed.activeEnergyKcal,
+                  exerciseMinutes: parsed.exerciseMinutes,
+                  skinTempC: parsed.skinTempC,
+                  spo2Avg: parsed.spo2Avg,
+                  vo2max: parsed.vo2max,
+                  stressHighMinutes: parsed.stressHighMinutes,
+                  recoveryHighMinutes: parsed.recoveryHighMinutes,
+                  resilienceLevel: parsed.resilienceLevel,
+                })
+                .onConflictDoUpdate({
+                  target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
+                  set: {
+                    steps: parsed.steps,
+                    restingHr: parsed.restingHr,
+                    hrv: parsed.hrv,
+                    activeEnergyKcal: parsed.activeEnergyKcal,
+                    exerciseMinutes: parsed.exerciseMinutes,
+                    skinTempC: parsed.skinTempC,
+                    spo2Avg: parsed.spo2Avg,
+                    vo2max: parsed.vo2max,
+                    stressHighMinutes: parsed.stressHighMinutes,
+                    recoveryHighMinutes: parsed.recoveryHighMinutes,
+                    resilienceLevel: parsed.resilienceLevel,
+                  },
+                });
+              count++;
+            } catch (err) {
+              errors.push({
+                message: `daily_metrics ${day}: ${err instanceof Error ? err.message : String(err)}`,
+                cause: err,
+              });
+            }
+          }
+
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
+    } catch (err) {
+      errors.push({
+        message: `daily_metrics: ${err instanceof Error ? err.message : String(err)}`,
+        cause: err,
+      });
+      return 0;
+    }
   }
 }

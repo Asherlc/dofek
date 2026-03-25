@@ -1,4 +1,6 @@
-export const VELOHERO_SPORT_MAP: Record<string, string> = {
+import type { CanonicalActivityType } from "@dofek/training/training";
+
+export const VELOHERO_SPORT_MAP: Record<string, CanonicalActivityType> = {
   "0": "other",
   "1": "cycling",
   "2": "running",
@@ -9,11 +11,11 @@ export const VELOHERO_SPORT_MAP: Record<string, string> = {
   "7": "hiking",
   "8": "cross_country_skiing",
   "9": "cycling", // velomobil / HPV
-  "10": "ball_games",
+  "10": "other",
   "11": "rowing",
-  "12": "cycling", // pedelec / e-bike
+  "12": "e_bike_cycling", // pedelec / e-bike
 };
 
-export function mapVeloHeroSport(sportId: string): string {
+export function mapVeloHeroSport(sportId: string): CanonicalActivityType {
   return VELOHERO_SPORT_MAP[sportId] ?? "other";
 }

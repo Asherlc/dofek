@@ -5,6 +5,7 @@ import {
   parseConnectActivity,
   parseConnectDailySummary,
   parseConnectSleep,
+  parseConnectSleepStages,
   parseHeartRateTimeSeries,
   parseHrvSummary,
   parseStressTimeSeries,
@@ -32,9 +33,9 @@ describe("mapConnectActivityType", () => {
 
   it("maps cycling types", () => {
     expect(mapConnectActivityType("cycling")).toBe("cycling");
-    expect(mapConnectActivityType("mountain_biking")).toBe("cycling");
-    expect(mapConnectActivityType("indoor_cycling")).toBe("cycling");
-    expect(mapConnectActivityType("gravel_cycling")).toBe("cycling");
+    expect(mapConnectActivityType("mountain_biking")).toBe("mountain_biking");
+    expect(mapConnectActivityType("indoor_cycling")).toBe("indoor_cycling");
+    expect(mapConnectActivityType("gravel_cycling")).toBe("gravel_cycling");
   });
 
   it("maps swimming types", () => {
@@ -441,5 +442,101 @@ describe("parseActivityDetail", () => {
   it("includes activity ID", () => {
     const parsed = parseActivityDetail(sampleDetail);
     expect(parsed.activityId).toBe(12345678);
+  });
+});
+
+describe("parseConnectSleepStages", () => {
+  it("maps sleepLevels activityLevel 0=deep, 1=light, 2=awake", () => {
+    const data: ConnectSleepData = {
+      dailySleepDTO: { id: 1, userProfilePK: 1, calendarDate: "2024-01-15" },
+      sleepLevels: [
+        { startGMT: "2024-01-15 00:00:00", endGMT: "2024-01-15 00:30:00", activityLevel: 0 },
+        { startGMT: "2024-01-15 00:30:00", endGMT: "2024-01-15 01:00:00", activityLevel: 1 },
+        { startGMT: "2024-01-15 01:00:00", endGMT: "2024-01-15 01:15:00", activityLevel: 2 },
+      ],
+    };
+    const stages = parseConnectSleepStages(data);
+    expect(stages).toHaveLength(3);
+    expect(stages[0].stage).toBe("deep");
+    expect(stages[1].stage).toBe("light");
+    expect(stages[2].stage).toBe("awake");
+  });
+
+  it("maps remSleepData entries to rem stages", () => {
+    const data: ConnectSleepData = {
+      dailySleepDTO: { id: 1, userProfilePK: 1, calendarDate: "2024-01-15" },
+      remSleepData: [
+        { startGMT: "2024-01-15 02:00:00", endGMT: "2024-01-15 02:30:00" },
+        { startGMT: "2024-01-15 04:00:00", endGMT: "2024-01-15 04:20:00" },
+      ],
+    };
+    const stages = parseConnectSleepStages(data);
+    expect(stages).toHaveLength(2);
+    expect(stages[0].stage).toBe("rem");
+    expect(stages[1].stage).toBe("rem");
+  });
+
+  it("combines sleepLevels and remSleepData sorted by startedAt", () => {
+    const data: ConnectSleepData = {
+      dailySleepDTO: { id: 1, userProfilePK: 1, calendarDate: "2024-01-15" },
+      sleepLevels: [
+        { startGMT: "2024-01-15 00:00:00", endGMT: "2024-01-15 00:30:00", activityLevel: 0 },
+        { startGMT: "2024-01-15 01:00:00", endGMT: "2024-01-15 01:30:00", activityLevel: 1 },
+      ],
+      remSleepData: [{ startGMT: "2024-01-15 00:30:00", endGMT: "2024-01-15 01:00:00" }],
+    };
+    const stages = parseConnectSleepStages(data);
+    expect(stages).toHaveLength(3);
+    expect(stages[0].stage).toBe("deep");
+    expect(stages[1].stage).toBe("rem");
+    expect(stages[2].stage).toBe("light");
+  });
+
+  it("returns empty array when no sleep level data", () => {
+    const data: ConnectSleepData = {
+      dailySleepDTO: { id: 1, userProfilePK: 1, calendarDate: "2024-01-15" },
+    };
+    expect(parseConnectSleepStages(data)).toEqual([]);
+  });
+
+  it("skips unknown activityLevel values", () => {
+    const data: ConnectSleepData = {
+      dailySleepDTO: { id: 1, userProfilePK: 1, calendarDate: "2024-01-15" },
+      sleepLevels: [
+        { startGMT: "2024-01-15 00:00:00", endGMT: "2024-01-15 00:30:00", activityLevel: 99 },
+      ],
+    };
+    expect(parseConnectSleepStages(data)).toEqual([]);
+  });
+
+  it("excludes light entries that overlap with remSleepData", () => {
+    const data: ConnectSleepData = {
+      dailySleepDTO: { id: 1, userProfilePK: 1, calendarDate: "2024-01-15" },
+      sleepLevels: [
+        { startGMT: "2024-01-15 00:00:00", endGMT: "2024-01-15 00:30:00", activityLevel: 0 },
+        // This "light" entry covers the same window as the REM entry below
+        { startGMT: "2024-01-15 00:30:00", endGMT: "2024-01-15 01:00:00", activityLevel: 1 },
+        { startGMT: "2024-01-15 01:00:00", endGMT: "2024-01-15 01:30:00", activityLevel: 1 },
+      ],
+      remSleepData: [{ startGMT: "2024-01-15 00:30:00", endGMT: "2024-01-15 01:00:00" }],
+    };
+    const stages = parseConnectSleepStages(data);
+    // Should have deep, rem, light (not deep, light, rem, light)
+    expect(stages).toHaveLength(3);
+    expect(stages[0]?.stage).toBe("deep");
+    expect(stages[1]?.stage).toBe("rem");
+    expect(stages[2]?.stage).toBe("light");
+  });
+
+  it("parses timestamps correctly with UTC suffix", () => {
+    const data: ConnectSleepData = {
+      dailySleepDTO: { id: 1, userProfilePK: 1, calendarDate: "2024-01-15" },
+      sleepLevels: [
+        { startGMT: "2024-01-15 00:00:00", endGMT: "2024-01-15 00:30:00", activityLevel: 0 },
+      ],
+    };
+    const stages = parseConnectSleepStages(data);
+    expect(stages[0].startedAt).toEqual(new Date("2024-01-15T00:00:00Z"));
+    expect(stages[0].endedAt).toEqual(new Date("2024-01-15T00:30:00Z"));
   });
 });

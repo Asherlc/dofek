@@ -1,8 +1,9 @@
 import { createHmac, randomBytes } from "node:crypto";
+import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { getOAuthRedirectUri } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { foodEntry } from "../db/schema.ts";
+import { foodEntry, nutritionData } from "../db/schema.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
 import type { SyncError, SyncProvider, SyncResult } from "./types.ts";
@@ -200,8 +201,8 @@ function dateIntToIso(dateInt: string): string {
  */
 function optNum(val: string | undefined): number | undefined {
   if (val === undefined) return undefined;
-  const n = parseFloat(val);
-  return Number.isNaN(n) ? undefined : n;
+  const parsed = parseFloat(val);
+  return Number.isNaN(parsed) ? undefined : parsed;
 }
 
 /**
@@ -596,6 +597,15 @@ export class FatSecretProvider implements SyncProvider {
     const current = new Date(since);
     current.setHours(0, 0, 0, 0);
 
+    // Cap lookback to 2 years — FatSecret syncs day-by-day, so unbounded ranges
+    // generate thousands of API calls for empty days
+    const maxLookback = new Date();
+    maxLookback.setFullYear(maxLookback.getFullYear() - 2);
+    maxLookback.setHours(0, 0, 0, 0);
+    if (current < maxLookback) {
+      current.setTime(maxLookback.getTime());
+    }
+
     while (current <= today) {
       const dateInt = Math.floor(current.getTime() / 86400000).toString();
 
@@ -611,43 +621,69 @@ export class FatSecretProvider implements SyncProvider {
         const entries = parseFoodEntries(response);
 
         if (entries.length > 0) {
-          const rows = entries.map((e) => ({
-            providerId: this.id,
-            externalId: e.externalId,
-            date: e.date,
-            meal: e.meal,
-            foodName: e.foodName,
-            foodDescription: e.foodDescription,
-            category: inferCategory(e.foodName),
-            providerFoodId: e.fatsecretFoodId,
-            providerServingId: e.fatsecretServingId,
-            numberOfUnits: e.numberOfUnits,
-            calories: e.calories,
-            proteinG: e.proteinG,
-            carbsG: e.carbsG,
-            fatG: e.fatG,
-            saturatedFatG: e.saturatedFatG,
-            polyunsaturatedFatG: e.polyunsaturatedFatG,
-            monounsaturatedFatG: e.monounsaturatedFatG,
-            cholesterolMg: e.cholesterolMg,
-            sodiumMg: e.sodiumMg,
-            potassiumMg: e.potassiumMg,
-            fiberG: e.fiberG,
-            sugarG: e.sugarG,
-            vitaminAMcg: e.vitaminAMcg,
-            vitaminCMg: e.vitaminCMg,
-            calciumMg: e.calciumMg,
-            ironMg: e.ironMg,
-            raw: { ...e },
-          }));
+          for (const e of entries) {
+            // Skip if food_entry already exists (onConflictDoNothing would leave
+            // a new nutrition_data row orphaned with no FK pointing to it)
+            const existing = await db
+              .select({ id: foodEntry.id })
+              .from(foodEntry)
+              .where(
+                sql`${foodEntry.providerId} = ${this.id} AND ${foodEntry.externalId} = ${e.externalId}`,
+              );
+            if (existing.length > 0) continue;
 
-          await db.insert(foodEntry).values(rows).onConflictDoNothing();
-          recordsSynced += rows.length;
+            // Insert nutrition_data + food_entry for new entries
+            const [ndRow] = await db
+              .insert(nutritionData)
+              .values({
+                calories: e.calories,
+                proteinG: e.proteinG,
+                carbsG: e.carbsG,
+                fatG: e.fatG,
+                saturatedFatG: e.saturatedFatG,
+                polyunsaturatedFatG: e.polyunsaturatedFatG,
+                monounsaturatedFatG: e.monounsaturatedFatG,
+                cholesterolMg: e.cholesterolMg,
+                sodiumMg: e.sodiumMg,
+                potassiumMg: e.potassiumMg,
+                fiberG: e.fiberG,
+                sugarG: e.sugarG,
+                vitaminAMcg: e.vitaminAMcg,
+                vitaminCMg: e.vitaminCMg,
+                calciumMg: e.calciumMg,
+                ironMg: e.ironMg,
+              })
+              .returning({ id: nutritionData.id });
+
+            await db
+              .insert(foodEntry)
+              .values({
+                providerId: this.id,
+                externalId: e.externalId,
+                date: e.date,
+                meal: e.meal,
+                foodName: e.foodName,
+                foodDescription: e.foodDescription,
+                category: inferCategory(e.foodName),
+                providerFoodId: e.fatsecretFoodId,
+                providerServingId: e.fatsecretServingId,
+                numberOfUnits: e.numberOfUnits,
+                nutritionDataId: ndRow?.id,
+                raw: { ...e },
+              })
+              .onConflictDoNothing();
+          }
+          recordsSynced += entries.length;
         }
       } catch (err) {
-        // FatSecret returns an error for days with no entries — not a real error
-        const msg = err instanceof Error ? err.message : String(err);
-        if (!msg.includes("No entries found")) {
+        // FatSecret returns an error for days with no entries — not a real error.
+        // The API may return "No entries found" (HTTP error) or an unexpected response
+        // shape that fails Zod validation on the food_entries key (empty day variant).
+        const isNoEntriesMessage = err instanceof Error && err.message.includes("No entries found");
+        const isFoodEntriesZodError =
+          err instanceof z.ZodError && err.errors.some((issue) => issue.path[0] === "food_entries");
+        if (!isNoEntriesMessage && !isFoodEntriesZodError) {
+          const msg = err instanceof Error ? err.message : String(err);
           errors.push({ message: `Date ${current.toISOString().split("T")[0]}: ${msg}` });
         }
       }

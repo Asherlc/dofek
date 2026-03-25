@@ -55,7 +55,7 @@ export const runningRouter = router({
         ctx.db,
         dynamicsRowSchema,
         sql`SELECT
-              asum.started_at::date AS date,
+              (asum.started_at AT TIME ZONE ${ctx.timezone})::date AS date,
               asum.name,
               asum.avg_cadence,
               asum.avg_stride_length,
@@ -103,7 +103,7 @@ export const runningRouter = router({
         ctx.db,
         paceTrendRowSchema,
         sql`SELECT
-              asum.started_at::date AS date,
+              (asum.started_at AT TIME ZONE ${ctx.timezone})::date AS date,
               asum.name,
               asum.avg_speed,
               asum.total_distance,

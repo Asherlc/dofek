@@ -7,16 +7,16 @@ import type { ZwiftActivitySummary, ZwiftFitnessData } from "./types.ts";
 // ============================================================
 
 describe("mapZwiftSport", () => {
-  it("maps CYCLING to cycling", () => {
-    expect(mapZwiftSport("CYCLING")).toBe("cycling");
+  it("maps CYCLING to virtual_cycling", () => {
+    expect(mapZwiftSport("CYCLING")).toBe("virtual_cycling");
   });
 
   it("maps RUNNING to running", () => {
     expect(mapZwiftSport("RUNNING")).toBe("running");
   });
 
-  it("maps lowercase cycling to cycling", () => {
-    expect(mapZwiftSport("cycling")).toBe("cycling");
+  it("maps lowercase cycling to virtual_cycling", () => {
+    expect(mapZwiftSport("cycling")).toBe("virtual_cycling");
   });
 
   it("maps lowercase running to running", () => {
@@ -24,7 +24,7 @@ describe("mapZwiftSport", () => {
   });
 
   it("maps mixed case to correct sport", () => {
-    expect(mapZwiftSport("Cycling")).toBe("cycling");
+    expect(mapZwiftSport("Cycling")).toBe("virtual_cycling");
     expect(mapZwiftSport("Running")).toBe("running");
   });
 
@@ -71,7 +71,7 @@ describe("parseZwiftActivity", () => {
     const result = parseZwiftActivity(makeActivity());
 
     expect(result.externalId).toBe("123");
-    expect(result.activityType).toBe("cycling");
+    expect(result.activityType).toBe("virtual_cycling");
     expect(result.name).toBe("Watopia Ride");
     expect(result.startedAt).toEqual(new Date("2024-01-15T08:00:00Z"));
     expect(result.endedAt).toEqual(new Date("2024-01-15T09:30:00Z"));

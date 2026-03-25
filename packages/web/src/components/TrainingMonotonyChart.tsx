@@ -31,18 +31,18 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
         const first = params[0];
         if (!first) return "";
         const idx = first.dataIndex;
-        const d = data[idx];
-        if (!d) return "";
-        const dateLabel = new Date(d.week).toLocaleDateString("en-US", {
+        const dataPoint = data[idx];
+        if (!dataPoint) return "";
+        const dateLabel = new Date(dataPoint.week).toLocaleDateString("en-US", {
           month: "short",
           day: "numeric",
           year: "numeric",
         });
-        const monotonyColor = d.monotony > 2.0 ? "#ef4444" : chartColors.blue;
+        const monotonyColor = dataPoint.monotony > 2.0 ? "#ef4444" : chartColors.blue;
         return [
           `<strong>${dateLabel}</strong>`,
-          `Monotony: <span style="color:${monotonyColor}">${formatNumber(d.monotony, 2)}</span>${d.monotony > 2.0 ? " (high!)" : ""}`,
-          `Strain: ${formatNumber(d.strain)}`,
+          `Monotony: <span style="color:${monotonyColor}">${formatNumber(dataPoint.monotony, 2)}</span>${dataPoint.monotony > 2.0 ? " (high!)" : ""}`,
+          `Strain: ${formatNumber(dataPoint.strain)}`,
         ].join("<br/>");
       },
     }),

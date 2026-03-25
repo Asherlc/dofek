@@ -1,3 +1,4 @@
+import type { CanonicalActivityType } from "@dofek/training/training";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
@@ -51,7 +52,7 @@ interface KomootToursResponse {
 
 export interface ParsedKomootTour {
   externalId: string;
-  activityType: string;
+  activityType: CanonicalActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -62,14 +63,14 @@ export interface ParsedKomootTour {
 // Sport type mapping
 // ============================================================
 
-const KOMOOT_SPORT_MAP: Record<string, string> = {
+const KOMOOT_SPORT_MAP: Record<string, CanonicalActivityType> = {
   BIKING: "cycling",
-  E_BIKING: "cycling",
-  ROAD_CYCLING: "cycling",
+  E_BIKING: "e_bike_cycling",
+  ROAD_CYCLING: "road_cycling",
   MT_BIKING: "mountain_biking",
   E_MT_BIKING: "mountain_biking",
-  GRAVEL_BIKING: "cycling",
-  E_BIKE_TOURING: "cycling",
+  GRAVEL_BIKING: "gravel_cycling",
+  E_BIKE_TOURING: "e_bike_cycling",
   RUNNING: "running",
   TRAIL_RUNNING: "trail_running",
   HIKING: "hiking",
@@ -82,7 +83,7 @@ const KOMOOT_SPORT_MAP: Record<string, string> = {
   INLINE_SKATING: "skating",
 };
 
-export function mapKomootSport(sport: string): string {
+export function mapKomootSport(sport: string): CanonicalActivityType {
   return KOMOOT_SPORT_MAP[sport] ?? "other";
 }
 

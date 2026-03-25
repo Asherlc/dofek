@@ -1,85 +1,56 @@
 import { describe, expect, it } from "vitest";
-import type { supplement } from "../db/schema.ts";
-import { AutoSupplementsProvider, buildDailyEntries } from "./auto-supplements.ts";
+import {
+  AutoSupplementsProvider,
+  buildDailyEntries,
+  type SupplementWithNutrition,
+} from "./auto-supplements.ts";
 
 // ============================================================
 // Helpers
 // ============================================================
 
-type SupplementRow = typeof supplement.$inferSelect;
-
 const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
 
-/** Create a minimal supplement row for testing. */
-function makeRow(overrides: Partial<SupplementRow> & { name: string }): SupplementRow {
+/** Create a minimal supplement-with-nutrition row for testing.
+ *  The view returns snake_case column names for nutrient fields. */
+function makeRow(
+  overrides: Partial<SupplementWithNutrition> & { name: string },
+): SupplementWithNutrition {
   return {
     id: "00000000-0000-0000-0000-000000000000",
     userId: TEST_USER_ID,
-    sortOrder: 0,
+    user_id: TEST_USER_ID,
+    sort_order: 0,
     amount: null,
     unit: null,
     form: null,
     description: null,
     meal: null,
+    nutrition_data_id: null,
     calories: null,
-    proteinG: null,
-    carbsG: null,
-    fatG: null,
-    saturatedFatG: null,
-    polyunsaturatedFatG: null,
-    monounsaturatedFatG: null,
-    transFatG: null,
-    cholesterolMg: null,
-    sodiumMg: null,
-    potassiumMg: null,
-    fiberG: null,
-    sugarG: null,
-    vitaminAMcg: null,
-    vitaminCMg: null,
-    vitaminDMcg: null,
-    vitaminEMg: null,
-    vitaminKMcg: null,
-    vitaminB1Mg: null,
-    vitaminB2Mg: null,
-    vitaminB3Mg: null,
-    vitaminB5Mg: null,
-    vitaminB6Mg: null,
-    vitaminB7Mcg: null,
-    vitaminB9Mcg: null,
-    vitaminB12Mcg: null,
-    calciumMg: null,
-    ironMg: null,
-    magnesiumMg: null,
-    zincMg: null,
-    seleniumMcg: null,
-    copperMg: null,
-    manganeseMg: null,
-    chromiumMcg: null,
-    iodineMcg: null,
-    omega3Mg: null,
-    omega6Mg: null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
+    protein_g: null,
+    carbs_g: null,
+    fat_g: null,
     ...overrides,
   };
 }
 
 // ============================================================
-// Sample supplement rows
+// Sample supplement rows (as returned by v_supplement_with_nutrition view)
 // ============================================================
 
-const sampleRows: SupplementRow[] = [
+const sampleRows: SupplementWithNutrition[] = [
   makeRow({ name: "Vitamin D3 5000 IU", description: "1 softgel", meal: "breakfast", calories: 0 }),
   makeRow({
     name: "Fish Oil",
     description: "2 softgels",
     meal: "breakfast",
     calories: 25,
-    fatG: 2.5,
-    saturatedFatG: 0.5,
-    polyunsaturatedFatG: 1.5,
-    monounsaturatedFatG: 0.5,
-    cholesterolMg: 10,
+    fat_g: 2.5,
+    saturated_fat_g: 0.5,
+    polyunsaturated_fat_g: 1.5,
+    monounsaturated_fat_g: 0.5,
+    cholesterol_mg: 10,
   }),
   makeRow({
     name: "Creatine Monohydrate",
@@ -92,8 +63,8 @@ const sampleRows: SupplementRow[] = [
     description: "2 capsules",
     meal: "dinner",
     calories: 0,
-    calciumMg: 5,
-    ironMg: 0.1,
+    calcium_mg: 5,
+    iron_mg: 0.1,
   }),
 ];
 
@@ -161,7 +132,7 @@ describe("Auto-Supplements Provider", () => {
     it("includes userId from the supplement row", () => {
       const customUserId = "11111111-1111-1111-1111-111111111111";
       const entries = buildDailyEntries(
-        [makeRow({ name: "Test", userId: customUserId })],
+        [makeRow({ name: "Test", user_id: customUserId, userId: customUserId })],
         ["2024-03-15"],
       );
       expect(entries[0]?.userId).toBe(customUserId);
@@ -195,9 +166,9 @@ describe("Auto-Supplements Provider", () => {
       expect(entries[0]?.foodDescription).toBeNull();
     });
 
-    it("includes all nutrient keys, with null for undefined nutrients", () => {
+    it("includes all nutrient keys (camelCase), with null for undefined nutrients", () => {
       const entries = buildDailyEntries(
-        [makeRow({ name: "Test", calories: 10, proteinG: 5 })],
+        [makeRow({ name: "Test", calories: 10, protein_g: 5 })],
         ["2024-03-15"],
       );
       expect(entries[0]?.nutrients.calories).toBe(10);

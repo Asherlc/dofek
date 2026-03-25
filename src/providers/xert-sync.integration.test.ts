@@ -231,7 +231,7 @@ describe("XertProvider.sync() (integration)", () => {
     expect(swim?.activityType).toBe("swimming");
 
     const virtualCycling = rows.find((r) => r.externalId === "8002");
-    expect(virtualCycling?.activityType).toBe("cycling");
+    expect(virtualCycling?.activityType).toBe("virtual_cycling");
 
     const mtb = rows.find((r) => r.externalId === "8003");
     expect(mtb?.activityType).toBe("mountain_biking");

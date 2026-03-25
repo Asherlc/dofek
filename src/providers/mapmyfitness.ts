@@ -1,3 +1,4 @@
+import type { CanonicalActivityType } from "@dofek/training/training";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
@@ -57,7 +58,7 @@ interface MapMyFitnessWorkoutListResponse {
 
 export interface ParsedMapMyFitnessWorkout {
   externalId: string;
-  activityType: string;
+  activityType: CanonicalActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -68,7 +69,7 @@ export interface ParsedMapMyFitnessWorkout {
 // Parsing — pure functions
 // ============================================================
 
-export function mapMapMyFitnessActivityType(activityType: string): string {
+export function mapMapMyFitnessActivityType(activityType: string): CanonicalActivityType {
   const lower = activityType.toLowerCase();
   if (lower.includes("run")) return "running";
   if (lower.includes("ride") || lower.includes("cycl") || lower.includes("bik")) return "cycling";

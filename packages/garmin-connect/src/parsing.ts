@@ -1,3 +1,4 @@
+import type { CanonicalActivityType } from "@dofek/training/training";
 import type {
   ConnectActivityDetail,
   ConnectActivitySummary,
@@ -14,17 +15,17 @@ import type {
 // Activity type mapping (internal typeKey → normalized)
 // ============================================================
 
-const GARMIN_ACTIVITY_TYPE_MAP: Record<string, string> = {
+const GARMIN_ACTIVITY_TYPE_MAP: Record<string, CanonicalActivityType> = {
   running: "running",
   trail_running: "running",
   treadmill_running: "running",
   track_running: "running",
   cycling: "cycling",
-  mountain_biking: "cycling",
-  road_biking: "cycling",
-  indoor_cycling: "cycling",
-  gravel_cycling: "cycling",
-  virtual_ride: "cycling",
+  mountain_biking: "mountain_biking",
+  road_biking: "road_cycling",
+  indoor_cycling: "indoor_cycling",
+  gravel_cycling: "gravel_cycling",
+  virtual_ride: "virtual_cycling",
   swimming: "swimming",
   lap_swimming: "swimming",
   open_water_swimming: "swimming",
@@ -51,7 +52,7 @@ const GARMIN_ACTIVITY_TYPE_MAP: Record<string, string> = {
   meditation: "meditation",
 };
 
-export function mapConnectActivityType(typeKey: string): string {
+export function mapConnectActivityType(typeKey: string): CanonicalActivityType {
   return GARMIN_ACTIVITY_TYPE_MAP[typeKey] ?? "other";
 }
 
@@ -61,7 +62,7 @@ export function mapConnectActivityType(typeKey: string): string {
 
 export interface ParsedConnectActivity {
   externalId: string;
-  activityType: string;
+  activityType: CanonicalActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -81,6 +82,12 @@ export interface ParsedConnectSleep {
   awakeningCount: number | undefined;
   averageSpO2: number | undefined;
   averageRespiration: number | undefined;
+}
+
+export interface ParsedSleepStage {
+  stage: "deep" | "light" | "rem" | "awake";
+  startedAt: Date;
+  endedAt: Date;
 }
 
 export interface ParsedDailyMetrics {
@@ -201,6 +208,53 @@ export function parseConnectSleep(data: ConnectSleepData): ParsedConnectSleep | 
     averageSpO2: dto.averageSpO2Value,
     averageRespiration: dto.averageRespirationValue,
   };
+}
+
+const GARMIN_SLEEP_LEVEL_MAP: Record<number, "deep" | "light" | "awake"> = {
+  0: "deep",
+  1: "light",
+  2: "awake",
+};
+
+export function parseConnectSleepStages(data: ConnectSleepData): ParsedSleepStage[] {
+  const stages: ParsedSleepStage[] = [];
+
+  // Build REM time windows — Garmin marks REM as activityLevel 1 (light) in
+  // sleepLevels and provides the correct classification in remSleepData.
+  // We need to exclude overlapping "light" entries that are actually REM.
+  const remWindows = (data.remSleepData ?? []).map((rem) => ({
+    start: new Date(ensureUtcSuffix(rem.startGMT)).getTime(),
+    end: new Date(ensureUtcSuffix(rem.endGMT)).getTime(),
+  }));
+
+  for (const level of data.sleepLevels ?? []) {
+    const stage = GARMIN_SLEEP_LEVEL_MAP[level.activityLevel];
+    if (!stage) continue;
+
+    // Skip "light" entries whose time window overlaps with a REM period
+    if (stage === "light" && remWindows.length > 0) {
+      const start = new Date(ensureUtcSuffix(level.startGMT)).getTime();
+      const end = new Date(ensureUtcSuffix(level.endGMT)).getTime();
+      const overlapsRem = remWindows.some((rem) => start < rem.end && end > rem.start);
+      if (overlapsRem) continue;
+    }
+
+    stages.push({
+      stage,
+      startedAt: new Date(ensureUtcSuffix(level.startGMT)),
+      endedAt: new Date(ensureUtcSuffix(level.endGMT)),
+    });
+  }
+
+  for (const rem of data.remSleepData ?? []) {
+    stages.push({
+      stage: "rem",
+      startedAt: new Date(ensureUtcSuffix(rem.startGMT)),
+      endedAt: new Date(ensureUtcSuffix(rem.endGMT)),
+    });
+  }
+
+  return stages.sort((a, b) => a.startedAt.getTime() - b.startedAt.getTime());
 }
 
 export function parseConnectDailySummary(summary: ConnectDailySummary): ParsedDailyMetrics {

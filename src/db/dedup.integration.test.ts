@@ -223,12 +223,12 @@ describe("Deduplication materialized views", () => {
   });
 
   it("v_activity dedupes WHOOP and Apple Health with different type names", async () => {
-    // WHOOP records "commuting", Apple Health republishes it as "other"
+    // WHOOP records "walking", Apple Health republishes it as "other"
     await ctx.db.insert(activity).values([
       {
         providerId: "whoop",
         externalId: "whoop-commute-cross-type",
-        activityType: "commuting",
+        activityType: "walking",
         startedAt: new Date("2026-03-12T15:21:00Z"),
         endedAt: new Date("2026-03-12T15:36:00Z"),
       },
@@ -252,7 +252,7 @@ describe("Deduplication materialized views", () => {
     // Should merge into 1 activity — WHOOP wins (priority 30 < 90)
     expect(rows.length).toBe(1);
     expect(rows[0]?.provider_id).toBe("whoop");
-    expect(rows[0]?.activity_type).toBe("commuting");
+    expect(rows[0]?.activity_type).toBe("walking");
   });
 
   it("v_activity keeps non-overlapping same-type activities separate", async () => {
@@ -356,15 +356,15 @@ describe("Deduplication materialized views", () => {
     );
 
     expect(rows.length).toBe(1);
-    const m = rows[0];
-    expect(m).toBeDefined();
+    const measurement = rows[0];
+    expect(measurement).toBeDefined();
     // Withings wins (priority 15)
-    expect(m?.provider_id).toBe("withings");
-    expect(m?.weight_kg).toBeCloseTo(75.2);
+    expect(measurement?.provider_id).toBe("withings");
+    expect(measurement?.weight_kg).toBeCloseTo(75.2);
     // Body fat from Withings (Apple Health was null)
-    expect(m?.body_fat_pct).toBeCloseTo(18.5);
-    expect(m?.source_providers).toContain("withings");
-    expect(m?.source_providers).toContain("apple_health");
+    expect(measurement?.body_fat_pct).toBeCloseTo(18.5);
+    expect(measurement?.source_providers).toContain("withings");
+    expect(measurement?.source_providers).toContain("apple_health");
   });
 
   it("v_daily_metrics merges per-field across providers", async () => {

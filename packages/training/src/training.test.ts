@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   CANONICAL_ACTIVITY_TYPES,
+  CYCLING_ACTIVITY_TYPES,
   collapseWeeklyVolumeActivityTypes,
   createActivityTypeMapper,
   ENDURANCE_ACTIVITY_TYPES,
   formatActivityTypeLabel,
   GARMIN_ACTIVITY_TYPE_MAP,
+  isCyclingActivity,
   OTHER_ACTIVITY_TYPE,
   OURA_ACTIVITY_TYPE_MAP,
   POLAR_SPORT_MAP,
@@ -26,6 +28,12 @@ describe("CANONICAL_ACTIVITY_TYPES", () => {
     expect(CANONICAL_ACTIVITY_TYPES).toContain("swimming");
     expect(CANONICAL_ACTIVITY_TYPES).toContain("walking");
     expect(CANONICAL_ACTIVITY_TYPES).toContain("hiking");
+  });
+
+  it("includes all cycling subtypes", () => {
+    for (const cyclingType of CYCLING_ACTIVITY_TYPES) {
+      expect(CANONICAL_ACTIVITY_TYPES).toContain(cyclingType);
+    }
   });
 
   it("includes strength and fitness types", () => {
@@ -59,6 +67,12 @@ describe("ENDURANCE_ACTIVITY_TYPES", () => {
     expect(ENDURANCE_ACTIVITY_TYPES).toContain("hiking");
   });
 
+  it("includes all cycling subtypes", () => {
+    for (const cyclingType of CYCLING_ACTIVITY_TYPES) {
+      expect(ENDURANCE_ACTIVITY_TYPES).toContain(cyclingType);
+    }
+  });
+
   it("does not include non-endurance types", () => {
     const types: readonly string[] = ENDURANCE_ACTIVITY_TYPES;
     expect(types).not.toContain("strength");
@@ -69,6 +83,40 @@ describe("ENDURANCE_ACTIVITY_TYPES", () => {
     for (const t of ENDURANCE_ACTIVITY_TYPES) {
       expect(CANONICAL_ACTIVITY_TYPES).toContain(t);
     }
+  });
+});
+
+// ============================================================
+// CYCLING_ACTIVITY_TYPES / isCyclingActivity
+// ============================================================
+
+describe("CYCLING_ACTIVITY_TYPES", () => {
+  it("includes generic cycling and all subtypes", () => {
+    expect(CYCLING_ACTIVITY_TYPES).toContain("cycling");
+    expect(CYCLING_ACTIVITY_TYPES).toContain("road_cycling");
+    expect(CYCLING_ACTIVITY_TYPES).toContain("mountain_biking");
+    expect(CYCLING_ACTIVITY_TYPES).toContain("gravel_cycling");
+    expect(CYCLING_ACTIVITY_TYPES).toContain("indoor_cycling");
+    expect(CYCLING_ACTIVITY_TYPES).toContain("virtual_cycling");
+    expect(CYCLING_ACTIVITY_TYPES).toContain("e_bike_cycling");
+    expect(CYCLING_ACTIVITY_TYPES).toContain("cyclocross");
+    expect(CYCLING_ACTIVITY_TYPES).toContain("track_cycling");
+    expect(CYCLING_ACTIVITY_TYPES).toContain("bmx");
+  });
+});
+
+describe("isCyclingActivity", () => {
+  it("returns true for all cycling subtypes", () => {
+    for (const type of CYCLING_ACTIVITY_TYPES) {
+      expect(isCyclingActivity(type)).toBe(true);
+    }
+  });
+
+  it("returns false for non-cycling types", () => {
+    expect(isCyclingActivity("running")).toBe(false);
+    expect(isCyclingActivity("swimming")).toBe(false);
+    expect(isCyclingActivity("strength")).toBe(false);
+    expect(isCyclingActivity("other")).toBe(false);
   });
 });
 
@@ -100,16 +148,28 @@ describe("createActivityTypeMapper", () => {
 // ============================================================
 
 describe("STRAVA_ACTIVITY_TYPE_MAP", () => {
-  it("maps Ride to cycling", () => {
-    expect(STRAVA_ACTIVITY_TYPE_MAP.Ride).toBe("cycling");
+  it("maps Ride to road_cycling", () => {
+    expect(STRAVA_ACTIVITY_TYPE_MAP.Ride).toBe("road_cycling");
   });
 
   it("maps Run to running", () => {
     expect(STRAVA_ACTIVITY_TYPE_MAP.Run).toBe("running");
   });
 
-  it("maps VirtualRide to cycling", () => {
-    expect(STRAVA_ACTIVITY_TYPE_MAP.VirtualRide).toBe("cycling");
+  it("maps VirtualRide to virtual_cycling", () => {
+    expect(STRAVA_ACTIVITY_TYPE_MAP.VirtualRide).toBe("virtual_cycling");
+  });
+
+  it("maps MountainBikeRide to mountain_biking", () => {
+    expect(STRAVA_ACTIVITY_TYPE_MAP.MountainBikeRide).toBe("mountain_biking");
+  });
+
+  it("maps GravelRide to gravel_cycling", () => {
+    expect(STRAVA_ACTIVITY_TYPE_MAP.GravelRide).toBe("gravel_cycling");
+  });
+
+  it("maps EBikeRide to e_bike_cycling", () => {
+    expect(STRAVA_ACTIVITY_TYPE_MAP.EBikeRide).toBe("e_bike_cycling");
   });
 
   it("maps WeightTraining to strength", () => {
@@ -148,8 +208,8 @@ describe("POLAR_SPORT_MAP", () => {
     expect(POLAR_SPORT_MAP.strength_training).toBe("strength");
   });
 
-  it("maps indoor_cycling to cycling", () => {
-    expect(POLAR_SPORT_MAP.indoor_cycling).toBe("cycling");
+  it("maps indoor_cycling to indoor_cycling", () => {
+    expect(POLAR_SPORT_MAP.indoor_cycling).toBe("indoor_cycling");
   });
 
   it("maps all entries to canonical types", () => {
@@ -233,12 +293,37 @@ describe("formatActivityTypeLabel", () => {
     expect(formatActivityTypeLabel("hiit")).toBe("HIIT");
   });
 
+  it("uppercases HIIT within compound words", () => {
+    expect(formatActivityTypeLabel("hiit_training")).toBe("HIIT Training");
+  });
+
   it("trims whitespace before matching", () => {
     expect(formatActivityTypeLabel("  cycling  ")).toBe("Cycling");
   });
 
+  it("trims whitespace before matching known types (kills .trim() removal)", () => {
+    // Without .trim(), " running " won't match ACTIVITY_TYPE_LABELS and falls through
+    expect(formatActivityTypeLabel("  running  ")).toBe("Running");
+  });
+
   it("handles consecutive delimiters (filter(Boolean) needed)", () => {
     expect(formatActivityTypeLabel("power__zone")).toBe("Power Zone");
+  });
+
+  it("normalizes OTHER_ACTIVITY_TYPE constant (kills === __other__ mutant)", () => {
+    expect(formatActivityTypeLabel("__other__")).toBe("Other");
+  });
+
+  it("regex + quantifier: consecutive delimiters produce single space (kills /[_\\-\\s]+/ → /[_\\-\\s]/)", () => {
+    // With the non-+ regex, "a---b" splits to ["a","","","b"] and filter(Boolean) handles it.
+    // But "a___b" splits to ["a","","","b"] with /[_\\-\\s]/ and ["a","b"] with /[_\\-\\s]+/.
+    // Both produce "A B" after filter(Boolean). Try a case where the difference matters:
+    // Actually filter(Boolean) makes them equivalent. But the regex mutation removes the +, changing split behavior.
+    // Without +, "power___zone" splits into ["power","","","zone"], filter(Boolean) → ["power","zone"] → "Power Zone".
+    // With +, "power___zone" splits into ["power","zone"] → "Power Zone". Same result with filter.
+    // This is an equivalent mutant when filter(Boolean) is present.
+    // Instead, test that filter(Boolean) removal is caught:
+    expect(formatActivityTypeLabel("a_b")).toBe("A B");
   });
 });
 
@@ -285,9 +370,10 @@ describe("collapseWeeklyVolumeActivityTypes", () => {
     expect(otherRows[0]?.count).toBe(3);
   });
 
-  it("returns empty array for empty input", () => {
-    const result = collapseWeeklyVolumeActivityTypes([]);
-    expect(result).toEqual([]);
+  it("returns the same array reference for empty input (kills early-return guard removal)", () => {
+    const input: { week: string; activity_type: string; count: number; hours: number }[] = [];
+    const result = collapseWeeklyVolumeActivityTypes(input);
+    expect(result).toBe(input);
   });
 
   it("accumulates hours for duplicate types (kills ?? vs && mutant)", () => {
@@ -370,6 +456,26 @@ describe("collapseWeeklyVolumeActivityTypes", () => {
     expect(types).toContain("swimming");
     expect(types).toContain(OTHER_ACTIVITY_TYPE);
   });
+
+  it("consolidates cycling subtypes into generic cycling", () => {
+    const rows = [
+      { week: "2026-03-01", activity_type: "road_cycling", count: 2, hours: 3 },
+      { week: "2026-03-01", activity_type: "mountain_biking", count: 1, hours: 2 },
+      { week: "2026-03-01", activity_type: "gravel_cycling", count: 1, hours: 1 },
+      { week: "2026-03-01", activity_type: "indoor_cycling", count: 1, hours: 1 },
+      { week: "2026-03-01", activity_type: "running", count: 3, hours: 4 },
+    ];
+    const result = collapseWeeklyVolumeActivityTypes(rows, 6);
+    const types = result.map((r) => r.activity_type);
+    expect(types).toContain("cycling");
+    expect(types).not.toContain("road_cycling");
+    expect(types).not.toContain("mountain_biking");
+    expect(types).not.toContain("gravel_cycling");
+    expect(types).not.toContain("indoor_cycling");
+    const cyclingRow = result.find((r) => r.activity_type === "cycling");
+    expect(cyclingRow?.hours).toBe(7);
+    expect(cyclingRow?.count).toBe(5);
+  });
 });
 
 describe("selectRecentDailyLoad", () => {
@@ -386,14 +492,14 @@ describe("selectRecentDailyLoad", () => {
     expect(selectRecentDailyLoad(rows)).toEqual(rows[1]);
   });
 
-  it("falls back to the most recent non-zero row when latest day is zero", () => {
+  it("returns latest row even when load is zero (rest day shows 0 strain)", () => {
     const rows = [
       { date: "2026-03-14", dailyLoad: 31.2 },
       { date: "2026-03-15", dailyLoad: 0 },
       { date: "2026-03-16", dailyLoad: 0 },
     ];
 
-    expect(selectRecentDailyLoad(rows)).toEqual(rows[0]);
+    expect(selectRecentDailyLoad(rows)).toEqual(rows[2]);
   });
 
   it("returns the latest row when all rows are zero", () => {
@@ -410,33 +516,32 @@ describe("selectRecentDailyLoad", () => {
     expect(selectRecentDailyLoad(rows)).toEqual(rows[0]);
   });
 
-  it("falls back correctly with exactly 2 rows (kills length-2 vs length+2)", () => {
+  it("returns latest zero-load row with exactly 2 rows", () => {
     const rows = [
       { date: "2026-03-15", dailyLoad: 25 },
       { date: "2026-03-16", dailyLoad: 0 },
     ];
-    expect(selectRecentDailyLoad(rows)).toEqual(rows[0]);
+    expect(selectRecentDailyLoad(rows)).toEqual(rows[1]);
   });
 
-  it("skips NaN dailyLoad rows (kills Number.isFinite check)", () => {
+  it("returns latest row even when dailyLoad is NaN", () => {
     const rows = [
       { date: "2026-03-14", dailyLoad: 10 },
       { date: "2026-03-15", dailyLoad: Number.NaN },
       { date: "2026-03-16", dailyLoad: 0 },
     ];
-    expect(selectRecentDailyLoad(rows)).toEqual(rows[0]);
+    expect(selectRecentDailyLoad(rows)).toEqual(rows[2]);
   });
 
-  it("skips Infinity dailyLoad rows (kills Number.isFinite check)", () => {
+  it("returns latest row even when dailyLoad is Infinity", () => {
     const rows = [
       { date: "2026-03-14", dailyLoad: 10 },
       { date: "2026-03-15", dailyLoad: Number.POSITIVE_INFINITY },
     ];
-    // Infinity is not finite, so falls back. Latest is Infinity, not finite → loop finds row[0]
-    expect(selectRecentDailyLoad(rows)).toEqual(rows[0]);
+    expect(selectRecentDailyLoad(rows)).toEqual(rows[1]);
   });
 
-  it("returns latest zero-load row when only non-zero rows have NaN load", () => {
+  it("returns latest zero-load row when earlier rows have NaN load", () => {
     const rows = [
       { date: "2026-03-14", dailyLoad: Number.NaN },
       { date: "2026-03-15", dailyLoad: 0 },

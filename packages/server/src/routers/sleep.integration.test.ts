@@ -83,24 +83,27 @@ describe("sleep router integration", () => {
     return first?.result?.data;
   }
 
-  const ISO_8601_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+  /** sleep.list returns local (wall-clock) timestamps without Z suffix */
+  const LOCAL_ISO_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/;
+  /** sleep.latest returns UTC timestamps with Z suffix */
+  const UTC_ISO_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 
-  it("sleep.list returns started_at in ISO 8601 format", async () => {
+  it("sleep.list returns started_at as local ISO 8601 (no Z)", async () => {
     await queryCache.invalidateAll();
     const rows = await query<{ started_at: string }[]>("sleep.list", { days: 30 });
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) {
-      expect(row.started_at).toMatch(ISO_8601_REGEX);
+      expect(row.started_at).toMatch(LOCAL_ISO_REGEX);
       expect(new Date(row.started_at).getTime()).not.toBeNaN();
     }
   });
 
-  it("sleep.latest returns started_at in ISO 8601 format", async () => {
+  it("sleep.latest returns started_at in UTC ISO 8601 format", async () => {
     await queryCache.invalidateAll();
     const row = await query<{ started_at: string } | null>("sleep.latest");
     expect(row).not.toBeNull();
     if (row) {
-      expect(row.started_at).toMatch(ISO_8601_REGEX);
+      expect(row.started_at).toMatch(UTC_ISO_REGEX);
       expect(new Date(row.started_at).getTime()).not.toBeNaN();
     }
   });

@@ -1,16 +1,24 @@
-import { createActivityTypeMapper, POLAR_SPORT_MAP } from "@dofek/training/training";
+import { createHmac, timingSafeEqual } from "node:crypto";
+import {
+  type CanonicalActivityType,
+  createActivityTypeMapper,
+  POLAR_SPORT_MAP,
+} from "@dofek/training/training";
+import { eq } from "drizzle-orm";
+import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { activity, dailyMetrics, sleepSession } from "../db/schema.ts";
+import { activity, dailyMetrics, sleepSession, sleepStage } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import type {
   ProviderAuthSetup,
   SyncError,
   SyncOptions,
-  SyncProvider,
   SyncResult,
+  WebhookEvent,
+  WebhookProvider,
 } from "./types.ts";
 
 // ============================================================
@@ -80,7 +88,7 @@ export interface PolarNightlyRecharge {
 
 const mapPolarType = createActivityTypeMapper(POLAR_SPORT_MAP);
 
-export function mapPolarSport(sport: string): string {
+export function mapPolarSport(sport: string): CanonicalActivityType {
   const key = sport.toLowerCase();
   return mapPolarType(key);
 }
@@ -106,7 +114,7 @@ export function parsePolarDuration(isoDuration: string): number {
 
 export interface ParsedPolarActivity {
   externalId: string;
-  activityType: string;
+  activityType: CanonicalActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -147,6 +155,12 @@ export interface ParsedPolarSleep {
   awakeMinutes: number;
 }
 
+export interface ParsedPolarSleepStage {
+  stage: "deep" | "light" | "rem" | "awake";
+  startedAt: Date;
+  endedAt: Date;
+}
+
 export function parsePolarSleep(sleep: PolarSleep): ParsedPolarSleep {
   const startedAt = new Date(sleep.sleep_start_time);
   const endedAt = new Date(sleep.sleep_end_time);
@@ -166,6 +180,67 @@ export function parsePolarSleep(sleep: PolarSleep): ParsedPolarSleep {
     remMinutes,
     awakeMinutes,
   };
+}
+
+// Polar hypnogram stage codes (from Polar API documentation):
+// 1 = deep, 2 = light, 3 = REM, 4 = interrupted (awake), 5 = awake (at sleep boundary)
+const POLAR_HYPNOGRAM_STAGE_MAP: Record<number, "deep" | "light" | "rem" | "awake"> = {
+  1: "deep",
+  2: "light",
+  3: "rem",
+  4: "awake",
+  5: "awake",
+};
+
+export function parsePolarSleepStages(
+  sleepStartTime: string,
+  hypnogram: Record<string, number>,
+): ParsedPolarSleepStage[] {
+  const startMs = new Date(sleepStartTime).getTime();
+  const entries = Object.entries(hypnogram)
+    .map(([minuteStr, stageValue]) => ({
+      minute: Number(minuteStr),
+      stage: POLAR_HYPNOGRAM_STAGE_MAP[stageValue],
+    }))
+    .filter(
+      (e): e is { minute: number; stage: "deep" | "light" | "rem" | "awake" } => e.stage != null,
+    )
+    .sort((a, b) => a.minute - b.minute);
+
+  const first = entries[0];
+  if (!first) return [];
+
+  // Merge consecutive identical stages into intervals.
+  // Each hypnogram entry represents one minute starting at that offset.
+  const stages: ParsedPolarSleepStage[] = [];
+  let currentStage = first.stage;
+  let currentStart = first.minute;
+  let previousMinute = first.minute;
+
+  for (let i = 1; i < entries.length; i++) {
+    const entry = entries[i];
+    if (!entry) continue;
+    // Start a new interval if stage changed or there's a gap
+    if (entry.stage !== currentStage || entry.minute !== previousMinute + 1) {
+      stages.push({
+        stage: currentStage,
+        startedAt: new Date(startMs + currentStart * 60000),
+        endedAt: new Date(startMs + (previousMinute + 1) * 60000),
+      });
+      currentStage = entry.stage;
+      currentStart = entry.minute;
+    }
+    previousMinute = entry.minute;
+  }
+
+  // Push final interval
+  stages.push({
+    stage: currentStage,
+    startedAt: new Date(startMs + currentStart * 60000),
+    endedAt: new Date(startMs + (previousMinute + 1) * 60000),
+  });
+
+  return stages;
 }
 
 export interface ParsedPolarDailyMetrics {
@@ -296,9 +371,10 @@ export class PolarClient {
 // Provider implementation
 // ============================================================
 
-export class PolarProvider implements SyncProvider {
+export class PolarProvider implements WebhookProvider {
   readonly id = "polar";
   readonly name = "Polar";
+  readonly webhookScope = "app" as const;
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
@@ -309,6 +385,105 @@ export class PolarProvider implements SyncProvider {
     if (!process.env.POLAR_CLIENT_ID) return "POLAR_CLIENT_ID is not set";
     if (!process.env.POLAR_CLIENT_SECRET) return "POLAR_CLIENT_SECRET is not set";
     return null;
+  }
+
+  // ── Webhook implementation ──
+
+  async registerWebhook(
+    callbackUrl: string,
+    _verifyToken: string,
+  ): Promise<{ subscriptionId: string; signingSecret?: string; expiresAt?: Date }> {
+    const clientId = process.env.POLAR_CLIENT_ID;
+    const clientSecret = process.env.POLAR_CLIENT_SECRET;
+    if (!clientId || !clientSecret) {
+      throw new Error("POLAR_CLIENT_ID and POLAR_CLIENT_SECRET are required");
+    }
+
+    const response = await this.#fetchFn("https://www.polaraccesslink.com/v3/webhooks", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
+      },
+      body: JSON.stringify({
+        events: [
+          { event: "EXERCISE", url: callbackUrl },
+          { event: "SLEEP", url: callbackUrl },
+          { event: "CONTINUOUS_HEART_RATE", url: callbackUrl },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Polar webhook registration failed (${response.status}): ${text}`);
+    }
+
+    const data: { data?: { id?: string; signature_secret_key?: string } } = await response.json();
+    return {
+      subscriptionId: data.data?.id ?? "polar-webhook",
+      signingSecret: data.data?.signature_secret_key,
+    };
+  }
+
+  async unregisterWebhook(subscriptionId: string): Promise<void> {
+    const clientId = process.env.POLAR_CLIENT_ID;
+    const clientSecret = process.env.POLAR_CLIENT_SECRET;
+    if (!clientId || !clientSecret) return;
+
+    await this.#fetchFn(`https://www.polaraccesslink.com/v3/webhooks/${subscriptionId}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
+      },
+    });
+  }
+
+  verifyWebhookSignature(
+    rawBody: Buffer,
+    headers: Record<string, string | string[] | undefined>,
+    signingSecret: string,
+  ): boolean {
+    const signature = headers["polar-webhook-signature"];
+    if (!signature || typeof signature !== "string") return false;
+
+    const hmac = createHmac("sha256", signingSecret);
+    hmac.update(rawBody);
+    const expected = hmac.digest("hex");
+    try {
+      return timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+    } catch {
+      return false;
+    }
+  }
+
+  parseWebhookPayload(body: unknown): WebhookEvent[] {
+    const parsed = z
+      .object({
+        event: z.string(),
+        user_id: z.coerce.string(),
+        entity_id: z.string().optional(),
+        timestamp: z.string().optional(),
+      })
+      .safeParse(body);
+
+    if (!parsed.success) return [];
+    const event = parsed.data;
+
+    const eventTypeMap: Record<string, string> = {
+      EXERCISE: "activity",
+      SLEEP: "sleep",
+      CONTINUOUS_HEART_RATE: "heart_rate",
+    };
+
+    return [
+      {
+        ownerExternalId: String(event.user_id),
+        eventType: "create",
+        objectType: eventTypeMap[event.event] ?? event.event.toLowerCase(),
+        objectId: event.entity_id,
+      },
+    ];
   }
 
   authSetup(): ProviderAuthSetup {
@@ -448,7 +623,7 @@ export class PolarProvider implements SyncProvider {
             const parsed = parsePolarSleep(sleepRecord);
 
             try {
-              await db
+              const [session] = await db
                 .insert(sleepSession)
                 .values({
                   providerId: this.id,
@@ -472,7 +647,24 @@ export class PolarProvider implements SyncProvider {
                     remMinutes: parsed.remMinutes,
                     awakeMinutes: parsed.awakeMinutes,
                   },
-                });
+                })
+                .returning({ id: sleepSession.id });
+
+              const stages = sleepRecord.hypnogram
+                ? parsePolarSleepStages(sleepRecord.sleep_start_time, sleepRecord.hypnogram)
+                : [];
+              if (session && stages.length > 0) {
+                await db.delete(sleepStage).where(eq(sleepStage.sessionId, session.id));
+                await db.insert(sleepStage).values(
+                  stages.map((s) => ({
+                    sessionId: session.id,
+                    stage: s.stage,
+                    startedAt: s.startedAt,
+                    endedAt: s.endedAt,
+                  })),
+                );
+              }
+
               count++;
             } catch (err) {
               errors.push({

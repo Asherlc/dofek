@@ -269,12 +269,12 @@ describe("parseTripToActivity — additional edge cases", () => {
     expect(result.endedAt).toBeUndefined();
   });
 
-  it("maps cyclocross to cycling", () => {
-    expect(mapActivityType("cyclocross")).toBe("cycling");
+  it("maps cyclocross to cyclocross", () => {
+    expect(mapActivityType("cyclocross")).toBe("cyclocross");
   });
 
-  it("maps track_cycling to cycling", () => {
-    expect(mapActivityType("track_cycling")).toBe("cycling");
+  it("maps track_cycling to track_cycling", () => {
+    expect(mapActivityType("track_cycling")).toBe("track_cycling");
   });
 });
 

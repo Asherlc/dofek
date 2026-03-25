@@ -1,0 +1,9 @@
+`const $name = $value` where {
+  $text = text($name),
+  $text <: r"^[a-zA-Z]$",
+  register_diagnostic(
+    span = $name,
+    message = "Single-letter variable names are not descriptive enough. Use a meaningful name that communicates the variable's purpose.",
+    severity = "error"
+  )
+}
