@@ -64,5 +64,18 @@ target 'Dofek' do
       :mac_catalyst_enabled => false,
       :ccache_enabled => ccache_enabled?(podfile_properties),
     )
+
+    # RNSentry expects private Sentry headers at ${PODS_ROOT}/Sentry/Sources/Sentry/include/
+    # which exists when Sentry is built from source. Our local prebuilt XCFramework pod
+    # places them in LocalPods/Sentry/Sources/Sentry/include/ instead.
+    # Add the correct path so RNSentry can find SentrySwizzle.h et al.
+    local_sentry_headers = '"${PODS_ROOT}/../LocalPods/Sentry/Sources/Sentry/include"'
+    installer.pods_project.targets.each do |target|
+      next unless target.name == 'RNSentry'
+      target.build_configurations.each do |config|
+        paths = config.build_settings['HEADER_SEARCH_PATHS'] || '$(inherited)'
+        config.build_settings['HEADER_SEARCH_PATHS'] = paths + ' ' + local_sentry_headers
+      end
+    end
   end
 end
