@@ -36,19 +36,19 @@ export function linearRegression(
   xs: number[],
   ys: number[],
 ): { slope: number; intercept: number; r2: number } {
-  const n = xs.length;
+  const pointCount = xs.length;
   const sumX = xs.reduce((a, b) => a + b, 0);
   const sumY = ys.reduce((a, b) => a + b, 0);
   const sumXY = xs.reduce((a, x, i) => a + x * (ys[i] ?? 0), 0);
   const sumX2 = xs.reduce((a, x) => a + x * x, 0);
 
-  const denom = n * sumX2 - sumX * sumX;
+  const denom = pointCount * sumX2 - sumX * sumX;
   if (denom === 0) return { slope: 0, intercept: 0, r2: 0 };
 
-  const slope = (n * sumXY - sumX * sumY) / denom;
-  const intercept = (sumY - slope * sumX) / n;
+  const slope = (pointCount * sumXY - sumX * sumY) / denom;
+  const intercept = (sumY - slope * sumX) / pointCount;
 
-  const yMean = sumY / n;
+  const yMean = sumY / pointCount;
   const ssTotal = ys.reduce((a, y) => a + (y - yMean) ** 2, 0);
   const ssResidual = ys.reduce((a, y, i) => a + (y - (slope * (xs[i] ?? 0) + intercept)) ** 2, 0);
   const r2 = ssTotal > 0 ? 1 - ssResidual / ssTotal : 0;
@@ -151,19 +151,19 @@ export function computePowerCurve(samples: PowerCurveSample[]): PowerCurvePoint[
   const bestPerDuration = new Map<number, { power: number; date: string }>();
 
   for (const { rows, activityDate, intervalSeconds } of activities) {
-    const n = rows.length;
+    const rowCount = rows.length;
 
-    const cumsum = new Float64Array(n + 1);
-    for (let i = 0; i < n; i++) {
+    const cumsum = new Float64Array(rowCount + 1);
+    for (let i = 0; i < rowCount; i++) {
       cumsum[i + 1] = (cumsum[i] ?? 0) + (rows[i]?.power ?? 0);
     }
 
     for (const duration of STANDARD_DURATIONS) {
       const windowSize = Math.round(duration / intervalSeconds);
-      if (windowSize > n || windowSize < 1) continue;
+      if (windowSize > rowCount || windowSize < 1) continue;
 
       let maxAvg = 0;
-      for (let i = windowSize; i <= n; i++) {
+      for (let i = windowSize; i <= rowCount; i++) {
         const avg = ((cumsum[i] ?? 0) - (cumsum[i - windowSize] ?? 0)) / windowSize;
         if (avg > maxAvg) maxAvg = avg;
       }
@@ -211,16 +211,16 @@ export function computeNormalizedPower(samples: NormalizedPowerSample[]): Normal
 
   for (const { rows, activityDate, intervalSeconds } of activities) {
     const windowSize = Math.max(1, Math.round(30 / intervalSeconds));
-    const n = rows.length;
+    const rowCount = rows.length;
 
-    const cumsum = new Float64Array(n + 1);
-    for (let i = 0; i < n; i++) {
+    const cumsum = new Float64Array(rowCount + 1);
+    for (let i = 0; i < rowCount; i++) {
       cumsum[i + 1] = (cumsum[i] ?? 0) + (rows[i]?.power ?? 0);
     }
 
     let sum4thPower = 0;
     let count = 0;
-    for (let i = windowSize; i <= n; i++) {
+    for (let i = windowSize; i <= rowCount; i++) {
       const avg = ((cumsum[i] ?? 0) - (cumsum[i - windowSize] ?? 0)) / windowSize;
       sum4thPower += avg ** 4;
       count++;

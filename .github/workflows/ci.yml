@@ -354,10 +354,84 @@ jobs:
         if: always()
         run: docker compose -f docker-compose.e2e.yml down -v
 
-  mutation:
-    name: Mutation Testing
+  mutation-prep:
+    name: Mutation Prep
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 5
+    outputs:
+      shards: ${{ steps.shard.outputs.shards }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Compute changed files and split into shards
+        id: shard
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            DIFF_RANGE="origin/main...HEAD"
+            MIN_LINES=15
+          else
+            DIFF_RANGE="HEAD~1...HEAD"
+            MIN_LINES=0
+          fi
+
+          CANDIDATES=$(git diff --name-only $DIFF_RANGE \
+            | { grep '\.ts$' || true; } \
+            | { grep -v '\.test\.ts$' || true; } \
+            | { grep -v '\.cy\.ts$' || true; } \
+            | { grep -v 'test-helpers\.ts$' || true; } \
+            | { grep -v '\.d\.ts$' || true; } \
+            | { grep -v '\.gen\.ts$' || true; } \
+            | { grep -v '\.config\.' || true; } \
+            | { grep -v 'drizzle/' || true; } \
+            | { grep -v 'src/db/schema\.ts$' || true; } \
+            | { grep -v 'scripts/' || true; } \
+            | { grep -v 'packages/mobile/' || true; })
+
+          ALL_FILES=()
+          for f in $CANDIDATES; do
+            if [ "$MIN_LINES" -gt 0 ]; then
+              LINES=$(git diff --numstat $DIFF_RANGE -- "$f" | awk '{print $1+$2}')
+              [ "$LINES" -lt "$MIN_LINES" ] && continue
+            elif [ ! -f "$f" ]; then
+              continue
+            fi
+            ALL_FILES+=("$f")
+          done
+
+          COUNT=${#ALL_FILES[@]}
+          if [ "$COUNT" -eq 0 ]; then
+            echo "shards=[]" >> "$GITHUB_OUTPUT"
+            echo "No files to mutate"
+            exit 0
+          fi
+
+          # Split into shards of up to 5 files each
+          SHARD_SIZE=5
+          SHARDS="["
+          for (( i=0; i<COUNT; i+=SHARD_SIZE )); do
+            CHUNK=""
+            for (( j=i; j<i+SHARD_SIZE && j<COUNT; j++ )); do
+              CHUNK="${CHUNK:+$CHUNK,}${ALL_FILES[$j]}"
+            done
+            [ "$i" -gt 0 ] && SHARDS="$SHARDS,"
+            SHARDS="$SHARDS\"$CHUNK\""
+          done
+          SHARDS="$SHARDS]"
+
+          echo "shards=$SHARDS" >> "$GITHUB_OUTPUT"
+          echo "Split $COUNT files into shards: $SHARDS"
+
+  mutation:
+    name: Mutation (${{ matrix.files }})
+    needs: mutation-prep
+    if: needs.mutation-prep.outputs.shards != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        files: ${{ fromJSON(needs.mutation-prep.outputs.shards) }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -372,77 +446,31 @@ jobs:
         uses: actions/cache@v4
         with:
           path: reports/stryker-incremental.json
-          key: stryker-v2-${{ github.head_ref || 'main' }}-${{ github.sha }}
+          key: stryker-v2-${{ github.head_ref || 'main' }}-${{ hashFiles(matrix.files) }}-${{ github.sha }}
           restore-keys: |
-            stryker-v2-${{ github.head_ref || 'main' }}-
-            stryker-v2-main-
+            stryker-v2-${{ github.head_ref || 'main' }}-${{ hashFiles(matrix.files) }}-
+            stryker-v2-main-${{ hashFiles(matrix.files) }}-
           save-always: true
-      - name: Get changed files (PR)
-        if: github.event_name == 'pull_request'
-        id: changed-pr
-        run: |
-          # Filter to .ts source files, excluding tests, config, etc.
-          # Also skip files with < 15 changed lines (trivial changes like import
-          # additions, mechanical renames, or removing a column)
-          CANDIDATES=$(git diff --name-only origin/main...HEAD \
-            | { grep '\.ts$' || true; } \
-            | { grep -v '\.test\.ts$' || true; } \
-            | { grep -v '\.cy\.ts$' || true; } \
-            | { grep -v 'test-helpers\.ts$' || true; } \
-            | { grep -v '\.d\.ts$' || true; } \
-            | { grep -v '\.gen\.ts$' || true; } \
-            | { grep -v '\.config\.' || true; } \
-            | { grep -v 'drizzle/' || true; } \
-            | { grep -v 'src/db/schema\.ts$' || true; } \
-            | { grep -v 'scripts/' || true; } \
-            | { grep -v 'packages/mobile/' || true; })
-          FILES=""
-          for f in $CANDIDATES; do
-            LINES=$(git diff --numstat origin/main...HEAD -- "$f" | awk '{print $1+$2}')
-            if [ "$LINES" -ge 15 ]; then
-              FILES="${FILES:+$FILES,}$f"
-            fi
-          done
-          echo "files=$FILES" >> "$GITHUB_OUTPUT"
-          echo "Mutating changed files: $FILES"
-      - name: Get changed files (push)
-        if: github.event_name == 'push'
-        id: changed-push
-        run: |
-          # On push to main, only mutate files changed in this push
-          # (the incremental cache handles previously-seen mutations)
-          CANDIDATES=$(git diff --name-only HEAD~1...HEAD \
-            | { grep '\.ts$' || true; } \
-            | { grep -v '\.test\.ts$' || true; } \
-            | { grep -v '\.cy\.ts$' || true; } \
-            | { grep -v 'test-helpers\.ts$' || true; } \
-            | { grep -v '\.d\.ts$' || true; } \
-            | { grep -v '\.gen\.ts$' || true; } \
-            | { grep -v '\.config\.' || true; } \
-            | { grep -v 'drizzle/' || true; } \
-            | { grep -v 'src/db/schema\.ts$' || true; } \
-            | { grep -v 'scripts/' || true; } \
-            | { grep -v 'packages/mobile/' || true; })
-          FILES=""
-          for f in $CANDIDATES; do
-            if [ -f "$f" ]; then
-              FILES="${FILES:+$FILES,}$f"
-            fi
-          done
-          echo "files=$FILES" >> "$GITHUB_OUTPUT"
-          echo "Mutating changed files: $FILES"
-      - name: Run Stryker (PR — changed files)
-        if: github.event_name == 'pull_request' && steps.changed-pr.outputs.files != ''
-        run: pnpm test:mutation --mutate "${{ steps.changed-pr.outputs.files }}"
-      - name: Run Stryker (push — changed files)
-        if: github.event_name == 'push' && steps.changed-push.outputs.files != ''
-        run: pnpm test:mutation --mutate "${{ steps.changed-push.outputs.files }}"
+      - name: Run Stryker
+        run: pnpm test:mutation --mutate "${{ matrix.files }}"
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: mutation-report
+          name: mutation-report-${{ strategy.job-index }}
           path: reports/mutation/
           retention-days: 7
+
+  mutation-gate:
+    name: Mutation Testing
+    needs: [mutation-prep, mutation]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          if [ "${{ needs.mutation.result }}" = "failure" ] || [ "${{ needs.mutation.result }}" = "cancelled" ]; then
+            echo "Mutation testing failed or was cancelled"
+            exit 1
+          fi
 
   test-swift:
     name: Swift Tests

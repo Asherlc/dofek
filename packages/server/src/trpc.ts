@@ -23,11 +23,11 @@ export interface AuthenticatedContext extends Context {
   userId: string;
 }
 
-const t = initTRPC.context<Context>().create();
+const trpc = initTRPC.context<Context>().create();
 
-export const router = t.router;
+export const router = trpc.router;
 // Auth middleware — rejects unauthenticated requests
-const isAuthenticated = t.middleware(({ ctx, next }) => {
+const isAuthenticated = trpc.middleware(({ ctx, next }) => {
   if (!ctx.userId) {
     throw new TRPCError({ code: "UNAUTHORIZED", message: "Not authenticated" });
   }
@@ -35,8 +35,8 @@ const isAuthenticated = t.middleware(({ ctx, next }) => {
   return next({ ctx: authenticatedCtx });
 });
 
-export const publicProcedure = t.procedure;
-export const protectedProcedure = t.procedure.use(isAuthenticated);
+export const publicProcedure = trpc.procedure;
+export const protectedProcedure = trpc.procedure.use(isAuthenticated);
 
 export const CacheTTL = {
   SHORT: 2 * 60 * 1000, // 2 min
@@ -45,7 +45,7 @@ export const CacheTTL = {
 } as const;
 
 function cached(ttlMs: number, { lightweight = false } = {}) {
-  return t.middleware(async ({ ctx, path, type, getRawInput, next }) => {
+  return trpc.middleware(async ({ ctx, path, type, getRawInput, next }) => {
     const start = performance.now();
     const rawInput = await getRawInput();
     // Include userId in cache key to prevent cross-user data leaks

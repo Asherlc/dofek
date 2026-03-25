@@ -23,7 +23,7 @@ describe("mapDecathlonSport — all types", () => {
     expect(mapDecathlonSport("/v2/sports/173")).toBe("rowing");
     expect(mapDecathlonSport("/v2/sports/263")).toBe("open_water_swimming");
     expect(mapDecathlonSport("/v2/sports/91")).toBe("skiing");
-    expect(mapDecathlonSport("/v2/sports/174")).toBe("indoor_rowing");
+    expect(mapDecathlonSport("/v2/sports/174")).toBe("rowing");
     expect(mapDecathlonSport("/v2/sports/395")).toBe("yoga");
     expect(mapDecathlonSport("/v2/sports/105")).toBe("gym");
     expect(mapDecathlonSport("/v2/sports/264")).toBe("triathlon");

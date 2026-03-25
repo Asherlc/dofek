@@ -1,3 +1,4 @@
+import type { CanonicalActivityType } from "@dofek/training/training";
 import type { ZwiftActivitySummary, ZwiftFitnessData } from "./types.ts";
 
 // ============================================================
@@ -6,7 +7,7 @@ import type { ZwiftActivitySummary, ZwiftFitnessData } from "./types.ts";
 
 export interface ParsedZwiftActivity {
   externalId: string;
-  activityType: string;
+  activityType: CanonicalActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -29,10 +30,10 @@ export interface ParsedZwiftStreamSample {
 // Parsing — pure functions
 // ============================================================
 
-export function mapZwiftSport(sport: string): string {
+export function mapZwiftSport(sport: string): CanonicalActivityType {
   switch (sport.toUpperCase()) {
     case "CYCLING":
-      return "cycling";
+      return "virtual_cycling";
     case "RUNNING":
       return "running";
     default:

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { NUTRIENTS } from "./nutrients.ts";
 
 const BASE_URL = "https://world.openfoodfacts.org";
 const DEFAULT_LOCALE = "en-US";
@@ -17,12 +18,15 @@ export interface FoodDatabaseResult {
   name: string;
   brand: string | null;
   servingSize: string | null;
+  imageUrl: string | null;
+  // Macronutrients (stay as top-level fields — queried on every endpoint)
   calories: number | null;
   proteinG: number | null;
   carbsG: number | null;
   fatG: number | null;
   fiberG: number | null;
-  imageUrl: string | null;
+  /** Micronutrients keyed by nutrient id (e.g. 'vitamin_a' → 150). Only present nutrients are included. */
+  nutrients: Record<string, number>;
 }
 
 interface SearchLocalePreferences {
@@ -70,6 +74,20 @@ export class OpenFoodFactsClient {
 
   constructor(locale?: string) {
     this.#localePreferences = getLocalePreferences(locale);
+  }
+
+  /** Get a nutriment value, preferring per-serving over per-100g, with optional unit conversion. */
+  #getNutrimentWithConversion(
+    nutriments: Record<string, unknown> | undefined,
+    offKey: string,
+    conversionFactor = 1,
+  ): number | null {
+    const raw =
+      this.#getNumericNutrimentValue(nutriments, `${offKey}_serving`) ??
+      this.#getNumericNutrimentValue(nutriments, `${offKey}_100g`);
+    if (raw == null) return null;
+    const converted = raw * conversionFactor;
+    return Math.round(converted * 10) / 10;
   }
 
   async lookupBarcode(barcode: string, signal?: AbortSignal): Promise<FoodDatabaseResult | null> {
@@ -171,18 +189,20 @@ export class OpenFoodFactsClient {
     const calories =
       this.#getNumericNutrimentValue(nutriments, "energy-kcal_serving") ??
       this.#getNumericNutrimentValue(nutriments, "energy-kcal_100g");
-    const proteinG =
-      this.#getNumericNutrimentValue(nutriments, "proteins_serving") ??
-      this.#getNumericNutrimentValue(nutriments, "proteins_100g");
-    const carbsG =
-      this.#getNumericNutrimentValue(nutriments, "carbohydrates_serving") ??
-      this.#getNumericNutrimentValue(nutriments, "carbohydrates_100g");
-    const fatG =
-      this.#getNumericNutrimentValue(nutriments, "fat_serving") ??
-      this.#getNumericNutrimentValue(nutriments, "fat_100g");
-    const fiberG =
-      this.#getNumericNutrimentValue(nutriments, "fiber_serving") ??
-      this.#getNumericNutrimentValue(nutriments, "fiber_100g");
+
+    // Build micronutrients map from the canonical catalog
+    const nutrients: Record<string, number> = {};
+    for (const definition of NUTRIENTS) {
+      if (definition.openFoodFactsKey === null) continue;
+      const value = this.#getNutrimentWithConversion(
+        nutriments,
+        definition.openFoodFactsKey,
+        definition.conversionFactor,
+      );
+      if (value !== null) {
+        nutrients[definition.id] = value;
+      }
+    }
 
     return {
       barcode: product.code ?? null,
@@ -190,11 +210,12 @@ export class OpenFoodFactsClient {
       brand: product.brands ?? null,
       servingSize: product.serving_size ?? null,
       calories: calories != null ? Math.round(calories) : null,
-      proteinG: proteinG != null ? Math.round(proteinG * 10) / 10 : null,
-      carbsG: carbsG != null ? Math.round(carbsG * 10) / 10 : null,
-      fatG: fatG != null ? Math.round(fatG * 10) / 10 : null,
-      fiberG: fiberG != null ? Math.round(fiberG * 10) / 10 : null,
       imageUrl: product.image_front_small_url ?? null,
+      proteinG: this.#getNutrimentWithConversion(nutriments, "proteins"),
+      carbsG: this.#getNutrimentWithConversion(nutriments, "carbohydrates"),
+      fatG: this.#getNutrimentWithConversion(nutriments, "fat"),
+      fiberG: this.#getNutrimentWithConversion(nutriments, "fiber"),
+      nutrients,
     };
   }
 

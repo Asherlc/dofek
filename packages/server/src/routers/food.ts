@@ -35,6 +35,9 @@ const foodCategoryValues = [
   "other",
 ] as const;
 
+/** Schema for the normalized nutrients map (nutrient_id → amount) */
+const nutrientsMapSchema = z.record(z.string(), z.number().nonnegative()).default({});
+
 const createFoodEntrySchema = z
   .object({
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD format"),
@@ -43,6 +46,7 @@ const createFoodEntrySchema = z
     foodDescription: z.string().max(2000).nullish(),
     category: z.enum(foodCategoryValues).nullish(),
     numberOfUnits: z.number().positive().nullish(),
+    nutrients: nutrientsMapSchema,
   })
   .merge(nutrientFieldsSchema);
 
@@ -58,6 +62,7 @@ const updateFoodEntrySchema = z
     foodDescription: z.string().max(2000).nullish(),
     category: z.enum(foodCategoryValues).nullish(),
     numberOfUnits: z.number().positive().nullish(),
+    nutrients: nutrientsMapSchema.optional(),
   })
   .merge(nutrientFieldsSchema.partial());
 
@@ -287,18 +292,34 @@ export const foodRouter = router({
     );
     const newId = idRows[0]?.id;
 
-    // Fetch the full row from the view (separate query so the view can see the committed data)
+    // Fetch the full row from the view
     const rows = await executeWithSchema(
       ctx.db,
       foodEntryRowSchema,
       sql`SELECT * FROM fitness.v_food_entry_with_nutrition WHERE id = ${newId}`,
     );
-    return rows[0];
+    const inserted = rows[0];
+    if (!inserted) throw new Error("Failed to insert food entry");
+
+    // Insert nutrients into junction table
+    const nutrientEntries = Object.entries(input.nutrients);
+    if (nutrientEntries.length > 0) {
+      const valuesClauses = nutrientEntries.map(
+        ([nutrientId, amount]) => sql`(${inserted.id}::uuid, ${nutrientId}, ${amount})`,
+      );
+      await ctx.db.execute(
+        sql`INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+            VALUES ${sql.join(valuesClauses, sql`, `)}
+            ON CONFLICT (food_entry_id, nutrient_id) DO UPDATE SET amount = EXCLUDED.amount`,
+      );
+    }
+
+    return { ...inserted, nutrients: input.nutrients };
   }),
 
   /** Update an existing food entry by id */
   update: protectedProcedure.input(updateFoodEntrySchema).mutation(async ({ ctx, input }) => {
-    const { id, ...fields } = input;
+    const { id, nutrients, ...fields } = input;
 
     // Separate food_entry fields from nutrient fields
     const foodEntryClauses: ReturnType<typeof sql>[] = [];
@@ -335,7 +356,7 @@ export const foodRouter = router({
       }
     }
 
-    if (foodEntryClauses.length === 0 && nutrientClauses.length === 0) return null;
+    if (foodEntryClauses.length === 0 && nutrientClauses.length === 0 && !nutrients) return null;
 
     // Update nutrition_data if any nutrient fields changed
     if (nutrientClauses.length > 0) {
@@ -372,6 +393,31 @@ export const foodRouter = router({
       await ctx.db.execute(
         sql`UPDATE fitness.food_entry SET ${foodSetExpression} WHERE user_id = ${ctx.userId} AND confirmed = true AND id = ${id}`,
       );
+    }
+
+    // Replace nutrients in junction table if provided (scoped by user ownership)
+    if (nutrients) {
+      await ctx.db.execute(
+        sql`DELETE FROM fitness.food_entry_nutrient
+            WHERE food_entry_id = (
+              SELECT id FROM fitness.food_entry
+              WHERE id = ${id}::uuid AND user_id = ${ctx.userId}
+            )`,
+      );
+      const nutrientEntries = Object.entries(nutrients);
+      if (nutrientEntries.length > 0) {
+        const valuesClauses = nutrientEntries.map(
+          ([nutrientId, amount]) => sql`(${id}::uuid, ${nutrientId}, ${amount})`,
+        );
+        await ctx.db.execute(
+          sql`INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+              SELECT food_entry_id, nutrient_id, amount
+              FROM (VALUES ${sql.join(valuesClauses, sql`, `)}) AS vals(food_entry_id, nutrient_id, amount)
+              WHERE food_entry_id IN (
+                SELECT id FROM fitness.food_entry WHERE id = ${id}::uuid AND user_id = ${ctx.userId}
+              )`,
+        );
+      }
     }
 
     // Return the updated row from the view
@@ -448,6 +494,6 @@ export const foodRouter = router({
         foodEntryRowSchema,
         sql`SELECT * FROM fitness.v_food_entry_with_nutrition WHERE id = ${newId}`,
       );
-      return rows[0];
+      return rows[0] ? { ...rows[0], nutrients: {} } : undefined;
     }),
 });

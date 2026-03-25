@@ -4,7 +4,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./body-measurements": "./src/body-measurements.ts",
+    "./daily-metrics": "./src/daily-metrics.ts",
     "./meal": "./src/meal.ts",
+    "./nutrients": "./src/nutrients.ts",
     "./open-food-facts": "./src/open-food-facts.ts"
   },
   "dependencies": {

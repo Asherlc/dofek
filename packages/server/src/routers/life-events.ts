@@ -157,14 +157,14 @@ export const lifeEventsRouter = router({
 
       const startDate = event.started_at;
       const endDate = event.ended_at ?? (event.ongoing ? "NOW()" : null);
-      const w = input.windowDays;
+      const windowDays = input.windowDays;
 
       // For point events or ongoing: compare windowDays before start vs windowDays after start
       // For ranged events: compare windowDays before start vs during the range
-      const beforeClause = sql`user_id = ${ctx.userId} AND date BETWEEN (${startDate}::date - ${w}::int) AND (${startDate}::date - 1)`;
+      const beforeClause = sql`user_id = ${ctx.userId} AND date BETWEEN (${startDate}::date - ${windowDays}::int) AND (${startDate}::date - 1)`;
       const afterClause = endDate
         ? sql`user_id = ${ctx.userId} AND date BETWEEN ${startDate}::date AND ${endDate === "NOW()" ? sql`CURRENT_DATE` : sql`${endDate}::date`}`
-        : sql`user_id = ${ctx.userId} AND date BETWEEN ${startDate}::date AND (${startDate}::date + ${w}::int)`;
+        : sql`user_id = ${ctx.userId} AND date BETWEEN ${startDate}::date AND (${startDate}::date + ${windowDays}::int)`;
 
       const results = await executeWithSchema(
         ctx.db,
@@ -208,7 +208,7 @@ export const lifeEventsRouter = router({
             SELECT 'before' as period, *
             FROM fitness.v_sleep
             WHERE user_id = ${ctx.userId}
-              AND (started_at AT TIME ZONE ${ctx.timezone})::date BETWEEN (${startDate}::date - ${w}::int) AND (${startDate}::date - 1)
+              AND (started_at AT TIME ZONE ${ctx.timezone})::date BETWEEN (${startDate}::date - ${windowDays}::int) AND (${startDate}::date - 1)
               AND NOT is_nap
           ),
           after_sleep AS (
@@ -220,7 +220,7 @@ export const lifeEventsRouter = router({
                   ? endDate === "NOW()"
                     ? sql`(started_at AT TIME ZONE ${ctx.timezone})::date BETWEEN ${startDate}::date AND CURRENT_DATE`
                     : sql`(started_at AT TIME ZONE ${ctx.timezone})::date BETWEEN ${startDate}::date AND ${endDate}::date`
-                  : sql`(started_at AT TIME ZONE ${ctx.timezone})::date BETWEEN ${startDate}::date AND (${startDate}::date + ${w}::int)`
+                  : sql`(started_at AT TIME ZONE ${ctx.timezone})::date BETWEEN ${startDate}::date AND (${startDate}::date + ${windowDays}::int)`
               }
               AND NOT is_nap
           ),
@@ -249,7 +249,7 @@ export const lifeEventsRouter = router({
             SELECT 'before' as period, *
             FROM fitness.v_body_measurement
             WHERE user_id = ${ctx.userId}
-              AND (recorded_at AT TIME ZONE ${ctx.timezone})::date BETWEEN (${startDate}::date - ${w}::int) AND (${startDate}::date - 1)
+              AND (recorded_at AT TIME ZONE ${ctx.timezone})::date BETWEEN (${startDate}::date - ${windowDays}::int) AND (${startDate}::date - 1)
           ),
           after_body AS (
             SELECT 'after' as period, *
@@ -260,7 +260,7 @@ export const lifeEventsRouter = router({
                   ? endDate === "NOW()"
                     ? sql`(recorded_at AT TIME ZONE ${ctx.timezone})::date BETWEEN ${startDate}::date AND CURRENT_DATE`
                     : sql`(recorded_at AT TIME ZONE ${ctx.timezone})::date BETWEEN ${startDate}::date AND ${endDate}::date`
-                  : sql`(recorded_at AT TIME ZONE ${ctx.timezone})::date BETWEEN ${startDate}::date AND (${startDate}::date + ${w}::int)`
+                  : sql`(recorded_at AT TIME ZONE ${ctx.timezone})::date BETWEEN ${startDate}::date AND (${startDate}::date + ${windowDays}::int)`
               }
           ),
           combined AS (

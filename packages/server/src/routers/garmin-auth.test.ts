@@ -24,10 +24,10 @@ vi.mock("../lib/cache.ts", () => ({
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const t = initTRPC.context<{ db: unknown; userId: string; timezone: string }>().create();
+  const trpc = initTRPC.context<{ db: unknown; userId: string; timezone: string }>().create();
   return {
-    router: t.router,
-    protectedProcedure: t.procedure,
+    router: trpc.router,
+    protectedProcedure: trpc.procedure,
   };
 });
 

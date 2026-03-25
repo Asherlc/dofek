@@ -19,6 +19,7 @@ import Svg, {
 } from "react-native-svg";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { formatDurationRange, formatNumber } from "@dofek/format/format";
+import { formatActivityTypeLabel } from "@dofek/training/training";
 import { HEART_RATE_ZONE_COLORS } from "@dofek/zones/zones";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
@@ -534,11 +535,11 @@ export default function ActivityDetailScreen() {
           <Text style={styles.icon}>{activityIcon(activity.activityType)}</Text>
           <View style={styles.headerText}>
             <Text style={styles.name}>
-              {activity.name ?? activity.activityType}
+              {activity.name ?? formatActivityTypeLabel(activity.activityType)}
             </Text>
             <View style={styles.typeBadge}>
               <Text style={styles.typeBadgeText}>
-                {activity.activityType}
+                {formatActivityTypeLabel(activity.activityType)}
               </Text>
             </View>
           </View>

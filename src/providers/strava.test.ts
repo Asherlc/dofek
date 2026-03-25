@@ -97,11 +97,11 @@ const sampleStreams: StravaStreamSet = {
 describe("Strava Provider", () => {
   describe("mapStravaActivityType", () => {
     it("maps common Strava types to canonical types", () => {
-      expect(mapStravaActivityType("Ride")).toBe("cycling");
-      expect(mapStravaActivityType("VirtualRide")).toBe("cycling");
-      expect(mapStravaActivityType("MountainBikeRide")).toBe("cycling");
-      expect(mapStravaActivityType("GravelRide")).toBe("cycling");
-      expect(mapStravaActivityType("EBikeRide")).toBe("cycling");
+      expect(mapStravaActivityType("Ride")).toBe("road_cycling");
+      expect(mapStravaActivityType("VirtualRide")).toBe("virtual_cycling");
+      expect(mapStravaActivityType("MountainBikeRide")).toBe("mountain_biking");
+      expect(mapStravaActivityType("GravelRide")).toBe("gravel_cycling");
+      expect(mapStravaActivityType("EBikeRide")).toBe("e_bike_cycling");
       expect(mapStravaActivityType("Run")).toBe("running");
       expect(mapStravaActivityType("VirtualRun")).toBe("running");
       expect(mapStravaActivityType("TrailRun")).toBe("running");
@@ -127,7 +127,7 @@ describe("Strava Provider", () => {
       const result = parseStravaActivity(sampleActivity);
 
       expect(result.externalId).toBe("12345678");
-      expect(result.activityType).toBe("cycling");
+      expect(result.activityType).toBe("road_cycling");
       expect(result.name).toBe("Morning Ride");
       expect(result.startedAt).toEqual(new Date("2026-03-01T08:00:00Z"));
       expect(result.endedAt).toEqual(
@@ -641,9 +641,9 @@ describe("StravaClient — request throttling", () => {
     };
 
     const client = new StravaClient("token", mockFetch);
-    const p = client.getActivities(0);
+    const pendingRequest = client.getActivities(0);
     await vi.advanceTimersByTimeAsync(0);
-    await p;
+    await pendingRequest;
 
     // First call should happen at time 0 (no throttle delay)
     expect(callTimestamps).toHaveLength(1);

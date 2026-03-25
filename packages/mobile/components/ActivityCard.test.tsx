@@ -22,7 +22,7 @@ describe("ActivityCard", () => {
 
   it("falls back to activityType when name is empty", () => {
     render(<ActivityCard {...baseProps} name="" />);
-    expect(screen.getByText("running")).toBeTruthy();
+    expect(screen.getByText("Running")).toBeTruthy();
   });
 
   it("shows avg HR when provided", () => {

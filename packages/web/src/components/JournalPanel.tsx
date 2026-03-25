@@ -305,19 +305,19 @@ function JournalTrends({ days }: { days: number }) {
   // Auto-select first 3 chartable questions if none selected
   const effectiveSlugs = useMemo(() => {
     if (selectedSlugs.size > 0) return selectedSlugs;
-    return new Set(chartableQuestions.slice(0, 3).map((q) => q.slug));
+    return new Set(chartableQuestions.slice(0, 3).map((question) => question.slug));
   }, [selectedSlugs, chartableQuestions]);
 
   const series = useMemo(() => {
-    return [...effectiveSlugs].map((slug, i) => {
-      const q = questions.find((qq) => qq.slug === slug);
+    return [...effectiveSlugs].map((slug, index) => {
+      const question = questions.find((candidate) => candidate.slug === slug);
       const data: [string, number | null][] = entries
-        .filter((e) => e.question_slug === slug && e.answer_numeric !== null)
-        .map((e) => [e.date, e.answer_numeric]);
+        .filter((entry) => entry.question_slug === slug && entry.answer_numeric !== null)
+        .map((entry) => [entry.date, entry.answer_numeric]);
       return {
-        name: q?.display_name ?? slug,
+        name: question?.display_name ?? slug,
         data,
-        color: TREND_COLORS[i % TREND_COLORS.length],
+        color: TREND_COLORS[index % TREND_COLORS.length],
       };
     });
   }, [effectiveSlugs, entries, questions]);

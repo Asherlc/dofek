@@ -83,41 +83,41 @@ function computeTrimpR2(
   if (trimps.length < 10) return -Infinity;
 
   // Fit linear regression: targets = slope * trimps + intercept
-  const n = trimps.length;
+  const count = trimps.length;
   let sumX = 0;
   let sumY = 0;
   let sumXY = 0;
   let sumX2 = 0;
 
-  for (let i = 0; i < n; i++) {
-    const x = trimps[i] ?? 0;
-    const y = targets[i] ?? 0;
-    sumX += x;
-    sumY += y;
-    sumXY += x * y;
-    sumX2 += x * x;
+  for (let i = 0; i < count; i++) {
+    const trimpValue = trimps[i] ?? 0;
+    const targetValue = targets[i] ?? 0;
+    sumX += trimpValue;
+    sumY += targetValue;
+    sumXY += trimpValue * targetValue;
+    sumX2 += trimpValue * trimpValue;
   }
 
-  const denomX = n * sumX2 - sumX * sumX;
+  const denomX = count * sumX2 - sumX * sumX;
   if (denomX === 0) return -Infinity;
 
-  const slope = (n * sumXY - sumX * sumY) / denomX;
-  const intercept = (sumY - slope * sumX) / n;
+  const slope = (count * sumXY - sumX * sumY) / denomX;
+  const intercept = (sumY - slope * sumX) / count;
 
   // Require positive slope (more HR effort → more load)
   if (slope <= 0) return -Infinity;
 
   // Compute R²
-  const meanY = sumY / n;
+  const meanY = sumY / count;
   let ssRes = 0;
   let ssTot = 0;
 
-  for (let i = 0; i < n; i++) {
-    const x = trimps[i] ?? 0;
-    const y = targets[i] ?? 0;
-    const pred = slope * x + intercept;
-    ssRes += (y - pred) ** 2;
-    ssTot += (y - meanY) ** 2;
+  for (let i = 0; i < count; i++) {
+    const trimpValue = trimps[i] ?? 0;
+    const targetValue = targets[i] ?? 0;
+    const pred = slope * trimpValue + intercept;
+    ssRes += (targetValue - pred) ** 2;
+    ssTot += (targetValue - meanY) ** 2;
   }
 
   if (ssTot === 0) return -Infinity;

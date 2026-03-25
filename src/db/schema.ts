@@ -60,6 +60,150 @@ export const labResultStatusEnum = fitness.enum("lab_result_status", [
   "cancelled",
 ]);
 
+export const activityTypeEnum = fitness.enum("activity_type", [
+  // Cycling subtypes
+  "cycling",
+  "road_cycling",
+  "mountain_biking",
+  "gravel_cycling",
+  "indoor_cycling",
+  "virtual_cycling",
+  "e_bike_cycling",
+  "cyclocross",
+  "track_cycling",
+  "bmx",
+  // Endurance
+  "running",
+  "trail_running",
+  "swimming",
+  "open_water_swimming",
+  "walking",
+  "hiking",
+  // Strength / gym
+  "strength",
+  "strength_training",
+  "functional_strength",
+  "gym",
+  // Mind / body
+  "yoga",
+  "pilates",
+  "tai_chi",
+  "mind_and_body",
+  "meditation",
+  "breathwork",
+  "stretching",
+  "flexibility",
+  "barre",
+  // Cardio / HIIT
+  "elliptical",
+  "rowing",
+  "cardio",
+  "hiit",
+  "mixed_cardio",
+  "mixed_metabolic_cardio",
+  "stair_climbing",
+  "stairmaster",
+  "stairs",
+  "step_training",
+  "jump_rope",
+  "fitness_gaming",
+  // Cross training
+  "cross_training",
+  "bootcamp",
+  "circuit_training",
+  "functional_fitness",
+  "core",
+  "core_training",
+  "boxing",
+  "kickboxing",
+  "martial_arts",
+  "group_exercise",
+  // Winter sports
+  "skiing",
+  "cross_country_skiing",
+  "downhill_skiing",
+  "snowboarding",
+  "snow_sports",
+  "snowshoeing",
+  "skating",
+  // Water sports
+  "surfing",
+  "kayaking",
+  "sailing",
+  "paddle_sports",
+  "paddleboarding",
+  "paddling",
+  "water_fitness",
+  "water_polo",
+  "water_sports",
+  "aqua_fitness",
+  "underwater_diving",
+  "diving",
+  "snorkeling",
+  // Racquet sports
+  "tennis",
+  "table_tennis",
+  "squash",
+  "racquetball",
+  "badminton",
+  "pickleball",
+  "padel",
+  "paddle_racquet",
+  // Team sports
+  "basketball",
+  "soccer",
+  "football",
+  "american_football",
+  "australian_football",
+  "rugby",
+  "hockey",
+  "ice_hockey",
+  "lacrosse",
+  "baseball",
+  "softball",
+  "volleyball",
+  "cricket",
+  "handball",
+  // Other sports
+  "golf",
+  "disc_golf",
+  "climbing",
+  "rock_climbing",
+  "dance",
+  "dancing",
+  "cardio_dance",
+  "social_dance",
+  "triathlon",
+  "multisport",
+  "hand_cycling",
+  "wheelchair_walk",
+  "wheelchair_run",
+  "disc_sports",
+  // Outdoor / recreation
+  "equestrian",
+  "fencing",
+  "fishing",
+  "hunting",
+  "gymnastics",
+  "archery",
+  "bowling",
+  "curling",
+  "wrestling",
+  "track_and_field",
+  "play",
+  "navigation",
+  "geocaching",
+  // Air sports
+  "skydiving",
+  "paragliding",
+  // Activity lifecycle
+  "preparation_and_recovery",
+  "cooldown",
+  "transition",
+  // Catch-all
+  "other",
+]);
+
 // ============================================================
 // User profile — multi-user support
 // ============================================================
@@ -219,6 +363,37 @@ export const bodyMeasurement = fitness.table(
 );
 
 // ============================================================
+// Body measurement type catalog + junction table
+// ============================================================
+
+export const measurementType = fitness.table("measurement_type", {
+  id: text("id").primaryKey(),
+  displayName: text("display_name").notNull(),
+  unit: text("unit"),
+  category: text("category").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isInteger: boolean("is_integer").notNull().default(false),
+});
+
+export const bodyMeasurementValue = fitness.table(
+  "body_measurement_value",
+  {
+    bodyMeasurementId: uuid("body_measurement_id")
+      .notNull()
+      .references(() => bodyMeasurement.id, { onDelete: "cascade" }),
+    measurementTypeId: text("measurement_type_id")
+      .notNull()
+      .references(() => measurementType.id),
+    value: real("value").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.bodyMeasurementId, table.measurementTypeId] }),
+    index("body_measurement_value_entry_idx").on(table.bodyMeasurementId),
+    index("body_measurement_value_type_idx").on(table.measurementTypeId),
+  ],
+);
+
+// ============================================================
 // Strength training
 // ============================================================
 
@@ -292,7 +467,7 @@ export const activity = fitness.table(
       .default(DEFAULT_USER_ID)
       .references(() => userProfile.id),
     externalId: text("external_id"),
-    activityType: text("activity_type").notNull(),
+    activityType: activityTypeEnum("activity_type").notNull(),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
     endedAt: timestamp("ended_at", { withTimezone: true }),
     name: text("name"),
@@ -480,6 +655,38 @@ export const dailyMetrics = fitness.table(
 );
 
 // ============================================================
+// Daily metric type catalog + junction table
+// ============================================================
+
+export const dailyMetricType = fitness.table("daily_metric_type", {
+  id: text("id").primaryKey(),
+  displayName: text("display_name").notNull(),
+  unit: text("unit"),
+  category: text("category").notNull(),
+  priorityCategory: text("priority_category").notNull().default("activity"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isInteger: boolean("is_integer").notNull().default(false),
+});
+
+export const dailyMetricValue = fitness.table(
+  "daily_metric_value",
+  {
+    dailyMetricsId: uuid("daily_metrics_id")
+      .notNull()
+      .references(() => dailyMetrics.id, { onDelete: "cascade" }),
+    metricTypeId: text("metric_type_id")
+      .notNull()
+      .references(() => dailyMetricType.id),
+    value: real("value").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.dailyMetricsId, table.metricTypeId] }),
+    index("daily_metric_value_entry_idx").on(table.dailyMetricsId),
+    index("daily_metric_value_type_idx").on(table.metricTypeId),
+  ],
+);
+
+// ============================================================
 // Sleep
 // ============================================================
 
@@ -569,6 +776,55 @@ export const supplement = fitness.table(
   (table) => [
     uniqueIndex("supplement_user_name_idx").on(table.userId, table.name),
     index("supplement_user_idx").on(table.userId),
+  ],
+);
+
+// ============================================================
+// Nutrient catalog + junction tables
+// ============================================================
+
+export const nutrient = fitness.table("nutrient", {
+  id: text("id").primaryKey(),
+  displayName: text("display_name").notNull(),
+  unit: text("unit").notNull(),
+  category: text("category").notNull(),
+  rda: real("rda"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  openFoodFactsKey: text("open_food_facts_key"),
+  conversionFactor: real("conversion_factor").notNull().default(1),
+});
+
+export const foodEntryNutrient = fitness.table(
+  "food_entry_nutrient",
+  {
+    foodEntryId: uuid("food_entry_id")
+      .notNull()
+      .references(() => foodEntry.id, { onDelete: "cascade" }),
+    nutrientId: text("nutrient_id")
+      .notNull()
+      .references(() => nutrient.id),
+    amount: real("amount").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.foodEntryId, table.nutrientId] }),
+    index("food_entry_nutrient_entry_idx").on(table.foodEntryId),
+  ],
+);
+
+export const supplementNutrient = fitness.table(
+  "supplement_nutrient",
+  {
+    supplementId: uuid("supplement_id")
+      .notNull()
+      .references(() => supplement.id, { onDelete: "cascade" }),
+    nutrientId: text("nutrient_id")
+      .notNull()
+      .references(() => nutrient.id),
+    amount: real("amount").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.supplementId, table.nutrientId] }),
+    index("supplement_nutrient_supplement_idx").on(table.supplementId),
   ],
 );
 

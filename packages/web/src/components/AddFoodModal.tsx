@@ -13,6 +13,8 @@ export interface FoodFormData {
   carbsG: number | null;
   fatG: number | null;
   foodDescription: string;
+  /** Micronutrient data keyed by nutrient id (e.g. 'vitamin_a' → 150) */
+  nutrients: Record<string, number>;
 }
 
 interface AddFoodModalProps {
@@ -46,6 +48,7 @@ function historyRowToFoodResult(row: {
     fatG: row.fat_g,
     fiberG: row.fiber_g,
     imageUrl: null,
+    nutrients: {},
   };
 }
 
@@ -75,6 +78,7 @@ export function AddFoodModal({
   const nameInputRef = useRef<HTMLInputElement>(null);
   const historyRequestCounterRef = useRef(0);
   const skipNextSearchRef = useRef(false);
+  const selectedFoodNutrients = useRef<Record<string, number>>({});
   const openFoodFactsRequestCounterRef = useRef(0);
   const browserLocale = typeof navigator !== "undefined" ? navigator.language : "en-US";
   const foodClient = useMemo(() => new OpenFoodFactsClient(browserLocale), [browserLocale]);
@@ -109,6 +113,7 @@ export function AddFoodModal({
     historyRequestCounterRef.current += 1;
     openFoodFactsRequestCounterRef.current += 1;
     skipNextSearchRef.current = false;
+    selectedFoodNutrients.current = {};
     setFoodName("");
     setCalories("");
     setProteinGrams("");
@@ -138,6 +143,7 @@ export function AddFoodModal({
       carbsG: carbsGrams ? Number.parseFloat(carbsGrams) : null,
       fatG: fatGrams ? Number.parseFloat(fatGrams) : null,
       foodDescription: servingDescription.trim(),
+      nutrients: selectedFoodNutrients.current,
     });
     resetForm();
   }
@@ -167,6 +173,7 @@ export function AddFoodModal({
 
   function applySearchResult(result: FoodDatabaseResult) {
     skipNextSearchRef.current = true;
+    selectedFoodNutrients.current = result.nutrients;
     const selectedName = result.brand ? `${result.name} (${result.brand})` : result.name;
     setFoodName(selectedName);
     setServingDescription(result.servingSize ?? "");

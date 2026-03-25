@@ -6,10 +6,12 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import type { SyncDatabase } from "../../db/index.ts";
 import {
   buildSourceNameMap,
+  defaultConsoleProgress,
   findLatestExport,
   importClinicalRecords,
   readZipEntries,
 } from "./import.ts";
+import type { ProgressInfo } from "./streaming.ts";
 
 // ============================================================
 // FHIR test fixtures
@@ -187,6 +189,131 @@ ${records}
   writeFileSync(xmlPath, xml, "utf8");
   return xmlPath;
 }
+
+// ============================================================
+// defaultConsoleProgress (exercises formatBytes indirectly)
+// ============================================================
+
+describe("defaultConsoleProgress", () => {
+  it("formats bytes (< 1024) and writes progress bar", () => {
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const info: ProgressInfo = {
+      bytesRead: 500,
+      totalBytes: 900,
+      percentage: 55,
+      recordCount: 10,
+      workoutCount: 2,
+      sleepCount: 1,
+    };
+
+    defaultConsoleProgress(info);
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    const output = String(spy.mock.calls[0]?.[0]);
+    expect(output).toContain("500 B");
+    expect(output).toContain("900 B");
+    expect(output).toContain("55%");
+    expect(output).toContain("10 records");
+    expect(output).toContain("2 workouts");
+    expect(output).toContain("1 sleep");
+    // Progress bar: 27 full blocks (55/2 = 27.5 -> floor 27), 23 light blocks
+    expect(output).toContain("\u2588".repeat(27));
+    expect(output).toContain("\u2591".repeat(23));
+    spy.mockRestore();
+  });
+
+  it("formats KB (>= 1024 and < 1MB)", () => {
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const info: ProgressInfo = {
+      bytesRead: 2048,
+      totalBytes: 512000,
+      percentage: 0,
+      recordCount: 0,
+      workoutCount: 0,
+      sleepCount: 0,
+    };
+
+    defaultConsoleProgress(info);
+
+    const output = String(spy.mock.calls[0]?.[0]);
+    expect(output).toContain("2 KB");
+    expect(output).toContain("500 KB");
+    spy.mockRestore();
+  });
+
+  it("formats MB (>= 1MB and < 1GB)", () => {
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const info: ProgressInfo = {
+      bytesRead: 5 * 1024 * 1024,
+      totalBytes: 100 * 1024 * 1024,
+      percentage: 5,
+      recordCount: 0,
+      workoutCount: 0,
+      sleepCount: 0,
+    };
+
+    defaultConsoleProgress(info);
+
+    const output = String(spy.mock.calls[0]?.[0]);
+    expect(output).toContain("5.0 MB");
+    expect(output).toContain("100.0 MB");
+    spy.mockRestore();
+  });
+
+  it("formats GB (>= 1GB)", () => {
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const info: ProgressInfo = {
+      bytesRead: 2.5 * 1024 * 1024 * 1024,
+      totalBytes: 3 * 1024 * 1024 * 1024,
+      percentage: 83,
+      recordCount: 0,
+      workoutCount: 0,
+      sleepCount: 0,
+    };
+
+    defaultConsoleProgress(info);
+
+    const output = String(spy.mock.calls[0]?.[0]);
+    expect(output).toContain("2.50 GB");
+    expect(output).toContain("3.00 GB");
+    spy.mockRestore();
+  });
+
+  it("writes a newline when percentage >= 100", () => {
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const info: ProgressInfo = {
+      bytesRead: 1000,
+      totalBytes: 1000,
+      percentage: 100,
+      recordCount: 50,
+      workoutCount: 5,
+      sleepCount: 3,
+    };
+
+    defaultConsoleProgress(info);
+
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(spy.mock.calls[1]?.[0]).toBe("\n");
+    spy.mockRestore();
+  });
+
+  it("does not write a newline when percentage < 100", () => {
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const info: ProgressInfo = {
+      bytesRead: 500,
+      totalBytes: 1000,
+      percentage: 50,
+      recordCount: 0,
+      workoutCount: 0,
+      sleepCount: 0,
+    };
+
+    defaultConsoleProgress(info);
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    spy.mockRestore();
+  });
+});
 
 // ============================================================
 // importClinicalRecords

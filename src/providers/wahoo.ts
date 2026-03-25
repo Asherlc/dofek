@@ -1,4 +1,8 @@
-import { createActivityTypeMapper, WAHOO_WORKOUT_TYPE_MAP } from "@dofek/training/training";
+import {
+  type CanonicalActivityType,
+  createActivityTypeMapper,
+  WAHOO_WORKOUT_TYPE_MAP,
+} from "@dofek/training/training";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
@@ -101,7 +105,7 @@ export const wahooWebhookPayloadSchema = z.object({
 
 const mapWahooWorkoutType = createActivityTypeMapper(WAHOO_WORKOUT_TYPE_MAP);
 
-function mapWorkoutType(typeId: number): string {
+function mapWorkoutType(typeId: number): CanonicalActivityType {
   return mapWahooWorkoutType(typeId);
 }
 
@@ -111,7 +115,7 @@ function mapWorkoutType(typeId: number): string {
 
 export interface ParsedCardioActivity {
   externalId: string;
-  activityType: string;
+  activityType: CanonicalActivityType;
   name?: string;
   startedAt: Date;
   endedAt?: Date;

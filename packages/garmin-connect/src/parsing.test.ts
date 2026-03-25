@@ -33,9 +33,9 @@ describe("mapConnectActivityType", () => {
 
   it("maps cycling types", () => {
     expect(mapConnectActivityType("cycling")).toBe("cycling");
-    expect(mapConnectActivityType("mountain_biking")).toBe("cycling");
-    expect(mapConnectActivityType("indoor_cycling")).toBe("cycling");
-    expect(mapConnectActivityType("gravel_cycling")).toBe("cycling");
+    expect(mapConnectActivityType("mountain_biking")).toBe("mountain_biking");
+    expect(mapConnectActivityType("indoor_cycling")).toBe("indoor_cycling");
+    expect(mapConnectActivityType("gravel_cycling")).toBe("gravel_cycling");
   });
 
   it("maps swimming types", () => {

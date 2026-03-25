@@ -1,4 +1,5 @@
 import { createHmac } from "node:crypto";
+import type { CanonicalActivityType } from "@dofek/training/training";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import {
@@ -144,7 +145,7 @@ type FitbitWeightListResponse = z.infer<typeof fitbitWeightListResponseSchema>;
 
 export interface ParsedFitbitActivity {
   externalId: string;
-  activityType: string;
+  activityType: CanonicalActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -190,7 +191,7 @@ export interface ParsedFitbitBodyMeasurement {
 // Activity type mapping
 // ============================================================
 
-const ACTIVITY_NAME_PATTERNS: Array<[RegExp, string]> = [
+const ACTIVITY_NAME_PATTERNS: Array<[RegExp, CanonicalActivityType]> = [
   [/\brun\b|treadmill/i, "running"],
   [/\bbike\b|cycling|spinning/i, "cycling"],
   [/\bwalk\b/i, "walking"],
@@ -202,7 +203,10 @@ const ACTIVITY_NAME_PATTERNS: Array<[RegExp, string]> = [
   [/\browing\b|row\b/i, "rowing"],
 ];
 
-export function mapFitbitActivityType(activityName: string, _activityTypeId: number): string {
+export function mapFitbitActivityType(
+  activityName: string,
+  _activityTypeId: number,
+): CanonicalActivityType {
   for (const [pattern, type] of ACTIVITY_NAME_PATTERNS) {
     if (pattern.test(activityName)) {
       return type;

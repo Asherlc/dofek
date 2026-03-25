@@ -17,7 +17,7 @@ describe("mapXertSport — all types", () => {
     expect(mapXertSport("Hiking")).toBe("hiking");
     expect(mapXertSport("Rowing")).toBe("rowing");
     expect(mapXertSport("Skiing")).toBe("skiing");
-    expect(mapXertSport("Virtual Cycling")).toBe("cycling");
+    expect(mapXertSport("Virtual Cycling")).toBe("virtual_cycling");
     expect(mapXertSport("Mountain Biking")).toBe("mountain_biking");
     expect(mapXertSport("Trail Running")).toBe("trail_running");
     expect(mapXertSport("Cross Country Skiing")).toBe("cross_country_skiing");

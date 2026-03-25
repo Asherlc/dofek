@@ -1,5 +1,6 @@
 import { StyleSheet, Text, View } from "react-native";
 import { formatDurationRange, formatNumber, parseValidDate } from "@dofek/format/format";
+import { formatActivityTypeLabel } from "@dofek/training/training";
 import { type UnitConverter } from "../lib/units";
 import { colors } from "../theme";
 
@@ -66,7 +67,7 @@ export function ActivityCard({
         <Text style={styles.icon}>{activityIcon(activityType)}</Text>
         <View style={styles.headerText}>
           <Text style={styles.name} numberOfLines={2}>
-            {name || activityType}
+            {name || formatActivityTypeLabel(activityType)}
           </Text>
           <Text style={styles.time}>
             {formatTime(startedAt)} · {formatDurationRange(startedAt, endedAt)}
