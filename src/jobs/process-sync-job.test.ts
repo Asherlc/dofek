@@ -21,6 +21,7 @@ vi.mock("../logger.ts", () => ({
 }));
 
 // Mock dependencies — the mock functions are accessed via module-level refs
+
 vi.mock("./provider-registration.ts", () => ({
   ensureProvidersRegistered: vi.fn().mockResolvedValue(undefined),
 }));

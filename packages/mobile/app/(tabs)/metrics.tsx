@@ -13,6 +13,7 @@ import { colors } from "../../theme";
 export default function MetricsScreen() {
   const units = useUnitConverter();
   const [days, setDays] = useState(30);
+  const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in client tz
 
   // HRV trend
   const hrvQuery = trpc.recovery.hrvVariability.useQuery({ days });
@@ -36,9 +37,9 @@ export default function MetricsScreen() {
   const stressTrend = stressResult?.trend;
 
   // Daily metrics for SpO2 and skin temp
-  const trendsQuery = trpc.dailyMetrics.trends.useQuery({ days });
+  const trendsQuery = trpc.dailyMetrics.trends.useQuery({ days, today });
   const trendsData = trendsQuery.data;
-  const dailyMetricsQuery = trpc.dailyMetrics.list.useQuery({ days });
+  const dailyMetricsQuery = trpc.dailyMetrics.list.useQuery({ days, today });
   const dailyMetricsData = dailyMetricsQuery.data ?? [];
 
   const spo2Trend = dailyMetricsData
