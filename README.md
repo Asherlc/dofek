@@ -35,7 +35,7 @@ Provider-agnostic fitness and health data pipeline. Pulls data from various APIs
 └─────────────┘
 ```
 
-Each data source is a **provider plugin** that implements a simple interface. The sync runner orchestrates all enabled providers. Data lands in a `fitness` Postgres schema. The web dashboard provides sync controls, provider health monitoring, insights, and data exploration. Sync runs as a one-shot container triggered by a server cron job.
+Each data source is a **provider plugin** that implements a simple interface. The sync runner orchestrates all enabled providers. Data lands in a `fitness` Postgres schema. The web dashboard provides sync controls, provider health monitoring, insights, and data exploration. A companion iOS app (Expo + React Native) provides native HealthKit integration and on-the-go access. Long-running sync jobs are processed by a BullMQ worker backed by Redis. Sync runs as a one-shot container triggered by a server cron job.
 
 ## Quick Start
 
@@ -65,19 +65,41 @@ See [docs/schema.md](docs/schema.md) for the full data model.
 
 ## Project Structure
 
-pnpm workspace monorepo with three packages:
+pnpm workspace monorepo:
 
 ```
 dofek/
-├── src/                    # Root package — sync runner, providers, DB schema
+├── src/                           # Root package — sync runner, providers, DB schema
+│   └── providers/                 # Provider plugin implementations (30 providers)
 ├── packages/
-│   ├── server/             # dofek-server — Express + tRPC API (Node)
-│   └── web/                # dofek-web — Vite + React SPA (browser)
-├── drizzle/                # SQL migrations
-└── Dockerfile              # Multi-stage: server + client targets
+│   ├── server/                    # dofek-server — Express + tRPC API + BullMQ jobs
+│   ├── web/                       # dofek-web — Vite + React SPA (browser)
+│   ├── mobile/                    # dofek-mobile — Expo + React Native app (iOS)
+│   ├── format/                    # @dofek/format — date, duration, number, unit formatting
+│   ├── scoring/                   # @dofek/scoring — score colors, labels, workload helpers
+│   ├── nutrition/                 # @dofek/nutrition — meal types, auto-meal detection
+│   ├── training/                  # @dofek/training — activity types, weekly volume
+│   ├── stats/                     # @dofek/stats — correlation, regression analysis
+│   ├── recovery/                  # @dofek/recovery — recovery metrics and scoring
+│   ├── onboarding/                # @dofek/onboarding — onboarding flow logic
+│   ├── providers-meta/            # @dofek/providers — provider display labels
+│   ├── zones/                     # @dofek/zones — HR/power zone calculations
+│   ├── auth/                      # @dofek/auth — shared authentication logic
+│   ├── heart-rate-variability/    # @dofek/heart-rate-variability — HRV analysis
+│   ├── whoop-whoop/               # RE'd WHOOP internal API client
+│   ├── eight-sleep/               # RE'd Eight Sleep internal API client
+│   ├── zwift-client/              # RE'd Zwift internal API client
+│   ├── trainerroad-client/        # RE'd TrainerRoad internal API client
+│   ├── velohero-client/           # RE'd VeloHero API client
+│   ├── garmin-connect/            # RE'd Garmin Connect SSO + API client
+│   └── trainingpeaks-connect/     # RE'd TrainingPeaks internal API client
+├── cypress/                       # E2E tests (Cypress)
+├── drizzle/                       # SQL migrations
+├── deploy/                        # Terraform + Docker Compose + Caddy
+└── Dockerfile                     # Multi-stage: server + client targets
 ```
 
-The server imports shared code from the root package via `dofek` workspace dependency (e.g. `import { createDatabaseFromEnv } from "dofek/db"`). The web client imports the `AppRouter` type from the server via `dofek-server/router`.
+The server imports shared code from the root package via `dofek` workspace dependency (e.g. `import { createDatabaseFromEnv } from "dofek/db"`). The web client imports the `AppRouter` type from the server via `dofek-server/router`. Shared domain logic lives in dedicated packages (`@dofek/format`, `@dofek/scoring`, etc.) imported by both web and mobile.
 
 ## Development
 
@@ -93,7 +115,7 @@ cd packages/web && pnpm dev
 cd packages/server && pnpm dev
 ```
 
-Tests use [Vitest](https://vitest.dev/). TDD is the standard workflow — write tests first, then implement. Test files are colocated with source files (e.g. `index.test.ts` next to `index.ts`).
+Tests use [Vitest](https://vitest.dev/). TDD is the standard workflow — write tests first, then implement. Test files are colocated with source files (e.g. `index.test.ts` next to `index.ts`). E2E tests use [Cypress](https://www.cypress.io/) and run against a Docker Compose stack in CI. [Stryker](https://stryker-mutator.io/) mutation testing runs on PRs to verify test quality.
 
 ## Docker
 
@@ -101,8 +123,8 @@ Two images built from a single multi-stage Dockerfile:
 
 | Image | Base | Contents | Size |
 |-------|------|----------|------|
-| `ghcr.io/your-org/dofek:latest` | node:22-slim | Express API + sync runner | ~350MB |
-| `ghcr.io/your-org/dofek-client:latest` | nginx:alpine | Vite static bundle | ~63MB |
+| `ghcr.io/asherlc/dofek:latest` | node:22-slim | Express API + sync runner + BullMQ worker | ~350MB |
+| `ghcr.io/asherlc/dofek-client:latest` | nginx:alpine | Vite static bundle | ~63MB |
 
 ### How it works
 
@@ -132,20 +154,6 @@ docker run --rm dofek-client:local nginx -t
 
 Always test Docker builds locally before deploying. The CI build runs on Linux and may behave differently than local dev.
 
-### Production architecture
-
-```
-Traefik (host routing + Authentik auth)
-  └── dofek-client (Nginx :80)
-        ├── /assets/*    → static files (1yr cache)
-        ├── /api/*       → proxy_pass dofek-web:3000
-        ├── /auth/*      → proxy_pass dofek-web:3000
-        ├── /callback    → proxy_pass dofek-web:3000
-        └── /*           → index.html (SPA fallback)
-```
-
-Traefik handles host-based routing and authentication. Nginx owns all path-based routing within the app — this keeps infrastructure config decoupled from application routing. The Express server (`dofek-web`) has no published port and is only reachable internally via Nginx.
-
 ### Entrypoint modes
 
 The server image runs in multiple modes via `entrypoint.sh`:
@@ -157,15 +165,18 @@ docker run dofek:latest migrate
 # API server (Express + tRPC)
 docker run dofek:latest web
 
-# Sync runner (provider data sync)
+# BullMQ job worker (processes sync jobs, file imports)
+docker run dofek:latest worker
+
+# Sync runner (provider data sync, one-shot)
 docker run dofek:latest sync
 ```
 
-Both use Node 22 `--experimental-transform-types` to run TypeScript source directly — no build step.
+All modes use Node 22 `--experimental-transform-types` to run TypeScript source directly — no build step. All modes run migrations before starting.
 
 ## Deployment
 
-Deployed on a Hetzner Cloud CAX11 (ARM) server at `your-domain.example.com`.
+Deployed on a Hetzner Cloud CAX11 (ARM) server at `dofek.asherlc.com`.
 
 ### Infrastructure
 
@@ -177,8 +188,9 @@ deploy/
 ├── cloud-init.yml                # Auto-installs Docker on first boot
 ├── docker-compose.yml            # Production stack (all services)
 ├── otel-collector-config.yaml    # OTel Collector — receives app logs/traces + tails Docker logs → Axiom
-├── Caddyfile                     # Auto-HTTPS via Let's Encrypt
+├── Caddyfile                     # Auto-HTTPS via Let's Encrypt (multiple domains)
 ├── deploy-config/main.tf         # Terraform — pushes config updates to server via SSH
+├── dns/main.tf                   # Terraform — Cloudflare DNS for dofek.fit + dofek.live
 ├── terraform.tfvars.example      # Example config
 └── .gitignore                    # Excludes secrets and state
 ```
@@ -186,12 +198,14 @@ deploy/
 ### Production architecture
 
 ```
-Internet → Caddy (auto-HTTPS :443)
+Internet → Caddy (auto-HTTPS :443, serves dofek.asherlc.com + dofek.fit + dofek.live)
              └── dofek-client (Nginx :80)
                    ├── /assets/*    → static files (1yr cache)
                    ├── /api/*       → proxy_pass dofek-web:3000
                    ├── /auth/*      → proxy_pass dofek-web:3000
                    ├── /callback    → proxy_pass dofek-web:3000
+                   ├── /admin/*     → proxy_pass dofek-web:3000 (BullMQ dashboard)
+                   ├── /metrics     → proxy_pass dofek-web:3000 (Prometheus)
                    └── /*           → index.html (SPA fallback)
 ```
 
@@ -200,13 +214,16 @@ Internet → Caddy (auto-HTTPS :443)
 | Container | Image | Purpose |
 |-----------|-------|---------|
 | `caddy` | caddy:2-alpine | TLS termination + reverse proxy to nginx |
-| `client` | ghcr.io/your-org/dofek-client | Nginx serving Vite bundle + proxying API routes |
-| `migrate` | ghcr.io/your-org/dofek | Runs pending DB migrations (one-shot, exits on completion) |
-| `web` | ghcr.io/your-org/dofek | Express + tRPC API server (port 3000, internal only) |
-| `sync` | ghcr.io/your-org/dofek | Sync runner (provider data sync) |
-| `db` | timescale/timescaledb | TimescaleDB (persistent volume) |
+| `client` | ghcr.io/asherlc/dofek-client | Nginx serving Vite bundle + proxying API routes |
+| `migrate` | ghcr.io/asherlc/dofek | Runs pending DB migrations (one-shot, exits on completion) |
+| `web` | ghcr.io/asherlc/dofek | Express + tRPC API server (port 3000, internal only) |
+| `worker` | ghcr.io/asherlc/dofek | BullMQ job worker (processes sync jobs, file imports) |
+| `sync` | ghcr.io/asherlc/dofek | Sync runner (provider data sync, one-shot) |
+| `redis` | redis:7-alpine | Job queue backend for BullMQ |
+| `db` | timescale/timescaledb:latest-pg16 | TimescaleDB (persistent volume) |
 | `db-backup` | postgres-backup-local | Daily pg_dump (7 daily, 4 weekly, 6 monthly) |
 | `collector` | otel/opentelemetry-collector-contrib | OTel Collector — receives app logs/traces + tails Docker container logs → Axiom |
+| `portainer` | portainer/portainer-ce:lts | Container management UI (portainer.dofek.asherlc.com) |
 | `watchtower` | containrrr/watchtower | Auto-pulls new images from GHCR every 5min |
 
 ### CI/CD pipeline
@@ -230,7 +247,7 @@ terraform init
 terraform apply
 ```
 
-Then point DNS — create an A record for `your-domain.example.com` → the output `server_ip`. Caddy will auto-provision the TLS certificate.
+Then point DNS — create an A record for `dofek.asherlc.com` → the output `server_ip`. Caddy will auto-provision the TLS certificate.
 
 ### Updating server config files
 
@@ -421,11 +438,12 @@ All credentials go in the SOPS-encrypted `.env`. The login page auto-discovers w
 
 Each provider is enabled by adding its credentials to `.env` (SOPS-encrypted). OAuth providers also require a one-time browser authorization via the Data Sources page.
 
-### Implemented Providers (29)
+### Implemented Providers (30)
 
 | Provider | Auth Type | Data Types | Required `.env` Variables |
 |----------|-----------|------------|--------------------------|
 | Apple Health | File import | HR, HRV, sleep, workouts, body, glucose, nutrition, walking, labs | None (upload `.zip`/`.xml` via web UI or share to iOS app) |
+| BodySpec | OAuth 2.0 | DEXA scans (body composition, bone density, visceral fat, RMR) | `BODYSPEC_CLIENT_ID`, `BODYSPEC_CLIENT_SECRET` |
 | Wahoo | OAuth 2.0 | Activities with FIT file parsing (GPS, power, HR, cadence, running dynamics) | `WAHOO_CLIENT_ID`, `WAHOO_CLIENT_SECRET` |
 | WHOOP | RE'd (Cognito) | Sleep, recovery, workouts, 6s HR streams, journal, strength sets | None (credentials entered in UI modal) |
 | Peloton | Automated login | Workouts with performance metrics | `PELOTON_USERNAME`, `PELOTON_PASSWORD` |
@@ -503,14 +521,19 @@ sops .env   # opens decrypted file in $EDITOR; re-encrypts on save
 
 ## Stack
 
-- **TypeScript** — sync scripts, provider plugins, and web dashboard (Node 22 native type stripping at runtime — no tsx in production)
+- **TypeScript** — sync scripts, provider plugins, and web + mobile apps (Node 22 native type stripping at runtime — no tsx in production)
 - **Drizzle ORM** — type-safe schema and migrations
 - **TimescaleDB** — Postgres with time-series extensions (hypertables, continuous aggregates, compression)
 - **Vite + React** — web dashboard frontend
+- **Expo + React Native** — iOS mobile app with native HealthKit integration
 - **tRPC + Express** — API layer
-- **ECharts** — data visualization
-- **shadcn/ui + Tailwind** — UI components
+- **BullMQ + Redis** — job queue for async sync jobs and file imports
+- **ECharts** — data visualization (web)
+- **shadcn/ui + Tailwind** — UI components (web)
 - **Winston** — structured logging
-- **Vitest** — testing
+- **Sentry** — error tracking (via OpenTelemetry)
+- **Vitest** — unit + integration testing
+- **Cypress** — E2E testing
+- **Stryker** — mutation testing
 - **Biome** — linting and formatting
 - **Docker + GHCR** — deployment via GitHub Actions + Watchtower
