@@ -142,28 +142,21 @@ export const dailyMetricsRouter = router({
               FROM current
             ),
             latest AS (
-              SELECT
-                date,
-                FIRST_VALUE(resting_hr) OVER (ORDER BY CASE WHEN resting_hr IS NOT NULL THEN date END DESC NULLS LAST) AS latest_resting_hr,
-                FIRST_VALUE(hrv) OVER (ORDER BY CASE WHEN hrv IS NOT NULL THEN date END DESC NULLS LAST) AS latest_hrv,
-                FIRST_VALUE(spo2_avg) OVER (ORDER BY CASE WHEN spo2_avg IS NOT NULL THEN date END DESC NULLS LAST) AS latest_spo2,
-                FIRST_VALUE(steps) OVER (ORDER BY CASE WHEN steps IS NOT NULL THEN date END DESC NULLS LAST) AS latest_steps,
-                FIRST_VALUE(active_energy_kcal) OVER (ORDER BY CASE WHEN active_energy_kcal IS NOT NULL THEN date END DESC NULLS LAST) AS latest_active_energy,
-                FIRST_VALUE(skin_temp_c) OVER (ORDER BY CASE WHEN skin_temp_c IS NOT NULL THEN date END DESC NULLS LAST) AS latest_skin_temp,
-                ROW_NUMBER() OVER (ORDER BY date DESC) AS rn
+              SELECT *
               FROM current
+              ORDER BY date DESC
+              LIMIT 1
             )
             SELECT
               stats.*,
-              l.latest_resting_hr,
-              l.latest_hrv,
-              l.latest_spo2,
-              l.latest_steps,
-              l.latest_active_energy,
-              l.latest_skin_temp,
+              l.resting_hr AS latest_resting_hr,
+              l.hrv AS latest_hrv,
+              l.spo2_avg AS latest_spo2,
+              l.steps AS latest_steps,
+              l.active_energy_kcal AS latest_active_energy,
+              l.skin_temp_c AS latest_skin_temp,
               l.date AS latest_date
-            FROM stats, latest l
-            WHERE l.rn = 1`,
+            FROM stats, latest l`,
       );
       return rows[0] ?? null;
     }),

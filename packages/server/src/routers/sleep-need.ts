@@ -12,15 +12,19 @@ export interface SleepNeedResult {
   accumulatedDebtMinutes: number;
   /** Total recommended sleep tonight (minutes) */
   totalNeedMinutes: number;
-  /** Last 7 nights: actual vs needed */
+  /** Last 7 calendar nights: actual vs needed (null = no data for that night) */
   recentNights: SleepNight[];
+  /** Whether yesterday's sleep data is available (required for tonight's recommendation) */
+  canRecommend: boolean;
 }
 
 export interface SleepNight {
   date: string;
-  actualMinutes: number;
+  /** Actual sleep minutes, or null if no data for this night */
+  actualMinutes: number | null;
   neededMinutes: number;
-  debtMinutes: number;
+  /** Sleep debt for this night, or null if no data */
+  debtMinutes: number | null;
 }
 
 /**
@@ -138,18 +142,41 @@ export const sleepNeedRouter = router({
 
       const totalNeedMinutes = baselineMinutes + strainDebtMinutes + debtRecoveryMinutes;
 
-      // Recent nights with debt tracking
-      const last7 = nights.slice(-7);
-      const recentNights: SleepNight[] = last7.map((n) => {
-        const actual = Number(n.duration_minutes);
-        const needed = baselineMinutes;
+      // Build calendar of last 7 dates (today-6 through today)
+      const nightsByDate = new Map(nights.map((n) => [n.date, n]));
+      const calendarDates: string[] = [];
+      const today = new Date();
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(today);
+        d.setDate(d.getDate() - i);
+        calendarDates.push(d.toISOString().slice(0, 10));
+      }
+
+      // Map all 7 calendar dates to nights (null for missing)
+      const recentNights: SleepNight[] = calendarDates.map((date) => {
+        const night = nightsByDate.get(date);
+        if (night) {
+          const actual = Number(night.duration_minutes);
+          return {
+            date,
+            actualMinutes: Math.round(actual),
+            neededMinutes: baselineMinutes,
+            debtMinutes: Math.max(0, Math.round(baselineMinutes - actual)),
+          };
+        }
         return {
-          date: n.date,
-          actualMinutes: Math.round(actual),
-          neededMinutes: needed,
-          debtMinutes: Math.max(0, Math.round(needed - actual)),
+          date,
+          actualMinutes: null,
+          neededMinutes: baselineMinutes,
+          debtMinutes: null,
         };
       });
+
+      // canRecommend: yesterday's sleep must be present for tonight's recommendation
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().slice(0, 10);
+      const canRecommend = nightsByDate.has(yesterdayStr);
 
       return {
         baselineMinutes,
@@ -157,6 +184,7 @@ export const sleepNeedRouter = router({
         accumulatedDebtMinutes: Math.round(accumulatedDebt),
         totalNeedMinutes,
         recentNights,
+        canRecommend,
       };
     },
   ),

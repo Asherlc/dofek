@@ -7,8 +7,8 @@ interface MetricCardProps {
   title: string;
   value: string;
   unit?: string;
-  /** Trend data for sparkline */
-  trend?: number[];
+  /** Trend data for sparkline (null values create visible gaps) */
+  trend?: (number | null)[];
   /** Color of the value and sparkline */
   color?: string;
   /** Subtitle/context text */
@@ -35,7 +35,8 @@ export function MetricCard({
   trendDirection,
   chartDescription,
 }: MetricCardProps) {
-  const hasTrendChart = Boolean(trend && trend.length >= 2);
+  const nonNullCount = trend ? trend.filter((v) => v != null).length : 0;
+  const hasTrendChart = nonNullCount >= 2;
   const description =
     chartDescription ?? `This chart shows the recent trend for ${title.toLowerCase()}.`;
 

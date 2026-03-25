@@ -3,8 +3,8 @@ import { View, type LayoutChangeEvent } from "react-native";
 import Svg, { Line, Polyline } from "react-native-svg";
 
 interface SparkLineProps {
-  /** Data points to plot */
-  data: number[];
+  /** Data points to plot (null values create visible gaps) */
+  data: (number | null)[];
   /** Fixed width of the chart (optional) */
   width?: number;
   /** Fixed height of the chart (optional) */
@@ -15,6 +15,37 @@ interface SparkLineProps {
   lineWidth?: number;
   /** Show baseline (average) */
   showBaseline?: boolean;
+}
+
+/** Split data into contiguous non-null segments for gap rendering */
+function splitSegments(
+  data: (number | null)[],
+  padding: number,
+  chartWidth: number,
+  chartHeight: number,
+  min: number,
+  range: number,
+): string[] {
+  const segments: string[] = [];
+  let current: string[] = [];
+
+  for (let i = 0; i < data.length; i++) {
+    const value = data[i];
+    if (value != null) {
+      const x = padding + (i / (data.length - 1)) * chartWidth;
+      const y = padding + chartHeight - ((value - min) / range) * chartHeight;
+      current.push(`${x},${y}`);
+    } else {
+      if (current.length >= 2) {
+        segments.push(current.join(" "));
+      }
+      current = [];
+    }
+  }
+  if (current.length >= 2) {
+    segments.push(current.join(" "));
+  }
+  return segments;
 }
 
 export function SparkLine({
@@ -36,7 +67,9 @@ export function SparkLine({
   const currentWidth = fixedWidth ?? layout.width;
   const currentHeight = fixedHeight ?? layout.height;
 
-  if (data.length < 2 || currentWidth === 0 || currentHeight === 0) {
+  const nonNullValues = data.filter((v): v is number => v != null);
+
+  if (nonNullValues.length < 2 || currentWidth === 0 || currentHeight === 0) {
     return <View style={{ width: fixedWidth, height: fixedHeight, flex: fixedWidth ? undefined : 1 }} onLayout={onLayout} />;
   }
 
@@ -44,19 +77,13 @@ export function SparkLine({
   const chartWidth = currentWidth - padding * 2;
   const chartHeight = currentHeight - padding * 2;
 
-  const min = Math.min(...data);
-  const max = Math.max(...data);
+  const min = Math.min(...nonNullValues);
+  const max = Math.max(...nonNullValues);
   const range = max - min || 1;
 
-  const points = data
-    .map((value, index) => {
-      const x = padding + (index / (data.length - 1)) * chartWidth;
-      const y = padding + chartHeight - ((value - min) / range) * chartHeight;
-      return `${x},${y}`;
-    })
-    .join(" ");
+  const segments = splitSegments(data, padding, chartWidth, chartHeight, min, range);
 
-  const avg = data.reduce((sum, v) => sum + v, 0) / data.length;
+  const avg = nonNullValues.reduce((sum, v) => sum + v, 0) / nonNullValues.length;
   const avgY = padding + chartHeight - ((avg - min) / range) * chartHeight;
 
   return (
@@ -73,14 +100,17 @@ export function SparkLine({
             strokeDasharray="4,4"
           />
         )}
-        <Polyline
-          points={points}
-          fill="none"
-          stroke={color}
-          strokeWidth={lineWidth}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
+        {segments.map((points, i) => (
+          <Polyline
+            key={`segment-${i}`}
+            points={points}
+            fill="none"
+            stroke={color}
+            strokeWidth={lineWidth}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        ))}
       </Svg>
     </View>
   );
