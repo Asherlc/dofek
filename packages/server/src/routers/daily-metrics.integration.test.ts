@@ -186,15 +186,23 @@ describe("dailyMetrics data correctness", () => {
       expect(result.avg_steps).toBeLessThan(15000);
     });
 
-    it("returns null when no data exists in the window", async () => {
+    it("returns all-null values when no data exists in the window", async () => {
       // Use a 1-day window far in the future where no data exists.
-      // The query has no upper bound, so a past date would still pick up
-      // our test data; a future date with days=1 ensures truly empty results.
-      const result = await query<null>("dailyMetrics.trends", {
+      const result = await query<{
+        avg_resting_hr: number | null;
+        latest_resting_hr: number | null;
+        latest_date: string | null;
+      }>("dailyMetrics.trends", {
         days: 1,
         endDate: "2099-01-02",
       });
-      expect(result).toBeNull();
+
+      // stats CTE returns a row of nulls (SQL aggregate on empty set),
+      // and LEFT JOIN today produces no match — so all fields are null
+      expect(result).not.toBeNull();
+      expect(result.avg_resting_hr).toBeNull();
+      expect(result.latest_resting_hr).toBeNull();
+      expect(result.latest_date).toBeNull();
     });
   });
 
