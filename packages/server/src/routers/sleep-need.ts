@@ -163,9 +163,9 @@ export const sleepNeedRouter = router({
       const calendarDates: string[] = [];
       const endDate = new Date(`${input.endDate}T00:00:00`);
       for (let i = 6; i >= 0; i--) {
-        const d = new Date(endDate);
-        d.setDate(d.getDate() - i);
-        calendarDates.push(d.toISOString().slice(0, 10));
+        const calendarDay = new Date(endDate);
+        calendarDay.setDate(calendarDay.getDate() - i);
+        calendarDates.push(calendarDay.toISOString().slice(0, 10));
       }
 
       // Map all 7 calendar dates to nights (null for missing)
