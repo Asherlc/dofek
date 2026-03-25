@@ -40,7 +40,10 @@ async function refreshAccessToken(rt: string) {
   });
 
   const data: Record<string, unknown> = await response.json();
-  const authResult = data.AuthenticationResult as Record<string, unknown>;
+  const authResult: Record<string, unknown> = (data.AuthenticationResult ?? {}) satisfies Record<
+    string,
+    unknown
+  >;
   const accessToken = String(authResult.AccessToken);
 
   const bootstrapResp = await fetch(
@@ -48,7 +51,10 @@ async function refreshAccessToken(rt: string) {
     { headers: { Authorization: `Bearer ${accessToken}` } },
   );
   const bootstrapData: Record<string, unknown> = await bootstrapResp.json();
-  const user = bootstrapData.user as Record<string, unknown> | undefined;
+  const user: Record<string, unknown> | undefined =
+    bootstrapData.user && typeof bootstrapData.user === "object"
+      ? (bootstrapData.user satisfies Record<string, unknown>)
+      : undefined;
   const userId = Number(bootstrapData.id ?? bootstrapData.user_id ?? user?.id ?? user?.user_id);
 
   return { accessToken, userId };
