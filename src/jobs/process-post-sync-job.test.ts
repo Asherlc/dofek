@@ -3,7 +3,7 @@ import { processPostSyncJob } from "./process-post-sync-job.ts";
 
 const mockUpdateUserMaxHr = vi.fn();
 const mockRefreshDedupViews = vi.fn();
-const mockLoadProviderPriorityConfig = vi.fn(() => ({ priorities: [] }));
+const mockLoadProviderPriorityConfig = vi.fn((): unknown => ({ priorities: [] }));
 const mockSyncProviderPriorities = vi.fn();
 const mockRefitAllParams = vi.fn();
 
