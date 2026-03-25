@@ -2,12 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const t = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  const trpc = initTRPC
+    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .create();
   return {
-    router: t.router,
-    protectedProcedure: t.procedure,
-    cachedProtectedQuery: () => t.procedure,
-    cachedProtectedQueryLight: () => t.procedure,
+    router: trpc.router,
+    protectedProcedure: trpc.procedure,
+    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQueryLight: () => trpc.procedure,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -30,17 +32,12 @@ vi.mock("dofek/personalization/storage", () => ({
   loadPersonalizedParams: vi.fn().mockResolvedValue(null),
 }));
 
-import { type ActivityRow, TrainingStressCalculator } from "@dofek/training/training-load";
+import { TrainingStressCalculator } from "@dofek/training/training-load";
 import { pmcRouter } from "./pmc.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 // Default calculator for test assertions
 const calc = new TrainingStressCalculator();
-const { computePowerTss, buildTssModel, estimateFtp } = {
-  computePowerTss: TrainingStressCalculator.computePowerTss,
-  buildTssModel: TrainingStressCalculator.buildTssModel,
-  estimateFtp: TrainingStressCalculator.estimateFtp,
-};
 
 // --- pmcRouter ---
 
@@ -52,6 +49,7 @@ describe("pmcRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.chart({ days: 180 });
       expect(result.data).toEqual([]);
@@ -83,7 +81,7 @@ describe("pmcRouter", () => {
       ]);
       execute.mockResolvedValueOnce([]);
 
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
       const result = await caller.chart({ days: 180 });
 
       expect(result.model.type).toBe("generic");
@@ -117,7 +115,7 @@ describe("pmcRouter", () => {
       ]);
       execute.mockResolvedValueOnce([]);
 
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
       const result = await caller.chart({ days: 180 });
 
       // Find the activity day and verify load matches expected hrTSS
@@ -133,13 +131,13 @@ describe("pmcRouter", () => {
 
       // Vary avg_hr and avg_power across activities to produce a real regression
       const activities = Array.from({ length: 12 }, (_, i) => {
-        const d = new Date(today);
-        d.setDate(d.getDate() - i);
+        const date = new Date(today);
+        date.setDate(date.getDate() - i);
         return {
           global_max_hr: 190,
           resting_hr: 55,
           id: `a${i}`,
-          date: d.toISOString().slice(0, 10),
+          date: date.toISOString().slice(0, 10),
           duration_min: 30 + i * 5,
           avg_hr: 140 + i * 3,
           max_hr: 180,
@@ -157,7 +155,7 @@ describe("pmcRouter", () => {
       }));
       execute.mockResolvedValueOnce(npRows);
 
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
       const result = await caller.chart({ days: 180 });
 
       // FTP = round(best_avg_power * 0.95) = round(290 * 0.95) = 276
@@ -189,7 +187,7 @@ describe("pmcRouter", () => {
       ]);
       execute.mockResolvedValueOnce([]);
 
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
       const result = await caller.chart({ days: 180 });
 
       for (const point of result.data) {
@@ -225,7 +223,7 @@ describe("pmcRouter", () => {
       ]);
       execute.mockResolvedValueOnce([]);
 
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
       const result = await caller.chart({ days: 180 });
 
       // First data point should be at or near the activity (CTL starts building)
@@ -258,7 +256,7 @@ describe("pmcRouter", () => {
       ]);
       execute.mockResolvedValueOnce([]);
 
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
       const result = await caller.chart({ days: 180 });
 
       for (const point of result.data) {
@@ -299,7 +297,7 @@ describe("pmcRouter", () => {
       ]);
       execute.mockResolvedValueOnce([]);
 
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
       const result = await caller.chart({ days: 180 });
 
       // Combined load should be sum of both activities' hrTSS

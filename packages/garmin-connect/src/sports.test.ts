@@ -13,11 +13,11 @@ describe("mapGarminConnectSport", () => {
 
   it("maps cycling variants", () => {
     expect(mapGarminConnectSport("cycling")).toBe("cycling");
-    expect(mapGarminConnectSport("mountain_biking")).toBe("cycling");
-    expect(mapGarminConnectSport("road_biking")).toBe("cycling");
-    expect(mapGarminConnectSport("indoor_cycling")).toBe("cycling");
-    expect(mapGarminConnectSport("gravel_cycling")).toBe("cycling");
-    expect(mapGarminConnectSport("virtual_ride")).toBe("cycling");
+    expect(mapGarminConnectSport("mountain_biking")).toBe("mountain_biking");
+    expect(mapGarminConnectSport("road_biking")).toBe("road_cycling");
+    expect(mapGarminConnectSport("indoor_cycling")).toBe("indoor_cycling");
+    expect(mapGarminConnectSport("gravel_cycling")).toBe("gravel_cycling");
+    expect(mapGarminConnectSport("virtual_ride")).toBe("virtual_cycling");
   });
 
   it("maps swimming variants", () => {

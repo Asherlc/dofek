@@ -204,23 +204,23 @@ export function trainHrvPredictor(days: DailyFeatureRow[]): PredictionResult | n
  * Returns average R² across folds.
  */
 function crossValidate(X: number[][], y: number[], k: number): number {
-  const n = X.length;
-  if (n < k * 5) return 0; // Not enough data for meaningful CV
+  const sampleCount = X.length;
+  if (sampleCount < k * 5) return 0; // Not enough data for meaningful CV
 
-  const foldSize = Math.floor(n / k);
+  const foldSize = Math.floor(sampleCount / k);
   let totalSsRes = 0;
   let totalSsTot = 0;
 
   for (let fold = 0; fold < k; fold++) {
     const testStart = fold * foldSize;
-    const testEnd = fold === k - 1 ? n : testStart + foldSize;
+    const testEnd = fold === k - 1 ? sampleCount : testStart + foldSize;
 
     const trainX: number[][] = [];
     const trainY: number[] = [];
     const testX: number[][] = [];
     const testY: number[] = [];
 
-    for (let i = 0; i < n; i++) {
+    for (let i = 0; i < sampleCount; i++) {
       const xi = X[i];
       const yi = y[i];
       if (xi === undefined || yi === undefined) {

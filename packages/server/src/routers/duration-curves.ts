@@ -67,7 +67,7 @@ export const durationCurvesRouter = router({
         sql`
         WITH activity_hr AS (
           SELECT ms.activity_id, ms.recorded_at, ms.heart_rate,
-                 a.started_at::date AS activity_date,
+                 (a.started_at AT TIME ZONE ${ctx.timezone})::date AS activity_date,
                  ROW_NUMBER() OVER (
                    PARTITION BY ms.activity_id ORDER BY ms.recorded_at
                  ) AS rn,
@@ -150,7 +150,7 @@ export const durationCurvesRouter = router({
         sql`
         WITH activity_speed AS (
           SELECT ms.activity_id, ms.recorded_at, ms.speed,
-                 a.started_at::date AS activity_date,
+                 (a.started_at AT TIME ZONE ${ctx.timezone})::date AS activity_date,
                  ROW_NUMBER() OVER (
                    PARTITION BY ms.activity_id ORDER BY ms.recorded_at
                  ) AS rn,

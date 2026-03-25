@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -148,14 +148,28 @@ describe("FatSecretProvider.sync() (integration)", () => {
     if (!chicken) throw new Error("expected entry-100");
     expect(chicken.foodName).toBe("Chicken Breast");
     expect(chicken.meal).toBe("lunch");
-    expect(chicken.calories).toBe(165);
-    expect(chicken.proteinG).toBeCloseTo(31);
-    expect(chicken.fatG).toBeCloseTo(3.6);
+
+    // Check nutrient data via the view
+    const viewRows = await ctx.db.execute<{
+      calories: number | null;
+      protein_g: number | null;
+      fat_g: number | null;
+      carbs_g: number | null;
+    }>(
+      sql`SELECT calories, protein_g, fat_g, carbs_g FROM fitness.v_food_entry_with_nutrition WHERE external_id = 'entry-100' LIMIT 1`,
+    );
+    expect(viewRows[0]?.calories).toBe(165);
+    expect(viewRows[0]?.protein_g).toBeCloseTo(31);
+    expect(viewRows[0]?.fat_g).toBeCloseTo(3.6);
 
     const rice = rows.find((r) => r.externalId === "entry-101");
     if (!rice) throw new Error("expected entry-101");
     expect(rice.foodName).toBe("Brown Rice");
-    expect(rice.carbsG).toBeCloseTo(45);
+
+    const riceView = await ctx.db.execute<{ carbs_g: number | null }>(
+      sql`SELECT carbs_g FROM fitness.v_food_entry_with_nutrition WHERE external_id = 'entry-101' LIMIT 1`,
+    );
+    expect(riceView[0]?.carbs_g).toBeCloseTo(45);
   });
 
   it("does not duplicate entries on re-sync", async () => {
@@ -273,5 +287,70 @@ describe("FatSecretProvider.sync() (integration)", () => {
 
     // Should have errors but not crash
     expect(result.errors.length).toBeGreaterThan(0);
+  });
+
+  it("caps lookback to 2 years when since is epoch (new Date(0))", async () => {
+    await saveTokens(ctx.db, "fatsecret", {
+      accessToken: "oauth1-token",
+      refreshToken: "oauth1-token-secret",
+      expiresAt: new Date("2099-01-01T00:00:00Z"),
+      scopes: null,
+    });
+
+    const requestedDateInts: string[] = [];
+
+    server.use(
+      http.get("https://platform.fatsecret.com/rest/server.api", ({ request }) => {
+        const url = new URL(request.url);
+        const dateParam = url.searchParams.get("date");
+        if (dateParam) requestedDateInts.push(dateParam);
+        return HttpResponse.json(
+          { error: { code: 7, message: "No entries found" } },
+          { status: 400 },
+        );
+      }),
+    );
+
+    const provider = new FatSecretProvider();
+    // Pass epoch — would generate ~20,000 API calls without the 2-year cap
+    const result = await provider.sync(ctx.db, new Date(0));
+
+    expect(result.errors).toHaveLength(0);
+
+    // All requested date_ints must be within the 2-year window
+    const twoYearsAgoMs = Date.now() - 2 * 365 * 24 * 60 * 60 * 1000;
+    const twoYearsAgoDayInt = Math.floor(twoYearsAgoMs / 86400000);
+    for (const dateInt of requestedDateInts) {
+      expect(Number(dateInt)).toBeGreaterThanOrEqual(twoYearsAgoDayInt - 1); // -1 for rounding
+    }
+
+    // Must have made fewer than 800 requests (2 years = ~730 days), not 20,000+
+    expect(requestedDateInts.length).toBeLessThan(800);
+  });
+
+  it("silently skips Zod validation errors about missing food_entries", async () => {
+    await saveTokens(ctx.db, "fatsecret", {
+      accessToken: "oauth1-token",
+      refreshToken: "oauth1-token-secret",
+      expiresAt: new Date("2099-01-01T00:00:00Z"),
+      scopes: null,
+    });
+
+    // Return a shape that fails Zod validation on the food_entries path.
+    // This simulates the API returning an unexpected response for an empty day.
+    // food_entry is a string instead of an array — Zod throws a ZodError with
+    // path[0] === "food_entries", which the catch block silently discards.
+    server.use(
+      http.get("https://platform.fatsecret.com/rest/server.api", () => {
+        return HttpResponse.json({ food_entries: { food_entry: "not-an-array" } });
+      }),
+    );
+
+    const provider = new FatSecretProvider();
+    const since = new Date("2026-03-20T00:00:00Z");
+    const result = await provider.sync(ctx.db, since);
+
+    // The Zod error for food_entries path must not appear in errors
+    expect(result.errors).toHaveLength(0);
   });
 });

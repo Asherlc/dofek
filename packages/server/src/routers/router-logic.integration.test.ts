@@ -341,15 +341,19 @@ describe("Router transformation logic", () => {
       expect(data.baselineMinutes).toBeGreaterThan(0);
       expect(data.totalNeedMinutes).toBeGreaterThan(0);
       expect(data.totalNeedMinutes).toBeGreaterThanOrEqual(data.baselineMinutes);
-      // Recent nights should have data
-      expect(data.recentNights.length).toBeGreaterThan(0);
-      expect(data.recentNights.length).toBeLessThanOrEqual(7);
+      // Calendar-based: always exactly 7 nights
+      expect(data.recentNights).toHaveLength(7);
 
       for (const night of data.recentNights) {
         expect(night.date).toBeTruthy();
-        expect(night.actualMinutes).toBeGreaterThan(0);
         expect(night.neededMinutes).toBeGreaterThan(0);
-        expect(night.debtMinutes).toBeGreaterThanOrEqual(0);
+        // Nights with data have numeric values; calendar gaps have null
+        if (night.actualMinutes != null) {
+          expect(night.actualMinutes).toBeGreaterThan(0);
+          expect(night.debtMinutes).toBeGreaterThanOrEqual(0);
+        } else {
+          expect(night.debtMinutes).toBeNull();
+        }
       }
     });
 

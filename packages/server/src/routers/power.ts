@@ -37,11 +37,11 @@ const normalizedPowerSampleSchema = z.object({
  * Includes zero-power (coasting) samples. Returns samples ordered
  * by activity then time, with the per-activity recording interval.
  */
-function powerCurveSamplesQuery(days: number, userId: string) {
+function powerCurveSamplesQuery(days: number, userId: string, timezone: string) {
   return sql`
     WITH activity_info AS (
       SELECT a.id AS activity_id,
-             a.started_at::date::text AS activity_date,
+             (a.started_at AT TIME ZONE ${timezone})::date::text AS activity_date,
              GREATEST(ROUND(
                EXTRACT(EPOCH FROM MAX(ms.recorded_at) - MIN(ms.recorded_at))::numeric
                / NULLIF(COUNT(*) - 1, 0)
@@ -74,11 +74,11 @@ function powerCurveSamplesQuery(days: number, userId: string) {
  * lower Normalized Power. Only includes activities with >= 240 power-positive samples
  * (~20 min at any sample rate).
  */
-function normalizedPowerSamplesQuery(days: number, userId: string) {
+function normalizedPowerSamplesQuery(days: number, userId: string, timezone: string) {
   return sql`
     WITH activity_info AS (
       SELECT a.id AS activity_id,
-             a.started_at::date::text AS activity_date,
+             (a.started_at AT TIME ZONE ${timezone})::date::text AS activity_date,
              a.name AS activity_name,
              GREATEST(ROUND(
                EXTRACT(EPOCH FROM MAX(ms.recorded_at) - MIN(ms.recorded_at))::numeric
@@ -120,7 +120,7 @@ export const powerRouter = router({
       const samples = await executeWithSchema(
         ctx.db,
         powerCurveSampleSchema,
-        powerCurveSamplesQuery(input.days, ctx.userId),
+        powerCurveSamplesQuery(input.days, ctx.userId, ctx.timezone),
       );
 
       const results = computePowerCurve(samples);
@@ -151,7 +151,7 @@ export const powerRouter = router({
       const normalizedPowerSamples = await executeWithSchema(
         ctx.db,
         normalizedPowerSampleSchema,
-        normalizedPowerSamplesQuery(input.days, ctx.userId),
+        normalizedPowerSamplesQuery(input.days, ctx.userId, ctx.timezone),
       );
 
       const normalizedPowerResults = computeNormalizedPower(normalizedPowerSamples);
@@ -166,7 +166,7 @@ export const powerRouter = router({
       const pcSamples = await executeWithSchema(
         ctx.db,
         powerCurveSampleSchema,
-        powerCurveSamplesQuery(90, ctx.userId),
+        powerCurveSamplesQuery(90, ctx.userId, ctx.timezone),
       );
 
       const pcResults = computePowerCurve(pcSamples);

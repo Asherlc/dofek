@@ -65,13 +65,13 @@ describe("generateExport", () => {
   });
 
   it("exports all tables and returns result with counts", async () => {
-    // 16 tables in EXPORT_TABLES, last one is batched (metric-streams)
-    // For non-batched: 15 calls returning rows
+    // 17 tables in EXPORT_TABLES, last one is batched (metric-streams)
+    // For non-batched: 16 calls returning rows
     // For batched: 1 count query + batched stream reads
     const rows = [{ id: "1" }];
     const executeResults: Record<string, unknown>[][] = [];
-    // 15 non-batched tables each return 1 row
-    for (let i = 0; i < 15; i++) {
+    // 16 non-batched tables each return 1 row
+    for (let i = 0; i < 16; i++) {
       executeResults.push(rows);
     }
     // metric-streams count query
@@ -98,17 +98,17 @@ describe("generateExport", () => {
       progress.push(info);
     });
 
-    expect(result.tableCount).toBe(16);
-    // 15 non-batched tables * 1 row each + 3 from batched count
-    expect(result.totalRecords).toBe(18);
+    expect(result.tableCount).toBe(17);
+    // 16 non-batched tables * 1 row each + 3 from batched count
+    expect(result.totalRecords).toBe(19);
     expect(progress.length).toBeGreaterThan(0);
     expect(progress[progress.length - 1]).toEqual({ percentage: 100, message: "Export complete" });
   });
 
   it("handles empty tables correctly", async () => {
     const executeResults: Record<string, unknown>[][] = [];
-    // 15 non-batched tables returning empty
-    for (let i = 0; i < 15; i++) {
+    // 16 non-batched tables returning empty
+    for (let i = 0; i < 16; i++) {
       executeResults.push([]);
     }
     // metric-streams count query
@@ -126,13 +126,13 @@ describe("generateExport", () => {
 
     const result = await generateExport(mockDb, "user-1", "/tmp/test.zip", () => {});
 
-    expect(result.tableCount).toBe(16);
+    expect(result.tableCount).toBe(17);
     expect(result.totalRecords).toBe(0);
   });
 
   it("reports progress for each table", async () => {
     const executeResults: Record<string, unknown>[][] = [];
-    for (let i = 0; i < 15; i++) {
+    for (let i = 0; i < 16; i++) {
       executeResults.push([]);
     }
     executeResults.push([{ count: "0" }]);
@@ -151,18 +151,18 @@ describe("generateExport", () => {
       progress.push(info);
     });
 
-    // Should have progress for each of the 16 tables + final 100%
-    expect(progress.length).toBe(17);
+    // Should have progress for each of the 17 tables + final 100%
+    expect(progress.length).toBe(18);
     // First progress should be 0%
     expect(progress[0]?.percentage).toBe(0);
     expect(progress[0]?.message).toContain("Exporting");
     // Last progress should be 100%
-    expect(progress[16]?.percentage).toBe(100);
+    expect(progress[17]?.percentage).toBe(100);
   });
 
   it("includes metadata file in the archive", async () => {
     const executeResults: Record<string, unknown>[][] = [];
-    for (let i = 0; i < 15; i++) {
+    for (let i = 0; i < 16; i++) {
       executeResults.push([]);
     }
     executeResults.push([{ count: "0" }]);
@@ -190,7 +190,7 @@ describe("generateExport", () => {
 
     const metadata = JSON.parse(String(metadataCall?.[0]));
     expect(metadata.userId).toBe("user-1");
-    expect(metadata.tables).toHaveLength(16);
+    expect(metadata.tables).toHaveLength(17);
     expect(metadata.totalRecords).toBe(0);
     expect(metadata.exportedAt).toBeDefined();
   });

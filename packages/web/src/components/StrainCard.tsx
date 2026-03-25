@@ -1,5 +1,5 @@
 import { StrainScore, WorkloadRatio } from "@dofek/scoring/scoring";
-import type { WorkloadRatioResult } from "dofek-server/types";
+import type { StrainTargetResult, WorkloadRatioResult } from "dofek-server/types";
 import { useEffect, useState } from "react";
 import { useCountUp } from "../hooks/useCountUp.ts";
 import { chartThemeColors } from "../lib/chartTheme.ts";
@@ -7,10 +7,19 @@ import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface StrainCardProps {
   data: WorkloadRatioResult | undefined;
+  strainTarget?: StrainTargetResult | undefined;
   loading?: boolean;
 }
 
-function StrainRing({ strain, size = 120 }: { strain: number; size?: number }) {
+function StrainRing({
+  strain,
+  targetStrain,
+  size = 120,
+}: {
+  strain: number;
+  targetStrain?: number;
+  size?: number;
+}) {
   const maxStrain = 21;
   const strokeWidth = 8;
   const radius = (size - strokeWidth) / 2;
@@ -59,6 +68,26 @@ function StrainRing({ strain, size = 120 }: { strain: number; size?: number }) {
           transform={`rotate(-90 ${center} ${center})`}
           style={{ transition: "stroke-dashoffset 1.2s cubic-bezier(0.16, 1, 0.3, 1)" }}
         />
+        {/* Target marker */}
+        {targetStrain != null &&
+          targetStrain > 0 &&
+          (() => {
+            const targetFraction = Math.min(targetStrain / maxStrain, 1);
+            const targetAngle = -90 + targetFraction * 360;
+            const rad = (targetAngle * Math.PI) / 180;
+            const markerX = center + radius * Math.cos(rad);
+            const markerY = center + radius * Math.sin(rad);
+            return (
+              <circle
+                cx={markerX}
+                cy={markerY}
+                r={4}
+                fill="white"
+                stroke={chartThemeColors.gridLine}
+                strokeWidth={1.5}
+              />
+            );
+          })()}
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span className="text-2xl font-bold font-mono tabular-nums" style={{ color }}>
@@ -72,7 +101,7 @@ function StrainRing({ strain, size = 120 }: { strain: number; size?: number }) {
   );
 }
 
-export function StrainCard({ data, loading }: StrainCardProps) {
+export function StrainCard({ data, strainTarget, loading }: StrainCardProps) {
   if (loading) {
     return <ChartLoadingSkeleton height={200} />;
   }
@@ -102,7 +131,7 @@ export function StrainCard({ data, loading }: StrainCardProps) {
   return (
     <div className="card p-6">
       <div className="flex items-center gap-6">
-        <StrainRing strain={strain} size={120} />
+        <StrainRing strain={strain} targetStrain={strainTarget?.targetStrain} size={120} />
 
         <div className="flex-1 space-y-3">
           <div>
@@ -138,6 +167,19 @@ export function StrainCard({ data, loading }: StrainCardProps) {
               <p className="text-[10px] text-subtle">Workload Ratio</p>
             </div>
           </div>
+
+          {strainTarget && (
+            <div className="mt-1 pt-2 border-t border-border">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-subtle">
+                  Target:{" "}
+                  <span className="text-foreground font-medium">{strainTarget.targetStrain}</span> (
+                  {strainTarget.zone})
+                </span>
+                <span className="text-subtle">{strainTarget.progressPercent}% reached</span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

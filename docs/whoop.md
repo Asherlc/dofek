@@ -143,7 +143,7 @@ SELECT refresh_token FROM fitness.oauth_token WHERE provider_id = 'whoop';
 2. ~~Sync exercise-level data into the existing `strength_workout` / `strength_set` tables~~ ✅ Done
 3. Consider syncing the exercise catalog (`GET /weightlifting-service/v2/exercise`) for exercise metadata
 
-### Future: Raw IMU/accelerometer data
+### Raw IMU/accelerometer data
 
 There are **three paths** to getting raw accelerometer data from a Whoop strap. All are on the roadmap for future implementation (iPhone accelerometer via `CMSensorRecorder` is being implemented first as a quicker win).
 
@@ -151,17 +151,82 @@ There are **three paths** to getting raw accelerometer data from a Whoop strap. 
 
 Each set in the weightlifting response has a `protobuf_file_path` field pointing to raw accelerometer/gyroscope data from the WHOOP strap. This is the rawest data WHOOP captures for strength training — the MSK strain scores are derived from it.
 
-**Current status (March 2026):** All sets in the user's workouts have `protobuf_file_path: null`. This is because the workouts were logged with exercises entered manually in the app, NOT tracked live with the strap worn on a specific body part (bicep, forearm, etc.). The related fields `strap_location` and `strap_location_laterality` are also null.
+**Status (March 2026): Confirmed protobuf data exists, download mechanism TBD.**
 
-**To investigate this, you need:**
-1. A workout where the user wore the WHOOP strap on a body part and used "Strength Trainer" mode (sport_id=123) with live tracking
-2. After the workout, fetch the weightlifting response and check for non-null `protobuf_file_path` values
-3. The path is likely an S3 key or presigned URL — try downloading it with the same auth token
-4. The upload endpoint is `POST /weightlifting-service/v1/raw-data/protobuf` (confirmed to exist via 405 response) — the protobuf schema may be inferrable from the decompiled APK
+A live-tracked Strength Trainer workout (sport_id=123, "Virgil van Dijk's Pitch Power") confirmed that `protobuf_file_path` is populated for sets where the strap detects the exercise. Key observations:
+
+- **Only RIGHT-side sets had protobuf data** — the strap was worn on the right arm, so sets where `strap_location_laterality: "RIGHT"` have protobuf paths, while `"LEFT"` sets do not
+- **`strap_location` is an integer** (e.g., `1`), not a string like the decompiled DTO suggested ("BICEP")
+- **4 of ~18 sets** across the workout had protobuf data (Split Squat sets tracked on right arm, Squat Jump)
+- **New field discovered**: `is_exercise_trackable: Boolean` — indicates whether the exercise supports IMU tracking
+- **New field discovered**: `weightlifting_workout_set_id: UUID` — unique ID per set
+
+**S3 storage:**
+- **Bucket**: `com.whoop.weightlifting.prod` (in `us-west-2`)
+- **Key format**: `pb/dt={YYYY-MM-DD}/hour={HH}/user_id={userId}/{timestampMs}.pb`
+- **Full path example**: `com.whoop.weightlifting.prod/pb/dt=2026-03-26/hour=00/user_id=35557944/1774486428149.pb`
+
+**Upload endpoint:**
+- `POST /weightlifting-service/v1/raw-data/protobuf` with `Content-Type: application/octet-stream`
+- Returns `{"bucket_and_key": "com.whoop.weightlifting.prod/pb/..."}` on success
+- The strap uploads raw IMU data here during live-tracked workouts
+
+**Download: NOT YET POSSIBLE.** Attempts tried:
+- Direct S3 access → 403 (bucket is private, no public access)
+- Various API download endpoints → all 404
+- Bearer token on S3 → invalid (S3 doesn't accept Cognito Bearer tokens)
+- No presigned URL endpoint found on the weightlifting-service
+
+**APK decompilation confirmed (March 2026): no download mechanism exists.**
+- The app only **uploads** protobuf data via `POST /weightlifting-service/v1/raw-data/protobuf` (Retrofit method: `uploadWeightliftingProtobufFile`). There is no download/GET endpoint for protobuf files.
+- **No Cognito Identity Pool** — the app does not use federated identity for direct S3 access. It uses `cognitoidentityprovider` (User Pool auth) only.
+- **No protobuf schema bundled** — the `.proto` files in the APK are Firebase analytics (`client_analytics.proto`, `messaging_event.proto`), not WHOOP IMU schemas.
+- The upload method signature is: `uploadWeightliftingProtobufFile(body: RequestBody, headers: Map<String, String>, setStartTimeMS: Long) -> UploadedProtobufInfo`
+- `UploadedProtobufInfo` contains a single field: `bucket_and_key: String` (the S3 path)
+
+**Remaining options to access raw IMU data:**
+1. **BLE interception** — capture accelerometer data as it flows from strap to phone over Bluetooth Low Energy, before upload. This would require reverse-engineering the BLE protocol.
+2. **WHOOP Unite research program** — institutional research agreement that may offer deeper data access.
+3. **MITM proxy** — intercept the upload to capture the raw protobuf bytes and reverse-engineer the schema.
+
+**Derived accelerometer data (potentially accessible):**
+The APK contains a `LoadVelocityProfileDto` with fields derived from accelerometer data:
+- `average_velocities_meters_per_second: List<Double>` — per-set average velocity
+- `peak_velocities_meters_per_second: List<Double>` — per-set peak velocity
+- `loads_kg: List<Double>` — load for each data point
+- `one_rm_kg: Double` — estimated 1RM from load-velocity regression
+- `slope_average / slope_peak: Double` — regression slope
+- `r_value_average / r_value_peak: Double` — regression R-value
+- `minimum_average_velocity_threshold_m_per_s / minimum_peak_velocity_threshold_m_per_s: Double`
+- `load_at_zero_average_velocity_kg / load_at_zero_peak_velocity_kg: Double` — y-intercept
+- `zero_load_average_velocity_m_per_s / zero_load_peak_velocity_m_per_s: Double` — x-intercept
+
+This data is served via `POST /weightlifting-service/v2/performance-profile/template` — not yet tested, likely requires enough training data points to compute the regression.
+
+**Example set with protobuf (from live-tracked workout):**
+```json
+{
+  "weight_kg": 0.0,
+  "is_exercise_trackable": true,
+  "weightlifting_workout_set_id": "8f58d274-61c3-49ef-90f1-d4feae1a79e4",
+  "number_of_reps": 8,
+  "during": "['2026-03-25T17:53:48.149Z','2026-03-25T17:53:48.419Z')",
+  "strap_location": 1,
+  "strap_location_laterality": "RIGHT",
+  "protobuf_file_path": "com.whoop.weightlifting.prod/pb/dt=2026-03-26/hour=00/user_id=35557944/1774486428149.pb",
+  "msk_total_volume_kg": 0.0,
+  "time_in_seconds": null,
+  "complete": true
+}
+```
+
+**Additional response fields discovered (not in current types):**
+- Top-level: `pushcore_version`, `weightlifting_workout_id`, `workout_template_id`, `msk_intensity_percent`, `raw_cardio_intensity_score`, `raw_total_strain_score`, `total_strain_score`, `total_active_time_seconds`, `total_rest_time_seconds`, `average_heart_rate`, `max_heart_rate`, `kilojoules`
+- Exercise details: `image_url` (CloudFront), `video_url` (CloudFront) — exercise demo images/videos
 
 **Decompiled DTO fields (from `WeightliftingWorkoutSetDto.java`):**
-- `protobuf_file_path: String` — path to raw IMU data
-- `strap_location: String` — where on the body the strap was (e.g., "BICEP")
+- `protobuf_file_path: String` — S3 key for raw IMU data
+- `strap_location: Integer` — where on the body the strap was (integer code, not string as originally documented)
 - `strap_location_laterality: String` — "LEFT" or "RIGHT"
 - `is_exercise_trackable: Boolean` — whether the exercise supports IMU tracking
 
@@ -169,6 +234,7 @@ Each set in the weightlifting response has a `protobuf_file_path` field pointing
 - `sources/com/whoop/weightlifting/data/WeightliftingApi.java` — Retrofit interface with all 20 endpoints
 - `sources/com/whoop/weightlifting/data/dto/WeightliftingWorkoutSetDto.java` — Set DTO with protobuf fields
 - Search for `protobuf` or `ProtobufParser` in the decompiled sources to find the protobuf schema definition
+- Search for `IdentityPoolId` or `CognitoIdentity` to find the S3 access mechanism
 
 #### Path B: BLE capture during Strength Trainer workouts (passive)
 

@@ -16,7 +16,7 @@ describe("useCountUp", () => {
       setTimeout(() => cb(time), 0);
       return time;
     });
-    vi.spyOn(globalThis, "cancelAnimationFrame").mockImplementation((id) => {
+    vi.spyOn(globalThis, "cancelAnimationFrame").mockImplementation((_id) => {
       // no-op for test
     });
   });

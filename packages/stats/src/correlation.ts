@@ -267,8 +267,8 @@ export interface PearsonResult {
 }
 
 export function pearsonCorrelation(x: number[], y: number[]): PearsonResult {
-  const n = x.length;
-  if (n < 3) return { r: 0, pValue: 1, n };
+  const sampleSize = x.length;
+  if (sampleSize < 3) return { r: 0, pValue: 1, n: sampleSize };
 
   let sumX = 0;
   let sumY = 0;
@@ -276,7 +276,7 @@ export function pearsonCorrelation(x: number[], y: number[]): PearsonResult {
   let sumX2 = 0;
   let sumY2 = 0;
 
-  for (let i = 0; i < n; i++) {
+  for (let i = 0; i < sampleSize; i++) {
     const xi = x[i] ?? 0;
     const yi = y[i] ?? 0;
     sumX += xi;
@@ -286,20 +286,23 @@ export function pearsonCorrelation(x: number[], y: number[]): PearsonResult {
     sumY2 += yi * yi;
   }
 
-  const num = n * sumXY - sumX * sumY;
-  const den = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
+  const num = sampleSize * sumXY - sumX * sumY;
+  const den = Math.sqrt((sampleSize * sumX2 - sumX * sumX) * (sampleSize * sumY2 - sumY * sumY));
 
-  if (den === 0) return { r: 0, pValue: 1, n };
+  if (den === 0) return { r: 0, pValue: 1, n: sampleSize };
 
-  const r = num / den;
+  const correlationCoefficient = num / den;
 
   // t-test for significance
-  if (Math.abs(r) >= 1) return { r, pValue: 0, n };
-  const t = r * Math.sqrt((n - 2) / (1 - r * r));
-  const df = n - 2;
-  const pValue = 2 * tCDF(-Math.abs(t), df);
+  if (Math.abs(correlationCoefficient) >= 1)
+    return { r: correlationCoefficient, pValue: 0, n: sampleSize };
+  const tStatistic =
+    correlationCoefficient *
+    Math.sqrt((sampleSize - 2) / (1 - correlationCoefficient * correlationCoefficient));
+  const df = sampleSize - 2;
+  const pValue = 2 * tCDF(-Math.abs(tStatistic), df);
 
-  return { r, pValue, n };
+  return { r: correlationCoefficient, pValue, n: sampleSize };
 }
 
 // ── Linear regression ───────────────────────────────────────────────────
@@ -311,21 +314,21 @@ export interface RegressionResult {
 }
 
 export function linearRegression(x: number[], y: number[]): RegressionResult {
-  const n = x.length;
-  if (n < 2) return { slope: 0, intercept: 0, rSquared: 0 };
+  const sampleSize = x.length;
+  if (sampleSize < 2) return { slope: 0, intercept: 0, rSquared: 0 };
 
   let sumX = 0;
   let sumY = 0;
-  for (let i = 0; i < n; i++) {
+  for (let i = 0; i < sampleSize; i++) {
     sumX += x[i] ?? 0;
     sumY += y[i] ?? 0;
   }
-  const xMean = sumX / n;
-  const yMean = sumY / n;
+  const xMean = sumX / sampleSize;
+  const yMean = sumY / sampleSize;
 
   let num = 0;
   let den = 0;
-  for (let i = 0; i < n; i++) {
+  for (let i = 0; i < sampleSize; i++) {
     const dx = (x[i] ?? 0) - xMean;
     const dy = (y[i] ?? 0) - yMean;
     num += dx * dy;
@@ -340,7 +343,7 @@ export function linearRegression(x: number[], y: number[]): RegressionResult {
   // R-squared
   let ssRes = 0;
   let ssTot = 0;
-  for (let i = 0; i < n; i++) {
+  for (let i = 0; i < sampleSize; i++) {
     const yi = y[i] ?? 0;
     const predicted = slope * (x[i] ?? 0) + intercept;
     ssRes += (yi - predicted) ** 2;
@@ -354,8 +357,8 @@ export function linearRegression(x: number[], y: number[]): RegressionResult {
 // ── t-CDF ────────────────────────────────────────────────────────────────
 
 export function tCDF(t: number, df: number): number {
-  const x = df / (df + t * t);
-  return 0.5 * regularizedBeta(x, df / 2, 0.5);
+  const betaArg = df / (df + t * t);
+  return 0.5 * regularizedBeta(betaArg, df / 2, 0.5);
 }
 
 export function regularizedBeta(x: number, a: number, b: number): number {
@@ -397,7 +400,7 @@ export function regularizedBeta(x: number, a: number, b: number): number {
 }
 
 export function lgamma(z: number): number {
-  const g = 7;
+  const lanczosG = 7;
   const coef = [
     0.99999999999980993, 676.5203681218851, -1259.1392167224028, 771.32342877765313,
     -176.61502916214059, 12.507343278686905, -0.13857109526572012, 9.9843695780195716e-6,
@@ -407,10 +410,15 @@ export function lgamma(z: number): number {
     return Math.log(Math.PI / Math.sin(Math.PI * z)) - lgamma(1 - z);
   }
   z -= 1;
-  let x = coef[0] ?? 0;
-  for (let i = 1; i < g + 2; i++) {
-    x += (coef[i] ?? 0) / (z + i);
+  let seriesSum = coef[0] ?? 0;
+  for (let i = 1; i < lanczosG + 2; i++) {
+    seriesSum += (coef[i] ?? 0) / (z + i);
   }
-  const t = z + g + 0.5;
-  return 0.5 * Math.log(2 * Math.PI) + (z + 0.5) * Math.log(t) - t + Math.log(x);
+  const lanczosArg = z + lanczosG + 0.5;
+  return (
+    0.5 * Math.log(2 * Math.PI) +
+    (z + 0.5) * Math.log(lanczosArg) -
+    lanczosArg +
+    Math.log(seriesSum)
+  );
 }
