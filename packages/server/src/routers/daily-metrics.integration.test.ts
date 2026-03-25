@@ -27,7 +27,7 @@ describe("dailyMetrics data correctness", () => {
 
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
-    queryCache.reset();
+    await queryCache.invalidateAll();
 
     const session = await createSession(testCtx.db, DEFAULT_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
@@ -109,7 +109,7 @@ describe("dailyMetrics data correctness", () => {
   });
 
   async function query<T = unknown>(path: string, input: Record<string, unknown> = {}): Promise<T> {
-    queryCache.reset();
+    await queryCache.invalidateAll();
     const res = await fetch(`${baseUrl}/api/trpc/${path}?batch=1`, {
       method: "POST",
       headers: {
