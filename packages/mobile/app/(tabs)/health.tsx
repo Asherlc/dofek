@@ -43,6 +43,7 @@ const ALL_QUANTITY_TYPES = [...ADDITIVE_QUANTITY_TYPES, ...NON_ADDITIVE_QUANTITY
 const NAV_LINKS = [
   { route: "/sleep" as const, label: "Sleep", emoji: "\uD83C\uDF19", description: "Sleep stages, debt & patterns" },
   { route: "/correlation" as const, label: "Correlation Explorer", emoji: "\u{1F50D}", description: "See how any two metrics relate" },
+  { route: "/accelerometer" as const, label: "Accelerometer", emoji: "\uD83D\uDCF1", description: "Raw motion data & recording status" },
   { route: "/providers" as const, label: "Data Sources", emoji: "\uD83D\uDD17", description: "Manage providers & sync history" },
   { route: "/tracking" as const, label: "Tracking", emoji: "\uD83D\uDCCB", description: "Life events" },
   { route: "/settings" as const, label: "Settings", emoji: "\u2699\uFE0F", description: "Accounts, units & export" },
