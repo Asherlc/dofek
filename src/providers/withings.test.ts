@@ -495,6 +495,206 @@ describe("WithingsProvider.sync() — temperature measurement", () => {
   });
 });
 
+// ============================================================
+// Webhook method tests
+// ============================================================
+
+describe("WithingsProvider webhook methods", () => {
+  const provider = new WithingsProvider();
+
+  describe("registerWebhook", () => {
+    it("returns withings-user-subscription as subscriptionId", async () => {
+      const result = await provider.registerWebhook("https://example.com/webhook", "verify-token");
+      expect(result.subscriptionId).toBe("withings-user-subscription");
+    });
+
+    it("does not return a signingSecret or expiresAt", async () => {
+      const result = await provider.registerWebhook("https://example.com/webhook", "verify-token");
+      expect(result.signingSecret).toBeUndefined();
+      expect(result.expiresAt).toBeUndefined();
+    });
+  });
+
+  describe("verifyWebhookSignature", () => {
+    it("returns true with valid-looking inputs", () => {
+      const result = provider.verifyWebhookSignature(
+        Buffer.from("some body"),
+        { "x-signature": "abc123" },
+        "secret",
+      );
+      expect(result).toBe(true);
+    });
+
+    it("returns true with empty inputs", () => {
+      const result = provider.verifyWebhookSignature(Buffer.from(""), {}, "");
+      expect(result).toBe(true);
+    });
+
+    it("returns true regardless of header values", () => {
+      const result = provider.verifyWebhookSignature(
+        Buffer.from("anything"),
+        { "x-withings-signature": "wrong" },
+        "any-secret",
+      );
+      expect(result).toBe(true);
+    });
+  });
+
+  describe("parseWebhookPayload", () => {
+    it("maps appli 1 to weight", () => {
+      const events = provider.parseWebhookPayload({ userid: "12345", appli: 1 });
+      expect(events).toHaveLength(1);
+      expect(events[0]?.objectType).toBe("weight");
+    });
+
+    it("maps appli 4 to blood_pressure", () => {
+      const events = provider.parseWebhookPayload({ userid: "12345", appli: 4 });
+      expect(events).toHaveLength(1);
+      expect(events[0]?.objectType).toBe("blood_pressure");
+    });
+
+    it("maps appli 16 to activity", () => {
+      const events = provider.parseWebhookPayload({ userid: "12345", appli: 16 });
+      expect(events).toHaveLength(1);
+      expect(events[0]?.objectType).toBe("activity");
+    });
+
+    it("maps appli 44 to sleep", () => {
+      const events = provider.parseWebhookPayload({ userid: "12345", appli: 44 });
+      expect(events).toHaveLength(1);
+      expect(events[0]?.objectType).toBe("sleep");
+    });
+
+    it("maps appli 54 to spo2", () => {
+      const events = provider.parseWebhookPayload({ userid: "12345", appli: 54 });
+      expect(events).toHaveLength(1);
+      expect(events[0]?.objectType).toBe("spo2");
+    });
+
+    it("maps unknown appli code to unknown", () => {
+      const events = provider.parseWebhookPayload({ userid: "12345", appli: 999 });
+      expect(events).toHaveLength(1);
+      expect(events[0]?.objectType).toBe("unknown");
+    });
+
+    it("maps missing appli to unknown", () => {
+      const events = provider.parseWebhookPayload({ userid: "12345" });
+      expect(events).toHaveLength(1);
+      expect(events[0]?.objectType).toBe("unknown");
+    });
+
+    it("sets ownerExternalId from userid", () => {
+      const events = provider.parseWebhookPayload({ userid: "67890", appli: 1 });
+      expect(events).toHaveLength(1);
+      expect(events[0]?.ownerExternalId).toBe("67890");
+    });
+
+    it("coerces numeric userid to string", () => {
+      const events = provider.parseWebhookPayload({ userid: 99999, appli: 1 });
+      expect(events).toHaveLength(1);
+      expect(events[0]?.ownerExternalId).toBe("99999");
+    });
+
+    it("sets eventType to update for all valid payloads", () => {
+      const events = provider.parseWebhookPayload({ userid: "12345", appli: 1 });
+      expect(events).toHaveLength(1);
+      expect(events[0]?.eventType).toBe("update");
+    });
+
+    it("returns empty array for non-object data", () => {
+      const events = provider.parseWebhookPayload(42);
+      expect(events).toEqual([]);
+    });
+
+    it("returns empty array for null input", () => {
+      const events = provider.parseWebhookPayload(null);
+      expect(events).toEqual([]);
+    });
+
+    it("returns empty array for undefined input", () => {
+      const events = provider.parseWebhookPayload(undefined);
+      expect(events).toEqual([]);
+    });
+
+    it("returns empty array for string input", () => {
+      const events = provider.parseWebhookPayload("not-an-object");
+      expect(events).toEqual([]);
+    });
+
+    it("includes startdate and enddate without affecting output structure", () => {
+      const events = provider.parseWebhookPayload({
+        userid: "12345",
+        appli: 1,
+        startdate: 1700000000,
+        enddate: 1700086400,
+      });
+      expect(events).toHaveLength(1);
+      expect(events[0]?.ownerExternalId).toBe("12345");
+      expect(events[0]?.objectType).toBe("weight");
+      expect(events[0]?.eventType).toBe("update");
+    });
+  });
+
+  describe("authSetup", () => {
+    const originalEnv = { ...process.env };
+
+    afterEach(() => {
+      process.env = { ...originalEnv };
+    });
+
+    it("returns exchangeCode as a callable function", () => {
+      process.env.WITHINGS_CLIENT_ID = "test-id";
+      process.env.WITHINGS_CLIENT_SECRET = "test-secret";
+
+      const setup = provider.authSetup();
+      expect(typeof setup.exchangeCode).toBe("function");
+    });
+
+    it("exchangeCode returns a promise (not undefined)", () => {
+      process.env.WITHINGS_CLIENT_ID = "test-id";
+      process.env.WITHINGS_CLIENT_SECRET = "test-secret";
+
+      const setup = provider.authSetup();
+      // Calling exchangeCode should return a promise, not undefined
+      const result = setup.exchangeCode("test-code");
+      expect(result).toBeInstanceOf(Promise);
+      // Catch the rejection since there's no real server
+      result.catch(() => {});
+    });
+
+    it("returns apiBaseUrl as the Withings API base", () => {
+      process.env.WITHINGS_CLIENT_ID = "test-id";
+      process.env.WITHINGS_CLIENT_SECRET = "test-secret";
+
+      const setup = provider.authSetup();
+      expect(setup.apiBaseUrl).toBe("https://wbsapi.withings.net");
+    });
+
+    it("throws when env vars are missing", () => {
+      delete process.env.WITHINGS_CLIENT_ID;
+      delete process.env.WITHINGS_CLIENT_SECRET;
+
+      expect(() => provider.authSetup()).toThrow(
+        "WITHINGS_CLIENT_ID and WITHINGS_CLIENT_SECRET are required",
+      );
+    });
+  });
+
+  describe("provider identity", () => {
+    it("has id 'withings'", () => {
+      expect(provider.id).toBe("withings");
+    });
+
+    it("has name 'Withings'", () => {
+      expect(provider.name).toBe("Withings");
+    });
+
+    it("has webhookScope 'user'", () => {
+      expect(provider.webhookScope).toBe("user");
+    });
+  });
+});
+
 describe("exchangeWithingsCode — scope handling", () => {
   it("handles non-string scope in response", async () => {
     const mockFetch: typeof globalThis.fetch = async () => {

@@ -5,19 +5,19 @@ import { appRouter } from "../router.ts";
 /** Fire common queries sequentially to populate cache without overwhelming the DB.
  *  Uses DEFAULT_USER_ID for backwards compatibility — only warms for the primary user. */
 export async function warmCache(db: import("dofek/db").Database): Promise<void> {
-  const caller = appRouter.createCaller({ db, userId: DEFAULT_USER_ID });
-  const today = new Date().toLocaleDateString("en-CA"); // server tz — best-effort for cache warming
+  const caller = appRouter.createCaller({ db, userId: DEFAULT_USER_ID, timezone: "UTC" });
+  const endDate = new Date().toISOString().slice(0, 10);
   const queries: Array<[string, () => Promise<unknown>]> = [
     // Dashboard
-    ["dailyMetrics.list(30)", () => caller.dailyMetrics.list({ days: 30, today })],
-    ["dailyMetrics.list(90)", () => caller.dailyMetrics.list({ days: 90, today })],
-    ["dailyMetrics.trends(30)", () => caller.dailyMetrics.trends({ days: 30, today })],
-    ["training.nextWorkout", () => caller.training.nextWorkout()],
+    ["dailyMetrics.list(30)", () => caller.dailyMetrics.list({ days: 30, endDate })],
+    ["dailyMetrics.list(90)", () => caller.dailyMetrics.list({ days: 90, endDate })],
+    ["dailyMetrics.trends(30)", () => caller.dailyMetrics.trends({ days: 30, endDate })],
+    ["training.nextWorkout", () => caller.training.nextWorkout({ endDate })],
     ["dailyMetrics.latest", () => caller.dailyMetrics.latest()],
-    ["sleep.list(30)", () => caller.sleep.list({ days: 30 })],
+    ["sleep.list(30)", () => caller.sleep.list({ days: 30, endDate })],
     ["sync.providers", () => caller.sync.providers()],
     ["sync.providerStats", () => caller.sync.providerStats()],
-    ["insights.compute(90)", () => caller.insights.compute({ days: 90 })],
+    ["insights.compute(90)", () => caller.insights.compute({ days: 90, endDate })],
     // Training page
     ["training.weeklyVolume(90)", () => caller.training.weeklyVolume({ days: 90 })],
     ["training.hrZones(90)", () => caller.training.hrZones({ days: 90 })],

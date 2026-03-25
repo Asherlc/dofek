@@ -68,11 +68,11 @@ describe("Router SQL validity", () => {
 
   // ── Daily Metrics ──
   describe("dailyMetrics", () => {
-    it("list", () => expectValidSql("dailyMetrics.list", { days: 30, today: "2024-01-16" }));
+    it("list", () => expectValidSql("dailyMetrics.list", { days: 30, endDate: "2024-01-16" }));
     it("latest", () => expectValidSql("dailyMetrics.latest"));
     it("hrvBaseline", () =>
-      expectValidSql("dailyMetrics.hrvBaseline", { days: 30, today: "2024-01-16" }));
-    it("trends", () => expectValidSql("dailyMetrics.trends", { days: 30, today: "2024-01-16" }));
+      expectValidSql("dailyMetrics.hrvBaseline", { days: 30, endDate: "2024-01-16" }));
+    it("trends", () => expectValidSql("dailyMetrics.trends", { days: 30, endDate: "2024-01-16" }));
   });
 
   // ── Sleep ──

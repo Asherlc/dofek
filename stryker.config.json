@@ -29,9 +29,9 @@
     "packages/velohero-client/src/**/*.ts",
     "packages/zwift-client/src/**/*.ts",
     "packages/trainingpeaks-connect/src/**/*.ts",
-    "packages/ios/app/**/*.{ts,tsx}",
-    "packages/ios/components/**/*.{ts,tsx}",
-    "packages/ios/lib/**/*.{ts,tsx}",
+    "packages/mobile/app/**/*.{ts,tsx}",
+    "packages/mobile/components/**/*.{ts,tsx}",
+    "packages/mobile/lib/**/*.{ts,tsx}",
     "!**/*.test.ts",
     "!**/*.test.tsx",
     "!**/test-helpers.ts",
@@ -46,12 +46,13 @@
     ".context/**"
   ],
   "testRunnerNodeArgs": ["--import", "tsx"],
+  "dryRunTimeoutMinutes": 15,
   "timeoutMS": 30000,
   "thresholds": {
     "high": 90,
     "low": 80,
-    "break": 50
+    "break": 60
   },
   "reporters": ["clear-text", "html", "progress"],
-  "concurrency": 4
+  "concurrency": 2
 }

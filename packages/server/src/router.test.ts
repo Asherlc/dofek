@@ -6,8 +6,11 @@ const { mockRouter } = vi.hoisted(() => ({
 }));
 
 vi.mock("./routers/activity.ts", () => ({ activityRouter: mockRouter }));
+vi.mock("./routers/ai-coach.ts", () => ({ aiCoachRouter: mockRouter }));
 vi.mock("./routers/anomaly-detection.ts", () => ({ anomalyDetectionRouter: mockRouter }));
 vi.mock("./routers/auth.ts", () => ({ authRouter: mockRouter }));
+vi.mock("./routers/behavior-impact.ts", () => ({ behaviorImpactRouter: mockRouter }));
+vi.mock("./routers/breathwork.ts", () => ({ breathworkRouter: mockRouter }));
 vi.mock("./routers/body.ts", () => ({ bodyRouter: mockRouter }));
 vi.mock("./routers/body-analytics.ts", () => ({ bodyAnalyticsRouter: mockRouter }));
 vi.mock("./routers/calendar.ts", () => ({ calendarRouter: mockRouter }));
@@ -20,11 +23,15 @@ vi.mock("./routers/efficiency.ts", () => ({ efficiencyRouter: mockRouter }));
 vi.mock("./routers/food.ts", () => ({ foodRouter: mockRouter }));
 vi.mock("./routers/garmin-auth.ts", () => ({ garminAuthRouter: mockRouter }));
 vi.mock("./routers/health-kit-sync.ts", () => ({ healthKitSyncRouter: mockRouter }));
+vi.mock("./routers/health-report.ts", () => ({ healthReportRouter: mockRouter }));
 vi.mock("./routers/healthspan.ts", () => ({ healthspanRouter: mockRouter }));
 vi.mock("./routers/hiking.ts", () => ({ hikingRouter: mockRouter }));
 vi.mock("./routers/insights.ts", () => ({ insightsRouter: mockRouter }));
 vi.mock("./routers/intervals.ts", () => ({ intervalsRouter: mockRouter }));
+vi.mock("./routers/journal.ts", () => ({ journalRouter: mockRouter }));
 vi.mock("./routers/life-events.ts", () => ({ lifeEventsRouter: mockRouter }));
+vi.mock("./routers/menstrual-cycle.ts", () => ({ menstrualCycleRouter: mockRouter }));
+vi.mock("./routers/monthly-report.ts", () => ({ monthlyReportRouter: mockRouter }));
 vi.mock("./routers/nutrition.ts", () => ({ nutritionRouter: mockRouter }));
 vi.mock("./routers/nutrition-analytics.ts", () => ({ nutritionAnalyticsRouter: mockRouter }));
 vi.mock("./routers/personalization.ts", () => ({ personalizationRouter: mockRouter }));
@@ -50,7 +57,7 @@ vi.mock("./routers/whoop-auth.ts", () => ({ whoopAuthRouter: mockRouter }));
 // Mock trpc
 vi.mock("./trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const t = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  const t = initTRPC.context<{ db: unknown; userId: string | null; timezone: string }>().create();
   return {
     router: t.router,
     protectedProcedure: t.procedure,
@@ -84,8 +91,11 @@ describe("appRouter", () => {
   it("includes all sub-routers in the definition", () => {
     const expectedRouters = [
       "activity",
+      "aiCoach",
       "anomalyDetection",
       "auth",
+      "behaviorImpact",
+      "breathwork",
       "sleep",
       "sleepNeed",
       "dailyMetrics",
@@ -111,6 +121,7 @@ describe("appRouter", () => {
       "food",
       "garminAuth",
       "healthKitSync",
+      "healthReport",
       "whoopAuth",
       "strength",
       "cyclingAdvanced",
@@ -121,9 +132,12 @@ describe("appRouter", () => {
       "settings",
       "stress",
       "healthspan",
+      "menstrualCycle",
+      "monthlyReport",
       "weeklyReport",
       "sportSettings",
       "intervals",
+      "journal",
     ];
 
     // The router definition record should have entries for each sub-router

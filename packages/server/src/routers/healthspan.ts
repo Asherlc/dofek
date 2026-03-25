@@ -1,5 +1,7 @@
+import { scoreToYearsDelta } from "@dofek/scoring/healthspan-years";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { dateWindowStart, endDateSchema, timestampWindowStart } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
@@ -28,11 +30,15 @@ export interface HealthspanMetric {
   score: number;
   /** Brief interpretation */
   status: "excellent" | "good" | "fair" | "poor";
+  /** Biological age delta in years for this metric alone */
+  yearsDelta: number;
 }
 
 export interface HealthspanResult {
   /** Composite healthspan score 0-100, or null when there is no data */
   healthspanScore: number | null;
+  /** Composite biological age delta in years, or null when no score */
+  yearsDelta: number | null;
   /** Individual metric breakdowns */
   metrics: HealthspanMetric[];
   /** Historical weekly scores derived from resting heart rate, steps, and VO2 max only */
@@ -142,7 +148,7 @@ export const healthspanRouter = router({
    * Updates weekly from rolling 4-week data windows.
    */
   score: cachedProtectedQuery(CacheTTL.LONG)
-    .input(z.object({ weeks: z.number().min(4).max(52).default(12) }))
+    .input(z.object({ weeks: z.number().min(4).max(52).default(12), endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<HealthspanResult> => {
       const totalDays = input.weeks * 7;
 
@@ -173,13 +179,13 @@ export const healthspanRouter = router({
         rawRowSchema,
         sql`WITH sleep_data AS (
               SELECT
-                started_at::date AS date,
+                (started_at AT TIME ZONE ${ctx.timezone})::date AS date,
                 duration_minutes,
-                EXTRACT(HOUR FROM started_at) * 60 + EXTRACT(MINUTE FROM started_at) AS bedtime_minutes
+                EXTRACT(HOUR FROM started_at AT TIME ZONE ${ctx.timezone}) * 60 + EXTRACT(MINUTE FROM started_at AT TIME ZONE ${ctx.timezone}) AS bedtime_minutes
               FROM fitness.v_sleep
               WHERE user_id = ${ctx.userId}
                 AND is_nap = false
-                AND started_at > NOW() - ${totalDays}::int * INTERVAL '1 day'
+                AND started_at > ${timestampWindowStart(input.endDate, totalDays)}
             ),
             sleep_agg AS (
               SELECT
@@ -196,7 +202,7 @@ export const healthspanRouter = router({
                  ORDER BY date DESC LIMIT 1) AS latest_vo2max
               FROM fitness.v_daily_metrics
               WHERE user_id = ${ctx.userId}
-                AND date > CURRENT_DATE - ${totalDays}::int
+                AND date > ${dateWindowStart(input.endDate, totalDays)}
             ),
             hr_zone_time AS (
               SELECT
@@ -237,13 +243,13 @@ export const healthspanRouter = router({
                   SELECT dm.resting_hr
                   FROM fitness.v_daily_metrics dm
                   WHERE dm.user_id = up2.id
-                    AND dm.date <= a.started_at::date
+                    AND dm.date <= (a.started_at AT TIME ZONE ${ctx.timezone})::date
                     AND dm.resting_hr IS NOT NULL
                   ORDER BY dm.date DESC
                   LIMIT 1
                 ) rhr ON true
                 WHERE up2.id = ${ctx.userId}
-                  AND a.started_at > NOW() - ${totalDays}::int * INTERVAL '1 day'
+                  AND a.started_at > ${timestampWindowStart(input.endDate, totalDays)}
                   AND ms.heart_rate IS NOT NULL
                   AND up2.max_hr IS NOT NULL
               ) hr_samples
@@ -252,7 +258,7 @@ export const healthspanRouter = router({
               SELECT NULLIF(COUNT(*), 0)::real / GREATEST(${totalDays}::real / 7, 1) AS sessions_per_week
               FROM fitness.strength_workout
               WHERE user_id = ${ctx.userId}
-                AND started_at > NOW() - ${totalDays}::int * INTERVAL '1 day'
+                AND started_at > ${timestampWindowStart(input.endDate, totalDays)}
             ),
             body_latest AS (
               SELECT weight_kg, body_fat_pct
@@ -270,7 +276,7 @@ export const healthspanRouter = router({
                 AVG(vo2max) AS avg_vo2max
               FROM fitness.v_daily_metrics
               WHERE user_id = ${ctx.userId}
-                AND date > CURRENT_DATE - ${totalDays}::int
+                AND date > ${dateWindowStart(input.endDate, totalDays)}
               GROUP BY date_trunc('week', date)
               ORDER BY week_start ASC
             )
@@ -302,6 +308,7 @@ export const healthspanRouter = router({
       if (!row) {
         return {
           healthspanScore: null,
+          yearsDelta: null,
           metrics: [],
           history: [],
           trend: null,
@@ -321,6 +328,7 @@ export const healthspanRouter = router({
             row.bedtime_stddev_min != null ? Number(row.bedtime_stddev_min) : null,
           ),
           status: "good",
+          yearsDelta: 0,
         },
         {
           name: "Sleep Duration",
@@ -328,6 +336,7 @@ export const healthspanRouter = router({
           unit: "min/night",
           score: scoreSleepDuration(row.avg_sleep_min != null ? Number(row.avg_sleep_min) : null),
           status: "good",
+          yearsDelta: 0,
         },
         {
           name: "Aerobic Activity",
@@ -337,6 +346,7 @@ export const healthspanRouter = router({
             row.weekly_aerobic_min != null ? Number(row.weekly_aerobic_min) : null,
           ),
           status: "good",
+          yearsDelta: 0,
         },
         {
           name: "High Intensity",
@@ -349,6 +359,7 @@ export const healthspanRouter = router({
             row.weekly_high_intensity_min != null ? Number(row.weekly_high_intensity_min) : null,
           ),
           status: "good",
+          yearsDelta: 0,
         },
         {
           name: "Strength Training",
@@ -361,6 +372,7 @@ export const healthspanRouter = router({
             row.sessions_per_week != null ? Number(row.sessions_per_week) : null,
           ),
           status: "good",
+          yearsDelta: 0,
         },
         {
           name: "Daily Steps",
@@ -368,6 +380,7 @@ export const healthspanRouter = router({
           unit: "steps/day",
           score: scoreSteps(row.avg_steps != null ? Number(row.avg_steps) : null),
           status: "good",
+          yearsDelta: 0,
         },
         {
           name: "VO2 Max",
@@ -375,6 +388,7 @@ export const healthspanRouter = router({
           unit: "mL/kg/min",
           score: scoreVo2Max(row.latest_vo2max != null ? Number(row.latest_vo2max) : null),
           status: "good",
+          yearsDelta: 0,
         },
         {
           name: "Resting Heart Rate",
@@ -383,6 +397,7 @@ export const healthspanRouter = router({
           unit: "bpm",
           score: scoreRestingHr(row.avg_resting_hr != null ? Number(row.avg_resting_hr) : null),
           status: "good",
+          yearsDelta: 0,
         },
         {
           name: "Lean Body Mass",
@@ -390,12 +405,14 @@ export const healthspanRouter = router({
           unit: "%",
           score: scoreLeanMassPct(leanMassPct),
           status: "good",
+          yearsDelta: 0,
         },
       ];
 
-      // Set status based on score
+      // Set status and yearsDelta based on score
       for (const m of metricDefs) {
         m.status = scoreToStatus(m.score);
+        m.yearsDelta = scoreToYearsDelta(m.score);
       }
 
       // Composite: equal weight across metrics that have real data.
@@ -441,6 +458,7 @@ export const healthspanRouter = router({
 
       return {
         healthspanScore,
+        yearsDelta: healthspanScore != null ? scoreToYearsDelta(healthspanScore) : null,
         metrics: metricDefs,
         history,
         trend,

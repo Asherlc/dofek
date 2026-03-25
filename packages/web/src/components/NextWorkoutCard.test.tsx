@@ -8,7 +8,7 @@ function makeRecommendation(
   overrides?: Partial<NextWorkoutRecommendation>,
 ): NextWorkoutRecommendation {
   return {
-    generatedAt: "2026-03-20T10:00:00Z",
+    generatedAt: new Date().toISOString(),
     recommendationType: "cardio",
     title: "Easy Zone 2 Run",
     shortBlurb: "Keep it easy today to build aerobic base.",
@@ -107,6 +107,13 @@ describe("NextWorkoutCard", () => {
     });
     render(<NextWorkoutCard data={data} />);
     expect(screen.getByText(/Chest, Triceps/)).toBeDefined();
+  });
+
+  it("renders empty state when generatedAt is not today", () => {
+    const staleDate = new Date();
+    staleDate.setDate(staleDate.getDate() - 2);
+    render(<NextWorkoutCard data={makeRecommendation({ generatedAt: staleDate.toISOString() })} />);
+    expect(screen.getByText(/Not enough data for a workout recommendation/)).toBeDefined();
   });
 
   it("opens detail modal on button click", () => {

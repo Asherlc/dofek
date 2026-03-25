@@ -4,4 +4,5 @@ export {
   formatRelativeTime,
   formatTime,
   isToday,
+  isYesterday,
 } from "@dofek/format/format";

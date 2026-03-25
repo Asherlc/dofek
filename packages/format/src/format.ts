@@ -88,6 +88,17 @@ export function isToday(date: Date): boolean {
   );
 }
 
+/** Check if a Date is yesterday */
+export function isYesterday(date: Date): boolean {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  return (
+    date.getFullYear() === yesterday.getFullYear() &&
+    date.getMonth() === yesterday.getMonth() &&
+    date.getDate() === yesterday.getDate()
+  );
+}
+
 /** Format a timestamp as relative time: "5m ago", "2h ago", "3d ago".
  *  Accepts ISO strings, postgres-format strings, or Date objects
  *  (postgres-js returns Date objects on Linux/ARM). */
