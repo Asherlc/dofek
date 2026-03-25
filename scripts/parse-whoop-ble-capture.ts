@@ -81,8 +81,8 @@ const CommandName: Record<number, string> = {
 };
 
 /** Whoop DATA_FROM_STRAP characteristic handle suffixes */
-const DATA_CHAR_SUFFIXES = ["0005"];
-const CMD_CHAR_SUFFIXES = ["0002"];
+const _DATA_CHAR_SUFFIXES = ["0005"];
+const _CMD_CHAR_SUFFIXES = ["0002"];
 
 // ---------------------------------------------------------------------------
 // btsnoop / pklg file parsers
@@ -104,9 +104,9 @@ function parseBtsnoop(buf: Buffer): HciPacket[] {
   let offset = 16;
 
   while (offset + 24 <= buf.length) {
-    const origLen = buf.readUInt32BE(offset);
+    const _origLen = buf.readUInt32BE(offset);
     const inclLen = buf.readUInt32BE(offset + 4);
-    const flags = buf.readUInt32BE(offset + 8);
+    const _flags = buf.readUInt32BE(offset + 8);
     // timestamp is 8 bytes at offset+16 (microseconds since epoch)
     const tsHi = buf.readUInt32BE(offset + 16);
     const tsLo = buf.readUInt32BE(offset + 20);
@@ -169,28 +169,28 @@ function extractAttFromAcl(packets: HciPacket[]) {
   const writes: AttWrite[] = [];
 
   for (const pkt of packets) {
-    const d = pkt.data;
-    if (d.length < 9) continue;
+    const data = pkt.data;
+    if (data.length < 9) continue;
 
     // ACL header: handle(2) + len(2), then L2CAP: len(2) + CID(2)
     // We want CID = 0x0004 (ATT)
-    const l2capLen = d.readUInt16LE(4);
-    const cid = d.readUInt16LE(6);
+    const _l2capLen = data.readUInt16LE(4);
+    const cid = data.readUInt16LE(6);
     if (cid !== 0x0004) continue;
 
-    const attOpcode = d[8];
+    const attOpcode = data[8];
 
     // ATT Handle Value Notification (0x1B): handle(2) + value
-    if (attOpcode === 0x1b && d.length >= 11) {
-      const handle = d.readUInt16LE(9);
-      const value = Buffer.from(d.subarray(11));
+    if (attOpcode === 0x1b && data.length >= 11) {
+      const handle = data.readUInt16LE(9);
+      const value = Buffer.from(data.subarray(11));
       notifications.push({ handle, value, timestamp: pkt.timestamp });
     }
 
     // ATT Write Request (0x12) or Write Command (0x52): handle(2) + value
-    if ((attOpcode === 0x12 || attOpcode === 0x52) && d.length >= 11) {
-      const handle = d.readUInt16LE(9);
-      const value = Buffer.from(d.subarray(11));
+    if ((attOpcode === 0x12 || attOpcode === 0x52) && data.length >= 11) {
+      const handle = data.readUInt16LE(9);
+      const value = Buffer.from(data.subarray(11));
       writes.push({ handle, value, timestamp: pkt.timestamp });
     }
   }
@@ -250,7 +250,7 @@ function tryParseWhoopPayload(frame: Buffer, timestamp: number): WhoopPacket | n
 
   const payloadLen = frame.readUInt16LE(1);
   const headerSize = 4; // SOF + len(2) + crc8(1)
-  const expectedTotal = headerSize + payloadLen + 4; // +4 for trailing CRC32
+  const _expectedTotal = headerSize + payloadLen + 4; // +4 for trailing CRC32
 
   // Allow slightly short frames (BLE fragmentation edge cases)
   if (frame.length < headerSize + Math.min(payloadLen, 13)) return null;
@@ -299,7 +299,7 @@ interface ImuSample {
 }
 
 function extractImuSamples(packet: WhoopPacket): ImuSample[] {
-  const p = packet.payload;
+  const payload = packet.payload;
   const samples: ImuSample[] = [];
 
   // IMU stream packet (type 0x33 or 0x34)
@@ -308,22 +308,22 @@ function extractImuSamples(packet: WhoopPacket): ImuSample[] {
   if (
     (packet.packetType === PacketType.REALTIME_IMU ||
       packet.packetType === PacketType.HISTORICAL_IMU) &&
-    p.length >= 28
+    payload.length >= 28
   ) {
-    const countA = p.readUInt16LE(24);
-    const countB = p.readUInt16LE(26);
+    const countA = payload.readUInt16LE(24);
+    const countB = payload.readUInt16LE(26);
     const count = Math.min(countA, countB, 200); // safety cap
     let offset = 28;
 
-    for (let i = 0; i < count && offset + 12 <= p.length; i++) {
+    for (let i = 0; i < count && offset + 12 <= payload.length; i++) {
       samples.push({
         timestamp: packet.dataTimestamp,
-        ax: p.readInt16LE(offset),
-        ay: p.readInt16LE(offset + 2),
-        az: p.readInt16LE(offset + 4),
-        bx: p.readInt16LE(offset + 6),
-        by: p.readInt16LE(offset + 8),
-        bz: p.readInt16LE(offset + 10),
+        ax: payload.readInt16LE(offset),
+        ay: payload.readInt16LE(offset + 2),
+        az: payload.readInt16LE(offset + 4),
+        bx: payload.readInt16LE(offset + 6),
+        by: payload.readInt16LE(offset + 8),
+        bz: payload.readInt16LE(offset + 10),
       });
       offset += 12;
     }
@@ -334,21 +334,21 @@ function extractImuSamples(packet: WhoopPacket): ImuSample[] {
   if (
     packet.packetType === PacketType.REALTIME_RAW_DATA &&
     packet.recordType === 21 &&
-    p.length >= 1244
+    payload.length >= 1244
   ) {
-    const countA = p.readUInt16LE(16);
-    const countB = p.readUInt16LE(622);
+    const countA = payload.readUInt16LE(16);
+    const countB = payload.readUInt16LE(622);
     const count = Math.min(countA, 100);
 
     for (let i = 0; i < count; i++) {
       samples.push({
         timestamp: packet.dataTimestamp,
-        ax: p.readInt16LE(20 + i * 2),
-        ay: p.readInt16LE(220 + i * 2),
-        az: p.readInt16LE(420 + i * 2),
-        bx: i < countB ? p.readInt16LE(632 + i * 2) : 0,
-        by: i < countB ? p.readInt16LE(832 + i * 2) : 0,
-        bz: i < countB ? p.readInt16LE(1032 + i * 2) : 0,
+        ax: payload.readInt16LE(20 + i * 2),
+        ay: payload.readInt16LE(220 + i * 2),
+        az: payload.readInt16LE(420 + i * 2),
+        bx: i < countB ? payload.readInt16LE(632 + i * 2) : 0,
+        by: i < countB ? payload.readInt16LE(832 + i * 2) : 0,
+        bz: i < countB ? payload.readInt16LE(1032 + i * 2) : 0,
       });
     }
   }
@@ -443,7 +443,7 @@ function main() {
     }
 
     // Write full CSV
-    const csvFile = file.replace(/\.[^.]+$/, "") + "-imu.csv";
+    const csvFile = `${file.replace(/\.[^.]+$/, "")}-imu.csv`;
     const csvLines = [
       "timestamp,ax,ay,az,bx,by,bz",
       ...allImuSamples.map((s) => `${s.timestamp},${s.ax},${s.ay},${s.az},${s.bx},${s.by},${s.bz}`),

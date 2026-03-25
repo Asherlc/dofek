@@ -11,7 +11,7 @@
  * specifically targeting Whoop's custom BLE service UUIDs.
  */
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 
 const file = process.argv[2] || `${process.env.HOME}/Downloads/whoop-capture.pklg`;
 const buf = readFileSync(file);
@@ -24,13 +24,13 @@ const WHOOP_SERVICE_UUIDS = [
 
 // Track all unique ATT handles and their UUIDs
 const handleToUuid = new Map<number, string>();
-const handleToData = new Map<number, Buffer[]>();
+const _handleToData = new Map<number, Buffer[]>();
 
 // Stats
 let totalRecords = 0;
 let aclPackets = 0;
 let attPackets = 0;
-const whoopPackets = 0;
+const _whoopPackets = 0;
 const infoMessages: string[] = [];
 
 // Parse UUID from bytes (little-endian 128-bit)
@@ -119,13 +119,13 @@ while (offset < buf.length - 4) {
     aclPackets++;
 
     // HCI ACL header: 2 bytes handle+flags, 2 bytes data length
-    const hciHandle = payload.readUInt16LE(0) & 0x0fff;
-    const pbFlag = (payload.readUInt16LE(0) >> 12) & 0x03;
+    const _hciHandle = payload.readUInt16LE(0) & 0x0fff;
+    const _pbFlag = (payload.readUInt16LE(0) >> 12) & 0x03;
     const hciDataLen = payload.readUInt16LE(2);
 
     if (hciDataLen > 0 && payloadLen >= 4 + 4) {
       // L2CAP header: 2 bytes length, 2 bytes CID
-      const l2capLen = payload.readUInt16LE(4);
+      const _l2capLen = payload.readUInt16LE(4);
       const l2capCid = payload.readUInt16LE(6);
 
       // CID 0x0004 = ATT protocol
@@ -158,7 +158,7 @@ while (offset < buf.length - 4) {
           let i = 1;
           while (i + attrLen <= attData.length) {
             const startHandle = attData.readUInt16LE(i);
-            const endHandle = attData.readUInt16LE(i + 2);
+            const _endHandle = attData.readUInt16LE(i + 2);
             let uuid: string;
             if (attrLen === 6) {
               uuid = parseUuid16(attData, i + 4);
@@ -177,7 +177,7 @@ while (offset < buf.length - 4) {
           const attrLen = attData[0];
           let i = 1;
           while (i + attrLen <= attData.length) {
-            const attrHandle = attData.readUInt16LE(i);
+            const _attrHandle = attData.readUInt16LE(i);
             if (attrLen >= 7) {
               const valHandle = attData.readUInt16LE(i + 3);
               let uuid: string;
@@ -200,9 +200,9 @@ while (offset < buf.length - 4) {
           let i = 1;
           const entryLen = format === 1 ? 4 : 18;
           while (i + entryLen <= attData.length) {
-            const h = attData.readUInt16LE(i);
+            const descriptorHandle = attData.readUInt16LE(i);
             const uuid = format === 1 ? parseUuid16(attData, i + 2) : parseUuid128(attData, i + 2);
-            handleToUuid.set(h, uuid);
+            handleToUuid.set(descriptorHandle, uuid);
             i += entryLen;
           }
         }
@@ -293,23 +293,24 @@ console.log();
 
 // Print notifications (likely data streaming)
 console.log("=== Notification Streams (Handle Value Notifications) ===");
-const notificationHandles = attEvents
-  .filter((e) => e.opcode === 0x1b)
-  .reduce(
-    (acc, e) => {
-      const h = e.handle!;
-      if (!acc[h]) acc[h] = { count: 0, totalBytes: 0, firstBytes: [] as string[] };
-      acc[h].count++;
-      acc[h].totalBytes += e.data.length;
-      if (acc[h].firstBytes.length < 3) {
-        acc[h].firstBytes.push(e.data.subarray(0, Math.min(20, e.data.length)).toString("hex"));
-      }
-      return acc;
-    },
-    {} as Record<number, { count: number; totalBytes: number; firstBytes: string[] }>,
-  );
+const notificationHandleStats: Record<
+  number,
+  { count: number; totalBytes: number; firstBytes: string[] }
+> = {};
+for (const evt of attEvents.filter((e) => e.opcode === 0x1b)) {
+  const handle = evt.handle ?? 0;
+  if (!notificationHandleStats[handle])
+    notificationHandleStats[handle] = { count: 0, totalBytes: 0, firstBytes: [] };
+  notificationHandleStats[handle].count++;
+  notificationHandleStats[handle].totalBytes += evt.data.length;
+  if (notificationHandleStats[handle].firstBytes.length < 3) {
+    notificationHandleStats[handle].firstBytes.push(
+      evt.data.subarray(0, Math.min(20, evt.data.length)).toString("hex"),
+    );
+  }
+}
 
-for (const [handleStr, info] of Object.entries(notificationHandles)) {
+for (const [handleStr, info] of Object.entries(notificationHandleStats)) {
   const handle = Number(handleStr);
   const uuid = handleToUuid.get(handle) || "unknown";
   console.log(
@@ -337,7 +338,7 @@ if (whoopHandles.size > 0) {
   console.log("=== Whoop Handle Data ===");
   const whoopEvents = attEvents.filter((e) => e.handle !== undefined && whoopHandles.has(e.handle));
   for (const evt of whoopEvents.slice(0, 50)) {
-    const handle = `0x${evt.handle!.toString(16).padStart(4, "0")}`;
+    const handle = `0x${(evt.handle ?? 0).toString(16).padStart(4, "0")}`;
     console.log(
       `  [${evt.direction}] ${evt.opcodeName} handle=${handle}: ${evt.data.subarray(0, Math.min(40, evt.data.length)).toString("hex")}`,
     );
