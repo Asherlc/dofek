@@ -48,6 +48,7 @@
     "./auth/oauth": "./src/auth/oauth.ts",
     "./db/sync-log": "./src/db/sync-log.ts",
     "./jobs/queues": "./src/jobs/queues.ts",
+    "./jobs/provider-queue-config": "./src/jobs/provider-queue-config.ts",
     "./jobs/process-export-job": "./src/jobs/process-export-job.ts",
     "./personalization/params": "./src/personalization/params.ts",
     "./personalization/storage": "./src/personalization/storage.ts",
