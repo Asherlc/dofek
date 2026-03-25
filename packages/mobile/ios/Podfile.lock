@@ -2194,12 +2194,12 @@ DEPENDENCIES:
   - "RNScreens (from `../../../node_modules/.pnpm/react-native-screens@4.11.1_react-native@0.83.4_@babel+core@7.29.0_@types+react@19.2.14_react@19.2.4__react@19.2.4/node_modules/react-native-screens`)"
   - "RNSentry (from `../../../node_modules/.pnpm/@sentry+react-native@8.5.0_expo@55.0.6_react-native@0.83.4_@babel+core@7.29.0_@types+re_0241bcdae54fdb9338aced8b8ead1fdd/node_modules/@sentry/react-native`)"
   - "RNSVG (from `../../../node_modules/.pnpm/react-native-svg@15.15.3_react-native@0.83.4_@babel+core@7.29.0_@types+react@19.2.14_react@19.2.4__react@19.2.4/node_modules/react-native-svg`)"
+  - Sentry (from `./LocalPods/Sentry`)
   - "Yoga (from `../../../node_modules/.pnpm/react-native@0.83.4_@babel+core@7.29.0_@types+react@19.2.14_react@19.2.4/node_modules/react-native/ReactCommon/yoga`)"
 
 SPEC REPOS:
   trunk:
     - ReachabilitySwift
-    - Sentry
     - ZXingObjC
 
 EXTERNAL SOURCES:
@@ -2400,6 +2400,8 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/.pnpm/@sentry+react-native@8.5.0_expo@55.0.6_react-native@0.83.4_@babel+core@7.29.0_@types+re_0241bcdae54fdb9338aced8b8ead1fdd/node_modules/@sentry/react-native"
   RNSVG:
     :path: "../../../node_modules/.pnpm/react-native-svg@15.15.3_react-native@0.83.4_@babel+core@7.29.0_@types+react@19.2.14_react@19.2.4__react@19.2.4/node_modules/react-native-svg"
+  Sentry:
+    :path: "./LocalPods/Sentry"
   Yoga:
     :path: "../../../node_modules/.pnpm/react-native@0.83.4_@babel+core@7.29.0_@types+react@19.2.14_react@19.2.4/node_modules/react-native/ReactCommon/yoga"
 
@@ -2503,10 +2505,10 @@ SPEC CHECKSUMS:
   RNScreens: cdd6d15f1ab6e43728d8db3412d8121882979bca
   RNSentry: abe87472a87a37bc3513e939adf97f5ed5c9ce92
   RNSVG: 0bd149b873018bc6e0e3321e2f6435bdba294460
-  Sentry: 0fe17abdc98f83a3799c02564382d8b2afabadef
+  Sentry: 6622b6fa1b0b9c32a54d8d373a00f9d0e0f96424
   Yoga: acd565934addf7423687593ec490bd4491b2a802
   ZXingObjC: 8898711ab495761b2dbbdec76d90164a6d7e14c5
 
-PODFILE CHECKSUM: 1c0353e14d8348aa67ed178e9eb2df1527a3b52d
+PODFILE CHECKSUM: cb913818f910b6be1a83678070c5ab6b9d3a31be
 
 COCOAPODS: 1.16.2

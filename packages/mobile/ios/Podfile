@@ -23,6 +23,11 @@ prepare_react_native_project!
 target 'Dofek' do
   use_expo_modules!
 
+  # Use prebuilt Sentry XCFramework instead of building from source.
+  # Avoids @_implementationOnly / SwiftVerifyEmittedModuleInterface runtime crashes on Xcode 26+.
+  # Run `scripts/download-sentry-xcframework.sh` before `pod install`.
+  pod 'Sentry', :path => './LocalPods/Sentry'
+
   if ENV['EXPO_USE_COMMUNITY_AUTOLINKING'] == '1'
     config_command = ['node', '-e', "process.argv=['', '', 'config'];require('@react-native-community/cli').run()"];
   else
@@ -60,14 +65,16 @@ target 'Dofek' do
       :ccache_enabled => ccache_enabled?(podfile_properties),
     )
 
-    # Sentry 9.7.0 uses @_implementationOnly Swift imports without library evolution,
-    # which causes SwiftVerifyEmittedModuleInterface failures on Xcode 26+. Disable
-    # module interface verification for the Sentry pod to allow building from source.
+    # RNSentry expects private Sentry headers at ${PODS_ROOT}/Sentry/Sources/Sentry/include/
+    # which exists when Sentry is built from source. Our local prebuilt XCFramework pod
+    # places them in LocalPods/Sentry/Sources/Sentry/include/ instead.
+    # Add the correct path so RNSentry can find SentrySwizzle.h et al.
+    local_sentry_headers = '"${PODS_ROOT}/../LocalPods/Sentry/Sources/Sentry/include"'
     installer.pods_project.targets.each do |target|
-      next unless target.name == 'Sentry'
+      next unless target.name == 'RNSentry'
       target.build_configurations.each do |config|
-        config.build_settings['SWIFT_VERIFY_EMITTED_MODULE_INTERFACE'] = 'NO'
-        config.build_settings['BUILD_LIBRARY_FOR_DISTRIBUTION'] = 'NO'
+        paths = config.build_settings['HEADER_SEARCH_PATHS'] || '$(inherited)'
+        config.build_settings['HEADER_SEARCH_PATHS'] = paths + ' ' + local_sentry_headers
       end
     end
   end

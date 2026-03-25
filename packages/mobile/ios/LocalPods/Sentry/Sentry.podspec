@@ -4,6 +4,9 @@
 # SwiftVerifyEmittedModuleInterface issues on Xcode 26+. The XCFramework
 # is downloaded by scripts/download-sentry-xcframework.sh.
 #
+# SentrySessionReplayHybridSDK.m is compiled separately because the prebuilt
+# XCFramework from GitHub releases is missing it (sentry-cocoa build bug).
+#
 # Version must match what RNSentry expects (s.dependency 'Sentry', '9.7.0').
 Pod::Spec.new do |s|
   s.name         = "Sentry"
@@ -21,5 +24,6 @@ Pod::Spec.new do |s|
 
   s.subspec "Core" do |sp|
     sp.vendored_frameworks = "Sentry.xcframework"
+    sp.source_files = "SentrySessionReplayHybridSDK.m"
   end
 end

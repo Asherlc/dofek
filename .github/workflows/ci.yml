@@ -276,12 +276,14 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Download Sentry XCFramework
+        run: packages/mobile/scripts/download-sentry-xcframework.sh
       - name: Cache CocoaPods
         uses: actions/cache@v4
         with:
           path: packages/mobile/ios/Pods
-          key: pods-v5-${{ hashFiles('packages/mobile/ios/Podfile', 'packages/mobile/ios/Podfile.lock') }}
-          restore-keys: pods-v5-
+          key: pods-v6-${{ hashFiles('packages/mobile/ios/Podfile', 'packages/mobile/ios/Podfile.lock', 'packages/mobile/scripts/download-sentry-xcframework.sh') }}
+          restore-keys: pods-v6-
       - name: Install CocoaPods dependencies
         run: cd packages/mobile/ios && pod install
       - name: Build for simulator
@@ -567,11 +569,14 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
+      - name: Download Sentry XCFramework
+        run: packages/mobile/scripts/download-sentry-xcframework.sh
+
       - name: Cache CocoaPods
         uses: actions/cache@v4
         with:
           path: packages/mobile/ios/Pods
-          key: pods-v5-${{ hashFiles('packages/mobile/ios/Podfile', 'packages/mobile/ios/Podfile.lock') }}
+          key: pods-v6-${{ hashFiles('packages/mobile/ios/Podfile', 'packages/mobile/ios/Podfile.lock', 'packages/mobile/scripts/download-sentry-xcframework.sh') }}
 
       - name: Install CocoaPods
         run: cd packages/mobile/ios && pod install
