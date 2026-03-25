@@ -1,6 +1,12 @@
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import {
+  dateWindowEnd,
+  dateWindowStart,
+  endDateSchema,
+  timestampWindowStart,
+} from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
@@ -52,7 +58,12 @@ const anomalyCheckRowSchema = z.object({
   sleep_count: z.coerce.number().nullable(),
 });
 
-export async function checkAnomalies(db: Database, userId: string): Promise<AnomalyCheckResult> {
+export async function checkAnomalies(
+  db: Database,
+  userId: string,
+  timezone: string,
+  endDate: string,
+): Promise<AnomalyCheckResult> {
   const rows = await executeWithSchema(
     db,
     anomalyCheckRowSchema,
@@ -69,20 +80,27 @@ export async function checkAnomalies(db: Database, userId: string): Promise<Anom
             COUNT(hrv) OVER (ORDER BY date ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING) AS hrv_count
           FROM fitness.v_daily_metrics
           WHERE user_id = ${userId}
-            AND date > CURRENT_DATE - 35
+            AND date > ${dateWindowStart(endDate, 35)}
           ORDER BY date ASC
         ),
-        sleep AS (
+        sleep_raw AS (
           SELECT
-            started_at::date AS date,
+            (started_at AT TIME ZONE ${timezone})::date AS date,
             duration_minutes,
-            AVG(duration_minutes) OVER (ORDER BY started_at::date ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING) AS sleep_mean,
-            STDDEV_POP(duration_minutes) OVER (ORDER BY started_at::date ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING) AS sleep_sd,
-            COUNT(*) OVER (ORDER BY started_at::date ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING) AS sleep_count
+            started_at
           FROM fitness.v_sleep
           WHERE user_id = ${userId}
             AND is_nap = false
-            AND started_at > NOW() - INTERVAL '35 days'
+            AND started_at > ${timestampWindowStart(endDate, 35)}
+        ),
+        sleep AS (
+          SELECT
+            date,
+            duration_minutes,
+            AVG(duration_minutes) OVER (ORDER BY date ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING) AS sleep_mean,
+            STDDEV_POP(duration_minutes) OVER (ORDER BY date ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING) AS sleep_sd,
+            COUNT(*) OVER (ORDER BY date ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING) AS sleep_count
+          FROM sleep_raw
           ORDER BY started_at ASC
         )
         SELECT
@@ -92,7 +110,7 @@ export async function checkAnomalies(db: Database, userId: string): Promise<Anom
           s.duration_minutes, s.sleep_mean, s.sleep_sd, s.sleep_count
         FROM baseline b
         LEFT JOIN sleep s ON s.date = b.date
-        WHERE b.date = CURRENT_DATE
+        WHERE b.date = ${dateWindowEnd(endDate)}
         LIMIT 1`,
   );
 
@@ -293,9 +311,9 @@ export const anomalyDetectionRouter = router({
    * Returns any metrics that deviate significantly from the 30-day baseline.
    */
   check: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(z.object({}).default({}))
-    .query(async ({ ctx }): Promise<AnomalyCheckResult> => {
-      return checkAnomalies(ctx.db, ctx.userId);
+    .input(z.object({ endDate: endDateSchema }))
+    .query(async ({ ctx, input }): Promise<AnomalyCheckResult> => {
+      return checkAnomalies(ctx.db, ctx.userId, ctx.timezone, input.endDate);
     }),
 
   /**

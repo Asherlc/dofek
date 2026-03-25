@@ -1,11 +1,18 @@
 import { type ReadinessComponents, ReadinessScore } from "@dofek/recovery/readiness";
 import { computeSleepConsistencyScore } from "@dofek/recovery/sleep-consistency";
 import { StrainScore, zScoreToRecoveryScore } from "@dofek/scoring/scoring";
+import { computeStrainTarget } from "@dofek/scoring/strain-target";
 import { selectRecentDailyLoad } from "@dofek/training/training";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import {
+  dateWindowEnd,
+  dateWindowStart,
+  endDateSchema,
+  timestampWindowStart,
+} from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
@@ -67,6 +74,14 @@ export interface ReadinessRow {
   components: ReadinessComponents;
 }
 
+export interface StrainTargetResult {
+  targetStrain: number;
+  currentStrain: number;
+  progressPercent: number;
+  zone: "Push" | "Maintain" | "Recovery";
+  explanation: string;
+}
+
 export const recoveryRouter = router({
   /**
    * Sleep schedule consistency: stddev of bedtime and wake time over rolling 14-day windows.
@@ -85,14 +100,15 @@ export const recoveryRouter = router({
         rolling_waketime_stddev: z.coerce.number().nullable(),
         window_count: z.coerce.number(),
       });
+      const tz = ctx.timezone;
       const rows = await executeWithSchema(
         ctx.db,
         consistencyRowSchema,
         sql`WITH nightly AS (
               SELECT
-                started_at::date AS date,
-                EXTRACT(HOUR FROM started_at) + EXTRACT(MINUTE FROM started_at) / 60.0 AS bedtime_hour,
-                EXTRACT(HOUR FROM ended_at) + EXTRACT(MINUTE FROM ended_at) / 60.0 AS waketime_hour
+                (started_at AT TIME ZONE ${tz})::date AS date,
+                EXTRACT(HOUR FROM started_at AT TIME ZONE ${tz}) + EXTRACT(MINUTE FROM started_at AT TIME ZONE ${tz}) / 60.0 AS bedtime_hour,
+                EXTRACT(HOUR FROM ended_at AT TIME ZONE ${tz}) + EXTRACT(MINUTE FROM ended_at AT TIME ZONE ${tz}) / 60.0 AS waketime_hour
               FROM fitness.v_sleep
               WHERE user_id = ${ctx.userId}
                 AND is_nap = false
@@ -193,7 +209,7 @@ export const recoveryRouter = router({
    * Acute = 7-day sum, Chronic = 28-day average of daily load.
    */
   workloadRatio: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(z.object({ days: z.number().default(90) }))
+    .input(z.object({ days: z.number().default(90), endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<WorkloadRatioResult> => {
       const queryDays = input.days + 28;
       const workloadRowSchema = z.object({
@@ -208,20 +224,20 @@ export const recoveryRouter = router({
         workloadRowSchema,
         sql`WITH date_series AS (
               SELECT generate_series(
-                CURRENT_DATE - ${queryDays}::int,
-                CURRENT_DATE,
+                ${dateWindowStart(input.endDate, queryDays)},
+                ${dateWindowEnd(input.endDate)},
                 '1 day'::interval
               )::date AS date
             ),
             per_activity AS (
               SELECT
-                asum.started_at::date AS date,
+                (asum.started_at AT TIME ZONE ${ctx.timezone})::date AS date,
                 EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
                   * asum.avg_hr
                   / NULLIF(asum.max_hr, 0) AS load
               FROM fitness.activity_summary asum
               WHERE asum.user_id = ${ctx.userId}
-                AND asum.started_at::date >= CURRENT_DATE - ${queryDays}::int
+                AND (asum.started_at AT TIME ZONE ${ctx.timezone})::date >= ${dateWindowStart(input.endDate, queryDays)}
                 AND asum.ended_at IS NOT NULL
                 AND asum.avg_hr IS NOT NULL
             ),
@@ -257,7 +273,7 @@ export const recoveryRouter = router({
                 ELSE NULL
               END AS workload_ratio
             FROM with_windows
-            WHERE date > CURRENT_DATE - ${input.days}::int
+            WHERE date > ${dateWindowStart(input.endDate, input.days)}
             ORDER BY date ASC`,
       );
 
@@ -300,12 +316,13 @@ export const recoveryRouter = router({
         efficiency: z.coerce.number(),
         rolling_avg_duration: z.coerce.number().nullable(),
       });
+      const tz = ctx.timezone;
       const rows = await executeWithSchema(
         ctx.db,
         sleepRowSchema,
         sql`WITH nightly AS (
               SELECT
-                started_at::date AS date,
+                (started_at AT TIME ZONE ${tz})::date AS date,
                 duration_minutes,
                 -- Actual time asleep: for Apple Health, duration = in-bed time,
                 -- so derive sleep time from stages. Other providers already exclude awake.
@@ -381,7 +398,7 @@ export const recoveryRouter = router({
    * Uses asymmetric sigmoid mapping instead of linear z-score for more natural scaling.
    */
   readinessScore: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(z.object({ days: z.number().default(30) }))
+    .input(z.object({ days: z.number().default(30), endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<ReadinessRow[]> => {
       // Load personalized readiness weights
       const storedParams = await loadPersonalizedParams(ctx.db, ctx.userId);
@@ -421,17 +438,21 @@ export const recoveryRouter = router({
                 STDDEV_POP(respiratory_rate_avg) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_sd_30d
               FROM fitness.v_daily_metrics
               WHERE user_id = ${ctx.userId}
-                AND date > CURRENT_DATE - ${queryDays}::int
+                AND date > ${dateWindowStart(input.endDate, queryDays)}
             ),
             sleep_eff AS (
-              SELECT DISTINCT ON (COALESCE(ended_at, started_at + interval '8 hours')::date)
-                COALESCE(ended_at, started_at + interval '8 hours')::date::text AS date,
+              SELECT DISTINCT ON (local_date)
+                local_date::text AS date,
                 efficiency_pct
-              FROM fitness.v_sleep
-              WHERE user_id = ${ctx.userId}
-                AND is_nap = false
-                AND started_at > NOW() - ${queryDays}::int * INTERVAL '1 day'
-              ORDER BY COALESCE(ended_at, started_at + interval '8 hours')::date, started_at DESC
+              FROM (
+                SELECT (COALESCE(ended_at, started_at + interval '8 hours') AT TIME ZONE ${ctx.timezone})::date AS local_date,
+                       efficiency_pct, started_at
+                FROM fitness.v_sleep
+                WHERE user_id = ${ctx.userId}
+                  AND is_nap = false
+                  AND started_at > ${timestampWindowStart(input.endDate, queryDays)}
+              ) sleep_sub
+              ORDER BY local_date, started_at DESC
             )
             SELECT
               m.date,
@@ -449,7 +470,7 @@ export const recoveryRouter = router({
             LEFT JOIN sleep_eff s ON s.date = m.date
             ORDER BY m.date ASC`,
       );
-      const cutoffDate = new Date();
+      const cutoffDate = new Date(input.endDate);
       cutoffDate.setDate(cutoffDate.getDate() - input.days);
       const cutoffStr = cutoffDate.toISOString().split("T")[0] ?? "";
 
@@ -521,5 +542,120 @@ export const recoveryRouter = router({
       }
 
       return results;
+    }),
+
+  /**
+   * Daily strain target based on current readiness and training loads.
+   * Returns a recommended strain level and progress toward it.
+   */
+  strainTarget: cachedProtectedQuery(CacheTTL.MEDIUM)
+    .input(z.object({ days: z.number().default(30), endDate: endDateSchema }))
+    .query(async ({ ctx, input }): Promise<StrainTargetResult> => {
+      // Get readiness score
+      const readinessRows = await executeWithSchema(
+        ctx.db,
+        z.object({
+          date: dateStringSchema,
+          resting_hr: z.number().nullable(),
+          hrv: z.number().nullable(),
+          spo2_avg: z.number().nullable(),
+          respiratory_rate_avg: z.number().nullable(),
+        }),
+        sql`
+          SELECT date, resting_hr, hrv, spo2_avg, respiratory_rate_avg
+          FROM fitness.daily_metrics
+          WHERE user_id = ${ctx.userId}
+          ORDER BY date DESC
+          LIMIT 1
+        `,
+      );
+
+      // Get daily loads for ACWR
+      const loads = await executeWithSchema(
+        ctx.db,
+        z.object({
+          date: dateStringSchema,
+          daily_load: z.coerce.number(),
+        }),
+        sql`
+          SELECT
+            asum.started_at::date::text AS date,
+            SUM(
+              asum.avg_hr * EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0 / 100.0
+            ) AS daily_load
+          FROM fitness.v_activity asum
+          WHERE asum.user_id = ${ctx.userId}
+            AND asum.started_at::date >= ${dateWindowStart(input.endDate, input.days)}
+            AND asum.ended_at IS NOT NULL
+            AND asum.avg_hr IS NOT NULL
+          GROUP BY asum.started_at::date
+          ORDER BY date ASC
+        `,
+      );
+
+      // Compute readiness if we have metrics
+      let readinessScore = 50; // default moderate
+      const m = readinessRows[0];
+      if (m) {
+        const params = getEffectiveParams(await loadPersonalizedParams(ctx.db, ctx.userId));
+        const sleepRows = await executeWithSchema(
+          ctx.db,
+          z.object({ efficiency_pct: z.number().nullable() }),
+          sql`
+            SELECT efficiency_pct
+            FROM fitness.sleep_session
+            WHERE user_id = ${ctx.userId}
+              AND sleep_type = 'sleep'
+            ORDER BY started_at DESC
+            LIMIT 1
+          `,
+        );
+
+        // Use sleep efficiency as a proxy for sleep score, default 62 for others
+        const sleepEff = sleepRows[0]?.efficiency_pct ?? null;
+        const sleepScore = sleepEff != null ? Math.max(0, Math.min(100, Math.round(sleepEff))) : 62;
+        const components: ReadinessComponents = {
+          hrvScore: m.hrv != null ? Math.max(0, Math.min(100, Math.round(m.hrv))) : 62,
+          restingHrScore:
+            m.resting_hr != null ? Math.max(0, Math.min(100, 120 - m.resting_hr)) : 62,
+          sleepScore,
+          respiratoryRateScore: 62,
+        };
+        const weights = params.readinessWeights;
+        const score = new ReadinessScore(components, weights);
+        readinessScore = score.score;
+      }
+
+      // Compute acute and chronic loads
+      const today = input.endDate;
+      const acuteWindow = 7;
+      const chronicWindow = 28;
+      let acuteLoad = 0;
+      let chronicLoad = 0;
+      let currentStrain = 0;
+
+      for (const row of loads) {
+        const daysAgo = Math.floor(
+          (new Date(today).getTime() - new Date(row.date).getTime()) / 86400000,
+        );
+        if (daysAgo < acuteWindow) acuteLoad += row.daily_load;
+        if (daysAgo < chronicWindow) chronicLoad += row.daily_load;
+        if (row.date === today) {
+          currentStrain = StrainScore.fromRawLoad(row.daily_load).value;
+        }
+      }
+      acuteLoad /= acuteWindow;
+      chronicLoad /= chronicWindow;
+
+      const target = computeStrainTarget(readinessScore, chronicLoad, acuteLoad);
+
+      return {
+        targetStrain: target.targetStrain,
+        currentStrain: Math.round(currentStrain * 10) / 10,
+        progressPercent:
+          target.targetStrain > 0 ? Math.round((currentStrain / target.targetStrain) * 100) : 0,
+        zone: target.zone,
+        explanation: target.explanation,
+      };
     }),
 });

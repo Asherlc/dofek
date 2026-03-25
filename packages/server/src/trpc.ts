@@ -14,6 +14,8 @@ import { dbQuerySemaphore } from "./lib/semaphore.ts";
 export interface Context {
   db: Database;
   userId: string | null;
+  /** IANA timezone from client (e.g. "America/Los_Angeles"). Falls back to "UTC". */
+  timezone: string;
 }
 
 /** Context after auth middleware — userId is guaranteed non-null. */
@@ -33,6 +35,7 @@ const isAuthenticated = t.middleware(({ ctx, next }) => {
   return next({ ctx: authenticatedCtx });
 });
 
+export const publicProcedure = t.procedure;
 export const protectedProcedure = t.procedure.use(isAuthenticated);
 
 export const CacheTTL = {

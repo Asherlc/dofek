@@ -1,4 +1,5 @@
 import { createActivityTypeMapper, WAHOO_WORKOUT_TYPE_MAP } from "@dofek/training/training";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
@@ -12,29 +13,40 @@ import type {
   ProviderAuthSetup,
   ProviderIdentity,
   SyncError,
-  SyncProvider,
+  SyncOptions,
   SyncResult,
+  WebhookEvent,
+  WebhookProvider,
 } from "./types.ts";
 
 // ============================================================
 // Wahoo API Zod schemas
 // ============================================================
 
+/**
+ * Wahoo's API returns numeric fields as strings or null — coerce to number
+ * or undefined so downstream code always sees `number | undefined`.
+ */
+const wahooNumeric = z.preprocess(
+  (val) => (val === null || val === undefined ? undefined : Number(val)),
+  z.number().optional(),
+);
+
 export const wahooWorkoutSummarySchema = z.object({
   id: z.number(),
-  ascent_accum: z.number().optional(),
-  cadence_avg: z.number().optional(),
-  calories_accum: z.number().optional(),
-  distance_accum: z.number().optional(),
-  duration_active_accum: z.number().optional(),
-  duration_paused_accum: z.number().optional(),
-  duration_total_accum: z.number().optional(),
-  heart_rate_avg: z.number().optional(),
-  power_bike_np_last: z.number().optional(),
-  power_bike_tss_last: z.number().optional(),
-  power_avg: z.number().optional(),
-  speed_avg: z.number().optional(),
-  work_accum: z.number().optional(),
+  ascent_accum: wahooNumeric,
+  cadence_avg: wahooNumeric,
+  calories_accum: wahooNumeric,
+  distance_accum: wahooNumeric,
+  duration_active_accum: wahooNumeric,
+  duration_paused_accum: wahooNumeric,
+  duration_total_accum: wahooNumeric,
+  heart_rate_avg: wahooNumeric,
+  power_bike_np_last: wahooNumeric,
+  power_bike_tss_last: wahooNumeric,
+  power_avg: wahooNumeric,
+  speed_avg: wahooNumeric,
+  work_accum: wahooNumeric,
   created_at: z.string(),
   updated_at: z.string(),
   file: z.object({ url: z.string() }).optional(),
@@ -69,6 +81,18 @@ type WahooWorkoutListResponse = z.infer<typeof wahooWorkoutListResponseSchema>;
 
 const wahooSingleWorkoutResponseSchema = z.object({
   workout: wahooWorkoutSchema,
+});
+
+/**
+ * Wahoo webhook payload schema. The payload contains the full workout and
+ * workout_summary data inline, so we can upsert directly without API calls.
+ */
+export const wahooWebhookPayloadSchema = z.object({
+  event_type: z.string().optional(),
+  webhook_token: z.string().optional(),
+  user: z.object({ id: z.number() }),
+  workout_summary: wahooWorkoutSummarySchema.optional(),
+  workout: wahooWorkoutSchema.optional(),
 });
 
 // ============================================================
@@ -220,9 +244,10 @@ export function wahooOAuthConfig(): OAuthConfig | null {
   };
 }
 
-export class WahooProvider implements SyncProvider {
+export class WahooProvider implements WebhookProvider {
   readonly id = "wahoo";
   readonly name = "Wahoo";
+  readonly webhookScope = "app" as const;
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
@@ -233,6 +258,186 @@ export class WahooProvider implements SyncProvider {
     if (!process.env.WAHOO_CLIENT_ID) return "WAHOO_CLIENT_ID is not set";
     if (!process.env.WAHOO_CLIENT_SECRET) return "WAHOO_CLIENT_SECRET is not set";
     return null;
+  }
+
+  // ── Webhook implementation ──
+
+  async registerWebhook(
+    _callbackUrl: string,
+    _verifyToken: string,
+  ): Promise<{ subscriptionId: string; signingSecret?: string; expiresAt?: Date }> {
+    // Wahoo webhooks are registered via the developer portal, not via API.
+    // Configure the webhook URL at https://developers.wahooligan.com
+    return { subscriptionId: "wahoo-portal-subscription" };
+  }
+
+  async unregisterWebhook(_subscriptionId: string): Promise<void> {
+    // Managed via Wahoo developer portal
+  }
+
+  verifyWebhookSignature(
+    _rawBody: Buffer,
+    _headers: Record<string, string | string[] | undefined>,
+    _signingSecret: string,
+  ): boolean {
+    // Wahoo webhook signature verification is not publicly documented.
+    // Webhooks are registered via the developer portal with a specific URL.
+    return true;
+  }
+
+  parseWebhookPayload(body: unknown): WebhookEvent[] {
+    const parsed = wahooWebhookPayloadSchema.safeParse(body);
+
+    if (!parsed.success) return [];
+    const event = parsed.data;
+
+    return [
+      {
+        ownerExternalId: String(event.user.id),
+        eventType: event.event_type === "workout_summary.updated" ? "update" : "create",
+        objectType: "workout",
+        objectId: event.workout_summary?.id ? String(event.workout_summary.id) : undefined,
+        metadata: { payload: event },
+      },
+    ];
+  }
+
+  /**
+   * Sync a single workout from a webhook event. The Wahoo webhook payload
+   * contains the full workout + workout_summary data, so we can upsert
+   * directly without any API calls (except downloading the FIT file).
+   */
+  async syncWebhookEvent(
+    db: SyncDatabase,
+    event: WebhookEvent,
+    _options?: SyncOptions,
+  ): Promise<SyncResult> {
+    const start = Date.now();
+    const errors: SyncError[] = [];
+    let recordsSynced = 0;
+
+    if (event.objectType !== "workout") {
+      return { provider: this.id, recordsSynced: 0, errors: [], duration: Date.now() - start };
+    }
+
+    // Extract the full workout from the webhook metadata
+    const webhookPayload = wahooWebhookPayloadSchema.safeParse(event.metadata?.payload);
+    if (!webhookPayload.success) {
+      errors.push({
+        message: `Invalid webhook payload: ${webhookPayload.error.message}`,
+        externalId: event.objectId,
+      });
+      return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
+    }
+
+    const payload = webhookPayload.data;
+
+    // Build a WahooWorkout from the payload. The webhook may provide the
+    // workout object directly, or we can reconstruct it from the
+    // workout_summary + top-level fields.
+    let workout: WahooWorkout | undefined = payload.workout;
+    if (!workout && payload.workout_summary) {
+      // When only workout_summary is present (e.g. workout_summary.created
+      // events), we don't have enough data for a full workout record.
+      // Fall back: log and skip — the full sync will pick it up.
+      logger.warn(
+        `[wahoo] Webhook payload has workout_summary but no workout object for event ${event.objectId}`,
+      );
+      return { provider: this.id, recordsSynced: 0, errors: [], duration: Date.now() - start };
+    }
+
+    if (!workout) {
+      errors.push({
+        message: "Webhook payload missing workout data",
+        externalId: event.objectId,
+      });
+      return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
+    }
+
+    // If the payload includes a standalone workout_summary that's richer than
+    // the one nested inside the workout, merge it in.
+    if (payload.workout_summary && !workout.workout_summary) {
+      workout = { ...workout, workout_summary: payload.workout_summary };
+    }
+
+    const parsed = parseWorkoutSummary(workout);
+
+    try {
+      const [row] = await db
+        .insert(activity)
+        .values({
+          providerId: this.id,
+          externalId: parsed.externalId,
+          activityType: parsed.activityType,
+          startedAt: parsed.startedAt,
+          endedAt: parsed.endedAt,
+          name: parsed.name,
+        })
+        .onConflictDoUpdate({
+          target: [activity.providerId, activity.externalId],
+          set: {
+            activityType: parsed.activityType,
+            startedAt: parsed.startedAt,
+            endedAt: parsed.endedAt,
+            name: parsed.name,
+          },
+        })
+        .returning({ id: activity.id });
+
+      recordsSynced++;
+
+      const activityId = row?.id;
+      if (!activityId) {
+        return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
+      }
+
+      // Download and parse FIT file if a URL is present
+      if (parsed.fitFileUrl) {
+        try {
+          const fitBuffer = await new WahooClient("", this.#fetchFn).downloadFitFile(
+            parsed.fitFileUrl,
+          );
+          const fitData = await parseFitFile(fitBuffer);
+          const metricRows = fitRecordsToMetricStream(fitData.records, this.id, activityId);
+
+          if (metricRows.length > 0) {
+            // Delete existing metric_stream rows before re-inserting
+            await db.delete(metricStream).where(eq(metricStream.activityId, activityId));
+
+            // Insert in batches of 500
+            for (let i = 0; i < metricRows.length; i += 500) {
+              await db.insert(metricStream).values(metricRows.slice(i, i + 500));
+            }
+            logger.info(
+              `[wahoo] Webhook: inserted ${metricRows.length} metric_stream records for workout ${parsed.externalId}`,
+            );
+          }
+        } catch (fitErr) {
+          errors.push({
+            message: `FIT file for ${parsed.externalId}: ${fitErr instanceof Error ? fitErr.message : String(fitErr)}`,
+            externalId: parsed.externalId,
+            cause: fitErr,
+          });
+        }
+      }
+    } catch (err) {
+      errors.push({
+        message: err instanceof Error ? err.message : String(err),
+        externalId: parsed.externalId,
+        cause: err,
+      });
+    }
+
+    logger.info(
+      `[wahoo] Webhook sync complete: ${recordsSynced} records, ${errors.length} errors (${Date.now() - start}ms)`,
+    );
+
+    return {
+      provider: this.id,
+      recordsSynced,
+      errors,
+      duration: Date.now() - start,
+    };
   }
 
   authSetup(): ProviderAuthSetup {
@@ -279,11 +484,7 @@ export class WahooProvider implements SyncProvider {
     });
   }
 
-  async sync(
-    db: SyncDatabase,
-    since: Date,
-    options?: import("./types.ts").SyncOptions,
-  ): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
     const onProgress = options?.onProgress;
     const start = Date.now();
     const errors: SyncError[] = [];

@@ -1,0 +1,14 @@
+coverage:
+  status:
+    project:
+      default:
+        target: 93.5%
+    patch:
+      default:
+        target: 90%
+
+flags:
+  unit:
+    carryforward: true
+  integration:
+    carryforward: true

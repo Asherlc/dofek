@@ -91,8 +91,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
       if (hasErrors) {
         for (const err of result.errors) {
           logger.error(`[worker] ${provider.name} sync error: ${err.message}`);
-          const exception = err.cause instanceof Error ? err.cause : new Error(err.message);
-          Sentry.captureException(exception, {
+          Sentry.captureException(err.cause ?? new Error(err.message), {
             tags: { provider: provider.id },
           });
         }
@@ -110,6 +109,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
     } catch (err: unknown) {
       completedCount++;
       const message = err instanceof Error ? err.message : String(err);
+      Sentry.captureException(err, { tags: { provider: provider.id } });
       providerStatus[provider.id] = { status: "error", message };
       await job.updateProgress({
         providers: providerStatus,

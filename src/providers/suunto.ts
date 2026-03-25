@@ -1,3 +1,5 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
@@ -9,8 +11,9 @@ import type {
   ProviderAuthSetup,
   SyncError,
   SyncOptions,
-  SyncProvider,
   SyncResult,
+  WebhookEvent,
+  WebhookProvider,
 } from "./types.ts";
 
 // ============================================================
@@ -43,6 +46,32 @@ interface SuuntoWorkout {
 interface SuuntoWorkoutsResponse {
   payload: SuuntoWorkout[];
 }
+
+/**
+ * Zod schema for validating SuuntoWorkout data from webhook payloads.
+ * Used at the runtime boundary where TypeScript types can't guarantee shape.
+ */
+const suuntoWorkoutSchema = z.object({
+  workoutKey: z.string(),
+  activityId: z.number(),
+  workoutName: z.string().optional(),
+  startTime: z.number(),
+  stopTime: z.number(),
+  totalTime: z.number(),
+  totalDistance: z.number(),
+  totalAscent: z.number(),
+  totalDescent: z.number(),
+  avgSpeed: z.number(),
+  maxSpeed: z.number(),
+  energyConsumption: z.number(),
+  stepCount: z.number(),
+  hrdata: z
+    .object({
+      workoutAvgHR: z.number(),
+      workoutMaxHR: z.number(),
+    })
+    .optional(),
+});
 
 // ============================================================
 // Parsed types
@@ -129,9 +158,10 @@ export function suuntoOAuthConfig(): OAuthConfig | null {
 // Provider implementation
 // ============================================================
 
-export class SuuntoProvider implements SyncProvider {
+export class SuuntoProvider implements WebhookProvider {
   readonly id = "suunto";
   readonly name = "Suunto";
+  readonly webhookScope = "app" as const;
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
@@ -143,6 +173,132 @@ export class SuuntoProvider implements SyncProvider {
     if (!process.env.SUUNTO_CLIENT_SECRET) return "SUUNTO_CLIENT_SECRET is not set";
     if (!process.env.SUUNTO_SUBSCRIPTION_KEY) return "SUUNTO_SUBSCRIPTION_KEY is not set";
     return null;
+  }
+
+  // ── Webhook implementation ──
+
+  async registerWebhook(
+    _callbackUrl: string,
+    _verifyToken: string,
+  ): Promise<{ subscriptionId: string; signingSecret?: string; expiresAt?: Date }> {
+    // Suunto webhooks are configured via the APIzone developer portal.
+    return { subscriptionId: "suunto-portal-subscription" };
+  }
+
+  async unregisterWebhook(_subscriptionId: string): Promise<void> {
+    // Managed via Suunto APIzone portal
+  }
+
+  verifyWebhookSignature(
+    rawBody: Buffer,
+    headers: Record<string, string | string[] | undefined>,
+    signingSecret: string,
+  ): boolean {
+    // Suunto signs with HMAC-SHA256 in the X-HMAC-SHA256-Signature header
+    const signature = headers["x-hmac-sha256-signature"];
+    if (!signature || typeof signature !== "string") return false;
+
+    const hmac = createHmac("sha256", signingSecret);
+    hmac.update(rawBody);
+    const expected = hmac.digest("hex");
+    try {
+      return timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+    } catch {
+      return false;
+    }
+  }
+
+  parseWebhookPayload(body: unknown): WebhookEvent[] {
+    // Suunto WORKOUT_CREATED webhooks include the full workout summary inline
+    const parsed = z
+      .object({
+        type: z.string().optional(),
+        username: z.string(),
+        workout_id: z.coerce.string().optional(),
+      })
+      .safeParse(body);
+
+    if (!parsed.success) return [];
+    const event = parsed.data;
+
+    return [
+      {
+        ownerExternalId: event.username,
+        eventType: "create",
+        objectType: event.type ?? "workout",
+        objectId: event.workout_id ?? undefined,
+        metadata: { payload: body },
+      },
+    ];
+  }
+
+  async syncWebhookEvent(
+    db: SyncDatabase,
+    event: WebhookEvent,
+    options?: SyncOptions,
+  ): Promise<SyncResult> {
+    const start = Date.now();
+    const errors: SyncError[] = [];
+    let recordsSynced = 0;
+
+    if (event.objectType !== "workout") {
+      return { provider: this.id, recordsSynced: 0, errors: [], duration: Date.now() - start };
+    }
+
+    // Extract and validate the workout data from the webhook metadata
+    const workoutResult = suuntoWorkoutSchema.safeParse(event.metadata?.payload);
+    if (!workoutResult.success) {
+      errors.push({
+        message: `Invalid workout in webhook metadata: ${workoutResult.error.message}`,
+      });
+      return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
+    }
+
+    await ensureProvider(db, this.id, this.name, SUUNTO_API_BASE);
+
+    const parsed = parseSuuntoWorkout(workoutResult.data);
+
+    try {
+      await withSyncLog(
+        db,
+        this.id,
+        "activity",
+        async () => {
+          await db
+            .insert(activity)
+            .values({
+              providerId: this.id,
+              externalId: parsed.externalId,
+              activityType: parsed.activityType,
+              name: parsed.name,
+              startedAt: parsed.startedAt,
+              endedAt: parsed.endedAt,
+              raw: parsed.raw,
+            })
+            .onConflictDoUpdate({
+              target: [activity.providerId, activity.externalId],
+              set: {
+                activityType: parsed.activityType,
+                name: parsed.name,
+                startedAt: parsed.startedAt,
+                endedAt: parsed.endedAt,
+                raw: parsed.raw,
+              },
+            });
+          return { recordCount: 1, result: 1 };
+        },
+        options?.userId,
+      );
+      recordsSynced = 1;
+    } catch (err) {
+      errors.push({
+        message: err instanceof Error ? err.message : String(err),
+        externalId: parsed.externalId,
+        cause: err,
+      });
+    }
+
+    return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
   }
 
   authSetup(): ProviderAuthSetup {

@@ -1,9 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useMemo } from "react";
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
 import { HrvVariabilityChart } from "../../components/HrvVariabilityChart.tsx";
 import { ReadinessScoreCard } from "../../components/ReadinessScoreCard.tsx";
 import { SleepAnalyticsChart } from "../../components/SleepAnalyticsChart.tsx";
 import { WorkloadRatioChart } from "../../components/WorkloadRatioChart.tsx";
+import { formatDateForQuery } from "../../lib/dates.ts";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
 import { trpc } from "../../lib/trpc.ts";
 
@@ -13,11 +15,12 @@ export const Route = createFileRoute("/training/recovery")({
 
 function RecoveryTab() {
   const { days } = useTrainingDays();
+  const endDate = useMemo(() => formatDateForQuery(), []);
 
   const hrvVariability = trpc.recovery.hrvVariability.useQuery({ days });
-  const workloadRatio = trpc.recovery.workloadRatio.useQuery({ days });
+  const workloadRatio = trpc.recovery.workloadRatio.useQuery({ days, endDate });
   const sleepData = trpc.recovery.sleepAnalytics.useQuery({ days });
-  const readiness = trpc.recovery.readinessScore.useQuery({ days });
+  const readiness = trpc.recovery.readinessScore.useQuery({ days, endDate });
 
   return (
     <>

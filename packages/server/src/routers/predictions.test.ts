@@ -3,7 +3,7 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const t = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  const t = initTRPC.context<{ db: unknown; userId: string | null; timezone: string }>().create();
   return {
     router: t.router,
     protectedProcedure: t.procedure,
@@ -55,6 +55,7 @@ describe("predictionsRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.targets();
 
@@ -71,6 +72,7 @@ describe("predictionsRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.predict({ target: "hrv", days: 365 });
 
@@ -83,6 +85,7 @@ describe("predictionsRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.predict({ target: "unknown_target", days: 365 });
       expect(result).toBeNull();
@@ -93,6 +96,7 @@ describe("predictionsRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.predict({ target: "avg_power", days: 365 });
 
@@ -105,6 +109,7 @@ describe("predictionsRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.predict({ target: "total_volume", days: 365 });
       expect(result).toBeNull();

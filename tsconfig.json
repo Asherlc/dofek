@@ -8,16 +8,12 @@
     "rootDir": "src",
     "strict": true,
     "noUncheckedIndexedAccess": true,
-    "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "declaration": true,
     "declarationMap": true,
-    "sourceMap": true,
-    "paths": {
-      "@/*": ["./src/*"]
-    }
+    "sourceMap": true
   },
   "include": ["src"],
   "exclude": ["node_modules", "dist"]

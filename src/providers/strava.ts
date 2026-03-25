@@ -1,5 +1,6 @@
 import { createActivityTypeMapper, STRAVA_ACTIVITY_TYPE_MAP } from "@dofek/training/training";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
+import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
@@ -10,8 +11,10 @@ import type {
   ProviderAuthSetup,
   ProviderIdentity,
   SyncError,
-  SyncProvider,
+  SyncOptions,
   SyncResult,
+  WebhookEvent,
+  WebhookProvider,
 } from "./types.ts";
 
 // ============================================================
@@ -383,9 +386,10 @@ export function stravaOAuthConfig(): OAuthConfig | null {
   };
 }
 
-export class StravaProvider implements SyncProvider {
+export class StravaProvider implements WebhookProvider {
   readonly id = "strava";
   readonly name = "Strava";
+  readonly webhookScope = "app" as const;
   #fetchFn: typeof globalThis.fetch;
   #throttleMs: number;
 
@@ -401,6 +405,110 @@ export class StravaProvider implements SyncProvider {
     if (!process.env.STRAVA_CLIENT_ID) return "STRAVA_CLIENT_ID is not set";
     if (!process.env.STRAVA_CLIENT_SECRET) return "STRAVA_CLIENT_SECRET is not set";
     return null;
+  }
+
+  // ── Webhook implementation ──
+
+  async registerWebhook(
+    callbackUrl: string,
+    verifyToken: string,
+  ): Promise<{ subscriptionId: string; signingSecret?: string; expiresAt?: Date }> {
+    const clientId = process.env.STRAVA_CLIENT_ID;
+    const clientSecret = process.env.STRAVA_CLIENT_SECRET;
+    if (!clientId || !clientSecret) {
+      throw new Error("STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET are required");
+    }
+
+    const response = await this.#fetchFn("https://www.strava.com/api/v3/push_subscriptions", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        callback_url: callbackUrl,
+        verify_token: verifyToken,
+      }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Strava webhook registration failed (${response.status}): ${text}`);
+    }
+
+    const data: { id: number } = await response.json();
+    return { subscriptionId: String(data.id) };
+  }
+
+  async unregisterWebhook(subscriptionId: string): Promise<void> {
+    const clientId = process.env.STRAVA_CLIENT_ID;
+    const clientSecret = process.env.STRAVA_CLIENT_SECRET;
+    if (!clientId || !clientSecret) return;
+
+    const url = new URL(`https://www.strava.com/api/v3/push_subscriptions/${subscriptionId}`);
+    url.searchParams.set("client_id", clientId);
+    url.searchParams.set("client_secret", clientSecret);
+
+    const response = await this.#fetchFn(url.toString(), { method: "DELETE" });
+    if (!response.ok && response.status !== 404) {
+      const text = await response.text();
+      logger.warn(`[strava] Failed to unregister webhook ${subscriptionId}: ${text}`);
+    }
+  }
+
+  verifyWebhookSignature(
+    _rawBody: Buffer,
+    _headers: Record<string, string | string[] | undefined>,
+    _signingSecret: string,
+  ): boolean {
+    // Strava does not sign webhook payloads — verification happens during
+    // the subscription handshake (hub.challenge + verify_token).
+    // All POST events to the callback URL are trusted once registered.
+    return true;
+  }
+
+  parseWebhookPayload(body: unknown): WebhookEvent[] {
+    // Strava sends a single event object per POST
+    const parsed = z
+      .object({
+        aspect_type: z.string().optional(),
+        event_time: z.number().optional(),
+        object_id: z.number().optional(),
+        object_type: z.string(),
+        owner_id: z.number(),
+        subscription_id: z.number().optional(),
+        updates: z.record(z.unknown()).optional(),
+      })
+      .safeParse(body);
+
+    if (!parsed.success) return [];
+    const event = parsed.data;
+
+    const eventTypeMap: Record<string, WebhookEvent["eventType"]> = {
+      create: "create",
+      update: "update",
+      delete: "delete",
+    };
+
+    return [
+      {
+        ownerExternalId: String(event.owner_id),
+        eventType: eventTypeMap[event.aspect_type ?? ""] ?? "update",
+        objectType: event.object_type,
+        objectId: event.object_id ? String(event.object_id) : undefined,
+      },
+    ];
+  }
+
+  handleValidationChallenge(query: Record<string, string>, verifyToken: string): unknown | null {
+    // Strava sends: GET callback?hub.mode=subscribe&hub.challenge=CHALLENGE&hub.verify_token=TOKEN
+    const mode = query["hub.mode"];
+    const challenge = query["hub.challenge"];
+    const token = query["hub.verify_token"];
+
+    if (mode !== "subscribe" || !challenge) return null;
+    if (token !== verifyToken) return null;
+
+    return { "hub.challenge": challenge };
   }
 
   authSetup(): ProviderAuthSetup {
@@ -442,6 +550,123 @@ export class StravaProvider implements SyncProvider {
       getOAuthConfig: () => stravaOAuthConfig(),
       fetchFn: this.#fetchFn,
     });
+  }
+
+  /**
+   * Sync a single activity from a webhook event.
+   * Makes 2 API calls (detail + streams) instead of a full sync's 1 + 2N.
+   */
+  async syncWebhookEvent(
+    db: SyncDatabase,
+    event: WebhookEvent,
+    options?: SyncOptions,
+  ): Promise<SyncResult> {
+    const start = Date.now();
+    const errors: SyncError[] = [];
+    let recordsSynced = 0;
+
+    if (event.objectType !== "activity" || !event.objectId) {
+      return { provider: this.id, recordsSynced: 0, errors: [], duration: Date.now() - start };
+    }
+
+    const activityExternalId = Number(event.objectId);
+
+    // Handle delete events — remove the activity and its streams
+    if (event.eventType === "delete") {
+      const deleted = await db
+        .delete(activity)
+        .where(
+          sql`${activity.providerId} = ${this.id} AND ${activity.externalId} = ${event.objectId}`,
+        )
+        .returning({ id: activity.id });
+      const deletedRow = deleted[0];
+      if (deletedRow) {
+        await db.delete(metricStream).where(eq(metricStream.activityId, deletedRow.id));
+        logger.info(`[strava] Deleted activity ${event.objectId} via webhook`);
+      }
+      return { provider: this.id, recordsSynced: 0, errors: [], duration: Date.now() - start };
+    }
+
+    let tokens: TokenSet;
+    try {
+      tokens = await this.#resolveTokens(db);
+    } catch (err) {
+      errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
+      return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
+    }
+
+    const client = new StravaClient(tokens.accessToken, this.#fetchFn, this.#throttleMs);
+
+    // Fetch the single activity detail (1 API call)
+    const detail = await client.getActivity(activityExternalId);
+    const parsed = parseStravaActivity(detail);
+
+    // Upsert the activity row
+    const [row] = await db
+      .insert(activity)
+      .values({
+        providerId: this.id,
+        externalId: parsed.externalId,
+        activityType: parsed.activityType,
+        startedAt: parsed.startedAt,
+        endedAt: parsed.endedAt,
+        name: parsed.name,
+        sourceName: detail.device_name,
+        raw: detail,
+      })
+      .onConflictDoUpdate({
+        target: [activity.providerId, activity.externalId],
+        set: {
+          activityType: parsed.activityType,
+          startedAt: parsed.startedAt,
+          endedAt: parsed.endedAt,
+          name: parsed.name,
+          sourceName: detail.device_name,
+          raw: detail,
+        },
+      })
+      .returning({ id: activity.id });
+
+    recordsSynced++;
+    const activityId = row?.id;
+    if (!activityId) {
+      return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
+    }
+
+    // Fetch streams for sensor data (1 API call)
+    try {
+      const streams = await client.getActivityStreams(activityExternalId);
+      const metricRows = stravaStreamsToMetricStream(
+        streams,
+        this.id,
+        activityId,
+        parsed.startedAt,
+      );
+
+      if (metricRows.length > 0) {
+        // Delete existing streams then re-insert (metric_stream has no unique constraint)
+        await db.delete(metricStream).where(eq(metricStream.activityId, activityId));
+        for (let i = 0; i < metricRows.length; i += 500) {
+          await db.insert(metricStream).values(metricRows.slice(i, i + 500));
+        }
+        logger.info(
+          `[strava] Webhook: inserted ${metricRows.length} metric_stream records for activity ${event.objectId}`,
+        );
+      }
+    } catch (streamErr) {
+      if (streamErr instanceof StravaNotFoundError) {
+        logger.info(`[strava] No streams for activity ${event.objectId} (404)`);
+      } else {
+        errors.push({
+          message: `Streams for activity ${event.objectId}: ${streamErr instanceof Error ? streamErr.message : String(streamErr)}`,
+          externalId: event.objectId,
+          cause: streamErr,
+        });
+      }
+    }
+
+    logger.info(`[strava] Webhook: synced activity ${event.objectId} (${event.eventType})`);
+    return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
   }
 
   async sync(

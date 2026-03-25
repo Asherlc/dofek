@@ -49,12 +49,17 @@ describe("Slack Bot — DB helper functions (integration)", () => {
     foodName: string,
   ): Promise<string> {
     const rows = await ctx.db.execute<{ id: string }>(
-      sql`INSERT INTO fitness.food_entry (
-            user_id, provider_id, date, food_name, calories, protein_g, carbs_g, fat_g,
-            fiber_g, saturated_fat_g, sugar_g, sodium_mg, confirmed
+      sql`WITH nd AS (
+            INSERT INTO fitness.nutrition_data (
+              calories, protein_g, carbs_g, fat_g, fiber_g, saturated_fat_g, sugar_g, sodium_mg
+            ) VALUES (200, 10, 30, 8, 3, 2, 5, 100)
+            RETURNING id
+          )
+          INSERT INTO fitness.food_entry (
+            user_id, provider_id, date, food_name, nutrition_data_id, confirmed
           ) VALUES (
             ${userId}, ${DOFEK_PROVIDER_ID}, ${date}::date,
-            ${foodName}, 200, 10, 30, 8, 3, 2, 5, 100, false
+            ${foodName}, (SELECT id FROM nd), false
           ) RETURNING id`,
     );
     const row = rows[0];
@@ -166,10 +171,15 @@ describe("Slack Bot — DB helper functions (integration)", () => {
             VALUES (${orphanUserId}, 'slack', 'SLACK_USER_1', 'Slack User', 'real@test.com')`,
       );
 
-      // Insert food entry under orphan
+      // Insert food entry under orphan (nutrition_data + food_entry)
       await ctx.db.execute(
-        sql`INSERT INTO fitness.food_entry (user_id, provider_id, date, food_name, calories, protein_g, carbs_g, fat_g, fiber_g, saturated_fat_g, sugar_g, sodium_mg, confirmed)
-            VALUES (${orphanUserId}, ${DOFEK_PROVIDER_ID}, '2026-01-15', 'Test Food', 200, 10, 20, 8, 3, 2, 5, 100, true)`,
+        sql`WITH nd AS (
+              INSERT INTO fitness.nutrition_data (calories, protein_g, carbs_g, fat_g, fiber_g, saturated_fat_g, sugar_g, sodium_mg)
+              VALUES (200, 10, 20, 8, 3, 2, 5, 100)
+              RETURNING id
+            )
+            INSERT INTO fitness.food_entry (user_id, provider_id, date, food_name, nutrition_data_id, confirmed)
+            VALUES (${orphanUserId}, ${DOFEK_PROVIDER_ID}, '2026-01-15', 'Test Food', (SELECT id FROM nd), true)`,
       );
 
       // Simulate the repair: detect the mismatch and fix it

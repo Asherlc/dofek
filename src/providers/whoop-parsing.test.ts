@@ -131,28 +131,57 @@ describe("parseSleep — invalid timestamps", () => {
     };
   }
 
-  it("throws with descriptive message for empty start timestamp", () => {
-    expect(() => parseSleep(sleepRecord({ start: "" }))).toThrow("Invalid start timestamp");
+  it("returns null for empty start timestamp", () => {
+    expect(parseSleep(sleepRecord({ start: "" }))).toBeNull();
   });
 
-  it("throws with descriptive message for non-date start timestamp", () => {
-    expect(() => parseSleep(sleepRecord({ start: "not-a-date" }))).toThrow(
-      "Invalid start timestamp",
-    );
+  it("returns null for non-date start timestamp", () => {
+    expect(parseSleep(sleepRecord({ start: "not-a-date" }))).toBeNull();
   });
 
-  it("throws with descriptive message for empty end timestamp", () => {
-    expect(() => parseSleep(sleepRecord({ end: "" }))).toThrow("Invalid end timestamp");
+  it("returns null for empty end timestamp", () => {
+    expect(parseSleep(sleepRecord({ end: "" }))).toBeNull();
   });
 
-  it("includes the raw value in the error message", () => {
-    expect(() => parseSleep(sleepRecord({ start: "garbage" }))).toThrow('"garbage"');
+  it("returns null for garbage start timestamp", () => {
+    expect(parseSleep(sleepRecord({ start: "garbage" }))).toBeNull();
+  });
+
+  it("returns null when start/end are missing and no during is provided", () => {
+    expect(parseSleep(sleepRecord({ start: undefined, end: undefined }))).toBeNull();
   });
 
   it("succeeds with valid timestamps", () => {
     const parsed = parseSleep(sleepRecord());
-    expect(parsed.startedAt).toEqual(new Date("2026-02-28T23:00:00Z"));
-    expect(parsed.endedAt).toEqual(new Date("2026-03-01T07:00:00Z"));
+    expect(parsed).not.toBeNull();
+    expect(parsed?.startedAt).toEqual(new Date("2026-02-28T23:00:00Z"));
+    expect(parsed?.endedAt).toEqual(new Date("2026-03-01T07:00:00Z"));
+  });
+
+  it("parses 'during' Postgres range when start/end are missing", () => {
+    const parsed = parseSleep(
+      sleepRecord({
+        start: undefined,
+        end: undefined,
+        during: "['2026-02-28T23:00:00.000Z','2026-03-01T07:00:00.000Z')",
+      }),
+    );
+    expect(parsed).not.toBeNull();
+    expect(parsed?.startedAt).toEqual(new Date("2026-02-28T23:00:00.000Z"));
+    expect(parsed?.endedAt).toEqual(new Date("2026-03-01T07:00:00.000Z"));
+  });
+
+  it("prefers 'during' over start/end when both are present", () => {
+    const parsed = parseSleep(
+      sleepRecord({
+        start: "2026-01-01T00:00:00Z",
+        end: "2026-01-01T08:00:00Z",
+        during: "['2026-02-28T23:00:00.000Z','2026-03-01T07:00:00.000Z')",
+      }),
+    );
+    expect(parsed).not.toBeNull();
+    expect(parsed?.startedAt).toEqual(new Date("2026-02-28T23:00:00.000Z"));
+    expect(parsed?.endedAt).toEqual(new Date("2026-03-01T07:00:00.000Z"));
   });
 
   it("falls back to `during` field when start/end are missing", () => {
@@ -190,11 +219,12 @@ describe("parseSleep — invalid timestamps", () => {
     };
 
     const parsed = parseSleep(record);
-    expect(parsed.startedAt).toEqual(new Date("2026-03-24T05:30:00.000Z"));
-    expect(parsed.endedAt).toEqual(new Date("2026-03-24T13:15:00.000Z"));
-    expect(parsed.deepMinutes).toBe(120);
-    expect(parsed.remMinutes).toBe(135);
-    expect(parsed.lightMinutes).toBe(180);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.startedAt).toEqual(new Date("2026-03-24T05:30:00.000Z"));
+    expect(parsed?.endedAt).toEqual(new Date("2026-03-24T13:15:00.000Z"));
+    expect(parsed?.deepMinutes).toBe(120);
+    expect(parsed?.remMinutes).toBe(135);
+    expect(parsed?.lightMinutes).toBe(180);
   });
 });
 
@@ -213,14 +243,15 @@ describe("parseSleep — edge cases", () => {
     };
 
     const parsed = parseSleep(record);
-    expect(parsed.externalId).toBe("300");
-    expect(parsed.deepMinutes).toBe(0);
-    expect(parsed.remMinutes).toBe(0);
-    expect(parsed.lightMinutes).toBe(0);
-    expect(parsed.awakeMinutes).toBe(0);
-    expect(parsed.durationMinutes).toBe(0);
-    expect(parsed.efficiencyPct).toBeUndefined();
-    expect(parsed.isNap).toBe(false);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.externalId).toBe("300");
+    expect(parsed?.deepMinutes).toBe(0);
+    expect(parsed?.remMinutes).toBe(0);
+    expect(parsed?.lightMinutes).toBe(0);
+    expect(parsed?.awakeMinutes).toBe(0);
+    expect(parsed?.durationMinutes).toBe(0);
+    expect(parsed?.efficiencyPct).toBeUndefined();
+    expect(parsed?.isNap).toBe(false);
   });
 
   it("parses nap correctly", () => {
@@ -259,12 +290,13 @@ describe("parseSleep — edge cases", () => {
     };
 
     const parsed = parseSleep(record);
-    expect(parsed.isNap).toBe(true);
-    expect(parsed.deepMinutes).toBe(5);
-    expect(parsed.lightMinutes).toBe(15);
-    expect(parsed.remMinutes).toBe(5);
-    expect(parsed.awakeMinutes).toBe(5);
-    expect(parsed.efficiencyPct).toBeCloseTo(83.3);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.isNap).toBe(true);
+    expect(parsed?.deepMinutes).toBe(5);
+    expect(parsed?.lightMinutes).toBe(15);
+    expect(parsed?.remMinutes).toBe(5);
+    expect(parsed?.awakeMinutes).toBe(5);
+    expect(parsed?.efficiencyPct).toBeCloseTo(83.3);
   });
 });
 
@@ -945,10 +977,11 @@ describe("parseSleep — sleep need breakdown", () => {
     };
 
     const parsed = parseSleep(record);
-    expect(parsed.sleepNeedBaselineMinutes).toBe(480);
-    expect(parsed.sleepNeedFromDebtMinutes).toBe(30);
-    expect(parsed.sleepNeedFromStrainMinutes).toBe(15);
-    expect(parsed.sleepNeedFromNapMinutes).toBe(-10);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.sleepNeedBaselineMinutes).toBe(480);
+    expect(parsed?.sleepNeedFromDebtMinutes).toBe(30);
+    expect(parsed?.sleepNeedFromStrainMinutes).toBe(15);
+    expect(parsed?.sleepNeedFromNapMinutes).toBe(-10);
   });
 
   it("returns undefined sleep need when score is missing", () => {
@@ -965,10 +998,11 @@ describe("parseSleep — sleep need breakdown", () => {
     };
 
     const parsed = parseSleep(record);
-    expect(parsed.sleepNeedBaselineMinutes).toBeUndefined();
-    expect(parsed.sleepNeedFromDebtMinutes).toBeUndefined();
-    expect(parsed.sleepNeedFromStrainMinutes).toBeUndefined();
-    expect(parsed.sleepNeedFromNapMinutes).toBeUndefined();
+    expect(parsed).not.toBeNull();
+    expect(parsed?.sleepNeedBaselineMinutes).toBeUndefined();
+    expect(parsed?.sleepNeedFromDebtMinutes).toBeUndefined();
+    expect(parsed?.sleepNeedFromStrainMinutes).toBeUndefined();
+    expect(parsed?.sleepNeedFromNapMinutes).toBeUndefined();
   });
 });
 
