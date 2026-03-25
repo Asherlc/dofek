@@ -214,7 +214,7 @@ export const sleepNeedRouter = router({
       // Get sleep need (reuse the baseline calculation logic)
       const baselineRows = await executeWithSchema(
         ctx.db,
-        z.object({ avg_duration: z.number().nullable() }),
+        z.object({ avg_duration: z.coerce.number().nullable() }),
         sql`
           SELECT AVG(duration_minutes) AS avg_duration
           FROM fitness.sleep_session
