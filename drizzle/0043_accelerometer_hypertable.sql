@@ -41,9 +41,5 @@ SELECT add_compression_policy(
   if_not_exists => TRUE
 );
 
--- Retain 90 days of data, then auto-drop
-SELECT add_retention_policy(
-  'fitness.accelerometer_sample',
-  drop_after => INTERVAL '90 days',
-  if_not_exists => TRUE
-);
+-- No retention policy — keep all data indefinitely.
+-- Revisit when storage becomes a concern (~5-9 MB/day compressed).
