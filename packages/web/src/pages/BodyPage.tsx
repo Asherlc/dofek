@@ -82,10 +82,11 @@ function buildSkinTempSeries(
 export function BodyPage() {
   const units = useUnitConverter();
   const [days, setDays] = useState(30);
+  const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in client tz
 
-  const trends = trpc.dailyMetrics.trends.useQuery({ days });
-  const dailyMetrics = trpc.dailyMetrics.list.useQuery({ days });
-  const hrvBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({ days });
+  const trends = trpc.dailyMetrics.trends.useQuery({ days, today });
+  const dailyMetrics = trpc.dailyMetrics.list.useQuery({ days, today });
+  const hrvBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({ days, today });
   const stressData = trpc.stress.scores.useQuery({ days });
   const smoothedWeight = trpc.bodyAnalytics.smoothedWeight.useQuery({ days: Math.max(days, 90) });
   const bodyRecomp = trpc.bodyAnalytics.recomposition.useQuery({ days: Math.max(days, 180) });

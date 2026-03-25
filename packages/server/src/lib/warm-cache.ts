@@ -6,11 +6,12 @@ import { appRouter } from "../router.ts";
  *  Uses DEFAULT_USER_ID for backwards compatibility — only warms for the primary user. */
 export async function warmCache(db: import("dofek/db").Database): Promise<void> {
   const caller = appRouter.createCaller({ db, userId: DEFAULT_USER_ID });
+  const today = new Date().toLocaleDateString("en-CA"); // server tz — best-effort for cache warming
   const queries: Array<[string, () => Promise<unknown>]> = [
     // Dashboard
-    ["dailyMetrics.list(30)", () => caller.dailyMetrics.list({ days: 30 })],
-    ["dailyMetrics.list(90)", () => caller.dailyMetrics.list({ days: 90 })],
-    ["dailyMetrics.trends(30)", () => caller.dailyMetrics.trends({ days: 30 })],
+    ["dailyMetrics.list(30)", () => caller.dailyMetrics.list({ days: 30, today })],
+    ["dailyMetrics.list(90)", () => caller.dailyMetrics.list({ days: 90, today })],
+    ["dailyMetrics.trends(30)", () => caller.dailyMetrics.trends({ days: 30, today })],
     ["training.nextWorkout", () => caller.training.nextWorkout()],
     ["dailyMetrics.latest", () => caller.dailyMetrics.latest()],
     ["sleep.list(30)", () => caller.sleep.list({ days: 30 })],

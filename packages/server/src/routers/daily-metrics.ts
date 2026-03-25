@@ -32,20 +32,22 @@ export interface HrvBaselineRow {
   mean_7d: number | null;
 }
 
+/** Shared input: client sends today's date (YYYY-MM-DD in their local timezone) + a lookback window. */
+const dateRangeInput = z.object({
+  days: z.number().default(30),
+  today: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD date string"),
+});
+
 export const dailyMetricsRouter = router({
   list: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(
-      z.object({
-        days: z.number().default(30),
-      }),
-    )
+    .input(dateRangeInput)
     .query(async ({ ctx, input }) => {
       return executeWithSchema(
         ctx.db,
         dailyMetricsViewRowSchema,
         sql`SELECT * FROM fitness.v_daily_metrics
             WHERE user_id = ${ctx.userId}
-              AND date > CURRENT_DATE - ${input.days}::int
+              AND date > ${input.today}::date - ${input.days}::int
             ORDER BY date ASC`,
       );
     }),
@@ -60,11 +62,7 @@ export const dailyMetricsRouter = router({
   }),
 
   hrvBaseline: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(
-      z.object({
-        days: z.number().default(30),
-      }),
-    )
+    .input(dateRangeInput)
     .query(async ({ ctx, input }) => {
       const hrvBaselineRowSchema = z.object({
         date: dateStringSchema,
@@ -83,22 +81,18 @@ export const dailyMetricsRouter = router({
               AVG(hrv) OVER (ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS mean_7d
             FROM fitness.v_daily_metrics
             WHERE user_id = ${ctx.userId}
-              AND date > CURRENT_DATE - ${input.days}::int - 60
+              AND date > ${input.today}::date - ${input.days}::int - 60
             ORDER BY date ASC`,
       );
       // Filter to only return the requested date range (discard warmup rows)
-      const cutoff = new Date();
+      const cutoff = new Date(`${input.today}T00:00:00`);
       cutoff.setDate(cutoff.getDate() - input.days);
       const cutoffStr = cutoff.toISOString().slice(0, 10);
       return rows.filter((r) => r.date >= cutoffStr);
     }),
 
   trends: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(
-      z.object({
-        days: z.number().default(30),
-      }),
-    )
+    .input(dateRangeInput)
     .query(async ({ ctx, input }) => {
       const trendsRowSchema = z.object({
         avg_resting_hr: z.coerce.number().nullable(),
@@ -125,7 +119,7 @@ export const dailyMetricsRouter = router({
         sql`WITH current AS (
               SELECT * FROM fitness.v_daily_metrics
               WHERE user_id = ${ctx.userId}
-                AND date > CURRENT_DATE - ${input.days}::int
+                AND date > ${input.today}::date - ${input.days}::int
             ),
             stats AS (
               SELECT

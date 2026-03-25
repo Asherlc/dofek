@@ -46,8 +46,13 @@ describe("dailyMetricsRouter", () => {
         { date: "2024-01-16", resting_hr: 56, hrv: 62 },
       ];
       const caller = makeCaller(rows);
-      const result = await caller.list({ days: 30 });
+      const result = await caller.list({ days: 30, today: "2024-01-16" });
       expect(result).toEqual(rows);
+    });
+
+    it("rejects invalid today parameter", async () => {
+      const caller = makeCaller([]);
+      await expect(caller.list({ days: 30, today: "not-a-date" })).rejects.toThrow();
     });
   });
 
@@ -67,19 +72,22 @@ describe("dailyMetricsRouter", () => {
   });
 
   describe("hrvBaseline", () => {
-    it("filters rows by cutoff date", async () => {
-      // Return rows that span before and after cutoff
+    it("filters rows by cutoff date derived from today param", async () => {
+      // today=2024-01-16, days=30 → cutoff = 2023-12-17
       const rows = [
-        { date: "2020-01-01", hrv: 50, resting_hr: 55, mean_60d: 52, sd_60d: 5, mean_7d: 51 },
-        { date: "2099-12-31", hrv: 60, resting_hr: 55, mean_60d: 55, sd_60d: 5, mean_7d: 58 },
+        { date: "2023-12-16", hrv: 50, resting_hr: 55, mean_60d: 52, sd_60d: 5, mean_7d: 51 },
+        { date: "2023-12-17", hrv: 55, resting_hr: 54, mean_60d: 53, sd_60d: 5, mean_7d: 52 },
+        { date: "2024-01-16", hrv: 60, resting_hr: 55, mean_60d: 55, sd_60d: 5, mean_7d: 58 },
       ];
       const caller = makeCaller(rows);
-      const result = await caller.hrvBaseline({ days: 30 });
+      const result = await caller.hrvBaseline({ days: 30, today: "2024-01-16" });
 
-      // The 2020 date is before cutoff, so should be filtered out
-      // The 2099 date is after cutoff, so should be included
-      expect(result.some((r) => r.date === "2099-12-31")).toBe(true);
-      expect(result.some((r) => r.date === "2020-01-01")).toBe(false);
+      // 2023-12-16 is before cutoff (2023-12-17), should be excluded
+      expect(result.some((r) => r.date === "2023-12-16")).toBe(false);
+      // 2023-12-17 is at cutoff, should be included (>=)
+      expect(result.some((r) => r.date === "2023-12-17")).toBe(true);
+      // 2024-01-16 is after cutoff, should be included
+      expect(result.some((r) => r.date === "2024-01-16")).toBe(true);
     });
   });
 
@@ -107,7 +115,7 @@ describe("dailyMetricsRouter", () => {
         },
       ];
       const caller = makeCaller(rows);
-      const result = await caller.trends({ days: 30 });
+      const result = await caller.trends({ days: 30, today: "2024-01-16" });
       expect(result).toEqual(rows[0]);
     });
 
@@ -148,7 +156,7 @@ describe("dailyMetricsRouter", () => {
         },
       ];
       const caller = makeCaller(rows);
-      const result = await caller.trends({ days: 30 });
+      const result = await caller.trends({ days: 30, today: "2024-01-16" });
       expect(result?.avg_resting_hr).toBe(55);
       expect(typeof result?.avg_resting_hr).toBe("number");
       expect(result?.stddev_hrv).toBe(10.5);
@@ -157,7 +165,7 @@ describe("dailyMetricsRouter", () => {
 
     it("returns null when no data", async () => {
       const caller = makeCaller([]);
-      const result = await caller.trends({ days: 30 });
+      const result = await caller.trends({ days: 30, today: "2024-01-16" });
       expect(result).toBeNull();
     });
   });

@@ -193,16 +193,17 @@ export function Dashboard() {
     setActivityPage(0);
   }, []);
   const onboarding = useOnboarding();
+  const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in client tz
 
-  const trends = trpc.dailyMetrics.trends.useQuery({ days });
-  const dailyMetrics = trpc.dailyMetrics.list.useQuery({ days });
+  const trends = trpc.dailyMetrics.trends.useQuery({ days, today });
+  const dailyMetrics = trpc.dailyMetrics.list.useQuery({ days, today });
   const activities = trpc.activity.list.useQuery({
     days,
     limit: activityPageSize,
     offset: activityPage * activityPageSize,
   });
   const sleepData = trpc.sleep.list.useQuery({ days });
-  const hrvBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({ days });
+  const hrvBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({ days, today });
   const nutritionData = trpc.nutrition.daily.useQuery({ days });
   const insightsQuery = trpc.insights.compute.useQuery({ days });
   const sleepNeed = trpc.sleepNeed.calculate.useQuery();

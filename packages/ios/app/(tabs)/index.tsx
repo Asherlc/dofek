@@ -64,6 +64,7 @@ export default function OverviewScreen() {
   const [days, setDays] = useState(30);
   const [recentActivityPage, setRecentActivityPage] = useState(0);
   const showDetailedSections = true;
+  const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in client tz
 
   // Fetch readiness/recovery score
   const readinessQuery = trpc.recovery.readinessScore.useQuery({ days });
@@ -110,7 +111,7 @@ export default function OverviewScreen() {
   );
 
   // Health metrics (latest)
-  const dailyMetricsQuery = trpc.dailyMetrics.trends.useQuery({ days });
+  const dailyMetricsQuery = trpc.dailyMetrics.trends.useQuery({ days, today });
   const metrics = dailyMetricsQuery.data;
 
   // Auto-sync when data is stale (API providers + HealthKit)
@@ -145,7 +146,7 @@ export default function OverviewScreen() {
   const anomalies = anomalyQuery.data;
 
   // Steps (from daily metrics)
-  const stepsQuery = trpc.dailyMetrics.list.useQuery({ days });
+  const stepsQuery = trpc.dailyMetrics.list.useQuery({ days, today });
   const stepsData = stepsQuery.data ?? [];
 
   const recoveryScore = todayReadiness?.readinessScore ?? null;
