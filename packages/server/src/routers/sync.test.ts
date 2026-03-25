@@ -379,7 +379,9 @@ describe("syncRouter", () => {
       });
 
       const result = await caller.triggerSync({});
-      expect(result.providerJobs).toEqual([{ providerId: "strava", jobId: "job-strava", queueName: "sync:strava" }]);
+      expect(result.providerJobs).toEqual([
+        { providerId: "strava", jobId: "job-strava", queueName: "sync:strava" },
+      ]);
       expect(mockAdd).toHaveBeenCalledTimes(1);
       expect(mockAdd).toHaveBeenCalledWith("sync", {
         providerId: "strava",
@@ -400,7 +402,9 @@ describe("syncRouter", () => {
       const result = await caller.triggerSync({ providerId: "wahoo" });
       expect(result.jobId).toBe("job-123");
       expect(result.jobIds).toEqual(["job-123"]);
-      expect(result.providerJobs).toEqual([{ providerId: "wahoo", jobId: "job-123", queueName: "sync:wahoo" }]);
+      expect(result.providerJobs).toEqual([
+        { providerId: "wahoo", jobId: "job-123", queueName: "sync:wahoo" },
+      ]);
       expect(mockAdd).toHaveBeenCalledWith("sync", {
         providerId: "wahoo",
         sinceDays: undefined,
