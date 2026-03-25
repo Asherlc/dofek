@@ -404,7 +404,7 @@ See `packages/server/src/routers/life-events.ts` for the API and `packages/web/s
 - [x] Cross-provider deduplication via materialized views (recursive CTE overlap clustering, per-field merge by provider priority)
 - [x] Strong CSV import (strength training history — CSV upload with unit conversion)
 - [x] RideWithGPS provider (trip sync with GPS track points, activity type mapping)
-- [ ] WHOOP raw IMU/accelerometer data from strength strap (protobuf download — see `docs/whoop.md`)
+- [x] WHOOP raw IMU/accelerometer data investigation — **not feasible**: data is in a private S3 bucket with no download API; app only uploads, never reads back. Load-velocity profiles (derived from accelerometer) may be accessible once enough training data is collected. See `docs/whoop.md`.
 
 ### Dashboard & Insights
 - [x] Web dashboard (Vite + React + tRPC + ECharts + shadcn/ui)
