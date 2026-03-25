@@ -66,12 +66,13 @@ describe("accelerometerSyncRouter", () => {
       const execute = makeExecute();
       const caller = createCaller({ db: { execute }, userId: "user-1" });
 
+      // Build an invalid sample missing y and z — Zod should reject at runtime
+      const invalidSample = { timestamp: "2026-03-25T10:00:00Z", x: 0.1 };
       await expect(
         caller.pushAccelerometerSamples({
           deviceId: "iPhone 15 Pro",
           deviceType: "iphone",
-          // @ts-expect-error — intentionally passing invalid sample
-          samples: [{ timestamp: "2026-03-25T10:00:00Z", x: 0.1 }],
+          samples: [invalidSample],
         }),
       ).rejects.toThrow();
     });
