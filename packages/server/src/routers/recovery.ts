@@ -583,7 +583,7 @@ export const recoveryRouter = router({
             SUM(
               asum.avg_hr * EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0 / 100.0
             ) AS daily_load
-          FROM fitness.v_activity asum
+          FROM fitness.activity_summary asum
           WHERE asum.user_id = ${ctx.userId}
             AND asum.started_at::date >= ${dateWindowStart(input.endDate, input.days)}
             AND asum.ended_at IS NOT NULL

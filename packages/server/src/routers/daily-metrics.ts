@@ -140,7 +140,13 @@ export const dailyMetricsRouter = router({
                 FIRST_VALUE(steps) OVER (ORDER BY CASE WHEN steps IS NOT NULL THEN date END DESC NULLS LAST) AS latest_steps,
                 FIRST_VALUE(active_energy_kcal) OVER (ORDER BY CASE WHEN active_energy_kcal IS NOT NULL THEN date END DESC NULLS LAST) AS latest_active_energy,
                 FIRST_VALUE(skin_temp_c) OVER (ORDER BY CASE WHEN skin_temp_c IS NOT NULL THEN date END DESC NULLS LAST) AS latest_skin_temp,
-                ROW_NUMBER() OVER (ORDER BY date DESC) AS rn
+                ROW_NUMBER() OVER (
+                  ORDER BY CASE
+                    WHEN resting_hr IS NOT NULL OR hrv IS NOT NULL OR spo2_avg IS NOT NULL
+                      OR steps IS NOT NULL OR active_energy_kcal IS NOT NULL OR skin_temp_c IS NOT NULL
+                    THEN date
+                  END DESC NULLS LAST
+                ) AS rn
               FROM current
             )
             SELECT
