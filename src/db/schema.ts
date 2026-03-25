@@ -607,6 +607,30 @@ export const metricStream = fitness.table(
 );
 
 // ============================================================
+// Accelerometer (high-frequency IMU data, 50 Hz)
+// ============================================================
+
+export const accelerometerSample = fitness.table(
+  "accelerometer_sample",
+  {
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .default(DEFAULT_USER_ID)
+      .references(() => userProfile.id),
+    deviceId: text("device_id").notNull(), // e.g., "iPhone 15 Pro", "Apple Watch Series 9"
+    deviceType: text("device_type").notNull(), // "iphone" | "apple_watch" | "whoop"
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id),
+    x: real("x").notNull(), // acceleration in g
+    y: real("y").notNull(), // acceleration in g
+    z: real("z").notNull(), // acceleration in g
+  },
+  (table) => [index("accelerometer_user_time_idx").on(table.userId, table.recordedAt)],
+);
+
+// ============================================================
 // Daily fitness metrics
 // ============================================================
 
