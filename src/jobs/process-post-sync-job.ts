@@ -1,13 +1,17 @@
-import type { Job } from "bullmq";
 import type { SyncDatabase } from "../db/index.ts";
 import { logger } from "../logger.ts";
 import type { PostSyncJobData } from "./queues.ts";
+
+/** Minimal Job interface — only the subset processPostSyncJob actually uses. */
+export interface PostSyncJob {
+  data: PostSyncJobData;
+}
 
 /**
  * Process debounced post-sync work: materialized view refresh, parameter refit, etc.
  * This runs once per user after all their provider syncs settle (debounced in the queue).
  */
-export async function processPostSyncJob(job: Job<PostSyncJobData>, db: SyncDatabase) {
+export async function processPostSyncJob(job: PostSyncJob, db: SyncDatabase) {
   const { userId } = job.data;
   logger.info(`[post-sync] Running post-sync work for user ${userId}`);
 

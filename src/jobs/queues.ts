@@ -49,7 +49,7 @@ export const POST_SYNC_QUEUE = "post-sync";
 
 /** Get the per-provider queue name for a given provider ID. */
 export function providerSyncQueueName(providerId: string): string {
-  return `${SYNC_QUEUE_PREFIX}:${providerId}`;
+  return `${SYNC_QUEUE_PREFIX}-${providerId}`;
 }
 
 // ── Shared Redis connection config ──

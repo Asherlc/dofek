@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { processPostSyncJob } from "./process-post-sync-job.ts";
+import type { PostSyncJob } from "./process-post-sync-job.ts";
 
 const mockUpdateUserMaxHr = vi.fn();
 const mockRefreshDedupViews = vi.fn();
@@ -25,11 +25,15 @@ vi.mock("../logger.ts", () => ({
   logger: { info: vi.fn(), error: vi.fn() },
 }));
 
-function makeJob(userId: string) {
-  return { data: { userId }, id: "test-job" } as Parameters<typeof processPostSyncJob>[0];
+// Lazy import to respect vi.mock ordering
+const { processPostSyncJob } = await import("./process-post-sync-job.ts");
+
+function makeJob(userId: string): PostSyncJob {
+  return { data: { userId } };
 }
 
-const fakeDb = {} as Parameters<typeof processPostSyncJob>[1];
+// All DB calls are mocked via vi.mock above, so an empty object satisfies the contract at runtime.
+const fakeDb: Parameters<typeof processPostSyncJob>[1] = Object.create(null);
 
 describe("processPostSyncJob", () => {
   it("runs all four post-sync operations", async () => {

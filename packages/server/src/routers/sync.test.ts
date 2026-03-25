@@ -51,7 +51,7 @@ vi.mock("dofek/jobs/queues", () => ({
     getJob: mockGetJob,
     getJobs: mockGetJobs,
   })),
-  providerSyncQueueName: vi.fn((id: string) => `sync:${id}`),
+  providerSyncQueueName: vi.fn((id: string) => `sync-${id}`),
 }));
 
 vi.mock("dofek/providers/registry", () => ({
@@ -293,8 +293,8 @@ describe("syncRouter", () => {
       expect(result.jobId).toBe("job-strava");
       expect(result.jobIds).toEqual(["job-strava", "job-wahoo"]);
       expect(result.providerJobs).toEqual([
-        { providerId: "strava", jobId: "job-strava", queueName: "sync:strava" },
-        { providerId: "wahoo", jobId: "job-wahoo", queueName: "sync:wahoo" },
+        { providerId: "strava", jobId: "job-strava", queueName: "sync-strava" },
+        { providerId: "wahoo", jobId: "job-wahoo", queueName: "sync-wahoo" },
       ]);
       expect(mockAdd).toHaveBeenNthCalledWith(1, "sync", {
         providerId: "strava",
@@ -359,8 +359,8 @@ describe("syncRouter", () => {
       // strava has authSetup and has token — included
       // intervals has no authSetup — included (no auth needed)
       expect(result.providerJobs).toEqual([
-        { providerId: "strava", jobId: "job-strava", queueName: "sync:strava" },
-        { providerId: "intervals", jobId: "job-intervals", queueName: "sync:intervals" },
+        { providerId: "strava", jobId: "job-strava", queueName: "sync-strava" },
+        { providerId: "intervals", jobId: "job-intervals", queueName: "sync-intervals" },
       ]);
       expect(mockAdd).toHaveBeenCalledTimes(2);
     });
@@ -380,7 +380,7 @@ describe("syncRouter", () => {
 
       const result = await caller.triggerSync({});
       expect(result.providerJobs).toEqual([
-        { providerId: "strava", jobId: "job-strava", queueName: "sync:strava" },
+        { providerId: "strava", jobId: "job-strava", queueName: "sync-strava" },
       ]);
       expect(mockAdd).toHaveBeenCalledTimes(1);
       expect(mockAdd).toHaveBeenCalledWith("sync", {
@@ -403,7 +403,7 @@ describe("syncRouter", () => {
       expect(result.jobId).toBe("job-123");
       expect(result.jobIds).toEqual(["job-123"]);
       expect(result.providerJobs).toEqual([
-        { providerId: "wahoo", jobId: "job-123", queueName: "sync:wahoo" },
+        { providerId: "wahoo", jobId: "job-123", queueName: "sync-wahoo" },
       ]);
       expect(mockAdd).toHaveBeenCalledWith("sync", {
         providerId: "wahoo",

@@ -46,7 +46,7 @@ vi.mock("./provider-queue-config.ts", () => ({
 
 vi.mock("./queues.ts", () => ({
   getRedisConnection: vi.fn(() => ({})),
-  providerSyncQueueName: vi.fn((id: string) => `sync:${id}`),
+  providerSyncQueueName: vi.fn((id: string) => `sync-${id}`),
   IMPORT_QUEUE: "import-queue",
   SYNC_QUEUE: "sync-queue",
   EXPORT_QUEUE: "export-queue",
@@ -74,8 +74,8 @@ describe("worker module", () => {
     const { Worker } = await import("bullmq");
     expect(Worker).toHaveBeenCalledTimes(EXPECTED_WORKER_COUNT);
     // Per-provider workers
-    expect(Worker).toHaveBeenCalledWith("sync:strava", expect.any(Function), expect.any(Object));
-    expect(Worker).toHaveBeenCalledWith("sync:garmin", expect.any(Function), expect.any(Object));
+    expect(Worker).toHaveBeenCalledWith("sync-strava", expect.any(Function), expect.any(Object));
+    expect(Worker).toHaveBeenCalledWith("sync-garmin", expect.any(Function), expect.any(Object));
     // Legacy sync worker
     expect(Worker).toHaveBeenCalledWith("sync-queue", expect.any(Function), expect.any(Object));
     // Standard workers

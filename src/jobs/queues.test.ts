@@ -125,10 +125,10 @@ describe("queues", () => {
   });
 
   describe("providerSyncQueueName", () => {
-    it("returns sync:{providerId} format", async () => {
+    it("returns sync-{providerId} format", async () => {
       const { providerSyncQueueName } = await import("./queues.ts");
-      expect(providerSyncQueueName("strava")).toBe("sync:strava");
-      expect(providerSyncQueueName("garmin")).toBe("sync:garmin");
+      expect(providerSyncQueueName("strava")).toBe("sync-strava");
+      expect(providerSyncQueueName("garmin")).toBe("sync-garmin");
     });
   });
 
@@ -138,7 +138,7 @@ describe("queues", () => {
 
       createProviderSyncQueue("strava", { host: "test", port: 1234 });
 
-      expect(MockQueue).toHaveBeenCalledWith("sync:strava", {
+      expect(MockQueue).toHaveBeenCalledWith("sync-strava", {
         connection: { host: "test", port: 1234 },
       });
     });
@@ -149,7 +149,7 @@ describe("queues", () => {
 
       createProviderSyncQueue("garmin");
 
-      expect(MockQueue).toHaveBeenCalledWith("sync:garmin", {
+      expect(MockQueue).toHaveBeenCalledWith("sync-garmin", {
         connection: expect.objectContaining({ host: "localhost", port: 6379 }),
       });
     });
