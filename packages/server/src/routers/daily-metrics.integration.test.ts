@@ -171,10 +171,12 @@ describe("dailyMetrics data correctness", () => {
     });
 
     it("returns null when no data exists in the window", async () => {
-      // Query a window far in the past where no data exists
+      // Use a 1-day window far in the future where no data exists.
+      // The query has no upper bound, so a past date would still pick up
+      // our test data; a future date with days=1 ensures truly empty results.
       const result = await query<null>("dailyMetrics.trends", {
-        days: 30,
-        endDate: "2020-01-01",
+        days: 1,
+        endDate: "2099-01-02",
       });
       expect(result).toBeNull();
     });
