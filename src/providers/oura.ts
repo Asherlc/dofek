@@ -1,4 +1,8 @@
-import { createActivityTypeMapper, OURA_ACTIVITY_TYPE_MAP } from "@dofek/training/training";
+import {
+  type CanonicalActivityType,
+  createActivityTypeMapper,
+  OURA_ACTIVITY_TYPE_MAP,
+} from "@dofek/training/training";
 import { z } from "zod";
 import type { OAuthConfig } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
@@ -339,12 +343,22 @@ export function parseOuraDailyMetrics(
 
 const mapOuraType = createActivityTypeMapper(OURA_ACTIVITY_TYPE_MAP);
 
-export function mapOuraActivityType(ouraActivity: string): string {
+export function mapOuraActivityType(ouraActivity: string): CanonicalActivityType {
   const key = ouraActivity.toLowerCase();
-  const mapped = mapOuraType(key);
-  // Oura falls back to the lowercased activity name rather than "other"
-  // to preserve unrecognized Oura-specific types as-is
-  return mapped === "other" && key !== "other" ? key : mapped;
+  return mapOuraType(key);
+}
+
+const OURA_SESSION_TYPE_MAP: Record<string, CanonicalActivityType> = {
+  meditation: "meditation",
+  breathing: "breathwork",
+  nap: "other",
+  relaxation: "other",
+  rest: "other",
+  body_status: "other",
+};
+
+function mapOuraSessionType(sessionType: string): CanonicalActivityType {
+  return OURA_SESSION_TYPE_MAP[sessionType] ?? "other";
 }
 
 // ============================================================
@@ -813,12 +827,13 @@ export class OuraProvider implements SyncProvider {
 
           for (const s of allSessions) {
             try {
+              const sessionActivityType = mapOuraSessionType(s.type);
               await db
                 .insert(activity)
                 .values({
                   providerId: this.id,
                   externalId: s.id,
-                  activityType: s.type,
+                  activityType: sessionActivityType,
                   startedAt: new Date(s.start_datetime),
                   endedAt: new Date(s.end_datetime),
                   name: s.type,
@@ -827,7 +842,7 @@ export class OuraProvider implements SyncProvider {
                 .onConflictDoUpdate({
                   target: [activity.providerId, activity.externalId],
                   set: {
-                    activityType: s.type,
+                    activityType: sessionActivityType,
                     startedAt: new Date(s.start_datetime),
                     endedAt: new Date(s.end_datetime),
                     name: s.type,

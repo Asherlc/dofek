@@ -223,12 +223,12 @@ describe("Deduplication materialized views", () => {
   });
 
   it("v_activity dedupes WHOOP and Apple Health with different type names", async () => {
-    // WHOOP records "commuting", Apple Health republishes it as "other"
+    // WHOOP records "walking", Apple Health republishes it as "other"
     await ctx.db.insert(activity).values([
       {
         providerId: "whoop",
         externalId: "whoop-commute-cross-type",
-        activityType: "commuting",
+        activityType: "walking",
         startedAt: new Date("2026-03-12T15:21:00Z"),
         endedAt: new Date("2026-03-12T15:36:00Z"),
       },
@@ -252,7 +252,7 @@ describe("Deduplication materialized views", () => {
     // Should merge into 1 activity — WHOOP wins (priority 30 < 90)
     expect(rows.length).toBe(1);
     expect(rows[0]?.provider_id).toBe("whoop");
-    expect(rows[0]?.activity_type).toBe("commuting");
+    expect(rows[0]?.activity_type).toBe("walking");
   });
 
   it("v_activity keeps non-overlapping same-type activities separate", async () => {

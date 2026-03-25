@@ -494,19 +494,19 @@ describe("parseWorkoutSummary — additional type mappings", () => {
 
   it("handles indoor cycling type (3)", () => {
     expect(parseWorkoutSummary({ ...baseWorkout, workout_type_id: 3 }).activityType).toBe(
-      "cycling",
+      "indoor_cycling",
     );
   });
 
   it("handles mountain biking type (4)", () => {
     expect(parseWorkoutSummary({ ...baseWorkout, workout_type_id: 4 }).activityType).toBe(
-      "cycling",
+      "mountain_biking",
     );
   });
 
   it("handles gravel cycling type (5)", () => {
     expect(parseWorkoutSummary({ ...baseWorkout, workout_type_id: 5 }).activityType).toBe(
-      "cycling",
+      "gravel_cycling",
     );
   });
 });

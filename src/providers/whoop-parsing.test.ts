@@ -312,7 +312,7 @@ describe("parseWorkout — edge cases", () => {
     expect(parseWorkout(makeRecord(33)).activityType).toBe("swimming");
     expect(parseWorkout(makeRecord(52)).activityType).toBe("hiking");
     expect(parseWorkout(makeRecord(63)).activityType).toBe("walking");
-    expect(parseWorkout(makeRecord(45)).activityType).toBe("weightlifting");
+    expect(parseWorkout(makeRecord(45)).activityType).toBe("strength");
     expect(parseWorkout(makeRecord(18)).activityType).toBe("rowing");
     expect(parseWorkout(makeRecord(65)).activityType).toBe("elliptical");
     expect(parseWorkout(makeRecord(29)).activityType).toBe("skiing");

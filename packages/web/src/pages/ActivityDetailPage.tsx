@@ -1,3 +1,4 @@
+import { formatActivityTypeLabel } from "@dofek/training/training";
 import type { ActivityHrZone } from "@dofek/zones/zones";
 import { HEART_RATE_ZONE_COLORS } from "@dofek/zones/zones";
 import { Link, useParams } from "@tanstack/react-router";
@@ -178,7 +179,9 @@ function ActivityHeader({ activity, units }: { activity: ActivityDetail; units: 
         <h1 className="text-xl font-semibold text-foreground">
           {activity.name ?? activity.activityType}
         </h1>
-        <span className="text-xs text-subtle capitalize">{activity.activityType}</span>
+        <span className="text-xs text-subtle">
+          {formatActivityTypeLabel(activity.activityType)}
+        </span>
       </div>
       <p className="text-sm text-subtle mb-4">
         {new Date(activity.startedAt).toLocaleDateString(undefined, {

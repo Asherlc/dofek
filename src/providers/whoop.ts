@@ -1,3 +1,4 @@
+import type { CanonicalActivityType } from "@dofek/training/training";
 import { and, eq } from "drizzle-orm";
 import {
   mapSportId,
@@ -163,7 +164,7 @@ export function parseSleep(record: WhoopSleepRecord): ParsedSleep {
 
 export interface ParsedWorkout {
   externalId: string;
-  activityType: string;
+  activityType: CanonicalActivityType;
   startedAt: Date;
   endedAt: Date;
   durationSeconds: number;

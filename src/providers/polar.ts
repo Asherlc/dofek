@@ -1,4 +1,8 @@
-import { createActivityTypeMapper, POLAR_SPORT_MAP } from "@dofek/training/training";
+import {
+  type CanonicalActivityType,
+  createActivityTypeMapper,
+  POLAR_SPORT_MAP,
+} from "@dofek/training/training";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
@@ -80,7 +84,7 @@ export interface PolarNightlyRecharge {
 
 const mapPolarType = createActivityTypeMapper(POLAR_SPORT_MAP);
 
-export function mapPolarSport(sport: string): string {
+export function mapPolarSport(sport: string): CanonicalActivityType {
   const key = sport.toLowerCase();
   return mapPolarType(key);
 }
@@ -106,7 +110,7 @@ export function parsePolarDuration(isoDuration: string): number {
 
 export interface ParsedPolarActivity {
   externalId: string;
-  activityType: string;
+  activityType: CanonicalActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;

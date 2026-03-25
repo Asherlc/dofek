@@ -1,7 +1,9 @@
+import type { CanonicalActivityType } from "@dofek/training/training";
+
 /**
  * TrainingPeaks workout type family IDs → normalized sport type.
  */
-export const TRAINING_PEAKS_SPORT_MAP: Record<number, string> = {
+export const TRAINING_PEAKS_SPORT_MAP: Record<number, CanonicalActivityType> = {
   1: "swimming",
   2: "cycling",
   3: "running",
@@ -13,13 +15,13 @@ export const TRAINING_PEAKS_SPORT_MAP: Record<number, string> = {
   9: "hiking",
   10: "other",
   11: "triathlon",
-  12: "rest",
+  12: "other",
   13: "cardio",
 };
 
 /**
  * Map a TrainingPeaks workoutTypeFamilyId to a normalized sport type.
  */
-export function mapTrainingPeaksSport(familyId: number): string {
+export function mapTrainingPeaksSport(familyId: number): CanonicalActivityType {
   return TRAINING_PEAKS_SPORT_MAP[familyId] ?? "other";
 }

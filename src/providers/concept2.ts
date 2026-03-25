@@ -1,3 +1,4 @@
+import type { CanonicalActivityType } from "@dofek/training/training";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens } from "../auth/oauth.ts";
@@ -77,7 +78,7 @@ const concept2ResultsResponseSchema = z.object({
 
 export interface ParsedConcept2Result {
   externalId: string;
-  activityType: string;
+  activityType: CanonicalActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -88,7 +89,7 @@ export interface ParsedConcept2Result {
 // Parsing
 // ============================================================
 
-export function mapConcept2Type(type: string): string {
+export function mapConcept2Type(type: string): CanonicalActivityType {
   switch (type.toLowerCase()) {
     case "rower":
       return "rowing";

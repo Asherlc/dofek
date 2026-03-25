@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   CANONICAL_ACTIVITY_TYPES,
+  CYCLING_ACTIVITY_TYPES,
   collapseWeeklyVolumeActivityTypes,
   createActivityTypeMapper,
   ENDURANCE_ACTIVITY_TYPES,
   formatActivityTypeLabel,
   GARMIN_ACTIVITY_TYPE_MAP,
+  isCyclingActivity,
   OTHER_ACTIVITY_TYPE,
   OURA_ACTIVITY_TYPE_MAP,
   POLAR_SPORT_MAP,
@@ -26,6 +28,12 @@ describe("CANONICAL_ACTIVITY_TYPES", () => {
     expect(CANONICAL_ACTIVITY_TYPES).toContain("swimming");
     expect(CANONICAL_ACTIVITY_TYPES).toContain("walking");
     expect(CANONICAL_ACTIVITY_TYPES).toContain("hiking");
+  });
+
+  it("includes all cycling subtypes", () => {
+    for (const cyclingType of CYCLING_ACTIVITY_TYPES) {
+      expect(CANONICAL_ACTIVITY_TYPES).toContain(cyclingType);
+    }
   });
 
   it("includes strength and fitness types", () => {
@@ -59,6 +67,12 @@ describe("ENDURANCE_ACTIVITY_TYPES", () => {
     expect(ENDURANCE_ACTIVITY_TYPES).toContain("hiking");
   });
 
+  it("includes all cycling subtypes", () => {
+    for (const cyclingType of CYCLING_ACTIVITY_TYPES) {
+      expect(ENDURANCE_ACTIVITY_TYPES).toContain(cyclingType);
+    }
+  });
+
   it("does not include non-endurance types", () => {
     const types: readonly string[] = ENDURANCE_ACTIVITY_TYPES;
     expect(types).not.toContain("strength");
@@ -69,6 +83,40 @@ describe("ENDURANCE_ACTIVITY_TYPES", () => {
     for (const t of ENDURANCE_ACTIVITY_TYPES) {
       expect(CANONICAL_ACTIVITY_TYPES).toContain(t);
     }
+  });
+});
+
+// ============================================================
+// CYCLING_ACTIVITY_TYPES / isCyclingActivity
+// ============================================================
+
+describe("CYCLING_ACTIVITY_TYPES", () => {
+  it("includes generic cycling and all subtypes", () => {
+    expect(CYCLING_ACTIVITY_TYPES).toContain("cycling");
+    expect(CYCLING_ACTIVITY_TYPES).toContain("road_cycling");
+    expect(CYCLING_ACTIVITY_TYPES).toContain("mountain_biking");
+    expect(CYCLING_ACTIVITY_TYPES).toContain("gravel_cycling");
+    expect(CYCLING_ACTIVITY_TYPES).toContain("indoor_cycling");
+    expect(CYCLING_ACTIVITY_TYPES).toContain("virtual_cycling");
+    expect(CYCLING_ACTIVITY_TYPES).toContain("e_bike_cycling");
+    expect(CYCLING_ACTIVITY_TYPES).toContain("cyclocross");
+    expect(CYCLING_ACTIVITY_TYPES).toContain("track_cycling");
+    expect(CYCLING_ACTIVITY_TYPES).toContain("bmx");
+  });
+});
+
+describe("isCyclingActivity", () => {
+  it("returns true for all cycling subtypes", () => {
+    for (const type of CYCLING_ACTIVITY_TYPES) {
+      expect(isCyclingActivity(type)).toBe(true);
+    }
+  });
+
+  it("returns false for non-cycling types", () => {
+    expect(isCyclingActivity("running")).toBe(false);
+    expect(isCyclingActivity("swimming")).toBe(false);
+    expect(isCyclingActivity("strength")).toBe(false);
+    expect(isCyclingActivity("other")).toBe(false);
   });
 });
 
@@ -100,16 +148,28 @@ describe("createActivityTypeMapper", () => {
 // ============================================================
 
 describe("STRAVA_ACTIVITY_TYPE_MAP", () => {
-  it("maps Ride to cycling", () => {
-    expect(STRAVA_ACTIVITY_TYPE_MAP.Ride).toBe("cycling");
+  it("maps Ride to road_cycling", () => {
+    expect(STRAVA_ACTIVITY_TYPE_MAP.Ride).toBe("road_cycling");
   });
 
   it("maps Run to running", () => {
     expect(STRAVA_ACTIVITY_TYPE_MAP.Run).toBe("running");
   });
 
-  it("maps VirtualRide to cycling", () => {
-    expect(STRAVA_ACTIVITY_TYPE_MAP.VirtualRide).toBe("cycling");
+  it("maps VirtualRide to virtual_cycling", () => {
+    expect(STRAVA_ACTIVITY_TYPE_MAP.VirtualRide).toBe("virtual_cycling");
+  });
+
+  it("maps MountainBikeRide to mountain_biking", () => {
+    expect(STRAVA_ACTIVITY_TYPE_MAP.MountainBikeRide).toBe("mountain_biking");
+  });
+
+  it("maps GravelRide to gravel_cycling", () => {
+    expect(STRAVA_ACTIVITY_TYPE_MAP.GravelRide).toBe("gravel_cycling");
+  });
+
+  it("maps EBikeRide to e_bike_cycling", () => {
+    expect(STRAVA_ACTIVITY_TYPE_MAP.EBikeRide).toBe("e_bike_cycling");
   });
 
   it("maps WeightTraining to strength", () => {
@@ -148,8 +208,8 @@ describe("POLAR_SPORT_MAP", () => {
     expect(POLAR_SPORT_MAP.strength_training).toBe("strength");
   });
 
-  it("maps indoor_cycling to cycling", () => {
-    expect(POLAR_SPORT_MAP.indoor_cycling).toBe("cycling");
+  it("maps indoor_cycling to indoor_cycling", () => {
+    expect(POLAR_SPORT_MAP.indoor_cycling).toBe("indoor_cycling");
   });
 
   it("maps all entries to canonical types", () => {
@@ -369,6 +429,26 @@ describe("collapseWeeklyVolumeActivityTypes", () => {
     expect(types).toContain("running");
     expect(types).toContain("swimming");
     expect(types).toContain(OTHER_ACTIVITY_TYPE);
+  });
+
+  it("consolidates cycling subtypes into generic cycling", () => {
+    const rows = [
+      { week: "2026-03-01", activity_type: "road_cycling", count: 2, hours: 3 },
+      { week: "2026-03-01", activity_type: "mountain_biking", count: 1, hours: 2 },
+      { week: "2026-03-01", activity_type: "gravel_cycling", count: 1, hours: 1 },
+      { week: "2026-03-01", activity_type: "indoor_cycling", count: 1, hours: 1 },
+      { week: "2026-03-01", activity_type: "running", count: 3, hours: 4 },
+    ];
+    const result = collapseWeeklyVolumeActivityTypes(rows, 6);
+    const types = result.map((r) => r.activity_type);
+    expect(types).toContain("cycling");
+    expect(types).not.toContain("road_cycling");
+    expect(types).not.toContain("mountain_biking");
+    expect(types).not.toContain("gravel_cycling");
+    expect(types).not.toContain("indoor_cycling");
+    const cyclingRow = result.find((r) => r.activity_type === "cycling");
+    expect(cyclingRow?.hours).toBe(7);
+    expect(cyclingRow?.count).toBe(5);
   });
 });
 
