@@ -57,7 +57,7 @@ export const pmcRouter = router({
                 WHERE user_id = ${ctx.userId} AND resting_hr IS NOT NULL ORDER BY date DESC LIMIT 1
               ), 60) AS resting_hr,
               asum.activity_id AS id,
-              asum.started_at::date AS date,
+              (asum.started_at AT TIME ZONE ${ctx.timezone})::date AS date,
               EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60 AS duration_min,
               asum.avg_hr,
               asum.max_hr,

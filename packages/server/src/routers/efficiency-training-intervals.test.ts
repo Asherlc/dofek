@@ -3,7 +3,7 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const t = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  const t = initTRPC.context<{ db: unknown; userId: string | null; timezone: string }>().create();
   return {
     router: t.router,
     protectedProcedure: t.procedure,
@@ -70,6 +70,7 @@ describe("efficiencyRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.aerobicEfficiency({ days: 180 });
 
@@ -82,6 +83,7 @@ describe("efficiencyRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.aerobicEfficiency({ days: 180 });
       expect(result.maxHr).toBeNull();
@@ -105,6 +107,7 @@ describe("efficiencyRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.aerobicDecoupling({ days: 180 });
 
@@ -127,6 +130,7 @@ describe("efficiencyRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.polarizationTrend({ days: 180 });
 
@@ -142,6 +146,7 @@ describe("efficiencyRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.polarizationTrend({ days: 180 });
 
@@ -159,6 +164,7 @@ describe("trainingRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.weeklyVolume({ days: 90 });
       expect(result).toEqual(rows);
@@ -180,6 +186,7 @@ describe("trainingRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.weeklyVolume({ days: 90 });
       expect(result[0]?.hours).toBe(5.5);
@@ -203,6 +210,7 @@ describe("trainingRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.hrZones({ days: 90 });
       expect(result.maxHr).toBe(190);
@@ -213,6 +221,7 @@ describe("trainingRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.hrZones({ days: 90 });
       expect(result.maxHr).toBeNull();
@@ -226,6 +235,7 @@ describe("trainingRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.activityStats({ days: 90 });
       expect(result).toEqual(rows);
@@ -233,8 +243,9 @@ describe("trainingRouter", () => {
   });
 
   describe("nextWorkout", () => {
+    const TEST_END_DATE = "2026-03-15";
     function dateDaysAgo(days: number): string {
-      const d = new Date();
+      const d = new Date(`${TEST_END_DATE}T00:00:00Z`);
       d.setUTCDate(d.getUTCDate() - days);
       return d.toISOString().slice(0, 10);
     }
@@ -268,8 +279,8 @@ describe("trainingRouter", () => {
         .mockResolvedValueOnce([{ hiit_count_7d: 1, last_hiit_date: dateDaysAgo(1) }])
         .mockResolvedValueOnce([]);
 
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
-      const result = await caller.nextWorkout();
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
+      const result = await caller.nextWorkout({ endDate: TEST_END_DATE });
 
       expect(result.recommendationType).toBe("rest");
       expect(result.cardio?.focus).toBe("recovery");
@@ -308,8 +319,8 @@ describe("trainingRouter", () => {
         .mockResolvedValueOnce([{ hiit_count_7d: 1, last_hiit_date: dateDaysAgo(3) }])
         .mockResolvedValueOnce([{ training_date: dateDaysAgo(1) }]);
 
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
-      const result = await caller.nextWorkout();
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
+      const result = await caller.nextWorkout({ endDate: TEST_END_DATE });
 
       expect(result.recommendationType).toBe("strength");
       expect(result.strength).not.toBeNull();
@@ -345,8 +356,8 @@ describe("trainingRouter", () => {
         .mockResolvedValueOnce([{ hiit_count_7d: 2, last_hiit_date: dateDaysAgo(2) }])
         .mockResolvedValueOnce([{ training_date: dateDaysAgo(0) }]);
 
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
-      const result = await caller.nextWorkout();
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
+      const result = await caller.nextWorkout({ endDate: TEST_END_DATE });
 
       expect(result.recommendationType).toBe("cardio");
       expect(result.cardio?.focus).toBe("z2");
@@ -389,12 +400,120 @@ describe("trainingRouter", () => {
         .mockResolvedValueOnce([{ hiit_count_7d: 1, last_hiit_date: dateDaysAgo(3) }])
         .mockResolvedValueOnce([{ training_date: dateDaysAgo(0) }]);
 
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
-      const result = await caller.nextWorkout();
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
+      const result = await caller.nextWorkout({ endDate: TEST_END_DATE });
 
       expect(result.recommendationType).toBe("cardio");
       expect(result.cardio?.focus).toBe("intervals");
       expect(result.cardio?.targetZones).toContain("Z4");
+    });
+
+    it("includes readiness score and level in response (kills ObjectLiteral mutation)", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([
+          {
+            date: dateDaysAgo(0),
+            hrv: 50,
+            resting_hr: 60,
+            hrv_mean_60d: 50,
+            hrv_sd_60d: 10,
+            rhr_mean_60d: 60,
+            rhr_sd_60d: 6,
+          },
+        ])
+        .mockResolvedValueOnce([{ efficiency_pct: 70 }])
+        .mockResolvedValueOnce([{ acwr: 1.1 }])
+        .mockResolvedValueOnce([{ muscle_group: "chest", last_trained_date: dateDaysAgo(0) }])
+        .mockResolvedValueOnce([
+          {
+            strength_7d: 3,
+            endurance_7d: 4,
+            last_strength_date: dateDaysAgo(0),
+            last_endurance_date: dateDaysAgo(2),
+          },
+        ])
+        .mockResolvedValueOnce([{ zone1: 3000, zone2: 2200, zone3: 900, zone4: 500, zone5: 150 }])
+        .mockResolvedValueOnce([{ hiit_count_7d: 2, last_hiit_date: dateDaysAgo(2) }])
+        .mockResolvedValueOnce([{ training_date: dateDaysAgo(0) }]);
+
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
+      const result = await caller.nextWorkout({ endDate: TEST_END_DATE });
+
+      expect(result.readiness).toBeDefined();
+      expect(result.readiness?.score).toBeTypeOf("number");
+      expect(result.readiness?.level).toBeTypeOf("string");
+      expect(result.readiness?.level).toBe("moderate");
+    });
+
+    it("includes HIIT cap rationale when cap reached", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([
+          {
+            date: dateDaysAgo(0),
+            hrv: 50,
+            resting_hr: 60,
+            hrv_mean_60d: 50,
+            hrv_sd_60d: 10,
+            rhr_mean_60d: 60,
+            rhr_sd_60d: 6,
+          },
+        ])
+        .mockResolvedValueOnce([{ efficiency_pct: 70 }])
+        .mockResolvedValueOnce([{ acwr: 1.1 }])
+        .mockResolvedValueOnce([{ muscle_group: "chest", last_trained_date: dateDaysAgo(0) }])
+        .mockResolvedValueOnce([
+          {
+            strength_7d: 3,
+            endurance_7d: 4,
+            last_strength_date: dateDaysAgo(0),
+            last_endurance_date: dateDaysAgo(2),
+          },
+        ])
+        .mockResolvedValueOnce([{ zone1: 3000, zone2: 2200, zone3: 900, zone4: 500, zone5: 150 }])
+        .mockResolvedValueOnce([{ hiit_count_7d: 3, last_hiit_date: dateDaysAgo(2) }])
+        .mockResolvedValueOnce([{ training_date: dateDaysAgo(0) }]);
+
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
+      const result = await caller.nextWorkout({ endDate: TEST_END_DATE });
+
+      expect(result.rationale.some((r: string) => r.includes("HIIT cap"))).toBe(true);
+    });
+
+    it("includes HIIT spacing rationale when HIIT was recent", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([
+          {
+            date: dateDaysAgo(0),
+            hrv: 50,
+            resting_hr: 60,
+            hrv_mean_60d: 50,
+            hrv_sd_60d: 10,
+            rhr_mean_60d: 60,
+            rhr_sd_60d: 6,
+          },
+        ])
+        .mockResolvedValueOnce([{ efficiency_pct: 70 }])
+        .mockResolvedValueOnce([{ acwr: 1.1 }])
+        .mockResolvedValueOnce([{ muscle_group: "chest", last_trained_date: dateDaysAgo(0) }])
+        .mockResolvedValueOnce([
+          {
+            strength_7d: 3,
+            endurance_7d: 4,
+            last_strength_date: dateDaysAgo(0),
+            last_endurance_date: dateDaysAgo(2),
+          },
+        ])
+        .mockResolvedValueOnce([{ zone1: 3000, zone2: 2200, zone3: 900, zone4: 500, zone5: 150 }])
+        .mockResolvedValueOnce([{ hiit_count_7d: 1, last_hiit_date: dateDaysAgo(0) }])
+        .mockResolvedValueOnce([{ training_date: dateDaysAgo(0) }]);
+
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
+      const result = await caller.nextWorkout({ endDate: TEST_END_DATE });
+
+      expect(result.rationale.some((r: string) => r.includes("48 hours"))).toBe(true);
     });
   });
 });
@@ -408,6 +527,7 @@ describe("intervalsRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.byActivity({
         activityId: "00000000-0000-0000-0000-000000000001",
@@ -421,6 +541,7 @@ describe("intervalsRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.detect({
         activityId: "00000000-0000-0000-0000-000000000001",
@@ -490,6 +611,7 @@ describe("intervalsRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.detect({
         activityId: "00000000-0000-0000-0000-000000000001",
@@ -539,6 +661,7 @@ describe("intervalsRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.detect({
         activityId: "00000000-0000-0000-0000-000000000001",

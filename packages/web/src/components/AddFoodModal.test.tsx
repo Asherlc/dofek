@@ -83,9 +83,26 @@ describe("AddFoodModal", () => {
     expect(getInputByLabel(/Fat \(g\)/i).value).toBe("6");
   });
 
+  it("closes when Escape is pressed while an input is focused", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ products: [] }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const onClose = vi.fn();
+    render(<AddFoodModal isOpen onClose={onClose} onSubmit={vi.fn()} />);
+
+    // Focus the food name input and press Escape
+    const input = screen.getByLabelText(/What did you eat\?/i);
+    input.focus();
+    fireEvent.keyDown(input, { key: "Escape" });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it("shows Open Food Facts results when Search Food Database button is clicked", async () => {
     historyFetchMock.mockResolvedValue([]);
-
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -120,7 +137,7 @@ describe("AddFoodModal", () => {
     fireEvent.click(searchButton);
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalled();
     });
 
     const suggestion = await screen.findByText("Seeded Burger Buns (Baker Co)");
@@ -128,8 +145,13 @@ describe("AddFoodModal", () => {
 
     fireEvent.click(suggestion);
 
-    const requestedUrl = String(fetchMock.mock.calls[0]?.[0] ?? "");
-    const parsedUrl = new URL(requestedUrl);
+    // Find the localized search call (with country filter)
+    const localizedCall = fetchMock.mock.calls.find((call) => {
+      const url = new URL(String(call[0]));
+      return url.searchParams.get("countries_tags_en") !== null;
+    });
+    expect(localizedCall).toBeDefined();
+    const parsedUrl = new URL(String(localizedCall?.[0]));
     expect(parsedUrl.searchParams.get("lc")).toBe("en");
     expect(parsedUrl.searchParams.get("countries_tags_en")).toBe("united-states");
 

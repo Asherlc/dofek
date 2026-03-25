@@ -3,7 +3,7 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const t = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  const t = initTRPC.context<{ db: unknown; userId: string | null; timezone: string }>().create();
   return {
     router: t.router,
     protectedProcedure: t.procedure,
@@ -13,11 +13,7 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
-import {
-  aggregateDailyMetricSamples,
-  healthKitSyncRouter,
-  type SleepSample,
-} from "./health-kit-sync.ts";
+import { aggregateDailyMetricSamples, healthKitSyncRouter } from "./health-kit-sync.ts";
 
 const createCaller = createTestCallerFactory(healthKitSyncRouter);
 
@@ -96,6 +92,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.pushQuantitySamples({
@@ -117,6 +114,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.pushQuantitySamples({
@@ -187,6 +185,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.pushQuantitySamples({
@@ -208,6 +207,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.pushQuantitySamples({
@@ -224,6 +224,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       await caller.pushQuantitySamples({
@@ -247,6 +248,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.pushQuantitySamples({
@@ -263,6 +265,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.pushQuantitySamples({ samples: [] });
@@ -276,6 +279,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.pushQuantitySamples({
@@ -381,6 +385,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.pushQuantitySamples({
@@ -398,6 +403,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.pushQuantitySamples({
@@ -420,6 +426,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.pushWorkouts({
@@ -446,6 +453,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       await caller.pushWorkouts({
@@ -479,6 +487,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.pushWorkouts({
@@ -505,6 +514,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.pushWorkouts({ workouts: [] });
@@ -518,6 +528,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.pushSleepSamples({
@@ -584,6 +595,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       await caller.pushSleepSamples({
@@ -614,6 +626,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       await caller.pushSleepSamples({
@@ -717,6 +730,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.pushSleepSamples({

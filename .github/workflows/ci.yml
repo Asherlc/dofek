@@ -52,6 +52,19 @@ jobs:
           wait $pid3 || fail=1
           exit $fail
 
+  sherif:
+    name: Sherif
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec sherif
+
   knip:
     name: Knip
     runs-on: ubuntu-latest
@@ -76,14 +89,18 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec vitest run --project unit --reporter=blob --coverage.enabled --coverage.reporter=json --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0
-      - run: mv .vitest-reports/blob.json .vitest-reports/unit.json
+      - run: pnpm exec vitest run --project unit --coverage
+        env:
+          VITEST_COVERAGE_SKIP_THRESHOLDS: "true"
+      - uses: codecov/codecov-action@v5
+        with:
+          files: coverage/lcov.info
+          flags: unit
+          token: ${{ secrets.CODECOV_TOKEN }}
       - uses: actions/upload-artifact@v4
         with:
-          name: blob-unit
-          path: .vitest-reports/
-          include-hidden-files: true
-          retention-days: 1
+          name: coverage-unit
+          path: coverage/
 
   test-integration:
     name: Integration Tests
@@ -122,15 +139,19 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec vitest run --project integration --reporter=blob --reporter=verbose --coverage.enabled --coverage.reporter=json --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0
+      - run: pnpm exec vitest run --project integration --coverage
         timeout-minutes: 10
-      - run: mv .vitest-reports/blob.json .vitest-reports/integration.json
+        env:
+          VITEST_COVERAGE_SKIP_THRESHOLDS: "true"
+      - uses: codecov/codecov-action@v5
+        with:
+          files: coverage/lcov.info
+          flags: integration
+          token: ${{ secrets.CODECOV_TOKEN }}
       - uses: actions/upload-artifact@v4
         with:
-          name: blob-integration
-          path: .vitest-reports/
-          include-hidden-files: true
-          retention-days: 1
+          name: coverage-integration
+          path: coverage/
 
   coverage:
     name: Coverage
@@ -146,13 +167,28 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v4
         with:
-          pattern: blob-*
-          path: .vitest-reports/
-          merge-multiple: true
-      - run: pnpm exec vitest --merge-reports --coverage
+          name: coverage-unit
+          path: coverage-unit
+      - uses: actions/download-artifact@v4
+        with:
+          name: coverage-integration
+          path: coverage-integration
+      - name: Merge and check coverage
+        run: |
+          mkdir -p .nyc_output
+          cp coverage-unit/coverage-final.json .nyc_output/unit.json
+          cp coverage-integration/coverage-final.json .nyc_output/integration.json
+          pnpm exec nyc merge .nyc_output merged-coverage.json
+          mkdir -p final-coverage
+          cp merged-coverage.json final-coverage/coverage-final.json
+          pnpm exec nyc report --temp-dir final-coverage --reporter=text-summary
+          pnpm exec nyc check-coverage --temp-dir final-coverage \
+            --lines 93.5 --branches 89 --functions 94.5 --statements 93.5
 
-  test-ios:
-    name: iOS Tests
+  test-mobile:
+    name: Mobile Tests
+    needs: check-mobile-changes
+    if: needs.check-mobile-changes.outputs.changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -162,10 +198,12 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec vitest run --project ios
+      - run: pnpm exec vitest run --project mobile
 
-  build-ios:
-    name: iOS Metro Bundle
+  build-mobile:
+    name: Mobile Metro Bundle
+    needs: check-mobile-changes
+    if: needs.check-mobile-changes.outputs.changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -176,19 +214,21 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Verify iOS Metro bundle
-        run: cd packages/ios && pnpm expo export --platform ios --clear
+        run: cd packages/mobile && pnpm expo export --platform ios --clear
 
   lint-ios-podspecs:
     name: iOS Podspec Lint
+    needs: check-mobile-changes
+    if: needs.check-mobile-changes.outputs.changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Validate podspec deployment targets
         run: |
-          APP_TARGET=$(python3 -c "import json; print(json.load(open('packages/ios/app.json'))['expo']['ios']['deploymentTarget'])")
+          APP_TARGET=$(python3 -c "import json; print(json.load(open('packages/mobile/app.json'))['expo']['ios']['deploymentTarget'])")
           echo "App deployment target: iOS $APP_TARGET"
           FAILED=0
-          for spec in packages/ios/modules/*/ios/*.podspec; do
+          for spec in packages/mobile/modules/*/ios/*.podspec; do
             SPEC_TARGET=$(grep -oP "s\.platform\s*=\s*:ios,\s*'\K[^']+" "$spec")
             echo "  $(basename "$spec"): iOS $SPEC_TARGET"
             if [ "$(printf '%s\n' "$APP_TARGET" "$SPEC_TARGET" | sort -V | head -1)" != "$APP_TARGET" ]; then
@@ -198,8 +238,8 @@ jobs:
           done
           exit $FAILED
 
-  check-ios-changes:
-    name: Check iOS Changes
+  check-mobile-changes:
+    name: Check Mobile Changes
     runs-on: ubuntu-latest
     outputs:
       changed: ${{ steps.check.outputs.changed }}
@@ -212,7 +252,7 @@ jobs:
           if [ "${{ github.event_name }}" = "push" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
-            CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- packages/ios/)
+            CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- packages/mobile/)
             if [ -n "$CHANGED" ]; then
               echo "changed=true" >> "$GITHUB_OUTPUT"
               echo "iOS files changed:"
@@ -225,9 +265,9 @@ jobs:
 
   build-ios-native:
     name: iOS Native Build
-    needs: check-ios-changes
-    if: needs.check-ios-changes.outputs.changed == 'true'
-    runs-on: macos-15
+    needs: check-mobile-changes
+    if: needs.check-mobile-changes.outputs.changed == 'true'
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -236,18 +276,20 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Download Sentry XCFramework
+        run: packages/mobile/scripts/download-sentry-xcframework.sh
       - name: Cache CocoaPods
         uses: actions/cache@v4
         with:
-          path: packages/ios/ios/Pods
-          key: pods-${{ hashFiles('packages/ios/ios/Podfile.lock') }}
-          restore-keys: pods-
+          path: packages/mobile/ios/Pods
+          key: pods-v3-${{ hashFiles('packages/mobile/ios/Podfile.lock', 'packages/mobile/scripts/download-sentry-xcframework.sh') }}
+          restore-keys: pods-v3-
       - name: Install CocoaPods dependencies
-        run: cd packages/ios/ios && pod install
+        run: cd packages/mobile/ios && pod install
       - name: Build for simulator
         run: |
           xcodebuild build \
-            -workspace packages/ios/ios/Dofek.xcworkspace \
+            -workspace packages/mobile/ios/Dofek.xcworkspace \
             -scheme Dofek \
             -sdk iphonesimulator \
             -configuration Debug \
@@ -256,24 +298,30 @@ jobs:
             | tail -20
         timeout-minutes: 20
 
-  ios-native-gate:
+  ios-gate:
     name: iOS Native Gate
-    needs: [check-ios-changes, build-ios-native]
+    needs: [check-mobile-changes, test-mobile, build-mobile, lint-ios-podspecs, build-ios-native, test-swift]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - run: |
-          if [ "${{ needs.build-ios-native.result }}" = "failure" ] || [ "${{ needs.build-ios-native.result }}" = "cancelled" ]; then
-            echo "iOS native build failed or was cancelled"
-            exit 1
-          fi
+      - name: Check iOS job results
+        run: |
+          for result in \
+            "${{ needs.check-mobile-changes.result }}" \
+            "${{ needs.test-mobile.result }}" \
+            "${{ needs.build-mobile.result }}" \
+            "${{ needs.lint-ios-podspecs.result }}" \
+            "${{ needs.build-ios-native.result }}" \
+            "${{ needs.test-swift.result }}"; do
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              echo "An iOS job failed or was cancelled"
+              exit 1
+            fi
+          done
 
   test-e2e-web:
     name: E2E Tests (Web)
     runs-on: ubuntu-latest
-    env:
-      DOCKER_BUILDKIT: "1"
-      COMPOSE_DOCKER_CLI_BUILD: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -281,15 +329,22 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - name: Parallel setup — Docker build + deps install
-        run: |
-          docker compose -f docker-compose.e2e.yml build &
-          DOCKER_PID=$!
-          pnpm install --frozen-lockfile
-          pnpm exec cypress install
-          wait $DOCKER_PID
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec cypress install
+      - uses: docker/setup-buildx-action@v3
+      - name: Build E2E images with cache
+        uses: docker/bake-action@v5
+        with:
+          files: docker-compose.e2e.yml
+          targets: |
+            server
+            client
+          load: true
+          set: |
+            *.cache-from=type=gha,scope=e2e
+            *.cache-to=type=gha,mode=max,scope=e2e
       - name: Start e2e stack
-        run: docker compose -f docker-compose.e2e.yml up -d --wait
+        run: docker compose -f docker-compose.e2e.yml up -d --wait --no-build
       - run: pnpm e2e:web:run
       - uses: actions/upload-artifact@v4
         if: failure()
@@ -304,6 +359,7 @@ jobs:
   mutation:
     name: Mutation Testing
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
@@ -322,9 +378,10 @@ jobs:
           restore-keys: |
             stryker-v2-${{ github.head_ref || 'main' }}-
             stryker-v2-main-
-      - name: Get changed files
+          save-always: true
+      - name: Get changed files (PR)
         if: github.event_name == 'pull_request'
-        id: changed
+        id: changed-pr
         run: |
           # Filter to .ts source files, excluding tests, config, etc.
           # Also skip files with < 15 changed lines (trivial changes like import
@@ -340,7 +397,7 @@ jobs:
             | { grep -v 'drizzle/' || true; } \
             | { grep -v 'src/db/schema\.ts$' || true; } \
             | { grep -v 'scripts/' || true; } \
-            | { grep -v 'packages/ios/' || true; })
+            | { grep -v 'packages/mobile/' || true; })
           FILES=""
           for f in $CANDIDATES; do
             LINES=$(git diff --numstat origin/main...HEAD -- "$f" | awk '{print $1+$2}')
@@ -350,12 +407,38 @@ jobs:
           done
           echo "files=$FILES" >> "$GITHUB_OUTPUT"
           echo "Mutating changed files: $FILES"
-      - name: Run Stryker (changed files)
-        if: github.event_name == 'pull_request' && steps.changed.outputs.files != ''
-        run: pnpm test:mutation --mutate "${{ steps.changed.outputs.files }}"
-      - name: Run Stryker (full suite)
+      - name: Get changed files (push)
         if: github.event_name == 'push'
-        run: pnpm test:mutation
+        id: changed-push
+        run: |
+          # On push to main, only mutate files changed in this push
+          # (the incremental cache handles previously-seen mutations)
+          CANDIDATES=$(git diff --name-only HEAD~1...HEAD \
+            | { grep '\.ts$' || true; } \
+            | { grep -v '\.test\.ts$' || true; } \
+            | { grep -v '\.cy\.ts$' || true; } \
+            | { grep -v 'test-helpers\.ts$' || true; } \
+            | { grep -v '\.d\.ts$' || true; } \
+            | { grep -v '\.gen\.ts$' || true; } \
+            | { grep -v '\.config\.' || true; } \
+            | { grep -v 'drizzle/' || true; } \
+            | { grep -v 'src/db/schema\.ts$' || true; } \
+            | { grep -v 'scripts/' || true; } \
+            | { grep -v 'packages/mobile/' || true; })
+          FILES=""
+          for f in $CANDIDATES; do
+            if [ -f "$f" ]; then
+              FILES="${FILES:+$FILES,}$f"
+            fi
+          done
+          echo "files=$FILES" >> "$GITHUB_OUTPUT"
+          echo "Mutating changed files: $FILES"
+      - name: Run Stryker (PR — changed files)
+        if: github.event_name == 'pull_request' && steps.changed-pr.outputs.files != ''
+        run: pnpm test:mutation --mutate "${{ steps.changed-pr.outputs.files }}"
+      - name: Run Stryker (push — changed files)
+        if: github.event_name == 'push' && steps.changed-push.outputs.files != ''
+        run: pnpm test:mutation --mutate "${{ steps.changed-push.outputs.files }}"
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -365,37 +448,40 @@ jobs:
 
   test-swift:
     name: Swift Tests
+    needs: check-mobile-changes
+    if: needs.check-mobile-changes.outputs.changed == 'true'
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
         with:
-          path: packages/ios/modules/health-kit/.build
-          key: swift-build-v1-${{ hashFiles('packages/ios/modules/health-kit/Package.swift') }}
+          path: packages/mobile/modules/health-kit/.build
+          key: swift-build-v1-${{ hashFiles('packages/mobile/modules/health-kit/Package.swift') }}
           restore-keys: swift-build-v1-
       - name: Run Swift tests with coverage
         run: |
-          cd packages/ios/modules/health-kit
+          cd packages/mobile/modules/health-kit
           bash scripts/check-coverage.sh
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: swift-coverage
-          path: packages/ios/modules/health-kit/.build/debug/codecov/
+          path: packages/mobile/modules/health-kit/.build/debug/codecov/
           retention-days: 7
 
   mutation-swift:
     name: Swift Mutation Testing
+    needs: check-mobile-changes
     runs-on: macos-14
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && needs.check-mobile-changes.outputs.changed == 'true'
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - uses: actions/cache@v4
         with:
-          path: packages/ios/modules/health-kit/.build
-          key: swift-build-v1-${{ hashFiles('packages/ios/modules/health-kit/Package.swift') }}
+          path: packages/mobile/modules/health-kit/.build
+          key: swift-build-v1-${{ hashFiles('packages/mobile/modules/health-kit/Package.swift') }}
           restore-keys: swift-build-v1-
       - name: Install Muter
         run: brew install muter-mutation-testing/formulae/muter
@@ -408,14 +494,14 @@ jobs:
             | { grep -v 'Tests/' || true; } \
             | { grep -v 'HealthKitModule.swift' || true; } \
             | { grep -v 'Package.swift' || true; } \
-            | sed 's|^packages/ios/modules/health-kit/||' \
+            | sed 's|^packages/mobile/modules/health-kit/||' \
             | tr '\n' ',' \
             | sed 's/,$//')
           echo "files=$CHANGED" >> "$GITHUB_OUTPUT"
           echo "Mutating changed Swift files: $CHANGED"
       - name: Run Muter
         if: steps.changed.outputs.files != ''
-        working-directory: packages/ios/modules/health-kit
+        working-directory: packages/mobile/modules/health-kit
         timeout-minutes: 30
         run: |
           muter --files-to-mutate "${{ steps.changed.outputs.files }}" || {
@@ -432,12 +518,220 @@ jobs:
         if: failure()
         with:
           name: muter-report
-          path: packages/ios/modules/health-kit/muter_logs/
+          path: packages/mobile/modules/health-kit/muter_logs/
           retention-days: 7
+
+  ios-release:
+    name: iOS TestFlight
+    needs: [lint, typecheck, knip, coverage, test-mobile, build-mobile]
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Download Sentry XCFramework
+        run: packages/mobile/scripts/download-sentry-xcframework.sh
+
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: packages/mobile/ios/Pods
+          key: pods-v3-${{ hashFiles('packages/mobile/ios/Podfile.lock', 'packages/mobile/scripts/download-sentry-xcframework.sh') }}
+
+      - name: Install CocoaPods
+        run: cd packages/mobile/ios && pod install
+
+      - name: Setup code signing
+        env:
+          DEV_CERT_BASE64: ${{ secrets.IOS_DEVELOPMENT_CERT_BASE64 }}
+          DEV_CERT_PASSWORD: ${{ secrets.IOS_DEVELOPMENT_CERT_PASSWORD }}
+          DIST_CERT_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERT_BASE64 }}
+          DIST_CERT_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(uuidgen)
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          echo -n "$DEV_CERT_BASE64" | base64 --decode > $RUNNER_TEMP/dev-cert.p12
+          security import $RUNNER_TEMP/dev-cert.p12 -P "$DEV_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          echo -n "$DIST_CERT_BASE64" | base64 --decode > $RUNNER_TEMP/dist-cert.p12
+          security import $RUNNER_TEMP/dist-cert.p12 -P "$DIST_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+
+      - name: Setup App Store Connect API key
+        env:
+          API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_KEY_BASE64 }}
+        run: |
+          mkdir -p ~/private_keys
+          echo -n "$API_KEY_BASE64" | base64 --decode > ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8
+
+      - name: Set build number
+        run: |
+          cd packages/mobile/ios
+          agvtool new-version -all ${{ github.run_number }}
+
+      - name: Build archive
+        run: |
+          cd packages/mobile/ios
+          xcodebuild archive \
+            -workspace Dofek.xcworkspace \
+            -scheme Dofek \
+            -configuration Release \
+            -archivePath $RUNNER_TEMP/Dofek.xcarchive \
+            -destination 'generic/platform=iOS' \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8 \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
+            DEVELOPMENT_TEAM=68LEL35DQ9
+
+      - name: Export & upload to TestFlight
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath $RUNNER_TEMP/Dofek.xcarchive \
+            -exportOptionsPlist packages/mobile/ios/ExportOptions.plist \
+            -exportPath $RUNNER_TEMP/export \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8 \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
+
+      - name: Cleanup keychain
+        if: always()
+        run: security delete-keychain $RUNNER_TEMP/app-signing.keychain-db || true
+
+  ota-deploy:
+    name: OTA Deploy
+    needs: [lint, typecheck, knip, coverage, build-mobile]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Export iOS bundle
+        run: cd packages/mobile && pnpm expo export --platform ios --clear
+
+      - name: Generate metadata and stage release
+        run: |
+          RELEASE_DIR="$(date +%Y-%m-%d)-${GITHUB_SHA::8}"
+          STAGING_DIR="$RUNNER_TEMP/ota/$RELEASE_DIR"
+          mkdir -p "$STAGING_DIR/bundles" "$STAGING_DIR/assets"
+
+          # Generate metadata.json
+          node --experimental-transform-types scripts/generate-ota-metadata.ts \
+            --dist packages/mobile/dist \
+            --runtime-version 1.0 \
+            --output "$STAGING_DIR/metadata.json"
+
+          # Copy bundle files
+          find packages/mobile/dist -name '*.hbc' -o -name '*.js' | while read -r f; do
+            cp "$f" "$STAGING_DIR/bundles/"
+          done
+
+          # Copy asset files
+          if [ -d packages/mobile/dist/assets ]; then
+            cp packages/mobile/dist/assets/* "$STAGING_DIR/assets/" 2>/dev/null || true
+          fi
+
+          echo "RELEASE_DIR=$RELEASE_DIR" >> "$GITHUB_ENV"
+          echo "STAGING_DIR=$STAGING_DIR" >> "$GITHUB_ENV"
+
+      - name: Deploy to server
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+          # Upload release directory
+          ssh root@"$SERVER_HOST" "mkdir -p /opt/dofek/updates/$RELEASE_DIR"
+          scp -r "$STAGING_DIR"/* root@"$SERVER_HOST":/opt/dofek/updates/"$RELEASE_DIR"/
+
+          # Atomic symlink switch
+          ssh root@"$SERVER_HOST" "ln -sfn /opt/dofek/updates/$RELEASE_DIR /opt/dofek/updates/current"
+
+          # Clean up old releases (keep last 10)
+          ssh root@"$SERVER_HOST" 'cd /opt/dofek/updates && ls -dt 20*/ | tail -n +11 | xargs rm -rf'
+
+          echo "OTA update deployed: $RELEASE_DIR"
+
+  deploy-config:
+    name: Deploy Config
+    needs: [lint, typecheck, knip, coverage]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Check for config changes
+        id: changes
+        run: |
+          CHANGED=$(git diff --name-only HEAD~1...HEAD -- \
+            deploy/Caddyfile \
+            deploy/docker-compose.yml \
+            deploy/otel-collector-config.yaml)
+          if [ -n "$CHANGED" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Config files changed:"
+            echo "$CHANGED"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No config changes, skipping deploy"
+          fi
+      - name: Setup Terraform
+        if: steps.changes.outputs.changed == 'true'
+        uses: hashicorp/setup-terraform@v4
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+      - name: Setup SSH
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          eval "$(ssh-agent -s)"
+          ssh-add ~/.ssh/id_ed25519
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> "$GITHUB_ENV"
+      - name: Terraform Apply
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: deploy/deploy-config
+        env:
+          TF_VAR_server_ip: ${{ secrets.SERVER_HOST }}
+        run: |
+          terraform init
+          terraform apply -auto-approve
 
   docker:
     name: Docker (${{ matrix.target }})
-    needs: [lint, typecheck, knip, coverage, test-e2e-web, test-ios, build-ios, test-swift]
+    needs: [lint, typecheck, knip, coverage, test-e2e-web, ios-gate]
     if: github.ref == 'refs/heads/main'
     concurrency:
       group: docker

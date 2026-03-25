@@ -568,22 +568,11 @@ export function collapseWeeklyVolumeActivityTypes(
 
 /**
  * Pick the daily load row to display in "current strain" UI.
- * If the latest day is a rest day (0 load), fall back to the most recent
- * day with positive load so recent training is still represented.
+ * Always returns the latest (most recent) row so the dashboard reflects
+ * the current day's actual state — including 0 strain on rest days or
+ * days where no data has synced yet.
  */
 export function selectRecentDailyLoad<T extends DailyLoadRow>(rows: T[]): T | null {
   if (rows.length === 0) return null;
-
-  const latest = rows[rows.length - 1];
-  if (latest == null) return null;
-  if (Number.isFinite(latest.dailyLoad) && latest.dailyLoad > 0) return latest;
-
-  for (let index = rows.length - 2; index >= 0; index -= 1) {
-    const row = rows[index];
-    if (row != null && Number.isFinite(row.dailyLoad) && row.dailyLoad > 0) {
-      return row;
-    }
-  }
-
-  return latest;
+  return rows[rows.length - 1] ?? null;
 }

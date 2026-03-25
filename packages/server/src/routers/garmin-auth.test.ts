@@ -24,7 +24,7 @@ vi.mock("../lib/cache.ts", () => ({
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const t = initTRPC.context<{ db: unknown; userId: string }>().create();
+  const t = initTRPC.context<{ db: unknown; userId: string; timezone: string }>().create();
   return {
     router: t.router,
     protectedProcedure: t.procedure,
@@ -49,7 +49,7 @@ describe("garminAuthRouter", () => {
       mockInvalidateByPrefix.mockResolvedValue(undefined);
 
       const mockDb = { execute: vi.fn() };
-      const caller = createCaller({ db: mockDb, userId: "user-123" });
+      const caller = createCaller({ db: mockDb, userId: "user-123", timezone: "UTC" });
 
       const result = await caller.signIn({
         username: "test@example.com",
@@ -77,7 +77,11 @@ describe("garminAuthRouter", () => {
     it("propagates GarminConnectClient.signIn errors", async () => {
       mockSignIn.mockRejectedValue(new Error("Invalid credentials"));
 
-      const caller = createCaller({ db: { execute: vi.fn() }, userId: "user-123" });
+      const caller = createCaller({
+        db: { execute: vi.fn() },
+        userId: "user-123",
+        timezone: "UTC",
+      });
 
       await expect(
         caller.signIn({ username: "bad@example.com", password: "wrong" }),

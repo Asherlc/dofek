@@ -24,7 +24,7 @@ const {
 // Mock trpc
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const t = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  const t = initTRPC.context<{ db: unknown; userId: string | null; timezone: string }>().create();
   return {
     router: t.router,
     protectedProcedure: t.procedure,
@@ -199,6 +199,7 @@ describe("syncRouter", () => {
             .mockResolvedValueOnce([{ provider_id: "wahoo", last_synced: "2024-01-01" }]),
         },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.providers();
@@ -245,6 +246,7 @@ describe("syncRouter", () => {
           execute: vi.fn().mockResolvedValue([]),
         },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.providers();
@@ -272,6 +274,7 @@ describe("syncRouter", () => {
             .mockResolvedValueOnce([]),
         },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.triggerSync({});
@@ -335,6 +338,7 @@ describe("syncRouter", () => {
             .mockResolvedValueOnce([{ provider_id: "strava" }]),
         },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.triggerSync({});
@@ -359,6 +363,7 @@ describe("syncRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValueOnce([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.triggerSync({});
@@ -377,6 +382,7 @@ describe("syncRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.triggerSync({ providerId: "wahoo" });
@@ -399,6 +405,7 @@ describe("syncRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       // Should find wahoo specifically, not just the first provider
@@ -413,6 +420,7 @@ describe("syncRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       await caller.triggerSync({});
@@ -429,6 +437,7 @@ describe("syncRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       await expect(caller.triggerSync({ providerId: "nonexistent" })).rejects.toThrow(
@@ -444,6 +453,7 @@ describe("syncRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       await expect(caller.triggerSync({ providerId: "wahoo" })).rejects.toThrow(
@@ -458,6 +468,7 @@ describe("syncRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.triggerSync({});
@@ -472,6 +483,7 @@ describe("syncRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.syncStatus({ jobId: "" });
@@ -486,6 +498,7 @@ describe("syncRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.syncStatus({ jobId: "missing-job" });
@@ -498,6 +511,7 @@ describe("syncRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.syncStatus({ jobId: "some-job" });
@@ -514,6 +528,7 @@ describe("syncRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.syncStatus({ jobId: "other-job" });
@@ -534,6 +549,7 @@ describe("syncRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.syncStatus({ jobId: "active-job" });
@@ -557,6 +573,7 @@ describe("syncRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.syncStatus({ jobId: "active-job-percentage" });
@@ -575,6 +592,7 @@ describe("syncRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.syncStatus({ jobId: "active-no-percentage" });
@@ -598,6 +616,7 @@ describe("syncRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.syncStatus({ jobId: "multi-status" });
@@ -619,6 +638,7 @@ describe("syncRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.syncStatus({ jobId: "done-job" });
@@ -637,6 +657,7 @@ describe("syncRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.syncStatus({ jobId: "failed-job" });
@@ -654,6 +675,7 @@ describe("syncRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.syncStatus({ jobId: "bad-data-job" });
@@ -724,6 +746,7 @@ describe("syncRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.syncStatus({ jobId: "waiting-job" });
@@ -739,6 +762,7 @@ describe("syncRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.activeSyncs();
@@ -769,6 +793,7 @@ describe("syncRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.activeSyncs();
@@ -796,6 +821,7 @@ describe("syncRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.activeSyncs();
@@ -809,6 +835,7 @@ describe("syncRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.activeSyncs();
@@ -828,6 +855,7 @@ describe("syncRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.activeSyncs();
@@ -848,6 +876,7 @@ describe("syncRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.activeSyncs();
@@ -879,6 +908,7 @@ describe("syncRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.activeSyncs();
@@ -902,12 +932,14 @@ describe("syncRouter", () => {
               health_events: "1",
               metric_stream: "100",
               nutrition_daily: "7",
+              lab_panels: "2",
               lab_results: "4",
               journal_entries: "6",
             },
           ]),
         },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.providerStats();
@@ -923,6 +955,7 @@ describe("syncRouter", () => {
           healthEvents: 1,
           metricStream: 100,
           nutritionDaily: 7,
+          labPanels: 2,
           labResults: 4,
           journalEntries: 6,
         },
@@ -933,6 +966,7 @@ describe("syncRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.providerStats();
@@ -981,6 +1015,7 @@ describe("syncRouter", () => {
       const caller = createCaller({
         db: { select: mockSelect, execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.logs({});

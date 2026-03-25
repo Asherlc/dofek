@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const t = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  const t = initTRPC.context<{ db: unknown; userId: string | null; timezone: string }>().create();
   return {
     router: t.router,
     protectedProcedure: t.procedure,
@@ -42,6 +42,7 @@ describe("personalizationRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn() },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.status();
@@ -76,6 +77,7 @@ describe("personalizationRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn() },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.status();
@@ -100,6 +102,7 @@ describe("personalizationRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn() },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.status();
@@ -111,7 +114,7 @@ describe("personalizationRouter", () => {
     it("passes db and userId to loadPersonalizedParams", async () => {
       mockLoadPersonalizedParams.mockResolvedValue(null);
       const mockDb = { execute: vi.fn() };
-      const caller = createCaller({ db: mockDb, userId: "user-42" });
+      const caller = createCaller({ db: mockDb, userId: "user-42", timezone: "UTC" });
 
       await caller.status();
 
@@ -137,6 +140,7 @@ describe("personalizationRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn() },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.status();
@@ -170,7 +174,7 @@ describe("personalizationRouter", () => {
       };
       mockRefitAllParams.mockResolvedValue(refitResult);
       const mockDb = { execute: vi.fn() };
-      const caller = createCaller({ db: mockDb, userId: "user-1" });
+      const caller = createCaller({ db: mockDb, userId: "user-1", timezone: "UTC" });
 
       const result = await caller.refit();
 
@@ -194,6 +198,7 @@ describe("personalizationRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn() },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.refit();
@@ -218,7 +223,7 @@ describe("personalizationRouter", () => {
       };
       mockRefitAllParams.mockResolvedValue(refitResult);
       const mockDb = { execute: vi.fn() };
-      const caller = createCaller({ db: mockDb, userId: "user-99" });
+      const caller = createCaller({ db: mockDb, userId: "user-99", timezone: "UTC" });
 
       await caller.refit();
 
@@ -232,6 +237,7 @@ describe("personalizationRouter", () => {
       const caller = createCaller({
         db: { execute: mockExecute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.reset();
@@ -245,6 +251,7 @@ describe("personalizationRouter", () => {
       const caller = createCaller({
         db: { execute: mockExecute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       await caller.reset();

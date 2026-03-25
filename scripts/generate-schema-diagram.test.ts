@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   buildPlantUml,
-  type Column,
   extractTables,
   parseColumnLine,
   parseColumns,

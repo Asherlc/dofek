@@ -1,7 +1,22 @@
+import {
+  computeRecommendedBedtime,
+  computeSleepPerformance,
+  type SleepPerformanceResult,
+} from "@dofek/scoring/sleep-performance";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { dateWindowStart, endDateSchema, timestampWindowStart } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+
+export interface SleepPerformanceInfo extends SleepPerformanceResult {
+  actualMinutes: number;
+  neededMinutes: number;
+  efficiency: number;
+  recommendedBedtime: string;
+  /** Date of the sleep session (wake-up date), for freshness checking */
+  sleepDate: string;
+}
 
 export interface SleepNeedResult {
   /** Personalized baseline sleep need in minutes (derived from historical optimum) */
@@ -37,8 +52,9 @@ export const sleepNeedRouter = router({
    * Sleep Need Calculator — like Whoop's Sleep Coach.
    * Computes personalized sleep need and accumulated debt.
    */
-  calculate: cachedProtectedQuery(CacheTTL.SHORT).query(
-    async ({ ctx }): Promise<SleepNeedResult> => {
+  calculate: cachedProtectedQuery(CacheTTL.SHORT)
+    .input(z.object({ endDate: endDateSchema }))
+    .query(async ({ ctx, input }): Promise<SleepNeedResult> => {
       const sleepNeedRowSchema = z.object({
         date: dateStringSchema,
         duration_minutes: z.coerce.number(),
@@ -54,12 +70,12 @@ export const sleepNeedRouter = router({
         sleepNeedRowSchema,
         sql`WITH sleep_nights AS (
               SELECT
-                started_at::date AS date,
+                (started_at AT TIME ZONE ${ctx.timezone})::date AS date,
                 COALESCE(duration_minutes, EXTRACT(EPOCH FROM (ended_at - started_at)) / 60)::int AS duration_minutes
               FROM fitness.v_sleep
               WHERE user_id = ${ctx.userId}
                 AND is_nap = false
-                AND started_at > NOW() - INTERVAL '90 days'
+                AND started_at > ${timestampWindowStart(input.endDate, 90)}
               ORDER BY started_at ASC
             ),
             daily_hrv AS (
@@ -68,7 +84,7 @@ export const sleepNeedRouter = router({
                 hrv
               FROM fitness.v_daily_metrics
               WHERE user_id = ${ctx.userId}
-                AND date > CURRENT_DATE - 90
+                AND date > ${dateWindowStart(input.endDate, 90)}
                 AND hrv IS NOT NULL
             ),
             sleep_with_next_hrv AS (
@@ -91,7 +107,7 @@ export const sleepNeedRouter = router({
               ), 0) AS load
               FROM fitness.activity_summary asum
               WHERE asum.user_id = ${ctx.userId}
-                AND asum.started_at::date = CURRENT_DATE - 1
+                AND (asum.started_at AT TIME ZONE ${ctx.timezone})::date = ${sql`${input.endDate}::date - 1`}
                 AND asum.ended_at IS NOT NULL
                 AND asum.avg_hr IS NOT NULL
             )
@@ -158,6 +174,69 @@ export const sleepNeedRouter = router({
         totalNeedMinutes,
         recentNights,
       };
-    },
-  ),
+    }),
+
+  /**
+   * Sleep performance score for last night: how well did you sleep relative to need.
+   * Returns score (0-100), tier (Peak/Perform/Get By/Low), and recommended bedtime.
+   */
+  performance: cachedProtectedQuery(CacheTTL.MEDIUM)
+    .input(z.object({ endDate: endDateSchema }))
+    .query(async ({ ctx, input }): Promise<SleepPerformanceInfo | null> => {
+      // Get last night's sleep
+      const tz = ctx.timezone;
+      const sleepRows = await executeWithSchema(
+        ctx.db,
+        z.object({
+          duration_minutes: z.number().nullable(),
+          efficiency_pct: z.number().nullable(),
+          sleep_date: z.string(),
+        }),
+        sql`
+          SELECT duration_minutes, efficiency_pct,
+            (COALESCE(ended_at, started_at + interval '8 hours') AT TIME ZONE ${tz})::date::text AS sleep_date
+          FROM fitness.sleep_session
+          WHERE user_id = ${ctx.userId}
+            AND sleep_type = 'sleep'
+          ORDER BY started_at DESC
+          LIMIT 1
+        `,
+      );
+
+      const lastSleep = sleepRows[0];
+      if (!lastSleep || lastSleep.duration_minutes == null) {
+        return null;
+      }
+
+      const actualMinutes = lastSleep.duration_minutes;
+      const efficiency = lastSleep.efficiency_pct ?? 85;
+
+      // Get sleep need (reuse the baseline calculation logic)
+      const baselineRows = await executeWithSchema(
+        ctx.db,
+        z.object({ avg_duration: z.number().nullable() }),
+        sql`
+          SELECT AVG(duration_minutes) AS avg_duration
+          FROM fitness.sleep_session
+          WHERE user_id = ${ctx.userId}
+            AND sleep_type = 'sleep'
+            AND started_at > ${timestampWindowStart(input.endDate, 90)}
+            AND duration_minutes IS NOT NULL
+        `,
+      );
+
+      const neededMinutes = baselineRows[0]?.avg_duration ?? 480;
+
+      const result = computeSleepPerformance(actualMinutes, neededMinutes, efficiency);
+      const recommendedBedtime = computeRecommendedBedtime("07:00", Math.round(neededMinutes));
+
+      return {
+        ...result,
+        actualMinutes,
+        neededMinutes: Math.round(neededMinutes),
+        efficiency,
+        recommendedBedtime,
+        sleepDate: lastSleep.sleep_date,
+      };
+    }),
 });
