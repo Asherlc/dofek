@@ -35,12 +35,16 @@ echo "Extracting Sentry.xcframework..."
 unzip -qo "$ZIP_PATH" -d "$LOCAL_POD_DIR"
 rm -f "$ZIP_PATH"
 
-# Download private header needed by RNSentry (ios/RNSentry+fetchNativeStack.m
-# imports SentryFormatter.h via HEADER_SEARCH_PATHS pointing to Sources/Sentry/include).
+# Download private headers needed by RNSentry. The RNSentry podspec adds
+# "${PODS_ROOT}/Sentry/Sources/Sentry/include" to HEADER_SEARCH_PATHS,
+# so place headers at the same relative path the source build would have.
 PRIVATE_HEADER_DIR="$LOCAL_POD_DIR/Sources/Sentry/include"
 mkdir -p "$PRIVATE_HEADER_DIR"
-HEADER_URL="https://raw.githubusercontent.com/getsentry/sentry-cocoa/${SENTRY_VERSION}/Sources/Sentry/include/SentryFormatter.h"
-echo "Downloading SentryFormatter.h..."
-curl -fSL "$HEADER_URL" -o "$PRIVATE_HEADER_DIR/SentryFormatter.h"
+RAW_BASE="https://raw.githubusercontent.com/getsentry/sentry-cocoa/${SENTRY_VERSION}/Sources/Sentry/include"
+
+echo "Downloading private headers..."
+for header in SentryFormatter.h SentrySwizzle.h; do
+  curl -fSL "${RAW_BASE}/${header}" -o "$PRIVATE_HEADER_DIR/${header}"
+done
 
 echo "Sentry.xcframework ${SENTRY_VERSION} ready at $XCFRAMEWORK_DIR"
