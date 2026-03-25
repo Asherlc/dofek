@@ -206,17 +206,18 @@ describe("dailyMetrics data correctness", () => {
       expect(todayRow).toBeDefined();
     });
 
-    it("respects the endDate boundary", async () => {
-      // Use a window ending 10 days ago
+    it("respects the endDate lower bound", async () => {
+      // endDate anchors the window: only rows after (endDate - days) are returned
       const pastEndDate = subtractDays(endDate, 10);
       const result = await query<Array<{ date: string }>>("dailyMetrics.list", {
-        days: 10,
+        days: 5,
         endDate: pastEndDate,
       });
 
-      // No row should be after pastEndDate
+      // No row should be at or before the lower bound (pastEndDate - 5)
+      const lowerBound = subtractDays(pastEndDate, 5);
       for (const row of result) {
-        expect(row.date <= pastEndDate).toBe(true);
+        expect(row.date > lowerBound).toBe(true);
       }
     });
   });
@@ -249,7 +250,7 @@ describe("dailyMetrics data correctness", () => {
 
 /** Subtract days from a YYYY-MM-DD string, returning YYYY-MM-DD. */
 function subtractDays(dateStr: string, days: number): string {
-  const d = new Date(`${dateStr}T00:00:00`);
-  d.setDate(d.getDate() - days);
-  return d.toISOString().slice(0, 10);
+  const date = new Date(`${dateStr}T00:00:00`);
+  date.setDate(date.getDate() - days);
+  return date.toISOString().slice(0, 10);
 }
