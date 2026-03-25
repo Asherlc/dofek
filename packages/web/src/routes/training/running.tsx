@@ -176,13 +176,13 @@ function PaceTrendChart({
     tooltip: dofekTooltip({
       trigger: "item",
       formatter: (params: { data: [string, number]; dataIndex: number }) => {
-        const d = data[params.dataIndex];
-        if (!d) return "";
+        const dataPoint = data[params.dataIndex];
+        if (!dataPoint) return "";
         return [
-          `<strong>${d.activityName}</strong>`,
-          `${d.date}`,
-          `Pace: ${formatPace(units.convertPace(d.paceSecondsPerKm))} ${units.paceLabel}`,
-          `Distance: ${formatNumber(units.convertDistance(d.distanceKm))} ${units.distanceLabel} · ${d.durationMinutes} min`,
+          `<strong>${dataPoint.activityName}</strong>`,
+          `${dataPoint.date}`,
+          `Pace: ${formatPace(units.convertPace(dataPoint.paceSecondsPerKm))} ${units.paceLabel}`,
+          `Distance: ${formatNumber(units.convertDistance(dataPoint.distanceKm))} ${units.distanceLabel} · ${dataPoint.durationMinutes} min`,
         ].join("<br/>");
       },
     }),
@@ -201,8 +201,10 @@ function PaceTrendChart({
         type: "scatter" as const,
         data: data.map((d) => [d.date, units.convertPace(d.paceSecondsPerKm)]),
         symbolSize: (val: [string, number]) => {
-          const d = data.find((p) => units.convertPace(p.paceSecondsPerKm) === val[1]);
-          return Math.min(Math.max((d?.distanceKm ?? 5) * 1.5, 4), 16);
+          const matchedActivity = data.find(
+            (point) => units.convertPace(point.paceSecondsPerKm) === val[1],
+          );
+          return Math.min(Math.max((matchedActivity?.distanceKm ?? 5) * 1.5, 4), 16);
         },
         itemStyle: { color: chartColors.emerald, opacity: 0.7 },
       },
@@ -239,9 +241,9 @@ function CadenceTrendChart({ data, loading }: { data: DynamicsRow[]; loading: bo
     tooltip: dofekTooltip({
       trigger: "item",
       formatter: (params: { data: [string, number]; dataIndex: number }) => {
-        const d = data[params.dataIndex];
-        if (!d) return "";
-        return `<strong>${d.activityName}</strong><br/>${d.date}<br/>Cadence: ${d.cadence} spm`;
+        const dataPoint = data[params.dataIndex];
+        if (!dataPoint) return "";
+        return `<strong>${dataPoint.activityName}</strong><br/>${dataPoint.date}<br/>Cadence: ${dataPoint.cadence} spm`;
       },
     }),
     xAxis: dofekAxis.time(),

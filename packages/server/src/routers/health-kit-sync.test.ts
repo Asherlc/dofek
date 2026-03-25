@@ -3,12 +3,14 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const t = initTRPC.context<{ db: unknown; userId: string | null; timezone: string }>().create();
+  const trpc = initTRPC
+    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .create();
   return {
-    router: t.router,
-    protectedProcedure: t.procedure,
-    cachedProtectedQuery: () => t.procedure,
-    cachedProtectedQueryLight: () => t.procedure,
+    router: trpc.router,
+    protectedProcedure: trpc.procedure,
+    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQueryLight: () => trpc.procedure,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -577,8 +579,8 @@ describe("healthKitSyncRouter", () => {
       // deep: 22:30-23:30 = 60, REM: 23:30-01:00 = 90,
       // light (core): 01:00-04:00 = 180, awake: 04:00-04:15 = 15
       const insertCall = execute.mock.calls.find((call: unknown[]) => {
-        const s = JSON.stringify(call[0]);
-        return s.includes("sleep_session") && s.includes("INSERT");
+        const serialized = JSON.stringify(call[0]);
+        return serialized.includes("sleep_session") && serialized.includes("INSERT");
       });
       expect(insertCall).toBeDefined();
       const sqlValues = JSON.stringify(insertCall?.[0]);

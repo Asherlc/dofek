@@ -17,7 +17,7 @@ import { BarcodeScanner } from "../../components/BarcodeScanner";
 import { useAuth } from "../../lib/auth-context";
 import { colors } from "../../theme";
 
-import { OpenFoodFactsClient } from "../../lib/food-database";
+import { type FoodDatabaseResult, OpenFoodFactsClient } from "../../lib/food-database";
 import { MEAL_OPTIONS, type MealType, autoMealType } from "@dofek/nutrition/meal";
 import { formatDateYmd } from "@dofek/format/format";
 import { SERVER_URL, getTrpcUrl } from "../../lib/server";
@@ -49,6 +49,8 @@ interface SearchResult {
   fatG: number | null;
   servingDescription: string | null;
   barcode: string | null;
+  /** Original Open Food Facts result with full micronutrient data */
+  openFoodFactsData?: FoodDatabaseResult;
 }
 
 export default function AddFoodScreen() {
@@ -86,6 +88,9 @@ export default function AddFoodScreen() {
   const [carbsGrams, setCarbsGrams] = useState("");
   const [fatGrams, setFatGrams] = useState("");
   const [servingDescription, setServingDescription] = useState("");
+
+  // ── Micronutrient data from selected food result (passed through to create mutation) ──
+  const selectedFoodNutrients = useRef<Record<string, number>>({});
 
   // ── Recent foods (loaded once on mount) ──
   const [recentFoods, setRecentFoods] = useState<SearchResult[]>([]);
@@ -275,6 +280,7 @@ export default function AddFoodScreen() {
     setScanningBarcode(false);
 
     if (result) {
+      selectedFoodNutrients.current = result.nutrients;
       fillForm({
         source: "openfoodfacts",
         name: result.brand ? `${result.name} (${result.brand})` : result.name,
@@ -310,6 +316,7 @@ export default function AddFoodScreen() {
   }
 
   function handleSelectResult(result: SearchResult) {
+    selectedFoodNutrients.current = result.openFoodFactsData?.nutrients ?? {};
     fillForm(result);
   }
 
@@ -334,6 +341,7 @@ export default function AddFoodScreen() {
       carbsG: safeParseFloat(carbsGrams),
       fatG: safeParseFloat(fatGrams),
       foodDescription: servingDescription.trim() || null,
+      nutrients: selectedFoodNutrients.current,
     });
   }
 
@@ -459,7 +467,7 @@ export default function AddFoodScreen() {
           <View style={styles.formButtons}>
             <TouchableOpacity
               style={styles.backButton}
-              onPress={() => setShowForm(false)}
+              onPress={() => { selectedFoodNutrients.current = {}; setShowForm(false); }}
               activeOpacity={0.7}
             >
               <Text style={styles.backButtonText}>Back</Text>
@@ -669,6 +677,7 @@ export default function AddFoodScreen() {
             <TouchableOpacity
               style={styles.manualEntry}
               onPress={() => {
+                selectedFoodNutrients.current = {};
                 setFoodName(searchQuery.trim());
                 setCalories("");
                 setProteinGrams("");

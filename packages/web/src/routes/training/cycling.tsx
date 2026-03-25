@@ -312,15 +312,15 @@ function DerivedRow({
   recentStr?: string;
   seasonStr?: string;
 }) {
-  const r = recentStr ?? (recent != null ? `${recent}${unit}` : "--");
-  const s = seasonStr ?? (season != null ? `${season}${unit}` : "--");
+  const recentDisplay = recentStr ?? (recent != null ? `${recent}${unit}` : "--");
+  const seasonDisplay = seasonStr ?? (season != null ? `${season}${unit}` : "--");
   return (
     <div className="flex justify-between text-muted">
       <span>{label}</span>
       <span>
-        <span className="text-violet-300">{r}</span>
+        <span className="text-violet-300">{recentDisplay}</span>
         <span className="mx-1 text-dim">/</span>
-        <span>{s}</span>
+        <span>{seasonDisplay}</span>
       </span>
     </div>
   );

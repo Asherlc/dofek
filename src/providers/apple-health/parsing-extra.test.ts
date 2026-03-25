@@ -270,13 +270,13 @@ describe("parseWorkout", () => {
     ).toBe("strength_training");
   });
 
-  it("falls back to lowercased HKWorkoutActivityType suffix for unknown types", () => {
+  it("returns other for unknown HKWorkoutActivityType suffix", () => {
     const workout = parseWorkout({
       workoutActivityType: "HKWorkoutActivityTypeSomethingNew",
       startDate: "",
       endDate: "",
     });
-    expect(workout.activityType).toBe("somethingnew");
+    expect(workout.activityType).toBe("other");
   });
 });
 

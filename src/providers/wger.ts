@@ -1,3 +1,4 @@
+import type { CanonicalActivityType } from "@dofek/training/training";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
@@ -48,7 +49,7 @@ interface WgerPaginatedResponse<T> {
 
 export interface ParsedWgerWorkoutSession {
   externalId: string;
-  activityType: string;
+  activityType: CanonicalActivityType;
   name: string;
   startedAt: Date;
   raw: Record<string, unknown>;

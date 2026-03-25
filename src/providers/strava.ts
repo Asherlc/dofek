@@ -1,4 +1,8 @@
-import { createActivityTypeMapper, STRAVA_ACTIVITY_TYPE_MAP } from "@dofek/training/training";
+import {
+  type CanonicalActivityType,
+  createActivityTypeMapper,
+  STRAVA_ACTIVITY_TYPE_MAP,
+} from "@dofek/training/training";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
@@ -101,7 +105,13 @@ function isStreamKey(key: string): key is keyof StravaStreamSet {
 
 const mapStravaType = createActivityTypeMapper(STRAVA_ACTIVITY_TYPE_MAP);
 
-export function mapStravaActivityType(sportType: string): string {
+/**
+ * Map a Strava activity to its canonical type.
+ * When sport_type is "Ride" and trainer is true, override to indoor_cycling
+ * (covers spin bikes and other stationary trainers recorded via Strava).
+ */
+export function mapStravaActivityType(sportType: string, trainer = false): CanonicalActivityType {
+  if (sportType === "Ride" && trainer) return "indoor_cycling";
   return mapStravaType(sportType);
 }
 
@@ -111,7 +121,7 @@ export function mapStravaActivityType(sportType: string): string {
 
 export interface ParsedStravaActivity {
   externalId: string;
-  activityType: string;
+  activityType: CanonicalActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -122,7 +132,7 @@ export function parseStravaActivity(act: StravaActivity): ParsedStravaActivity {
   const startedAt = new Date(act.start_date);
   return {
     externalId: String(act.id),
-    activityType: mapStravaActivityType(act.sport_type),
+    activityType: mapStravaActivityType(act.sport_type, act.trainer),
     name: act.name,
     startedAt,
     endedAt: new Date(startedAt.getTime() + act.elapsed_time * 1000),

@@ -595,8 +595,8 @@ export const recoveryRouter = router({
 
       // Compute readiness if we have metrics
       let readinessScore = 50; // default moderate
-      const m = readinessRows[0];
-      if (m) {
+      const readinessMetrics = readinessRows[0];
+      if (readinessMetrics) {
         const params = getEffectiveParams(await loadPersonalizedParams(ctx.db, ctx.userId));
         const sleepRows = await executeWithSchema(
           ctx.db,
@@ -615,9 +615,14 @@ export const recoveryRouter = router({
         const sleepEff = sleepRows[0]?.efficiency_pct ?? null;
         const sleepScore = sleepEff != null ? Math.max(0, Math.min(100, Math.round(sleepEff))) : 62;
         const components: ReadinessComponents = {
-          hrvScore: m.hrv != null ? Math.max(0, Math.min(100, Math.round(m.hrv))) : 62,
+          hrvScore:
+            readinessMetrics.hrv != null
+              ? Math.max(0, Math.min(100, Math.round(readinessMetrics.hrv)))
+              : 62,
           restingHrScore:
-            m.resting_hr != null ? Math.max(0, Math.min(100, 120 - m.resting_hr)) : 62,
+            readinessMetrics.resting_hr != null
+              ? Math.max(0, Math.min(100, 120 - readinessMetrics.resting_hr))
+              : 62,
           sleepScore,
           respiratoryRateScore: 62,
         };

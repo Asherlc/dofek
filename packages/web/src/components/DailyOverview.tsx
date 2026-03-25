@@ -183,8 +183,8 @@ export function DailyOverview({
   const strain = strainIsToday ? (workloadRatio?.displayedStrain ?? 0) : 0;
   const sleepIsFresh = (() => {
     if (!sleepPerformance?.sleepDate) return false;
-    const d = new Date(`${sleepPerformance.sleepDate}T00:00:00`);
-    return isToday(d) || isYesterday(d);
+    const sleepDate = new Date(`${sleepPerformance.sleepDate}T00:00:00`);
+    return isToday(sleepDate) || isYesterday(sleepDate);
   })();
   const freshSleepPerformance = sleepIsFresh ? sleepPerformance : null;
 

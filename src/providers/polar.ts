@@ -1,5 +1,9 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { createActivityTypeMapper, POLAR_SPORT_MAP } from "@dofek/training/training";
+import {
+  type CanonicalActivityType,
+  createActivityTypeMapper,
+  POLAR_SPORT_MAP,
+} from "@dofek/training/training";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
@@ -84,7 +88,7 @@ export interface PolarNightlyRecharge {
 
 const mapPolarType = createActivityTypeMapper(POLAR_SPORT_MAP);
 
-export function mapPolarSport(sport: string): string {
+export function mapPolarSport(sport: string): CanonicalActivityType {
   const key = sport.toLowerCase();
   return mapPolarType(key);
 }
@@ -110,7 +114,7 @@ export function parsePolarDuration(isoDuration: string): number {
 
 export interface ParsedPolarActivity {
   externalId: string;
-  activityType: string;
+  activityType: CanonicalActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;

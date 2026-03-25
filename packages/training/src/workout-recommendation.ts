@@ -484,13 +484,13 @@ function makeStrength(freshMuscleGroups: string[], reasoning: string[]): Workout
 // ── Date Helpers ─────────────────────────────────────────────────────
 
 function addDays(isoDate: string, days: number): string {
-  const d = new Date(isoDate);
-  d.setDate(d.getDate() + days);
-  return d.toISOString().split("T")[0] ?? isoDate;
+  const date = new Date(isoDate);
+  date.setDate(date.getDate() + days);
+  return date.toISOString().split("T")[0] ?? isoDate;
 }
 
 function daysBetween(from: string, to: string): number {
-  const a = new Date(from);
-  const b = new Date(to);
-  return Math.round((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
+  const fromDate = new Date(from);
+  const toDate = new Date(to);
+  return Math.round((toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24));
 }

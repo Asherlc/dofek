@@ -3,11 +3,11 @@ import { LinearRegression } from "./regression.ts";
 
 describe("LinearRegression", () => {
   it("fits a perfect linear relationship y = 2x + 1", () => {
-    const X = [[1], [2], [3], [4], [5]];
-    const y = [3, 5, 7, 9, 11];
+    const featureMatrix = [[1], [2], [3], [4], [5]];
+    const targets = [3, 5, 7, 9, 11];
 
     const model = new LinearRegression();
-    model.fit(X, y);
+    model.fit(featureMatrix, targets);
 
     expect(model.coefficients).toHaveLength(1);
     expect(model.coefficients[0]).toBeCloseTo(2, 5);
@@ -16,7 +16,7 @@ describe("LinearRegression", () => {
   });
 
   it("fits a multivariate relationship y = 3x1 + 2x2 - 1", () => {
-    const X = [
+    const featureMatrix = [
       [1, 1],
       [2, 1],
       [1, 2],
@@ -26,10 +26,10 @@ describe("LinearRegression", () => {
       [3, 3],
       [5, 2],
     ];
-    const y = X.map(([x1, x2]) => 3 * (x1 ?? 0) + 2 * (x2 ?? 0) - 1);
+    const targets = featureMatrix.map(([x1, x2]) => 3 * (x1 ?? 0) + 2 * (x2 ?? 0) - 1);
 
     const model = new LinearRegression();
-    model.fit(X, y);
+    model.fit(featureMatrix, targets);
 
     expect(model.coefficients[0]).toBeCloseTo(3, 4);
     expect(model.coefficients[1]).toBeCloseTo(2, 4);
@@ -38,11 +38,11 @@ describe("LinearRegression", () => {
   });
 
   it("predicts new values", () => {
-    const X = [[1], [2], [3], [4], [5]];
-    const y = [3, 5, 7, 9, 11];
+    const featureMatrix = [[1], [2], [3], [4], [5]];
+    const targets = [3, 5, 7, 9, 11];
 
     const model = new LinearRegression();
-    model.fit(X, y);
+    model.fit(featureMatrix, targets);
 
     expect(model.predict([6])).toBeCloseTo(13, 5);
     expect(model.predict([0])).toBeCloseTo(1, 5);
@@ -77,9 +77,9 @@ describe("LinearRegression", () => {
     const X: number[][] = [];
     const y: number[] = [];
     for (let i = 0; i < 100; i++) {
-      const x = rng() * 10;
-      X.push([x]);
-      y.push(2 * x + 1 + (rng() - 0.5) * 2);
+      const featureValue = rng() * 10;
+      X.push([featureValue]);
+      y.push(2 * featureValue + 1 + (rng() - 0.5) * 2);
     }
 
     const model = new LinearRegression();
@@ -92,11 +92,11 @@ describe("LinearRegression", () => {
   });
 
   it("returns adjusted R²", () => {
-    const X = [[1], [2], [3], [4], [5]];
-    const y = [3, 5, 7, 9, 11];
+    const featureMatrix = [[1], [2], [3], [4], [5]];
+    const targets = [3, 5, 7, 9, 11];
 
     const model = new LinearRegression();
-    model.fit(X, y);
+    model.fit(featureMatrix, targets);
 
     // For a perfect fit, adjusted R² should also be ~1
     expect(model.adjustedRSquared).toBeCloseTo(1, 4);
@@ -113,11 +113,11 @@ describe("LinearRegression", () => {
   });
 
   it("serializes and deserializes", () => {
-    const X = [[1], [2], [3], [4], [5]];
-    const y = [3, 5, 7, 9, 11];
+    const featureMatrix = [[1], [2], [3], [4], [5]];
+    const targets = [3, 5, 7, 9, 11];
 
     const model = new LinearRegression();
-    model.fit(X, y);
+    model.fit(featureMatrix, targets);
 
     const json = model.toJSON();
     const restored = LinearRegression.fromJSON(json);

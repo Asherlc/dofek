@@ -8,12 +8,12 @@ import { KomootProvider, komootOAuthConfig, mapKomootSport, parseKomootTour } fr
 describe("mapKomootSport", () => {
   it("maps all known sport types", () => {
     expect(mapKomootSport("BIKING")).toBe("cycling");
-    expect(mapKomootSport("E_BIKING")).toBe("cycling");
-    expect(mapKomootSport("ROAD_CYCLING")).toBe("cycling");
+    expect(mapKomootSport("E_BIKING")).toBe("e_bike_cycling");
+    expect(mapKomootSport("ROAD_CYCLING")).toBe("road_cycling");
     expect(mapKomootSport("MT_BIKING")).toBe("mountain_biking");
     expect(mapKomootSport("E_MT_BIKING")).toBe("mountain_biking");
-    expect(mapKomootSport("GRAVEL_BIKING")).toBe("cycling");
-    expect(mapKomootSport("E_BIKE_TOURING")).toBe("cycling");
+    expect(mapKomootSport("GRAVEL_BIKING")).toBe("gravel_cycling");
+    expect(mapKomootSport("E_BIKE_TOURING")).toBe("e_bike_cycling");
     expect(mapKomootSport("RUNNING")).toBe("running");
     expect(mapKomootSport("TRAIL_RUNNING")).toBe("trail_running");
     expect(mapKomootSport("HIKING")).toBe("hiking");

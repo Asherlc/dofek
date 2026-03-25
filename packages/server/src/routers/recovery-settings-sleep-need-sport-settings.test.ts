@@ -3,12 +3,14 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const t = initTRPC.context<{ db: unknown; userId: string | null; timezone: string }>().create();
+  const trpc = initTRPC
+    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .create();
   return {
-    router: t.router,
-    protectedProcedure: t.procedure,
-    cachedProtectedQuery: () => t.procedure,
-    cachedProtectedQueryLight: () => t.procedure,
+    router: trpc.router,
+    protectedProcedure: trpc.procedure,
+    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQueryLight: () => trpc.procedure,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -361,11 +363,11 @@ describe("recoveryRouter", () => {
       const result = await caller.readinessScore({ days: 30 });
 
       expect(result.length).toBeGreaterThan(0);
-      const r = result[0];
-      expect(r.readinessScore).toBeGreaterThanOrEqual(0);
-      expect(r.readinessScore).toBeLessThanOrEqual(100);
-      expect(r.components).toHaveProperty("hrvScore");
-      expect(r.components).toHaveProperty("sleepScore");
+      const firstRow = result[0];
+      expect(firstRow.readinessScore).toBeGreaterThanOrEqual(0);
+      expect(firstRow.readinessScore).toBeLessThanOrEqual(100);
+      expect(firstRow.components).toHaveProperty("hrvScore");
+      expect(firstRow.components).toHaveProperty("sleepScore");
     });
 
     it("uses default scores for null metrics", async () => {
@@ -469,11 +471,11 @@ describe("recoveryRouter", () => {
       const result = await caller.readinessScore({ days: 30 });
 
       if (result.length > 0) {
-        const c = result[0]?.components;
-        expect(Number.isInteger(c?.hrvScore)).toBe(true);
-        expect(Number.isInteger(c?.restingHrScore)).toBe(true);
-        expect(Number.isInteger(c?.sleepScore)).toBe(true);
-        expect(Number.isInteger(c?.respiratoryRateScore)).toBe(true);
+        const components = result[0]?.components;
+        expect(Number.isInteger(components?.hrvScore)).toBe(true);
+        expect(Number.isInteger(components?.restingHrScore)).toBe(true);
+        expect(Number.isInteger(components?.sleepScore)).toBe(true);
+        expect(Number.isInteger(components?.respiratoryRateScore)).toBe(true);
       }
     });
   });

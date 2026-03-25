@@ -2,12 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const t = initTRPC.context<{ db: unknown; userId: string | null; timezone: string }>().create();
+  const trpc = initTRPC
+    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .create();
   return {
-    router: t.router,
-    protectedProcedure: t.procedure,
-    cachedProtectedQuery: () => t.procedure,
-    cachedProtectedQueryLight: () => t.procedure,
+    router: trpc.router,
+    protectedProcedure: trpc.procedure,
+    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQueryLight: () => trpc.procedure,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -498,24 +500,24 @@ describe("weeklyReportRouter", () => {
         timezone: "UTC",
       });
       const result = await caller.report({ weeks: 1, endDate: "2026-03-24" });
-      const w = result.current;
-      expect(w).not.toBeNull();
+      const currentWeek = result.current;
+      expect(currentWeek).not.toBeNull();
 
       // trainingHours: Math.round(7.777 * 10) / 10 = Math.round(77.77) / 10 = 78 / 10 = 7.8
-      expect(w?.trainingHours).toBe(7.8);
+      expect(currentWeek?.trainingHours).toBe(7.8);
       // avgDailyLoad: Math.round(4.56 * 10) / 10 = Math.round(45.6) / 10 = 46 / 10 = 4.6
-      expect(w?.avgDailyLoad).toBe(4.6);
+      expect(currentWeek?.avgDailyLoad).toBe(4.6);
       // avgSleepMinutes: Math.round(465) = 465
-      expect(w?.avgSleepMinutes).toBe(465);
+      expect(currentWeek?.avgSleepMinutes).toBe(465);
       // sleepPerformancePct: Math.round((465 / 450) * 100) = Math.round(103.33) = 103
-      expect(w?.sleepPerformancePct).toBe(103);
+      expect(currentWeek?.sleepPerformancePct).toBe(103);
       // avgRestingHr: Math.round(57.89 * 10) / 10 = Math.round(578.9) / 10 = 579 / 10 = 57.9
-      expect(w?.avgRestingHr).toBe(57.9);
+      expect(currentWeek?.avgRestingHr).toBe(57.9);
       // avgHrv: Math.round(52.14 * 10) / 10 = Math.round(521.4) / 10 = 521 / 10 = 52.1
-      expect(w?.avgHrv).toBe(52.1);
+      expect(currentWeek?.avgHrv).toBe(52.1);
       // strainZone: 4.56 / 3.78 = 1.206 → between 0.8 and 1.3 → optimal
-      expect(w?.strainZone).toBe("optimal");
-      expect(w?.activityCount).toBe(5);
+      expect(currentWeek?.strainZone).toBe("optimal");
+      expect(currentWeek?.activityCount).toBe(5);
     });
 
     it("uses avgDailyLoad || 0 correctly when avg_daily_load is non-zero (kills && mutant)", async () => {

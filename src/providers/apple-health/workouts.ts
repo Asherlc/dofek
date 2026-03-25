@@ -1,9 +1,12 @@
-import { APPLE_HEALTH_WORKOUT_TYPE_MAP } from "@dofek/training/training";
+import {
+  APPLE_HEALTH_WORKOUT_TYPE_MAP,
+  type CanonicalActivityType,
+} from "@dofek/training/training";
 import { parseHealthDate } from "./dates.ts";
 import type { RouteLocation } from "./records.ts";
 
 export interface HealthWorkout {
-  activityType: string;
+  activityType: CanonicalActivityType;
   sourceName: string | null;
   durationSeconds: number;
   distanceMeters?: number;
@@ -19,33 +22,32 @@ export interface HealthWorkout {
 export const WORKOUT_TYPE_MAP = APPLE_HEALTH_WORKOUT_TYPE_MAP;
 
 export function normalizeDuration(value: string, unit: string): number {
-  const v = parseFloat(value);
+  const numericValue = parseFloat(value);
   switch (unit) {
     case "min":
-      return v * 60;
+      return numericValue * 60;
     case "hr":
-      return v * 3600;
+      return numericValue * 3600;
     default:
-      return v; // assume seconds
+      return numericValue; // assume seconds
   }
 }
 
 export function normalizeDistance(value: string, unit: string): number {
-  const v = parseFloat(value);
+  const numericValue = parseFloat(value);
   switch (unit) {
     case "km":
-      return v * 1000;
+      return numericValue * 1000;
     case "mi":
-      return v * 1609.344;
+      return numericValue * 1609.344;
     default:
-      return v; // assume meters
+      return numericValue; // assume meters
   }
 }
 
 export function parseWorkout(attrs: Record<string, string>): HealthWorkout {
   const rawType = attrs.workoutActivityType ?? "HKWorkoutActivityTypeOther";
-  const activityType =
-    WORKOUT_TYPE_MAP[rawType] ?? rawType.replace("HKWorkoutActivityType", "").toLowerCase();
+  const activityType: CanonicalActivityType = WORKOUT_TYPE_MAP[rawType] ?? "other";
 
   const durationSeconds = normalizeDuration(attrs.duration ?? "0", attrs.durationUnit ?? "min");
 

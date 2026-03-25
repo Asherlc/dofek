@@ -50,13 +50,13 @@ export function Hypnogram({ data, loading }: HypnogramProps) {
     tooltip: dofekTooltip({
       trigger: "axis",
       formatter: (params: { value: [string, number] }[]) => {
-        const p = params[0];
-        if (!p) return "";
-        const time = new Date(p.value[0]).toLocaleTimeString("en-US", {
+        const point = params[0];
+        if (!point) return "";
+        const time = new Date(point.value[0]).toLocaleTimeString("en-US", {
           hour: "numeric",
           minute: "2-digit",
         });
-        const label = STAGE_LABELS[p.value[1]] ?? "Unknown";
+        const label = STAGE_LABELS[point.value[1]] ?? "Unknown";
         return `${time}<br/><strong>${label}</strong>`;
       },
     }),

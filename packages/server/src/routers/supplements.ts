@@ -95,57 +95,57 @@ export const supplementsRouter = router({
 
         if (input.supplements.length > 0) {
           for (let i = 0; i < input.supplements.length; i++) {
-            const s = input.supplements[i];
-            if (!s) continue;
+            const entry = input.supplements[i];
+            if (!entry) continue;
             // Insert nutrition_data first with explicitly typed nutrient values
             const [ndRow] = await tx
               .insert(nutritionData)
               .values({
-                calories: s.calories ?? null,
-                proteinG: s.proteinG ?? null,
-                carbsG: s.carbsG ?? null,
-                fatG: s.fatG ?? null,
-                saturatedFatG: s.saturatedFatG ?? null,
-                polyunsaturatedFatG: s.polyunsaturatedFatG ?? null,
-                monounsaturatedFatG: s.monounsaturatedFatG ?? null,
-                transFatG: s.transFatG ?? null,
-                cholesterolMg: s.cholesterolMg ?? null,
-                sodiumMg: s.sodiumMg ?? null,
-                potassiumMg: s.potassiumMg ?? null,
-                fiberG: s.fiberG ?? null,
-                sugarG: s.sugarG ?? null,
-                vitaminAMcg: s.vitaminAMcg ?? null,
-                vitaminCMg: s.vitaminCMg ?? null,
-                vitaminDMcg: s.vitaminDMcg ?? null,
-                vitaminEMg: s.vitaminEMg ?? null,
-                vitaminKMcg: s.vitaminKMcg ?? null,
-                vitaminB1Mg: s.vitaminB1Mg ?? null,
-                vitaminB2Mg: s.vitaminB2Mg ?? null,
-                vitaminB3Mg: s.vitaminB3Mg ?? null,
-                vitaminB5Mg: s.vitaminB5Mg ?? null,
-                vitaminB6Mg: s.vitaminB6Mg ?? null,
-                vitaminB7Mcg: s.vitaminB7Mcg ?? null,
-                vitaminB9Mcg: s.vitaminB9Mcg ?? null,
-                vitaminB12Mcg: s.vitaminB12Mcg ?? null,
-                calciumMg: s.calciumMg ?? null,
-                ironMg: s.ironMg ?? null,
-                magnesiumMg: s.magnesiumMg ?? null,
-                zincMg: s.zincMg ?? null,
-                seleniumMcg: s.seleniumMcg ?? null,
-                copperMg: s.copperMg ?? null,
-                manganeseMg: s.manganeseMg ?? null,
-                chromiumMcg: s.chromiumMcg ?? null,
-                iodineMcg: s.iodineMcg ?? null,
-                omega3Mg: s.omega3Mg ?? null,
-                omega6Mg: s.omega6Mg ?? null,
+                calories: entry.calories ?? null,
+                proteinG: entry.proteinG ?? null,
+                carbsG: entry.carbsG ?? null,
+                fatG: entry.fatG ?? null,
+                saturatedFatG: entry.saturatedFatG ?? null,
+                polyunsaturatedFatG: entry.polyunsaturatedFatG ?? null,
+                monounsaturatedFatG: entry.monounsaturatedFatG ?? null,
+                transFatG: entry.transFatG ?? null,
+                cholesterolMg: entry.cholesterolMg ?? null,
+                sodiumMg: entry.sodiumMg ?? null,
+                potassiumMg: entry.potassiumMg ?? null,
+                fiberG: entry.fiberG ?? null,
+                sugarG: entry.sugarG ?? null,
+                vitaminAMcg: entry.vitaminAMcg ?? null,
+                vitaminCMg: entry.vitaminCMg ?? null,
+                vitaminDMcg: entry.vitaminDMcg ?? null,
+                vitaminEMg: entry.vitaminEMg ?? null,
+                vitaminKMcg: entry.vitaminKMcg ?? null,
+                vitaminB1Mg: entry.vitaminB1Mg ?? null,
+                vitaminB2Mg: entry.vitaminB2Mg ?? null,
+                vitaminB3Mg: entry.vitaminB3Mg ?? null,
+                vitaminB5Mg: entry.vitaminB5Mg ?? null,
+                vitaminB6Mg: entry.vitaminB6Mg ?? null,
+                vitaminB7Mcg: entry.vitaminB7Mcg ?? null,
+                vitaminB9Mcg: entry.vitaminB9Mcg ?? null,
+                vitaminB12Mcg: entry.vitaminB12Mcg ?? null,
+                calciumMg: entry.calciumMg ?? null,
+                ironMg: entry.ironMg ?? null,
+                magnesiumMg: entry.magnesiumMg ?? null,
+                zincMg: entry.zincMg ?? null,
+                seleniumMcg: entry.seleniumMcg ?? null,
+                copperMg: entry.copperMg ?? null,
+                manganeseMg: entry.manganeseMg ?? null,
+                chromiumMcg: entry.chromiumMcg ?? null,
+                iodineMcg: entry.iodineMcg ?? null,
+                omega3Mg: entry.omega3Mg ?? null,
+                omega6Mg: entry.omega6Mg ?? null,
               })
               .returning({ id: nutritionData.id });
 
             // Insert supplement with FK
             await tx.execute(
               sql`INSERT INTO fitness.supplement (user_id, name, amount, unit, form, description, meal, sort_order, nutrition_data_id)
-                  VALUES (${ctx.userId}, ${s.name}, ${s.amount ?? null}, ${s.unit ?? null},
-                          ${s.form ?? null}, ${s.description ?? null}, ${s.meal ?? null},
+                  VALUES (${ctx.userId}, ${entry.name}, ${entry.amount ?? null}, ${entry.unit ?? null},
+                          ${entry.form ?? null}, ${entry.description ?? null}, ${entry.meal ?? null},
                           ${i}, ${ndRow?.id})`,
             );
           }

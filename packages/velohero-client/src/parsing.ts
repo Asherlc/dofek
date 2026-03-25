@@ -1,9 +1,10 @@
+import type { CanonicalActivityType } from "@dofek/training/training";
 import { mapVeloHeroSport } from "./sports.ts";
 import type { VeloHeroWorkout } from "./types.ts";
 
 export interface ParsedVeloHeroWorkout {
   externalId: string;
-  activityType: string;
+  activityType: CanonicalActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;

@@ -1331,9 +1331,9 @@ describe("mapOuraActivityType", () => {
     expect(mapOuraActivityType("RUNNING")).toBe("running");
   });
 
-  it("passes through unknown types lowercase", () => {
-    expect(mapOuraActivityType("kickboxing")).toBe("kickboxing");
-    expect(mapOuraActivityType("CrossFit")).toBe("crossfit");
+  it("returns other for unknown types", () => {
+    expect(mapOuraActivityType("kickboxing")).toBe("other");
+    expect(mapOuraActivityType("CrossFit")).toBe("other");
   });
 });
 

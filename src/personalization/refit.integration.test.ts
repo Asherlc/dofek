@@ -28,10 +28,10 @@ beforeEach(async () => {
 });
 
 /** Generate a date string N days before today in YYYY-MM-DD format. */
-function daysAgo(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return d.toISOString().slice(0, 10);
+function daysAgo(count: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() - count);
+  return date.toISOString().slice(0, 10);
 }
 
 /** Generate a timestamp at 22:00 UTC on the given date string. */
@@ -41,9 +41,9 @@ function sleepStart(dateStr: string): Date {
 
 /** Generate a timestamp at 06:00 UTC on the day AFTER the given date string. */
 function sleepEnd(dateStr: string): Date {
-  const d = new Date(`${dateStr}T06:00:00Z`);
-  d.setDate(d.getDate() + 1);
-  return d;
+  const endDate = new Date(`${dateStr}T06:00:00Z`);
+  endDate.setDate(endDate.getDate() + 1);
+  return endDate;
 }
 
 /**

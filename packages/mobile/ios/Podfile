@@ -23,11 +23,6 @@ prepare_react_native_project!
 target 'Dofek' do
   use_expo_modules!
 
-  # Use prebuilt Sentry XCFramework instead of building from source.
-  # Avoids @_implementationOnly / SwiftVerifyEmittedModuleInterface issues on Xcode 26+.
-  # Run `scripts/download-sentry-xcframework.sh` before `pod install`.
-  pod 'Sentry', :path => './LocalPods/Sentry'
-
   if ENV['EXPO_USE_COMMUNITY_AUTOLINKING'] == '1'
     config_command = ['node', '-e', "process.argv=['', '', 'config'];require('@react-native-community/cli').run()"];
   else
@@ -64,5 +59,16 @@ target 'Dofek' do
       :mac_catalyst_enabled => false,
       :ccache_enabled => ccache_enabled?(podfile_properties),
     )
+
+    # Sentry 9.7.0 uses @_implementationOnly Swift imports without library evolution,
+    # which causes SwiftVerifyEmittedModuleInterface failures on Xcode 26+. Disable
+    # module interface verification for the Sentry pod to allow building from source.
+    installer.pods_project.targets.each do |target|
+      next unless target.name == 'Sentry'
+      target.build_configurations.each do |config|
+        config.build_settings['SWIFT_VERIFY_EMITTED_MODULE_INTERFACE'] = 'NO'
+        config.build_settings['BUILD_LIBRARY_FOR_DISTRIBUTION'] = 'NO'
+      end
+    end
   end
 end

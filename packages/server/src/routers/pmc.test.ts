@@ -2,12 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const t = initTRPC.context<{ db: unknown; userId: string | null; timezone: string }>().create();
+  const trpc = initTRPC
+    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .create();
   return {
-    router: t.router,
-    protectedProcedure: t.procedure,
-    cachedProtectedQuery: () => t.procedure,
-    cachedProtectedQueryLight: () => t.procedure,
+    router: trpc.router,
+    protectedProcedure: trpc.procedure,
+    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQueryLight: () => trpc.procedure,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -129,13 +131,13 @@ describe("pmcRouter", () => {
 
       // Vary avg_hr and avg_power across activities to produce a real regression
       const activities = Array.from({ length: 12 }, (_, i) => {
-        const d = new Date(today);
-        d.setDate(d.getDate() - i);
+        const date = new Date(today);
+        date.setDate(date.getDate() - i);
         return {
           global_max_hr: 190,
           resting_hr: 55,
           id: `a${i}`,
-          date: d.toISOString().slice(0, 10),
+          date: date.toISOString().slice(0, 10),
           duration_min: 30 + i * 5,
           avg_hr: 140 + i * 3,
           max_hr: 180,

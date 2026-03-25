@@ -1,4 +1,5 @@
 import { parseValidDate } from "@dofek/format/format";
+import { formatActivityTypeLabel } from "@dofek/training/training";
 import { useNavigate } from "@tanstack/react-router";
 import { formatNumber } from "../lib/format.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
@@ -104,7 +105,9 @@ export function ActivityList({
                 <td className="py-2 pr-4 text-foreground whitespace-nowrap">
                   {formatActivityDate(a.started_at)}
                 </td>
-                <td className="py-2 pr-4 capitalize whitespace-nowrap">{a.activity_type}</td>
+                <td className="py-2 pr-4 whitespace-nowrap">
+                  {formatActivityTypeLabel(a.activity_type)}
+                </td>
                 <td className="py-2 pr-4 text-foreground max-w-[200px] truncate">
                   {a.name ?? "—"}
                 </td>

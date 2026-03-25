@@ -377,16 +377,17 @@ export const anomalyDetectionRouter = router({
           Number(row.rhr_sd) > 0 &&
           Number(row.rhr_count) >= 14
         ) {
-          const z = (Number(row.resting_hr) - Number(row.rhr_mean)) / Number(row.rhr_sd);
-          if (z > 2) {
+          const restingHrZScore =
+            (Number(row.resting_hr) - Number(row.rhr_mean)) / Number(row.rhr_sd);
+          if (restingHrZScore > 2) {
             anomalies.push({
               date,
               metric: "Resting Heart Rate",
               value: Number(row.resting_hr),
               baselineMean: Math.round(Number(row.rhr_mean) * 10) / 10,
               baselineStddev: Math.round(Number(row.rhr_sd) * 10) / 10,
-              zScore: Math.round(z * 100) / 100,
-              severity: z > 3 ? "alert" : "warning",
+              zScore: Math.round(restingHrZScore * 100) / 100,
+              severity: restingHrZScore > 3 ? "alert" : "warning",
             });
           }
         }
@@ -399,16 +400,16 @@ export const anomalyDetectionRouter = router({
           Number(row.hrv_sd) > 0 &&
           Number(row.hrv_count) >= 14
         ) {
-          const z = (Number(row.hrv) - Number(row.hrv_mean)) / Number(row.hrv_sd);
-          if (z < -2) {
+          const hrvZScore = (Number(row.hrv) - Number(row.hrv_mean)) / Number(row.hrv_sd);
+          if (hrvZScore < -2) {
             anomalies.push({
               date,
               metric: "Heart Rate Variability",
               value: Number(row.hrv),
               baselineMean: Math.round(Number(row.hrv_mean) * 10) / 10,
               baselineStddev: Math.round(Number(row.hrv_sd) * 10) / 10,
-              zScore: Math.round(z * 100) / 100,
-              severity: z < -3 ? "alert" : "warning",
+              zScore: Math.round(hrvZScore * 100) / 100,
+              severity: hrvZScore < -3 ? "alert" : "warning",
             });
           }
         }

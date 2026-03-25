@@ -243,7 +243,7 @@ describe("ZwiftProvider.sync() (integration)", () => {
 
     const ride = activityRows.find((r) => r.externalId === "100001");
     if (!ride) throw new Error("expected activity 100001");
-    expect(ride.activityType).toBe("cycling");
+    expect(ride.activityType).toBe("virtual_cycling");
     expect(ride.name).toBe("Watopia Hilly Route");
 
     const run = activityRows.find((r) => r.externalId === "100002");

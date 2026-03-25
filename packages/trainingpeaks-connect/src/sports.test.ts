@@ -7,7 +7,7 @@ describe("mapTrainingPeaksSport", () => {
     expect(mapTrainingPeaksSport(2)).toBe("cycling");
     expect(mapTrainingPeaksSport(3)).toBe("running");
     expect(mapTrainingPeaksSport(7)).toBe("strength");
-    expect(mapTrainingPeaksSport(12)).toBe("rest");
+    expect(mapTrainingPeaksSport(12)).toBe("other");
   });
 
   it("defaults to other for unknown IDs", () => {
