@@ -10,6 +10,15 @@ export const OTHER_ACTIVITY_TYPE = "__other__";
  */
 export const CANONICAL_ACTIVITY_TYPES = [
   "cycling",
+  "road_cycling",
+  "mountain_biking",
+  "gravel_cycling",
+  "indoor_cycling",
+  "virtual_cycling",
+  "e_bike_cycling",
+  "cyclocross",
+  "track_cycling",
+  "bmx",
   "running",
   "swimming",
   "walking",
@@ -27,30 +36,28 @@ export const CANONICAL_ACTIVITY_TYPES = [
   "cardio",
   "hiit",
   "cross_training",
-  "mountain_biking",
   "trail_running",
   "stair_climbing",
   "stairmaster",
-  "cross country skiing",
-  "group exercise",
   "stretching",
   "dance",
-  "martial arts",
+  "martial_arts",
   "tennis",
   "basketball",
   "soccer",
   "golf",
-  "ice hockey",
+  "ice_hockey",
   "snowboarding",
-  "rock climbing",
+  "rock_climbing",
   "surfing",
   "kayaking",
-  "functional fitness",
+  "functional_fitness",
   "bootcamp",
   "boxing",
   "core",
-  "aqua fitness",
-  "circuit training",
+  "aqua_fitness",
+  "circuit_training",
+  "group_exercise",
   "triathlon",
   "dancing",
   // Apple Health granular types
@@ -110,8 +117,58 @@ export const CANONICAL_ACTIVITY_TYPES = [
   "underwater_diving",
   "cross_country_skiing",
   "downhill_skiing",
+  // Provider-specific types (Garmin, Peloton, Komoot, Decathlon)
+  "breathwork",
+  "meditation",
+  "paddleboarding",
+  "snowshoeing",
+  "pickleball",
+  "padel",
+  "football",
+  "multisport",
+  "disc_golf",
+  "skydiving",
+  "paragliding",
+  "diving",
+  "snorkeling",
+  "navigation",
+  "geocaching",
+  "paddling",
+  "gym",
+  "open_water_swimming",
   "other",
 ] as const;
+
+export type CanonicalActivityType = (typeof CANONICAL_ACTIVITY_TYPES)[number];
+
+// ============================================================
+// Cycling activity types
+// ============================================================
+
+/**
+ * All canonical activity types considered "cycling" for consolidated views.
+ * Individual activities show the specific subtype, but aggregated views
+ * (weekly volume, PMC, cycling page) treat them as one sport.
+ */
+export const CYCLING_ACTIVITY_TYPES = [
+  "cycling",
+  "road_cycling",
+  "mountain_biking",
+  "gravel_cycling",
+  "indoor_cycling",
+  "virtual_cycling",
+  "e_bike_cycling",
+  "cyclocross",
+  "track_cycling",
+  "bmx",
+] as const;
+
+export type CyclingActivityType = (typeof CYCLING_ACTIVITY_TYPES)[number];
+
+/** Check whether an activity type is a cycling variant. */
+export function isCyclingActivity(activityType: string): activityType is CyclingActivityType {
+  return CYCLING_ACTIVITY_TYPES.some((t) => t === activityType);
+}
 
 // ============================================================
 // Endurance activity types
@@ -129,9 +186,9 @@ export { ENDURANCE_ACTIVITY_TYPES, isEnduranceActivity } from "./endurance-types
  * Unknown provider types default to "other".
  */
 export function createActivityTypeMapper<K extends string | number>(
-  providerMappings: Record<K, string>,
-): (providerType: K) => string {
-  return (providerType: K): string => {
+  providerMappings: Record<K, CanonicalActivityType>,
+): (providerType: K) => CanonicalActivityType {
+  return (providerType: K): CanonicalActivityType => {
     return providerMappings[providerType] ?? "other";
   };
 }
@@ -141,12 +198,13 @@ export function createActivityTypeMapper<K extends string | number>(
 // ============================================================
 
 /** Strava sport_type → canonical activity type */
-export const STRAVA_ACTIVITY_TYPE_MAP: Record<string, string> = {
-  Ride: "cycling",
-  VirtualRide: "cycling",
-  MountainBikeRide: "cycling",
-  GravelRide: "cycling",
-  EBikeRide: "cycling",
+export const STRAVA_ACTIVITY_TYPE_MAP: Record<string, CanonicalActivityType> = {
+  Ride: "road_cycling",
+  VirtualRide: "virtual_cycling",
+  MountainBikeRide: "mountain_biking",
+  GravelRide: "gravel_cycling",
+  EBikeRide: "e_bike_cycling",
+  EMountainBikeRide: "e_bike_cycling",
   Run: "running",
   VirtualRun: "running",
   TrailRun: "running",
@@ -170,13 +228,13 @@ export const STRAVA_ACTIVITY_TYPE_MAP: Record<string, string> = {
 };
 
 /** Wahoo workout_type_id (numeric) → canonical activity type */
-export const WAHOO_WORKOUT_TYPE_MAP: Record<number, string> = {
+export const WAHOO_WORKOUT_TYPE_MAP: Record<number, CanonicalActivityType> = {
   0: "cycling",
   1: "running",
   2: "running", // treadmill
-  3: "cycling", // indoor cycling
-  4: "cycling", // mountain biking
-  5: "cycling", // gravel
+  3: "indoor_cycling",
+  4: "mountain_biking",
+  5: "gravel_cycling",
   6: "swimming",
   7: "yoga",
   8: "walking",
@@ -188,7 +246,7 @@ export const WAHOO_WORKOUT_TYPE_MAP: Record<number, string> = {
 };
 
 /** Polar sport (lowercased) → canonical activity type */
-export const POLAR_SPORT_MAP: Record<string, string> = {
+export const POLAR_SPORT_MAP: Record<string, CanonicalActivityType> = {
   running: "running",
   cycling: "cycling",
   swimming: "swimming",
@@ -197,35 +255,35 @@ export const POLAR_SPORT_MAP: Record<string, string> = {
   strength_training: "strength",
   yoga: "yoga",
   pilates: "pilates",
-  cross_country_skiing: "cross country skiing",
+  cross_country_skiing: "cross_country_skiing",
   rowing: "rowing",
   elliptical: "elliptical",
   mountain_biking: "mountain_biking",
   trail_running: "trail_running",
   cross_training: "cross_training",
-  group_exercise: "group exercise",
+  group_exercise: "group_exercise",
   stretching: "stretching",
   dance: "dance",
-  martial_arts: "martial arts",
+  martial_arts: "martial_arts",
   tennis: "tennis",
   basketball: "basketball",
   soccer: "soccer",
   golf: "golf",
-  ice_hockey: "ice hockey",
+  ice_hockey: "ice_hockey",
   skiing: "skiing",
   snowboarding: "snowboarding",
   skating: "skating",
-  rock_climbing: "rock climbing",
+  rock_climbing: "rock_climbing",
   surfing: "surfing",
   kayaking: "kayaking",
-  functional_training: "functional fitness",
+  functional_training: "functional_fitness",
   bootcamp: "bootcamp",
   boxing: "boxing",
   core: "core",
-  aqua_fitness: "aqua fitness",
-  circuit_training: "circuit training",
+  aqua_fitness: "aqua_fitness",
+  circuit_training: "circuit_training",
   triathlon: "triathlon",
-  indoor_cycling: "cycling",
+  indoor_cycling: "indoor_cycling",
   indoor_rowing: "rowing",
   indoor_running: "running",
   indoor_walking: "walking",
@@ -234,7 +292,7 @@ export const POLAR_SPORT_MAP: Record<string, string> = {
 };
 
 /** Garmin activityType → canonical activity type */
-export const GARMIN_ACTIVITY_TYPE_MAP: Record<string, string> = {
+export const GARMIN_ACTIVITY_TYPE_MAP: Record<string, CanonicalActivityType> = {
   // Running
   RUNNING: "running",
   TRAIL_RUNNING: "running",
@@ -242,11 +300,11 @@ export const GARMIN_ACTIVITY_TYPE_MAP: Record<string, string> = {
   TRACK_RUNNING: "running",
   // Cycling
   CYCLING: "cycling",
-  MOUNTAIN_BIKING: "cycling",
-  ROAD_BIKING: "cycling",
-  INDOOR_CYCLING: "cycling",
-  GRAVEL_CYCLING: "cycling",
-  VIRTUAL_RIDE: "cycling",
+  MOUNTAIN_BIKING: "mountain_biking",
+  ROAD_BIKING: "road_cycling",
+  INDOOR_CYCLING: "indoor_cycling",
+  GRAVEL_CYCLING: "gravel_cycling",
+  VIRTUAL_RIDE: "virtual_cycling",
   // Swimming
   SWIMMING: "swimming",
   LAP_SWIMMING: "swimming",
@@ -265,7 +323,7 @@ export const GARMIN_ACTIVITY_TYPE_MAP: Record<string, string> = {
 };
 
 /** Oura activity (lowercased) → canonical activity type */
-export const OURA_ACTIVITY_TYPE_MAP: Record<string, string> = {
+export const OURA_ACTIVITY_TYPE_MAP: Record<string, CanonicalActivityType> = {
   walking: "walking",
   running: "running",
   cycling: "cycling",
@@ -278,19 +336,19 @@ export const OURA_ACTIVITY_TYPE_MAP: Record<string, string> = {
   weight_training: "strength",
   dancing: "dancing",
   pilates: "pilates",
-  indoor_cycling: "cycling",
+  indoor_cycling: "indoor_cycling",
   stairmaster: "stairmaster",
   other: "other",
 };
 
 /** RideWithGPS activity_type → canonical activity type */
-export const RIDE_WITH_GPS_ACTIVITY_TYPE_MAP: Record<string, string> = {
+export const RIDE_WITH_GPS_ACTIVITY_TYPE_MAP: Record<string, CanonicalActivityType> = {
   cycling: "cycling",
-  mountain_biking: "cycling",
-  road_cycling: "cycling",
-  gravel_cycling: "cycling",
-  cyclocross: "cycling",
-  track_cycling: "cycling",
+  mountain_biking: "mountain_biking",
+  road_cycling: "road_cycling",
+  gravel_cycling: "gravel_cycling",
+  cyclocross: "cyclocross",
+  track_cycling: "track_cycling",
   running: "running",
   trail_running: "running",
   walking: "walking",
@@ -299,7 +357,7 @@ export const RIDE_WITH_GPS_ACTIVITY_TYPE_MAP: Record<string, string> = {
 };
 
 /** Apple Health HKWorkoutActivityType → normalized lowercase name */
-export const APPLE_HEALTH_WORKOUT_TYPE_MAP: Record<string, string> = {
+export const APPLE_HEALTH_WORKOUT_TYPE_MAP: Record<string, CanonicalActivityType> = {
   HKWorkoutActivityTypeAmericanFootball: "american_football",
   HKWorkoutActivityTypeArchery: "archery",
   HKWorkoutActivityTypeAustralianFootball: "australian_football",
@@ -399,6 +457,15 @@ export interface DailyLoadRow {
 
 const ACTIVITY_TYPE_LABELS: Record<string, string> = {
   cycling: "Cycling",
+  road_cycling: "Road Cycling",
+  mountain_biking: "Mountain Biking",
+  gravel_cycling: "Gravel Cycling",
+  indoor_cycling: "Indoor Cycling",
+  virtual_cycling: "Virtual Cycling",
+  e_bike_cycling: "E-Bike Cycling",
+  cyclocross: "Cyclocross",
+  track_cycling: "Track Cycling",
+  bmx: "BMX",
   running: "Running",
   trail_running: "Trail Running",
   walking: "Walking",
@@ -411,7 +478,6 @@ const ACTIVITY_TYPE_LABELS: Record<string, string> = {
   strength: "Strength",
   strength_training: "Strength Training",
   functional_strength: "Functional Strength",
-  mountain_biking: "Mountain Biking",
   stair_climbing: "Stair Climbing",
   cross_training: "Cross Training",
   hiit: "HIIT",
@@ -453,10 +519,14 @@ export function collapseWeeklyVolumeActivityTypes(
 ): WeeklyVolumeChartRow[] {
   if (rows.length === 0) return rows;
 
-  const normalizedRows = rows.map((row) => ({
-    ...row,
-    activity_type: normalizeActivityType(row.activity_type),
-  }));
+  // Consolidate all cycling subtypes into generic "cycling" before grouping
+  const normalizedRows = rows.map((row) => {
+    const normalized = normalizeActivityType(row.activity_type);
+    return {
+      ...row,
+      activity_type: isCyclingActivity(normalized) ? "cycling" : normalized,
+    };
+  });
 
   const totalsByType = new Map<string, number>();
   for (const row of normalizedRows) {

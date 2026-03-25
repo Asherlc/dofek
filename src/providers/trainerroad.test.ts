@@ -35,8 +35,8 @@ describe("TrainerRoad Provider", () => {
       expect(mapTrainerRoadActivityType("Ride", true)).toBe("cycling");
     });
 
-    it("maps indoor runs to virtual_running", () => {
-      expect(mapTrainerRoadActivityType("Run", false)).toBe("virtual_running");
+    it("maps indoor runs to running", () => {
+      expect(mapTrainerRoadActivityType("Run", false)).toBe("running");
     });
 
     it("maps outdoor runs to running", () => {

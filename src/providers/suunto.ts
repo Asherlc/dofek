@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import type { CanonicalActivityType } from "@dofek/training/training";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens } from "../auth/oauth.ts";
@@ -79,7 +80,7 @@ const suuntoWorkoutSchema = z.object({
 
 export interface ParsedSuuntoWorkout {
   externalId: string;
-  activityType: string;
+  activityType: CanonicalActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -90,7 +91,7 @@ export interface ParsedSuuntoWorkout {
 // Activity type mapping
 // ============================================================
 
-const SUUNTO_ACTIVITY_MAP: Record<number, string> = {
+const SUUNTO_ACTIVITY_MAP: Record<number, CanonicalActivityType> = {
   1: "other",
   2: "running",
   3: "cycling",
@@ -104,10 +105,10 @@ const SUUNTO_ACTIVITY_MAP: Record<number, string> = {
   67: "trail_running",
   69: "rowing",
   82: "virtual_cycling",
-  83: "virtual_running",
+  83: "running",
 };
 
-export function mapSuuntoActivityType(activityId: number): string {
+export function mapSuuntoActivityType(activityId: number): CanonicalActivityType {
   return SUUNTO_ACTIVITY_MAP[activityId] ?? "other";
 }
 

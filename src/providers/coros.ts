@@ -1,3 +1,4 @@
+import type { CanonicalActivityType } from "@dofek/training/training";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens } from "../auth/oauth.ts";
@@ -82,7 +83,7 @@ const corosDailyResponseSchema = z.object({
 
 export interface ParsedCorosWorkout {
   externalId: string;
-  activityType: string;
+  activityType: CanonicalActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -93,7 +94,7 @@ export interface ParsedCorosWorkout {
 // Activity type mapping
 // ============================================================
 
-const COROS_SPORT_MAP: Record<number, string> = {
+const COROS_SPORT_MAP: Record<number, CanonicalActivityType> = {
   8: "running",
   9: "cycling",
   10: "swimming",
@@ -108,7 +109,7 @@ const COROS_SPORT_MAP: Record<number, string> = {
   100: "other",
 };
 
-export function mapCorosSportType(mode: number): string {
+export function mapCorosSportType(mode: number): CanonicalActivityType {
   return COROS_SPORT_MAP[mode] ?? "other";
 }
 

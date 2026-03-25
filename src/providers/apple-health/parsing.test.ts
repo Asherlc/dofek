@@ -908,7 +908,7 @@ describe("parseWorkout -- distance and duration unit conversions", () => {
       startDate: "2024-03-01 18:00:00 -0500",
       endDate: "2024-03-01 18:30:00 -0500",
     });
-    expect(result.activityType).toBe("futurenewsport");
+    expect(result.activityType).toBe("other");
   });
 
   it("defaults to 'other' for HKWorkoutActivityTypeOther", () => {
