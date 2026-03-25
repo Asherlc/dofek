@@ -128,7 +128,9 @@ describe("dailyMetrics data correctness", () => {
   }
 
   describe("trends", () => {
-    it("latest_date reflects the most recent date with actual health data, not empty rows", async () => {
+    it("returns today's values only, not backfilled historical data", async () => {
+      // endDate (today) only has garmin rows with no health metrics,
+      // so all today's values should be null — not backfilled from day 4.
       const result = await query<{
         latest_date: string | null;
         latest_resting_hr: number | null;
@@ -138,13 +140,27 @@ describe("dailyMetrics data correctness", () => {
 
       expect(result).not.toBeNull();
 
-      // latest_date should NOT be today (day 0) or days 1-3 —
-      // those only have garmin rows with no health metrics.
-      // It should be day 4, which is the most recent day with apple_health data.
-      const expectedLatestDate = subtractDays(endDate, 4);
-      expect(result.latest_date).toBe(expectedLatestDate);
+      // latest_date is today (endDate) since that row exists in the view
+      expect(result.latest_date).toBe(endDate);
 
-      // The latest values should come from the apple_health data, not be null
+      // All health metrics should be null — today's garmin row has no health data
+      expect(result.latest_resting_hr).toBeNull();
+      expect(result.latest_hrv).toBeNull();
+      expect(result.latest_steps).toBeNull();
+    });
+
+    it("returns today's values when endDate has health data", async () => {
+      // Query with endDate set to a day that has apple_health data (day 4)
+      const dayWithData = subtractDays(endDate, 4);
+      const result = await query<{
+        latest_date: string | null;
+        latest_resting_hr: number | null;
+        latest_hrv: number | null;
+        latest_steps: number | null;
+      }>("dailyMetrics.trends", { days: 30, endDate: dayWithData });
+
+      expect(result).not.toBeNull();
+      expect(result.latest_date).toBe(dayWithData);
       expect(result.latest_resting_hr).not.toBeNull();
       expect(result.latest_hrv).not.toBeNull();
       expect(result.latest_steps).not.toBeNull();
@@ -170,15 +186,23 @@ describe("dailyMetrics data correctness", () => {
       expect(result.avg_steps).toBeLessThan(15000);
     });
 
-    it("returns null when no data exists in the window", async () => {
+    it("returns all-null values when no data exists in the window", async () => {
       // Use a 1-day window far in the future where no data exists.
-      // The query has no upper bound, so a past date would still pick up
-      // our test data; a future date with days=1 ensures truly empty results.
-      const result = await query<null>("dailyMetrics.trends", {
+      const result = await query<{
+        avg_resting_hr: number | null;
+        latest_resting_hr: number | null;
+        latest_date: string | null;
+      }>("dailyMetrics.trends", {
         days: 1,
         endDate: "2099-01-02",
       });
-      expect(result).toBeNull();
+
+      // stats CTE returns a row of nulls (SQL aggregate on empty set),
+      // and LEFT JOIN today produces no match — so all fields are null
+      expect(result).not.toBeNull();
+      expect(result.avg_resting_hr).toBeNull();
+      expect(result.latest_resting_hr).toBeNull();
+      expect(result.latest_date).toBeNull();
     });
   });
 
