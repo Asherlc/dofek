@@ -14,6 +14,10 @@ import {
   teardownBackgroundWhoopBleSync,
 } from "../lib/background-whoop-ble-sync";
 import {
+  addBackgroundRefreshListener,
+  scheduleRefresh,
+} from "../modules/background-refresh";
+import {
   isBluetoothAvailable,
   findWhoop,
   connect as whoopConnect,
@@ -137,8 +141,30 @@ function AuthGate() {
       // Best-effort — settings fetch failure is non-critical
     });
 
+    // Listen for background refresh wakeups (~every 15-30 min, system-decided).
+    // On each wake, restart Watch recording and sync accelerometer data so
+    // coverage continues even if the user never opens the app.
+    const refreshSubscription = addBackgroundRefreshListener(() => {
+      // Restart Watch accelerometer recording
+      initBackgroundWatchAccelerometerSync(watchSyncClient).catch(() => {});
+
+      // Restart phone accelerometer recording
+      initBackgroundAccelerometerSync({
+        accelerometerSync: {
+          pushAccelerometerSamples: {
+            mutate: (input) =>
+              trpcClient.accelerometerSync.pushAccelerometerSamples.mutate(input),
+          },
+        },
+      }).catch(() => {});
+
+      // Re-schedule for next wakeup
+      scheduleRefresh();
+    });
+
     return () => {
       teardownBackgroundWhoopBleSync();
+      refreshSubscription.remove();
     };
   }, [user, trpcClient]);
 

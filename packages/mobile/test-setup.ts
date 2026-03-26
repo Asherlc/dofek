@@ -272,6 +272,13 @@ vi.mock("./modules/core-motion", () => ({
   setLastSyncTimestamp: vi.fn(),
 }));
 
+// ── Background Refresh native module mock ──────────────────────────
+vi.mock("./modules/background-refresh", () => ({
+  scheduleRefresh: vi.fn(),
+  isBackgroundRefreshAvailable: vi.fn(() => false),
+  addBackgroundRefreshListener: vi.fn(() => ({ remove: vi.fn() })),
+}));
+
 // ── WHOOP BLE native module mock ───────────────────────────────────
 vi.mock("./modules/whoop-ble", () => ({
   isBluetoothAvailable: vi.fn(() => false),
