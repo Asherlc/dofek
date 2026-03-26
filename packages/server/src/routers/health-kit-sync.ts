@@ -1,4 +1,5 @@
 import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
+import { healthKitPushTotal, healthKitRecordsTotal } from "dofek/sync-metrics";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema } from "../lib/typed-sql.ts";
@@ -210,7 +211,7 @@ function extractDate(isoString: string): string {
   return isoString.slice(0, 10);
 }
 
-function computeBoundsFromIsoTimestamps(
+export function computeBoundsFromIsoTimestamps(
   timestamps: string[],
 ): { startAt: string; endAt: string } | null {
   if (timestamps.length === 0) return null;
@@ -237,7 +238,7 @@ function parseIsoTimestamp(value: string): number | null {
   return milliseconds;
 }
 
-function isSleepStageValue(value: string): boolean {
+export function isSleepStageValue(value: string): boolean {
   return (
     value === "asleep" ||
     value === "asleepUnspecified" ||
@@ -1026,6 +1027,27 @@ export const healthKitSyncRouter = router({
         errors.push(`Health events: ${message}`);
       }
 
+      healthKitPushTotal.add(1, {
+        endpoint: "pushQuantitySamples",
+        status: errors.length > 0 ? "error" : "success",
+      });
+      healthKitRecordsTotal.add(bodyMeasurements.length, {
+        endpoint: "pushQuantitySamples",
+        category: "bodyMeasurement",
+      });
+      healthKitRecordsTotal.add(dailyMetricSamples.length, {
+        endpoint: "pushQuantitySamples",
+        category: "dailyMetric",
+      });
+      healthKitRecordsTotal.add(metricStreamSamples.length, {
+        endpoint: "pushQuantitySamples",
+        category: "metricStream",
+      });
+      healthKitRecordsTotal.add(healthEventSamples.length, {
+        endpoint: "pushQuantitySamples",
+        category: "healthEvent",
+      });
+
       return { inserted, errors };
     }),
 
@@ -1034,6 +1056,11 @@ export const healthKitSyncRouter = router({
     .mutation(async ({ ctx, input }) => {
       await ensureProvider(ctx.db);
       const inserted = await processWorkouts(ctx.db, ctx.userId, input.workouts);
+      healthKitPushTotal.add(1, { endpoint: "pushWorkouts", status: "success" });
+      healthKitRecordsTotal.add(input.workouts.length, {
+        endpoint: "pushWorkouts",
+        category: "workout",
+      });
       return { inserted };
     }),
 
@@ -1042,6 +1069,11 @@ export const healthKitSyncRouter = router({
     .mutation(async ({ ctx, input }) => {
       await ensureProvider(ctx.db);
       const inserted = await processSleepSamples(ctx.db, ctx.userId, input.samples);
+      healthKitPushTotal.add(1, { endpoint: "pushSleepSamples", status: "success" });
+      healthKitRecordsTotal.add(input.samples.length, {
+        endpoint: "pushSleepSamples",
+        category: "sleep",
+      });
       return { inserted };
     }),
 });

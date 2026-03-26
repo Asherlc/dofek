@@ -268,8 +268,6 @@ jobs:
     needs: check-mobile-changes
     if: needs.check-mobile-changes.outputs.changed == 'true'
     runs-on: macos-26
-    env:
-      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -579,7 +577,7 @@ jobs:
 
   ios-release:
     name: iOS TestFlight
-    needs: [lint, typecheck, knip, coverage, test-mobile, build-ios-native]
+    needs: [lint, typecheck, knip, coverage, test-mobile, build-mobile]
     if: github.ref == 'refs/heads/main'
     runs-on: macos-26
     timeout-minutes: 60

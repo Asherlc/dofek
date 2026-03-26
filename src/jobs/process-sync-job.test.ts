@@ -48,6 +48,17 @@ vi.mock("../db/dedup.ts", () => ({
   refreshDedupViews: (...args: unknown[]) => mockRefreshDedupViews(...args),
 }));
 
+const mockSyncRecordsTotal = { add: vi.fn() };
+const mockSyncOperationsTotal = { add: vi.fn() };
+const mockSyncDuration = { record: vi.fn() };
+const mockSyncErrorsTotal = { add: vi.fn() };
+vi.mock("../sync-metrics.ts", () => ({
+  syncRecordsTotal: mockSyncRecordsTotal,
+  syncOperationsTotal: mockSyncOperationsTotal,
+  syncDuration: mockSyncDuration,
+  syncErrorsTotal: mockSyncErrorsTotal,
+}));
+
 // Import after mocks are set up
 const { processSyncJob } = await import("./process-sync-job.ts");
 
@@ -455,5 +466,84 @@ describe("processSyncJob", () => {
       new Date(0),
       expect.objectContaining({ onProgress: expect.any(Function), userId: "user-1" }),
     );
+  });
+
+  it("emits sync metrics on successful sync", async () => {
+    const provider = createMockProvider({ id: "garmin", name: "Garmin" });
+    mockGetSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    expect(mockSyncRecordsTotal.add).toHaveBeenCalledWith(5, {
+      provider: "garmin",
+      data_type: "sync",
+      status: "success",
+    });
+    expect(mockSyncOperationsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "garmin",
+      data_type: "sync",
+      status: "success",
+    });
+    expect(mockSyncDuration.record).toHaveBeenCalledWith(expect.any(Number), {
+      provider: "garmin",
+      data_type: "sync",
+    });
+    expect(mockSyncErrorsTotal.add).not.toHaveBeenCalled();
+  });
+
+  it("emits sync error metrics when sync has errors", async () => {
+    const provider = createMockProvider({
+      id: "partial",
+      name: "Partial",
+      sync: vi.fn().mockResolvedValue({
+        provider: "partial",
+        recordsSynced: 3,
+        errors: [{ message: "bad record 1" }, { message: "bad record 2" }],
+        duration: 50,
+      }),
+    });
+    mockGetSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    expect(mockSyncRecordsTotal.add).toHaveBeenCalledWith(3, {
+      provider: "partial",
+      data_type: "sync",
+      status: "error",
+    });
+    expect(mockSyncOperationsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "partial",
+      data_type: "sync",
+      status: "error",
+    });
+    expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(2, {
+      provider: "partial",
+      data_type: "sync",
+    });
+  });
+
+  it("emits sync error metrics when sync throws", async () => {
+    const provider = createMockProvider({
+      id: "broken",
+      name: "Broken",
+      sync: vi.fn().mockRejectedValue(new Error("API timeout")),
+    });
+    mockGetSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    expect(mockSyncOperationsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "broken",
+      data_type: "sync",
+      status: "error",
+    });
+    expect(mockSyncDuration.record).toHaveBeenCalledWith(expect.any(Number), {
+      provider: "broken",
+      data_type: "sync",
+    });
+    expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "broken",
+      data_type: "sync",
+    });
   });
 });
