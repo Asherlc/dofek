@@ -36,11 +36,11 @@ export function TimeSeriesChart({ series, height = 200, yAxis, loading }: TimeSe
     grid: dofekGrid(hasDualAxis ? "dualAxis" : "single"),
     legend: dofekLegend(series.length > 1),
     series: series.map((s) =>
-      dofekSeries.line(
-        s.name,
-        s.data.filter(([, v]) => v != null),
-        { color: s.color, areaStyle: s.areaStyle, yAxisIndex: s.yAxisIndex },
-      ),
+      dofekSeries.line(s.name, s.data, {
+        color: s.color,
+        areaStyle: s.areaStyle,
+        yAxisIndex: s.yAxisIndex,
+      }),
     ),
   };
 

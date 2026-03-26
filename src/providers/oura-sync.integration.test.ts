@@ -243,7 +243,7 @@ interface MockFetchOptions {
 }
 
 function ouraHandlers(opts?: MockFetchOptions) {
-  const o = opts ?? {};
+  const options = opts ?? {};
 
   return [
     http.post("https://api.ouraring.com/oauth/token", () => {
@@ -257,49 +257,49 @@ function ouraHandlers(opts?: MockFetchOptions) {
 
     // Order matters: more specific paths before less specific ones
     http.get("https://api.ouraring.com/v2/usercollection/sleep_time", () => {
-      return HttpResponse.json({ data: o.sleepTimeDocs ?? [], next_token: null });
+      return HttpResponse.json({ data: options.sleepTimeDocs ?? [], next_token: null });
     }),
     http.get("https://api.ouraring.com/v2/usercollection/sleep", () => {
-      return HttpResponse.json({ data: o.sleepDocs ?? [], next_token: null });
+      return HttpResponse.json({ data: options.sleepDocs ?? [], next_token: null });
     }),
     http.get("https://api.ouraring.com/v2/usercollection/daily_readiness", () => {
-      return HttpResponse.json({ data: o.readinessDocs ?? [], next_token: null });
+      return HttpResponse.json({ data: options.readinessDocs ?? [], next_token: null });
     }),
     http.get("https://api.ouraring.com/v2/usercollection/daily_activity", () => {
-      return HttpResponse.json({ data: o.activityDocs ?? [], next_token: null });
+      return HttpResponse.json({ data: options.activityDocs ?? [], next_token: null });
     }),
     http.get("https://api.ouraring.com/v2/usercollection/daily_spo2", () => {
-      return HttpResponse.json({ data: o.spo2Docs ?? [], next_token: null });
+      return HttpResponse.json({ data: options.spo2Docs ?? [], next_token: null });
     }),
     http.get("https://api.ouraring.com/v2/usercollection/vO2_max", () => {
-      return HttpResponse.json({ data: o.vo2MaxDocs ?? [], next_token: null });
+      return HttpResponse.json({ data: options.vo2MaxDocs ?? [], next_token: null });
     }),
     http.get("https://api.ouraring.com/v2/usercollection/workout", () => {
-      return HttpResponse.json({ data: o.workoutDocs ?? [], next_token: null });
+      return HttpResponse.json({ data: options.workoutDocs ?? [], next_token: null });
     }),
     http.get("https://api.ouraring.com/v2/usercollection/heartrate", () => {
-      return HttpResponse.json({ data: o.heartRateDocs ?? [] });
+      return HttpResponse.json({ data: options.heartRateDocs ?? [] });
     }),
     http.get("https://api.ouraring.com/v2/usercollection/session", () => {
-      return HttpResponse.json({ data: o.sessionDocs ?? [], next_token: null });
+      return HttpResponse.json({ data: options.sessionDocs ?? [], next_token: null });
     }),
     http.get("https://api.ouraring.com/v2/usercollection/daily_stress", () => {
-      return HttpResponse.json({ data: o.stressDocs ?? [], next_token: null });
+      return HttpResponse.json({ data: options.stressDocs ?? [], next_token: null });
     }),
     http.get("https://api.ouraring.com/v2/usercollection/daily_resilience", () => {
-      return HttpResponse.json({ data: o.resilienceDocs ?? [], next_token: null });
+      return HttpResponse.json({ data: options.resilienceDocs ?? [], next_token: null });
     }),
     http.get("https://api.ouraring.com/v2/usercollection/daily_cardiovascular_age", () => {
-      return HttpResponse.json({ data: o.cvAgeDocs ?? [], next_token: null });
+      return HttpResponse.json({ data: options.cvAgeDocs ?? [], next_token: null });
     }),
     http.get("https://api.ouraring.com/v2/usercollection/enhanced_tag", () => {
-      return HttpResponse.json({ data: o.enhancedTagDocs ?? [], next_token: null });
+      return HttpResponse.json({ data: options.enhancedTagDocs ?? [], next_token: null });
     }),
     http.get("https://api.ouraring.com/v2/usercollection/tag", () => {
-      return HttpResponse.json({ data: o.tagDocs ?? [], next_token: null });
+      return HttpResponse.json({ data: options.tagDocs ?? [], next_token: null });
     }),
     http.get("https://api.ouraring.com/v2/usercollection/rest_mode_period", () => {
-      return HttpResponse.json({ data: o.restModeDocs ?? [], next_token: null });
+      return HttpResponse.json({ data: options.restModeDocs ?? [], next_token: null });
     }),
   ];
 }

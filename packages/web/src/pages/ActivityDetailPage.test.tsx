@@ -17,6 +17,7 @@ vi.mock("echarts-for-react", () => ({
 
 vi.mock("@tanstack/react-router", () => ({
   useParams: () => ({ id: "test-123" }),
+  useNavigate: () => vi.fn(),
   Link: ({ children, ...props }: { children: ReactNode; to: string }) => (
     <a href={props.to}>{children}</a>
   ),
@@ -77,7 +78,9 @@ vi.mock("../lib/trpc.ts", () => ({
       byId: { useQuery: () => ({ data: mockActivity, isLoading: false, error: null }) },
       stream: { useQuery: () => ({ data: mockStreamPoints, isLoading: false }) },
       hrZones: { useQuery: () => ({ data: [], isLoading: false }) },
+      delete: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
     },
+    useUtils: () => ({ activity: { list: { invalidate: vi.fn() } } }),
   },
 }));
 

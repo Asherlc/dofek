@@ -163,7 +163,7 @@ describe("mapSuuntoActivityType — additional mappings", () => {
   });
 
   it("maps virtual_running (83)", () => {
-    expect(mapSuuntoActivityType(83)).toBe("virtual_running");
+    expect(mapSuuntoActivityType(83)).toBe("running");
   });
 
   it("maps cross_country_skiing (4)", () => {

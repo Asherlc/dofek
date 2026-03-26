@@ -158,6 +158,8 @@ interface LineOptions {
   stack?: string;
   lineStyle?: Record<string, unknown>;
   z?: number;
+  /** Whether to connect across null/missing data points (default: false = show gaps) */
+  connectNulls?: boolean;
 }
 
 interface BarOptions {
@@ -193,6 +195,7 @@ export const dofekSeries = {
       smooth: options?.smooth ?? true,
       symbol: options?.symbol ?? "none",
       symbolSize: options?.symbolSize,
+      connectNulls: options?.connectNulls ?? false,
       lineStyle: { width: options?.width ?? 2, color: options?.color, ...options?.lineStyle },
       itemStyle: { color: options?.color },
       areaStyle: area,

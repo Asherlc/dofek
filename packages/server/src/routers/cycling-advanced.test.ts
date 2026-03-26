@@ -3,12 +3,14 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const t = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  const trpc = initTRPC
+    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .create();
   return {
-    router: t.router,
-    protectedProcedure: t.procedure,
-    cachedProtectedQuery: () => t.procedure,
-    cachedProtectedQueryLight: () => t.procedure,
+    router: trpc.router,
+    protectedProcedure: trpc.procedure,
+    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQueryLight: () => trpc.procedure,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -47,6 +49,7 @@ function makeCaller(rows: Record<string, unknown>[] = []) {
   return createCaller({
     db: { execute: vi.fn().mockResolvedValue(rows) },
     userId: "user-1",
+    timezone: "UTC",
   });
 }
 
@@ -62,9 +65,9 @@ function buildRows(
 ): { day: string; trimp: number }[] {
   const rows: { day: string; trimp: number }[] = [];
   for (let i = dayStart; i >= dayEnd; i--) {
-    const d = new Date(base);
-    d.setDate(d.getDate() - i);
-    rows.push({ day: d.toISOString().slice(0, 10), trimp });
+    const date = new Date(base);
+    date.setDate(date.getDate() - i);
+    rows.push({ day: date.toISOString().slice(0, 10), trimp });
   }
   return rows;
 }
@@ -188,9 +191,9 @@ describe("cyclingAdvancedRouter", () => {
       const rows: { day: string; trimp: number }[] = [];
       const base = new Date(now);
       for (let i = 14; i >= 0; i--) {
-        const d = new Date(base);
-        d.setDate(d.getDate() - i);
-        rows.push({ day: d.toISOString().slice(0, 10), trimp: 50 + i * 2 });
+        const date = new Date(base);
+        date.setDate(date.getDate() - i);
+        rows.push({ day: date.toISOString().slice(0, 10), trimp: 50 + i * 2 });
       }
       const caller = makeCaller(rows);
       const result = await caller.rampRate({ days: 90 });
@@ -204,9 +207,9 @@ describe("cyclingAdvancedRouter", () => {
       const rows: { day: string; trimp: number }[] = [];
       const base = new Date();
       for (let i = 30; i >= 0; i--) {
-        const d = new Date(base);
-        d.setDate(d.getDate() - i);
-        rows.push({ day: d.toISOString().slice(0, 10), trimp: 50 });
+        const date = new Date(base);
+        date.setDate(date.getDate() - i);
+        rows.push({ day: date.toISOString().slice(0, 10), trimp: 50 });
       }
       const caller = makeCaller(rows);
       const result = await caller.rampRate({ days: 90 });
@@ -224,15 +227,15 @@ describe("cyclingAdvancedRouter", () => {
         const base = new Date();
         // First 3 weeks: low load
         for (let i = 28; i >= 14; i--) {
-          const d = new Date(base);
-          d.setDate(d.getDate() - i);
-          rows.push({ day: d.toISOString().slice(0, 10), trimp: 10 });
+          const date = new Date(base);
+          date.setDate(date.getDate() - i);
+          rows.push({ day: date.toISOString().slice(0, 10), trimp: 10 });
         }
         // Last 2 weeks: very high load
         for (let i = 13; i >= 0; i--) {
-          const d = new Date(base);
-          d.setDate(d.getDate() - i);
-          rows.push({ day: d.toISOString().slice(0, 10), trimp: 1000 });
+          const date = new Date(base);
+          date.setDate(date.getDate() - i);
+          rows.push({ day: date.toISOString().slice(0, 10), trimp: 1000 });
         }
         const caller = makeCaller(rows);
         const result = await caller.rampRate({ days: 90 });
@@ -272,9 +275,9 @@ describe("cyclingAdvancedRouter", () => {
       const rows: { day: string; trimp: number }[] = [];
       const base = new Date();
       for (let i = 21; i >= 0; i--) {
-        const d = new Date(base);
-        d.setDate(d.getDate() - i);
-        rows.push({ day: d.toISOString().slice(0, 10), trimp: 50 + i });
+        const date = new Date(base);
+        date.setDate(date.getDate() - i);
+        rows.push({ day: date.toISOString().slice(0, 10), trimp: 50 + i });
       }
       const caller = makeCaller(rows);
       const result = await caller.rampRate({ days: 90 });
@@ -287,7 +290,7 @@ describe("cyclingAdvancedRouter", () => {
 
     it("executes a non-empty SQL query", async () => {
       const execute = vi.fn().mockResolvedValue([{ day: "2026-03-11", trimp: 75 }]);
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
 
       await caller.rampRate({ days: 90 });
 
@@ -342,7 +345,7 @@ describe("cyclingAdvancedRouter", () => {
       const execute = vi
         .fn()
         .mockResolvedValue([{ week: "2024-01-08", monotony: 1.2, strain: 200, weekly_load: 150 }]);
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
 
       await caller.trainingMonotony({ days: 90 });
 
@@ -369,6 +372,7 @@ describe("cyclingAdvancedRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.activityVariability({ days: 90 });
 
@@ -388,7 +392,7 @@ describe("cyclingAdvancedRouter", () => {
         { date: "2024-01-15", name: "Ride", np: 280, avg_power: 250, total_count: 1 },
       ]);
 
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
       const result = await caller.activityVariability({ days: 90 });
 
       // VI = 280/250 = 1.12
@@ -404,7 +408,7 @@ describe("cyclingAdvancedRouter", () => {
         { date: "2024-01-15", name: "Zwift Race", np: 190, avg_power: 180, total_count: 1 },
       ]);
 
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
       const result = await caller.activityVariability({ days: 90 });
 
       expect(result.rows[0]?.activityName).toBe("Zwift Race");
@@ -420,7 +424,7 @@ describe("cyclingAdvancedRouter", () => {
         { date: "2024-01-16", name: "Ride 2", np: 240, avg_power: 210, total_count: 5 },
       ]);
 
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
       const result = await caller.activityVariability({ days: 90, limit: 2, offset: 0 });
 
       expect(result.rows).toHaveLength(2);
@@ -432,7 +436,7 @@ describe("cyclingAdvancedRouter", () => {
       execute.mockResolvedValueOnce([{ ftp: 250 }]);
       execute.mockResolvedValueOnce([]);
 
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
       const result = await caller.activityVariability({ days: 90, limit: 20, offset: 200 });
 
       expect(result).toEqual({ rows: [], totalCount: 0 });
@@ -445,7 +449,7 @@ describe("cyclingAdvancedRouter", () => {
         { date: "2024-01-15", name: "Ride", np: 230, avg_power: 200, total_count: 1 },
       ]);
 
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
       const result = await caller.activityVariability({ days: 90, limit: 20, offset: 0 });
 
       expect(result).toEqual({ rows: [], totalCount: 0 });
@@ -516,7 +520,7 @@ describe("cyclingAdvancedRouter", () => {
         .mockResolvedValue([
           { date: "2024-01-15", name: "Climb", elevation_gain: 500, climbing_seconds: 3600 },
         ]);
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
 
       await caller.verticalAscentRate({ days: 90 });
 
@@ -558,7 +562,7 @@ describe("cyclingAdvancedRouter", () => {
           avg_pedal_smoothness: 22.1,
         },
       ]);
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
 
       await caller.pedalDynamics({ days: 90 });
 

@@ -65,7 +65,7 @@ export const strengthRouter = router({
         ctx.db,
         volumeRowSchema,
         sql`SELECT
-              date_trunc('week', sw.started_at)::date::text AS week,
+              date_trunc('week', (sw.started_at AT TIME ZONE ${ctx.timezone})::date)::date::text AS week,
               COALESCE(SUM(ss.weight_kg * ss.reps), 0)::real AS total_volume_kg,
               COUNT(ss.id)::int AS set_count,
               COUNT(DISTINCT sw.id)::int AS workout_count
@@ -73,7 +73,7 @@ export const strengthRouter = router({
             JOIN fitness.strength_set ss ON ss.workout_id = sw.id
             WHERE sw.user_id = ${ctx.userId}
               AND sw.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
-            GROUP BY date_trunc('week', sw.started_at)
+            GROUP BY 1
             ORDER BY week`,
       );
       return rows.map((r) => ({
@@ -105,7 +105,7 @@ export const strengthRouter = router({
         sql`WITH best_per_workout AS (
               SELECT
                 e.name AS exercise_name,
-                sw.started_at::date::text AS workout_date,
+                (sw.started_at AT TIME ZONE ${ctx.timezone})::date::text AS workout_date,
                 ss.weight_kg * (1 + ss.reps / 30.0) AS e1rm,
                 ss.weight_kg AS actual_weight,
                 ss.reps AS actual_reps,
@@ -175,7 +175,7 @@ export const strengthRouter = router({
         muscleGroupRowSchema,
         sql`SELECT
               e.muscle_group,
-              date_trunc('week', sw.started_at)::date::text AS week,
+              date_trunc('week', (sw.started_at AT TIME ZONE ${ctx.timezone})::date)::date::text AS week,
               COUNT(ss.id)::int AS sets
             FROM fitness.strength_set ss
             JOIN fitness.strength_workout sw ON sw.id = ss.workout_id
@@ -183,7 +183,7 @@ export const strengthRouter = router({
             WHERE sw.user_id = ${ctx.userId}
               AND sw.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
               AND e.muscle_group IS NOT NULL
-            GROUP BY e.muscle_group, date_trunc('week', sw.started_at)
+            GROUP BY e.muscle_group, 2
             ORDER BY e.muscle_group, week`,
       );
 
@@ -216,7 +216,7 @@ export const strengthRouter = router({
         overloadRowSchema,
         sql`SELECT
               e.name AS exercise_name,
-              date_trunc('week', sw.started_at)::date::text AS week,
+              date_trunc('week', (sw.started_at AT TIME ZONE ${ctx.timezone})::date)::date::text AS week,
               COALESCE(SUM(ss.weight_kg * ss.reps), 0)::real AS weekly_volume
             FROM fitness.strength_set ss
             JOIN fitness.strength_workout sw ON sw.id = ss.workout_id
@@ -224,7 +224,7 @@ export const strengthRouter = router({
             WHERE sw.user_id = ${ctx.userId}
               AND sw.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
               AND ss.weight_kg > 0
-            GROUP BY e.name, date_trunc('week', sw.started_at)
+            GROUP BY e.name, 2
             ORDER BY e.name, week`,
       );
 
@@ -266,7 +266,7 @@ export const strengthRouter = router({
         ctx.db,
         summaryRowSchema,
         sql`SELECT
-              sw.started_at::date::text AS date,
+              (sw.started_at AT TIME ZONE ${ctx.timezone})::date::text AS date,
               sw.name,
               COUNT(DISTINCT ss.exercise_id)::int AS exercise_count,
               COUNT(ss.id)::int AS total_sets,
@@ -297,23 +297,23 @@ export const strengthRouter = router({
  * where x is the zero-based index (i.e. week number).
  */
 function linearRegressionSlope(values: number[]): number {
-  const n = values.length;
-  if (n < 2) return 0;
+  const valueCount = values.length;
+  if (valueCount < 2) return 0;
 
   let sumX = 0;
   let sumY = 0;
   let sumXY = 0;
   let sumX2 = 0;
 
-  for (let i = 0; i < n; i++) {
+  for (let i = 0; i < valueCount; i++) {
     sumX += i;
     sumY += values[i] ?? 0;
     sumXY += i * (values[i] ?? 0);
     sumX2 += i * i;
   }
 
-  const denominator = n * sumX2 - sumX * sumX;
+  const denominator = valueCount * sumX2 - sumX * sumX;
   if (denominator === 0) return 0;
 
-  return (n * sumXY - sumX * sumY) / denominator;
+  return (valueCount * sumXY - sumX * sumY) / denominator;
 }

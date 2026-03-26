@@ -2,8 +2,9 @@ import { mapHrZones } from "@dofek/zones/zones";
 import { TRPCError } from "@trpc/server";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { endDateSchema, timestampWindowStart } from "../lib/date-window.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
-import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
 const activityListRowSchema = z
   .object({
@@ -104,6 +105,7 @@ export const activityRouter = router({
     .input(
       z.object({
         days: z.number().default(30),
+        endDate: endDateSchema,
         limit: z.number().min(1).max(100).default(20),
         offset: z.number().min(0).default(0),
       }),
@@ -133,7 +135,7 @@ export const activityRouter = router({
             FROM fitness.v_activity a
             LEFT JOIN fitness.activity_summary s ON s.activity_id = a.id
             WHERE a.user_id = ${ctx.userId}
-              AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+              AND a.started_at > ${timestampWindowStart(input.endDate, input.days)}
             ORDER BY a.started_at DESC
             LIMIT ${input.limit} OFFSET ${input.offset}`,
       );
@@ -252,7 +254,7 @@ export const activityRouter = router({
                 FROM fitness.v_daily_metrics dm
                 WHERE dm.user_id = up.id
                   AND dm.date <= (
-                    SELECT a.started_at::date FROM fitness.v_activity a
+                    SELECT (a.started_at AT TIME ZONE ${ctx.timezone})::date FROM fitness.v_activity a
                     WHERE a.id = ${input.id} AND a.user_id = ${ctx.userId}
                   )
                   AND dm.resting_hr IS NOT NULL
@@ -291,6 +293,16 @@ export const activityRouter = router({
       );
 
       return mapHrZones(rows);
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      await ctx.db.execute(sql`
+        DELETE FROM fitness.activity
+        WHERE id = ${input.id}::uuid AND user_id = ${ctx.userId}
+      `);
+      return { success: true };
     }),
 });
 

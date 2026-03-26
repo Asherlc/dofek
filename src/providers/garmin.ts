@@ -1,3 +1,4 @@
+import { isIndoorCycling } from "@dofek/training/endurance-types";
 import { and, eq } from "drizzle-orm";
 import {
   GarminConnectClient,
@@ -6,6 +7,7 @@ import {
   parseConnectActivity,
   parseConnectDailySummary,
   parseConnectSleep,
+  parseConnectSleepStages,
   parseHeartRateTimeSeries,
   parseHrvSummary,
   parseStressTimeSeries,
@@ -20,6 +22,7 @@ import {
   dailyMetrics,
   metricStream,
   sleepSession,
+  sleepStage,
   userSettings,
 } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
@@ -283,8 +286,8 @@ export class GarminProvider implements SyncProvider {
         this.id,
         "activities",
         async () => {
-          const c = await this.#syncConnectActivities(db, client);
-          return { recordCount: c, result: c };
+          const activitiesCount = await this.#syncConnectActivities(db, client);
+          return { recordCount: activitiesCount, result: activitiesCount };
         },
         userId,
       );
@@ -303,8 +306,8 @@ export class GarminProvider implements SyncProvider {
         this.id,
         "sleep",
         async () => {
-          const c = await this.#syncConnectSleep(db, client, dates);
-          return { recordCount: c, result: c };
+          const sleepCount = await this.#syncConnectSleep(db, client, dates);
+          return { recordCount: sleepCount, result: sleepCount };
         },
         userId,
       );
@@ -323,8 +326,8 @@ export class GarminProvider implements SyncProvider {
         this.id,
         "daily_metrics",
         async () => {
-          const c = await this.#syncConnectDailyMetrics(db, client, dates);
-          return { recordCount: c, result: c };
+          const dailyMetricsCount = await this.#syncConnectDailyMetrics(db, client, dates);
+          return { recordCount: dailyMetricsCount, result: dailyMetricsCount };
         },
         userId,
       );
@@ -343,8 +346,8 @@ export class GarminProvider implements SyncProvider {
         this.id,
         "stress",
         async () => {
-          const c = await this.#syncConnectStress(db, client, dates);
-          return { recordCount: c, result: c };
+          const stressCount = await this.#syncConnectStress(db, client, dates);
+          return { recordCount: stressCount, result: stressCount };
         },
         userId,
       );
@@ -363,8 +366,8 @@ export class GarminProvider implements SyncProvider {
         this.id,
         "heart_rate",
         async () => {
-          const c = await this.#syncConnectHeartRate(db, client, dates);
-          return { recordCount: c, result: c };
+          const heartRateCount = await this.#syncConnectHeartRate(db, client, dates);
+          return { recordCount: heartRateCount, result: heartRateCount };
         },
         userId,
       );
@@ -451,7 +454,11 @@ export class GarminProvider implements SyncProvider {
                   : sample.directBikeCadence !== null
                     ? sample.directBikeCadence
                     : undefined,
-              speed: sample.directSpeed !== null ? sample.directSpeed : undefined,
+              speed: isIndoorCycling(parsed.activityType)
+                ? undefined
+                : sample.directSpeed !== null
+                  ? sample.directSpeed
+                  : undefined,
               altitude: sample.directElevation !== null ? sample.directElevation : undefined,
               lat: sample.directLatitude !== null ? sample.directLatitude : undefined,
               lng: sample.directLongitude !== null ? sample.directLongitude : undefined,
@@ -483,7 +490,7 @@ export class GarminProvider implements SyncProvider {
         const parsed = parseConnectSleep(raw);
         if (!parsed) continue;
 
-        await db
+        const [session] = await db
           .insert(sleepSession)
           .values({
             providerId: this.id,
@@ -507,7 +514,22 @@ export class GarminProvider implements SyncProvider {
               remMinutes: parsed.remMinutes,
               awakeMinutes: parsed.awakeMinutes,
             },
-          });
+          })
+          .returning({ id: sleepSession.id });
+
+        const stages = parseConnectSleepStages(raw);
+        if (session && stages.length > 0) {
+          // Delete existing stages for this session (re-sync)
+          await db.delete(sleepStage).where(eq(sleepStage.sessionId, session.id));
+          await db.insert(sleepStage).values(
+            stages.map((s) => ({
+              sessionId: session.id,
+              stage: s.stage,
+              startedAt: s.startedAt,
+              endedAt: s.endedAt,
+            })),
+          );
+        }
 
         count++;
       } catch {

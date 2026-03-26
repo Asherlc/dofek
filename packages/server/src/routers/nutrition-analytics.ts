@@ -112,7 +112,7 @@ export const nutritionAnalyticsRouter = router({
       ).join(",\n");
 
       const dailyAggregates = RECOMMENDED_DAILY_ALLOWANCES.map(
-        (rda) => `SUM(${rda.column}) AS daily_${rda.column}`,
+        (rda) => `SUM(nd.${rda.column}) AS daily_${rda.column}`,
       ).join(",\n");
 
       // Use sql`` tagged template for user-controlled values (userId, days) to prevent injection.
@@ -122,13 +122,14 @@ export const nutritionAnalyticsRouter = router({
         z.record(z.string(), z.coerce.number().nullable()),
         sql`WITH daily_totals AS (
               SELECT
-                date,
+                fe.date,
                 ${sql.raw(dailyAggregates)}
-              FROM fitness.food_entry
-              WHERE user_id = ${ctx.userId}
-                AND confirmed = true
-                AND date > CURRENT_DATE - ${input.days}::int
-              GROUP BY date
+              FROM fitness.food_entry fe
+              JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id
+              WHERE fe.user_id = ${ctx.userId}
+                AND fe.confirmed = true
+                AND fe.date > CURRENT_DATE - ${input.days}::int
+              GROUP BY fe.date
             )
             SELECT ${sql.raw(columnAverages)}
             FROM daily_totals`,
@@ -255,14 +256,18 @@ export const nutritionAnalyticsRouter = router({
               GROUP BY date
             ),
             weight AS (
-              SELECT DISTINCT ON (recorded_at::date)
-                recorded_at::date AS date,
+              SELECT DISTINCT ON (local_date)
+                local_date AS date,
                 weight_kg
-              FROM fitness.v_body_measurement
-              WHERE user_id = ${ctx.userId}
-                AND weight_kg IS NOT NULL
-                AND recorded_at > NOW() - ${input.days}::int * INTERVAL '1 day'
-              ORDER BY recorded_at::date, recorded_at DESC
+              FROM (
+                SELECT (recorded_at AT TIME ZONE ${ctx.timezone})::date AS local_date,
+                       weight_kg, recorded_at
+                FROM fitness.v_body_measurement
+                WHERE user_id = ${ctx.userId}
+                  AND weight_kg IS NOT NULL
+                  AND recorded_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+              ) weight_sub
+              ORDER BY local_date, recorded_at DESC
             )
             SELECT
               n.date::text,

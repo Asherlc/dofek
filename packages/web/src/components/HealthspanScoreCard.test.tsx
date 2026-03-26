@@ -11,14 +11,22 @@ vi.mock("echarts-for-react", () => ({
 }));
 
 const baseMetrics: HealthspanMetric[] = [
-  { name: "Resting Heart Rate", value: 58, unit: "bpm", score: 85, status: "excellent" },
-  { name: "HRV", value: 45, unit: "ms", score: 60, status: "fair" },
-  { name: "VO2 Max", value: 42, unit: "ml/kg/min", score: 70, status: "good" },
+  {
+    name: "Resting Heart Rate",
+    value: 58,
+    unit: "bpm",
+    score: 85,
+    status: "excellent",
+    yearsDelta: -1.4,
+  },
+  { name: "HRV", value: 45, unit: "ms", score: 60, status: "fair", yearsDelta: -0.4 },
+  { name: "VO2 Max", value: 42, unit: "ml/kg/min", score: 70, status: "good", yearsDelta: -0.8 },
 ];
 
 function makeData(overrides: Partial<HealthspanResult> = {}): HealthspanResult {
   return {
     healthspanScore: 72,
+    yearsDelta: -0.9,
     metrics: baseMetrics,
     history: [{ weekStart: "2026-03-01", score: 70 }],
     trend: "stable",
@@ -68,7 +76,7 @@ describe("HealthspanScoreCard", () => {
 
   it("shows dash when metric value is null", () => {
     const metrics: HealthspanMetric[] = [
-      { name: "Sleep", value: null, unit: "hrs", score: 50, status: "fair" },
+      { name: "Sleep", value: null, unit: "hrs", score: 50, status: "fair", yearsDelta: 0 },
     ];
     render(<HealthspanScoreCard data={makeData({ metrics })} />);
     expect(screen.getByText("—")).toBeDefined();

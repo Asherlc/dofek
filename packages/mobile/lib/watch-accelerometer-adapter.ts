@@ -1,0 +1,65 @@
+import {
+	acknowledgeWatchSamples,
+	getLastWatchSyncTimestamp,
+	getPendingWatchSamples,
+	isWatchAppInstalled,
+	isWatchPaired,
+	requestWatchSync,
+	setLastWatchSyncTimestamp,
+} from "../modules/watch-motion";
+import type { CoreMotionAdapter } from "./accelerometer-sync";
+
+/**
+ * Creates a CoreMotionAdapter that reads accelerometer data from a paired
+ * Apple Watch via WCSession file transfers, rather than from the local
+ * iPhone's CMSensorRecorder.
+ *
+ * This adapter plugs into the existing `syncAccelerometerToServer()` pipeline
+ * unchanged — the only difference is where the samples come from.
+ */
+export function createWatchCoreMotionAdapter(): CoreMotionAdapter {
+	const paired = isWatchPaired();
+	const installed = isWatchAppInstalled();
+
+	return {
+		isAccelerometerRecordingAvailable(): boolean {
+			return paired && installed;
+		},
+
+		async queryRecordedData(
+			_fromDate: string,
+			_toDate: string,
+		): Promise<
+			Array<{ timestamp: string; x: number; y: number; z: number }>
+		> {
+			// Watch transfers entire files — we return all pending samples.
+			// Date filtering is not needed because the Watch only sends
+			// samples newer than the last acknowledged sync.
+			return getPendingWatchSamples();
+		},
+
+		getLastSyncTimestamp(): string | null {
+			return getLastWatchSyncTimestamp();
+		},
+
+		setLastSyncTimestamp(timestamp: string): void {
+			setLastWatchSyncTimestamp(timestamp);
+			// After advancing the cursor, delete the processed transfer files
+			acknowledgeWatchSamples();
+		},
+
+		async startRecording(_durationSeconds: number): Promise<boolean> {
+			// Ask the Watch to queue a data transfer. The Watch records
+			// autonomously (12-hour CMSensorRecorder sessions), so even if
+			// the request doesn't reach it, recording continues.
+			await requestWatchSync();
+			return true;
+		},
+
+		isRecordingActive(): boolean {
+			// The Watch app records continuously when installed.
+			// We report active if the Watch is paired + app installed.
+			return paired && installed;
+		},
+	};
+}

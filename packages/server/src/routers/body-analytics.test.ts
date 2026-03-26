@@ -3,12 +3,14 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const t = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  const trpc = initTRPC
+    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .create();
   return {
-    router: t.router,
-    protectedProcedure: t.procedure,
-    cachedProtectedQuery: () => t.procedure,
-    cachedProtectedQueryLight: () => t.procedure,
+    router: trpc.router,
+    protectedProcedure: trpc.procedure,
+    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQueryLight: () => trpc.procedure,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -35,6 +37,7 @@ function makeCaller(rows: Record<string, unknown>[] = []) {
   return createCaller({
     db: { execute: vi.fn().mockResolvedValue(rows) },
     userId: "user-1",
+    timezone: "UTC",
   });
 }
 
@@ -42,7 +45,7 @@ describe("bodyAnalyticsRouter", () => {
   describe("smoothedWeight", () => {
     it("returns empty array when no data", async () => {
       const caller = makeCaller([]);
-      const result = await caller.smoothedWeight({ days: 90 });
+      const result = await caller.smoothedWeight({ days: 90, endDate: "2026-03-15" });
       expect(result).toEqual([]);
     });
 
@@ -58,7 +61,7 @@ describe("bodyAnalyticsRouter", () => {
         { date: "2024-01-08", weight_kg: 79.8 },
       ];
       const caller = makeCaller(rows);
-      const result = await caller.smoothedWeight({ days: 90 });
+      const result = await caller.smoothedWeight({ days: 90, endDate: "2026-03-15" });
 
       expect(result).toHaveLength(8);
       expect(result[0]?.rawWeight).toBe(80);
@@ -75,7 +78,7 @@ describe("bodyAnalyticsRouter", () => {
   describe("recomposition", () => {
     it("returns empty array when no data", async () => {
       const caller = makeCaller([]);
-      const result = await caller.recomposition({ days: 180 });
+      const result = await caller.recomposition({ days: 180, endDate: "2026-03-15" });
       expect(result).toEqual([]);
     });
 
@@ -85,7 +88,7 @@ describe("bodyAnalyticsRouter", () => {
         { date: "2024-01-02", weight_kg: 80, body_fat_pct: 19.5 },
       ];
       const caller = makeCaller(rows);
-      const result = await caller.recomposition({ days: 180 });
+      const result = await caller.recomposition({ days: 180, endDate: "2026-03-15" });
 
       expect(result).toHaveLength(2);
       expect(result[0]?.fatMassKg).toBe(16);

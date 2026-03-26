@@ -3,15 +3,21 @@ import { join, resolve } from "node:path";
 import postgres from "postgres";
 import { logger } from "../logger.ts";
 
+/** Postgres advisory lock key — serializes concurrent migration runs across containers */
+export const MIGRATION_LOCK_KEY = 728370291;
+
 /**
  * Run pending migrations from the drizzle/ directory.
  * Safe to call on every startup — skips already-applied migrations.
+ * Uses a Postgres advisory lock to prevent races when multiple containers start simultaneously.
  */
 export async function runMigrations(databaseUrl: string, migrationsDir?: string): Promise<number> {
   const dir = migrationsDir ?? resolve(import.meta.dirname, "../../drizzle");
   const sql = postgres(databaseUrl);
 
   try {
+    await sql`SELECT pg_advisory_lock(${MIGRATION_LOCK_KEY})`;
+
     await sql`CREATE SCHEMA IF NOT EXISTS health`;
     await sql`CREATE SCHEMA IF NOT EXISTS drizzle`;
 
@@ -49,6 +55,7 @@ export async function runMigrations(databaseUrl: string, migrationsDir?: string)
     }
     return count;
   } finally {
+    await sql`SELECT pg_advisory_unlock(${MIGRATION_LOCK_KEY})`.catch(() => {});
     await sql.end();
   }
 }

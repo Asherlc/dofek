@@ -189,7 +189,7 @@ describe("PelotonProvider.sync() (integration)", () => {
 
     const ride = rows.find((r) => r.externalId === "workout-001");
     if (!ride) throw new Error("expected workout-001");
-    expect(ride.activityType).toBe("cycling");
+    expect(ride.activityType).toBe("indoor_cycling");
     expect(ride.name).toBe("30 min Power Zone Ride");
 
     // Check raw JSONB metadata
@@ -434,6 +434,6 @@ describe("PelotonProvider.sync() (integration)", () => {
       .where(eq(activity.externalId, "workout-graph-fail"));
 
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.activityType).toBe("cycling");
+    expect(rows[0]?.activityType).toBe("indoor_cycling");
   });
 });

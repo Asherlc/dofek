@@ -1,7 +1,7 @@
 /** Format a Date as YYYY-MM-DD for API queries. */
 export function formatDateYmd(date?: Date): string {
-  const d = date ?? new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const resolvedDate = date ?? new Date();
+  return `${resolvedDate.getFullYear()}-${String(resolvedDate.getMonth() + 1).padStart(2, "0")}-${String(resolvedDate.getDate()).padStart(2, "0")}`;
 }
 
 /** Format a duration in minutes as "Xh Ym" */
@@ -88,6 +88,17 @@ export function isToday(date: Date): boolean {
   );
 }
 
+/** Check if a Date is yesterday */
+export function isYesterday(date: Date): boolean {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  return (
+    date.getFullYear() === yesterday.getFullYear() &&
+    date.getMonth() === yesterday.getMonth() &&
+    date.getDate() === yesterday.getDate()
+  );
+}
+
 /** Format a timestamp as relative time: "5m ago", "2h ago", "3d ago".
  *  Accepts ISO strings, postgres-format strings, or Date objects
  *  (postgres-js returns Date objects on Linux/ARM). */
@@ -117,9 +128,9 @@ export function formatPace(secondsPerKm: number): string {
 
 /** Format an ISO string as "Jan 1, 2:30 PM" */
 export function formatTime(iso: string): string {
-  const d = parseValidDate(iso);
-  if (!d) return "--";
-  return d.toLocaleString("en-US", {
+  const parsedDate = parseValidDate(iso);
+  if (!parsedDate) return "--";
+  return parsedDate.toLocaleString("en-US", {
     month: "short",
     day: "numeric",
     hour: "numeric",

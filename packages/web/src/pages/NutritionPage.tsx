@@ -126,6 +126,7 @@ export function NutritionPage() {
       carbsG: data.carbsG,
       fatG: data.fatG,
       foodDescription: data.foodDescription || null,
+      nutrients: data.nutrients,
     });
   }
 

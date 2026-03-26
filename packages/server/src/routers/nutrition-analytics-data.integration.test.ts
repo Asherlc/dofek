@@ -102,76 +102,100 @@ describe("Nutrition analytics data coverage", () => {
     for (let i = 14; i >= 0; i--) {
       // Breakfast with micronutrients
       await testCtx.db.execute(
-        sql`INSERT INTO fitness.food_entry (
+        sql`WITH nd AS (
+              INSERT INTO fitness.nutrition_data (
+                calories, protein_g, carbs_g, fat_g, fiber_g,
+                vitamin_a_mcg, vitamin_c_mg, vitamin_d_mcg, calcium_mg,
+                iron_mg, magnesium_mg, zinc_mg, potassium_mg, sodium_mg
+              ) VALUES (
+                350, 12, 55, 8, 8,
+                450, 45, 5, 350,
+                6, 100, 4, 800, 400
+              )
+              RETURNING id
+            )
+            INSERT INTO fitness.food_entry (
               user_id, provider_id, date, meal, food_name,
-              calories, protein_g, carbs_g, fat_g, fiber_g,
-              vitamin_a_mcg, vitamin_c_mg, vitamin_d_mcg, calcium_mg,
-              iron_mg, magnesium_mg, zinc_mg, potassium_mg, sodium_mg,
-              confirmed
+              nutrition_data_id, confirmed
             ) VALUES (
               ${DEFAULT_USER_ID}, 'dofek',
               CURRENT_DATE - ${i}::int,
               'breakfast', 'Fortified Oatmeal',
-              350, 12, 55, 8, 8,
-              450, 45, 5, 350,
-              6, 100, 4, 800, 400,
-              true
+              (SELECT id FROM nd), true
             )`,
       );
 
       // Lunch with micronutrients
       await testCtx.db.execute(
-        sql`INSERT INTO fitness.food_entry (
+        sql`WITH nd AS (
+              INSERT INTO fitness.nutrition_data (
+                calories, protein_g, carbs_g, fat_g, fiber_g,
+                vitamin_a_mcg, vitamin_c_mg, vitamin_d_mcg, calcium_mg,
+                iron_mg, magnesium_mg, zinc_mg, potassium_mg, sodium_mg
+              ) VALUES (
+                550, 40, 30, 22, 6,
+                300, 30, 3, 250,
+                3, 80, 5, 600, 800
+              )
+              RETURNING id
+            )
+            INSERT INTO fitness.food_entry (
               user_id, provider_id, date, meal, food_name,
-              calories, protein_g, carbs_g, fat_g, fiber_g,
-              vitamin_a_mcg, vitamin_c_mg, vitamin_d_mcg, calcium_mg,
-              iron_mg, magnesium_mg, zinc_mg, potassium_mg, sodium_mg,
-              confirmed
+              nutrition_data_id, confirmed
             ) VALUES (
               ${DEFAULT_USER_ID}, 'dofek',
               CURRENT_DATE - ${i}::int,
               'lunch', 'Chicken Salad Bowl',
-              550, 40, 30, 22, 6,
-              300, 30, 3, 250,
-              3, 80, 5, 600, 800,
-              true
+              (SELECT id FROM nd), true
             )`,
       );
 
       // Dinner with micronutrients
       await testCtx.db.execute(
-        sql`INSERT INTO fitness.food_entry (
+        sql`WITH nd AS (
+              INSERT INTO fitness.nutrition_data (
+                calories, protein_g, carbs_g, fat_g, fiber_g,
+                vitamin_a_mcg, vitamin_c_mg, vitamin_d_mcg, calcium_mg,
+                iron_mg, magnesium_mg, zinc_mg, potassium_mg, sodium_mg
+              ) VALUES (
+                600, 45, 35, 28, 7,
+                200, 25, 8, 300,
+                2, 120, 3, 900, 600
+              )
+              RETURNING id
+            )
+            INSERT INTO fitness.food_entry (
               user_id, provider_id, date, meal, food_name,
-              calories, protein_g, carbs_g, fat_g, fiber_g,
-              vitamin_a_mcg, vitamin_c_mg, vitamin_d_mcg, calcium_mg,
-              iron_mg, magnesium_mg, zinc_mg, potassium_mg, sodium_mg,
-              confirmed
+              nutrition_data_id, confirmed
             ) VALUES (
               ${DEFAULT_USER_ID}, 'dofek',
               CURRENT_DATE - ${i}::int,
               'dinner', 'Salmon with Vegetables',
-              600, 45, 35, 28, 7,
-              200, 25, 8, 300,
-              2, 120, 3, 900, 600,
-              true
+              (SELECT id FROM nd), true
             )`,
       );
 
       // An unconfirmed entry that should be excluded from micronutrient calculations
       if (i === 5) {
         await testCtx.db.execute(
-          sql`INSERT INTO fitness.food_entry (
+          sql`WITH nd AS (
+                INSERT INTO fitness.nutrition_data (
+                  calories, protein_g, carbs_g, fat_g,
+                  vitamin_c_mg, calcium_mg
+                ) VALUES (
+                  200, 10, 25, 8,
+                  999, 999
+                )
+                RETURNING id
+              )
+              INSERT INTO fitness.food_entry (
                 user_id, provider_id, date, meal, food_name,
-                calories, protein_g, carbs_g, fat_g,
-                vitamin_c_mg, calcium_mg,
-                confirmed
+                nutrition_data_id, confirmed
               ) VALUES (
                 ${DEFAULT_USER_ID}, 'dofek',
                 CURRENT_DATE - ${i}::int,
                 'snack', 'Unconfirmed Snack',
-                200, 10, 25, 8,
-                999, 999,
-                false
+                (SELECT id FROM nd), false
               )`,
         );
       }

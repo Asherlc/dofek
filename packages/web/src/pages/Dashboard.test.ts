@@ -98,40 +98,8 @@ describe("spo2TempSectionConfig", () => {
 });
 
 describe("healthMonitorSubtitle", () => {
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("returns today's label when latestDate is null", () => {
-    expect(healthMonitorSubtitle(null)).toBe("Today's values vs. rolling average");
-  });
-
-  it("returns today's label when latestDate is undefined", () => {
-    expect(healthMonitorSubtitle(undefined)).toBe("Today's values vs. rolling average");
-  });
-
-  it("returns today's label when latestDate matches today", () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-03-21T10:00:00"));
-    expect(healthMonitorSubtitle("2026-03-21")).toBe("Today's values vs. rolling average");
-  });
-
-  it("shows actual date and stale notice when data is from yesterday", () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-03-21T10:00:00"));
-    const result = healthMonitorSubtitle("2026-03-20");
-    expect(result).toContain("not yet updated today");
-    expect(result).toContain("Mar");
-    expect(result).toContain("20");
-  });
-
-  it("shows actual date and stale notice for older data", () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-03-21T10:00:00"));
-    const result = healthMonitorSubtitle("2026-03-15");
-    expect(result).toContain("not yet updated today");
-    expect(result).toContain("Mar");
-    expect(result).toContain("15");
+  it("always returns today's label", () => {
+    expect(healthMonitorSubtitle()).toBe("Today's values vs. rolling average");
   });
 });
 

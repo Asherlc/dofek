@@ -715,6 +715,19 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
 
       logger.info(`[auth] ${providerId} tokens saved. Expires: ${tokens.expiresAt.toISOString()}`);
 
+      // Register webhook subscription if this provider supports push notifications
+      try {
+        const { isWebhookProvider } = await import("dofek/providers/types");
+        if (isWebhookProvider(provider)) {
+          const { registerWebhookForProvider } = await import("./webhooks.ts");
+          await registerWebhookForProvider(db, provider);
+          logger.info(`[auth] Webhook registered for ${providerId}`);
+        }
+      } catch (webhookErr: unknown) {
+        // Non-fatal: webhook registration failure shouldn't block provider connection
+        logger.warn(`[auth] Failed to register webhook for ${providerId}: ${webhookErr}`);
+      }
+
       // Auto-link identity when connecting data providers (if getUserIdentity is available)
       if (setup.getUserIdentity) {
         try {

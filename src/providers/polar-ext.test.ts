@@ -23,7 +23,7 @@ describe("mapPolarSport — extended mappings", () => {
   });
 
   it("maps cross_country_skiing", () => {
-    expect(mapPolarSport("CROSS_COUNTRY_SKIING")).toBe("cross country skiing");
+    expect(mapPolarSport("CROSS_COUNTRY_SKIING")).toBe("cross_country_skiing");
   });
 
   it("maps rowing", () => {
@@ -47,7 +47,7 @@ describe("mapPolarSport — extended mappings", () => {
   });
 
   it("maps group_exercise", () => {
-    expect(mapPolarSport("GROUP_EXERCISE")).toBe("group exercise");
+    expect(mapPolarSport("GROUP_EXERCISE")).toBe("group_exercise");
   });
 
   it("maps stretching", () => {
@@ -59,7 +59,7 @@ describe("mapPolarSport — extended mappings", () => {
   });
 
   it("maps martial_arts", () => {
-    expect(mapPolarSport("MARTIAL_ARTS")).toBe("martial arts");
+    expect(mapPolarSport("MARTIAL_ARTS")).toBe("martial_arts");
   });
 
   it("maps tennis", () => {
@@ -79,7 +79,7 @@ describe("mapPolarSport — extended mappings", () => {
   });
 
   it("maps ice_hockey", () => {
-    expect(mapPolarSport("ICE_HOCKEY")).toBe("ice hockey");
+    expect(mapPolarSport("ICE_HOCKEY")).toBe("ice_hockey");
   });
 
   it("maps skiing", () => {
@@ -95,7 +95,7 @@ describe("mapPolarSport — extended mappings", () => {
   });
 
   it("maps rock_climbing", () => {
-    expect(mapPolarSport("ROCK_CLIMBING")).toBe("rock climbing");
+    expect(mapPolarSport("ROCK_CLIMBING")).toBe("rock_climbing");
   });
 
   it("maps surfing", () => {
@@ -107,7 +107,7 @@ describe("mapPolarSport — extended mappings", () => {
   });
 
   it("maps functional_training", () => {
-    expect(mapPolarSport("FUNCTIONAL_TRAINING")).toBe("functional fitness");
+    expect(mapPolarSport("FUNCTIONAL_TRAINING")).toBe("functional_fitness");
   });
 
   it("maps bootcamp", () => {
@@ -123,19 +123,19 @@ describe("mapPolarSport — extended mappings", () => {
   });
 
   it("maps aqua_fitness", () => {
-    expect(mapPolarSport("AQUA_FITNESS")).toBe("aqua fitness");
+    expect(mapPolarSport("AQUA_FITNESS")).toBe("aqua_fitness");
   });
 
   it("maps circuit_training", () => {
-    expect(mapPolarSport("CIRCUIT_TRAINING")).toBe("circuit training");
+    expect(mapPolarSport("CIRCUIT_TRAINING")).toBe("circuit_training");
   });
 
   it("maps triathlon", () => {
     expect(mapPolarSport("TRIATHLON")).toBe("triathlon");
   });
 
-  it("maps indoor_cycling to cycling", () => {
-    expect(mapPolarSport("INDOOR_CYCLING")).toBe("cycling");
+  it("maps indoor_cycling to indoor_cycling", () => {
+    expect(mapPolarSport("INDOOR_CYCLING")).toBe("indoor_cycling");
   });
 
   it("maps indoor_rowing to rowing", () => {
