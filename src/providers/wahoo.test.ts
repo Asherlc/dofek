@@ -218,6 +218,40 @@ describe("Wahoo Provider", () => {
       const rows = fitRecordsToMetricStream([], "wahoo", "activity-uuid-123");
       expect(rows).toHaveLength(0);
     });
+
+    it("omits speed for indoor_cycling activities", () => {
+      const rows = fitRecordsToMetricStream(
+        fakeRecords,
+        "wahoo",
+        "activity-uuid-123",
+        "indoor_cycling",
+      );
+      expect(rows[0]?.speed).toBeUndefined();
+      expect(rows[1]?.speed).toBeUndefined();
+      // Other fields should still be present
+      expect(rows[0]?.heartRate).toBe(130);
+      expect(rows[0]?.power).toBe(200);
+    });
+
+    it("omits speed for virtual_cycling activities", () => {
+      const rows = fitRecordsToMetricStream(
+        fakeRecords,
+        "wahoo",
+        "activity-uuid-123",
+        "virtual_cycling",
+      );
+      expect(rows[0]?.speed).toBeUndefined();
+    });
+
+    it("keeps speed for outdoor cycling activities", () => {
+      const rows = fitRecordsToMetricStream(
+        fakeRecords,
+        "wahoo",
+        "activity-uuid-123",
+        "road_cycling",
+      );
+      expect(rows[0]?.speed).toBe(8.5);
+    });
   });
 });
 

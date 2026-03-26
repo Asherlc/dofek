@@ -638,8 +638,6 @@ export class PelotonProvider implements SyncProvider {
               const hrSeries = series.find((s) => s.slug === "heart_rate");
               const powerSeries = series.find((s) => s.slug === "output");
               const cadenceSeries = series.find((s) => s.slug === "cadence");
-              const speedSeries = series.find((s) => s.slug === "speed");
-
               const sampleCount =
                 hrSeries?.values.length ??
                 powerSeries?.values.length ??
@@ -667,7 +665,7 @@ export class PelotonProvider implements SyncProvider {
                     heartRate: hrSeries?.values[i] ?? null,
                     power: powerSeries?.values[i] ?? null,
                     cadence: cadenceSeries?.values[i] ?? null,
-                    speed: speedSeries?.values[i] ?? null,
+                    // Indoor rides have no meaningful speed — omit it
                   });
                 }
 

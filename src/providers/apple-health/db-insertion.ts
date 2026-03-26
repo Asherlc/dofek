@@ -1,4 +1,5 @@
 import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
+import { isIndoorCycling } from "@dofek/training/endurance-types";
 import { eq, sql } from "drizzle-orm";
 import type { SyncDatabase } from "../../db/index.ts";
 import {
@@ -721,7 +722,7 @@ export async function upsertWorkoutBatch(
           lat: loc.lat,
           lng: loc.lng,
           altitude: loc.altitude,
-          speed: loc.speed,
+          speed: isIndoorCycling(workout.activityType) ? undefined : loc.speed,
           gpsAccuracy:
             loc.horizontalAccuracy != null ? Math.round(loc.horizontalAccuracy) : undefined,
           sourceName: workout.sourceName,
