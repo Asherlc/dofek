@@ -84,5 +84,17 @@ struct ContentView: View {
             }
             .padding()
         }
+        .task {
+            // Activate WCSession on first appearance
+            sessionDelegate.activate()
+
+            // Handle sync requests from iPhone
+            sessionDelegate.onSyncRequested = { [weak transferManager] in
+                transferManager?.transferNewSamples()
+            }
+
+            // Start recording immediately
+            recorder.startRecording()
+        }
     }
 }

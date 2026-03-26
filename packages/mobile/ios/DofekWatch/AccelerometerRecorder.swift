@@ -1,6 +1,14 @@
 import CoreMotion
 import Foundation
 
+// CMSensorDataList only conforms to NSFastEnumeration, not Swift Sequence.
+// This extension bridges it so we can use for-in loops.
+extension CMSensorDataList: @retroactive Sequence {
+    public func makeIterator() -> NSFastEnumerationIterator {
+        NSFastEnumerationIterator(self)
+    }
+}
+
 /// Manages CMSensorRecorder sessions on Apple Watch.
 /// Records accelerometer data at 50 Hz in the background, retains up to 3 days of history.
 final class AccelerometerRecorder: ObservableObject {

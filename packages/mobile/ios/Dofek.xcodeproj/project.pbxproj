@@ -9,24 +9,66 @@
 /* Begin PBXBuildFile section */
 		0E71572520ADBE1261538DDD /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A1A492679286EF012FC76622 /* PrivacyInfo.xcprivacy */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
+		2418C76C79A0C559691C782F /* AccelerometerRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C92AEAB286628CA9E52EB5E /* AccelerometerRecorder.swift */; };
+		3975E861DBE42480522A3639 /* DofekWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = DFBC1DA1B47BBA2D3F9377E1 /* DofekWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
+		61412D870A1359F727B7B7A3 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0611EEE7DAF0B33A8FF13084 /* Foundation.framework */; };
+		8F6D2E2826BB0A93F2257706 /* DofekWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5214494ECE3EE4E9D0C21D8 /* DofekWatchApp.swift */; };
+		9371533B62FBC9B6E8B1371A /* TransferManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D016F77232B6C290626E38B7 /* TransferManager.swift */; };
+		94BE7B6F9A65ECBD41B1A5BA /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 976C17D87B5171C7F2524746 /* ContentView.swift */; };
+		97B81BABD681EFB33E061069 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B880A67F09CF49EF5FEB368F /* Assets.xcassets */; };
 		9AA1CAC071524E06105116C8 /* libPods-Dofek.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A8D177F9E40885CD8E6188D7 /* libPods-Dofek.a */; };
+		AEB771F42FD690EB22EE5112 /* WatchSessionDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF249E2188C8E06EDDC93489 /* WatchSessionDelegate.swift */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
 		E2E77FADCB9C42DBEF2988B9 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B38362DBE0FF7C6EA059464 /* ExpoModulesProvider.swift */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		4F7B979E26F862E736688621 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 83CBB9F71A601CBA00E9B192 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = FEE2661CE9A2FDBC9A736BB4;
+			remoteInfo = DofekWatch;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		4DED5A208CD6983C49C1EA21 /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				3975E861DBE42480522A3639 /* DofekWatch.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		0611EEE7DAF0B33A8FF13084 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS11.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		13B07F961A680F5B00A75B9A /* Dofek.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Dofek.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = Dofek/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = Dofek/Info.plist; sourceTree = "<group>"; };
+		6B1038038CE5FC1D124B7D7F /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		7C92AEAB286628CA9E52EB5E /* AccelerometerRecorder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AccelerometerRecorder.swift; sourceTree = "<group>"; };
 		83E64E4B62167088DA0A700B /* Pods-Dofek.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Dofek.debug.xcconfig"; path = "Target Support Files/Pods-Dofek/Pods-Dofek.debug.xcconfig"; sourceTree = "<group>"; };
 		86C1556DAA785CB4E82E376D /* Pods-Dofek.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Dofek.release.xcconfig"; path = "Target Support Files/Pods-Dofek/Pods-Dofek.release.xcconfig"; sourceTree = "<group>"; };
+		8E0C343DC2F7F766EBC4FCB2 /* DofekWatch.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = DofekWatch.entitlements; sourceTree = "<group>"; };
+		976C17D87B5171C7F2524746 /* ContentView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		9B38362DBE0FF7C6EA059464 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-Dofek/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		A1A492679286EF012FC76622 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = Dofek/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		A8D177F9E40885CD8E6188D7 /* libPods-Dofek.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-Dofek.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = Dofek/SplashScreen.storyboard; sourceTree = "<group>"; };
+		AF249E2188C8E06EDDC93489 /* WatchSessionDelegate.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchSessionDelegate.swift; sourceTree = "<group>"; };
+		B5214494ECE3EE4E9D0C21D8 /* DofekWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DofekWatchApp.swift; sourceTree = "<group>"; };
+		B880A67F09CF49EF5FEB368F /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
+		D016F77232B6C290626E38B7 /* TransferManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TransferManager.swift; sourceTree = "<group>"; };
+		DFBC1DA1B47BBA2D3F9377E1 /* DofekWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DofekWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = Dofek/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* Dofek-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "Dofek-Bridging-Header.h"; path = "Dofek/Dofek-Bridging-Header.h"; sourceTree = "<group>"; };
@@ -38,6 +80,14 @@
 			buildActionMask = 2147483647;
 			files = (
 				9AA1CAC071524E06105116C8 /* libPods-Dofek.a in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BE6C46D82DC8751D2A54598D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				61412D870A1359F727B7B7A3 /* Foundation.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -71,8 +121,33 @@
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
 				A8D177F9E40885CD8E6188D7 /* libPods-Dofek.a */,
+				4BC471AC0D7C87F6C60A3D8D /* watchOS */,
 			);
 			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		4BC471AC0D7C87F6C60A3D8D /* watchOS */ = {
+			isa = PBXGroup;
+			children = (
+				0611EEE7DAF0B33A8FF13084 /* Foundation.framework */,
+			);
+			name = watchOS;
+			sourceTree = "<group>";
+		};
+		5476FA99ED9F490E6DEB2266 /* DofekWatch */ = {
+			isa = PBXGroup;
+			children = (
+				B5214494ECE3EE4E9D0C21D8 /* DofekWatchApp.swift */,
+				7C92AEAB286628CA9E52EB5E /* AccelerometerRecorder.swift */,
+				976C17D87B5171C7F2524746 /* ContentView.swift */,
+				D016F77232B6C290626E38B7 /* TransferManager.swift */,
+				AF249E2188C8E06EDDC93489 /* WatchSessionDelegate.swift */,
+				6B1038038CE5FC1D124B7D7F /* Info.plist */,
+				8E0C343DC2F7F766EBC4FCB2 /* DofekWatch.entitlements */,
+				B880A67F09CF49EF5FEB368F /* Assets.xcassets */,
+			);
+			name = DofekWatch;
+			path = DofekWatch;
 			sourceTree = "<group>";
 		};
 		832341AE1AAA6A7D00B99B32 /* Libraries */ = {
@@ -91,6 +166,7 @@
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
 				CDA6F595588101EA9BC7F43E /* Pods */,
 				1488EB4C7572E284CCEF1E8E /* ExpoModulesProviders */,
+				5476FA99ED9F490E6DEB2266 /* DofekWatch */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -101,6 +177,7 @@
 			isa = PBXGroup;
 			children = (
 				13B07F961A680F5B00A75B9A /* Dofek.app */,
+				DFBC1DA1B47BBA2D3F9377E1 /* DofekWatch.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -148,14 +225,33 @@
 				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
 				CB92A3BDB1714E8293E9E3EC /* Upload Debug Symbols to Sentry */,
 				4EB76D0A806CF838E6C03B5A /* [CP] Embed Pods Frameworks */,
+				4DED5A208CD6983C49C1EA21 /* Embed Watch Content */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				59CA96B2CB1634AF66299199 /* PBXTargetDependency */,
+			);
+			name = Dofek;
+			productName = Dofek;
+			productReference = 13B07F961A680F5B00A75B9A /* Dofek.app */;
+			productType = "com.apple.product-type.application";
+		};
+		FEE2661CE9A2FDBC9A736BB4 /* DofekWatch */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DB06B3F74F5BA22373A2A03D /* Build configuration list for PBXNativeTarget "DofekWatch" */;
+			buildPhases = (
+				5307A9AE6225FBFE1EB2FE7A /* Sources */,
+				BE6C46D82DC8751D2A54598D /* Frameworks */,
+				EAF3901993D150FC5C8AF37B /* Resources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
-			name = Dofek;
-			productName = Dofek;
-			productReference = 13B07F961A680F5B00A75B9A /* Dofek.app */;
+			name = DofekWatch;
+			productName = DofekWatch;
+			productReference = DFBC1DA1B47BBA2D3F9377E1 /* DofekWatch.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -168,6 +264,9 @@
 				TargetAttributes = {
 					13B07F861A680F5B00A75B9A = {
 						LastSwiftMigration = 1250;
+					};
+					FEE2661CE9A2FDBC9A736BB4 = {
+						CreatedOnToolsVersion = 16.0;
 					};
 				};
 			};
@@ -185,6 +284,7 @@
 			projectRoot = "";
 			targets = (
 				13B07F861A680F5B00A75B9A /* Dofek */,
+				FEE2661CE9A2FDBC9A736BB4 /* DofekWatch */,
 			);
 		};
 /* End PBXProject section */
@@ -198,6 +298,14 @@
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
 				0E71572520ADBE1261538DDD /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		EAF3901993D150FC5C8AF37B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				97B81BABD681EFB33E061069 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -347,9 +455,59 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		5307A9AE6225FBFE1EB2FE7A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8F6D2E2826BB0A93F2257706 /* DofekWatchApp.swift in Sources */,
+				2418C76C79A0C559691C782F /* AccelerometerRecorder.swift in Sources */,
+				94BE7B6F9A65ECBD41B1A5BA /* ContentView.swift in Sources */,
+				9371533B62FBC9B6E8B1371A /* TransferManager.swift in Sources */,
+				AEB771F42FD690EB22EE5112 /* WatchSessionDelegate.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		59CA96B2CB1634AF66299199 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = DofekWatch;
+			target = FEE2661CE9A2FDBC9A736BB4 /* DofekWatch */;
+			targetProxy = 4F7B979E26F862E736688621 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		019EAD4ED63086F35CD84577 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = DofekWatch/DofekWatch.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = DofekWatch/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.dofek.app.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				VERSIONING_SYSTEM = "apple-generic";
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
 		13B07F941A680F5B00A75B9A /* Debug */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 83E64E4B62167088DA0A700B /* Pods-Dofek.debug.xcconfig */;
@@ -536,6 +694,35 @@
 			};
 			name = Release;
 		};
+		AF49FA9F192523204C04573F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = DofekWatch/DofekWatch.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = DofekWatch/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.dofek.app.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				VALIDATE_PRODUCT = YES;
+				VERSIONING_SYSTEM = "apple-generic";
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -553,6 +740,15 @@
 			buildConfigurations = (
 				83CBBA201A601CBA00E9B192 /* Debug */,
 				83CBBA211A601CBA00E9B192 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		DB06B3F74F5BA22373A2A03D /* Build configuration list for PBXNativeTarget "DofekWatch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AF49FA9F192523204C04573F /* Release */,
+				019EAD4ED63086F35CD84577 /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

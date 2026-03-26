@@ -36,17 +36,5 @@ struct DofekWatchApp: App {
                 break
             }
         }
-        .onAppear {
-            // Activate WCSession
-            sessionDelegate.activate()
-
-            // Handle sync requests from iPhone
-            sessionDelegate.onSyncRequested = { [weak transferManager] in
-                transferManager?.transferNewSamples()
-            }
-
-            // Start recording immediately
-            recorder.startRecording()
-        }
     }
 }
