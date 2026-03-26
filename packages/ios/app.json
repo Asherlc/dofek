@@ -46,6 +46,14 @@
           "cameraPermission": "Dofek uses the camera to scan food barcodes."
         }
       ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Dofek records your GPS track during workouts to show your route and distance.",
+          "locationAlwaysAndWhenInUsePermission": "Dofek records your GPS track during workouts to show your route and distance, even when the app is in the background.",
+          "isIosBackgroundLocationEnabled": true
+        }
+      ],
       "@sentry/react-native/expo"
     ]
   }

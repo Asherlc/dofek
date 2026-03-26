@@ -84,6 +84,7 @@ describe("appRouter", () => {
   it("includes all sub-routers in the definition", () => {
     const expectedRouters = [
       "activity",
+      "activityRecording",
       "anomalyDetection",
       "auth",
       "sleep",

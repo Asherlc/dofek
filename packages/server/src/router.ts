@@ -1,4 +1,5 @@
 import { activityRouter } from "./routers/activity.ts";
+import { activityRecordingRouter } from "./routers/activity-recording.ts";
 import { anomalyDetectionRouter } from "./routers/anomaly-detection.ts";
 import { authRouter } from "./routers/auth.ts";
 import { bodyRouter } from "./routers/body.ts";
@@ -43,6 +44,7 @@ import { router } from "./trpc.ts";
 
 export const appRouter = router({
   activity: activityRouter,
+  activityRecording: activityRecordingRouter,
   anomalyDetection: anomalyDetectionRouter,
   personalization: personalizationRouter,
   auth: authRouter,

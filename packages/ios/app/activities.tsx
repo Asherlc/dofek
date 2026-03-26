@@ -36,6 +36,13 @@ export default function ActivitiesScreen() {
 
   return (
     <View style={styles.container}>
+      <TouchableOpacity
+        style={styles.recordButton}
+        onPress={() => router.push("/record")}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.recordButtonText}>Record Activity</Text>
+      </TouchableOpacity>
       <FlatList
         data={parsed}
         keyExtractor={(item) => String(item.id)}
@@ -118,6 +125,19 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  recordButton: {
+    backgroundColor: colors.accent,
+    marginHorizontal: 16,
+    marginTop: 12,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  recordButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
   },
   list: {
     padding: 16,
