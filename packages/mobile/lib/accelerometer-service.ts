@@ -21,6 +21,17 @@ export interface WatchDeps {
 	acknowledgeSamples(): void;
 }
 
+/** Abstraction over WHOOP BLE module for IMU streaming during activity recording */
+export interface WhoopBleDeps {
+	isAvailable(): boolean;
+	findAndConnect(): Promise<boolean>;
+	startStreaming(): Promise<boolean>;
+	stopStreaming(): Promise<boolean>;
+	getBufferedSamples(): Promise<
+		Array<{ timestamp: string; x: number; y: number; z: number }>
+	>;
+}
+
 /** tRPC client interface for accelerometer upload */
 export interface AccelerometerUploadClient {
 	accelerometerSync: {
@@ -37,6 +48,7 @@ export interface AccelerometerUploadClient {
 export interface AccelerometerServiceDeps {
 	coreMotion: CoreMotionDeps;
 	watch: WatchDeps;
+	whoopBle?: WhoopBleDeps;
 	trpcClient: AccelerometerUploadClient;
 	deviceId: string;
 }
@@ -62,7 +74,7 @@ export interface AccelerometerService {
 export function createAccelerometerService(
 	deps: AccelerometerServiceDeps,
 ): AccelerometerService {
-	const { coreMotion, watch, trpcClient, deviceId } = deps;
+	const { coreMotion, watch, whoopBle, trpcClient, deviceId } = deps;
 
 	async function uploadBatched(
 		uploadDeviceId: string,
@@ -102,6 +114,18 @@ export function createAccelerometerService(
 					// Best-effort — Watch may not be reachable
 				}
 			}
+
+			// Connect to WHOOP strap and start IMU streaming (best-effort)
+			if (whoopBle?.isAvailable()) {
+				try {
+					const connected = await whoopBle.findAndConnect();
+					if (connected) {
+						await whoopBle.startStreaming();
+					}
+				} catch {
+					// Best-effort — WHOOP may not be nearby or BLE unavailable
+				}
+			}
 		},
 
 		async syncForTimeRange(
@@ -131,6 +155,23 @@ export function createAccelerometerService(
 						await uploadBatched("Apple Watch", "apple_watch", watchSamples);
 						watch.acknowledgeSamples();
 					}
+				} catch {
+					// Best-effort — don't fail activity save
+				}
+			}
+
+			// Retrieve and upload WHOOP BLE IMU samples
+			if (whoopBle?.isAvailable()) {
+				try {
+					const whoopSamples = await whoopBle.getBufferedSamples();
+					if (whoopSamples.length > 0) {
+						await uploadBatched(
+							"WHOOP Strap",
+							"whoop",
+							whoopSamples,
+						);
+					}
+					await whoopBle.stopStreaming();
 				} catch {
 					// Best-effort — don't fail activity save
 				}
