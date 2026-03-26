@@ -4,7 +4,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { endDateSchema, timestampWindowStart } from "../lib/date-window.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
-import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
 const activityListRowSchema = z
   .object({
@@ -293,6 +293,16 @@ export const activityRouter = router({
       );
 
       return mapHrZones(rows);
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      await ctx.db.execute(sql`
+        DELETE FROM fitness.activity
+        WHERE id = ${input.id}::uuid AND user_id = ${ctx.userId}
+      `);
+      return { success: true };
     }),
 });
 

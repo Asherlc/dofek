@@ -1,6 +1,8 @@
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   ActivityIndicator,
+  Alert,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -426,7 +428,32 @@ const statsStyles = StyleSheet.create({
 
 export default function ActivityDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const router = useRouter();
   const units = useUnitConverter();
+  const trpcUtils = trpc.useUtils();
+  const deleteMutation = trpc.activity.delete.useMutation({
+    onSuccess: async () => {
+      await trpcUtils.activity.list.invalidate();
+      router.back();
+    },
+  });
+
+  const handleDelete = () => {
+    Alert.alert(
+      "Delete Activity",
+      "Are you sure you want to delete this activity? This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            if (id) deleteMutation.mutate({ id });
+          },
+        },
+      ],
+    );
+  };
 
   const detail = trpc.activity.byId.useQuery(
     { id: id ?? "" },
@@ -586,6 +613,21 @@ export default function ActivityDetailScreen() {
 
       {/* HR Zones */}
       {zones.length > 0 && <HrZonesChart zones={zones} />}
+
+      {/* Delete Activity */}
+      <Pressable
+        onPress={handleDelete}
+        disabled={deleteMutation.isPending}
+        style={({ pressed }) => [
+          styles.deleteButton,
+          pressed && styles.deleteButtonPressed,
+          deleteMutation.isPending && styles.deleteButtonDisabled,
+        ]}
+      >
+        <Text style={styles.deleteButtonText}>
+          {deleteMutation.isPending ? "Deleting..." : "Delete Activity"}
+        </Text>
+      </Pressable>
     </ScrollView>
   );
 }
@@ -658,5 +700,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textSecondary,
     marginTop: 4,
+  },
+  deleteButton: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 14,
+    alignItems: "center",
+    marginTop: 8,
+  },
+  deleteButtonPressed: {
+    opacity: 0.7,
+  },
+  deleteButtonDisabled: {
+    opacity: 0.5,
+  },
+  deleteButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#ef4444",
   },
 });
