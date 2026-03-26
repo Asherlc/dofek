@@ -1,8 +1,10 @@
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-proto";
+import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-proto";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 import { ExpressInstrumentation } from "@opentelemetry/instrumentation-express";
 import { HttpInstrumentation } from "@opentelemetry/instrumentation-http";
 import { BatchLogRecordProcessor } from "@opentelemetry/sdk-logs";
+import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-node";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -25,12 +27,20 @@ vi.mock("@opentelemetry/exporter-logs-otlp-proto", () => ({
   OTLPLogExporter: vi.fn(),
 }));
 
+vi.mock("@opentelemetry/exporter-metrics-otlp-proto", () => ({
+  OTLPMetricExporter: vi.fn(),
+}));
+
 vi.mock("@opentelemetry/sdk-trace-node", () => ({
   BatchSpanProcessor: vi.fn(),
 }));
 
 vi.mock("@opentelemetry/sdk-logs", () => ({
   BatchLogRecordProcessor: vi.fn(),
+}));
+
+vi.mock("@opentelemetry/sdk-metrics", () => ({
+  PeriodicExportingMetricReader: vi.fn(),
 }));
 
 vi.mock("@opentelemetry/instrumentation-http", () => ({
@@ -57,6 +67,7 @@ describe("instrumentation", () => {
   let originalEndpoint: string | undefined;
   let originalTracesEndpoint: string | undefined;
   let originalLogsEndpoint: string | undefined;
+  let originalMetricsEndpoint: string | undefined;
   let sigTermCountBefore: number;
   let sigIntCountBefore: number;
 
@@ -64,13 +75,16 @@ describe("instrumentation", () => {
     originalEndpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
     originalTracesEndpoint = process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
     originalLogsEndpoint = process.env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT;
+    originalMetricsEndpoint = process.env.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT;
     sigTermCountBefore = process.listenerCount("SIGTERM");
     sigIntCountBefore = process.listenerCount("SIGINT");
     vi.mocked(NodeSDK).mockClear();
     vi.mocked(OTLPTraceExporter).mockClear();
     vi.mocked(OTLPLogExporter).mockClear();
+    vi.mocked(OTLPMetricExporter).mockClear();
     vi.mocked(BatchSpanProcessor).mockClear();
     vi.mocked(BatchLogRecordProcessor).mockClear();
+    vi.mocked(PeriodicExportingMetricReader).mockClear();
     vi.mocked(HttpInstrumentation).mockClear();
     vi.mocked(ExpressInstrumentation).mockClear();
     mockStart.mockClear();
@@ -93,6 +107,11 @@ describe("instrumentation", () => {
     } else {
       process.env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT = originalLogsEndpoint;
     }
+    if (originalMetricsEndpoint === undefined) {
+      delete process.env.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT;
+    } else {
+      process.env.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT = originalMetricsEndpoint;
+    }
     removeExtraListeners("SIGTERM", sigTermCountBefore);
     removeExtraListeners("SIGINT", sigIntCountBefore);
   });
@@ -106,6 +125,7 @@ describe("instrumentation", () => {
     delete process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
     delete process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
     delete process.env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT;
+    delete process.env.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT;
     const { startInstrumentation } = await import("./instrumentation.ts");
 
     const sdk = startInstrumentation({});
@@ -159,7 +179,7 @@ describe("instrumentation", () => {
     await sdk?.shutdown();
   });
 
-  it("constructs NodeSDK with span processors, log processors, and instrumentations", async () => {
+  it("constructs NodeSDK with span processors, log processors, metric reader, and instrumentations", async () => {
     const { startInstrumentation } = await import("./instrumentation.ts");
 
     startInstrumentation({ OTEL_EXPORTER_OTLP_ENDPOINT: "http://localhost:4318" });
@@ -170,9 +190,13 @@ describe("instrumentation", () => {
     expect(config).toBeDefined();
     expect(config?.spanProcessors).toHaveLength(1);
     expect(config?.logRecordProcessors).toHaveLength(1);
+    expect(config?.metricReader).toBeDefined();
     expect(config?.instrumentations).toHaveLength(2);
     expect(BatchSpanProcessor).toHaveBeenCalledWith(expect.any(OTLPTraceExporter));
     expect(BatchLogRecordProcessor).toHaveBeenCalledWith(expect.any(OTLPLogExporter));
+    expect(PeriodicExportingMetricReader).toHaveBeenCalledWith(
+      expect.objectContaining({ exporter: expect.any(OTLPMetricExporter) }),
+    );
     expect(HttpInstrumentation).toHaveBeenCalled();
     expect(ExpressInstrumentation).toHaveBeenCalled();
   });
@@ -190,9 +214,11 @@ describe("instrumentation", () => {
     expect(config).toBeDefined();
     expect(config?.spanProcessors).toHaveLength(1);
     expect(config?.logRecordProcessors).toHaveLength(0);
+    expect(config?.metricReader).toBeUndefined();
     expect(config?.instrumentations).toHaveLength(2);
     expect(BatchSpanProcessor).toHaveBeenCalledWith(expect.any(OTLPTraceExporter));
     expect(BatchLogRecordProcessor).not.toHaveBeenCalled();
+    expect(PeriodicExportingMetricReader).not.toHaveBeenCalled();
     expect(HttpInstrumentation).toHaveBeenCalled();
     expect(ExpressInstrumentation).toHaveBeenCalled();
   });
@@ -215,6 +241,41 @@ describe("instrumentation", () => {
     expect(BatchLogRecordProcessor).toHaveBeenCalledWith(expect.any(OTLPLogExporter));
     expect(HttpInstrumentation).not.toHaveBeenCalled();
     expect(ExpressInstrumentation).not.toHaveBeenCalled();
+  });
+
+  it("configures metric reader when only metrics endpoint exists", async () => {
+    const { startInstrumentation } = await import("./instrumentation.ts");
+
+    const sdk = startInstrumentation({
+      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: "http://localhost:4318/v1/metrics",
+    });
+
+    expect(sdk).toBeDefined();
+    expect(NodeSDK).toHaveBeenCalledOnce();
+    const config = vi.mocked(NodeSDK).mock.calls[0]?.[0];
+    expect(config?.spanProcessors).toHaveLength(0);
+    expect(config?.logRecordProcessors).toHaveLength(0);
+    expect(config?.metricReader).toBeDefined();
+    expect(PeriodicExportingMetricReader).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exporter: expect.any(OTLPMetricExporter),
+        exportIntervalMillis: 30_000,
+      }),
+    );
+    await sdk?.shutdown();
+  });
+
+  it("picks up OTEL_EXPORTER_OTLP_METRICS_ENDPOINT_unencrypted (SOPS convention)", async () => {
+    const { startInstrumentation } = await import("./instrumentation.ts");
+
+    const sdk = startInstrumentation({
+      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT_unencrypted: "http://localhost:4318/v1/metrics",
+    });
+
+    expect(sdk).toBeDefined();
+    const config = vi.mocked(NodeSDK).mock.calls[0]?.[0];
+    expect(config?.metricReader).toBeDefined();
+    await sdk?.shutdown();
   });
 
   it("does not override configured endpoint with *_unencrypted fallback", async () => {

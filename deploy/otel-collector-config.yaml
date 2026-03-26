@@ -53,6 +53,11 @@ exporters:
     headers:
       authorization: "Bearer ${env:AXIOM_API_TOKEN}"
       x-axiom-dataset: dofek-logs
+  otlphttp/metrics:
+    endpoint: https://api.axiom.co
+    headers:
+      authorization: "Bearer ${env:AXIOM_API_TOKEN}"
+      x-axiom-dataset: dofek-metrics
 
 service:
   pipelines:
@@ -68,3 +73,7 @@ service:
       receivers: [filelog]
       processors: [resource/docker, batch]
       exporters: [otlphttp/logs]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlphttp/metrics]

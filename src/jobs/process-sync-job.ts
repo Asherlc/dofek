@@ -3,6 +3,12 @@ import type { SyncDatabase } from "../db/index.ts";
 import { logSync } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
+import {
+  syncDuration,
+  syncErrorsTotal,
+  syncOperationsTotal,
+  syncRecordsTotal,
+} from "../sync-metrics.ts";
 import type { SyncJobData } from "./queues.ts";
 
 /**
@@ -97,15 +103,28 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         }
       }
 
+      const durationMs = Date.now() - syncStart;
       await logSync(db, {
         providerId: provider.id,
         dataType: "sync",
         status: hasErrors ? "error" : "success",
         recordCount: result.recordsSynced,
         errorMessage: hasErrors ? result.errors.map((e) => e.message).join("; ") : undefined,
-        durationMs: Date.now() - syncStart,
+        durationMs,
         userId: job.data.userId,
       });
+
+      const status = hasErrors ? "error" : "success";
+      syncRecordsTotal.add(result.recordsSynced, {
+        provider: provider.id,
+        data_type: "sync",
+        status,
+      });
+      syncOperationsTotal.add(1, { provider: provider.id, data_type: "sync", status });
+      syncDuration.record(durationMs, { provider: provider.id, data_type: "sync" });
+      if (hasErrors) {
+        syncErrorsTotal.add(result.errors.length, { provider: provider.id, data_type: "sync" });
+      }
     } catch (err: unknown) {
       completedCount++;
       const message = err instanceof Error ? err.message : String(err);
@@ -116,14 +135,19 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         percentage: computePercentage(completedCount, 0, totalProviders),
       });
 
+      const durationMs = Date.now() - syncStart;
       await logSync(db, {
         providerId: provider.id,
         dataType: "sync",
         status: "error",
         errorMessage: message,
-        durationMs: Date.now() - syncStart,
+        durationMs,
         userId: job.data.userId,
       });
+
+      syncOperationsTotal.add(1, { provider: provider.id, data_type: "sync", status: "error" });
+      syncDuration.record(durationMs, { provider: provider.id, data_type: "sync" });
+      syncErrorsTotal.add(1, { provider: provider.id, data_type: "sync" });
     }
   }
 
