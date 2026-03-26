@@ -20,6 +20,11 @@ private enum ConnectionState: String {
 /// already-connected strap.
 public class WhoopBleModule: Module {
 
+    /// Restore identifier for CoreBluetooth state restoration.
+    /// When the app is relaunched by iOS after being killed, the system
+    /// restores the CBCentralManager with any active connections.
+    private static let restoreIdentifier = "com.dofek.whoop-ble-central"
+
     private var centralManager: CBCentralManager?
     private let bleQueue = DispatchQueue(label: "com.dofek.whoop-ble", qos: .userInitiated)
     private let delegate = BleDelegate()
@@ -28,6 +33,11 @@ public class WhoopBleModule: Module {
     private var cmdCharacteristic: CBCharacteristic?
     private var dataCharacteristic: CBCharacteristic?
     private var state: ConnectionState = .idle
+
+    /// Whether to automatically reconnect on disconnect (for always-on mode)
+    private var autoReconnect = false
+    /// Whether streaming was active before a disconnect (to resume after reconnect)
+    private var wasStreaming = false
 
     private let frameParser = WhoopBleFrameParser()
     private var sampleBuffer: [WhoopImuSample] = []
@@ -49,7 +59,13 @@ public class WhoopBleModule: Module {
             self.centralManager = CBCentralManager(
                 delegate: self.delegate,
                 queue: self.bleQueue,
-                options: [CBCentralManagerOptionShowPowerAlertKey: false]
+                options: [
+                    CBCentralManagerOptionShowPowerAlertKey: false,
+                    // Enable state restoration so iOS relaunches the app
+                    // and restores active BLE connections after the app is killed.
+                    // This allows background IMU streaming to survive app termination.
+                    CBCentralManagerOptionRestoreIdentifierKey: WhoopBleModule.restoreIdentifier,
+                ]
             )
         }
 
@@ -123,6 +139,7 @@ public class WhoopBleModule: Module {
                 peripheral.delegate = self.delegate
                 self.connectPromise = promise
                 self.state = .connecting
+                self.autoReconnect = true
                 centralManager.connect(peripheral, options: nil)
 
                 // Timeout after 10 seconds
@@ -219,6 +236,7 @@ public class WhoopBleModule: Module {
 
         Function("disconnect") {
             self.bleQueue.async {
+                self.autoReconnect = false
                 if let peripheral = self.connectedPeripheral {
                     self.centralManager?.cancelPeripheralConnection(peripheral)
                 }
@@ -230,7 +248,28 @@ public class WhoopBleModule: Module {
     // MARK: - Internal handlers (called by delegate)
 
     func handleCentralManagerPoweredOn() {
-        // Ready to scan/retrieve
+        // If we have a restored peripheral waiting to reconnect, start service discovery
+        if let peripheral = connectedPeripheral, state == .idle {
+            state = .discoveringServices
+            peripheral.discoverServices(WhoopBleConstants.allServiceUUIDs)
+        }
+    }
+
+    /// Called during state restoration when iOS relaunches the app with
+    /// a previously-connected peripheral. Re-establishes our reference
+    /// so that when Bluetooth powers on, we can resume service discovery.
+    func handleRestoredPeripheral(_ peripheral: CBPeripheral) {
+        connectedPeripheral = peripheral
+        peripheral.delegate = delegate
+        autoReconnect = true
+        wasStreaming = true // Assume we were streaming before the app was killed
+
+        // If the peripheral is already connected, start discovery immediately
+        if peripheral.state == .connected {
+            state = .discoveringServices
+            peripheral.discoverServices(WhoopBleConstants.allServiceUUIDs)
+        }
+        // Otherwise, wait for centralManagerDidUpdateState → poweredOn
     }
 
     func handlePeripheralDiscovered(_ peripheral: CBPeripheral) {
@@ -255,7 +294,9 @@ public class WhoopBleModule: Module {
     }
 
     func handlePeripheralDisconnected(_ peripheral: CBPeripheral, error: Error?) {
-        let wasStreaming = state == .streaming
+        wasStreaming = state == .streaming
+        let shouldReconnect = autoReconnect
+
         cleanup()
 
         sendEvent("onConnectionStateChanged", [
@@ -267,6 +308,16 @@ public class WhoopBleModule: Module {
         // Reject any pending promises
         connectPromise?.reject("DISCONNECTED", error?.localizedDescription ?? "Disconnected")
         connectPromise = nil
+
+        // Auto-reconnect after unexpected disconnect (BLE link loss, strap out of range, etc.)
+        // The strap may come back in range, or iOS may have suspended the connection temporarily.
+        if shouldReconnect {
+            autoReconnect = true
+            state = .connecting
+            connectedPeripheral = peripheral
+            peripheral.delegate = delegate
+            centralManager?.connect(peripheral, options: nil)
+        }
     }
 
     func handleServicesDiscovered(_ peripheral: CBPeripheral) {
@@ -297,7 +348,7 @@ public class WhoopBleModule: Module {
         cmdCharacteristic = service.characteristics?.first { $0.uuid == cmdUUID }
         dataCharacteristic = service.characteristics?.first { $0.uuid == dataUUID }
 
-        guard cmdCharacteristic != nil, let dataChar = dataCharacteristic else {
+        guard let cmdChar = cmdCharacteristic, let dataChar = dataCharacteristic else {
             connectPromise?.reject("NO_CHARACTERISTICS", "Required characteristics not found")
             connectPromise = nil
             state = .idle
@@ -315,6 +366,17 @@ public class WhoopBleModule: Module {
             "state": "connected",
             "peripheralId": peripheral.identifier.uuidString,
         ])
+
+        // Auto-resume IMU streaming after reconnect (e.g., strap came back in range)
+        if wasStreaming {
+            wasStreaming = false
+            let commandData = WhoopBleFrameParser.buildCommandData(
+                command: WhoopBleConstants.commandToggleImuMode
+            )
+            peripheral.writeValue(commandData, for: cmdChar, type: .withResponse)
+            state = .streaming
+            frameParser.reset()
+        }
     }
 
     func handleDataReceived(_ data: Data) {
@@ -361,6 +423,19 @@ private class BleDelegate: NSObject, CBCentralManagerDelegate, CBPeripheralDeleg
         if central.state == .poweredOn {
             module?.handleCentralManagerPoweredOn()
         }
+    }
+
+    /// Called by iOS when the app is relaunched to restore BLE state.
+    /// Re-establishes references to peripherals that were connected before the app was killed.
+    func centralManager(_ central: CBCentralManager, willRestoreState dict: [String: Any]) {
+        guard let peripherals = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral],
+              let peripheral = peripherals.first else {
+            return
+        }
+
+        // Re-establish the peripheral reference and delegate
+        peripheral.delegate = self
+        module?.handleRestoredPeripheral(peripheral)
     }
 
     func centralManager(
