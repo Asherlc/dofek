@@ -1,3 +1,4 @@
+import type { AccelerometerService } from "./accelerometer-service.ts";
 import type { GpsSample, LocationAdapter } from "./location-service.ts";
 
 export type RecordingState = "idle" | "recording" | "paused" | "saving" | "error";
@@ -78,6 +79,7 @@ export function createActivityRecorder(
   locationAdapter: LocationAdapter,
   trpcClient: RecordingTrpcClient,
   sourceName: string,
+  accelerometerService?: AccelerometerService,
 ): ActivityRecorder {
   let state: RecordingState = "idle";
   let activityType: string | null = null;
@@ -144,6 +146,11 @@ export function createActivityRecorder(
           notify();
         }
       });
+
+      // Ensure accelerometer recording is active (best-effort, non-blocking)
+      accelerometerService?.ensureRecording().catch(() => {
+        // Best-effort — don't disrupt GPS recording
+      });
     },
 
     pause() {
@@ -209,6 +216,13 @@ export function createActivityRecorder(
             speed: s.speed,
           })),
         });
+
+        // Sync accelerometer data for the activity window (best-effort)
+        try {
+          await accelerometerService?.syncForTimeRange(startedAt, endedAt);
+        } catch {
+          // Best-effort — don't fail the activity save
+        }
 
         state = "idle";
         activityType = null;

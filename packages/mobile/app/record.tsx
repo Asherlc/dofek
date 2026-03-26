@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -15,7 +16,20 @@ import {
   type ActivityRecorder,
   type RecordingSnapshot,
 } from "../lib/activity-recording";
+import { createAccelerometerService } from "../lib/accelerometer-service";
 import { createLocationAdapter } from "../lib/location-service";
+import {
+  isAccelerometerRecordingAvailable,
+  startRecording,
+  queryRecordedData,
+} from "../modules/core-motion";
+import {
+  isWatchPaired,
+  isWatchAppInstalled,
+  requestWatchSync,
+  getPendingWatchSamples,
+  acknowledgeWatchSamples,
+} from "../modules/watch-motion";
 import { trpc } from "../lib/trpc";
 import { colors, fonts, fontSize, fontWeight, radius, spacing } from "../theme";
 
@@ -68,13 +82,30 @@ export default function RecordScreen() {
   const [activityName, setActivityName] = useState("");
   const [activityNotes, setActivityNotes] = useState("");
 
-  // Create recorder once
+  // Create recorder once (with accelerometer service for phone + watch)
   const recorder = useMemo(() => {
     if (!recorderRef.current) {
+      const accelerometerService = createAccelerometerService({
+        coreMotion: {
+          isAccelerometerRecordingAvailable,
+          startRecording,
+          queryRecordedData,
+        },
+        watch: {
+          isAvailable: () => isWatchPaired() && isWatchAppInstalled(),
+          requestSync: requestWatchSync,
+          getPendingSamples: getPendingWatchSamples,
+          acknowledgeSamples: acknowledgeWatchSamples,
+        },
+        trpcClient,
+        deviceId: `iPhone (${Platform.OS} ${Platform.Version})`,
+      });
+
       recorderRef.current = createActivityRecorder(
         createLocationAdapter(),
         trpcClient,
         "Dofek iOS",
+        accelerometerService,
       );
     }
     return recorderRef.current;
