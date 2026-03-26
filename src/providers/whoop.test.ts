@@ -529,6 +529,29 @@ describe("WHOOP Provider — parsing", () => {
       expect(result.spo2).toBeUndefined();
       expect(result.skinTemp).toBeUndefined();
     });
+
+    it("parses BFF v0 recovery with unknown state value (API drift)", () => {
+      // The WHOOP API has returned various state values over time. The parser
+      // should accept recovery data whenever biometric fields are present,
+      // regardless of what `state` says.
+      const bffRecovery: WhoopRecoveryRecord = {
+        user_id: 10129,
+        created_at: "2026-03-26T11:25:44.774Z",
+        updated_at: "2026-03-26T14:25:44.774Z",
+        state: "responded",
+        recovery_score: 65,
+        resting_heart_rate: 63,
+        hrv_rmssd: 0.048,
+        spo2: 97,
+        skin_temp_celsius: 34.857334,
+        calibrating: false,
+      };
+      const result = parseRecovery(bffRecovery);
+      expect(result.restingHr).toBe(63);
+      expect(result.hrv).toBeCloseTo(48, 0);
+      expect(result.spo2).toBe(97);
+      expect(result.skinTemp).toBeCloseTo(34.86, 1);
+    });
   });
 
   describe("parseSleep", () => {
