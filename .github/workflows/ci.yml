@@ -297,15 +297,16 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             | tail -20
         timeout-minutes: 20
-      - name: Build for device (Release)
+      - name: Archive (Release, no signing)
         run: |
-          xcodebuild build \
+          xcodebuild archive \
             -workspace packages/mobile/ios/Dofek.xcworkspace \
             -scheme Dofek \
-            -sdk iphoneos \
             -configuration Release \
+            -archivePath $RUNNER_TEMP/Dofek.xcarchive \
             -destination 'generic/platform=iOS' \
             CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
             | tail -20
         timeout-minutes: 25
 
