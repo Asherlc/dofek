@@ -7,6 +7,7 @@ import {
 } from "./activity-recording.ts";
 import type { GpsSample, LocationAdapter } from "./location-service.ts";
 import type { RecordingTrpcClient } from "./activity-recording.ts";
+import type { AccelerometerService } from "./accelerometer-service.ts";
 
 function makeMockLocationAdapter(): LocationAdapter & {
   emitSample(sample: GpsSample): void;
@@ -249,5 +250,81 @@ describe("createActivityRecorder", () => {
   it("ignores pause when not recording", () => {
     recorder.pause(); // idle -> should do nothing
     expect(recorder.getSnapshot().state).toBe("idle");
+  });
+});
+
+function makeMockAccelerometerService(): AccelerometerService {
+  return {
+    ensureRecording: vi.fn().mockResolvedValue(undefined),
+    syncForTimeRange: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
+describe("createActivityRecorder with accelerometer", () => {
+  let location: ReturnType<typeof makeMockLocationAdapter>;
+  let trpcClient: RecordingTrpcClient;
+  let accelerometer: AccelerometerService;
+  let recorder: ActivityRecorder;
+
+  beforeEach(() => {
+    location = makeMockLocationAdapter();
+    trpcClient = makeMockTrpcClient();
+    accelerometer = makeMockAccelerometerService();
+    recorder = createActivityRecorder(location, trpcClient, "Dofek iOS", accelerometer);
+  });
+
+  it("calls ensureRecording on start", async () => {
+    await recorder.start("running");
+
+    expect(accelerometer.ensureRecording).toHaveBeenCalled();
+  });
+
+  it("does not block recording start when ensureRecording fails", async () => {
+    (accelerometer.ensureRecording as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("Accelerometer error"),
+    );
+
+    await recorder.start("running");
+
+    expect(recorder.getSnapshot().state).toBe("recording");
+  });
+
+  it("calls syncForTimeRange on save with activity timestamps", async () => {
+    await recorder.start("running");
+    location.emitSample(makeSample());
+    recorder.stop();
+
+    await recorder.save("Morning run", null);
+
+    expect(accelerometer.syncForTimeRange).toHaveBeenCalledWith(
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+    );
+  });
+
+  it("saves activity successfully even when accelerometer sync fails", async () => {
+    (accelerometer.syncForTimeRange as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("Sync failed"),
+    );
+
+    await recorder.start("cycling");
+    location.emitSample(makeSample());
+    recorder.stop();
+
+    const activityId = await recorder.save(null, null);
+
+    expect(activityId).toBe("activity-123");
+    expect(recorder.getSnapshot().state).toBe("idle");
+  });
+
+  it("works without accelerometer service (backwards compatible)", async () => {
+    const recorderWithoutAccel = createActivityRecorder(location, trpcClient, "Dofek iOS");
+
+    await recorderWithoutAccel.start("running");
+    location.emitSample(makeSample());
+    recorderWithoutAccel.stop();
+
+    const activityId = await recorderWithoutAccel.save(null, null);
+    expect(activityId).toBe("activity-123");
   });
 });
