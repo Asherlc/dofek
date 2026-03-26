@@ -137,6 +137,75 @@ export interface ParsedSleep {
   sleepNeedFromNapMinutes?: number;
 }
 
+/**
+ * Zod schema for inline sleep records from the BFF v0 cycle.sleeps array.
+ * The sleep-service endpoint now returns raw stage data, so we parse from
+ * the cycle response instead.
+ */
+export const inlineSleepSchema = z.object({
+  during: z.string(),
+  state: z.string().optional(),
+  time_in_bed: z.number(),
+  wake_duration: z.number(),
+  light_sleep_duration: z.number(),
+  slow_wave_sleep_duration: z.number(),
+  rem_sleep_duration: z.number(),
+  in_sleep_efficiency: z.number().optional(),
+  sleep_need: z.number().optional(),
+  habitual_sleep_need: z.number().optional(),
+  debt_post: z.number().optional(),
+  need_from_strain: z.number().optional(),
+  credit_from_naps: z.number().optional(),
+  significant: z.boolean().optional(),
+});
+
+export type InlineSleepRecord = z.infer<typeof inlineSleepSchema>;
+
+/**
+ * Parse an inline sleep record from the BFF v0 cycle.sleeps array.
+ * This is the primary sleep parsing path since the sleep-service endpoint
+ * changed to return raw stage arrays instead of summary objects.
+ */
+export function parseInlineSleep(
+  record: InlineSleepRecord,
+  sleepIndex: number,
+): ParsedSleep | null {
+  let range: { start: Date; end: Date };
+  try {
+    range = parseDuringRange(record.during);
+  } catch {
+    return null;
+  }
+  if (Number.isNaN(range.start.getTime()) || Number.isNaN(range.end.getTime())) {
+    return null;
+  }
+
+  const durationMilli = record.time_in_bed - record.wake_duration;
+
+  return {
+    externalId: `inline-${range.start.toISOString()}-${sleepIndex}`,
+    startedAt: range.start,
+    endedAt: range.end,
+    durationMinutes: milliToMinutes(durationMilli),
+    deepMinutes: milliToMinutes(record.slow_wave_sleep_duration),
+    remMinutes: milliToMinutes(record.rem_sleep_duration),
+    lightMinutes: milliToMinutes(record.light_sleep_duration),
+    awakeMinutes: milliToMinutes(record.wake_duration),
+    efficiencyPct: record.in_sleep_efficiency,
+    sleepType: record.significant === false ? "nap" : "sleep",
+    isNap: record.significant === false,
+    sleepNeedBaselineMinutes:
+      record.habitual_sleep_need != null ? milliToMinutes(record.habitual_sleep_need) : undefined,
+    sleepNeedFromDebtMinutes:
+      record.debt_post != null ? milliToMinutes(record.debt_post) : undefined,
+    sleepNeedFromStrainMinutes:
+      record.need_from_strain != null ? milliToMinutes(record.need_from_strain) : undefined,
+    sleepNeedFromNapMinutes:
+      record.credit_from_naps != null ? milliToMinutes(record.credit_from_naps) : undefined,
+  };
+}
+
+/** Parse a sleep record from the legacy sleep-service API response. */
 export function parseSleep(record: WhoopSleepRecord): ParsedSleep | null {
   // BFF v0 uses `during` range; fall back to legacy `start`/`end`
   let startedAt: Date;
@@ -716,37 +785,27 @@ export class WhoopProvider implements SyncProvider {
         "sleep",
         async () => {
           let count = 0;
-          const seenSleepIds = new Set<string>();
           for (const cycle of cycles) {
-            // Log inline sleep data from cycle for diagnosis
-            if (cycle.sleeps && Array.isArray(cycle.sleeps) && cycle.sleeps.length > 0) {
-              const firstSleep = cycle.sleeps[0];
-              const sleepKeys =
-                firstSleep && typeof firstSleep === "object" && firstSleep !== null
-                  ? Object.keys(firstSleep)
-                  : [];
-              logger.info(
-                `[whoop] Cycle has ${cycle.sleeps.length} inline sleep(s), ` +
-                  `first keys: ${sleepKeys.join(",")}`,
-              );
-            }
-            for (const sleepId of extractSleepIdsFromCycle(cycle)) {
-              if (seenSleepIds.has(sleepId)) continue;
-              seenSleepIds.add(sleepId);
-              try {
-                const sleepData = await client.getSleep(sleepId);
-                logger.info(
-                  `[whoop] Sleep raw ${sleepId}: ` +
-                    `start=${sleepData.start}, end=${sleepData.end}, ` +
-                    `during=${sleepData.during}, state=${sleepData.state ?? sleepData.score_state}, ` +
-                    `keys=${Object.keys(sleepData).join(",")}`,
+            const inlineSleeps = cycle.sleeps ?? [];
+            let sleepIndex = 0;
+            for (const rawSleep of inlineSleeps) {
+              const parseResult = inlineSleepSchema.safeParse(rawSleep);
+              if (!parseResult.success) {
+                logger.warn(
+                  `[whoop] Skipping inline sleep: schema mismatch: ${parseResult.error.issues[0]?.message}`,
                 );
-                const parsed = parseSleep(sleepData);
-                if (!parsed) {
-                  logger.warn(`[whoop] Skipping sleep ${sleepId}: missing timestamp data`);
-                  continue;
-                }
+                continue;
+              }
+              const parsed = parseInlineSleep(parseResult.data, sleepIndex);
+              sleepIndex++;
+              if (!parsed) {
+                logger.warn("[whoop] Skipping inline sleep: invalid timestamps");
+                continue;
+              }
+              // Skip incomplete (in-progress) sleeps
+              if (parseResult.data.state !== "complete") continue;
 
+              try {
                 await db
                   .insert(sleepSession)
                   .values({
@@ -787,8 +846,7 @@ export class WhoopProvider implements SyncProvider {
                 count++;
               } catch (err) {
                 errors.push({
-                  message: `Sleep ${sleepId}: ${err instanceof Error ? err.message : String(err)}`,
-                  externalId: sleepId,
+                  message: `Inline sleep: ${err instanceof Error ? err.message : String(err)}`,
                   cause: err,
                 });
               }

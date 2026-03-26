@@ -15,6 +15,7 @@
 import { describe, expect, it } from "vitest";
 import { WhoopClient } from "whoop-whoop";
 import { z } from "zod";
+import { inlineSleepSchema, parseInlineSleep } from "./whoop.ts";
 
 const REFRESH_TOKEN = process.env.WHOOP_REFRESH_TOKEN ?? "";
 const USER_ID = Number(process.env.WHOOP_USER_ID ?? "0");
@@ -216,7 +217,7 @@ describe.skipIf(!hasCredentials)("WHOOP API contract", () => {
     }
   });
 
-  it("cycle.sleeps inline data has parseable structure", async () => {
+  it("cycle.sleeps inline data matches inlineSleepSchema and parses correctly", async () => {
     const end = new Date();
     const start = new Date(end.getTime() - 3 * 24 * 60 * 60 * 1000);
 
@@ -224,20 +225,35 @@ describe.skipIf(!hasCredentials)("WHOOP API contract", () => {
     const cyclesWithSleeps = cycles.filter(
       (cycle) => cycle.sleeps && Array.isArray(cycle.sleeps) && cycle.sleeps.length > 0,
     );
+    expect(cyclesWithSleeps.length).toBeGreaterThan(0);
 
-    if (cyclesWithSleeps.length === 0) {
-      console.warn("No cycles with inline sleeps data found — skipping inline sleep check");
-      return;
-    }
-
+    let parsedCount = 0;
     for (const cycle of cyclesWithSleeps) {
       if (!cycle.sleeps) continue;
-      for (const sleep of cycle.sleeps) {
-        if (sleep && typeof sleep === "object") {
-          console.info("Inline sleep keys:", Object.keys(sleep));
-          console.info("Inline sleep sample:", JSON.stringify(sleep, null, 2).slice(0, 500));
+      for (const [index, sleep] of cycle.sleeps.entries()) {
+        const schemaResult = inlineSleepSchema.safeParse(sleep);
+        if (!schemaResult.success) {
+          console.error(
+            "Inline sleep schema violation:",
+            JSON.stringify(schemaResult.error.issues, null, 2),
+          );
+          if (sleep && typeof sleep === "object") {
+            console.error("Inline sleep keys:", Object.keys(sleep));
+            console.error("Inline sleep sample:", JSON.stringify(sleep, null, 2).slice(0, 500));
+          }
+        }
+        expect(schemaResult.success, "Inline sleep matches inlineSleepSchema").toBe(true);
+        if (!schemaResult.success) continue;
+
+        // Also verify our parser produces valid output
+        const parsed = parseInlineSleep(schemaResult.data, index);
+        if (schemaResult.data.state === "complete") {
+          expect(parsed, "parseInlineSleep returns non-null for complete sleeps").not.toBeNull();
+          expect(parsed?.durationMinutes).toBeGreaterThan(0);
+          parsedCount++;
         }
       }
     }
+    expect(parsedCount).toBeGreaterThan(0);
   });
 });
