@@ -1,3 +1,4 @@
+import { isIndoorCycling } from "@dofek/training/endurance-types";
 import {
   type CanonicalActivityType,
   createActivityTypeMapper,
@@ -483,7 +484,7 @@ export class RideWithGpsProvider implements SyncProvider {
               lat: point.lat,
               lng: point.lng,
               altitude: point.altitude,
-              speed: point.speed,
+              speed: isIndoorCycling(parsed.activityType) ? undefined : point.speed,
               temperature: point.temperature,
               heartRate: point.heartRate,
               cadence: point.cadence,

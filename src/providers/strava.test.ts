@@ -344,6 +344,43 @@ describe("Strava Provider", () => {
         grade_smooth: 0.5,
       });
     });
+
+    it("omits speed for indoor_cycling activities", () => {
+      const rows = stravaStreamsToMetricStream(
+        sampleStreams,
+        "strava",
+        "act-uuid",
+        startedAt,
+        "indoor_cycling",
+      );
+      expect(rows[0]?.speed).toBeUndefined();
+      expect(rows[1]?.speed).toBeUndefined();
+      // Other fields should still be present
+      expect(rows[0]?.heartRate).toBe(130);
+      expect(rows[0]?.power).toBe(200);
+    });
+
+    it("omits speed for virtual_cycling activities", () => {
+      const rows = stravaStreamsToMetricStream(
+        sampleStreams,
+        "strava",
+        "act-uuid",
+        startedAt,
+        "virtual_cycling",
+      );
+      expect(rows[0]?.speed).toBeUndefined();
+    });
+
+    it("keeps speed for outdoor cycling activities", () => {
+      const rows = stravaStreamsToMetricStream(
+        sampleStreams,
+        "strava",
+        "act-uuid",
+        startedAt,
+        "road_cycling",
+      );
+      expect(rows[0]?.speed).toBe(8.5);
+    });
   });
 });
 

@@ -1,3 +1,4 @@
+import { isIndoorCycling } from "@dofek/training/endurance-types";
 import { and, eq } from "drizzle-orm";
 import {
   GarminConnectClient,
@@ -453,7 +454,11 @@ export class GarminProvider implements SyncProvider {
                   : sample.directBikeCadence !== null
                     ? sample.directBikeCadence
                     : undefined,
-              speed: sample.directSpeed !== null ? sample.directSpeed : undefined,
+              speed: isIndoorCycling(parsed.activityType)
+                ? undefined
+                : sample.directSpeed !== null
+                  ? sample.directSpeed
+                  : undefined,
               altitude: sample.directElevation !== null ? sample.directElevation : undefined,
               lat: sample.directLatitude !== null ? sample.directLatitude : undefined,
               lng: sample.directLongitude !== null ? sample.directLongitude : undefined,

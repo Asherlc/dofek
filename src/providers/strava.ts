@@ -1,3 +1,4 @@
+import { isIndoorCycling } from "@dofek/training/endurance-types";
 import {
   type CanonicalActivityType,
   createActivityTypeMapper,
@@ -164,6 +165,7 @@ export function stravaStreamsToMetricStream(
   providerId: string,
   activityId: string,
   startedAt: Date,
+  activityType?: string,
 ): (typeof metricStream.$inferInsert)[] {
   // Scalar streams contain number[], latlng contains [number, number][]
   function isScalarArray(data: number[] | [number, number][]): data is number[] {
@@ -214,7 +216,7 @@ export function stravaStreamsToMetricStream(
       heartRate: heartrates?.[i],
       power: watts?.[i],
       cadence: cadences?.[i],
-      speed: speeds?.[i],
+      speed: activityType && isIndoorCycling(activityType) ? undefined : speeds?.[i],
       lat: latlng?.[0],
       lng: latlng?.[1],
       altitude: altitudes?.[i],
@@ -651,6 +653,7 @@ export class StravaProvider implements WebhookProvider {
         this.id,
         activityId,
         parsed.startedAt,
+        parsed.activityType,
       );
 
       if (metricRows.length > 0) {
@@ -826,6 +829,7 @@ export class StravaProvider implements WebhookProvider {
               this.id,
               activityId,
               act.startedAt,
+              act.activityType,
             );
 
             if (metricRows.length > 0) {

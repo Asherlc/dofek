@@ -1,3 +1,4 @@
+import { isIndoorCycling } from "@dofek/training/endurance-types";
 import {
   type CanonicalActivityType,
   createActivityTypeMapper,
@@ -163,7 +164,9 @@ export function fitRecordsToMetricStream(
   records: ParsedFitRecord[],
   providerId: string,
   activityId: string,
+  activityType?: string,
 ): (typeof metricStream.$inferInsert)[] {
+  const indoor = activityType ? isIndoorCycling(activityType) : false;
   return records.map((r) => ({
     providerId,
     activityId,
@@ -171,7 +174,7 @@ export function fitRecordsToMetricStream(
     heartRate: r.heartRate,
     power: r.power,
     cadence: r.cadence,
-    speed: r.speed,
+    speed: indoor ? undefined : r.speed,
     lat: r.lat,
     lng: r.lng,
     altitude: r.altitude,
@@ -402,7 +405,12 @@ export class WahooProvider implements WebhookProvider {
             parsed.fitFileUrl,
           );
           const fitData = await parseFitFile(fitBuffer);
-          const metricRows = fitRecordsToMetricStream(fitData.records, this.id, activityId);
+          const metricRows = fitRecordsToMetricStream(
+            fitData.records,
+            this.id,
+            activityId,
+            parsed.activityType,
+          );
 
           if (metricRows.length > 0) {
             // Delete existing metric_stream rows before re-inserting
@@ -560,7 +568,12 @@ export class WahooProvider implements WebhookProvider {
               const fitData = await parseFitFile(fitBuffer);
               const activityId = row?.id;
               if (!activityId) continue;
-              const metricRows = fitRecordsToMetricStream(fitData.records, this.id, activityId);
+              const metricRows = fitRecordsToMetricStream(
+                fitData.records,
+                this.id,
+                activityId,
+                workout.activityType,
+              );
 
               if (metricRows.length > 0) {
                 // Insert in batches of 500
