@@ -4,14 +4,19 @@ import { createDatabaseFromEnv } from "../db/index.ts";
 import { jobContext, logger } from "../logger.ts";
 import { processExportJob } from "./process-export-job.ts";
 import { processImportJob } from "./process-import-job.ts";
+import { processPostSyncJob } from "./process-post-sync-job.ts";
 import { processScheduledSyncJob } from "./process-scheduled-sync-job.ts";
 import { processSyncJob } from "./process-sync-job.ts";
+import { getConfiguredProviderIds, getProviderQueueConfig } from "./provider-queue-config.ts";
 import {
   EXPORT_QUEUE,
   type ExportJobData,
   getRedisConnection,
   IMPORT_QUEUE,
   type ImportJobData,
+  POST_SYNC_QUEUE,
+  type PostSyncJobData,
+  providerSyncQueueName,
   SCHEDULED_SYNC_QUEUE,
   type ScheduledSyncJobData,
   SYNC_QUEUE,
@@ -29,13 +34,42 @@ const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const db = createDatabaseFromEnv();
 const connection = getRedisConnection();
 
-// ── Workers ──
+// ── Per-provider sync workers ──
 
-const syncWorker = new Worker<SyncJobData>(
+const providerWorkers = new Map<string, Worker<SyncJobData>>();
+
+for (const providerId of getConfiguredProviderIds()) {
+  const config = getProviderQueueConfig(providerId);
+  const worker = new Worker<SyncJobData>(
+    providerSyncQueueName(providerId),
+    (job) => jobContext.run(job, () => processSyncJob(job, db)),
+    {
+      connection,
+      concurrency: config.concurrency,
+      ...(config.limiter ? { limiter: config.limiter } : {}),
+    },
+  );
+  providerWorkers.set(providerId, worker);
+}
+
+logger.info(`[worker] Created ${providerWorkers.size} per-provider sync workers`);
+
+// ── Legacy sync worker (drains old "sync" queue) ──
+
+const legacySyncWorker = new Worker<SyncJobData>(
   SYNC_QUEUE,
-  (job) => jobContext.run(job, () => processSyncJob(job, db)),
+  (job) => {
+    logger.warn(
+      `[worker] Processing job from legacy "sync" queue (provider=${job.data.providerId}). ` +
+        "New jobs should use per-provider queues.",
+    );
+    return jobContext.run(job, () => processSyncJob(job, db));
+  },
   { connection },
 );
+
+// ── Other workers ──
+
 const importWorker = new Worker<ImportJobData>(
   IMPORT_QUEUE,
   (job) => jobContext.run(job, () => processImportJob(job, db)),
@@ -50,6 +84,11 @@ const scheduledSyncWorker = new Worker<ScheduledSyncJobData>(
   SCHEDULED_SYNC_QUEUE,
   (job) => jobContext.run(job, () => processScheduledSyncJob(job, db)),
   { connection },
+);
+const postSyncWorker = new Worker<PostSyncJobData>(
+  POST_SYNC_QUEUE,
+  (job) => jobContext.run(job, () => processPostSyncJob(job, db)),
+  { connection, concurrency: 1 },
 );
 
 // ── Idle spin-down ──
@@ -72,7 +111,16 @@ function startIdleTimer() {
   }, IDLE_TIMEOUT_MS);
 }
 
-for (const worker of [syncWorker, importWorker, exportWorker, scheduledSyncWorker]) {
+const allWorkers: Worker[] = [
+  ...providerWorkers.values(),
+  legacySyncWorker,
+  importWorker,
+  exportWorker,
+  scheduledSyncWorker,
+  postSyncWorker,
+];
+
+for (const worker of allWorkers) {
   worker.on("active", () => {
     activeJobs++;
     resetIdleTimer();
@@ -115,12 +163,7 @@ async function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
   logger.info("[worker] Shutting down gracefully...");
-  await Promise.all([
-    syncWorker.close(),
-    importWorker.close(),
-    exportWorker.close(),
-    scheduledSyncWorker.close(),
-  ]);
+  await Promise.all(allWorkers.map((w) => w.close()));
   logger.info("[worker] Shutdown complete.");
   process.exit(0);
 }

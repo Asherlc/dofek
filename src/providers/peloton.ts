@@ -1,3 +1,4 @@
+import type { CanonicalActivityType } from "@dofek/training/training";
 import { and as sqlAnd, eq as sqlEq } from "drizzle-orm";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
@@ -86,8 +87,8 @@ export interface PelotonPerformanceGraph {
 // Activity type mapping
 // ============================================================
 
-const DISCIPLINE_MAP: Record<string, string> = {
-  cycling: "cycling",
+const DISCIPLINE_MAP: Record<string, CanonicalActivityType> = {
+  cycling: "indoor_cycling",
   running: "running",
   walking: "walking",
   rowing: "rowing",
@@ -102,7 +103,7 @@ const DISCIPLINE_MAP: Record<string, string> = {
   outdoor: "running",
 };
 
-export function mapFitnessDiscipline(discipline: string): string {
+export function mapFitnessDiscipline(discipline: string): CanonicalActivityType {
   return DISCIPLINE_MAP[discipline] ?? "other";
 }
 
@@ -112,7 +113,7 @@ export function mapFitnessDiscipline(discipline: string): string {
 
 export interface ParsedPelotonWorkout {
   externalId: string;
-  activityType: string;
+  activityType: CanonicalActivityType;
   name?: string;
   startedAt: Date;
   endedAt?: Date;
@@ -637,8 +638,6 @@ export class PelotonProvider implements SyncProvider {
               const hrSeries = series.find((s) => s.slug === "heart_rate");
               const powerSeries = series.find((s) => s.slug === "output");
               const cadenceSeries = series.find((s) => s.slug === "cadence");
-              const speedSeries = series.find((s) => s.slug === "speed");
-
               const sampleCount =
                 hrSeries?.values.length ??
                 powerSeries?.values.length ??
@@ -666,7 +665,7 @@ export class PelotonProvider implements SyncProvider {
                     heartRate: hrSeries?.values[i] ?? null,
                     power: powerSeries?.values[i] ?? null,
                     cadence: cadenceSeries?.values[i] ?? null,
-                    speed: speedSeries?.values[i] ?? null,
+                    // Indoor rides have no meaningful speed — omit it
                   });
                 }
 

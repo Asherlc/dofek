@@ -164,6 +164,110 @@ export interface CredentialProvider extends SyncProvider {
 export interface FileImportProvider extends ImportProvider {}
 
 // ============================================================
+// Webhook support
+// ============================================================
+
+/**
+ * An event parsed from an incoming webhook payload.
+ * Used to determine which user needs a sync.
+ */
+export interface WebhookEvent {
+  /** Provider-specific owner/user ID (e.g., Strava athlete_id, Fitbit user_id) */
+  ownerExternalId: string;
+  /** What happened */
+  eventType: "create" | "update" | "delete";
+  /** What kind of object changed (activity, sleep, body, etc.) */
+  objectType: string;
+  /** External ID of the changed object (if available) */
+  objectId?: string;
+  /**
+   * Provider-specific metadata carried through to syncWebhookEvent().
+   * Can include the full payload (Wahoo, Concept2, Suunto), a date (Fitbit),
+   * a time range (Withings), or any other context needed for targeted sync.
+   */
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * A provider that supports receiving webhook push notifications.
+ * Extends SyncProvider — webhooks trigger targeted syncs via the existing sync pipeline.
+ *
+ * Webhook registration can be either:
+ * - **App-level** (Strava): one subscription for the entire app, registered once
+ * - **Per-user** (Fitbit, Withings): subscription created per connected user
+ */
+export interface WebhookProvider extends SyncProvider {
+  /**
+   * Register a webhook subscription with the provider API.
+   * For app-level webhooks: called once during setup.
+   * For per-user webhooks: called after OAuth token exchange.
+   *
+   * @param callbackUrl - The URL the provider should POST events to
+   * @param verifyToken - Random token for validation challenges
+   * @returns Registration result with subscription ID and optional signing secret
+   */
+  registerWebhook(
+    callbackUrl: string,
+    verifyToken: string,
+  ): Promise<{ subscriptionId: string; signingSecret?: string; expiresAt?: Date }>;
+
+  /**
+   * Unregister a webhook subscription.
+   * Called when a user disconnects or when cleaning up.
+   */
+  unregisterWebhook(subscriptionId: string): Promise<void>;
+
+  /**
+   * Verify an incoming webhook request's authenticity.
+   * Each provider has its own signature scheme (HMAC-SHA256, HMAC-SHA1, etc.).
+   *
+   * @param rawBody - The raw request body bytes
+   * @param headers - HTTP request headers
+   * @param signingSecret - The secret/token used for verification
+   * @returns true if the signature is valid
+   */
+  verifyWebhookSignature(
+    rawBody: Buffer,
+    headers: Record<string, string | string[] | undefined>,
+    signingSecret: string,
+  ): boolean;
+
+  /**
+   * Parse a webhook payload to extract events.
+   * Each event identifies the affected user and what changed.
+   */
+  parseWebhookPayload(body: unknown): WebhookEvent[];
+
+  /**
+   * Process a single webhook event efficiently — fetch/upsert only the
+   * specific data that changed, instead of running a full sync().
+   *
+   * Returns a SyncResult describing what was synced.
+   * If not implemented, the webhook router falls back to a full sync().
+   */
+  syncWebhookEvent?(
+    db: SyncDatabase,
+    event: WebhookEvent,
+    options?: SyncOptions,
+  ): Promise<SyncResult>;
+
+  /**
+   * Handle provider-specific validation challenges (e.g., Strava's hub.challenge).
+   * Called on GET requests to the webhook URL.
+   * Returns the challenge response body, or null if not applicable.
+   */
+  handleValidationChallenge?(query: Record<string, string>, verifyToken: string): unknown | null;
+
+  /** Whether this is an app-level (single) or per-user subscription */
+  readonly webhookScope: "app" | "user";
+}
+
+/** Type guard: narrows a Provider to WebhookProvider. */
+export function isWebhookProvider(provider: Provider): provider is WebhookProvider {
+  return "registerWebhook" in provider && typeof provider.registerWebhook === "function";
+}
+
+// ============================================================
 // Runtime auth type detection
 // ============================================================
 

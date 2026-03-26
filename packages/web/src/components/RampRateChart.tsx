@@ -25,17 +25,17 @@ export function buildRampRateOption(data: RampRateWeekData[]) {
         const first = params[0];
         if (!first) return "";
         const idx = first.dataIndex;
-        const d = data[idx];
-        if (!d) return "";
-        const color = rampRateColor(d.rampRate);
-        const dateLabel = new Date(d.week).toLocaleDateString("en-US", {
+        const dataPoint = data[idx];
+        if (!dataPoint) return "";
+        const color = rampRateColor(dataPoint.rampRate);
+        const dateLabel = new Date(dataPoint.week).toLocaleDateString("en-US", {
           month: "short",
           day: "numeric",
           year: "numeric",
         });
         return [
           `<strong>${dateLabel}</strong>`,
-          `Ramp Rate: <span style="color:${color}">${formatNumber(d.rampRate, 2)}</span>`,
+          `Ramp Rate: <span style="color:${color}">${formatNumber(dataPoint.rampRate, 2)}</span>`,
         ].join("<br/>");
       },
     }),

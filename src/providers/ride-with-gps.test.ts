@@ -10,9 +10,9 @@ import {
 describe("mapActivityType", () => {
   it("maps cycling types", () => {
     expect(mapActivityType("cycling")).toBe("cycling");
-    expect(mapActivityType("mountain_biking")).toBe("cycling");
-    expect(mapActivityType("road_cycling")).toBe("cycling");
-    expect(mapActivityType("gravel_cycling")).toBe("cycling");
+    expect(mapActivityType("mountain_biking")).toBe("mountain_biking");
+    expect(mapActivityType("road_cycling")).toBe("road_cycling");
+    expect(mapActivityType("gravel_cycling")).toBe("gravel_cycling");
   });
 
   it("maps running types", () => {
@@ -83,7 +83,7 @@ describe("parseTripToActivity", () => {
 
   it("maps activity type through mapActivityType", () => {
     const trip = { ...baseTrip, activity_type: "mountain_biking" };
-    expect(parseTripToActivity(trip).activityType).toBe("cycling");
+    expect(parseTripToActivity(trip).activityType).toBe("mountain_biking");
   });
 
   it("handles null description", () => {

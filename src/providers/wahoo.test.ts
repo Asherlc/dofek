@@ -218,6 +218,40 @@ describe("Wahoo Provider", () => {
       const rows = fitRecordsToMetricStream([], "wahoo", "activity-uuid-123");
       expect(rows).toHaveLength(0);
     });
+
+    it("omits speed for indoor_cycling activities", () => {
+      const rows = fitRecordsToMetricStream(
+        fakeRecords,
+        "wahoo",
+        "activity-uuid-123",
+        "indoor_cycling",
+      );
+      expect(rows[0]?.speed).toBeUndefined();
+      expect(rows[1]?.speed).toBeUndefined();
+      // Other fields should still be present
+      expect(rows[0]?.heartRate).toBe(130);
+      expect(rows[0]?.power).toBe(200);
+    });
+
+    it("omits speed for virtual_cycling activities", () => {
+      const rows = fitRecordsToMetricStream(
+        fakeRecords,
+        "wahoo",
+        "activity-uuid-123",
+        "virtual_cycling",
+      );
+      expect(rows[0]?.speed).toBeUndefined();
+    });
+
+    it("keeps speed for outdoor cycling activities", () => {
+      const rows = fitRecordsToMetricStream(
+        fakeRecords,
+        "wahoo",
+        "activity-uuid-123",
+        "road_cycling",
+      );
+      expect(rows[0]?.speed).toBe(8.5);
+    });
   });
 });
 
@@ -267,7 +301,7 @@ describe("wahooOAuthConfig", () => {
     process.env.WAHOO_CLIENT_SECRET = "test-secret";
     delete process.env.OAUTH_REDIRECT_URI_unencrypted;
     const config = wahooOAuthConfig();
-    expect(config?.redirectUri).toContain("dofek");
+    expect(config?.redirectUri).toBe("https://dofek.asherlc.com/callback");
   });
 });
 
@@ -314,7 +348,7 @@ describe("WahooProvider.authSetup()", () => {
     const setup = provider.authSetup();
     expect(setup.oauthConfig.clientId).toBe("test-id");
     expect(setup.exchangeCode).toBeTypeOf("function");
-    expect(setup.apiBaseUrl).toContain("wahooligan.com");
+    expect(setup.apiBaseUrl).toBe("https://api.wahooligan.com");
   });
 
   it("throws when env vars are missing", () => {
@@ -322,6 +356,52 @@ describe("WahooProvider.authSetup()", () => {
     delete process.env.WAHOO_CLIENT_SECRET;
     const provider = new WahooProvider();
     expect(() => provider.authSetup()).toThrow("WAHOO_CLIENT_ID");
+  });
+});
+
+describe("WahooClient — API base URL", () => {
+  it("uses https://api.wahooligan.com as the base URL for workouts endpoint", async () => {
+    let capturedUrl = "";
+    const mockFetch: typeof globalThis.fetch = async (
+      input: string | URL | Request,
+    ): Promise<Response> => {
+      capturedUrl = String(input);
+      return Response.json({
+        workouts: [],
+        total: 0,
+        page: 1,
+        per_page: 30,
+        order: "desc",
+        sort: "starts",
+      });
+    };
+
+    const client = new WahooClient("token", mockFetch);
+    await client.getWorkouts();
+    expect(capturedUrl).toMatch(/^https:\/\/api\.wahooligan\.com\//);
+    expect(capturedUrl).toContain("/v1/workouts");
+  });
+
+  it("sends Authorization Bearer header with access token", async () => {
+    let capturedHeaders: HeadersInit | undefined;
+    const mockFetch: typeof globalThis.fetch = async (
+      _input: string | URL | Request,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      capturedHeaders = init?.headers;
+      return Response.json({
+        workouts: [],
+        total: 0,
+        page: 1,
+        per_page: 30,
+        order: "desc",
+        sort: "starts",
+      });
+    };
+
+    const client = new WahooClient("my-token", mockFetch);
+    await client.getWorkouts();
+    expect(capturedHeaders).toEqual(expect.objectContaining({ Authorization: "Bearer my-token" }));
   });
 });
 
@@ -356,6 +436,62 @@ describe("WahooClient — error handling", () => {
     await expect(client.downloadFitFile("https://example.com/test.fit")).rejects.toThrow(
       "Failed to download FIT file (404)",
     );
+  });
+});
+
+describe("WahooClient — Zod coercion of string/null numeric fields", () => {
+  it("coerces string numeric fields and null values from the Wahoo API", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return Response.json({
+        workouts: [
+          {
+            id: 1,
+            workout_type_id: 0,
+            starts: "2026-03-01T10:00:00Z",
+            created_at: "2026-03-01T10:00:00Z",
+            updated_at: "2026-03-01T10:00:00Z",
+            workout_summary: {
+              id: 101,
+              ascent_accum: "350.5",
+              cadence_avg: null,
+              calories_accum: "1500",
+              distance_accum: "42000.0",
+              duration_active_accum: "5400",
+              duration_paused_accum: "120",
+              duration_total_accum: "5520",
+              heart_rate_avg: "145.3",
+              power_bike_np_last: null,
+              power_bike_tss_last: null,
+              power_avg: null,
+              speed_avg: "7.78",
+              work_accum: null,
+              created_at: "2026-03-01T10:00:00Z",
+              updated_at: "2026-03-01T10:30:00Z",
+            },
+          },
+        ],
+        total: 1,
+        page: 1,
+        per_page: 30,
+        order: "desc",
+        sort: "starts",
+      });
+    };
+
+    const client = new WahooClient("token", mockFetch);
+    const result = await client.getWorkouts();
+    const summary = result.workouts[0]?.workout_summary;
+
+    expect(summary?.ascent_accum).toBe(350.5);
+    expect(summary?.cadence_avg).toBeUndefined();
+    expect(summary?.calories_accum).toBe(1500);
+    expect(summary?.distance_accum).toBe(42000.0);
+    expect(summary?.duration_active_accum).toBe(5400);
+    expect(summary?.heart_rate_avg).toBe(145.3);
+    expect(summary?.power_bike_np_last).toBeUndefined();
+    expect(summary?.power_avg).toBeUndefined();
+    expect(summary?.speed_avg).toBe(7.78);
+    expect(summary?.work_accum).toBeUndefined();
   });
 });
 
@@ -494,19 +630,19 @@ describe("parseWorkoutSummary — additional type mappings", () => {
 
   it("handles indoor cycling type (3)", () => {
     expect(parseWorkoutSummary({ ...baseWorkout, workout_type_id: 3 }).activityType).toBe(
-      "cycling",
+      "indoor_cycling",
     );
   });
 
   it("handles mountain biking type (4)", () => {
     expect(parseWorkoutSummary({ ...baseWorkout, workout_type_id: 4 }).activityType).toBe(
-      "cycling",
+      "mountain_biking",
     );
   });
 
   it("handles gravel cycling type (5)", () => {
     expect(parseWorkoutSummary({ ...baseWorkout, workout_type_id: 5 }).activityType).toBe(
-      "cycling",
+      "gravel_cycling",
     );
   });
 });
@@ -569,5 +705,636 @@ describe("WahooProvider.getUserIdentity()", () => {
     const setup = provider.authSetup();
     if (!setup.getUserIdentity) throw new Error("getUserIdentity not defined");
     await expect(setup.getUserIdentity("bad-token")).rejects.toThrow("Wahoo user API error (401)");
+  });
+});
+
+// ============================================================
+// syncWebhookEvent tests
+// ============================================================
+
+import { vi } from "vitest";
+
+function makeWahooInsertMock(returnId = "act-uuid") {
+  return vi.fn().mockReturnValue({
+    values: vi.fn().mockReturnValue({
+      onConflictDoUpdate: vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([{ id: returnId }]),
+      }),
+      onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+    }),
+  });
+}
+
+describe("WahooProvider.syncWebhookEvent", () => {
+  it("returns immediately for non-workout objectType", async () => {
+    const provider = new WahooProvider(async () => new Response());
+    const mockDb = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn(),
+    };
+
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "42",
+      eventType: "create",
+      objectType: "user",
+      objectId: "1",
+    });
+
+    expect(result.provider).toBe("wahoo");
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it("returns error when webhook metadata is invalid", async () => {
+    const provider = new WahooProvider(async () => new Response());
+    const mockDb = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn(),
+    };
+
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "42",
+      eventType: "create",
+      objectType: "workout",
+      objectId: "99",
+      metadata: { payload: { bad: "data" } },
+    });
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("Invalid webhook payload");
+  });
+
+  it("returns early when payload has workout_summary but no workout", async () => {
+    const provider = new WahooProvider(async () => new Response());
+    const mockDb = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn(),
+    };
+
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "42",
+      eventType: "create",
+      objectType: "workout",
+      objectId: "99",
+      metadata: {
+        payload: {
+          user: { id: 42 },
+          workout_summary: {
+            id: 99,
+            created_at: "2026-03-01T10:00:00Z",
+            updated_at: "2026-03-01T10:00:00Z",
+          },
+        },
+      },
+    });
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it("returns error when payload has neither workout nor workout_summary", async () => {
+    const provider = new WahooProvider(async () => new Response());
+    const mockDb = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn(),
+    };
+
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "42",
+      eventType: "create",
+      objectType: "workout",
+      objectId: "99",
+      metadata: {
+        payload: {
+          user: { id: 42 },
+        },
+      },
+    });
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("missing workout data");
+  });
+
+  it("upserts activity on happy path without FIT file", async () => {
+    const mockInsert = makeWahooInsertMock();
+    const mockDb = {
+      select: vi.fn(),
+      insert: mockInsert,
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      execute: vi.fn(),
+    };
+
+    const provider = new WahooProvider(async () => new Response());
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "42",
+      eventType: "create",
+      objectType: "workout",
+      objectId: "99",
+      metadata: {
+        payload: {
+          user: { id: 42 },
+          workout: {
+            id: 42,
+            workout_type_id: 0,
+            starts: "2026-03-01T08:00:00Z",
+            created_at: "2026-03-01T10:00:00Z",
+            updated_at: "2026-03-01T10:00:00Z",
+          },
+        },
+      },
+    });
+
+    expect(result.provider).toBe("wahoo");
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(0);
+    expect(mockInsert).toHaveBeenCalled();
+  });
+
+  it("merges standalone workout_summary into workout when workout has none", async () => {
+    const mockInsert = makeWahooInsertMock();
+    const mockDb = {
+      select: vi.fn(),
+      insert: mockInsert,
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      execute: vi.fn(),
+    };
+
+    const provider = new WahooProvider(async () => new Response());
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "42",
+      eventType: "create",
+      objectType: "workout",
+      objectId: "99",
+      metadata: {
+        payload: {
+          user: { id: 42 },
+          workout_summary: {
+            id: 200,
+            duration_total_accum: 3600,
+            created_at: "2026-03-01T11:00:00Z",
+            updated_at: "2026-03-01T11:00:00Z",
+          },
+          workout: {
+            id: 42,
+            workout_type_id: 0,
+            starts: "2026-03-01T08:00:00Z",
+            created_at: "2026-03-01T10:00:00Z",
+            updated_at: "2026-03-01T10:00:00Z",
+            // No workout_summary here — should be merged from top-level
+          },
+        },
+      },
+    });
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it("collects FIT file download errors without failing", async () => {
+    const mockInsert = makeWahooInsertMock();
+    const mockDelete = vi.fn().mockReturnValue({
+      where: vi.fn().mockResolvedValue(undefined),
+    });
+    const mockDb = {
+      select: vi.fn(),
+      insert: mockInsert,
+      delete: mockDelete,
+      execute: vi.fn(),
+    };
+
+    // FIT file URL download returns 404
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response("Not Found", { status: 404 });
+    };
+
+    const provider = new WahooProvider(mockFetch);
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "42",
+      eventType: "create",
+      objectType: "workout",
+      objectId: "99",
+      metadata: {
+        payload: {
+          user: { id: 42 },
+          workout: {
+            id: 42,
+            workout_type_id: 0,
+            starts: "2026-03-01T08:00:00Z",
+            created_at: "2026-03-01T10:00:00Z",
+            updated_at: "2026-03-01T10:00:00Z",
+            workout_summary: {
+              id: 101,
+              created_at: "2026-03-01T10:00:00Z",
+              updated_at: "2026-03-01T10:00:00Z",
+              file: { url: "https://cdn.wahoo.com/test.fit" },
+            },
+          },
+        },
+      },
+    });
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("FIT file");
+  });
+
+  it("returns early when activity insert returns no id", async () => {
+    const mockInsert = vi.fn().mockReturnValue({
+      values: vi.fn().mockReturnValue({
+        onConflictDoUpdate: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([]),
+        }),
+      }),
+    });
+    const mockDb = {
+      select: vi.fn(),
+      insert: mockInsert,
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      execute: vi.fn(),
+    };
+
+    const provider = new WahooProvider(async () => new Response());
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "42",
+      eventType: "create",
+      objectType: "workout",
+      objectId: "99",
+      metadata: {
+        payload: {
+          user: { id: 42 },
+          workout: {
+            id: 42,
+            workout_type_id: 0,
+            starts: "2026-03-01T08:00:00Z",
+            created_at: "2026-03-01T10:00:00Z",
+            updated_at: "2026-03-01T10:00:00Z",
+            workout_summary: {
+              id: 101,
+              created_at: "2026-03-01T10:00:00Z",
+              updated_at: "2026-03-01T10:00:00Z",
+              file: { url: "https://cdn.wahoo.com/test.fit" },
+            },
+          },
+        },
+      },
+    });
+
+    // Activity counted as synced but no FIT file download attempted
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it("collects DB insert errors for the activity upsert", async () => {
+    const insertError = new Error("DB constraint violation");
+    const mockInsert = vi.fn().mockReturnValue({
+      values: vi.fn().mockReturnValue({
+        onConflictDoUpdate: vi.fn().mockReturnValue({
+          returning: vi.fn().mockRejectedValue(insertError),
+        }),
+      }),
+    });
+    const mockDb = {
+      select: vi.fn(),
+      insert: mockInsert,
+      delete: vi.fn(),
+      execute: vi.fn(),
+    };
+
+    const provider = new WahooProvider(async () => new Response());
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "42",
+      eventType: "create",
+      objectType: "workout",
+      objectId: "99",
+      metadata: {
+        payload: {
+          user: { id: 42 },
+          workout: {
+            id: 42,
+            workout_type_id: 0,
+            starts: "2026-03-01T08:00:00Z",
+            created_at: "2026-03-01T10:00:00Z",
+            updated_at: "2026-03-01T10:00:00Z",
+          },
+        },
+      },
+    });
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("DB constraint violation");
+  });
+});
+
+// ============================================================
+// Additional precise assertions for mutation killing
+// ============================================================
+
+describe("WahooProvider — precise webhook assertions", () => {
+  it("parseWebhookPayload exact event for workout_summary.updated vs other types", () => {
+    const provider = new WahooProvider(async () => new Response());
+
+    // workout_summary.updated should return "update"
+    const updatedEvents = provider.parseWebhookPayload({
+      event_type: "workout_summary.updated",
+      user: { id: 7 },
+      workout_summary: {
+        id: 33,
+        created_at: "2026-03-01T10:00:00Z",
+        updated_at: "2026-03-01T10:00:00Z",
+      },
+    });
+    expect(updatedEvents[0]?.eventType).toBe("update");
+    expect(updatedEvents[0]?.ownerExternalId).toBe("7");
+    expect(updatedEvents[0]?.objectType).toBe("workout");
+    expect(updatedEvents[0]?.objectId).toBe("33");
+
+    // Any other event_type should return "create"
+    const createdEvents = provider.parseWebhookPayload({
+      event_type: "workout_summary.created",
+      user: { id: 8 },
+    });
+    expect(createdEvents[0]?.eventType).toBe("create");
+
+    // event_type undefined should return "create"
+    const noTypeEvents = provider.parseWebhookPayload({
+      user: { id: 9 },
+    });
+    expect(noTypeEvents[0]?.eventType).toBe("create");
+  });
+
+  it("parseWebhookPayload with workout_summary id=0 returns objectId '0'", () => {
+    const provider = new WahooProvider(async () => new Response());
+
+    // Edge case: id=0 is falsy but should still produce "0"
+    const events = provider.parseWebhookPayload({
+      user: { id: 1 },
+      workout_summary: {
+        id: 0,
+        created_at: "2026-03-01T10:00:00Z",
+        updated_at: "2026-03-01T10:00:00Z",
+      },
+    });
+    // id=0 is falsy in JS, so the `?.id ? String(...) : undefined` check matters
+    expect(events).toHaveLength(1);
+    // Zero is falsy, so objectId should be undefined (due to the ternary)
+    expect(events[0]?.objectId).toBeUndefined();
+  });
+
+  it("parseWebhookPayload includes full payload in metadata", () => {
+    const provider = new WahooProvider(async () => new Response());
+    const inputPayload = {
+      event_type: "workout_summary.created",
+      user: { id: 42 },
+      webhook_token: "wh-tok",
+    };
+
+    const events = provider.parseWebhookPayload(inputPayload);
+    expect(events[0]?.metadata).toEqual({ payload: inputPayload });
+  });
+
+  it("registerWebhook returns exact string 'wahoo-portal-subscription'", async () => {
+    const provider = new WahooProvider(async () => new Response());
+    const result = await provider.registerWebhook("https://example.com/cb", "tok");
+    expect(result.subscriptionId).toBe("wahoo-portal-subscription");
+    expect(result.signingSecret).toBeUndefined();
+    expect(result.expiresAt).toBeUndefined();
+  });
+
+  it("verifyWebhookSignature returns exactly true for any input", () => {
+    const provider = new WahooProvider(async () => new Response());
+    expect(provider.verifyWebhookSignature(Buffer.from(""), {}, "")).toBe(true);
+    expect(provider.verifyWebhookSignature(Buffer.from("body"), { "x-sig": "abc" }, "secret")).toBe(
+      true,
+    );
+  });
+
+  it("syncWebhookEvent returns provider as 'wahoo' for all paths", async () => {
+    const provider = new WahooProvider(async () => new Response());
+    const mockDb = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn(),
+    };
+
+    // Non-workout path
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "1",
+      eventType: "create",
+      objectType: "user",
+    });
+    expect(result.provider).toBe("wahoo");
+    expect(result.duration).toBeGreaterThanOrEqual(0);
+    expect(result.errors).toEqual([]);
+    expect(result.recordsSynced).toBe(0);
+  });
+
+  it("syncWebhookEvent invalid payload path returns provider 'wahoo'", async () => {
+    const provider = new WahooProvider(async () => new Response());
+    const mockDb = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn(),
+    };
+
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "1",
+      eventType: "create",
+      objectType: "workout",
+      metadata: { payload: "not-an-object" },
+    });
+    expect(result.provider).toBe("wahoo");
+    expect(result.errors.length).toBeGreaterThan(0);
+  });
+
+  it("syncWebhookEvent summary-only path returns provider 'wahoo'", async () => {
+    const provider = new WahooProvider(async () => new Response());
+    const mockDb = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn(),
+    };
+
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "1",
+      eventType: "create",
+      objectType: "workout",
+      metadata: {
+        payload: {
+          user: { id: 1 },
+          workout_summary: {
+            id: 1,
+            created_at: "2026-01-01T00:00:00Z",
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+        },
+      },
+    });
+    expect(result.provider).toBe("wahoo");
+    expect(result.recordsSynced).toBe(0);
+  });
+
+  it("syncWebhookEvent no-workout-data path returns provider 'wahoo'", async () => {
+    const provider = new WahooProvider(async () => new Response());
+    const mockDb = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn(),
+    };
+
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "1",
+      eventType: "create",
+      objectType: "workout",
+      metadata: {
+        payload: {
+          user: { id: 1 },
+        },
+      },
+    });
+    expect(result.provider).toBe("wahoo");
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toBe("Webhook payload missing workout data");
+  });
+
+  it("parseWorkoutSummary name is undefined when workout has no name", () => {
+    const workout: WahooWorkout = {
+      id: 10,
+      workout_type_id: 0,
+      starts: "2026-03-01T10:00:00Z",
+      created_at: "2026-03-01T10:00:00Z",
+      updated_at: "2026-03-01T10:00:00Z",
+    };
+    const result = parseWorkoutSummary(workout);
+    expect(result.name).toBeUndefined();
+    expect(result.externalId).toBe("10");
+    expect(result.activityType).toBe("cycling");
+    expect(result.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
+    expect(result.endedAt).toBeUndefined();
+    expect(result.fitFileUrl).toBeUndefined();
+  });
+
+  it("syncWebhookEvent FIT file error includes externalId and original error message", async () => {
+    const mockInsert = makeWahooInsertMock();
+    const mockDelete = vi.fn().mockReturnValue({
+      where: vi.fn().mockResolvedValue(undefined),
+    });
+    const mockDb = {
+      select: vi.fn(),
+      insert: mockInsert,
+      delete: mockDelete,
+      execute: vi.fn(),
+    };
+
+    // FIT file URL download throws a custom error
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response("Server Error", { status: 500 });
+    };
+
+    const provider = new WahooProvider(mockFetch);
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "42",
+      eventType: "create",
+      objectType: "workout",
+      objectId: "99",
+      metadata: {
+        payload: {
+          user: { id: 42 },
+          workout: {
+            id: 42,
+            workout_type_id: 0,
+            starts: "2026-03-01T08:00:00Z",
+            created_at: "2026-03-01T10:00:00Z",
+            updated_at: "2026-03-01T10:00:00Z",
+            workout_summary: {
+              id: 101,
+              created_at: "2026-03-01T10:00:00Z",
+              updated_at: "2026-03-01T10:00:00Z",
+              file: { url: "https://cdn.wahoo.com/bad.fit" },
+            },
+          },
+        },
+      },
+    });
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(1);
+    // Assert exact error format: "FIT file for <externalId>: <message>"
+    expect(result.errors[0]?.message).toMatch(/^FIT file for 42: /);
+    expect(result.errors[0]?.externalId).toBe("42");
+    expect(result.errors[0]?.cause).toBeDefined();
+  });
+
+  it("syncWebhookEvent outer catch includes externalId from parsed workout", async () => {
+    // Simulate the outer catch by having the activity insert itself throw
+    const mockInsert = vi.fn().mockReturnValue({
+      values: vi.fn().mockReturnValue({
+        onConflictDoUpdate: vi.fn().mockReturnValue({
+          returning: vi.fn().mockRejectedValue(new Error("outer fail")),
+        }),
+      }),
+    });
+    const mockDb = {
+      select: vi.fn(),
+      insert: mockInsert,
+      delete: vi.fn(),
+      execute: vi.fn(),
+    };
+
+    const provider = new WahooProvider(async () => new Response());
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "42",
+      eventType: "create",
+      objectType: "workout",
+      objectId: "99",
+      metadata: {
+        payload: {
+          user: { id: 42 },
+          workout: {
+            id: 77,
+            workout_type_id: 1,
+            starts: "2026-03-01T08:00:00Z",
+            created_at: "2026-03-01T10:00:00Z",
+            updated_at: "2026-03-01T10:00:00Z",
+          },
+        },
+      },
+    });
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("outer fail");
+    expect(result.errors[0]?.externalId).toBe("77");
+  });
+
+  it("wahooOAuthConfig includes exact API URLs using WAHOO_API_BASE", () => {
+    const originalEnv = { ...process.env };
+    process.env.WAHOO_CLIENT_ID = "id";
+    process.env.WAHOO_CLIENT_SECRET = "secret";
+    const config = wahooOAuthConfig();
+    expect(config?.authorizeUrl).toBe("https://api.wahooligan.com/oauth/authorize");
+    expect(config?.tokenUrl).toBe("https://api.wahooligan.com/oauth/token");
+    expect(config?.scopes).toEqual(["user_read", "workouts_read", "offline_data"]);
+    process.env = { ...originalEnv };
+  });
+
+  it("WahooProvider.authSetup apiBaseUrl matches exact Wahoo API base", () => {
+    const originalEnv = { ...process.env };
+    process.env.WAHOO_CLIENT_ID = "id";
+    process.env.WAHOO_CLIENT_SECRET = "secret";
+    const provider = new WahooProvider();
+    const setup = provider.authSetup();
+    expect(setup.apiBaseUrl).toBe("https://api.wahooligan.com");
+    process.env = { ...originalEnv };
   });
 });

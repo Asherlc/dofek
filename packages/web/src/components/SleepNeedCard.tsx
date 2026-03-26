@@ -9,7 +9,6 @@ import {
 } from "../lib/chartTheme.ts";
 import { formatNumber } from "../lib/format.ts";
 import { DofekChart } from "./DofekChart.tsx";
-import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface SleepNeedCardProps {
   data: SleepNeedResult | undefined;
@@ -17,9 +16,9 @@ interface SleepNeedCardProps {
 }
 
 function formatHoursMinutes(minutes: number): string {
-  const h = Math.floor(minutes / 60);
-  const m = Math.round(minutes % 60);
-  return `${h}h ${m}m`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = Math.round(minutes % 60);
+  return `${hours}h ${remainingMinutes}m`;
 }
 
 export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
@@ -58,10 +57,13 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
           month: "short",
           day: "numeric",
         });
+        if (night.actualMinutes == null) {
+          return `<div style="font-weight:600;margin-bottom:4px">${date}</div><div style="color:#6b7280">No data</div>`;
+        }
         let html = `<div style="font-weight:600;margin-bottom:4px">${date}</div>`;
         html += `<div>Slept: <b>${formatHoursMinutes(night.actualMinutes)}</b></div>`;
         html += `<div>Needed: <b>${formatHoursMinutes(night.neededMinutes)}</b></div>`;
-        if (night.debtMinutes > 0) {
+        if (night.debtMinutes != null && night.debtMinutes > 0) {
           html += `<div style="color:#ef4444">Debt: ${night.debtMinutes}m</div>`;
         }
         return html;
@@ -81,9 +83,14 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
         ...dofekSeries.bar(
           "Actual",
           data.recentNights.map((n) => ({
-            value: n.actualMinutes,
+            value: n.actualMinutes ?? 0,
             itemStyle: {
-              color: n.actualMinutes >= n.neededMinutes ? "#22c55e" : "#ef4444",
+              color:
+                n.actualMinutes == null
+                  ? "#3a3a3e"
+                  : n.actualMinutes >= n.neededMinutes
+                    ? "#22c55e"
+                    : "#ef4444",
             },
           })),
         ),
@@ -98,6 +105,7 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
             lineStyle: { type: "dashed" },
             width: 1.5,
             z: 5,
+            connectNulls: true,
           },
         ),
       },
@@ -109,10 +117,16 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
       <div className="flex items-start justify-between mb-4">
         <div>
           <h3 className="text-muted text-sm font-medium mb-1">Sleep Need Tonight</h3>
-          <div className="flex items-baseline gap-2">
-            <span className="text-4xl font-bold text-blue-400">{needHours}h</span>
-            <span className="text-subtle text-sm">recommended</span>
-          </div>
+          {data.canRecommend ? (
+            <div className="flex items-baseline gap-2">
+              <span className="text-4xl font-bold text-blue-400">{needHours}h</span>
+              <span className="text-subtle text-sm">recommended</span>
+            </div>
+          ) : (
+            <div className="flex items-baseline gap-2">
+              <span className="text-lg text-dim">Need last night's sleep data</span>
+            </div>
+          )}
         </div>
       </div>
 

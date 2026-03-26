@@ -15,9 +15,9 @@ export function MicronutrientChart({ data, loading }: MicronutrientChartProps) {
     tooltip: dofekTooltip({
       axisPointer: { type: "shadow" },
       formatter: (params: Array<{ name: string; value: number; dataIndex: number }>) => {
-        const p = params[0];
-        if (!p) return "";
-        const row = sorted[p.dataIndex];
+        const firstParam = params[0];
+        if (!firstParam) return "";
+        const row = sorted[firstParam.dataIndex];
         if (!row) return "";
         return `<b>${row.nutrient}</b><br/>
           ${row.avgIntake} ${row.unit} / ${row.rda} ${row.unit}<br/>

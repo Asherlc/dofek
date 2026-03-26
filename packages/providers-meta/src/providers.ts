@@ -37,6 +37,7 @@ export const PROVIDER_LABELS: Record<string, string> = {
   "strong-csv": "Strong",
   "cronometer-csv": "Cronometer",
   bodyspec: "BodySpec",
+  dofek: "Dofek",
 };
 
 /** Human-readable label for a provider ID, falls back to the raw ID */
@@ -92,6 +93,7 @@ export const PNG_LOGOS: ReadonlySet<string> = new Set([
 export const BRAND_COLORS: Readonly<Record<string, string>> = {
   velohero: "#FF6600",
   bodyspec: "#00B4D8",
+  dofek: "#4A9D8E",
 };
 
 /** Returns "svg", "png", or null depending on what logo file a provider has. */

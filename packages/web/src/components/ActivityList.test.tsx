@@ -38,7 +38,7 @@ describe("ActivityList", () => {
   it("renders a list of activities with metric units", () => {
     renderWithUnits(<ActivityList activities={mockActivities} />, "metric");
     expect(screen.getByText("Morning Run")).toBeDefined();
-    expect(screen.getByText("running")).toBeDefined();
+    expect(screen.getByText("Running")).toBeDefined();
     expect(screen.getByText("5.0 km")).toBeDefined();
     expect(screen.getByText("450 kcal")).toBeDefined();
   });

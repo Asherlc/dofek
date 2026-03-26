@@ -8,43 +8,43 @@ interface Supplement {
   form?: string;
   description?: string;
   meal?: "breakfast" | "lunch" | "dinner" | "snack" | "other";
-  calories?: number;
-  proteinG?: number;
-  carbsG?: number;
-  fatG?: number;
-  saturatedFatG?: number;
-  polyunsaturatedFatG?: number;
-  monounsaturatedFatG?: number;
-  transFatG?: number;
-  cholesterolMg?: number;
-  sodiumMg?: number;
-  potassiumMg?: number;
-  fiberG?: number;
-  sugarG?: number;
-  vitaminAMcg?: number;
-  vitaminCMg?: number;
-  vitaminDMcg?: number;
-  vitaminEMg?: number;
-  vitaminKMcg?: number;
-  vitaminB1Mg?: number;
-  vitaminB2Mg?: number;
-  vitaminB3Mg?: number;
-  vitaminB5Mg?: number;
-  vitaminB6Mg?: number;
-  vitaminB7Mcg?: number;
-  vitaminB9Mcg?: number;
-  vitaminB12Mcg?: number;
-  calciumMg?: number;
-  ironMg?: number;
-  magnesiumMg?: number;
-  zincMg?: number;
-  seleniumMcg?: number;
-  copperMg?: number;
-  manganeseMg?: number;
-  chromiumMcg?: number;
-  iodineMcg?: number;
-  omega3Mg?: number;
-  omega6Mg?: number;
+  calories?: number | null;
+  proteinG?: number | null;
+  carbsG?: number | null;
+  fatG?: number | null;
+  saturatedFatG?: number | null;
+  polyunsaturatedFatG?: number | null;
+  monounsaturatedFatG?: number | null;
+  transFatG?: number | null;
+  cholesterolMg?: number | null;
+  sodiumMg?: number | null;
+  potassiumMg?: number | null;
+  fiberG?: number | null;
+  sugarG?: number | null;
+  vitaminAMcg?: number | null;
+  vitaminCMg?: number | null;
+  vitaminDMcg?: number | null;
+  vitaminEMg?: number | null;
+  vitaminKMcg?: number | null;
+  vitaminB1Mg?: number | null;
+  vitaminB2Mg?: number | null;
+  vitaminB3Mg?: number | null;
+  vitaminB5Mg?: number | null;
+  vitaminB6Mg?: number | null;
+  vitaminB7Mcg?: number | null;
+  vitaminB9Mcg?: number | null;
+  vitaminB12Mcg?: number | null;
+  calciumMg?: number | null;
+  ironMg?: number | null;
+  magnesiumMg?: number | null;
+  zincMg?: number | null;
+  seleniumMcg?: number | null;
+  copperMg?: number | null;
+  manganeseMg?: number | null;
+  chromiumMcg?: number | null;
+  iodineMcg?: number | null;
+  omega3Mg?: number | null;
+  omega6Mg?: number | null;
 }
 
 const MEALS = ["breakfast", "lunch", "dinner", "snack", "other"] as const;
@@ -295,8 +295,8 @@ function SupplementForm({
   const [nutrients, setNutrients] = useState<Record<string, string>>(() => {
     const vals: Record<string, string> = {};
     for (const f of NUTRIENT_FIELDS) {
-      const v = initial?.[f.key];
-      vals[f.key] = v != null ? String(v) : "";
+      const fieldValue = initial?.[f.key];
+      vals[f.key] = fieldValue != null ? String(fieldValue) : "";
     }
     return vals;
   });
@@ -304,8 +304,8 @@ function SupplementForm({
   const amountNum = amount ? Number(amount) : null;
   const hasAmount = amountNum != null && !Number.isNaN(amountNum) && amountNum > 0;
   const invalidNutrients = NUTRIENT_FIELDS.some((f) => {
-    const v = nutrients[f.key];
-    return v !== "" && (Number.isNaN(Number(v)) || Number(v) < 0);
+    const fieldValue = nutrients[f.key];
+    return fieldValue !== "" && (Number.isNaN(Number(fieldValue)) || Number(fieldValue) < 0);
   });
   const canSubmit = name.trim().length > 0 && !invalidNutrients && !saving;
 
@@ -333,9 +333,9 @@ function SupplementForm({
     if (descParts.length > 0) supp.description = descParts.join(" ");
 
     for (const f of NUTRIENT_FIELDS) {
-      const v = nutrients[f.key];
-      if (v !== "" && !Number.isNaN(Number(v)) && Number(v) >= 0) {
-        Object.assign(supp, { [f.key]: Number(v) });
+      const fieldValue = nutrients[f.key];
+      if (fieldValue !== "" && !Number.isNaN(Number(fieldValue)) && Number(fieldValue) >= 0) {
+        Object.assign(supp, { [f.key]: Number(fieldValue) });
       }
     }
     onSubmit(supp);

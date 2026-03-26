@@ -89,8 +89,8 @@ function num(val: unknown): number | undefined {
 }
 
 function intOrUndef(val: unknown): number | undefined {
-  const n = num(val);
-  return n !== undefined ? Math.round(n) : undefined;
+  const numericValue = num(val);
+  return numericValue !== undefined ? Math.round(numericValue) : undefined;
 }
 
 function extractLeftRightBalance(val: unknown): number | undefined {

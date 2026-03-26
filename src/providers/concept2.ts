@@ -1,3 +1,5 @@
+import type { CanonicalActivityType } from "@dofek/training/training";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens } from "../auth/oauth.ts";
@@ -11,8 +13,9 @@ import type {
   ProviderAuthSetup,
   SyncError,
   SyncOptions,
-  SyncProvider,
   SyncResult,
+  WebhookEvent,
+  WebhookProvider,
 } from "./types.ts";
 
 // ============================================================
@@ -77,7 +80,7 @@ const concept2ResultsResponseSchema = z.object({
 
 export interface ParsedConcept2Result {
   externalId: string;
-  activityType: string;
+  activityType: CanonicalActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -88,7 +91,7 @@ export interface ParsedConcept2Result {
 // Parsing
 // ============================================================
 
-export function mapConcept2Type(type: string): string {
+export function mapConcept2Type(type: string): CanonicalActivityType {
   switch (type.toLowerCase()) {
     case "rower":
       return "rowing";
@@ -176,9 +179,10 @@ export class Concept2Client extends ProviderHttpClient {
 // Provider implementation
 // ============================================================
 
-export class Concept2Provider implements SyncProvider {
+export class Concept2Provider implements WebhookProvider {
   readonly id = "concept2";
   readonly name = "Concept2";
+  readonly webhookScope = "app" as const;
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
@@ -189,6 +193,144 @@ export class Concept2Provider implements SyncProvider {
     if (!process.env.CONCEPT2_CLIENT_ID) return "CONCEPT2_CLIENT_ID is not set";
     if (!process.env.CONCEPT2_CLIENT_SECRET) return "CONCEPT2_CLIENT_SECRET is not set";
     return null;
+  }
+
+  // ── Webhook implementation ──
+
+  async registerWebhook(
+    _callbackUrl: string,
+    _verifyToken: string,
+  ): Promise<{ subscriptionId: string; signingSecret?: string; expiresAt?: Date }> {
+    // Concept2 webhooks are registered via the developer portal.
+    return { subscriptionId: "concept2-portal-subscription" };
+  }
+
+  async unregisterWebhook(_subscriptionId: string): Promise<void> {
+    // Managed via Concept2 developer portal
+  }
+
+  verifyWebhookSignature(
+    _rawBody: Buffer,
+    _headers: Record<string, string | string[] | undefined>,
+    _signingSecret: string,
+  ): boolean {
+    // Concept2 webhook signature verification not publicly documented.
+    return true;
+  }
+
+  parseWebhookPayload(body: unknown): WebhookEvent[] {
+    // Concept2 sends: { event: "result-added"|"result-updated"|"result-deleted", result: { ... } }
+    // Use a permissive record schema for the result to capture the full payload.
+    // The full result is re-validated against concept2ResultSchema in syncWebhookEvent().
+    const parsed = z
+      .object({
+        event: z.string(),
+        user_id: z.coerce.string(),
+        result: z.object({ id: z.coerce.string() }).passthrough().optional(),
+      })
+      .safeParse(body);
+
+    if (!parsed.success) return [];
+    const event = parsed.data;
+
+    const eventTypeMap: Record<string, WebhookEvent["eventType"]> = {
+      "result-added": "create",
+      "result-updated": "update",
+      "result-deleted": "delete",
+    };
+
+    const resultId = event.result?.id;
+
+    return [
+      {
+        ownerExternalId: String(event.user_id),
+        eventType: eventTypeMap[event.event] ?? "update",
+        objectType: "result",
+        objectId: resultId ?? undefined,
+        metadata: event.result ? { payload: event.result } : undefined,
+      },
+    ];
+  }
+
+  async syncWebhookEvent(
+    db: SyncDatabase,
+    event: WebhookEvent,
+    options?: SyncOptions,
+  ): Promise<SyncResult> {
+    const start = Date.now();
+    const errors: SyncError[] = [];
+    let recordsSynced = 0;
+
+    if (event.objectType !== "result") {
+      return { provider: this.id, recordsSynced: 0, errors: [], duration: Date.now() - start };
+    }
+
+    // Handle delete events
+    if (event.eventType === "delete" && event.objectId) {
+      await db
+        .delete(activity)
+        .where(and(eq(activity.providerId, this.id), eq(activity.externalId, event.objectId)));
+      return { provider: this.id, recordsSynced: 0, errors: [], duration: Date.now() - start };
+    }
+
+    // Extract the full result from webhook metadata
+    const rawPayload = event.metadata?.payload;
+    if (!rawPayload) {
+      return { provider: this.id, recordsSynced: 0, errors: [], duration: Date.now() - start };
+    }
+
+    const parseResult = concept2ResultSchema.safeParse(rawPayload);
+    if (!parseResult.success) {
+      errors.push({
+        message: `Failed to parse webhook result payload: ${parseResult.error.message}`,
+      });
+      return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
+    }
+
+    await ensureProvider(db, this.id, this.name, CONCEPT2_API_BASE);
+
+    try {
+      const activityCount = await withSyncLog(
+        db,
+        this.id,
+        "activity",
+        async () => {
+          const parsed = parseConcept2Result(parseResult.data);
+          await db
+            .insert(activity)
+            .values({
+              providerId: this.id,
+              externalId: parsed.externalId,
+              activityType: parsed.activityType,
+              name: parsed.name,
+              startedAt: parsed.startedAt,
+              endedAt: parsed.endedAt,
+              raw: parsed.raw,
+            })
+            .onConflictDoUpdate({
+              target: [activity.providerId, activity.externalId],
+              set: {
+                activityType: parsed.activityType,
+                name: parsed.name,
+                startedAt: parsed.startedAt,
+                endedAt: parsed.endedAt,
+                raw: parsed.raw,
+              },
+            });
+          return { recordCount: 1, result: 1 };
+        },
+        options?.userId,
+      );
+      recordsSynced += activityCount;
+    } catch (err) {
+      errors.push({
+        message: `activity: ${err instanceof Error ? err.message : String(err)}`,
+        externalId: event.objectId,
+        cause: err,
+      });
+    }
+
+    return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
   }
 
   authSetup(): ProviderAuthSetup {

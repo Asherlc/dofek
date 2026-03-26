@@ -33,8 +33,8 @@ interface AerobicEfficiencyChartProps {
 
 /** Simple linear regression returning slope and intercept. */
 function linearRegression(points: [number, number][]): { slope: number; intercept: number } {
-  const n = points.length;
-  if (n < 2) return { slope: 0, intercept: 0 };
+  const count = points.length;
+  if (count < 2) return { slope: 0, intercept: 0 };
 
   let sumX = 0;
   let sumY = 0;
@@ -48,11 +48,11 @@ function linearRegression(points: [number, number][]): { slope: number; intercep
     sumXX += x * x;
   }
 
-  const denom = n * sumXX - sumX * sumX;
-  if (denom === 0) return { slope: 0, intercept: sumY / n };
+  const denom = count * sumXX - sumX * sumX;
+  if (denom === 0) return { slope: 0, intercept: sumY / count };
 
-  const slope = (n * sumXY - sumX * sumY) / denom;
-  const intercept = (sumY - slope * sumX) / n;
+  const slope = (count * sumXY - sumX * sumY) / denom;
+  const intercept = (sumY - slope * sumX) / count;
   return { slope, intercept };
 }
 

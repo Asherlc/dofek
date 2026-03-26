@@ -137,7 +137,7 @@ describe("parseTrainingPeaksWorkout", () => {
       workoutTypeValueId: 0,
     };
     const parsed = parseTrainingPeaksWorkout(minimal);
-    expect(parsed.activityType).toBe("rest");
+    expect(parsed.activityType).toBe("other");
     expect(parsed.distanceMeters).toBeUndefined();
     expect(parsed.averagePower).toBeUndefined();
     expect(parsed.trainingStressScore).toBeUndefined();
@@ -151,7 +151,7 @@ describe("parseTrainingPeaksWorkout", () => {
       [3, "running"],
       [7, "strength"],
       [10, "other"],
-      [12, "rest"],
+      [12, "other"],
       [99, "other"],
     ];
     for (const [familyId, expected] of types) {

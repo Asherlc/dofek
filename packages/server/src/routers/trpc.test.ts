@@ -78,11 +78,12 @@ describe("trpc", () => {
         test: protectedProcedure.query(() => "ok"),
       });
 
-      const t = initTRPC.context<Context>().create();
-      const createCaller = t.createCallerFactory(testRouter);
+      const trpc = initTRPC.context<Context>().create();
+      const createCaller = trpc.createCallerFactory(testRouter);
       const caller = createCaller({
         db: {},
         userId: null,
+        timezone: "UTC",
       });
 
       await expect(caller.test()).rejects.toThrow(TRPCError);
@@ -96,11 +97,12 @@ describe("trpc", () => {
         test: protectedProcedure.query(({ ctx }) => ctx.userId),
       });
 
-      const t = initTRPC.context<Context>().create();
-      const createCaller = t.createCallerFactory(testRouter);
+      const trpc = initTRPC.context<Context>().create();
+      const createCaller = trpc.createCallerFactory(testRouter);
       const caller = createCaller({
         db: {},
         userId: "user-123",
+        timezone: "UTC",
       });
 
       const result = await caller.test();
@@ -114,15 +116,15 @@ describe("trpc", () => {
         cachedQuery: cachedProtectedQuery(CacheTTL.SHORT).query(() => "db-result"),
         lightQuery: cachedProtectedQueryLight(CacheTTL.MEDIUM).query(() => "light-result"),
       });
-      const t = initTRPC.context<Context>().create();
-      const createCaller = t.createCallerFactory(testRouter);
+      const trpc = initTRPC.context<Context>().create();
+      const createCaller = trpc.createCallerFactory(testRouter);
       return createCaller;
     }
 
     it("returns cached data on cache hit", async () => {
       vi.mocked(queryCache.get).mockResolvedValue("cached-value");
       const createCaller = createCachedRouter();
-      const caller = createCaller({ db: {}, userId: "user-1" });
+      const caller = createCaller({ db: {}, userId: "user-1", timezone: "UTC" });
 
       const result = await caller.cachedQuery();
       expect(result).toBe("cached-value");
@@ -133,7 +135,7 @@ describe("trpc", () => {
     it("calls next() and caches result on cache miss", async () => {
       vi.mocked(queryCache.get).mockResolvedValue(undefined);
       const createCaller = createCachedRouter();
-      const caller = createCaller({ db: {}, userId: "user-1" });
+      const caller = createCaller({ db: {}, userId: "user-1", timezone: "UTC" });
 
       const result = await caller.cachedQuery();
       expect(result).toBe("db-result");
@@ -148,7 +150,7 @@ describe("trpc", () => {
     it("uses semaphore for normal cached queries", async () => {
       vi.mocked(queryCache.get).mockResolvedValue(undefined);
       const createCaller = createCachedRouter();
-      const caller = createCaller({ db: {}, userId: "user-1" });
+      const caller = createCaller({ db: {}, userId: "user-1", timezone: "UTC" });
 
       await caller.cachedQuery();
       expect(dbQuerySemaphore.run).toHaveBeenCalled();
@@ -157,7 +159,7 @@ describe("trpc", () => {
     it("bypasses semaphore for lightweight cached queries", async () => {
       vi.mocked(queryCache.get).mockResolvedValue(undefined);
       const createCaller = createCachedRouter();
-      const caller = createCaller({ db: {}, userId: "user-1" });
+      const caller = createCaller({ db: {}, userId: "user-1", timezone: "UTC" });
 
       await caller.lightQuery();
       // Lightweight queries should NOT go through the semaphore
@@ -169,7 +171,7 @@ describe("trpc", () => {
       // cachedProtectedQuery requires auth, so we can't test anonymous via it.
       // But we can verify the key format by checking what queryCache.get was called with.
       const createCaller = createCachedRouter();
-      const caller = createCaller({ db: {}, userId: "user-abc" });
+      const caller = createCaller({ db: {}, userId: "user-abc", timezone: "UTC" });
 
       await caller.cachedQuery();
       expect(queryCache.get).toHaveBeenCalledWith(expect.stringContaining("user-abc:"));
