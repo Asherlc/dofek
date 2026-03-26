@@ -1,6 +1,14 @@
 import CoreMotion
 import ExpoModulesCore
 
+// CMSensorDataList conforms to NSFastEnumeration but not Swift's Sequence,
+// so we add conformance to enable for-in loops.
+extension CMSensorDataList: @retroactive Sequence {
+    public func makeIterator() -> NSFastEnumerationIterator {
+        return NSFastEnumerationIterator(self)
+    }
+}
+
 private let lastSyncKey = "com.dofek.coreMotion.lastSyncTimestamp"
 private let recordingActiveKey = "com.dofek.coreMotion.recordingActive"
 
