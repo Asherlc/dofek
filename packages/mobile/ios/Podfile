@@ -83,3 +83,8 @@ target 'Dofek' do
     end
   end
 end
+
+target 'DofekWatch' do
+  platform :watchos, '10.0'
+  pod 'Sentry', :path => './LocalPods/Sentry'
+end

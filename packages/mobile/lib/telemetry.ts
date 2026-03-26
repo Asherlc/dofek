@@ -16,6 +16,7 @@ export function initTelemetry() {
 
   Sentry.init({
     dsn: SENTRY_DSN,
+    enableNativeSdk: false,
   });
 }
 

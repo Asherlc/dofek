@@ -18,6 +18,7 @@ Pod::Spec.new do |s|
   s.source       = { :path => "." }
 
   s.ios.deployment_target = "15.0"
+  s.watchos.deployment_target = "10.0"
   s.module_name  = "Sentry"
 
   s.default_subspecs = ["Core"]
