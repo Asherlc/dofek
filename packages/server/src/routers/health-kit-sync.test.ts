@@ -1,5 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
+
+vi.mock("dofek/sync-metrics", () => ({
+  healthKitRecordsTotal: { add: vi.fn() },
+  healthKitPushTotal: { add: vi.fn() },
+}));
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -15,6 +20,7 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
+import { healthKitPushTotal, healthKitRecordsTotal } from "dofek/sync-metrics";
 import { aggregateDailyMetricSamples, healthKitSyncRouter } from "./health-kit-sync.ts";
 
 const createCaller = createTestCallerFactory(healthKitSyncRouter);
@@ -38,6 +44,11 @@ function makeSample(overrides: Record<string, unknown> = {}) {
 }
 
 describe("healthKitSyncRouter", () => {
+  beforeEach(() => {
+    vi.mocked(healthKitRecordsTotal.add).mockClear();
+    vi.mocked(healthKitPushTotal.add).mockClear();
+  });
+
   describe("pushQuantitySamples", () => {
     it("uses the first HRV reading of the day (overnight) instead of averaging with Breathe sessions", () => {
       const samples = [
@@ -453,6 +464,49 @@ describe("healthKitSyncRouter", () => {
 
       expect(result.inserted).toBe(1);
     });
+
+    it("emits HealthKit metrics with per-category counts", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.pushQuantitySamples({
+        samples: [
+          makeSample({ type: "HKQuantityTypeIdentifierBodyMass", value: 75, uuid: "bm1" }),
+          makeSample({ type: "HKQuantityTypeIdentifierStepCount", value: 5000, uuid: "dm1" }),
+          makeSample({
+            type: "HKQuantityTypeIdentifierHeartRate",
+            value: 72,
+            unit: "count/min",
+            uuid: "ms1",
+          }),
+        ],
+      });
+
+      expect(vi.mocked(healthKitPushTotal.add)).toHaveBeenCalledWith(1, {
+        endpoint: "pushQuantitySamples",
+        status: "success",
+      });
+      expect(vi.mocked(healthKitRecordsTotal.add)).toHaveBeenCalledWith(1, {
+        endpoint: "pushQuantitySamples",
+        category: "bodyMeasurement",
+      });
+      expect(vi.mocked(healthKitRecordsTotal.add)).toHaveBeenCalledWith(1, {
+        endpoint: "pushQuantitySamples",
+        category: "dailyMetric",
+      });
+      expect(vi.mocked(healthKitRecordsTotal.add)).toHaveBeenCalledWith(1, {
+        endpoint: "pushQuantitySamples",
+        category: "metricStream",
+      });
+      expect(vi.mocked(healthKitRecordsTotal.add)).toHaveBeenCalledWith(0, {
+        endpoint: "pushQuantitySamples",
+        category: "healthEvent",
+      });
+    });
   });
 
   describe("pushWorkouts", () => {
@@ -554,6 +608,40 @@ describe("healthKitSyncRouter", () => {
 
       const result = await caller.pushWorkouts({ workouts: [] });
       expect(result.inserted).toBe(0);
+    });
+
+    it("emits HealthKit metrics for workouts", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.pushWorkouts({
+        workouts: [
+          {
+            uuid: "w-metric",
+            workoutType: "13",
+            startDate: "2024-01-15T10:00:00Z",
+            endDate: "2024-01-15T11:00:00Z",
+            duration: 3600,
+            totalEnergyBurned: 500,
+            totalDistance: 25000,
+            sourceName: "Apple Watch",
+            sourceBundle: "com.apple.Health",
+          },
+        ],
+      });
+
+      expect(vi.mocked(healthKitPushTotal.add)).toHaveBeenCalledWith(1, {
+        endpoint: "pushWorkouts",
+        status: "success",
+      });
+      expect(vi.mocked(healthKitRecordsTotal.add)).toHaveBeenCalledWith(1, {
+        endpoint: "pushWorkouts",
+        category: "workout",
+      });
     });
   });
 
@@ -795,6 +883,36 @@ describe("healthKitSyncRouter", () => {
       });
 
       expect(result.inserted).toBe(1);
+    });
+
+    it("emits HealthKit metrics for sleep samples", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.pushSleepSamples({
+        samples: [
+          {
+            uuid: "sleep-metric",
+            startDate: "2024-01-15T22:00:00Z",
+            endDate: "2024-01-16T06:00:00Z",
+            value: "inBed",
+            sourceName: "Apple Watch",
+          },
+        ],
+      });
+
+      expect(vi.mocked(healthKitPushTotal.add)).toHaveBeenCalledWith(1, {
+        endpoint: "pushSleepSamples",
+        status: "success",
+      });
+      expect(vi.mocked(healthKitRecordsTotal.add)).toHaveBeenCalledWith(1, {
+        endpoint: "pushSleepSamples",
+        category: "sleep",
+      });
     });
   });
 });
