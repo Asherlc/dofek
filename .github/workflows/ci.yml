@@ -306,14 +306,6 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             2>&1 | tail -40
         timeout-minutes: 25
-      - name: Upload archive
-        if: github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v4
-        with:
-          name: Dofek.xcarchive
-          path: ${{ runner.temp }}/Dofek.xcarchive
-          retention-days: 1
-
   build-watchos:
     name: watchOS Build
     needs: check-mobile-changes
@@ -590,23 +582,32 @@ jobs:
     needs: [lint, typecheck, knip, coverage, test-mobile, build-ios-native]
     if: github.ref == 'refs/heads/main'
     runs-on: macos-26
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
       APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          sparse-checkout: |
-            packages/mobile/ios/ExportOptions.plist
-          sparse-checkout-cone-mode: false
 
-      - name: Download archive
-        uses: actions/download-artifact@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
         with:
-          name: Dofek.xcarchive
-          path: ${{ runner.temp }}/Dofek.xcarchive
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Download Sentry XCFramework
+        run: packages/mobile/scripts/download-sentry-xcframework.sh
+
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: packages/mobile/ios/Pods
+          key: pods-v6-${{ hashFiles('packages/mobile/ios/Podfile', 'packages/mobile/ios/Podfile.lock', 'packages/mobile/scripts/download-sentry-xcframework.sh') }}
+
+      - name: Install CocoaPods
+        run: cd packages/mobile/ios && pod install
 
       - name: Setup code signing
         env:
@@ -633,6 +634,26 @@ jobs:
         run: |
           mkdir -p ~/private_keys
           echo -n "$API_KEY_BASE64" | base64 --decode > ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8
+
+      - name: Set build number
+        run: |
+          cd packages/mobile/ios
+          agvtool new-version -all ${{ github.run_number }}
+
+      - name: Build archive
+        run: |
+          cd packages/mobile/ios
+          xcodebuild archive \
+            -workspace Dofek.xcworkspace \
+            -scheme Dofek \
+            -configuration Release \
+            -archivePath $RUNNER_TEMP/Dofek.xcarchive \
+            -destination 'generic/platform=iOS' \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8 \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
+            DEVELOPMENT_TEAM=68LEL35DQ9
 
       - name: Export & upload to TestFlight
         run: |
