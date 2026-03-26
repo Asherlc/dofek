@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
+import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import Svg, { Rect, Line, Text as SvgText } from "react-native-svg";
 import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
 import { formatNumber } from "@dofek/format/format";
 import { trpc } from "../lib/trpc";
+import { useRefresh } from "../lib/useRefresh";
 import { colors } from "../theme";
 import { statusColors } from "@dofek/scoring/colors";
 
@@ -50,9 +51,10 @@ function LoadingText() {
 
 export default function NutritionAnalyticsScreen() {
   const [days, setDays] = useState(90);
+  const { refreshing, onRefresh } = useRefresh();
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}>
       {/* Days selector */}
       <View style={styles.daysRow}>
         {DAY_OPTIONS.map((opt) => (

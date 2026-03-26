@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
+import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import Svg, { Rect, Text as SvgText, Path } from "react-native-svg";
 import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
 import { trpc } from "../lib/trpc";
+import { useRefresh } from "../lib/useRefresh";
 import { useUnitConverter } from "../lib/units";
 import { colors } from "../theme";
 import { scoreColor, scoreLabel, WorkloadRatio, rampRateColor, FormZone, FORM_ZONE_COLORS } from "@dofek/scoring/scoring";
@@ -130,9 +131,10 @@ function EmptyText({ message }: { message: string }) {
 export default function TrainingScreen() {
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [days, setDays] = useState(30);
+  const { refreshing, onRefresh } = useRefresh();
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}>
       {/* Tab bar */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabBar} contentContainerStyle={styles.tabBarContent}>
         {TABS.map((tab) => (

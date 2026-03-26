@@ -3,7 +3,7 @@ import {
   formatActivityTypeLabel,
 } from "@dofek/training/training";
 import { useState } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { ActivityCard } from "../../components/ActivityCard";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { DaySelector } from "../../components/DaySelector";
@@ -13,6 +13,7 @@ import { aggregateWeeklyVolume, WorkloadRatio } from "../../lib/scoring";
 import type { WeekSummary } from "../../lib/scoring";
 import { formatNumber } from "@dofek/format/format";
 import { trpc } from "../../lib/trpc";
+import { useRefresh } from "../../lib/useRefresh";
 import { useUnitConverter } from "../../lib/units";
 import type { ActivityRow, WorkloadRatioRow } from "../../types/api";
 import { ActivityRowSchema, WeeklyVolumeRowSchema } from "../../types/api";
@@ -62,11 +63,13 @@ export default function StrainScreen() {
   const strainTrend = workloadData.slice(-14).map((d) => d.strain);
 
   const isLoading = workloadQuery.isLoading;
+  const { refreshing, onRefresh } = useRefresh();
 
   return (
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}
     >
       <DaySelector days={days} onChange={setDays} />
 

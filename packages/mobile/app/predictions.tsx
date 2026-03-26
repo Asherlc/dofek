@@ -1,9 +1,10 @@
 import { useState, useMemo } from "react";
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
+import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import Svg, { Path, Line, Circle, Text as SvgText } from "react-native-svg";
 import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
 import { formatNumber } from "@dofek/format/format";
 import { trpc } from "../lib/trpc";
+import { useRefresh } from "../lib/useRefresh";
 import { colors } from "../theme";
 import { statusColors } from "@dofek/scoring/colors";
 
@@ -192,9 +193,10 @@ export default function PredictionsScreen() {
     : null;
 
   const isLoading = targetsQuery.isLoading || (!!activeTarget && predictionQuery.isLoading);
+  const { refreshing, onRefresh } = useRefresh();
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}>
       {/* Section 1: Target selector */}
       <ScrollView
         horizontal

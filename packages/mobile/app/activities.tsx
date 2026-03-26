@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import {
   ActivityIndicator,
   FlatList,
+  RefreshControl,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -10,6 +11,7 @@ import {
 } from "react-native";
 import { ActivityCard } from "../components/ActivityCard";
 import { trpc } from "../lib/trpc";
+import { useRefresh } from "../lib/useRefresh";
 import { useUnitConverter } from "../lib/units";
 import { ActivityRowSchema } from "../types/api";
 import { colors } from "../theme";
@@ -33,6 +35,7 @@ export default function ActivitiesScreen() {
   const totalCount = (query.data as { totalCount?: number } | undefined)
     ?.totalCount ?? 0;
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+  const { refreshing, onRefresh } = useRefresh();
 
   return (
     <View style={styles.container}>
@@ -40,6 +43,7 @@ export default function ActivitiesScreen() {
         data={parsed}
         keyExtractor={(item) => String(item.id)}
         contentContainerStyle={styles.list}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}
         renderItem={({ item }) => (
           <TouchableOpacity
             activeOpacity={0.7}

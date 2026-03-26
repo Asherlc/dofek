@@ -22,6 +22,7 @@ vi.mock("../../lib/trpc", () => ({
       trends: { useQuery: () => ({ data: mockTrendsData, isLoading: false }) },
       list: { useQuery: () => ({ data: mockDailyMetricsData, isLoading: false }) },
     },
+    useUtils: () => ({ invalidate: vi.fn() }),
   },
 }));
 

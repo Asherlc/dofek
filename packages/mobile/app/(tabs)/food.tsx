@@ -1,9 +1,10 @@
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { MacroSummary } from "../../components/MacroSummary";
 import { MealSection } from "../../components/MealSection";
 import { trpc } from "../../lib/trpc";
+import { useRefresh } from "../../lib/useRefresh";
 import { colors } from "../../theme";
 import { type FoodEntryRow, FoodEntrySchema } from "../../types/api";
 
@@ -103,9 +104,11 @@ export default function FoodScreen() {
     deleteMutation.mutate({ id });
   }
 
+  const { refreshing, onRefresh } = useRefresh();
+
   return (
     <View style={styles.container}>
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}>
         {/* Date navigation */}
         <View style={styles.dateNav}>
           <TouchableOpacity onPress={goToPreviousDay} style={styles.dateArrow}>

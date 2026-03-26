@@ -43,6 +43,7 @@ vi.mock("react-native", () => ({
 		create: <T extends Record<string, unknown>>(styles: T): T => styles,
 		hairlineWidth: 1,
 	},
+	RefreshControl: () => null,
 	Alert: { alert: vi.fn() },
 	useWindowDimensions: () => ({ width: 400, height: 800 }),
 }));
@@ -78,6 +79,7 @@ vi.mock("../../lib/trpc", () => ({
 			set: { useMutation: () => ({ mutateAsync: mockSettingsSetMutate }) },
 		},
 		useUtils: () => ({
+			invalidate: vi.fn(),
 			client: {
 				healthKitSync: {
 					pushQuantitySamples: { mutate: mockPushQuantityMutate },

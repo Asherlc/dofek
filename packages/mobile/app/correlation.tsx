@@ -1,9 +1,10 @@
 import { useState, useMemo } from "react";
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
+import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import Svg, { Circle, Line } from "react-native-svg";
 import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
 import { formatNumber, formatSigned } from "@dofek/format/format";
 import { trpc } from "../lib/trpc";
+import { useRefresh } from "../lib/useRefresh";
 import { colors } from "../theme";
 import { statusColors } from "@dofek/scoring/colors";
 
@@ -259,8 +260,10 @@ export default function CorrelationScreen() {
   const xMetric = metrics.find((m) => m.id === metricX);
   const yMetric = metrics.find((m) => m.id === metricY);
 
+  const { refreshing, onRefresh } = useRefresh();
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={[styles.content, isWide && styles.contentWide]}>
+    <ScrollView style={styles.container} contentContainerStyle={[styles.content, isWide && styles.contentWide]} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}>
       {/* Time range */}
       <Text style={styles.sectionLabel}>Time Range</Text>
       <DaySelector days={days} onChange={setDays} />
