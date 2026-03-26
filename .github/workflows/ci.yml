@@ -635,6 +635,42 @@ jobs:
           mkdir -p ~/private_keys
           echo -n "$API_KEY_BASE64" | base64 --decode > ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8
 
+      - name: Register Watch bundle ID
+        run: |
+          # Create JWT for App Store Connect API
+          HEADER=$(printf '{"alg":"ES256","kid":"%s","typ":"JWT"}' "$APP_STORE_CONNECT_KEY_ID" | openssl base64 -e -A | tr '+/' '-_' | tr -d '=')
+          NOW=$(date +%s)
+          EXP=$((NOW + 1200))
+          CLAIMS=$(printf '{"iss":"%s","iat":%d,"exp":%d,"aud":"appstoreconnect-v1"}' "$APP_STORE_CONNECT_ISSUER_ID" "$NOW" "$EXP" | openssl base64 -e -A | tr '+/' '-_' | tr -d '=')
+          UNSIGNED="${HEADER}.${CLAIMS}"
+          SIGNATURE=$(printf '%s' "$UNSIGNED" | openssl dgst -sha256 -sign ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8 | openssl base64 -e -A | tr '+/' '-_' | tr -d '=')
+          TOKEN="${UNSIGNED}.${SIGNATURE}"
+
+          # Register the Watch app bundle ID (ignore 409 if already exists)
+          HTTP_CODE=$(curl -s -o /tmp/asc-response.json -w '%{http_code}' \
+            -X POST "https://api.appstoreconnect.apple.com/v1/bundleIds" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "data": {
+                "type": "bundleIds",
+                "attributes": {
+                  "identifier": "com.dofek.app.watchkitapp",
+                  "name": "Dofek Watch App",
+                  "platform": "UNIVERSAL"
+                }
+              }
+            }')
+          echo "ASC API response: $HTTP_CODE"
+          cat /tmp/asc-response.json
+          if [ "$HTTP_CODE" = "201" ]; then
+            echo "✅ Watch bundle ID registered successfully"
+          elif [ "$HTTP_CODE" = "409" ]; then
+            echo "✅ Watch bundle ID already exists"
+          else
+            echo "⚠️ Unexpected response ($HTTP_CODE) — continuing anyway"
+          fi
+
       - name: Set build number
         run: |
           cd packages/mobile/ios
