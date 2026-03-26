@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { NUTRIENTS } from "./nutrients.ts";
 
 const BASE_URL = "https://world.openfoodfacts.org";
 const DEFAULT_LOCALE = "en-US";
@@ -17,12 +18,15 @@ export interface FoodDatabaseResult {
   name: string;
   brand: string | null;
   servingSize: string | null;
+  imageUrl: string | null;
+  // Macronutrients (stay as top-level fields — queried on every endpoint)
   calories: number | null;
   proteinG: number | null;
   carbsG: number | null;
   fatG: number | null;
   fiberG: number | null;
-  imageUrl: string | null;
+  /** Micronutrients keyed by nutrient id (e.g. 'vitamin_a' → 150). Only present nutrients are included. */
+  nutrients: Record<string, number>;
 }
 
 interface SearchLocalePreferences {
@@ -72,10 +76,25 @@ export class OpenFoodFactsClient {
     this.#localePreferences = getLocalePreferences(locale);
   }
 
-  async lookupBarcode(barcode: string): Promise<FoodDatabaseResult | null> {
+  /** Get a nutriment value, preferring per-serving over per-100g, with optional unit conversion. */
+  #getNutrimentWithConversion(
+    nutriments: Record<string, unknown> | undefined,
+    offKey: string,
+    conversionFactor = 1,
+  ): number | null {
+    const raw =
+      this.#getNumericNutrimentValue(nutriments, `${offKey}_serving`) ??
+      this.#getNumericNutrimentValue(nutriments, `${offKey}_100g`);
+    if (raw == null) return null;
+    const converted = raw * conversionFactor;
+    return Math.round(converted * 10) / 10;
+  }
+
+  async lookupBarcode(barcode: string, signal?: AbortSignal): Promise<FoodDatabaseResult | null> {
     try {
       const response = await fetch(
         `${BASE_URL}/api/v2/product/${barcode}.json?fields=code,product_name,brands,serving_size,nutriments,image_front_small_url,lang,product_name_${this.#localePreferences.languageCode}`,
+        { signal },
       );
       if (!response.ok) return null;
 
@@ -90,14 +109,24 @@ export class OpenFoodFactsClient {
     }
   }
 
-  async searchFoods(query: string, limit = 20): Promise<FoodDatabaseResult[]> {
+  async searchFoods(
+    query: string,
+    limit = 20,
+    signal?: AbortSignal,
+  ): Promise<FoodDatabaseResult[]> {
     try {
-      const localizedResults = await this.#runSearch(query, limit);
-      if (localizedResults.length > 0 || !this.#localePreferences.countryTag) {
-        return localizedResults;
+      if (!this.#localePreferences.countryTag) {
+        return await this.#runSearch(query, limit, undefined, signal);
       }
-      // Fallback to global search if country-filtered results are empty.
-      return this.#runSearch(query, limit, { ...this.#localePreferences, countryTag: null });
+
+      // Run localized and global searches in parallel to avoid sequential latency.
+      const [localizedResults, globalResults] = await Promise.all([
+        this.#runSearch(query, limit, undefined, signal),
+        this.#runSearch(query, limit, { ...this.#localePreferences, countryTag: null }, signal),
+      ]);
+
+      // Prefer localized results; fall back to global if empty.
+      return localizedResults.length > 0 ? localizedResults : globalResults;
     } catch {
       return [];
     }
@@ -160,18 +189,20 @@ export class OpenFoodFactsClient {
     const calories =
       this.#getNumericNutrimentValue(nutriments, "energy-kcal_serving") ??
       this.#getNumericNutrimentValue(nutriments, "energy-kcal_100g");
-    const proteinG =
-      this.#getNumericNutrimentValue(nutriments, "proteins_serving") ??
-      this.#getNumericNutrimentValue(nutriments, "proteins_100g");
-    const carbsG =
-      this.#getNumericNutrimentValue(nutriments, "carbohydrates_serving") ??
-      this.#getNumericNutrimentValue(nutriments, "carbohydrates_100g");
-    const fatG =
-      this.#getNumericNutrimentValue(nutriments, "fat_serving") ??
-      this.#getNumericNutrimentValue(nutriments, "fat_100g");
-    const fiberG =
-      this.#getNumericNutrimentValue(nutriments, "fiber_serving") ??
-      this.#getNumericNutrimentValue(nutriments, "fiber_100g");
+
+    // Build micronutrients map from the canonical catalog
+    const nutrients: Record<string, number> = {};
+    for (const definition of NUTRIENTS) {
+      if (definition.openFoodFactsKey === null) continue;
+      const value = this.#getNutrimentWithConversion(
+        nutriments,
+        definition.openFoodFactsKey,
+        definition.conversionFactor,
+      );
+      if (value !== null) {
+        nutrients[definition.id] = value;
+      }
+    }
 
     return {
       barcode: product.code ?? null,
@@ -179,11 +210,12 @@ export class OpenFoodFactsClient {
       brand: product.brands ?? null,
       servingSize: product.serving_size ?? null,
       calories: calories != null ? Math.round(calories) : null,
-      proteinG: proteinG != null ? Math.round(proteinG * 10) / 10 : null,
-      carbsG: carbsG != null ? Math.round(carbsG * 10) / 10 : null,
-      fatG: fatG != null ? Math.round(fatG * 10) / 10 : null,
-      fiberG: fiberG != null ? Math.round(fiberG * 10) / 10 : null,
       imageUrl: product.image_front_small_url ?? null,
+      proteinG: this.#getNutrimentWithConversion(nutriments, "proteins"),
+      carbsG: this.#getNutrimentWithConversion(nutriments, "carbohydrates"),
+      fatG: this.#getNutrimentWithConversion(nutriments, "fat"),
+      fiberG: this.#getNutrimentWithConversion(nutriments, "fiber"),
+      nutrients,
     };
   }
 
@@ -191,6 +223,7 @@ export class OpenFoodFactsClient {
     query: string,
     limit: number,
     localeOverride?: SearchLocalePreferences,
+    signal?: AbortSignal,
   ): Promise<FoodDatabaseResult[]> {
     const localePreferences = localeOverride ?? this.#localePreferences;
     const localizedNameField = `product_name_${localePreferences.languageCode}`;
@@ -220,7 +253,7 @@ export class OpenFoodFactsClient {
       params.set("countries_tags_en", localePreferences.countryTag);
     }
 
-    const response = await fetch(`${BASE_URL}/cgi/search.pl?${params}`);
+    const response = await fetch(`${BASE_URL}/cgi/search.pl?${params}`, { signal });
     if (!response.ok) return [];
 
     const data: unknown = await response.json();

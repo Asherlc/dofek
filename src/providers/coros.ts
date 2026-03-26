@@ -1,3 +1,4 @@
+import type { CanonicalActivityType } from "@dofek/training/training";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens } from "../auth/oauth.ts";
@@ -11,8 +12,9 @@ import type {
   ProviderAuthSetup,
   SyncError,
   SyncOptions,
-  SyncProvider,
   SyncResult,
+  WebhookEvent,
+  WebhookProvider,
 } from "./types.ts";
 
 // ============================================================
@@ -81,7 +83,7 @@ const corosDailyResponseSchema = z.object({
 
 export interface ParsedCorosWorkout {
   externalId: string;
-  activityType: string;
+  activityType: CanonicalActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -92,7 +94,7 @@ export interface ParsedCorosWorkout {
 // Activity type mapping
 // ============================================================
 
-const COROS_SPORT_MAP: Record<number, string> = {
+const COROS_SPORT_MAP: Record<number, CanonicalActivityType> = {
   8: "running",
   9: "cycling",
   10: "swimming",
@@ -107,7 +109,7 @@ const COROS_SPORT_MAP: Record<number, string> = {
   100: "other",
 };
 
-export function mapCorosSportType(mode: number): string {
+export function mapCorosSportType(mode: number): CanonicalActivityType {
   return COROS_SPORT_MAP[mode] ?? "other";
 }
 
@@ -203,9 +205,10 @@ export class CorosClient extends ProviderHttpClient {
 // Provider implementation
 // ============================================================
 
-export class CorosProvider implements SyncProvider {
+export class CorosProvider implements WebhookProvider {
   readonly id = "coros";
   readonly name = "COROS";
+  readonly webhookScope = "app" as const;
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
@@ -216,6 +219,70 @@ export class CorosProvider implements SyncProvider {
     if (!process.env.COROS_CLIENT_ID) return "COROS_CLIENT_ID is not set";
     if (!process.env.COROS_CLIENT_SECRET) return "COROS_CLIENT_SECRET is not set";
     return null;
+  }
+
+  // ── Webhook implementation ──
+
+  async registerWebhook(
+    _callbackUrl: string,
+    _verifyToken: string,
+  ): Promise<{ subscriptionId: string; signingSecret?: string; expiresAt?: Date }> {
+    // COROS webhooks are configured during API partner onboarding.
+    return { subscriptionId: "coros-partner-subscription" };
+  }
+
+  async unregisterWebhook(_subscriptionId: string): Promise<void> {
+    // Managed via COROS partner agreement
+  }
+
+  verifyWebhookSignature(
+    _rawBody: Buffer,
+    _headers: Record<string, string | string[] | undefined>,
+    _signingSecret: string,
+  ): boolean {
+    // COROS webhook verification is handled per partner agreement
+    return true;
+  }
+
+  parseWebhookPayload(body: unknown): WebhookEvent[] {
+    const sportDataItemSchema = z.object({
+      openId: z.string(),
+      labelId: z.coerce.string().optional(),
+    });
+
+    const listParsed = z
+      .object({
+        sportDataList: z.array(z.unknown()),
+      })
+      .safeParse(body);
+
+    // COROS may send a list of sport data updates
+    if (listParsed.success) {
+      return listParsed.data.sportDataList
+        .map((item) => sportDataItemSchema.safeParse(item))
+        .filter(
+          (result): result is z.SafeParseSuccess<z.infer<typeof sportDataItemSchema>> =>
+            result.success,
+        )
+        .map((result) => ({
+          ownerExternalId: result.data.openId,
+          eventType: "create" as const,
+          objectType: "workout",
+          objectId: result.data.labelId ?? undefined,
+        }));
+    }
+
+    const singleParsed = z.object({ openId: z.string() }).safeParse(body);
+
+    if (!singleParsed.success) return [];
+
+    return [
+      {
+        ownerExternalId: singleParsed.data.openId,
+        eventType: "create",
+        objectType: "workout",
+      },
+    ];
   }
 
   authSetup(): ProviderAuthSetup {

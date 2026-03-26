@@ -89,17 +89,17 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
           typeof piParam?.dataIndex === "number" && piParam.dataIndex >= 0
             ? weeks[piParam.dataIndex]
             : undefined;
-        const w = weekByIndex ?? findWeekForAxisValue(weeks, param.axisValue);
-        if (!w) return "";
+        const weekData = weekByIndex ?? findWeekForAxisValue(weeks, param.axisValue);
+        if (!weekData) return "";
 
-        const pi = w.polarizationIndex;
+        const pi = weekData.polarizationIndex;
         const piStr = pi !== null ? formatNumber(pi, 3) : "N/A";
-        const dateLabel = new Date(w.week).toLocaleDateString("en-US", {
+        const dateLabel = new Date(weekData.week).toLocaleDateString("en-US", {
           month: "short",
           day: "numeric",
           year: "numeric",
         });
-        const missingZones = missingZonesForWeek(w);
+        const missingZones = missingZonesForWeek(weekData);
         const status =
           pi === null
             ? '<span style="color:#f59e0b">Insufficient zone coverage</span>'
@@ -113,9 +113,9 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
         return [
           `<strong>Week of ${dateLabel}</strong>`,
           `Polarization Index: ${piStr} ${status}`,
-          `Zone 1 (easy, <80% max HR): ${formatMinutes(w.z1Seconds)}`,
-          `Zone 2 (threshold, 80-90% max HR): ${formatMinutes(w.z2Seconds)}`,
-          `Zone 3 (high, ≥90% max HR): ${formatMinutes(w.z3Seconds)}`,
+          `Zone 1 (easy, <80% max HR): ${formatMinutes(weekData.z1Seconds)}`,
+          `Zone 2 (threshold, 80-90% max HR): ${formatMinutes(weekData.z2Seconds)}`,
+          `Zone 3 (high, ≥90% max HR): ${formatMinutes(weekData.z3Seconds)}`,
           missingZonesText,
         ]
           .filter((line): line is string => typeof line === "string")

@@ -3,8 +3,8 @@ import { GradientBoostedTrees } from "./gradient-boost.ts";
 
 describe("GradientBoostedTrees", () => {
   it("fits a simple linear relationship", () => {
-    const X = Array.from({ length: 50 }, (_, i) => [i]);
-    const y = X.map(([x]) => 2 * (x ?? 0) + 1);
+    const featureMatrix = Array.from({ length: 50 }, (_, i) => [i]);
+    const targets = featureMatrix.map(([x]) => 2 * (x ?? 0) + 1);
 
     const model = new GradientBoostedTrees({
       nEstimators: 50,
@@ -12,7 +12,7 @@ describe("GradientBoostedTrees", () => {
       learningRate: 0.1,
       minSamplesLeaf: 2,
     });
-    model.fit(X, y);
+    model.fit(featureMatrix, targets);
 
     // Should approximate the linear trend reasonably well
     const pred = model.predict([25]);
@@ -20,8 +20,8 @@ describe("GradientBoostedTrees", () => {
   });
 
   it("captures a nonlinear step function", () => {
-    const X = Array.from({ length: 100 }, (_, i) => [i]);
-    const y = X.map(([x]) => ((x ?? 0) < 50 ? 10 : 30));
+    const featureMatrix = Array.from({ length: 100 }, (_, i) => [i]);
+    const targets = featureMatrix.map(([x]) => ((x ?? 0) < 50 ? 10 : 30));
 
     const model = new GradientBoostedTrees({
       nEstimators: 50,
@@ -29,7 +29,7 @@ describe("GradientBoostedTrees", () => {
       learningRate: 0.3,
       minSamplesLeaf: 2,
     });
-    model.fit(X, y);
+    model.fit(featureMatrix, targets);
 
     expect(model.predict([20])).toBeCloseTo(10, -1);
     expect(model.predict([80])).toBeCloseTo(30, -1);
@@ -96,9 +96,9 @@ describe("GradientBoostedTrees", () => {
     const X: number[][] = [];
     const y: number[] = [];
     for (let i = 0; i < 100; i++) {
-      const x = rng() * 10;
-      X.push([x]);
-      y.push(2 * x + 1 + (rng() - 0.5));
+      const featureValue = rng() * 10;
+      X.push([featureValue]);
+      y.push(2 * featureValue + 1 + (rng() - 0.5));
     }
 
     const model = new GradientBoostedTrees({
@@ -118,8 +118,8 @@ describe("GradientBoostedTrees", () => {
   });
 
   it("serializes and deserializes", () => {
-    const X = Array.from({ length: 50 }, (_, i) => [i, i * 2]);
-    const y = X.map(([x1, x2]) => (x1 ?? 0) + (x2 ?? 0));
+    const featureMatrix = Array.from({ length: 50 }, (_, i) => [i, i * 2]);
+    const targets = featureMatrix.map(([x1, x2]) => (x1 ?? 0) + (x2 ?? 0));
 
     const model = new GradientBoostedTrees({
       nEstimators: 20,
@@ -127,7 +127,7 @@ describe("GradientBoostedTrees", () => {
       learningRate: 0.1,
       minSamplesLeaf: 2,
     });
-    model.fit(X, y);
+    model.fit(featureMatrix, targets);
 
     const json = model.toJSON();
     const restored = GradientBoostedTrees.fromJSON(json);

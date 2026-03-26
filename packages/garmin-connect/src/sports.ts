@@ -1,8 +1,10 @@
+import type { CanonicalActivityType } from "@dofek/training/training";
+
 /**
  * Garmin Connect activity type key → normalized sport type.
  * Sourced from the activityType.typeKey field in activity search results.
  */
-export const GARMIN_CONNECT_SPORT_MAP: Record<string, string> = {
+export const GARMIN_CONNECT_SPORT_MAP: Record<string, CanonicalActivityType> = {
   // Running
   running: "running",
   trail_running: "running",
@@ -12,16 +14,16 @@ export const GARMIN_CONNECT_SPORT_MAP: Record<string, string> = {
   virtual_run: "running",
   // Cycling
   cycling: "cycling",
-  mountain_biking: "cycling",
-  road_biking: "cycling",
-  indoor_cycling: "cycling",
-  gravel_cycling: "cycling",
-  virtual_ride: "cycling",
-  bmx: "cycling",
-  cyclocross: "cycling",
+  mountain_biking: "mountain_biking",
+  road_biking: "road_cycling",
+  indoor_cycling: "indoor_cycling",
+  gravel_cycling: "gravel_cycling",
+  virtual_ride: "virtual_cycling",
+  bmx: "bmx",
+  cyclocross: "cyclocross",
   recumbent_cycling: "cycling",
-  e_bike_mountain: "cycling",
-  e_bike_fitness: "cycling",
+  e_bike_mountain: "e_bike_cycling",
+  e_bike_fitness: "e_bike_cycling",
   // Swimming
   lap_swimming: "swimming",
   open_water_swimming: "swimming",
@@ -81,7 +83,7 @@ export const GARMIN_CONNECT_SPORT_MAP: Record<string, string> = {
   multi_sport: "multisport",
   transition: "transition",
   golf: "golf",
-  horseback_riding: "horseback_riding",
+  horseback_riding: "equestrian",
   hunting: "hunting",
   fishing: "fishing",
   skating: "skating",
@@ -102,6 +104,6 @@ export const GARMIN_CONNECT_SPORT_MAP: Record<string, string> = {
 /**
  * Map a Garmin Connect activityType.typeKey to a normalized sport type.
  */
-export function mapGarminConnectSport(typeKey: string): string {
+export function mapGarminConnectSport(typeKey: string): CanonicalActivityType {
   return GARMIN_CONNECT_SPORT_MAP[typeKey] ?? "other";
 }

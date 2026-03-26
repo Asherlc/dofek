@@ -1,7 +1,7 @@
 import { StressScore, trendColor } from "@dofek/scoring/scoring";
 import type { StressResult } from "dofek-server/types";
 import { dofekAxis, dofekGrid, dofekLegend, dofekSeries, dofekTooltip } from "../lib/chartTheme.ts";
-import { formatNumber } from "../lib/format.ts";
+import { formatNumber, isToday } from "../lib/format.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface StressChartProps {
@@ -24,7 +24,9 @@ export function StressChart({ data, loading }: StressChartProps) {
     return <DofekChart option={{}} empty={true} height={350} emptyMessage="No stress data" />;
   }
 
-  const latest = data.latestScore ?? 0;
+  const latestDaily = data.daily[data.daily.length - 1];
+  const hasToday = latestDaily != null && isToday(new Date(latestDaily.date));
+  const latest = hasToday ? (data.latestScore ?? 0) : 0;
   const latestStress = new StressScore(latest);
   const latestColor = latestStress.color;
 
@@ -60,19 +62,21 @@ export function StressChart({ data, loading }: StressChartProps) {
       },
     }),
     legend: dofekLegend(true, { data: ["Daily Stress", "Weekly Avg"] }),
-    graphic: [
-      {
-        type: "text" as const,
-        right: 10,
-        top: 5,
-        style: {
-          text: `Today: ${formatNumber(latest)} ${latestStress.label} ${trendIcon(data.trend)}`,
-          fill: latestColor,
-          fontSize: 13,
-          fontWeight: "bold" as const,
-        },
-      },
-    ],
+    graphic: hasToday
+      ? [
+          {
+            type: "text" as const,
+            right: 10,
+            top: 5,
+            style: {
+              text: `Today: ${formatNumber(latest)} ${latestStress.label} ${trendIcon(data.trend)}`,
+              fill: latestColor,
+              fontSize: 13,
+              fontWeight: "bold" as const,
+            },
+          },
+        ]
+      : [],
     xAxis: dofekAxis.time(),
     yAxis: [
       dofekAxis.value({ name: "Stress (0-3)", min: 0, max: 3 }),
@@ -124,12 +128,24 @@ export function StressChart({ data, loading }: StressChartProps) {
               ? "Worsening"
               : "Stable"}
         </span>
-        {data.weekly.length > 0 && (
-          <span className="text-dim text-xs">
-            This week: {formatNumber(data.weekly[data.weekly.length - 1]?.cumulativeStress ?? 0)}{" "}
-            cumulative
-          </span>
-        )}
+        {data.weekly.length > 0 &&
+          (() => {
+            const latestWeek = data.weekly[data.weekly.length - 1];
+            if (!latestWeek) return null;
+            const weekDate = new Date(latestWeek.weekStart);
+            const now = new Date();
+            const startOfThisWeek = new Date(now);
+            const dayOfWeek = now.getDay();
+            const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+            startOfThisWeek.setDate(now.getDate() - mondayOffset);
+            startOfThisWeek.setHours(0, 0, 0, 0);
+            if (weekDate < startOfThisWeek) return null;
+            return (
+              <span className="text-dim text-xs">
+                This week: {formatNumber(latestWeek.cumulativeStress ?? 0)} cumulative
+              </span>
+            );
+          })()}
       </div>
       <DofekChart option={option} height={300} />
     </div>

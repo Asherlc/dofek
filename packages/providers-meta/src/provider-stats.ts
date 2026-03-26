@@ -8,6 +8,7 @@ export interface ProviderStats {
   healthEvents: number;
   metricStream: number;
   nutritionDaily: number;
+  labPanels: number;
   labResults: number;
   journalEntries: number;
 }
@@ -25,6 +26,7 @@ export const DATA_TYPE_LABELS: ReadonlyArray<{
   { key: "foodEntries", label: "Food" },
   { key: "nutritionDaily", label: "Nutrition" },
   { key: "healthEvents", label: "Events" },
+  { key: "labPanels", label: "Lab Panels" },
   { key: "labResults", label: "Lab Results" },
   { key: "journalEntries", label: "Journal" },
 ] as const;

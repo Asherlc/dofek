@@ -1,3 +1,4 @@
+import type { CanonicalActivityType } from "@dofek/training/training";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { getOAuthRedirectUri } from "../auth/oauth.ts";
@@ -49,7 +50,7 @@ interface XertActivity {
 
 export interface ParsedXertActivity {
   externalId: string;
-  activityType: string;
+  activityType: CanonicalActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -60,7 +61,7 @@ export interface ParsedXertActivity {
 // Sport type mapping
 // ============================================================
 
-const XERT_SPORT_MAP: Record<string, string> = {
+const XERT_SPORT_MAP: Record<string, CanonicalActivityType> = {
   Cycling: "cycling",
   Running: "running",
   Swimming: "swimming",
@@ -68,13 +69,13 @@ const XERT_SPORT_MAP: Record<string, string> = {
   Hiking: "hiking",
   Rowing: "rowing",
   Skiing: "skiing",
-  "Virtual Cycling": "cycling",
+  "Virtual Cycling": "virtual_cycling",
   "Mountain Biking": "mountain_biking",
   "Trail Running": "trail_running",
   "Cross Country Skiing": "cross_country_skiing",
 };
 
-export function mapXertSport(sport: string): string {
+export function mapXertSport(sport: string): CanonicalActivityType {
   return XERT_SPORT_MAP[sport] ?? "other";
 }
 

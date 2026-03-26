@@ -25,14 +25,14 @@ function makeDb(rows: Record<string, unknown>[]) {
 describe("checkAnomalies", () => {
   it("returns empty when no data", async () => {
     const db = makeDb([]);
-    const result = await checkAnomalies(db, "user-1");
+    const result = await checkAnomalies(db, "user-1", "UTC", "2024-01-15");
     expect(result.anomalies).toEqual([]);
     expect(result.checkedMetrics).toEqual([]);
   });
 
   it("returns empty when row has null date", async () => {
     const db = makeDb([{ date: null }]);
-    const result = await checkAnomalies(db, "user-1");
+    const result = await checkAnomalies(db, "user-1", "UTC", "2024-01-15");
     expect(result.anomalies).toEqual([]);
   });
 
@@ -54,7 +54,7 @@ describe("checkAnomalies", () => {
         sleep_count: null,
       },
     ]);
-    const result = await checkAnomalies(db, "user-1");
+    const result = await checkAnomalies(db, "user-1", "UTC", "2024-01-15");
 
     expect(result.checkedMetrics).toContain("resting_hr");
     expect(result.anomalies).toHaveLength(1);
@@ -80,7 +80,7 @@ describe("checkAnomalies", () => {
         sleep_count: null,
       },
     ]);
-    const result = await checkAnomalies(db, "user-1");
+    const result = await checkAnomalies(db, "user-1", "UTC", "2024-01-15");
 
     expect(result.anomalies).toHaveLength(1);
     expect(result.anomalies[0]?.severity).toBe("warning");
@@ -104,7 +104,7 @@ describe("checkAnomalies", () => {
         sleep_count: null,
       },
     ]);
-    const result = await checkAnomalies(db, "user-1");
+    const result = await checkAnomalies(db, "user-1", "UTC", "2024-01-15");
     expect(result.checkedMetrics).not.toContain("resting_hr");
   });
 
@@ -126,7 +126,7 @@ describe("checkAnomalies", () => {
         sleep_count: null,
       },
     ]);
-    const result = await checkAnomalies(db, "user-1");
+    const result = await checkAnomalies(db, "user-1", "UTC", "2024-01-15");
 
     expect(result.checkedMetrics).toContain("hrv");
     expect(result.anomalies).toHaveLength(1);
@@ -152,7 +152,7 @@ describe("checkAnomalies", () => {
         sleep_count: 20,
       },
     ]);
-    const result = await checkAnomalies(db, "user-1");
+    const result = await checkAnomalies(db, "user-1", "UTC", "2024-01-15");
 
     expect(result.checkedMetrics).toContain("sleep_duration");
     expect(result.anomalies).toHaveLength(1);
@@ -178,10 +178,252 @@ describe("checkAnomalies", () => {
         sleep_count: 20,
       },
     ]);
-    const result = await checkAnomalies(db, "user-1");
+    const result = await checkAnomalies(db, "user-1", "UTC", "2024-01-15");
 
     expect(result.checkedMetrics).toHaveLength(3);
     expect(result.anomalies).toHaveLength(0);
+  });
+
+  it("classifies resting HR alert (z > 3)", async () => {
+    const db = makeDb([
+      {
+        date: "2024-01-15",
+        resting_hr: 76,
+        rhr_mean: 60,
+        rhr_sd: 5,
+        rhr_count: 20,
+        hrv: null,
+        hrv_mean: null,
+        hrv_sd: null,
+        hrv_count: null,
+        duration_minutes: null,
+        sleep_mean: null,
+        sleep_sd: null,
+        sleep_count: null,
+      },
+    ]);
+    const result = await checkAnomalies(db, "user-1");
+
+    expect(result.anomalies).toHaveLength(1);
+    expect(result.anomalies[0]?.severity).toBe("alert"); // z = 3.2 > 3
+    expect(result.anomalies[0]?.zScore).toBe(3.2);
+  });
+
+  it("classifies HRV alert (z < -3)", async () => {
+    const db = makeDb([
+      {
+        date: "2024-01-15",
+        resting_hr: null,
+        rhr_mean: null,
+        rhr_sd: null,
+        rhr_count: null,
+        hrv: 15,
+        hrv_mean: 50,
+        hrv_sd: 10,
+        hrv_count: 20,
+        duration_minutes: null,
+        sleep_mean: null,
+        sleep_sd: null,
+        sleep_count: null,
+      },
+    ]);
+    const result = await checkAnomalies(db, "user-1");
+
+    expect(result.anomalies).toHaveLength(1);
+    expect(result.anomalies[0]?.severity).toBe("alert"); // z = -3.5 < -3
+    expect(result.anomalies[0]?.zScore).toBe(-3.5);
+  });
+
+  it("classifies sleep alert (z < -3)", async () => {
+    const db = makeDb([
+      {
+        date: "2024-01-15",
+        resting_hr: null,
+        rhr_mean: null,
+        rhr_sd: null,
+        rhr_count: null,
+        hrv: null,
+        hrv_mean: null,
+        hrv_sd: null,
+        hrv_count: null,
+        duration_minutes: 240,
+        sleep_mean: 480,
+        sleep_sd: 60,
+        sleep_count: 20,
+      },
+    ]);
+    const result = await checkAnomalies(db, "user-1");
+
+    expect(result.anomalies).toHaveLength(1);
+    expect(result.anomalies[0]?.severity).toBe("alert"); // z = -4.0 < -3
+    expect(result.anomalies[0]?.zScore).toBe(-4);
+  });
+
+  it("detects all three anomalies simultaneously", async () => {
+    const db = makeDb([
+      {
+        date: "2024-01-15",
+        resting_hr: 80,
+        rhr_mean: 60,
+        rhr_sd: 5,
+        rhr_count: 20,
+        hrv: 15,
+        hrv_mean: 50,
+        hrv_sd: 10,
+        hrv_count: 20,
+        duration_minutes: 240,
+        sleep_mean: 480,
+        sleep_sd: 60,
+        sleep_count: 20,
+      },
+    ]);
+    const result = await checkAnomalies(db, "user-1");
+
+    expect(result.checkedMetrics).toHaveLength(3);
+    expect(result.checkedMetrics).toContain("resting_hr");
+    expect(result.checkedMetrics).toContain("hrv");
+    expect(result.checkedMetrics).toContain("sleep_duration");
+    expect(result.anomalies).toHaveLength(3);
+  });
+
+  it("computes baselineMean and baselineStddev with correct rounding", async () => {
+    const db = makeDb([
+      {
+        date: "2024-01-15",
+        resting_hr: 75,
+        rhr_mean: 60.45,
+        rhr_sd: 5.67,
+        rhr_count: 20,
+        hrv: null,
+        hrv_mean: null,
+        hrv_sd: null,
+        hrv_count: null,
+        duration_minutes: null,
+        sleep_mean: null,
+        sleep_sd: null,
+        sleep_count: null,
+      },
+    ]);
+    const result = await checkAnomalies(db, "user-1");
+    expect(result.anomalies[0]?.baselineMean).toBe(60.5);
+    expect(result.anomalies[0]?.baselineStddev).toBe(5.7);
+    expect(result.anomalies[0]?.value).toBe(75);
+  });
+
+  it("does not flag resting HR at exactly z=2 (requires > 2)", async () => {
+    const db = makeDb([
+      {
+        date: "2024-01-15",
+        resting_hr: 70,
+        rhr_mean: 60,
+        rhr_sd: 5,
+        rhr_count: 20,
+        hrv: null,
+        hrv_mean: null,
+        hrv_sd: null,
+        hrv_count: null,
+        duration_minutes: null,
+        sleep_mean: null,
+        sleep_sd: null,
+        sleep_count: null,
+      },
+    ]);
+    const result = await checkAnomalies(db, "user-1");
+    // z = (70-60)/5 = 2.0 — not > 2
+    expect(result.checkedMetrics).toContain("resting_hr");
+    expect(result.anomalies).toHaveLength(0);
+  });
+
+  it("does not flag HRV at exactly z=-2 (requires < -2)", async () => {
+    const db = makeDb([
+      {
+        date: "2024-01-15",
+        resting_hr: null,
+        rhr_mean: null,
+        rhr_sd: null,
+        rhr_count: null,
+        hrv: 30,
+        hrv_mean: 50,
+        hrv_sd: 10,
+        hrv_count: 20,
+        duration_minutes: null,
+        sleep_mean: null,
+        sleep_sd: null,
+        sleep_count: null,
+      },
+    ]);
+    const result = await checkAnomalies(db, "user-1");
+    // z = (30-50)/10 = -2.0 — not < -2
+    expect(result.checkedMetrics).toContain("hrv");
+    expect(result.anomalies).toHaveLength(0);
+  });
+
+  it("skips HRV check with insufficient data (count < 14)", async () => {
+    const db = makeDb([
+      {
+        date: "2024-01-15",
+        resting_hr: null,
+        rhr_mean: null,
+        rhr_sd: null,
+        rhr_count: null,
+        hrv: 10,
+        hrv_mean: 50,
+        hrv_sd: 10,
+        hrv_count: 10,
+        duration_minutes: null,
+        sleep_mean: null,
+        sleep_sd: null,
+        sleep_count: null,
+      },
+    ]);
+    const result = await checkAnomalies(db, "user-1");
+    expect(result.checkedMetrics).not.toContain("hrv");
+  });
+
+  it("skips sleep check with insufficient data (count < 14)", async () => {
+    const db = makeDb([
+      {
+        date: "2024-01-15",
+        resting_hr: null,
+        rhr_mean: null,
+        rhr_sd: null,
+        rhr_count: null,
+        hrv: null,
+        hrv_mean: null,
+        hrv_sd: null,
+        hrv_count: null,
+        duration_minutes: 100,
+        sleep_mean: 480,
+        sleep_sd: 60,
+        sleep_count: 10,
+      },
+    ]);
+    const result = await checkAnomalies(db, "user-1");
+    expect(result.checkedMetrics).not.toContain("sleep_duration");
+  });
+
+  it("rounds sleep values to integers", async () => {
+    const db = makeDb([
+      {
+        date: "2024-01-15",
+        resting_hr: null,
+        rhr_mean: null,
+        rhr_sd: null,
+        rhr_count: null,
+        hrv: null,
+        hrv_mean: null,
+        hrv_sd: null,
+        hrv_count: null,
+        duration_minutes: 280.7,
+        sleep_mean: 480.3,
+        sleep_sd: 60.9,
+        sleep_count: 20,
+      },
+    ]);
+    const result = await checkAnomalies(db, "user-1");
+    expect(result.anomalies[0]?.value).toBe(281);
+    expect(result.anomalies[0]?.baselineMean).toBe(480);
+    expect(result.anomalies[0]?.baselineStddev).toBe(61);
   });
 
   it("skips checks when stddev is 0", async () => {
@@ -202,7 +444,7 @@ describe("checkAnomalies", () => {
         sleep_count: null,
       },
     ]);
-    const result = await checkAnomalies(db, "user-1");
+    const result = await checkAnomalies(db, "user-1", "UTC", "2024-01-15");
     expect(result.checkedMetrics).not.toContain("resting_hr");
   });
 });
@@ -374,6 +616,173 @@ describe("sendAnomalyAlertToSlack", () => {
     ];
     const result = await sendAnomalyAlertToSlack(db, "user-1", anomalies);
     expect(result).toBe(false);
+    fetchSpy.mockRestore();
+  });
+
+  it("uses 'Health Alert' header when any anomaly has alert severity", async () => {
+    mockExecuteWithSchema.mockReset();
+    mockExecuteWithSchema.mockResolvedValueOnce([{ bot_token: "xoxb-fake" }]);
+    mockExecuteWithSchema.mockResolvedValueOnce([{ provider_account_id: "U12345" }]);
+    const db = {};
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ ok: true }),
+    });
+
+    const anomalies = [
+      {
+        date: "2024-01-15",
+        metric: "Resting Heart Rate",
+        value: 80,
+        baselineMean: 60,
+        baselineStddev: 5,
+        zScore: 4.0,
+        severity: "alert" as const,
+      },
+    ];
+    const result = await sendAnomalyAlertToSlack(db, "user-1", anomalies);
+    expect(result).toBe(true);
+
+    const callBody = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
+    expect(callBody.blocks[0].text.text).toBe("Health Alert");
+    expect(callBody.text).toContain("alert");
+    fetchSpy.mockRestore();
+  });
+
+  it("uses 'Health Warning' header when all anomalies are warning severity", async () => {
+    mockExecuteWithSchema.mockReset();
+    mockExecuteWithSchema.mockResolvedValueOnce([{ bot_token: "xoxb-fake" }]);
+    mockExecuteWithSchema.mockResolvedValueOnce([{ provider_account_id: "U12345" }]);
+    const db = {};
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ ok: true }),
+    });
+
+    const anomalies = [
+      {
+        date: "2024-01-15",
+        metric: "Resting Heart Rate",
+        value: 71,
+        baselineMean: 60,
+        baselineStddev: 5,
+        zScore: 2.2,
+        severity: "warning" as const,
+      },
+    ];
+    const result = await sendAnomalyAlertToSlack(db, "user-1", anomalies);
+    expect(result).toBe(true);
+
+    const callBody = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
+    expect(callBody.blocks[0].text.text).toBe("Health Warning");
+    expect(callBody.text).toContain("warning");
+    fetchSpy.mockRestore();
+  });
+
+  it("formats anomaly details in Slack message blocks", async () => {
+    mockExecuteWithSchema.mockReset();
+    mockExecuteWithSchema.mockResolvedValueOnce([{ bot_token: "xoxb-fake" }]);
+    mockExecuteWithSchema.mockResolvedValueOnce([{ provider_account_id: "U12345" }]);
+    const db = {};
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ ok: true }),
+    });
+
+    const anomalies = [
+      {
+        date: "2024-01-15",
+        metric: "Resting Heart Rate",
+        value: 75,
+        baselineMean: 60,
+        baselineStddev: 5,
+        zScore: 3.0,
+        severity: "alert" as const,
+      },
+    ];
+    await sendAnomalyAlertToSlack(db, "user-1", anomalies);
+
+    const callBody = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
+    // header + intro + 1 anomaly = 3 blocks
+    expect(callBody.blocks).toHaveLength(3);
+    // Anomaly block should contain metric details
+    expect(callBody.blocks[2].text.text).toContain("*Resting Heart Rate*");
+    expect(callBody.blocks[2].text.text).toContain("75");
+    expect(callBody.blocks[2].text.text).toContain("60");
+    expect(callBody.blocks[2].text.text).toContain("5");
+    expect(callBody.blocks[2].text.text).toContain("3");
+    fetchSpy.mockRestore();
+  });
+
+  it("does not include illness warning when only HR is anomalous", async () => {
+    mockExecuteWithSchema.mockReset();
+    mockExecuteWithSchema.mockResolvedValueOnce([{ bot_token: "xoxb-fake" }]);
+    mockExecuteWithSchema.mockResolvedValueOnce([{ provider_account_id: "U12345" }]);
+    const db = {};
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ ok: true }),
+    });
+
+    const anomalies = [
+      {
+        date: "2024-01-15",
+        metric: "Resting Heart Rate",
+        value: 75,
+        baselineMean: 60,
+        baselineStddev: 5,
+        zScore: 3.0,
+        severity: "alert" as const,
+      },
+    ];
+    await sendAnomalyAlertToSlack(db, "user-1", anomalies);
+
+    const callBody = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
+    // No illness warning block
+    expect(callBody.blocks).toHaveLength(3); // header + intro + 1 anomaly
+    const allText = callBody.blocks.map((b: { text?: { text: string } }) => b.text?.text).join("");
+    expect(allText).not.toContain("fighting something");
+    fetchSpy.mockRestore();
+  });
+
+  it("sends to correct Slack channel (user's provider_account_id)", async () => {
+    mockExecuteWithSchema.mockReset();
+    mockExecuteWithSchema.mockResolvedValueOnce([{ bot_token: "xoxb-test-token" }]);
+    mockExecuteWithSchema.mockResolvedValueOnce([{ provider_account_id: "U99999" }]);
+    const db = {};
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ ok: true }),
+    });
+
+    const anomalies = [
+      {
+        date: "2024-01-15",
+        metric: "Sleep Duration",
+        value: 280,
+        baselineMean: 480,
+        baselineStddev: 60,
+        zScore: -3.33,
+        severity: "alert" as const,
+      },
+    ];
+    await sendAnomalyAlertToSlack(db, "user-1", anomalies);
+
+    const callBody = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
+    expect(callBody.channel).toBe("U99999");
+
+    // Check Authorization header
+    const callArgs = fetchSpy.mock.calls[0]?.[1];
+    const callHeaders =
+      callArgs && typeof callArgs === "object" && "headers" in callArgs
+        ? (callArgs.headers ?? {})
+        : {};
+    expect(callHeaders).toHaveProperty("Authorization", "Bearer xoxb-test-token");
     fetchSpy.mockRestore();
   });
 

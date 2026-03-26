@@ -71,8 +71,8 @@ describe("Data Export", () => {
       ),
       // Journal entry
       testCtx.db.execute(
-        sql`INSERT INTO fitness.journal_entry (date, provider_id, user_id, question, answer_text)
-            VALUES ('2024-01-15', 'test-provider', ${DEFAULT_USER_ID}, 'How did you sleep?', 'Great')`,
+        sql`INSERT INTO fitness.journal_entry (date, provider_id, user_id, question_slug, answer_text)
+            VALUES ('2024-01-15', 'test-provider', ${DEFAULT_USER_ID}, 'sleep_quality', 'Great')`,
       ),
       // Life event
       testCtx.db.execute(

@@ -1,3 +1,4 @@
+import type { CanonicalActivityType } from "@dofek/training/training";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
@@ -50,7 +51,7 @@ interface DecathlonActivitiesResponse {
 
 export interface ParsedDecathlonActivity {
   externalId: string;
-  activityType: string;
+  activityType: CanonicalActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -62,7 +63,7 @@ export interface ParsedDecathlonActivity {
 // ============================================================
 
 // Decathlon sport IDs mapped to normalized activity types
-const DECATHLON_SPORT_MAP: Record<string, string> = {
+const DECATHLON_SPORT_MAP: Record<string, CanonicalActivityType> = {
   "381": "running",
   "121": "cycling",
   "153": "mountain_biking",
@@ -74,7 +75,7 @@ const DECATHLON_SPORT_MAP: Record<string, string> = {
   "173": "rowing",
   "263": "open_water_swimming",
   "91": "skiing",
-  "174": "indoor_rowing",
+  "174": "rowing",
   "395": "yoga",
   "105": "gym",
   "264": "triathlon",
@@ -85,7 +86,7 @@ const DECATHLON_SPORT_MAP: Record<string, string> = {
   "176": "strength_training",
 };
 
-export function mapDecathlonSport(sportUri: string): string {
+export function mapDecathlonSport(sportUri: string): CanonicalActivityType {
   // Sport URI is like "/v2/sports/381" — extract the ID
   const sportId = sportUri.split("/").pop() ?? "";
   return DECATHLON_SPORT_MAP[sportId] ?? "other";

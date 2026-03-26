@@ -66,7 +66,7 @@ describe("useScrollReveal", () => {
     });
 
     // Re-render to trigger useEffect with the element
-    const { result: result2 } = renderHook(() => useScrollReveal());
+    renderHook(() => useScrollReveal());
     const el = document.createElement("div");
 
     // We need to set the ref before render. Let's use a different approach:

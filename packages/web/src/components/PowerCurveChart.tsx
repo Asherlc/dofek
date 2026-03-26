@@ -43,9 +43,9 @@ export function PowerCurveChart({ data, comparisonData, model, loading }: PowerC
     const logMax = Math.log10(7200);
     const steps = 50;
     for (let i = 0; i <= steps; i++) {
-      const t = 10 ** (logMin + (logMax - logMin) * (i / steps));
-      const p = model.cp + model.wPrime / t;
-      modelCurveData.push([Math.round(t), Math.round(p)]);
+      const timeSeconds = 10 ** (logMin + (logMax - logMin) * (i / steps));
+      const powerWatts = model.cp + model.wPrime / timeSeconds;
+      modelCurveData.push([Math.round(timeSeconds), Math.round(powerWatts)]);
     }
   }
 
