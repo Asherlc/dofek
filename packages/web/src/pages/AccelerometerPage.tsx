@@ -28,7 +28,12 @@ function SyncStatusPanel() {
           key={`${device.device_id}-${device.device_type}`}
           className="rounded-lg border border-border bg-card p-4"
         >
-          <p className="text-sm font-medium text-muted-foreground">{device.device_id}</p>
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-medium text-muted-foreground">{device.device_id}</p>
+            <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+              {device.device_type === "apple_watch" ? "Apple Watch" : "iPhone"}
+            </span>
+          </div>
           <p className="text-2xl font-bold">{formatNumber(device.sample_count)} samples</p>
           <p className="text-xs text-muted-foreground">
             {device.earliest_sample
@@ -76,7 +81,7 @@ export function AccelerometerPage() {
     <PageLayout>
       <PageSection
         title="Accelerometer"
-        subtitle="Continuous 50 Hz iPhone motion data for activity detection"
+        subtitle="Continuous 50 Hz motion data from iPhone and Apple Watch"
       >
         <SyncStatusPanel />
       </PageSection>

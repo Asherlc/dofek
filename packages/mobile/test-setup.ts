@@ -124,6 +124,12 @@ vi.mock("react-native", () => {
 
   const RefreshControl = createMockComponent("RefreshControl");
 
+  const AppState = {
+    currentState: "active" as string,
+    addEventListener: vi.fn(() => ({ remove: vi.fn() })),
+    removeEventListener: vi.fn(),
+  };
+
   return {
     __esModule: true,
     View,
@@ -139,6 +145,7 @@ vi.mock("react-native", () => {
     StyleSheet,
     Platform,
     Alert,
+    AppState,
     useWindowDimensions: () => ({ width: 390, height: 844 }),
   };
 });
@@ -245,4 +252,23 @@ vi.mock("./modules/core-motion", () => ({
   queryRecordedData: vi.fn(() => Promise.resolve([])),
   getLastSyncTimestamp: vi.fn(() => null),
   setLastSyncTimestamp: vi.fn(),
+}));
+
+// ── Watch Motion native module mock ─────────────────────────────────
+vi.mock("./modules/watch-motion", () => ({
+  isWatchSupported: vi.fn(() => true),
+  isWatchPaired: vi.fn(() => false),
+  isWatchAppInstalled: vi.fn(() => false),
+  getWatchSyncStatus: vi.fn(() => ({
+    isSupported: true,
+    isPaired: false,
+    isReachable: false,
+    isWatchAppInstalled: false,
+    pendingFileCount: 0,
+  })),
+  requestWatchSync: vi.fn(() => Promise.resolve(false)),
+  getPendingWatchSamples: vi.fn(() => Promise.resolve([])),
+  acknowledgeWatchSamples: vi.fn(),
+  getLastWatchSyncTimestamp: vi.fn(() => null),
+  setLastWatchSyncTimestamp: vi.fn(),
 }));

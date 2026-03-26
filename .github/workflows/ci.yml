@@ -298,9 +298,28 @@ jobs:
             | tail -20
         timeout-minutes: 20
 
+  build-watchos:
+    name: watchOS Build
+    needs: check-mobile-changes
+    if: needs.check-mobile-changes.outputs.changed == 'true'
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Watch target for simulator
+        run: |
+          xcodebuild build \
+            -project packages/mobile/ios/Dofek.xcodeproj \
+            -target DofekWatch \
+            -sdk watchsimulator \
+            -configuration Debug \
+            -destination 'generic/platform=watchOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            | tail -20
+        timeout-minutes: 5
+
   ios-gate:
     name: iOS Native Gate
-    needs: [check-mobile-changes, test-mobile, build-mobile, lint-ios-podspecs, build-ios-native, test-swift]
+    needs: [check-mobile-changes, test-mobile, build-mobile, lint-ios-podspecs, build-ios-native, build-watchos, test-swift]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -312,6 +331,7 @@ jobs:
             "${{ needs.build-mobile.result }}" \
             "${{ needs.lint-ios-podspecs.result }}" \
             "${{ needs.build-ios-native.result }}" \
+            "${{ needs.build-watchos.result }}" \
             "${{ needs.test-swift.result }}"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
               echo "An iOS job failed or was cancelled"
