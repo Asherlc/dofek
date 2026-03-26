@@ -21,7 +21,12 @@ vi.mock("../trpc.ts", async () => {
 });
 
 import { healthKitPushTotal, healthKitRecordsTotal } from "dofek/sync-metrics";
-import { aggregateDailyMetricSamples, healthKitSyncRouter } from "./health-kit-sync.ts";
+import {
+  aggregateDailyMetricSamples,
+  computeBoundsFromIsoTimestamps,
+  healthKitSyncRouter,
+  isSleepStageValue,
+} from "./health-kit-sync.ts";
 
 const createCaller = createTestCallerFactory(healthKitSyncRouter);
 
@@ -153,6 +158,61 @@ describe("healthKitSyncRouter", () => {
 
       expect(result.inserted).toBe(1);
       expect(result.errors).toEqual([]);
+    });
+
+    it("applies body fat percentage transform (value * 100)", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.pushQuantitySamples({
+        samples: [
+          makeSample({
+            type: "HKQuantityTypeIdentifierBodyFatPercentage",
+            value: 0.18,
+            uuid: "bf-1",
+          }),
+        ],
+      });
+
+      const sqlCall = execute.mock.calls.find((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return serialized.includes("body_measurement") && serialized.includes("body_fat_pct");
+      });
+      expect(sqlCall).toBeDefined();
+      // 0.18 * 100 = 18
+      expect(JSON.stringify(sqlCall?.[0])).toContain("18");
+    });
+
+    it("applies distance transform (value / 1000)", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.pushQuantitySamples({
+        samples: [
+          makeSample({
+            type: "HKQuantityTypeIdentifierDistanceWalkingRunning",
+            value: 5000,
+            uuid: "dist-transform",
+          }),
+        ],
+      });
+
+      const sqlCall = execute.mock.calls.find((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return serialized.includes("daily_metrics") && serialized.includes("distance_km");
+      });
+      expect(sqlCall).toBeDefined();
+      // 5000 / 1000 = 5
+      const serialized = JSON.stringify(sqlCall?.[0]);
+      expect(serialized).toContain(",5,");
     });
 
     it("processes additive daily metric samples", async () => {
@@ -913,6 +973,65 @@ describe("healthKitSyncRouter", () => {
         endpoint: "pushSleepSamples",
         category: "sleep",
       });
+    });
+  });
+
+  describe("computeBoundsFromIsoTimestamps", () => {
+    it("returns null for empty array", () => {
+      expect(computeBoundsFromIsoTimestamps([])).toBeNull();
+    });
+
+    it("returns bounds for a single timestamp", () => {
+      const result = computeBoundsFromIsoTimestamps(["2024-01-15T10:00:00Z"]);
+      expect(result).toEqual({
+        startAt: "2024-01-15T10:00:00.000Z",
+        endAt: "2024-01-15T10:00:00.000Z",
+      });
+    });
+
+    it("returns min/max bounds for multiple timestamps", () => {
+      const result = computeBoundsFromIsoTimestamps([
+        "2024-01-15T12:00:00Z",
+        "2024-01-15T08:00:00Z",
+        "2024-01-15T20:00:00Z",
+      ]);
+      expect(result).toEqual({
+        startAt: "2024-01-15T08:00:00.000Z",
+        endAt: "2024-01-15T20:00:00.000Z",
+      });
+    });
+
+    it("returns null when all timestamps are invalid", () => {
+      expect(computeBoundsFromIsoTimestamps(["invalid", "also-invalid"])).toBeNull();
+    });
+
+    it("ignores invalid timestamps among valid ones", () => {
+      const result = computeBoundsFromIsoTimestamps([
+        "invalid",
+        "2024-01-15T10:00:00Z",
+        "2024-01-15T14:00:00Z",
+      ]);
+      expect(result).toEqual({
+        startAt: "2024-01-15T10:00:00.000Z",
+        endAt: "2024-01-15T14:00:00.000Z",
+      });
+    });
+  });
+
+  describe("isSleepStageValue", () => {
+    it("returns true for all sleep stage values", () => {
+      expect(isSleepStageValue("asleep")).toBe(true);
+      expect(isSleepStageValue("asleepUnspecified")).toBe(true);
+      expect(isSleepStageValue("asleepCore")).toBe(true);
+      expect(isSleepStageValue("asleepDeep")).toBe(true);
+      expect(isSleepStageValue("asleepREM")).toBe(true);
+    });
+
+    it("returns false for non-sleep-stage values", () => {
+      expect(isSleepStageValue("inBed")).toBe(false);
+      expect(isSleepStageValue("awake")).toBe(false);
+      expect(isSleepStageValue("")).toBe(false);
+      expect(isSleepStageValue("unknown")).toBe(false);
     });
   });
 });

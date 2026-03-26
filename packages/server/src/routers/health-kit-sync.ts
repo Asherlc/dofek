@@ -211,7 +211,7 @@ function extractDate(isoString: string): string {
   return isoString.slice(0, 10);
 }
 
-function computeBoundsFromIsoTimestamps(
+export function computeBoundsFromIsoTimestamps(
   timestamps: string[],
 ): { startAt: string; endAt: string } | null {
   if (timestamps.length === 0) return null;
@@ -238,7 +238,7 @@ function parseIsoTimestamp(value: string): number | null {
   return milliseconds;
 }
 
-function isSleepStageValue(value: string): boolean {
+export function isSleepStageValue(value: string): boolean {
   return (
     value === "asleep" ||
     value === "asleepUnspecified" ||
