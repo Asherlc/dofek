@@ -256,6 +256,22 @@ describe("activityRouter", () => {
     });
   });
 
+  describe("delete", () => {
+    it("calls DELETE with correct activity id and user_id", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+      const result = await caller.delete({
+        id: "00000000-0000-0000-0000-000000000001",
+      });
+      expect(result).toEqual({ success: true });
+      expect(execute).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe("hrZones", () => {
     it("returns 5 zones with labels", async () => {
       const rows = [
