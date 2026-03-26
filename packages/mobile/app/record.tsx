@@ -30,6 +30,14 @@ import {
   getPendingWatchSamples,
   acknowledgeWatchSamples,
 } from "../modules/watch-motion";
+import {
+  isBluetoothAvailable,
+  findWhoop,
+  connect as whoopConnect,
+  startImuStreaming,
+  stopImuStreaming,
+  getBufferedSamples as getWhoopSamples,
+} from "../modules/whoop-ble";
 import { trpc } from "../lib/trpc";
 import { colors, fonts, fontSize, fontWeight, radius, spacing } from "../theme";
 
@@ -96,6 +104,25 @@ export default function RecordScreen() {
           requestSync: requestWatchSync,
           getPendingSamples: getPendingWatchSamples,
           acknowledgeSamples: acknowledgeWatchSamples,
+        },
+        whoopBle: {
+          isAvailable: isBluetoothAvailable,
+          findAndConnect: async () => {
+            const device = await findWhoop();
+            if (!device) return false;
+            return whoopConnect(device.id);
+          },
+          startStreaming: startImuStreaming,
+          stopStreaming: stopImuStreaming,
+          getBufferedSamples: async () => {
+            const samples = await getWhoopSamples();
+            return samples.map((sample) => ({
+              timestamp: sample.timestamp,
+              x: sample.accelerometerX,
+              y: sample.accelerometerY,
+              z: sample.accelerometerZ,
+            }));
+          },
         },
         trpcClient,
         deviceId: `iPhone (${Platform.OS} ${Platform.Version})`,

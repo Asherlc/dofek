@@ -27,6 +27,7 @@
         "NSHealthShareUsageDescription": "Dofek reads your health data to sync workouts, heart rate, sleep, and body metrics to your personal dashboard.",
         "NSHealthUpdateUsageDescription": "Dofek writes dietary data back to Apple Health so your nutrition is tracked alongside activity data.",
         "NSMotionUsageDescription": "Dofek records accelerometer data to analyze movement patterns, detect activities, and provide fitness insights.",
+        "NSBluetoothAlwaysUsageDescription": "Dofek connects to your WHOOP strap via Bluetooth to record accelerometer data during workouts.",
         "LSSupportsOpeningDocumentsInPlace": true,
         "CFBundleDocumentTypes": [
           {
@@ -41,6 +42,7 @@
           }
         ]
       },
+      "backgroundModes": ["bluetooth-central"],
       "entitlements": {
         "com.apple.developer.healthkit": true,
         "com.apple.developer.healthkit.background-delivery": true

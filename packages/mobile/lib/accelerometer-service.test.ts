@@ -5,6 +5,16 @@ import {
 	type AccelerometerServiceDeps,
 } from "./accelerometer-service.ts";
 
+function makeMockWhoopBle() {
+	return {
+		isAvailable: vi.fn().mockReturnValue(true),
+		findAndConnect: vi.fn().mockResolvedValue(true),
+		startStreaming: vi.fn().mockResolvedValue(true),
+		stopStreaming: vi.fn().mockResolvedValue(true),
+		getBufferedSamples: vi.fn().mockResolvedValue([]),
+	};
+}
+
 function makeMockDeps(): AccelerometerServiceDeps {
 	return {
 		coreMotion: {
@@ -18,6 +28,7 @@ function makeMockDeps(): AccelerometerServiceDeps {
 			getPendingSamples: vi.fn().mockResolvedValue([]),
 			acknowledgeSamples: vi.fn(),
 		},
+		whoopBle: makeMockWhoopBle(),
 		trpcClient: {
 			accelerometerSync: {
 				pushAccelerometerSamples: {
@@ -196,6 +207,87 @@ describe("AccelerometerService", () => {
 			expect(phoneCalls[0][0].samples).toHaveLength(5000);
 			expect(phoneCalls[1][0].samples).toHaveLength(5000);
 			expect(phoneCalls[2][0].samples).toHaveLength(2000);
+		});
+	});
+
+	describe("WHOOP BLE integration", () => {
+		const startedAt = "2026-03-25T08:00:00.000Z";
+		const endedAt = "2026-03-25T09:00:00.000Z";
+
+		it("connects to WHOOP and starts streaming on ensureRecording", async () => {
+			await service.ensureRecording();
+
+			expect(deps.whoopBle?.findAndConnect).toHaveBeenCalled();
+			expect(deps.whoopBle?.startStreaming).toHaveBeenCalled();
+		});
+
+		it("skips WHOOP when unavailable", async () => {
+			(deps.whoopBle!.isAvailable as ReturnType<typeof vi.fn>).mockReturnValue(false);
+
+			await service.ensureRecording();
+
+			expect(deps.whoopBle?.findAndConnect).not.toHaveBeenCalled();
+		});
+
+		it("does not throw when WHOOP connection fails", async () => {
+			(deps.whoopBle!.findAndConnect as ReturnType<typeof vi.fn>).mockRejectedValue(
+				new Error("BLE error"),
+			);
+
+			await expect(service.ensureRecording()).resolves.toBeUndefined();
+		});
+
+		it("does not start streaming when connection fails", async () => {
+			(deps.whoopBle!.findAndConnect as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+
+			await service.ensureRecording();
+
+			expect(deps.whoopBle?.startStreaming).not.toHaveBeenCalled();
+		});
+
+		it("uploads WHOOP buffered samples on syncForTimeRange", async () => {
+			const whoopSamples = [
+				{ timestamp: "2026-03-25T08:00:01.000Z", x: 100, y: -200, z: 300 },
+				{ timestamp: "2026-03-25T08:00:01.020Z", x: 101, y: -201, z: 301 },
+			];
+			(deps.whoopBle!.getBufferedSamples as ReturnType<typeof vi.fn>).mockResolvedValue(whoopSamples);
+
+			await service.syncForTimeRange(startedAt, endedAt);
+
+			const calls = (deps.trpcClient.accelerometerSync.pushAccelerometerSamples.mutate as ReturnType<typeof vi.fn>).mock.calls;
+			const whoopCalls = calls.filter(
+				(call: Array<{ deviceType: string }>) => call[0].deviceType === "whoop",
+			);
+			expect(whoopCalls).toHaveLength(1);
+			expect(whoopCalls[0][0].deviceId).toBe("WHOOP Strap");
+			expect(whoopCalls[0][0].samples).toHaveLength(2);
+		});
+
+		it("stops WHOOP streaming after sync", async () => {
+			await service.syncForTimeRange(startedAt, endedAt);
+
+			expect(deps.whoopBle?.stopStreaming).toHaveBeenCalled();
+		});
+
+		it("does not upload when WHOOP buffer is empty", async () => {
+			(deps.whoopBle!.getBufferedSamples as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+			await service.syncForTimeRange(startedAt, endedAt);
+
+			const calls = (deps.trpcClient.accelerometerSync.pushAccelerometerSamples.mutate as ReturnType<typeof vi.fn>).mock.calls;
+			const whoopCalls = calls.filter(
+				(call: Array<{ deviceType: string }>) => call[0].deviceType === "whoop",
+			);
+			expect(whoopCalls).toHaveLength(0);
+		});
+
+		it("works without whoopBle deps (optional)", async () => {
+			const depsWithoutWhoop = makeMockDeps();
+			delete depsWithoutWhoop.whoopBle;
+			const serviceWithoutWhoop = createAccelerometerService(depsWithoutWhoop);
+
+			await expect(serviceWithoutWhoop.ensureRecording()).resolves.toBeUndefined();
+			await expect(serviceWithoutWhoop.syncForTimeRange(startedAt, endedAt)).resolves.toBeUndefined();
 		});
 	});
 });
