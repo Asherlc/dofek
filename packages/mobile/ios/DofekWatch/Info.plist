@@ -4,9 +4,11 @@
 <dict>
 	<key>NSMotionUsageDescription</key>
 	<string>Dofek records accelerometer data to track your movement and activity throughout the day.</string>
-	<key>WKCompanionAppBundleIdentifier</key>
-	<string>com.dofek.app</string>
+	<key>RCTNewArchEnabled</key>
+	<true/>
 	<key>WKApplication</key>
 	<true/>
+	<key>WKCompanionAppBundleIdentifier</key>
+	<string>com.dofek.app</string>
 </dict>
 </plist>

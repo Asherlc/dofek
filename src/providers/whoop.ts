@@ -96,22 +96,15 @@ export function parseRecovery(record: WhoopRecoveryRecord): ParsedRecovery {
       skinTemp: record.score.skin_temp_celsius,
     };
   }
-  // BFF v0 format: flat fields at top level (state === "complete" or biometrics present)
-  if (state === "complete" && record.resting_heart_rate != null) {
+  // BFF v0 format: flat biometric fields at top level.
+  // Accept any state value (or absent state) — the presence of resting_heart_rate
+  // indicates scored recovery. The API has used "complete", no state, and other
+  // values across different versions; keying on biometric data is more robust.
+  if (record.resting_heart_rate != null) {
     return {
       cycleId: record.cycle_id ?? 0,
       restingHr: record.resting_heart_rate,
       // BFF returns hrv_rmssd in seconds; convert to milliseconds
-      hrv: record.hrv_rmssd != null ? record.hrv_rmssd * 1000 : undefined,
-      spo2: record.spo2_percentage ?? record.spo2,
-      skinTemp: record.skin_temp_celsius,
-    };
-  }
-  // BFF v0 format without state field: has biometric data at top level
-  if (record.resting_heart_rate != null && state == null) {
-    return {
-      cycleId: record.cycle_id ?? 0,
-      restingHr: record.resting_heart_rate,
       hrv: record.hrv_rmssd != null ? record.hrv_rmssd * 1000 : undefined,
       spo2: record.spo2_percentage ?? record.spo2,
       skinTemp: record.skin_temp_celsius,
@@ -727,9 +720,8 @@ export class WhoopProvider implements SyncProvider {
             }
             const recoveryState = resolveRecoveryState(cycle.recovery);
             const hasLegacyRecovery = recoveryState === "SCORED" && cycle.recovery.score;
-            const hasBffRecovery =
-              (recoveryState === "complete" || recoveryState == null) &&
-              cycle.recovery.resting_heart_rate != null;
+            // BFF v0: accept any state value if biometric data is present
+            const hasBffRecovery = cycle.recovery.resting_heart_rate != null;
             if (hasLegacyRecovery || hasBffRecovery) {
               const parsed = parseRecovery(cycle.recovery);
               logger.info(

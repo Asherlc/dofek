@@ -52,9 +52,9 @@
   "dryRunTimeoutMinutes": 15,
   "timeoutMS": 15000,
   "thresholds": {
-    "high": 90,
-    "low": 80,
-    "break": 60
+    "high": 100,
+    "low": 90,
+    "break": 70
   },
   "reporters": ["clear-text", "progress"]
 }

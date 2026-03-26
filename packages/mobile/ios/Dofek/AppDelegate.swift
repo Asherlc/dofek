@@ -1,6 +1,7 @@
 internal import Expo
 import React
 import ReactAppDependencyProvider
+import Sentry
 
 @main
 class AppDelegate: ExpoAppDelegate {
@@ -13,6 +14,13 @@ class AppDelegate: ExpoAppDelegate {
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
+    // Initialize Sentry before React Native boots to capture native crashes
+    // that occur before the JS bundle loads. @sentry/react-native will merge
+    // its JS-side config into this existing native session.
+    SentrySDK.start { options in
+      options.dsn = "https://971f1d756067049f70cdf4a04e8771a4@o4511073249067008.ingest.us.sentry.io/4511073386627073"
+    }
+
     let delegate = ReactNativeDelegate()
     let factory = ExpoReactNativeFactory(delegate: delegate)
     delegate.dependencyProvider = RCTAppDependencyProvider()
