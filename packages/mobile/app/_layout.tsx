@@ -8,6 +8,7 @@ import { trpc } from "../lib/trpc";
 import { AuthProvider, useAuth } from "../lib/auth-context";
 import { initBackgroundAccelerometerSync } from "../lib/background-accelerometer-sync";
 import { initBackgroundHealthKitSync } from "../lib/background-health-kit-sync";
+import { initBackgroundWatchAccelerometerSync } from "../lib/background-watch-accelerometer-sync";
 import type { SyncTrpcClient } from "../lib/health-kit-sync";
 import { getTrpcUrl } from "../lib/server";
 import { initTelemetry } from "../lib/telemetry";
@@ -80,6 +81,19 @@ function AuthGate() {
       },
     }).catch(() => {
       // Best-effort — accelerometer sync is non-critical
+    });
+
+    // Start Apple Watch accelerometer sync (if Watch is paired)
+    const watchSyncClient = {
+      accelerometerSync: {
+        pushAccelerometerSamples: {
+          mutate: (input: Parameters<typeof trpcClient.accelerometerSync.pushAccelerometerSamples.mutate>[0]) =>
+            trpcClient.accelerometerSync.pushAccelerometerSamples.mutate(input),
+        },
+      },
+    };
+    initBackgroundWatchAccelerometerSync(watchSyncClient).catch(() => {
+      // Best-effort — Watch sync is non-critical
     });
   }, [user, trpcClient]);
 

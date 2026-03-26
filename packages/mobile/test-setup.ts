@@ -246,3 +246,22 @@ vi.mock("./modules/core-motion", () => ({
   getLastSyncTimestamp: vi.fn(() => null),
   setLastSyncTimestamp: vi.fn(),
 }));
+
+// ── Watch Motion native module mock ─────────────────────────────────
+vi.mock("./modules/watch-motion", () => ({
+  isWatchSupported: vi.fn(() => true),
+  isWatchPaired: vi.fn(() => false),
+  isWatchAppInstalled: vi.fn(() => false),
+  getWatchSyncStatus: vi.fn(() => ({
+    isSupported: true,
+    isPaired: false,
+    isReachable: false,
+    isWatchAppInstalled: false,
+    pendingFileCount: 0,
+  })),
+  requestWatchSync: vi.fn(() => Promise.resolve(false)),
+  getPendingWatchSamples: vi.fn(() => Promise.resolve([])),
+  acknowledgeWatchSamples: vi.fn(),
+  getLastWatchSyncTimestamp: vi.fn(() => null),
+  setLastWatchSyncTimestamp: vi.fn(),
+}));

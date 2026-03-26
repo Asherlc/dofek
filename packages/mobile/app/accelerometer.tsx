@@ -5,6 +5,7 @@ import {
 	isAccelerometerRecordingAvailable,
 	isRecordingActive,
 } from "../modules/core-motion";
+import { getWatchSyncStatus } from "../modules/watch-motion";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
 import { rootStackScreenOptions } from "./_layout";
@@ -22,6 +23,7 @@ export default function AccelerometerScreen() {
 	const available = isAccelerometerRecordingAvailable();
 	const recording = available && isRecordingActive();
 	const authStatus = available ? getMotionAuthorizationStatus() : "unavailable";
+	const watchStatus = getWatchSyncStatus();
 
 	const syncStatus = trpc.accelerometer.getSyncStatus.useQuery();
 	const dailyCounts = trpc.accelerometer.getDailyCounts.useQuery({ days: 30 });
@@ -57,6 +59,27 @@ export default function AccelerometerScreen() {
 							label="Recording"
 							value={recording ? "Active" : "Inactive"}
 							color={recording ? colors.positive : colors.textTertiary}
+						/>
+					</View>
+				</View>
+
+				<View style={styles.section}>
+					<Text style={styles.sectionTitle}>Apple Watch</Text>
+					<View style={styles.badgeRow}>
+						<StatusBadge
+							label="Paired"
+							value={watchStatus.isPaired ? "Yes" : "No"}
+							color={watchStatus.isPaired ? colors.positive : colors.textTertiary}
+						/>
+						<StatusBadge
+							label="App Installed"
+							value={watchStatus.isWatchAppInstalled ? "Yes" : "No"}
+							color={watchStatus.isWatchAppInstalled ? colors.positive : colors.textTertiary}
+						/>
+						<StatusBadge
+							label="Pending"
+							value={String(watchStatus.pendingFileCount)}
+							color={watchStatus.pendingFileCount > 0 ? colors.accent : colors.textTertiary}
 						/>
 					</View>
 				</View>
