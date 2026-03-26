@@ -9,6 +9,19 @@ import { AuthProvider, useAuth } from "../lib/auth-context";
 import { initBackgroundAccelerometerSync } from "../lib/background-accelerometer-sync";
 import { initBackgroundHealthKitSync } from "../lib/background-health-kit-sync";
 import { initBackgroundWatchAccelerometerSync } from "../lib/background-watch-accelerometer-sync";
+import {
+  initBackgroundWhoopBleSync,
+  teardownBackgroundWhoopBleSync,
+} from "../lib/background-whoop-ble-sync";
+import {
+  isBluetoothAvailable,
+  findWhoop,
+  connect as whoopConnect,
+  startImuStreaming,
+  stopImuStreaming,
+  getBufferedSamples as getWhoopSamples,
+  disconnect as whoopDisconnect,
+} from "../modules/whoop-ble";
 import type { SyncTrpcClient } from "../lib/health-kit-sync";
 import { getTrpcUrl } from "../lib/server";
 import { initTelemetry } from "../lib/telemetry";
@@ -95,6 +108,38 @@ function AuthGate() {
     initBackgroundWatchAccelerometerSync(watchSyncClient).catch(() => {
       // Best-effort — Watch sync is non-critical
     });
+
+    // Start always-on WHOOP BLE accelerometer sync (if enabled in settings)
+    trpcClient.settings.get.query({ key: "whoopAlwaysOnImu" }).then((setting) => {
+      if (setting?.value !== true) return;
+
+      const whoopSyncClient = {
+        accelerometerSync: {
+          pushAccelerometerSamples: {
+            mutate: (input: Parameters<typeof trpcClient.accelerometerSync.pushAccelerometerSamples.mutate>[0]) =>
+              trpcClient.accelerometerSync.pushAccelerometerSamples.mutate(input),
+          },
+        },
+      };
+
+      initBackgroundWhoopBleSync(whoopSyncClient, {
+        isBluetoothAvailable,
+        findWhoop,
+        connect: whoopConnect,
+        startImuStreaming,
+        stopImuStreaming,
+        getBufferedSamples: getWhoopSamples,
+        disconnect: whoopDisconnect,
+      }).catch(() => {
+        // Best-effort — WHOOP BLE sync is non-critical
+      });
+    }).catch(() => {
+      // Best-effort — settings fetch failure is non-critical
+    });
+
+    return () => {
+      teardownBackgroundWhoopBleSync();
+    };
   }, [user, trpcClient]);
 
   if (isLoading) {

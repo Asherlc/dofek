@@ -124,6 +124,23 @@ vi.mock("react-native", () => {
 
   const RefreshControl = createMockComponent("RefreshControl");
 
+  const Switch = ({
+    value,
+    onValueChange,
+    disabled,
+    ...props
+  }: Record<string, unknown>) =>
+    React.createElement("input", {
+      ...props,
+      type: "checkbox",
+      checked: value,
+      onChange: () => {
+        if (!disabled && typeof onValueChange === "function") onValueChange(!value);
+      },
+      disabled,
+    });
+  Switch.displayName = "Switch";
+
   const AppState = {
     currentState: "active" as string,
     addEventListener: vi.fn(() => ({ remove: vi.fn() })),
@@ -142,6 +159,7 @@ vi.mock("react-native", () => {
     FlatList,
     ActivityIndicator,
     RefreshControl,
+    Switch,
     StyleSheet,
     Platform,
     Alert,
@@ -252,6 +270,17 @@ vi.mock("./modules/core-motion", () => ({
   queryRecordedData: vi.fn(() => Promise.resolve([])),
   getLastSyncTimestamp: vi.fn(() => null),
   setLastSyncTimestamp: vi.fn(),
+}));
+
+// ── WHOOP BLE native module mock ───────────────────────────────────
+vi.mock("./modules/whoop-ble", () => ({
+  isBluetoothAvailable: vi.fn(() => false),
+  findWhoop: vi.fn(() => Promise.resolve(null)),
+  connect: vi.fn(() => Promise.resolve(false)),
+  startImuStreaming: vi.fn(() => Promise.resolve(false)),
+  stopImuStreaming: vi.fn(() => Promise.resolve(false)),
+  getBufferedSamples: vi.fn(() => Promise.resolve([])),
+  disconnect: vi.fn(),
 }));
 
 // ── Watch Motion native module mock ─────────────────────────────────

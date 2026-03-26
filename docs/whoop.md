@@ -251,10 +251,9 @@ Build a macOS or iOS CoreBluetooth client that connects to the Whoop strap and s
 - `TOGGLE_IMU_MODE (0x6a)` — enable continuous raw IMU streaming
 
 **Challenges:**
-- The Whoop only bonds to one BLE central at a time — would need to disconnect the Whoop app first (or build a MITM proxy)
-- Battery drain on strap: raw IMU mode is power-hungry, likely 2-3x normal battery consumption
+- On iOS, multiple apps can connect to the same BLE peripheral simultaneously (bonding is at the OS level). Use `retrieveConnectedPeripherals(withServices:)` to find the already-connected strap. ~~The Whoop only bonds to one BLE central at a time~~ — **confirmed working alongside the WHOOP app.**
+- Battery drain on strap: The WHOOP 4.0 has a 192 mAh battery ([TechInsights teardown](https://www.techinsights.com/blog/teardown/fitness-wearable-whoop-40-leverages-next-generation-battery-anode-technology)). During normal wear, the IMU is off (`SENSORS: No active IMU data collection sources` in console log) to save power. Enabling the gyroscope + accelerometer at full rate adds ~0.55-0.65 mA ([STMicro LSM6DSO datasheet](https://www.st.com/en/mems-and-sensors/lsm6dso.html), typical 6-axis IMU in this class), which on a 192 mAh battery would reduce life from ~5 days to ~3-4 days. Actual impact depends on the specific WHOOP IMU chip and firmware duty cycling.
 - Protocol may change with firmware updates
-- The strap's console log confirms `SENSORS: No active IMU data collection sources` during normal wear — the IMU is off by default to save battery
 
 **This is the most complete path** (24/7 raw wrist accel from the Whoop itself) but also the most fragile. Worth pursuing after the iPhone accelerometer pipeline is proven.
 
