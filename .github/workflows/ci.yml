@@ -268,6 +268,8 @@ jobs:
     needs: check-mobile-changes
     if: needs.check-mobile-changes.outputs.changed == 'true'
     runs-on: macos-26
+    env:
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -288,6 +290,7 @@ jobs:
         run: cd packages/mobile/ios && pod install
       - name: Build for simulator (Debug)
         run: |
+          set -o pipefail
           xcodebuild build \
             -workspace packages/mobile/ios/Dofek.xcworkspace \
             -scheme Dofek \
@@ -295,7 +298,7 @@ jobs:
             -configuration Debug \
             -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO \
-            | tail -20
+            2>&1 | tail -40
         timeout-minutes: 20
       - name: Set build number
         if: github.ref == 'refs/heads/main'
@@ -304,6 +307,7 @@ jobs:
           agvtool new-version -all ${{ github.run_number }}
       - name: Archive (Release, no signing)
         run: |
+          set -o pipefail
           xcodebuild archive \
             -workspace packages/mobile/ios/Dofek.xcworkspace \
             -scheme Dofek \
@@ -312,7 +316,7 @@ jobs:
             -destination 'generic/platform=iOS' \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGN_IDENTITY="" \
-            | tail -20
+            2>&1 | tail -40
         timeout-minutes: 25
       - name: Upload archive
         if: github.ref == 'refs/heads/main'
