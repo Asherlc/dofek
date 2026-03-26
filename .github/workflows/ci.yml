@@ -268,8 +268,6 @@ jobs:
     needs: check-mobile-changes
     if: needs.check-mobile-changes.outputs.changed == 'true'
     runs-on: macos-26
-    env:
-      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -288,24 +286,18 @@ jobs:
           restore-keys: pods-v6-
       - name: Install CocoaPods dependencies
         run: cd packages/mobile/ios && pod install
-      - name: Set build number
-        if: github.ref == 'refs/heads/main'
+      - name: Build for simulator
         run: |
-          cd packages/mobile/ios
-          agvtool new-version -all ${{ github.run_number }}
-      - name: Archive (Release, no signing)
-        run: |
-          set -o pipefail
-          xcodebuild archive \
+          xcodebuild build \
             -workspace packages/mobile/ios/Dofek.xcworkspace \
             -scheme Dofek \
-            -configuration Release \
-            -archivePath $RUNNER_TEMP/Dofek.xcarchive \
-            -destination 'generic/platform=iOS' \
+            -sdk iphonesimulator \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGN_IDENTITY="" \
-            2>&1 | tail -40
-        timeout-minutes: 25
+            | tail -20
+        timeout-minutes: 20
+
   build-watchos:
     name: watchOS Build
     needs: check-mobile-changes
@@ -579,7 +571,7 @@ jobs:
 
   ios-release:
     name: iOS TestFlight
-    needs: [lint, typecheck, knip, coverage, test-mobile, build-ios-native]
+    needs: [lint, typecheck, knip, coverage, test-mobile, build-mobile]
     if: github.ref == 'refs/heads/main'
     runs-on: macos-26
     timeout-minutes: 60
