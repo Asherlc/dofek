@@ -124,6 +124,12 @@ vi.mock("react-native", () => {
 
   const RefreshControl = createMockComponent("RefreshControl");
 
+  const AppState = {
+    currentState: "active" as string,
+    addEventListener: vi.fn(() => ({ remove: vi.fn() })),
+    removeEventListener: vi.fn(),
+  };
+
   return {
     __esModule: true,
     View,
@@ -139,6 +145,7 @@ vi.mock("react-native", () => {
     StyleSheet,
     Platform,
     Alert,
+    AppState,
     useWindowDimensions: () => ({ width: 390, height: 844 }),
   };
 });
