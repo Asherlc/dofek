@@ -274,4 +274,69 @@ describe("FatSecretProvider.sync() (integration)", () => {
     // Should have errors but not crash
     expect(result.errors.length).toBeGreaterThan(0);
   });
+
+  it("caps lookback to 2 years when since is epoch (new Date(0))", async () => {
+    await saveTokens(ctx.db, "fatsecret", {
+      accessToken: "oauth1-token",
+      refreshToken: "oauth1-token-secret",
+      expiresAt: new Date("2099-01-01T00:00:00Z"),
+      scopes: null,
+    });
+
+    const requestedDateInts: string[] = [];
+
+    server.use(
+      http.get("https://platform.fatsecret.com/rest/server.api", ({ request }) => {
+        const url = new URL(request.url);
+        const dateParam = url.searchParams.get("date");
+        if (dateParam) requestedDateInts.push(dateParam);
+        return HttpResponse.json(
+          { error: { code: 7, message: "No entries found" } },
+          { status: 400 },
+        );
+      }),
+    );
+
+    const provider = new FatSecretProvider();
+    // Pass epoch — would generate ~20,000 API calls without the 2-year cap
+    const result = await provider.sync(ctx.db, new Date(0));
+
+    expect(result.errors).toHaveLength(0);
+
+    // All requested date_ints must be within the 2-year window
+    const twoYearsAgoMs = Date.now() - 2 * 365 * 24 * 60 * 60 * 1000;
+    const twoYearsAgoDayInt = Math.floor(twoYearsAgoMs / 86400000);
+    for (const dateInt of requestedDateInts) {
+      expect(Number(dateInt)).toBeGreaterThanOrEqual(twoYearsAgoDayInt - 1); // -1 for rounding
+    }
+
+    // Must have made fewer than 800 requests (2 years = ~730 days), not 20,000+
+    expect(requestedDateInts.length).toBeLessThan(800);
+  });
+
+  it("silently skips Zod validation errors about missing food_entries", async () => {
+    await saveTokens(ctx.db, "fatsecret", {
+      accessToken: "oauth1-token",
+      refreshToken: "oauth1-token-secret",
+      expiresAt: new Date("2099-01-01T00:00:00Z"),
+      scopes: null,
+    });
+
+    // Return a shape that fails Zod validation on the food_entries path.
+    // This simulates the API returning an unexpected response for an empty day.
+    // food_entry is a string instead of an array — Zod throws a ZodError with
+    // path[0] === "food_entries", which the catch block silently discards.
+    server.use(
+      http.get("https://platform.fatsecret.com/rest/server.api", () => {
+        return HttpResponse.json({ food_entries: { food_entry: "not-an-array" } });
+      }),
+    );
+
+    const provider = new FatSecretProvider();
+    const since = new Date("2026-03-20T00:00:00Z");
+    const result = await provider.sync(ctx.db, since);
+
+    // The Zod error for food_entries path must not appear in errors
+    expect(result.errors).toHaveLength(0);
+  });
 });

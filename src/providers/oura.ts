@@ -7,6 +7,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity, dailyMetrics, healthEvent, metricStream, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
+import { logger } from "../logger.ts";
 import { ProviderHttpClient } from "./http-client.ts";
 import type {
   ProviderAuthSetup,
@@ -589,6 +590,26 @@ async function fetchAllPages<T>(
   return allData;
 }
 
+/**
+ * Like fetchAllPages, but returns an empty array on 401 (missing OAuth scope).
+ * Use for endpoints that require optional OAuth scopes (stress, heart_health).
+ */
+export async function fetchAllPagesOptional<T>(
+  fetchPage: (nextToken?: string) => Promise<OuraListResponse<T>>,
+  endpointName: string,
+): Promise<T[]> {
+  try {
+    return await fetchAllPages(fetchPage);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes("API error 401")) {
+      logger.warn(`[oura] Skipping ${endpointName}: missing required OAuth scope`);
+      return [];
+    }
+    throw err;
+  }
+}
+
 // ============================================================
 // Batch size for metric stream inserts
 // ============================================================
@@ -912,8 +933,9 @@ export class OuraProvider implements SyncProvider {
         this.id,
         "daily_stress",
         async () => {
-          const allStress = await fetchAllPages((nextToken) =>
-            client.getDailyStress(sinceDate, todayDate, nextToken),
+          const allStress = await fetchAllPagesOptional(
+            (nextToken) => client.getDailyStress(sinceDate, todayDate, nextToken),
+            "daily_stress",
           );
 
           const rows = allStress.map((s) => ({
@@ -957,8 +979,9 @@ export class OuraProvider implements SyncProvider {
         this.id,
         "daily_resilience",
         async () => {
-          const allResilience = await fetchAllPages((nextToken) =>
-            client.getDailyResilience(sinceDate, todayDate, nextToken),
+          const allResilience = await fetchAllPagesOptional(
+            (nextToken) => client.getDailyResilience(sinceDate, todayDate, nextToken),
+            "daily_resilience",
           );
 
           let count = 0;
@@ -1000,8 +1023,9 @@ export class OuraProvider implements SyncProvider {
         this.id,
         "cardiovascular_age",
         async () => {
-          const allCvAge = await fetchAllPages((nextToken) =>
-            client.getDailyCardiovascularAge(sinceDate, todayDate, nextToken),
+          const allCvAge = await fetchAllPagesOptional(
+            (nextToken) => client.getDailyCardiovascularAge(sinceDate, todayDate, nextToken),
+            "cardiovascular_age",
           );
 
           let count = 0;
@@ -1231,10 +1255,17 @@ export class OuraProvider implements SyncProvider {
                 client.getDailyActivity(sinceDate, todayDate, nextToken),
               ),
               fetchAllPages((nextToken) => client.getDailySpO2(sinceDate, todayDate, nextToken)),
-              fetchAllPages((nextToken) => client.getVO2Max(sinceDate, todayDate, nextToken)),
-              fetchAllPages((nextToken) => client.getDailyStress(sinceDate, todayDate, nextToken)),
-              fetchAllPages((nextToken) =>
-                client.getDailyResilience(sinceDate, todayDate, nextToken),
+              fetchAllPagesOptional(
+                (nextToken) => client.getVO2Max(sinceDate, todayDate, nextToken),
+                "vO2_max",
+              ),
+              fetchAllPagesOptional(
+                (nextToken) => client.getDailyStress(sinceDate, todayDate, nextToken),
+                "daily_stress",
+              ),
+              fetchAllPagesOptional(
+                (nextToken) => client.getDailyResilience(sinceDate, todayDate, nextToken),
+                "daily_resilience",
               ),
             ]);
 

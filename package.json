@@ -39,6 +39,8 @@
     "./providers/wger": "./src/providers/wger.ts",
     "./providers/decathlon": "./src/providers/decathlon.ts",
     "./providers/velohero": "./src/providers/velohero.ts",
+    "./providers/bodyspec": "./src/providers/bodyspec.ts",
+    "./providers/auto-supplements": "./src/providers/auto-supplements.ts",
     "./db/migrate": "./src/db/migrate.ts",
     "./db/tokens": "./src/db/tokens.ts",
     "./auth/oauth": "./src/auth/oauth.ts",

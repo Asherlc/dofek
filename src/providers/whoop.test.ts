@@ -513,15 +513,16 @@ describe("WHOOP Provider — parsing", () => {
   describe("parseSleep", () => {
     it("maps sleep fields to sleep session", () => {
       const result = parseSleep(sampleSleep);
-      expect(result.externalId).toBe("10235");
-      expect(result.startedAt).toEqual(new Date("2026-02-28T23:00:00Z"));
-      expect(result.endedAt).toEqual(new Date("2026-03-01T06:30:00Z"));
-      expect(result.deepMinutes).toBe(120); // 7200000ms / 60000
-      expect(result.remMinutes).toBe(90);
-      expect(result.lightMinutes).toBe(180);
-      expect(result.awakeMinutes).toBe(30);
-      expect(result.efficiencyPct).toBeCloseTo(91.7);
-      expect(result.isNap).toBe(false);
+      expect(result).not.toBeNull();
+      expect(result?.externalId).toBe("10235");
+      expect(result?.startedAt).toEqual(new Date("2026-02-28T23:00:00Z"));
+      expect(result?.endedAt).toEqual(new Date("2026-03-01T06:30:00Z"));
+      expect(result?.deepMinutes).toBe(120); // 7200000ms / 60000
+      expect(result?.remMinutes).toBe(90);
+      expect(result?.lightMinutes).toBe(180);
+      expect(result?.awakeMinutes).toBe(30);
+      expect(result?.efficiencyPct).toBeCloseTo(91.7);
+      expect(result?.isNap).toBe(false);
     });
 
     it("defaults all stage times to 0 when score is missing", () => {
@@ -530,17 +531,18 @@ describe("WHOOP Provider — parsing", () => {
         score: undefined,
       };
       const result = parseSleep(noScore);
-      expect(result.durationMinutes).toBe(0);
-      expect(result.deepMinutes).toBe(0);
-      expect(result.remMinutes).toBe(0);
-      expect(result.lightMinutes).toBe(0);
-      expect(result.awakeMinutes).toBe(0);
-      expect(result.efficiencyPct).toBeUndefined();
+      expect(result).not.toBeNull();
+      expect(result?.durationMinutes).toBe(0);
+      expect(result?.deepMinutes).toBe(0);
+      expect(result?.remMinutes).toBe(0);
+      expect(result?.lightMinutes).toBe(0);
+      expect(result?.awakeMinutes).toBe(0);
+      expect(result?.efficiencyPct).toBeUndefined();
     });
 
     it("marks naps as isNap=true", () => {
       const nap: WhoopSleepRecord = { ...sampleSleep, nap: true };
-      expect(parseSleep(nap).isNap).toBe(true);
+      expect(parseSleep(nap)?.isNap).toBe(true);
     });
   });
 
@@ -1656,6 +1658,89 @@ describe("WhoopProvider.sync() — sleep sync", () => {
     const sleepError = result.errors.find((e) => e.message.includes("Sleep 99999"));
     expect(sleepError).toBeDefined();
     expect(sleepError?.externalId).toBe("99999");
+  });
+
+  it("skips sleep records with missing timestamps and logs a warning", async () => {
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValueOnce({
+      accessToken: "test",
+      refreshToken: "test-refresh",
+      expiresAt: new Date("2027-01-01"),
+      scopes: "userId:42",
+    });
+
+    const cycles = [
+      {
+        days: ["2026-03-01"],
+        recovery: null,
+        sleep: { id: 55555 },
+        workouts: [],
+      },
+    ];
+
+    // Sleep record with no timestamps and no `during` range — parseSleep returns null
+    const sleepData: WhoopSleepRecord = {
+      id: 55555,
+      user_id: 42,
+      created_at: "2026-03-01T06:00:00Z",
+      updated_at: "2026-03-01T06:30:00Z",
+      timezone_offset: "-05:00",
+      nap: false,
+      score_state: "SCORED",
+      score: {
+        stage_summary: {
+          total_in_bed_time_milli: 27000000,
+          total_awake_time_milli: 1800000,
+          total_no_data_time_milli: 0,
+          total_light_sleep_time_milli: 10800000,
+          total_slow_wave_sleep_time_milli: 7200000,
+          total_rem_sleep_time_milli: 5400000,
+          sleep_cycle_count: 4,
+          disturbance_count: 2,
+        },
+        sleep_needed: {
+          baseline_milli: 28800000,
+          need_from_sleep_debt_milli: 1800000,
+          need_from_recent_strain_milli: 900000,
+          need_from_recent_nap_milli: 0,
+        },
+        respiratory_rate: 16.1,
+        sleep_performance_percentage: 92,
+        sleep_consistency_percentage: 88,
+        sleep_efficiency_percentage: 91.7,
+      },
+    };
+
+    const { logger } = await import("../logger.ts");
+    const warnSpy = vi.spyOn(logger, "warn");
+
+    const mockFetch = makeSyncMockFetch({
+      cycles,
+      sleepData,
+      journalData: [],
+      hrValues: [],
+      weightliftingData: null,
+    });
+    const provider = new WhoopProvider(mockFetch);
+    const db = makeChainableMock();
+    db.onConflictDoUpdate = vi.fn().mockReturnValue(db);
+    db.returning = vi.fn().mockResolvedValue([]);
+    const result = await provider.sync(db, new Date("2026-03-01"));
+
+    expect(result.provider).toBe("whoop");
+    // No errors should be recorded — the record is intentionally skipped
+    const sleepErrors = result.errors.filter((e) => e.message.includes("55555"));
+    expect(sleepErrors).toHaveLength(0);
+
+    // No sleep insert should have occurred
+    const valuesCallArgs = getValuesCallArgs(db);
+    const sleepInsert = findValuesRecord(valuesCallArgs, (rec) => rec.externalId === "55555");
+    expect(sleepInsert).toBeUndefined();
+
+    // Warning should be logged
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Skipping sleep 55555"));
+
+    warnSpy.mockRestore();
   });
 });
 

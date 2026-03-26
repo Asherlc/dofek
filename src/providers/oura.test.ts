@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
+import { logger } from "../logger.ts";
 import {
+  fetchAllPagesOptional,
   mapOuraActivityType,
   OuraClient,
   type OuraDailyActivity,
@@ -70,6 +72,10 @@ vi.mock("../auth/oauth.ts", () => ({
     expiresAt: new Date("2027-01-01T00:00:00Z"),
     scopes: "daily",
   })),
+}));
+
+vi.mock("../logger.ts", () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
 // ============================================================
@@ -1788,5 +1794,111 @@ describe("OuraProvider.sync()", () => {
     // No data inserts should happen when all responses are empty
     // values() should never have been called with actual data
     expect(db.values).not.toHaveBeenCalled();
+  });
+
+  it("skips scope-gated endpoints on 401 and does not produce errors", async () => {
+    setupEnv();
+    const readiness = fakeReadiness();
+    const dailyActivity = fakeActivity();
+
+    // Return 401 for all scope-gated endpoints (stress, resilience, cv_age, vo2max)
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      const urlStr = input.toString();
+      if (urlStr.includes("/v2/usercollection/sleep_time")) {
+        return Response.json({ data: [], next_token: null });
+      }
+      if (urlStr.includes("/v2/usercollection/sleep")) {
+        return Response.json({ data: [], next_token: null });
+      }
+      if (urlStr.includes("/v2/usercollection/daily_readiness")) {
+        return Response.json({ data: [readiness], next_token: null });
+      }
+      if (urlStr.includes("/v2/usercollection/daily_activity")) {
+        return Response.json({ data: [dailyActivity], next_token: null });
+      }
+      if (
+        urlStr.includes("/v2/usercollection/daily_stress") ||
+        urlStr.includes("/v2/usercollection/daily_resilience") ||
+        urlStr.includes("/v2/usercollection/daily_cardiovascular_age") ||
+        urlStr.includes("/v2/usercollection/vO2_max")
+      ) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+      return Response.json({ data: [], next_token: null });
+    };
+
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const result = await provider.sync(db, new Date("2026-03-01"));
+
+    // No errors — 401s on optional scopes are silently skipped
+    expect(result.errors).toHaveLength(0);
+    // Readiness + activity should still have synced
+    const val = findValuesCall(
+      db,
+      (v) => v.date === "2026-03-01" && v.providerId === "oura" && v.steps === 9500,
+    );
+    expect(val.steps).toBe(9500);
+    // Stress/resilience fields are absent when scope is missing
+    expect(val.stressHighMinutes).toBeUndefined();
+    expect(val.resilienceLevel).toBeUndefined();
+  });
+});
+
+// ============================================================
+// fetchAllPagesOptional tests
+// ============================================================
+
+describe("fetchAllPagesOptional", () => {
+  it("returns data normally when the fetch succeeds", async () => {
+    const fetchPage = async () => ({ data: [{ id: "x" }], next_token: null });
+    const result = await fetchAllPagesOptional(fetchPage, "test_endpoint");
+    expect(result).toEqual([{ id: "x" }]);
+  });
+
+  it("returns empty array on API error 401", async () => {
+    const fetchPage = async (): Promise<{ data: never[]; next_token: null }> => {
+      throw new Error("API error 401: Unauthorized");
+    };
+    const result = await fetchAllPagesOptional(fetchPage, "daily_stress");
+    expect(result).toEqual([]);
+  });
+
+  it("logs a warning on 401 with the endpoint name", async () => {
+    const warnSpy = vi.mocked(logger.warn);
+    warnSpy.mockClear();
+
+    const fetchPage = async (): Promise<{ data: never[]; next_token: null }> => {
+      throw new Error("API error 401: Unauthorized");
+    };
+    await fetchAllPagesOptional(fetchPage, "daily_resilience");
+
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("daily_resilience"));
+  });
+
+  it("re-throws non-401 errors", async () => {
+    const fetchPage = async (): Promise<{ data: never[]; next_token: null }> => {
+      throw new Error("API error 500: Internal Server Error");
+    };
+    await expect(fetchAllPagesOptional(fetchPage, "daily_stress")).rejects.toThrow("API error 500");
+  });
+
+  it("re-throws 403 errors", async () => {
+    const fetchPage = async (): Promise<{ data: never[]; next_token: null }> => {
+      throw new Error("API error 403: Forbidden");
+    };
+    await expect(fetchAllPagesOptional(fetchPage, "daily_stress")).rejects.toThrow("API error 403");
+  });
+
+  it("paginates through multiple pages before returning", async () => {
+    let page = 0;
+    const fetchPage = async (_nextToken?: string) => {
+      page++;
+      if (page === 1) return { data: [{ id: "a" }], next_token: "tok2" };
+      return { data: [{ id: "b" }], next_token: null };
+    };
+    const result = await fetchAllPagesOptional(fetchPage, "test_endpoint");
+    expect(result).toEqual([{ id: "a" }, { id: "b" }]);
   });
 });
