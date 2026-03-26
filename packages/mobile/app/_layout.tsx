@@ -6,6 +6,7 @@ import { Stack } from "expo-router";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { trpc } from "../lib/trpc";
 import { AuthProvider, useAuth } from "../lib/auth-context";
+import { initBackgroundAccelerometerSync } from "../lib/background-accelerometer-sync";
 import { initBackgroundHealthKitSync } from "../lib/background-health-kit-sync";
 import type { SyncTrpcClient } from "../lib/health-kit-sync";
 import { getTrpcUrl } from "../lib/server";
@@ -67,6 +68,18 @@ function AuthGate() {
       queryClient.invalidateQueries();
     }).catch(() => {
       // Best-effort — don't block the app for background sync setup failures
+    });
+
+    // Start continuous accelerometer recording and background sync
+    initBackgroundAccelerometerSync({
+      accelerometerSync: {
+        pushAccelerometerSamples: {
+          mutate: (input) =>
+            trpcClient.accelerometerSync.pushAccelerometerSamples.mutate(input),
+        },
+      },
+    }).catch(() => {
+      // Best-effort — accelerometer sync is non-critical
     });
   }, [user, trpcClient]);
 

@@ -231,3 +231,15 @@ vi.mock("./modules/health-kit", () => ({
   querySleepSamples: vi.fn(() => Promise.resolve([])),
   queryHeartRateSamples: vi.fn(() => Promise.resolve([])),
 }));
+
+// ── CoreMotion native module mock ───────────────────────────────────
+vi.mock("./modules/core-motion", () => ({
+  isAccelerometerRecordingAvailable: vi.fn(() => false),
+  getMotionAuthorizationStatus: vi.fn(() => "notDetermined"),
+  requestMotionPermission: vi.fn(() => Promise.resolve("authorized")),
+  startRecording: vi.fn(() => Promise.resolve(true)),
+  isRecordingActive: vi.fn(() => false),
+  queryRecordedData: vi.fn(() => Promise.resolve([])),
+  getLastSyncTimestamp: vi.fn(() => null),
+  setLastSyncTimestamp: vi.fn(),
+}));

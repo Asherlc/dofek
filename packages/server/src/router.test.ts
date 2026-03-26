@@ -5,6 +5,8 @@ const { mockRouter } = vi.hoisted(() => ({
   mockRouter: { _def: { procedures: {} } },
 }));
 
+vi.mock("./routers/accelerometer.ts", () => ({ accelerometerRouter: mockRouter }));
+vi.mock("./routers/accelerometer-sync.ts", () => ({ accelerometerSyncRouter: mockRouter }));
 vi.mock("./routers/activity.ts", () => ({ activityRouter: mockRouter }));
 vi.mock("./routers/ai-coach.ts", () => ({ aiCoachRouter: mockRouter }));
 vi.mock("./routers/anomaly-detection.ts", () => ({ anomalyDetectionRouter: mockRouter }));
@@ -92,6 +94,8 @@ describe("appRouter", () => {
 
   it("includes all sub-routers in the definition", () => {
     const expectedRouters = [
+      "accelerometer",
+      "accelerometerSync",
       "activity",
       "aiCoach",
       "anomalyDetection",
