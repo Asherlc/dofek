@@ -626,14 +626,40 @@ describe("Oura Provider", () => {
   });
 
   describe("parseOuraDailyMetrics", () => {
+    it("uses sleep average_hrv and lowest_heart_rate instead of readiness contributor scores", () => {
+      const result = parseOuraDailyMetrics(
+        sampleReadiness,
+        sampleActivity,
+        null,
+        null,
+        null,
+        null,
+        sampleSleep,
+      );
+
+      // HRV should be the actual measurement from sleep (48 ms), NOT the
+      // readiness contributor score (78 = "how much HRV contributes to readiness")
+      expect(result.hrv).toBe(48);
+      // Resting HR should be from sleep (45 bpm), NOT the contributor score (85)
+      expect(result.restingHr).toBe(45);
+    });
+
     it("maps daily readiness and activity fields", () => {
-      const result = parseOuraDailyMetrics(sampleReadiness, sampleActivity, null, null, null, null);
+      const result = parseOuraDailyMetrics(
+        sampleReadiness,
+        sampleActivity,
+        null,
+        null,
+        null,
+        null,
+        sampleSleep,
+      );
 
       expect(result.date).toBe("2026-03-01");
       expect(result.steps).toBe(9500);
       expect(result.activeEnergyKcal).toBe(450);
-      expect(result.hrv).toBe(78);
-      expect(result.restingHr).toBe(85);
+      expect(result.hrv).toBe(48);
+      expect(result.restingHr).toBe(45);
       expect(result.exerciseMinutes).toBe(75);
       expect(result.skinTempC).toBe(-0.15);
     });
@@ -643,6 +669,7 @@ describe("Oura Provider", () => {
         sampleReadiness,
         sampleActivity,
         sampleSpO2,
+        null,
         null,
         null,
         null,
@@ -659,6 +686,7 @@ describe("Oura Provider", () => {
         sampleVO2Max,
         null,
         null,
+        null,
       );
 
       expect(result.vo2max).toBe(42.5);
@@ -672,6 +700,7 @@ describe("Oura Provider", () => {
         sampleVO2Max,
         null,
         null,
+        null,
       );
 
       expect(result.spo2Avg).toBe(97.5);
@@ -680,73 +709,85 @@ describe("Oura Provider", () => {
 
     it("handles null spo2_percentage", () => {
       const noPercentage: OuraDailySpO2 = { ...sampleSpO2, spo2_percentage: null };
-      const result = parseOuraDailyMetrics(null, null, noPercentage, null, null, null);
+      const result = parseOuraDailyMetrics(null, null, noPercentage, null, null, null, null);
       expect(result.spo2Avg).toBeUndefined();
     });
 
     it("handles null vo2_max value", () => {
       const noValue: OuraVO2Max = { ...sampleVO2Max, vo2_max: null };
-      const result = parseOuraDailyMetrics(null, null, null, noValue, null, null);
+      const result = parseOuraDailyMetrics(null, null, null, noValue, null, null, null);
       expect(result.vo2max).toBeUndefined();
     });
 
-    it("handles null readiness", () => {
-      const result = parseOuraDailyMetrics(null, sampleActivity, null, null, null, null);
+    it("returns undefined hrv and restingHr when no sleep data", () => {
+      const result = parseOuraDailyMetrics(
+        sampleReadiness,
+        sampleActivity,
+        null,
+        null,
+        null,
+        null,
+        null,
+      );
 
-      expect(result.steps).toBe(9500);
-      expect(result.activeEnergyKcal).toBe(450);
       expect(result.hrv).toBeUndefined();
       expect(result.restingHr).toBeUndefined();
-      expect(result.skinTempC).toBeUndefined();
     });
 
     it("handles null activity", () => {
-      const result = parseOuraDailyMetrics(sampleReadiness, null, null, null, null, null);
+      const result = parseOuraDailyMetrics(
+        sampleReadiness,
+        null,
+        null,
+        null,
+        null,
+        null,
+        sampleSleep,
+      );
 
       expect(result.steps).toBeUndefined();
       expect(result.activeEnergyKcal).toBeUndefined();
       expect(result.exerciseMinutes).toBeUndefined();
-      expect(result.hrv).toBe(78);
-      expect(result.restingHr).toBe(85);
+      expect(result.hrv).toBe(48);
+      expect(result.restingHr).toBe(45);
     });
 
-    it("handles null contributors in readiness", () => {
-      const noContributors: OuraDailyReadiness = {
-        ...sampleReadiness,
-        contributors: {
-          resting_heart_rate: null,
-          hrv_balance: null,
-          body_temperature: null,
-          recovery_index: null,
-          sleep_balance: null,
-          previous_night: null,
-          previous_day_activity: null,
-          activity_balance: null,
-        },
+    it("handles null hrv in sleep", () => {
+      const noHrv: OuraSleepDocument = {
+        ...sampleSleep,
+        average_hrv: null,
+        lowest_heart_rate: null,
       };
-
-      const result = parseOuraDailyMetrics(noContributors, sampleActivity, null, null, null, null);
+      const result = parseOuraDailyMetrics(
+        sampleReadiness,
+        sampleActivity,
+        null,
+        null,
+        null,
+        null,
+        noHrv,
+      );
       expect(result.hrv).toBeUndefined();
       expect(result.restingHr).toBeUndefined();
     });
 
     it("uses activity day when readiness is null", () => {
-      const result = parseOuraDailyMetrics(null, sampleActivity, null, null, null, null);
+      const result = parseOuraDailyMetrics(null, sampleActivity, null, null, null, null, null);
       expect(result.date).toBe("2026-03-01");
     });
 
     it("returns empty date when all are null", () => {
-      const result = parseOuraDailyMetrics(null, null, null, null, null, null);
+      const result = parseOuraDailyMetrics(null, null, null, null, null, null, null);
       expect(result.date).toBe("");
     });
 
     it("uses spo2 day when readiness and activity are null", () => {
-      const result = parseOuraDailyMetrics(null, null, sampleSpO2, null, null, null);
+      const result = parseOuraDailyMetrics(null, null, sampleSpO2, null, null, null, null);
       expect(result.date).toBe("2026-03-01");
     });
 
     it("uses vo2max day when others are null", () => {
-      const result = parseOuraDailyMetrics(null, null, null, sampleVO2Max, null, null);
+      const result = parseOuraDailyMetrics(null, null, null, sampleVO2Max, null, null, null);
       expect(result.date).toBe("2026-03-01");
     });
 
@@ -756,7 +797,7 @@ describe("Oura Provider", () => {
         high_activity_time: 100, // 1.67 min
         medium_activity_time: 100, // 1.67 min
       };
-      const result = parseOuraDailyMetrics(null, activity, null, null, null, null);
+      const result = parseOuraDailyMetrics(null, activity, null, null, null, null, null);
       expect(result.exerciseMinutes).toBe(3); // Math.round(200/60)
     });
 
@@ -767,6 +808,7 @@ describe("Oura Provider", () => {
         null,
         null,
         sampleStress,
+        null,
         null,
       );
       expect(result.stressHighMinutes).toBe(90);
@@ -781,6 +823,7 @@ describe("Oura Provider", () => {
         null,
         null,
         sampleResilience,
+        null,
       );
       expect(result.resilienceLevel).toBe("solid");
     });
@@ -791,25 +834,33 @@ describe("Oura Provider", () => {
         stress_high: null,
         recovery_high: null,
       };
-      const result = parseOuraDailyMetrics(null, null, null, null, nullStress, null);
+      const result = parseOuraDailyMetrics(null, null, null, null, nullStress, null, null);
       expect(result.stressHighMinutes).toBeUndefined();
       expect(result.recoveryHighMinutes).toBeUndefined();
     });
 
     it("handles null stress and resilience", () => {
-      const result = parseOuraDailyMetrics(sampleReadiness, sampleActivity, null, null, null, null);
+      const result = parseOuraDailyMetrics(
+        sampleReadiness,
+        sampleActivity,
+        null,
+        null,
+        null,
+        null,
+        null,
+      );
       expect(result.stressHighMinutes).toBeUndefined();
       expect(result.recoveryHighMinutes).toBeUndefined();
       expect(result.resilienceLevel).toBeUndefined();
     });
 
     it("uses stress day when others are null", () => {
-      const result = parseOuraDailyMetrics(null, null, null, null, sampleStress, null);
+      const result = parseOuraDailyMetrics(null, null, null, null, sampleStress, null, null);
       expect(result.date).toBe("2026-03-01");
     });
 
     it("uses resilience day when others are null", () => {
-      const result = parseOuraDailyMetrics(null, null, null, null, null, sampleResilience);
+      const result = parseOuraDailyMetrics(null, null, null, null, null, sampleResilience, null);
       expect(result.date).toBe("2026-03-01");
     });
   });
@@ -1663,6 +1714,7 @@ describe("OuraProvider.sync()", () => {
     const vo2max = fakeVO2Max();
     const stress = fakeStress();
     const resilience = fakeResilience();
+    const sleep = fakeSleepDoc();
     const mockFetch = createMockApiFetch({
       readiness: [readiness],
       dailyActivity: [dailyActivity],
@@ -1670,6 +1722,7 @@ describe("OuraProvider.sync()", () => {
       vo2max: [vo2max],
       stress: [stress],
       resilience: [resilience],
+      sleep: [sleep],
     });
     const provider = new OuraProvider(mockFetch);
     const db = createMockDb();
@@ -1687,8 +1740,10 @@ describe("OuraProvider.sync()", () => {
     );
     expect(val.steps).toBe(9500);
     expect(val.activeEnergyKcal).toBe(450);
-    expect(val.hrv).toBe(78);
-    expect(val.restingHr).toBe(85);
+    // HRV and resting HR come from sleep data (actual measurements),
+    // not readiness contributor scores
+    expect(val.hrv).toBe(48);
+    expect(val.restingHr).toBe(45);
     expect(val.exerciseMinutes).toBe(75);
     expect(val.skinTempC).toBe(-0.15);
     expect(val.spo2Avg).toBe(97.5);

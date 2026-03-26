@@ -19,9 +19,15 @@ enum HealthKitQueries {
         return formatter.date(from: dateString)
     }
 
-    /// Format a date to ISO 8601 string
+    /// Format a date to ISO 8601 string with local timezone offset.
+    /// Using the local timezone ensures that `isoString.prefix(10)` on the
+    /// server produces the correct calendar date for the user. Without this,
+    /// evening readings get assigned to the next UTC day and can cause the
+    /// wrong HRV value to be selected as the "overnight" reading.
     static func formatDate(_ date: Date) -> String {
-        return ISO8601DateFormatter().string(from: date)
+        let formatter = ISO8601DateFormatter()
+        formatter.timeZone = .current
+        return formatter.string(from: date)
     }
 
     /// Return the preferred unit for a given quantity type

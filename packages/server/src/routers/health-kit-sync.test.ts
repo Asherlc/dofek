@@ -91,6 +91,39 @@ describe("healthKitSyncRouter", () => {
       expect(jan15?.hrv).toBe(52);
     });
 
+    it("assigns HRV readings to the correct local date when timestamps include timezone offsets", () => {
+      // iOS sends timestamps with local timezone offset so that extractDate
+      // (which slices the first 10 chars) gets the correct calendar date.
+      // Without timezone offsets, a 9:30 PM PDT reading would become
+      // "2024-01-15T04:30:00Z" in UTC and be assigned to Jan 15 instead of Jan 14.
+      const samples = [
+        makeSample({
+          type: "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
+          value: 14, // low evening HRV (post-exercise)
+          startDate: "2024-01-14T21:30:00-0700", // 9:30 PM PDT Jan 14
+          endDate: "2024-01-14T21:30:05-0700",
+          uuid: "hrv-evening",
+        }),
+        makeSample({
+          type: "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
+          value: 55, // normal overnight HRV reading on Jan 15
+          startDate: "2024-01-15T06:00:00-0700", // 6 AM PDT Jan 15
+          endDate: "2024-01-15T06:00:05-0700",
+          uuid: "hrv-overnight",
+        }),
+      ];
+
+      const daily = aggregateDailyMetricSamples(samples);
+
+      // The evening reading belongs to Jan 14 (local date)
+      const jan14 = daily.get("2024-01-14\x00iPhone");
+      expect(jan14?.hrv).toBe(14);
+
+      // Jan 15 gets only the overnight reading
+      const jan15 = daily.get("2024-01-15\x00iPhone");
+      expect(jan15?.hrv).toBe(55);
+    });
+
     it("processes body measurement samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({

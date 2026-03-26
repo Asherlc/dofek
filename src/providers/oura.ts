@@ -304,6 +304,7 @@ export function parseOuraDailyMetrics(
   vo2max: OuraVO2Max | null,
   stress: OuraDailyStress | null,
   resilience: OuraDailyResilience | null,
+  sleep: OuraSleepDocument | null,
 ): ParsedOuraDailyMetrics {
   const day =
     readiness?.day ??
@@ -325,8 +326,11 @@ export function parseOuraDailyMetrics(
     date: day,
     steps: activity?.steps,
     activeEnergyKcal: activity?.active_calories,
-    hrv: readiness?.contributors.hrv_balance ?? undefined,
-    restingHr: readiness?.contributors.resting_heart_rate ?? undefined,
+    // HRV and resting HR come from the actual sleep measurements, not from
+    // readiness contributor scores. contributors.hrv_balance is a 0-100 score
+    // indicating how HRV contributes to readiness — not the HRV value itself.
+    hrv: sleep?.average_hrv ?? undefined,
+    restingHr: sleep?.lowest_heart_rate ?? undefined,
     exerciseMinutes,
     skinTempC: readiness?.temperature_deviation ?? undefined,
     spo2Avg: spo2?.spo2_percentage?.average ?? undefined,
@@ -1222,21 +1226,25 @@ export class OuraProvider implements SyncProvider {
         async () => {
           let count = 0;
 
-          const [allReadiness, allActivity, allSpO2, allVO2Max, allStress, allResilience] =
-            await Promise.all([
-              fetchAllPages((nextToken) =>
-                client.getDailyReadiness(sinceDate, todayDate, nextToken),
-              ),
-              fetchAllPages((nextToken) =>
-                client.getDailyActivity(sinceDate, todayDate, nextToken),
-              ),
-              fetchAllPages((nextToken) => client.getDailySpO2(sinceDate, todayDate, nextToken)),
-              fetchAllPages((nextToken) => client.getVO2Max(sinceDate, todayDate, nextToken)),
-              fetchAllPages((nextToken) => client.getDailyStress(sinceDate, todayDate, nextToken)),
-              fetchAllPages((nextToken) =>
-                client.getDailyResilience(sinceDate, todayDate, nextToken),
-              ),
-            ]);
+          const [
+            allReadiness,
+            allActivity,
+            allSpO2,
+            allVO2Max,
+            allStress,
+            allResilience,
+            allSleep,
+          ] = await Promise.all([
+            fetchAllPages((nextToken) => client.getDailyReadiness(sinceDate, todayDate, nextToken)),
+            fetchAllPages((nextToken) => client.getDailyActivity(sinceDate, todayDate, nextToken)),
+            fetchAllPages((nextToken) => client.getDailySpO2(sinceDate, todayDate, nextToken)),
+            fetchAllPages((nextToken) => client.getVO2Max(sinceDate, todayDate, nextToken)),
+            fetchAllPages((nextToken) => client.getDailyStress(sinceDate, todayDate, nextToken)),
+            fetchAllPages((nextToken) =>
+              client.getDailyResilience(sinceDate, todayDate, nextToken),
+            ),
+            fetchAllPages((nextToken) => client.getSleep(sinceDate, todayDate, nextToken)),
+          ]);
 
           // Index by day for merging
           const readinessByDay = new Map<string, OuraDailyReadiness>();
@@ -1257,6 +1265,18 @@ export class OuraProvider implements SyncProvider {
           const resilienceByDay = new Map<string, OuraDailyResilience>();
           for (const r of allResilience) resilienceByDay.set(r.day, r);
 
+          // Index primary sleep (long_sleep/sleep) by day for HRV + resting HR.
+          // Prefer long_sleep over other types since it represents the main overnight session.
+          const primarySleepByDay = new Map<string, OuraSleepDocument>();
+          for (const s of allSleep) {
+            if (s.type === "long_sleep" || s.type === "sleep") {
+              const existing = primarySleepByDay.get(s.day);
+              if (!existing || (s.type === "long_sleep" && existing.type !== "long_sleep")) {
+                primarySleepByDay.set(s.day, s);
+              }
+            }
+          }
+
           // Union of all days
           const allDays = new Set([
             ...readinessByDay.keys(),
@@ -1274,6 +1294,7 @@ export class OuraProvider implements SyncProvider {
             const vo2max = vo2maxByDay.get(day) ?? null;
             const stress = stressByDay.get(day) ?? null;
             const resilience = resilienceByDay.get(day) ?? null;
+            const sleep = primarySleepByDay.get(day) ?? null;
             const parsed = parseOuraDailyMetrics(
               readiness,
               activityDoc,
@@ -1281,6 +1302,7 @@ export class OuraProvider implements SyncProvider {
               vo2max,
               stress,
               resilience,
+              sleep,
             );
 
             try {
