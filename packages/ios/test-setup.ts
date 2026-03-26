@@ -122,6 +122,8 @@ vi.mock("react-native", () => {
 
   const Alert = { alert: vi.fn() };
 
+  const RefreshControl = createMockComponent("RefreshControl");
+
   return {
     __esModule: true,
     View,
@@ -133,6 +135,7 @@ vi.mock("react-native", () => {
     Image,
     FlatList,
     ActivityIndicator,
+    RefreshControl,
     StyleSheet,
     Platform,
     Alert,

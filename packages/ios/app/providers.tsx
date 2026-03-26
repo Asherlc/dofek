@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -14,6 +15,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { File as ExpoFile } from "expo-file-system";
 import * as WebBrowser from "expo-web-browser";
 import { trpc } from "../lib/trpc";
+import { useRefresh } from "../lib/useRefresh";
 import { useAuth } from "../lib/auth-context";
 import { importSharedFile, type ShareImportProgress } from "../lib/share-import";
 import { ProviderStatsBreakdown } from "../components/ProviderStatsBreakdown";
@@ -489,8 +491,10 @@ export default function ProvidersScreen() {
     );
   }
 
+  const { refreshing, onRefresh } = useRefresh();
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}>
       {/* Sync All */}
       {enabledProviders.length > 0 && (
         <View style={styles.syncAllRow}>

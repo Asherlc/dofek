@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { DaySelector } from "../../components/DaySelector";
 import { MetricCard } from "../../components/MetricCard";
@@ -7,6 +7,7 @@ import { SparkLine } from "../../components/charts/SparkLine";
 import { formatNumber } from "@dofek/format/format";
 import { trendDirection as computeTrend } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
+import { useRefresh } from "../../lib/useRefresh";
 import { useUnitConverter } from "../../lib/units";
 import { colors } from "../../theme";
 
@@ -51,11 +52,13 @@ export default function MetricsScreen() {
 
   const isLoading =
     hrvQuery.isLoading || readinessQuery.isLoading || stressQuery.isLoading;
+  const { refreshing, onRefresh } = useRefresh();
 
   return (
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}
     >
       <Text style={styles.header}>Body</Text>
 

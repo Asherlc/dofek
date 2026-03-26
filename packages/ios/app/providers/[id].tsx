@@ -8,6 +8,7 @@ import {
   Linking,
   Modal,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -19,6 +20,7 @@ import { formatRelativeTime, formatTime } from "@dofek/format/format";
 import { useAuth } from "../../lib/auth-context";
 import { ProviderStatsBreakdown } from "../../components/ProviderStatsBreakdown";
 import { trpc } from "../../lib/trpc";
+import { useRefresh } from "../../lib/useRefresh";
 import { colors } from "../../theme";
 
 type DataType = (typeof DATA_TYPE_LABELS)[number]["key"];
@@ -859,8 +861,10 @@ export default function ProviderDetailScreen() {
     );
   }
 
+  const { refreshing, onRefresh } = useRefresh();
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}>
       {/* Provider header */}
       <View style={styles.headerCard}>
         <View style={styles.headerRow}>

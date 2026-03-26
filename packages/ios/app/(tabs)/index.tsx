@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { NextWorkoutRecommendation } from "dofek-server/types";
 import { useRouter } from "expo-router";
 import {
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -22,6 +23,7 @@ import { readinessLevelColor, scoreColor, scoreLabel, StrainZone, trendColor, tr
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useAutoSync } from "../../lib/useAutoSync";
+import { useRefresh } from "../../lib/useRefresh";
 import { useOnboarding } from "../../lib/useOnboarding";
 import { ActivityRowSchema } from "../../types/api";
 import { colors, statusColors } from "../../theme";
@@ -156,6 +158,11 @@ export default function OverviewScreen() {
     sleepQuery.isLoading ||
     workloadQuery.isLoading;
 
+  const triggerSync = trpc.sync.triggerSync.useMutation();
+  const { refreshing, onRefresh } = useRefresh(() => {
+    triggerSync.mutate({ sinceDays: 1 });
+  });
+
   // Derive data for new sections
   const currentWeek = weeklyReport?.current;
 
@@ -189,6 +196,7 @@ export default function OverviewScreen() {
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}
     >
       {/* Onboarding — shown to new users with no connected providers */}
       {onboarding.showOnboarding && (

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   Alert,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Switch,
@@ -11,6 +12,7 @@ import {
 } from "react-native";
 import { z } from "zod";
 import { trpc } from "../lib/trpc";
+import { useRefresh } from "../lib/useRefresh";
 import { colors } from "../theme";
 
 const lifeEventSchema = z.object({
@@ -80,8 +82,10 @@ function ChipPicker<T extends string>({
 }
 
 export default function TrackingScreen() {
+  const { refreshing, onRefresh } = useRefresh();
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}>
       <Text style={styles.title}>Life Events</Text>
       <LifeEventsSection />
     </ScrollView>

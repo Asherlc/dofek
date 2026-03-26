@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
+import { Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import { useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth-context";
 import { colors } from "../../theme";
@@ -15,6 +15,7 @@ import {
   requestPermissions,
 } from "../../modules/health-kit";
 import { trpc } from "../../lib/trpc";
+import { useRefresh } from "../../lib/useRefresh";
 import {
   ADDITIVE_QUANTITY_TYPES,
   NON_ADDITIVE_QUANTITY_TYPES,
@@ -75,6 +76,7 @@ export default function HealthScreen() {
         ? 7
         : null; // first time = All
 
+  const { refreshing, onRefresh } = useRefresh();
   const trpcClient = trpc.useUtils().client;
   const setBackfillComplete = trpc.settings.set.useMutation();
 
@@ -172,7 +174,7 @@ export default function HealthScreen() {
   const isWide = width >= 600;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={[styles.content, isWide && styles.contentWide]}>
+    <ScrollView style={styles.container} contentContainerStyle={[styles.content, isWide && styles.contentWide]} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}>
       {/* Navigation links */}
       {NAV_LINKS.map((link) => (
         <TouchableOpacity

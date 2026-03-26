@@ -85,6 +85,7 @@ vi.mock("../lib/trpc", () => ({
       workloadRatio: q(() => []),
       hrvVariability: q(() => []),
     },
+    useUtils: () => ({ invalidate: vi.fn() }),
   },
 }));
 

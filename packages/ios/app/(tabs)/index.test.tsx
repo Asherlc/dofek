@@ -36,6 +36,7 @@ vi.mock("../../lib/trpc", () => ({
       activeSyncs: { useQuery: () => ({ data: [], isLoading: false }) },
     },
     useUtils: () => ({
+      invalidate: vi.fn(),
       client: {
         healthKitSync: {
           pushQuantitySamples: { mutate: vi.fn().mockResolvedValue({ inserted: 0, errors: [] }) },

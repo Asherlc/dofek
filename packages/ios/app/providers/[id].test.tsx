@@ -15,9 +15,10 @@ vi.mock("react-native", () => ({
 		return React.createElement("span", rest, children as React.ReactNode);
 	},
 	ScrollView: ({ children, ...props }: Record<string, unknown>) => {
-		const { style: _s, contentContainerStyle: _cs, showsHorizontalScrollIndicator: _sh, horizontal: _h, ...rest } = props;
+		const { style: _s, contentContainerStyle: _cs, showsHorizontalScrollIndicator: _sh, horizontal: _h, refreshControl: _rc, ...rest } = props;
 		return React.createElement("div", rest, children as React.ReactNode);
 	},
+	RefreshControl: () => null,
 	TouchableOpacity: ({ children, onPress, disabled, ...props }: Record<string, unknown>) => {
 		const { style: _s, activeOpacity: _ao, ...rest } = props;
 		return React.createElement("button", { type: "button", onClick: onPress, disabled, ...rest }, children as React.ReactNode);
@@ -118,6 +119,7 @@ vi.mock("../../lib/trpc", () => ({
 			},
 		},
 		useUtils: () => ({
+			invalidate: vi.fn(),
 			sync: {
 				providers: { invalidate: mockInvalidateProviders },
 				providerStats: { invalidate: mockInvalidateProviderStats },

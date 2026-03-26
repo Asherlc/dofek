@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   Alert,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -10,6 +11,7 @@ import {
 } from "react-native";
 import { z } from "zod";
 import { trpc } from "../lib/trpc";
+import { useRefresh } from "../lib/useRefresh";
 import { colors } from "../theme";
 import { MEAL_OPTIONS } from "@dofek/nutrition/meal";
 import type { MealType } from "@dofek/nutrition/meal";
@@ -104,8 +106,10 @@ export default function SupplementsScreen() {
     handleSave(updated);
   }
 
+  const { refreshing, onRefresh } = useRefresh();
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}>
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Supplements</Text>
         <TouchableOpacity

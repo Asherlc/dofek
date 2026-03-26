@@ -1,7 +1,8 @@
 import { useState, useMemo, useCallback } from "react";
-import { LayoutAnimation, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
+import { LayoutAnimation, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import { formatNumber, formatSigned } from "@dofek/format/format";
 import { trpc } from "../lib/trpc";
+import { useRefresh } from "../lib/useRefresh";
 import { colors } from "../theme";
 import { statusColors } from "@dofek/scoring/colors";
 
@@ -234,8 +235,10 @@ export default function InsightsScreen() {
       .map((cat) => ({ category: cat, insights: groups[cat] ?? [] }));
   }, [filtered]);
 
+  const { refreshing, onRefresh } = useRefresh();
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={[styles.content, isWide && styles.contentWide]}>
+    <ScrollView style={styles.container} contentContainerStyle={[styles.content, isWide && styles.contentWide]} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}>
       {/* Days selector */}
       <Text style={styles.sectionLabel}>Time Range</Text>
       <DaySelector days={days} onChange={setDays} />
