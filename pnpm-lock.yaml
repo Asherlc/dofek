@@ -259,6 +259,9 @@ importers:
       expo-file-system:
         specifier: 55.0.11
         version: 55.0.11(expo@55.0.6)(react-native@0.83.4(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.4))
+      expo-location:
+        specifier: 55.1.4
+        version: 55.1.4(expo@55.0.6)
       expo-router:
         specifier: 5.0.7
         version: 5.0.7(@types/react@19.2.14)(expo-constants@55.0.7)(expo-linking@7.0.5)(expo@55.0.6)(react-native-safe-area-context@5.4.1(react-native@0.83.4(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.4))(react@19.2.4))(react-native-screens@4.11.1(react-native@0.83.4(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.4))(react@19.2.4))(react-native@0.83.4(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.4))(react@19.2.4)
@@ -6755,6 +6758,11 @@ packages:
     peerDependencies:
       react: '*'
       react-native: '*'
+
+  expo-location@55.1.4:
+    resolution: {integrity: sha512-0QWQ4QP8I6svtGUL895Y8bvKM3nGUWNp/MdCoCQNH3uAuwvLf2TQ6ZDVD3kdlkl2wGGdw6ziHQIYDHL96OlfnA==}
+    peerDependencies:
+      expo: '*'
 
   expo-manifests@55.0.11:
     resolution: {integrity: sha512-3+pFun4C9F/eFMVpwZgOBrBWq5sfu7rS1uxTrcg9G7jUFatNe5W6hr+M7z7aQPDf0J1afaSudUZPawx1LLf15w==}
@@ -16816,6 +16824,11 @@ snapshots:
     transitivePeerDependencies:
       - expo
       - supports-color
+
+  expo-location@55.1.4(expo@55.0.6):
+    dependencies:
+      '@expo/image-utils': 0.8.12
+      expo: 55.0.6(@babel/core@7.29.0)(@expo/dom-webview@55.0.3)(expo-router@5.0.7)(react-dom@19.2.4(react@19.2.4))(react-native@0.83.4(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.4))(react@19.2.4)(typescript@5.9.3)
 
   expo-manifests@55.0.11(expo@55.0.6)(typescript@5.9.3):
     dependencies:

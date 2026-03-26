@@ -1,6 +1,7 @@
 import { accelerometerRouter } from "./routers/accelerometer.ts";
 import { accelerometerSyncRouter } from "./routers/accelerometer-sync.ts";
 import { activityRouter } from "./routers/activity.ts";
+import { activityRecordingRouter } from "./routers/activity-recording.ts";
 import { aiCoachRouter } from "./routers/ai-coach.ts";
 import { anomalyDetectionRouter } from "./routers/anomaly-detection.ts";
 import { authRouter } from "./routers/auth.ts";
@@ -54,6 +55,7 @@ export const appRouter = router({
   accelerometer: accelerometerRouter,
   accelerometerSync: accelerometerSyncRouter,
   activity: activityRouter,
+  activityRecording: activityRecordingRouter,
   aiCoach: aiCoachRouter,
   anomalyDetection: anomalyDetectionRouter,
   behaviorImpact: behaviorImpactRouter,
