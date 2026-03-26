@@ -296,7 +296,7 @@ jobs:
             -scheme Dofek \
             -sdk iphonesimulator \
             -configuration Debug \
-            -destination 'generic/platform=iOS Simulator' \
+            -destination 'platform=iOS Simulator,name=iPhone 16' \
             CODE_SIGNING_ALLOWED=NO \
             2>&1 | tail -40
         timeout-minutes: 20
