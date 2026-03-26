@@ -26,6 +26,7 @@ interface FakeCycle {
   days: string[];
   recovery?: WhoopRecoveryRecord;
   sleep?: { id: number };
+  sleeps?: Record<string, unknown>[];
   workouts?: WhoopWorkoutRecord[];
   strain?: {
     workouts: WhoopWorkoutRecord[];
@@ -54,6 +55,23 @@ function fakeCycle(overrides: Partial<FakeCycle> = {}): FakeCycle {
       },
     },
     sleep: { id: 10235 },
+    sleeps: [
+      {
+        during: "['2026-02-28T23:00:00Z','2026-03-01T06:30:00Z')",
+        state: "complete",
+        time_in_bed: 27000000,
+        wake_duration: 1800000,
+        light_sleep_duration: 10800000,
+        slow_wave_sleep_duration: 7200000,
+        rem_sleep_duration: 5400000,
+        in_sleep_efficiency: 91.7,
+        habitual_sleep_need: 28800000,
+        debt_post: 1800000,
+        need_from_strain: 900000,
+        credit_from_naps: 0,
+        significant: true,
+      },
+    ],
     workouts: [
       {
         activity_id: "abc12345-6789-0def-1234-567890abcdef",
@@ -269,12 +287,14 @@ describe("WhoopProvider.sync() (integration)", () => {
       .where(eq(sleepSession.providerId, "whoop"));
 
     expect(rows.length).toBeGreaterThanOrEqual(1);
-    const session = rows.find((r) => r.externalId === "10235");
-    if (!session) throw new Error("expected session 10235");
+    const session = rows[0];
+    if (!session) throw new Error("expected at least one sleep session");
     expect(session.deepMinutes).toBe(120);
     expect(session.remMinutes).toBe(90);
     expect(session.efficiencyPct).toBeCloseTo(91.7);
     expect(session.sleepType).toBe("sleep");
+    expect(session.startedAt).toEqual(new Date("2026-02-28T23:00:00Z"));
+    expect(session.endedAt).toEqual(new Date("2026-03-01T06:30:00Z"));
   });
 
   it("syncs workouts from cycles into cardio_activity", async () => {
