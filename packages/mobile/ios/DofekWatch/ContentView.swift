@@ -93,6 +93,11 @@ struct ContentView: View {
                 transferManager?.transferNewSamples()
             }
 
+            // Handle recording requests from iPhone
+            sessionDelegate.onRecordingRequested = { [weak recorder] in
+                recorder?.startRecording()
+            }
+
             // Start recording immediately
             recorder.startRecording()
         }

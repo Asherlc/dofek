@@ -296,6 +296,7 @@ vi.mock("./modules/watch-motion", () => ({
     pendingFileCount: 0,
   })),
   requestWatchSync: vi.fn(() => Promise.resolve(false)),
+  requestWatchRecording: vi.fn(() => Promise.resolve(false)),
   getPendingWatchSamples: vi.fn(() => Promise.resolve([])),
   acknowledgeWatchSamples: vi.fn(),
   getLastWatchSyncTimestamp: vi.fn(() => null),
