@@ -286,7 +286,7 @@ jobs:
           restore-keys: pods-v6-
       - name: Install CocoaPods dependencies
         run: cd packages/mobile/ios && pod install
-      - name: Build for simulator
+      - name: Build for simulator (Debug)
         run: |
           xcodebuild build \
             -workspace packages/mobile/ios/Dofek.xcworkspace \
@@ -297,6 +297,17 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             | tail -20
         timeout-minutes: 20
+      - name: Build for device (Release)
+        run: |
+          xcodebuild build \
+            -workspace packages/mobile/ios/Dofek.xcworkspace \
+            -scheme Dofek \
+            -sdk iphoneos \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            | tail -20
+        timeout-minutes: 25
 
   build-watchos:
     name: watchOS Build
