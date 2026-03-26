@@ -3,12 +3,14 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const t = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  const trpc = initTRPC
+    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .create();
   return {
-    router: t.router,
-    protectedProcedure: t.procedure,
-    cachedProtectedQuery: () => t.procedure,
-    cachedProtectedQueryLight: () => t.procedure,
+    router: trpc.router,
+    protectedProcedure: trpc.procedure,
+    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQueryLight: () => trpc.procedure,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -42,6 +44,7 @@ function makeCaller(rows: Record<string, unknown>[] = []) {
   return createCaller({
     db: { execute: vi.fn().mockResolvedValue(rows) },
     userId: "user-1",
+    timezone: "UTC",
   });
 }
 
@@ -107,13 +110,15 @@ describe("foodRouter", () => {
 
   describe("create", () => {
     it("creates a food entry", async () => {
-      const created = { id: "new-1", food_name: "Test Food" };
+      const created = { id: "new-1", food_name: "Test Food", calories: 200 };
       const execute = vi.fn();
       execute.mockResolvedValueOnce([]); // ensureDofekProvider
-      execute.mockResolvedValueOnce([created]); // INSERT
+      execute.mockResolvedValueOnce([{ id: "new-1" }]); // CTE INSERT RETURNING id
+      execute.mockResolvedValueOnce([created]); // SELECT FROM view
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.create({
@@ -121,7 +126,7 @@ describe("foodRouter", () => {
         foodName: "Test Food",
         calories: 200,
       });
-      expect(result).toEqual(created);
+      expect(result).toEqual({ ...created, nutrients: {} });
     });
   });
 
@@ -185,13 +190,15 @@ describe("foodRouter", () => {
 
   describe("quickAdd", () => {
     it("creates a quick food entry", async () => {
-      const created = { id: "qa-1", food_name: "Quick Food" };
+      const created = { id: "qa-1", food_name: "Quick Food", calories: 500 };
       const execute = vi.fn();
       execute.mockResolvedValueOnce([]); // ensureDofekProvider
-      execute.mockResolvedValueOnce([created]); // INSERT
+      execute.mockResolvedValueOnce([{ id: "qa-1" }]); // CTE INSERT RETURNING id
+      execute.mockResolvedValueOnce([created]); // SELECT FROM view
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.quickAdd({
@@ -200,7 +207,7 @@ describe("foodRouter", () => {
         foodName: "Quick Food",
         calories: 500,
       });
-      expect(result).toEqual(created);
+      expect(result).toEqual({ ...created, nutrients: {} });
     });
   });
 });

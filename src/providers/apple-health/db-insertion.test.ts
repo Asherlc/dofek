@@ -48,10 +48,20 @@ function createMockDb(returningData: Record<string, unknown>[] = []): {
   const insertFn = vi.fn();
   insertFn.mockImplementation(() => makeChainable());
 
+  const selectChain = {
+    from: vi.fn().mockReturnValue({
+      where: vi.fn().mockResolvedValue([]),
+    }),
+  };
+
+  const deleteChain = {
+    where: vi.fn().mockResolvedValue(undefined),
+  };
+
   const db: SyncDatabase = {
-    select: vi.fn(),
+    select: vi.fn().mockReturnValue(selectChain),
     insert: insertFn,
-    delete: vi.fn(),
+    delete: vi.fn().mockReturnValue(deleteChain),
     execute: vi.fn(),
   };
 

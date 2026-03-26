@@ -1,0 +1,51 @@
+{
+  "name": "dofek-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start",
+    "ios": "expo run:ios",
+    "ios:device": "expo run:ios --device",
+    "prebuild": "expo prebuild --platform ios --clean",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write ."
+  },
+  "dependencies": {
+    "@dofek/auth": "workspace:*",
+    "@dofek/format": "workspace:*",
+    "@dofek/nutrition": "workspace:*",
+    "@dofek/onboarding": "workspace:*",
+    "@dofek/providers": "workspace:*",
+    "@dofek/scoring": "workspace:*",
+    "@dofek/training": "workspace:*",
+    "@dofek/zones": "workspace:*",
+    "@sentry/cli": "3.3.3",
+    "@sentry/react-native": "8.5.0",
+    "@tanstack/react-query": "5.90.21",
+    "@trpc/client": "11.12.0",
+    "@trpc/react-query": "11.12.0",
+    "dofek-server": "workspace:*",
+    "expo": "55.0.6",
+    "expo-camera": "55.0.9",
+    "expo-file-system": "55.0.11",
+    "expo-location": "55.1.4",
+    "expo-router": "5.0.7",
+    "expo-secure-store": "55.0.9",
+    "expo-sharing": "55.0.14",
+    "expo-status-bar": "2.2.3",
+    "expo-updates": "55.0.15",
+    "expo-web-browser": "55.0.10",
+    "react": "19.2.4",
+    "react-native": "0.83.4",
+    "react-native-safe-area-context": "5.4.1",
+    "react-native-screens": "4.11.1",
+    "react-native-svg": "15.15.3",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@testing-library/react": "16.3.2",
+    "@types/react": "19.2.14",
+    "typescript": "5.9.3"
+  }
+}

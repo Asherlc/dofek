@@ -19,7 +19,7 @@ describe("mapSuuntoActivityType", () => {
     expect(mapSuuntoActivityType(67)).toBe("trail_running");
     expect(mapSuuntoActivityType(69)).toBe("rowing");
     expect(mapSuuntoActivityType(82)).toBe("virtual_cycling");
-    expect(mapSuuntoActivityType(83)).toBe("virtual_running");
+    expect(mapSuuntoActivityType(83)).toBe("running");
     expect(mapSuuntoActivityType(1)).toBe("other");
     expect(mapSuuntoActivityType(5)).toBe("other");
   });

@@ -1,3 +1,4 @@
+import { formatYearsDelta } from "@dofek/scoring/healthspan-years";
 import { healthStatusColor, scoreColor, trendColor } from "@dofek/scoring/scoring";
 import type { HealthspanResult } from "dofek-server/types";
 import { chartThemeColors, dofekTooltip } from "../lib/chartTheme.ts";
@@ -10,11 +11,11 @@ interface HealthspanScoreCardProps {
 }
 
 function TrendBadge({ trend }: { trend: "improving" | "declining" | "stable" }) {
-  const c = trendColor(trend);
+  const color = trendColor(trend);
   return (
     <div
       className="inline-block px-2 py-1 rounded text-xs font-medium"
-      style={{ color: c, backgroundColor: `${c}15` }}
+      style={{ color: color, backgroundColor: `${color}15` }}
     >
       {trend.charAt(0).toUpperCase() + trend.slice(1)}
     </div>
@@ -75,6 +76,17 @@ export function HealthspanScoreCard({ data, loading }: HealthspanScoreCardProps)
             </span>
             <span className="text-subtle text-sm">/100</span>
           </div>
+          {data.yearsDelta != null && (
+            <div className="mt-1">
+              <span
+                className="text-xs font-medium"
+                style={{ color: data.yearsDelta <= 0 ? "#22c55e" : "#ef4444" }}
+              >
+                {formatYearsDelta(data.yearsDelta)}
+              </span>
+              <span className="text-dim text-xs ml-1">biological age impact</span>
+            </div>
+          )}
         </div>
 
         <div className="text-right">{data.trend != null && <TrendBadge trend={data.trend} />}</div>
@@ -96,6 +108,12 @@ export function HealthspanScoreCard({ data, loading }: HealthspanScoreCardProps)
             </div>
             <span className="text-subtle text-xs w-20 text-right tabular-nums">
               {m.value != null ? `${m.value} ${m.unit}` : "\u2014"}
+            </span>
+            <span
+              className="text-xs w-14 text-right tabular-nums"
+              style={{ color: m.yearsDelta <= 0 ? "#22c55e" : "#ef4444" }}
+            >
+              {formatYearsDelta(m.yearsDelta)}
             </span>
           </div>
         ))}

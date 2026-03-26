@@ -1,4 +1,6 @@
+import { isIndoorCycling } from "@dofek/training/endurance-types";
 import {
+  type CanonicalActivityType,
   createActivityTypeMapper,
   RIDE_WITH_GPS_ACTIVITY_TYPE_MAP,
 } from "@dofek/training/training";
@@ -147,7 +149,7 @@ export function rideWithGpsOAuthConfig(): OAuthConfig | null {
 
 const mapRwgpsType = createActivityTypeMapper(RIDE_WITH_GPS_ACTIVITY_TYPE_MAP);
 
-export function mapActivityType(rawType: string | null | undefined): string {
+export function mapActivityType(rawType: string | null | undefined): CanonicalActivityType {
   if (!rawType) return "cycling";
   return mapRwgpsType(rawType);
 }
@@ -158,7 +160,7 @@ export function mapActivityType(rawType: string | null | undefined): string {
 
 export interface ParsedActivity {
   externalId: string;
-  activityType: string;
+  activityType: CanonicalActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date | undefined;
@@ -482,7 +484,7 @@ export class RideWithGpsProvider implements SyncProvider {
               lat: point.lat,
               lng: point.lng,
               altitude: point.altitude,
-              speed: point.speed,
+              speed: isIndoorCycling(parsed.activityType) ? undefined : point.speed,
               temperature: point.temperature,
               heartRate: point.heartRate,
               cadence: point.cadence,

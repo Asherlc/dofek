@@ -1,0 +1,201 @@
+import { describe, expect, it, vi, beforeEach } from "vitest";
+import {
+	createAccelerometerService,
+	type AccelerometerService,
+	type AccelerometerServiceDeps,
+} from "./accelerometer-service.ts";
+
+function makeMockDeps(): AccelerometerServiceDeps {
+	return {
+		coreMotion: {
+			isAccelerometerRecordingAvailable: vi.fn().mockReturnValue(true),
+			startRecording: vi.fn().mockResolvedValue(true),
+			queryRecordedData: vi.fn().mockResolvedValue([]),
+		},
+		watch: {
+			isAvailable: vi.fn().mockReturnValue(true),
+			requestSync: vi.fn().mockResolvedValue(true),
+			getPendingSamples: vi.fn().mockResolvedValue([]),
+			acknowledgeSamples: vi.fn(),
+		},
+		trpcClient: {
+			accelerometerSync: {
+				pushAccelerometerSamples: {
+					mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
+				},
+			},
+		},
+		deviceId: "iPhone 15 Pro",
+	};
+}
+
+describe("AccelerometerService", () => {
+	let deps: AccelerometerServiceDeps;
+	let service: AccelerometerService;
+
+	beforeEach(() => {
+		deps = makeMockDeps();
+		service = createAccelerometerService(deps);
+	});
+
+	describe("ensureRecording", () => {
+		it("starts a 12-hour CoreMotion recording session", async () => {
+			await service.ensureRecording();
+
+			expect(deps.coreMotion.startRecording).toHaveBeenCalledWith(43200);
+		});
+
+		it("requests Watch sync when watch is available", async () => {
+			await service.ensureRecording();
+
+			expect(deps.watch.requestSync).toHaveBeenCalled();
+		});
+
+		it("skips CoreMotion when accelerometer is unavailable", async () => {
+			(deps.coreMotion.isAccelerometerRecordingAvailable as ReturnType<typeof vi.fn>).mockReturnValue(false);
+
+			await service.ensureRecording();
+
+			expect(deps.coreMotion.startRecording).not.toHaveBeenCalled();
+		});
+
+		it("skips Watch sync when watch is unavailable", async () => {
+			(deps.watch.isAvailable as ReturnType<typeof vi.fn>).mockReturnValue(false);
+
+			await service.ensureRecording();
+
+			expect(deps.watch.requestSync).not.toHaveBeenCalled();
+		});
+
+		it("does not throw when CoreMotion fails", async () => {
+			(deps.coreMotion.startRecording as ReturnType<typeof vi.fn>).mockRejectedValue(
+				new Error("CoreMotion error"),
+			);
+
+			await expect(service.ensureRecording()).resolves.toBeUndefined();
+		});
+
+		it("does not throw when Watch sync fails", async () => {
+			(deps.watch.requestSync as ReturnType<typeof vi.fn>).mockRejectedValue(
+				new Error("Watch unreachable"),
+			);
+
+			await expect(service.ensureRecording()).resolves.toBeUndefined();
+		});
+	});
+
+	describe("syncForTimeRange", () => {
+		const startedAt = "2026-03-25T08:00:00.000Z";
+		const endedAt = "2026-03-25T09:00:00.000Z";
+
+		it("queries CoreMotion for the time range and uploads samples", async () => {
+			const samples = [
+				{ timestamp: "2026-03-25T08:00:00.100Z", x: 0.01, y: -0.98, z: 0.04 },
+				{ timestamp: "2026-03-25T08:00:00.120Z", x: 0.02, y: -0.97, z: 0.05 },
+			];
+			(deps.coreMotion.queryRecordedData as ReturnType<typeof vi.fn>).mockResolvedValue(samples);
+
+			await service.syncForTimeRange(startedAt, endedAt);
+
+			expect(deps.coreMotion.queryRecordedData).toHaveBeenCalledWith(startedAt, endedAt);
+			expect(deps.trpcClient.accelerometerSync.pushAccelerometerSamples.mutate).toHaveBeenCalledWith({
+				deviceId: "iPhone 15 Pro",
+				deviceType: "iphone",
+				samples,
+			});
+		});
+
+		it("uploads Watch pending samples", async () => {
+			const watchSamples = [
+				{ timestamp: "2026-03-25T08:00:00.100Z", x: 0.1, y: -0.9, z: 0.0 },
+			];
+			(deps.watch.getPendingSamples as ReturnType<typeof vi.fn>).mockResolvedValue(watchSamples);
+
+			await service.syncForTimeRange(startedAt, endedAt);
+
+			expect(deps.trpcClient.accelerometerSync.pushAccelerometerSamples.mutate).toHaveBeenCalledWith({
+				deviceId: "Apple Watch",
+				deviceType: "apple_watch",
+				samples: watchSamples,
+			});
+			expect(deps.watch.acknowledgeSamples).toHaveBeenCalled();
+		});
+
+		it("does not upload when CoreMotion returns no samples", async () => {
+			(deps.coreMotion.queryRecordedData as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+			(deps.watch.getPendingSamples as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+			await service.syncForTimeRange(startedAt, endedAt);
+
+			expect(deps.trpcClient.accelerometerSync.pushAccelerometerSamples.mutate).not.toHaveBeenCalled();
+		});
+
+		it("skips CoreMotion query when unavailable", async () => {
+			(deps.coreMotion.isAccelerometerRecordingAvailable as ReturnType<typeof vi.fn>).mockReturnValue(false);
+
+			await service.syncForTimeRange(startedAt, endedAt);
+
+			expect(deps.coreMotion.queryRecordedData).not.toHaveBeenCalled();
+		});
+
+		it("skips Watch query when unavailable", async () => {
+			(deps.watch.isAvailable as ReturnType<typeof vi.fn>).mockReturnValue(false);
+
+			await service.syncForTimeRange(startedAt, endedAt);
+
+			expect(deps.watch.getPendingSamples).not.toHaveBeenCalled();
+		});
+
+		it("does not throw when CoreMotion query fails", async () => {
+			(deps.coreMotion.queryRecordedData as ReturnType<typeof vi.fn>).mockRejectedValue(
+				new Error("Query failed"),
+			);
+
+			await expect(service.syncForTimeRange(startedAt, endedAt)).resolves.toBeUndefined();
+		});
+
+		it("does not throw when upload fails", async () => {
+			const samples = [{ timestamp: "2026-03-25T08:00:00.100Z", x: 0.01, y: -0.98, z: 0.04 }];
+			(deps.coreMotion.queryRecordedData as ReturnType<typeof vi.fn>).mockResolvedValue(samples);
+			(deps.trpcClient.accelerometerSync.pushAccelerometerSamples.mutate as ReturnType<typeof vi.fn>).mockRejectedValue(
+				new Error("Upload failed"),
+			);
+
+			await expect(service.syncForTimeRange(startedAt, endedAt)).resolves.toBeUndefined();
+		});
+
+		it("does not acknowledge Watch samples when upload fails", async () => {
+			const watchSamples = [{ timestamp: "2026-03-25T08:00:00.100Z", x: 0.1, y: -0.9, z: 0.0 }];
+			(deps.watch.getPendingSamples as ReturnType<typeof vi.fn>).mockResolvedValue(watchSamples);
+			(deps.trpcClient.accelerometerSync.pushAccelerometerSamples.mutate as ReturnType<typeof vi.fn>).mockRejectedValue(
+				new Error("Upload failed"),
+			);
+
+			await service.syncForTimeRange(startedAt, endedAt);
+
+			expect(deps.watch.acknowledgeSamples).not.toHaveBeenCalled();
+		});
+
+		it("batches large sample sets", async () => {
+			const largeSampleSet = Array.from({ length: 12000 }, (_, index) => ({
+				timestamp: `2026-03-25T08:00:${String(Math.floor(index / 50)).padStart(2, "0")}.${String((index % 50) * 20).padStart(3, "0")}Z`,
+				x: 0.01,
+				y: -0.98,
+				z: 0.04,
+			}));
+			(deps.coreMotion.queryRecordedData as ReturnType<typeof vi.fn>).mockResolvedValue(largeSampleSet);
+
+			await service.syncForTimeRange(startedAt, endedAt);
+
+			// 12000 samples / 5000 batch = 3 calls for phone data
+			const calls = (deps.trpcClient.accelerometerSync.pushAccelerometerSamples.mutate as ReturnType<typeof vi.fn>).mock.calls;
+			const phoneCalls = calls.filter(
+				(call: Array<{ deviceType: string }>) => call[0].deviceType === "iphone",
+			);
+			expect(phoneCalls).toHaveLength(3);
+			expect(phoneCalls[0][0].samples).toHaveLength(5000);
+			expect(phoneCalls[1][0].samples).toHaveLength(5000);
+			expect(phoneCalls[2][0].samples).toHaveLength(2000);
+		});
+	});
+});

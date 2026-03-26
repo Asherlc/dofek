@@ -3,21 +3,19 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const t = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  const trpc = initTRPC
+    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .create();
   return {
-    router: t.router,
-    protectedProcedure: t.procedure,
-    cachedProtectedQuery: () => t.procedure,
-    cachedProtectedQueryLight: () => t.procedure,
+    router: trpc.router,
+    protectedProcedure: trpc.procedure,
+    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQueryLight: () => trpc.procedure,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
 
-import {
-  aggregateDailyMetricSamples,
-  healthKitSyncRouter,
-  type SleepSample,
-} from "./health-kit-sync.ts";
+import { aggregateDailyMetricSamples, healthKitSyncRouter } from "./health-kit-sync.ts";
 
 const createCaller = createTestCallerFactory(healthKitSyncRouter);
 
@@ -91,11 +89,45 @@ describe("healthKitSyncRouter", () => {
       expect(jan15?.hrv).toBe(52);
     });
 
+    it("assigns HRV readings to the correct local date when timestamps include timezone offsets", () => {
+      // iOS sends timestamps with local timezone offset so that extractDate
+      // (which slices the first 10 chars) gets the correct calendar date.
+      // Without timezone offsets, a 9:30 PM PDT reading would become
+      // "2024-01-15T04:30:00Z" in UTC and be assigned to Jan 15 instead of Jan 14.
+      const samples = [
+        makeSample({
+          type: "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
+          value: 14, // low evening HRV (post-exercise)
+          startDate: "2024-01-14T21:30:00-0700", // 9:30 PM PDT Jan 14
+          endDate: "2024-01-14T21:30:05-0700",
+          uuid: "hrv-evening",
+        }),
+        makeSample({
+          type: "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
+          value: 55, // normal overnight HRV reading on Jan 15
+          startDate: "2024-01-15T06:00:00-0700", // 6 AM PDT Jan 15
+          endDate: "2024-01-15T06:00:05-0700",
+          uuid: "hrv-overnight",
+        }),
+      ];
+
+      const daily = aggregateDailyMetricSamples(samples);
+
+      // The evening reading belongs to Jan 14 (local date)
+      const jan14 = daily.get("2024-01-14\x00iPhone");
+      expect(jan14?.hrv).toBe(14);
+
+      // Jan 15 gets only the overnight reading
+      const jan15 = daily.get("2024-01-15\x00iPhone");
+      expect(jan15?.hrv).toBe(55);
+    });
+
     it("processes body measurement samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.pushQuantitySamples({
@@ -117,6 +149,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.pushQuantitySamples({
@@ -187,6 +220,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.pushQuantitySamples({
@@ -208,6 +242,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.pushQuantitySamples({
@@ -224,6 +259,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       await caller.pushQuantitySamples({
@@ -247,6 +283,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.pushQuantitySamples({
@@ -263,6 +300,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.pushQuantitySamples({ samples: [] });
@@ -276,6 +314,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.pushQuantitySamples({
@@ -381,6 +420,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.pushQuantitySamples({
@@ -398,6 +438,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.pushQuantitySamples({
@@ -420,6 +461,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.pushWorkouts({
@@ -446,6 +488,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       await caller.pushWorkouts({
@@ -479,6 +522,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.pushWorkouts({
@@ -505,6 +549,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.pushWorkouts({ workouts: [] });
@@ -518,6 +563,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.pushSleepSamples({
@@ -566,8 +612,8 @@ describe("healthKitSyncRouter", () => {
       // deep: 22:30-23:30 = 60, REM: 23:30-01:00 = 90,
       // light (core): 01:00-04:00 = 180, awake: 04:00-04:15 = 15
       const insertCall = execute.mock.calls.find((call: unknown[]) => {
-        const s = JSON.stringify(call[0]);
-        return s.includes("sleep_session") && s.includes("INSERT");
+        const serialized = JSON.stringify(call[0]);
+        return serialized.includes("sleep_session") && serialized.includes("INSERT");
       });
       expect(insertCall).toBeDefined();
       const sqlValues = JSON.stringify(insertCall?.[0]);
@@ -584,6 +630,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       await caller.pushSleepSamples({
@@ -614,6 +661,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       await caller.pushSleepSamples({
@@ -717,6 +765,7 @@ describe("healthKitSyncRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+        timezone: "UTC",
       });
 
       const result = await caller.pushSleepSamples({

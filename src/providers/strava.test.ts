@@ -3,6 +3,7 @@ import {
   mapStravaActivityType,
   parseStravaActivity,
   parseStravaActivityList,
+  STRAVA_THROTTLE_MS,
   type StravaActivity,
   StravaClient,
   type StravaDetailedActivity,
@@ -96,11 +97,11 @@ const sampleStreams: StravaStreamSet = {
 describe("Strava Provider", () => {
   describe("mapStravaActivityType", () => {
     it("maps common Strava types to canonical types", () => {
-      expect(mapStravaActivityType("Ride")).toBe("cycling");
-      expect(mapStravaActivityType("VirtualRide")).toBe("cycling");
-      expect(mapStravaActivityType("MountainBikeRide")).toBe("cycling");
-      expect(mapStravaActivityType("GravelRide")).toBe("cycling");
-      expect(mapStravaActivityType("EBikeRide")).toBe("cycling");
+      expect(mapStravaActivityType("Ride")).toBe("road_cycling");
+      expect(mapStravaActivityType("VirtualRide")).toBe("virtual_cycling");
+      expect(mapStravaActivityType("MountainBikeRide")).toBe("mountain_biking");
+      expect(mapStravaActivityType("GravelRide")).toBe("gravel_cycling");
+      expect(mapStravaActivityType("EBikeRide")).toBe("e_bike_cycling");
       expect(mapStravaActivityType("Run")).toBe("running");
       expect(mapStravaActivityType("VirtualRun")).toBe("running");
       expect(mapStravaActivityType("TrailRun")).toBe("running");
@@ -126,7 +127,7 @@ describe("Strava Provider", () => {
       const result = parseStravaActivity(sampleActivity);
 
       expect(result.externalId).toBe("12345678");
-      expect(result.activityType).toBe("cycling");
+      expect(result.activityType).toBe("road_cycling");
       expect(result.name).toBe("Morning Ride");
       expect(result.startedAt).toEqual(new Date("2026-03-01T08:00:00Z"));
       expect(result.endedAt).toEqual(
@@ -343,6 +344,43 @@ describe("Strava Provider", () => {
         grade_smooth: 0.5,
       });
     });
+
+    it("omits speed for indoor_cycling activities", () => {
+      const rows = stravaStreamsToMetricStream(
+        sampleStreams,
+        "strava",
+        "act-uuid",
+        startedAt,
+        "indoor_cycling",
+      );
+      expect(rows[0]?.speed).toBeUndefined();
+      expect(rows[1]?.speed).toBeUndefined();
+      // Other fields should still be present
+      expect(rows[0]?.heartRate).toBe(130);
+      expect(rows[0]?.power).toBe(200);
+    });
+
+    it("omits speed for virtual_cycling activities", () => {
+      const rows = stravaStreamsToMetricStream(
+        sampleStreams,
+        "strava",
+        "act-uuid",
+        startedAt,
+        "virtual_cycling",
+      );
+      expect(rows[0]?.speed).toBeUndefined();
+    });
+
+    it("keeps speed for outdoor cycling activities", () => {
+      const rows = stravaStreamsToMetricStream(
+        sampleStreams,
+        "strava",
+        "act-uuid",
+        startedAt,
+        "road_cycling",
+      );
+      expect(rows[0]?.speed).toBe(8.5);
+    });
   });
 });
 
@@ -376,7 +414,7 @@ describe("stravaOAuthConfig", () => {
     expect(config).not.toBeNull();
     expect(config?.clientId).toBe("test-id");
     expect(config?.clientSecret).toBe("test-secret");
-    expect(config?.scopes).toContain("activity:read_all");
+    expect(config?.scopes).toEqual(["read", "activity:read_all"]);
     expect(config?.scopeSeparator).toBe(",");
   });
 
@@ -393,7 +431,7 @@ describe("stravaOAuthConfig", () => {
     process.env.STRAVA_CLIENT_SECRET = "test-secret";
     delete process.env.OAUTH_REDIRECT_URI_unencrypted;
     const config = stravaOAuthConfig();
-    expect(config?.redirectUri).toContain("dofek");
+    expect(config?.redirectUri).toBe("https://dofek.asherlc.com/callback");
   });
 });
 
@@ -440,8 +478,9 @@ describe("StravaProvider.authSetup()", () => {
     const setup = provider.authSetup();
     expect(setup.oauthConfig.clientId).toBe("test-id");
     expect(setup.exchangeCode).toBeTypeOf("function");
-    expect(setup.apiBaseUrl).toContain("strava.com");
-    expect(setup.oauthConfig.authorizeUrl).toContain("/authorize");
+    expect(setup.apiBaseUrl).toBe("https://www.strava.com/api/v3/");
+    expect(setup.oauthConfig.authorizeUrl).toBe("https://www.strava.com/oauth/authorize");
+    expect(setup.oauthConfig.tokenUrl).toBe("https://www.strava.com/oauth/token");
     expect(setup.oauthConfig.scopes).toEqual(["read", "activity:read_all"]);
   });
 
@@ -639,9 +678,9 @@ describe("StravaClient — request throttling", () => {
     };
 
     const client = new StravaClient("token", mockFetch);
-    const p = client.getActivities(0);
+    const pendingRequest = client.getActivities(0);
     await vi.advanceTimersByTimeAsync(0);
-    await p;
+    await pendingRequest;
 
     // First call should happen at time 0 (no throttle delay)
     expect(callTimestamps).toHaveLength(1);
@@ -706,7 +745,7 @@ describe("StravaProvider.getUserIdentity()", () => {
     const setup = provider.authSetup();
     if (!setup.getUserIdentity) throw new Error("getUserIdentity not defined");
     const identity = await setup.getUserIdentity("test-token");
-    expect(calledUrl).toContain("https://www.strava.com/api/v3/athlete");
+    expect(calledUrl).toBe("https://www.strava.com/api/v3/athlete");
     expect(calledHeaders).toEqual(expect.objectContaining({ Authorization: "Bearer test-token" }));
     expect(identity.providerAccountId).toBe("12345");
     expect(identity.email).toBe("athlete@test.com");
@@ -744,5 +783,881 @@ describe("StravaProvider.getUserIdentity()", () => {
     await expect(setup.getUserIdentity("bad-token")).rejects.toThrow(
       "Strava athlete API error (403)",
     );
+  });
+});
+
+// ============================================================
+// syncWebhookEvent tests
+// ============================================================
+
+function makeStravaInsertMock(returnId = "act-uuid") {
+  return vi.fn().mockReturnValue({
+    values: vi.fn().mockReturnValue({
+      onConflictDoUpdate: vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([{ id: returnId }]),
+      }),
+      onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+    }),
+  });
+}
+
+function makeStravaSelectMock(
+  tokenRow: {
+    accessToken: string;
+    refreshToken: string | null;
+    expiresAt: Date;
+    scopes: string;
+  } | null,
+) {
+  const rows = tokenRow ? [tokenRow] : [];
+  return vi.fn().mockReturnValue({
+    from: vi.fn().mockReturnValue({
+      where: vi.fn().mockReturnValue({
+        limit: vi.fn().mockResolvedValue(rows),
+      }),
+    }),
+  });
+}
+
+const validTokenRow = {
+  accessToken: "valid-access-token",
+  refreshToken: "valid-refresh-token",
+  expiresAt: new Date("2099-01-01T00:00:00Z"),
+  scopes: "read activity:read_all",
+};
+
+describe("StravaProvider.syncWebhookEvent", () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env.STRAVA_CLIENT_ID = "test-id";
+    process.env.STRAVA_CLIENT_SECRET = "test-secret";
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("returns immediately for non-activity objectType", async () => {
+    const provider = new StravaProvider(async () => new Response(), 0);
+    const mockDb = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn(),
+    };
+
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "123",
+      eventType: "create",
+      objectType: "athlete",
+      objectId: "456",
+    });
+
+    expect(result.provider).toBe("strava");
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(0);
+    expect(mockDb.select).not.toHaveBeenCalled();
+  });
+
+  it("returns immediately when objectId is missing", async () => {
+    const provider = new StravaProvider(async () => new Response(), 0);
+    const mockDb = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn(),
+    };
+
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "123",
+      eventType: "create",
+      objectType: "activity",
+    });
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it("handles delete events by removing activity and streams", async () => {
+    const provider = new StravaProvider(async () => new Response(), 0);
+    const mockDelete = vi.fn().mockReturnValue({
+      where: vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([{ id: "deleted-act-id" }]),
+      }),
+    });
+
+    const mockDb = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: mockDelete,
+      execute: vi.fn(),
+    };
+
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "123",
+      eventType: "delete",
+      objectType: "activity",
+      objectId: "99999",
+    });
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(0);
+    // Should call delete twice: once for activity, once for metric_stream
+    expect(mockDelete).toHaveBeenCalledTimes(2);
+  });
+
+  it("handles delete event when activity not found", async () => {
+    const provider = new StravaProvider(async () => new Response(), 0);
+    const mockDelete = vi.fn().mockReturnValue({
+      where: vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([]),
+      }),
+    });
+
+    const mockDb = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: mockDelete,
+      execute: vi.fn(),
+    };
+
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "123",
+      eventType: "delete",
+      objectType: "activity",
+      objectId: "nonexistent",
+    });
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(0);
+    // Only called once for the activity delete, not for metric_stream
+    expect(mockDelete).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns error when token resolution fails", async () => {
+    const provider = new StravaProvider(async () => new Response(), 0);
+    const mockDb = {
+      select: makeStravaSelectMock(null),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn(),
+    };
+
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "123",
+      eventType: "create",
+      objectType: "activity",
+      objectId: "12345",
+    });
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("No OAuth tokens");
+  });
+
+  it("upserts activity and streams on create/update happy path", async () => {
+    const detailedActivity: StravaDetailedActivity = {
+      ...sampleActivity,
+      device_name: "Garmin Edge 530",
+    };
+
+    const streamResponse = [
+      { type: "time", data: [0, 1], series_type: "time", resolution: "high", original_size: 2 },
+      {
+        type: "heartrate",
+        data: [130, 135],
+        series_type: "time",
+        resolution: "high",
+        original_size: 2,
+      },
+    ];
+
+    const mockFetch: typeof globalThis.fetch = async (
+      input: string | URL | Request,
+    ): Promise<Response> => {
+      const url = String(input);
+      if (url.includes("activities/12345678/streams")) {
+        return Response.json(streamResponse);
+      }
+      if (url.includes("activities/12345678")) {
+        return Response.json(detailedActivity);
+      }
+      return new Response("Not Found", { status: 404 });
+    };
+
+    const mockInsert = makeStravaInsertMock();
+    const mockDelete = vi.fn().mockReturnValue({
+      where: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const mockDb = {
+      select: makeStravaSelectMock(validTokenRow),
+      insert: mockInsert,
+      delete: mockDelete,
+      execute: vi.fn(),
+    };
+
+    const provider = new StravaProvider(mockFetch, 0);
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "123",
+      eventType: "create",
+      objectType: "activity",
+      objectId: "12345678",
+    });
+
+    expect(result.provider).toBe("strava");
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(0);
+    // insert called for: activity upsert, then metric_stream batch
+    expect(mockInsert).toHaveBeenCalled();
+  });
+
+  it("handles stream fetch 404 as non-fatal", async () => {
+    const detailedActivity: StravaDetailedActivity = {
+      ...sampleActivity,
+      device_name: "Wahoo ELEMNT",
+    };
+
+    const mockFetch: typeof globalThis.fetch = async (
+      input: string | URL | Request,
+    ): Promise<Response> => {
+      const url = String(input);
+      if (url.includes("activities/12345678/streams")) {
+        // 404 on streams is non-fatal
+        return new Response("Not Found", { status: 404 });
+      }
+      if (url.includes("activities/12345678")) {
+        return Response.json(detailedActivity);
+      }
+      return new Response("Not Found", { status: 404 });
+    };
+
+    const mockInsert = makeStravaInsertMock();
+    const mockDb = {
+      select: makeStravaSelectMock(validTokenRow),
+      insert: mockInsert,
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      execute: vi.fn(),
+    };
+
+    const provider = new StravaProvider(mockFetch, 0);
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "123",
+      eventType: "update",
+      objectType: "activity",
+      objectId: "12345678",
+    });
+
+    // Activity still synced, no errors from 404 streams
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it("collects stream fetch errors (non-404) without failing", async () => {
+    const detailedActivity: StravaDetailedActivity = {
+      ...sampleActivity,
+    };
+
+    const mockFetch: typeof globalThis.fetch = async (
+      input: string | URL | Request,
+    ): Promise<Response> => {
+      const url = String(input);
+      if (url.includes("activities/12345678/streams")) {
+        return new Response("Server Error", { status: 500 });
+      }
+      if (url.includes("activities/12345678")) {
+        return Response.json(detailedActivity);
+      }
+      return new Response("Not Found", { status: 404 });
+    };
+
+    const mockInsert = makeStravaInsertMock();
+    const mockDb = {
+      select: makeStravaSelectMock(validTokenRow),
+      insert: mockInsert,
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      execute: vi.fn(),
+    };
+
+    const provider = new StravaProvider(mockFetch, 0);
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "123",
+      eventType: "create",
+      objectType: "activity",
+      objectId: "12345678",
+    });
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("Streams for activity 12345678");
+  });
+
+  it("returns early when activity insert returns no id", async () => {
+    const detailedActivity: StravaDetailedActivity = { ...sampleActivity };
+
+    const mockFetch: typeof globalThis.fetch = async (
+      input: string | URL | Request,
+    ): Promise<Response> => {
+      const url = String(input);
+      if (url.includes("activities/12345678")) {
+        return Response.json(detailedActivity);
+      }
+      return new Response("Not Found", { status: 404 });
+    };
+
+    // Insert returns empty array (no id)
+    const mockInsert = vi.fn().mockReturnValue({
+      values: vi.fn().mockReturnValue({
+        onConflictDoUpdate: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([]),
+        }),
+      }),
+    });
+
+    const mockDb = {
+      select: makeStravaSelectMock(validTokenRow),
+      insert: mockInsert,
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      execute: vi.fn(),
+    };
+
+    const provider = new StravaProvider(mockFetch, 0);
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "123",
+      eventType: "create",
+      objectType: "activity",
+      objectId: "12345678",
+    });
+
+    // recordsSynced is 1 (activity itself counted), but no stream insert
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(0);
+  });
+});
+
+// ============================================================
+// registerWebhook / unregisterWebhook tests
+// ============================================================
+
+describe("StravaProvider.registerWebhook", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("throws when STRAVA_CLIENT_ID is missing", async () => {
+    delete process.env.STRAVA_CLIENT_ID;
+    delete process.env.STRAVA_CLIENT_SECRET;
+    const provider = new StravaProvider(async () => new Response(), 0);
+    await expect(
+      provider.registerWebhook("https://example.com/webhook", "verify-token"),
+    ).rejects.toThrow("STRAVA_CLIENT_ID");
+  });
+
+  it("throws when registration response is not OK", async () => {
+    process.env.STRAVA_CLIENT_ID = "test-id";
+    process.env.STRAVA_CLIENT_SECRET = "test-secret";
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response("Conflict", { status: 409 });
+    };
+    const provider = new StravaProvider(mockFetch, 0);
+    await expect(
+      provider.registerWebhook("https://example.com/webhook", "verify-token"),
+    ).rejects.toThrow("Strava webhook registration failed (409)");
+  });
+
+  it("returns subscriptionId on success", async () => {
+    process.env.STRAVA_CLIENT_ID = "test-id";
+    process.env.STRAVA_CLIENT_SECRET = "test-secret";
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return Response.json({ id: 42 });
+    };
+    const provider = new StravaProvider(mockFetch, 0);
+    const result = await provider.registerWebhook("https://example.com/webhook", "verify-token");
+    expect(result.subscriptionId).toBe("42");
+  });
+});
+
+describe("StravaProvider.unregisterWebhook", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("does nothing when env vars are missing", async () => {
+    delete process.env.STRAVA_CLIENT_ID;
+    delete process.env.STRAVA_CLIENT_SECRET;
+    const mockFetch = vi.fn();
+    const provider = new StravaProvider(mockFetch, 0);
+    await provider.unregisterWebhook("42");
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("succeeds on 200 response", async () => {
+    process.env.STRAVA_CLIENT_ID = "test-id";
+    process.env.STRAVA_CLIENT_SECRET = "test-secret";
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response(null, { status: 200 });
+    };
+    const provider = new StravaProvider(mockFetch, 0);
+    // Should not throw
+    await provider.unregisterWebhook("42");
+  });
+
+  it("treats 404 as OK (already deleted)", async () => {
+    process.env.STRAVA_CLIENT_ID = "test-id";
+    process.env.STRAVA_CLIENT_SECRET = "test-secret";
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response("Not Found", { status: 404 });
+    };
+    const provider = new StravaProvider(mockFetch, 0);
+    // Should not throw
+    await provider.unregisterWebhook("42");
+  });
+
+  it("logs warning on non-OK non-404 response", async () => {
+    process.env.STRAVA_CLIENT_ID = "test-id";
+    process.env.STRAVA_CLIENT_SECRET = "test-secret";
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response("Server Error", { status: 500 });
+    };
+    const provider = new StravaProvider(mockFetch, 0);
+    // Should not throw, just logs warning
+    await provider.unregisterWebhook("42");
+  });
+});
+
+// ============================================================
+// Additional precise assertions for mutation killing
+// ============================================================
+
+describe("StravaProvider — precise webhook string/object assertions", () => {
+  it("parseWebhookPayload maps all three Strava aspect_types correctly", async () => {
+    const provider = new StravaProvider(async () => new Response(), 0);
+
+    for (const [aspect, expected] of [
+      ["create", "create"],
+      ["update", "update"],
+      ["delete", "delete"],
+    ] as const) {
+      const events = provider.parseWebhookPayload({
+        aspect_type: aspect,
+        object_type: "activity",
+        owner_id: 1,
+        object_id: 100,
+      });
+      expect(events[0]?.eventType).toBe(expected);
+    }
+  });
+
+  it("parseWebhookPayload converts owner_id number to string", async () => {
+    const provider = new StravaProvider(async () => new Response(), 0);
+    const events = provider.parseWebhookPayload({
+      aspect_type: "create",
+      object_type: "activity",
+      owner_id: 0, // edge case: zero
+    });
+    expect(events).toHaveLength(1);
+    expect(events[0]?.ownerExternalId).toBe("0");
+  });
+
+  it("parseWebhookPayload converts object_id number to string", async () => {
+    const provider = new StravaProvider(async () => new Response(), 0);
+    const events = provider.parseWebhookPayload({
+      aspect_type: "create",
+      object_type: "activity",
+      owner_id: 1,
+      object_id: 42,
+    });
+    expect(events[0]?.objectId).toBe("42");
+  });
+
+  it("parseWebhookPayload treats object_id=0 as falsy (undefined)", async () => {
+    const provider = new StravaProvider(async () => new Response(), 0);
+    const events = provider.parseWebhookPayload({
+      aspect_type: "create",
+      object_type: "activity",
+      owner_id: 1,
+      object_id: 0, // zero is falsy — ternary produces undefined
+    });
+    expect(events[0]?.objectId).toBeUndefined();
+  });
+
+  it("handleValidationChallenge echoes back the exact challenge string", async () => {
+    const provider = new StravaProvider(async () => new Response(), 0);
+    const result = provider.handleValidationChallenge(
+      {
+        "hub.mode": "subscribe",
+        "hub.challenge": "specific-challenge-123",
+        "hub.verify_token": "tok",
+      },
+      "tok",
+    );
+    expect(result).toEqual({ "hub.challenge": "specific-challenge-123" });
+  });
+
+  it("handleValidationChallenge compares token exactly (not substring)", async () => {
+    const provider = new StravaProvider(async () => new Response(), 0);
+    // Partial match should fail
+    const result = provider.handleValidationChallenge(
+      { "hub.mode": "subscribe", "hub.challenge": "abc", "hub.verify_token": "tok" },
+      "token-longer",
+    );
+    expect(result).toBeNull();
+  });
+
+  it("registerWebhook sends correct form parameters", async () => {
+    const originalEnv = { ...process.env };
+    process.env.STRAVA_CLIENT_ID = "my-client-id";
+    process.env.STRAVA_CLIENT_SECRET = "my-client-secret";
+
+    let capturedBody: URLSearchParams | undefined;
+    const mockFetch: typeof globalThis.fetch = async (_url, init): Promise<Response> => {
+      capturedBody = new URLSearchParams(String(init?.body));
+      return Response.json({ id: 1 });
+    };
+
+    const provider = new StravaProvider(mockFetch, 0);
+    await provider.registerWebhook("https://example.com/callback", "my-verify-token");
+
+    expect(capturedBody?.get("client_id")).toBe("my-client-id");
+    expect(capturedBody?.get("client_secret")).toBe("my-client-secret");
+    expect(capturedBody?.get("callback_url")).toBe("https://example.com/callback");
+    expect(capturedBody?.get("verify_token")).toBe("my-verify-token");
+
+    process.env = { ...originalEnv };
+  });
+
+  it("registerWebhook POST URL is exactly the Strava push subscriptions endpoint", async () => {
+    const originalEnv = { ...process.env };
+    process.env.STRAVA_CLIENT_ID = "id";
+    process.env.STRAVA_CLIENT_SECRET = "secret";
+
+    let capturedUrl = "";
+    const mockFetch: typeof globalThis.fetch = async (url): Promise<Response> => {
+      capturedUrl = String(url);
+      return Response.json({ id: 1 });
+    };
+
+    const provider = new StravaProvider(mockFetch, 0);
+    await provider.registerWebhook("https://example.com/cb", "tok");
+    expect(capturedUrl).toBe("https://www.strava.com/api/v3/push_subscriptions");
+
+    process.env = { ...originalEnv };
+  });
+
+  it("registerWebhook includes Content-Type header", async () => {
+    const originalEnv = { ...process.env };
+    process.env.STRAVA_CLIENT_ID = "id";
+    process.env.STRAVA_CLIENT_SECRET = "secret";
+
+    let capturedHeaders: HeadersInit | undefined;
+    const mockFetch: typeof globalThis.fetch = async (_url, init): Promise<Response> => {
+      capturedHeaders = init?.headers;
+      return Response.json({ id: 1 });
+    };
+
+    const provider = new StravaProvider(mockFetch, 0);
+    await provider.registerWebhook("https://example.com/cb", "tok");
+    expect(capturedHeaders).toEqual(
+      expect.objectContaining({ "Content-Type": "application/x-www-form-urlencoded" }),
+    );
+
+    process.env = { ...originalEnv };
+  });
+
+  it("unregisterWebhook includes client_id and client_secret as query params", async () => {
+    const originalEnv = { ...process.env };
+    process.env.STRAVA_CLIENT_ID = "my-id";
+    process.env.STRAVA_CLIENT_SECRET = "my-secret";
+
+    let capturedUrl = "";
+    const mockFetch: typeof globalThis.fetch = async (url): Promise<Response> => {
+      capturedUrl = String(url);
+      return new Response(null, { status: 200 });
+    };
+
+    const provider = new StravaProvider(mockFetch, 0);
+    await provider.unregisterWebhook("sub-42");
+
+    const parsed = new URL(capturedUrl);
+    expect(parsed.searchParams.get("client_id")).toBe("my-id");
+    expect(parsed.searchParams.get("client_secret")).toBe("my-secret");
+    expect(parsed.pathname).toContain("push_subscriptions/sub-42");
+
+    process.env = { ...originalEnv };
+  });
+
+  it("syncWebhookEvent returns provider as 'strava' for all paths", async () => {
+    const provider = new StravaProvider(async () => new Response(), 0);
+    const mockDb = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn(),
+    };
+
+    // Non-activity path
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "1",
+      eventType: "create",
+      objectType: "athlete",
+    });
+    expect(result.provider).toBe("strava");
+    expect(result.duration).toBeGreaterThanOrEqual(0);
+    expect(result.errors).toEqual([]);
+  });
+
+  it("syncWebhookEvent delete path returns provider 'strava'", async () => {
+    const mockDelete = vi.fn().mockReturnValue({
+      where: vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([]),
+      }),
+    });
+    const mockDb = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: mockDelete,
+      execute: vi.fn(),
+    };
+
+    const provider = new StravaProvider(async () => new Response(), 0);
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "1",
+      eventType: "delete",
+      objectType: "activity",
+      objectId: "999",
+    });
+    expect(result.provider).toBe("strava");
+    expect(result.recordsSynced).toBe(0);
+  });
+});
+
+// ============================================================
+// getActivityStreams — exercises STREAM_KEYS and isStreamKey
+// ============================================================
+
+describe("StravaClient.getActivityStreams", () => {
+  it("maps all recognized stream types from the API response to StravaStreamSet keys", async () => {
+    // Strava returns an array of stream objects; getActivityStreams converts them
+    // to a keyed StravaStreamSet using isStreamKey (which checks STREAM_KEYS).
+    const apiResponse = [
+      { type: "time", data: [0, 1], series_type: "time", resolution: "high", original_size: 2 },
+      {
+        type: "heartrate",
+        data: [130, 135],
+        series_type: "time",
+        resolution: "high",
+        original_size: 2,
+      },
+      {
+        type: "watts",
+        data: [200, 210],
+        series_type: "time",
+        resolution: "high",
+        original_size: 2,
+      },
+      {
+        type: "cadence",
+        data: [85, 88],
+        series_type: "time",
+        resolution: "high",
+        original_size: 2,
+      },
+      {
+        type: "velocity_smooth",
+        data: [8.5, 8.7],
+        series_type: "time",
+        resolution: "high",
+        original_size: 2,
+      },
+      {
+        type: "latlng",
+        data: [
+          [40.7, -74.0],
+          [40.71, -74.01],
+        ],
+        series_type: "time",
+        resolution: "high",
+        original_size: 2,
+      },
+      {
+        type: "altitude",
+        data: [15.2, 15.5],
+        series_type: "time",
+        resolution: "high",
+        original_size: 2,
+      },
+      {
+        type: "distance",
+        data: [0, 8.5],
+        series_type: "time",
+        resolution: "high",
+        original_size: 2,
+      },
+      { type: "temp", data: [22, 23], series_type: "time", resolution: "high", original_size: 2 },
+      {
+        type: "grade_smooth",
+        data: [0.5, 1.0],
+        series_type: "time",
+        resolution: "high",
+        original_size: 2,
+      },
+    ];
+
+    const mockFetch: typeof globalThis.fetch = async (
+      input: string | URL | Request,
+    ): Promise<Response> => {
+      const url = String(input);
+      expect(url).toContain("activities/12345/streams");
+      return Response.json(apiResponse);
+    };
+
+    const client = new StravaClient("token", mockFetch, 0);
+    const streams = await client.getActivityStreams(12345);
+
+    // Verify all 10 STREAM_KEYS are present in the result
+    expect(streams.time).toBeDefined();
+    expect(streams.time?.data).toEqual([0, 1]);
+    expect(streams.heartrate).toBeDefined();
+    expect(streams.heartrate?.data).toEqual([130, 135]);
+    expect(streams.watts).toBeDefined();
+    expect(streams.watts?.data).toEqual([200, 210]);
+    expect(streams.cadence).toBeDefined();
+    expect(streams.cadence?.data).toEqual([85, 88]);
+    expect(streams.velocity_smooth).toBeDefined();
+    expect(streams.velocity_smooth?.data).toEqual([8.5, 8.7]);
+    expect(streams.latlng).toBeDefined();
+    expect(streams.latlng?.data).toEqual([
+      [40.7, -74.0],
+      [40.71, -74.01],
+    ]);
+    expect(streams.altitude).toBeDefined();
+    expect(streams.altitude?.data).toEqual([15.2, 15.5]);
+    expect(streams.distance).toBeDefined();
+    expect(streams.distance?.data).toEqual([0, 8.5]);
+    expect(streams.temp).toBeDefined();
+    expect(streams.temp?.data).toEqual([22, 23]);
+    expect(streams.grade_smooth).toBeDefined();
+    expect(streams.grade_smooth?.data).toEqual([0.5, 1.0]);
+  });
+
+  it("filters out unknown stream types via isStreamKey", async () => {
+    const apiResponse = [
+      { type: "time", data: [0], series_type: "time", resolution: "high", original_size: 1 },
+      {
+        type: "unknown_stream",
+        data: [42],
+        series_type: "time",
+        resolution: "high",
+        original_size: 1,
+      },
+    ];
+
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return Response.json(apiResponse);
+    };
+
+    const client = new StravaClient("token", mockFetch, 0);
+    const streams = await client.getActivityStreams(1);
+
+    expect(streams.time).toBeDefined();
+    // unknown_stream should not appear in the result
+    expect(Object.keys(streams)).toEqual(["time"]);
+  });
+
+  it("sends request to correct Strava API URL with query params", async () => {
+    let capturedUrl = "";
+    const mockFetch: typeof globalThis.fetch = async (
+      input: string | URL | Request,
+    ): Promise<Response> => {
+      capturedUrl = String(input);
+      return Response.json([]);
+    };
+
+    const client = new StravaClient("token", mockFetch, 0);
+    await client.getActivityStreams(99999);
+
+    // Verify base URL is the Strava API
+    expect(capturedUrl).toContain("https://www.strava.com/api/v3/");
+    expect(capturedUrl).toContain("activities/99999/streams");
+    expect(capturedUrl).toContain("keys=");
+    // Verify all stream keys are requested
+    for (const key of [
+      "time",
+      "heartrate",
+      "watts",
+      "cadence",
+      "velocity_smooth",
+      "latlng",
+      "altitude",
+      "distance",
+      "temp",
+      "grade_smooth",
+    ]) {
+      expect(capturedUrl).toContain(key);
+    }
+  });
+});
+
+// ============================================================
+// STRAVA_API_BASE — assert exact URL used by StravaClient
+// ============================================================
+
+describe("StravaClient — API base URL", () => {
+  it("uses https://www.strava.com/api/v3/ as the base URL for all requests", async () => {
+    let capturedUrl = "";
+    const mockFetch: typeof globalThis.fetch = async (
+      input: string | URL | Request,
+    ): Promise<Response> => {
+      capturedUrl = String(input);
+      return Response.json([]);
+    };
+
+    const client = new StravaClient("token", mockFetch, 0);
+    await client.getActivities(0);
+
+    expect(capturedUrl).toMatch(/^https:\/\/www\.strava\.com\/api\/v3\//);
+  });
+
+  it("getActivity fetches the exact Strava activities endpoint", async () => {
+    let capturedUrl = "";
+    const mockFetch: typeof globalThis.fetch = async (
+      input: string | URL | Request,
+    ): Promise<Response> => {
+      capturedUrl = String(input);
+      return Response.json(sampleActivity);
+    };
+
+    const client = new StravaClient("token", mockFetch, 0);
+    await client.getActivity(42);
+    expect(capturedUrl).toBe("https://www.strava.com/api/v3/activities/42");
+  });
+
+  it("sends Authorization Bearer header with access token", async () => {
+    let capturedHeaders: HeadersInit | undefined;
+    const mockFetch: typeof globalThis.fetch = async (
+      _input: string | URL | Request,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      capturedHeaders = init?.headers;
+      return Response.json([]);
+    };
+
+    const client = new StravaClient("my-secret-token", mockFetch, 0);
+    await client.getActivities(0);
+    expect(capturedHeaders).toEqual({ Authorization: "Bearer my-secret-token" });
+  });
+});
+
+// ============================================================
+// STRAVA_THROTTLE_MS export value
+// ============================================================
+
+describe("STRAVA_THROTTLE_MS", () => {
+  it("is exactly 10000ms", () => {
+    expect(STRAVA_THROTTLE_MS).toBe(10_000);
   });
 });

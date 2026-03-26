@@ -183,7 +183,7 @@ export class ZwiftProvider implements SyncProvider {
                             heartRate: s.heartRate,
                             power: s.power,
                             cadence: s.cadence,
-                            speed: s.speed,
+                            // Virtual rides have no meaningful speed — omit it
                             altitude: s.altitude,
                             lat: s.lat,
                             lng: s.lng,

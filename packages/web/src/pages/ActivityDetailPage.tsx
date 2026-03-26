@@ -1,7 +1,8 @@
+import { formatActivityTypeLabel } from "@dofek/training/training";
 import type { ActivityHrZone } from "@dofek/zones/zones";
 import { HEART_RATE_ZONE_COLORS } from "@dofek/zones/zones";
-import { Link, useParams } from "@tanstack/react-router";
-import { useEffect, useRef } from "react";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
+import { useEffect, useRef, useState } from "react";
 import type { ActivityDetail, StreamPoint } from "../../../server/src/routers/activity.ts";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { DofekChart } from "../components/DofekChart.tsx";
@@ -68,12 +69,15 @@ export function ActivityDetailPage() {
 
   return (
     <PageLayout>
-      <div className="flex items-center gap-2 text-xs text-subtle">
-        <Link to="/dashboard" className="hover:text-foreground">
-          Dashboard
-        </Link>
-        <span>/</span>
-        <span className="text-foreground">{activity.name ?? activity.activityType}</span>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-xs text-subtle">
+          <Link to="/dashboard" className="hover:text-foreground">
+            Dashboard
+          </Link>
+          <span>/</span>
+          <span className="text-foreground">{activity.name ?? activity.activityType}</span>
+        </div>
+        <DeleteActivityButton activityId={id} />
       </div>
 
       <ActivityHeader activity={activity} units={units} />
@@ -127,6 +131,52 @@ export function ActivityDetailPage() {
   );
 }
 
+function DeleteActivityButton({ activityId }: { activityId: string }) {
+  const [showConfirm, setShowConfirm] = useState(false);
+  const navigate = useNavigate();
+  const trpcUtils = trpc.useUtils();
+  const deleteMutation = trpc.activity.delete.useMutation({
+    onSuccess: async () => {
+      await trpcUtils.activity.list.invalidate();
+      navigate({ to: "/dashboard" });
+    },
+  });
+
+  if (showConfirm) {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted">Delete this activity? This cannot be undone.</span>
+        <button
+          type="button"
+          onClick={() => deleteMutation.mutate({ id: activityId })}
+          disabled={deleteMutation.isPending}
+          className="px-3 py-1.5 text-xs rounded bg-red-600 text-white hover:bg-red-500 disabled:opacity-50 transition-colors cursor-pointer"
+        >
+          {deleteMutation.isPending ? "Deleting..." : "Confirm Delete"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowConfirm(false)}
+          disabled={deleteMutation.isPending}
+          className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors cursor-pointer"
+        >
+          Cancel
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setShowConfirm(true)}
+      className="px-3 py-1.5 text-xs rounded bg-accent/10 text-red-400 hover:bg-surface-hover transition-colors cursor-pointer"
+    >
+      Delete Activity
+    </button>
+  );
+}
+
 function ActivityHeader({ activity, units }: { activity: ActivityDetail; units: UnitConverter }) {
   const durationMin =
     activity.startedAt && activity.endedAt
@@ -136,9 +186,9 @@ function ActivityHeader({ activity, units }: { activity: ActivityDetail; units: 
       : null;
 
   const formatDuration = (mins: number) => {
-    const h = Math.floor(mins / 60);
-    const m = mins % 60;
-    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+    const hours = Math.floor(mins / 60);
+    const remainingMinutes = mins % 60;
+    return hours > 0 ? `${hours}h ${remainingMinutes}m` : `${remainingMinutes}m`;
   };
 
   const stats: Array<{ label: string; value: string }> = [];
@@ -178,7 +228,9 @@ function ActivityHeader({ activity, units }: { activity: ActivityDetail; units: 
         <h1 className="text-xl font-semibold text-foreground">
           {activity.name ?? activity.activityType}
         </h1>
-        <span className="text-xs text-subtle capitalize">{activity.activityType}</span>
+        <span className="text-xs text-subtle">
+          {formatActivityTypeLabel(activity.activityType)}
+        </span>
       </div>
       <p className="text-sm text-subtle mb-4">
         {new Date(activity.startedAt).toLocaleDateString(undefined, {
@@ -422,8 +474,8 @@ function MetricsChart({
       data: times,
       axisLabel: {
         formatter: (v: string) => {
-          const d = new Date(v);
-          return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
+          const date = new Date(v);
+          return `${date.getHours().toString().padStart(2, "0")}:${date.getMinutes().toString().padStart(2, "0")}`;
         },
       },
     }),
@@ -452,17 +504,17 @@ function ElevationChart({
     grid: dofekGrid("single", { top: 10, right: 20, bottom: 30, left: 50 }),
     tooltip: dofekTooltip({
       formatter: (params: Array<{ value: number; dataIndex: number }>) => {
-        const p = params[0];
-        if (!p) return "";
-        return `Elevation: ${Math.round(units.convertElevation(p.value))} ${units.elevationLabel}`;
+        const firstParam = params[0];
+        if (!firstParam) return "";
+        return `Elevation: ${Math.round(units.convertElevation(firstParam.value))} ${units.elevationLabel}`;
       },
     }),
     xAxis: dofekAxis.category({
       data: elevPoints.map((p) => p.recordedAt),
       axisLabel: {
         formatter: (v: string) => {
-          const d = new Date(v);
-          return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
+          const date = new Date(v);
+          return `${date.getHours().toString().padStart(2, "0")}:${date.getMinutes().toString().padStart(2, "0")}`;
         },
       },
     }),
@@ -508,9 +560,9 @@ function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: bo
   }
 
   const formatTime = (secs: number) => {
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
-    return m > 0 ? `${m}m ${s}s` : `${s}s`;
+    const minutes = Math.floor(secs / 60);
+    const seconds = secs % 60;
+    return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
   };
 
   const option = {
@@ -518,9 +570,9 @@ function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: bo
     tooltip: dofekTooltip({
       axisPointer: { type: "shadow" },
       formatter: (params: Array<{ name: string; value: number; dataIndex: number }>) => {
-        const p = params[0];
-        if (!p) return "";
-        const zone = zones[p.dataIndex];
+        const firstParam = params[0];
+        if (!firstParam) return "";
+        const zone = zones[firstParam.dataIndex];
         if (!zone) return "";
         const percentage =
           totalSeconds > 0 ? formatNumber((zone.seconds / totalSeconds) * 100) : "0";

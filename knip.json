@@ -28,7 +28,7 @@
         "entry": ["src/**/*.test.{ts,tsx}"]
       }
     },
-    "packages/ios": {
+    "packages/mobile": {
       "ignore": ["**/*"]
     },
     "packages/whoop-whoop": {

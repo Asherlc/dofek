@@ -974,8 +974,10 @@ describe("DEFAULT_PARAMS", () => {
   });
 
   it("readiness weights sum to 1", () => {
-    const w = DEFAULT_PARAMS.readinessWeights;
-    expect(w.hrv + w.restingHr + w.sleep + w.respiratoryRate).toBeCloseTo(1.0);
+    const weights = DEFAULT_PARAMS.readinessWeights;
+    expect(weights.hrv + weights.restingHr + weights.sleep + weights.respiratoryRate).toBeCloseTo(
+      1.0,
+    );
   });
 
   it("stress thresholds are in correct order", () => {

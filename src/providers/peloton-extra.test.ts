@@ -17,7 +17,7 @@ import {
 
 describe("mapFitnessDiscipline — all types", () => {
   it("maps all known disciplines", () => {
-    expect(mapFitnessDiscipline("cycling")).toBe("cycling");
+    expect(mapFitnessDiscipline("cycling")).toBe("indoor_cycling");
     expect(mapFitnessDiscipline("running")).toBe("running");
     expect(mapFitnessDiscipline("walking")).toBe("walking");
     expect(mapFitnessDiscipline("rowing")).toBe("rowing");
@@ -65,7 +65,7 @@ describe("parseWorkout", () => {
   it("parses workout with all fields", () => {
     const parsed = parseWorkout(sampleWorkout);
     expect(parsed.externalId).toBe("workout-123");
-    expect(parsed.activityType).toBe("cycling");
+    expect(parsed.activityType).toBe("indoor_cycling");
     expect(parsed.name).toBe("30 Min HIIT Ride");
     expect(parsed.startedAt).toEqual(new Date(1709200000 * 1000));
     expect(parsed.endedAt).toEqual(new Date(1709203600 * 1000));

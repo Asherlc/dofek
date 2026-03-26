@@ -1,3 +1,4 @@
+import type { CanonicalActivityType } from "@dofek/training/training";
 import { and, eq } from "drizzle-orm";
 import {
   mapSportId,
@@ -20,6 +21,7 @@ import {
   exercise,
   exerciseAlias,
   journalEntry,
+  journalQuestion,
   metricStream,
   sleepSession,
   strengthSet,
@@ -255,7 +257,7 @@ export function parseSleep(record: WhoopSleepRecord): ParsedSleep | null {
 
 export interface ParsedWorkout {
   externalId: string;
-  activityType: string;
+  activityType: CanonicalActivityType;
   startedAt: Date;
   endedAt: Date;
   durationSeconds: number;
@@ -501,29 +503,33 @@ export function parseJournalResponse(raw: unknown): ParsedJournalEntry[] {
 
     if (Array.isArray(answers)) {
       for (const answer of answers) {
-        const a = toRecord(answer);
-        if (!a) continue;
+        const answerRecord = toRecord(answer);
+        if (!answerRecord) continue;
         const question =
-          getString(a, "name") ??
-          getString(a, "behavior") ??
-          getString(a, "question") ??
-          getString(a, "type") ??
+          getString(answerRecord, "name") ??
+          getString(answerRecord, "behavior") ??
+          getString(answerRecord, "question") ??
+          getString(answerRecord, "type") ??
           "unknown";
         const answerNumeric =
-          typeof a.value === "number" ? a.value : typeof a.score === "number" ? a.score : null;
+          typeof answerRecord.value === "number"
+            ? answerRecord.value
+            : typeof answerRecord.score === "number"
+              ? answerRecord.score
+              : null;
         const answerText =
-          typeof a.answer === "string"
-            ? a.answer
-            : typeof a.response === "string"
-              ? a.response
-              : typeof a.value === "string"
-                ? a.value
+          typeof answerRecord.answer === "string"
+            ? answerRecord.answer
+            : typeof answerRecord.response === "string"
+              ? answerRecord.response
+              : typeof answerRecord.value === "string"
+                ? answerRecord.value
                 : null;
         const impactScore =
-          typeof a.impact === "number"
-            ? a.impact
-            : typeof a.impact_score === "number"
-              ? a.impact_score
+          typeof answerRecord.impact === "number"
+            ? answerRecord.impact
+            : typeof answerRecord.impact_score === "number"
+              ? answerRecord.impact_score
               : null;
 
         entries.push({
@@ -1157,18 +1163,38 @@ export class WhoopProvider implements SyncProvider {
           const entries = parseJournalResponse(raw);
           let count = 0;
           for (const entry of entries) {
+            // Ensure the question exists in the reference table
+            await db
+              .insert(journalQuestion)
+              .values({
+                slug: entry.question,
+                displayName: entry.question
+                  .replace(/_/g, " ")
+                  .replace(/\b\w/g, (c) => c.toUpperCase()),
+                category: "custom",
+                dataType: "numeric",
+              })
+              .onConflictDoNothing();
+
+            const userId = options?.userId ?? "00000000-0000-0000-0000-000000000001";
             await db
               .insert(journalEntry)
               .values({
                 date: entry.date.toISOString().split("T")[0] ?? "",
                 providerId: this.id,
-                question: entry.question,
+                userId,
+                questionSlug: entry.question,
                 answerText: entry.answerText,
                 answerNumeric: entry.answerNumeric,
                 impactScore: entry.impactScore,
               })
               .onConflictDoUpdate({
-                target: [journalEntry.providerId, journalEntry.date, journalEntry.question],
+                target: [
+                  journalEntry.userId,
+                  journalEntry.date,
+                  journalEntry.questionSlug,
+                  journalEntry.providerId,
+                ],
                 set: {
                   answerText: entry.answerText,
                   answerNumeric: entry.answerNumeric,

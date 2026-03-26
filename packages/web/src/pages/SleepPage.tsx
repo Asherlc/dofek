@@ -5,11 +5,14 @@ import {
   CorrelationCardSkeleton,
   type Insight,
 } from "../components/CorrelationCard.tsx";
+import { Hypnogram } from "../components/Hypnogram.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { PageSection } from "../components/PageSection.tsx";
 import { SleepChart } from "../components/SleepChart.tsx";
 import { SleepNeedCard } from "../components/SleepNeedCard.tsx";
+import { SleepPerformanceCard } from "../components/SleepPerformanceCard.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
+import { formatDateForQuery } from "../lib/dates.ts";
 import { trpc } from "../lib/trpc.ts";
 import { assertRows } from "../lib/utils.ts";
 
@@ -29,10 +32,13 @@ function isSleepInsight(metric: string): boolean {
 
 export function SleepPage() {
   const [days, setDays] = useState(30);
+  const endDate = useMemo(() => formatDateForQuery(), []);
 
-  const sleepData = trpc.sleep.list.useQuery({ days });
-  const sleepNeed = trpc.sleepNeed.calculate.useQuery();
-  const insightsQuery = trpc.insights.compute.useQuery({ days: Math.max(days, 90) });
+  const sleepData = trpc.sleep.list.useQuery({ days, endDate });
+  const latestStages = trpc.sleep.latestStages.useQuery();
+  const sleepNeed = trpc.sleepNeed.calculate.useQuery({ endDate });
+  const sleepPerformance = trpc.sleepNeed.performance.useQuery({ endDate });
+  const insightsQuery = trpc.insights.compute.useQuery({ days: Math.max(days, 90), endDate });
 
   const sleepInsights = useMemo(() => {
     const all: Insight[] = insightsQuery.data ?? [];
@@ -47,8 +53,11 @@ export function SleepPage() {
       title="Sleep"
       subtitle="Sleep stages, debt, and patterns over time"
     >
-      {/* Sleep Coach */}
-      <SleepNeedCard data={sleepNeed.data} loading={sleepNeed.isLoading} />
+      {/* Sleep Performance Score + Bedtime Recommendation */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <SleepPerformanceCard data={sleepPerformance.data} loading={sleepPerformance.isLoading} />
+        <SleepNeedCard data={sleepNeed.data} loading={sleepNeed.isLoading} />
+      </div>
 
       {/* Sleep Stage Chart */}
       <PageSection title="Sleep Stages">
@@ -56,6 +65,11 @@ export function SleepPage() {
           data={assertRows(sleepData.data, sleepRowSchema)}
           loading={sleepData.isLoading}
         />
+      </PageSection>
+
+      {/* Last Night Hypnogram */}
+      <PageSection title="Last Night">
+        <Hypnogram data={latestStages.data ?? []} loading={latestStages.isLoading} />
       </PageSection>
 
       {/* Sleep Insights */}

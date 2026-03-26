@@ -184,7 +184,7 @@ describe("StravaProvider.sync() (integration)", () => {
 
     const ride = rows.find((r) => r.externalId === "1001");
     if (!ride) throw new Error("expected activity 1001");
-    expect(ride.activityType).toBe("cycling");
+    expect(ride.activityType).toBe("road_cycling");
     expect(ride.name).toBe("Morning Ride");
 
     const run = rows.find((r) => r.externalId === "1002");

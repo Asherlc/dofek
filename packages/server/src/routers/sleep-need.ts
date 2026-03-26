@@ -1,7 +1,22 @@
+import {
+  computeRecommendedBedtime,
+  computeSleepPerformance,
+  type SleepPerformanceResult,
+} from "@dofek/scoring/sleep-performance";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { dateWindowStart, endDateSchema, timestampWindowStart } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+
+export interface SleepPerformanceInfo extends SleepPerformanceResult {
+  actualMinutes: number;
+  neededMinutes: number;
+  efficiency: number;
+  recommendedBedtime: string;
+  /** Date of the sleep session (wake-up date), for freshness checking */
+  sleepDate: string;
+}
 
 export interface SleepNeedResult {
   /** Personalized baseline sleep need in minutes (derived from historical optimum) */
@@ -12,15 +27,19 @@ export interface SleepNeedResult {
   accumulatedDebtMinutes: number;
   /** Total recommended sleep tonight (minutes) */
   totalNeedMinutes: number;
-  /** Last 7 nights: actual vs needed */
+  /** Last 7 calendar nights: actual vs needed (null = no data for that night) */
   recentNights: SleepNight[];
+  /** Whether yesterday's sleep data is available (required for tonight's recommendation) */
+  canRecommend: boolean;
 }
 
 export interface SleepNight {
   date: string;
-  actualMinutes: number;
+  /** Actual sleep minutes, or null if no data for this night */
+  actualMinutes: number | null;
   neededMinutes: number;
-  debtMinutes: number;
+  /** Sleep debt for this night, or null if no data */
+  debtMinutes: number | null;
 }
 
 /**
@@ -37,8 +56,9 @@ export const sleepNeedRouter = router({
    * Sleep Need Calculator — like Whoop's Sleep Coach.
    * Computes personalized sleep need and accumulated debt.
    */
-  calculate: cachedProtectedQuery(CacheTTL.SHORT).query(
-    async ({ ctx }): Promise<SleepNeedResult> => {
+  calculate: cachedProtectedQuery(CacheTTL.SHORT)
+    .input(z.object({ endDate: endDateSchema }))
+    .query(async ({ ctx, input }): Promise<SleepNeedResult> => {
       const sleepNeedRowSchema = z.object({
         date: dateStringSchema,
         duration_minutes: z.coerce.number(),
@@ -54,12 +74,12 @@ export const sleepNeedRouter = router({
         sleepNeedRowSchema,
         sql`WITH sleep_nights AS (
               SELECT
-                started_at::date AS date,
+                (started_at AT TIME ZONE ${ctx.timezone})::date AS date,
                 COALESCE(duration_minutes, EXTRACT(EPOCH FROM (ended_at - started_at)) / 60)::int AS duration_minutes
               FROM fitness.v_sleep
               WHERE user_id = ${ctx.userId}
                 AND is_nap = false
-                AND started_at > NOW() - INTERVAL '90 days'
+                AND started_at > ${timestampWindowStart(input.endDate, 90)}
               ORDER BY started_at ASC
             ),
             daily_hrv AS (
@@ -68,7 +88,7 @@ export const sleepNeedRouter = router({
                 hrv
               FROM fitness.v_daily_metrics
               WHERE user_id = ${ctx.userId}
-                AND date > CURRENT_DATE - 90
+                AND date > ${dateWindowStart(input.endDate, 90)}
                 AND hrv IS NOT NULL
             ),
             sleep_with_next_hrv AS (
@@ -91,7 +111,7 @@ export const sleepNeedRouter = router({
               ), 0) AS load
               FROM fitness.activity_summary asum
               WHERE asum.user_id = ${ctx.userId}
-                AND asum.started_at::date = CURRENT_DATE - 1
+                AND (asum.started_at AT TIME ZONE ${ctx.timezone})::date = ${sql`${input.endDate}::date - 1`}
                 AND asum.ended_at IS NOT NULL
                 AND asum.avg_hr IS NOT NULL
             )
@@ -138,18 +158,41 @@ export const sleepNeedRouter = router({
 
       const totalNeedMinutes = baselineMinutes + strainDebtMinutes + debtRecoveryMinutes;
 
-      // Recent nights with debt tracking
-      const last7 = nights.slice(-7);
-      const recentNights: SleepNight[] = last7.map((n) => {
-        const actual = Number(n.duration_minutes);
-        const needed = baselineMinutes;
+      // Build calendar of last 7 dates (endDate-6 through endDate)
+      const nightsByDate = new Map(nights.map((n) => [n.date, n]));
+      const calendarDates: string[] = [];
+      const endDate = new Date(`${input.endDate}T00:00:00`);
+      for (let i = 6; i >= 0; i--) {
+        const calendarDay = new Date(endDate);
+        calendarDay.setDate(calendarDay.getDate() - i);
+        calendarDates.push(calendarDay.toISOString().slice(0, 10));
+      }
+
+      // Map all 7 calendar dates to nights (null for missing)
+      const recentNights: SleepNight[] = calendarDates.map((date) => {
+        const night = nightsByDate.get(date);
+        if (night) {
+          const actual = Number(night.duration_minutes);
+          return {
+            date,
+            actualMinutes: Math.round(actual),
+            neededMinutes: baselineMinutes,
+            debtMinutes: Math.max(0, Math.round(baselineMinutes - actual)),
+          };
+        }
         return {
-          date: n.date,
-          actualMinutes: Math.round(actual),
-          neededMinutes: needed,
-          debtMinutes: Math.max(0, Math.round(needed - actual)),
+          date,
+          actualMinutes: null,
+          neededMinutes: baselineMinutes,
+          debtMinutes: null,
         };
       });
+
+      // canRecommend: yesterday's sleep must be present for tonight's recommendation
+      const yesterday = new Date(endDate);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().slice(0, 10);
+      const canRecommend = nightsByDate.has(yesterdayStr);
 
       return {
         baselineMinutes,
@@ -157,7 +200,71 @@ export const sleepNeedRouter = router({
         accumulatedDebtMinutes: Math.round(accumulatedDebt),
         totalNeedMinutes,
         recentNights,
+        canRecommend,
       };
-    },
-  ),
+    }),
+
+  /**
+   * Sleep performance score for last night: how well did you sleep relative to need.
+   * Returns score (0-100), tier (Peak/Perform/Get By/Low), and recommended bedtime.
+   */
+  performance: cachedProtectedQuery(CacheTTL.MEDIUM)
+    .input(z.object({ endDate: endDateSchema }))
+    .query(async ({ ctx, input }): Promise<SleepPerformanceInfo | null> => {
+      // Get last night's sleep
+      const tz = ctx.timezone;
+      const sleepRows = await executeWithSchema(
+        ctx.db,
+        z.object({
+          duration_minutes: z.number().nullable(),
+          efficiency_pct: z.number().nullable(),
+          sleep_date: z.string(),
+        }),
+        sql`
+          SELECT duration_minutes, efficiency_pct,
+            (COALESCE(ended_at, started_at + interval '8 hours') AT TIME ZONE ${tz})::date::text AS sleep_date
+          FROM fitness.sleep_session
+          WHERE user_id = ${ctx.userId}
+            AND sleep_type = 'sleep'
+          ORDER BY started_at DESC
+          LIMIT 1
+        `,
+      );
+
+      const lastSleep = sleepRows[0];
+      if (!lastSleep || lastSleep.duration_minutes == null) {
+        return null;
+      }
+
+      const actualMinutes = lastSleep.duration_minutes;
+      const efficiency = lastSleep.efficiency_pct ?? 85;
+
+      // Get sleep need (reuse the baseline calculation logic)
+      const baselineRows = await executeWithSchema(
+        ctx.db,
+        z.object({ avg_duration: z.coerce.number().nullable() }),
+        sql`
+          SELECT AVG(duration_minutes) AS avg_duration
+          FROM fitness.sleep_session
+          WHERE user_id = ${ctx.userId}
+            AND sleep_type = 'sleep'
+            AND started_at > ${timestampWindowStart(input.endDate, 90)}
+            AND duration_minutes IS NOT NULL
+        `,
+      );
+
+      const neededMinutes = baselineRows[0]?.avg_duration ?? 480;
+
+      const result = computeSleepPerformance(actualMinutes, neededMinutes, efficiency);
+      const recommendedBedtime = computeRecommendedBedtime("07:00", Math.round(neededMinutes));
+
+      return {
+        ...result,
+        actualMinutes,
+        neededMinutes: Math.round(neededMinutes),
+        efficiency,
+        recommendedBedtime,
+        sleepDate: lastSleep.sleep_date,
+      };
+    }),
 });

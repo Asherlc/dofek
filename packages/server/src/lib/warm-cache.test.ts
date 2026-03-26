@@ -14,7 +14,7 @@ vi.mock("../router.ts", () => ({
         sleep: { list: mockFn },
         sync: { providers: mockFn, providerStats: mockFn },
         insights: { compute: mockFn },
-        training: { weeklyVolume: mockFn, hrZones: mockFn },
+        training: { weeklyVolume: mockFn, hrZones: mockFn, nextWorkout: mockFn },
         pmc: { chart: mockFn },
         power: { powerCurve: mockFn, eftpTrend: mockFn },
         efficiency: {

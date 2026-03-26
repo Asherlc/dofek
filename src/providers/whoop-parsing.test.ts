@@ -246,6 +246,49 @@ describe("parseSleep — invalid timestamps", () => {
     expect(parsed?.startedAt).toEqual(new Date("2026-02-28T23:00:00.000Z"));
     expect(parsed?.endedAt).toEqual(new Date("2026-03-01T07:00:00.000Z"));
   });
+
+  it("falls back to `during` field when start/end are missing", () => {
+    const record: WhoopSleepRecord = {
+      id: 500,
+      user_id: 10129,
+      created_at: "2026-03-01T06:00:00Z",
+      updated_at: "2026-03-01T06:30:00Z",
+      timezone_offset: "-05:00",
+      nap: false,
+      score_state: "SCORED",
+      during: "['2026-03-24T05:30:00.000Z','2026-03-24T13:15:00.000Z')",
+      score: {
+        stage_summary: {
+          total_in_bed_time_milli: 27900000,
+          total_awake_time_milli: 1800000,
+          total_no_data_time_milli: 0,
+          total_light_sleep_time_milli: 10800000,
+          total_slow_wave_sleep_time_milli: 7200000,
+          total_rem_sleep_time_milli: 8100000,
+          sleep_cycle_count: 4,
+          disturbance_count: 2,
+        },
+        sleep_needed: {
+          baseline_milli: 27000000,
+          need_from_sleep_debt_milli: 0,
+          need_from_recent_strain_milli: 1800000,
+          need_from_recent_nap_milli: 0,
+        },
+        respiratory_rate: 15.5,
+        sleep_performance_percentage: 96,
+        sleep_consistency_percentage: 85,
+        sleep_efficiency_percentage: 93.5,
+      },
+    };
+
+    const parsed = parseSleep(record);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.startedAt).toEqual(new Date("2026-03-24T05:30:00.000Z"));
+    expect(parsed?.endedAt).toEqual(new Date("2026-03-24T13:15:00.000Z"));
+    expect(parsed?.deepMinutes).toBe(120);
+    expect(parsed?.remMinutes).toBe(135);
+    expect(parsed?.lightMinutes).toBe(180);
+  });
 });
 
 describe("parseInlineSleep — BFF v0 cycle.sleeps format", () => {
@@ -484,7 +527,7 @@ describe("parseWorkout — edge cases", () => {
     expect(parseWorkout(makeRecord(33)).activityType).toBe("swimming");
     expect(parseWorkout(makeRecord(52)).activityType).toBe("hiking");
     expect(parseWorkout(makeRecord(63)).activityType).toBe("walking");
-    expect(parseWorkout(makeRecord(45)).activityType).toBe("weightlifting");
+    expect(parseWorkout(makeRecord(45)).activityType).toBe("strength");
     expect(parseWorkout(makeRecord(18)).activityType).toBe("rowing");
     expect(parseWorkout(makeRecord(65)).activityType).toBe("elliptical");
     expect(parseWorkout(makeRecord(29)).activityType).toBe("skiing");
