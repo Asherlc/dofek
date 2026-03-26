@@ -198,7 +198,14 @@ async function ensureProvider(db: Database) {
   );
 }
 
-/** Extract date string (YYYY-MM-DD) from an ISO timestamp */
+/** Extract date string (YYYY-MM-DD) from an ISO timestamp.
+ *
+ * When the timestamp includes a timezone offset (e.g. "2024-01-14T21:30:00-0700"),
+ * the first 10 characters are the local date. For UTC timestamps ending in "Z",
+ * the first 10 characters are the UTC date — which may differ from the user's
+ * local date for evening readings. The iOS app should send local-timezone offsets
+ * so this function returns the correct calendar date.
+ */
 function extractDate(isoString: string): string {
   return isoString.slice(0, 10);
 }

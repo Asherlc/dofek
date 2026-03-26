@@ -59,13 +59,36 @@ final class HealthKitQueriesTests: XCTestCase {
 
     // MARK: - formatDate
 
-    func testFormatDateProducesISO8601() {
-        // 2024-01-15T12:00:00Z
+    func testFormatDateProducesISO8601WithLocalTimezone() {
+        // 2024-01-15T12:00:00Z in UTC
         let date = Date(timeIntervalSince1970: 1705320000)
         let formatted = HealthKitQueries.formatDate(date)
 
-        XCTAssertTrue(formatted.contains("2024-01-15"))
-        XCTAssertTrue(formatted.hasSuffix("Z"))
+        // The formatted string should contain the local date representation.
+        // The date portion (first 10 chars) should be the local calendar date,
+        // and the string should include a timezone offset (not necessarily "Z").
+        XCTAssertTrue(formatted.count >= 19, "Should be a full ISO 8601 timestamp")
+
+        // Verify round-trip: parsing the formatted string should yield the same instant
+        guard let parsed = HealthKitQueries.parseDate(formatted) else {
+            XCTFail("Failed to parse formatted date")
+            return
+        }
+        XCTAssertEqual(parsed.timeIntervalSince1970, date.timeIntervalSince1970, accuracy: 1)
+    }
+
+    func testFormatDateLocalDateMatchesCalendar() {
+        // Verify the first 10 characters of formatDate output match the local calendar date.
+        // This is critical because the server uses isoString.slice(0, 10) to extract the date.
+        let date = Date(timeIntervalSince1970: 1705320000) // 2024-01-15T12:00:00Z
+        let formatted = HealthKitQueries.formatDate(date)
+        let datePrefix = String(formatted.prefix(10))
+
+        let calendar = Calendar.current
+        let components = calendar.dateComponents([.year, .month, .day], from: date)
+        let expected = String(format: "%04d-%02d-%02d", components.year!, components.month!, components.day!)
+
+        XCTAssertEqual(datePrefix, expected)
     }
 
     func testFormatDateParseRoundTrip() {
@@ -75,7 +98,12 @@ final class HealthKitQueriesTests: XCTestCase {
             return
         }
         let formatted = HealthKitQueries.formatDate(date)
-        XCTAssertEqual(formatted, original)
+        // Parse both and verify they represent the same instant
+        guard let reparsed = HealthKitQueries.parseDate(formatted) else {
+            XCTFail("Failed to re-parse formatted date")
+            return
+        }
+        XCTAssertEqual(reparsed.timeIntervalSince1970, date.timeIntervalSince1970, accuracy: 1)
     }
 
     func testFormatDateParseRoundTripStripsSubseconds() {
@@ -86,8 +114,13 @@ final class HealthKitQueriesTests: XCTestCase {
             return
         }
         let formatted = HealthKitQueries.formatDate(date)
-        // formatDate uses ISO8601DateFormatter which doesn't emit fractional seconds by default
-        XCTAssertTrue(formatted.hasPrefix("2024-06-15T08:30:00"))
+        // Verify the formatted string represents the same time
+        guard let reparsed = HealthKitQueries.parseDate(formatted) else {
+            XCTFail("Failed to re-parse formatted date")
+            return
+        }
+        // Allow 1 second tolerance since subseconds are dropped
+        XCTAssertEqual(reparsed.timeIntervalSince1970, date.timeIntervalSince1970, accuracy: 1)
     }
 
     // MARK: - datePredicate

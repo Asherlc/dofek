@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  type InlineSleepRecord,
   parseHeartRateValues,
+  parseInlineSleep,
   parseJournalResponse,
   parseRecovery,
   parseSleep,
@@ -112,6 +114,67 @@ describe("parseRecovery — edge cases", () => {
     expect(parsed.hrv).toBe(45.0);
     expect(parsed.spo2).toBeUndefined();
     expect(parsed.skinTemp).toBeUndefined();
+  });
+
+  it("parses BFF v0 format with 'state' instead of 'score_state' and flat biometrics", () => {
+    // Matches the actual production API response as of 2026-03-26:
+    // keys: responded,state,recovery_score,resting_heart_rate,hrv_rmssd,
+    //       calibrating,skin_temp_celsius,spo2,created_at,updated_at,activity_id,user_id
+    const record: WhoopRecoveryRecord = {
+      user_id: 10129,
+      created_at: "2026-03-26T06:00:00Z",
+      updated_at: "2026-03-26T06:30:00Z",
+      state: "complete",
+      recovery_score: 72,
+      resting_heart_rate: 63,
+      hrv_rmssd: 0.045, // seconds
+      spo2: 96.5,
+      skin_temp_celsius: 34.857,
+      calibrating: false,
+    };
+
+    const parsed = parseRecovery(record);
+    expect(parsed.restingHr).toBe(63);
+    expect(parsed.hrv).toBe(45); // 0.045 * 1000 = 45ms
+    expect(parsed.spo2).toBe(96.5);
+    expect(parsed.skinTemp).toBe(34.857);
+  });
+
+  it("parses BFF v0 format without any state field when biometrics are present", () => {
+    // API can return recovery with no score_state AND no state field
+    const record: WhoopRecoveryRecord = {
+      user_id: 10129,
+      created_at: "2026-03-26T06:00:00Z",
+      updated_at: "2026-03-26T06:30:00Z",
+      recovery_score: 68,
+      resting_heart_rate: 62,
+      hrv_rmssd: 0.038,
+      spo2: 97.0,
+      skin_temp_celsius: 34.16,
+      calibrating: false,
+    };
+
+    const parsed = parseRecovery(record);
+    expect(parsed.restingHr).toBe(62);
+    expect(parsed.hrv).toBe(38);
+    expect(parsed.spo2).toBe(97.0);
+    expect(parsed.skinTemp).toBe(34.16);
+  });
+
+  it("uses spo2 field when spo2_percentage is missing (BFF v0)", () => {
+    const record: WhoopRecoveryRecord = {
+      user_id: 10129,
+      created_at: "2026-03-26T06:00:00Z",
+      updated_at: "2026-03-26T06:30:00Z",
+      state: "complete",
+      resting_heart_rate: 55,
+      hrv_rmssd: 0.06,
+      spo2: 98.2,
+      skin_temp_celsius: 33.5,
+    };
+
+    const parsed = parseRecovery(record);
+    expect(parsed.spo2).toBe(98.2);
   });
 });
 
@@ -225,6 +288,84 @@ describe("parseSleep — invalid timestamps", () => {
     expect(parsed?.deepMinutes).toBe(120);
     expect(parsed?.remMinutes).toBe(135);
     expect(parsed?.lightMinutes).toBe(180);
+  });
+});
+
+describe("parseInlineSleep — BFF v0 cycle.sleeps format", () => {
+  function inlineSleep(overrides: Partial<InlineSleepRecord> = {}): InlineSleepRecord {
+    return {
+      during: "['2026-03-26T06:28:43.510Z','2026-03-26T14:29:45.070Z')",
+      state: "complete",
+      time_in_bed: 28861560,
+      wake_duration: 3063020,
+      light_sleep_duration: 15647370,
+      slow_wave_sleep_duration: 5298540,
+      rem_sleep_duration: 4852630,
+      in_sleep_efficiency: 89.4,
+      sleep_need: 29424206,
+      habitual_sleep_need: 27145502,
+      debt_post: 2330785,
+      need_from_strain: 2278704,
+      credit_from_naps: 0,
+      significant: true,
+      ...overrides,
+    };
+  }
+
+  it("parses complete inline sleep with all fields", () => {
+    const parsed = parseInlineSleep(inlineSleep(), 0);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.startedAt).toEqual(new Date("2026-03-26T06:28:43.510Z"));
+    expect(parsed?.endedAt).toEqual(new Date("2026-03-26T14:29:45.070Z"));
+    expect(parsed?.durationMinutes).toBe(430); // (28861560 - 3063020) / 60000
+    expect(parsed?.deepMinutes).toBe(88); // 5298540 / 60000
+    expect(parsed?.remMinutes).toBe(81); // 4852630 / 60000
+    expect(parsed?.lightMinutes).toBe(261); // 15647370 / 60000
+    expect(parsed?.awakeMinutes).toBe(51); // 3063020 / 60000
+    expect(parsed?.efficiencyPct).toBe(89.4);
+    expect(parsed?.sleepType).toBe("sleep");
+    expect(parsed?.isNap).toBe(false);
+    expect(parsed?.sleepNeedBaselineMinutes).toBe(452); // 27145502 / 60000
+    expect(parsed?.sleepNeedFromDebtMinutes).toBe(39); // 2330785 / 60000
+    expect(parsed?.sleepNeedFromStrainMinutes).toBe(38); // 2278704 / 60000
+    expect(parsed?.sleepNeedFromNapMinutes).toBe(0);
+  });
+
+  it("returns null for invalid during range", () => {
+    const parsed = parseInlineSleep(inlineSleep({ during: "invalid" }), 0);
+    expect(parsed).toBeNull();
+  });
+
+  it("marks non-significant sleeps as naps", () => {
+    const parsed = parseInlineSleep(inlineSleep({ significant: false }), 0);
+    expect(parsed?.sleepType).toBe("nap");
+    expect(parsed?.isNap).toBe(true);
+  });
+
+  it("generates unique externalId from timestamp and index", () => {
+    const parsed0 = parseInlineSleep(inlineSleep(), 0);
+    const parsed1 = parseInlineSleep(inlineSleep(), 1);
+    expect(parsed0?.externalId).not.toBe(parsed1?.externalId);
+    expect(parsed0?.externalId).toContain("inline-");
+  });
+
+  it("handles missing optional fields", () => {
+    const parsed = parseInlineSleep(
+      inlineSleep({
+        in_sleep_efficiency: undefined,
+        habitual_sleep_need: undefined,
+        debt_post: undefined,
+        need_from_strain: undefined,
+        credit_from_naps: undefined,
+      }),
+      0,
+    );
+    expect(parsed).not.toBeNull();
+    expect(parsed?.efficiencyPct).toBeUndefined();
+    expect(parsed?.sleepNeedBaselineMinutes).toBeUndefined();
+    expect(parsed?.sleepNeedFromDebtMinutes).toBeUndefined();
+    expect(parsed?.sleepNeedFromStrainMinutes).toBeUndefined();
+    expect(parsed?.sleepNeedFromNapMinutes).toBeUndefined();
   });
 });
 
