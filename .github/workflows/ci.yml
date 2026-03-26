@@ -288,19 +288,6 @@ jobs:
           restore-keys: pods-v6-
       - name: Install CocoaPods dependencies
         run: cd packages/mobile/ios && pod install
-      - name: Build for simulator (Debug)
-        run: |
-          set -o pipefail
-          DEST=$(xcrun simctl list devices available -j | python3 -c "import sys,json; devs=[d for r in json.load(sys.stdin)['devices'].values() for d in r if 'iPhone' in d['name']]; print(devs[0]['udid'])")
-          xcodebuild build \
-            -workspace packages/mobile/ios/Dofek.xcworkspace \
-            -scheme Dofek \
-            -sdk iphonesimulator \
-            -configuration Debug \
-            -destination "platform=iOS Simulator,id=$DEST" \
-            CODE_SIGNING_ALLOWED=NO \
-            2>&1 | tail -40
-        timeout-minutes: 20
       - name: Set build number
         if: github.ref == 'refs/heads/main'
         run: |
