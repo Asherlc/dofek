@@ -21,18 +21,22 @@ export interface WhoopRecoveryScore {
 }
 
 export interface WhoopRecoveryRecord {
-  cycle_id: number;
-  sleep_id: number;
+  cycle_id?: number;
+  sleep_id?: number;
   user_id: number;
   created_at: string;
   updated_at: string;
-  score_state: string;
+  // Legacy uses "score_state", BFF v0 uses "state"
+  score_state?: string;
+  state?: string;
   score?: WhoopRecoveryScore;
   // BFF v0 flat fields (fields at top level instead of nested under `score`)
+  activity_id?: string; // UUID — replaces cycle_id in BFF v0
   recovery_score?: number;
   resting_heart_rate?: number;
   hrv_rmssd?: number; // seconds (not milliseconds)
   spo2_percentage?: number;
+  spo2?: number; // BFF v0 uses `spo2` instead of `spo2_percentage`
   skin_temp_celsius?: number;
   calibrating?: boolean;
 }
@@ -69,11 +73,13 @@ export interface WhoopSleepRecord {
   user_id: number;
   created_at: string;
   updated_at: string;
-  start: string;
-  end: string;
+  start?: string;
+  end?: string;
+  during?: string; // BFF v0: Postgres range format "['start','end')"
   timezone_offset: string;
   nap: boolean;
-  score_state: string;
+  score_state?: string;
+  state?: string; // BFF v0 uses "state" instead of "score_state"
   score?: WhoopSleepScore;
 }
 

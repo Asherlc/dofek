@@ -113,6 +113,67 @@ describe("parseRecovery — edge cases", () => {
     expect(parsed.spo2).toBeUndefined();
     expect(parsed.skinTemp).toBeUndefined();
   });
+
+  it("parses BFF v0 format with 'state' instead of 'score_state' and flat biometrics", () => {
+    // Matches the actual production API response as of 2026-03-26:
+    // keys: responded,state,recovery_score,resting_heart_rate,hrv_rmssd,
+    //       calibrating,skin_temp_celsius,spo2,created_at,updated_at,activity_id,user_id
+    const record: WhoopRecoveryRecord = {
+      user_id: 10129,
+      created_at: "2026-03-26T06:00:00Z",
+      updated_at: "2026-03-26T06:30:00Z",
+      state: "complete",
+      recovery_score: 72,
+      resting_heart_rate: 63,
+      hrv_rmssd: 0.045, // seconds
+      spo2: 96.5,
+      skin_temp_celsius: 34.857,
+      calibrating: false,
+    };
+
+    const parsed = parseRecovery(record);
+    expect(parsed.restingHr).toBe(63);
+    expect(parsed.hrv).toBe(45); // 0.045 * 1000 = 45ms
+    expect(parsed.spo2).toBe(96.5);
+    expect(parsed.skinTemp).toBe(34.857);
+  });
+
+  it("parses BFF v0 format without any state field when biometrics are present", () => {
+    // API can return recovery with no score_state AND no state field
+    const record: WhoopRecoveryRecord = {
+      user_id: 10129,
+      created_at: "2026-03-26T06:00:00Z",
+      updated_at: "2026-03-26T06:30:00Z",
+      recovery_score: 68,
+      resting_heart_rate: 62,
+      hrv_rmssd: 0.038,
+      spo2: 97.0,
+      skin_temp_celsius: 34.16,
+      calibrating: false,
+    };
+
+    const parsed = parseRecovery(record);
+    expect(parsed.restingHr).toBe(62);
+    expect(parsed.hrv).toBe(38);
+    expect(parsed.spo2).toBe(97.0);
+    expect(parsed.skinTemp).toBe(34.16);
+  });
+
+  it("uses spo2 field when spo2_percentage is missing (BFF v0)", () => {
+    const record: WhoopRecoveryRecord = {
+      user_id: 10129,
+      created_at: "2026-03-26T06:00:00Z",
+      updated_at: "2026-03-26T06:30:00Z",
+      state: "complete",
+      resting_heart_rate: 55,
+      hrv_rmssd: 0.06,
+      spo2: 98.2,
+      skin_temp_celsius: 33.5,
+    };
+
+    const parsed = parseRecovery(record);
+    expect(parsed.spo2).toBe(98.2);
+  });
 });
 
 describe("parseSleep — invalid timestamps", () => {
