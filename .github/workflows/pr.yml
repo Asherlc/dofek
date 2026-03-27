@@ -17,10 +17,12 @@ jobs:
           fetch-depth: 0
       - name: Check PR size
         run: |
-          STATS=$(git diff --numstat origin/${{ github.base_ref }}...HEAD)
+          # Use -w to ignore whitespace-only changes (formatting) so auto-formatter
+          # runs don't inflate the count and block PRs.
+          STATS=$(git diff -w --numstat origin/${{ github.base_ref }}...HEAD)
           ADDITIONS=$(echo "$STATS" | awk '{ add += $1 } END { print add+0 }')
           DELETIONS=$(echo "$STATS" | awk '{ del += $2 } END { print del+0 }')
-          FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | wc -l | tr -d ' ')
+          FILES=$(git diff -w --name-only origin/${{ github.base_ref }}...HEAD | wc -l | tr -d ' ')
           echo "## PR Size" >> "$GITHUB_STEP_SUMMARY"
           echo "- **$ADDITIONS** additions, **$DELETIONS** deletions across **$FILES** files" >> "$GITHUB_STEP_SUMMARY"
           if [ "$ADDITIONS" -gt 2000 ]; then
