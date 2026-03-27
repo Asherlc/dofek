@@ -292,6 +292,8 @@ jobs:
           cd packages/mobile/ios
           agvtool new-version -all ${{ github.run_number }}
       - name: Archive (Release, no signing)
+        env:
+          SENTRY_DISABLE_AUTO_UPLOAD: "true"
         run: |
           set -o pipefail
           xcodebuild archive \
@@ -651,10 +653,9 @@ jobs:
             -authenticationKeyPath ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8 \
             -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
             -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
-            DEVELOPMENT_TEAM=68LEL35DQ9 \
-            CODE_SIGN_IDENTITY="Apple Distribution"
+            DEVELOPMENT_TEAM=68LEL35DQ9
 
-      - name: Export IPA
+      - name: Export and upload to TestFlight
         run: |
           xcodebuild -exportArchive \
             -archivePath $RUNNER_TEMP/Dofek.xcarchive \
@@ -665,14 +666,13 @@ jobs:
             -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
             -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
 
-      - name: Upload to TestFlight
-        if: success()
-        run: |
-          xcrun altool --upload-app \
-            --type ios \
-            --file $RUNNER_TEMP/export/Dofek.ipa \
-            --apiKey "$APP_STORE_CONNECT_KEY_ID" \
-            --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID"
+      - name: Upload distribution logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcdistributionlogs
+          path: /var/folders/**/Dofek_*.xcdistributionlogs
+          retention-days: 3
 
       - name: Cleanup keychain
         if: always()
