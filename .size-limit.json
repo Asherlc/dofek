@@ -1,0 +1,14 @@
+[
+  {
+    "path": "packages/web/dist/assets/*.js",
+    "limit": "500 kB",
+    "gzip": true,
+    "name": "Web JS (gzipped)"
+  },
+  {
+    "path": "packages/web/dist/assets/*.css",
+    "limit": "50 kB",
+    "gzip": true,
+    "name": "Web CSS (gzipped)"
+  }
+]
