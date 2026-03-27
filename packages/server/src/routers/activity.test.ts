@@ -33,6 +33,32 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   };
 });
 
+vi.mock("./sync.ts", () => ({
+  ensureProvidersRegistered: vi.fn(async () => {}),
+}));
+
+vi.mock("dofek/providers/registry", () => ({
+  getProvider: vi.fn((id: string) => {
+    const providers: Record<string, { name: string; activityUrl: (externalId: string) => string }> =
+      {
+        strava: {
+          name: "Strava",
+          activityUrl: (externalId: string) => `https://www.strava.com/activities/${externalId}`,
+        },
+        wahoo: {
+          name: "Wahoo",
+          activityUrl: (externalId: string) => `https://cloud.wahoo.com/workouts/${externalId}`,
+        },
+        garmin: {
+          name: "Garmin",
+          activityUrl: (externalId: string) =>
+            `https://connect.garmin.com/modern/activity/${externalId}`,
+        },
+      };
+    return providers[id];
+  }),
+}));
+
 import { activityRouter } from "./activity.ts";
 
 const createCaller = createTestCallerFactory(activityRouter);
@@ -322,11 +348,30 @@ describe("activityRouter", () => {
 });
 
 describe("buildSourceLinks", () => {
-  it("builds links for providers with known URL templates", () => {
-    const links = buildSourceLinks([
-      { providerId: "strava", externalId: "12345" },
-      { providerId: "garmin", externalId: "67890" },
-    ]);
+  const mockLookup = (id: string) => {
+    const providers: Record<string, { name: string; activityUrl: (externalId: string) => string }> =
+      {
+        strava: {
+          name: "Strava",
+          activityUrl: (externalId: string) => `https://www.strava.com/activities/${externalId}`,
+        },
+        garmin: {
+          name: "Garmin",
+          activityUrl: (externalId: string) =>
+            `https://connect.garmin.com/modern/activity/${externalId}`,
+        },
+      };
+    return providers[id];
+  };
+
+  it("builds links for providers with activityUrl", () => {
+    const links = buildSourceLinks(
+      [
+        { providerId: "strava", externalId: "12345" },
+        { providerId: "garmin", externalId: "67890" },
+      ],
+      mockLookup,
+    );
     expect(links).toEqual([
       { providerId: "strava", label: "Strava", url: "https://www.strava.com/activities/12345" },
       {
@@ -337,25 +382,43 @@ describe("buildSourceLinks", () => {
     ]);
   });
 
-  it("skips providers without URL templates", () => {
-    const links = buildSourceLinks([
-      { providerId: "strava", externalId: "12345" },
-      { providerId: "apple_health", externalId: "ah:workout:2024-01-01" },
-    ]);
+  it("skips providers without activityUrl", () => {
+    const links = buildSourceLinks(
+      [
+        { providerId: "strava", externalId: "12345" },
+        { providerId: "apple_health", externalId: "ah:workout:2024-01-01" },
+      ],
+      mockLookup,
+    );
     expect(links).toHaveLength(1);
     expect(links[0]?.providerId).toBe("strava");
   });
 
   it("returns empty array for null input", () => {
-    expect(buildSourceLinks(null)).toEqual([]);
+    expect(buildSourceLinks(null, mockLookup)).toEqual([]);
   });
 
   it("returns empty array for empty input", () => {
-    expect(buildSourceLinks([])).toEqual([]);
+    expect(buildSourceLinks([], mockLookup)).toEqual([]);
   });
 });
 
 describe("mapActivityDetail", () => {
+  const mockLookup = (id: string) => {
+    const providers: Record<string, { name: string; activityUrl: (externalId: string) => string }> =
+      {
+        strava: {
+          name: "Strava",
+          activityUrl: (externalId: string) => `https://www.strava.com/activities/${externalId}`,
+        },
+        wahoo: {
+          name: "Wahoo",
+          activityUrl: (externalId: string) => `https://cloud.wahoo.com/workouts/${externalId}`,
+        },
+      };
+    return providers[id];
+  };
+
   const fullRow = {
     id: "abc-123",
     activity_type: "cycling",
@@ -383,7 +446,7 @@ describe("mapActivityDetail", () => {
   };
 
   it("maps all fields correctly", () => {
-    const mapped = mapActivityDetail(fullRow);
+    const mapped = mapActivityDetail(fullRow, mockLookup);
     expect(mapped.id).toBe("abc-123");
     expect(mapped.activityType).toBe("cycling");
     expect(mapped.startedAt).toBe("2026-03-01T10:00:00+00:00");

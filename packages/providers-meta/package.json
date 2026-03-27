@@ -5,7 +5,6 @@
   "type": "module",
   "exports": {
     "./providers": "./src/providers.ts",
-    "./provider-stats": "./src/provider-stats.ts",
-    "./source-links": "./src/source-links.ts"
+    "./provider-stats": "./src/provider-stats.ts"
   }
 }

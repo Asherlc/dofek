@@ -1,12 +1,12 @@
-import { providerLabel } from "@dofek/providers/providers";
-import { activitySourceUrl } from "@dofek/providers/source-links";
 import { mapHrZones } from "@dofek/zones/zones";
 import { TRPCError } from "@trpc/server";
+import { getProvider } from "dofek/providers/registry";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { endDateSchema, timestampWindowStart } from "../lib/date-window.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
+import { ensureProvidersRegistered } from "./sync.ts";
 
 const activityListRowSchema = z
   .object({
@@ -206,7 +206,8 @@ export const activityRouter = router({
         throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
       }
 
-      return mapActivityDetail(row);
+      await ensureProvidersRegistered();
+      return mapActivityDetail(row, getProvider);
     }),
 
   /**
@@ -322,45 +323,57 @@ export const activityRouter = router({
     }),
 });
 
-/** Build source links from provider external IDs. Exported for unit testing. */
+/** Build source links from provider external IDs using the provider registry. Exported for unit testing. */
 export function buildSourceLinks(
   sourceExternalIds: Array<{ providerId: string; externalId: string }> | null,
+  lookupProvider: (
+    id: string,
+  ) => { activityUrl?(externalId: string): string; name: string } | undefined,
 ): SourceLink[] {
   if (!sourceExternalIds) return [];
   const links: SourceLink[] = [];
   for (const { providerId, externalId } of sourceExternalIds) {
-    const url = activitySourceUrl(providerId, externalId);
-    if (url) {
-      links.push({ providerId, label: providerLabel(providerId), url });
+    const provider = lookupProvider(providerId);
+    if (provider?.activityUrl) {
+      links.push({
+        providerId,
+        label: provider.name,
+        url: provider.activityUrl(externalId),
+      });
     }
   }
   return links;
 }
 
 /** Map a raw DB row to an ActivityDetail. Exported for unit testing. */
-export function mapActivityDetail(row: {
-  id: string;
-  activity_type: string;
-  started_at: string;
-  ended_at: string | null;
-  name: string | null;
-  notes: string | null;
-  provider_id: string;
-  source_providers: string[];
-  source_external_ids: Array<{ providerId: string; externalId: string }> | null;
-  avg_hr: number | null;
-  max_hr: number | null;
-  avg_power: number | null;
-  max_power: number | null;
-  avg_speed: number | null;
-  max_speed: number | null;
-  avg_cadence: number | null;
-  total_distance: number | null;
-  elevation_gain_m: number | null;
-  elevation_loss_m: number | null;
-  calories: number | null;
-  sample_count: number | null;
-}): ActivityDetail {
+export function mapActivityDetail(
+  row: {
+    id: string;
+    activity_type: string;
+    started_at: string;
+    ended_at: string | null;
+    name: string | null;
+    notes: string | null;
+    provider_id: string;
+    source_providers: string[];
+    source_external_ids: Array<{ providerId: string; externalId: string }> | null;
+    avg_hr: number | null;
+    max_hr: number | null;
+    avg_power: number | null;
+    max_power: number | null;
+    avg_speed: number | null;
+    max_speed: number | null;
+    avg_cadence: number | null;
+    total_distance: number | null;
+    elevation_gain_m: number | null;
+    elevation_loss_m: number | null;
+    calories: number | null;
+    sample_count: number | null;
+  },
+  lookupProvider: (
+    id: string,
+  ) => { activityUrl?(externalId: string): string; name: string } | undefined = () => undefined,
+): ActivityDetail {
   return {
     id: String(row.id),
     activityType: String(row.activity_type),
@@ -370,7 +383,7 @@ export function mapActivityDetail(row: {
     notes: row.notes ? String(row.notes) : null,
     providerId: String(row.provider_id),
     sourceProviders: row.source_providers ?? [],
-    sourceLinks: buildSourceLinks(row.source_external_ids),
+    sourceLinks: buildSourceLinks(row.source_external_ids, lookupProvider),
     avgHr: row.avg_hr != null ? Number(row.avg_hr) : null,
     maxHr: row.max_hr != null ? Number(row.max_hr) : null,
     avgPower: row.avg_power != null ? Number(row.avg_power) : null,

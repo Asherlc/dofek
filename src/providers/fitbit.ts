@@ -374,6 +374,10 @@ export class FitbitProvider implements WebhookProvider {
     return null;
   }
 
+  activityUrl(externalId: string): string {
+    return `https://www.fitbit.com/activities/exercise/${externalId}`;
+  }
+
   // ── Webhook implementation ──
 
   async registerWebhook(

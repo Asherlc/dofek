@@ -207,6 +207,10 @@ export class XertProvider implements SyncProvider {
     return null;
   }
 
+  activityUrl(externalId: string): string {
+    return `https://www.xertonline.com/activities/${externalId}`;
+  }
+
   authSetup(): ProviderAuthSetup {
     const config = xertOAuthConfig();
     if (!config) throw new Error("Failed to create Xert OAuth config");
