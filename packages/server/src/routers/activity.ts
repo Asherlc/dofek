@@ -5,6 +5,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { endDateSchema, timestampWindowStart } from "../lib/date-window.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
+import { Activity, type ActivityDetail } from "../models/activity.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 import { ensureProvidersRegistered } from "./sync.ts";
 
@@ -55,6 +56,8 @@ const activityDetailRowSchema = z.object({
   sample_count: z.number().nullable(),
 });
 
+export type { ActivityDetail, SourceLink } from "../models/activity.ts";
+
 const streamPointRowSchema = z.object({
   recorded_at: timestampStringSchema,
   heart_rate: z.number().nullable(),
@@ -70,36 +73,6 @@ const hrZoneRowSchema = z.object({
   zone: z.coerce.number(),
   seconds: z.coerce.number(),
 });
-
-export interface SourceLink {
-  providerId: string;
-  label: string;
-  url: string;
-}
-
-export interface ActivityDetail {
-  id: string;
-  activityType: string;
-  startedAt: string;
-  endedAt: string | null;
-  name: string | null;
-  notes: string | null;
-  providerId: string;
-  sourceProviders: string[];
-  sourceLinks: SourceLink[];
-  avgHr: number | null;
-  maxHr: number | null;
-  avgPower: number | null;
-  maxPower: number | null;
-  avgSpeed: number | null;
-  maxSpeed: number | null;
-  avgCadence: number | null;
-  totalDistance: number | null;
-  elevationGain: number | null;
-  elevationLoss: number | null;
-  calories: number | null;
-  sampleCount: number | null;
-}
 
 export interface StreamPoint {
   recordedAt: string;
@@ -207,7 +180,7 @@ export const activityRouter = router({
       }
 
       await ensureProvidersRegistered();
-      return mapActivityDetail(row, getProvider);
+      return new Activity(row, getProvider).toDetail();
     }),
 
   /**
@@ -322,82 +295,6 @@ export const activityRouter = router({
       return { success: true };
     }),
 });
-
-/** Build source links from provider external IDs using the provider registry. Exported for unit testing. */
-export function buildSourceLinks(
-  sourceExternalIds: Array<{ providerId: string; externalId: string }> | null,
-  lookupProvider: (
-    id: string,
-  ) => { activityUrl?(externalId: string): string; name: string } | undefined,
-): SourceLink[] {
-  if (!sourceExternalIds) return [];
-  const links: SourceLink[] = [];
-  for (const { providerId, externalId } of sourceExternalIds) {
-    const provider = lookupProvider(providerId);
-    if (provider?.activityUrl) {
-      links.push({
-        providerId,
-        label: provider.name,
-        url: provider.activityUrl(externalId),
-      });
-    }
-  }
-  return links;
-}
-
-/** Map a raw DB row to an ActivityDetail. Exported for unit testing. */
-export function mapActivityDetail(
-  row: {
-    id: string;
-    activity_type: string;
-    started_at: string;
-    ended_at: string | null;
-    name: string | null;
-    notes: string | null;
-    provider_id: string;
-    source_providers: string[];
-    source_external_ids: Array<{ providerId: string; externalId: string }> | null;
-    avg_hr: number | null;
-    max_hr: number | null;
-    avg_power: number | null;
-    max_power: number | null;
-    avg_speed: number | null;
-    max_speed: number | null;
-    avg_cadence: number | null;
-    total_distance: number | null;
-    elevation_gain_m: number | null;
-    elevation_loss_m: number | null;
-    calories: number | null;
-    sample_count: number | null;
-  },
-  lookupProvider: (
-    id: string,
-  ) => { activityUrl?(externalId: string): string; name: string } | undefined = () => undefined,
-): ActivityDetail {
-  return {
-    id: String(row.id),
-    activityType: String(row.activity_type),
-    startedAt: String(row.started_at),
-    endedAt: row.ended_at ? String(row.ended_at) : null,
-    name: row.name ? String(row.name) : null,
-    notes: row.notes ? String(row.notes) : null,
-    providerId: String(row.provider_id),
-    sourceProviders: row.source_providers ?? [],
-    sourceLinks: buildSourceLinks(row.source_external_ids, lookupProvider),
-    avgHr: row.avg_hr != null ? Number(row.avg_hr) : null,
-    maxHr: row.max_hr != null ? Number(row.max_hr) : null,
-    avgPower: row.avg_power != null ? Number(row.avg_power) : null,
-    maxPower: row.max_power != null ? Number(row.max_power) : null,
-    avgSpeed: row.avg_speed != null ? Number(row.avg_speed) : null,
-    maxSpeed: row.max_speed != null ? Number(row.max_speed) : null,
-    avgCadence: row.avg_cadence != null ? Number(row.avg_cadence) : null,
-    totalDistance: row.total_distance != null ? Number(row.total_distance) : null,
-    elevationGain: row.elevation_gain_m != null ? Number(row.elevation_gain_m) : null,
-    elevationLoss: row.elevation_loss_m != null ? Number(row.elevation_loss_m) : null,
-    calories: row.calories != null ? Number(row.calories) : null,
-    sampleCount: row.sample_count != null ? Number(row.sample_count) : null,
-  };
-}
 
 /** Map a raw stream row to a StreamPoint. Exported for unit testing. */
 export function mapStreamPoint(row: {

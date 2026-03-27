@@ -1,7 +1,8 @@
 import { TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
 
-import { buildSourceLinks, mapActivityDetail, mapHrZones, mapStreamPoint } from "./activity.ts";
+import { Activity } from "../models/activity.ts";
+import { mapHrZones, mapStreamPoint } from "./activity.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 // Mock tRPC infrastructure
@@ -347,63 +348,7 @@ describe("activityRouter", () => {
   });
 });
 
-describe("buildSourceLinks", () => {
-  const mockLookup = (id: string) => {
-    const providers: Record<string, { name: string; activityUrl: (externalId: string) => string }> =
-      {
-        strava: {
-          name: "Strava",
-          activityUrl: (externalId: string) => `https://www.strava.com/activities/${externalId}`,
-        },
-        garmin: {
-          name: "Garmin",
-          activityUrl: (externalId: string) =>
-            `https://connect.garmin.com/modern/activity/${externalId}`,
-        },
-      };
-    return providers[id];
-  };
-
-  it("builds links for providers with activityUrl", () => {
-    const links = buildSourceLinks(
-      [
-        { providerId: "strava", externalId: "12345" },
-        { providerId: "garmin", externalId: "67890" },
-      ],
-      mockLookup,
-    );
-    expect(links).toEqual([
-      { providerId: "strava", label: "Strava", url: "https://www.strava.com/activities/12345" },
-      {
-        providerId: "garmin",
-        label: "Garmin",
-        url: "https://connect.garmin.com/modern/activity/67890",
-      },
-    ]);
-  });
-
-  it("skips providers without activityUrl", () => {
-    const links = buildSourceLinks(
-      [
-        { providerId: "strava", externalId: "12345" },
-        { providerId: "apple_health", externalId: "ah:workout:2024-01-01" },
-      ],
-      mockLookup,
-    );
-    expect(links).toHaveLength(1);
-    expect(links[0]?.providerId).toBe("strava");
-  });
-
-  it("returns empty array for null input", () => {
-    expect(buildSourceLinks(null, mockLookup)).toEqual([]);
-  });
-
-  it("returns empty array for empty input", () => {
-    expect(buildSourceLinks([], mockLookup)).toEqual([]);
-  });
-});
-
-describe("mapActivityDetail", () => {
+describe("Activity model (via router integration)", () => {
   const mockLookup = (id: string) => {
     const providers: Record<string, { name: string; activityUrl: (externalId: string) => string }> =
       {
@@ -442,68 +387,75 @@ describe("mapActivityDetail", () => {
     total_distance: 42000,
     elevation_gain_m: 350,
     elevation_loss_m: 340,
+    calories: null,
     sample_count: 5400,
   };
 
-  it("maps all fields correctly", () => {
-    const mapped = mapActivityDetail(fullRow, mockLookup);
-    expect(mapped.id).toBe("abc-123");
-    expect(mapped.activityType).toBe("cycling");
-    expect(mapped.startedAt).toBe("2026-03-01T10:00:00+00:00");
-    expect(mapped.endedAt).toBe("2026-03-01T11:30:00+00:00");
-    expect(mapped.name).toBe("Morning Ride");
-    expect(mapped.notes).toBe("Felt good");
-    expect(mapped.providerId).toBe("wahoo");
-    expect(mapped.sourceProviders).toEqual(["wahoo", "strava"]);
-    expect(mapped.sourceLinks).toHaveLength(2);
-    expect(mapped.sourceLinks[0]?.label).toBe("Strava");
-    expect(mapped.avgHr).toBe(145);
-    expect(mapped.maxHr).toBe(175);
-    expect(mapped.avgPower).toBe(220);
-    expect(mapped.maxPower).toBe(450);
-    expect(mapped.avgSpeed).toBe(8.5);
-    expect(mapped.maxSpeed).toBe(15.2);
-    expect(mapped.avgCadence).toBe(85);
-    expect(mapped.totalDistance).toBe(42000);
-    expect(mapped.elevationGain).toBe(350);
-    expect(mapped.elevationLoss).toBe(340);
-    expect(mapped.sampleCount).toBe(5400);
+  it("toDetail() maps all fields correctly", () => {
+    const activity = new Activity(fullRow, mockLookup);
+    const detail = activity.toDetail();
+    expect(detail.id).toBe("abc-123");
+    expect(detail.activityType).toBe("cycling");
+    expect(detail.startedAt).toBe("2026-03-01T10:00:00+00:00");
+    expect(detail.endedAt).toBe("2026-03-01T11:30:00+00:00");
+    expect(detail.name).toBe("Morning Ride");
+    expect(detail.notes).toBe("Felt good");
+    expect(detail.providerId).toBe("wahoo");
+    expect(detail.sourceProviders).toEqual(["wahoo", "strava"]);
+    expect(detail.sourceLinks).toHaveLength(2);
+    expect(detail.sourceLinks[0]?.label).toBe("Strava");
+    expect(detail.avgHr).toBe(145);
+    expect(detail.maxHr).toBe(175);
+    expect(detail.avgPower).toBe(220);
+    expect(detail.maxPower).toBe(450);
+    expect(detail.avgSpeed).toBe(8.5);
+    expect(detail.maxSpeed).toBe(15.2);
+    expect(detail.avgCadence).toBe(85);
+    expect(detail.totalDistance).toBe(42000);
+    expect(detail.elevationGain).toBe(350);
+    expect(detail.elevationLoss).toBe(340);
+    expect(detail.sampleCount).toBe(5400);
   });
 
-  it("returns null for all nullable fields when null", () => {
-    const mapped = mapActivityDetail({
-      ...fullRow,
-      ended_at: null,
-      name: null,
-      notes: null,
-      source_external_ids: null,
-      avg_hr: null,
-      max_hr: null,
-      avg_power: null,
-      max_power: null,
-      avg_speed: null,
-      max_speed: null,
-      avg_cadence: null,
-      total_distance: null,
-      elevation_gain_m: null,
-      elevation_loss_m: null,
-      sample_count: null,
-    });
-    expect(mapped.endedAt).toBeNull();
-    expect(mapped.name).toBeNull();
-    expect(mapped.notes).toBeNull();
-    expect(mapped.sourceLinks).toEqual([]);
-    expect(mapped.avgHr).toBeNull();
-    expect(mapped.maxHr).toBeNull();
-    expect(mapped.avgPower).toBeNull();
-    expect(mapped.maxPower).toBeNull();
-    expect(mapped.avgSpeed).toBeNull();
-    expect(mapped.maxSpeed).toBeNull();
-    expect(mapped.avgCadence).toBeNull();
-    expect(mapped.totalDistance).toBeNull();
-    expect(mapped.elevationGain).toBeNull();
-    expect(mapped.elevationLoss).toBeNull();
-    expect(mapped.sampleCount).toBeNull();
+  it("toDetail() returns null for all nullable fields when null", () => {
+    const activity = new Activity(
+      {
+        ...fullRow,
+        ended_at: null,
+        name: null,
+        notes: null,
+        source_external_ids: null,
+        avg_hr: null,
+        max_hr: null,
+        avg_power: null,
+        max_power: null,
+        avg_speed: null,
+        max_speed: null,
+        avg_cadence: null,
+        total_distance: null,
+        elevation_gain_m: null,
+        elevation_loss_m: null,
+        calories: null,
+        sample_count: null,
+      },
+      mockLookup,
+    );
+    const detail = activity.toDetail();
+    expect(detail.endedAt).toBeNull();
+    expect(detail.name).toBeNull();
+    expect(detail.notes).toBeNull();
+    expect(detail.sourceLinks).toEqual([]);
+    expect(detail.avgHr).toBeNull();
+    expect(detail.maxHr).toBeNull();
+    expect(detail.avgPower).toBeNull();
+    expect(detail.maxPower).toBeNull();
+    expect(detail.avgSpeed).toBeNull();
+    expect(detail.maxSpeed).toBeNull();
+    expect(detail.avgCadence).toBeNull();
+    expect(detail.totalDistance).toBeNull();
+    expect(detail.elevationGain).toBeNull();
+    expect(detail.elevationLoss).toBeNull();
+    expect(detail.sampleCount).toBeNull();
   });
 });
 
