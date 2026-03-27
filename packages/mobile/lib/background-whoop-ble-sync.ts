@@ -66,6 +66,16 @@ export async function initBackgroundWhoopBleSync(
 				});
 		},
 	);
+
+	// Do an initial sync immediately — the AppState listener only fires on
+	// state *transitions*, so if the app is already active when init is called
+	// (the common case), nothing would happen until the user backgrounds and
+	// re-opens the app. Best-effort: don't let init failures propagate.
+	try {
+		await syncOnForeground(trpcClient, whoopDeps);
+	} catch {
+		// Best-effort — connection may fail on first attempt
+	}
 }
 
 async function syncOnForeground(

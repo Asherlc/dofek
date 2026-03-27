@@ -1,9 +1,12 @@
-import { ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import { useCallback, useEffect, useState } from "react";
+import { AppState, type AppStateStatus, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import { Stack } from "expo-router";
 import {
 	getMotionAuthorizationStatus,
 	isAccelerometerRecordingAvailable,
 	isRecordingActive,
+	requestMotionPermission,
+	type MotionAuthorizationStatus,
 } from "../modules/core-motion";
 import { getWatchSyncStatus } from "../modules/watch-motion";
 import { isBluetoothAvailable } from "../modules/whoop-ble";
@@ -34,10 +37,45 @@ function deviceLabel(deviceType: string, deviceId: string): string {
 	}
 }
 
+function useMotionPermission(available: boolean): MotionAuthorizationStatus | "unavailable" {
+	const [status, setStatus] = useState<MotionAuthorizationStatus | "unavailable">(() =>
+		available ? getMotionAuthorizationStatus() : "unavailable",
+	);
+
+	const refreshStatus = useCallback(() => {
+		if (!available) return;
+		setStatus(getMotionAuthorizationStatus());
+	}, [available]);
+
+	// Request permission on mount if not yet determined
+	useEffect(() => {
+		if (status !== "notDetermined") return;
+		requestMotionPermission().then((result) => {
+			setStatus(result);
+		}).catch(() => {
+			// Best-effort — re-read the status in case it changed
+			refreshStatus();
+		});
+	}, [status, refreshStatus]);
+
+	// Re-read permission when the app returns to foreground (the iOS
+	// permission dialog causes a background→active transition)
+	useEffect(() => {
+		const subscription = AppState.addEventListener("change", (nextState: AppStateStatus) => {
+			if (nextState === "active") {
+				refreshStatus();
+			}
+		});
+		return () => subscription.remove();
+	}, [refreshStatus]);
+
+	return status;
+}
+
 export default function AccelerometerScreen() {
 	const available = isAccelerometerRecordingAvailable();
 	const recording = available && isRecordingActive();
-	const authStatus = available ? getMotionAuthorizationStatus() : "unavailable";
+	const authStatus = useMotionPermission(available);
 	const watchStatus = getWatchSyncStatus();
 	const bluetoothAvailable = isBluetoothAvailable();
 
