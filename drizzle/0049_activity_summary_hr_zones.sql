@@ -10,14 +10,6 @@
 -- where resting_hr is the user's latest value and max_hr is from their profile.
 -- Activities for users without max_hr or resting_hr get NULL zone columns.
 
-set lock_timeout = '2s';
-
---> statement-breakpoint
-
-set statement_timeout = '300s';
-
---> statement-breakpoint
-
 DROP MATERIALIZED VIEW IF EXISTS fitness.activity_summary;
 
 --> statement-breakpoint
