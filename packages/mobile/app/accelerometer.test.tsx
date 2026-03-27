@@ -59,6 +59,9 @@ vi.mock("../modules/core-motion", () => ({
 
 vi.mock("../modules/whoop-ble", () => ({
   isBluetoothAvailable: () => false,
+  getConnectionState: () => "idle",
+  getBluetoothState: () => "poweredOff",
+  getBufferedSampleCount: () => 0,
 }));
 
 vi.mock("../modules/watch-motion", () => ({
