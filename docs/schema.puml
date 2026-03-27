@@ -14,6 +14,7 @@ entity "activity" {
   name : text
   notes : text
   perceived_exertion : real
+  percent_recorded : real
   source_name : text
   raw : jsonb
   created_at : timestamp
@@ -84,15 +85,12 @@ entity "daily_metrics" {
   cycling_distance_km : real
   flights_climbed : integer
   exercise_minutes : integer
-  mindful_minutes : integer
   walking_speed : real
   walking_step_length : real
   walking_double_support_pct : real
   walking_asymmetry_pct : real
   walking_steadiness : real
   stand_hours : integer
-  environmental_audio_exposure : real
-  headphone_audio_exposure : real
   skin_temp_c : real
   stress_high_minutes : integer
   recovery_high_minutes : integer
@@ -151,7 +149,9 @@ entity "exercise" {
   --
   name : text
   muscle_group : text
+  muscle_groups : text_array
   equipment : text
+  exercise_type : text
   movement : text
   created_at : timestamp
 }
@@ -405,6 +405,10 @@ entity "sleep_session" {
   awake_minutes : integer
   efficiency_pct : real
   sleep_type : text
+  sleep_need_baseline_minutes : integer
+  sleep_need_from_debt_minutes : integer
+  sleep_need_from_strain_minutes : integer
+  sleep_need_from_nap_minutes : integer
   source_name : text
   created_at : timestamp
 }
@@ -438,6 +442,8 @@ entity "strength_set" {
   reps : integer
   distance_meters : real
   duration_seconds : integer
+  strap_location : text
+  strap_location_laterality : text
   rpe : real
   notes : text
   created_at : timestamp
@@ -453,6 +459,11 @@ entity "strength_workout" {
   ended_at : timestamp
   name : text
   notes : text
+  raw_msk_strain_score : real
+  scaled_msk_strain_score : real
+  cardio_strain_score : real
+  cardio_strain_contribution_percent : real
+  msk_strain_contribution_percent : real
   created_at : timestamp
 }
 

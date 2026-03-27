@@ -28,9 +28,12 @@ target 'Dofek' do
   # Run `scripts/download-sentry-xcframework.sh` before `pod install`.
   pod 'Sentry', :path => './LocalPods/Sentry'
 
-  # Local Expo module for HealthKit access. Must be declared explicitly because
-  # Expo autolinking discovers it but CocoaPods doesn't install it automatically.
+  # Local Expo modules must be declared explicitly because Expo autolinking
+  # discovers them but CocoaPods doesn't install them automatically.
   pod 'ExpoHealthKit', :path => '../modules/health-kit/ios'
+  pod 'ExpoCoreMotion', :path => '../modules/core-motion/ios'
+  pod 'ExpoWatchMotion', :path => '../modules/watch-motion/ios'
+  pod 'ExpoWhoopBle', :path => '../modules/whoop-ble/ios'
 
   if ENV['EXPO_USE_COMMUNITY_AUTOLINKING'] == '1'
     config_command = ['node', '-e', "process.argv=['', '', 'config'];require('@react-native-community/cli').run()"];
