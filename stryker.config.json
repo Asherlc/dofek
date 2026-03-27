@@ -40,7 +40,6 @@
   ],
   "ignorePatterns": [
     "dist/**",
-    "drizzle/**",
     ".codex/**",
     ".claude/**",
     ".context/**"
