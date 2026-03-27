@@ -15,6 +15,9 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: semgrep/semgrep
+      credentials:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - name: Run project-specific rules (blocking)
