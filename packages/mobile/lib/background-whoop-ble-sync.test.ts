@@ -183,7 +183,10 @@ describe("background-whoop-ble-sync", () => {
     // Now make getBufferedSamples slow to simulate a long sync
     let resolveBuffered: (() => void) | null = null;
     vi.mocked(whoopDeps.getBufferedSamples).mockImplementation(
-      () => new Promise((resolve) => { resolveBuffered = () => resolve([]); }),
+      () =>
+        new Promise((resolve) => {
+          resolveBuffered = () => resolve([]);
+        }),
     );
 
     // First foreground — starts but doesn't resolve

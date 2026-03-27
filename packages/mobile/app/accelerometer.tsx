@@ -1,3 +1,4 @@
+import { Stack } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
   AppState,
@@ -8,17 +9,16 @@ import {
   Text,
   View,
 } from "react-native";
-import { Stack } from "expo-router";
+import { trpc } from "../lib/trpc";
 import {
   getMotionAuthorizationStatus,
   isAccelerometerRecordingAvailable,
   isRecordingActive,
-  requestMotionPermission,
   type MotionAuthorizationStatus,
+  requestMotionPermission,
 } from "../modules/core-motion";
 import { getWatchSyncStatus } from "../modules/watch-motion";
 import { isBluetoothAvailable } from "../modules/whoop-ble";
-import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
 import { rootStackScreenOptions } from "./_layout";
 
