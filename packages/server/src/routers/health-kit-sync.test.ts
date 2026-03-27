@@ -183,8 +183,11 @@ describe("healthKitSyncRouter", () => {
         return serialized.includes("body_measurement") && serialized.includes("body_fat_pct");
       });
       expect(sqlCall).toBeDefined();
-      // 0.18 * 100 = 18
-      expect(JSON.stringify(sqlCall?.[0])).toContain("18");
+      const serialized = JSON.stringify(sqlCall?.[0]);
+      // 0.18 * 100 = 18 — must NOT contain the un-transformed value 0.18 or the wrong-direction 0.0018
+      expect(serialized).toContain(",18,");
+      expect(serialized).not.toContain("0.0018");
+      expect(serialized).not.toContain("0.18");
     });
 
     it("applies distance transform (value / 1000)", async () => {
@@ -578,6 +581,52 @@ describe("healthKitSyncRouter", () => {
 
       expect(result.errors.length).toBeGreaterThan(0);
       expect(result.errors[0]).toContain("Body measurements");
+    });
+
+    it("reports errors when metric stream processing fails", async () => {
+      const execute = vi.fn();
+      // ensureProvider succeeds
+      execute.mockResolvedValueOnce([]);
+      // metric_stream insert fails
+      execute.mockRejectedValueOnce(new Error("Metric stream DB error"));
+
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.pushQuantitySamples({
+        samples: [
+          makeSample({ type: "HKQuantityTypeIdentifierHeartRate", value: 72, uuid: "hr-err" }),
+        ],
+      });
+
+      expect(result.errors.length).toBeGreaterThan(0);
+      expect(result.errors.some((e: string) => e.includes("Metric stream"))).toBe(true);
+    });
+
+    it("reports errors when health event processing fails", async () => {
+      const execute = vi.fn();
+      // ensureProvider succeeds
+      execute.mockResolvedValueOnce([]);
+      // health_event insert fails
+      execute.mockRejectedValueOnce(new Error("Health event DB error"));
+
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.pushQuantitySamples({
+        samples: [
+          makeSample({ type: "HKQuantityTypeIdentifierUnknownType", value: 1, uuid: "he-err" }),
+        ],
+      });
+
+      expect(result.errors.length).toBeGreaterThan(0);
+      expect(result.errors.some((e: string) => e.includes("Health events"))).toBe(true);
     });
 
     it("applies distance transform (m to km)", async () => {
@@ -1066,15 +1115,27 @@ describe("healthKitSyncRouter", () => {
     });
 
     it("returns min/max bounds for multiple timestamps", () => {
+      // Max is NOT the last element — kills `if (true) maxTs = ms` mutation
+      // Min is NOT the last element — kills `if (true) minTs = ms` mutation
       const result = computeBoundsFromIsoTimestamps([
         "2024-01-15T12:00:00Z",
-        "2024-01-15T08:00:00Z",
         "2024-01-15T20:00:00Z",
+        "2024-01-15T08:00:00Z",
       ]);
       expect(result).toEqual({
         startAt: "2024-01-15T08:00:00.000Z",
         endAt: "2024-01-15T20:00:00.000Z",
       });
+    });
+
+    it("returns null when only one of min/max is valid", () => {
+      // Only one valid timestamp means both min and max are set —
+      // but if the || is mutated to &&, it would incorrectly succeed when only one is invalid
+      // This test kills `|| → &&` mutation on the isFinite check
+      const result = computeBoundsFromIsoTimestamps(["2024-01-15T10:00:00Z"]);
+      expect(result).not.toBeNull();
+      // With a single valid ts, both min and max should be the same
+      expect(result?.startAt).toBe(result?.endAt);
     });
 
     it("returns null when all timestamps are invalid", () => {
