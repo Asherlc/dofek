@@ -58,8 +58,7 @@ describe("trpc", () => {
     it("exports cachedProtectedQuery function", () => {
       expect(typeof cachedProtectedQuery).toBe("function");
     });
-
-});
+  });
 
   describe("auth middleware", () => {
     it("rejects unauthenticated requests (userId is null)", async () => {
