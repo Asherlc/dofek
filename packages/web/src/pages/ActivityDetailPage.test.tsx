@@ -38,6 +38,7 @@ const mockActivity = {
   avgSpeed: 3.0,
   avgCadence: null,
   sourceProviders: ["whoop", "apple_health"],
+  sourceLinks: [],
 };
 
 const mockStreamPoints = [
@@ -177,8 +178,40 @@ describe("ActivityDetailPage", () => {
     it("shows source providers with human-readable labels", async () => {
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />);
-      const sourceElements = screen.getAllByText("Source: WHOOP, Apple Health");
-      expect(sourceElements.length).toBeGreaterThan(0);
+      expect(screen.getByText(/WHOOP/)).toBeDefined();
+      expect(screen.getByText(/Apple Health/)).toBeDefined();
+    });
+
+    it("renders source links as clickable anchors", async () => {
+      const originalData = { ...mockActivity };
+      Object.assign(mockActivity, {
+        sourceProviders: ["strava", "garmin"],
+        sourceLinks: [
+          { providerId: "strava", label: "Strava", url: "https://www.strava.com/activities/123" },
+          {
+            providerId: "garmin",
+            label: "Garmin",
+            url: "https://connect.garmin.com/modern/activity/456",
+          },
+        ],
+      });
+
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      const stravaLink = screen.getByText("Strava");
+      expect(stravaLink.tagName).toBe("A");
+      expect(stravaLink.getAttribute("href")).toBe("https://www.strava.com/activities/123");
+      expect(stravaLink.getAttribute("target")).toBe("_blank");
+
+      const garminLink = screen.getByText("Garmin");
+      expect(garminLink.tagName).toBe("A");
+      expect(garminLink.getAttribute("href")).toBe(
+        "https://connect.garmin.com/modern/activity/456",
+      );
+
+      // Restore
+      Object.assign(mockActivity, originalData);
     });
   });
 

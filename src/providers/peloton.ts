@@ -511,6 +511,10 @@ export class PelotonProvider implements SyncProvider {
     return null;
   }
 
+  activityUrl(externalId: string): string {
+    return `https://members.onepeloton.com/classes/cycling?modal=classDetailsModal&classId=${externalId}`;
+  }
+
   authSetup(): ProviderAuthSetup {
     const config = pelotonOAuthConfig();
     const codeVerifier = generateCodeVerifier();

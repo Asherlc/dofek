@@ -419,6 +419,10 @@ export class StravaProvider implements WebhookProvider {
     return null;
   }
 
+  activityUrl(externalId: string): string {
+    return `https://www.strava.com/activities/${externalId}`;
+  }
+
   // ── Webhook implementation ──
 
   async registerWebhook(
