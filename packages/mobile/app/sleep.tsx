@@ -7,6 +7,7 @@ import { SleepBar } from "../components/charts/SleepBar";
 import { SparkLine } from "../components/charts/SparkLine";
 import { DaySelector } from "../components/DaySelector";
 import { MetricCard } from "../components/MetricCard";
+import { sleepDebtColor } from "../lib/scoring";
 import { trpc } from "../lib/trpc";
 import { useRefresh } from "../lib/useRefresh";
 import { colors } from "../theme";
@@ -102,14 +103,7 @@ export default function SleepScreen() {
             <Text
               style={[
                 styles.debtValue,
-                {
-                  color:
-                    sleepDebt > 120
-                      ? colors.danger
-                      : sleepDebt > 60
-                        ? colors.warning
-                        : colors.positive,
-                },
+                { color: sleepDebtColor(sleepDebt) },
               ]}
             >
               {formatSleepDebt(sleepDebt)}
