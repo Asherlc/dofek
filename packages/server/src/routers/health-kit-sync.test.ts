@@ -2170,7 +2170,7 @@ describe("healthKitSyncRouter", () => {
       await caller.pushWorkouts({
         workouts: [
           {
-            uuid: "w-rawdata",
+            uuid: "w-raw-data",
             workoutType: "35",
             startDate: "2024-01-15T10:00:00Z",
             endDate: "2024-01-15T11:00:00Z",
@@ -2345,14 +2345,14 @@ describe("healthKitSyncRouter", () => {
       await caller.pushSleepSamples({
         samples: [
           {
-            uuid: "inbed-unspec",
+            uuid: "inbed-unspecified",
             startDate: "2024-01-15T22:00:00Z",
             endDate: "2024-01-16T06:00:00Z",
             value: "inBed",
             sourceName: "Apple Watch",
           },
           {
-            uuid: "stage-unspec",
+            uuid: "stage-unspecified",
             startDate: "2024-01-15T22:30:00Z",
             endDate: "2024-01-16T00:30:00Z", // 2 hours = 120 minutes
             value: "asleepUnspecified",
