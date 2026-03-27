@@ -304,6 +304,23 @@ describe("Peloton Provider", () => {
       expect(result.stravaId).toBeUndefined();
     });
 
+    it("ignores strava_id when it is empty string", () => {
+      const empty: PelotonWorkout = { ...sampleWorkout, strava_id: "" };
+      const result = parseWorkout(empty);
+      expect(result.stravaId).toBeUndefined();
+    });
+
+    it("preserves valid strava_id", () => {
+      const result = parseWorkout(sampleWorkout);
+      expect(result.stravaId).toBe("3456789012");
+    });
+
+    it("stores hasPedalingMetrics false in raw", () => {
+      const noPedaling: PelotonWorkout = { ...sampleWorkout, has_pedaling_metrics: false };
+      const result = parseWorkout(noPedaling);
+      expect(result.raw.hasPedalingMetrics).toBe(false);
+    });
+
     it("handles missing optional source fields", () => {
       const minimal: PelotonWorkout = {
         ...sampleWorkout,
