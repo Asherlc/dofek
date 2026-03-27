@@ -9,7 +9,11 @@
       ],
       "project": ["src/**/*.ts", "*.config.{ts,js,json}"],
       "ignoreDependencies": ["sharp", "tsx"],
-      "ignoreBinaries": ["tsr", "expo"],
+      "ignoreBinaries": [
+        "tsr", "expo", "license-checker", "squawk", "diff-cover", "pip",
+        "GPL-2.0-or-later", "GPL-3.0-only", "GPL-3.0-or-later",
+        "AGPL-1.0-only", "AGPL-3.0-only", "AGPL-3.0-or-later"
+      ],
       "vitest": {
         "config": ["vitest.config.ts"],
         "entry": ["src/**/*.test.ts", "src/**/*.integration.test.ts"]

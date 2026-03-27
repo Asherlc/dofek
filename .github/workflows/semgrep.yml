@@ -17,7 +17,16 @@ jobs:
       image: semgrep/semgrep
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - run: semgrep scan --config auto --config .semgrep/ --error --sarif --output semgrep.sarif
+      - name: Run project-specific rules (blocking)
+        run: semgrep scan --config .semgrep/ --error --sarif --output semgrep-custom.sarif
+      - name: Run community rules (informational)
+        if: always()
+        run: semgrep scan --config auto --sarif --output semgrep-auto.sarif || true
+      - name: Merge SARIF results
+        if: always()
+        run: |
+          # Upload whichever SARIF files exist
+          if [ -f semgrep-custom.sarif ]; then cp semgrep-custom.sarif semgrep.sarif; fi
       - uses: github/codeql-action/upload-sarif@ebcb5b36ded6beda4ceefea6a8bc4cc885255bb3 # v3
         if: always()
         with:

@@ -20,11 +20,11 @@ rules:
     pattern: console.log(...)
     paths:
       exclude:
-        - "*.test.ts"
-        - "*.test.tsx"
-        - "test-helpers.ts"
-        - "scripts/"
-        - "cypress/"
+        - "**/**.test.ts"
+        - "**/**.test.tsx"
+        - "**/test-helpers.ts"
+        - "**/scripts/"
+        - "**/cypress/"
     message: >
       Use the project logger (winston) instead of console.log in production code.
     languages: [typescript, javascript]
@@ -34,9 +34,9 @@ rules:
     pattern: $DB.execute($QUERY)
     paths:
       exclude:
-        - "*.test.ts"
-        - "*.test.tsx"
-        - "src/db/migrate.ts"
+        - "**/**.test.ts"
+        - "**/**.test.tsx"
+        - "**/src/db/migrate.ts"
     message: >
       Use executeWithSchema() from lib/typed-sql.ts instead of raw db.execute().
       TypeScript generics only provide compile-time safety; Zod catches runtime shape mismatches.
@@ -47,17 +47,17 @@ rules:
     pattern: process.env.$VAR
     paths:
       include:
-        - "packages/format/"
-        - "packages/scoring/"
-        - "packages/nutrition/"
-        - "packages/training/"
-        - "packages/stats/"
-        - "packages/recovery/"
-        - "packages/onboarding/"
-        - "packages/providers-meta/"
-        - "packages/zones/"
+        - "**/packages/format/"
+        - "**/packages/scoring/"
+        - "**/packages/nutrition/"
+        - "**/packages/training/"
+        - "**/packages/stats/"
+        - "**/packages/recovery/"
+        - "**/packages/onboarding/"
+        - "**/packages/providers-meta/"
+        - "**/packages/zones/"
       exclude:
-        - "*.test.ts"
+        - "**/**.test.ts"
     message: >
       Shared domain packages must not read process.env directly.
       Accept configuration via function parameters or dependency injection.
@@ -68,9 +68,9 @@ rules:
     pattern: fetch($URL, ...)
     paths:
       include:
-        - "src/providers/"
+        - "**/src/providers/"
       exclude:
-        - "*.test.ts"
+        - "**/**.test.ts"
     message: >
       Consider using the provider's authenticated fetch with retry logic
       instead of bare fetch() in provider code.

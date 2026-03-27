@@ -85,7 +85,7 @@
     "mobile:device": "pnpm --filter dofek-mobile ios:device",
     "size": "size-limit",
     "depcruise": "depcruise --config .dependency-cruiser.cjs src/ packages/",
-    "spellcheck": "cspell --no-progress \"src/**/*.ts\" \"packages/*/src/**/*.ts\""
+    "spellcheck": "cspell --no-progress"
   },
   "dependencies": {
     "@bull-board/api": "6.20.5",

@@ -53,10 +53,11 @@ module.exports = {
         pathNot: [
           // Allow importing from the same provider directory
           "^src/providers/$1",
-          // Allow importing shared types and registry
+          // Allow importing shared types, registry, and utilities
           "^src/providers/types\\.ts$",
           "^src/providers/index\\.ts$",
           "^src/providers/provider-model\\.ts$",
+          "^src/providers/http-client\\.ts$",
         ],
       },
     },

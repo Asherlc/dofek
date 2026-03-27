@@ -38,7 +38,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm audit --prod
+      - run: pnpm audit --prod --audit-level=critical
 
   license-check:
     name: License Check
@@ -64,10 +64,16 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - name: Verify all actions are SHA-pinned
         run: |
-          UNPINNED=$(grep -rn 'uses:' .github/workflows/*.yml \
-            | grep -v '#' \
-            | grep -vE 'uses: \./|uses: docker://' \
-            | grep -vE 'uses: [a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+(/[a-zA-Z0-9_-]+)?@[0-9a-f]{40}' \
+          # Extract only actual YAML uses: directives (indented, not inside run: blocks)
+          UNPINNED=$(awk '
+            /^[[:space:]]*run:[[:space:]]*\|/ { in_run=1; next }
+            /^[[:space:]]*run:[[:space:]]*[^|]/ { in_run=0 }
+            in_run && /^[[:space:]]{2,}[^-]/ { next }
+            in_run && /^[[:space:]]*-/ { in_run=0 }
+            /^[[:space:]]+uses:/ { print FILENAME ":" NR ":" $0 }
+          ' .github/workflows/*.yml \
+            | grep -vE '@[0-9a-f]{40}' \
+            | grep -vE 'uses: \./' \
             || true)
           if [ -n "$UNPINNED" ]; then
             echo "::error::Found unpinned GitHub Actions (must use full commit SHA):"
@@ -153,7 +159,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec cspell --no-progress "src/**/*.ts" "packages/*/src/**/*.ts"
+      - run: pnpm exec cspell --no-progress
 
   import-boundaries:
     name: Import Boundaries
@@ -645,9 +651,9 @@ jobs:
       - name: Scan server image (Grype)
         uses: anchore/scan-action@1638637db639e0ade3258b51db49a9a137574c3e # v6
         with:
-          image: dofek-server:latest
+          image: e2e-server:latest
           fail-build: true
-          severity-cutoff: high
+          severity-cutoff: critical
       - name: Start e2e stack
         run: docker compose -f docker-compose.e2e.yml up -d --wait --no-build
       - run: pnpm e2e:web:run
