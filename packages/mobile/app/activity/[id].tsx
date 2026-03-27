@@ -6,6 +6,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -560,11 +561,27 @@ export default function ActivityDetailScreen() {
           {" at "}
           {formatTimeOfDay(activity.startedAt)}
         </Text>
-        {activity.sourceProviders.length > 0 && (
-          <Text style={styles.source}>
-            Source:{" "}
-            {activity.sourceProviders.map((provider: string) => providerLabel(provider)).join(", ")}
-          </Text>
+        {(activity.sourceLinks.length > 0 || activity.sourceProviders.length > 0) && (
+          <View style={styles.sourceRow}>
+            <Text style={styles.source}>Source: </Text>
+            {activity.sourceProviders.map((providerId: string, index: number) => {
+              const link = activity.sourceLinks.find(
+                (sourceLink) => sourceLink.providerId === providerId,
+              );
+              return (
+                <Text key={providerId} style={styles.source}>
+                  {index > 0 && ", "}
+                  {link ? (
+                    <Text style={styles.sourceLink} onPress={() => Linking.openURL(link.url)}>
+                      {link.label}
+                    </Text>
+                  ) : (
+                    providerLabel(providerId)
+                  )}
+                </Text>
+              );
+            })}
+          </View>
         )}
       </View>
 
@@ -693,10 +710,20 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 4,
   },
+  sourceRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    marginTop: 2,
+  },
   source: {
     fontSize: 12,
     color: colors.textTertiary,
-    marginTop: 2,
+  },
+  sourceLink: {
+    fontSize: 12,
+    color: colors.accent,
+    textDecorationLine: "underline",
   },
   deleteButton: {
     backgroundColor: colors.surface,

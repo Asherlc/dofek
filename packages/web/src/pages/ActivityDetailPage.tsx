@@ -246,9 +246,9 @@ function ActivityHeader({ activity, units }: { activity: ActivityDetail; units: 
           minute: "2-digit",
         })}
       </p>
-      {activity.sourceProviders.length > 0 && (
+      {(activity.sourceLinks.length > 0 || activity.sourceProviders.length > 0) && (
         <p className="text-xs text-subtle mb-4">
-          Source: {activity.sourceProviders.map((provider) => providerLabel(provider)).join(", ")}
+          Source: <SourceLinks activity={activity} />
         </p>
       )}
 
@@ -263,6 +263,35 @@ function ActivityHeader({ activity, units }: { activity: ActivityDetail; units: 
         </div>
       )}
     </div>
+  );
+}
+
+function SourceLinks({ activity }: { activity: ActivityDetail }) {
+  const linkMap = new Map(activity.sourceLinks.map((link) => [link.providerId, link]));
+
+  return (
+    <>
+      {activity.sourceProviders.map((providerId, index) => {
+        const link = linkMap.get(providerId);
+        return (
+          <span key={providerId}>
+            {index > 0 && ", "}
+            {link ? (
+              <a
+                href={link.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-accent hover:text-accent-secondary underline"
+              >
+                {link.label}
+              </a>
+            ) : (
+              providerLabel(providerId)
+            )}
+          </span>
+        );
+      })}
+    </>
   );
 }
 

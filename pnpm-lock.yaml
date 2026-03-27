@@ -373,6 +373,9 @@ importers:
       '@dofek/heart-rate-variability':
         specifier: workspace:*
         version: link:../heart-rate-variability
+      '@dofek/providers':
+        specifier: workspace:*
+        version: link:../providers-meta
       '@dofek/recovery':
         specifier: workspace:*
         version: link:../recovery

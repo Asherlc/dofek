@@ -1,3 +1,5 @@
+import { providerLabel } from "@dofek/providers/providers";
+import { activitySourceUrl } from "@dofek/providers/source-links";
 import { mapHrZones } from "@dofek/zones/zones";
 import { TRPCError } from "@trpc/server";
 import { sql } from "drizzle-orm";
@@ -24,6 +26,11 @@ const activityListRowSchema = z
   })
   .passthrough();
 
+const sourceExternalIdSchema = z.object({
+  providerId: z.string(),
+  externalId: z.string(),
+});
+
 const activityDetailRowSchema = z.object({
   id: z.string(),
   activity_type: z.string(),
@@ -33,6 +40,7 @@ const activityDetailRowSchema = z.object({
   notes: z.string().nullable(),
   provider_id: z.string(),
   source_providers: z.array(z.string()),
+  source_external_ids: z.array(sourceExternalIdSchema).nullable(),
   avg_hr: z.number().nullable(),
   max_hr: z.number().nullable(),
   avg_power: z.number().nullable(),
@@ -63,6 +71,12 @@ const hrZoneRowSchema = z.object({
   seconds: z.coerce.number(),
 });
 
+export interface SourceLink {
+  providerId: string;
+  label: string;
+  url: string;
+}
+
 export interface ActivityDetail {
   id: string;
   activityType: string;
@@ -72,6 +86,7 @@ export interface ActivityDetail {
   notes: string | null;
   providerId: string;
   sourceProviders: string[];
+  sourceLinks: SourceLink[];
   avgHr: number | null;
   maxHr: number | null;
   avgPower: number | null;
@@ -163,6 +178,7 @@ export const activityRouter = router({
               a.notes,
               a.provider_id,
               a.source_providers,
+              a.source_external_ids,
               s.avg_hr,
               s.max_hr,
               s.avg_power,
@@ -306,6 +322,21 @@ export const activityRouter = router({
     }),
 });
 
+/** Build source links from provider external IDs. Exported for unit testing. */
+export function buildSourceLinks(
+  sourceExternalIds: Array<{ providerId: string; externalId: string }> | null,
+): SourceLink[] {
+  if (!sourceExternalIds) return [];
+  const links: SourceLink[] = [];
+  for (const { providerId, externalId } of sourceExternalIds) {
+    const url = activitySourceUrl(providerId, externalId);
+    if (url) {
+      links.push({ providerId, label: providerLabel(providerId), url });
+    }
+  }
+  return links;
+}
+
 /** Map a raw DB row to an ActivityDetail. Exported for unit testing. */
 export function mapActivityDetail(row: {
   id: string;
@@ -316,6 +347,7 @@ export function mapActivityDetail(row: {
   notes: string | null;
   provider_id: string;
   source_providers: string[];
+  source_external_ids: Array<{ providerId: string; externalId: string }> | null;
   avg_hr: number | null;
   max_hr: number | null;
   avg_power: number | null;
@@ -338,6 +370,7 @@ export function mapActivityDetail(row: {
     notes: row.notes ? String(row.notes) : null,
     providerId: String(row.provider_id),
     sourceProviders: row.source_providers ?? [],
+    sourceLinks: buildSourceLinks(row.source_external_ids),
     avgHr: row.avg_hr != null ? Number(row.avg_hr) : null,
     maxHr: row.max_hr != null ? Number(row.max_hr) : null,
     avgPower: row.avg_power != null ? Number(row.avg_power) : null,

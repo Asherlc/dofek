@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
 
-import { mapActivityDetail, mapHrZones, mapStreamPoint } from "./activity.ts";
+import { buildSourceLinks, mapActivityDetail, mapHrZones, mapStreamPoint } from "./activity.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 // Mock tRPC infrastructure
@@ -135,7 +135,7 @@ describe("activityRouter", () => {
   });
 
   describe("byId", () => {
-    it("returns mapped activity detail", async () => {
+    it("returns mapped activity detail with source links", async () => {
       const row = {
         id: "abc-123",
         activity_type: "cycling",
@@ -144,7 +144,11 @@ describe("activityRouter", () => {
         name: "Morning Ride",
         notes: null,
         provider_id: "wahoo",
-        source_providers: ["wahoo"],
+        source_providers: ["strava", "wahoo"],
+        source_external_ids: [
+          { providerId: "strava", externalId: "99999" },
+          { providerId: "wahoo", externalId: "42" },
+        ],
         avg_hr: 150,
         max_hr: 180,
         avg_power: 200,
@@ -165,6 +169,10 @@ describe("activityRouter", () => {
       expect(result.avgHr).toBe(150);
       expect(result.maxPower).toBe(350);
       expect(result.elevationGain).toBe(300);
+      expect(result.sourceLinks).toEqual([
+        { providerId: "strava", label: "Strava", url: "https://www.strava.com/activities/99999" },
+        { providerId: "wahoo", label: "Wahoo", url: "https://cloud.wahoo.com/workouts/42" },
+      ]);
     });
 
     it("throws NOT_FOUND when activity does not exist", async () => {
@@ -184,6 +192,7 @@ describe("activityRouter", () => {
         notes: null,
         provider_id: "manual",
         source_providers: null,
+        source_external_ids: null,
         avg_hr: null,
         max_hr: null,
         avg_power: null,
@@ -203,6 +212,7 @@ describe("activityRouter", () => {
       expect(result.name).toBeNull();
       expect(result.avgHr).toBeNull();
       expect(result.sourceProviders).toEqual([]);
+      expect(result.sourceLinks).toEqual([]);
     });
   });
 
@@ -311,6 +321,40 @@ describe("activityRouter", () => {
   });
 });
 
+describe("buildSourceLinks", () => {
+  it("builds links for providers with known URL templates", () => {
+    const links = buildSourceLinks([
+      { providerId: "strava", externalId: "12345" },
+      { providerId: "garmin", externalId: "67890" },
+    ]);
+    expect(links).toEqual([
+      { providerId: "strava", label: "Strava", url: "https://www.strava.com/activities/12345" },
+      {
+        providerId: "garmin",
+        label: "Garmin",
+        url: "https://connect.garmin.com/modern/activity/67890",
+      },
+    ]);
+  });
+
+  it("skips providers without URL templates", () => {
+    const links = buildSourceLinks([
+      { providerId: "strava", externalId: "12345" },
+      { providerId: "apple_health", externalId: "ah:workout:2024-01-01" },
+    ]);
+    expect(links).toHaveLength(1);
+    expect(links[0]?.providerId).toBe("strava");
+  });
+
+  it("returns empty array for null input", () => {
+    expect(buildSourceLinks(null)).toEqual([]);
+  });
+
+  it("returns empty array for empty input", () => {
+    expect(buildSourceLinks([])).toEqual([]);
+  });
+});
+
 describe("mapActivityDetail", () => {
   const fullRow = {
     id: "abc-123",
@@ -321,6 +365,10 @@ describe("mapActivityDetail", () => {
     notes: "Felt good",
     provider_id: "wahoo",
     source_providers: ["wahoo", "strava"],
+    source_external_ids: [
+      { providerId: "strava", externalId: "99999" },
+      { providerId: "wahoo", externalId: "42" },
+    ],
     avg_hr: 145,
     max_hr: 175,
     avg_power: 220,
@@ -344,6 +392,8 @@ describe("mapActivityDetail", () => {
     expect(mapped.notes).toBe("Felt good");
     expect(mapped.providerId).toBe("wahoo");
     expect(mapped.sourceProviders).toEqual(["wahoo", "strava"]);
+    expect(mapped.sourceLinks).toHaveLength(2);
+    expect(mapped.sourceLinks[0]?.label).toBe("Strava");
     expect(mapped.avgHr).toBe(145);
     expect(mapped.maxHr).toBe(175);
     expect(mapped.avgPower).toBe(220);
@@ -363,6 +413,7 @@ describe("mapActivityDetail", () => {
       ended_at: null,
       name: null,
       notes: null,
+      source_external_ids: null,
       avg_hr: null,
       max_hr: null,
       avg_power: null,
@@ -378,6 +429,7 @@ describe("mapActivityDetail", () => {
     expect(mapped.endedAt).toBeNull();
     expect(mapped.name).toBeNull();
     expect(mapped.notes).toBeNull();
+    expect(mapped.sourceLinks).toEqual([]);
     expect(mapped.avgHr).toBeNull();
     expect(mapped.maxHr).toBeNull();
     expect(mapped.avgPower).toBeNull();
