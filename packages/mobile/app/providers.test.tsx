@@ -717,6 +717,25 @@ describe("ProvidersScreen", () => {
 		expect(screen.queryByText("Sync All")).toBeNull();
 	});
 
+	it("shows Expired status when provider needsReauth", async () => {
+		const expiredProvider = {
+			...connectedProvider,
+			id: "polar",
+			name: "Polar",
+			needsReauth: true,
+		};
+		mockProvidersQuery.mockReturnValue({
+			data: [expiredProvider],
+			isLoading: false,
+		});
+
+		const { default: ProvidersScreen } = await import("./providers");
+		render(<ProvidersScreen />);
+
+		expect(screen.getByText("Expired")).toBeTruthy();
+		expect(screen.getByText("Connect")).toBeTruthy();
+	});
+
 	it("opens browser for OAuth provider connect", async () => {
 		const WebBrowser = await import("expo-web-browser");
 		mockProvidersQuery.mockReturnValue({
