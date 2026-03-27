@@ -12,6 +12,8 @@ extension CMSensorDataList: @retroactive Sequence {
 /// Manages CMSensorRecorder sessions on Apple Watch.
 /// Records accelerometer data at 50 Hz in the background, retains up to 3 days of history.
 final class AccelerometerRecorder: ObservableObject {
+    static let shared = AccelerometerRecorder()
+
     private let sensorRecorder = CMSensorRecorder()
     private let defaults = UserDefaults.standard
 
