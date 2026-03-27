@@ -19,6 +19,8 @@ jobs:
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          fetch-depth: 0 # Full history needed for git rev-list build number
       - uses: ./.github/actions/setup-node-pnpm
 
       - name: Download Sentry XCFramework
@@ -307,6 +309,9 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: COMMIT_HASH=${{ github.sha }}
+          build-args: |
+            COMMIT_HASH=${{ github.sha }}
+            NODE_IMAGE=ghcr.io/asherlc/dofek/mirror/node:22-alpine
+            NGINX_IMAGE=ghcr.io/asherlc/dofek/mirror/nginx:alpine
           cache-from: type=gha,scope=${{ matrix.target }}
           cache-to: type=gha,mode=max,scope=${{ matrix.target }}
