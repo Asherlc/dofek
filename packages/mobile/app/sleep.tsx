@@ -100,12 +100,7 @@ export default function SleepScreen() {
           {/* Sleep debt */}
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Sleep Debt (14 Days)</Text>
-            <Text
-              style={[
-                styles.debtValue,
-                { color: sleepDebtColor(sleepDebt) },
-              ]}
-            >
+            <Text style={[styles.debtValue, { color: sleepDebtColor(sleepDebt) }]}>
               {formatSleepDebt(sleepDebt)}
             </Text>
             <Text style={styles.debtSubtitle}>vs 8 hour target per night</Text>
