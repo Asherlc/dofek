@@ -19,6 +19,8 @@ jobs:
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          fetch-depth: 0 # Full history needed for git rev-list build number
       - uses: ./.github/actions/setup-node-pnpm
 
       - name: Download Sentry XCFramework
