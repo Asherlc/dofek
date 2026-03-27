@@ -2,6 +2,9 @@
 -- This stores an array of {provider_id, external_id} pairs for each
 -- deduplicated activity, enabling deep links to the original source apps.
 
+SET lock_timeout = '5s';
+SET statement_timeout = '60s';
+
 -- Must drop dependent views first
 DROP MATERIALIZED VIEW IF EXISTS fitness.activity_summary;
 DROP MATERIALIZED VIEW IF EXISTS fitness.v_activity CASCADE;
@@ -127,9 +130,17 @@ SELECT
 FROM merged m
 ORDER BY m.started_at DESC;
 
-CREATE UNIQUE INDEX v_activity_id_idx ON fitness.v_activity (id);
-CREATE INDEX v_activity_time_idx ON fitness.v_activity (started_at DESC);
-CREATE INDEX v_activity_user_time_idx ON fitness.v_activity (user_id, started_at DESC);
+--> statement-breakpoint
+
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS v_activity_id_idx ON fitness.v_activity (id);
+
+--> statement-breakpoint
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS v_activity_time_idx ON fitness.v_activity (started_at DESC);
+
+--> statement-breakpoint
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS v_activity_user_time_idx ON fitness.v_activity (user_id, started_at DESC);
 
 --> statement-breakpoint
 
@@ -234,8 +245,8 @@ GROUP BY ms.activity_id, ms.user_id, a.activity_type, a.started_at, a.ended_at, 
 
 --> statement-breakpoint
 
-CREATE UNIQUE INDEX IF NOT EXISTS activity_summary_pk ON fitness.activity_summary (activity_id);
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS activity_summary_pk ON fitness.activity_summary (activity_id);
 
 --> statement-breakpoint
 
-CREATE INDEX IF NOT EXISTS activity_summary_user_time ON fitness.activity_summary (user_id, started_at DESC);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS activity_summary_user_time ON fitness.activity_summary (user_id, started_at DESC);
