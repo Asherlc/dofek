@@ -108,7 +108,14 @@ describe("initBackgroundHealthKitSync", () => {
     vi.useFakeTimers();
     // Return workout data so pushWorkouts.mutate gets called
     vi.mocked(queryWorkouts).mockResolvedValueOnce([
-      { activityType: 1, startDate: "2026-03-22T10:00:00Z", endDate: "2026-03-22T11:00:00Z", duration: 3600, totalEnergyBurned: 500, totalDistance: 10000 },
+      {
+        activityType: 1,
+        startDate: "2026-03-22T10:00:00Z",
+        endDate: "2026-03-22T11:00:00Z",
+        duration: 3600,
+        totalEnergyBurned: 500,
+        totalDistance: 10000,
+      },
     ]);
     const client = createMockClient();
     client.healthKitSync.pushWorkouts.mutate.mockRejectedValue(new Error("network"));
@@ -128,7 +135,14 @@ describe("initBackgroundHealthKitSync", () => {
   it("reports sync failures to Sentry", async () => {
     vi.useFakeTimers();
     vi.mocked(queryWorkouts).mockResolvedValueOnce([
-      { activityType: 1, startDate: "2026-03-22T10:00:00Z", endDate: "2026-03-22T11:00:00Z", duration: 3600, totalEnergyBurned: 500, totalDistance: 10000 },
+      {
+        activityType: 1,
+        startDate: "2026-03-22T10:00:00Z",
+        endDate: "2026-03-22T11:00:00Z",
+        duration: 3600,
+        totalEnergyBurned: 500,
+        totalDistance: 10000,
+      },
     ]);
     const client = createMockClient();
     const networkError = new Error("network timeout");
@@ -141,10 +155,9 @@ describe("initBackgroundHealthKitSync", () => {
     await vi.advanceTimersByTimeAsync(5000);
     await vi.runAllTimersAsync();
 
-    expect(mockCaptureException).toHaveBeenCalledWith(
-      networkError,
-      { source: "bg-healthkit-sync" },
-    );
+    expect(mockCaptureException).toHaveBeenCalledWith(networkError, {
+      source: "bg-healthkit-sync",
+    });
     vi.useRealTimers();
   });
 

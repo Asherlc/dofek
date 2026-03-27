@@ -1,9 +1,9 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
 import * as WebBrowser from "expo-web-browser";
+import { describe, expect, it, vi } from "vitest";
 
 const mockSlackStatus = {
-  data: undefined as { configured: boolean; connected: boolean } | undefined,
+  data: undefined satisfies { configured: boolean; connected: boolean } | undefined,
   isLoading: true,
   refetch: vi.fn(),
 };

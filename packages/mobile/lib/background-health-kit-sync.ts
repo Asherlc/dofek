@@ -9,7 +9,7 @@ import {
   queryWorkouts,
   setupBackgroundObservers,
 } from "../modules/health-kit";
-import { syncHealthKitToServer, type SyncTrpcClient } from "./health-kit-sync";
+import { type SyncTrpcClient, syncHealthKitToServer } from "./health-kit-sync";
 import { captureException, logger } from "./telemetry";
 
 const TAG = "bg-healthkit-sync";
@@ -74,7 +74,10 @@ export async function initBackgroundHealthKitSync(
         syncRangeDays: 1,
       })
         .then((result) => {
-          logger.info(TAG, `Sync complete: ${result.inserted} inserted, ${result.errors.length} errors`);
+          logger.info(
+            TAG,
+            `Sync complete: ${result.inserted} inserted, ${result.errors.length} errors`,
+          );
           onSyncComplete?.();
         })
         .catch((error: unknown) => {

@@ -1613,7 +1613,7 @@ describe("WhoopProvider.sync() — sleep sync", () => {
     const db = makeChainableMock();
     db.onConflictDoUpdate = vi.fn().mockReturnValue(db);
     db.returning = vi.fn().mockResolvedValue([]);
-    const result = await provider.sync(db, new Date("2026-03-01"));
+    await provider.sync(db, new Date("2026-03-01"));
 
     const valuesCallArgs = getValuesCallArgs(db);
     const sleepInsert = findValuesRecord(

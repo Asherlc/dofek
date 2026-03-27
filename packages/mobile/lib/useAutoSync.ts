@@ -1,15 +1,15 @@
 import { useEffect, useRef } from "react";
-import { trpc } from "./trpc";
 import {
   getRequestStatus,
   isAvailable,
   queryDailyStatistics,
   queryQuantitySamples,
-  queryWorkouts,
   querySleepSamples,
+  queryWorkouts,
 } from "../modules/health-kit";
 import { syncHealthKitToServer } from "./health-kit-sync";
 import { captureException, logger } from "./telemetry";
+import { trpc } from "./trpc";
 
 /** Check whether the latest data date is before today (stale). */
 export function isDataStale(latestDate: string | null | undefined): boolean {
@@ -45,10 +45,7 @@ export function useAutoSync(latestDate: string | null | undefined) {
       .mutateAsync({ sinceDays: 1 })
       .then(async ({ jobId }) => {
         const pollUntilDone = async (): Promise<void> => {
-          const status = await trpcUtils.sync.syncStatus.fetch(
-            { jobId },
-            { staleTime: 0 },
-          );
+          const status = await trpcUtils.sync.syncStatus.fetch({ jobId }, { staleTime: 0 });
           if (!status || status.status === "done" || status.status === "error") {
             await trpcUtils.invalidate();
             return;
@@ -92,7 +89,10 @@ export function useAutoSync(latestDate: string | null | undefined) {
           }
         })
         .catch((error: unknown) => {
-          logger.warn("auto-sync", `HealthKit sync failed: ${error instanceof Error ? error.message : String(error)}`);
+          logger.warn(
+            "auto-sync",
+            `HealthKit sync failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
           captureException(error, { source: "auto-sync-healthkit" });
         });
     }

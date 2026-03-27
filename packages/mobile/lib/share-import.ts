@@ -76,15 +76,11 @@ function getSharedFileInfo(fileUri: string): SharedFileInfo {
   const encodedName = uriWithoutQuery.split("/").pop() ?? "shared-file";
   const fileName = decodeURIComponent(encodedName);
   const dotIndex = fileName.lastIndexOf(".");
-  const fileExtension =
-    dotIndex >= 0 ? normalizeExtension(fileName.slice(dotIndex)) : "";
+  const fileExtension = dotIndex >= 0 ? normalizeExtension(fileName.slice(dotIndex)) : "";
   return { fileName, fileExtension };
 }
 
-function getUploadTarget(
-  serverUrl: string,
-  providerId: ImportProviderId,
-): UploadTarget {
+function getUploadTarget(serverUrl: string, providerId: ImportProviderId): UploadTarget {
   const baseUrl = serverUrl.replace(/\/+$/, "");
   switch (providerId) {
     case "apple-health":
@@ -105,11 +101,11 @@ function getUploadTarget(
   }
 }
 
-function matchesCsvHeader(
-  csvHeaderLine: string,
-  requiredColumns: string[],
-): boolean {
-  const normalized = csvHeaderLine.replace(/^\uFEFF/, "").trim().toLowerCase();
+function matchesCsvHeader(csvHeaderLine: string, requiredColumns: string[]): boolean {
+  const normalized = csvHeaderLine
+    .replace(/^\uFEFF/, "")
+    .trim()
+    .toLowerCase();
   if (normalized === "") return false;
   return requiredColumns.every((column) => normalized.includes(column));
 }
@@ -125,10 +121,7 @@ function parseErrorMessage(data: unknown, fallback: string): string {
   return parsed.data.error ?? parsed.data.message ?? fallback;
 }
 
-function getContentTypeForUpload(
-  providerId: ImportProviderId,
-  fileExtension: string,
-): string {
+function getContentTypeForUpload(providerId: ImportProviderId, fileExtension: string): string {
   if (providerId === "apple-health") {
     return fileExtension === ".xml" ? "application/xml" : "application/zip";
   }
@@ -164,14 +157,7 @@ export function inferImportProviderFromFile({
     return null;
   }
 
-  if (
-    matchesCsvHeader(csvHeaderLine, [
-      "date",
-      "workout name",
-      "duration",
-      "exercise name",
-    ])
-  ) {
+  if (matchesCsvHeader(csvHeaderLine, ["date", "workout name", "duration", "exercise name"])) {
     return "strong-csv";
   }
 
@@ -186,7 +172,12 @@ export function inferImportProviderFromFile({
 }
 
 function getCsvHeaderLine(csvText: string): string {
-  return csvText.replace(/^\uFEFF/, "").split(/\r?\n/)[0]?.trim() ?? "";
+  return (
+    csvText
+      .replace(/^\uFEFF/, "")
+      .split(/\r?\n/)[0]
+      ?.trim() ?? ""
+  );
 }
 
 async function readBlob(fetchImpl: typeof fetch, fileUri: string): Promise<Blob> {
@@ -198,7 +189,7 @@ async function readBlob(fetchImpl: typeof fetch, fileUri: string): Promise<Blob>
 }
 
 async function parseUploadResponse(response: Response): Promise<{ jobId: string }> {
-  const json = (await response.json().catch(() => ({}))) as unknown;
+  const json: unknown = await response.json().catch(() => ({}));
   const parsed = uploadResponseSchema.safeParse(json);
   if (!response.ok) {
     throw new Error(parseErrorMessage(json, `Upload failed (HTTP ${response.status})`));
@@ -305,7 +296,7 @@ async function pollImportStatus(
         Authorization: `Bearer ${sessionToken}`,
       },
     });
-    const json = (await response.json().catch(() => ({}))) as unknown;
+    const json: unknown = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new Error(parseErrorMessage(json, `Status check failed (HTTP ${response.status})`));
     }
@@ -351,9 +342,12 @@ export async function importSharedFile(
   deps: ImportSharedFileDeps = {},
 ): Promise<ShareImportResult> {
   const fetchImpl = deps.fetchImpl ?? fetch;
-  const sleep = deps.sleep ?? ((milliseconds: number) => new Promise<void>((resolve) => {
-    setTimeout(resolve, milliseconds);
-  }));
+  const sleep =
+    deps.sleep ??
+    ((milliseconds: number) =>
+      new Promise<void>((resolve) => {
+        setTimeout(resolve, milliseconds);
+      }));
 
   const { fileName, fileExtension } = getSharedFileInfo(args.fileUri);
   args.onProgress?.({
@@ -367,8 +361,7 @@ export async function importSharedFile(
     const blob = await readBlobFn(args.fileUri);
     const mimeType = blob.type || null;
 
-    const csvHeaderLine =
-      fileExtension === ".csv" ? getCsvHeaderLine(await blob.text()) : "";
+    const csvHeaderLine = fileExtension === ".csv" ? getCsvHeaderLine(await blob.text()) : "";
 
     const providerId = inferImportProviderFromFile({
       fileName,
