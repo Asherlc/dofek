@@ -9,6 +9,7 @@ import {
   querySleepSamples,
 } from "../modules/health-kit";
 import { syncHealthKitToServer } from "./health-kit-sync";
+import { captureException } from "./telemetry";
 
 /** Check whether the latest data date is before today (stale). */
 export function isDataStale(latestDate: string | null | undefined): boolean {
@@ -63,9 +64,13 @@ export function useAutoSync(latestDate: string | null | undefined) {
 
     // Trigger HealthKit sync (iOS only)
     if (isAvailable()) {
+      console.log("[auto-sync] Starting HealthKit sync");
       getRequestStatus()
         .then((status) => {
-          if (status !== "unnecessary") return null;
+          if (status !== "unnecessary") {
+            console.log(`[auto-sync] HealthKit permission status="${status}", skipping`);
+            return null;
+          }
           return syncHealthKitToServer({
             trpcClient: trpcUtils.client,
             healthKit: {
@@ -78,10 +83,16 @@ export function useAutoSync(latestDate: string | null | undefined) {
           });
         })
         .then((result) => {
-          if (result) trpcUtils.invalidate();
+          if (result) {
+            console.log(
+              `[auto-sync] HealthKit sync complete: ${result.inserted} inserted, ${result.errors.length} errors`,
+            );
+            trpcUtils.invalidate();
+          }
         })
-        .catch(() => {
-          // Silently fail — auto-sync is best-effort
+        .catch((error: unknown) => {
+          console.warn("[auto-sync] HealthKit sync failed:", error);
+          captureException(error, { source: "auto-sync-healthkit" });
         });
     }
   }, [latestDate, activeSyncs.isLoading, activeSyncs.data, triggerSync, trpcUtils]);

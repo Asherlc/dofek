@@ -7,7 +7,10 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { trpc } from "../lib/trpc";
 import { AuthProvider, useAuth } from "../lib/auth-context";
 import { initBackgroundAccelerometerSync } from "../lib/background-accelerometer-sync";
-import { initBackgroundHealthKitSync } from "../lib/background-health-kit-sync";
+import {
+  initBackgroundHealthKitSync,
+} from "../lib/background-health-kit-sync";
+import { captureException } from "../lib/telemetry";
 import { initBackgroundWatchAccelerometerSync } from "../lib/background-watch-accelerometer-sync";
 import {
   initBackgroundWhoopBleSync,
@@ -84,8 +87,9 @@ function AuthGate() {
     };
     initBackgroundHealthKitSync(syncClient, () => {
       queryClient.invalidateQueries();
-    }).catch(() => {
-      // Best-effort — don't block the app for background sync setup failures
+    }).catch((error: unknown) => {
+      console.warn("[bg-healthkit-sync] Init failed:", error);
+      captureException(error, { source: "background-health-kit-sync-init" });
     });
 
     // Start continuous accelerometer recording and background sync

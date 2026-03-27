@@ -753,11 +753,15 @@ export class WhoopProvider implements SyncProvider {
                   },
                 });
               count++;
-            } else {
+            } else if (recoveryState === "SCORED") {
+              // Has SCORED state but no parseable biometric data — likely an API change
               logger.warn(
-                `[whoop] Skipping unrecognized recovery format: ` +
-                  `state=${recoveryState}, keys=${Object.keys(cycle.recovery).join(",")}`,
+                `[whoop] SCORED recovery with no parseable data: ` +
+                  `keys=${Object.keys(cycle.recovery).join(",")}`,
               );
+            } else {
+              // Pending/unscored recovery (current day before sleep, etc.) — expected
+              logger.info(`[whoop] Skipping unscored recovery: state=${recoveryState}`);
             }
           }
           logger.info(
