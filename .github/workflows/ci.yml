@@ -292,6 +292,8 @@ jobs:
           cd packages/mobile/ios
           agvtool new-version -all ${{ github.run_number }}
       - name: Archive (Release, no signing)
+        env:
+          SENTRY_COPY_OPTIONS_FILE: "false"
         run: |
           set -o pipefail
           xcodebuild archive \
