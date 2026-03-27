@@ -10,6 +10,9 @@
 -- where resting_hr is the user's latest value and max_hr is from their profile.
 -- Activities for users without max_hr or resting_hr get NULL zone columns.
 
+set lock_timeout = '1s';
+set statement_timeout = '300s';
+
 DROP MATERIALIZED VIEW IF EXISTS fitness.activity_summary;
 
 --> statement-breakpoint
@@ -149,8 +152,8 @@ GROUP BY ms.activity_id, ms.user_id, a.activity_type, a.started_at, a.ended_at, 
 
 --> statement-breakpoint
 
-CREATE UNIQUE INDEX IF NOT EXISTS activity_summary_pk ON fitness.activity_summary (activity_id);
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS activity_summary_pk ON fitness.activity_summary (activity_id);
 
 --> statement-breakpoint
 
-CREATE INDEX IF NOT EXISTS activity_summary_user_time ON fitness.activity_summary (user_id, started_at DESC);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS activity_summary_user_time ON fitness.activity_summary (user_id, started_at DESC);
