@@ -246,6 +246,16 @@ describe("PelotonClient", () => {
     expect(secondUrl).toContain("/api/user/user-123/workouts");
   });
 
+  it("sends Authorization and peloton-platform headers", async () => {
+    const mockFetch = vi.fn().mockResolvedValue(Response.json({ id: "user-123" }));
+    const client = new PelotonClient("my-secret-token", mockFetch);
+    await client.getUserId();
+
+    const options = mockFetch.mock.calls[0]?.[1];
+    expect(options?.headers?.Authorization).toBe("Bearer my-secret-token");
+    expect(options?.headers?.["peloton-platform"]).toBe("web");
+  });
+
   it("getPerformanceGraph calls correct endpoint", async () => {
     const mockFetch = vi.fn().mockResolvedValue(
       Response.json({

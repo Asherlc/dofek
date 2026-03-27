@@ -250,6 +250,20 @@ describe("Peloton Provider", () => {
       expect(result.raw?.classTitle).toBeUndefined();
     });
 
+    it("handles ride with no instructor", () => {
+      const noInstructor: PelotonWorkout = {
+        ...sampleWorkout,
+        ride: {
+          id: "ride-001",
+          title: "Just Ride",
+          duration: 1800,
+        },
+      };
+      const result = parseWorkout(noInstructor);
+      expect(result.raw.instructor).toBeUndefined();
+      expect(result.raw.classTitle).toBe("Just Ride");
+    });
+
     it("parses a strength workout", () => {
       const result = parseWorkout(sampleStrengthWorkout);
 
