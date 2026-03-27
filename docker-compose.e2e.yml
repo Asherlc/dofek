@@ -1,6 +1,6 @@
 services:
   db:
-    image: ghcr.io/asherlc/dofek/mirror/timescaledb:latest-pg16
+    image: timescale/timescaledb:latest-pg16
     environment:
       POSTGRES_DB: health
       POSTGRES_USER: health
