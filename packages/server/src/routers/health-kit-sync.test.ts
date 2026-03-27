@@ -286,6 +286,82 @@ describe("healthKitSyncRouter", () => {
       expect(jan15?.steps).toBe(3000);
     });
 
+    it("rounds float steps to integer before inserting into daily_metrics", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.pushQuantitySamples({
+        samples: [
+          makeSample({
+            type: "HKQuantityTypeIdentifierStepCount",
+            value: 5552.349998360692,
+            uuid: "steps-float",
+          }),
+        ],
+      });
+
+      // Find the daily_metrics INSERT
+      const dailyInsertCall = execute.mock.calls.find((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return serialized.includes("daily_metrics");
+      });
+      expect(dailyInsertCall).toBeDefined();
+      // The serialized SQL should contain the rounded integer value (5552), not the float
+      const serialized = JSON.stringify(dailyInsertCall?.[0]);
+      expect(serialized).toContain("5552");
+      expect(serialized).not.toContain("5552.349998360692");
+    });
+
+    it("rounds float heart rate to smallint before inserting into metric_stream", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.pushQuantitySamples({
+        samples: [
+          makeSample({
+            type: "HKQuantityTypeIdentifierHeartRate",
+            value: 80.89823150634766,
+            uuid: "hr-float",
+          }),
+        ],
+      });
+
+      // Find the metric_stream INSERT
+      const metricInsertCall = execute.mock.calls.find((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return serialized.includes("metric_stream") && serialized.includes("heart_rate");
+      });
+      expect(metricInsertCall).toBeDefined();
+      const serialized = JSON.stringify(metricInsertCall?.[0]);
+      expect(serialized).toContain("81");
+      expect(serialized).not.toContain("80.89823150634766");
+    });
+
+    it("does not round real-valued columns (active_energy_kcal, distance_km)", async () => {
+      const samples = [
+        makeSample({
+          type: "HKQuantityTypeIdentifierActiveEnergyBurned",
+          value: 385.08851139373337,
+          startDate: "2024-01-15T12:00:00Z",
+          uuid: "energy-float",
+        }),
+      ];
+
+      const daily = aggregateDailyMetricSamples(samples);
+      const jan15 = daily.get("2024-01-15\x00iPhone");
+
+      // activeEnergyKcal is a real column — should preserve the float value
+      expect(jan15?.activeEnergyKcal).toBeCloseTo(385.089, 2);
+    });
+
     it("processes point-in-time daily metric samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({
