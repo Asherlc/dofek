@@ -11,6 +11,7 @@ let syncing = false;
  *
  * - Checks if a Watch is paired with the Dofek app installed
  * - Listens for app foreground events and syncs any pending transferred data
+ * - Runs an initial sync immediately (AppState listener only fires on transitions)
  * - Should be called once after authentication is established
  */
 export async function initBackgroundWatchAccelerometerSync(
@@ -44,6 +45,15 @@ export async function initBackgroundWatchAccelerometerSync(
       .finally(() => {
         syncing = false;
       });
+  });
+
+  // Run an initial sync immediately. The app is already active when init runs,
+  // so no AppState "active" event fires until the next background → foreground cycle.
+  await syncAccelerometerToServer({
+    trpcClient,
+    coreMotion: adapter,
+    deviceId: "Apple Watch",
+    deviceType: "apple_watch",
   });
 }
 

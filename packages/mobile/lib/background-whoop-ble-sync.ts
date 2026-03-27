@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/react-native";
 import { AppState, type AppStateStatus } from "react-native";
 import type { AccelerometerUploadClient } from "./accelerometer-service";
 
@@ -32,7 +33,7 @@ let currentDeps: WhoopBleSyncDeps | null = null;
 /**
  * Initialize always-on WHOOP BLE accelerometer sync.
  *
- * - Connects to the WHOOP strap and starts IMU streaming on first foreground
+ * - Connects to the WHOOP strap and starts IMU streaming immediately
  * - On subsequent foreground events, uploads buffered samples (streaming stays on)
  * - Should be called once after authentication when the setting is enabled
  */
@@ -78,16 +79,40 @@ async function syncOnForeground(
   trpcClient: AccelerometerUploadClient,
   whoopDeps: WhoopBleSyncDeps,
 ): Promise<void> {
-  if (!whoopDeps.isBluetoothAvailable()) return;
+  if (!whoopDeps.isBluetoothAvailable()) {
+    Sentry.addBreadcrumb({
+      category: "whoop-ble",
+      message: "Bluetooth not available, skipping sync",
+      level: "warning",
+    });
+    return;
+  }
 
   // Connect if not already connected
   if (!connected) {
     const device = await whoopDeps.findWhoop();
-    if (!device) return;
+    if (!device) {
+      Sentry.addBreadcrumb({
+        category: "whoop-ble",
+        message: "No WHOOP strap found",
+        level: "warning",
+      });
+      return;
+    }
 
+    Sentry.addBreadcrumb({
+      category: "whoop-ble",
+      message: `Connecting to ${device.name ?? device.id}`,
+      level: "info",
+    });
     await whoopDeps.connect(device.id);
     await whoopDeps.startImuStreaming();
     connected = true;
+    Sentry.addBreadcrumb({
+      category: "whoop-ble",
+      message: "Connected and streaming",
+      level: "info",
+    });
   }
 
   // Upload any buffered samples
