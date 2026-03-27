@@ -868,23 +868,51 @@ jobs:
             DEVELOPMENT_TEAM=68LEL35DQ9
 
       - name: Diagnose archive signing
+        if: always()
         run: |
           echo "=== Keychain identities ==="
           security find-identity -v -p codesigning
           echo ""
+
+          echo "=== Archive structure ==="
+          find "$RUNNER_TEMP/Dofek.xcarchive/Products" -maxdepth 3 -type d 2>/dev/null || true
+          echo ""
+
+          echo "=== Archive top-level products ==="
+          ls -la "$RUNNER_TEMP/Dofek.xcarchive/Products/Applications/" 2>/dev/null || true
+          echo ""
+
           echo "=== Main app codesign ==="
           codesign -dvv "$RUNNER_TEMP/Dofek.xcarchive/Products/Applications/Dofek.app" 2>&1 || true
           echo ""
+
+          echo "=== Main app entitlements ==="
+          codesign -d --entitlements - "$RUNNER_TEMP/Dofek.xcarchive/Products/Applications/Dofek.app" 2>&1 || true
+          echo ""
+
           echo "=== Watch app codesign ==="
-          find "$RUNNER_TEMP/Dofek.xcarchive" -name "DofekWatch.app" -exec codesign -dvv {} \; 2>&1 || true
+          find "$RUNNER_TEMP/Dofek.xcarchive" -name "DofekWatch.app" -exec sh -c 'echo "--- $1 ---"; codesign -dvv "$1" 2>&1' _ {} \; || true
           echo ""
+
+          echo "=== Watch app entitlements ==="
+          find "$RUNNER_TEMP/Dofek.xcarchive" -name "DofekWatch.app" -exec sh -c 'echo "--- $1 ---"; codesign -d --entitlements - "$1" 2>&1' _ {} \; || true
+          echo ""
+
           echo "=== Embedded provisioning profiles ==="
-          find "$RUNNER_TEMP/Dofek.xcarchive" -name "embedded.mobileprovision" -exec sh -c 'echo "--- $1 ---"; security cms -D -i "$1" 2>/dev/null | grep -A1 "Name\|TeamIdentifier\|ProvisionsAllDevices\|com.apple.developer" | head -20' _ {} \; || true
+          find "$RUNNER_TEMP/Dofek.xcarchive" -name "embedded.mobileprovision" -exec sh -c '
+            echo "--- $1 ---"
+            security cms -D -i "$1" 2>/dev/null | grep -E "AppIDName|Name|TeamIdentifier|TeamName|ProvisionsAllDevices|ProvisionedDevices|ExpirationDate|com\.apple\.developer" | head -30
+          ' _ {} \; || true
           echo ""
+
           echo "=== Provisioning profiles dir ==="
           ls -la ~/Library/MobileDevice/Provisioning\ Profiles/ 2>/dev/null || echo "No profiles dir"
+          echo ""
 
-      - name: Export and upload to TestFlight
+          echo "=== Archive Info.plist ==="
+          cat "$RUNNER_TEMP/Dofek.xcarchive/Info.plist" 2>/dev/null | head -60 || true
+
+      - name: Export IPA
         run: |
           xcodebuild -exportArchive \
             -archivePath $RUNNER_TEMP/Dofek.xcarchive \
@@ -895,10 +923,18 @@ jobs:
             -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
             -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
 
-      - name: Upload distribution logs
+      - name: Upload to TestFlight
+        if: success()
+        run: |
+          xcrun altool --upload-app \
+            --type ios \
+            --file $RUNNER_TEMP/export/Dofek.ipa \
+            --apiKey "$APP_STORE_CONNECT_KEY_ID" \
+            --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID"
+
+      - name: Dump distribution logs
         if: failure()
         run: |
-          echo "=== Distribution logs ==="
           find /var/folders -name "*.xcdistributionlogs" -print 2>/dev/null | while read logdir; do
             echo "--- $logdir ---"
             find "$logdir" -type f -exec sh -c 'echo "== $1 =="; cat "$1"' _ {} \;
