@@ -466,7 +466,7 @@ export default function ProvidersScreen() {
     id: p.id,
     label: p.name,
     enabled: p.authorized && !p.importOnly,
-    authStatus: p.authorized ? "connected" : "not_connected",
+    authStatus: p.needsReauth ? "expired" : p.authorized ? "connected" : "not_connected",
     authType: p.authType,
     lastSyncAt: p.lastSyncedAt,
     importOnly: p.importOnly,
