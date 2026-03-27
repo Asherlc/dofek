@@ -37,6 +37,7 @@ const mockActivity = {
   maxPower: null,
   avgSpeed: 3.0,
   avgCadence: null,
+  sourceProviders: ["whoop", "apple_health"],
 };
 
 const mockStreamPoints = [
@@ -169,6 +170,15 @@ describe("ActivityDetailPage", () => {
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />, "imperial");
       expect(screen.getByText(/6\.7 mph/)).toBeDefined();
+    });
+  });
+
+  describe("source providers", () => {
+    it("shows source providers with human-readable labels", async () => {
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+      const sourceElements = screen.getAllByText("Source: WHOOP, Apple Health");
+      expect(sourceElements.length).toBeGreaterThan(0);
     });
   });
 
