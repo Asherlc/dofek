@@ -27,6 +27,8 @@ const sampleWorkout: PelotonWorkout = {
   total_work: 360000, // joules
   is_total_work_personal_record: false,
   metrics_type: "cycling",
+  device_type: "home_bike_v1",
+  platform: "home_bike",
   ride: {
     id: "ride-001",
     title: "30 min Power Zone Ride",
@@ -272,6 +274,23 @@ describe("Peloton Provider", () => {
     it("computes duration from start/end when both present", () => {
       const result = parseWorkout(sampleWorkout);
       expect(result.name).toBe("30 min Power Zone Ride");
+    });
+
+    it("stores device_type and platform in raw metadata", () => {
+      const result = parseWorkout(sampleCyclingWorkout);
+      expect(result.raw.deviceType).toBe("home_bike_v1");
+      expect(result.raw.platform).toBe("home_bike");
+    });
+
+    it("handles missing device_type and platform", () => {
+      const noDevice: PelotonWorkout = {
+        ...sampleWorkout,
+        device_type: undefined,
+        platform: undefined,
+      };
+      const result = parseWorkout(noDevice);
+      expect(result.raw.deviceType).toBeUndefined();
+      expect(result.raw.platform).toBeUndefined();
     });
 
     it("stores personal record flag in raw", () => {

@@ -48,6 +48,8 @@ export interface PelotonWorkout {
   total_work: number; // joules
   is_total_work_personal_record: boolean;
   metrics_type?: string;
+  device_type?: string; // e.g. "home_bike_v1", "iOS", "android"
+  platform?: string; // e.g. "home_bike", "iOS_app", "android_app"
   ride?: PelotonRide;
   total_leaderboard_users?: number;
   leaderboard_rank?: number;
@@ -136,6 +138,8 @@ export function parseWorkout(workout: PelotonWorkout): ParsedPelotonWorkout {
     isPersonalRecord: workout.is_total_work_personal_record || undefined,
     fitnessDiscipline: workout.fitness_discipline,
     pelotonRideId: workout.ride?.id,
+    deviceType: workout.device_type || undefined,
+    platform: workout.platform || undefined,
   };
 
   return {
