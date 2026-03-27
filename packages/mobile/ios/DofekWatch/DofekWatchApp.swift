@@ -5,19 +5,26 @@ import SwiftUI
 struct DofekWatchApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
+    @ObservedObject private var recorder = AccelerometerRecorder.shared
+    @ObservedObject private var sessionDelegate = WatchSessionDelegate.shared
+
+    @StateObject private var transferManager = TransferManager(
+        recorder: AccelerometerRecorder.shared
+    )
+
     init() {
         SentrySDK.start { options in
             options.dsn = "https://971f1d756067049f70cdf4a04e8771a4@o4511073249067008.ingest.us.sentry.io/4511073386627073"
+            // Disable iOS-specific features that are unavailable on watchOS.
+            // The prebuilt XCFramework includes all platforms, but auto-instrumentation
+            // (UIViewController tracking, swizzling, network breadcrumbs) relies on
+            // UIKit which doesn't exist on watchOS and can crash at launch.
+            options.enableSwizzling = false
+            options.enableAutoPerformanceTracing = false
+            options.enableCaptureFailedRequests = false
+            options.enableAppHangTracking = false
         }
     }
-
-    @StateObject private var recorder = AccelerometerRecorder()
-    @StateObject private var sessionDelegate = WatchSessionDelegate.shared
-
-    @StateObject private var transferManager: TransferManager = {
-        let recorder = AccelerometerRecorder()
-        return TransferManager(recorder: recorder)
-    }()
 
     var body: some Scene {
         WindowGroup {
@@ -30,12 +37,9 @@ struct DofekWatchApp: App {
         .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {
             case .active:
-                // Start recording on every foreground (extends existing session)
                 recorder.startRecording()
-                // Transfer any queued data
                 transferManager.transferNewSamples()
             case .background:
-                // Ensure recording continues in background
                 recorder.startRecording()
             case .inactive:
                 break

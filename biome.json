@@ -14,7 +14,14 @@
   },
   "files": {
     "ignoreUnknown": true,
-    "includes": ["src/**", "packages/*/src/**", "scripts/**", "cypress/**", "*.ts"]
+    "includes": [
+      "src/**",
+      "packages/*/src/**",
+      "packages/mobile/**",
+      "scripts/**",
+      "cypress/**",
+      "*.ts"
+    ]
   },
   "formatter": {
     "indentStyle": "space",
@@ -40,6 +47,26 @@
       "linter": { "enabled": false },
       "formatter": { "enabled": false },
       "assist": { "enabled": false }
+    },
+    {
+      "includes": ["packages/mobile/**"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "error"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/mobile/lib/telemetry.ts", "packages/mobile/test-setup.ts"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "off"
+          }
+        }
+      }
     }
   ],
   "css": {

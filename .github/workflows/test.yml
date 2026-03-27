@@ -1,0 +1,183 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  seed-images:
+    name: Seed GHCR Mirror
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Mirror missing images
+        run: |
+          mirror() {
+            local source=$1 target=$2
+            if docker manifest inspect "$target" >/dev/null 2>&1; then
+              echo "✓ $target exists"
+            else
+              echo "Mirroring $source → $target"
+              docker pull "$source"
+              docker tag "$source" "$target"
+              docker push "$target"
+            fi
+          }
+          mirror "timescale/timescaledb:latest-pg16" "ghcr.io/asherlc/dofek/mirror/timescaledb:latest-pg16"
+          mirror "redis:7-alpine" "ghcr.io/asherlc/dofek/mirror/redis:7-alpine"
+
+  test-unit:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: ./.github/actions/setup-node-pnpm
+      - run: pnpm exec vitest run --project unit --coverage
+        env:
+          VITEST_COVERAGE_SKIP_THRESHOLDS: "true"
+      - uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe # v5
+        with:
+          files: coverage/lcov.info
+          flags: unit
+          token: ${{ secrets.CODECOV_TOKEN }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: coverage-unit
+          path: coverage/
+
+  test-integration:
+    name: Integration Tests
+    needs: seed-images
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: ghcr.io/asherlc/dofek/mirror/timescaledb:latest-pg16
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          POSTGRES_DB: test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+      redis:
+        image: ghcr.io/asherlc/dofek/mirror/redis:7-alpine
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      TEST_DATABASE_URL: postgres://test:test@localhost:5432/test
+      REDIS_URL: redis://localhost:6379
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: ./.github/actions/setup-node-pnpm
+      - run: pnpm exec vitest run --project integration --coverage
+        timeout-minutes: 10
+        env:
+          VITEST_COVERAGE_SKIP_THRESHOLDS: "true"
+      - uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe # v5
+        with:
+          files: coverage/lcov.info
+          flags: integration
+          token: ${{ secrets.CODECOV_TOKEN }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: coverage-integration
+          path: coverage/
+
+  coverage:
+    name: Coverage
+    needs: [test-unit, test-integration]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-node-pnpm
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: coverage-unit
+          path: coverage-unit
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: coverage-integration
+          path: coverage-integration
+      - name: Merge and check coverage
+        run: |
+          mkdir -p .nyc_output
+          cp coverage-unit/coverage-final.json .nyc_output/unit.json
+          cp coverage-integration/coverage-final.json .nyc_output/integration.json
+          pnpm exec nyc merge .nyc_output merged-coverage.json
+          mkdir -p final-coverage
+          cp merged-coverage.json final-coverage/coverage-final.json
+          pnpm exec nyc report --temp-dir final-coverage --reporter=text-summary
+          pnpm exec nyc check-coverage --temp-dir final-coverage \
+            --lines 93.5 --branches 89 --functions 94.5 --statements 93.5
+      - name: Diff coverage (changed lines only)
+        if: github.event_name == 'pull_request'
+        run: |
+          pip install diff-cover
+          # Generate lcov from merged coverage
+          pnpm exec nyc report --temp-dir final-coverage --reporter=lcov --report-dir diff-coverage-lcov
+          diff-cover diff-coverage-lcov/lcov.info \
+            --compare-branch=origin/${{ github.base_ref }} \
+            --fail-under=80 \
+            --markdown-report diff-coverage.md || DIFF_FAILED=1
+          if [ -f diff-coverage.md ]; then
+            cat diff-coverage.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit ${DIFF_FAILED:-0}
+
+  bundle-size:
+    name: Bundle Size
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Build web bundle
+        run: cd packages/web && pnpm run build
+      - name: Check bundle size
+        run: pnpm exec size-limit
+
+  gate:
+    name: Unit & Integration Tests
+    needs: [test-unit, test-integration, coverage, bundle-size]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check results
+        run: |
+          for result in \
+            "${{ needs.test-unit.result }}" \
+            "${{ needs.test-integration.result }}" \
+            "${{ needs.coverage.result }}" \
+            "${{ needs.bundle-size.result }}"; do
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              echo "A required job failed or was cancelled"
+              exit 1
+            fi
+          done

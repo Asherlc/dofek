@@ -2,24 +2,24 @@ import WhoopBleModule from "./src/WhoopBleModule";
 
 /** A discovered WHOOP strap */
 export interface WhoopDevice {
-	id: string;
-	name: string | null;
+  id: string;
+  name: string | null;
 }
 
 /** A single IMU sample from the WHOOP strap's accelerometer + gyroscope */
 export interface WhoopImuSample {
-	timestamp: string; // ISO 8601
-	accelerometerX: number; // raw i16
-	accelerometerY: number;
-	accelerometerZ: number;
-	gyroscopeX: number; // raw i16
-	gyroscopeY: number;
-	gyroscopeZ: number;
+  timestamp: string; // ISO 8601
+  accelerometerX: number; // raw i16
+  accelerometerY: number;
+  accelerometerZ: number;
+  gyroscopeX: number; // raw i16
+  gyroscopeY: number;
+  gyroscopeZ: number;
 }
 
 /** Check whether Bluetooth is powered on and available. */
 export function isBluetoothAvailable(): boolean {
-	return WhoopBleModule.isBluetoothAvailable();
+  return WhoopBleModule.isBluetoothAvailable();
 }
 
 /**
@@ -31,7 +31,7 @@ export function isBluetoothAvailable(): boolean {
  * @returns The discovered WHOOP device, or null if not found.
  */
 export async function findWhoop(): Promise<WhoopDevice | null> {
-	return WhoopBleModule.findWhoop();
+  return WhoopBleModule.findWhoop();
 }
 
 /**
@@ -44,7 +44,7 @@ export async function findWhoop(): Promise<WhoopDevice | null> {
  * @returns true on success.
  */
 export async function connect(peripheralId: string): Promise<boolean> {
-	return WhoopBleModule.connect(peripheralId);
+  return WhoopBleModule.connect(peripheralId);
 }
 
 /**
@@ -57,7 +57,7 @@ export async function connect(peripheralId: string): Promise<boolean> {
  * @returns true on success.
  */
 export async function startImuStreaming(): Promise<boolean> {
-	return WhoopBleModule.startImuStreaming();
+  return WhoopBleModule.startImuStreaming();
 }
 
 /**
@@ -66,7 +66,7 @@ export async function startImuStreaming(): Promise<boolean> {
  * Sends the STOP_RAW_DATA (0x52) BLE command.
  */
 export async function stopImuStreaming(): Promise<boolean> {
-	return WhoopBleModule.stopImuStreaming();
+  return WhoopBleModule.stopImuStreaming();
 }
 
 /**
@@ -76,25 +76,25 @@ export async function stopImuStreaming(): Promise<boolean> {
  * streaming started). The buffer is cleared after retrieval.
  */
 export async function getBufferedSamples(): Promise<WhoopImuSample[]> {
-	return WhoopBleModule.getBufferedSamples();
+  return WhoopBleModule.getBufferedSamples();
 }
 
 /** Get the current BLE connection state (idle, scanning, connecting, ready, streaming). */
 export function getConnectionState(): string {
-	return WhoopBleModule.getConnectionState();
+  return WhoopBleModule.getConnectionState();
 }
 
 /** Get the underlying CBCentralManager Bluetooth state. */
 export function getBluetoothState(): string {
-	return WhoopBleModule.getBluetoothState();
+  return WhoopBleModule.getBluetoothState();
 }
 
 /** Get the number of IMU samples currently buffered. */
 export function getBufferedSampleCount(): number {
-	return WhoopBleModule.getBufferedSampleCount();
+  return WhoopBleModule.getBufferedSampleCount();
 }
 
 /** Disconnect from the WHOOP strap. */
 export function disconnect(): void {
-	WhoopBleModule.disconnect();
+  WhoopBleModule.disconnect();
 }

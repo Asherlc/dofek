@@ -1,3 +1,7 @@
+import { formatDurationRange, formatNumber } from "@dofek/format/format";
+import { providerLabel } from "@dofek/providers/providers";
+import { formatActivityTypeLabel } from "@dofek/training/training";
+import { HEART_RATE_ZONE_COLORS } from "@dofek/zones/zones";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   ActivityIndicator,
@@ -20,9 +24,6 @@ import Svg, {
   Text as SvgText,
 } from "react-native-svg";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
-import { formatDurationRange, formatNumber } from "@dofek/format/format";
-import { formatActivityTypeLabel } from "@dofek/training/training";
-import { HEART_RATE_ZONE_COLORS } from "@dofek/zones/zones";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { colors } from "../../theme";
@@ -40,8 +41,8 @@ const CHART_COLORS = {
 // ── Helpers ──
 
 function formatDateTime(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleDateString("en-US", {
+  const date = new Date(iso);
+  return date.toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
     day: "numeric",
@@ -50,8 +51,8 @@ function formatDateTime(iso: string): string {
 }
 
 function formatTimeOfDay(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleTimeString("en-US", {
+  const date = new Date(iso);
+  return date.toLocaleTimeString("en-US", {
     hour: "numeric",
     minute: "2-digit",
   });
@@ -310,24 +311,19 @@ function HrZonesChart({ zones }: { zones: HrZone[] }) {
         {zones.map((zone, i) => {
           const percentage = totalSeconds > 0 ? zone.seconds / totalSeconds : 0;
           const barWidth = Math.max(percentage * barAreaWidth, 2);
-          const y = i * (barHeight + gap);
+          const rowY = i * (barHeight + gap);
           const zoneColor = HEART_RATE_ZONE_COLORS[i] ?? "#71717a";
 
           return (
             <G key={zone.zone}>
               {/* Zone label */}
-              <SvgText
-                x={0}
-                y={y + barHeight / 2 + 4}
-                fill={colors.textSecondary}
-                fontSize={11}
-              >
+              <SvgText x={0} y={rowY + barHeight / 2 + 4} fill={colors.textSecondary} fontSize={11}>
                 {`Z${zone.zone} ${zone.label}`}
               </SvgText>
               {/* Bar background */}
               <Rect
                 x={labelWidth}
-                y={y}
+                y={rowY}
                 width={barAreaWidth}
                 height={barHeight}
                 rx={4}
@@ -336,7 +332,7 @@ function HrZonesChart({ zones }: { zones: HrZone[] }) {
               {/* Bar fill */}
               <Rect
                 x={labelWidth}
-                y={y}
+                y={rowY}
                 width={barWidth}
                 height={barHeight}
                 rx={4}
@@ -345,7 +341,7 @@ function HrZonesChart({ zones }: { zones: HrZone[] }) {
               {/* Percentage label */}
               <SvgText
                 x={labelWidth + barAreaWidth + 8}
-                y={y + barHeight / 2 + 4}
+                y={rowY + barHeight / 2 + 4}
                 fill={colors.text}
                 fontSize={12}
                 fontWeight="600"
@@ -455,18 +451,9 @@ export default function ActivityDetailScreen() {
     );
   };
 
-  const detail = trpc.activity.byId.useQuery(
-    { id: id ?? "" },
-    { enabled: !!id },
-  );
-  const stream = trpc.activity.stream.useQuery(
-    { id: id ?? "", maxPoints: 200 },
-    { enabled: !!id },
-  );
-  const hrZones = trpc.activity.hrZones.useQuery(
-    { id: id ?? "" },
-    { enabled: !!id },
-  );
+  const detail = trpc.activity.byId.useQuery({ id: id ?? "" }, { enabled: !!id });
+  const stream = trpc.activity.stream.useQuery({ id: id ?? "", maxPoints: 200 }, { enabled: !!id });
+  const hrZones = trpc.activity.hrZones.useQuery({ id: id ?? "" }, { enabled: !!id });
 
   if (detail.isLoading) {
     return (
@@ -552,10 +539,7 @@ export default function ActivityDetailScreen() {
   }
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-    >
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* Activity Header */}
       <View style={styles.header}>
         <View style={styles.headerRow}>
@@ -576,6 +560,12 @@ export default function ActivityDetailScreen() {
           {" at "}
           {formatTimeOfDay(activity.startedAt)}
         </Text>
+        {activity.sourceProviders.length > 0 && (
+          <Text style={styles.source}>
+            Source:{" "}
+            {activity.sourceProviders.map((provider: string) => providerLabel(provider)).join(", ")}
+          </Text>
+        )}
       </View>
 
       {/* Stats Grid */}
@@ -604,7 +594,9 @@ export default function ActivityDetailScreen() {
       {/* Elevation Profile */}
       {hasAltitude && (
         <AreaChart
-          data={points.map((p) => ({ value: p.altitude != null ? units.convertElevation(p.altitude) : null }))}
+          data={points.map((p) => ({
+            value: p.altitude != null ? units.convertElevation(p.altitude) : null,
+          }))}
           color={CHART_COLORS.altitude}
           label="Elevation Profile"
           unit={units.elevationLabel}
@@ -700,6 +692,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textSecondary,
     marginTop: 4,
+  },
+  source: {
+    fontSize: 12,
+    color: colors.textTertiary,
+    marginTop: 2,
   },
   deleteButton: {
     backgroundColor: colors.surface,

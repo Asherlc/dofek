@@ -1,0 +1,86 @@
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  secret-scan:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: ./.github/actions/setup-node-pnpm
+      - run: pnpm audit --prod --audit-level=critical
+
+  license-check:
+    name: License Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Check for forbidden licenses
+        run: |
+          npx license-checker --production --excludePrivatePackages \
+            --failOn "GPL-2.0-only;GPL-2.0-or-later;GPL-3.0-only;GPL-3.0-or-later;AGPL-1.0-only;AGPL-3.0-only;AGPL-3.0-or-later" \
+            --summary
+
+  action-pinning:
+    name: Action Pinning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - name: Verify all actions are SHA-pinned
+        run: |
+          # Extract only actual YAML uses: directives (indented, not inside run: blocks)
+          UNPINNED=$(awk '
+            /^[[:space:]]*run:[[:space:]]*\|/ { in_run=1; next }
+            /^[[:space:]]*run:[[:space:]]*[^|]/ { in_run=0 }
+            in_run && /^[[:space:]]{2,}[^-]/ { next }
+            in_run && /^[[:space:]]*-/ { in_run=0 }
+            /^[[:space:]]+uses:/ { print FILENAME ":" NR ":" $0 }
+          ' .github/workflows/*.yml .github/actions/**/*.yml \
+            | grep -vE '@[0-9a-f]{40}' \
+            | grep -vE 'uses: \./' \
+            || true)
+          if [ -n "$UNPINNED" ]; then
+            echo "::error::Found unpinned GitHub Actions (must use full commit SHA):"
+            echo "$UNPINNED"
+            exit 1
+          fi
+          echo "All actions are SHA-pinned"
+
+  gate:
+    name: Security & Dependencies
+    needs: [secret-scan, audit, license-check, action-pinning]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check results
+        run: |
+          for result in \
+            "${{ needs.secret-scan.result }}" \
+            "${{ needs.audit.result }}" \
+            "${{ needs.license-check.result }}" \
+            "${{ needs.action-pinning.result }}"; do
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              echo "A required job failed or was cancelled"
+              exit 1
+            fi
+          done

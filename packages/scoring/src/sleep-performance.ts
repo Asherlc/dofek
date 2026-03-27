@@ -1,4 +1,4 @@
-export type SleepTier = "Peak" | "Perform" | "Get By" | "Low";
+export type SleepTier = "Excellent" | "Good" | "Fair" | "Poor";
 
 export interface SleepPerformanceResult {
   /** Performance score 0-100 */
@@ -10,7 +10,7 @@ export interface SleepPerformanceResult {
 /**
  * Compute sleep performance from actual vs needed sleep and efficiency.
  * Score = 70% sufficiency (actual/needed, capped at 100%) + 30% efficiency.
- * Tiers: Peak (90+), Perform (70-89), Get By (50-69), Low (<50).
+ * Tiers: Excellent (90+), Good (70-89), Fair (50-69), Poor (<50).
  */
 export function computeSleepPerformance(
   actualMinutes: number,
@@ -25,13 +25,13 @@ export function computeSleepPerformance(
 
   let tier: SleepTier;
   if (clampedScore >= 90) {
-    tier = "Peak";
+    tier = "Excellent";
   } else if (clampedScore >= 70) {
-    tier = "Perform";
+    tier = "Good";
   } else if (clampedScore >= 50) {
-    tier = "Get By";
+    tier = "Fair";
   } else {
-    tier = "Low";
+    tier = "Poor";
   }
 
   return { score: clampedScore, tier };
