@@ -10,7 +10,7 @@ import { initBackgroundAccelerometerSync } from "../lib/background-accelerometer
 import {
   initBackgroundHealthKitSync,
 } from "../lib/background-health-kit-sync";
-import { captureException } from "../lib/telemetry";
+import { captureException, logger } from "../lib/telemetry";
 import { initBackgroundWatchAccelerometerSync } from "../lib/background-watch-accelerometer-sync";
 import {
   initBackgroundWhoopBleSync,
@@ -88,8 +88,8 @@ function AuthGate() {
     initBackgroundHealthKitSync(syncClient, () => {
       queryClient.invalidateQueries();
     }).catch((error: unknown) => {
-      console.warn("[bg-healthkit-sync] Init failed:", error);
-      captureException(error, { source: "background-health-kit-sync-init" });
+      logger.warn("bg-healthkit-sync", `Init failed: ${error instanceof Error ? error.message : String(error)}`);
+      captureException(error, { source: "bg-healthkit-sync" });
     });
 
     // Start continuous accelerometer recording and background sync

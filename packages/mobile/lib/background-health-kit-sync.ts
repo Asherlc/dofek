@@ -10,9 +10,9 @@ import {
   setupBackgroundObservers,
 } from "../modules/health-kit";
 import { syncHealthKitToServer, type SyncTrpcClient } from "./health-kit-sync";
-import { captureException } from "./telemetry";
+import { captureException, logger } from "./telemetry";
 
-const TAG = "[bg-healthkit-sync]";
+const TAG = "bg-healthkit-sync";
 const DEBOUNCE_MS = 5000;
 
 let subscription: EventSubscription | null = null;
@@ -31,38 +31,38 @@ export async function initBackgroundHealthKitSync(
   onSyncComplete?: () => void,
 ) {
   if (!isAvailable()) {
-    console.log(`${TAG} HealthKit not available, skipping init`);
+    logger.info(TAG, "HealthKit not available, skipping init");
     return;
   }
 
   const status = await getRequestStatus();
   if (status !== "unnecessary") {
-    console.log(`${TAG} HealthKit permission status="${status}", skipping init`);
+    logger.info(TAG, `HealthKit permission status="${status}", skipping init`);
     return;
   }
 
   // Set up native observer queries
   await setupBackgroundObservers();
-  console.log(`${TAG} Background observers registered`);
+  logger.info(TAG, "Background observers registered");
 
   // Clean up any existing listener
   if (subscription) {
-    console.log(`${TAG} Removing previous listener before re-init`);
+    logger.info(TAG, "Removing previous listener before re-init");
     subscription.remove();
     subscription = null;
   }
 
   // Listen for sample update events and debounce into a single sync
   subscription = addSampleUpdateListener(() => {
-    console.log(`${TAG} Sample update event received, debouncing`);
+    logger.info(TAG, "Sample update event received, debouncing");
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       if (syncing) {
-        console.log(`${TAG} Sync already in progress, skipping`);
+        logger.info(TAG, "Sync already in progress, skipping");
         return;
       }
       syncing = true;
-      console.log(`${TAG} Starting sync`);
+      logger.info(TAG, "Starting sync");
       syncHealthKitToServer({
         trpcClient,
         healthKit: {
@@ -74,15 +74,13 @@ export async function initBackgroundHealthKitSync(
         syncRangeDays: 1,
       })
         .then((result) => {
-          console.log(
-            `${TAG} Sync complete: ${result.inserted} inserted, ${result.errors.length} errors`,
-          );
+          logger.info(TAG, `Sync complete: ${result.inserted} inserted, ${result.errors.length} errors`);
           onSyncComplete?.();
         })
         .catch((error: unknown) => {
           const message = error instanceof Error ? error.message : String(error);
-          console.warn(`${TAG} Sync failed: ${message}`);
-          captureException(error, { source: "background-health-kit-sync" });
+          logger.warn(TAG, `Sync failed: ${message}`);
+          captureException(error, { source: TAG });
         })
         .finally(() => {
           syncing = false;
@@ -90,13 +88,13 @@ export async function initBackgroundHealthKitSync(
     }, DEBOUNCE_MS);
   });
 
-  console.log(`${TAG} Init complete, listening for HealthKit updates`);
+  logger.info(TAG, "Init complete, listening for HealthKit updates");
 }
 
 /** Clean up background sync listeners and timers */
 export function teardownBackgroundHealthKitSync() {
   if (subscription) {
-    console.log(`${TAG} Tearing down: removing listener`);
+    logger.info(TAG, "Tearing down: removing listener");
     subscription.remove();
     subscription = null;
   }

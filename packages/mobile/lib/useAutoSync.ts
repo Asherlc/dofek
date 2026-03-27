@@ -9,7 +9,7 @@ import {
   querySleepSamples,
 } from "../modules/health-kit";
 import { syncHealthKitToServer } from "./health-kit-sync";
-import { captureException } from "./telemetry";
+import { captureException, logger } from "./telemetry";
 
 /** Check whether the latest data date is before today (stale). */
 export function isDataStale(latestDate: string | null | undefined): boolean {
@@ -64,11 +64,11 @@ export function useAutoSync(latestDate: string | null | undefined) {
 
     // Trigger HealthKit sync (iOS only)
     if (isAvailable()) {
-      console.log("[auto-sync] Starting HealthKit sync");
+      logger.info("auto-sync", "Starting HealthKit sync");
       getRequestStatus()
         .then((status) => {
           if (status !== "unnecessary") {
-            console.log(`[auto-sync] HealthKit permission status="${status}", skipping`);
+            logger.info("auto-sync", `HealthKit permission status="${status}", skipping`);
             return null;
           }
           return syncHealthKitToServer({
@@ -84,14 +84,15 @@ export function useAutoSync(latestDate: string | null | undefined) {
         })
         .then((result) => {
           if (result) {
-            console.log(
-              `[auto-sync] HealthKit sync complete: ${result.inserted} inserted, ${result.errors.length} errors`,
+            logger.info(
+              "auto-sync",
+              `HealthKit sync complete: ${result.inserted} inserted, ${result.errors.length} errors`,
             );
             trpcUtils.invalidate();
           }
         })
         .catch((error: unknown) => {
-          console.warn("[auto-sync] HealthKit sync failed:", error);
+          logger.warn("auto-sync", `HealthKit sync failed: ${error instanceof Error ? error.message : String(error)}`);
           captureException(error, { source: "auto-sync-healthkit" });
         });
     }

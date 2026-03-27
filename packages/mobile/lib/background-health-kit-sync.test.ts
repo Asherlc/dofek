@@ -5,6 +5,9 @@ const mockAddSampleUpdateListener = vi.fn().mockReturnValue({ remove: vi.fn() })
 const mockGetRequestStatus = vi.fn().mockResolvedValue("unnecessary");
 const mockIsAvailable = vi.fn().mockReturnValue(true);
 const mockCaptureException = vi.fn();
+const mockLoggerInfo = vi.fn();
+const mockLoggerWarn = vi.fn();
+const mockLoggerError = vi.fn();
 
 vi.mock("../modules/health-kit", () => ({
   isAvailable: (...args: unknown[]) => mockIsAvailable(...args),
@@ -19,6 +22,11 @@ vi.mock("../modules/health-kit", () => ({
 
 vi.mock("./telemetry", () => ({
   captureException: (...args: unknown[]) => mockCaptureException(...args),
+  logger: {
+    info: (...args: unknown[]) => mockLoggerInfo(...args),
+    warn: (...args: unknown[]) => mockLoggerWarn(...args),
+    error: (...args: unknown[]) => mockLoggerError(...args),
+  },
 }));
 
 import { queryWorkouts } from "../modules/health-kit";
@@ -135,7 +143,7 @@ describe("initBackgroundHealthKitSync", () => {
 
     expect(mockCaptureException).toHaveBeenCalledWith(
       networkError,
-      { source: "background-health-kit-sync" },
+      { source: "bg-healthkit-sync" },
     );
     vi.useRealTimers();
   });
