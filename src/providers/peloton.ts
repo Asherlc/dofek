@@ -50,6 +50,11 @@ export interface PelotonWorkout {
   metrics_type?: string;
   device_type?: string; // e.g. "home_bike_v1", "iOS", "android"
   platform?: string; // e.g. "home_bike", "iOS_app", "android_app"
+  peloton_id?: string; // scheduled class instance ID
+  workout_type?: string; // e.g. "class", "freestyle"
+  has_pedaling_metrics?: boolean;
+  has_leaderboard_metrics?: boolean;
+  timezone?: string; // e.g. "America/New_York"
   ride?: PelotonRide;
   total_leaderboard_users?: number;
   leaderboard_rank?: number;
@@ -140,6 +145,10 @@ export function parseWorkout(workout: PelotonWorkout): ParsedPelotonWorkout {
     pelotonRideId: workout.ride?.id,
     deviceType: workout.device_type || undefined,
     platform: workout.platform || undefined,
+    pelotonClassId: workout.peloton_id || undefined,
+    workoutType: workout.workout_type || undefined,
+    hasPedalingMetrics: workout.has_pedaling_metrics,
+    timezone: workout.timezone || undefined,
   };
 
   return {
@@ -633,6 +642,8 @@ export class PelotonProvider implements SyncProvider {
             }
 
             // Fetch performance graph for time-series + summary enrichment
+            // Skip if the workout has no pedaling/sensor metrics (e.g. freestyle app sessions)
+            if (workout.has_pedaling_metrics === false) continue;
             try {
               const everyN = 5;
               const graph = await client.getPerformanceGraph(workout.id, everyN);

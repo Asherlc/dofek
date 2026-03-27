@@ -29,6 +29,11 @@ const sampleWorkout: PelotonWorkout = {
   metrics_type: "cycling",
   device_type: "home_bike_v1",
   platform: "home_bike",
+  peloton_id: "7a77557fbaf6454e8445fcff4a415a6c",
+  workout_type: "class",
+  has_pedaling_metrics: true,
+  has_leaderboard_metrics: true,
+  timezone: "America/New_York",
   ride: {
     id: "ride-001",
     title: "30 min Power Zone Ride",
@@ -276,21 +281,33 @@ describe("Peloton Provider", () => {
       expect(result.name).toBe("30 min Power Zone Ride");
     });
 
-    it("stores device_type and platform in raw metadata", () => {
+    it("stores device and source metadata in raw", () => {
       const result = parseWorkout(sampleCyclingWorkout);
       expect(result.raw.deviceType).toBe("home_bike_v1");
       expect(result.raw.platform).toBe("home_bike");
+      expect(result.raw.pelotonClassId).toBe("7a77557fbaf6454e8445fcff4a415a6c");
+      expect(result.raw.workoutType).toBe("class");
+      expect(result.raw.hasPedalingMetrics).toBe(true);
+      expect(result.raw.timezone).toBe("America/New_York");
     });
 
-    it("handles missing device_type and platform", () => {
-      const noDevice: PelotonWorkout = {
+    it("handles missing optional source fields", () => {
+      const minimal: PelotonWorkout = {
         ...sampleWorkout,
         device_type: undefined,
         platform: undefined,
+        peloton_id: undefined,
+        workout_type: undefined,
+        has_pedaling_metrics: undefined,
+        timezone: undefined,
       };
-      const result = parseWorkout(noDevice);
+      const result = parseWorkout(minimal);
       expect(result.raw.deviceType).toBeUndefined();
       expect(result.raw.platform).toBeUndefined();
+      expect(result.raw.pelotonClassId).toBeUndefined();
+      expect(result.raw.workoutType).toBeUndefined();
+      expect(result.raw.hasPedalingMetrics).toBeUndefined();
+      expect(result.raw.timezone).toBeUndefined();
     });
 
     it("stores personal record flag in raw", () => {
