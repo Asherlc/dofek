@@ -92,6 +92,3 @@ function cached(ttlMs: number) {
 
 /** Cached protected query (requires auth, cache scoped by userId). */
 export const cachedProtectedQuery = (ttl: number) => protectedProcedure.use(cached(ttl));
-
-/** @deprecated Alias for cachedProtectedQuery — the semaphore that this bypassed has been removed. */
-export const cachedProtectedQueryLight = cachedProtectedQuery;

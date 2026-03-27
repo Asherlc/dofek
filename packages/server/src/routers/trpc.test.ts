@@ -23,7 +23,6 @@ import {
   CacheTTL,
   type Context,
   cachedProtectedQuery,
-  cachedProtectedQueryLight,
   protectedProcedure,
   router,
 } from "../trpc.ts";
@@ -60,10 +59,7 @@ describe("trpc", () => {
       expect(typeof cachedProtectedQuery).toBe("function");
     });
 
-    it("exports cachedProtectedQueryLight function", () => {
-      expect(typeof cachedProtectedQueryLight).toBe("function");
-    });
-  });
+});
 
   describe("auth middleware", () => {
     it("rejects unauthenticated requests (userId is null)", async () => {
@@ -107,7 +103,6 @@ describe("trpc", () => {
     function createCachedRouter() {
       const testRouter = router({
         cachedQuery: cachedProtectedQuery(CacheTTL.SHORT).query(() => "db-result"),
-        lightQuery: cachedProtectedQueryLight(CacheTTL.MEDIUM).query(() => "light-result"),
       });
       const trpc = initTRPC.context<Context>().create();
       const createCaller = trpc.createCallerFactory(testRouter);
@@ -138,10 +133,6 @@ describe("trpc", () => {
         "db-result",
         CacheTTL.SHORT,
       );
-    });
-
-    it("cachedProtectedQueryLight is an alias for cachedProtectedQuery", () => {
-      expect(cachedProtectedQueryLight).toBe(cachedProtectedQuery);
     });
 
     it("includes userId in cache key for anonymous users", async () => {
