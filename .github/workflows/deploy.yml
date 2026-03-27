@@ -9,8 +9,36 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  check-native-changes:
+    name: Check Native iOS Changes
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.check.outputs.changed }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          fetch-depth: 2
+      - id: check
+        run: |
+          CHANGED=$(git diff --name-only HEAD~1...HEAD -- \
+            'packages/mobile/ios/**' \
+            'packages/mobile/modules/*/ios/**' \
+            'packages/mobile/modules/*/Package.swift' \
+            'packages/mobile/app.json' \
+            'packages/mobile/modules/*/expo-module.config.json')
+          if [ -n "$CHANGED" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Native iOS files changed:"
+            echo "$CHANGED"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No native iOS changes, skipping TestFlight upload"
+          fi
+
   ios-release:
     name: iOS TestFlight
+    needs: check-native-changes
+    if: needs.check-native-changes.outputs.changed == 'true'
     runs-on: macos-26
     timeout-minutes: 60
     env:
