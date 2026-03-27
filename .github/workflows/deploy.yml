@@ -309,6 +309,9 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: COMMIT_HASH=${{ github.sha }}
+          build-args: |
+            COMMIT_HASH=${{ github.sha }}
+            NODE_IMAGE=ghcr.io/${{ github.repository }}/mirror/node:22-alpine
+            NGINX_IMAGE=ghcr.io/${{ github.repository }}/mirror/nginx:alpine
           cache-from: type=gha,scope=${{ matrix.target }}
           cache-to: type=gha,mode=max,scope=${{ matrix.target }}
