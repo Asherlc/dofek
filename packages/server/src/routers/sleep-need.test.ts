@@ -499,7 +499,7 @@ describe("sleepNeedRouter", () => {
       expect(result?.efficiency).toBe(92);
       expect(result?.score).toBeGreaterThanOrEqual(0);
       expect(result?.score).toBeLessThanOrEqual(100);
-      expect(["Peak", "Perform", "Get By", "Low"]).toContain(result?.tier);
+      expect(["Excellent", "Good", "Fair", "Poor"]).toContain(result?.tier);
       expect(result?.recommendedBedtime).toMatch(/^\d{2}:\d{2}$/);
     });
 

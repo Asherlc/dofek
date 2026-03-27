@@ -128,7 +128,7 @@ function SleepRing({ performance }: { performance: SleepPerformanceInfo }) {
   const clampedScore = Math.min(score, 100);
 
   // Map tier to color (rendering logic)
-  const color = tier === "Peak" ? "#22c55e" : tier === "Perform" ? "#eab308" : "#ef4444";
+  const color = tier === "Excellent" ? "#22c55e" : tier === "Good" ? "#eab308" : "#ef4444";
 
   const actualHours = Math.floor(actualMinutes / 60);
   const actualMins = Math.round(actualMinutes % 60);
