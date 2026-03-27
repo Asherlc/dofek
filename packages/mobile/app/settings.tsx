@@ -1,14 +1,25 @@
-import { useState } from "react";
-import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
+import { providerLabel } from "@dofek/providers/providers";
 import { File as ExpoFile, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
+import { useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TouchableOpacity,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import { z } from "zod";
-import { providerLabel } from "@dofek/providers/providers";
 import { PersonalizationPanel } from "../components/PersonalizationPanel";
 import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel";
+import { useAuth } from "../lib/auth-context";
 import { trpc } from "../lib/trpc";
 import { useRefresh } from "../lib/useRefresh";
-import { useAuth } from "../lib/auth-context";
 import { colors } from "../theme";
 
 type UnitSystem = "metric" | "imperial";
@@ -202,7 +213,17 @@ export default function SettingsScreen() {
   const { refreshing, onRefresh } = useRefresh();
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={[styles.content, isWide && styles.contentWide]} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={[styles.content, isWide && styles.contentWide]}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={colors.textSecondary}
+        />
+      }
+    >
       {/* ── Linked Accounts ── */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Linked Accounts</Text>
@@ -216,12 +237,8 @@ export default function SettingsScreen() {
             accounts.map((account) => (
               <View key={account.id} style={styles.accountRow}>
                 <View style={styles.accountInfo}>
-                  <Text style={styles.accountProvider}>
-                    {providerLabel(account.authProvider)}
-                  </Text>
-                  {account.email ? (
-                    <Text style={styles.accountEmail}>{account.email}</Text>
-                  ) : null}
+                  <Text style={styles.accountProvider}>{providerLabel(account.authProvider)}</Text>
+                  {account.email ? <Text style={styles.accountEmail}>{account.email}</Text> : null}
                 </View>
                 <TouchableOpacity
                   onPress={() => handleUnlink(account.id)}
@@ -272,8 +289,8 @@ export default function SettingsScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>WHOOP Accelerometer</Text>
         <Text style={styles.sectionDescription}>
-          Record accelerometer data from your WHOOP strap continuously via Bluetooth.
-          Reduces strap battery life from ~5 days to ~3-4 days.
+          Record accelerometer data from your WHOOP strap continuously via Bluetooth. Reduces strap
+          battery life from ~5 days to ~3-4 days.
         </Text>
         <View style={styles.card}>
           <View style={styles.toggleRow}>
@@ -328,14 +345,13 @@ export default function SettingsScreen() {
               <Text style={styles.exportMessageText}>{exportMessage}</Text>
             </View>
           )}
-          {exportState === "done" && (
-            <Text style={styles.exportDoneText}>Export complete</Text>
-          )}
-          {exportState === "error" && (
-            <Text style={styles.exportErrorText}>{exportMessage}</Text>
-          )}
+          {exportState === "done" && <Text style={styles.exportDoneText}>Export complete</Text>}
+          {exportState === "error" && <Text style={styles.exportErrorText}>{exportMessage}</Text>}
           <TouchableOpacity
-            style={[styles.exportButton, exportState === "processing" && styles.exportButtonDisabled]}
+            style={[
+              styles.exportButton,
+              exportState === "processing" && styles.exportButtonDisabled,
+            ]}
             onPress={handleExport}
             activeOpacity={0.7}
             disabled={exportState === "processing"}

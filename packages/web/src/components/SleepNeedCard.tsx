@@ -1,3 +1,4 @@
+import { statusColors } from "@dofek/scoring/colors";
 import { sleepDebtColor } from "@dofek/scoring/scoring";
 import type { SleepNeedResult } from "dofek-server/types";
 import {
@@ -89,8 +90,8 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
                 n.actualMinutes == null
                   ? "#3a3a3e"
                   : n.actualMinutes >= n.neededMinutes
-                    ? "#22c55e"
-                    : "#ef4444",
+                    ? statusColors.positive
+                    : statusColors.danger,
             },
           })),
         ),

@@ -475,6 +475,8 @@ export const activity = fitness.table(
     perceivedExertion: real("perceived_exertion"),
     percentRecorded: real("percent_recorded"),
     sourceName: text("source_name"),
+    timezone: text("timezone"), // IANA timezone (e.g. "America/New_York")
+    stravaId: text("strava_id"), // Strava activity ID for cross-provider linking
     raw: jsonb("raw"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

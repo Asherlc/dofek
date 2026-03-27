@@ -1,4 +1,8 @@
+import { formatRelativeTime } from "@dofek/format/format";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
+import { File as ExpoFile } from "expo-file-system";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -11,16 +15,12 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { File as ExpoFile } from "expo-file-system";
-import * as WebBrowser from "expo-web-browser";
-import { trpc } from "../lib/trpc";
-import { useRefresh } from "../lib/useRefresh";
+import { ProviderStatsBreakdown } from "../components/ProviderStatsBreakdown";
 import { useAuth } from "../lib/auth-context";
 import { importSharedFile, type ShareImportProgress } from "../lib/share-import";
-import { ProviderStatsBreakdown } from "../components/ProviderStatsBreakdown";
+import { trpc } from "../lib/trpc";
+import { useRefresh } from "../lib/useRefresh";
 import { colors } from "../theme";
-import { formatRelativeTime } from "@dofek/format/format";
 
 function readBlobFromFileUri(fileUri: string): Promise<Blob> {
   return Promise.resolve(new ExpoFile(fileUri));
@@ -37,7 +37,6 @@ interface Provider {
   lastSyncAt: string | null;
   importOnly: boolean;
 }
-
 
 interface SyncLog {
   id: string;
@@ -132,9 +131,7 @@ export function ProviderCard({
             {syncing ? (
               <ActivityIndicator color={colors.text} size="small" />
             ) : (
-              <Text style={styles.syncButtonText}>
-                {providerActionLabel(provider.authStatus)}
-              </Text>
+              <Text style={styles.syncButtonText}>{providerActionLabel(provider.authStatus)}</Text>
             )}
           </TouchableOpacity>
         )}
@@ -163,15 +160,14 @@ export function ProviderCard({
           <Text style={styles.cardMetaText}>
             {provider.importOnly ? "Import only" : statusLabel(provider.authStatus)}
           </Text>
-          {!provider.importOnly && (
-            provider.lastSyncAt && formatRelativeTime(provider.lastSyncAt) ? (
+          {!provider.importOnly &&
+            (provider.lastSyncAt && formatRelativeTime(provider.lastSyncAt) ? (
               <Text style={styles.cardMetaText}>
                 Last sync: {formatRelativeTime(provider.lastSyncAt)}
               </Text>
             ) : (
               <Text style={styles.cardMetaText}>Never synced</Text>
-            )
-          )}
+            ))}
           {provider.authStatus === "connected" && !syncing && !provider.importOnly && (
             <TouchableOpacity onPress={onFullSync} activeOpacity={0.7}>
               <Text style={styles.fullSyncLink}>Full sync</Text>
@@ -206,9 +202,7 @@ function SyncLogRow({ log }: { log: SyncLog }) {
             {(log.recordCount ?? 0).toLocaleString()} records
           </Text>
           <Text style={styles.logDetailText}>{formatDuration(log.durationMs ?? 0)}</Text>
-          <Text style={styles.logDetailText}>
-            {formatRelativeTime(log.syncedAt) ?? ""}
-          </Text>
+          <Text style={styles.logDetailText}>{formatRelativeTime(log.syncedAt) ?? ""}</Text>
         </View>
         {isError && log.errorMessage ? (
           <Text style={styles.logError} numberOfLines={2}>
@@ -248,9 +242,7 @@ export default function ProvidersScreen() {
   const pollingJobIds = useRef(new Set<string>());
   const importedSharedUris = useRef(new Set<string>());
 
-  const sharedFileUri = Array.isArray(params.sharedFile)
-    ? params.sharedFile[0]
-    : params.sharedFile;
+  const sharedFileUri = Array.isArray(params.sharedFile) ? params.sharedFile[0] : params.sharedFile;
 
   const pollJob = useCallback(
     async (jobId: string, providerIds: string[]) => {
@@ -293,7 +285,10 @@ export default function ProvidersScreen() {
           const next = new Set(prev);
           for (const pid of providerIds) {
             const providerStatus = status.providers[pid];
-            if (providerStatus && (providerStatus.status === "running" || providerStatus.status === "pending")) {
+            if (
+              providerStatus &&
+              (providerStatus.status === "running" || providerStatus.status === "pending")
+            ) {
               next.add(pid);
             } else {
               next.delete(pid);
@@ -305,7 +300,10 @@ export default function ProvidersScreen() {
           const next = { ...prev };
           for (const pid of providerIds) {
             const providerStatus = status.providers[pid];
-            if (providerStatus && (providerStatus.status === "running" || providerStatus.status === "pending")) {
+            if (
+              providerStatus &&
+              (providerStatus.status === "running" || providerStatus.status === "pending")
+            ) {
               next[pid] = {
                 percentage: status.percentage,
                 message: providerStatus.message,
@@ -408,42 +406,45 @@ export default function ProvidersScreen() {
     [syncMutation, pollJob],
   );
 
-  const handleSyncAll = useCallback(async (fullSync = false) => {
-    const enabled = (providers.data ?? []).filter((p) => p.authorized && !p.importOnly);
-    const ids = enabled.map((p) => p.id);
-    if (ids.length === 0) return;
-    setSyncingProviders(new Set(ids));
-    setAnySyncing(true);
-    try {
-      const result = await syncMutation.mutateAsync({
-        sinceDays: fullSync ? undefined : 7,
-      });
-      const providerJobMap = new Map(
-        (result.providerJobs ?? []).map((job) => [job.providerId, job.jobId] as const),
-      );
-      if (providerJobMap.size > 0) {
-        await Promise.all(
-          ids.map(async (providerId) => {
-            const jobId = providerJobMap.get(providerId);
-            if (!jobId) {
-              setSyncingProviders((prev) => {
-                const next = new Set(prev);
-                next.delete(providerId);
-                return next;
-              });
-              return;
-            }
-            await pollJob(jobId, [providerId]);
-          }),
+  const handleSyncAll = useCallback(
+    async (fullSync = false) => {
+      const enabled = (providers.data ?? []).filter((p) => p.authorized && !p.importOnly);
+      const ids = enabled.map((p) => p.id);
+      if (ids.length === 0) return;
+      setSyncingProviders(new Set(ids));
+      setAnySyncing(true);
+      try {
+        const result = await syncMutation.mutateAsync({
+          sinceDays: fullSync ? undefined : 7,
+        });
+        const providerJobMap = new Map(
+          (result.providerJobs ?? []).map((job) => [job.providerId, job.jobId] as const),
         );
-      } else {
-        await pollJob(result.jobId, ids);
+        if (providerJobMap.size > 0) {
+          await Promise.all(
+            ids.map(async (providerId) => {
+              const jobId = providerJobMap.get(providerId);
+              if (!jobId) {
+                setSyncingProviders((prev) => {
+                  const next = new Set(prev);
+                  next.delete(providerId);
+                  return next;
+                });
+                return;
+              }
+              await pollJob(jobId, [providerId]);
+            }),
+          );
+        } else {
+          await pollJob(result.jobId, ids);
+        }
+      } catch {
+        setSyncingProviders(new Set());
+        setAnySyncing(false);
       }
-    } catch {
-      setSyncingProviders(new Set());
-      setAnySyncing(false);
-    }
-  }, [syncMutation, providers.data, pollJob]);
+    },
+    [syncMutation, providers.data, pollJob],
+  );
 
   const handleConnect = useCallback(
     async (provider: { id: string; label: string; authType: string }) => {
@@ -465,7 +466,7 @@ export default function ProvidersScreen() {
     id: p.id,
     label: p.name,
     enabled: p.authorized && !p.importOnly,
-    authStatus: p.authorized ? "connected" : "not_connected",
+    authStatus: p.needsReauth ? "expired" : p.authorized ? "connected" : "not_connected",
     authType: p.authType,
     lastSyncAt: p.lastSyncedAt,
     importOnly: p.importOnly,
@@ -475,6 +476,8 @@ export default function ProvidersScreen() {
     statsMap[s.providerId] = s;
   }
   const logList: SyncLog[] = logs.data ?? [];
+
+  const { refreshing, onRefresh } = useRefresh();
 
   const isLoading = providers.isLoading || stats.isLoading;
   const enabledProviders = providerList.filter((p) => p.enabled);
@@ -487,15 +490,27 @@ export default function ProvidersScreen() {
     );
   }
 
-  const { refreshing, onRefresh } = useRefresh();
-
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={colors.textSecondary}
+        />
+      }
+    >
       {/* Sync All */}
       {enabledProviders.length > 0 && (
         <View style={styles.syncAllRow}>
           <TouchableOpacity
-            style={[styles.syncAllButton, styles.syncAllButtonFlex, anySyncing && styles.syncAllButtonDisabled]}
+            style={[
+              styles.syncAllButton,
+              styles.syncAllButtonFlex,
+              anySyncing && styles.syncAllButtonDisabled,
+            ]}
             onPress={() => handleSyncAll(false)}
             activeOpacity={0.7}
             disabled={anySyncing}
@@ -520,7 +535,8 @@ export default function ProvidersScreen() {
       <View style={styles.shareInfoCard}>
         <Text style={styles.shareInfoTitle}>Import from Share</Text>
         <Text style={styles.shareInfoDescription}>
-          Export a CSV, XML, or ZIP file from Strong, Cronometer, or Apple Health and share it to Dofek.
+          Export a CSV, XML, or ZIP file from Strong, Cronometer, or Apple Health and share it to
+          Dofek.
         </Text>
         {sharedImportState ? (
           <View style={styles.shareImportState}>
@@ -684,9 +700,7 @@ function CredentialAuthModal({
             activeOpacity={0.7}
             disabled={loading || !username || !password}
           >
-            <Text style={styles.signInButtonText}>
-              {loading ? "Signing in..." : "Sign In"}
-            </Text>
+            <Text style={styles.signInButtonText}>{loading ? "Signing in..." : "Sign In"}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -883,7 +897,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
   },
-
 
   // Sync history logs
   logRow: {
