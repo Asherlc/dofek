@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
+
+import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { renderHook, act } from "@testing-library/react";
 
 // --- Mutable mock state ---
 const mockMutateAsync = vi.fn();
@@ -43,8 +44,7 @@ vi.mock("../modules/health-kit", () => ({
 const mockSyncHealthKitToServer = vi.fn();
 
 vi.mock("./health-kit-sync", () => ({
-  syncHealthKitToServer: (...args: unknown[]) =>
-    mockSyncHealthKitToServer(...args),
+  syncHealthKitToServer: (...args: unknown[]) => mockSyncHealthKitToServer(...args),
 }));
 
 const { useAutoSync, isDataStale } = await import("./useAutoSync");
@@ -131,10 +131,7 @@ describe("useAutoSync", () => {
     await act(() => vi.runAllTimersAsync());
 
     expect(mockMutateAsync).toHaveBeenCalledWith({ sinceDays: 1 });
-    expect(mockSyncStatusFetch).toHaveBeenCalledWith(
-      { jobId: "test-job" },
-      { staleTime: 0 },
-    );
+    expect(mockSyncStatusFetch).toHaveBeenCalledWith({ jobId: "test-job" }, { staleTime: 0 });
     expect(mockInvalidate).toHaveBeenCalled();
   });
 
@@ -180,10 +177,9 @@ describe("useAutoSync", () => {
   });
 
   it("only triggers once across re-renders", async () => {
-    const { rerender } = renderHook(
-      ({ date }) => useAutoSync(date),
-      { initialProps: { date: "2026-03-21" } },
-    );
+    const { rerender } = renderHook(({ date }) => useAutoSync(date), {
+      initialProps: { date: "2026-03-21" },
+    });
     await act(() => vi.runAllTimersAsync());
 
     rerender({ date: "2026-03-21" });

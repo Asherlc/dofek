@@ -2020,9 +2020,7 @@ describe("healthKitSyncRouter", () => {
 
     it("handles concurrent refresh failure by falling back to non-concurrent refresh (kills catch{} empty block mutation)", async () => {
       const execute = vi.fn();
-      let callIndex = 0;
       execute.mockImplementation((..._args: unknown[]) => {
-        callIndex++;
         // Make the CONCURRENTLY refresh fail to trigger the fallback
         const serialized = JSON.stringify(_args[0]);
         if (

@@ -1,7 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
 import { UnitConverter } from "@dofek/format/units";
+import { describe, expect, it, vi } from "vitest";
 
-const mockSettings = { data: undefined as { value: unknown } | undefined };
+const mockSettings: { data: { value: unknown } | undefined } = { data: undefined };
 
 vi.mock("./trpc", () => ({
   trpc: {

@@ -1,16 +1,16 @@
+import { formatHour, formatSleepDebt, isToday, isYesterday } from "@dofek/format/format";
 import { useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
-import { DaySelector } from "../components/DaySelector";
 import { Hypnogram } from "../components/charts/Hypnogram";
-import { MetricCard } from "../components/MetricCard";
 import { SleepBar } from "../components/charts/SleepBar";
 import { SparkLine } from "../components/charts/SparkLine";
-import { formatHour, formatSleepDebt, isToday, isYesterday } from "@dofek/format/format";
+import { DaySelector } from "../components/DaySelector";
+import { MetricCard } from "../components/MetricCard";
 import { trpc } from "../lib/trpc";
 import { useRefresh } from "../lib/useRefresh";
-import type { SleepConsistencyRow, SleepNightlyRow } from "../types/api";
 import { colors } from "../theme";
+import type { SleepConsistencyRow } from "../types/api";
 
 export default function SleepScreen() {
   const [days, setDays] = useState(30);
@@ -30,22 +30,14 @@ export default function SleepScreen() {
   const consistency = consistencyQuery.data ?? [];
   const latestConsistency = consistency[consistency.length - 1];
 
-  const durationTrend = nightly
-    .slice(-14)
-    .map((n) => n.sleepMinutes);
-  const efficiencyTrend = nightly
-    .slice(-14)
-    .map((n) => n.efficiency);
+  const durationTrend = nightly.slice(-14).map((n) => n.sleepMinutes);
+  const efficiencyTrend = nightly.slice(-14).map((n) => n.efficiency);
 
   const avgDuration =
-    nightly.length > 0
-      ? nightly.reduce((sum, n) => sum + n.sleepMinutes, 0) / nightly.length
-      : 0;
+    nightly.length > 0 ? nightly.reduce((sum, n) => sum + n.sleepMinutes, 0) / nightly.length : 0;
 
   const avgEfficiency =
-    nightly.length > 0
-      ? nightly.reduce((sum, n) => sum + n.efficiency, 0) / nightly.length
-      : 0;
+    nightly.length > 0 ? nightly.reduce((sum, n) => sum + n.efficiency, 0) / nightly.length : 0;
 
   const isLoading = sleepQuery.isLoading;
   const { refreshing, onRefresh } = useRefresh();
@@ -54,7 +46,13 @@ export default function SleepScreen() {
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={colors.textSecondary}
+        />
+      }
     >
       <DaySelector days={days} onChange={setDays} />
 
@@ -81,9 +79,7 @@ export default function SleepScreen() {
               />
               <View style={styles.efficiencyRow}>
                 <Text style={styles.efficiencyLabel}>Sleep Efficiency</Text>
-                <Text style={styles.efficiencyValue}>
-                  {Math.round(lastNight.efficiency)}%
-                </Text>
+                <Text style={styles.efficiencyValue}>{Math.round(lastNight.efficiency)}%</Text>
               </View>
             </View>
           )}
@@ -106,14 +102,19 @@ export default function SleepScreen() {
             <Text
               style={[
                 styles.debtValue,
-                { color: sleepDebt > 120 ? colors.danger : sleepDebt > 60 ? colors.warning : colors.positive },
+                {
+                  color:
+                    sleepDebt > 120
+                      ? colors.danger
+                      : sleepDebt > 60
+                        ? colors.warning
+                        : colors.positive,
+                },
               ]}
             >
               {formatSleepDebt(sleepDebt)}
             </Text>
-            <Text style={styles.debtSubtitle}>
-              vs 8 hour target per night
-            </Text>
+            <Text style={styles.debtSubtitle}>vs 8 hour target per night</Text>
           </View>
 
           {/* Trends */}
@@ -163,51 +164,58 @@ export default function SleepScreen() {
                   <Text style={styles.consistencyLabel}>Avg Wake</Text>
                 </View>
               </View>
-              {consistency.length >= 2 && (() => {
-                const scored = consistency.filter(
-                  (c): c is SleepConsistencyRow & { consistencyScore: number } =>
-                    c.consistencyScore != null,
-                );
-                const first = scored[0];
-                const last = scored[scored.length - 1];
-                if (!first || !last) return null;
-                return (
-                  <>
-                    <View style={styles.chartWithAxes}>
-                      <View style={styles.yAxis}>
-                        <Text style={styles.axisLabel}>100</Text>
-                        <Text style={styles.axisLabel}>0</Text>
-                      </View>
-                      <View style={styles.chartBody}>
-                        <SparkLine
-                          data={scored.map((c) => c.consistencyScore)}
-                          height={60}
-                          color={colors.purple}
-                          showBaseline
-                        />
-                        <View style={styles.xAxis}>
-                          <Text style={styles.axisLabel}>
-                            {new Date(first.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                          </Text>
-                          <Text style={styles.axisLabel}>
-                            {new Date(last.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                          </Text>
+              {consistency.length >= 2 &&
+                (() => {
+                  const scored = consistency.filter(
+                    (c): c is SleepConsistencyRow & { consistencyScore: number } =>
+                      c.consistencyScore != null,
+                  );
+                  const first = scored[0];
+                  const last = scored[scored.length - 1];
+                  if (!first || !last) return null;
+                  return (
+                    <>
+                      <View style={styles.chartWithAxes}>
+                        <View style={styles.yAxis}>
+                          <Text style={styles.axisLabel}>100</Text>
+                          <Text style={styles.axisLabel}>0</Text>
+                        </View>
+                        <View style={styles.chartBody}>
+                          <SparkLine
+                            data={scored.map((c) => c.consistencyScore)}
+                            height={60}
+                            color={colors.purple}
+                            showBaseline
+                          />
+                          <View style={styles.xAxis}>
+                            <Text style={styles.axisLabel}>
+                              {new Date(first.date).toLocaleDateString(undefined, {
+                                month: "short",
+                                day: "numeric",
+                              })}
+                            </Text>
+                            <Text style={styles.axisLabel}>
+                              {new Date(last.date).toLocaleDateString(undefined, {
+                                month: "short",
+                                day: "numeric",
+                              })}
+                            </Text>
+                          </View>
                         </View>
                       </View>
-                    </View>
-                    <View style={styles.legend}>
-                      <View style={styles.legendItem}>
-                        <View style={[styles.legendLine, { backgroundColor: colors.purple }]} />
-                        <Text style={styles.legendText}>Consistency Score</Text>
+                      <View style={styles.legend}>
+                        <View style={styles.legendItem}>
+                          <View style={[styles.legendLine, { backgroundColor: colors.purple }]} />
+                          <Text style={styles.legendText}>Consistency Score</Text>
+                        </View>
+                        <View style={styles.legendItem}>
+                          <View style={[styles.legendDashed, { borderColor: "#3a3a3e" }]} />
+                          <Text style={styles.legendText}>Average</Text>
+                        </View>
                       </View>
-                      <View style={styles.legendItem}>
-                        <View style={[styles.legendDashed, { borderColor: "#3a3a3e" }]} />
-                        <Text style={styles.legendText}>Average</Text>
-                      </View>
-                    </View>
-                  </>
-                );
-              })()}
+                    </>
+                  );
+                })()}
             </View>
           )}
 
@@ -220,27 +228,30 @@ export default function SleepScreen() {
                 textStyle={styles.cardTitle}
               />
               <View style={styles.nightlyStack}>
-                {nightly.slice(-7).reverse().map((night) => (
-                  <View key={night.date} style={styles.nightlyRow}>
-                    <Text style={styles.nightlyDate}>
-                      {new Date(night.date).toLocaleDateString("en-US", {
-                        weekday: "short",
-                        month: "short",
-                        day: "numeric",
-                      })}
-                    </Text>
-                    <View style={styles.nightlyBarContainer}>
-                      <SleepBar
-                        durationMinutes={night.durationMinutes}
-                        deepPercentage={night.deepPct}
-                        remPercentage={night.remPct}
-                        lightPercentage={night.lightPct}
-                        awakePercentage={night.awakePct}
-                        showLegend={false}
-                      />
+                {nightly
+                  .slice(-7)
+                  .reverse()
+                  .map((night) => (
+                    <View key={night.date} style={styles.nightlyRow}>
+                      <Text style={styles.nightlyDate}>
+                        {new Date(night.date).toLocaleDateString("en-US", {
+                          weekday: "short",
+                          month: "short",
+                          day: "numeric",
+                        })}
+                      </Text>
+                      <View style={styles.nightlyBarContainer}>
+                        <SleepBar
+                          durationMinutes={night.durationMinutes}
+                          deepPercentage={night.deepPct}
+                          remPercentage={night.remPct}
+                          lightPercentage={night.lightPct}
+                          awakePercentage={night.awakePct}
+                          showLegend={false}
+                        />
+                      </View>
                     </View>
-                  </View>
-                ))}
+                  ))}
               </View>
             </View>
           )}

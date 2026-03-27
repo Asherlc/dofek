@@ -377,7 +377,7 @@ export class FitbitProvider implements WebhookProvider {
   // ── Webhook implementation ──
 
   async registerWebhook(
-    callbackUrl: string,
+    _callbackUrl: string,
     verifyToken: string,
   ): Promise<{ subscriptionId: string; signingSecret?: string; expiresAt?: Date }> {
     // Fitbit requires a subscriber endpoint to be registered via the developer portal.
