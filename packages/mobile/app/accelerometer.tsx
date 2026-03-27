@@ -164,8 +164,8 @@ export default function AccelerometerScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>WHOOP Strap</Text>
           <Text style={styles.sectionDescription}>
-            Streams motion data from your WHOOP strap via Bluetooth. Reduces strap battery life
-            from ~5 days to ~3–4 days.
+            Streams motion data from your WHOOP strap via Bluetooth. Reduces strap battery life from
+            ~5 days to ~3–4 days.
           </Text>
           <View style={styles.badgeRow}>
             <StatusBadge
