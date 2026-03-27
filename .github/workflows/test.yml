@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: ghcr.io/${{ github.repository }}/mirror/timescaledb:latest-pg16
+        image: ghcr.io/asherlc/dofek/mirror/timescaledb:latest-pg16
         credentials:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
@@ -50,7 +50,7 @@ jobs:
           --health-timeout 5s
           --health-retries 15
       redis:
-        image: ghcr.io/${{ github.repository }}/mirror/redis:7-alpine
+        image: ghcr.io/asherlc/dofek/mirror/redis:7-alpine
         credentials:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}

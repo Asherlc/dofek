@@ -1,4 +1,5 @@
 ARG NODE_IMAGE=node:22-alpine
+ARG NGINX_IMAGE=nginx:alpine
 FROM ${NODE_IMAGE} AS base
 RUN apk upgrade --no-cache
 ENV PNPM_HOME="/pnpm"
@@ -159,7 +160,6 @@ ENTRYPOINT ["./entrypoint.sh"]
 CMD ["sync"]
 
 # ── Client image (Nginx serving Vite bundle) ────────────────────────────
-ARG NGINX_IMAGE=nginx:alpine
 FROM ${NGINX_IMAGE} AS client
 COPY --from=client-build /app/packages/web/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf

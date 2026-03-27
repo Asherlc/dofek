@@ -7,7 +7,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ${{ github.repository }}/mirror
+  IMAGE_PREFIX: asherlc/dofek/mirror
 
 jobs:
   mirror:
