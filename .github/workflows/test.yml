@@ -10,6 +10,33 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  seed-images:
+    name: Seed GHCR Mirror
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Mirror missing images
+        run: |
+          mirror() {
+            local source=$1 target=$2
+            if docker manifest inspect "$target" >/dev/null 2>&1; then
+              echo "✓ $target exists"
+            else
+              echo "Mirroring $source → $target"
+              docker pull "$source"
+              docker tag "$source" "$target"
+              docker push "$target"
+            fi
+          }
+          mirror "timescale/timescaledb:latest-pg16" "ghcr.io/asherlc/dofek/mirror/timescaledb:latest-pg16"
+          mirror "redis:7-alpine" "ghcr.io/asherlc/dofek/mirror/redis:7-alpine"
+
   test-unit:
     name: Unit Tests
     runs-on: ubuntu-latest
@@ -31,6 +58,7 @@ jobs:
 
   test-integration:
     name: Integration Tests
+    needs: seed-images
     runs-on: ubuntu-latest
     services:
       postgres:
