@@ -37,8 +37,9 @@ jobs:
         uses: anchore/scan-action@1638637db639e0ade3258b51db49a9a137574c3e # v6
         with:
           image: e2e-server:latest
-          fail-build: false
+          fail-build: true
           severity-cutoff: critical
+          only-fixed: true
       - name: Start e2e stack
         run: docker compose -f docker-compose.e2e.yml up -d --wait --no-build
       - run: pnpm e2e:web:run
