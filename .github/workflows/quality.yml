@@ -1,0 +1,111 @@
+name: Quality
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: ./.github/actions/setup-node-pnpm
+      - run: pnpm lint
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Typecheck all packages
+        run: |
+          pnpm tsc --noEmit &
+          pid1=$!
+          (cd packages/server && pnpm tsc --noEmit) &
+          pid2=$!
+          (cd packages/web && pnpm exec tsr generate && pnpm tsc --noEmit) &
+          pid3=$!
+          fail=0
+          wait $pid1 || fail=1
+          wait $pid2 || fail=1
+          wait $pid3 || fail=1
+          exit $fail
+
+  sherif:
+    name: Sherif
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: ./.github/actions/setup-node-pnpm
+      - run: pnpm exec sherif
+
+  knip:
+    name: Knip
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: ./.github/actions/setup-node-pnpm
+      - run: pnpm knip
+
+  spellcheck:
+    name: Spell Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: ./.github/actions/setup-node-pnpm
+      - run: pnpm exec cspell --no-progress
+
+  import-boundaries:
+    name: Import Boundaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: ./.github/actions/setup-node-pnpm
+      - run: pnpm exec depcruise --config .dependency-cruiser.cjs src/ packages/
+
+  hadolint:
+    name: Dockerfile Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf # v3.1.0
+        with:
+          dockerfile: Dockerfile
+
+  terraform-validate:
+    name: Terraform Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
+      - run: cd deploy/deploy-config && terraform init -backend=false && terraform validate
+
+  gate:
+    name: Lint & Static Analysis
+    needs: [lint, typecheck, sherif, knip, spellcheck, import-boundaries, hadolint, terraform-validate]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check results
+        run: |
+          for result in \
+            "${{ needs.lint.result }}" \
+            "${{ needs.typecheck.result }}" \
+            "${{ needs.sherif.result }}" \
+            "${{ needs.knip.result }}" \
+            "${{ needs.spellcheck.result }}" \
+            "${{ needs.import-boundaries.result }}" \
+            "${{ needs.hadolint.result }}" \
+            "${{ needs.terraform-validate.result }}"; do
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              echo "A required job failed or was cancelled"
+              exit 1
+            fi
+          done
