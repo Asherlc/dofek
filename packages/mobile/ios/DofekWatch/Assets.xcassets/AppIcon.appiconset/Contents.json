@@ -1,12 +1,10 @@
 {
   "images" : [
     {
-      "idiom" : "watch",
-      "scale" : "2x",
-      "size" : "40x40",
-      "filename" : "",
-      "role" : "appLauncher",
-      "subtype" : "38mm"
+      "filename" : "AppIcon.png",
+      "idiom" : "universal",
+      "platform" : "watchos",
+      "size" : "1024x1024"
     }
   ],
   "info" : {
