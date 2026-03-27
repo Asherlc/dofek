@@ -12,6 +12,8 @@ extension CMSensorDataList: @retroactive Sequence {
 /// Manages CMSensorRecorder sessions on Apple Watch.
 /// Records accelerometer data at 50 Hz in the background, retains up to 3 days of history.
 final class AccelerometerRecorder: ObservableObject {
+    static let shared = AccelerometerRecorder()
+
     private let sensorRecorder = CMSensorRecorder()
     private let defaults = UserDefaults.standard
 
@@ -53,12 +55,14 @@ final class AccelerometerRecorder: ObservableObject {
         guard Self.isAvailable else { return [] }
 
         let now = Date()
+        // CMSensorRecorder requires startTime within 3 days of today.
+        // Use 2.9 days to leave margin and avoid edge-case NSExceptions.
+        let maxLookback = now.addingTimeInterval(-2.9 * 24 * 3600)
         let fromDate: Date
         if let cursor = defaults.object(forKey: lastQueryCursorKey) as? Date {
-            fromDate = cursor
+            fromDate = max(cursor, maxLookback)
         } else {
-            // First query: go back 3 days (max CMSensorRecorder retention)
-            fromDate = now.addingTimeInterval(-3 * 24 * 3600)
+            fromDate = maxLookback
         }
 
         // Don't query if fromDate is in the future or too close to now

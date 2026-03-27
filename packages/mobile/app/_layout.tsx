@@ -1,10 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink } from "@trpc/client";
+import { Stack } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
-import { Stack } from "expo-router";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { trpc } from "../lib/trpc";
 import { AuthProvider, useAuth } from "../lib/auth-context";
 import { initBackgroundAccelerometerSync } from "../lib/background-accelerometer-sync";
 import { initBackgroundHealthKitSync } from "../lib/background-health-kit-sync";
@@ -13,22 +12,20 @@ import {
   initBackgroundWhoopBleSync,
   teardownBackgroundWhoopBleSync,
 } from "../lib/background-whoop-ble-sync";
-import {
-  addBackgroundRefreshListener,
-  scheduleRefresh,
-} from "../modules/background-refresh";
-import {
-  isBluetoothAvailable,
-  findWhoop,
-  connect as whoopConnect,
-  startImuStreaming,
-  stopImuStreaming,
-  getBufferedSamples as getWhoopSamples,
-  disconnect as whoopDisconnect,
-} from "../modules/whoop-ble";
 import type { SyncTrpcClient } from "../lib/health-kit-sync";
 import { getTrpcUrl } from "../lib/server";
-import { initTelemetry } from "../lib/telemetry";
+import { captureException, initTelemetry, logger } from "../lib/telemetry";
+import { trpc } from "../lib/trpc";
+import { addBackgroundRefreshListener, scheduleRefresh } from "../modules/background-refresh";
+import {
+  findWhoop,
+  getBufferedSamples as getWhoopSamples,
+  isBluetoothAvailable,
+  startImuStreaming,
+  stopImuStreaming,
+  connect as whoopConnect,
+  disconnect as whoopDisconnect,
+} from "../modules/whoop-ble";
 import { colors } from "../theme";
 import LoginScreen from "./login";
 
@@ -84,16 +81,19 @@ function AuthGate() {
     };
     initBackgroundHealthKitSync(syncClient, () => {
       queryClient.invalidateQueries();
-    }).catch(() => {
-      // Best-effort — don't block the app for background sync setup failures
+    }).catch((error: unknown) => {
+      logger.warn(
+        "bg-healthkit-sync",
+        `Init failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      captureException(error, { source: "bg-healthkit-sync" });
     });
 
     // Start continuous accelerometer recording and background sync
     initBackgroundAccelerometerSync({
       accelerometerSync: {
         pushAccelerometerSamples: {
-          mutate: (input) =>
-            trpcClient.accelerometerSync.pushAccelerometerSamples.mutate(input),
+          mutate: (input) => trpcClient.accelerometerSync.pushAccelerometerSamples.mutate(input),
         },
       },
     }).catch(() => {
@@ -104,8 +104,11 @@ function AuthGate() {
     const watchSyncClient = {
       accelerometerSync: {
         pushAccelerometerSamples: {
-          mutate: (input: Parameters<typeof trpcClient.accelerometerSync.pushAccelerometerSamples.mutate>[0]) =>
-            trpcClient.accelerometerSync.pushAccelerometerSamples.mutate(input),
+          mutate: (
+            input: Parameters<
+              typeof trpcClient.accelerometerSync.pushAccelerometerSamples.mutate
+            >[0],
+          ) => trpcClient.accelerometerSync.pushAccelerometerSamples.mutate(input),
         },
       },
     };
@@ -114,32 +117,38 @@ function AuthGate() {
     });
 
     // Start always-on WHOOP BLE accelerometer sync (if enabled in settings)
-    trpcClient.settings.get.query({ key: "whoopAlwaysOnImu" }).then((setting) => {
-      if (setting?.value !== true) return;
+    trpcClient.settings.get
+      .query({ key: "whoopAlwaysOnImu" })
+      .then((setting) => {
+        if (setting?.value !== true) return;
 
-      const whoopSyncClient = {
-        accelerometerSync: {
-          pushAccelerometerSamples: {
-            mutate: (input: Parameters<typeof trpcClient.accelerometerSync.pushAccelerometerSamples.mutate>[0]) =>
-              trpcClient.accelerometerSync.pushAccelerometerSamples.mutate(input),
+        const whoopSyncClient = {
+          accelerometerSync: {
+            pushAccelerometerSamples: {
+              mutate: (
+                input: Parameters<
+                  typeof trpcClient.accelerometerSync.pushAccelerometerSamples.mutate
+                >[0],
+              ) => trpcClient.accelerometerSync.pushAccelerometerSamples.mutate(input),
+            },
           },
-        },
-      };
+        };
 
-      initBackgroundWhoopBleSync(whoopSyncClient, {
-        isBluetoothAvailable,
-        findWhoop,
-        connect: whoopConnect,
-        startImuStreaming,
-        stopImuStreaming,
-        getBufferedSamples: getWhoopSamples,
-        disconnect: whoopDisconnect,
-      }).catch(() => {
-        // Best-effort — WHOOP BLE sync is non-critical
+        initBackgroundWhoopBleSync(whoopSyncClient, {
+          isBluetoothAvailable,
+          findWhoop,
+          connect: whoopConnect,
+          startImuStreaming,
+          stopImuStreaming,
+          getBufferedSamples: getWhoopSamples,
+          disconnect: whoopDisconnect,
+        }).catch(() => {
+          // Best-effort — WHOOP BLE sync is non-critical
+        });
+      })
+      .catch(() => {
+        // Best-effort — settings fetch failure is non-critical
       });
-    }).catch(() => {
-      // Best-effort — settings fetch failure is non-critical
-    });
 
     // Listen for background refresh wakeups (~every 15-30 min, system-decided).
     // On each wake, restart Watch recording and sync accelerometer data so
@@ -152,8 +161,7 @@ function AuthGate() {
       initBackgroundAccelerometerSync({
         accelerometerSync: {
           pushAccelerometerSamples: {
-            mutate: (input) =>
-              trpcClient.accelerometerSync.pushAccelerometerSamples.mutate(input),
+            mutate: (input) => trpcClient.accelerometerSync.pushAccelerometerSamples.mutate(input),
           },
         },
       }).catch(() => {});
@@ -166,7 +174,7 @@ function AuthGate() {
       teardownBackgroundWhoopBleSync();
       refreshSubscription.remove();
     };
-  }, [user, trpcClient]);
+  }, [user, trpcClient, queryClient]);
 
   if (isLoading) {
     return (
@@ -185,9 +193,7 @@ function AuthGate() {
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>
-        <Stack
-          screenOptions={rootStackScreenOptions}
-        >
+        <Stack screenOptions={rootStackScreenOptions}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen
             name="food/add"
@@ -198,9 +204,7 @@ function AuthGate() {
               headerTintColor: colors.text,
               headerLeft: () => (
                 <Pressable onPress={() => navigation.goBack()}>
-                  <Text style={{ color: colors.accent, fontSize: 17 }}>
-                    Cancel
-                  </Text>
+                  <Text style={{ color: colors.accent, fontSize: 17 }}>Cancel</Text>
                 </Pressable>
               ),
             })}

@@ -153,6 +153,10 @@ export class GarminProvider implements SyncProvider {
     return null;
   }
 
+  activityUrl(externalId: string): string {
+    return `https://connect.garmin.com/modern/activity/${externalId}`;
+  }
+
   authSetup(): ProviderAuthSetup {
     const dummyConfig = {
       clientId: "garmin-connect-internal",

@@ -1,4 +1,9 @@
-import type { DailyStatistic, HealthKitSample, SleepSample, WorkoutSample } from "../modules/health-kit";
+import type {
+  DailyStatistic,
+  HealthKitSample,
+  SleepSample,
+  WorkoutSample,
+} from "../modules/health-kit";
 
 // Additive types use HKStatisticsCollectionQuery for proper source deduplication.
 // Without this, overlapping samples from iPhone + Apple Watch get summed, roughly
@@ -31,9 +36,9 @@ const ALL_QUANTITY_TYPES = [...ADDITIVE_QUANTITY_TYPES, ...NON_ADDITIVE_QUANTITY
 const BATCH_SIZE = 500;
 
 function daysAgo(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  return d.toISOString();
+  const date = new Date();
+  date.setDate(date.getDate() - days);
+  return date.toISOString();
 }
 
 function normalizeWorkout(workout: WorkoutSample): WorkoutSample {
@@ -46,8 +51,16 @@ function normalizeWorkout(workout: WorkoutSample): WorkoutSample {
 
 /** Abstraction over HealthKit native module for testability */
 export interface HealthKitAdapter {
-  queryDailyStatistics(typeId: string, startDate: string, endDate: string): Promise<DailyStatistic[]>;
-  queryQuantitySamples(typeId: string, startDate: string, endDate: string): Promise<HealthKitSample[]>;
+  queryDailyStatistics(
+    typeId: string,
+    startDate: string,
+    endDate: string,
+  ): Promise<DailyStatistic[]>;
+  queryQuantitySamples(
+    typeId: string,
+    startDate: string,
+    endDate: string,
+  ): Promise<HealthKitSample[]>;
   queryWorkouts(startDate: string, endDate: string): Promise<WorkoutSample[]>;
   querySleepSamples(startDate: string, endDate: string): Promise<SleepSample[]>;
 }
@@ -56,7 +69,9 @@ export interface HealthKitAdapter {
 export interface SyncTrpcClient {
   healthKitSync: {
     pushQuantitySamples: {
-      mutate(input: { samples: HealthKitSample[] }): Promise<{ inserted: number; errors: string[] }>;
+      mutate(input: {
+        samples: HealthKitSample[];
+      }): Promise<{ inserted: number; errors: string[] }>;
     };
     pushWorkouts: {
       mutate(input: { workouts: WorkoutSample[] }): Promise<{ inserted: number }>;
@@ -151,7 +166,9 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
   onProgress?.("Querying sleep...");
   const sleepSamples = await healthKit.querySleepSamples(startDate, endDate);
   if (sleepSamples.length > 0) {
-    const result = await trpcClient.healthKitSync.pushSleepSamples.mutate({ samples: sleepSamples });
+    const result = await trpcClient.healthKitSync.pushSleepSamples.mutate({
+      samples: sleepSamples,
+    });
     totalInserted += result.inserted;
   }
 

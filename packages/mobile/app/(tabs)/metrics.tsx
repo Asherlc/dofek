@@ -1,14 +1,14 @@
+import { formatNumber } from "@dofek/format/format";
 import { useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
+import { SparkLine } from "../../components/charts/SparkLine";
 import { DaySelector } from "../../components/DaySelector";
 import { MetricCard } from "../../components/MetricCard";
-import { SparkLine } from "../../components/charts/SparkLine";
-import { formatNumber } from "@dofek/format/format";
 import { trendDirection as computeTrend } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
-import { useRefresh } from "../../lib/useRefresh";
 import { useUnitConverter } from "../../lib/units";
+import { useRefresh } from "../../lib/useRefresh";
 import { colors } from "../../theme";
 
 export default function MetricsScreen() {
@@ -20,7 +20,7 @@ export default function MetricsScreen() {
   const hrvQuery = trpc.recovery.hrvVariability.useQuery({ days });
   const hrvData = hrvQuery.data ?? [];
   const latestHrv = hrvData[hrvData.length - 1];
-  const hrvValues = hrvData.filter((d) => d.hrv != null).map((d) => d.hrv as number);
+  const hrvValues = hrvData.flatMap((d) => (d.hrv != null ? [d.hrv] : []));
   const hrvBaseline = latestHrv?.rollingMean;
 
   // Readiness trend
@@ -51,15 +51,20 @@ export default function MetricsScreen() {
     .filter((d: Record<string, unknown>) => d.skin_temp_c != null)
     .map((d: Record<string, unknown>) => units.convertTemperature(Number(d.skin_temp_c)));
 
-  const isLoading =
-    hrvQuery.isLoading || readinessQuery.isLoading || stressQuery.isLoading;
+  const isLoading = hrvQuery.isLoading || readinessQuery.isLoading || stressQuery.isLoading;
   const { refreshing, onRefresh } = useRefresh();
 
   return (
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={colors.textSecondary}
+        />
+      }
     >
       <Text style={styles.header}>Body</Text>
 
@@ -80,9 +85,7 @@ export default function MetricsScreen() {
                 textStyle={styles.cardTitle}
               />
               <View style={styles.chartRow}>
-                <Text style={styles.bigValue}>
-                  {latestReadiness?.readinessScore ?? "--"}
-                </Text>
+                <Text style={styles.bigValue}>{latestReadiness?.readinessScore ?? "--"}</Text>
                 <SparkLine
                   data={readinessValues}
                   width={240}
@@ -92,7 +95,8 @@ export default function MetricsScreen() {
                 />
               </View>
               <Text style={styles.chartSubtitle}>
-                {days}-day avg: {Math.round(readinessValues.reduce((s, v) => s + v, 0) / readinessValues.length)}
+                {days}-day avg:{" "}
+                {Math.round(readinessValues.reduce((s, v) => s + v, 0) / readinessValues.length)}
               </Text>
             </View>
           )}
@@ -105,9 +109,7 @@ export default function MetricsScreen() {
             trend={hrvValues.slice(-14)}
             color={colors.positive}
             subtitle={
-              hrvBaseline != null
-                ? `7-day baseline: ${Math.round(hrvBaseline)} ms`
-                : undefined
+              hrvBaseline != null ? `7-day baseline: ${Math.round(hrvBaseline)} ms` : undefined
             }
             trendDirection={
               hrvValues.length >= 2
@@ -128,9 +130,9 @@ export default function MetricsScreen() {
                 textStyle={styles.cardTitle}
               />
               <SparkLine
-                data={hrvData
-                  .filter((d) => d.rollingCoefficientOfVariation != null)
-                  .map((d) => d.rollingCoefficientOfVariation as number)}
+                data={hrvData.flatMap((d) =>
+                  d.rollingCoefficientOfVariation != null ? [d.rollingCoefficientOfVariation] : [],
+                )}
                 width={320}
                 height={50}
                 color={colors.teal}
@@ -157,11 +159,7 @@ export default function MetricsScreen() {
             }
             subtitle={stressTrend ? `Trend: ${stressTrend}` : undefined}
             trendDirection={
-              stressTrend === "improving"
-                ? "down"
-                : stressTrend === "worsening"
-                  ? "up"
-                  : "stable"
+              stressTrend === "improving" ? "down" : stressTrend === "worsening" ? "up" : "stable"
             }
           />
 
@@ -182,12 +180,8 @@ export default function MetricsScreen() {
                         day: "numeric",
                       })}
                     </Text>
-                    <Text style={styles.weeklyValue}>
-                      {formatNumber(week.avgDailyStress)}
-                    </Text>
-                    <Text style={styles.weeklyLabel}>
-                      {week.highStressDays} high days
-                    </Text>
+                    <Text style={styles.weeklyValue}>{formatNumber(week.avgDailyStress)}</Text>
+                    <Text style={styles.weeklyLabel}>{week.highStressDays} high days</Text>
                   </View>
                 ))}
               </View>
@@ -231,7 +225,6 @@ export default function MetricsScreen() {
               }
             />
           )}
-
         </>
       )}
     </ScrollView>

@@ -198,6 +198,34 @@ public class WhoopBleModule: Module {
             }
         }
 
+        // MARK: - Diagnostics
+
+        Function("getConnectionState") { () -> String in
+            return self.state.rawValue
+        }
+
+        Function("getBluetoothState") { () -> String in
+            guard let manager = self.centralManager else {
+                return "uninitialized"
+            }
+            switch manager.state {
+            case .unknown: return "unknown"
+            case .resetting: return "resetting"
+            case .unsupported: return "unsupported"
+            case .unauthorized: return "unauthorized"
+            case .poweredOff: return "poweredOff"
+            case .poweredOn: return "poweredOn"
+            @unknown default: return "unknown"
+            }
+        }
+
+        Function("getBufferedSampleCount") { () -> Int in
+            self.bufferLock.lock()
+            let count = self.sampleBuffer.count
+            self.bufferLock.unlock()
+            return count
+        }
+
         // MARK: - Buffer access
 
         AsyncFunction("getBufferedSamples") { (promise: Promise) in

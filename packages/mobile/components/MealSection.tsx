@@ -1,7 +1,7 @@
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { FoodEntryCard } from "./FoodEntryCard";
-import type { FoodEntry } from "./FoodEntryCard";
 import { colors } from "../theme";
+import type { FoodEntry } from "./FoodEntryCard";
+import { FoodEntryCard } from "./FoodEntryCard";
 
 interface MealSectionProps {
   mealName: string;
@@ -12,7 +12,14 @@ interface MealSectionProps {
   deleting: boolean;
 }
 
-export function MealSection({ mealName, mealKey, entries, onAddFood, onDeleteFood, deleting }: MealSectionProps) {
+export function MealSection({
+  mealName,
+  mealKey,
+  entries,
+  onAddFood,
+  onDeleteFood,
+  deleting,
+}: MealSectionProps) {
   const totalCalories = entries.reduce((sum, entry) => sum + (entry.calories ?? 0), 0);
 
   return (
@@ -30,7 +37,11 @@ export function MealSection({ mealName, mealKey, entries, onAddFood, onDeleteFoo
         <Text style={styles.emptyText}>No entries yet</Text>
       )}
 
-      <TouchableOpacity style={styles.addButton} onPress={() => onAddFood(mealKey)} activeOpacity={0.7}>
+      <TouchableOpacity
+        style={styles.addButton}
+        onPress={() => onAddFood(mealKey)}
+        activeOpacity={0.7}
+      >
         <Text style={styles.addButtonText}>+ Add food</Text>
       </TouchableOpacity>
     </View>

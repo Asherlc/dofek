@@ -8,6 +8,25 @@ import { protectedProcedure, router } from "../trpc.ts";
 
 const PROVIDER_ID = "apple_health";
 const BATCH_SIZE = 500;
+
+/** daily_metrics columns that are integer/smallint and require Math.round() before insert */
+const INTEGER_DAILY_COLUMNS = new Set([
+  "steps",
+  "flights_climbed",
+  "exercise_minutes",
+  "resting_hr",
+  "stand_hours",
+]);
+
+/** metric_stream columns that are smallint/integer and require Math.round() before insert */
+const INTEGER_METRIC_STREAM_COLUMNS = new Set([
+  "heart_rate",
+  "power",
+  "cadence",
+  "gps_accuracy",
+  "accumulated_power",
+  "stress",
+]);
 const MAX_SLEEP_SESSION_GAP_MS = 90 * 60 * 1000;
 
 // ── Zod schemas ──
@@ -248,7 +267,7 @@ export function isSleepStageValue(value: string): boolean {
   );
 }
 
-function deriveSleepSessionsFromStages(samples: SleepSample[]): SleepSample[] {
+export function deriveSleepSessionsFromStages(samples: SleepSample[]): SleepSample[] {
   const sessions: SleepSample[] = [];
   const bySource = new Map<string, SleepSample[]>();
 
@@ -577,8 +596,11 @@ async function processDailyMetrics(
     ];
 
     for (const { column, key } of additiveFields) {
-      const value = Number(accumulator[key]);
-      if (value > 0) {
+      const raw = Number(accumulator[key]);
+      if (raw > 0) {
+        // Integer columns (steps, flights_climbed, exercise_minutes) need rounding;
+        // real columns (active_energy_kcal, basal_energy_kcal, distance_km, cycling_distance_km) don't.
+        const value = INTEGER_DAILY_COLUMNS.has(column) ? Math.round(raw) : raw;
         insertColumns.push(sql`${sql.identifier(column)}`);
         insertValues.push(sql`${value}`);
         setClauses.push(sql`${sql.identifier(column)} = EXCLUDED.${sql.identifier(column)}`);
@@ -597,8 +619,9 @@ async function processDailyMetrics(
     ];
 
     for (const { column, key } of pointFields) {
-      const value = accumulator[key];
-      if (value !== null) {
+      const raw = accumulator[key];
+      if (raw !== null) {
+        const value = INTEGER_DAILY_COLUMNS.has(column) ? Math.round(raw) : raw;
         insertColumns.push(sql`${sql.identifier(column)}`);
         insertValues.push(sql`${value}`);
         setClauses.push(sql`${sql.identifier(column)} = EXCLUDED.${sql.identifier(column)}`);
@@ -634,13 +657,16 @@ async function processMetricStream(
       const mapping = metricStreamTypes[sample.type];
       if (!mapping) continue;
 
+      const metricValue = INTEGER_METRIC_STREAM_COLUMNS.has(mapping.column)
+        ? Math.round(sample.value)
+        : sample.value;
       await db.execute(
         sql`INSERT INTO fitness.metric_stream (user_id, provider_id, recorded_at, ${sql.identifier(mapping.column)}, raw)
             VALUES (
               ${userId},
               ${PROVIDER_ID},
               ${sample.startDate}::timestamptz,
-              ${sample.value},
+              ${metricValue},
               ${JSON.stringify({ uuid: sample.uuid, type: sample.type, sourceName: sample.sourceName })}::jsonb
             )`,
       );
