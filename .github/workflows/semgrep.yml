@@ -18,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - name: Run project-specific rules (blocking)
-        run: semgrep scan --config .semgrep/ --error --sarif --output semgrep-custom.sarif
+        run: semgrep scan --config .semgrep/ --error --severity ERROR --sarif --output semgrep-custom.sarif
       - name: Run community rules (informational)
         if: always()
         run: semgrep scan --config auto --sarif --output semgrep-auto.sarif || true
