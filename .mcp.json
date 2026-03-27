@@ -3,6 +3,13 @@
     "axiom": {
       "command": "pnpm",
       "args": ["dlx", "mcp-remote", "https://mcp.axiom.co/sse"]
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
+      }
     }
   }
 }

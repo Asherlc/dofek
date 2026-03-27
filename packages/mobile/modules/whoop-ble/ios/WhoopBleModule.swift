@@ -56,29 +56,23 @@ public class WhoopBleModule: Module {
 
         OnCreate {
             self.delegate.module = self
-            self.centralManager = CBCentralManager(
-                delegate: self.delegate,
-                queue: self.bleQueue,
-                options: [
-                    CBCentralManagerOptionShowPowerAlertKey: false,
-                    // Enable state restoration so iOS relaunches the app
-                    // and restores active BLE connections after the app is killed.
-                    // This allows background IMU streaming to survive app termination.
-                    CBCentralManagerOptionRestoreIdentifierKey: WhoopBleModule.restoreIdentifier,
-                ]
-            )
+            // Defer CBCentralManager creation to first use via ensureCentralManager().
+            // Creating it eagerly in OnCreate caused launch crashes when the
+            // NSBluetoothAlwaysUsageDescription key was missing from Info.plist,
+            // because iOS throws an NSException on the background dispatch queue.
         }
 
         // MARK: - Availability
 
         Function("isBluetoothAvailable") { () -> Bool in
-            return self.centralManager?.state == .poweredOn
+            return self.ensureCentralManager().state == .poweredOn
         }
 
         // MARK: - Discovery
 
         AsyncFunction("findWhoop") { (promise: Promise) in
-            guard self.centralManager?.state == .poweredOn else {
+            let manager = self.ensureCentralManager()
+            guard manager.state == .poweredOn else {
                 promise.resolve(nil)
                 return
             }
@@ -86,9 +80,9 @@ public class WhoopBleModule: Module {
             self.bleQueue.async {
                 // First, check for already-connected peripherals (fast path)
                 for serviceUUID in WhoopBleConstants.allServiceUUIDs {
-                    let connected = self.centralManager?.retrieveConnectedPeripherals(
+                    let connected = manager.retrieveConnectedPeripherals(
                         withServices: [serviceUUID]
-                    ) ?? []
+                    )
                     if let peripheral = connected.first {
                         let result: [String: Any?] = [
                             "id": peripheral.identifier.uuidString,
@@ -102,7 +96,7 @@ public class WhoopBleModule: Module {
                 // Fallback: scan for 5 seconds
                 self.findPromise = promise
                 self.state = .scanning
-                self.centralManager?.scanForPeripherals(
+                manager.scanForPeripherals(
                     withServices: WhoopBleConstants.allServiceUUIDs,
                     options: nil
                 )
@@ -110,7 +104,7 @@ public class WhoopBleModule: Module {
                 // Timeout after 5 seconds
                 self.bleQueue.asyncAfter(deadline: .now() + 5) {
                     if self.state == .scanning {
-                        self.centralManager?.stopScan()
+                        manager.stopScan()
                         self.state = .idle
                         self.findPromise?.resolve(nil)
                         self.findPromise = nil
@@ -399,6 +393,25 @@ public class WhoopBleModule: Module {
             sampleBuffer.removeFirst(sampleBuffer.count - WhoopBleModule.maxBufferSize)
         }
         bufferLock.unlock()
+    }
+
+    /// Lazily create the CBCentralManager on first use instead of at module init.
+    /// This avoids a launch crash if the NSBluetoothAlwaysUsageDescription key
+    /// is missing or if Bluetooth is restricted by MDM.
+    private func ensureCentralManager() -> CBCentralManager {
+        if let existing = centralManager {
+            return existing
+        }
+        let manager = CBCentralManager(
+            delegate: delegate,
+            queue: bleQueue,
+            options: [
+                CBCentralManagerOptionShowPowerAlertKey: false,
+                CBCentralManagerOptionRestoreIdentifierKey: WhoopBleModule.restoreIdentifier,
+            ]
+        )
+        centralManager = manager
+        return manager
     }
 
     private func cleanup() {
