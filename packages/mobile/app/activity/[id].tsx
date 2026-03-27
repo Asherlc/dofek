@@ -1,4 +1,5 @@
 import { formatDurationRange, formatNumber } from "@dofek/format/format";
+import { providerLabel } from "@dofek/providers/providers";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { HEART_RATE_ZONE_COLORS } from "@dofek/zones/zones";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -22,7 +23,6 @@ import Svg, {
   Stop,
   Text as SvgText,
 } from "react-native-svg";
-import { providerLabel } from "@dofek/providers/providers";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
@@ -562,7 +562,8 @@ export default function ActivityDetailScreen() {
         </Text>
         {activity.sourceProviders.length > 0 && (
           <Text style={styles.source}>
-            Source: {activity.sourceProviders.map((provider: string) => providerLabel(provider)).join(", ")}
+            Source:{" "}
+            {activity.sourceProviders.map((provider: string) => providerLabel(provider)).join(", ")}
           </Text>
         )}
       </View>
