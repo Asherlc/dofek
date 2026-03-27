@@ -206,12 +206,44 @@ export const healthspanRouter = router({
             ),
             hr_zone_time AS (
               SELECT
-                COALESCE(SUM(asum.aerobic_minutes), 0) AS aerobic_minutes,
-                COALESCE(SUM(asum.high_intensity_minutes), 0) AS high_intensity_minutes
+                COALESCE(SUM(
+                  CASE WHEN up3.max_hr IS NOT NULL AND rhr2.resting_hr IS NOT NULL
+                       AND asum.hr_sample_count > 0 AND asum.ended_at IS NOT NULL
+                  THEN
+                    cnt.aerobic_count::real / asum.hr_sample_count::real
+                    * EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
+                  ELSE 0 END
+                ), 0) AS aerobic_minutes,
+                COALESCE(SUM(
+                  CASE WHEN up3.max_hr IS NOT NULL AND rhr2.resting_hr IS NOT NULL
+                       AND asum.hr_sample_count > 0 AND asum.ended_at IS NOT NULL
+                  THEN
+                    cnt.hi_count::real / asum.hr_sample_count::real
+                    * EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
+                  ELSE 0 END
+                ), 0) AS high_intensity_minutes
               FROM fitness.activity_summary asum
+              JOIN fitness.user_profile up3 ON up3.id = asum.user_id
+              JOIN LATERAL (
+                SELECT dm2.resting_hr
+                FROM fitness.v_daily_metrics dm2
+                WHERE dm2.user_id = asum.user_id
+                  AND dm2.date <= (asum.started_at AT TIME ZONE ${ctx.timezone})::date
+                  AND dm2.resting_hr IS NOT NULL
+                ORDER BY dm2.date DESC LIMIT 1
+              ) rhr2 ON true
+              JOIN LATERAL (
+                SELECT
+                  COUNT(*) FILTER (WHERE ms2.heart_rate < rhr2.resting_hr + (up3.max_hr - rhr2.resting_hr) * 0.8) AS aerobic_count,
+                  COUNT(*) FILTER (WHERE ms2.heart_rate >= rhr2.resting_hr + (up3.max_hr - rhr2.resting_hr) * 0.8) AS hi_count
+                FROM fitness.metric_stream ms2
+                WHERE ms2.activity_id = asum.activity_id
+                  AND ms2.heart_rate IS NOT NULL
+              ) cnt ON true
               WHERE asum.user_id = ${ctx.userId}
                 AND asum.started_at > ${timestampWindowStart(input.endDate, totalDays)}
-                AND asum.aerobic_minutes IS NOT NULL
+                AND asum.hr_sample_count > 0
+                AND up3.max_hr IS NOT NULL
             ),
             strength_freq AS (
               SELECT NULLIF(COUNT(*), 0)::real / GREATEST(${totalDays}::real / 7, 1) AS sessions_per_week
