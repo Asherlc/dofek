@@ -155,7 +155,7 @@ describe("DailyOverview", () => {
     expect(skeletons.length).toBe(2); // circle + label skeleton
   });
 
-  it("shows placeholders when data is from yesterday (not synced today)", () => {
+  it("shows yesterday's readiness as fresh (recovery reflects last night)", () => {
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     const yesterdayStr = yesterday.toLocaleDateString("en-CA");
@@ -202,10 +202,53 @@ describe("DailyOverview", () => {
         sleepLoading={false}
       />,
     );
-    // Recovery should show "No data" since readiness is from yesterday
+    // Recovery should show yesterday's score (recovery reflects last night's data)
+    expect(screen.getByText("75")).toBeTruthy();
+    expect(screen.getByText("Recovered")).toBeTruthy();
+  });
+
+  it("shows placeholder when readiness data is 2+ days old", () => {
+    const twoDaysAgo = new Date();
+    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+    const twoDaysAgoStr = twoDaysAgo.toLocaleDateString("en-CA");
+
+    render(
+      <DailyOverview
+        readiness={[
+          {
+            date: twoDaysAgoStr,
+            readinessScore: 75,
+            components: {
+              hrvScore: 80,
+              restingHrScore: 70,
+              sleepScore: 75,
+              respiratoryRateScore: 65,
+            },
+          },
+        ]}
+        workloadRatio={{
+          displayedStrain: 12.5,
+          displayedDate: twoDaysAgoStr,
+          timeSeries: [
+            {
+              date: twoDaysAgoStr,
+              dailyLoad: 100,
+              strain: 12.5,
+              acuteLoad: 80,
+              chronicLoad: 70,
+              workloadRatio: 1.14,
+            },
+          ],
+        }}
+        sleepPerformance={null}
+        readinessLoading={false}
+        workloadLoading={false}
+        sleepLoading={false}
+      />,
+    );
+    // Recovery should show "No data" since readiness is 2+ days old
     const noDatas = screen.getAllByText("No data");
     expect(noDatas.length).toBeGreaterThanOrEqual(1);
-    // Score "75" should NOT appear since readiness data is stale
     expect(screen.queryByText("75")).toBeNull();
   });
 });

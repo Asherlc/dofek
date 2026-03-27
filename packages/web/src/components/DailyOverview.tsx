@@ -173,10 +173,12 @@ export function DailyOverview({
   sleepLoading,
 }: DailyOverviewProps) {
   const latestReadiness = readiness?.length ? readiness[readiness.length - 1] : undefined;
-  const readinessIsToday = latestReadiness
-    ? isToday(new Date(`${latestReadiness.date}T00:00:00`))
-    : false;
-  const recoveryScore = readinessIsToday ? (latestReadiness?.readinessScore ?? null) : null;
+  const readinessIsFresh = (() => {
+    if (!latestReadiness) return false;
+    const readinessDate = new Date(`${latestReadiness.date}T00:00:00`);
+    return isToday(readinessDate) || isYesterday(readinessDate);
+  })();
+  const recoveryScore = readinessIsFresh ? (latestReadiness?.readinessScore ?? null) : null;
   const strainIsToday = workloadRatio?.displayedDate
     ? isToday(new Date(`${workloadRatio.displayedDate}T00:00:00`))
     : false;
