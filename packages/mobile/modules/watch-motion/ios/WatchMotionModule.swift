@@ -72,6 +72,21 @@ public class WatchMotionModule: Module {
             })
         }
 
+        /// Ask the Watch to restart its accelerometer recording session.
+        /// This ensures continuous coverage even if the user never opens
+        /// the Watch app — the iPhone can keep the 12-hour sessions rolling.
+        AsyncFunction("requestWatchRecording") { (promise: Promise) in
+            guard let session = self.session, session.isReachable else {
+                promise.resolve(false)
+                return
+            }
+            session.sendMessage(["action": "sync_and_record"], replyHandler: { _ in
+                promise.resolve(true)
+            }, errorHandler: { _ in
+                promise.resolve(false)
+            })
+        }
+
         AsyncFunction("getPendingWatchSamples") { (promise: Promise) in
             DispatchQueue.global(qos: .userInitiated).async {
                 do {

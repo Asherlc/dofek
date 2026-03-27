@@ -35,6 +35,15 @@ export async function requestWatchSync(): Promise<boolean> {
 	return WatchMotionModule.requestWatchSync();
 }
 
+/** Ask the Watch to restart its accelerometer recording session.
+ * This ensures continuous coverage even if the user never opens the Watch app —
+ * the iPhone can keep the 12-hour sessions rolling remotely.
+ * Also triggers a data transfer.
+ * Returns true if the message was sent, false if Watch is not reachable. */
+export async function requestWatchRecording(): Promise<boolean> {
+	return WatchMotionModule.requestWatchRecording();
+}
+
 /** Read all pending accelerometer sample files transferred from the Watch.
  * Files are gzip-compressed JSON arrays. Parsing happens on a background thread.
  * @returns Flattened array of all samples from all pending files. */

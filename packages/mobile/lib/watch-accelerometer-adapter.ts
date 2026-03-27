@@ -4,7 +4,7 @@ import {
 	getPendingWatchSamples,
 	isWatchAppInstalled,
 	isWatchPaired,
-	requestWatchSync,
+	requestWatchRecording,
 	setLastWatchSyncTimestamp,
 } from "../modules/watch-motion";
 import type { CoreMotionAdapter } from "./accelerometer-sync";
@@ -49,10 +49,10 @@ export function createWatchCoreMotionAdapter(): CoreMotionAdapter {
 		},
 
 		async startRecording(_durationSeconds: number): Promise<boolean> {
-			// Ask the Watch to queue a data transfer. The Watch records
-			// autonomously (12-hour CMSensorRecorder sessions), so even if
-			// the request doesn't reach it, recording continues.
-			await requestWatchSync();
+			// Ask the Watch to restart recording AND transfer data.
+			// This keeps the 12-hour CMSensorRecorder sessions rolling
+			// even if the user never opens the Watch app.
+			await requestWatchRecording();
 			return true;
 		},
 

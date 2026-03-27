@@ -12,6 +12,8 @@ final class WatchSessionDelegate: NSObject, ObservableObject, WCSessionDelegate 
 
     /// Callback triggered when the iPhone requests a sync.
     var onSyncRequested: (() -> Void)?
+    /// Callback triggered when the iPhone requests recording to start/restart.
+    var onRecordingRequested: (() -> Void)?
 
     private override init() {
         super.init()
@@ -47,10 +49,23 @@ final class WatchSessionDelegate: NSObject, ObservableObject, WCSessionDelegate 
         didReceiveMessage message: [String: Any],
         replyHandler: @escaping ([String: Any]) -> Void
     ) {
-        if let action = message["action"] as? String, action == "sync_accelerometer" {
+        guard let action = message["action"] as? String else {
+            replyHandler(["status": "unknown_action"])
+            return
+        }
+
+        switch action {
+        case "sync_accelerometer":
             onSyncRequested?()
             replyHandler(["status": "sync_started"])
-        } else {
+        case "start_recording":
+            onRecordingRequested?()
+            replyHandler(["status": "recording_started"])
+        case "sync_and_record":
+            onRecordingRequested?()
+            onSyncRequested?()
+            replyHandler(["status": "recording_and_sync_started"])
+        default:
             replyHandler(["status": "unknown_action"])
         }
     }

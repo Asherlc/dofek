@@ -272,6 +272,13 @@ vi.mock("./modules/core-motion", () => ({
   setLastSyncTimestamp: vi.fn(),
 }));
 
+// ── Background Refresh native module mock ──────────────────────────
+vi.mock("./modules/background-refresh", () => ({
+  scheduleRefresh: vi.fn(),
+  isBackgroundRefreshAvailable: vi.fn(() => false),
+  addBackgroundRefreshListener: vi.fn(() => ({ remove: vi.fn() })),
+}));
+
 // ── WHOOP BLE native module mock ───────────────────────────────────
 vi.mock("./modules/whoop-ble", () => ({
   isBluetoothAvailable: vi.fn(() => false),
@@ -296,6 +303,7 @@ vi.mock("./modules/watch-motion", () => ({
     pendingFileCount: 0,
   })),
   requestWatchSync: vi.fn(() => Promise.resolve(false)),
+  requestWatchRecording: vi.fn(() => Promise.resolve(false)),
   getPendingWatchSamples: vi.fn(() => Promise.resolve([])),
   acknowledgeWatchSamples: vi.fn(),
   getLastWatchSyncTimestamp: vi.fn(() => null),

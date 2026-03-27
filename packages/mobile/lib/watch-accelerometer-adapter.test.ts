@@ -7,7 +7,7 @@ const mockGetPendingWatchSamples = vi.fn(() => Promise.resolve([]));
 const mockAcknowledgeWatchSamples = vi.fn();
 const mockGetLastWatchSyncTimestamp = vi.fn(() => null as string | null);
 const mockSetLastWatchSyncTimestamp = vi.fn();
-const mockRequestWatchSync = vi.fn(() => Promise.resolve(true));
+const mockRequestWatchRecording = vi.fn(() => Promise.resolve(true));
 
 vi.mock("../modules/watch-motion", () => ({
 	isWatchPaired: () => mockIsWatchPaired(),
@@ -17,7 +17,7 @@ vi.mock("../modules/watch-motion", () => ({
 	getLastWatchSyncTimestamp: () => mockGetLastWatchSyncTimestamp(),
 	setLastWatchSyncTimestamp: (timestamp: string) =>
 		mockSetLastWatchSyncTimestamp(timestamp),
-	requestWatchSync: () => mockRequestWatchSync(),
+	requestWatchRecording: () => mockRequestWatchRecording(),
 }));
 
 import { createWatchCoreMotionAdapter } from "./watch-accelerometer-adapter.ts";
@@ -103,17 +103,17 @@ describe("WatchCoreMotionAdapter", () => {
 	});
 
 	describe("startRecording", () => {
-		it("requests Watch to sync and returns true", async () => {
-			mockRequestWatchSync.mockResolvedValue(true);
+		it("requests Watch to record and sync, returns true", async () => {
+			mockRequestWatchRecording.mockResolvedValue(true);
 
 			const result = await adapter.startRecording(43200);
 
 			expect(result).toBe(true);
-			expect(mockRequestWatchSync).toHaveBeenCalledTimes(1);
+			expect(mockRequestWatchRecording).toHaveBeenCalledTimes(1);
 		});
 
 		it("returns true even if Watch is not reachable", async () => {
-			mockRequestWatchSync.mockResolvedValue(false);
+			mockRequestWatchRecording.mockResolvedValue(false);
 
 			const result = await adapter.startRecording(43200);
 
