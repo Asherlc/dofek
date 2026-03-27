@@ -24,8 +24,10 @@ import { healthKitPushTotal, healthKitRecordsTotal } from "dofek/sync-metrics";
 import {
   aggregateDailyMetricSamples,
   computeBoundsFromIsoTimestamps,
+  deriveSleepSessionsFromStages,
   healthKitSyncRouter,
   isSleepStageValue,
+  type SleepSample,
 } from "./health-kit-sync.ts";
 
 const createCaller = createTestCallerFactory(healthKitSyncRouter);
@@ -1152,6 +1154,258 @@ describe("healthKitSyncRouter", () => {
         startAt: "2024-01-15T10:00:00.000Z",
         endAt: "2024-01-15T14:00:00.000Z",
       });
+    });
+  });
+
+  describe("deriveSleepSessionsFromStages", () => {
+    function makeSleepSample(overrides: Partial<SleepSample> = {}): SleepSample {
+      return {
+        uuid: overrides.uuid ?? "sleep-1",
+        startDate: overrides.startDate ?? "2024-01-15T23:00:00Z",
+        endDate: overrides.endDate ?? "2024-01-15T23:30:00Z",
+        value: overrides.value ?? "asleepCore",
+        sourceName: overrides.sourceName ?? "Apple Watch",
+      };
+    }
+
+    it("returns empty array for empty input", () => {
+      expect(deriveSleepSessionsFromStages([])).toEqual([]);
+    });
+
+    it("returns empty array when no sleep stages present (only non-sleep values)", () => {
+      const samples = [makeSleepSample({ value: "inBed", uuid: "s1" })];
+      // "inBed" is not a sleep stage and not "awake", so it gets filtered out
+      expect(deriveSleepSessionsFromStages(samples)).toEqual([]);
+    });
+
+    it("derives a single session from contiguous sleep stages", () => {
+      const samples = [
+        makeSleepSample({
+          uuid: "s1",
+          startDate: "2024-01-15T23:00:00Z",
+          endDate: "2024-01-15T23:30:00Z",
+          value: "asleepCore",
+        }),
+        makeSleepSample({
+          uuid: "s2",
+          startDate: "2024-01-15T23:30:00Z",
+          endDate: "2024-01-16T00:00:00Z",
+          value: "asleepDeep",
+        }),
+      ];
+
+      const result = deriveSleepSessionsFromStages(samples);
+      expect(result).toHaveLength(1);
+      expect(result[0]?.startDate).toBe("2024-01-15T23:00:00.000Z");
+      expect(result[0]?.endDate).toBe("2024-01-16T00:00:00.000Z");
+      expect(result[0]?.value).toBe("inBed");
+    });
+
+    it("splits into two sessions when gap exceeds 90 minutes", () => {
+      const samples = [
+        makeSleepSample({
+          uuid: "s1",
+          startDate: "2024-01-15T22:00:00Z",
+          endDate: "2024-01-15T23:00:00Z",
+          value: "asleepCore",
+        }),
+        // 3-hour gap (> 90min threshold)
+        makeSleepSample({
+          uuid: "s2",
+          startDate: "2024-01-16T02:00:00Z",
+          endDate: "2024-01-16T03:00:00Z",
+          value: "asleepDeep",
+        }),
+      ];
+
+      const result = deriveSleepSessionsFromStages(samples);
+      expect(result).toHaveLength(2);
+      expect(result[0]?.endDate).toBe("2024-01-15T23:00:00.000Z");
+      expect(result[1]?.startDate).toBe("2024-01-16T02:00:00.000Z");
+    });
+
+    it("merges stages within 90-minute gap", () => {
+      const samples = [
+        makeSleepSample({
+          uuid: "s1",
+          startDate: "2024-01-15T23:00:00Z",
+          endDate: "2024-01-16T00:00:00Z",
+          value: "asleepCore",
+        }),
+        // 60-minute gap (< 90min threshold)
+        makeSleepSample({
+          uuid: "s2",
+          startDate: "2024-01-16T01:00:00Z",
+          endDate: "2024-01-16T02:00:00Z",
+          value: "asleepREM",
+        }),
+      ];
+
+      const result = deriveSleepSessionsFromStages(samples);
+      expect(result).toHaveLength(1);
+      expect(result[0]?.endDate).toBe("2024-01-16T02:00:00.000Z");
+    });
+
+    it("includes awake stages in session grouping", () => {
+      const samples = [
+        makeSleepSample({
+          uuid: "s1",
+          startDate: "2024-01-15T23:00:00Z",
+          endDate: "2024-01-16T00:00:00Z",
+          value: "asleepCore",
+        }),
+        makeSleepSample({
+          uuid: "s2",
+          startDate: "2024-01-16T00:00:00Z",
+          endDate: "2024-01-16T00:15:00Z",
+          value: "awake",
+        }),
+        makeSleepSample({
+          uuid: "s3",
+          startDate: "2024-01-16T00:15:00Z",
+          endDate: "2024-01-16T01:00:00Z",
+          value: "asleepDeep",
+        }),
+      ];
+
+      const result = deriveSleepSessionsFromStages(samples);
+      expect(result).toHaveLength(1);
+      expect(result[0]?.endDate).toBe("2024-01-16T01:00:00.000Z");
+    });
+
+    it("drops session that only contains awake stages (no actual sleep)", () => {
+      // A session with only awake stages has currentHasSleepStage = false
+      const samples = [
+        makeSleepSample({
+          uuid: "s1",
+          startDate: "2024-01-15T23:00:00Z",
+          endDate: "2024-01-15T23:30:00Z",
+          value: "awake",
+        }),
+      ];
+
+      const result = deriveSleepSessionsFromStages(samples);
+      expect(result).toEqual([]);
+    });
+
+    it("filters out entries where endDate <= startDate", () => {
+      const samples = [
+        makeSleepSample({
+          uuid: "s1",
+          startDate: "2024-01-15T23:30:00Z",
+          endDate: "2024-01-15T23:00:00Z", // end before start
+          value: "asleepCore",
+        }),
+      ];
+
+      const result = deriveSleepSessionsFromStages(samples);
+      expect(result).toEqual([]);
+    });
+
+    it("filters out entries with invalid timestamps", () => {
+      const samples = [
+        makeSleepSample({
+          uuid: "s1",
+          startDate: "invalid",
+          endDate: "2024-01-15T23:30:00Z",
+          value: "asleepCore",
+        }),
+      ];
+
+      const result = deriveSleepSessionsFromStages(samples);
+      expect(result).toEqual([]);
+    });
+
+    it("sorts unsorted stages by start time before merging", () => {
+      const samples = [
+        makeSleepSample({
+          uuid: "s2",
+          startDate: "2024-01-16T00:00:00Z",
+          endDate: "2024-01-16T01:00:00Z",
+          value: "asleepDeep",
+        }),
+        makeSleepSample({
+          uuid: "s1",
+          startDate: "2024-01-15T23:00:00Z",
+          endDate: "2024-01-16T00:00:00Z",
+          value: "asleepCore",
+        }),
+      ];
+
+      const result = deriveSleepSessionsFromStages(samples);
+      expect(result).toHaveLength(1);
+      // Session starts at the earliest stage, not the first in input order
+      expect(result[0]?.startDate).toBe("2024-01-15T23:00:00.000Z");
+      expect(result[0]?.endDate).toBe("2024-01-16T01:00:00.000Z");
+      // UUID should be from the earliest stage (after sorting)
+      expect(result[0]?.uuid).toBe("s1");
+    });
+
+    it("extends session end time when overlapping stage has later end", () => {
+      const samples = [
+        makeSleepSample({
+          uuid: "s1",
+          startDate: "2024-01-15T23:00:00Z",
+          endDate: "2024-01-16T00:30:00Z",
+          value: "asleepCore",
+        }),
+        makeSleepSample({
+          uuid: "s2",
+          startDate: "2024-01-16T00:00:00Z",
+          endDate: "2024-01-16T01:00:00Z", // extends past s1 end
+          value: "asleepDeep",
+        }),
+      ];
+
+      const result = deriveSleepSessionsFromStages(samples);
+      expect(result).toHaveLength(1);
+      expect(result[0]?.endDate).toBe("2024-01-16T01:00:00.000Z");
+    });
+
+    it("does not shrink session end time when overlapping stage has earlier end", () => {
+      const samples = [
+        makeSleepSample({
+          uuid: "s1",
+          startDate: "2024-01-15T23:00:00Z",
+          endDate: "2024-01-16T01:00:00Z",
+          value: "asleepCore",
+        }),
+        makeSleepSample({
+          uuid: "s2",
+          startDate: "2024-01-15T23:30:00Z",
+          endDate: "2024-01-16T00:30:00Z", // ends before s1
+          value: "asleepDeep",
+        }),
+      ];
+
+      const result = deriveSleepSessionsFromStages(samples);
+      expect(result).toHaveLength(1);
+      // End should stay at s1's later end
+      expect(result[0]?.endDate).toBe("2024-01-16T01:00:00.000Z");
+    });
+
+    it("groups by source name independently", () => {
+      const samples = [
+        makeSleepSample({
+          uuid: "w1",
+          startDate: "2024-01-15T23:00:00Z",
+          endDate: "2024-01-16T07:00:00Z",
+          value: "asleepCore",
+          sourceName: "Apple Watch",
+        }),
+        makeSleepSample({
+          uuid: "p1",
+          startDate: "2024-01-15T23:00:00Z",
+          endDate: "2024-01-16T07:00:00Z",
+          value: "asleepDeep",
+          sourceName: "iPhone",
+        }),
+      ];
+
+      const result = deriveSleepSessionsFromStages(samples);
+      expect(result).toHaveLength(2);
+      const sources = result.map((s) => s.sourceName).sort();
+      expect(sources).toEqual(["Apple Watch", "iPhone"]);
     });
   });
 

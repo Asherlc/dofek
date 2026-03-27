@@ -267,7 +267,7 @@ export function isSleepStageValue(value: string): boolean {
   );
 }
 
-function deriveSleepSessionsFromStages(samples: SleepSample[]): SleepSample[] {
+export function deriveSleepSessionsFromStages(samples: SleepSample[]): SleepSample[] {
   const sessions: SleepSample[] = [];
   const bySource = new Map<string, SleepSample[]>();
 
