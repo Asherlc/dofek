@@ -62,7 +62,11 @@ jobs:
       - name: Set build number
         run: |
           cd packages/mobile/ios
-          agvtool new-version -all ${{ github.run_number }}
+          # Offset ensures continuity with builds uploaded before the workflow
+          # split (highest previously uploaded build was ~1816).
+          BUILD_NUMBER=$(( $(git rev-list --count HEAD) + 1200 ))
+          echo "Setting build number to $BUILD_NUMBER"
+          agvtool new-version -all "$BUILD_NUMBER"
 
       - name: Build archive
         run: |
