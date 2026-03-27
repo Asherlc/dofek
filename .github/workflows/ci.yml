@@ -926,11 +926,16 @@ jobs:
       - name: Upload to TestFlight
         if: success()
         run: |
-          xcrun altool --upload-app \
+          OUTPUT=$(xcrun altool --upload-app \
             --type ios \
             --file $RUNNER_TEMP/export/Dofek.ipa \
             --apiKey "$APP_STORE_CONNECT_KEY_ID" \
-            --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID"
+            --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID" 2>&1) || true
+          echo "$OUTPUT"
+          if echo "$OUTPUT" | grep -q "UPLOAD FAILED"; then
+            echo "::error::altool upload failed"
+            exit 1
+          fi
 
       - name: Dump distribution logs
         if: failure()
