@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
+import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import { File as ExpoFile, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { z } from "zod";
@@ -68,17 +68,6 @@ export default function SettingsScreen() {
 
   function handleUnitChange(value: UnitSystem) {
     setSettingMutation.mutate({ key: "unitSystem", value });
-  }
-
-  // ── WHOOP Accelerometer ──
-  const whoopImuSetting = trpc.settings.get.useQuery({ key: "whoopAlwaysOnImu" });
-  const whoopImuEnabled = whoopImuSetting.data?.value === true;
-
-  function handleWhoopImuToggle(enabled: boolean) {
-    setSettingMutation.mutate(
-      { key: "whoopAlwaysOnImu", value: enabled },
-      { onSuccess: () => whoopImuSetting.refetch() },
-    );
   }
 
   function handleUnlink(accountId: string) {
@@ -268,31 +257,6 @@ export default function SettingsScreen() {
         </View>
       </View>
 
-      {/* ── WHOOP Accelerometer ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>WHOOP Accelerometer</Text>
-        <Text style={styles.sectionDescription}>
-          Record accelerometer data from your WHOOP strap continuously via Bluetooth.
-          Reduces strap battery life from ~5 days to ~3-4 days.
-        </Text>
-        <View style={styles.card}>
-          <View style={styles.toggleRow}>
-            <View style={styles.toggleInfo}>
-              <Text style={styles.toggleLabel}>Always-on recording</Text>
-              <Text style={styles.toggleDescription}>
-                Streams accelerometer data whenever the app is open
-              </Text>
-            </View>
-            <Switch
-              value={whoopImuEnabled}
-              onValueChange={handleWhoopImuToggle}
-              disabled={setSettingMutation.isPending}
-              trackColor={{ false: colors.surfaceSecondary, true: colors.accent }}
-            />
-          </View>
-        </View>
-      </View>
-
       {/* ── Algorithm Personalization ── */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Algorithm Personalization</Text>
@@ -455,27 +419,6 @@ const styles = StyleSheet.create({
   },
   unlinkTextDisabled: {
     color: colors.textTertiary,
-  },
-
-  // ── Toggle Row ──
-  toggleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  toggleInfo: {
-    flex: 1,
-    marginRight: 12,
-  },
-  toggleLabel: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: colors.text,
-  },
-  toggleDescription: {
-    fontSize: 13,
-    color: colors.textTertiary,
-    marginTop: 2,
   },
 
   // ── Unit System ──
