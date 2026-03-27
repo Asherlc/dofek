@@ -55,6 +55,7 @@ export interface PelotonWorkout {
   has_pedaling_metrics?: boolean;
   has_leaderboard_metrics?: boolean;
   timezone?: string; // e.g. "America/New_York"
+  strava_id?: string; // Strava activity ID (e.g. "3456789012")
   ride?: PelotonRide;
   total_leaderboard_users?: number;
   leaderboard_rank?: number;
@@ -122,6 +123,8 @@ export interface ParsedPelotonWorkout {
   externalId: string;
   activityType: CanonicalActivityType;
   name?: string;
+  timezone?: string;
+  stravaId?: string;
   startedAt: Date;
   endedAt?: Date;
   raw: Record<string, unknown>;
@@ -151,10 +154,15 @@ export function parseWorkout(workout: PelotonWorkout): ParsedPelotonWorkout {
     timezone: workout.timezone || undefined,
   };
 
+  // strava_id "-1" means "not linked to Strava"
+  const stravaId = workout.strava_id && workout.strava_id !== "-1" ? workout.strava_id : undefined;
+
   return {
     externalId: workout.id,
     activityType: mapFitnessDiscipline(workout.fitness_discipline),
     name: workout.ride?.title,
+    timezone: workout.timezone || undefined,
+    stravaId,
     startedAt,
     endedAt,
     raw,
@@ -609,6 +617,8 @@ export class PelotonProvider implements SyncProvider {
                   startedAt: parsed.startedAt,
                   endedAt: parsed.endedAt,
                   name: parsed.name,
+                  timezone: parsed.timezone,
+                  stravaId: parsed.stravaId,
                   raw: parsed.raw,
                 })
                 .onConflictDoUpdate({
@@ -618,6 +628,8 @@ export class PelotonProvider implements SyncProvider {
                     startedAt: parsed.startedAt,
                     endedAt: parsed.endedAt,
                     name: parsed.name,
+                    timezone: parsed.timezone,
+                    stravaId: parsed.stravaId,
                     raw: parsed.raw,
                   },
                 })

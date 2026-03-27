@@ -34,6 +34,7 @@ const sampleWorkout: PelotonWorkout = {
   has_pedaling_metrics: true,
   has_leaderboard_metrics: true,
   timezone: "America/New_York",
+  strava_id: "3456789012",
   ride: {
     id: "ride-001",
     title: "30 min Power Zone Ride",
@@ -291,6 +292,18 @@ describe("Peloton Provider", () => {
       expect(result.raw.timezone).toBe("America/New_York");
     });
 
+    it("extracts timezone and stravaId as top-level fields", () => {
+      const result = parseWorkout(sampleCyclingWorkout);
+      expect(result.timezone).toBe("America/New_York");
+      expect(result.stravaId).toBe("3456789012");
+    });
+
+    it("ignores strava_id when it is -1 (not linked)", () => {
+      const notLinked: PelotonWorkout = { ...sampleWorkout, strava_id: "-1" };
+      const result = parseWorkout(notLinked);
+      expect(result.stravaId).toBeUndefined();
+    });
+
     it("handles missing optional source fields", () => {
       const minimal: PelotonWorkout = {
         ...sampleWorkout,
@@ -300,6 +313,7 @@ describe("Peloton Provider", () => {
         workout_type: undefined,
         has_pedaling_metrics: undefined,
         timezone: undefined,
+        strava_id: undefined,
       };
       const result = parseWorkout(minimal);
       expect(result.raw.deviceType).toBeUndefined();
@@ -308,6 +322,8 @@ describe("Peloton Provider", () => {
       expect(result.raw.workoutType).toBeUndefined();
       expect(result.raw.hasPedalingMetrics).toBeUndefined();
       expect(result.raw.timezone).toBeUndefined();
+      expect(result.timezone).toBeUndefined();
+      expect(result.stravaId).toBeUndefined();
     });
 
     it("stores personal record flag in raw", () => {
