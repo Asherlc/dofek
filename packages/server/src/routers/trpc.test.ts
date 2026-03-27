@@ -17,15 +17,8 @@ vi.mock("../lib/metrics.ts", () => ({
   trpcProcedureDuration: { observe: vi.fn() },
 }));
 
-vi.mock("../lib/semaphore.ts", () => ({
-  dbQuerySemaphore: {
-    run: vi.fn(<T>(fn: () => Promise<T>) => fn()),
-  },
-}));
-
 import { queryCache } from "../lib/cache.ts";
 import { cacheHitsTotal, cacheMissesTotal } from "../lib/metrics.ts";
-import { dbQuerySemaphore } from "../lib/semaphore.ts";
 import {
   CacheTTL,
   type Context,
@@ -147,23 +140,8 @@ describe("trpc", () => {
       );
     });
 
-    it("uses semaphore for normal cached queries", async () => {
-      vi.mocked(queryCache.get).mockResolvedValue(undefined);
-      const createCaller = createCachedRouter();
-      const caller = createCaller({ db: {}, userId: "user-1", timezone: "UTC" });
-
-      await caller.cachedQuery();
-      expect(dbQuerySemaphore.run).toHaveBeenCalled();
-    });
-
-    it("bypasses semaphore for lightweight cached queries", async () => {
-      vi.mocked(queryCache.get).mockResolvedValue(undefined);
-      const createCaller = createCachedRouter();
-      const caller = createCaller({ db: {}, userId: "user-1", timezone: "UTC" });
-
-      await caller.lightQuery();
-      // Lightweight queries should NOT go through the semaphore
-      expect(dbQuerySemaphore.run).not.toHaveBeenCalled();
+    it("cachedProtectedQueryLight is an alias for cachedProtectedQuery", () => {
+      expect(cachedProtectedQueryLight).toBe(cachedProtectedQuery);
     });
 
     it("includes userId in cache key for anonymous users", async () => {
