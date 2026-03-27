@@ -495,14 +495,17 @@ describe("PelotonProvider.sync — workout filtering", () => {
 });
 
 describe("PelotonProvider.sync — has_pedaling_metrics", () => {
-  it("skips performance graph fetch when has_pedaling_metrics is false", async () => {
+  it("still fetches performance graph when has_pedaling_metrics is false (for HR data)", async () => {
     const workout = makeWorkout();
     workout.has_pedaling_metrics = false;
 
     const mockFetch = vi
       .fn()
       .mockResolvedValueOnce(Response.json({ id: "user-123" }))
-      .mockResolvedValueOnce(Response.json(makeWorkoutListResponse([workout])));
+      .mockResolvedValueOnce(Response.json(makeWorkoutListResponse([workout])))
+      .mockResolvedValueOnce(
+        Response.json(makePerformanceGraph(["heart_rate", "output", "cadence"])),
+      );
 
     const mockDb = createMockDb();
 
@@ -512,15 +515,13 @@ describe("PelotonProvider.sync — has_pedaling_metrics", () => {
 
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBeGreaterThan(0);
-    // Only /api/me + workouts page — no performance_graph call
-    expect(mockFetch).toHaveBeenCalledTimes(2);
-    // Activity was still inserted (insert called for provider upsert + activity)
+    // Still fetches the performance graph (3 calls: /api/me + workouts + perf graph)
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+    // Metric stream rows are still inserted (HR present, power/cadence nulled out)
     expect(mockDb.insert).toHaveBeenCalled();
-    // No metric_stream cleanup since we skipped the graph
-    expect(mockDb.delete).not.toHaveBeenCalled();
   });
 
-  it("fetches performance graph when has_pedaling_metrics is true", async () => {
+  it("keeps all metrics when has_pedaling_metrics is true", async () => {
     const workout = makeWorkout();
     workout.has_pedaling_metrics = true;
 
@@ -541,9 +542,8 @@ describe("PelotonProvider.sync — has_pedaling_metrics", () => {
     expect(mockFetch).toHaveBeenCalledTimes(3);
   });
 
-  it("fetches performance graph when has_pedaling_metrics is undefined", async () => {
+  it("keeps all metrics when has_pedaling_metrics is undefined (backwards compat)", async () => {
     const workout = makeWorkout();
-    // has_pedaling_metrics not set — should still fetch graph (backwards compat)
 
     const mockFetch = vi
       .fn()

@@ -642,8 +642,6 @@ export class PelotonProvider implements SyncProvider {
             }
 
             // Fetch performance graph for time-series + summary enrichment
-            // Skip if the workout has no pedaling/sensor metrics (e.g. freestyle app sessions)
-            if (workout.has_pedaling_metrics === false) continue;
             try {
               const everyN = 5;
               const graph = await client.getPerformanceGraph(workout.id, everyN);
@@ -651,8 +649,13 @@ export class PelotonProvider implements SyncProvider {
 
               // Insert time-series metric_stream rows linked to the activity
               const hrSeries = series.find((s) => s.slug === "heart_rate");
-              const powerSeries = series.find((s) => s.slug === "output");
-              const cadenceSeries = series.find((s) => s.slug === "cadence");
+              // Discard pedaling metrics (power, cadence) when has_pedaling_metrics is false —
+              // the user may still have HR data from a chest strap or watch
+              const hasPedaling = workout.has_pedaling_metrics !== false;
+              const powerSeries = hasPedaling ? series.find((s) => s.slug === "output") : undefined;
+              const cadenceSeries = hasPedaling
+                ? series.find((s) => s.slug === "cadence")
+                : undefined;
               const sampleCount =
                 hrSeries?.values.length ??
                 powerSeries?.values.length ??
