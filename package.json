@@ -83,7 +83,10 @@
     "e2e:web:open": "pnpm exec cypress open",
     "e2e:web": "pnpm e2e:web:up && pnpm e2e:web:run; pnpm e2e:web:down",
     "mobile": "pnpm --filter dofek-mobile start",
-    "mobile:device": "pnpm --filter dofek-mobile ios:device"
+    "mobile:device": "pnpm --filter dofek-mobile ios:device",
+    "size": "size-limit",
+    "depcruise": "depcruise --config .dependency-cruiser.cjs src/ packages/",
+    "spellcheck": "cspell --no-progress"
   },
   "dependencies": {
     "@bull-board/api": "6.20.5",
@@ -123,6 +126,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.6",
+    "@size-limit/file": "12.0.1",
     "@stryker-mutator/core": "9.6.0",
     "@stryker-mutator/vitest-runner": "9.6.0",
     "@testing-library/react": "16.3.2",
@@ -131,7 +135,9 @@
     "@types/sax": "1.2.7",
     "@types/yauzl": "2.10.3",
     "@vitest/coverage-v8": "3.2.4",
+    "cspell": "9.7.0",
     "cypress": "15.12.0",
+    "dependency-cruiser": "17.3.10",
     "drizzle-dbml-generator": "0.10.0",
     "drizzle-kit": "0.30.6",
     "jsdom": "29.0.0",
@@ -143,13 +149,16 @@
     "postgres": "3.4.8",
     "sharp": "0.34.5",
     "sherif": "1.11.0",
+    "size-limit": "12.0.1",
     "testcontainers": "10.28.0",
     "tsx": "4.21.0",
     "typescript": "5.9.3",
     "vitest": "3.2.4"
   },
   "sherif": {
-    "ignoreRule": ["root-package-dependencies"]
+    "ignoreRule": [
+      "root-package-dependencies"
+    ]
   },
   "pnpm": {
     "onlyBuiltDependencies": [

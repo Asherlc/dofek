@@ -14,13 +14,83 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  # ── Security & supply chain ────────────────────────────────────────────
+
+  secret-scan:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm audit --prod --audit-level=critical
+
+  license-check:
+    name: License Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Check for forbidden licenses
+        run: |
+          npx license-checker --production --excludePrivatePackages \
+            --failOn "GPL-2.0-only;GPL-2.0-or-later;GPL-3.0-only;GPL-3.0-or-later;AGPL-1.0-only;AGPL-3.0-only;AGPL-3.0-or-later" \
+            --summary
+
+  action-pinning:
+    name: Action Pinning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - name: Verify all actions are SHA-pinned
+        run: |
+          # Extract only actual YAML uses: directives (indented, not inside run: blocks)
+          UNPINNED=$(awk '
+            /^[[:space:]]*run:[[:space:]]*\|/ { in_run=1; next }
+            /^[[:space:]]*run:[[:space:]]*[^|]/ { in_run=0 }
+            in_run && /^[[:space:]]{2,}[^-]/ { next }
+            in_run && /^[[:space:]]*-/ { in_run=0 }
+            /^[[:space:]]+uses:/ { print FILENAME ":" NR ":" $0 }
+          ' .github/workflows/*.yml \
+            | grep -vE '@[0-9a-f]{40}' \
+            | grep -vE 'uses: \./' \
+            || true)
+          if [ -n "$UNPINNED" ]; then
+            echo "::error::Found unpinned GitHub Actions (must use full commit SHA):"
+            echo "$UNPINNED"
+            exit 1
+          fi
+          echo "All actions are SHA-pinned"
+
+  # ── Static analysis ────────────────────────────────────────────────────
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: pnpm
@@ -31,9 +101,9 @@ jobs:
     name: Typecheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: pnpm
@@ -56,9 +126,9 @@ jobs:
     name: Sherif
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: pnpm
@@ -69,22 +139,133 @@ jobs:
     name: Knip
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm knip
 
+  spellcheck:
+    name: Spell Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec cspell --no-progress
+
+  import-boundaries:
+    name: Import Boundaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec depcruise --config .dependency-cruiser.cjs src/ packages/
+
+  hadolint:
+    name: Dockerfile Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf # v3.1.0
+        with:
+          dockerfile: Dockerfile
+
+  # ── Database ───────────────────────────────────────────────────────────
+
+  migration-lint:
+    name: Migration Lint
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          fetch-depth: 0
+      - name: Lint new migration SQL
+        run: |
+          NEW_MIGRATIONS=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- 'drizzle/*.sql' || true)
+          if [ -z "$NEW_MIGRATIONS" ]; then
+            echo "No new migrations to lint"
+            exit 0
+          fi
+          pip install squawk-cli
+          echo "Linting migrations:"
+          echo "$NEW_MIGRATIONS"
+          echo "$NEW_MIGRATIONS" | xargs squawk
+
+  # ── Infrastructure ─────────────────────────────────────────────────────
+
+  terraform-validate:
+    name: Terraform Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
+      - run: cd deploy/deploy-config && terraform init -backend=false && terraform validate
+
+  # ── PR quality gates ───────────────────────────────────────────────────
+
+  pr-size:
+    name: PR Size
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          fetch-depth: 0
+      - name: Check PR size
+        run: |
+          STATS=$(git diff --numstat origin/${{ github.base_ref }}...HEAD)
+          ADDITIONS=$(echo "$STATS" | awk '{ add += $1 } END { print add+0 }')
+          DELETIONS=$(echo "$STATS" | awk '{ del += $2 } END { print del+0 }')
+          FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | wc -l | tr -d ' ')
+          echo "## PR Size" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **$ADDITIONS** additions, **$DELETIONS** deletions across **$FILES** files" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$ADDITIONS" -gt 2000 ]; then
+            echo "::warning::Large PR: $ADDITIONS additions across $FILES files. Consider splitting into smaller PRs."
+          fi
+          if [ "$ADDITIONS" -gt 5000 ]; then
+            echo "::error::PR exceeds 5000 additions ($ADDITIONS). Please split into smaller PRs."
+            exit 1
+          fi
+
+  bundle-size:
+    name: Bundle Size
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build web bundle
+        run: cd packages/web && pnpm run build
+      - name: Check bundle size
+        run: pnpm exec size-limit
+
+  # ── Tests ──────────────────────────────────────────────────────────────
+
   test-unit:
     name: Unit Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: pnpm
@@ -92,12 +273,12 @@ jobs:
       - run: pnpm exec vitest run --project unit --coverage
         env:
           VITEST_COVERAGE_SKIP_THRESHOLDS: "true"
-      - uses: codecov/codecov-action@v5
+      - uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe # v5
         with:
           files: coverage/lcov.info
           flags: unit
           token: ${{ secrets.CODECOV_TOKEN }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: coverage-unit
           path: coverage/
@@ -132,9 +313,9 @@ jobs:
       TEST_DATABASE_URL: postgres://test:test@localhost:5432/test
       REDIS_URL: redis://localhost:6379
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: pnpm
@@ -143,12 +324,12 @@ jobs:
         timeout-minutes: 10
         env:
           VITEST_COVERAGE_SKIP_THRESHOLDS: "true"
-      - uses: codecov/codecov-action@v5
+      - uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe # v5
         with:
           files: coverage/lcov.info
           flags: integration
           token: ${{ secrets.CODECOV_TOKEN }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: coverage-integration
           path: coverage/
@@ -158,18 +339,20 @@ jobs:
     needs: [test-unit, test-integration]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: coverage-unit
           path: coverage-unit
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: coverage-integration
           path: coverage-integration
@@ -184,59 +367,22 @@ jobs:
           pnpm exec nyc report --temp-dir final-coverage --reporter=text-summary
           pnpm exec nyc check-coverage --temp-dir final-coverage \
             --lines 93.5 --branches 89 --functions 94.5 --statements 93.5
-
-  test-mobile:
-    name: Mobile Tests
-    needs: check-mobile-changes
-    if: needs.check-mobile-changes.outputs.changed == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm exec vitest run --project mobile
-
-  build-mobile:
-    name: Mobile Metro Bundle
-    needs: check-mobile-changes
-    if: needs.check-mobile-changes.outputs.changed == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Verify iOS Metro bundle
-        run: cd packages/mobile && pnpm expo export --platform ios --clear
-
-  lint-ios-podspecs:
-    name: iOS Podspec Lint
-    needs: check-mobile-changes
-    if: needs.check-mobile-changes.outputs.changed == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Validate podspec deployment targets
+      - name: Diff coverage (changed lines only)
+        if: github.event_name == 'pull_request'
         run: |
-          APP_TARGET=$(python3 -c "import json; print(json.load(open('packages/mobile/app.json'))['expo']['ios']['deploymentTarget'])")
-          echo "App deployment target: iOS $APP_TARGET"
-          FAILED=0
-          for spec in packages/mobile/modules/*/ios/*.podspec; do
-            SPEC_TARGET=$(grep -oP "s\.platform\s*=\s*:ios,\s*'\K[^']+" "$spec")
-            echo "  $(basename "$spec"): iOS $SPEC_TARGET"
-            if [ "$(printf '%s\n' "$APP_TARGET" "$SPEC_TARGET" | sort -V | head -1)" != "$APP_TARGET" ]; then
-              echo "  ERROR: podspec targets iOS $SPEC_TARGET which is below app target iOS $APP_TARGET"
-              FAILED=1
-            fi
-          done
-          exit $FAILED
+          pip install diff-cover
+          # Generate lcov from merged coverage
+          pnpm exec nyc report --temp-dir final-coverage --reporter=lcov --report-dir diff-coverage-lcov
+          diff-cover diff-coverage-lcov/lcov.info \
+            --compare-branch=origin/${{ github.base_ref }} \
+            --fail-under=80 \
+            --markdown-report diff-coverage.md || DIFF_FAILED=1
+          if [ -f diff-coverage.md ]; then
+            cat diff-coverage.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit ${DIFF_FAILED:-0}
+
+  # ── Mobile ─────────────────────────────────────────────────────────────
 
   check-mobile-changes:
     name: Check Mobile Changes
@@ -244,7 +390,7 @@ jobs:
     outputs:
       changed: ${{ steps.check.outputs.changed }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           fetch-depth: 0
       - id: check
@@ -263,15 +409,68 @@ jobs:
             fi
           fi
 
+  test-mobile:
+    name: Mobile Tests
+    needs: check-mobile-changes
+    if: needs.check-mobile-changes.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec vitest run --project mobile
+
+  build-mobile:
+    name: Mobile Metro Bundle
+    needs: check-mobile-changes
+    if: needs.check-mobile-changes.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Verify iOS Metro bundle
+        run: cd packages/mobile && pnpm expo export --platform ios --clear
+
+  lint-ios-podspecs:
+    name: iOS Podspec Lint
+    needs: check-mobile-changes
+    if: needs.check-mobile-changes.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - name: Validate podspec deployment targets
+        run: |
+          APP_TARGET=$(python3 -c "import json; print(json.load(open('packages/mobile/app.json'))['expo']['ios']['deploymentTarget'])")
+          echo "App deployment target: iOS $APP_TARGET"
+          FAILED=0
+          for spec in packages/mobile/modules/*/ios/*.podspec; do
+            SPEC_TARGET=$(grep -oP "s\.platform\s*=\s*:ios,\s*'\K[^']+" "$spec")
+            echo "  $(basename "$spec"): iOS $SPEC_TARGET"
+            if [ "$(printf '%s\n' "$APP_TARGET" "$SPEC_TARGET" | sort -V | head -1)" != "$APP_TARGET" ]; then
+              echo "  ERROR: podspec targets iOS $SPEC_TARGET which is below app target iOS $APP_TARGET"
+              FAILED=1
+            fi
+          done
+          exit $FAILED
+
   build-ios-native:
     name: iOS Native Build
     needs: check-mobile-changes
     if: needs.check-mobile-changes.outputs.changed == 'true'
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: pnpm
@@ -279,7 +478,7 @@ jobs:
       - name: Download Sentry XCFramework
         run: packages/mobile/scripts/download-sentry-xcframework.sh
       - name: Cache CocoaPods
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: packages/mobile/ios/Pods
           key: pods-v6-${{ hashFiles('packages/mobile/ios/Podfile', 'packages/mobile/ios/Podfile.lock', 'packages/mobile/scripts/download-sentry-xcframework.sh') }}
@@ -306,13 +505,14 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             2>&1 | tail -40
         timeout-minutes: 25
+
   build-watchos:
     name: watchOS Build
     needs: check-mobile-changes
     if: needs.check-mobile-changes.outputs.changed == 'true'
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - name: Build Watch target for simulator
         run: |
           xcodebuild build \
@@ -324,6 +524,81 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             | tail -20
         timeout-minutes: 5
+
+  test-swift:
+    name: Swift Tests
+    needs: check-mobile-changes
+    if: needs.check-mobile-changes.outputs.changed == 'true'
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: packages/mobile/modules/health-kit/.build
+          key: swift-build-v1-${{ hashFiles('packages/mobile/modules/health-kit/Package.swift') }}
+          restore-keys: swift-build-v1-
+      - name: Run Swift tests with coverage
+        run: |
+          cd packages/mobile/modules/health-kit
+          bash scripts/check-coverage.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: swift-coverage
+          path: packages/mobile/modules/health-kit/.build/debug/codecov/
+          retention-days: 7
+
+  mutation-swift:
+    name: Swift Mutation Testing
+    needs: check-mobile-changes
+    runs-on: macos-14
+    if: github.event_name == 'pull_request' && needs.check-mobile-changes.outputs.changed == 'true'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: packages/mobile/modules/health-kit/.build
+          key: swift-build-v1-${{ hashFiles('packages/mobile/modules/health-kit/Package.swift') }}
+          restore-keys: swift-build-v1-
+      - name: Install Muter
+        run: brew install muter-mutation-testing/formulae/muter
+      - name: Get changed Swift files
+        id: changed
+        run: |
+          # Filter to mutatable Swift source files, strip prefix for Muter's working directory
+          CHANGED=$(git diff --name-only origin/main...HEAD \
+            | { grep '\.swift$' || true; } \
+            | { grep -v 'Tests/' || true; } \
+            | { grep -v 'HealthKitModule.swift' || true; } \
+            | { grep -v 'Package.swift' || true; } \
+            | sed 's|^packages/mobile/modules/health-kit/||' \
+            | tr '\n' ',' \
+            | sed 's/,$//')
+          echo "files=$CHANGED" >> "$GITHUB_OUTPUT"
+          echo "Mutating changed Swift files: $CHANGED"
+      - name: Run Muter
+        if: steps.changed.outputs.files != ''
+        working-directory: packages/mobile/modules/health-kit
+        timeout-minutes: 30
+        run: |
+          muter --files-to-mutate "${{ steps.changed.outputs.files }}" || {
+            EXIT_CODE=$?
+            # Exit 255 = "no mutatable code found" — expected for incremental runs
+            # when changed files have no patterns Muter's operators can target
+            if [ $EXIT_CODE -eq 255 ]; then
+              echo "Muter found no mutatable code in changed files — skipping."
+              exit 0
+            fi
+            exit $EXIT_CODE
+          }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: failure()
+        with:
+          name: muter-report
+          path: packages/mobile/modules/health-kit/muter_logs/
+          retention-days: 7
 
   ios-gate:
     name: iOS Native Gate
@@ -347,21 +622,23 @@ jobs:
             fi
           done
 
+  # ── E2E & Docker ───────────────────────────────────────────────────────
+
   test-e2e-web:
     name: E2E Tests (Web)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec cypress install
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Build E2E images with cache
-        uses: docker/bake-action@v5
+        uses: docker/bake-action@4a9a8d494466d37134e2bfca2d3a8de8fb2681ad # v5
         with:
           files: docker-compose.e2e.yml
           targets: |
@@ -371,10 +648,16 @@ jobs:
           set: |
             *.cache-from=type=gha,scope=e2e
             *.cache-to=type=gha,mode=max,scope=e2e
+      - name: Scan server image (Grype)
+        uses: anchore/scan-action@1638637db639e0ade3258b51db49a9a137574c3e # v6
+        with:
+          image: e2e-server:latest
+          fail-build: false
+          severity-cutoff: critical
       - name: Start e2e stack
         run: docker compose -f docker-compose.e2e.yml up -d --wait --no-build
       - run: pnpm e2e:web:run
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: failure()
         with:
           name: cypress-screenshots
@@ -384,6 +667,8 @@ jobs:
         if: always()
         run: docker compose -f docker-compose.e2e.yml down -v
 
+  # ── Mutation testing ───────────────────────────────────────────────────
+
   mutation-prep:
     name: Mutation Prep
     runs-on: ubuntu-latest
@@ -391,7 +676,7 @@ jobs:
     outputs:
       shards: ${{ steps.shard.outputs.shards }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           fetch-depth: 0
       - name: Compute changed files and split into shards
@@ -463,17 +748,17 @@ jobs:
       matrix:
         files: ${{ fromJSON(needs.mutation-prep.outputs.shards) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Restore Stryker incremental cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: reports/stryker-incremental.json
           key: stryker-v2-${{ github.head_ref || 'main' }}-${{ hashFiles(matrix.files) }}-${{ github.sha }}
@@ -483,7 +768,7 @@ jobs:
           save-always: true
       - name: Run Stryker
         run: pnpm test:mutation --mutate "${{ matrix.files }}"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: failure()
         with:
           name: mutation-report-${{ strategy.job-index }}
@@ -502,80 +787,7 @@ jobs:
             exit 1
           fi
 
-  test-swift:
-    name: Swift Tests
-    needs: check-mobile-changes
-    if: needs.check-mobile-changes.outputs.changed == 'true'
-    runs-on: macos-14
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
-        with:
-          path: packages/mobile/modules/health-kit/.build
-          key: swift-build-v1-${{ hashFiles('packages/mobile/modules/health-kit/Package.swift') }}
-          restore-keys: swift-build-v1-
-      - name: Run Swift tests with coverage
-        run: |
-          cd packages/mobile/modules/health-kit
-          bash scripts/check-coverage.sh
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: swift-coverage
-          path: packages/mobile/modules/health-kit/.build/debug/codecov/
-          retention-days: 7
-
-  mutation-swift:
-    name: Swift Mutation Testing
-    needs: check-mobile-changes
-    runs-on: macos-14
-    if: github.event_name == 'pull_request' && needs.check-mobile-changes.outputs.changed == 'true'
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/cache@v4
-        with:
-          path: packages/mobile/modules/health-kit/.build
-          key: swift-build-v1-${{ hashFiles('packages/mobile/modules/health-kit/Package.swift') }}
-          restore-keys: swift-build-v1-
-      - name: Install Muter
-        run: brew install muter-mutation-testing/formulae/muter
-      - name: Get changed Swift files
-        id: changed
-        run: |
-          # Filter to mutatable Swift source files, strip prefix for Muter's working directory
-          CHANGED=$(git diff --name-only origin/main...HEAD \
-            | { grep '\.swift$' || true; } \
-            | { grep -v 'Tests/' || true; } \
-            | { grep -v 'HealthKitModule.swift' || true; } \
-            | { grep -v 'Package.swift' || true; } \
-            | sed 's|^packages/mobile/modules/health-kit/||' \
-            | tr '\n' ',' \
-            | sed 's/,$//')
-          echo "files=$CHANGED" >> "$GITHUB_OUTPUT"
-          echo "Mutating changed Swift files: $CHANGED"
-      - name: Run Muter
-        if: steps.changed.outputs.files != ''
-        working-directory: packages/mobile/modules/health-kit
-        timeout-minutes: 30
-        run: |
-          muter --files-to-mutate "${{ steps.changed.outputs.files }}" || {
-            EXIT_CODE=$?
-            # Exit 255 = "no mutatable code found" — expected for incremental runs
-            # when changed files have no patterns Muter's operators can target
-            if [ $EXIT_CODE -eq 255 ]; then
-              echo "Muter found no mutatable code in changed files — skipping."
-              exit 0
-            fi
-            exit $EXIT_CODE
-          }
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: muter-report
-          path: packages/mobile/modules/health-kit/muter_logs/
-          retention-days: 7
+  # ── Deploy (main only) ────────────────────────────────────────────────
 
   ios-release:
     name: iOS TestFlight
@@ -588,10 +800,10 @@ jobs:
       APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: pnpm
@@ -601,7 +813,7 @@ jobs:
         run: packages/mobile/scripts/download-sentry-xcframework.sh
 
       - name: Cache CocoaPods
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: packages/mobile/ios/Pods
           key: pods-v6-${{ hashFiles('packages/mobile/ios/Podfile', 'packages/mobile/ios/Podfile.lock', 'packages/mobile/scripts/download-sentry-xcframework.sh') }}
@@ -684,9 +896,9 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: pnpm
@@ -748,7 +960,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           fetch-depth: 2
       - name: Check for config changes
@@ -768,7 +980,7 @@ jobs:
           fi
       - name: Setup Terraform
         if: steps.changes.outputs.changed == 'true'
-        uses: hashicorp/setup-terraform@v4
+        uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
         with:
           cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
       - name: Setup SSH
@@ -812,21 +1024,21 @@ jobs:
           - target: client
             suffix: "-client"
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/metadata-action@v5
+      - uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         id: meta
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}${{ matrix.suffix }}
           tags: |
             type=sha
             type=raw,value=latest
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           target: ${{ matrix.target }}

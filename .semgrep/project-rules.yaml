@@ -1,0 +1,78 @@
+rules:
+  - id: no-empty-string-for-absent-value
+    patterns:
+      - pattern-either:
+          - pattern: |
+              $X === ""
+          - pattern: |
+              $X !== ""
+          - pattern: |
+              $X == ""
+          - pattern: |
+              $X != ""
+    message: >
+      Comparing against empty string — use null/undefined instead of "" for absent values.
+      Empty strings are ambiguous and look like "has a value" but mean "no value."
+    languages: [typescript, javascript]
+    severity: WARNING
+
+  - id: no-console-log-in-production
+    pattern: console.log(...)
+    paths:
+      exclude:
+        - "**/**.test.ts"
+        - "**/**.test.tsx"
+        - "**/test-helpers.ts"
+        - "**/scripts/"
+        - "**/cypress/"
+    message: >
+      Use the project logger (winston) instead of console.log in production code.
+    languages: [typescript, javascript]
+    severity: WARNING
+
+  - id: no-db-execute-without-schema
+    pattern: $DB.execute($QUERY)
+    paths:
+      exclude:
+        - "**/**.test.ts"
+        - "**/**.test.tsx"
+        - "**/src/db/migrate.ts"
+    message: >
+      Use executeWithSchema() from lib/typed-sql.ts instead of raw db.execute().
+      TypeScript generics only provide compile-time safety; Zod catches runtime shape mismatches.
+    languages: [typescript, javascript]
+    severity: WARNING
+
+  - id: no-process-env-in-shared-packages
+    pattern: process.env.$VAR
+    paths:
+      include:
+        - "**/packages/format/"
+        - "**/packages/scoring/"
+        - "**/packages/nutrition/"
+        - "**/packages/training/"
+        - "**/packages/stats/"
+        - "**/packages/recovery/"
+        - "**/packages/onboarding/"
+        - "**/packages/providers-meta/"
+        - "**/packages/zones/"
+      exclude:
+        - "**/**.test.ts"
+    message: >
+      Shared domain packages must not read process.env directly.
+      Accept configuration via function parameters or dependency injection.
+    languages: [typescript, javascript]
+    severity: ERROR
+
+  - id: no-fetch-in-provider-without-retry
+    pattern: fetch($URL, ...)
+    paths:
+      include:
+        - "**/src/providers/"
+      exclude:
+        - "**/**.test.ts"
+    message: >
+      Consider using the provider's authenticated fetch with retry logic
+      instead of bare fetch() in provider code.
+    languages: [typescript, javascript]
+    severity: WARNING
