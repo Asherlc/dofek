@@ -1,3 +1,4 @@
+import { providerLabel } from "@dofek/providers/providers";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import type { ActivityHrZone } from "@dofek/zones/zones";
 import { HEART_RATE_ZONE_COLORS } from "@dofek/zones/zones";
@@ -232,7 +233,7 @@ function ActivityHeader({ activity, units }: { activity: ActivityDetail; units: 
           {formatActivityTypeLabel(activity.activityType)}
         </span>
       </div>
-      <p className="text-sm text-subtle mb-4">
+      <p className="text-sm text-subtle">
         {new Date(activity.startedAt).toLocaleDateString(undefined, {
           weekday: "long",
           year: "numeric",
@@ -245,6 +246,11 @@ function ActivityHeader({ activity, units }: { activity: ActivityDetail; units: 
           minute: "2-digit",
         })}
       </p>
+      {activity.sourceProviders.length > 0 && (
+        <p className="text-xs text-subtle mb-4">
+          Source: {activity.sourceProviders.map((provider) => providerLabel(provider)).join(", ")}
+        </p>
+      )}
 
       {stats.length > 0 && (
         <div className="flex flex-wrap gap-4">

@@ -22,6 +22,7 @@ import Svg, {
   Stop,
   Text as SvgText,
 } from "react-native-svg";
+import { providerLabel } from "@dofek/providers/providers";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
@@ -559,6 +560,11 @@ export default function ActivityDetailScreen() {
           {" at "}
           {formatTimeOfDay(activity.startedAt)}
         </Text>
+        {activity.sourceProviders.length > 0 && (
+          <Text style={styles.source}>
+            Source: {activity.sourceProviders.map((provider: string) => providerLabel(provider)).join(", ")}
+          </Text>
+        )}
       </View>
 
       {/* Stats Grid */}
@@ -685,6 +691,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textSecondary,
     marginTop: 4,
+  },
+  source: {
+    fontSize: 12,
+    color: colors.textTertiary,
+    marginTop: 2,
   },
   deleteButton: {
     backgroundColor: colors.surface,
