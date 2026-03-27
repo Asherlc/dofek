@@ -66,22 +66,41 @@ export async function initBackgroundWhoopBleSync(
 				});
 		},
 	);
+
+	// Connect immediately instead of waiting for the next foreground transition.
+	// The app is already active when init runs, so no AppState "active" event fires.
+	syncing = true;
+	try {
+		await syncOnForeground(trpcClient, whoopDeps);
+	} catch {
+		// Best-effort — initial connect may fail (BLE unavailable, strap not found, etc.)
+	} finally {
+		syncing = false;
+	}
 }
 
 async function syncOnForeground(
 	trpcClient: AccelerometerUploadClient,
 	whoopDeps: WhoopBleSyncDeps,
 ): Promise<void> {
-	if (!whoopDeps.isBluetoothAvailable()) return;
+	if (!whoopDeps.isBluetoothAvailable()) {
+		console.warn("[WHOOP BLE] Bluetooth not available, skipping sync");
+		return;
+	}
 
 	// Connect if not already connected
 	if (!connected) {
 		const device = await whoopDeps.findWhoop();
-		if (!device) return;
+		if (!device) {
+			console.warn("[WHOOP BLE] No WHOOP strap found");
+			return;
+		}
 
+		console.info(`[WHOOP BLE] Connecting to ${device.name ?? device.id}...`);
 		await whoopDeps.connect(device.id);
 		await whoopDeps.startImuStreaming();
 		connected = true;
+		console.info("[WHOOP BLE] Connected and streaming");
 	}
 
 	// Upload any buffered samples

@@ -64,15 +64,27 @@ describe("background-whoop-ble-sync", () => {
 		expect(AppState.addEventListener).toHaveBeenCalledWith("change", expect.any(Function));
 	});
 
-	it("connects to WHOOP and starts streaming on first foreground", async () => {
+	it("connects to WHOOP and starts streaming immediately on init", async () => {
 		await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+
+		expect(whoopDeps.findWhoop).toHaveBeenCalled();
+		expect(whoopDeps.connect).toHaveBeenCalledWith("whoop-123");
+		expect(whoopDeps.startImuStreaming).toHaveBeenCalled();
+	});
+
+	it("uploads buffered samples on subsequent foreground", async () => {
+		await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+
+		// Reset mocks after init (which already connected)
+		(whoopDeps.findWhoop as ReturnType<typeof vi.fn>).mockClear();
+		(whoopDeps.connect as ReturnType<typeof vi.fn>).mockClear();
+
 		appStateCallback?.("active");
 
 		await vi.waitFor(() => {
-			expect(whoopDeps.startImuStreaming).toHaveBeenCalled();
+			// Should NOT re-connect (already connected from init)
+			expect(whoopDeps.findWhoop).not.toHaveBeenCalled();
 		});
-		expect(whoopDeps.findWhoop).toHaveBeenCalled();
-		expect(whoopDeps.connect).toHaveBeenCalledWith("whoop-123");
 	});
 
 	it("uploads buffered samples on foreground", async () => {
@@ -122,32 +134,38 @@ describe("background-whoop-ble-sync", () => {
 
 	it("ignores non-active state changes", async () => {
 		await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+
+		// Init calls findWhoop once during immediate sync — clear for this test
+		(whoopDeps.findWhoop as ReturnType<typeof vi.fn>).mockClear();
+
 		await appStateCallback?.("background");
 		await appStateCallback?.("inactive");
 
 		expect(whoopDeps.findWhoop).not.toHaveBeenCalled();
 	});
 
-	it("prevents concurrent syncs", async () => {
-		// Make findWhoop slow
-		let resolveFind: ((value: { id: string; name: string }) => void) | null = null;
-		(whoopDeps.findWhoop as ReturnType<typeof vi.fn>).mockImplementation(
-			() => new Promise((resolve) => { resolveFind = resolve; }),
-		);
-
+	it("prevents concurrent syncs via AppState handler", async () => {
 		await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
 
-		// First foreground — starts but doesn't resolve
-		const firstSync = appStateCallback?.("active");
-		// Second foreground — should be skipped
-		await appStateCallback?.("active");
+		// Init already connected — make getBufferedSamples slow for concurrency test
+		let resolveSamples: ((value: Array<{ timestamp: string; accelerometerX: number; accelerometerY: number; accelerometerZ: number; gyroscopeX: number; gyroscopeY: number; gyroscopeZ: number }>) => void) | null = null;
+		(whoopDeps.getBufferedSamples as ReturnType<typeof vi.fn>).mockImplementation(
+			() => new Promise((resolve) => { resolveSamples = resolve; }),
+		);
 
-		// findWhoop should only be called once (second was skipped)
-		expect(whoopDeps.findWhoop).toHaveBeenCalledTimes(1);
+		// First foreground — starts but doesn't resolve
+		appStateCallback?.("active");
+		// Second foreground — should be skipped (syncing flag is set)
+		appStateCallback?.("active");
+
+		// getBufferedSamples should only be called once from the AppState handler
+		// (plus once from init = 2 total, but we're checking the handler calls)
+		await vi.waitFor(() => {
+			expect(whoopDeps.getBufferedSamples).toHaveBeenCalledTimes(2); // 1 from init + 1 from first foreground
+		});
 
 		// Resolve the first one
-		resolveFind?.({ id: "whoop-123", name: "WHOOP 4.0" });
-		await firstSync;
+		resolveSamples?.([]);
 	});
 
 	it("teardown removes the AppState listener", async () => {
@@ -169,16 +187,14 @@ describe("background-whoop-ble-sync", () => {
 		expect(whoopDeps.disconnect).toHaveBeenCalled();
 	});
 
-	it("does not throw when connection fails", async () => {
+	it("does not throw when connection fails on init", async () => {
 		(whoopDeps.connect as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("BLE error"));
 
-		await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
-		appStateCallback?.("active");
+		// Init catches the error from the immediate sync — should not throw
+		await expect(
+			initBackgroundWhoopBleSync(trpcClient, whoopDeps),
+		).resolves.not.toThrow();
 
-		// Wait for the async sync to complete
-		await vi.waitFor(() => {
-			expect(whoopDeps.connect).toHaveBeenCalled();
-		});
-		// No throw — best-effort
+		expect(whoopDeps.connect).toHaveBeenCalled();
 	});
 });

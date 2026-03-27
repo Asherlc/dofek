@@ -52,6 +52,15 @@ export async function initBackgroundWatchAccelerometerSync(
 				});
 		},
 	);
+
+	// Run an initial sync immediately. The app is already active when init runs,
+	// so no AppState "active" event fires until the next background → foreground cycle.
+	await syncAccelerometerToServer({
+		trpcClient,
+		coreMotion: adapter,
+		deviceId: "Apple Watch",
+		deviceType: "apple_watch",
+	});
 }
 
 /** Clean up background Watch accelerometer sync listeners. */

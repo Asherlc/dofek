@@ -79,6 +79,21 @@ export async function getBufferedSamples(): Promise<WhoopImuSample[]> {
 	return WhoopBleModule.getBufferedSamples();
 }
 
+/** Get the current BLE connection state (idle, scanning, connecting, ready, streaming). */
+export function getConnectionState(): string {
+	return WhoopBleModule.getConnectionState();
+}
+
+/** Get the underlying CBCentralManager Bluetooth state. */
+export function getBluetoothState(): string {
+	return WhoopBleModule.getBluetoothState();
+}
+
+/** Get the number of IMU samples currently buffered. */
+export function getBufferedSampleCount(): number {
+	return WhoopBleModule.getBufferedSampleCount();
+}
+
 /** Disconnect from the WHOOP strap. */
 export function disconnect(): void {
 	WhoopBleModule.disconnect();

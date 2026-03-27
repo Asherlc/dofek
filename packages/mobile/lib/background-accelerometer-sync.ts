@@ -7,6 +7,7 @@ import {
 	setLastSyncTimestamp,
 	startRecording,
 	isRecordingActive,
+	requestMotionPermission,
 } from "../modules/core-motion";
 import {
 	syncAccelerometerToServer,
@@ -31,7 +32,10 @@ export async function initBackgroundAccelerometerSync(
 ): Promise<void> {
 	if (!isAccelerometerRecordingAvailable()) return;
 
-	const status = getMotionAuthorizationStatus();
+	let status = getMotionAuthorizationStatus();
+	if (status === "notDetermined") {
+		status = await requestMotionPermission();
+	}
 	if (status !== "authorized") return;
 
 	// Start recording immediately
