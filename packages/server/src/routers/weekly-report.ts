@@ -114,13 +114,17 @@ export const weeklyReportRouter = router({
               LEFT JOIN daily_training dt ON dt.date = ds.date
             ),
             sleep_daily AS (
-              SELECT
-                (started_at AT TIME ZONE ${ctx.timezone})::date AS date,
-                duration_minutes
-              FROM fitness.v_sleep
-              WHERE user_id = ${ctx.userId}
-                AND is_nap = false
-                AND started_at > ${timestampWindowStart(input.endDate, totalDays)}
+              SELECT DISTINCT ON (date) date, duration_minutes
+              FROM (
+                SELECT
+                  (started_at AT TIME ZONE ${ctx.timezone})::date AS date,
+                  duration_minutes
+                FROM fitness.v_sleep
+                WHERE user_id = ${ctx.userId}
+                  AND is_nap = false
+                  AND started_at > ${timestampWindowStart(input.endDate, totalDays)}
+              ) raw
+              ORDER BY date, duration_minutes DESC NULLS LAST
             ),
             metrics_daily AS (
               SELECT

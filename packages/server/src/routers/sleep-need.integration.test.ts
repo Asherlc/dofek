@@ -5,7 +5,8 @@ import { setupTestDatabase, type TestContext } from "../../../../src/db/test-hel
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
 import { queryCache } from "../lib/cache.ts";
-import type { SleepPerformanceInfo } from "./sleep-need.ts";
+import type { SleepNeedResult, SleepPerformanceInfo } from "./sleep-need.ts";
+import type { WeeklyReportResult } from "./weekly-report.ts";
 
 /**
  * Integration tests for sleep-need router.
@@ -150,5 +151,169 @@ describe("sleep-need router integration", () => {
     // v_sleep should pick the apple_health session (priority 1) with 480 min,
     // not the low-prio session with 120 min
     expect(result?.actualMinutes).toBe(480);
+  });
+});
+
+/**
+ * Integration tests for sleep data consistency when multiple non-nap sessions
+ * fall on the same calendar date.
+ *
+ * When v_sleep dedup doesn't merge sessions (< 80% time overlap, e.g. WHOOP
+ * 10pm-6am and Apple Health 11pm-5am), both survive as separate rows. The
+ * sleep_nights CTE in calculate must aggregate per date (picking the longest
+ * session), and the weekly report's sleep_daily must do the same.
+ *
+ * Bug: calculate uses a Map keyed by date, so the last row for each date
+ * wins (arbitrary). Weekly report's sleep_daily JOIN fans out training data
+ * when multiple rows share a date.
+ */
+describe("sleep data consistency: multiple sessions per date", () => {
+  let server: ReturnType<import("express").Express["listen"]>;
+  let baseUrl: string;
+  let testCtx: TestContext;
+  let sessionCookie: string;
+
+  beforeAll(async () => {
+    testCtx = await setupTestDatabase();
+
+    const session = await createSession(testCtx.db, DEFAULT_USER_ID);
+    sessionCookie = `session=${session.sessionId}`;
+
+    // Two providers: whoop (priority 10) and apple_health (priority 50)
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES ('whoop', 'WHOOP', ${DEFAULT_USER_ID})
+          ON CONFLICT DO NOTHING`,
+    );
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES ('apple_health', 'Apple Health', ${DEFAULT_USER_ID})
+          ON CONFLICT DO NOTHING`,
+    );
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.provider_priority (provider_id, priority, sleep_priority)
+          VALUES ('whoop', 10, 10)
+          ON CONFLICT (provider_id) DO UPDATE SET priority = 10, sleep_priority = 10`,
+    );
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.provider_priority (provider_id, priority, sleep_priority)
+          VALUES ('apple_health', 50, 50)
+          ON CONFLICT (provider_id) DO UPDATE SET priority = 50, sleep_priority = 50`,
+    );
+
+    // Insert 14 days of sleep from BOTH providers with slightly different
+    // time windows that DON'T overlap >80% — so v_sleep keeps both.
+    // WHOOP: 22:00-06:00 (480 min), Apple Health: 22:30-05:30 (420 min)
+    // Overlap = 22:30-05:30 = 7h; union = 22:00-06:00 = 8h; ratio = 7/8 = 0.875 > 0.8
+    // To make them NOT overlap enough, shift AH by 1.5h: 23:30-05:00 (330 min)
+    // Overlap = 23:30-05:00 = 5.5h; union = 22:00-06:00 = 8h; ratio = 5.5/8 = 0.6875 < 0.8
+    for (let daysAgo = 14; daysAgo >= 1; daysAgo--) {
+      // WHOOP session: 22:00-06:00 = 480 min
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.sleep_session (
+              provider_id, user_id, external_id, started_at, ended_at,
+              duration_minutes, deep_minutes, rem_minutes, light_minutes,
+              awake_minutes, efficiency_pct, sleep_type
+            ) VALUES (
+              'whoop', ${DEFAULT_USER_ID}, ${`w-${daysAgo}`},
+              (CURRENT_DATE - ${daysAgo}::int)::timestamp + INTERVAL '22 hours',
+              (CURRENT_DATE - ${daysAgo}::int + 1)::timestamp + INTERVAL '6 hours',
+              480, 96, 106, 216, 62, 92.0, 'sleep'
+            )`,
+      );
+
+      // Apple Health session: 23:30-05:00 = 330 min (doesn't overlap >80% with WHOOP)
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.sleep_session (
+              provider_id, user_id, external_id, started_at, ended_at,
+              duration_minutes, deep_minutes, rem_minutes, light_minutes,
+              awake_minutes, efficiency_pct, sleep_type
+            ) VALUES (
+              'apple_health', ${DEFAULT_USER_ID}, ${`ah-${daysAgo}`},
+              (CURRENT_DATE - ${daysAgo}::int)::timestamp + INTERVAL '23 hours 30 minutes',
+              (CURRENT_DATE - ${daysAgo}::int + 1)::timestamp + INTERVAL '5 hours',
+              330, 50, 70, 160, 50, NULL, 'sleep'
+            )`,
+      );
+    }
+
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
+
+    const app = createApp(testCtx.db);
+    await new Promise<void>((resolve) => {
+      server = app.listen(0, () => {
+        const addr = server.address();
+        const port = typeof addr === "object" && addr ? addr.port : 0;
+        baseUrl = `http://localhost:${port}`;
+        resolve();
+      });
+    });
+  }, 120_000);
+
+  afterAll(async () => {
+    if (server) {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => {
+        server.close(() => resolve());
+      });
+    }
+    await testCtx?.cleanup();
+  });
+
+  async function query<T = unknown>(path: string, input: Record<string, unknown> = {}): Promise<T> {
+    const res = await fetch(`${baseUrl}/api/trpc/${path}?batch=1`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: sessionCookie },
+      body: JSON.stringify({ "0": input }),
+    });
+    const data = await res.json();
+    const first: { result?: { data?: T }; error?: { message: string } } = data[0];
+    if (first?.error) {
+      throw new Error(`${path} error: ${JSON.stringify(first.error)}`);
+    }
+    return first?.result?.data;
+  }
+
+  it("v_sleep keeps both sessions when overlap < 80% (sanity check)", async () => {
+    await queryCache.invalidateAll();
+    const rows = await query<{ duration_minutes: number | null }[]>("sleep.list", {
+      days: 14,
+    });
+    // With 14 nights × 2 providers, v_sleep should have 28 rows (not deduped)
+    expect(rows.length).toBe(28);
+  });
+
+  it("sleepNeed.calculate must pick the longest session per date, not an arbitrary one", async () => {
+    await queryCache.invalidateAll();
+    const endDate = new Date().toISOString().slice(0, 10);
+    const result = await query<SleepNeedResult>("sleepNeed.calculate", { endDate });
+
+    // Each recent night should show the WHOOP session's 480 min (the longest),
+    // not Apple Health's 330 min.
+    // BUG: the Map(nights.map(n => [n.date, n])) keeps the LAST row per date.
+    // With ORDER BY started_at ASC, the Apple Health session (23:30) comes after
+    // WHOOP (22:00), so the Map overwrites with 330 min.
+    const nightsWithData = result.recentNights.filter((night) => night.actualMinutes !== null);
+    expect(nightsWithData.length).toBeGreaterThan(0);
+    for (const night of nightsWithData) {
+      expect(night.actualMinutes).toBe(480);
+    }
+  });
+
+  it("weekly report sleep avg must use longest session per date, not average duplicates", async () => {
+    await queryCache.invalidateAll();
+    const endDate = new Date().toISOString().slice(0, 10);
+    const result = await query<WeeklyReportResult>("weeklyReport.report", {
+      weeks: 2,
+      endDate,
+    });
+
+    // All nights have WHOOP (480 min) and AH (330 min). The weekly avg should
+    // be 480 (the longest per date), not (480 + 330) / 2 = 405.
+    // BUG: sleep_daily returns both rows per date, and the LEFT JOIN to daily
+    // fans out, so AVG(sl.duration_minutes) averages both = 405.
+    const current = result.current;
+    expect(current).not.toBeNull();
+    expect(current?.avgSleepMinutes).toBe(480);
   });
 });
