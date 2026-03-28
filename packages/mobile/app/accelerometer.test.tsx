@@ -78,14 +78,16 @@ vi.mock("../modules/whoop-ble", () => ({
   getBufferedSampleCount: () => 0,
 }));
 
+const mockGetWatchSyncStatus = vi.fn(() => ({
+  isSupported: true,
+  isPaired: false,
+  isReachable: false,
+  isWatchAppInstalled: false,
+  pendingFileCount: 0,
+}));
+
 vi.mock("../modules/watch-motion", () => ({
-  getWatchSyncStatus: () => ({
-    isSupported: true,
-    isPaired: false,
-    isReachable: false,
-    isWatchAppInstalled: false,
-    pendingFileCount: 0,
-  }),
+  getWatchSyncStatus: (...args: unknown[]) => mockGetWatchSyncStatus(...args),
 }));
 
 let mockSettingsGetData: { key: string; value: unknown } | null = null;
@@ -237,6 +239,50 @@ describe("AccelerometerScreen", () => {
       expect.objectContaining({ onSuccess: expect.any(Function) }),
     );
 
+    unmount();
+  });
+
+  it("updates Apple Watch status when connectivity changes", async () => {
+    vi.useFakeTimers();
+
+    // Start with no Watch paired
+    mockGetWatchSyncStatus.mockReturnValue({
+      isSupported: true,
+      isPaired: false,
+      isReachable: false,
+      isWatchAppInstalled: false,
+      pendingFileCount: 0,
+    });
+
+    const { unmount } = render(React.createElement((await import("./accelerometer")).default));
+
+    // Watch shows "No" for Paired and App Installed
+    const initialNoLabels = screen.getAllByText("No");
+    expect(initialNoLabels.length).toBeGreaterThanOrEqual(2);
+
+    // Simulate the Watch becoming paired and app installed
+    mockGetWatchSyncStatus.mockReturnValue({
+      isSupported: true,
+      isPaired: true,
+      isReachable: true,
+      isWatchAppInstalled: true,
+      pendingFileCount: 0,
+    });
+
+    // Advance past the poll interval
+    await act(async () => {
+      vi.advanceTimersByTime(3000);
+    });
+
+    // getWatchSyncStatus should have been polled (not just called once at mount)
+    // Initial mount + at least one poll tick
+    expect(mockGetWatchSyncStatus.mock.calls.length).toBeGreaterThanOrEqual(2);
+
+    // The "Paired" and "App Installed" badges should now show "Yes"
+    const yesLabels = screen.getAllByText("Yes");
+    expect(yesLabels.length).toBeGreaterThanOrEqual(2);
+
+    vi.useRealTimers();
     unmount();
   });
 });
