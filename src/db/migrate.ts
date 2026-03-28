@@ -128,19 +128,31 @@ async function recreateViews(sql: postgres.Sql, viewsDir: string): Promise<void>
 
   logger.info(`[migrate] Recreating ${viewFiles.length} materialized view(s)`);
 
-  // Drop all materialized views in the fitness schema (CASCADE handles dependencies)
-  const existingViews = await sql`
-    SELECT matviewname FROM pg_matviews WHERE schemaname = 'fitness'
-  `;
-  for (const row of existingViews) {
-    logger.info(`[migrate] Dropping fitness.${row.matviewname}`);
-    await sql.unsafe(`DROP MATERIALIZED VIEW IF EXISTS fitness.${row.matviewname} CASCADE`);
+  // Extract view names from canonical SQL files so we only drop views we manage.
+  // Other materialized views (e.g. v_daily_metrics, v_sleep) created by migrations
+  // are left untouched.
+  const viewNames: Array<string> = [];
+  const viewContents: Array<string> = [];
+  for (const file of viewFiles) {
+    const content = readFileSync(join(viewsDir, file), "utf-8");
+    viewContents.push(content);
+    const match = content.match(/CREATE\s+MATERIALIZED\s+VIEW\s+fitness\.(\w+)/i);
+    if (match?.[1]) {
+      viewNames.push(match[1]);
+    }
+  }
+
+  // Drop managed views in reverse order (dependents first)
+  for (const name of [...viewNames].reverse()) {
+    logger.info(`[migrate] Dropping fitness.${name}`);
+    await sql.unsafe(`DROP MATERIALIZED VIEW IF EXISTS fitness.${name} CASCADE`);
   }
 
   // Create in filename order (01_v_activity before 02_activity_summary)
-  for (const file of viewFiles) {
-    logger.info(`[migrate] Creating from ${file}`);
-    const content = readFileSync(join(viewsDir, file), "utf-8");
+  for (let index = 0; index < viewFiles.length; index++) {
+    logger.info(`[migrate] Creating from ${viewFiles[index]}`);
+    const content = viewContents[index];
+    if (!content) continue;
     for (const stmt of parseStatements(content)) {
       await sql.unsafe(stmt);
     }

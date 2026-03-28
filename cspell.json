@@ -381,7 +381,10 @@
     "reorderable",
     "Sparkline",
     "subtabs",
-    "unlinkable"
+    "unlinkable",
+    "matviews",
+    "matviewname",
+    "schemaname"
   ],
   "flagWords": [],
   "useGitignore": false,

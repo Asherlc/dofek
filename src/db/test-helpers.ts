@@ -89,19 +89,29 @@ export async function setupTestDatabase(): Promise<TestContext> {
       .filter((f) => f.endsWith(".sql"))
       .sort();
 
-    // Drop all materialized views in fitness schema (CASCADE handles dependencies)
-    const existingViews = await migrationClient.unsafe(
-      "SELECT matviewname FROM pg_matviews WHERE schemaname = 'fitness'",
-    );
-    for (const row of existingViews) {
+    // Extract view names from canonical SQL files, only drop views we manage
+    const viewNames: Array<string> = [];
+    const viewContents: Array<string> = [];
+    for (const file of viewFiles) {
+      const content = readFileSync(join(viewsDir, file), "utf-8");
+      viewContents.push(content);
+      const match = content.match(/CREATE\s+MATERIALIZED\s+VIEW\s+fitness\.(\w+)/i);
+      if (match?.[1]) {
+        viewNames.push(match[1]);
+      }
+    }
+
+    // Drop managed views in reverse order (dependents first)
+    for (const name of [...viewNames].reverse()) {
       await migrationClient.unsafe(
-        `DROP MATERIALIZED VIEW IF EXISTS fitness.${row.matviewname} CASCADE`,
+        `DROP MATERIALIZED VIEW IF EXISTS fitness.${name} CASCADE`,
       );
     }
 
     // Create in filename order (01_v_activity before 02_activity_summary)
-    for (const file of viewFiles) {
-      const content = readFileSync(join(viewsDir, file), "utf-8");
+    for (let index = 0; index < viewFiles.length; index++) {
+      const content = viewContents[index];
+      if (!content) continue;
       const statements = content
         .split("--> statement-breakpoint")
         .map((s) => s.trim())

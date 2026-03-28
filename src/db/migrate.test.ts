@@ -186,15 +186,11 @@ describe("runMigrations", () => {
       .mockReturnValueOnce(["01_v_activity.sql", "02_activity_summary.sql"]); // views dir
 
     mockExistsSync.mockReturnValue(true);
-    // Return existing views from pg_matviews query, then empty for other queries
-    mockSql
-      .mockResolvedValueOnce([]) // pg_advisory_lock
-      .mockResolvedValueOnce([]) // CREATE SCHEMA health
-      .mockResolvedValueOnce([]) // CREATE SCHEMA drizzle
-      .mockResolvedValueOnce([]) // CREATE TABLE __drizzle_migrations
-      .mockResolvedValueOnce([]) // SELECT hash (applied migrations)
-      .mockResolvedValueOnce([{ matviewname: "activity_summary" }, { matviewname: "v_activity" }]); // pg_matviews query
-    mockReadFileSync.mockReturnValue("CREATE MATERIALIZED VIEW fitness.test AS SELECT 1");
+    mockSql.mockResolvedValue([]);
+    // Each view file contains a CREATE MATERIALIZED VIEW statement
+    mockReadFileSync
+      .mockReturnValueOnce("CREATE MATERIALIZED VIEW fitness.v_activity AS SELECT 1")
+      .mockReturnValueOnce("CREATE MATERIALIZED VIEW fitness.activity_summary AS SELECT 1");
 
     await runMigrations("postgres://localhost/test", "/tmp/migrations");
 
@@ -202,7 +198,7 @@ describe("runMigrations", () => {
     const dropCalls = unsafeCalls.filter((call) => call.includes("DROP"));
     const createCalls = unsafeCalls.filter((call) => call.includes("CREATE MATERIALIZED"));
 
-    // Drops existing views from pg_matviews
+    // Drops only managed views in reverse order (dependents first)
     expect(dropCalls).toHaveLength(2);
     expect(dropCalls[0]).toContain("activity_summary");
     expect(dropCalls[1]).toContain("v_activity");
