@@ -845,7 +845,7 @@ jobs:
   check-native-changes:
     name: Check Native iOS Changes
     needs: [ci-gate]
-    if: github.ref == 'refs/heads/main'
+    if: always() && needs.ci-gate.result == 'success' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
       changed: ${{ steps.check.outputs.changed }}
@@ -873,7 +873,7 @@ jobs:
   ios-release:
     name: iOS TestFlight
     needs: check-native-changes
-    if: needs.check-native-changes.outputs.changed == 'true'
+    if: always() && needs.check-native-changes.result == 'success' && needs.check-native-changes.outputs.changed == 'true'
     runs-on: macos-26
     timeout-minutes: 60
     env:
@@ -1033,7 +1033,7 @@ jobs:
   ota-deploy:
     name: OTA Deploy
     needs: [ci-gate]
-    if: github.ref == 'refs/heads/main'
+    if: always() && needs.ci-gate.result == 'success' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
@@ -1092,7 +1092,7 @@ jobs:
   deploy-config:
     name: Deploy Config
     needs: [ci-gate]
-    if: github.ref == 'refs/heads/main'
+    if: always() && needs.ci-gate.result == 'success' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
@@ -1143,7 +1143,7 @@ jobs:
   docker:
     name: Docker (${{ matrix.target }})
     needs: [ci-gate]
-    if: github.ref == 'refs/heads/main'
+    if: always() && needs.ci-gate.result == 'success' && github.ref == 'refs/heads/main'
     concurrency:
       group: docker
       cancel-in-progress: false
