@@ -92,6 +92,9 @@ describe("runMigrations", () => {
     expect(count).toBe(1);
     expect(mockReadFileSync).toHaveBeenCalledTimes(1);
     expect(mockReadFileSync).toHaveBeenCalledWith("/tmp/migrations/0003_new.sql", "utf-8");
+
+    expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("Applying: 0003_new.sql"));
+    expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("Applied 1 migration"));
   });
 
   it("splits migration files on statement breakpoints", async () => {
@@ -121,6 +124,9 @@ describe("runMigrations", () => {
 
     expect(count).toBe(0);
     expect(mockReadFileSync).not.toHaveBeenCalled();
+    // Should NOT log "Applied" when nothing was applied
+    const infoMessages = mockLoggerInfo.mock.calls.map((call) => String(call[0]));
+    expect(infoMessages.every((message) => !message.includes("Applied"))).toBe(true);
   });
 
   it("only considers .sql files", async () => {
@@ -190,6 +196,9 @@ describe("runMigrations", () => {
     expect(mockLoggerWarn).toHaveBeenCalledWith(
       expect.stringContaining("Duplicate migration prefixes"),
     );
+    // Verify details include the actual prefix and filenames
+    expect(mockLoggerWarn).toHaveBeenCalledWith(expect.stringContaining("0049"));
+    expect(mockLoggerWarn).toHaveBeenCalledWith(expect.stringContaining("0049_add_timezone.sql"));
   });
 
   it("recreates materialized views from canonical definitions", async () => {
@@ -220,6 +229,26 @@ describe("runMigrations", () => {
 
     // Creates in filename order (01_ before 02_)
     expect(createCalls).toHaveLength(2);
+
+    // Verify view recreation logging
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      expect.stringContaining("Recreating 2 materialized view(s)"),
+    );
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      expect.stringContaining("Dropping fitness.activity_summary"),
+    );
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      expect.stringContaining("Dropping fitness.v_activity"),
+    );
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      expect.stringContaining("Creating from 01_v_activity.sql"),
+    );
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      expect.stringContaining("Creating from 02_activity_summary.sql"),
+    );
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      expect.stringContaining("Materialized views recreated"),
+    );
   });
 
   it("skips drop for view files without a CREATE MATERIALIZED VIEW statement", async () => {
