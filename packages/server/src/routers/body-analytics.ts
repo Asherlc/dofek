@@ -3,30 +3,10 @@ import { endDateSchema } from "../lib/date-window.ts";
 import { BodyAnalyticsRepository } from "../repositories/body-analytics-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
-// ── Types ────────────────────────────────────────────────────────────
-
-export interface SmoothedWeightRow {
-  date: string;
-  rawWeight: number;
-  smoothedWeight: number;
-  weeklyChange: number | null;
-}
-
-export interface BodyRecompositionRow {
-  date: string;
-  weightKg: number;
-  bodyFatPct: number;
-  fatMassKg: number;
-  leanMassKg: number;
-  smoothedFatMass: number;
-  smoothedLeanMass: number;
-}
-
-export interface WeightRateOfChange {
-  currentWeekly: number | null;
-  current4Week: number | null;
-  trend: "gaining" | "losing" | "stable" | "insufficient";
-}
+export type {
+  BodyRecompositionRow,
+  SmoothedWeightRow,
+} from "../repositories/body-analytics-repository.ts";
 
 // ── Router ───────────────────────────────────────────────────────────
 

@@ -1,42 +1,17 @@
 import { z } from "zod";
 import { endDateSchema } from "../lib/date-window.ts";
-import { WeeklyReportRepository } from "../repositories/weekly-report-repository.ts";
+import {
+  WeeklyReportRepository,
+  type WeeklyReportResult,
+} from "../repositories/weekly-report-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
-export { classifyStrainZone } from "../repositories/weekly-report-repository.ts";
-
-/** Strain balance category based on ACWR-like load distribution */
-export type StrainZone = "restoring" | "optimal" | "overreaching";
-
-export interface WeekSummary {
-  /** ISO week start date (Monday) */
-  weekStart: string;
-  /** Total training hours */
-  trainingHours: number;
-  /** Number of activities */
-  activityCount: number;
-  /** Strain balance zone based on the week's average daily load vs chronic baseline */
-  strainZone: StrainZone;
-  /** Average daily load for the week */
-  avgDailyLoad: number;
-  /** Average sleep duration (minutes) */
-  avgSleepMinutes: number;
-  /** Sleep performance: avg sleep vs 3-week rolling avg (percentage) */
-  sleepPerformancePct: number;
-  /** Average readiness score for the week */
-  avgReadiness: number;
-  /** Average resting HR */
-  avgRestingHr: number | null;
-  /** Average HRV */
-  avgHrv: number | null;
-}
-
-export interface WeeklyReportResult {
-  /** Current week's summary */
-  current: WeekSummary | null;
-  /** Previous weeks for comparison */
-  history: WeekSummary[];
-}
+export {
+  classifyStrainZone,
+  type StrainZone,
+  type WeeklyReportResult,
+  type WeekSummary,
+} from "../repositories/weekly-report-repository.ts";
 
 export const weeklyReportRouter = router({
   /**

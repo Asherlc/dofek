@@ -381,7 +381,8 @@
     "reorderable",
     "Sparkline",
     "subtabs",
-    "unlinkable"
+    "unlinkable",
+    "stddevs"
   ],
   "flagWords": [],
   "useGitignore": false,

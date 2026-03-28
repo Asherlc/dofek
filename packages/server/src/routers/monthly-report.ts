@@ -1,25 +1,14 @@
 import { z } from "zod";
-import { MonthlyReportRepository } from "../repositories/monthly-report-repository.ts";
+import {
+  MonthlyReportRepository,
+  type MonthlyReportResult,
+} from "../repositories/monthly-report-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
-export interface MonthSummary {
-  monthStart: string;
-  trainingHours: number;
-  activityCount: number;
-  avgDailyStrain: number;
-  avgSleepMinutes: number;
-  avgRestingHr: number | null;
-  avgHrv: number | null;
-  /** Month-over-month % change in training hours (null for first month) */
-  trainingHoursTrend: number | null;
-  /** Month-over-month % change in avg sleep (null for first month) */
-  avgSleepTrend: number | null;
-}
-
-export interface MonthlyReportResult {
-  current: MonthSummary | null;
-  history: MonthSummary[];
-}
+export type {
+  MonthlyReportResult,
+  MonthSummary,
+} from "../repositories/monthly-report-repository.ts";
 
 export const monthlyReportRouter = router({
   /**

@@ -43,7 +43,7 @@ const minuteAggRowSchema = z.object({
 
 export type IntervalRow = z.infer<typeof intervalRowSchema>;
 
-export type MinuteAggRow = z.infer<typeof minuteAggRowSchema>;
+type MinuteAggRow = z.infer<typeof minuteAggRowSchema>;
 
 export interface DetectedInterval {
   intervalIndex: number;

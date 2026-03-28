@@ -2,7 +2,28 @@ import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
-import type { MonthlyReportResult, MonthSummary } from "../routers/monthly-report.ts";
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface MonthSummary {
+  monthStart: string;
+  trainingHours: number;
+  activityCount: number;
+  avgDailyStrain: number;
+  avgSleepMinutes: number;
+  avgRestingHr: number | null;
+  avgHrv: number | null;
+  /** Month-over-month % change in training hours (null for first month) */
+  trainingHoursTrend: number | null;
+  /** Month-over-month % change in avg sleep (null for first month) */
+  avgSleepTrend: number | null;
+}
+
+export interface MonthlyReportResult {
+  current: MonthSummary | null;
+  history: MonthSummary[];
+}
 
 // ---------------------------------------------------------------------------
 // Zod schema for raw DB rows

@@ -3,11 +3,30 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { timestampWindowStart } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
-import type {
-  BodyRecompositionRow,
-  SmoothedWeightRow,
-  WeightRateOfChange,
-} from "../routers/body-analytics.ts";
+// ── Types ───────────────────────────────────────────────────────────
+
+export interface SmoothedWeightRow {
+  date: string;
+  rawWeight: number;
+  smoothedWeight: number;
+  weeklyChange: number | null;
+}
+
+export interface BodyRecompositionRow {
+  date: string;
+  weightKg: number;
+  bodyFatPct: number;
+  fatMassKg: number;
+  leanMassKg: number;
+  smoothedFatMass: number;
+  smoothedLeanMass: number;
+}
+
+export interface WeightRateOfChange {
+  currentWeekly: number | null;
+  current4Week: number | null;
+  trend: "gaining" | "losing" | "stable" | "insufficient";
+}
 
 // ── Zod schemas for raw DB rows ─────────────────────────────────────
 

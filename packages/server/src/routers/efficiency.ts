@@ -1,44 +1,19 @@
 import { z } from "zod";
-import { EfficiencyRepository } from "../repositories/efficiency-repository.ts";
+import {
+  type AerobicDecouplingActivity,
+  type AerobicEfficiencyResult,
+  EfficiencyRepository,
+  type PolarizationTrendResult,
+} from "../repositories/efficiency-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
-export interface AerobicEfficiencyActivity {
-  date: string;
-  activityType: string;
-  name: string;
-  avgPowerZ2: number;
-  avgHrZ2: number;
-  efficiencyFactor: number;
-  z2Samples: number;
-}
-
-export interface AerobicEfficiencyResult {
-  maxHr: number | null;
-  activities: AerobicEfficiencyActivity[];
-}
-
-export interface AerobicDecouplingActivity {
-  date: string;
-  activityType: string;
-  name: string;
-  firstHalfRatio: number;
-  secondHalfRatio: number;
-  decouplingPct: number;
-  totalSamples: number;
-}
-
-export interface PolarizationWeek {
-  week: string;
-  z1Seconds: number;
-  z2Seconds: number;
-  z3Seconds: number;
-  polarizationIndex: number | null;
-}
-
-export interface PolarizationTrendResult {
-  maxHr: number | null;
-  weeks: PolarizationWeek[];
-}
+export type {
+  AerobicDecouplingActivity,
+  AerobicEfficiencyActivity,
+  AerobicEfficiencyResult,
+  PolarizationTrendResult,
+  PolarizationWeek,
+} from "../repositories/efficiency-repository.ts";
 
 export const efficiencyRouter = router({
   /**

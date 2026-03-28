@@ -80,7 +80,7 @@ export class MuscleGroupVolume {
   }
 }
 
-export interface ProgressiveOverloadEntry {
+interface ProgressiveOverloadEntry {
   exerciseName: string;
   weeklyVolumes: number[];
   slopeKgPerWeek: number;

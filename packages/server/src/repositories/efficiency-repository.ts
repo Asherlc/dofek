@@ -8,12 +8,47 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { enduranceTypeFilter } from "../lib/endurance-types.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
-import type {
-  AerobicDecouplingActivity,
-  AerobicEfficiencyResult,
-  PolarizationTrendResult,
-  PolarizationWeek,
-} from "../routers/efficiency.ts";
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface AerobicEfficiencyActivity {
+  date: string;
+  activityType: string;
+  name: string;
+  avgPowerZ2: number;
+  avgHrZ2: number;
+  efficiencyFactor: number;
+  z2Samples: number;
+}
+
+export interface AerobicEfficiencyResult {
+  maxHr: number | null;
+  activities: AerobicEfficiencyActivity[];
+}
+
+export interface AerobicDecouplingActivity {
+  date: string;
+  activityType: string;
+  name: string;
+  firstHalfRatio: number;
+  secondHalfRatio: number;
+  decouplingPct: number;
+  totalSamples: number;
+}
+
+export interface PolarizationWeek {
+  week: string;
+  z1Seconds: number;
+  z2Seconds: number;
+  z3Seconds: number;
+  polarizationIndex: number | null;
+}
+
+export interface PolarizationTrendResult {
+  maxHr: number | null;
+  weeks: PolarizationWeek[];
+}
 
 // ---------------------------------------------------------------------------
 // Zod schemas for raw DB rows
