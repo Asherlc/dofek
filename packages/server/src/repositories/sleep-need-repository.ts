@@ -160,9 +160,9 @@ export class SleepNeedRepository {
       sql`
         SELECT duration_minutes, efficiency_pct,
           (COALESCE(ended_at, started_at + interval '8 hours') AT TIME ZONE ${this.#timezone})::date::text AS sleep_date
-        FROM fitness.sleep_session
+        FROM fitness.v_sleep
         WHERE user_id = ${this.#userId}
-          AND sleep_type = 'sleep'
+          AND is_nap = false
         ORDER BY started_at DESC
         LIMIT 1
       `,
@@ -181,9 +181,9 @@ export class SleepNeedRepository {
       baselineRowSchema,
       sql`
         SELECT AVG(duration_minutes) AS avg_duration
-        FROM fitness.sleep_session
+        FROM fitness.v_sleep
         WHERE user_id = ${this.#userId}
-          AND sleep_type = 'sleep'
+          AND is_nap = false
           AND started_at > ${timestampWindowStart(endDate, 90)}
           AND duration_minutes IS NOT NULL
       `,
