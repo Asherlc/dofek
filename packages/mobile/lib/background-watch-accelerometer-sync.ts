@@ -1,8 +1,8 @@
 import { AppState, type AppStateStatus } from "react-native";
-import { isWatchAppInstalled, isWatchPaired } from "../modules/watch-motion";
-import { type AccelerometerSyncTrpcClient, syncAccelerometerToServer } from "./accelerometer-sync";
+import { isWatchAppInstalled, isWatchPaired, requestWatchRecording } from "../modules/watch-motion";
+import type { AccelerometerSyncTrpcClient } from "./accelerometer-sync";
 import { captureException } from "./telemetry";
-import { createWatchCoreMotionAdapter } from "./watch-accelerometer-adapter";
+import { syncWatchAccelerometerFiles } from "./watch-file-sync";
 
 const TAG = "bg-watch-accel-sync";
 
@@ -16,6 +16,10 @@ let syncing = false;
  * - Listens for app foreground events and syncs any pending transferred data
  * - Runs an initial sync immediately (AppState listener only fires on transitions)
  * - Should be called once after authentication is established
+ *
+ * Uses per-file sync: each Watch transfer file is processed independently,
+ * so a failure in one file does not block others from being uploaded and
+ * acknowledged.
  */
 export async function initBackgroundWatchAccelerometerSync(
   trpcClient: AccelerometerSyncTrpcClient,
@@ -28,20 +32,13 @@ export async function initBackgroundWatchAccelerometerSync(
     appStateSubscription = null;
   }
 
-  const adapter = createWatchCoreMotionAdapter();
-
   // Sync whenever the app comes to foreground
   appStateSubscription = AppState.addEventListener("change", (nextState: AppStateStatus) => {
     if (nextState !== "active") return;
     if (syncing) return;
 
     syncing = true;
-    syncAccelerometerToServer({
-      trpcClient,
-      coreMotion: adapter,
-      deviceId: "Apple Watch",
-      deviceType: "apple_watch",
-    })
+    syncAndRecord(trpcClient)
       .catch((error: unknown) => {
         captureException(error, { source: TAG });
       })
@@ -52,12 +49,21 @@ export async function initBackgroundWatchAccelerometerSync(
 
   // Run an initial sync immediately. The app is already active when init runs,
   // so no AppState "active" event fires until the next background → foreground cycle.
-  await syncAccelerometerToServer({
-    trpcClient,
-    coreMotion: adapter,
-    deviceId: "Apple Watch",
-    deviceType: "apple_watch",
-  });
+  await syncAndRecord(trpcClient);
+}
+
+/**
+ * Sync pending Watch files and request the Watch to continue recording.
+ */
+async function syncAndRecord(trpcClient: AccelerometerSyncTrpcClient): Promise<void> {
+  await syncWatchAccelerometerFiles(trpcClient);
+
+  // Ask the Watch to restart recording and send any new data
+  try {
+    await requestWatchRecording();
+  } catch {
+    // Best-effort — Watch may not be reachable
+  }
 }
 
 /** Clean up background Watch accelerometer sync listeners. */

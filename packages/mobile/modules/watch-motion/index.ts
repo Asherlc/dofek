@@ -56,6 +56,25 @@ export function acknowledgeWatchSamples(): void {
   WatchMotionModule.acknowledgeWatchSamples();
 }
 
+/** List the file names of pending Watch accelerometer transfer files.
+ * Used by per-file sync to process files individually. */
+export function getPendingWatchFileNames(): string[] {
+  return WatchMotionModule.getPendingWatchFileNames();
+}
+
+/** Read and parse a single pending Watch transfer file.
+ * @param fileName — file name within the pending directory
+ * @returns Parsed accelerometer samples from that file */
+export async function readWatchFile(fileName: string): Promise<AccelerometerSample[]> {
+  return WatchMotionModule.readWatchFile(fileName);
+}
+
+/** Delete a single pending Watch transfer file after successful upload.
+ * @param fileName — file name within the pending directory */
+export function deleteWatchFile(fileName: string): void {
+  WatchMotionModule.deleteWatchFile(fileName);
+}
+
 /** Get the timestamp of the last successful Watch accelerometer sync.
  * Returns null if never synced. */
 export function getLastWatchSyncTimestamp(): string | null {

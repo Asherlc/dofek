@@ -18,29 +18,20 @@ vi.mock("react-native", () => ({
 
 const mockIsWatchPaired = vi.fn(() => true);
 const mockIsWatchAppInstalled = vi.fn(() => true);
+const mockRequestWatchRecording = vi.fn(() => Promise.resolve(true));
 
 vi.mock("../modules/watch-motion", () => ({
   isWatchPaired: () => mockIsWatchPaired(),
   isWatchAppInstalled: () => mockIsWatchAppInstalled(),
+  requestWatchRecording: () => mockRequestWatchRecording(),
 }));
 
-const mockSyncAccelerometerToServer = vi.fn(() =>
-  Promise.resolve({ inserted: 0, recording: true }),
+const mockSyncWatchAccelerometerFiles = vi.fn(() =>
+  Promise.resolve({ totalInserted: 0, filesProcessed: 0, filesFailed: 0 }),
 );
 
-vi.mock("./accelerometer-sync", () => ({
-  syncAccelerometerToServer: (...args: unknown[]) => mockSyncAccelerometerToServer(...args),
-}));
-
-vi.mock("./watch-accelerometer-adapter", () => ({
-  createWatchCoreMotionAdapter: vi.fn(() => ({
-    isAccelerometerRecordingAvailable: vi.fn(() => true),
-    queryRecordedData: vi.fn(() => Promise.resolve([])),
-    getLastSyncTimestamp: vi.fn(() => null),
-    setLastSyncTimestamp: vi.fn(),
-    startRecording: vi.fn(() => Promise.resolve(true)),
-    isRecordingActive: vi.fn(() => true),
-  })),
+vi.mock("./watch-file-sync", () => ({
+  syncWatchAccelerometerFiles: (...args: unknown[]) => mockSyncWatchAccelerometerFiles(...args),
 }));
 
 const mockCaptureException = vi.fn();
@@ -70,10 +61,16 @@ describe("background-watch-accelerometer-sync", () => {
     appStateCallback = null;
     mockRemove.mockClear();
     mockCaptureException.mockClear();
-    mockSyncAccelerometerToServer.mockReset();
-    mockSyncAccelerometerToServer.mockResolvedValue({ inserted: 0, recording: true });
+    mockSyncWatchAccelerometerFiles.mockReset();
+    mockSyncWatchAccelerometerFiles.mockResolvedValue({
+      totalInserted: 0,
+      filesProcessed: 0,
+      filesFailed: 0,
+    });
     mockIsWatchPaired.mockReturnValue(true);
     mockIsWatchAppInstalled.mockReturnValue(true);
+    mockRequestWatchRecording.mockReset();
+    mockRequestWatchRecording.mockResolvedValue(true);
     vi.mocked(AppState.addEventListener).mockClear();
     teardownBackgroundWatchAccelerometerSync();
   });
@@ -87,7 +84,14 @@ describe("background-watch-accelerometer-sync", () => {
 
     expect(AppState.addEventListener).toHaveBeenCalledWith("change", expect.any(Function));
     // Initial sync is called immediately during init
-    expect(mockSyncAccelerometerToServer).toHaveBeenCalledTimes(1);
+    expect(mockSyncWatchAccelerometerFiles).toHaveBeenCalledTimes(1);
+    expect(mockSyncWatchAccelerometerFiles).toHaveBeenCalledWith(trpcClient);
+  });
+
+  it("requests Watch recording after sync", async () => {
+    await initBackgroundWatchAccelerometerSync(trpcClient);
+
+    expect(mockRequestWatchRecording).toHaveBeenCalledTimes(1);
   });
 
   it("skips init when Watch is not paired", async () => {
@@ -110,7 +114,7 @@ describe("background-watch-accelerometer-sync", () => {
     await initBackgroundWatchAccelerometerSync(trpcClient);
 
     const syncError = new Error("watch sync failed");
-    mockSyncAccelerometerToServer.mockRejectedValue(syncError);
+    mockSyncWatchAccelerometerFiles.mockRejectedValue(syncError);
 
     appStateCallback?.("active");
 
@@ -124,7 +128,7 @@ describe("background-watch-accelerometer-sync", () => {
   it("resets syncing flag after error so next foreground event can sync", async () => {
     await initBackgroundWatchAccelerometerSync(trpcClient);
 
-    mockSyncAccelerometerToServer.mockRejectedValue(new Error("first failure"));
+    mockSyncWatchAccelerometerFiles.mockRejectedValue(new Error("first failure"));
     appStateCallback?.("active");
 
     await vi.waitFor(() => {
@@ -132,13 +136,17 @@ describe("background-watch-accelerometer-sync", () => {
     });
 
     mockCaptureException.mockClear();
-    mockSyncAccelerometerToServer.mockResolvedValue({ inserted: 3, recording: true });
+    mockSyncWatchAccelerometerFiles.mockResolvedValue({
+      totalInserted: 3,
+      filesProcessed: 1,
+      filesFailed: 0,
+    });
 
     appStateCallback?.("active");
 
     await vi.waitFor(() => {
       // Initial sync (1) + first foreground (2) + second foreground (3)
-      expect(mockSyncAccelerometerToServer).toHaveBeenCalledTimes(3);
+      expect(mockSyncWatchAccelerometerFiles).toHaveBeenCalledTimes(3);
     });
   });
 
