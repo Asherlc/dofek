@@ -628,10 +628,8 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             DIFF_RANGE="origin/main...HEAD"
-            MIN_LINES=15
           else
             DIFF_RANGE="HEAD~1...HEAD"
-            MIN_LINES=0
           fi
 
           CANDIDATES=$(git diff --name-only $DIFF_RANGE \
@@ -649,12 +647,7 @@ jobs:
 
           ALL_FILES=()
           for f in $CANDIDATES; do
-            if [ "$MIN_LINES" -gt 0 ]; then
-              LINES=$(git diff --numstat $DIFF_RANGE -- "$f" | awk '{print $1+$2}')
-              [ "$LINES" -lt "$MIN_LINES" ] && continue
-            elif [ ! -f "$f" ]; then
-              continue
-            fi
+            [ ! -f "$f" ] && continue
             ALL_FILES+=("$f")
           done
 
