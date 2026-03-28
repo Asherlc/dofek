@@ -753,7 +753,13 @@ export class WhoopProvider implements SyncProvider {
         cycles.push(...chunk);
         windowStart = windowEnd;
       }
-      logger.info(`[whoop] Fetched ${cycles.length} total cycles`);
+      if (cycles.length === 0) {
+        logger.warn(
+          `[whoop] API returned 0 cycles for range since ${since.toISOString()} — no data to sync`,
+        );
+      } else {
+        logger.info(`[whoop] Fetched ${cycles.length} total cycles`);
+      }
     } catch (err) {
       errors.push({
         message: `getCycles: ${err instanceof Error ? err.message : String(err)}`,
