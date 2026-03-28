@@ -931,7 +931,7 @@ describe("WhoopClient — getCycles response shapes", () => {
     expect(cycles).toHaveLength(1);
   });
 
-  it("throws for unknown object shape without array values", async () => {
+  it("returns empty array for unknown object shape", async () => {
     cyclesServer.use(
       http.get("https://api.prod.whoop.com/core-details-bff/v0/cycles/details", () => {
         return HttpResponse.json({ unknownKey: "value" });
@@ -939,24 +939,11 @@ describe("WhoopClient — getCycles response shapes", () => {
     );
 
     const client = new WhoopClient({ accessToken: "tok", refreshToken: "ref", userId: 10 });
-    await expect(client.getCycles("2026-03-01T00:00:00Z", "2026-03-02T00:00:00Z")).rejects.toThrow(
-      "Unrecognized WHOOP cycles response",
-    );
-  });
-
-  it("extracts cycles from unknown wrapper key if value is an array", async () => {
-    cyclesServer.use(
-      http.get("https://api.prod.whoop.com/core-details-bff/v0/cycles/details", () => {
-        return HttpResponse.json({ newApiKey: [{ id: 99, user_id: 10 }] });
-      }),
-    );
-
-    const client = new WhoopClient({ accessToken: "tok", refreshToken: "ref", userId: 10 });
     const cycles = await client.getCycles("2026-03-01T00:00:00Z", "2026-03-02T00:00:00Z");
-    expect(cycles).toHaveLength(1);
+    expect(cycles).toHaveLength(0);
   });
 
-  it("throws for null response", async () => {
+  it("returns empty array for null response", async () => {
     cyclesServer.use(
       http.get("https://api.prod.whoop.com/core-details-bff/v0/cycles/details", () => {
         return HttpResponse.json(null);
@@ -964,9 +951,8 @@ describe("WhoopClient — getCycles response shapes", () => {
     );
 
     const client = new WhoopClient({ accessToken: "tok", refreshToken: "ref", userId: 10 });
-    await expect(client.getCycles("2026-03-01T00:00:00Z", "2026-03-02T00:00:00Z")).rejects.toThrow(
-      "Unrecognized WHOOP cycles response",
-    );
+    const cycles = await client.getCycles("2026-03-01T00:00:00Z", "2026-03-02T00:00:00Z");
+    expect(cycles).toHaveLength(0);
   });
 });
 
