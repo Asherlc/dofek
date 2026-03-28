@@ -36,19 +36,19 @@ function parseStatements(content: string): Array<string> {
 
 /**
  * Run pending migrations from the drizzle/ directory, then recreate materialized
- * views from their canonical definitions in drizzle/views/.
+ * views from their canonical definitions in drizzle/_views/.
  *
  * Safe to call on every startup — skips already-applied migrations.
  * Uses a Postgres advisory lock to prevent races when multiple containers start simultaneously.
  *
  * Materialized views (v_activity, activity_summary) are always recreated from
- * canonical SQL files in drizzle/views/ rather than being managed by migrations.
+ * canonical SQL files in drizzle/_views/ rather than being managed by migrations.
  * This prevents conflicts when concurrent PRs both need to change a view —
  * they edit the same file, creating a Git merge conflict that must be resolved.
  */
 export async function runMigrations(databaseUrl: string, migrationsDir?: string): Promise<number> {
   const dir = migrationsDir ?? resolve(import.meta.dirname, "../../drizzle");
-  const viewsDir = join(dir, "views");
+  const viewsDir = join(dir, "_views");
   const sql = postgres(databaseUrl);
 
   try {
@@ -114,9 +114,10 @@ export async function runMigrations(databaseUrl: string, migrationsDir?: string)
 }
 
 /**
- * Drop and recreate materialized views from canonical SQL files in drizzle/views/.
- * Files are applied in alphabetical order (v_activity before activity_summary)
- * to respect dependency ordering.
+ * Drop and recreate materialized views from canonical SQL files in drizzle/_views/.
+ * Files are named with numeric prefixes for dependency ordering (e.g., 01_v_activity.sql
+ * before 02_activity_summary.sql). All existing materialized views in the fitness schema
+ * are dropped before recreation to avoid dependency issues.
  */
 async function recreateViews(sql: postgres.Sql, viewsDir: string): Promise<void> {
   const viewFiles = readdirSync(viewsDir)
@@ -127,16 +128,18 @@ async function recreateViews(sql: postgres.Sql, viewsDir: string): Promise<void>
 
   logger.info(`[migrate] Recreating ${viewFiles.length} materialized view(s)`);
 
-  // Drop in reverse order (activity_summary depends on v_activity)
-  for (const file of [...viewFiles].reverse()) {
-    const viewName = file.replace(/\.sql$/, "");
-    logger.info(`[migrate] Dropping fitness.${viewName}`);
-    await sql.unsafe(`DROP MATERIALIZED VIEW IF EXISTS fitness.${viewName} CASCADE`);
+  // Drop all materialized views in the fitness schema (CASCADE handles dependencies)
+  const existingViews = await sql`
+    SELECT matviewname FROM pg_matviews WHERE schemaname = 'fitness'
+  `;
+  for (const row of existingViews) {
+    logger.info(`[migrate] Dropping fitness.${row.matviewname}`);
+    await sql.unsafe(`DROP MATERIALIZED VIEW IF EXISTS fitness.${row.matviewname} CASCADE`);
   }
 
-  // Create in alphabetical order (v_activity first, then activity_summary)
+  // Create in filename order (01_v_activity before 02_activity_summary)
   for (const file of viewFiles) {
-    logger.info(`[migrate] Creating fitness.${file.replace(/\.sql$/, "")}`);
+    logger.info(`[migrate] Creating from ${file}`);
     const content = readFileSync(join(viewsDir, file), "utf-8");
     for (const stmt of parseStatements(content)) {
       await sql.unsafe(stmt);

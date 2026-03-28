@@ -15,4 +15,4 @@ UPDATE fitness.activity
     AND raw->>'timezone' IS NOT NULL
     AND timezone IS NULL;
 
--- v_activity and activity_summary are recreated from drizzle/views/ by the migration runner.
+-- v_activity and activity_summary are recreated from drizzle/_views/ by the migration runner.

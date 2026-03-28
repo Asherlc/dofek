@@ -183,25 +183,31 @@ describe("runMigrations", () => {
     // Main dir has no pending migrations
     mockReaddirSync
       .mockReturnValueOnce([]) // migrations dir
-      .mockReturnValueOnce(["v_activity.sql", "activity_summary.sql"]); // views dir
+      .mockReturnValueOnce(["01_v_activity.sql", "02_activity_summary.sql"]); // views dir
 
     mockExistsSync.mockReturnValue(true);
-    mockSql.mockResolvedValue([]);
+    // Return existing views from pg_matviews query, then empty for other queries
+    mockSql
+      .mockResolvedValueOnce([]) // pg_advisory_lock
+      .mockResolvedValueOnce([]) // CREATE SCHEMA health
+      .mockResolvedValueOnce([]) // CREATE SCHEMA drizzle
+      .mockResolvedValueOnce([]) // CREATE TABLE __drizzle_migrations
+      .mockResolvedValueOnce([]) // SELECT hash (applied migrations)
+      .mockResolvedValueOnce([{ matviewname: "activity_summary" }, { matviewname: "v_activity" }]); // pg_matviews query
     mockReadFileSync.mockReturnValue("CREATE MATERIALIZED VIEW fitness.test AS SELECT 1");
 
     await runMigrations("postgres://localhost/test", "/tmp/migrations");
 
-    // Should drop views in reverse order, then create in alphabetical order
     const unsafeCalls = mockSqlUnsafe.mock.calls.map((call) => String(call[0]));
     const dropCalls = unsafeCalls.filter((call) => call.includes("DROP"));
     const createCalls = unsafeCalls.filter((call) => call.includes("CREATE MATERIALIZED"));
 
+    // Drops existing views from pg_matviews
     expect(dropCalls).toHaveLength(2);
-    // Drops in reverse alphabetical: v_activity first, then activity_summary
-    expect(dropCalls[0]).toContain("v_activity");
-    expect(dropCalls[1]).toContain("activity_summary");
+    expect(dropCalls[0]).toContain("activity_summary");
+    expect(dropCalls[1]).toContain("v_activity");
 
-    // Creates in alphabetical: activity_summary first, then v_activity
+    // Creates in filename order (01_ before 02_)
     expect(createCalls).toHaveLength(2);
   });
 });

@@ -83,19 +83,23 @@ export async function setupTestDatabase(): Promise<TestContext> {
   }
 
   // Recreate materialized views from canonical definitions (same as production runner)
-  const viewsDir = join(drizzleDir, "views");
+  const viewsDir = join(drizzleDir, "_views");
   if (existsSync(viewsDir)) {
     const viewFiles = readdirSync(viewsDir)
       .filter((f) => f.endsWith(".sql"))
       .sort();
 
-    // Drop in reverse dependency order
-    for (const file of [...viewFiles].reverse()) {
-      const viewName = file.replace(/\.sql$/, "");
-      await migrationClient.unsafe(`DROP MATERIALIZED VIEW IF EXISTS fitness.${viewName} CASCADE`);
+    // Drop all materialized views in fitness schema (CASCADE handles dependencies)
+    const existingViews = await migrationClient.unsafe(
+      "SELECT matviewname FROM pg_matviews WHERE schemaname = 'fitness'",
+    );
+    for (const row of existingViews) {
+      await migrationClient.unsafe(
+        `DROP MATERIALIZED VIEW IF EXISTS fitness.${row.matviewname} CASCADE`,
+      );
     }
 
-    // Create in alphabetical order (v_activity before activity_summary)
+    // Create in filename order (01_v_activity before 02_activity_summary)
     for (const file of viewFiles) {
       const content = readFileSync(join(viewsDir, file), "utf-8");
       const statements = content
