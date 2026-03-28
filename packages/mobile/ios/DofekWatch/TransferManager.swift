@@ -145,9 +145,9 @@ final class TransferManager: ObservableObject {
                 stream.dst_ptr = outputBuffer
                 stream.dst_size = bufferSize
 
-                let flags = stream.src_size == 0
-                    ? Int32(COMPRESSION_STREAM_FINALIZE.rawValue)
-                    : Int32(0)
+                let flags: Int32 = stream.src_size == 0
+                    ? COMPRESSION_STREAM_FINALIZE
+                    : 0
 
                 status = compression_stream_process(&stream, flags)
 
