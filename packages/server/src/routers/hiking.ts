@@ -1,3 +1,4 @@
+import { computeGradeAdjustedPace } from "@dofek/training/grade-adjusted-pace";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
@@ -93,15 +94,7 @@ export const hikingRouter = router({
         const durationMinutes = Number(r.duration_seconds) / 60;
         const averagePaceMinPerKm = distanceKm > 0 ? durationMinutes / distanceKm : 0;
         const avgGrade = Number(r.avg_grade) / 100;
-
-        let costFactor: number;
-        if (avgGrade >= 0) {
-          costFactor = 1 + avgGrade * 3.5;
-        } else {
-          costFactor = Math.max(0.5, 1 - Math.abs(avgGrade) * 1.8);
-        }
-
-        const gradeAdjustedPaceMinPerKm = averagePaceMinPerKm / costFactor;
+        const gradeAdjustedPaceMinPerKm = computeGradeAdjustedPace(averagePaceMinPerKm, avgGrade);
 
         return {
           date: String(r.date),
