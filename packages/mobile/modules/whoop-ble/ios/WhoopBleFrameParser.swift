@@ -58,7 +58,18 @@ final class WhoopBleFrameParser {
         // Try to parse the current accumulator
         if let frame = WhoopBleFrameParser.parseFrame(accumulator) {
             frames.append(frame)
-            accumulator = Data()
+            // Advance past the consumed frame, preserving any trailing bytes
+            // that belong to the next frame (header + payload + CRC32)
+            let payloadLen = Int(accumulator[1]) | (Int(accumulator[2]) << 8)
+            let consumed = min(
+                WhoopBleConstants.headerSize + payloadLen + 4,
+                accumulator.count
+            )
+            if consumed < accumulator.count {
+                accumulator = Data(accumulator[consumed...])
+            } else {
+                accumulator = Data()
+            }
         }
 
         return frames
@@ -82,10 +93,12 @@ final class WhoopBleFrameParser {
 
         let payloadLen = Int(data[1]) | (Int(data[2]) << 8) // u16 LE
         let headerSize = WhoopBleConstants.headerSize
-        let expectedTotal = headerSize + payloadLen + 4 // +4 for CRC32
 
-        // Allow slightly short frames (BLE edge cases) but payload must have at least type byte
-        guard data.count >= headerSize + min(payloadLen, 1) else { return nil }
+        // Require the full payload before accepting the frame.
+        // This prevents premature parsing when BLE notifications fragment
+        // a large frame across multiple packets. We tolerate a missing CRC32
+        // trailer (4 bytes) since we don't validate it.
+        guard data.count >= headerSize + payloadLen else { return nil }
 
         let payloadEnd = min(headerSize + payloadLen, data.count)
         let payload = data[headerSize..<payloadEnd]
