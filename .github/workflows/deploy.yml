@@ -9,8 +9,52 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  ci-gate:
+    name: CI Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Wait for CI checks to pass
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          REQUIRED_CHECKS=("Unit & Integration Tests" "Lint & Static Analysis" "E2E Tests")
+          SHA="${{ github.sha }}"
+          REPO="${{ github.repository }}"
+
+          for attempt in $(seq 1 60); do
+            all_passed=true
+
+            for check in "${REQUIRED_CHECKS[@]}"; do
+              result=$(gh api "repos/$REPO/commits/$SHA/check-runs" \
+                --jq ".check_runs[] | select(.name == \"$check\") | .conclusion" 2>/dev/null | head -1)
+
+              if [ "$result" = "success" ]; then
+                echo "✓ $check passed"
+              elif [ "$result" = "failure" ] || [ "$result" = "cancelled" ] || [ "$result" = "timed_out" ]; then
+                echo "✗ $check failed ($result) — aborting deploy"
+                exit 1
+              else
+                echo "… $check pending (status: ${result:-not started})"
+                all_passed=false
+              fi
+            done
+
+            if $all_passed; then
+              echo "All CI checks passed — proceeding with deploy"
+              exit 0
+            fi
+
+            echo "Waiting for CI checks... (attempt $attempt/60)"
+            sleep 30
+          done
+
+          echo "Timed out waiting for CI checks"
+          exit 1
+
   check-native-changes:
     name: Check Native iOS Changes
+    needs: [ci-gate]
     runs-on: ubuntu-latest
     outputs:
       changed: ${{ steps.check.outputs.changed }}
@@ -197,6 +241,7 @@ jobs:
 
   ota-deploy:
     name: OTA Deploy
+    needs: [ci-gate]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
@@ -254,6 +299,7 @@ jobs:
 
   deploy-config:
     name: Deploy Config
+    needs: [ci-gate]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
@@ -303,6 +349,7 @@ jobs:
 
   docker:
     name: Docker (${{ matrix.target }})
+    needs: [ci-gate]
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
