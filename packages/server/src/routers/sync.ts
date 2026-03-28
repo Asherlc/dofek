@@ -52,12 +52,13 @@ const syncJobDataSchema = z.object({
 
 export const REDACTED_ERROR_MESSAGE = "Details hidden";
 
-function redactLogErrorMessage(errorMessage: string | null): string | null {
+// Exported for unit testing — these are pure helpers with no side effects.
+export function redactLogErrorMessage(errorMessage: string | null): string | null {
   if (!errorMessage) return null;
   return REDACTED_ERROR_MESSAGE;
 }
 
-function toJobId(id: string | number | undefined, providerId: string): string {
+export function toJobId(id: string | number | undefined, providerId: string): string {
   return id === undefined ? `job-${providerId}-${Date.now()}` : String(id);
 }
 
@@ -164,7 +165,7 @@ function getLegacySyncQueue() {
 }
 
 /** Map BullMQ job state to the frontend SyncJobStatus shape */
-function mapBullMqStateToSyncStatus(state: string): "running" | "done" | "error" {
+export function mapBullMqStateToSyncStatus(state: string): "running" | "done" | "error" {
   switch (state) {
     case "completed":
       return "done";

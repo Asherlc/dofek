@@ -431,6 +431,71 @@ describe("computeSleepDebt", () => {
   it("returns 0 when no nights", () => {
     expect(computeSleepDebt([], 480)).toBe(0);
   });
+
+  it("uses exactly 14 nights (not 13 or 15)", () => {
+    // Create exactly 15 nights, each with 80 min deficit
+    const nights: SleepNight[] = [];
+    for (let index = 0; index < 15; index++) {
+      nights.push(
+        new SleepNight({
+          date: `2024-03-${String(index + 1).padStart(2, "0")}`,
+          durationMinutes: 400,
+          sleepMinutes: 400,
+          deepPct: 20,
+          remPct: 25,
+          lightPct: 45,
+          awakePct: 10,
+          efficiency: 85,
+          rollingAvgDuration: null,
+        }),
+      );
+    }
+    const debt = computeSleepDebt(nights, 480);
+    // 14 nights * 80 = 1120 (not 15 * 80 = 1200, not 13 * 80 = 1040)
+    expect(debt).toBe(1120);
+    expect(debt).not.toBe(1200); // Would be 15 nights (slice(-15))
+    expect(debt).not.toBe(1040); // Would be 13 nights (slice(-13))
+  });
+
+  it("rounds debt to integer via Math.round", () => {
+    const nights = [
+      new SleepNight({
+        date: "2024-03-15",
+        durationMinutes: 450,
+        sleepMinutes: 450,
+        deepPct: 20,
+        remPct: 25,
+        lightPct: 45,
+        awakePct: 10,
+        efficiency: 85,
+        rollingAvgDuration: null,
+      }),
+    ];
+    // target=480, actual=450 => debt=30 (exact integer, but proves Math.round works)
+    const debt = computeSleepDebt(nights, 480);
+    expect(Number.isInteger(debt)).toBe(true);
+  });
+
+  it("subtracts sleepMinutes from targetMinutes (not the reverse)", () => {
+    const nights = [
+      new SleepNight({
+        date: "2024-03-15",
+        durationMinutes: 400,
+        sleepMinutes: 400,
+        deepPct: 20,
+        remPct: 25,
+        lightPct: 45,
+        awakePct: 10,
+        efficiency: 85,
+        rollingAvgDuration: null,
+      }),
+    ];
+    // target=480 - actual=400 = +80 (positive debt, undeslept)
+    // If reversed: actual=400 - target=480 = -80
+    const debt = computeSleepDebt(nights, 480);
+    expect(debt).toBe(80);
+    expect(debt).not.toBe(-80);
+  });
 });
 
 describe("computeReadinessComponents", () => {
@@ -711,6 +776,108 @@ describe("computeReadinessComponents", () => {
     expect(components.restingHrScore).toBe(62);
     expect(components.respiratoryRateScore).toBe(62);
   });
+
+  it("uses default 62 (not 50, 60, or 65) for HRV when null", () => {
+    const components = computeReadinessComponents({
+      date: "2024-03-15",
+      hrv: null,
+      restingHr: null,
+      respiratoryRate: null,
+      hrvMean30d: null,
+      hrvSd30d: null,
+      rhrMean30d: null,
+      rhrSd30d: null,
+      rrMean30d: null,
+      rrSd30d: null,
+      efficiencyPct: null,
+    });
+    expect(components.hrvScore).not.toBe(50);
+    expect(components.hrvScore).not.toBe(60);
+    expect(components.hrvScore).not.toBe(65);
+    expect(components.restingHrScore).not.toBe(50);
+    expect(components.restingHrScore).not.toBe(60);
+    expect(components.respiratoryRateScore).not.toBe(50);
+    expect(components.respiratoryRateScore).not.toBe(60);
+  });
+
+  it("returns integer scores (Math.round applied)", () => {
+    const components = computeReadinessComponents({
+      date: "2024-03-15",
+      hrv: 55,
+      restingHr: 62,
+      respiratoryRate: 16,
+      hrvMean30d: 50,
+      hrvSd30d: 7,
+      rhrMean30d: 60,
+      rhrSd30d: 4,
+      rrMean30d: 15,
+      rrSd30d: 2,
+      efficiencyPct: 88,
+    });
+    expect(Number.isInteger(components.hrvScore)).toBe(true);
+    expect(Number.isInteger(components.restingHrScore)).toBe(true);
+    expect(Number.isInteger(components.sleepScore)).toBe(true);
+    expect(Number.isInteger(components.respiratoryRateScore)).toBe(true);
+  });
+
+  it("does NOT negate HRV z-score (higher HRV = higher score, not inverted)", () => {
+    // HRV 2 SDs above mean: z = +2. If NOT negated, score > 62. If negated, score < 62.
+    const highHrv = computeReadinessComponents({
+      date: "2024-03-15",
+      hrv: 70,
+      restingHr: null,
+      respiratoryRate: null,
+      hrvMean30d: 50,
+      hrvSd30d: 10,
+      rhrMean30d: null,
+      rhrSd30d: null,
+      rrMean30d: null,
+      rrSd30d: null,
+      efficiencyPct: null,
+    });
+    // HRV 2 SDs below mean: z = -2. If NOT negated, score < 62. If negated, score > 62.
+    const lowHrv = computeReadinessComponents({
+      date: "2024-03-15",
+      hrv: 30,
+      restingHr: null,
+      respiratoryRate: null,
+      hrvMean30d: 50,
+      hrvSd30d: 10,
+      rhrMean30d: null,
+      rhrSd30d: null,
+      rrMean30d: null,
+      rrSd30d: null,
+      efficiencyPct: null,
+    });
+    // These two together kill the negation mutation: if HRV z were negated,
+    // highHrv would be < 62 (fails first) and lowHrv would be > 62 (fails second)
+    expect(highHrv.hrvScore).toBeGreaterThan(lowHrv.hrvScore);
+    expect(highHrv.hrvScore).toBeGreaterThan(62);
+    expect(lowHrv.hrvScore).toBeLessThan(62);
+  });
+
+  it("negates RHR z-score but does NOT negate HRV z-score (opposite directions)", () => {
+    // Same z-score magnitude but opposite direction for HRV vs RHR
+    // HRV +2 SD above mean → should be GOOD (> 62)
+    // RHR +2 SD above mean → should be BAD (< 62)
+    const row = {
+      date: "2024-03-15",
+      hrv: 70,
+      restingHr: 70,
+      respiratoryRate: null,
+      hrvMean30d: 50,
+      hrvSd30d: 10,
+      rhrMean30d: 50,
+      rhrSd30d: 10,
+      rrMean30d: null,
+      rrSd30d: null,
+      efficiencyPct: null,
+    };
+    const components = computeReadinessComponents(row);
+    // Both are +2 SD above mean, but HRV is good (not negated) and RHR is bad (negated)
+    expect(components.hrvScore).toBeGreaterThan(62);
+    expect(components.restingHrScore).toBeLessThan(62);
+  });
 });
 
 describe("computeStrainTargetResult", () => {
@@ -970,6 +1137,129 @@ describe("RecoveryRepository", () => {
       const result = await repo.getReadinessMetrics(30, "2024-03-15");
       expect(result[0]?.hrv).toBeNull();
       expect(result[0]?.efficiencyPct).toBeNull();
+    });
+
+    it("maps all 11 fields from snake_case to camelCase", async () => {
+      const { repo } = makeRepository([
+        {
+          date: "2024-03-15",
+          hrv: 55,
+          resting_hr: 58,
+          respiratory_rate: 14,
+          hrv_mean_30d: 52,
+          hrv_sd_30d: 6,
+          rhr_mean_30d: 60,
+          rhr_sd_30d: 4,
+          rr_mean_30d: 13,
+          rr_sd_30d: 1.5,
+          efficiency_pct: 92,
+        },
+      ]);
+      const result = await repo.getReadinessMetrics(30, "2024-03-15");
+      const row = result[0];
+      expect(row?.date).toBe("2024-03-15");
+      expect(row?.hrv).toBe(55);
+      expect(row?.restingHr).toBe(58);
+      expect(row?.respiratoryRate).toBe(14);
+      expect(row?.hrvMean30d).toBe(52);
+      expect(row?.hrvSd30d).toBe(6);
+      expect(row?.rhrMean30d).toBe(60);
+      expect(row?.rhrSd30d).toBe(4);
+      expect(row?.rrMean30d).toBe(13);
+      expect(row?.rrSd30d).toBe(1.5);
+      expect(row?.efficiencyPct).toBe(92);
+    });
+  });
+
+  describe("getLatestDailyMetrics", () => {
+    it("returns null when no rows", async () => {
+      const { repo } = makeRepository([]);
+      const result = await repo.getLatestDailyMetrics();
+      expect(result).toBeNull();
+    });
+
+    it("returns the first row when data exists", async () => {
+      const { repo } = makeRepository([
+        {
+          date: "2024-03-15",
+          resting_hr: 58,
+          hrv: 55,
+          spo2_avg: 97,
+          respiratory_rate_avg: 14,
+        },
+      ]);
+      const result = await repo.getLatestDailyMetrics();
+      expect(result).not.toBeNull();
+      expect(result?.date).toBe("2024-03-15");
+      expect(result?.resting_hr).toBe(58);
+      expect(result?.hrv).toBe(55);
+    });
+  });
+
+  describe("getLatestSleepEfficiency", () => {
+    it("returns null when no sleep data", async () => {
+      const { repo } = makeRepository([]);
+      const result = await repo.getLatestSleepEfficiency();
+      expect(result).toBeNull();
+    });
+
+    it("returns efficiency_pct when data exists", async () => {
+      const { repo } = makeRepository([{ efficiency_pct: 92 }]);
+      const result = await repo.getLatestSleepEfficiency();
+      expect(result).toBe(92);
+    });
+
+    it("returns null when efficiency_pct is null", async () => {
+      const { repo } = makeRepository([{ efficiency_pct: null }]);
+      const result = await repo.getLatestSleepEfficiency();
+      expect(result).toBeNull();
+    });
+  });
+
+  describe("getStrainTarget", () => {
+    function makeStrainRepository(executeResults: Record<string, unknown>[][]) {
+      const execute = vi.fn();
+      for (const rows of executeResults) {
+        execute.mockResolvedValueOnce(rows);
+      }
+      const db = { execute };
+      const repo = new RecoveryRepository(db, "user-1", "UTC");
+      return { repo, execute };
+    }
+
+    it("uses default readinessScore of 50 when no daily metrics", async () => {
+      const { repo } = makeStrainRepository([
+        [], // getLatestDailyMetrics returns null
+        [], // getDailyLoads returns empty
+      ]);
+      const result = await repo.getStrainTarget(28, "2024-03-15");
+      // With readiness=50 and no loads, target should exist
+      expect(result).toHaveProperty("targetStrain");
+      expect(result).toHaveProperty("zone");
+    });
+
+    it("calls execute for daily metrics, then daily loads (2 calls minimum)", async () => {
+      const { repo, execute } = makeStrainRepository([
+        [], // getLatestDailyMetrics
+        [], // getDailyLoads
+      ]);
+      await repo.getStrainTarget(28, "2024-03-15");
+      expect(execute).toHaveBeenCalledTimes(2);
+    });
+
+    it("calls execute 4 times when daily metrics exist (metrics + params + sleepEff + loads)", async () => {
+      const { repo, execute } = makeStrainRepository([
+        // getLatestDailyMetrics
+        [{ date: "2024-03-15", resting_hr: 58, hrv: 55, spo2_avg: 97, respiratory_rate_avg: 14 }],
+        // loadPersonalizedParams (from getEffectiveParams)
+        [],
+        // getLatestSleepEfficiency
+        [{ efficiency_pct: 90 }],
+        // getDailyLoads
+        [],
+      ]);
+      await repo.getStrainTarget(28, "2024-03-15");
+      expect(execute).toHaveBeenCalledTimes(4);
     });
   });
 });

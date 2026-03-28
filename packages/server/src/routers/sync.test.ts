@@ -133,9 +133,12 @@ import {
   ensureProvidersRegistered,
   isAuthError,
   logsInput,
+  mapBullMqStateToSyncStatus,
   REDACTED_ERROR_MESSAGE,
+  redactLogErrorMessage,
   syncRouter,
   syncStatusInput,
+  toJobId,
   triggerSyncInput,
 } from "./sync.ts";
 
@@ -1155,6 +1158,82 @@ describe("syncRouter", () => {
       const result = await caller.logs({});
       expect(result).toHaveLength(1);
       expect(result[0]?.errorMessage).toBe(REDACTED_ERROR_MESSAGE);
+    });
+  });
+
+  describe("redactLogErrorMessage", () => {
+    it("returns null when errorMessage is null", () => {
+      expect(redactLogErrorMessage(null)).toBeNull();
+    });
+
+    it("returns null when errorMessage is empty string", () => {
+      expect(redactLogErrorMessage("")).toBeNull();
+    });
+
+    it("returns REDACTED_ERROR_MESSAGE for any non-empty string", () => {
+      expect(redactLogErrorMessage("some error")).toBe(REDACTED_ERROR_MESSAGE);
+      expect(redactLogErrorMessage("stack trace details")).toBe(REDACTED_ERROR_MESSAGE);
+    });
+
+    it("returns the exact constant (not a different string)", () => {
+      const result = redactLogErrorMessage("error");
+      expect(result).toBe("Details hidden");
+      expect(result).not.toBe("Error");
+      expect(result).not.toBe("");
+    });
+  });
+
+  describe("toJobId", () => {
+    it("returns String(id) when id is defined as a number", () => {
+      expect(toJobId(123, "wahoo")).toBe("123");
+    });
+
+    it("returns String(id) when id is defined as a string", () => {
+      expect(toJobId("abc-456", "wahoo")).toBe("abc-456");
+    });
+
+    it("generates fallback ID when id is undefined", () => {
+      const result = toJobId(undefined, "wahoo");
+      expect(result).toMatch(/^job-wahoo-\d+$/);
+    });
+
+    it("includes the providerId in the fallback", () => {
+      const result = toJobId(undefined, "garmin");
+      expect(result).toContain("garmin");
+      expect(result).toMatch(/^job-garmin-/);
+    });
+
+    it("uses strict === undefined check (0 and empty string are valid IDs)", () => {
+      expect(toJobId(0, "wahoo")).toBe("0");
+      expect(toJobId("", "wahoo")).toBe("");
+    });
+  });
+
+  describe("mapBullMqStateToSyncStatus", () => {
+    it("maps 'completed' to 'done'", () => {
+      expect(mapBullMqStateToSyncStatus("completed")).toBe("done");
+    });
+
+    it("maps 'failed' to 'error'", () => {
+      expect(mapBullMqStateToSyncStatus("failed")).toBe("error");
+    });
+
+    it("maps 'active' to 'running' (default)", () => {
+      expect(mapBullMqStateToSyncStatus("active")).toBe("running");
+    });
+
+    it("maps 'waiting' to 'running' (default)", () => {
+      expect(mapBullMqStateToSyncStatus("waiting")).toBe("running");
+    });
+
+    it("maps unknown states to 'running' (default)", () => {
+      expect(mapBullMqStateToSyncStatus("delayed")).toBe("running");
+      expect(mapBullMqStateToSyncStatus("")).toBe("running");
+    });
+
+    it("does not swap 'completed' and 'failed' mappings", () => {
+      expect(mapBullMqStateToSyncStatus("completed")).not.toBe("error");
+      expect(mapBullMqStateToSyncStatus("failed")).not.toBe("done");
     });
   });
 });
