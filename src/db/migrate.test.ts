@@ -12,6 +12,16 @@ vi.mock("node:fs", () => ({
   existsSync: mockExistsSync,
 }));
 
+const mockLoggerWarn = vi.fn();
+const mockLoggerInfo = vi.fn();
+
+vi.mock("../logger.ts", () => ({
+  logger: {
+    warn: mockLoggerWarn,
+    info: mockLoggerInfo,
+  },
+}));
+
 const mockSqlEnd = vi.fn().mockResolvedValue(undefined);
 const mockSqlUnsafe = vi.fn().mockResolvedValue([]);
 
@@ -176,6 +186,10 @@ describe("runMigrations", () => {
 
     // Should not throw — just log a warning
     await runMigrations("postgres://localhost/test", "/tmp/migrations");
+
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      expect.stringContaining("Duplicate migration prefixes"),
+    );
   });
 
   it("recreates materialized views from canonical definitions", async () => {
