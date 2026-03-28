@@ -44,11 +44,9 @@ vi.mock("./watch-accelerometer-adapter", () => ({
 }));
 
 const mockCaptureException = vi.fn();
-const mockLogger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
 
 vi.mock("./telemetry", () => ({
   captureException: (...args: unknown[]) => mockCaptureException(...args),
-  logger: mockLogger,
 }));
 
 const { initBackgroundWatchAccelerometerSync, teardownBackgroundWatchAccelerometerSync } =
@@ -72,7 +70,6 @@ describe("background-watch-accelerometer-sync", () => {
     appStateCallback = null;
     mockRemove.mockClear();
     mockCaptureException.mockClear();
-    mockLogger.warn.mockClear();
     mockSyncAccelerometerToServer.mockReset();
     mockSyncAccelerometerToServer.mockResolvedValue({ inserted: 0, recording: true });
     mockIsWatchPaired.mockReturnValue(true);
@@ -121,21 +118,6 @@ describe("background-watch-accelerometer-sync", () => {
       expect(mockCaptureException).toHaveBeenCalledWith(syncError, {
         source: "bg-watch-accel-sync",
       });
-    });
-  });
-
-  it("logs warning when foreground sync rejects", async () => {
-    await initBackgroundWatchAccelerometerSync(trpcClient);
-
-    mockSyncAccelerometerToServer.mockRejectedValue(new Error("bluetooth disconnected"));
-
-    appStateCallback?.("active");
-
-    await vi.waitFor(() => {
-      expect(mockLogger.warn).toHaveBeenCalledWith(
-        "bg-watch-accel-sync",
-        expect.stringContaining("bluetooth disconnected"),
-      );
     });
   });
 

@@ -47,11 +47,9 @@ vi.mock("./accelerometer-sync", () => ({
 }));
 
 const mockCaptureException = vi.fn();
-const mockLogger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
 
 vi.mock("./telemetry", () => ({
   captureException: (...args: unknown[]) => mockCaptureException(...args),
-  logger: mockLogger,
 }));
 
 const { initBackgroundAccelerometerSync, teardownBackgroundAccelerometerSync } = await import(
@@ -76,7 +74,6 @@ describe("background-accelerometer-sync", () => {
     appStateCallback = null;
     mockRemove.mockClear();
     mockCaptureException.mockClear();
-    mockLogger.warn.mockClear();
     mockSyncAccelerometerToServer.mockReset();
     mockSyncAccelerometerToServer.mockResolvedValue({ inserted: 0, recording: true });
     mockIsAccelerometerRecordingAvailable.mockReturnValue(true);
@@ -123,21 +120,6 @@ describe("background-accelerometer-sync", () => {
       expect(mockCaptureException).toHaveBeenCalledWith(syncError, {
         source: "bg-accel-sync",
       });
-    });
-  });
-
-  it("logs warning when foreground sync rejects", async () => {
-    await initBackgroundAccelerometerSync(trpcClient);
-
-    mockSyncAccelerometerToServer.mockRejectedValue(new Error("network timeout"));
-
-    appStateCallback?.("active");
-
-    await vi.waitFor(() => {
-      expect(mockLogger.warn).toHaveBeenCalledWith(
-        "bg-accel-sync",
-        expect.stringContaining("network timeout"),
-      );
     });
   });
 

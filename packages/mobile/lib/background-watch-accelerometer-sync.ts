@@ -1,7 +1,7 @@
 import { AppState, type AppStateStatus } from "react-native";
 import { isWatchAppInstalled, isWatchPaired } from "../modules/watch-motion";
 import { type AccelerometerSyncTrpcClient, syncAccelerometerToServer } from "./accelerometer-sync";
-import { captureException, logger } from "./telemetry";
+import { captureException } from "./telemetry";
 import { createWatchCoreMotionAdapter } from "./watch-accelerometer-adapter";
 
 const TAG = "bg-watch-accel-sync";
@@ -43,8 +43,6 @@ export async function initBackgroundWatchAccelerometerSync(
       deviceType: "apple_watch",
     })
       .catch((error: unknown) => {
-        // Best-effort — don't crash the app for background sync failures
-        logger.warn(TAG, `Sync failed: ${error instanceof Error ? error.message : String(error)}`);
         captureException(error, { source: TAG });
       })
       .finally(() => {
