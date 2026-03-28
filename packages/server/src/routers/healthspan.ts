@@ -253,7 +253,7 @@ export const healthspanRouter = router({
             ),
             body_latest AS (
               SELECT weight_kg, body_fat_pct
-              FROM fitness.body_measurement
+              FROM fitness.v_body_measurement
               WHERE user_id = ${ctx.userId}
                 AND weight_kg IS NOT NULL
               ORDER BY recorded_at DESC
