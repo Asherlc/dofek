@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -855,19 +856,24 @@ jobs:
           fetch-depth: 2
       - id: check
         run: |
-          CHANGED=$(git diff --name-only HEAD~1...HEAD -- \
-            'packages/mobile/ios/**' \
-            'packages/mobile/modules/*/ios/**' \
-            'packages/mobile/modules/*/Package.swift' \
-            'packages/mobile/app.json' \
-            'packages/mobile/modules/*/expo-module.config.json')
-          if [ -n "$CHANGED" ]; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "Native iOS files changed:"
-            echo "$CHANGED"
+            echo "Manual dispatch — forcing TestFlight upload"
           else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "No native iOS changes, skipping TestFlight upload"
+            CHANGED=$(git diff --name-only HEAD~1...HEAD -- \
+              'packages/mobile/ios/**' \
+              'packages/mobile/modules/*/ios/**' \
+              'packages/mobile/modules/*/Package.swift' \
+              'packages/mobile/app.json' \
+              'packages/mobile/modules/*/expo-module.config.json')
+            if [ -n "$CHANGED" ]; then
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              echo "Native iOS files changed:"
+              echo "$CHANGED"
+            else
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+              echo "No native iOS changes, skipping TestFlight upload"
+            fi
           fi
 
   ios-release:
