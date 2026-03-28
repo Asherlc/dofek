@@ -3,11 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // Create mock functions with the specific signatures we need
 const mockReaddirSync = vi.fn<(path: string) => string[]>().mockReturnValue([]);
 const mockReadFileSync = vi.fn<(path: string, encoding: string) => string>().mockReturnValue("");
+const mockExistsSync = vi.fn<(path: string) => boolean>().mockReturnValue(false);
 
 // Mock node:fs
 vi.mock("node:fs", () => ({
   readdirSync: mockReaddirSync,
   readFileSync: mockReadFileSync,
+  existsSync: mockExistsSync,
 }));
 
 const mockSqlEnd = vi.fn().mockResolvedValue(undefined);
@@ -163,5 +165,76 @@ describe("runMigrations", () => {
     const log = buildCallLog();
     expect(log).toContain("lock");
     expect(log).toContain("unlock");
+  });
+
+  it("rejects duplicate migration prefixes", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+
+    mockReaddirSync.mockReturnValue(["0049_add_timezone.sql", "0049_source_external_ids.sql"]);
+
+    await expect(runMigrations("postgres://localhost/test", "/tmp/migrations")).rejects.toThrow(
+      "Duplicate migration prefixes",
+    );
+  });
+
+  it("recreates materialized views from canonical definitions", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+
+    // Main dir has no pending migrations
+    mockReaddirSync
+      .mockReturnValueOnce([]) // migrations dir
+      .mockReturnValueOnce(["v_activity.sql", "activity_summary.sql"]); // views dir
+
+    mockExistsSync.mockReturnValue(true);
+    mockSql.mockResolvedValue([]);
+    mockReadFileSync.mockReturnValue("CREATE MATERIALIZED VIEW fitness.test AS SELECT 1");
+
+    await runMigrations("postgres://localhost/test", "/tmp/migrations");
+
+    // Should drop views in reverse order, then create in alphabetical order
+    const unsafeCalls = mockSqlUnsafe.mock.calls.map((call) => String(call[0]));
+    const dropCalls = unsafeCalls.filter((call) => call.includes("DROP"));
+    const createCalls = unsafeCalls.filter((call) => call.includes("CREATE MATERIALIZED"));
+
+    expect(dropCalls).toHaveLength(2);
+    // Drops in reverse alphabetical: v_activity first, then activity_summary
+    expect(dropCalls[0]).toContain("v_activity");
+    expect(dropCalls[1]).toContain("activity_summary");
+
+    // Creates in alphabetical: activity_summary first, then v_activity
+    expect(createCalls).toHaveLength(2);
+  });
+});
+
+describe("detectDuplicatePrefixes", () => {
+  it("returns empty for unique prefixes", async () => {
+    const { detectDuplicatePrefixes } = await import("./migrate.ts");
+
+    const result = detectDuplicatePrefixes(["0001_init.sql", "0002_add_col.sql", "0003_new.sql"]);
+
+    expect(result).toEqual([]);
+  });
+
+  it("detects duplicate numeric prefixes", async () => {
+    const { detectDuplicatePrefixes } = await import("./migrate.ts");
+
+    const result = detectDuplicatePrefixes([
+      "0001_init.sql",
+      "0049_add_timezone.sql",
+      "0049_source_external_ids.sql",
+    ]);
+
+    expect(result).toHaveLength(1);
+    const [prefix, group] = result[0] ?? [];
+    expect(prefix).toBe("0049");
+    expect(group).toEqual(["0049_add_timezone.sql", "0049_source_external_ids.sql"]);
+  });
+
+  it("ignores files without numeric prefixes", async () => {
+    const { detectDuplicatePrefixes } = await import("./migrate.ts");
+
+    const result = detectDuplicatePrefixes(["README.md", "meta.json"]);
+
+    expect(result).toEqual([]);
   });
 });
