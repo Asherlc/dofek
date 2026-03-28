@@ -320,6 +320,10 @@ export class RideWithGpsProvider implements SyncProvider {
     return null;
   }
 
+  activityUrl(externalId: string): string {
+    return `https://ridewithgps.com/trips/${externalId}`;
+  }
+
   authSetup(): ProviderAuthSetup {
     const config = rideWithGpsOAuthConfig();
     if (!config) throw new Error("RWGPS_CLIENT_ID is required");

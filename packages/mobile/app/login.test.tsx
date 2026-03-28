@@ -1,5 +1,5 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock auth module before importing LoginScreen
 const mockOnLoginSuccess = vi.fn();
@@ -75,9 +75,7 @@ describe("LoginScreen", () => {
     render(<LoginScreen />);
 
     await waitFor(() => {
-      expect(
-        screen.getByText("No login providers configured on this server."),
-      ).toBeTruthy();
+      expect(screen.getByText("No login providers configured on this server.")).toBeTruthy();
     });
   });
 
@@ -97,11 +95,7 @@ describe("LoginScreen", () => {
     fireEvent.click(screen.getByText("Sign in with Google"));
 
     await waitFor(() => {
-      expect(mockStartOAuthLogin).toHaveBeenCalledWith(
-        "https://test.example.com",
-        "google",
-        false,
-      );
+      expect(mockStartOAuthLogin).toHaveBeenCalledWith("https://test.example.com", "google", false);
     });
     expect(mockOnLoginSuccess).toHaveBeenCalledWith("test-token-123");
   });

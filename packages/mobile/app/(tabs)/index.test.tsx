@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import React from "react";
+
 import { render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -14,15 +14,26 @@ function q(getData: () => unknown = () => undefined) {
 }
 
 function loadableQuery(getData: () => unknown, getLoading: () => boolean) {
-  return { useQuery: () => ({ data: getLoading() ? undefined : getData(), isLoading: getLoading() }) };
+  return {
+    useQuery: () => ({ data: getLoading() ? undefined : getData(), isLoading: getLoading() }),
+  };
 }
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
     recovery: {
-      readinessScore: loadableQuery(() => [], () => mockReadinessLoading),
-      sleepAnalytics: loadableQuery(() => undefined, () => mockSleepLoading),
-      workloadRatio: loadableQuery(() => [], () => mockWorkloadLoading),
+      readinessScore: loadableQuery(
+        () => [],
+        () => mockReadinessLoading,
+      ),
+      sleepAnalytics: loadableQuery(
+        () => undefined,
+        () => mockSleepLoading,
+      ),
+      workloadRatio: loadableQuery(
+        () => [],
+        () => mockWorkloadLoading,
+      ),
       hrvVariability: q(() => []),
     },
     stress: { scores: q() },
@@ -39,7 +50,9 @@ vi.mock("../../lib/trpc", () => ({
     bodyAnalytics: { smoothedWeight: q(() => []) },
     anomalyDetection: { check: q() },
     sync: {
-      triggerSync: { useMutation: () => ({ mutateAsync: vi.fn().mockResolvedValue({ jobId: "auto-sync-job" }) }) },
+      triggerSync: {
+        useMutation: () => ({ mutateAsync: vi.fn().mockResolvedValue({ jobId: "auto-sync-job" }) }),
+      },
       activeSyncs: { useQuery: () => ({ data: [], isLoading: false }) },
     },
     useUtils: () => ({

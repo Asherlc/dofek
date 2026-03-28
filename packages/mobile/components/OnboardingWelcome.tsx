@@ -4,12 +4,6 @@ import { useRouter } from "expo-router";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { colors } from "../theme";
 
-interface ProviderInfo {
-  id: string;
-  name: string;
-  authorized: boolean;
-}
-
 export function OnboardingWelcome({ onDismiss, providers }: OnboardingWelcomeProps) {
   const router = useRouter();
   const availableProviderIds = new Set(providers.map((p) => p.id));
@@ -27,9 +21,7 @@ export function OnboardingWelcome({ onDismiss, providers }: OnboardingWelcomePro
 
       {/* Category cards */}
       {ONBOARDING_CATEGORIES.map((category) => {
-        const categoryProviders = category.providerIds.filter((id) =>
-          availableProviderIds.has(id),
-        );
+        const categoryProviders = category.providerIds.filter((id) => availableProviderIds.has(id));
         if (categoryProviders.length === 0) return null;
 
         return (

@@ -2,7 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
-import { CacheTTL, cachedProtectedQueryLight, protectedProcedure, router } from "../trpc.ts";
+import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
 const linkedAccountRowSchema = z.object({
   id: z.string(),
@@ -15,7 +15,7 @@ const countRowSchema = z.object({ count: z.coerce.number() });
 const idRowSchema = z.object({ id: z.string() });
 
 export const authRouter = router({
-  linkedAccounts: cachedProtectedQueryLight(CacheTTL.SHORT).query(async ({ ctx }) => {
+  linkedAccounts: cachedProtectedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
     const rows = await executeWithSchema(
       ctx.db,
       linkedAccountRowSchema,

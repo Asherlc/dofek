@@ -151,16 +151,20 @@ public class WatchMotionModule: Module {
         var allSamples: [[String: Any]] = []
 
         for fileURL in contents {
-            let compressedData = try Data(contentsOf: fileURL)
+            let fileData = try Data(contentsOf: fileURL)
 
-            // Decompress gzip
+            // Decompress zlib. The Watch app compresses with NSData.compressed(using: .zlib)
+            // which produces zlib-format data (magic byte 0x78), not gzip (0x1f 0x8b).
             let decompressedData: Data
-            if compressedData.starts(with: [0x1f, 0x8b]) {
-                // Gzip magic bytes — decompress
-                decompressedData = try (compressedData as NSData).decompressed(using: .zlib) as Data
+            if let firstByte = fileData.first, firstByte == 0x78 {
+                // Zlib magic byte — decompress
+                decompressedData = try (fileData as NSData).decompressed(using: .zlib) as Data
+            } else if fileData.starts(with: [0x1f, 0x8b]) {
+                // Gzip magic bytes (legacy fallback)
+                decompressedData = try (fileData as NSData).decompressed(using: .zlib) as Data
             } else {
                 // Already uncompressed (plain JSON)
-                decompressedData = compressedData
+                decompressedData = fileData
             }
 
             // Parse JSON array of samples

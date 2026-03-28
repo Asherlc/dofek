@@ -198,6 +198,34 @@ public class WhoopBleModule: Module {
             }
         }
 
+        // MARK: - Diagnostics
+
+        Function("getConnectionState") { () -> String in
+            return self.state.rawValue
+        }
+
+        Function("getBluetoothState") { () -> String in
+            guard let manager = self.centralManager else {
+                return "uninitialized"
+            }
+            switch manager.state {
+            case .unknown: return "unknown"
+            case .resetting: return "resetting"
+            case .unsupported: return "unsupported"
+            case .unauthorized: return "unauthorized"
+            case .poweredOff: return "poweredOff"
+            case .poweredOn: return "poweredOn"
+            @unknown default: return "unknown"
+            }
+        }
+
+        Function("getBufferedSampleCount") { () -> Int in
+            self.bufferLock.lock()
+            let count = self.sampleBuffer.count
+            self.bufferLock.unlock()
+            return count
+        }
+
         // MARK: - Buffer access
 
         AsyncFunction("getBufferedSamples") { (promise: Promise) in
@@ -206,11 +234,16 @@ public class WhoopBleModule: Module {
             self.sampleBuffer.removeAll()
             self.bufferLock.unlock()
 
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let samplingInterval = 1.0 / 50.0 // 50 Hz = 20ms per sample
+
             let result = samples.map { sample -> [String: Any] in
-                // Convert strap timestamp to ISO 8601
-                let date = Date(timeIntervalSince1970: TimeInterval(sample.timestampSeconds))
-                let formatter = ISO8601DateFormatter()
-                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                // Compute per-sample timestamp: base epoch + sub-second offset + sample position
+                let baseTime = TimeInterval(sample.timestampSeconds)
+                    + TimeInterval(sample.subSeconds) / 1000.0
+                let sampleTime = baseTime + Double(sample.sampleIndex) * samplingInterval
+                let date = Date(timeIntervalSince1970: sampleTime)
 
                 return [
                     "timestamp": formatter.string(from: date),

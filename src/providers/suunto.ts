@@ -176,6 +176,10 @@ export class SuuntoProvider implements WebhookProvider {
     return null;
   }
 
+  activityUrl(externalId: string): string {
+    return `https://www.sports-tracker.com/workout/${externalId}`;
+  }
+
   // ── Webhook implementation ──
 
   async registerWebhook(

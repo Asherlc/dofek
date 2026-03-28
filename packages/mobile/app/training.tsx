@@ -1,15 +1,29 @@
+import { formatNumber, formatPace, formatSigned } from "@dofek/format/format";
+import { statusColors } from "@dofek/scoring/colors";
+import {
+  FORM_ZONE_COLORS,
+  FormZone,
+  rampRateColor,
+  scoreColor,
+  scoreLabel,
+  WorkloadRatio,
+} from "@dofek/scoring/scoring";
 import { useState } from "react";
-import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
-import Svg, { Rect, Text as SvgText, Path } from "react-native-svg";
+import {
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  useWindowDimensions,
+  View,
+} from "react-native";
+import Svg, { Path, Rect, Text as SvgText } from "react-native-svg";
 import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
 import { trpc } from "../lib/trpc";
-import { useRefresh } from "../lib/useRefresh";
 import { useUnitConverter } from "../lib/units";
+import { useRefresh } from "../lib/useRefresh";
 import { colors } from "../theme";
-import { scoreColor, scoreLabel, WorkloadRatio, rampRateColor, FormZone, FORM_ZONE_COLORS } from "@dofek/scoring/scoring";
-import { formatPace } from "@dofek/format/format";
-import { formatNumber, formatSigned } from "@dofek/format/format";
-import { statusColors } from "@dofek/scoring/colors";
 
 // ── Types ──
 
@@ -48,9 +62,9 @@ function sparklinePath(data: number[], width: number, height: number): string {
   const stepX = width / (data.length - 1);
   return data
     .map((v, i) => {
-      const x = i * stepX;
-      const y = height - ((v - min) / range) * height;
-      return `${i === 0 ? "M" : "L"} ${x} ${y}`;
+      const xCoord = i * stepX;
+      const yCoord = height - ((v - min) / range) * height;
+      return `${i === 0 ? "M" : "L"} ${xCoord} ${yCoord}`;
     })
     .join(" ");
 }
@@ -60,7 +74,17 @@ function formatNullable(value: number | null | undefined, decimals = 0): string 
   return formatNumber(value, decimals);
 }
 
-function Sparkline({ data, width, height, color }: { data: number[]; width: number; height: number; color: string }) {
+function Sparkline({
+  data,
+  width,
+  height,
+  color,
+}: {
+  data: number[];
+  width: number;
+  height: number;
+  color: string;
+}) {
   const path = sparklinePath(data, width, height);
   if (!path) return null;
   return (
@@ -93,18 +117,26 @@ function BarChart({
     <Svg width={width} height={height}>
       {data.map((v, i) => {
         const barH = (v / maxVal) * (chartHeight - 4);
-        const x = i * (barWidth + 4) + 2;
-        const y = chartHeight - barH;
+        const barX = i * (barWidth + 4) + 2;
+        const barY = chartHeight - barH;
         return (
-          <Rect key={`bar-${i}`} x={x} y={y} width={barWidth} height={barH} rx={2} fill={color} />
+          <Rect
+            key={`bar-${barX}`}
+            x={barX}
+            y={barY}
+            width={barWidth}
+            height={barH}
+            rx={2}
+            fill={color}
+          />
         );
       })}
       {labels?.map((label, i) => {
-        const x = i * (barWidth + 4) + 2 + barWidth / 2;
+        const labelX = i * (barWidth + 4) + 2 + barWidth / 2;
         return (
           <SvgText
-            key={`label-${i}`}
-            x={x}
+            key={`label-${label}`}
+            x={labelX}
             y={height - 1}
             fontSize={8}
             fill={colors.textTertiary}
@@ -134,9 +166,24 @@ export default function TrainingScreen() {
   const { refreshing, onRefresh } = useRefresh();
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={colors.textSecondary}
+        />
+      }
+    >
       {/* Tab bar */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabBar} contentContainerStyle={styles.tabBarContent}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.tabBar}
+        contentContainerStyle={styles.tabBarContent}
+      >
         {TABS.map((tab) => (
           <TouchableOpacity
             key={tab.key}
@@ -144,7 +191,9 @@ export default function TrainingScreen() {
             onPress={() => setActiveTab(tab.key)}
             activeOpacity={0.7}
           >
-            <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>{tab.label}</Text>
+            <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>
+              {tab.label}
+            </Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
@@ -201,18 +250,24 @@ function OverviewTab({ days }: { days: number }) {
       <View style={styles.summaryRow}>
         <View style={styles.summaryCard}>
           <Text style={styles.summaryLabel}>Fitness</Text>
-          <Text style={[styles.summaryValue, { color: colors.blue }]}>{formatNullable(latest?.ctl, 1)}</Text>
+          <Text style={[styles.summaryValue, { color: colors.blue }]}>
+            {formatNullable(latest?.ctl, 1)}
+          </Text>
         </View>
         <View style={styles.summaryCard}>
           <Text style={styles.summaryLabel}>Fatigue</Text>
-          <Text style={[styles.summaryValue, { color: colors.purple }]}>{formatNullable(latest?.atl, 1)}</Text>
+          <Text style={[styles.summaryValue, { color: colors.purple }]}>
+            {formatNullable(latest?.atl, 1)}
+          </Text>
         </View>
         <View style={styles.summaryCard}>
           <Text style={styles.summaryLabel}>Form</Text>
           <Text
             style={[
               styles.summaryValue,
-              { color: latest?.tsb != null ? new FormZone(latest.tsb).color : colors.textSecondary },
+              {
+                color: latest?.tsb != null ? new FormZone(latest.tsb).color : colors.textSecondary,
+              },
             ]}
           >
             {formatNullable(latest?.tsb, 1)}
@@ -261,7 +316,13 @@ function OverviewTab({ days }: { days: number }) {
               return (
                 <View
                   key={day.date}
-                  style={[styles.calendarSquare, { backgroundColor: bgColor, opacity: intensity === 0 ? 0.3 : 0.7 + intensity * 0.075 }]}
+                  style={[
+                    styles.calendarSquare,
+                    {
+                      backgroundColor: bgColor,
+                      opacity: intensity === 0 ? 0.3 : 0.7 + intensity * 0.075,
+                    },
+                  ]}
                 />
               );
             })}
@@ -306,16 +367,35 @@ function EnduranceTab({ days }: { days: number }) {
           {polarizationWeeks.slice(-6).map((week) => {
             const total = week.z1Seconds + week.z2Seconds + week.z3Seconds || 1;
             const hasPolarizationIndex = week.polarizationIndex !== null;
-            const polarizationIndexText = week.polarizationIndex !== null
-              ? `Polarization score ${formatNumber(week.polarizationIndex, 2)}`
-              : missingZonesLabel(week);
+            const polarizationIndexText =
+              week.polarizationIndex !== null
+                ? `Polarization score ${formatNumber(week.polarizationIndex, 2)}`
+                : missingZonesLabel(week);
             return (
               <View key={week.week} style={styles.polarizationRow}>
                 <Text style={styles.polarizationLabel}>{week.week.slice(5)}</Text>
                 <View style={styles.polarizationBar}>
-                  <View style={[styles.polarizationSegment, { flex: week.z1Seconds / total, backgroundColor: statusColors.positive }]} />
-                  <View style={[styles.polarizationSegment, { flex: (week.z2Seconds / total) || 0.01, backgroundColor: statusColors.warning }]} />
-                  <View style={[styles.polarizationSegment, { flex: week.z3Seconds / total, backgroundColor: statusColors.danger }]} />
+                  <View
+                    style={[
+                      styles.polarizationSegment,
+                      { flex: week.z1Seconds / total, backgroundColor: statusColors.positive },
+                    ]}
+                  />
+                  <View
+                    style={[
+                      styles.polarizationSegment,
+                      {
+                        flex: week.z2Seconds / total || 0.01,
+                        backgroundColor: statusColors.warning,
+                      },
+                    ]}
+                  />
+                  <View
+                    style={[
+                      styles.polarizationSegment,
+                      { flex: week.z3Seconds / total, backgroundColor: statusColors.danger },
+                    ]}
+                  />
                 </View>
                 <Text
                   style={[
@@ -352,7 +432,15 @@ function EnduranceTab({ days }: { days: number }) {
           description="This card shows how quickly your weekly training load is increasing or decreasing."
           textStyle={styles.cardTitle}
         />
-        <Text style={[styles.bigValue, { color: currentRampRate != null ? rampRateColor(Math.abs(currentRampRate)) : colors.text }]}>
+        <Text
+          style={[
+            styles.bigValue,
+            {
+              color:
+                currentRampRate != null ? rampRateColor(Math.abs(currentRampRate)) : colors.text,
+            },
+          ]}
+        >
           {currentRampRate != null ? `${formatSigned(currentRampRate)}%` : "--"}
         </Text>
         <Text style={styles.cardSubtext}>Weekly training load change rate</Text>
@@ -363,7 +451,12 @@ function EnduranceTab({ days }: { days: number }) {
         const monotonyData = monotony.data ?? [];
         if (monotonyData.length === 0) return null;
         const latest = monotonyData[monotonyData.length - 1];
-        const monotonyColor = latest && latest.monotony > 2.0 ? statusColors.danger : latest && latest.monotony > 1.5 ? statusColors.warning : statusColors.positive;
+        const monotonyColor =
+          latest && latest.monotony > 2.0
+            ? statusColors.danger
+            : latest && latest.monotony > 1.5
+              ? statusColors.warning
+              : statusColors.positive;
         return (
           <View style={styles.card}>
             <ChartTitleWithTooltip
@@ -400,9 +493,11 @@ function EnduranceTab({ days }: { days: number }) {
         );
       })()}
 
-      {polarizationWeeks.length === 0 && currentRampRate == null && (monotony.data ?? []).length === 0 && (
-        <EmptyText message="No endurance data available for this period." />
-      )}
+      {polarizationWeeks.length === 0 &&
+        currentRampRate == null &&
+        (monotony.data ?? []).length === 0 && (
+          <EmptyText message="No endurance data available for this period." />
+        )}
     </View>
   );
 }
@@ -468,20 +563,19 @@ function CyclingTab({ days }: { days: number }) {
           <View style={styles.summaryRow}>
             <View style={styles.summaryCard}>
               <Text style={styles.summaryLabel}>Fitness</Text>
-              <Text style={[styles.summaryValue, { color: colors.blue }]}>{formatNullable(latestPmc.ctl, 1)}</Text>
+              <Text style={[styles.summaryValue, { color: colors.blue }]}>
+                {formatNullable(latestPmc.ctl, 1)}
+              </Text>
             </View>
             <View style={styles.summaryCard}>
               <Text style={styles.summaryLabel}>Fatigue</Text>
-              <Text style={[styles.summaryValue, { color: colors.purple }]}>{formatNullable(latestPmc.atl, 1)}</Text>
+              <Text style={[styles.summaryValue, { color: colors.purple }]}>
+                {formatNullable(latestPmc.atl, 1)}
+              </Text>
             </View>
             <View style={styles.summaryCard}>
               <Text style={styles.summaryLabel}>Form</Text>
-              <Text
-                style={[
-                  styles.summaryValue,
-                  { color: new FormZone(latestPmc.tsb).color },
-                ]}
-              >
+              <Text style={[styles.summaryValue, { color: new FormZone(latestPmc.tsb).color }]}>
                 {formatNullable(latestPmc.tsb, 1)}
               </Text>
             </View>
@@ -535,7 +629,9 @@ function CyclingTab({ days }: { days: number }) {
             </View>
             <View style={styles.summaryCard}>
               <Text style={styles.summaryLabel}>Anaerobic Reserve</Text>
-              <Text style={[styles.summaryValue, { color: colors.orange }]}>{Math.round(model.wPrime / 1000)} kJ</Text>
+              <Text style={[styles.summaryValue, { color: colors.orange }]}>
+                {Math.round(model.wPrime / 1000)} kJ
+              </Text>
             </View>
           </View>
           <Text style={styles.cardSubtext}>Model fit: {formatNumber(model.r2 * 100, 0)}%</Text>
@@ -577,9 +673,7 @@ function AerobicEfficiencySection({ days, chartWidth }: { days: number; chartWid
       <Text style={[styles.bigValue, { color: colors.teal }]}>
         {latest ? latest.efficiencyFactor.toFixed(2) : "--"}
       </Text>
-      <Text style={styles.cardSubtext}>
-        {latest ? `${latest.name} — ${latest.date}` : ""}
-      </Text>
+      <Text style={styles.cardSubtext}>{latest ? `${latest.name} — ${latest.date}` : ""}</Text>
       {efValues.length > 1 && (
         <View style={styles.sparklineContainer}>
           <Sparkline data={efValues} width={chartWidth} height={40} color={colors.teal} />
@@ -608,18 +702,35 @@ function VerticalAscentSection({ days }: { days: number }) {
         {latest ? `${Math.round(latest.verticalAscentRate)} m/hr` : "--"}
       </Text>
       <Text style={styles.cardSubtext}>
-        {latest ? `${latest.activityName} — ${Math.round(latest.elevationGainMeters)} m gained in ${latest.climbingMinutes} min` : ""}
+        {latest
+          ? `${latest.activityName} — ${Math.round(latest.elevationGainMeters)} m gained in ${latest.climbingMinutes} min`
+          : ""}
       </Text>
       {rows.length > 2 && (
         <View style={{ marginTop: 8, gap: 4 }}>
-          {rows.slice(-5).reverse().map((row, i) => (
-            <View key={`${row.date}-${i}`} style={{ flexDirection: "row", justifyContent: "space-between" }}>
-              <Text style={{ fontSize: 12, color: colors.textSecondary }}>{row.activityName}</Text>
-              <Text style={{ fontSize: 12, color: colors.text, fontWeight: "600", fontVariant: ["tabular-nums"] }}>
-                {Math.round(row.verticalAscentRate)} m/hr
-              </Text>
-            </View>
-          ))}
+          {rows
+            .slice(-5)
+            .reverse()
+            .map((row) => (
+              <View
+                key={row.date}
+                style={{ flexDirection: "row", justifyContent: "space-between" }}
+              >
+                <Text style={{ fontSize: 12, color: colors.textSecondary }}>
+                  {row.activityName}
+                </Text>
+                <Text
+                  style={{
+                    fontSize: 12,
+                    color: colors.text,
+                    fontWeight: "600",
+                    fontVariant: ["tabular-nums"],
+                  }}
+                >
+                  {Math.round(row.verticalAscentRate)} m/hr
+                </Text>
+              </View>
+            ))}
         </View>
       )}
     </View>
@@ -642,22 +753,58 @@ function ActivityVariabilitySection({ days }: { days: number }) {
       <View style={{ gap: 6, marginTop: 4 }}>
         <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
           <Text style={{ fontSize: 11, color: colors.textTertiary, flex: 1 }}>Activity</Text>
-          <Text style={{ fontSize: 11, color: colors.textTertiary, width: 50, textAlign: "right" }}>Norm. Power</Text>
-          <Text style={{ fontSize: 11, color: colors.textTertiary, width: 50, textAlign: "right" }}>Var. Index</Text>
-          <Text style={{ fontSize: 11, color: colors.textTertiary, width: 50, textAlign: "right" }}>Int. Factor</Text>
+          <Text style={{ fontSize: 11, color: colors.textTertiary, width: 50, textAlign: "right" }}>
+            Norm. Power
+          </Text>
+          <Text style={{ fontSize: 11, color: colors.textTertiary, width: 50, textAlign: "right" }}>
+            Var. Index
+          </Text>
+          <Text style={{ fontSize: 11, color: colors.textTertiary, width: 50, textAlign: "right" }}>
+            Int. Factor
+          </Text>
         </View>
-        {rows.map((row, i) => (
-          <View key={`${row.date}-${i}`} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+        {rows.map((row) => (
+          <View
+            key={row.date}
+            style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}
+          >
             <Text style={{ fontSize: 12, color: colors.textSecondary, flex: 1 }} numberOfLines={1}>
               {row.activityName}
             </Text>
-            <Text style={{ fontSize: 12, color: colors.text, fontWeight: "600", fontVariant: ["tabular-nums"], width: 50, textAlign: "right" }}>
+            <Text
+              style={{
+                fontSize: 12,
+                color: colors.text,
+                fontWeight: "600",
+                fontVariant: ["tabular-nums"],
+                width: 50,
+                textAlign: "right",
+              }}
+            >
               {Math.round(row.normalizedPower)}
             </Text>
-            <Text style={{ fontSize: 12, color: colors.text, fontWeight: "600", fontVariant: ["tabular-nums"], width: 50, textAlign: "right" }}>
+            <Text
+              style={{
+                fontSize: 12,
+                color: colors.text,
+                fontWeight: "600",
+                fontVariant: ["tabular-nums"],
+                width: 50,
+                textAlign: "right",
+              }}
+            >
               {row.variabilityIndex.toFixed(2)}
             </Text>
-            <Text style={{ fontSize: 12, color: colors.text, fontWeight: "600", fontVariant: ["tabular-nums"], width: 50, textAlign: "right" }}>
+            <Text
+              style={{
+                fontSize: 12,
+                color: colors.text,
+                fontWeight: "600",
+                fontVariant: ["tabular-nums"],
+                width: 50,
+                textAlign: "right",
+              }}
+            >
               {row.intensityFactor.toFixed(2)}
             </Text>
           </View>
@@ -753,24 +900,34 @@ function RunningTab({ days }: { days: number }) {
       {paceData.length > 0 && (
         <View>
           <Text style={styles.sectionTitle}>Recent Runs</Text>
-          {paceData.slice(-10).reverse().map((run, index) => (
-            <View key={`${run.date}-${index}`} style={styles.card}>
-              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.cardTitle}>{run.activityName}</Text>
-                  <Text style={styles.cardSubtext}>{run.date}</Text>
-                </View>
-                <View style={{ alignItems: "flex-end" }}>
-                  <Text style={[styles.bigValue, { fontSize: 20, color: colors.green }]}>
-                    {formatPace(units.convertPace(run.paceSecondsPerKm))} {units.paceLabel}
-                  </Text>
-                  <Text style={styles.cardSubtext}>
-                    {formatNumber(units.convertDistance(run.distanceKm))} {units.distanceLabel} · {run.durationMinutes} min
-                  </Text>
+          {paceData
+            .slice(-10)
+            .reverse()
+            .map((run) => (
+              <View key={run.date} style={styles.card}>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.cardTitle}>{run.activityName}</Text>
+                    <Text style={styles.cardSubtext}>{run.date}</Text>
+                  </View>
+                  <View style={{ alignItems: "flex-end" }}>
+                    <Text style={[styles.bigValue, { fontSize: 20, color: colors.green }]}>
+                      {formatPace(units.convertPace(run.paceSecondsPerKm))} {units.paceLabel}
+                    </Text>
+                    <Text style={styles.cardSubtext}>
+                      {formatNumber(units.convertDistance(run.distanceKm))} {units.distanceLabel} ·{" "}
+                      {run.durationMinutes} min
+                    </Text>
+                  </View>
                 </View>
               </View>
-            </View>
-          ))}
+            ))}
         </View>
       )}
 
@@ -787,13 +944,22 @@ function RunningTab({ days }: { days: number }) {
                 <View style={{ gap: 8, marginTop: 8 }}>
                   <FormRow label="Cadence" value={`${latest.cadence} spm`} />
                   {latest.strideLengthMeters != null && (
-                    <FormRow label="Stride Length" value={`${formatNumber(latest.strideLengthMeters, 2)} m`} />
+                    <FormRow
+                      label="Stride Length"
+                      value={`${formatNumber(latest.strideLengthMeters, 2)} m`}
+                    />
                   )}
                   {latest.stanceTimeMs != null && (
-                    <FormRow label="Ground Contact" value={`${Math.round(latest.stanceTimeMs)} ms`} />
+                    <FormRow
+                      label="Ground Contact"
+                      value={`${Math.round(latest.stanceTimeMs)} ms`}
+                    />
                   )}
                   {latest.verticalOscillationMm != null && (
-                    <FormRow label="Vertical Oscillation" value={`${formatNumber(latest.verticalOscillationMm)} mm`} />
+                    <FormRow
+                      label="Vertical Oscillation"
+                      value={`${formatNumber(latest.verticalOscillationMm)} mm`}
+                    />
                   )}
                 </View>
               </View>
@@ -832,7 +998,16 @@ function FormRow({ label, value }: { label: string; value: string }) {
   return (
     <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
       <Text style={{ fontSize: 13, color: colors.textSecondary }}>{label}</Text>
-      <Text style={{ fontSize: 13, color: colors.text, fontWeight: "600", fontVariant: ["tabular-nums"] }}>{value}</Text>
+      <Text
+        style={{
+          fontSize: 13,
+          color: colors.text,
+          fontWeight: "600",
+          fontVariant: ["tabular-nums"],
+        }}
+      >
+        {value}
+      </Text>
     </View>
   );
 }
@@ -849,7 +1024,8 @@ function StrengthTab({ days }: { days: number }) {
   const overload = trpc.strength.progressiveOverload.useQuery({ days });
   const muscleGroup = trpc.strength.muscleGroupVolume.useQuery({ days });
 
-  if (volume.isLoading || oneRepMax.isLoading || overload.isLoading || muscleGroup.isLoading) return <LoadingText />;
+  if (volume.isLoading || oneRepMax.isLoading || overload.isLoading || muscleGroup.isLoading)
+    return <LoadingText />;
 
   const volumeData = volume.data ?? [];
   const oneRepMaxData = oneRepMax.data ?? [];
@@ -891,7 +1067,9 @@ function StrengthTab({ days }: { days: number }) {
               <View key={exercise.exerciseName} style={styles.card}>
                 <Text style={styles.cardTitle}>{exercise.exerciseName}</Text>
                 <Text style={styles.bigValue}>
-                  {latestEstimate ? `${Math.round(units.convertWeight(latestEstimate.estimatedMax))} ${units.weightLabel}` : "--"}
+                  {latestEstimate
+                    ? `${Math.round(units.convertWeight(latestEstimate.estimatedMax))} ${units.weightLabel}`
+                    : "--"}
                 </Text>
                 {exercise.history.length > 1 && (
                   <View style={styles.sparklineContainer}>
@@ -914,24 +1092,39 @@ function StrengthTab({ days }: { days: number }) {
         <View>
           <Text style={styles.sectionTitle}>Progressive Overload</Text>
           {overloadData.map((exercise) => (
-              <View key={exercise.exerciseName} style={styles.card}>
-                <View style={styles.overloadRow}>
-                  <View style={styles.overloadInfo}>
-                    <Text style={styles.cardTitle}>{exercise.exerciseName}</Text>
-                    <Text style={styles.cardSubtext}>
-                      Slope: {formatSigned(units.convertWeight(exercise.slopeKgPerWeek))} {units.weightLabel}/week
-                    </Text>
-                  </View>
-                  <View style={styles.overloadChange}>
-                    <Text style={[styles.changeArrow, { color: exercise.isProgressing ? statusColors.positive : statusColors.danger }]}>
-                      {exercise.isProgressing ? "\u2191" : "\u2193"}
-                    </Text>
-                    <Text style={[styles.changePercent, { color: exercise.isProgressing ? statusColors.positive : statusColors.danger }]}>
-                      {exercise.isProgressing ? "Progressing" : "Declining"}
-                    </Text>
-                  </View>
+            <View key={exercise.exerciseName} style={styles.card}>
+              <View style={styles.overloadRow}>
+                <View style={styles.overloadInfo}>
+                  <Text style={styles.cardTitle}>{exercise.exerciseName}</Text>
+                  <Text style={styles.cardSubtext}>
+                    Slope: {formatSigned(units.convertWeight(exercise.slopeKgPerWeek))}{" "}
+                    {units.weightLabel}/week
+                  </Text>
+                </View>
+                <View style={styles.overloadChange}>
+                  <Text
+                    style={[
+                      styles.changeArrow,
+                      {
+                        color: exercise.isProgressing ? statusColors.positive : statusColors.danger,
+                      },
+                    ]}
+                  >
+                    {exercise.isProgressing ? "\u2191" : "\u2193"}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.changePercent,
+                      {
+                        color: exercise.isProgressing ? statusColors.positive : statusColors.danger,
+                      },
+                    ]}
+                  >
+                    {exercise.isProgressing ? "Progressing" : "Declining"}
+                  </Text>
                 </View>
               </View>
+            </View>
           ))}
         </View>
       )}
@@ -963,11 +1156,25 @@ function StrengthTab({ days }: { days: number }) {
                 <View key={mg.name} style={{ gap: 2 }}>
                   <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
                     <Text style={{ fontSize: 12, color: colors.textSecondary }}>{mg.name}</Text>
-                    <Text style={{ fontSize: 12, color: colors.text, fontWeight: "600", fontVariant: ["tabular-nums"] }}>
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        color: colors.text,
+                        fontWeight: "600",
+                        fontVariant: ["tabular-nums"],
+                      }}
+                    >
                       {mg.totalSets} sets
                     </Text>
                   </View>
-                  <View style={{ height: 6, borderRadius: 3, backgroundColor: colors.surfaceSecondary, overflow: "hidden" }}>
+                  <View
+                    style={{
+                      height: 6,
+                      borderRadius: 3,
+                      backgroundColor: colors.surfaceSecondary,
+                      overflow: "hidden",
+                    }}
+                  >
                     <View
                       style={{
                         height: "100%",
@@ -984,9 +1191,12 @@ function StrengthTab({ days }: { days: number }) {
         );
       })()}
 
-      {volumeData.length === 0 && oneRepMaxData.length === 0 && overloadData.length === 0 && (muscleGroup.data ?? []).length === 0 && (
-        <EmptyText message="No strength data available for this period." />
-      )}
+      {volumeData.length === 0 &&
+        oneRepMaxData.length === 0 &&
+        overloadData.length === 0 &&
+        (muscleGroup.data ?? []).length === 0 && (
+          <EmptyText message="No strength data available for this period." />
+        )}
     </View>
   );
 }
@@ -1019,20 +1229,24 @@ function HikingTab({ days }: { days: number }) {
             <Text style={[styles.tableHeaderCell, { flex: 1 }]}>GAP</Text>
             <Text style={[styles.tableHeaderCell, { flex: 1 }]}>Gain</Text>
           </View>
-          {gapData.slice(0, 20).map((hike, index) => (
-            <View key={`${hike.date}-${index}`} style={styles.tableRow}>
+          {gapData.slice(0, 20).map((hike) => (
+            <View key={hike.date} style={styles.tableRow}>
               <View style={{ flex: 2 }}>
-                <Text style={styles.tableCellPrimary} numberOfLines={1}>{hike.activityName || hike.date}</Text>
+                <Text style={styles.tableCellPrimary} numberOfLines={1}>
+                  {hike.activityName || hike.date}
+                </Text>
                 <Text style={styles.tableCellSecondary}>{hike.date}</Text>
               </View>
               <Text style={[styles.tableCell, { flex: 1 }]}>
                 {formatNumber(units.convertDistance(hike.distanceKm))} {units.distanceLabel}
               </Text>
               <Text style={[styles.tableCell, { flex: 1 }]}>
-                {formatNumber(units.convertPace(hike.gradeAdjustedPaceMinPerKm * 60) / 60)} min{units.paceLabel}
+                {formatNumber(units.convertPace(hike.gradeAdjustedPaceMinPerKm * 60) / 60)} min
+                {units.paceLabel}
               </Text>
               <Text style={[styles.tableCell, { flex: 1 }]}>
-                {Math.round(units.convertElevation(hike.elevationGainMeters))} {units.elevationLabel}
+                {Math.round(units.convertElevation(hike.elevationGainMeters))}{" "}
+                {units.elevationLabel}
               </Text>
             </View>
           ))}
@@ -1099,8 +1313,15 @@ function RecoveryTab({ days }: { days: number }) {
             <Text style={[styles.bigValue, { color: scoreColor(latestReadiness.readinessScore) }]}>
               {Math.round(latestReadiness.readinessScore)}
             </Text>
-            <View style={[styles.scoreBadge, { backgroundColor: scoreColor(latestReadiness.readinessScore) }]}>
-              <Text style={styles.scoreBadgeText}>{scoreLabel(latestReadiness.readinessScore)}</Text>
+            <View
+              style={[
+                styles.scoreBadge,
+                { backgroundColor: scoreColor(latestReadiness.readinessScore) },
+              ]}
+            >
+              <Text style={styles.scoreBadgeText}>
+                {scoreLabel(latestReadiness.readinessScore)}
+              </Text>
             </View>
           </View>
 
@@ -1135,24 +1356,24 @@ function RecoveryTab({ days }: { days: number }) {
       )}
 
       {/* Workload Ratio */}
-      {latestWorkload && latestWorkload.workloadRatio != null && (() => {
-        const ratio = new WorkloadRatio(latestWorkload.workloadRatio);
-        return (
-          <View style={styles.card}>
-            <ChartTitleWithTooltip
-              title="Acute:Chronic Workload Ratio"
-              description="This ratio compares short-term load against longer-term load to highlight undertraining or overload risk."
-              textStyle={styles.cardTitle}
-            />
-            <Text style={[styles.bigValue, { color: ratio.color }]}>
-              {formatNumber(latestWorkload.workloadRatio, 2)}
-            </Text>
-            <Text style={[styles.cardSubtext, { color: ratio.color }]}>
-              {ratio.hint}
-            </Text>
-          </View>
-        );
-      })()}
+      {latestWorkload &&
+        latestWorkload.workloadRatio != null &&
+        (() => {
+          const ratio = new WorkloadRatio(latestWorkload.workloadRatio);
+          return (
+            <View style={styles.card}>
+              <ChartTitleWithTooltip
+                title="Acute:Chronic Workload Ratio"
+                description="This ratio compares short-term load against longer-term load to highlight undertraining or overload risk."
+                textStyle={styles.cardTitle}
+              />
+              <Text style={[styles.bigValue, { color: ratio.color }]}>
+                {formatNumber(latestWorkload.workloadRatio, 2)}
+              </Text>
+              <Text style={[styles.cardSubtext, { color: ratio.color }]}>{ratio.hint}</Text>
+            </View>
+          );
+        })()}
 
       {/* HRV Trends */}
       {hrvData.length > 1 && (
@@ -1165,7 +1386,7 @@ function RecoveryTab({ days }: { days: number }) {
           <Text style={styles.cardSubtext}>Rolling Mean</Text>
           <View style={styles.sparklineContainer}>
             <Sparkline
-              data={hrvData.filter((d) => d.rollingMean != null).map((d) => d.rollingMean as number)}
+              data={hrvData.flatMap((d) => (d.rollingMean != null ? [d.rollingMean] : []))}
               width={chartWidth}
               height={50}
               color={colors.teal}
@@ -1174,7 +1395,9 @@ function RecoveryTab({ days }: { days: number }) {
           <Text style={[styles.cardSubtext, { marginTop: 12 }]}>Coefficient of Variation</Text>
           <View style={styles.sparklineContainer}>
             <Sparkline
-              data={hrvData.filter((d) => d.rollingCoefficientOfVariation != null).map((d) => d.rollingCoefficientOfVariation as number)}
+              data={hrvData.flatMap((d) =>
+                d.rollingCoefficientOfVariation != null ? [d.rollingCoefficientOfVariation] : [],
+              )}
               width={chartWidth}
               height={50}
               color={colors.orange}

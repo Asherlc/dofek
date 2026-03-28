@@ -3,11 +3,23 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // Create mock functions with the specific signatures we need
 const mockReaddirSync = vi.fn<(path: string) => string[]>().mockReturnValue([]);
 const mockReadFileSync = vi.fn<(path: string, encoding: string) => string>().mockReturnValue("");
+const mockExistsSync = vi.fn<(path: string) => boolean>().mockReturnValue(false);
 
 // Mock node:fs
 vi.mock("node:fs", () => ({
   readdirSync: mockReaddirSync,
   readFileSync: mockReadFileSync,
+  existsSync: mockExistsSync,
+}));
+
+const mockLoggerWarn = vi.fn();
+const mockLoggerInfo = vi.fn();
+
+vi.mock("../logger.ts", () => ({
+  logger: {
+    warn: mockLoggerWarn,
+    info: mockLoggerInfo,
+  },
 }));
 
 const mockSqlEnd = vi.fn().mockResolvedValue(undefined);
@@ -80,6 +92,9 @@ describe("runMigrations", () => {
     expect(count).toBe(1);
     expect(mockReadFileSync).toHaveBeenCalledTimes(1);
     expect(mockReadFileSync).toHaveBeenCalledWith("/tmp/migrations/0003_new.sql", "utf-8");
+
+    expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("Applying: 0003_new.sql"));
+    expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("Applied 1 migration"));
   });
 
   it("splits migration files on statement breakpoints", async () => {
@@ -109,6 +124,9 @@ describe("runMigrations", () => {
 
     expect(count).toBe(0);
     expect(mockReadFileSync).not.toHaveBeenCalled();
+    // Should NOT log "Applied" when nothing was applied
+    const infoMessages = mockLoggerInfo.mock.calls.map((call) => String(call[0]));
+    expect(infoMessages.every((message) => !message.includes("Applied"))).toBe(true);
   });
 
   it("only considers .sql files", async () => {
@@ -163,5 +181,129 @@ describe("runMigrations", () => {
     const log = buildCallLog();
     expect(log).toContain("lock");
     expect(log).toContain("unlock");
+  });
+
+  it("warns on duplicate migration prefixes instead of throwing", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+
+    mockReaddirSync.mockReturnValue(["0049_add_timezone.sql", "0049_source_external_ids.sql"]);
+    mockReadFileSync.mockReturnValue("SELECT 1");
+    mockSql.mockResolvedValue([]);
+
+    // Should not throw — just log a warning
+    await runMigrations("postgres://localhost/test", "/tmp/migrations");
+
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      expect.stringContaining("Duplicate migration prefixes"),
+    );
+    // Verify details include the actual prefix and filenames
+    expect(mockLoggerWarn).toHaveBeenCalledWith(expect.stringContaining("0049"));
+    expect(mockLoggerWarn).toHaveBeenCalledWith(expect.stringContaining("0049_add_timezone.sql"));
+  });
+
+  it("recreates materialized views from canonical definitions", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+
+    // Main dir has no pending migrations
+    mockReaddirSync
+      .mockReturnValueOnce([]) // migrations dir
+      .mockReturnValueOnce(["01_v_activity.sql", "02_activity_summary.sql"]); // views dir
+
+    mockExistsSync.mockReturnValue(true);
+    mockSql.mockResolvedValue([]);
+    // Each view file contains a CREATE MATERIALIZED VIEW statement
+    mockReadFileSync
+      .mockReturnValueOnce("CREATE MATERIALIZED VIEW fitness.v_activity AS SELECT 1")
+      .mockReturnValueOnce("CREATE MATERIALIZED VIEW fitness.activity_summary AS SELECT 1");
+
+    await runMigrations("postgres://localhost/test", "/tmp/migrations");
+
+    const unsafeCalls = mockSqlUnsafe.mock.calls.map((call) => String(call[0]));
+    const dropCalls = unsafeCalls.filter((call) => call.includes("DROP"));
+    const createCalls = unsafeCalls.filter((call) => call.includes("CREATE MATERIALIZED"));
+
+    // Drops only managed views in reverse order (dependents first)
+    expect(dropCalls).toHaveLength(2);
+    expect(dropCalls[0]).toContain("activity_summary");
+    expect(dropCalls[1]).toContain("v_activity");
+
+    // Creates in filename order (01_ before 02_)
+    expect(createCalls).toHaveLength(2);
+
+    // Verify view recreation logging
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      expect.stringContaining("Recreating 2 materialized view(s)"),
+    );
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      expect.stringContaining("Dropping fitness.activity_summary"),
+    );
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      expect.stringContaining("Dropping fitness.v_activity"),
+    );
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      expect.stringContaining("Creating from 01_v_activity.sql"),
+    );
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      expect.stringContaining("Creating from 02_activity_summary.sql"),
+    );
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      expect.stringContaining("Materialized views recreated"),
+    );
+  });
+
+  it("skips drop for view files without a CREATE MATERIALIZED VIEW statement", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+
+    mockReaddirSync
+      .mockReturnValueOnce([]) // migrations dir
+      .mockReturnValueOnce(["01_v_activity.sql", "99_comment_only.sql"]); // views dir
+
+    mockExistsSync.mockReturnValue(true);
+    mockSql.mockResolvedValue([]);
+    mockReadFileSync
+      .mockReturnValueOnce("CREATE MATERIALIZED VIEW fitness.v_activity AS SELECT 1")
+      .mockReturnValueOnce("-- This file has no CREATE MATERIALIZED VIEW");
+
+    await runMigrations("postgres://localhost/test", "/tmp/migrations");
+
+    const unsafeCalls = mockSqlUnsafe.mock.calls.map((call) => String(call[0]));
+    const dropCalls = unsafeCalls.filter((call) => call.includes("DROP"));
+
+    // Only drops v_activity, not the comment-only file
+    expect(dropCalls).toHaveLength(1);
+    expect(dropCalls[0]).toContain("v_activity");
+  });
+});
+
+describe("detectDuplicatePrefixes", () => {
+  it("returns empty for unique prefixes", async () => {
+    const { detectDuplicatePrefixes } = await import("./migrate.ts");
+
+    const result = detectDuplicatePrefixes(["0001_init.sql", "0002_add_col.sql", "0003_new.sql"]);
+
+    expect(result).toEqual([]);
+  });
+
+  it("detects duplicate numeric prefixes", async () => {
+    const { detectDuplicatePrefixes } = await import("./migrate.ts");
+
+    const result = detectDuplicatePrefixes([
+      "0001_init.sql",
+      "0049_add_timezone.sql",
+      "0049_source_external_ids.sql",
+    ]);
+
+    expect(result).toHaveLength(1);
+    const [prefix, group] = result[0] ?? [];
+    expect(prefix).toBe("0049");
+    expect(group).toEqual(["0049_add_timezone.sql", "0049_source_external_ids.sql"]);
+  });
+
+  it("ignores files without numeric prefixes", async () => {
+    const { detectDuplicatePrefixes } = await import("./migrate.ts");
+
+    const result = detectDuplicatePrefixes(["README.md", "meta.json"]);
+
+    expect(result).toEqual([]);
   });
 });
