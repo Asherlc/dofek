@@ -1,12 +1,8 @@
+import { ZONE_BOUNDARIES_HRR } from "@dofek/zones/zones";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { ZONE_BOUNDARIES_HRR } from "@dofek/zones/zones";
-import {
-  dateWindowEnd,
-  dateWindowStart,
-  timestampWindowStart,
-} from "../lib/date-window.ts";
+import { dateWindowEnd, dateWindowStart, timestampWindowStart } from "../lib/date-window.ts";
 import { enduranceTypeFilter } from "../lib/endurance-types.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 

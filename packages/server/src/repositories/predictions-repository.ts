@@ -149,12 +149,9 @@ type ExerciseMinutesRow = z.infer<typeof exerciseMinutesRowSchema>;
 export class PredictionsRepository {
   readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
-  readonly #timezone: string;
-
-  constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
+  constructor(db: Pick<Database, "execute">, userId: string, _timezone: string) {
     this.#db = db;
     this.#userId = userId;
-    this.#timezone = timezone;
   }
 
   /** All available prediction targets (daily + activity-level). */
@@ -458,7 +455,8 @@ export function buildDailyContext(
       typeof exerciseRow.date === "string"
         ? exerciseRow.date.slice(0, 10)
         : new Date(exerciseRow.date).toISOString().slice(0, 10);
-    if (exerciseRow.exercise_minutes != null) exerciseMap.set(dateKey, exerciseRow.exercise_minutes);
+    if (exerciseRow.exercise_minutes != null)
+      exerciseMap.set(dateKey, exerciseRow.exercise_minutes);
   }
 
   const allDates = new Set<string>();

@@ -191,9 +191,7 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
     expect(week?.z2Seconds).toBe(1000);
     expect(week?.z3Seconds).toBe(500);
     // Verify polarization index matches the shared function
-    expect(week?.polarizationIndex).toBe(
-      computePolarizationIndex(5000, 1000, 500),
-    );
+    expect(week?.polarizationIndex).toBe(computePolarizationIndex(5000, 1000, 500));
   });
 
   it("computes polarization index as null when zone fractions are zero", async () => {
@@ -208,9 +206,7 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
     ]);
     const result = await repo.getPolarizationTrend(180);
     // computePolarizationIndex returns null when total is zero
-    expect(result.weeks[0]?.polarizationIndex).toBe(
-      computePolarizationIndex(0, 0, 0),
-    );
+    expect(result.weeks[0]?.polarizationIndex).toBe(computePolarizationIndex(0, 0, 0));
   });
 
   it("returns multiple weeks", async () => {

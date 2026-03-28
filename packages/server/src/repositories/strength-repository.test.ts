@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   EstimatedOneRepMax,
+  linearRegressionSlope,
   MuscleGroupVolume,
   ProgressiveOverload,
   StrengthRepository,
   VolumeWeek,
   WorkoutSummary,
-  linearRegressionSlope,
 } from "./strength-repository.ts";
 
 // ---------------------------------------------------------------------------

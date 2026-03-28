@@ -10,14 +10,16 @@ import {
 // ---------------------------------------------------------------------------
 
 describe("RunningDynamicsActivity", () => {
-  function makeRow(overrides: Partial<RunningDynamicsActivity["toDetail"]> & Record<string, unknown> = {}) {
+  function makeRow(
+    overrides: Partial<RunningDynamicsActivity["toDetail"]> & Record<string, unknown> = {},
+  ) {
     return {
       date: "2024-06-10",
       activityName: "Morning Run",
       avgCadence: 180,
-      avgStrideLengthMeters: 1.2 as number | null,
-      avgStanceTimeMs: 220 as number | null,
-      avgVerticalOscillationMm: 85 as number | null,
+      avgStrideLengthMeters: 1.2 satisfies number | null,
+      avgStanceTimeMs: 220 satisfies number | null,
+      avgVerticalOscillationMm: 85 satisfies number | null,
       avgSpeed: 3.5,
       totalDistance: 10000,
       ...overrides,
@@ -44,7 +46,11 @@ describe("RunningDynamicsActivity", () => {
 
   it("handles null optional fields", () => {
     const activity = new RunningDynamicsActivity(
-      makeRow({ avgStrideLengthMeters: null, avgStanceTimeMs: null, avgVerticalOscillationMm: null }),
+      makeRow({
+        avgStrideLengthMeters: null,
+        avgStanceTimeMs: null,
+        avgVerticalOscillationMm: null,
+      }),
     );
     expect(activity.strideLengthMeters).toBeNull();
     expect(activity.stanceTimeMs).toBeNull();

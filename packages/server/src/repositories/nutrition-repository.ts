@@ -70,12 +70,9 @@ const nutritionDailyDbSchema = z.object({
 export class NutritionRepository {
   readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
-  readonly #timezone: string;
-
-  constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
+  constructor(db: Pick<Database, "execute">, userId: string, _timezone: string) {
     this.#db = db;
     this.#userId = userId;
-    this.#timezone = timezone;
   }
 
   /** Daily nutrition totals after the given start date, ordered ascending. */

@@ -1,15 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  type DailyMetricAccumulator,
-  type HealthKitSample,
-  HealthKitSyncRepository,
-  type SleepSample,
   aggregateDailyMetricSamples,
   categorize,
   computeBoundsFromIsoTimestamps,
   deriveSleepSessionsFromStages,
   extractDate,
+  type HealthKitSample,
+  HealthKitSyncRepository,
   isSleepStageValue,
+  type SleepSample,
 } from "./health-kit-sync-repository.ts";
 
 // ---------------------------------------------------------------------------
@@ -273,9 +272,7 @@ describe("deriveSleepSessionsFromStages", () => {
   });
 
   it("filters out non-sleep non-awake values", () => {
-    const samples = [
-      makeSleepSample({ uuid: "1", value: "inBed" }),
-    ];
+    const samples = [makeSleepSample({ uuid: "1", value: "inBed" })];
     const sessions = deriveSleepSessionsFromStages(samples);
     expect(sessions).toHaveLength(0);
   });
@@ -288,10 +285,7 @@ describe("deriveSleepSessionsFromStages", () => {
 describe("HealthKitSyncRepository", () => {
   function makeRepository() {
     const execute = vi.fn().mockResolvedValue([]);
-    const transaction = vi.fn();
-    const db = { execute, transaction } as unknown as ConstructorParameters<
-      typeof HealthKitSyncRepository
-    >[0];
+    const db = { execute };
     const repository = new HealthKitSyncRepository(db, "user-1");
     return { repository, execute };
   }
@@ -478,7 +472,7 @@ describe("HealthKitSyncRepository", () => {
     });
 
     it("returns 0 when there are no inBed samples and no derivable sessions", async () => {
-      const { repository } = makeRepository();
+      makeRepository();
       const samples: SleepSample[] = [
         {
           uuid: "s1",
@@ -490,9 +484,7 @@ describe("HealthKitSyncRepository", () => {
       ];
       // inBed with no overlapping stages still inserts
       const execute = vi.fn().mockResolvedValue([{ id: "00000000-0000-0000-0000-000000000001" }]);
-      const db = { execute, transaction: vi.fn() } as unknown as ConstructorParameters<
-        typeof HealthKitSyncRepository
-      >[0];
+      const db = { execute };
       const repository2 = new HealthKitSyncRepository(db, "user-1");
       const result = await repository2.processSleepSamples(samples);
       expect(result).toBe(1);
@@ -501,13 +493,13 @@ describe("HealthKitSyncRepository", () => {
 
   describe("linkUnassignedHeartRateToWorkouts", () => {
     it("returns count of linked rows", async () => {
-      const execute = vi.fn().mockResolvedValue([
-        { recorded_at: "2024-01-15T10:30:00Z" },
-        { recorded_at: "2024-01-15T10:31:00Z" },
-      ]);
-      const db = { execute, transaction: vi.fn() } as unknown as ConstructorParameters<
-        typeof HealthKitSyncRepository
-      >[0];
+      const execute = vi
+        .fn()
+        .mockResolvedValue([
+          { recorded_at: "2024-01-15T10:30:00Z" },
+          { recorded_at: "2024-01-15T10:31:00Z" },
+        ]);
+      const db = { execute };
       const repository = new HealthKitSyncRepository(db, "user-1");
       const result = await repository.linkUnassignedHeartRateToWorkouts({
         startAt: "2024-01-15T10:00:00Z",
@@ -557,9 +549,7 @@ describe("HealthKitSyncRepository", () => {
         .fn()
         .mockRejectedValueOnce(new Error("concurrent refresh not possible"))
         .mockResolvedValueOnce([]);
-      const db = { execute, transaction: vi.fn() } as unknown as ConstructorParameters<
-        typeof HealthKitSyncRepository
-      >[0];
+      const db = { execute };
       const repository = new HealthKitSyncRepository(db, "user-1");
       await repository.refreshDailyMetricsView();
       expect(execute).toHaveBeenCalledTimes(2);

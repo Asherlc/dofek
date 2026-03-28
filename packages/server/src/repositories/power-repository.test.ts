@@ -2,128 +2,128 @@ import { describe, expect, it, vi } from "vitest";
 import { PowerRepository } from "./power-repository.ts";
 
 function makeDb(...callResults: Record<string, unknown>[][]) {
-	const execute = vi.fn();
-	for (const rows of callResults) {
-		execute.mockResolvedValueOnce(rows);
-	}
-	return { execute };
+  const execute = vi.fn();
+  for (const rows of callResults) {
+    execute.mockResolvedValueOnce(rows);
+  }
+  return { execute };
 }
 
 describe("PowerRepository", () => {
-	it("can be instantiated", () => {
-		const db = makeDb();
-		const repo = new PowerRepository(db, "user-1", "UTC");
-		expect(repo).toBeInstanceOf(PowerRepository);
-	});
+  it("can be instantiated", () => {
+    const db = makeDb();
+    const repo = new PowerRepository(db, "user-1", "UTC");
+    expect(repo).toBeInstanceOf(PowerRepository);
+  });
 
-	describe("getPowerCurve", () => {
-		it("returns empty points array when no samples", async () => {
-			const db = makeDb([]);
-			const repo = new PowerRepository(db, "user-1", "UTC");
-			const result = await repo.getPowerCurve(90);
+  describe("getPowerCurve", () => {
+    it("returns empty points array when no samples", async () => {
+      const db = makeDb([]);
+      const repo = new PowerRepository(db, "user-1", "UTC");
+      const result = await repo.getPowerCurve(90);
 
-			expect(result.points).toEqual([]);
-			expect(result.model).toBeNull();
-		});
+      expect(result.points).toEqual([]);
+      expect(result.model).toBeNull();
+    });
 
-		it("calls db.execute once", async () => {
-			const db = makeDb([]);
-			const repo = new PowerRepository(db, "user-1", "UTC");
-			await repo.getPowerCurve(90);
+    it("calls db.execute once", async () => {
+      const db = makeDb([]);
+      const repo = new PowerRepository(db, "user-1", "UTC");
+      await repo.getPowerCurve(90);
 
-			expect(db.execute).toHaveBeenCalledTimes(1);
-		});
+      expect(db.execute).toHaveBeenCalledTimes(1);
+    });
 
-		it("computes power curve from samples", async () => {
-			// Build enough samples to cover 5s duration at 1s intervals
-			const samples = Array.from({ length: 10 }, (_, index) => ({
-				activity_id: "act-1",
-				activity_date: "2024-06-15",
-				power: 200 + index,
-				interval_s: 1,
-			}));
-			const db = makeDb(samples);
-			const repo = new PowerRepository(db, "user-1", "UTC");
-			const result = await repo.getPowerCurve(90);
+    it("computes power curve from samples", async () => {
+      // Build enough samples to cover 5s duration at 1s intervals
+      const samples = Array.from({ length: 10 }, (_, index) => ({
+        activity_id: "act-1",
+        activity_date: "2024-06-15",
+        power: 200 + index,
+        interval_s: 1,
+      }));
+      const db = makeDb(samples);
+      const repo = new PowerRepository(db, "user-1", "UTC");
+      const result = await repo.getPowerCurve(90);
 
-			expect(result.points.length).toBeGreaterThan(0);
-			expect(result.points[0]).toMatchObject({
-				durationSeconds: expect.any(Number),
-				label: expect.any(String),
-				bestPower: expect.any(Number),
-				activityDate: "2024-06-15",
-			});
-		});
-	});
+      expect(result.points.length).toBeGreaterThan(0);
+      expect(result.points[0]).toMatchObject({
+        durationSeconds: expect.any(Number),
+        label: expect.any(String),
+        bestPower: expect.any(Number),
+        activityDate: "2024-06-15",
+      });
+    });
+  });
 
-	describe("getEftpTrend", () => {
-		it("returns empty trend when no samples", async () => {
-			const db = makeDb(
-				[], // normalizedPowerSamples query
-				[], // powerCurveSamples query (90-day for CP model)
-			);
-			const repo = new PowerRepository(db, "user-1", "UTC");
-			const result = await repo.getEftpTrend(365);
+  describe("getEftpTrend", () => {
+    it("returns empty trend when no samples", async () => {
+      const db = makeDb(
+        [], // normalizedPowerSamples query
+        [], // powerCurveSamples query (90-day for CP model)
+      );
+      const repo = new PowerRepository(db, "user-1", "UTC");
+      const result = await repo.getEftpTrend(365);
 
-			expect(result.trend).toEqual([]);
-			expect(result.currentEftp).toBeNull();
-			expect(result.model).toBeNull();
-		});
+      expect(result.trend).toEqual([]);
+      expect(result.currentEftp).toBeNull();
+      expect(result.model).toBeNull();
+    });
 
-		it("calls db.execute twice (NP samples + power curve samples)", async () => {
-			const db = makeDb([], []);
-			const repo = new PowerRepository(db, "user-1", "UTC");
-			await repo.getEftpTrend(365);
+    it("calls db.execute twice (NP samples + power curve samples)", async () => {
+      const db = makeDb([], []);
+      const repo = new PowerRepository(db, "user-1", "UTC");
+      await repo.getEftpTrend(365);
 
-			expect(db.execute).toHaveBeenCalledTimes(2);
-		});
+      expect(db.execute).toHaveBeenCalledTimes(2);
+    });
 
-		it("computes eFTP as NP * 0.95", async () => {
-			// Build 300 samples at 1s intervals for a single activity
-			// (>= 240 samples required for NP computation)
-			const normalizedPowerSamples = Array.from({ length: 300 }, (_, index) => ({
-				activity_id: "act-1",
-				activity_date: "2024-06-15",
-				activity_name: "Morning Ride",
-				power: 200,
-				interval_s: 1,
-			}));
+    it("computes eFTP as NP * 0.95", async () => {
+      // Build 300 samples at 1s intervals for a single activity
+      // (>= 240 samples required for NP computation)
+      const normalizedPowerSamples = Array.from({ length: 300 }, (_item, _index) => ({
+        activity_id: "act-1",
+        activity_date: "2024-06-15",
+        activity_name: "Morning Ride",
+        power: 200,
+        interval_s: 1,
+      }));
 
-			const db = makeDb(
-				normalizedPowerSamples, // NP query
-				[], // power curve query (empty = no CP model)
-			);
-			const repo = new PowerRepository(db, "user-1", "UTC");
-			const result = await repo.getEftpTrend(365);
+      const db = makeDb(
+        normalizedPowerSamples, // NP query
+        [], // power curve query (empty = no CP model)
+      );
+      const repo = new PowerRepository(db, "user-1", "UTC");
+      const result = await repo.getEftpTrend(365);
 
-			expect(result.trend).toHaveLength(1);
-			expect(result.trend[0]?.date).toBe("2024-06-15");
-			expect(result.trend[0]?.activityName).toBe("Morning Ride");
-			// Constant 200W power => NP = 200, eFTP = 200 * 0.95 = 190
-			expect(result.trend[0]?.eftp).toBe(190);
-		});
+      expect(result.trend).toHaveLength(1);
+      expect(result.trend[0]?.date).toBe("2024-06-15");
+      expect(result.trend[0]?.activityName).toBe("Morning Ride");
+      // Constant 200W power => NP = 200, eFTP = 200 * 0.95 = 190
+      expect(result.trend[0]?.eftp).toBe(190);
+    });
 
-		it("falls back to max NP * 0.95 when CP model fails", async () => {
-			// Use a recent date so the fallback filter includes it
-			const today = new Date().toISOString().slice(0, 10);
-			const normalizedPowerSamples = Array.from({ length: 300 }, () => ({
-				activity_id: "act-1",
-				activity_date: today,
-				activity_name: "Ride",
-				power: 250,
-				interval_s: 1,
-			}));
+    it("falls back to max NP * 0.95 when CP model fails", async () => {
+      // Use a recent date so the fallback filter includes it
+      const today = new Date().toISOString().slice(0, 10);
+      const normalizedPowerSamples = Array.from({ length: 300 }, () => ({
+        activity_id: "act-1",
+        activity_date: today,
+        activity_name: "Ride",
+        power: 250,
+        interval_s: 1,
+      }));
 
-			const db = makeDb(
-				normalizedPowerSamples, // NP query
-				[], // power curve query (empty = no CP model => fallback)
-			);
-			const repo = new PowerRepository(db, "user-1", "UTC");
-			const result = await repo.getEftpTrend(365);
+      const db = makeDb(
+        normalizedPowerSamples, // NP query
+        [], // power curve query (empty = no CP model => fallback)
+      );
+      const repo = new PowerRepository(db, "user-1", "UTC");
+      const result = await repo.getEftpTrend(365);
 
-			expect(result.model).toBeNull();
-			// Constant 250W => NP = 250, eFTP = 250 * 0.95 = 237.5 => 238
-			expect(result.currentEftp).toBe(238);
-		});
-	});
+      expect(result.model).toBeNull();
+      // Constant 250W => NP = 250, eFTP = 250 * 0.95 = 237.5 => 238
+      expect(result.currentEftp).toBe(238);
+    });
+  });
 });

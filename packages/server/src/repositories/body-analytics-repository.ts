@@ -151,9 +151,7 @@ export class BodyAnalyticsRepository {
 
   // ── Private computation methods ─────────────────────────────────
 
-  #computeSmoothedWeight(
-    data: { date: string; rawWeight: number }[],
-  ): SmoothedWeightRow[] {
+  #computeSmoothedWeight(data: { date: string; rawWeight: number }[]): SmoothedWeightRow[] {
     if (data.length === 0) return [];
 
     const alpha = 0.1;
@@ -207,7 +205,13 @@ export class BodyAnalyticsRepository {
       const leanMass = leanMasses[index];
       const smoothedFat = smoothedFatValues[index];
       const smoothedLean = smoothedLeanValues[index];
-      if (!day || fatMass === undefined || leanMass === undefined || smoothedFat === undefined || smoothedLean === undefined)
+      if (
+        !day ||
+        fatMass === undefined ||
+        leanMass === undefined ||
+        smoothedFat === undefined ||
+        smoothedLean === undefined
+      )
         continue;
 
       result.push({
@@ -238,8 +242,7 @@ export class BodyAnalyticsRepository {
     const oneWeekAgo = smoothed.length >= 8 ? (smoothed[smoothed.length - 8] ?? null) : null;
     const fourWeeksAgo = smoothed.length >= 29 ? (smoothed[smoothed.length - 29] ?? null) : null;
 
-    const currentWeekly =
-      oneWeekAgo != null ? Math.round((latest - oneWeekAgo) * 100) / 100 : null;
+    const currentWeekly = oneWeekAgo != null ? Math.round((latest - oneWeekAgo) * 100) / 100 : null;
     const current4Week =
       fourWeeksAgo != null ? Math.round((latest - fourWeeksAgo) * 100) / 100 : null;
 

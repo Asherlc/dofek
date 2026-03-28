@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { TrendRow, TrendsRepository, roundOrNull } from "./trends-repository.ts";
+import { roundOrNull, TrendRow, TrendsRepository } from "./trends-repository.ts";
 
 // ---------------------------------------------------------------------------
 // roundOrNull
@@ -36,7 +36,13 @@ describe("roundOrNull", () => {
 // ---------------------------------------------------------------------------
 
 describe("TrendRow", () => {
-  function makeRow(overrides: Partial<Parameters<typeof TrendRow.prototype.toDetail> extends never[] ? ReturnType<typeof makeTrendData> : ReturnType<typeof makeTrendData>> = {}) {
+  function makeRow(
+    overrides: Partial<
+      Parameters<typeof TrendRow.prototype.toDetail> extends never[]
+        ? ReturnType<typeof makeTrendData>
+        : ReturnType<typeof makeTrendData>
+    > = {},
+  ) {
     return makeTrendData(overrides);
   }
 
@@ -124,12 +130,14 @@ describe("TrendRow", () => {
     });
 
     it("converts totalSamples/hrSamples/powerSamples/activityCount to numbers", () => {
-      const detail = new TrendRow(makeRow({
-        totalSamples: 3600,
-        hrSamples: 3500,
-        powerSamples: 3400,
-        activityCount: 2,
-      })).toDetail();
+      const detail = new TrendRow(
+        makeRow({
+          totalSamples: 3600,
+          hrSamples: 3500,
+          powerSamples: 3400,
+          activityCount: 2,
+        }),
+      ).toDetail();
       expect(detail.totalSamples).toBe(3600);
       expect(detail.hrSamples).toBe(3500);
       expect(detail.powerSamples).toBe(3400);
@@ -137,14 +145,16 @@ describe("TrendRow", () => {
     });
 
     it("handles all null optional fields", () => {
-      const detail = new TrendRow(makeRow({
-        avgHr: null,
-        maxHr: null,
-        avgPower: null,
-        maxPower: null,
-        avgCadence: null,
-        avgSpeed: null,
-      })).toDetail();
+      const detail = new TrendRow(
+        makeRow({
+          avgHr: null,
+          maxHr: null,
+          avgPower: null,
+          maxPower: null,
+          avgCadence: null,
+          avgSpeed: null,
+        }),
+      ).toDetail();
       expect(detail.avgHr).toBeNull();
       expect(detail.maxHr).toBeNull();
       expect(detail.avgPower).toBeNull();

@@ -390,8 +390,7 @@ export class HealthspanRepository {
       },
       {
         name: "Resting Heart Rate",
-        value:
-          row.avg_resting_hr != null ? Math.round(Number(row.avg_resting_hr) * 10) / 10 : null,
+        value: row.avg_resting_hr != null ? Math.round(Number(row.avg_resting_hr) * 10) / 10 : null,
         unit: "bpm",
         score: scoreRestingHr(row.avg_resting_hr != null ? Number(row.avg_resting_hr) : null),
         status: "good",

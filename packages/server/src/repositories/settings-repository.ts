@@ -41,10 +41,10 @@ const USER_SCOPED_DELETE_TABLES = [
 
 /** Data access for user settings and account management. */
 export class SettingsRepository {
-  readonly #db: Database;
+  readonly #db: Pick<Database, "execute" | "transaction">;
   readonly #userId: string;
 
-  constructor(db: Database, userId: string) {
+  constructor(db: Pick<Database, "execute" | "transaction">, userId: string) {
     this.#db = db;
     this.#userId = userId;
   }
@@ -122,7 +122,9 @@ export class SettingsRepository {
       await transaction.execute(sql`DELETE FROM fitness.provider WHERE user_id = ${this.#userId}`);
 
       for (const table of USER_SCOPED_DELETE_TABLES) {
-        await transaction.execute(sql`DELETE FROM ${sql.raw(table)} WHERE user_id = ${this.#userId}`);
+        await transaction.execute(
+          sql`DELETE FROM ${sql.raw(table)} WHERE user_id = ${this.#userId}`,
+        );
       }
     });
   }

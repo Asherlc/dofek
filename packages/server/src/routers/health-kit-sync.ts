@@ -1,16 +1,16 @@
 import { healthKitPushTotal, healthKitRecordsTotal } from "dofek/sync-metrics";
 import { z } from "zod";
+import { logger } from "../logger.ts";
 import {
-  type HealthKitSample,
-  HealthKitSyncRepository,
-  type SleepSample,
   aggregateDailyMetricSamples,
   categorize,
   computeBoundsFromIsoTimestamps,
   deriveSleepSessionsFromStages,
+  type HealthKitSample,
+  HealthKitSyncRepository,
   isSleepStageValue,
+  type SleepSample,
 } from "../repositories/health-kit-sync-repository.ts";
-import { logger } from "../logger.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 
 // ── Zod input schemas (tRPC input validation) ──

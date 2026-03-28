@@ -92,12 +92,9 @@ const bodyMeasurementDbSchema = z.object({
 export class BodyRepository {
   readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
-  readonly #timezone: string;
-
-  constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
+  constructor(db: Pick<Database, "execute">, userId: string, _timezone: string) {
     this.#db = db;
     this.#userId = userId;
-    this.#timezone = timezone;
   }
 
   /** All body measurements within the given day window, newest first. */

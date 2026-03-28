@@ -183,8 +183,9 @@ export class SportSettingsRepository {
       `,
     );
 
-    // biome-ignore lint/style/noNonNullAssertion: RETURNING * always returns one row on INSERT/UPDATE
-    return toDomain(rows[0]!);
+    const row = rows[0];
+    if (!row) throw new Error("INSERT/UPDATE RETURNING returned no rows");
+    return toDomain(row);
   }
 
   /** Delete a setting by ID (scoped to the user). */

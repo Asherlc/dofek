@@ -4,9 +4,9 @@ import {
   computeStressTrend,
   type WeeklyStressRow,
 } from "@dofek/recovery/stress";
+import type { Database } from "dofek/db";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
-import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { dateWindowStart, timestampWindowStart } from "../lib/date-window.ts";
@@ -66,8 +66,7 @@ function computeHrvDeviation(row: RawRow): number | null {
     return null;
   }
   return (
-    Math.round(((Number(row.hrv) - Number(row.hrv_mean_60d)) / Number(row.hrv_sd_60d)) * 100) /
-    100
+    Math.round(((Number(row.hrv) - Number(row.hrv_mean_60d)) / Number(row.hrv_sd_60d)) * 100) / 100
   );
 }
 
@@ -154,7 +153,7 @@ export class StressRepository {
 
     // loadPersonalizedParams requires the minimal Database interface from src/db/typed-sql.ts.
     // The Drizzle Database's execute method is structurally compatible, so this cast is safe.
-    const storedParams = await loadPersonalizedParams(this.#db as Database, this.#userId);
+    const storedParams = await loadPersonalizedParams(this.#db, this.#userId);
     const effective = getEffectiveParams(storedParams);
 
     const daily: DailyStressRow[] = rows.map((row) => {

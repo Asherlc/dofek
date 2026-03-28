@@ -2,10 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AdaptiveTdeeEstimate,
   CaloricBalanceDay,
+  estimateTdee,
   MacroRatioDay,
   MicronutrientAdequacy,
   NutritionAnalyticsRepository,
-  estimateTdee,
   smoothWeightData,
 } from "./nutrition-analytics-repository.ts";
 
@@ -197,9 +197,7 @@ describe("MacroRatioDay", () => {
 
 describe("smoothWeightData", () => {
   it("returns first weight as initial smoothed value", () => {
-    const result = smoothWeightData([
-      { date: "2024-01-01", caloriesIn: 2000, weightKg: 80 },
-    ]);
+    const result = smoothWeightData([{ date: "2024-01-01", caloriesIn: 2000, weightKg: 80 }]);
     expect(result).toHaveLength(1);
     expect(result[0]?.smoothedWeight).toBe(80);
   });
@@ -223,9 +221,7 @@ describe("smoothWeightData", () => {
   });
 
   it("returns null smoothed weight when no weight data exists", () => {
-    const result = smoothWeightData([
-      { date: "2024-01-01", caloriesIn: 2000, weightKg: null },
-    ]);
+    const result = smoothWeightData([{ date: "2024-01-01", caloriesIn: 2000, weightKg: null }]);
     expect(result[0]?.smoothedWeight).toBeNull();
   });
 });
@@ -271,7 +267,8 @@ describe("estimateTdee", () => {
     const result = estimateTdee(smoothedData);
     // Gaining weight => TDEE < intake
     expect(result.estimatedTdee).not.toBeNull();
-    expect(result.estimatedTdee!).toBeLessThan(3000);
+    if (result.estimatedTdee == null) throw new Error("estimatedTdee should not be null");
+    expect(result.estimatedTdee).toBeLessThan(3000);
   });
 
   it("sets confidence to 0 when fewer than 28 days", () => {
@@ -329,9 +326,7 @@ describe("NutritionAnalyticsRepository", () => {
       const { repo } = makeRepository([row]);
       const result = await repo.getMicronutrientAdequacy(30);
       // Should filter out nutrients with 0 days tracked
-      const vitaminC = result.find(
-        (model) => model.nutrient === "Vitamin C",
-      );
+      const vitaminC = result.find((model) => model.nutrient === "Vitamin C");
       expect(vitaminC).toBeDefined();
       expect(vitaminC).toBeInstanceOf(MicronutrientAdequacy);
       expect(vitaminC?.avgIntake).toBe(72);
@@ -396,9 +391,7 @@ describe("NutritionAnalyticsRepository", () => {
     });
 
     it("returns data points with weight", async () => {
-      const { repo } = makeRepository([
-        { date: "2024-01-01", calories_in: 2300, weight_kg: 80.5 },
-      ]);
+      const { repo } = makeRepository([{ date: "2024-01-01", calories_in: 2300, weight_kg: 80.5 }]);
       const result = await repo.getAdaptiveTdeeData(90);
       expect(result).toHaveLength(1);
       expect(result[0]?.caloriesIn).toBe(2300);
@@ -406,9 +399,7 @@ describe("NutritionAnalyticsRepository", () => {
     });
 
     it("handles null weight", async () => {
-      const { repo } = makeRepository([
-        { date: "2024-01-01", calories_in: 2300, weight_kg: null },
-      ]);
+      const { repo } = makeRepository([{ date: "2024-01-01", calories_in: 2300, weight_kg: null }]);
       const result = await repo.getAdaptiveTdeeData(90);
       expect(result[0]?.weightKg).toBeNull();
     });
@@ -416,9 +407,7 @@ describe("NutritionAnalyticsRepository", () => {
 
   describe("getAdaptiveTdee", () => {
     it("returns AdaptiveTdeeEstimate", async () => {
-      const { repo } = makeRepository([
-        { date: "2024-01-01", calories_in: 2000, weight_kg: 80 },
-      ]);
+      const { repo } = makeRepository([{ date: "2024-01-01", calories_in: 2000, weight_kg: 80 }]);
       const result = await repo.getAdaptiveTdee(90);
       expect(result).toBeInstanceOf(AdaptiveTdeeEstimate);
     });
@@ -445,7 +434,9 @@ describe("NutritionAnalyticsRepository", () => {
       const result = await repo.getMacroRatios(30);
       expect(result).toHaveLength(1);
       expect(result[0]).toBeInstanceOf(MacroRatioDay);
-      const detail = result[0]!.toDetail();
+      const firstResult = result[0];
+      if (firstResult == null) throw new Error("result[0] should not be null");
+      const detail = firstResult.toDetail();
       // protein: 150*4=600, carbs: 250*4=1000, fat: 70*9=630, total=2230
       expect(detail.proteinPct).toBeCloseTo(26.9, 1);
       expect(detail.carbsPct).toBeCloseTo(44.8, 1);

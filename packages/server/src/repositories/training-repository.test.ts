@@ -40,7 +40,15 @@ describe("TrainingRepository", () => {
 
     it("returns maxHr and zone rows", async () => {
       const { repo } = makeRepository([
-        { max_hr: 190, week: "2024-01-15", zone1: 100, zone2: 200, zone3: 150, zone4: 50, zone5: 10 },
+        {
+          max_hr: 190,
+          week: "2024-01-15",
+          zone1: 100,
+          zone2: 200,
+          zone3: 150,
+          zone4: 50,
+          zone5: 10,
+        },
       ]);
       const result = await repo.getHrZones(90);
       expect(result.maxHr).toBe(190);

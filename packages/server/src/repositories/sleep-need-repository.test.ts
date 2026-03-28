@@ -3,20 +3,22 @@ import { SleepNeedRepository } from "./sleep-need-repository.ts";
 
 vi.mock("@dofek/scoring/sleep-performance", () => ({
   computeSleepPerformance: vi.fn((actual: number, needed: number, efficiency: number) => ({
-    score: Math.round((Math.min(actual / needed, 1) * 100) * 0.7 + efficiency * 0.3),
+    score: Math.round(Math.min(actual / needed, 1) * 100 * 0.7 + efficiency * 0.3),
     tier: "Good" as const,
   })),
   computeRecommendedBedtime: vi.fn(() => "22:30"),
 }));
 
-function makeNightRow(overrides: Partial<{
-  date: string;
-  duration_minutes: number;
-  next_day_hrv: number | null;
-  median_hrv: number | null;
-  good_recovery: boolean;
-  yesterday_load: number;
-}> = {}) {
+function makeNightRow(
+  overrides: Partial<{
+    date: string;
+    duration_minutes: number;
+    next_day_hrv: number | null;
+    median_hrv: number | null;
+    good_recovery: boolean;
+    yesterday_load: number;
+  }> = {},
+) {
   return {
     date: "2024-01-15",
     duration_minutes: 450,
@@ -179,9 +181,7 @@ describe("SleepNeedRepository", () => {
     });
 
     it("sets canRecommend true when yesterday has sleep data", async () => {
-      const nights = [
-        makeNightRow({ date: "2024-01-14", duration_minutes: 420 }),
-      ];
+      const nights = [makeNightRow({ date: "2024-01-14", duration_minutes: 420 })];
 
       const db = makeDb([nights]);
       const repo = new SleepNeedRepository(db, "user-1", "UTC");

@@ -1,10 +1,7 @@
 import type { ReadinessComponents } from "@dofek/recovery/readiness";
 import { z } from "zod";
 import { endDateSchema } from "../lib/date-window.ts";
-import {
-  RecoveryRepository,
-  computeWorkloadResult,
-} from "../repositories/recovery-repository.ts";
+import { computeWorkloadResult, RecoveryRepository } from "../repositories/recovery-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export type { ReadinessComponents };

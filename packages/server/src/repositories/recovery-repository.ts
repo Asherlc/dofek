@@ -8,11 +8,7 @@ import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import {
-  dateWindowEnd,
-  dateWindowStart,
-  timestampWindowStart,
-} from "../lib/date-window.ts";
+import { dateWindowEnd, dateWindowStart, timestampWindowStart } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 
 // ---------------------------------------------------------------------------
@@ -104,9 +100,7 @@ export class HrvVariabilityDay {
           ? Math.round(this.#row.rollingCoefficientOfVariation * 100) / 100
           : null,
       rollingMean:
-        this.#row.rollingMean != null
-          ? Math.round(this.#row.rollingMean * 10) / 10
-          : null,
+        this.#row.rollingMean != null ? Math.round(this.#row.rollingMean * 10) / 10 : null,
     };
   }
 }
@@ -148,9 +142,7 @@ export class WorkloadDay {
   }
 
   get workloadRatio(): number | null {
-    return this.#row.workloadRatio != null
-      ? Math.round(this.#row.workloadRatio * 100) / 100
-      : null;
+    return this.#row.workloadRatio != null ? Math.round(this.#row.workloadRatio * 100) / 100 : null;
   }
 
   toDetail() {
@@ -219,10 +211,7 @@ export class SleepNight {
 }
 
 /** Compute sleep debt from the last 14 nights against a target. */
-export function computeSleepDebt(
-  nights: SleepNight[],
-  targetMinutes: number,
-): number {
+export function computeSleepDebt(nights: SleepNight[], targetMinutes: number): number {
   const last14 = nights.slice(-14);
   const debt = last14.reduce((accumulated, night) => {
     return accumulated + (targetMinutes - night.sleepMinutes);
@@ -245,38 +234,24 @@ export interface ReadinessDayRow {
 }
 
 /** Compute component scores and readiness for a single day's metrics. */
-export function computeReadinessComponents(
-  row: ReadinessDayRow,
-): ReadinessComponents {
+export function computeReadinessComponents(row: ReadinessDayRow): ReadinessComponents {
   // HRV score: higher HRV = better (positive z = good)
   let hrvScore = 62;
-  if (
-    row.hrv != null &&
-    row.hrvMean30d != null &&
-    row.hrvSd30d != null &&
-    row.hrvSd30d > 0
-  ) {
+  if (row.hrv != null && row.hrvMean30d != null && row.hrvSd30d != null && row.hrvSd30d > 0) {
     const zHrv = (row.hrv - row.hrvMean30d) / row.hrvSd30d;
     hrvScore = zScoreToRecoveryScore(zHrv);
   }
 
   // Resting HR score: lower HR = better (invert z)
   let restingHrScore = 62;
-  if (
-    row.restingHr != null &&
-    row.rhrMean30d != null &&
-    row.rhrSd30d != null &&
-    row.rhrSd30d > 0
-  ) {
+  if (row.restingHr != null && row.rhrMean30d != null && row.rhrSd30d != null && row.rhrSd30d > 0) {
     const zRhr = (row.restingHr - row.rhrMean30d) / row.rhrSd30d;
     restingHrScore = zScoreToRecoveryScore(-zRhr);
   }
 
   // Sleep efficiency score: direct mapping (0-100 already)
   const sleepScore =
-    row.efficiencyPct != null
-      ? Math.max(0, Math.min(100, Math.round(row.efficiencyPct)))
-      : 62;
+    row.efficiencyPct != null ? Math.max(0, Math.min(100, Math.round(row.efficiencyPct))) : 62;
 
   // Respiratory rate score: lower is better (invert z, like RHR)
   let respiratoryRateScore = 62;
@@ -307,18 +282,12 @@ export interface StrainTargetInput {
 
 /** Compute strain target from readiness and training loads. */
 export function computeStrainTargetResult(input: StrainTargetInput) {
-  const target = computeStrainTarget(
-    input.readinessScore,
-    input.chronicLoad,
-    input.acuteLoad,
-  );
+  const target = computeStrainTarget(input.readinessScore, input.chronicLoad, input.acuteLoad);
   return {
     targetStrain: target.targetStrain,
     currentStrain: Math.round(input.currentStrain * 10) / 10,
     progressPercent:
-      target.targetStrain > 0
-        ? Math.round((input.currentStrain / target.targetStrain) * 100)
-        : 0,
+      target.targetStrain > 0 ? Math.round((input.currentStrain / target.targetStrain) * 100) : 0,
     zone: target.zone,
     explanation: target.explanation,
   };
@@ -405,11 +374,7 @@ export class RecoveryRepository {
   readonly #userId: string;
   readonly #timezone: string;
 
-  constructor(
-    db: Pick<Database, "execute">,
-    userId: string,
-    timezone: string,
-  ) {
+  constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
     this.#db = db;
     this.#userId = userId;
     this.#timezone = timezone;
@@ -451,13 +416,9 @@ export class RecoveryRepository {
           bedtimeHour: Number(row.bedtime_hour),
           waketimeHour: Number(row.waketime_hour),
           rollingBedtimeStddev:
-            row.rolling_bedtime_stddev != null
-              ? Number(row.rolling_bedtime_stddev)
-              : null,
+            row.rolling_bedtime_stddev != null ? Number(row.rolling_bedtime_stddev) : null,
           rollingWaketimeStddev:
-            row.rolling_waketime_stddev != null
-              ? Number(row.rolling_waketime_stddev)
-              : null,
+            row.rolling_waketime_stddev != null ? Number(row.rolling_waketime_stddev) : null,
           windowCount: Number(row.window_count),
         }),
     );
@@ -500,19 +461,14 @@ export class RecoveryRepository {
         new HrvVariabilityDay({
           date: row.date,
           hrv: row.hrv != null ? Number(row.hrv) : null,
-          rollingMean:
-            row.rolling_mean != null ? Number(row.rolling_mean) : null,
-          rollingCoefficientOfVariation:
-            row.rolling_cv != null ? Number(row.rolling_cv) : null,
+          rollingMean: row.rolling_mean != null ? Number(row.rolling_mean) : null,
+          rollingCoefficientOfVariation: row.rolling_cv != null ? Number(row.rolling_cv) : null,
         }),
     );
   }
 
   /** Acute:Chronic Workload Ratio time series. */
-  async getWorkloadRatio(
-    days: number,
-    endDate: string,
-  ): Promise<WorkloadDay[]> {
+  async getWorkloadRatio(days: number, endDate: string): Promise<WorkloadDay[]> {
     const queryDays = days + 28;
     const rows = await executeWithSchema(
       this.#db,
@@ -579,8 +535,7 @@ export class RecoveryRepository {
           dailyLoad: Number(row.daily_load),
           acuteLoad: Number(row.acute_load),
           chronicLoad: Number(row.chronic_load),
-          workloadRatio:
-            row.workload_ratio != null ? Number(row.workload_ratio) : null,
+          workloadRatio: row.workload_ratio != null ? Number(row.workload_ratio) : null,
         }),
     );
   }
@@ -641,9 +596,7 @@ export class RecoveryRepository {
           awakePct: Number(row.awake_pct),
           efficiency: Number(row.efficiency),
           rollingAvgDuration:
-            row.rolling_avg_duration != null
-              ? Number(row.rolling_avg_duration)
-              : null,
+            row.rolling_avg_duration != null ? Number(row.rolling_avg_duration) : null,
         }),
     );
   }
@@ -662,10 +615,7 @@ export class RecoveryRepository {
   }
 
   /** Readiness metrics with baselines and sleep efficiency. */
-  async getReadinessMetrics(
-    days: number,
-    endDate: string,
-  ): Promise<ReadinessDayRow[]> {
+  async getReadinessMetrics(days: number, endDate: string): Promise<ReadinessDayRow[]> {
     const queryDays = days + 30;
     const rows = await executeWithSchema(
       this.#db,
@@ -721,24 +671,19 @@ export class RecoveryRepository {
       date: row.date,
       hrv: row.hrv != null ? Number(row.hrv) : null,
       restingHr: row.resting_hr != null ? Number(row.resting_hr) : null,
-      respiratoryRate:
-        row.respiratory_rate != null ? Number(row.respiratory_rate) : null,
+      respiratoryRate: row.respiratory_rate != null ? Number(row.respiratory_rate) : null,
       hrvMean30d: row.hrv_mean_30d != null ? Number(row.hrv_mean_30d) : null,
       hrvSd30d: row.hrv_sd_30d != null ? Number(row.hrv_sd_30d) : null,
       rhrMean30d: row.rhr_mean_30d != null ? Number(row.rhr_mean_30d) : null,
       rhrSd30d: row.rhr_sd_30d != null ? Number(row.rhr_sd_30d) : null,
       rrMean30d: row.rr_mean_30d != null ? Number(row.rr_mean_30d) : null,
       rrSd30d: row.rr_sd_30d != null ? Number(row.rr_sd_30d) : null,
-      efficiencyPct:
-        row.efficiency_pct != null ? Number(row.efficiency_pct) : null,
+      efficiencyPct: row.efficiency_pct != null ? Number(row.efficiency_pct) : null,
     }));
   }
 
   /** Composite readiness scores over time. */
-  async getReadinessScores(
-    days: number,
-    endDate: string,
-  ) {
+  async getReadinessScores(days: number, endDate: string) {
     const storedParams = await loadPersonalizedParams(this.#db, this.#userId);
     const effective = getEffectiveParams(storedParams);
     const weights = effective.readinessWeights;
@@ -832,14 +777,9 @@ export class RecoveryRepository {
 
     let readinessScore = 50;
     if (readinessMetrics) {
-      const params = getEffectiveParams(
-        await loadPersonalizedParams(this.#db, this.#userId),
-      );
+      const params = getEffectiveParams(await loadPersonalizedParams(this.#db, this.#userId));
       const sleepEff = await this.getLatestSleepEfficiency();
-      const sleepScore =
-        sleepEff != null
-          ? Math.max(0, Math.min(100, Math.round(sleepEff)))
-          : 62;
+      const sleepScore = sleepEff != null ? Math.max(0, Math.min(100, Math.round(sleepEff))) : 62;
       const components: ReadinessComponents = {
         hrvScore:
           readinessMetrics.hrv != null
@@ -867,8 +807,7 @@ export class RecoveryRepository {
 
     for (const row of loads) {
       const daysAgo = Math.floor(
-        (new Date(endDate).getTime() - new Date(row.date).getTime()) /
-          86400000,
+        (new Date(endDate).getTime() - new Date(row.date).getTime()) / 86400000,
       );
       if (daysAgo < acuteWindow) acuteLoad += row.daily_load;
       if (daysAgo < chronicWindow) chronicLoad += row.daily_load;

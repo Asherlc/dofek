@@ -200,7 +200,7 @@ export class CorrelationRepository {
     }));
   }
 
-  async compute(metricX: string, metricY: string, days: number, lag: number, endDate: string) {
+  async compute(metricX: string, metricY: string, days: number, lag: number, _endDate: string) {
     const [metrics, sleep, activities, nutrition, bodyComp] = await Promise.all([
       executeWithSchema(
         this.#db,

@@ -1,8 +1,8 @@
 import { z } from "zod";
 import {
   DISCONNECT_CHILD_TABLES,
-  ProviderDetailRepository,
   dataTypeEnum,
+  ProviderDetailRepository,
   tableInfo,
 } from "../repositories/provider-detail-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
@@ -57,7 +57,12 @@ export const providerDetailRouter = router({
     )
     .query(async ({ ctx, input }) => {
       const repo = new ProviderDetailRepository(ctx.db, ctx.userId);
-      const rows = await repo.getRecords(input.providerId, input.dataType, input.limit, input.offset);
+      const rows = await repo.getRecords(
+        input.providerId,
+        input.dataType,
+        input.limit,
+        input.offset,
+      );
       return { rows };
     }),
 

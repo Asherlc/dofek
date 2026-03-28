@@ -4,7 +4,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { timestampWindowStart } from "../lib/date-window.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
-import { Activity, type ActivityRow, type ProviderLookup } from "../models/activity.ts";
+import type { ActivityRow } from "../models/activity.ts";
 
 // ---------------------------------------------------------------------------
 // Zod schemas for raw DB rows
@@ -135,7 +135,9 @@ export class ActivityRepository {
   }
 
   /** Paginated activity list with summary metrics. */
-  async list(input: ListInput): Promise<{ items: Array<Record<string, unknown>>; totalCount: number }> {
+  async list(
+    input: ListInput,
+  ): Promise<{ items: Array<Record<string, unknown>>; totalCount: number }> {
     const rows = await executeWithSchema(
       this.#db,
       activityListRowSchema,

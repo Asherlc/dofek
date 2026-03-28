@@ -1,10 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  IntervalsRepository,
-  average,
-  maxVal,
-  summarizeSegment,
-} from "./intervals-repository.ts";
+import { average, IntervalsRepository, maxVal, summarizeSegment } from "./intervals-repository.ts";
 
 // ---------------------------------------------------------------------------
 // Utility function tests
@@ -80,8 +75,24 @@ describe("summarizeSegment", () => {
 
   it("computes averages and maxes from segment rows", () => {
     const rows = [
-      { avg_power: 200, avg_hr: 140, avg_speed: 8.0, avg_cadence: 90, max_power: 250, max_hr: 155, max_speed: 9.0 },
-      { avg_power: 220, avg_hr: 150, avg_speed: 8.5, avg_cadence: 92, max_power: 280, max_hr: 160, max_speed: 9.5 },
+      {
+        avg_power: 200,
+        avg_hr: 140,
+        avg_speed: 8.0,
+        avg_cadence: 90,
+        max_power: 250,
+        max_hr: 155,
+        max_speed: 9.0,
+      },
+      {
+        avg_power: 220,
+        avg_hr: 150,
+        avg_speed: 8.5,
+        avg_cadence: 92,
+        max_power: 280,
+        max_hr: 160,
+        max_speed: 9.5,
+      },
     ];
 
     const result = summarizeSegment(rows, first, last);
@@ -99,7 +110,15 @@ describe("summarizeSegment", () => {
 
   it("returns nulls when all metric values are null", () => {
     const rows = [
-      { avg_power: null, avg_hr: null, avg_speed: null, avg_cadence: null, max_power: null, max_hr: null, max_speed: null },
+      {
+        avg_power: null,
+        avg_hr: null,
+        avg_speed: null,
+        avg_cadence: null,
+        max_power: null,
+        max_hr: null,
+        max_speed: null,
+      },
     ];
 
     const result = summarizeSegment(rows, first, last);
@@ -115,7 +134,15 @@ describe("summarizeSegment", () => {
 
   it("rounds maxHeartRate to integer", () => {
     const rows = [
-      { avg_power: null, avg_hr: 140, avg_speed: null, avg_cadence: null, max_power: null, max_hr: 155.7, max_speed: null },
+      {
+        avg_power: null,
+        avg_hr: 140,
+        avg_speed: null,
+        avg_cadence: null,
+        max_power: null,
+        max_hr: 155.7,
+        max_speed: null,
+      },
     ];
 
     const result = summarizeSegment(rows, first, last);
@@ -187,9 +214,36 @@ describe("IntervalsRepository", () => {
 
     it("returns single interval when intensity is stable", async () => {
       const rows = [
-        { minute_start: "2024-01-15T10:00:00Z", avg_power: 200, avg_hr: 140, avg_speed: 8.0, avg_cadence: 90, max_power: 210, max_hr: 145, max_speed: 8.5 },
-        { minute_start: "2024-01-15T10:01:00Z", avg_power: 205, avg_hr: 142, avg_speed: 8.1, avg_cadence: 91, max_power: 215, max_hr: 148, max_speed: 8.6 },
-        { minute_start: "2024-01-15T10:02:00Z", avg_power: 198, avg_hr: 141, avg_speed: 7.9, avg_cadence: 89, max_power: 208, max_hr: 146, max_speed: 8.4 },
+        {
+          minute_start: "2024-01-15T10:00:00Z",
+          avg_power: 200,
+          avg_hr: 140,
+          avg_speed: 8.0,
+          avg_cadence: 90,
+          max_power: 210,
+          max_hr: 145,
+          max_speed: 8.5,
+        },
+        {
+          minute_start: "2024-01-15T10:01:00Z",
+          avg_power: 205,
+          avg_hr: 142,
+          avg_speed: 8.1,
+          avg_cadence: 91,
+          max_power: 215,
+          max_hr: 148,
+          max_speed: 8.6,
+        },
+        {
+          minute_start: "2024-01-15T10:02:00Z",
+          avg_power: 198,
+          avg_hr: 141,
+          avg_speed: 7.9,
+          avg_cadence: 89,
+          max_power: 208,
+          max_hr: 146,
+          max_speed: 8.4,
+        },
       ];
       const db = makeDb(rows);
       const repo = new IntervalsRepository(db, "user-1");
@@ -204,11 +258,47 @@ describe("IntervalsRepository", () => {
 
     it("splits into multiple intervals on large power change", async () => {
       const rows = [
-        { minute_start: "2024-01-15T10:00:00Z", avg_power: 200, avg_hr: 140, avg_speed: 8.0, avg_cadence: 90, max_power: 210, max_hr: 145, max_speed: 8.5 },
-        { minute_start: "2024-01-15T10:01:00Z", avg_power: 205, avg_hr: 142, avg_speed: 8.1, avg_cadence: 91, max_power: 215, max_hr: 148, max_speed: 8.6 },
+        {
+          minute_start: "2024-01-15T10:00:00Z",
+          avg_power: 200,
+          avg_hr: 140,
+          avg_speed: 8.0,
+          avg_cadence: 90,
+          max_power: 210,
+          max_hr: 145,
+          max_speed: 8.5,
+        },
+        {
+          minute_start: "2024-01-15T10:01:00Z",
+          avg_power: 205,
+          avg_hr: 142,
+          avg_speed: 8.1,
+          avg_cadence: 91,
+          max_power: 215,
+          max_hr: 148,
+          max_speed: 8.6,
+        },
         // Big jump: 205 → 300 = 46% increase (> 15% threshold)
-        { minute_start: "2024-01-15T10:02:00Z", avg_power: 300, avg_hr: 165, avg_speed: 9.5, avg_cadence: 95, max_power: 350, max_hr: 175, max_speed: 10.0 },
-        { minute_start: "2024-01-15T10:03:00Z", avg_power: 310, avg_hr: 168, avg_speed: 9.6, avg_cadence: 96, max_power: 360, max_hr: 178, max_speed: 10.2 },
+        {
+          minute_start: "2024-01-15T10:02:00Z",
+          avg_power: 300,
+          avg_hr: 165,
+          avg_speed: 9.5,
+          avg_cadence: 95,
+          max_power: 350,
+          max_hr: 175,
+          max_speed: 10.0,
+        },
+        {
+          minute_start: "2024-01-15T10:03:00Z",
+          avg_power: 310,
+          avg_hr: 168,
+          avg_speed: 9.6,
+          avg_cadence: 96,
+          max_power: 360,
+          max_hr: 178,
+          max_speed: 10.2,
+        },
       ];
       const db = makeDb(rows);
       const repo = new IntervalsRepository(db, "user-1");
@@ -224,10 +314,37 @@ describe("IntervalsRepository", () => {
 
     it("falls back to heart rate when power is null", async () => {
       const rows = [
-        { minute_start: "2024-01-15T10:00:00Z", avg_power: null, avg_hr: 120, avg_speed: 8.0, avg_cadence: null, max_power: null, max_hr: 125, max_speed: 8.5 },
-        { minute_start: "2024-01-15T10:01:00Z", avg_power: null, avg_hr: 122, avg_speed: 8.1, avg_cadence: null, max_power: null, max_hr: 128, max_speed: 8.6 },
+        {
+          minute_start: "2024-01-15T10:00:00Z",
+          avg_power: null,
+          avg_hr: 120,
+          avg_speed: 8.0,
+          avg_cadence: null,
+          max_power: null,
+          max_hr: 125,
+          max_speed: 8.5,
+        },
+        {
+          minute_start: "2024-01-15T10:01:00Z",
+          avg_power: null,
+          avg_hr: 122,
+          avg_speed: 8.1,
+          avg_cadence: null,
+          max_power: null,
+          max_hr: 128,
+          max_speed: 8.6,
+        },
         // Big HR jump: 122 → 160 = 31% (> 15%)
-        { minute_start: "2024-01-15T10:02:00Z", avg_power: null, avg_hr: 160, avg_speed: 9.0, avg_cadence: null, max_power: null, max_hr: 170, max_speed: 9.5 },
+        {
+          minute_start: "2024-01-15T10:02:00Z",
+          avg_power: null,
+          avg_hr: 160,
+          avg_speed: 9.0,
+          avg_cadence: null,
+          max_power: null,
+          max_hr: 170,
+          max_speed: 9.5,
+        },
       ];
       const db = makeDb(rows);
       const repo = new IntervalsRepository(db, "user-1");
@@ -239,7 +356,16 @@ describe("IntervalsRepository", () => {
 
     it("handles single-row dataset as one interval", async () => {
       const rows = [
-        { minute_start: "2024-01-15T10:00:00Z", avg_power: 200, avg_hr: 140, avg_speed: 8.0, avg_cadence: 90, max_power: 210, max_hr: 145, max_speed: 8.5 },
+        {
+          minute_start: "2024-01-15T10:00:00Z",
+          avg_power: 200,
+          avg_hr: 140,
+          avg_speed: 8.0,
+          avg_cadence: 90,
+          max_power: 210,
+          max_hr: 145,
+          max_speed: 8.5,
+        },
       ];
       const db = makeDb(rows);
       const repo = new IntervalsRepository(db, "user-1");

@@ -42,9 +42,7 @@ function SyncStatusPanel() {
           className="rounded-lg border border-border bg-card p-4"
         >
           <div className="flex items-center gap-2">
-            <p className="text-sm font-medium">
-              {deviceLabel(device.deviceType, device.deviceId)}
-            </p>
+            <p className="text-sm font-medium">{deviceLabel(device.deviceType, device.deviceId)}</p>
           </div>
           <p className="text-2xl font-bold">{formatNumber(device.sampleCount)} samples</p>
           <p className="text-xs text-muted-foreground">

@@ -1,5 +1,9 @@
 import type { Database } from "dofek/db";
-import { type EffectiveParams, DEFAULT_PARAMS, getEffectiveParams } from "dofek/personalization/params";
+import {
+  DEFAULT_PARAMS,
+  type EffectiveParams,
+  getEffectiveParams,
+} from "dofek/personalization/params";
 import { refitAllParams } from "dofek/personalization/refit";
 import { loadPersonalizedParams, SETTINGS_KEY } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
@@ -71,8 +75,7 @@ export class PersonalizationRepository {
 
   /** Load current personalization status including learned and effective params. */
   async getStatus(): Promise<PersonalizationStatus> {
-    // loadPersonalizedParams requires full Database type but only uses execute
-    const stored = await loadPersonalizedParams(this.#db as Database, this.#userId);
+    const stored = await loadPersonalizedParams(this.#db, this.#userId);
     const effective = getEffectiveParams(stored);
 
     return {
@@ -98,8 +101,7 @@ export class PersonalizationRepository {
 
   /** Trigger an immediate refit of personalized parameters. */
   async refit(): Promise<RefitResult> {
-    // refitAllParams requires full Database type but only uses execute
-    const params = await refitAllParams(this.#db as Database, this.#userId);
+    const params = await refitAllParams(this.#db, this.#userId);
     const effective = getEffectiveParams(params);
 
     return {

@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  computeReadinessComponents,
+  computeSleepDebt,
+  computeStrainTargetResult,
+  computeWorkloadResult,
   HrvVariabilityDay,
   RecoveryRepository,
   SleepConsistencyDay,
   SleepNight,
   WorkloadDay,
-  computeReadinessComponents,
-  computeSleepDebt,
-  computeStrainTargetResult,
-  computeWorkloadResult,
 } from "./recovery-repository.ts";
 
 // ---------------------------------------------------------------------------
@@ -29,9 +29,7 @@ describe("SleepConsistencyDay", () => {
   }
 
   it("rounds bedtime and waketime hours to 2 decimals", () => {
-    const day = new SleepConsistencyDay(
-      makeRow({ bedtimeHour: 22.5678, waketimeHour: 6.1234 }),
-    );
+    const day = new SleepConsistencyDay(makeRow({ bedtimeHour: 22.5678, waketimeHour: 6.1234 }));
     expect(day.bedtimeHour).toBe(22.57);
     expect(day.waketimeHour).toBe(6.12);
   });
@@ -148,9 +146,7 @@ describe("WorkloadDay", () => {
   });
 
   it("rounds acute and chronic load to 1 decimal", () => {
-    const day = new WorkloadDay(
-      makeRow({ acuteLoad: 800.456, chronicLoad: 700.321 }),
-    );
+    const day = new WorkloadDay(makeRow({ acuteLoad: 800.456, chronicLoad: 700.321 }));
     expect(day.acuteLoad).toBe(800.5);
     expect(day.chronicLoad).toBe(700.3);
   });

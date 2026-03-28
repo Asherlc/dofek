@@ -159,9 +159,7 @@ export class ProviderDetailRepository {
   async deleteProviderData(providerId: string): Promise<void> {
     await this.#db.transaction(async (tx) => {
       for (const table of DISCONNECT_CHILD_TABLES) {
-        await tx.execute(
-          sql`DELETE FROM ${sql.raw(table)} WHERE provider_id = ${providerId}`,
-        );
+        await tx.execute(sql`DELETE FROM ${sql.raw(table)} WHERE provider_id = ${providerId}`);
       }
       await tx.execute(
         sql`DELETE FROM fitness.provider

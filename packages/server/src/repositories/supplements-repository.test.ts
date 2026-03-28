@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  type Supplement,
   SupplementsRepository,
   toApiSupplement,
-  type Supplement,
 } from "./supplements-repository.ts";
 
 /** All nutrient columns set to null, matching the DB view's snake_case shape. */
@@ -131,18 +131,22 @@ describe("SupplementsRepository", () => {
     const deleteReturn = {
       where: vi.fn().mockResolvedValue(undefined),
     };
-    const mockTransaction = vi.fn().mockImplementation(async (callback: Function) => {
-      const transactionContext = {
-        select: vi.fn().mockReturnValue(selectReturn),
-        insert: vi.fn().mockReturnValue(insertReturn),
-        delete: vi.fn().mockReturnValue(deleteReturn),
-        execute: vi.fn().mockResolvedValue([]),
-      };
-      return callback(transactionContext);
-    });
-    const db = { execute, transaction: mockTransaction };
-    // Cast needed: mock only implements the subset of Database used by the repository
-    const repo = new SupplementsRepository(db as unknown as ConstructorParameters<typeof SupplementsRepository>[0], "user-1");
+    const mockTransaction = vi
+      .fn()
+      .mockImplementation(async (callback: (tx: Record<string, unknown>) => Promise<unknown>) => {
+        const transactionContext = {
+          select: vi.fn().mockReturnValue(selectReturn),
+          insert: vi.fn().mockReturnValue(insertReturn),
+          delete: vi.fn().mockReturnValue(deleteReturn),
+          execute: vi.fn().mockResolvedValue([]),
+        };
+        return callback(transactionContext);
+      });
+    const db: Pick<import("dofek/db").Database, "execute" | "transaction"> = {
+      execute,
+      transaction: mockTransaction,
+    };
+    const repo = new SupplementsRepository(db, "user-1");
     return { repo, execute, transaction: mockTransaction };
   }
 

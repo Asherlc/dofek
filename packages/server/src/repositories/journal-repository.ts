@@ -161,7 +161,9 @@ export class JournalRepository {
             answer_numeric = EXCLUDED.answer_numeric
           RETURNING *`,
     );
-    return rows[0] as JournalEntryFullRow;
+    const row = rows[0];
+    if (!row) throw new Error("createEntry: INSERT returned no row");
+    return row;
   }
 
   /** Update a manual journal entry (only own entries via dofek provider). */
@@ -230,6 +232,8 @@ export class JournalRepository {
           VALUES (${input.slug}, ${input.displayName}, ${input.category}, ${input.dataType}, ${input.unit})
           RETURNING slug, display_name, category, data_type, unit, sort_order`,
     );
-    return rows[0] as JournalQuestionRow;
+    const row = rows[0];
+    if (!row) throw new Error("createQuestion: INSERT returned no row");
+    return row;
   }
 }

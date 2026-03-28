@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { endDateSchema } from "../lib/date-window.ts";
 import {
-  AnomalyDetectionRepository,
   type AnomalyCheckResult,
+  AnomalyDetectionRepository,
   type AnomalyRow,
   checkAnomalies,
   sendAnomalyAlertToSlack,

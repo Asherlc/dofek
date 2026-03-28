@@ -34,7 +34,10 @@ function makeActivityRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function makeDb(activityRows: Record<string, unknown>[] = [], npRows: Record<string, unknown>[] = []) {
+function makeDb(
+  activityRows: Record<string, unknown>[] = [],
+  npRows: Record<string, unknown>[] = [],
+) {
   // loadPersonalizedParams is mocked at module level (returns null),
   // so it never calls db.execute. Only executeWithSchema calls remain:
   // 1st call = activities query, 2nd call = NP query.

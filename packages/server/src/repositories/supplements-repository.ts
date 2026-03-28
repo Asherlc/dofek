@@ -74,10 +74,10 @@ export function toApiSupplement(row: Record<string, unknown>): Supplement {
 // ---------------------------------------------------------------------------
 
 export class SupplementsRepository {
-  readonly #db: Database;
+  readonly #db: Pick<Database, "execute" | "transaction">;
   readonly #userId: string;
 
-  constructor(db: Database, userId: string) {
+  constructor(db: Pick<Database, "execute" | "transaction">, userId: string) {
     this.#db = db;
     this.#userId = userId;
   }

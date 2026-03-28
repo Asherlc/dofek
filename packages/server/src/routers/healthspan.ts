@@ -5,16 +5,16 @@ import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export type { HealthspanMetric, HealthspanResult } from "../repositories/healthspan-repository.ts";
 export {
-  scoreToStatus,
-  scoreSleepConsistency,
-  scoreSleepDuration,
   scoreAerobicMinutes,
   scoreHighIntensityMinutes,
-  scoreStrengthFrequency,
-  scoreSteps,
-  scoreVo2Max,
-  scoreRestingHr,
   scoreLeanMassPct,
+  scoreRestingHr,
+  scoreSleepConsistency,
+  scoreSleepDuration,
+  scoreSteps,
+  scoreStrengthFrequency,
+  scoreToStatus,
+  scoreVo2Max,
 } from "../repositories/healthspan-repository.ts";
 
 export const healthspanRouter = router({

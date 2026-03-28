@@ -257,9 +257,7 @@ const KCAL_PER_KG = 7700;
 const TDEE_WINDOW = 28;
 
 /** Apply EWMA smoothing to weight data and prepare daily data array. */
-export function smoothWeightData(
-  data: AdaptiveTdeeDataPoint[],
-): AdaptiveTdeeDailyRowData[] {
+export function smoothWeightData(data: AdaptiveTdeeDataPoint[]): AdaptiveTdeeDailyRowData[] {
   const smoothedData: AdaptiveTdeeDailyRowData[] = [];
   let lastSmoothedWeight: number | null = null;
 
@@ -276,9 +274,7 @@ export function smoothWeightData(
       caloriesIn: day.caloriesIn,
       weightKg: day.weightKg,
       smoothedWeight:
-        lastSmoothedWeight != null
-          ? Math.round(lastSmoothedWeight * 100) / 100
-          : null,
+        lastSmoothedWeight != null ? Math.round(lastSmoothedWeight * 100) / 100 : null,
       estimatedTdee: null,
     });
   }
@@ -287,9 +283,7 @@ export function smoothWeightData(
 }
 
 /** Estimate TDEE using rolling 28-day windows on smoothed data. */
-export function estimateTdee(
-  smoothedData: AdaptiveTdeeDailyRowData[],
-): AdaptiveTdeeResultData {
+export function estimateTdee(smoothedData: AdaptiveTdeeDailyRowData[]): AdaptiveTdeeResultData {
   let latestTdee: number | null = null;
   let dataPointsUsed = 0;
 
@@ -298,18 +292,13 @@ export function estimateTdee(
     const windowEnd = smoothedData[index];
 
     if (!windowStart || !windowEnd) continue;
-    if (windowStart.smoothedWeight == null || windowEnd.smoothedWeight == null)
-      continue;
+    if (windowStart.smoothedWeight == null || windowEnd.smoothedWeight == null) continue;
 
     const weightChange = windowEnd.smoothedWeight - windowStart.smoothedWeight;
     let totalCalories = 0;
     let calorieDays = 0;
 
-    for (
-      let windowIndex = index - TDEE_WINDOW + 1;
-      windowIndex <= index;
-      windowIndex++
-    ) {
+    for (let windowIndex = index - TDEE_WINDOW + 1; windowIndex <= index; windowIndex++) {
       const day = smoothedData[windowIndex];
       if (day && day.caloriesIn > 0) {
         totalCalories += day.caloriesIn;
@@ -331,13 +320,9 @@ export function estimateTdee(
   }
 
   const totalDays = smoothedData.length;
-  const daysWithWeight = smoothedData.filter(
-    (day) => day.weightKg != null,
-  ).length;
+  const daysWithWeight = smoothedData.filter((day) => day.weightKg != null).length;
   const confidence =
-    totalDays >= 28 && daysWithWeight >= 10
-      ? Math.min(daysWithWeight / totalDays, 1)
-      : 0;
+    totalDays >= 28 && daysWithWeight >= 10 ? Math.min(daysWithWeight / totalDays, 1) : 0;
 
   return {
     estimatedTdee: latestTdee,
@@ -357,23 +342,15 @@ export class NutritionAnalyticsRepository {
   readonly #userId: string;
   readonly #timezone: string;
 
-  constructor(
-    db: Pick<Database, "execute">,
-    userId: string,
-    timezone: string,
-  ) {
+  constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
     this.#db = db;
     this.#userId = userId;
     this.#timezone = timezone;
   }
 
   /** Micronutrient adequacy: average daily intake as % of RDA. */
-  async getMicronutrientAdequacy(
-    days: number,
-  ): Promise<MicronutrientAdequacy[]> {
-    const VALID_COLUMNS = new Set(
-      RECOMMENDED_DAILY_ALLOWANCES.map((rda) => rda.column),
-    );
+  async getMicronutrientAdequacy(days: number): Promise<MicronutrientAdequacy[]> {
+    const VALID_COLUMNS = new Set(RECOMMENDED_DAILY_ALLOWANCES.map((rda) => rda.column));
     for (const rda of RECOMMENDED_DAILY_ALLOWANCES) {
       if (!VALID_COLUMNS.has(rda.column) || !/^[a-z0-9_]+$/.test(rda.column)) {
         throw new Error(`Invalid column name in RDA config: ${rda.column}`);
@@ -419,8 +396,7 @@ export class NutritionAnalyticsRepository {
         unit: rda.unit,
         rda: rda.rda,
         avgIntake: Math.round(avgIntake * 10) / 10,
-        percentRda:
-          rda.rda > 0 ? Math.round((avgIntake / rda.rda) * 1000) / 10 : 0,
+        percentRda: rda.rda > 0 ? Math.round((avgIntake / rda.rda) * 1000) / 10 : 0,
         daysTracked,
       });
     }).filter((model) => model.daysTracked > 0);
@@ -484,17 +460,13 @@ export class NutritionAnalyticsRepository {
           totalExpenditure: Math.round(Number(row.total_expenditure)),
           balance: Math.round(Number(row.balance)),
           rollingAvgBalance:
-            row.rolling_avg_balance != null
-              ? Math.round(Number(row.rolling_avg_balance))
-              : null,
+            row.rolling_avg_balance != null ? Math.round(Number(row.rolling_avg_balance)) : null,
         }),
     );
   }
 
   /** Raw daily calorie + weight data for adaptive TDEE estimation. */
-  async getAdaptiveTdeeData(
-    days: number,
-  ): Promise<AdaptiveTdeeDataPoint[]> {
+  async getAdaptiveTdeeData(days: number): Promise<AdaptiveTdeeDataPoint[]> {
     const rows = await executeWithSchema(
       this.#db,
       adaptiveTdeeRowSchema,
@@ -586,8 +558,7 @@ export class NutritionAnalyticsRepository {
       const fatCal = Number(row.fat_g) * 9;
       const totalMacroCal = proteinCal + carbsCal + fatCal;
       const divisor = totalMacroCal > 0 ? totalMacroCal : 1;
-      const weightKg =
-        row.weight_kg != null ? Number(row.weight_kg) : null;
+      const weightKg = row.weight_kg != null ? Number(row.weight_kg) : null;
 
       return new MacroRatioDay({
         date: row.date,

@@ -485,10 +485,10 @@ export function aggregateDailyMetricSamples(
 
 /** Data access for HealthKit sync operations (inserts, upserts, batch writes). */
 export class HealthKitSyncRepository {
-  readonly #db: Database;
+  readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
 
-  constructor(db: Database, userId: string) {
+  constructor(db: Pick<Database, "execute">, userId: string) {
     this.#db = db;
     this.#userId = userId;
   }
@@ -697,9 +697,10 @@ export class HealthKitSyncRepository {
   }
 
   /** Link heart rate metric_stream rows to overlapping workouts */
-  async linkUnassignedHeartRateToWorkouts(
-    bounds?: { startAt?: string; endAt?: string },
-  ): Promise<number> {
+  async linkUnassignedHeartRateToWorkouts(bounds?: {
+    startAt?: string;
+    endAt?: string;
+  }): Promise<number> {
     const filters = [
       sql`ms.user_id = ${this.#userId}`,
       sql`ms.provider_id = ${PROVIDER_ID}`,

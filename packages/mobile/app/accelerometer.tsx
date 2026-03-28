@@ -22,7 +22,6 @@ import {
   getBluetoothState,
   getBufferedSampleCount,
   getConnectionState,
-  isBluetoothAvailable,
 } from "../modules/whoop-ble";
 import { colors } from "../theme";
 import { rootStackScreenOptions } from "./_layout";

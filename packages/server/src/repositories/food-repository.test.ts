@@ -1,10 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  DailyTotals,
-  FoodEntry,
-  FoodRepository,
-  FoodSearchResult,
-} from "./food-repository.ts";
+import { DailyTotals, FoodEntry, FoodRepository, FoodSearchResult } from "./food-repository.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -187,7 +182,7 @@ describe("FoodSearchResult", () => {
 describe("FoodRepository", () => {
   function makeRepository(rows: Record<string, unknown>[] = []) {
     const execute = vi.fn().mockResolvedValue(rows);
-    const db = { execute } as unknown as Parameters<typeof FoodRepository extends new (...args: infer P) => unknown ? (...args: P) => void : never>[0];
+    const db = { execute };
     const repo = new FoodRepository(db, "user-1", "UTC");
     return { repo, execute };
   }
@@ -283,7 +278,7 @@ describe("FoodRepository", () => {
         .mockResolvedValueOnce([]) // ensureDofekProvider
         .mockResolvedValueOnce([{ id: "entry-1" }]) // insert CTE
         .mockResolvedValueOnce([foodRow]); // select from view
-      const db = { execute } as unknown as Parameters<typeof FoodRepository extends new (...args: infer P) => unknown ? (...args: P) => void : never>[0];
+      const db = { execute };
       const repo = new FoodRepository(db, "user-1", "UTC");
 
       const result = await repo.create({
@@ -306,7 +301,7 @@ describe("FoodRepository", () => {
         .mockResolvedValueOnce([{ id: "entry-1" }]) // insert CTE
         .mockResolvedValueOnce([foodRow]) // select from view
         .mockResolvedValueOnce([]); // junction table insert
-      const db = { execute } as unknown as Parameters<typeof FoodRepository extends new (...args: infer P) => unknown ? (...args: P) => void : never>[0];
+      const db = { execute };
       const repo = new FoodRepository(db, "user-1", "UTC");
 
       const result = await repo.create({
@@ -326,7 +321,7 @@ describe("FoodRepository", () => {
         .mockResolvedValueOnce([]) // ensureDofekProvider
         .mockResolvedValueOnce([{ id: "entry-1" }]) // insert CTE
         .mockResolvedValueOnce([]); // select from view returns nothing
-      const db = { execute } as unknown as Parameters<typeof FoodRepository extends new (...args: infer P) => unknown ? (...args: P) => void : never>[0];
+      const db = { execute };
       const repo = new FoodRepository(db, "user-1", "UTC");
 
       await expect(
@@ -353,7 +348,7 @@ describe("FoodRepository", () => {
         .fn()
         .mockResolvedValueOnce([]) // UPDATE food_entry
         .mockResolvedValueOnce([foodRow]); // SELECT from view
-      const db = { execute } as unknown as Parameters<typeof FoodRepository extends new (...args: infer P) => unknown ? (...args: P) => void : never>[0];
+      const db = { execute };
       const repo = new FoodRepository(db, "user-1", "UTC");
 
       const result = await repo.update({ id: "entry-1", foodName: "Updated Chicken" });
@@ -378,7 +373,7 @@ describe("FoodRepository", () => {
         .mockResolvedValueOnce([]) // ensureDofekProvider
         .mockResolvedValueOnce([{ id: "entry-2" }]) // insert CTE
         .mockResolvedValueOnce([foodRow]); // select from view
-      const db = { execute } as unknown as Parameters<typeof FoodRepository extends new (...args: infer P) => unknown ? (...args: P) => void : never>[0];
+      const db = { execute };
       const repo = new FoodRepository(db, "user-1", "UTC");
 
       const result = await repo.quickAdd({
@@ -398,7 +393,7 @@ describe("FoodRepository", () => {
         .mockResolvedValueOnce([]) // ensureDofekProvider
         .mockResolvedValueOnce([{ id: "entry-2" }]) // insert CTE
         .mockResolvedValueOnce([]); // select from view returns nothing
-      const db = { execute } as unknown as Parameters<typeof FoodRepository extends new (...args: infer P) => unknown ? (...args: P) => void : never>[0];
+      const db = { execute };
       const repo = new FoodRepository(db, "user-1", "UTC");
 
       const result = await repo.quickAdd({

@@ -1,11 +1,7 @@
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import {
-  dateWindowEnd,
-  dateWindowStart,
-  timestampWindowStart,
-} from "../lib/date-window.ts";
+import { dateWindowEnd, dateWindowStart, timestampWindowStart } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 
@@ -201,7 +197,13 @@ export class AnomalyDetectionRepository {
       const zScore = (Number(row.resting_hr) - Number(row.rhr_mean)) / Number(row.rhr_sd);
       if (zScore > WARNING_THRESHOLD) {
         anomalies.push(
-          buildRestingHrAnomaly(date, Number(row.resting_hr), Number(row.rhr_mean), Number(row.rhr_sd), zScore),
+          buildRestingHrAnomaly(
+            date,
+            Number(row.resting_hr),
+            Number(row.rhr_mean),
+            Number(row.rhr_sd),
+            zScore,
+          ),
         );
       }
     }
@@ -253,7 +255,7 @@ export class AnomalyDetectionRepository {
    * Historical anomalies: check each day over a period for deviations.
    * Returns resting HR and HRV anomalies (no sleep) for dashboard markers.
    */
-  async getHistory(days: number, endDate: string): Promise<AnomalyRow[]> {
+  async getHistory(days: number, _endDate: string): Promise<AnomalyRow[]> {
     const queryDays = days + BASELINE_WINDOW_DAYS;
     const rows = await executeWithSchema(
       this.#db,
@@ -301,7 +303,13 @@ export class AnomalyDetectionRepository {
           (Number(row.resting_hr) - Number(row.rhr_mean)) / Number(row.rhr_sd);
         if (restingHrZScore > WARNING_THRESHOLD) {
           anomalies.push(
-            buildRestingHrAnomaly(date, Number(row.resting_hr), Number(row.rhr_mean), Number(row.rhr_sd), restingHrZScore),
+            buildRestingHrAnomaly(
+              date,
+              Number(row.resting_hr),
+              Number(row.rhr_mean),
+              Number(row.rhr_sd),
+              restingHrZScore,
+            ),
           );
         }
       }
@@ -317,7 +325,13 @@ export class AnomalyDetectionRepository {
         const hrvZScore = (Number(row.hrv) - Number(row.hrv_mean)) / Number(row.hrv_sd);
         if (hrvZScore < -WARNING_THRESHOLD) {
           anomalies.push(
-            buildHrvAnomaly(date, Number(row.hrv), Number(row.hrv_mean), Number(row.hrv_sd), hrvZScore),
+            buildHrvAnomaly(
+              date,
+              Number(row.hrv),
+              Number(row.hrv_mean),
+              Number(row.hrv_sd),
+              hrvZScore,
+            ),
           );
         }
       }
@@ -386,7 +400,9 @@ export async function sendAnomalyAlertToSlack(
       type: "header",
       text: {
         type: "plain_text",
-        text: anomalies.some((anomaly) => anomaly.severity === "alert") ? "Health Alert" : "Health Warning",
+        text: anomalies.some((anomaly) => anomaly.severity === "alert")
+          ? "Health Alert"
+          : "Health Warning",
       },
     },
     {

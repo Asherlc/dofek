@@ -1,11 +1,11 @@
-import type { Database } from "dofek/db";
 import {
-	type CriticalPowerModel,
-	DURATION_LABELS,
-	computeNormalizedPower,
-	computePowerCurve,
-	fitCriticalPower,
+  type CriticalPowerModel,
+  computeNormalizedPower,
+  computePowerCurve,
+  DURATION_LABELS,
+  fitCriticalPower,
 } from "@dofek/training/power-analysis";
+import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { enduranceTypeFilter } from "../lib/endurance-types.ts";
@@ -14,18 +14,18 @@ import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 // ── Zod schemas for DB results ───────────────────────────────
 
 const powerCurveSampleSchema = z.object({
-	activity_id: z.string(),
-	activity_date: dateStringSchema,
-	power: z.coerce.number(),
-	interval_s: z.coerce.number(),
+  activity_id: z.string(),
+  activity_date: dateStringSchema,
+  power: z.coerce.number(),
+  interval_s: z.coerce.number(),
 });
 
 const normalizedPowerSampleSchema = z.object({
-	activity_id: z.string(),
-	activity_date: dateStringSchema,
-	activity_name: z.string().nullable(),
-	power: z.coerce.number(),
-	interval_s: z.coerce.number(),
+  activity_id: z.string(),
+  activity_date: dateStringSchema,
+  activity_name: z.string().nullable(),
+  power: z.coerce.number(),
+  interval_s: z.coerce.number(),
 });
 
 // ── Query builders ───────────────────────────────────────────
@@ -36,7 +36,7 @@ const normalizedPowerSampleSchema = z.object({
  * by activity then time, with the per-activity recording interval.
  */
 function powerCurveSamplesQuery(days: number, userId: string, timezone: string) {
-	return sql`
+  return sql`
     WITH activity_info AS (
       SELECT a.id AS activity_id,
              (a.started_at AT TIME ZONE ${timezone})::date::text AS activity_date,
@@ -73,7 +73,7 @@ function powerCurveSamplesQuery(days: number, userId: string, timezone: string) 
  * (~20 min at any sample rate).
  */
 function normalizedPowerSamplesQuery(days: number, userId: string, timezone: string) {
-	return sql`
+  return sql`
     WITH activity_info AS (
       SELECT a.id AS activity_id,
              (a.started_at AT TIME ZONE ${timezone})::date::text AS activity_date,
@@ -108,93 +108,93 @@ function normalizedPowerSamplesQuery(days: number, userId: string, timezone: str
 // ── Repository ───────────────────────────────────────────────
 
 export class PowerRepository {
-	readonly #db: Pick<Database, "execute">;
-	readonly #userId: string;
-	readonly #timezone: string;
+  readonly #db: Pick<Database, "execute">;
+  readonly #userId: string;
+  readonly #timezone: string;
 
-	constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
-		this.#db = db;
-		this.#userId = userId;
-		this.#timezone = timezone;
-	}
+  constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
+    this.#db = db;
+    this.#userId = userId;
+    this.#timezone = timezone;
+  }
 
-	/**
-	 * Power Duration Curve: best average power for standard durations.
-	 * Fetches raw samples then computes via prefix sums in app code.
-	 */
-	async getPowerCurve(days: number): Promise<{
-		points: {
-			durationSeconds: number;
-			label: string;
-			bestPower: number;
-			activityDate: string;
-		}[];
-		model: CriticalPowerModel | null;
-	}> {
-		const samples = await executeWithSchema(
-			this.#db,
-			powerCurveSampleSchema,
-			powerCurveSamplesQuery(days, this.#userId, this.#timezone),
-		);
+  /**
+   * Power Duration Curve: best average power for standard durations.
+   * Fetches raw samples then computes via prefix sums in app code.
+   */
+  async getPowerCurve(days: number): Promise<{
+    points: {
+      durationSeconds: number;
+      label: string;
+      bestPower: number;
+      activityDate: string;
+    }[];
+    model: CriticalPowerModel | null;
+  }> {
+    const samples = await executeWithSchema(
+      this.#db,
+      powerCurveSampleSchema,
+      powerCurveSamplesQuery(days, this.#userId, this.#timezone),
+    );
 
-		const results = computePowerCurve(samples);
+    const results = computePowerCurve(samples);
 
-		return {
-			points: results.map((result) => ({
-				durationSeconds: result.durationSeconds,
-				label: DURATION_LABELS[result.durationSeconds] ?? `${result.durationSeconds}s`,
-				bestPower: result.bestPower,
-				activityDate: result.activityDate,
-			})),
-			model: fitCriticalPower(results),
-		};
-	}
+    return {
+      points: results.map((result) => ({
+        durationSeconds: result.durationSeconds,
+        label: DURATION_LABELS[result.durationSeconds] ?? `${result.durationSeconds}s`,
+        bestPower: result.bestPower,
+        activityDate: result.activityDate,
+      })),
+      model: fitCriticalPower(results),
+    };
+  }
 
-	/**
-	 * eFTP trend: estimated Functional Threshold Power over time.
-	 * Uses per-activity Normalized Power (NP) x 0.95.
-	 */
-	async getEftpTrend(days: number): Promise<{
-		trend: { date: string; eftp: number; activityName: string | null }[];
-		currentEftp: number | null;
-		model: CriticalPowerModel | null;
-	}> {
-		const normalizedPowerSamples = await executeWithSchema(
-			this.#db,
-			normalizedPowerSampleSchema,
-			normalizedPowerSamplesQuery(days, this.#userId, this.#timezone),
-		);
+  /**
+   * eFTP trend: estimated Functional Threshold Power over time.
+   * Uses per-activity Normalized Power (NP) x 0.95.
+   */
+  async getEftpTrend(days: number): Promise<{
+    trend: { date: string; eftp: number; activityName: string | null }[];
+    currentEftp: number | null;
+    model: CriticalPowerModel | null;
+  }> {
+    const normalizedPowerSamples = await executeWithSchema(
+      this.#db,
+      normalizedPowerSampleSchema,
+      normalizedPowerSamplesQuery(days, this.#userId, this.#timezone),
+    );
 
-		const normalizedPowerResults = computeNormalizedPower(normalizedPowerSamples);
+    const normalizedPowerResults = computeNormalizedPower(normalizedPowerSamples);
 
-		const trend = normalizedPowerResults.map((result) => ({
-			date: result.activityDate,
-			eftp: Math.round(result.normalizedPower * 0.95),
-			activityName: result.activityName,
-		}));
+    const trend = normalizedPowerResults.map((result) => ({
+      date: result.activityDate,
+      eftp: Math.round(result.normalizedPower * 0.95),
+      activityName: result.activityName,
+    }));
 
-		// Compute current eFTP via CP model from last 90 days' power curve
-		const powerCurveSamples = await executeWithSchema(
-			this.#db,
-			powerCurveSampleSchema,
-			powerCurveSamplesQuery(90, this.#userId, this.#timezone),
-		);
+    // Compute current eFTP via CP model from last 90 days' power curve
+    const powerCurveSamples = await executeWithSchema(
+      this.#db,
+      powerCurveSampleSchema,
+      powerCurveSamplesQuery(90, this.#userId, this.#timezone),
+    );
 
-		const powerCurveResults = computePowerCurve(powerCurveSamples);
-		const model = fitCriticalPower(powerCurveResults);
+    const powerCurveResults = computePowerCurve(powerCurveSamples);
+    const model = fitCriticalPower(powerCurveResults);
 
-		// Fall back to 95% of best recent 20-min power if CP model can't fit
-		let currentEftp: number | null = model?.cp ?? null;
-		if (currentEftp == null) {
-			const recent = trend.filter((entry) => {
-				const date = new Date(entry.date);
-				const cutoff = new Date();
-				cutoff.setDate(cutoff.getDate() - 90);
-				return date >= cutoff;
-			});
-			currentEftp = recent.length > 0 ? Math.max(...recent.map((entry) => entry.eftp)) : null;
-		}
+    // Fall back to 95% of best recent 20-min power if CP model can't fit
+    let currentEftp: number | null = model?.cp ?? null;
+    if (currentEftp == null) {
+      const recent = trend.filter((entry) => {
+        const date = new Date(entry.date);
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - 90);
+        return date >= cutoff;
+      });
+      currentEftp = recent.length > 0 ? Math.max(...recent.map((entry) => entry.eftp)) : null;
+    }
 
-		return { trend, currentEftp, model };
-	}
+    return { trend, currentEftp, model };
+  }
 }

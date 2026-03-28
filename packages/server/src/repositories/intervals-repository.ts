@@ -241,8 +241,7 @@ export class IntervalsRepository {
       const curr = rows[index];
       if (!prev || !curr) continue;
 
-      const metric =
-        prev.avg_power != null ? "power" : prev.avg_hr != null ? "hr" : null;
+      const metric = prev.avg_power != null ? "power" : prev.avg_hr != null ? "hr" : null;
       if (!metric) continue;
 
       const prevVal = metric === "power" ? Number(prev.avg_power) : Number(prev.avg_hr);

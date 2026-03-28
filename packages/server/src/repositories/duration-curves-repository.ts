@@ -1,5 +1,5 @@
-import type { Database } from "dofek/db";
 import { DURATION_LABELS, linearRegression } from "@dofek/training/power-analysis";
+import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { enduranceTypeFilter } from "../lib/endurance-types.ts";
@@ -8,36 +8,36 @@ import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 // ── Zod schemas for DB results ───────────────────────────────
 
 const hrCurveRowSchema = z.object({
-	duration_seconds: z.coerce.number(),
-	best_hr: z.coerce.number(),
-	activity_date: dateStringSchema,
+  duration_seconds: z.coerce.number(),
+  best_hr: z.coerce.number(),
+  activity_date: dateStringSchema,
 });
 
 const paceCurveRowSchema = z.object({
-	duration_seconds: z.coerce.number(),
-	best_pace: z.coerce.number(),
-	activity_date: dateStringSchema,
+  duration_seconds: z.coerce.number(),
+  best_pace: z.coerce.number(),
+  activity_date: dateStringSchema,
 });
 
 // ── Domain types ─────────────────────────────────────────────
 
 export interface CriticalHeartRateModel {
-	thresholdHr: number;
-	r2: number;
+  thresholdHr: number;
+  r2: number;
 }
 
 export interface HrCurvePoint {
-	durationSeconds: number;
-	label: string;
-	bestHeartRate: number;
-	activityDate: string;
+  durationSeconds: number;
+  label: string;
+  bestHeartRate: number;
+  activityDate: string;
 }
 
 export interface PaceCurvePoint {
-	durationSeconds: number;
-	label: string;
-	bestPaceSecondsPerKm: number;
-	activityDate: string;
+  durationSeconds: number;
+  label: string;
+  bestPaceSecondsPerKm: number;
+  activityDate: string;
 }
 
 // ── Critical Heart Rate fitting ──────────────────────────────
@@ -53,49 +53,49 @@ export interface PaceCurvePoint {
  * Only uses durations >= 120s where the aerobic system dominates.
  */
 export function fitCriticalHeartRate(
-	points: { durationSeconds: number; bestHeartRate: number }[],
+  points: { durationSeconds: number; bestHeartRate: number }[],
 ): CriticalHeartRateModel | null {
-	const valid = points.filter((p) => p.durationSeconds >= 120 && p.bestHeartRate > 0);
-	if (valid.length < 3) return null;
+  const valid = points.filter((p) => p.durationSeconds >= 120 && p.bestHeartRate > 0);
+  if (valid.length < 3) return null;
 
-	const xs = valid.map((p) => p.durationSeconds);
-	const ys = valid.map((p) => p.bestHeartRate * p.durationSeconds);
+  const xs = valid.map((p) => p.durationSeconds);
+  const ys = valid.map((p) => p.bestHeartRate * p.durationSeconds);
 
-	const { slope: thresholdHr, r2 } = linearRegression(xs, ys);
+  const { slope: thresholdHr, r2 } = linearRegression(xs, ys);
 
-	if (thresholdHr <= 0) return null;
+  if (thresholdHr <= 0) return null;
 
-	return {
-		thresholdHr: Math.round(thresholdHr),
-		r2: Math.round(r2 * 1000) / 1000,
-	};
+  return {
+    thresholdHr: Math.round(thresholdHr),
+    r2: Math.round(r2 * 1000) / 1000,
+  };
 }
 
 // ── Repository ───────────────────────────────────────────────
 
 export class DurationCurvesRepository {
-	readonly #db: Pick<Database, "execute">;
-	readonly #userId: string;
-	readonly #timezone: string;
+  readonly #db: Pick<Database, "execute">;
+  readonly #userId: string;
+  readonly #timezone: string;
 
-	constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
-		this.#db = db;
-		this.#userId = userId;
-		this.#timezone = timezone;
-	}
+  constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
+    this.#db = db;
+    this.#userId = userId;
+    this.#timezone = timezone;
+  }
 
-	/**
-	 * Heart Rate Duration Curve: best sustained HR for standard durations.
-	 * Uses cumulative sums over metric_stream heart_rate, same approach as power curves.
-	 */
-	async getHrCurve(days: number): Promise<{
-		points: HrCurvePoint[];
-		model: CriticalHeartRateModel | null;
-	}> {
-		const rows = await executeWithSchema(
-			this.#db,
-			hrCurveRowSchema,
-			sql`
+  /**
+   * Heart Rate Duration Curve: best sustained HR for standard durations.
+   * Uses cumulative sums over metric_stream heart_rate, same approach as power curves.
+   */
+  async getHrCurve(days: number): Promise<{
+    points: HrCurvePoint[];
+    model: CriticalHeartRateModel | null;
+  }> {
+    const rows = await executeWithSchema(
+      this.#db,
+      hrCurveRowSchema,
+      sql`
 			WITH activity_hr AS (
 			  SELECT ms.activity_id, ms.recorded_at, ms.heart_rate,
 			         (a.started_at AT TIME ZONE ${this.#timezone})::date AS activity_date,
@@ -152,31 +152,31 @@ export class DurationCurvesRepository {
 			WHERE best_hr > 0
 			ORDER BY duration_seconds
 		`,
-		);
+    );
 
-		const results = rows.map((r) => ({
-			durationSeconds: Number(r.duration_seconds),
-			label: DURATION_LABELS[Number(r.duration_seconds)] ?? `${r.duration_seconds}s`,
-			bestHeartRate: Number(r.best_hr),
-			activityDate: String(r.activity_date),
-		}));
+    const results = rows.map((r) => ({
+      durationSeconds: Number(r.duration_seconds),
+      label: DURATION_LABELS[Number(r.duration_seconds)] ?? `${r.duration_seconds}s`,
+      bestHeartRate: Number(r.best_hr),
+      activityDate: String(r.activity_date),
+    }));
 
-		return {
-			points: results,
-			model: fitCriticalHeartRate(results),
-		};
-	}
+    return {
+      points: results,
+      model: fitCriticalHeartRate(results),
+    };
+  }
 
-	/**
-	 * Pace Duration Curve: best sustained pace for standard durations.
-	 * Uses speed (m/s) from metric_stream, converts to pace (s/km) for output.
-	 * Higher speed = better pace (lower s/km), so we want MAX average speed.
-	 */
-	async getPaceCurve(days: number): Promise<{ points: PaceCurvePoint[] }> {
-		const rows = await executeWithSchema(
-			this.#db,
-			paceCurveRowSchema,
-			sql`
+  /**
+   * Pace Duration Curve: best sustained pace for standard durations.
+   * Uses speed (m/s) from metric_stream, converts to pace (s/km) for output.
+   * Higher speed = better pace (lower s/km), so we want MAX average speed.
+   */
+  async getPaceCurve(days: number): Promise<{ points: PaceCurvePoint[] }> {
+    const rows = await executeWithSchema(
+      this.#db,
+      paceCurveRowSchema,
+      sql`
 			WITH activity_speed AS (
 			  SELECT ms.activity_id, ms.recorded_at, ms.speed,
 			         (a.started_at AT TIME ZONE ${this.#timezone})::date AS activity_date,
@@ -236,15 +236,15 @@ export class DurationCurvesRepository {
 			WHERE best_speed_ms > 0
 			ORDER BY duration_seconds
 		`,
-		);
+    );
 
-		const results = rows.map((r) => ({
-			durationSeconds: Number(r.duration_seconds),
-			label: DURATION_LABELS[Number(r.duration_seconds)] ?? `${r.duration_seconds}s`,
-			bestPaceSecondsPerKm: Number(r.best_pace),
-			activityDate: String(r.activity_date),
-		}));
+    const results = rows.map((r) => ({
+      durationSeconds: Number(r.duration_seconds),
+      label: DURATION_LABELS[Number(r.duration_seconds)] ?? `${r.duration_seconds}s`,
+      bestPaceSecondsPerKm: Number(r.best_pace),
+      activityDate: String(r.activity_date),
+    }));
 
-		return { points: results };
-	}
+    return { points: results };
+  }
 }

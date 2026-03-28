@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   DISCONNECT_CHILD_TABLES,
-  ProviderDetailRepository,
   dataTypeEnum,
+  ProviderDetailRepository,
   tableInfo,
 } from "./provider-detail-repository.ts";
 
@@ -112,16 +112,13 @@ describe("DISCONNECT_CHILD_TABLES", () => {
 // ---------------------------------------------------------------------------
 
 describe("ProviderDetailRepository", () => {
-  function makeRepository(
-    rows: Record<string, unknown>[] = [],
-    transactionOverride?: unknown,
-  ) {
+  function makeRepository(rows: Record<string, unknown>[] = [], transactionOverride?: unknown) {
     const execute = vi.fn().mockResolvedValue(rows);
     const transaction = transactionOverride ?? vi.fn();
-    const db = { execute, transaction } as unknown as Pick<
-      import("dofek/db").Database,
-      "execute" | "transaction"
-    >;
+    const db: Pick<import("dofek/db").Database, "execute" | "transaction"> = {
+      execute,
+      transaction,
+    };
     const repo = new ProviderDetailRepository(db, "user-1");
     return { repo, execute, transaction, db };
   }

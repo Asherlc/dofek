@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { AiCoachRepository } from "./ai-coach-repository.ts";
 
-function makeDb(metricsRows: Record<string, unknown>[] = [], activityRows: Record<string, unknown>[] = []) {
-  const execute = vi
-    .fn()
-    .mockResolvedValueOnce(metricsRows)
-    .mockResolvedValueOnce(activityRows);
+function makeDb(
+  metricsRows: Record<string, unknown>[] = [],
+  activityRows: Record<string, unknown>[] = [],
+) {
+  const execute = vi.fn().mockResolvedValueOnce(metricsRows).mockResolvedValueOnce(activityRows);
   return { execute };
 }
 

@@ -129,10 +129,7 @@ describe("JournalRepository", () => {
         impact_score: null,
       };
       // First call is ensureDofekProvider, second is the INSERT
-      const execute = vi
-        .fn()
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([entryRow]);
+      const execute = vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([entryRow]);
       const repository = new JournalRepository({ execute }, "user-1");
 
       const result = await repository.createEntry({

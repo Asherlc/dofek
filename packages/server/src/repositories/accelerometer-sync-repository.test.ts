@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { AccelerometerSyncRepository } from "./accelerometer-sync-repository.ts";
 import type { AccelerometerSample } from "./accelerometer-sync-repository.ts";
+import { AccelerometerSyncRepository } from "./accelerometer-sync-repository.ts";
 
 function makeRepository() {
   const execute = vi.fn().mockResolvedValue([]);

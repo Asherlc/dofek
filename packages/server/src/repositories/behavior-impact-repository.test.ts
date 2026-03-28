@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   BehaviorImpact,
-  type BehaviorImpactRow,
   BehaviorImpactRepository,
+  type BehaviorImpactRow,
 } from "./behavior-impact-repository.ts";
 
 describe("BehaviorImpact", () => {
@@ -30,9 +30,7 @@ describe("BehaviorImpact", () => {
   });
 
   it("returns 0 when avgReadinessNo is 0", () => {
-    expect(
-      new BehaviorImpact(makeRow({ avgReadinessNo: 0 })).impactPercent,
-    ).toBe(0);
+    expect(new BehaviorImpact(makeRow({ avgReadinessNo: 0 })).impactPercent).toBe(0);
   });
 
   it("rounds to one decimal place", () => {

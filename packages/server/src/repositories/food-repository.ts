@@ -1,8 +1,5 @@
-import {
-  NUTRIENT_COLUMN_MAP,
-  NUTRIENT_SQL_COLUMNS,
-} from "dofek/db/nutrient-columns";
 import type { Database } from "dofek/db";
+import { NUTRIENT_COLUMN_MAP, NUTRIENT_SQL_COLUMNS } from "dofek/db/nutrient-columns";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema } from "../lib/typed-sql.ts";
@@ -241,14 +238,11 @@ export interface QuickAddInput {
 
 /** Data access for food entries, nutrition data, and daily totals. */
 export class FoodRepository {
-  readonly #db: Database;
+  readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
-  readonly #timezone: string;
-
-  constructor(db: Database, userId: string, timezone: string) {
+  constructor(db: Pick<Database, "execute">, userId: string, _timezone: string) {
     this.#db = db;
     this.#userId = userId;
-    this.#timezone = timezone;
   }
 
   /** List food entries for a date range, optionally filtered by meal. */
@@ -348,7 +342,9 @@ export class FoodRepository {
   }
 
   /** Create a new food entry with nutrition data. Returns the created entry row plus nutrients. */
-  async create(input: CreateFoodEntryInput): Promise<FoodEntryRow & { nutrients: Record<string, number> }> {
+  async create(
+    input: CreateFoodEntryInput,
+  ): Promise<FoodEntryRow & { nutrients: Record<string, number> }> {
     await this.ensureDofekProvider();
 
     const idRows = await executeWithSchema(
@@ -541,7 +537,9 @@ export class FoodRepository {
   }
 
   /** Quick-add a food entry with minimal details. */
-  async quickAdd(input: QuickAddInput): Promise<(FoodEntryRow & { nutrients: Record<string, number> }) | undefined> {
+  async quickAdd(
+    input: QuickAddInput,
+  ): Promise<(FoodEntryRow & { nutrients: Record<string, number> }) | undefined> {
     await this.ensureDofekProvider();
 
     const idRows = await executeWithSchema(

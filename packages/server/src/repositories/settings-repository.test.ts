@@ -8,13 +8,15 @@ import { SettingsRepository } from "./settings-repository.ts";
 function makeRepository(rows: Record<string, unknown>[] = []) {
   const execute = vi.fn().mockResolvedValue(rows);
   const transactionCallback = vi.fn();
-  const transaction = vi.fn().mockImplementation(async (callback: (tx: { execute: typeof execute }) => Promise<void>) => {
-    const transactionExecute = vi.fn().mockResolvedValue([]);
-    transactionCallback.mockImplementation(callback);
-    await callback({ execute: transactionExecute });
-    return transactionExecute;
-  });
-  const db = { execute, transaction } as unknown as Parameters<typeof SettingsRepository extends new (db: infer D, ...rest: unknown[]) => unknown ? D extends infer T ? T : never : never>[0];
+  const transaction = vi
+    .fn()
+    .mockImplementation(async (callback: (tx: { execute: typeof execute }) => Promise<void>) => {
+      const transactionExecute = vi.fn().mockResolvedValue([]);
+      transactionCallback.mockImplementation(callback);
+      await callback({ execute: transactionExecute });
+      return transactionExecute;
+    });
+  const db: Pick<import("dofek/db").Database, "execute" | "transaction"> = { execute, transaction };
   const repo = new SettingsRepository(db, "user-1");
   return { repo, execute, transaction };
 }
@@ -144,11 +146,18 @@ describe("SettingsRepository", () => {
 
     it("executes deletes for provider child tables, provider, and user-scoped tables", async () => {
       const transactionExecute = vi.fn().mockResolvedValue([]);
-      const transaction = vi.fn().mockImplementation(async (callback: (tx: { execute: typeof transactionExecute }) => Promise<void>) => {
-        await callback({ execute: transactionExecute });
-      });
+      const transaction = vi
+        .fn()
+        .mockImplementation(
+          async (callback: (tx: { execute: typeof transactionExecute }) => Promise<void>) => {
+            await callback({ execute: transactionExecute });
+          },
+        );
       const execute = vi.fn().mockResolvedValue([]);
-      const db = { execute, transaction } as unknown as Parameters<typeof SettingsRepository extends new (db: infer D, ...rest: unknown[]) => unknown ? D extends infer T ? T : never : never>[0];
+      const db: Pick<import("dofek/db").Database, "execute" | "transaction"> = {
+        execute,
+        transaction,
+      };
       const repo = new SettingsRepository(db, "user-1");
 
       const childTables = ["fitness.sync_log", "fitness.activity"];

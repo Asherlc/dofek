@@ -1,7 +1,7 @@
 import {
+  computePolarizationIndex,
   POLARIZATION_ZONES,
   ZONE_BOUNDARIES_HRR,
-  computePolarizationIndex,
 } from "@dofek/zones/zones";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
@@ -10,7 +10,6 @@ import { enduranceTypeFilter } from "../lib/endurance-types.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import type {
   AerobicDecouplingActivity,
-  AerobicEfficiencyActivity,
   AerobicEfficiencyResult,
   PolarizationTrendResult,
   PolarizationWeek,
@@ -59,11 +58,7 @@ export class EfficiencyRepository {
   readonly #userId: string;
   readonly #timezone: string;
 
-  constructor(
-    db: Pick<Database, "execute">,
-    userId: string,
-    timezone: string,
-  ) {
+  constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
     this.#db = db;
     this.#userId = userId;
     this.#timezone = timezone;
@@ -133,9 +128,7 @@ export class EfficiencyRepository {
    * Compares power:HR ratio in first half vs second half of each activity.
    * Decoupling < 5% indicates a strong aerobic base.
    */
-  async getAerobicDecoupling(
-    days: number,
-  ): Promise<AerobicDecouplingActivity[]> {
+  async getAerobicDecoupling(days: number): Promise<AerobicDecouplingActivity[]> {
     const rows = await executeWithSchema(
       this.#db,
       decouplingRowSchema,

@@ -85,10 +85,10 @@ export interface SyncLogRow {
 
 /** Data access for sync-related DB queries. */
 export class SyncRepository {
-  readonly #db: Database;
+  readonly #db: Pick<Database, "execute" | "select">;
   readonly #userId: string;
 
-  constructor(db: Database, userId: string) {
+  constructor(db: Pick<Database, "execute" | "select">, userId: string) {
     this.#db = db;
     this.#userId = userId;
   }
@@ -157,7 +157,7 @@ export class SyncRepository {
       .orderBy(desc(syncLog.syncedAt))
       .limit(limit);
 
-    return rows as SyncLogRow[];
+    return rows satisfies SyncLogRow[];
   }
 
   /** Per-provider record counts broken down by table. */

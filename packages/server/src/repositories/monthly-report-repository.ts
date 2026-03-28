@@ -2,7 +2,7 @@ import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
-import type { MonthSummary, MonthlyReportResult } from "../routers/monthly-report.ts";
+import type { MonthlyReportResult, MonthSummary } from "../routers/monthly-report.ts";
 
 // ---------------------------------------------------------------------------
 // Zod schema for raw DB rows

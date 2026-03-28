@@ -16,8 +16,8 @@ function makeRepository(rows: Record<string, unknown>[] = []) {
       }),
     }),
   });
-  const db = { execute, select } as unknown as Parameters<typeof SyncRepository extends new (db: infer D, ...rest: unknown[]) => unknown ? (db: D) => void : never>[0];
-  const repo = new SyncRepository(db as never, "user-1");
+  const db: Pick<import("dofek/db").Database, "execute" | "select"> = { execute, select };
+  const repo = new SyncRepository(db, "user-1");
   return { repo, execute, select };
 }
 
@@ -34,15 +34,9 @@ describe("SyncRepository", () => {
     });
 
     it("returns provider tokens", async () => {
-      const { repo } = makeRepository([
-        { provider_id: "wahoo" },
-        { provider_id: "strava" },
-      ]);
+      const { repo } = makeRepository([{ provider_id: "wahoo" }, { provider_id: "strava" }]);
       const result = await repo.getConnectedProviderIds();
-      expect(result).toEqual([
-        { providerId: "wahoo" },
-        { providerId: "strava" },
-      ]);
+      expect(result).toEqual([{ providerId: "wahoo" }, { providerId: "strava" }]);
     });
 
     it("calls db.execute once", async () => {

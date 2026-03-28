@@ -75,9 +75,7 @@ describe("AnomalyDetectionRepository", () => {
 
     it("detects elevated resting HR as warning (z > 2)", async () => {
       // mean=60, sd=3, value=67 => z = (67-60)/3 = 2.33
-      const db = makeDb([
-        checkRow({ resting_hr: 67, rhr_mean: 60, rhr_sd: 3, rhr_count: 20 }),
-      ]);
+      const db = makeDb([checkRow({ resting_hr: 67, rhr_mean: 60, rhr_sd: 3, rhr_count: 20 })]);
       const repo = new AnomalyDetectionRepository(db, "user-1", "UTC");
       const result = await repo.check("2024-06-15");
 
@@ -90,9 +88,7 @@ describe("AnomalyDetectionRepository", () => {
 
     it("detects severely elevated resting HR as alert (z > 3)", async () => {
       // mean=60, sd=2, value=67 => z = (67-60)/2 = 3.5
-      const db = makeDb([
-        checkRow({ resting_hr: 67, rhr_mean: 60, rhr_sd: 2, rhr_count: 20 }),
-      ]);
+      const db = makeDb([checkRow({ resting_hr: 67, rhr_mean: 60, rhr_sd: 2, rhr_count: 20 })]);
       const repo = new AnomalyDetectionRepository(db, "user-1", "UTC");
       const result = await repo.check("2024-06-15");
 
@@ -102,9 +98,7 @@ describe("AnomalyDetectionRepository", () => {
 
     it("does not flag resting HR within normal range", async () => {
       // mean=60, sd=3, value=63 => z = 1.0
-      const db = makeDb([
-        checkRow({ resting_hr: 63, rhr_mean: 60, rhr_sd: 3, rhr_count: 20 }),
-      ]);
+      const db = makeDb([checkRow({ resting_hr: 63, rhr_mean: 60, rhr_sd: 3, rhr_count: 20 })]);
       const repo = new AnomalyDetectionRepository(db, "user-1", "UTC");
       const result = await repo.check("2024-06-15");
 
@@ -113,9 +107,7 @@ describe("AnomalyDetectionRepository", () => {
     });
 
     it("skips resting HR when baseline count < 14", async () => {
-      const db = makeDb([
-        checkRow({ resting_hr: 80, rhr_mean: 60, rhr_sd: 3, rhr_count: 10 }),
-      ]);
+      const db = makeDb([checkRow({ resting_hr: 80, rhr_mean: 60, rhr_sd: 3, rhr_count: 10 })]);
       const repo = new AnomalyDetectionRepository(db, "user-1", "UTC");
       const result = await repo.check("2024-06-15");
 
@@ -124,9 +116,7 @@ describe("AnomalyDetectionRepository", () => {
     });
 
     it("skips resting HR when stddev is zero", async () => {
-      const db = makeDb([
-        checkRow({ resting_hr: 65, rhr_mean: 60, rhr_sd: 0, rhr_count: 20 }),
-      ]);
+      const db = makeDb([checkRow({ resting_hr: 65, rhr_mean: 60, rhr_sd: 0, rhr_count: 20 })]);
       const repo = new AnomalyDetectionRepository(db, "user-1", "UTC");
       const result = await repo.check("2024-06-15");
 
@@ -137,9 +127,7 @@ describe("AnomalyDetectionRepository", () => {
 
     it("detects depressed HRV as warning (z < -2)", async () => {
       // mean=50, sd=5, value=38 => z = (38-50)/5 = -2.4
-      const db = makeDb([
-        checkRow({ hrv: 38, hrv_mean: 50, hrv_sd: 5, hrv_count: 20 }),
-      ]);
+      const db = makeDb([checkRow({ hrv: 38, hrv_mean: 50, hrv_sd: 5, hrv_count: 20 })]);
       const repo = new AnomalyDetectionRepository(db, "user-1", "UTC");
       const result = await repo.check("2024-06-15");
 
@@ -152,9 +140,7 @@ describe("AnomalyDetectionRepository", () => {
 
     it("detects severely depressed HRV as alert (z < -3)", async () => {
       // mean=50, sd=5, value=33 => z = (33-50)/5 = -3.4
-      const db = makeDb([
-        checkRow({ hrv: 33, hrv_mean: 50, hrv_sd: 5, hrv_count: 20 }),
-      ]);
+      const db = makeDb([checkRow({ hrv: 33, hrv_mean: 50, hrv_sd: 5, hrv_count: 20 })]);
       const repo = new AnomalyDetectionRepository(db, "user-1", "UTC");
       const result = await repo.check("2024-06-15");
 
@@ -163,9 +149,7 @@ describe("AnomalyDetectionRepository", () => {
 
     it("does not flag HRV within normal range", async () => {
       // mean=50, sd=5, value=45 => z = -1.0
-      const db = makeDb([
-        checkRow({ hrv: 45, hrv_mean: 50, hrv_sd: 5, hrv_count: 20 }),
-      ]);
+      const db = makeDb([checkRow({ hrv: 45, hrv_mean: 50, hrv_sd: 5, hrv_count: 20 })]);
       const repo = new AnomalyDetectionRepository(db, "user-1", "UTC");
       const result = await repo.check("2024-06-15");
 
@@ -231,9 +215,7 @@ describe("AnomalyDetectionRepository", () => {
 
     it("rounds z-scores to 2 decimal places", async () => {
       // mean=60, sd=7, value=75 => z = 15/7 = 2.142857...
-      const db = makeDb([
-        checkRow({ resting_hr: 75, rhr_mean: 60, rhr_sd: 7, rhr_count: 20 }),
-      ]);
+      const db = makeDb([checkRow({ resting_hr: 75, rhr_mean: 60, rhr_sd: 7, rhr_count: 20 })]);
       const repo = new AnomalyDetectionRepository(db, "user-1", "UTC");
       const result = await repo.check("2024-06-15");
 

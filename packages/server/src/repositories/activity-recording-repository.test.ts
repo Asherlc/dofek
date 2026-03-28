@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { ActivityRecordingRepository } from "./activity-recording-repository.ts";
 import type { SaveActivityInput } from "./activity-recording-repository.ts";
+import { ActivityRecordingRepository } from "./activity-recording-repository.ts";
 
 describe("ActivityRecordingRepository", () => {
   function makeRepository(executeResults?: Record<string, unknown>[][]) {

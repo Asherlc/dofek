@@ -89,9 +89,7 @@ describe("AccelerometerRepository", () => {
   describe("getTimeSeries", () => {
     it("returns empty array when no samples in range", async () => {
       const { repo } = makeRepository([]);
-      expect(
-        await repo.getTimeSeries("2025-01-15T10:00:00Z", "2025-01-15T10:05:00Z"),
-      ).toEqual([]);
+      expect(await repo.getTimeSeries("2025-01-15T10:00:00Z", "2025-01-15T10:05:00Z")).toEqual([]);
     });
 
     it("maps DB rows to AccelerometerSample objects", async () => {
@@ -99,9 +97,7 @@ describe("AccelerometerRepository", () => {
         { recorded_at: "2025-01-15T10:00:00Z", x: "0.01", y: "-9.81", z: "0.02" },
       ]);
       const result = await repo.getTimeSeries("2025-01-15T10:00:00Z", "2025-01-15T10:01:00Z");
-      expect(result).toEqual([
-        { recordedAt: "2025-01-15T10:00:00Z", x: 0.01, y: -9.81, z: 0.02 },
-      ]);
+      expect(result).toEqual([{ recordedAt: "2025-01-15T10:00:00Z", x: 0.01, y: -9.81, z: 0.02 }]);
     });
 
     it("clamps end date to 10 minutes after start", async () => {

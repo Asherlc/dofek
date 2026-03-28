@@ -12,9 +12,9 @@ vi.mock("dofek/personalization/refit", () => ({
   refitAllParams: vi.fn(),
 }));
 
+import { refitAllParams } from "dofek/personalization/refit";
 // Import mocked functions for test control
 import { loadPersonalizedParams } from "dofek/personalization/storage";
-import { refitAllParams } from "dofek/personalization/refit";
 
 const mockedLoadParams = vi.mocked(loadPersonalizedParams);
 const mockedRefitAll = vi.mocked(refitAllParams);
@@ -106,9 +106,7 @@ describe("PersonalizationRepository", () => {
         acuteTrainingLoadDays: 10,
       });
       // Non-fitted params should use defaults
-      expect(result.effective.readinessWeights).toEqual(
-        DEFAULT_PARAMS.readinessWeights,
-      );
+      expect(result.effective.readinessWeights).toEqual(DEFAULT_PARAMS.readinessWeights);
     });
   });
 

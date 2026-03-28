@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { MonthRow, MonthlyReportRepository } from "./monthly-report-repository.ts";
+import { MonthlyReportRepository, MonthRow } from "./monthly-report-repository.ts";
 
 // ---------------------------------------------------------------------------
 // MonthRow domain model
@@ -151,9 +151,7 @@ describe("MonthlyReportRepository", () => {
   });
 
   it("preserves null HR and HRV values", async () => {
-    const { repo } = makeRepository([
-      makeDbRow({ avg_resting_hr: null, avg_hrv: null }),
-    ]);
+    const { repo } = makeRepository([makeDbRow({ avg_resting_hr: null, avg_hrv: null })]);
     const result = await repo.getReport(6);
     expect(result.current?.avgRestingHr).toBeNull();
     expect(result.current?.avgHrv).toBeNull();

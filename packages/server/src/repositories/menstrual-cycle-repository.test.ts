@@ -19,9 +19,7 @@ describe("MenstrualCycleRepository", () => {
 
     it("computes menstrual phase for day 1 of cycle", async () => {
       const today = new Date("2025-01-15T12:00:00Z");
-      const { repo } = makeRepository([
-        { start_date: "2025-01-15", avg_cycle_length: "28" },
-      ]);
+      const { repo } = makeRepository([{ start_date: "2025-01-15", avg_cycle_length: "28" }]);
 
       const result = await repo.getCurrentPhase(today);
 
@@ -32,9 +30,7 @@ describe("MenstrualCycleRepository", () => {
 
     it("computes follicular phase for day 8 of 28-day cycle", async () => {
       const today = new Date("2025-01-22T12:00:00Z");
-      const { repo } = makeRepository([
-        { start_date: "2025-01-15", avg_cycle_length: "28" },
-      ]);
+      const { repo } = makeRepository([{ start_date: "2025-01-15", avg_cycle_length: "28" }]);
 
       const result = await repo.getCurrentPhase(today);
 
@@ -45,9 +41,7 @@ describe("MenstrualCycleRepository", () => {
     it("computes ovulatory phase around ovulation day", async () => {
       // Ovulation for 28-day cycle: day 14 (28-14=14), window is 13-15
       const today = new Date("2025-01-28T12:00:00Z");
-      const { repo } = makeRepository([
-        { start_date: "2025-01-15", avg_cycle_length: "28" },
-      ]);
+      const { repo } = makeRepository([{ start_date: "2025-01-15", avg_cycle_length: "28" }]);
 
       const result = await repo.getCurrentPhase(today);
 
@@ -58,9 +52,7 @@ describe("MenstrualCycleRepository", () => {
     it("computes luteal phase after ovulatory window", async () => {
       // Day 20 of 28-day cycle is luteal
       const today = new Date("2025-02-03T12:00:00Z");
-      const { repo } = makeRepository([
-        { start_date: "2025-01-15", avg_cycle_length: "28" },
-      ]);
+      const { repo } = makeRepository([{ start_date: "2025-01-15", avg_cycle_length: "28" }]);
 
       const result = await repo.getCurrentPhase(today);
 
@@ -70,9 +62,7 @@ describe("MenstrualCycleRepository", () => {
 
     it("uses default 28-day cycle when no average available", async () => {
       const today = new Date("2025-01-15T12:00:00Z");
-      const { repo } = makeRepository([
-        { start_date: "2025-01-15", avg_cycle_length: null },
-      ]);
+      const { repo } = makeRepository([{ start_date: "2025-01-15", avg_cycle_length: null }]);
 
       const result = await repo.getCurrentPhase(today);
 
@@ -83,9 +73,7 @@ describe("MenstrualCycleRepository", () => {
     it("returns null phase when past cycle length + 7 days", async () => {
       // Day 40 of a 28-day cycle (40 > 28+7=35)
       const today = new Date("2025-02-23T12:00:00Z");
-      const { repo } = makeRepository([
-        { start_date: "2025-01-15", avg_cycle_length: "28" },
-      ]);
+      const { repo } = makeRepository([{ start_date: "2025-01-15", avg_cycle_length: "28" }]);
 
       const result = await repo.getCurrentPhase(today);
 
@@ -96,9 +84,7 @@ describe("MenstrualCycleRepository", () => {
 
     it("rounds average cycle length to nearest integer", async () => {
       const today = new Date("2025-01-15T12:00:00Z");
-      const { repo } = makeRepository([
-        { start_date: "2025-01-15", avg_cycle_length: "29.7" },
-      ]);
+      const { repo } = makeRepository([{ start_date: "2025-01-15", avg_cycle_length: "29.7" }]);
 
       const result = await repo.getCurrentPhase(today);
 

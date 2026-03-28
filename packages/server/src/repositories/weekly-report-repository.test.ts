@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  classifyStrainZone,
+  WeeklyReportRepository,
   WeekRow,
   type WeekRowData,
-  WeeklyReportRepository,
-  classifyStrainZone,
 } from "./weekly-report-repository.ts";
 
 // ---------------------------------------------------------------------------
@@ -219,17 +219,13 @@ describe("WeeklyReportRepository", () => {
   });
 
   it("computes sleep performance from row data", async () => {
-    const { repo } = makeRepository([
-      makeDbRow({ avg_sleep_min: 450, prev_3wk_avg_sleep: 400 }),
-    ]);
+    const { repo } = makeRepository([makeDbRow({ avg_sleep_min: 450, prev_3wk_avg_sleep: 400 })]);
     const result = await repo.getReport(4, "2026-03-28");
     expect(result.current?.sleepPerformancePct).toBe(113);
   });
 
   it("defaults sleep performance to 100 when prev sleep is null", async () => {
-    const { repo } = makeRepository([
-      makeDbRow({ avg_sleep_min: 420, prev_3wk_avg_sleep: null }),
-    ]);
+    const { repo } = makeRepository([makeDbRow({ avg_sleep_min: 420, prev_3wk_avg_sleep: null })]);
     const result = await repo.getReport(4, "2026-03-28");
     expect(result.current?.sleepPerformancePct).toBe(100);
   });

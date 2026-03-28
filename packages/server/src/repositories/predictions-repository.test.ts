@@ -1,9 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import type { DailyContext } from "../ml/activity-features.ts";
 import {
   buildDailyContext,
-  PredictionTargetEntry,
   PredictionsRepository,
+  PredictionTargetEntry,
 } from "./predictions-repository.ts";
 
 // ---------------------------------------------------------------------------
@@ -164,9 +163,7 @@ describe("buildDailyContext", () => {
         skin_temp_c: null,
       },
     ];
-    const bodyComp = [
-      { recorded_at: "2024-01-15T08:00:00Z", weight_kg: 75.5, body_fat_pct: 15 },
-    ];
+    const bodyComp = [{ recorded_at: "2024-01-15T08:00:00Z", weight_kg: 75.5, body_fat_pct: 15 }];
     const result = buildDailyContext(metrics, [], [], bodyComp);
     expect(result).toHaveLength(2);
     expect(result[0]?.weightKg).toBe(75.5);
@@ -246,10 +243,10 @@ describe("buildDailyContext", () => {
     ];
     const result = buildDailyContext(metrics, sleep, nutrition, []);
     expect(result).toHaveLength(1);
-    const day = result[0] as DailyContext;
-    expect(day.hrv).toBe(45);
-    expect(day.sleepDurationMin).toBe(480);
-    expect(day.calories).toBe(2200);
+    const day = result[0];
+    expect(day?.hrv).toBe(45);
+    expect(day?.sleepDurationMin).toBe(480);
+    expect(day?.calories).toBe(2200);
   });
 
   it("sorts output by date", () => {

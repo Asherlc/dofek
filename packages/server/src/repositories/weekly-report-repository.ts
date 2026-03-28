@@ -1,18 +1,14 @@
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import {
-  dateWindowEnd,
-  dateWindowStart,
-  timestampWindowStart,
-} from "../lib/date-window.ts";
+import { dateWindowEnd, dateWindowStart, timestampWindowStart } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 
 // ---------------------------------------------------------------------------
 // Types (imported from router for backward compat)
 // ---------------------------------------------------------------------------
 
-import type { StrainZone, WeekSummary, WeeklyReportResult } from "../routers/weekly-report.ts";
+import type { StrainZone, WeeklyReportResult, WeekSummary } from "../routers/weekly-report.ts";
 
 // ---------------------------------------------------------------------------
 // Domain logic
@@ -84,11 +80,8 @@ export class WeekRow {
           : 100,
       avgReadiness: 0,
       avgRestingHr:
-        this.#data.avgRestingHr != null
-          ? Math.round(this.#data.avgRestingHr * 10) / 10
-          : null,
-      avgHrv:
-        this.#data.avgHrv != null ? Math.round(this.#data.avgHrv * 10) / 10 : null,
+        this.#data.avgRestingHr != null ? Math.round(this.#data.avgRestingHr * 10) / 10 : null,
+      avgHrv: this.#data.avgHrv != null ? Math.round(this.#data.avgHrv * 10) / 10 : null,
     };
   }
 }
@@ -230,8 +223,7 @@ export class WeeklyReportRepository {
 
     // Only return the requested number of weeks
     const cutoffWeeks = summaries.slice(-weeks);
-    const current =
-      cutoffWeeks.length > 0 ? (cutoffWeeks[cutoffWeeks.length - 1] ?? null) : null;
+    const current = cutoffWeeks.length > 0 ? (cutoffWeeks[cutoffWeeks.length - 1] ?? null) : null;
     const history = cutoffWeeks.slice(0, -1);
 
     return { current, history };

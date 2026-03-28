@@ -50,7 +50,7 @@ export class PmcRepository {
 
   async getChart(days: number): Promise<PmcChartResult> {
     // Load personalized algorithm parameters
-    const storedParams = await loadPersonalizedParams(this.#db as Database, this.#userId);
+    const storedParams = await loadPersonalizedParams(this.#db, this.#userId);
     const effective = getEffectiveParams(storedParams);
     const { chronicTrainingLoadDays, acuteTrainingLoadDays } = effective.exponentialMovingAverage;
     const { genderFactor, exponent } = effective.trainingImpulseConstants;

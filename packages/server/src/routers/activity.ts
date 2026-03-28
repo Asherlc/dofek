@@ -3,7 +3,10 @@ import { getProvider } from "dofek/providers/registry";
 import { z } from "zod";
 import { endDateSchema } from "../lib/date-window.ts";
 import { Activity, type ActivityDetail } from "../models/activity.ts";
-import { ActivityRepository, StreamPoint as StreamPointModel } from "../repositories/activity-repository.ts";
+import {
+  ActivityRepository,
+  StreamPoint as StreamPointModel,
+} from "../repositories/activity-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 import { ensureProvidersRegistered } from "./sync.ts";
 
