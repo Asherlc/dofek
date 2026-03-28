@@ -1,9 +1,18 @@
-import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
 import type { ImportJobData } from "./queues.ts";
+
+let realUnlink: typeof import("node:fs/promises").unlink;
+const mockUnlink = vi.fn<(path: string) => Promise<void>>();
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  realUnlink = actual.unlink;
+  return { ...actual, unlink: (...args: [string]) => mockUnlink(...args) };
+});
+
+const { writeFile, access } = await import("node:fs/promises");
 
 const mockLoggerInfo = vi.fn();
 const mockLoggerError = vi.fn();
@@ -103,6 +112,9 @@ describe("processImportJob", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
 
+    // By default, call through to the real unlink so existing cleanup tests work
+    mockUnlink.mockImplementation((path: string) => realUnlink(path));
+
     // Create a real temp file so unlink doesn't fail
     tempFilePath = join(tmpdir(), `test-import-${Date.now()}.tmp`);
     await writeFile(tempFilePath, "test data");
@@ -201,6 +213,37 @@ describe("processImportJob", () => {
         percentage: 90,
         message: "Importing health data (2,000 records, 10 workouts, 3 sleep sessions)...",
       });
+    });
+
+    it("logs warning when updateProgress rejects", async () => {
+      const progressError = new Error("Redis connection lost");
+
+      mockImportAppleHealthFile.mockImplementation(
+        async (
+          _db: unknown,
+          _path: unknown,
+          _since: unknown,
+          onProgress: (info: {
+            percentage: number;
+            recordCount: number;
+            workoutCount: number;
+            sleepCount: number;
+          }) => void,
+        ) => {
+          onProgress({ percentage: 50, recordCount: 100, workoutCount: 1, sleepCount: 0 });
+          return { recordsSynced: 10, errors: [] };
+        },
+      );
+
+      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
+      job.updateProgress.mockRejectedValue(progressError);
+      await runImportJob(job, mockDb);
+
+      // The catch block should log a warning with the error
+      expect(mockLoggerWarn).toHaveBeenCalledWith(
+        "Failed to update import progress: %s",
+        progressError,
+      );
     });
 
     it("only logs progress at 10% increments", async () => {
@@ -337,8 +380,6 @@ describe("processImportJob", () => {
 
   describe("file cleanup", () => {
     it("cleans up uploaded file after successful import", async () => {
-      const { access } = await import("node:fs/promises");
-
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await runImportJob(job, mockDb);
 
@@ -346,14 +387,25 @@ describe("processImportJob", () => {
     });
 
     it("cleans up uploaded file even when import fails", async () => {
-      const { access } = await import("node:fs/promises");
-
       mockImportAppleHealthFile.mockRejectedValue(new Error("parse error"));
 
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await expect(runImportJob(job, mockDb)).rejects.toThrow("parse error");
 
       await expect(access(tempFilePath)).rejects.toThrow();
+    });
+
+    it("warns when unlink fails during file cleanup", async () => {
+      mockUnlink.mockRejectedValueOnce(new Error("EACCES: permission denied"));
+
+      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
+      await runImportJob(job, mockDb);
+
+      expect(mockLoggerWarn).toHaveBeenCalledWith(
+        "Failed to clean up uploaded file %s: %s",
+        tempFilePath,
+        expect.any(Error),
+      );
     });
   });
 

@@ -137,8 +137,9 @@ function AuthGate() {
           mutate: (input) => trpcClient.accelerometerSync.pushAccelerometerSamples.mutate(input),
         },
       },
-    }).catch(() => {
+    }).catch((error: unknown) => {
       // Best-effort — accelerometer sync is non-critical
+      captureException(error, { source: "bg-accelerometer-sync" });
     });
 
     // Start Apple Watch accelerometer sync (if Watch is paired)
@@ -153,8 +154,9 @@ function AuthGate() {
         },
       },
     };
-    initBackgroundWatchAccelerometerSync(watchSyncClient).catch(() => {
+    initBackgroundWatchAccelerometerSync(watchSyncClient).catch((error: unknown) => {
       // Best-effort — Watch sync is non-critical
+      captureException(error, { source: "bg-watch-accel-sync" });
     });
 
     // WHOOP BLE sync is now managed reactively via useWhoopBleSync hook
@@ -165,7 +167,9 @@ function AuthGate() {
     // coverage continues even if the user never opens the app.
     const refreshSubscription = addBackgroundRefreshListener(() => {
       // Restart Watch accelerometer recording
-      initBackgroundWatchAccelerometerSync(watchSyncClient).catch(() => {});
+      initBackgroundWatchAccelerometerSync(watchSyncClient).catch((error: unknown) => {
+        captureException(error, { source: "bg-refresh-watch-sync" });
+      });
 
       // Restart phone accelerometer recording
       initBackgroundAccelerometerSync({
@@ -174,7 +178,9 @@ function AuthGate() {
             mutate: (input) => trpcClient.accelerometerSync.pushAccelerometerSamples.mutate(input),
           },
         },
-      }).catch(() => {});
+      }).catch((error: unknown) => {
+        captureException(error, { source: "bg-refresh-accel-sync" });
+      });
 
       // Re-schedule for next wakeup
       scheduleRefresh();

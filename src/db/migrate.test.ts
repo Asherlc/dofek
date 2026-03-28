@@ -183,6 +183,24 @@ describe("runMigrations", () => {
     expect(log).toContain("unlock");
   });
 
+  it("warns when advisory unlock fails", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+    mockReaddirSync.mockReturnValue([]);
+
+    // Make the advisory unlock call reject
+    mockSql.mockImplementation((...args: unknown[]) => {
+      const first = args[0];
+      if (Array.isArray(first) && first.join("").includes("pg_advisory_unlock")) {
+        return Promise.reject(new Error("connection lost"));
+      }
+      return Promise.resolve([]);
+    });
+
+    await runMigrations("postgres://localhost/test", "/tmp/migrations");
+
+    expect(mockLoggerWarn).toHaveBeenCalledWith("Advisory unlock failed: %s", expect.any(Error));
+  });
+
   it("warns on duplicate migration prefixes instead of throwing", async () => {
     const { runMigrations } = await import("./migrate.ts");
 

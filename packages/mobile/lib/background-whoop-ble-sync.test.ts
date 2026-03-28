@@ -43,6 +43,15 @@ vi.mock("react-native", () => ({
   },
 }));
 
+vi.mock("@sentry/react-native", () => ({
+  captureException: vi.fn(),
+  addBreadcrumb: vi.fn(),
+}));
+
+vi.mock("./telemetry", () => ({
+  captureException: vi.fn(),
+}));
+
 describe("background-whoop-ble-sync", () => {
   let whoopDeps: WhoopBleSyncDeps;
   let trpcClient: AccelerometerUploadClient;
@@ -227,5 +236,38 @@ describe("background-whoop-ble-sync", () => {
     await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
 
     expect(whoopDeps.connect).toHaveBeenCalled();
+  });
+
+  it("calls Sentry.captureException when foreground sync rejects", async () => {
+    const { captureException: sentryCaptureException } = await import("@sentry/react-native");
+
+    // Let init succeed normally first
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+
+    // Make the next sync fail (getBufferedSamples is called after connection)
+    const syncError = new Error("upload failed");
+    vi.mocked(whoopDeps.getBufferedSamples).mockRejectedValue(syncError);
+
+    // Trigger foreground event
+    appStateCallback?.("active");
+
+    await vi.waitFor(() => {
+      expect(sentryCaptureException).toHaveBeenCalledWith(syncError, {
+        tags: { source: "whoop-ble-foreground-sync" },
+      });
+    });
+  });
+
+  it("calls Sentry.captureException when init sync rejects", async () => {
+    const { captureException: sentryCaptureException } = await import("@sentry/react-native");
+    const initError = new Error("init BLE failure");
+    vi.mocked(whoopDeps.connect).mockRejectedValue(initError);
+
+    // Init should not throw
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+
+    expect(sentryCaptureException).toHaveBeenCalledWith(initError, {
+      tags: { source: "whoop-ble-init-sync" },
+    });
   });
 });

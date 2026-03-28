@@ -1,5 +1,6 @@
 import type { AccelerometerService } from "./accelerometer-service.ts";
 import type { GpsSample, LocationAdapter } from "./location-service.ts";
+import { captureException } from "./telemetry";
 
 export type RecordingState = "idle" | "recording" | "paused" | "saving" | "error";
 
@@ -143,8 +144,9 @@ export function createActivityRecorder(
       });
 
       // Ensure accelerometer recording is active (best-effort, non-blocking)
-      accelerometerService?.ensureRecording().catch(() => {
+      accelerometerService?.ensureRecording().catch((error: unknown) => {
         // Best-effort — don't disrupt GPS recording
+        captureException(error, { source: "activity-recording" });
       });
     },
 

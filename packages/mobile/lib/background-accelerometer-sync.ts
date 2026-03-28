@@ -10,7 +10,9 @@ import {
   startRecording,
 } from "../modules/core-motion";
 import { type AccelerometerSyncTrpcClient, syncAccelerometerToServer } from "./accelerometer-sync";
+import { captureException, logger } from "./telemetry";
 
+const TAG = "bg-accel-sync";
 const TWELVE_HOURS_SECONDS = 12 * 3600;
 
 let appStateSubscription: ReturnType<typeof AppState.addEventListener> | null = null;
@@ -64,8 +66,10 @@ export async function initBackgroundAccelerometerSync(
       deviceId,
       deviceType: "iphone",
     })
-      .catch(() => {
+      .catch((error: unknown) => {
         // Best-effort — don't crash the app for background sync failures
+        logger.warn(TAG, `Sync failed: ${error instanceof Error ? error.message : String(error)}`);
+        captureException(error, { source: TAG });
       })
       .finally(() => {
         syncing = false;
