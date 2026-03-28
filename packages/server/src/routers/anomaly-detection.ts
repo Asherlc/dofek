@@ -84,14 +84,17 @@ export async function checkAnomalies(
           ORDER BY date ASC
         ),
         sleep_raw AS (
-          SELECT
-            (started_at AT TIME ZONE ${timezone})::date AS date,
-            duration_minutes,
-            started_at
-          FROM fitness.v_sleep
-          WHERE user_id = ${userId}
-            AND is_nap = false
-            AND started_at > ${timestampWindowStart(endDate, 35)}
+          SELECT DISTINCT ON (date) date, duration_minutes
+          FROM (
+            SELECT
+              (started_at AT TIME ZONE ${timezone})::date AS date,
+              duration_minutes
+            FROM fitness.v_sleep
+            WHERE user_id = ${userId}
+              AND is_nap = false
+              AND started_at > ${timestampWindowStart(endDate, 35)}
+          ) raw
+          ORDER BY date, duration_minutes DESC NULLS LAST
         ),
         sleep AS (
           SELECT
@@ -101,7 +104,7 @@ export async function checkAnomalies(
             STDDEV_POP(duration_minutes) OVER (ORDER BY date ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING) AS sleep_sd,
             COUNT(*) OVER (ORDER BY date ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING) AS sleep_count
           FROM sleep_raw
-          ORDER BY started_at ASC
+          ORDER BY date ASC
         )
         SELECT
           b.date::text,
