@@ -1,7 +1,7 @@
 import { StyleSheet, Text, View } from "react-native";
+import { colors } from "../theme";
 import { ChartDescriptionTooltip } from "./ChartDescriptionTooltip";
 import { SparkLine } from "./charts/SparkLine";
-import { colors } from "../theme";
 
 interface MetricCardProps {
   title: string;
@@ -51,13 +51,7 @@ export function MetricCard({
           <Text style={[styles.value, { color }]}>{value}</Text>
           {unit && <Text style={styles.unit}>{unit}</Text>}
           {trendDirection && (
-            <Text
-              testID="trend-arrow"
-              style={[
-                styles.trendArrow,
-                { color },
-              ]}
-            >
+            <Text testID="trend-arrow" style={[styles.trendArrow, { color }]}>
               {trendArrow(trendDirection)}
             </Text>
           )}

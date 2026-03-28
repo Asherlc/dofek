@@ -237,8 +237,11 @@ export function DataSourcesPanel() {
   }, [trpcUtils, handleSync]);
 
   const handleProviderClick = useCallback(
-    (p: { id: string; name: string; authType: string; authorized: boolean }, fullSync = false) => {
-      if (p.authorized) {
+    (
+      p: { id: string; name: string; authType: string; authorized: boolean; needsReauth?: boolean },
+      fullSync = false,
+    ) => {
+      if (p.authorized && !p.needsReauth) {
         handleSync(p.id, fullSync);
         return;
       }
@@ -376,6 +379,7 @@ export function DataSourcesPanel() {
               provider.authType !== "none" &&
               provider.authType !== "file-import" &&
               !provider.authorized;
+            const needsReauth = provider.needsReauth === true;
             const providerStats = statsByProvider.get(provider.id);
             const recentLogs = (logsByProvider.get(provider.id) ?? []).slice(0, 5);
 
@@ -385,6 +389,7 @@ export function DataSourcesPanel() {
                 provider={provider}
                 state={state}
                 needsAuth={needsAuth}
+                needsReauth={needsReauth}
                 stats={providerStats}
                 recentLogs={recentLogs}
                 onSync={() => handleProviderClick(provider)}
@@ -447,6 +452,7 @@ function SyncProviderCard({
   provider,
   state,
   needsAuth,
+  needsReauth,
   stats,
   recentLogs,
   onSync,
@@ -455,6 +461,7 @@ function SyncProviderCard({
   provider: { id: string; name: string; lastSyncedAt: string | null; authorized: boolean };
   state: ProviderState;
   needsAuth: boolean;
+  needsReauth: boolean;
   stats: ProviderStats | undefined;
   recentLogs: SyncLogEntry[];
   onSync: () => void;
@@ -468,16 +475,21 @@ function SyncProviderCard({
         onClick={onSync}
         disabled={state.status === "syncing"}
         className="flex items-center gap-2 hover:opacity-80 disabled:opacity-50"
-        title={needsAuth ? "Click to connect" : "Sync last 7 days"}
+        title={
+          needsReauth ? "Click to reconnect" : needsAuth ? "Click to connect" : "Sync last 7 days"
+        }
       >
         <ProviderLogo provider={provider.id} size={18} />
-        {needsAuth ? (
+        {needsReauth ? (
+          <span className="inline-block w-2 h-2 rounded-full bg-amber-400" />
+        ) : needsAuth ? (
           <span className="inline-block w-2 h-2 rounded-full bg-blue-400" />
         ) : (
           <StatusDot status={state.status} />
         )}
         <span className="text-sm font-medium text-foreground">{provider.name}</span>
-        {needsAuth && <span className="text-xs text-blue-400">Connect</span>}
+        {needsReauth && <span className="text-xs text-amber-400">Reconnect</span>}
+        {needsAuth && !needsReauth && <span className="text-xs text-blue-400">Connect</span>}
         {state.status === "syncing" && <span className="text-xs text-subtle">...</span>}
       </button>
 
@@ -527,7 +539,7 @@ function SyncProviderCard({
           {recentLogs.length === 0 && <span className="text-xs text-dim">No sync history</span>}
         </div>
         <div className="flex items-center gap-3">
-          {!needsAuth && state.status !== "syncing" && (
+          {!needsAuth && !needsReauth && state.status !== "syncing" && (
             <button
               type="button"
               onClick={onFullSync}

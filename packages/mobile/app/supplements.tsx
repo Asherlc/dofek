@@ -1,3 +1,5 @@
+import type { MealType } from "@dofek/nutrition/meal";
+import { MEAL_OPTIONS } from "@dofek/nutrition/meal";
 import { useState } from "react";
 import {
   Alert,
@@ -13,8 +15,6 @@ import { z } from "zod";
 import { trpc } from "../lib/trpc";
 import { useRefresh } from "../lib/useRefresh";
 import { colors } from "../theme";
-import { MEAL_OPTIONS } from "@dofek/nutrition/meal";
-import type { MealType } from "@dofek/nutrition/meal";
 
 const UNITS = ["mg", "g", "mcg", "IU", "ml", "oz"] as const;
 const FORMS = ["capsule", "softgel", "tablet", "powder", "liquid", "gummy", "drop"] as const;
@@ -109,7 +109,17 @@ export default function SupplementsScreen() {
   const { refreshing, onRefresh } = useRefresh();
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={colors.textSecondary}
+        />
+      }
+    >
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Supplements</Text>
         <TouchableOpacity
@@ -131,11 +141,11 @@ export default function SupplementsScreen() {
         </Text>
       )}
 
-      {supplements.map((supp, index) => {
+      {supplements.map((supp) => {
         const dose = formatDose(supp);
         const mealLabel = MEAL_OPTIONS.find((m) => m.value === supp.meal)?.label;
         return (
-          <View key={`${supp.name}-${index}`} style={styles.card}>
+          <View key={supp.name} style={styles.card}>
             <View style={styles.cardRow}>
               <View style={styles.reorderColumn}>
                 {index > 0 && (
@@ -248,7 +258,7 @@ function AddSupplementForm({
             options={UNITS.map((u) => ({ value: u, label: u }))}
             value={unit}
             onChange={(v) => {
-              if (v) setUnit(v as (typeof UNITS)[number]);
+              if (v !== "") setUnit(v);
             }}
           />
         </View>
@@ -258,14 +268,14 @@ function AddSupplementForm({
       <ChipPicker
         options={FORMS.map((f) => ({ value: f, label: f }))}
         value={form}
-        onChange={(v) => setForm(v as (typeof FORMS)[number] | "")}
+        onChange={(v) => setForm(v)}
       />
 
       <Text style={styles.formLabel}>Meal</Text>
       <ChipPicker
         options={MEAL_OPTIONS.map((m) => ({ value: m.value, label: m.label }))}
         value={meal}
-        onChange={(v) => setMeal(v as MealType | "")}
+        onChange={(v) => setMeal(v)}
       />
 
       <TouchableOpacity
@@ -283,34 +293,81 @@ function AddSupplementForm({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 16, paddingTop: 24, paddingBottom: 40 },
-  sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
+  sectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
   sectionTitle: { fontSize: 20, fontWeight: "700", color: colors.text },
   card: { backgroundColor: colors.surface, borderRadius: 12, padding: 14, marginBottom: 8 },
   cardRow: { flexDirection: "row", alignItems: "center" },
   cardContent: { flex: 1, marginRight: 8 },
   cardLabel: { fontSize: 16, fontWeight: "600", color: colors.text },
   cardSub: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
-  cardMeal: { fontSize: 12, color: colors.textTertiary, marginTop: 2, textTransform: "uppercase", letterSpacing: 0.5 },
-  addButton: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.surfaceSecondary },
+  cardMeal: {
+    fontSize: 12,
+    color: colors.textTertiary,
+    marginTop: 2,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  addButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.surfaceSecondary,
+  },
   addButtonText: { fontSize: 14, fontWeight: "600", color: colors.accent },
   deleteButton: { paddingHorizontal: 12, paddingVertical: 6 },
   deleteButtonText: { fontSize: 13, color: colors.danger, fontWeight: "500" },
-  saveButton: { backgroundColor: colors.accent, borderRadius: 10, paddingVertical: 14, alignItems: "center", marginTop: 16 },
+  saveButton: {
+    backgroundColor: colors.accent,
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: "center",
+    marginTop: 16,
+  },
   saveButtonDisabled: { opacity: 0.5 },
   saveButtonText: { color: colors.text, fontSize: 16, fontWeight: "700" },
   reorderColumn: { marginRight: 10, alignItems: "center", justifyContent: "center", gap: 2 },
   reorderArrow: { fontSize: 12, color: colors.textTertiary },
   formCard: { backgroundColor: colors.surface, borderRadius: 12, padding: 16, marginBottom: 12 },
-  formLabel: { fontSize: 13, fontWeight: "600", color: colors.textSecondary, marginBottom: 6, marginTop: 12 },
-  input: { backgroundColor: colors.surfaceSecondary, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10, fontSize: 16, color: colors.text },
+  formLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.textSecondary,
+    marginBottom: 6,
+    marginTop: 12,
+  },
+  input: {
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 16,
+    color: colors.text,
+  },
   chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  chip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, backgroundColor: colors.surfaceSecondary },
+  chip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceSecondary,
+  },
   chipSelected: { backgroundColor: colors.accent },
   chipText: { fontSize: 13, color: colors.textSecondary, fontWeight: "500" },
   chipTextSelected: { color: colors.text },
   doseRow: { flexDirection: "row", gap: 12 },
   doseField: { flex: 1 },
-  loadingText: { fontSize: 14, color: colors.textSecondary, textAlign: "center", paddingVertical: 16 },
+  loadingText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: "center",
+    paddingVertical: 16,
+  },
   emptyText: { fontSize: 14, color: colors.textTertiary, textAlign: "center", paddingVertical: 16 },
   errorText: { fontSize: 13, color: colors.danger, marginTop: 8 },
 });

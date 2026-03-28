@@ -1,6 +1,7 @@
 import { MEAL_OPTIONS, type MealType } from "@dofek/nutrition/meal";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { type FoodDatabaseResult, OpenFoodFactsClient } from "../lib/food-database.ts";
+import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 
 export type { MealType } from "@dofek/nutrition/meal";
@@ -205,7 +206,8 @@ export function AddFoodModal({
         setOpenFoodFactsResults(results);
         setSearchingOpenFoodFacts(false);
       })
-      .catch(() => {
+      .catch((error: unknown) => {
+        captureException(error, { context: "open-food-facts-search" });
         if (openFoodFactsRequestCounterRef.current !== requestId) return;
         setOpenFoodFactsResults([]);
         setSearchingOpenFoodFacts(false);
@@ -249,7 +251,8 @@ export function AddFoodModal({
           setHistoryResults(rows.map(historyRowToFoodResult));
           setSearchingHistory(false);
         })
-        .catch(() => {
+        .catch((error: unknown) => {
+          captureException(error, { context: "food-history-search" });
           if (historyRequestCounterRef.current !== requestId) return;
           setHistoryResults([]);
           setSearchingHistory(false);

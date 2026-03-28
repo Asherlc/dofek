@@ -1,3 +1,5 @@
+import { formatDateYmd } from "@dofek/format/format";
+import { autoMealType, MEAL_OPTIONS, type MealType } from "@dofek/nutrition/meal";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -10,20 +12,28 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View,
   useWindowDimensions,
+  View,
 } from "react-native";
+import { z } from "zod";
 import { BarcodeScanner } from "../../components/BarcodeScanner";
 import { useAuth } from "../../lib/auth-context";
+import { type FoodDatabaseResult, OpenFoodFactsClient } from "../../lib/food-database";
+import { getTrpcUrl, SERVER_URL } from "../../lib/server";
+import { trpc } from "../../lib/trpc";
 import { colors } from "../../theme";
 
-import { type FoodDatabaseResult, OpenFoodFactsClient } from "../../lib/food-database";
-import { MEAL_OPTIONS, type MealType, autoMealType } from "@dofek/nutrition/meal";
-import { formatDateYmd } from "@dofek/format/format";
-import { SERVER_URL, getTrpcUrl } from "../../lib/server";
-import { trpc } from "../../lib/trpc";
-
 type LoggerTab = "search" | "scan" | "quickadd";
+
+/** Schema for food entries returned from the API */
+const FoodEntrySchema = z.object({
+  food_name: z.string(),
+  calories: z.number().nullable().optional(),
+  protein_g: z.number().nullable().optional(),
+  carbs_g: z.number().nullable().optional(),
+  fat_g: z.number().nullable().optional(),
+  food_description: z.string().nullable().optional(),
+});
 
 const TABS: { key: LoggerTab; label: string }[] = [
   { key: "search", label: "Search" },
@@ -34,8 +44,8 @@ const TABS: { key: LoggerTab; label: string }[] = [
 /** Parse a numeric string, returning null for empty/invalid input instead of NaN. */
 function safeParseFloat(value: string): number | null {
   if (!value) return null;
-  const n = Number.parseFloat(value);
-  return Number.isNaN(n) ? null : n;
+  const parsed = Number.parseFloat(value);
+  return Number.isNaN(parsed) ? null : parsed;
 }
 
 // Merged search result from our DB + Open Food Facts
@@ -60,10 +70,7 @@ export default function AddFoodScreen() {
   const { sessionToken } = useAuth();
   const apiUrl = getTrpcUrl(SERVER_URL);
   const authHeaders = useMemo<Record<string, string>>(
-    () =>
-      sessionToken
-        ? { Authorization: `Bearer ${sessionToken}` }
-        : ({} as Record<string, string>),
+    () => (sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
     [sessionToken],
   );
 
@@ -80,9 +87,11 @@ export default function AddFoodScreen() {
   // ── Form state (shown after selecting a result or manual entry) ──
   const [showForm, setShowForm] = useState(false);
   const [foodName, setFoodName] = useState("");
-  const [selectedMeal, setSelectedMeal] = useState<MealType>(
-    (params.meal as MealType) || autoMealType(),
-  );
+  const [selectedMeal, setSelectedMeal] = useState<MealType>(() => {
+    const paramMeal = params.meal;
+    const matched = MEAL_OPTIONS.find((option) => option.value === paramMeal);
+    return matched ? matched.value : autoMealType();
+  });
   const [calories, setCalories] = useState("");
   const [proteinGrams, setProteinGrams] = useState("");
   const [carbsGrams, setCarbsGrams] = useState("");
@@ -97,10 +106,7 @@ export default function AddFoodScreen() {
   const recentLoaded = useRef(false);
   const { width } = useWindowDimensions();
   const isWide = width >= 600;
-  const deviceLocale = useMemo(
-    () => Intl.DateTimeFormat().resolvedOptions().locale ?? "en-US",
-    [],
-  );
+  const deviceLocale = useMemo(() => Intl.DateTimeFormat().resolvedOptions().locale ?? "en-US", []);
   const foodClient = useMemo(() => new OpenFoodFactsClient(deviceLocale), [deviceLocale]);
 
   useEffect(() => {
@@ -117,38 +123,50 @@ export default function AddFoodScreen() {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify({ "0": { date } }),
-      }).then((r) => r.json()).catch(() => null),
+      })
+        .then((r) => r.json())
+        .catch(() => null),
       fetch(`${apiUrl}/food.byDate?batch=1`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify({ "0": { date: yStr } }),
-      }).then((r) => r.json()).catch(() => null),
+      })
+        .then((r) => r.json())
+        .catch(() => null),
     ]).then(([todayData, yesterdayData]) => {
-      const todayEntries: Record<string, unknown>[] = todayData?.[0]?.result?.data ?? [];
-      const yesterdayEntries: Record<string, unknown>[] = yesterdayData?.[0]?.result?.data ?? [];
+      const todayRaw: unknown[] = todayData?.[0]?.result?.data ?? [];
+      const yesterdayRaw: unknown[] = yesterdayData?.[0]?.result?.data ?? [];
+
+      const todayEntries = todayRaw.flatMap((item) => {
+        const parsed = FoodEntrySchema.safeParse(item);
+        return parsed.success ? [parsed.data] : [];
+      });
+      const yesterdayEntries = yesterdayRaw.flatMap((item) => {
+        const parsed = FoodEntrySchema.safeParse(item);
+        return parsed.success ? [parsed.data] : [];
+      });
 
       // Deduplicate by food name, today's entries first
       const seen = new Set<string>();
       const results: SearchResult[] = [];
-      for (const r of [...todayEntries, ...yesterdayEntries]) {
-        const name = r.food_name as string;
-        if (seen.has(name)) continue;
-        seen.add(name);
+      for (const entry of [...todayEntries, ...yesterdayEntries]) {
+        if (seen.has(entry.food_name)) continue;
+        seen.add(entry.food_name);
         results.push({
           source: "history",
-          name,
+          name: entry.food_name,
           brand: null,
-          calories: r.calories as number | null,
-          proteinG: r.protein_g as number | null,
-          carbsG: r.carbs_g as number | null,
-          fatG: r.fat_g as number | null,
-          servingDescription: r.food_description as string | null,
+          calories: entry.calories ?? null,
+          proteinG: entry.protein_g ?? null,
+          carbsG: entry.carbs_g ?? null,
+          fatG: entry.fat_g ?? null,
+          servingDescription: entry.food_description ?? null,
           barcode: null,
         });
       }
       setRecentFoods(results);
     });
-  }, [date]);
+  }, [date, apiUrl, authHeaders]);
 
   const utils = trpc.useUtils();
   const createMutation = trpc.food.create.useMutation({
@@ -177,45 +195,54 @@ export default function AddFoodScreen() {
   const [searchingOpenFoodFacts, setSearchingOpenFoodFacts] = useState(false);
 
   // ── Search logic (history only for fast typeahead) ──
-  const performSearch = useCallback(async (query: string, signal?: AbortSignal) => {
-    if (query.length < 2) {
-      setSearchResults([]);
-      setSearching(false);
-      return;
-    }
+  const performSearch = useCallback(
+    async (query: string, signal?: AbortSignal) => {
+      if (query.length < 2) {
+        setSearchResults([]);
+        setSearching(false);
+        return;
+      }
 
-    setSearching(true);
-    // Clear previous Open Food Facts results when query changes
-    setOpenFoodFactsResults([]);
-    setSearchingOpenFoodFacts(false);
-    openFoodFactsRequestCounterRef.current += 1;
+      setSearching(true);
+      // Clear previous Open Food Facts results when query changes
+      setOpenFoodFactsResults([]);
+      setSearchingOpenFoodFacts(false);
+      openFoodFactsRequestCounterRef.current += 1;
 
-    const historyResults = await fetch(`${apiUrl}/food.search?batch=1`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeaders },
-      body: JSON.stringify({ "0": { query, limit: 5 } }),
-      signal,
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        const results = data?.[0]?.result?.data ?? [];
-        return results.map((r: Record<string, unknown>): SearchResult => ({
-          source: "history" as const,
-          name: r.food_name as string,
-          brand: null,
-          calories: r.calories as number | null,
-          proteinG: r.protein_g as number | null,
-          carbsG: r.carbs_g as number | null,
-          fatG: r.fat_g as number | null,
-          servingDescription: r.food_description as string | null,
-          barcode: null,
-        }));
+      const historyResults = await fetch(`${apiUrl}/food.search?batch=1`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders },
+        body: JSON.stringify({ "0": { query, limit: 5 } }),
+        signal,
       })
-      .catch(() => [] as SearchResult[]);
+        .then((r) => r.json())
+        .then((data) => {
+          const rawResults: unknown[] = data?.[0]?.result?.data ?? [];
+          return rawResults.flatMap((item): SearchResult[] => {
+            const parsed = FoodEntrySchema.safeParse(item);
+            if (!parsed.success) return [];
+            return [
+              {
+                source: "history",
+                name: parsed.data.food_name,
+                brand: null,
+                calories: parsed.data.calories ?? null,
+                proteinG: parsed.data.protein_g ?? null,
+                carbsG: parsed.data.carbs_g ?? null,
+                fatG: parsed.data.fat_g ?? null,
+                servingDescription: parsed.data.food_description ?? null,
+                barcode: null,
+              },
+            ];
+          });
+        })
+        .catch((): SearchResult[] => []);
 
-    setSearchResults(historyResults);
-    setSearching(false);
-  }, [apiUrl, authHeaders]);
+      setSearchResults(historyResults);
+      setSearching(false);
+    },
+    [apiUrl, authHeaders],
+  );
 
   // ── On-demand Open Food Facts search ──
   const performOpenFoodFactsSearch = useCallback(async () => {
@@ -366,12 +393,7 @@ export default function AddFoodScreen() {
 
   // ── Barcode scanner overlay (full-screen) ──
   if (activeTab === "scan" && !showForm) {
-    return (
-      <BarcodeScanner
-        onScanned={handleBarcodeScan}
-        onClose={() => setActiveTab("search")}
-      />
-    );
+    return <BarcodeScanner onScanned={handleBarcodeScan} onClose={() => setActiveTab("search")} />;
   }
 
   // ── Detail form (after selecting a search result or scan result) ──
@@ -382,7 +404,10 @@ export default function AddFoodScreen() {
         style={styles.container}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
-        <ScrollView style={styles.scrollView} contentContainerStyle={[styles.formContent, isWide && styles.contentWide]}>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={[styles.formContent, isWide && styles.contentWide]}
+        >
           {/* Food name (editable) */}
           <Text style={styles.label}>Name</Text>
           <TextInput
@@ -403,7 +428,12 @@ export default function AddFoodScreen() {
                 onPress={() => setSelectedMeal(value)}
                 activeOpacity={0.7}
               >
-                <Text style={[styles.mealChipText, selectedMeal === value && styles.mealChipTextSelected]}>
+                <Text
+                  style={[
+                    styles.mealChipText,
+                    selectedMeal === value && styles.mealChipTextSelected,
+                  ]}
+                >
                   {label}
                 </Text>
               </TouchableOpacity>
@@ -422,9 +452,7 @@ export default function AddFoodScreen() {
           />
 
           {/* Serving description */}
-          {servingDescription ? (
-            <Text style={styles.servingHint}>{servingDescription}</Text>
-          ) : null}
+          {servingDescription ? <Text style={styles.servingHint}>{servingDescription}</Text> : null}
 
           {/* Macros — compact row */}
           <View style={styles.macroRow}>
@@ -467,7 +495,10 @@ export default function AddFoodScreen() {
           <View style={styles.formButtons}>
             <TouchableOpacity
               style={styles.backButton}
-              onPress={() => { selectedFoodNutrients.current = {}; setShowForm(false); }}
+              onPress={() => {
+                selectedFoodNutrients.current = {};
+                setShowForm(false);
+              }}
               activeOpacity={0.7}
             >
               <Text style={styles.backButtonText}>Back</Text>
@@ -478,9 +509,7 @@ export default function AddFoodScreen() {
               activeOpacity={0.8}
               disabled={isSaving}
             >
-              <Text style={styles.saveButtonText}>
-                {isSaving ? "Saving..." : "Log Food"}
-              </Text>
+              <Text style={styles.saveButtonText}>{isSaving ? "Saving..." : "Log Food"}</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -551,7 +580,7 @@ export default function AddFoodScreen() {
               </View>
             )}
 
-            {displayResults.map((result, index) => {
+            {displayResults.map((result) => {
               const macroTags = [
                 result.proteinG != null ? `Protein ${result.proteinG}g` : null,
                 result.carbsG != null ? `Carbs ${result.carbsG}g` : null,
@@ -560,7 +589,7 @@ export default function AddFoodScreen() {
 
               return (
                 <TouchableOpacity
-                  key={`${result.source}-${result.name}-${index}`}
+                  key={`${result.source}-${result.name}`}
                   style={styles.resultCard}
                   onPress={() => handleSelectResult(result)}
                   activeOpacity={0.75}
@@ -626,7 +655,7 @@ export default function AddFoodScreen() {
             {openFoodFactsResults.length > 0 && (
               <>
                 <Text style={styles.sectionHeader}>Food Database</Text>
-                {openFoodFactsResults.map((result, index) => {
+                {openFoodFactsResults.map((result) => {
                   const macroTags = [
                     result.proteinG != null ? `Protein ${result.proteinG}g` : null,
                     result.carbsG != null ? `Carbs ${result.carbsG}g` : null,
@@ -635,7 +664,7 @@ export default function AddFoodScreen() {
 
                   return (
                     <TouchableOpacity
-                      key={`off-${result.name}-${index}`}
+                      key={`off-${result.name}`}
                       style={styles.resultCard}
                       onPress={() => handleSelectResult(result)}
                       activeOpacity={0.75}
@@ -724,7 +753,12 @@ export default function AddFoodScreen() {
                 onPress={() => setSelectedMeal(value)}
                 activeOpacity={0.7}
               >
-                <Text style={[styles.mealChipText, selectedMeal === value && styles.mealChipTextSelected]}>
+                <Text
+                  style={[
+                    styles.mealChipText,
+                    selectedMeal === value && styles.mealChipTextSelected,
+                  ]}
+                >
                   {label}
                 </Text>
               </TouchableOpacity>
@@ -793,7 +827,11 @@ export default function AddFoodScreen() {
 
           {/* Log button */}
           <TouchableOpacity
-            style={[styles.saveButton, { marginTop: 16 }, quickAddMutation.isPending && styles.saveButtonDisabled]}
+            style={[
+              styles.saveButton,
+              { marginTop: 16 },
+              quickAddMutation.isPending && styles.saveButtonDisabled,
+            ]}
             onPress={handleQuickAddSave}
             activeOpacity={0.8}
             disabled={quickAddMutation.isPending}

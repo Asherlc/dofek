@@ -137,5 +137,120 @@ export function mapSportId(sportId: number): CanonicalActivityType {
   return WHOOP_SPORT_MAP[sportId] ?? "other";
 }
 
+// ============================================================
+// v2_activity type name → canonical activity type
+// ============================================================
+// The BFF cycle response includes `v2_activities[]` with a human-readable
+// `type` string (e.g., "walk", "spin", "functional-fitness"). This map
+// provides a fallback when a sport_id is unknown or maps to "other".
+
+const V2_ACTIVITY_TYPE_MAP: Record<string, CanonicalActivityType> = {
+  walk: "walking",
+  walking: "walking",
+  "dog-walk": "walking",
+  "dog-walking": "walking",
+  "stroller-walk": "walking",
+  "stroller-walking": "walking",
+  run: "running",
+  running: "running",
+  "stroller-jogging": "running",
+  cycling: "cycling",
+  spin: "indoor_cycling",
+  "indoor-cycling": "indoor_cycling",
+  "mountain-biking": "mountain_biking",
+  swimming: "swimming",
+  hiking: "hiking",
+  rucking: "hiking",
+  yoga: "yoga",
+  "hot-yoga": "yoga",
+  pilates: "pilates",
+  strength: "strength",
+  weightlifting: "strength",
+  "strength-trainer": "strength",
+  "functional-fitness": "functional_fitness",
+  rowing: "rowing",
+  elliptical: "elliptical",
+  stairmaster: "stairmaster",
+  "stair-climbing": "stair_climbing",
+  "stadium-steps": "stair_climbing",
+  meditation: "meditation",
+  boxing: "boxing",
+  "box-fitness": "boxing",
+  kickboxing: "kickboxing",
+  "martial-arts": "martial_arts",
+  "jiu-jitsu": "martial_arts",
+  tennis: "tennis",
+  basketball: "basketball",
+  soccer: "soccer",
+  golf: "golf",
+  "ice-hockey": "ice_hockey",
+  baseball: "baseball",
+  softball: "softball",
+  volleyball: "volleyball",
+  squash: "squash",
+  wrestling: "wrestling",
+  lacrosse: "lacrosse",
+  rugby: "rugby",
+  cricket: "cricket",
+  handball: "handball",
+  badminton: "badminton",
+  "table-tennis": "table_tennis",
+  pickleball: "paddle_racquet",
+  "paddle-tennis": "paddle_racquet",
+  padel: "padel",
+  surfing: "surfing",
+  snowboarding: "snowboarding",
+  skiing: "skiing",
+  "cross-country-skiing": "cross_country_skiing",
+  "rock-climbing": "rock_climbing",
+  climbing: "climbing",
+  gymnastics: "gymnastics",
+  dance: "dance",
+  skating: "skating",
+  "ice-skating": "skating",
+  "inline-skating": "skating",
+  kayaking: "kayaking",
+  paddleboarding: "paddleboarding",
+  sailing: "sailing",
+  fencing: "fencing",
+  "track-and-field": "track_and_field",
+  triathlon: "triathlon",
+  duathlon: "triathlon",
+  hiit: "hiit",
+  "obstacle-course-racing": "cross_training",
+  "cross-training": "cross_training",
+  "f45-training": "cross_training",
+  barrys: "cross_training",
+  stretching: "stretching",
+  barre: "barre",
+  barre3: "barre",
+  "jump-rope": "jump_rope",
+  "jumping-rope": "jump_rope",
+  "water-polo": "water_polo",
+  "water-sports": "water_sports",
+  "kite-boarding": "water_sports",
+  "water-skiing": "water_sports",
+  wakeboarding: "water_sports",
+  diving: "underwater_diving",
+  "disc-golf": "disc_golf",
+  "fitness-gaming": "fitness_gaming",
+  football: "football",
+  "gaelic-football": "football",
+  "australian-football": "australian_football",
+  "horseback-riding": "equestrian",
+  polo: "equestrian",
+  cardio: "cardio",
+  "assault-bike": "cardio",
+  breathwork: "breathwork",
+};
+
+/**
+ * Map a WHOOP v2_activity type string to a canonical activity type.
+ * Returns null if the type is unknown (caller should fall back to sport_id).
+ */
+export function mapV2ActivityType(typeName: string): CanonicalActivityType | null {
+  return V2_ACTIVITY_TYPE_MAP[typeName.toLowerCase()] ?? null;
+}
+
 /** All known WHOOP sport IDs and their canonical types. */
 export { WHOOP_SPORT_MAP };

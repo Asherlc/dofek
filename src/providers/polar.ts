@@ -387,6 +387,10 @@ export class PolarProvider implements WebhookProvider {
     return null;
   }
 
+  activityUrl(externalId: string): string {
+    return `https://flow.polar.com/training/analysis/${externalId}`;
+  }
+
   // ── Webhook implementation ──
 
   async registerWebhook(

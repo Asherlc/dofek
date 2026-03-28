@@ -10,8 +10,16 @@ vi.mock("../lib/start-worker.ts", () => ({
 }));
 
 vi.mock("../logger.ts", () => ({
-  logger: { info: vi.fn(), error: vi.fn() },
+  logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
 }));
+
+const mockRm = vi
+  .fn<(path: string, options?: object) => Promise<void>>()
+  .mockResolvedValue(undefined);
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return { ...actual, rm: (...args: [string, object?]) => mockRm(...args) };
+});
 
 vi.mock("../auth/cookies.ts", () => ({
   getSessionIdFromRequest: vi.fn(),
@@ -28,6 +36,7 @@ import express from "express";
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
 import { assembleChunks, streamToFile } from "../lib/server-utils.ts";
+import { logger } from "../logger.ts";
 import { createUploadRouter } from "./upload.ts";
 
 const EXPECTED_JOB_FILES_DIR = process.env.JOB_FILES_DIR || join(tmpdir(), "dofek-job-files");
@@ -81,7 +90,7 @@ async function request(
           resolve({ status: res.status, body: await res.text() });
           server.close();
         })
-        .catch(() => {
+        .catch((_error: unknown) => {
           resolve({ status: 500, body: "fetch error" });
           server.close();
         });
@@ -610,6 +619,110 @@ describe("createUploadRouter", () => {
         body: Buffer.from("chunk-0"),
       });
       expect(res.status).toBe(500);
+    });
+
+    it("warns when rm fails during chunked upload error cleanup", async () => {
+      const { app } = createTestApp();
+      // First chunk succeeds to create the upload entry
+      await request(app, "post", "/api/upload/apple-health", {
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "x-upload-id": "upload-rm-err",
+          "x-chunk-index": "0",
+          "x-chunk-total": "2",
+        },
+        body: Buffer.from("chunk-0"),
+      });
+
+      // Second chunk fails to trigger the outer catch, and rm rejects
+      vi.mocked(streamToFile).mockRejectedValueOnce(new Error("write error"));
+      mockRm.mockRejectedValueOnce(new Error("EPERM"));
+
+      const res = await request(app, "post", "/api/upload/apple-health", {
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "x-upload-id": "upload-rm-err",
+          "x-chunk-index": "1",
+          "x-chunk-total": "2",
+        },
+        body: Buffer.from("chunk-1"),
+      });
+      expect(res.status).toBe(500);
+
+      await vi.waitFor(() => {
+        expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+          "Failed to clean up upload dir %s: %s",
+          expect.any(String),
+          expect.any(Error),
+        );
+      });
+    });
+
+    it("warns when rm fails during assembly error cleanup", async () => {
+      vi.mocked(assembleChunks).mockRejectedValueOnce(new Error("disk full"));
+      mockRm.mockRejectedValueOnce(new Error("EPERM"));
+      const { app } = createTestApp();
+
+      // Send chunk 0 of 2
+      await request(app, "post", "/api/upload/apple-health", {
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "x-upload-id": "upload-rm-assembly-err",
+          "x-chunk-index": "0",
+          "x-chunk-total": "2",
+        },
+        body: Buffer.from("chunk-0"),
+      });
+
+      // Send chunk 1 of 2 (final)
+      await request(app, "post", "/api/upload/apple-health", {
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "x-upload-id": "upload-rm-assembly-err",
+          "x-chunk-index": "1",
+          "x-chunk-total": "2",
+        },
+        body: Buffer.from("chunk-1"),
+      });
+
+      // Wait for background assembly error + rm error to propagate
+      await vi.waitFor(() => {
+        expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+          "Failed to clean up chunk dir %s: %s",
+          expect.any(String),
+          expect.any(Error),
+        );
+      });
+    });
+
+    it("warns when rm fails during stale upload cleanup", async () => {
+      vi.useFakeTimers();
+      const { app } = createTestApp();
+
+      // Send first chunk to create the upload entry
+      await request(app, "post", "/api/upload/apple-health", {
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "x-upload-id": "upload-stale-rm-err",
+          "x-chunk-index": "0",
+          "x-chunk-total": "3",
+        },
+        body: Buffer.from("chunk-0"),
+      });
+
+      // Make rm reject when the stale timeout fires
+      mockRm.mockRejectedValueOnce(new Error("EPERM"));
+
+      // Advance past the 30-minute stale timeout
+      await vi.advanceTimersByTimeAsync(30 * 60 * 1000 + 1);
+
+      expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+        "Failed to clean up stale upload dir %s: %s",
+        expect.any(String),
+        expect.any(Error),
+      );
+
+      vi.useRealTimers();
     });
 
     it("sets error status when background assembly fails", async () => {

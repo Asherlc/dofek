@@ -135,6 +135,10 @@ export class CyclingAnalyticsProvider implements SyncProvider {
     return null;
   }
 
+  activityUrl(externalId: string): string {
+    return `https://www.cyclinganalytics.com/ride/${externalId}`;
+  }
+
   authSetup(): ProviderAuthSetup {
     const config = cyclingAnalyticsOAuthConfig();
     if (!config) throw new Error("CYCLING_ANALYTICS_CLIENT_ID and CLIENT_SECRET required");

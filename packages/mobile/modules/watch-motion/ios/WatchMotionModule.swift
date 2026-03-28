@@ -1,3 +1,4 @@
+import Compression
 import ExpoModulesCore
 import WatchConnectivity
 
@@ -151,26 +152,113 @@ public class WatchMotionModule: Module {
         var allSamples: [[String: Any]] = []
 
         for fileURL in contents {
-            let compressedData = try Data(contentsOf: fileURL)
+            do {
+                let fileData = try Data(contentsOf: fileURL)
 
-            // Decompress gzip
-            let decompressedData: Data
-            if compressedData.starts(with: [0x1f, 0x8b]) {
-                // Gzip magic bytes — decompress
-                decompressedData = try (compressedData as NSData).decompressed(using: .zlib) as Data
-            } else {
-                // Already uncompressed (plain JSON)
-                decompressedData = compressedData
-            }
+                // Decompress zlib. The Watch app compresses with NSData.compressed(using: .zlib)
+                // which produces zlib-format data (magic byte 0x78), not gzip (0x1f 0x8b).
+                let decompressedData: Data
+                if let firstByte = fileData.first, firstByte == 0x78 {
+                    // Zlib magic byte — decompress
+                    decompressedData = try (fileData as NSData).decompressed(using: .zlib) as Data
+                } else if fileData.starts(with: [0x1f, 0x8b]) {
+                    // Gzip: strip the header to get raw DEFLATE, then decompress.
+                    // NSData.decompressed(using: .zlib) only handles zlib format, not gzip.
+                    decompressedData = try Self.decompressGzip(fileData)
+                } else {
+                    // Already uncompressed (plain JSON)
+                    decompressedData = fileData
+                }
 
-            // Parse JSON array of samples
-            guard let jsonArray = try JSONSerialization.jsonObject(with: decompressedData) as? [[String: Any]] else {
-                continue
+                // Parse JSON array of samples
+                guard let jsonArray = try JSONSerialization.jsonObject(with: decompressedData) as? [[String: Any]] else {
+                    NSLog("[WatchMotion] Skipping file %@ — JSON is not an array", fileURL.lastPathComponent)
+                    continue
+                }
+                allSamples.append(contentsOf: jsonArray)
+            } catch {
+                NSLog("[WatchMotion] Failed to parse pending file %@: %@", fileURL.lastPathComponent, error.localizedDescription)
+                // Skip this file and continue processing others.
+                // The file will be deleted when acknowledgeWatchSamples() runs,
+                // preventing it from blocking future syncs.
             }
-            allSamples.append(contentsOf: jsonArray)
         }
 
         return allSamples
+    }
+
+    /// Decompress gzip data by stripping the gzip header and decompressing
+    /// the raw DEFLATE payload using the Compression framework.
+    private static func decompressGzip(_ data: Data) throws -> Data {
+        guard data.count >= 10, data[0] == 0x1f, data[1] == 0x8b else {
+            throw NSError(domain: "WatchMotion", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "Invalid gzip header",
+            ])
+        }
+
+        var offset = 10  // Minimum gzip header size
+        let flags = data[3]
+
+        // FEXTRA — skip extra field
+        if flags & 0x04 != 0 {
+            guard data.count > offset + 2 else {
+                throw NSError(domain: "WatchMotion", code: 2, userInfo: [
+                    NSLocalizedDescriptionKey: "Truncated gzip FEXTRA",
+                ])
+            }
+            let extraLength = Int(data[offset]) | (Int(data[offset + 1]) << 8)
+            offset += 2 + extraLength
+        }
+        // FNAME — skip null-terminated name
+        if flags & 0x08 != 0 {
+            while offset < data.count && data[offset] != 0 { offset += 1 }
+            offset += 1
+        }
+        // FCOMMENT — skip null-terminated comment
+        if flags & 0x10 != 0 {
+            while offset < data.count && data[offset] != 0 { offset += 1 }
+            offset += 1
+        }
+        // FHCRC — skip header CRC16
+        if flags & 0x02 != 0 { offset += 2 }
+
+        guard data.count > offset + 8 else {
+            throw NSError(domain: "WatchMotion", code: 3, userInfo: [
+                NSLocalizedDescriptionKey: "Truncated gzip data",
+            ])
+        }
+
+        // Strip gzip header and 8-byte trailer (CRC32 + uncompressed size)
+        let deflatePayload = data.subdata(in: offset ..< (data.count - 8))
+
+        // Read the original uncompressed size from the last 4 bytes (little-endian)
+        let uncompressedSize = Int(data[data.count - 4])
+            | (Int(data[data.count - 3]) << 8)
+            | (Int(data[data.count - 2]) << 16)
+            | (Int(data[data.count - 1]) << 24)
+
+        // Allocate output buffer (use uncompressed size hint, with a safety cap)
+        let bufferSize = min(max(uncompressedSize, deflatePayload.count * 4), 50 * 1024 * 1024)
+        let destinationBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+        defer { destinationBuffer.deallocate() }
+
+        let decodedSize = deflatePayload.withUnsafeBytes { sourcePointer -> Int in
+            guard let baseAddress = sourcePointer.baseAddress else { return 0 }
+            return compression_decode_buffer(
+                destinationBuffer, bufferSize,
+                baseAddress.assumingMemoryBound(to: UInt8.self), deflatePayload.count,
+                nil,
+                COMPRESSION_ZLIB
+            )
+        }
+
+        guard decodedSize > 0 else {
+            throw NSError(domain: "WatchMotion", code: 4, userInfo: [
+                NSLocalizedDescriptionKey: "Gzip decompression failed (decoded 0 bytes)",
+            ])
+        }
+
+        return Data(bytes: destinationBuffer, count: decodedSize)
     }
 
     private func deletePendingFiles() {

@@ -1,5 +1,5 @@
-import { useState } from "react";
 import { useRouter } from "expo-router";
+import { useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -11,10 +11,10 @@ import {
 } from "react-native";
 import { ActivityCard } from "../components/ActivityCard";
 import { trpc } from "../lib/trpc";
-import { useRefresh } from "../lib/useRefresh";
 import { useUnitConverter } from "../lib/units";
-import { ActivityRowSchema } from "../types/api";
+import { useRefresh } from "../lib/useRefresh";
 import { colors } from "../theme";
+import { ActivityRowSchema } from "../types/api";
 
 const PAGE_SIZE = 20;
 
@@ -32,8 +32,7 @@ export default function ActivitiesScreen() {
   const parsed = ActivityRowSchema.array()
     .catch([])
     .parse(query.data?.items ?? []);
-  const totalCount = (query.data as { totalCount?: number } | undefined)
-    ?.totalCount ?? 0;
+  const totalCount = query.data && "totalCount" in query.data ? (query.data.totalCount ?? 0) : 0;
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
   const { refreshing, onRefresh } = useRefresh();
 
@@ -50,12 +49,15 @@ export default function ActivitiesScreen() {
         data={parsed}
         keyExtractor={(item) => String(item.id)}
         contentContainerStyle={styles.list}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.textSecondary}
+          />
+        }
         renderItem={({ item }) => (
-          <TouchableOpacity
-            activeOpacity={0.7}
-            onPress={() => router.push(`/activity/${item.id}`)}
-          >
+          <TouchableOpacity activeOpacity={0.7} onPress={() => router.push(`/activity/${item.id}`)}>
             <ActivityCard
               name={item.name ?? ""}
               activityType={item.activity_type ?? ""}
@@ -83,17 +85,9 @@ export default function ActivitiesScreen() {
               <TouchableOpacity
                 onPress={() => setPage((p) => p - 1)}
                 disabled={page <= 0}
-                style={[
-                  styles.pageButton,
-                  page <= 0 && styles.pageButtonDisabled,
-                ]}
+                style={[styles.pageButton, page <= 0 && styles.pageButtonDisabled]}
               >
-                <Text
-                  style={[
-                    styles.pageButtonText,
-                    page <= 0 && styles.pageButtonTextDisabled,
-                  ]}
-                >
+                <Text style={[styles.pageButtonText, page <= 0 && styles.pageButtonTextDisabled]}>
                   Previous
                 </Text>
               </TouchableOpacity>
@@ -103,10 +97,7 @@ export default function ActivitiesScreen() {
               <TouchableOpacity
                 onPress={() => setPage((p) => p + 1)}
                 disabled={page >= totalPages - 1}
-                style={[
-                  styles.pageButton,
-                  page >= totalPages - 1 && styles.pageButtonDisabled,
-                ]}
+                style={[styles.pageButton, page >= totalPages - 1 && styles.pageButtonDisabled]}
               >
                 <Text
                   style={[

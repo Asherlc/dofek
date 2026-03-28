@@ -163,8 +163,12 @@ export function createExportRouter(db: import("dofek/db").Database): Router {
         logger.error(`[export] Download failed: ${err}`);
       }
       // Clean up the temp file after download
-      unlink(filePath).catch(() => {});
-      job.remove().catch(() => {});
+      unlink(filePath).catch((error: unknown) => {
+        logger.warn("Failed to clean up export file %s: %s", filePath, error);
+      });
+      job.remove().catch((error: unknown) => {
+        logger.warn("Failed to remove export job: %s", error);
+      });
     });
   });
 
