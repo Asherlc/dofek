@@ -1,9 +1,10 @@
 import * as Sentry from "@sentry/react-native";
 import { AppState, type AppStateStatus } from "react-native";
 import type { AccelerometerUploadClient } from "./accelerometer-service";
-import { captureException } from "./telemetry";
+import { captureException, logger } from "./telemetry";
 
 const UPLOAD_BATCH_SIZE = 5000;
+const LOG_CATEGORY = "whoop-ble";
 
 /** Dependencies injected for testability (wraps the whoop-ble native module) */
 export interface WhoopBleSyncDeps {
@@ -53,11 +54,16 @@ export async function initBackgroundWhoopBleSync(
   // Sync whenever the app comes to foreground
   appStateSubscription = AppState.addEventListener("change", (nextState: AppStateStatus) => {
     if (nextState !== "active") return;
-    if (syncing) return;
+    if (syncing) {
+      logger.info(LOG_CATEGORY, "foreground sync skipped — already syncing");
+      return;
+    }
 
+    logger.info(LOG_CATEGORY, "app foregrounded — starting sync");
     syncing = true;
     syncOnForeground(trpcClient, whoopDeps)
       .catch((error: unknown) => {
+        logger.error(LOG_CATEGORY, `foreground sync error: ${error}`);
         Sentry.captureException(error, { tags: { source: "whoop-ble-foreground-sync" } });
       })
       .finally(() => {
@@ -69,9 +75,12 @@ export async function initBackgroundWhoopBleSync(
   // state *transitions*, so if the app is already active when init is called
   // (the common case), nothing would happen until the user backgrounds and
   // re-opens the app. Best-effort: don't let init failures propagate.
+  logger.info(LOG_CATEGORY, "initializing background sync");
   try {
     await syncOnForeground(trpcClient, whoopDeps);
+    logger.info(LOG_CATEGORY, "initial sync complete");
   } catch (error: unknown) {
+    logger.error(LOG_CATEGORY, `initial sync error: ${error}`);
     Sentry.captureException(error, { tags: { source: "whoop-ble-init-sync" } });
   }
 }
@@ -81,6 +90,7 @@ async function syncOnForeground(
   whoopDeps: WhoopBleSyncDeps,
 ): Promise<void> {
   if (!whoopDeps.isBluetoothAvailable()) {
+    logger.warn(LOG_CATEGORY, "Bluetooth not available, skipping sync");
     Sentry.addBreadcrumb({
       category: "whoop-ble",
       message: "Bluetooth not available, skipping sync",
@@ -91,8 +101,10 @@ async function syncOnForeground(
 
   // Connect if not already connected
   if (!connected) {
+    logger.info(LOG_CATEGORY, "not connected, searching for WHOOP strap");
     const device = await whoopDeps.findWhoop();
     if (!device) {
+      logger.warn(LOG_CATEGORY, "no WHOOP strap found");
       Sentry.addBreadcrumb({
         category: "whoop-ble",
         message: "No WHOOP strap found",
@@ -101,41 +113,71 @@ async function syncOnForeground(
       return;
     }
 
+    const deviceLabel = device.name ?? device.id;
+    logger.info(LOG_CATEGORY, `connecting to ${deviceLabel}`);
     Sentry.addBreadcrumb({
       category: "whoop-ble",
-      message: `Connecting to ${device.name ?? device.id}`,
+      message: `Connecting to ${deviceLabel}`,
       level: "info",
     });
     await whoopDeps.connect(device.id);
+    logger.info(LOG_CATEGORY, "connected, starting IMU streaming");
     await whoopDeps.startImuStreaming();
     connected = true;
+    logger.info(LOG_CATEGORY, "streaming started");
     Sentry.addBreadcrumb({
       category: "whoop-ble",
       message: "Connected and streaming",
       level: "info",
     });
+  } else {
+    logger.info(LOG_CATEGORY, "already connected, uploading buffer");
   }
 
   // Upload any buffered samples
   const samples = await whoopDeps.getBufferedSamples();
-  if (samples.length > 0) {
-    // Convert to the accelerometer sample format (x/y/z) for the upload endpoint
-    const uploadSamples = samples.map((sample) => ({
-      timestamp: sample.timestamp,
-      x: sample.accelerometerX,
-      y: sample.accelerometerY,
-      z: sample.accelerometerZ,
-    }));
+  logger.info(LOG_CATEGORY, `getBufferedSamples returned ${samples.length} samples`);
 
-    for (let offset = 0; offset < uploadSamples.length; offset += UPLOAD_BATCH_SIZE) {
-      const batch = uploadSamples.slice(offset, offset + UPLOAD_BATCH_SIZE);
-      await trpcClient.accelerometerSync.pushAccelerometerSamples.mutate({
-        deviceId: "WHOOP Strap",
-        deviceType: "whoop",
-        samples: batch,
-      });
-    }
+  if (samples.length === 0) {
+    Sentry.addBreadcrumb({
+      category: "whoop-ble",
+      message: "Buffer empty — no samples to upload",
+      level: "info",
+    });
+    return;
   }
+
+  // Convert to the accelerometer sample format (x/y/z) for the upload endpoint
+  const uploadSamples = samples.map((sample) => ({
+    timestamp: sample.timestamp,
+    x: sample.accelerometerX,
+    y: sample.accelerometerY,
+    z: sample.accelerometerZ,
+  }));
+
+  // Log timestamp range for debugging stale/future data
+  const firstTimestamp = uploadSamples[0]?.timestamp;
+  const lastTimestamp = uploadSamples[uploadSamples.length - 1]?.timestamp;
+  logger.info(
+    LOG_CATEGORY,
+    `uploading ${uploadSamples.length} samples (${firstTimestamp} → ${lastTimestamp})`,
+  );
+
+  let totalUploaded = 0;
+  for (let offset = 0; offset < uploadSamples.length; offset += UPLOAD_BATCH_SIZE) {
+    const batch = uploadSamples.slice(offset, offset + UPLOAD_BATCH_SIZE);
+    const result = await trpcClient.accelerometerSync.pushAccelerometerSamples.mutate({
+      deviceId: "WHOOP Strap",
+      deviceType: "whoop",
+      samples: batch,
+    });
+    totalUploaded += batch.length;
+    logger.info(
+      LOG_CATEGORY,
+      `uploaded batch ${Math.floor(offset / UPLOAD_BATCH_SIZE) + 1}: ${batch.length} samples (server inserted: ${result.inserted})`,
+    );
+  }
+  logger.info(LOG_CATEGORY, `upload complete: ${totalUploaded} samples`);
 }
 
 /** Clean up background WHOOP BLE sync listeners and disconnect */
