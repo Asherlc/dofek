@@ -27,6 +27,17 @@ const INTEGER_METRIC_STREAM_COLUMNS = new Set([
   "accumulated_power",
   "stress",
 ]);
+
+type Database = Parameters<Parameters<typeof protectedProcedure.mutation>[0]>[0]["ctx"]["db"];
+
+/** Refresh a single materialized view (CONCURRENTLY if possible). */
+async function refreshView(db: Database, view: string): Promise<void> {
+  try {
+    await db.execute(sql.raw(`REFRESH MATERIALIZED VIEW CONCURRENTLY ${view}`));
+  } catch {
+    await db.execute(sql.raw(`REFRESH MATERIALIZED VIEW ${view}`));
+  }
+}
 const MAX_SLEEP_SESSION_GAP_MS = 90 * 60 * 1000;
 
 // ── Zod schemas ──
@@ -206,8 +217,6 @@ const workoutActivityTypeMap: Record<string, string> = {
   "79": "pickleball",
   "80": "cooldown",
 };
-
-type Database = Parameters<Parameters<typeof protectedProcedure.mutation>[0]>[0]["ctx"]["db"];
 
 /** Ensure the apple_health provider row exists */
 async function ensureProvider(db: Database) {
@@ -985,6 +994,7 @@ export const healthKitSyncRouter = router({
 
       let inserted = 0;
       const errors: string[] = [];
+      let needsDailyMetricsRefresh = false;
 
       try {
         inserted += await processBodyMeasurements(ctx.db, ctx.userId, bodyMeasurements);
@@ -994,7 +1004,11 @@ export const healthKitSyncRouter = router({
       }
 
       try {
-        inserted += await processDailyMetrics(ctx.db, ctx.userId, dailyMetricSamples);
+        const dailyInserted = await processDailyMetrics(ctx.db, ctx.userId, dailyMetricSamples);
+        inserted += dailyInserted;
+        if (dailyInserted > 0) {
+          needsDailyMetricsRefresh = true;
+        }
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         errors.push(`Daily metrics: ${message}`);
@@ -1032,13 +1046,7 @@ export const healthKitSyncRouter = router({
 
           // Refresh the daily metrics view so the dashboard picks up new data immediately
           if (aggregatedDailyMetrics) {
-            try {
-              await ctx.db.execute(
-                sql.raw("REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_daily_metrics"),
-              );
-            } catch {
-              await ctx.db.execute(sql.raw("REFRESH MATERIALIZED VIEW fitness.v_daily_metrics"));
-            }
+            needsDailyMetricsRefresh = true;
           }
         }
       } catch (error: unknown) {
@@ -1051,6 +1059,22 @@ export const healthKitSyncRouter = router({
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         errors.push(`Health events: ${message}`);
+      }
+
+      // Refresh materialized views so the dashboard picks up new data immediately
+      if (needsDailyMetricsRefresh) {
+        try {
+          await refreshView(ctx.db, "fitness.v_daily_metrics");
+        } catch (error) {
+          logger.error(`[apple_health] Failed to refresh v_daily_metrics: ${error}`);
+        }
+      }
+      if (bodyMeasurements.length > 0) {
+        try {
+          await refreshView(ctx.db, "fitness.v_body_measurement");
+        } catch (error) {
+          logger.error(`[apple_health] Failed to refresh v_body_measurement: ${error}`);
+        }
       }
 
       healthKitPushTotal.add(1, {
@@ -1082,6 +1106,17 @@ export const healthKitSyncRouter = router({
     .mutation(async ({ ctx, input }) => {
       await ensureProvider(ctx.db);
       const inserted = await processWorkouts(ctx.db, ctx.userId, input.workouts);
+
+      // Refresh activity views so dashboard picks up new workouts immediately
+      if (inserted > 0) {
+        try {
+          await refreshView(ctx.db, "fitness.v_activity");
+          await refreshView(ctx.db, "fitness.activity_summary");
+        } catch (error) {
+          logger.error(`[apple_health] Failed to refresh activity views: ${error}`);
+        }
+      }
+
       healthKitPushTotal.add(1, { endpoint: "pushWorkouts", status: "success" });
       healthKitRecordsTotal.add(input.workouts.length, {
         endpoint: "pushWorkouts",
@@ -1095,6 +1130,16 @@ export const healthKitSyncRouter = router({
     .mutation(async ({ ctx, input }) => {
       await ensureProvider(ctx.db);
       const inserted = await processSleepSamples(ctx.db, ctx.userId, input.samples);
+
+      // Refresh v_sleep so sleep queries pick up new data immediately
+      if (inserted > 0) {
+        try {
+          await refreshView(ctx.db, "fitness.v_sleep");
+        } catch (error) {
+          logger.error(`[apple_health] Failed to refresh v_sleep: ${error}`);
+        }
+      }
+
       healthKitPushTotal.add(1, { endpoint: "pushSleepSamples", status: "success" });
       healthKitRecordsTotal.add(input.samples.length, {
         endpoint: "pushSleepSamples",

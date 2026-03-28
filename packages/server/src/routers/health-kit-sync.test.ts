@@ -535,7 +535,7 @@ describe("healthKitSyncRouter", () => {
       expect(refreshCall).toBeDefined();
     });
 
-    it("does not refresh v_daily_metrics when no metric stream samples present", async () => {
+    it("refreshes v_daily_metrics when daily metric samples are inserted", async () => {
       const execute = makeExecute();
       const caller = createCaller({
         db: { execute },
@@ -548,6 +548,32 @@ describe("healthKitSyncRouter", () => {
             type: "HKQuantityTypeIdentifierStepCount",
             value: 5000,
             uuid: "steps-only",
+          }),
+        ],
+      });
+
+      const refreshCall = execute.mock.calls.find((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return (
+          serialized.includes("REFRESH MATERIALIZED VIEW") && serialized.includes("v_daily_metrics")
+        );
+      });
+      expect(refreshCall).toBeDefined();
+    });
+
+    it("does not refresh v_daily_metrics when no daily metrics or metric stream samples present", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+      });
+
+      await caller.pushQuantitySamples({
+        samples: [
+          makeSample({
+            type: "HKQuantityTypeIdentifierEnvironmentalAudioExposure",
+            value: 70,
+            uuid: "audio-only",
           }),
         ],
       });
@@ -1122,6 +1148,77 @@ describe("healthKitSyncRouter", () => {
         endpoint: "pushSleepSamples",
         category: "sleep",
       });
+    });
+
+    it("refreshes v_sleep materialized view after inserting sleep data", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.pushSleepSamples({
+        samples: [
+          {
+            uuid: "sleep-refresh",
+            startDate: "2024-01-15T22:00:00Z",
+            endDate: "2024-01-16T06:00:00Z",
+            value: "inBed",
+            sourceName: "Apple Watch",
+          },
+        ],
+      });
+
+      const refreshCall = execute.mock.calls.find((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return serialized.includes("REFRESH MATERIALIZED VIEW") && serialized.includes("v_sleep");
+      });
+      expect(refreshCall).toBeDefined();
+    });
+  });
+
+  describe("pushWorkouts view refresh", () => {
+    it("refreshes v_activity and activity_summary after inserting workouts", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.pushWorkouts({
+        workouts: [
+          {
+            uuid: "workout-refresh",
+            workoutType: "13",
+            startDate: "2024-01-15T09:00:00Z",
+            endDate: "2024-01-15T10:00:00Z",
+            duration: 3600,
+            totalEnergyBurned: 500,
+            totalDistance: 25000,
+            sourceName: "Apple Watch",
+            sourceBundle: "com.apple.Health",
+          },
+        ],
+      });
+
+      const activityRefreshCall = execute.mock.calls.find((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return (
+          serialized.includes("REFRESH MATERIALIZED VIEW") && serialized.includes("v_activity")
+        );
+      });
+      expect(activityRefreshCall).toBeDefined();
+
+      const summaryRefreshCall = execute.mock.calls.find((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return (
+          serialized.includes("REFRESH MATERIALIZED VIEW") &&
+          serialized.includes("activity_summary")
+        );
+      });
+      expect(summaryRefreshCall).toBeDefined();
     });
   });
 
