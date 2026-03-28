@@ -63,9 +63,7 @@ describe("ProviderLogo", () => {
     });
 
     it("shows '?' for an empty string provider", () => {
-      const { getByText } = render(
-        <ProviderLogo provider="" serverUrl="https://example.com" />,
-      );
+      const { getByText } = render(<ProviderLogo provider="" serverUrl="https://example.com" />);
       expect(getByText("?")).toBeTruthy();
     });
   });

@@ -1,9 +1,9 @@
 import { providerLabel } from "@dofek/providers/providers";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ProviderLogo } from "../components/ProviderLogo";
 import { type ConfiguredProviders, fetchConfiguredProviders, startOAuthLogin } from "../lib/auth";
 import { useAuth } from "../lib/auth-context";
-import { ProviderLogo } from "../components/ProviderLogo";
 import { colors } from "../theme";
 
 export default function LoginScreen() {

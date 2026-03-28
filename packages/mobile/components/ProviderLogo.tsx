@@ -1,9 +1,5 @@
+import { BRAND_COLORS, PROVIDER_LABELS, providerLogoType } from "@dofek/providers/providers";
 import { Image, StyleSheet, Text, View } from "react-native";
-import {
-  BRAND_COLORS,
-  PROVIDER_LABELS,
-  providerLogoType,
-} from "@dofek/providers/providers";
 
 interface ProviderLogoProps {
   /** Provider ID (e.g. "strava", "wahoo") */
