@@ -35,6 +35,20 @@ describe("classifyStrainZone", () => {
   it("returns 'optimal' when chronic average load is negative", () => {
     expect(classifyStrainZone(50, -10)).toBe("optimal");
   });
+
+  it("classifies exact boundary 0.8 as optimal (not restoring)", () => {
+    // ratio = 80/100 = 0.8, which should NOT be < 0.8
+    expect(classifyStrainZone(80, 100)).toBe("optimal");
+    // ratio = 79.99/100 = 0.7999, which IS < 0.8
+    expect(classifyStrainZone(79.99, 100)).toBe("restoring");
+  });
+
+  it("classifies exact boundary 1.3 as optimal (not overreaching)", () => {
+    // ratio = 130/100 = 1.3, which should NOT be > 1.3
+    expect(classifyStrainZone(130, 100)).toBe("optimal");
+    // ratio = 130.01/100 = 1.3001, which IS > 1.3
+    expect(classifyStrainZone(130.01, 100)).toBe("overreaching");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -148,6 +162,26 @@ describe("WeekRow", () => {
     it("sets avgReadiness to 0", () => {
       const summary = new WeekRow(makeRowData()).toSummary();
       expect(summary.avgReadiness).toBe(0);
+    });
+
+    it("rounds trainingHours using *10/10 (not other multipliers)", () => {
+      // 10.95 * 10 = 109.5, round = 110, / 10 = 11.0
+      // 10.95 * 11 = 120.45, round = 120, / 11 = 10.909...
+      const summary = new WeekRow(makeRowData({ totalHours: 10.95 })).toSummary();
+      expect(summary.trainingHours).toBe(11);
+    });
+
+    it("computes sleep performance as exact percentage", () => {
+      // 333 / 300 * 100 = 111.0 — verifies the * 100 multiplier
+      const summary = new WeekRow(
+        makeRowData({ avgSleepMin: 333, prev3wkAvgSleep: 300 }),
+      ).toSummary();
+      expect(summary.sleepPerformancePct).toBe(111);
+    });
+
+    it("returns avgSleepMinutes as rounded integer", () => {
+      const summary = new WeekRow(makeRowData({ avgSleepMin: 412.7 })).toSummary();
+      expect(summary.avgSleepMinutes).toBe(413);
     });
   });
 });

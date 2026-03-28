@@ -107,6 +107,79 @@ describe("TrainingRepository", () => {
       expect(data.trainingDates).toEqual([]);
     });
 
+    it("returns data from non-empty queries", async () => {
+      const execute = vi.fn();
+      // latestMetrics
+      execute.mockResolvedValueOnce([
+        {
+          date: "2024-01-14",
+          hrv: 65.3,
+          resting_hr: 52.1,
+          respiratory_rate: 15.2,
+          hrv_mean_30d: 60.0,
+          hrv_sd_30d: 8.0,
+          rhr_mean_30d: 54.0,
+          rhr_sd_30d: 3.0,
+          rr_mean_30d: 15.0,
+          rr_sd_30d: 1.0,
+        },
+      ]);
+      // sleep
+      execute.mockResolvedValueOnce([{ efficiency_pct: 88.5 }]);
+      // acwr
+      execute.mockResolvedValueOnce([{ acwr: 1.15 }]);
+      // muscleFreshness
+      execute.mockResolvedValueOnce([{ muscle_group: "chest", last_trained_date: "2024-01-12" }]);
+      // balance
+      execute.mockResolvedValueOnce([
+        {
+          strength_7d: 3,
+          endurance_7d: 4,
+          last_strength_date: "2024-01-13",
+          last_endurance_date: "2024-01-14",
+        },
+      ]);
+      // zoneTotals
+      execute.mockResolvedValueOnce([{ zone1: 100, zone2: 200, zone3: 150, zone4: 50, zone5: 10 }]);
+      // hiitLoad
+      execute.mockResolvedValueOnce([{ hiit_count_7d: 2, last_hiit_date: "2024-01-13" }]);
+      // trainingDays
+      execute.mockResolvedValueOnce([
+        { training_date: "2024-01-14" },
+        { training_date: "2024-01-12" },
+      ]);
+
+      const repo = new TrainingRepository({ execute }, "user-1", "UTC");
+      const data = await repo.getNextWorkoutData("2024-01-15");
+
+      expect(data.latestMetric).not.toBeNull();
+      expect(data.latestMetric?.hrv).toBe(65.3);
+      expect(data.latestSleepEfficiency).toBe(88.5);
+      expect(data.acwr).toBe(1.15);
+      expect(data.muscleFreshness).toHaveLength(1);
+      expect(data.muscleFreshness[0]?.muscle_group).toBe("chest");
+      expect(data.balance.strength_7d).toBe(3);
+      expect(data.balance.endurance_7d).toBe(4);
+      expect(data.zoneTotals.zone1).toBe(100);
+      expect(data.zoneTotals.zone3).toBe(150);
+      expect(data.hiitLoad.hiit_count_7d).toBe(2);
+      expect(data.trainingDates).toEqual(["2024-01-14", "2024-01-12"]);
+    });
+
+    it("returns exactly 0 for numeric defaults (not 1 or other values)", async () => {
+      const { repo } = makeRepository([]);
+      const data = await repo.getNextWorkoutData("2024-01-15");
+      // Each default 0 must be exactly 0 to catch Stryker 0→1 mutations
+      expect(data.balance.strength_7d).toStrictEqual(0);
+      expect(data.balance.endurance_7d).toStrictEqual(0);
+      expect(data.zoneTotals.zone1).toStrictEqual(0);
+      expect(data.zoneTotals.zone2).toStrictEqual(0);
+      expect(data.zoneTotals.zone3).toStrictEqual(0);
+      expect(data.zoneTotals.zone4).toStrictEqual(0);
+      expect(data.zoneTotals.zone5).toStrictEqual(0);
+      expect(data.hiitLoad.hiit_count_7d).toStrictEqual(0);
+    });
+
     it("calls execute for each sub-query", async () => {
       const { repo, execute } = makeRepository([]);
       await repo.getNextWorkoutData("2024-01-15");

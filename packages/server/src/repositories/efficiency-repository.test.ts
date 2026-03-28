@@ -53,6 +53,31 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
     });
   });
 
+  it("converts numeric string fields to proper numbers", async () => {
+    const { repo } = makeRepository([
+      {
+        max_hr: "190",
+        date: "2025-06-01",
+        activity_type: "cycling",
+        name: "Ride",
+        avg_power_z2: "180.5",
+        avg_hr_z2: "135.2",
+        efficiency_factor: "1.335",
+        z2_samples: "1800",
+      },
+    ]);
+    const result = await repo.getAerobicEfficiency(180);
+    // Verify that Number() conversions actually happen
+    expect(typeof result.activities[0]?.avgPowerZ2).toBe("number");
+    expect(typeof result.activities[0]?.avgHrZ2).toBe("number");
+    expect(typeof result.activities[0]?.efficiencyFactor).toBe("number");
+    expect(typeof result.activities[0]?.z2Samples).toBe("number");
+    expect(result.activities[0]?.avgPowerZ2).toBe(180.5);
+    expect(result.activities[0]?.avgHrZ2).toBe(135.2);
+    expect(result.activities[0]?.efficiencyFactor).toBe(1.335);
+    expect(result.activities[0]?.z2Samples).toBe(1800);
+  });
+
   it("extracts maxHr from first row", async () => {
     const { repo } = makeRepository([
       {

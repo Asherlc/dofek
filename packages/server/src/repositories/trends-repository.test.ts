@@ -29,6 +29,22 @@ describe("roundOrNull", () => {
   it("returns 0 for zero input", () => {
     expect(roundOrNull(0, 1)).toBe(0);
   });
+
+  it("rounds to 0 decimal places", () => {
+    expect(roundOrNull(72.6, 0)).toBe(73);
+    expect(roundOrNull(72.4, 0)).toBe(72);
+  });
+
+  it("rounds to 3 decimal places", () => {
+    expect(roundOrNull(1.23456, 3)).toBe(1.235);
+  });
+
+  it("uses exponentiation not multiplication for factor", () => {
+    // 10 ** 2 = 100, but 10 * 2 = 20
+    // With correct exponentiation: round(5.6789 * 100) / 100 = 5.68
+    // With multiplication instead: round(5.6789 * 20) / 20 = round(113.578) / 20 = 114 / 20 = 5.7
+    expect(roundOrNull(5.6789, 2)).toBe(5.68);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -124,9 +140,19 @@ describe("TrendRow", () => {
       expect(detail.avgCadence).toBe(88.1);
     });
 
-    it("rounds avgSpeed to 2 decimals", () => {
+    it("rounds avgSpeed to 2 decimals (not 1)", () => {
+      // 28.5678 rounded to 1 decimal = 28.6, to 2 decimals = 28.57
       const detail = new TrendRow(makeRow({ avgSpeed: 28.5678 })).toDetail();
       expect(detail.avgSpeed).toBe(28.57);
+    });
+
+    it("distinguishes avgSpeed 2-decimal from avgHr 1-decimal precision", () => {
+      // Use a value where 1-decimal and 2-decimal rounding differ
+      const detail = new TrendRow(makeRow({ avgSpeed: 5.555, avgCadence: 5.555 })).toDetail();
+      // avgSpeed rounds to 2 decimals: 5.56 (or 5.55 with banker's rounding)
+      expect(detail.avgSpeed).toBe(5.56);
+      // avgCadence rounds to 1 decimal: 5.6
+      expect(detail.avgCadence).toBe(5.6);
     });
 
     it("converts totalSamples/hrSamples/powerSamples/activityCount to numbers", () => {
@@ -229,6 +255,16 @@ describe("TrendsRepository", () => {
       const { repo, execute } = makeRepository([]);
       await repo.getWeekly(12);
       expect(execute).toHaveBeenCalledTimes(1);
+    });
+
+    it("maps rows correctly to TrendRow", async () => {
+      const { repo } = makeRepository([sampleDbRow]);
+      const result = await repo.getWeekly(52);
+      expect(result).toHaveLength(1);
+      const detail = result[0]?.toDetail();
+      expect(detail?.avgHr).toBe(142.5);
+      expect(detail?.avgSpeed).toBe(28.57);
+      expect(detail?.avgCadence).toBe(88.1);
     });
   });
 });

@@ -120,6 +120,29 @@ describe("ActivityRepository", () => {
       await repo.list({ days: 30, endDate: "2024-02-01", limit: 20, offset: 0 });
       expect(execute).toHaveBeenCalledTimes(1);
     });
+
+    it("extracts totalCount from single result row", async () => {
+      const { repo } = makeRepository([
+        {
+          id: "abc-1",
+          activity_type: "running",
+          started_at: "2024-01-15T10:00:00.000Z",
+          ended_at: "2024-01-15T11:00:00.000Z",
+          name: "Run",
+          provider_id: "garmin",
+          source_providers: ["garmin"],
+          avg_hr: 140,
+          max_hr: 175,
+          avg_power: null,
+          distance_meters: 10000,
+          calories: 400,
+          total_count: 1,
+        },
+      ]);
+      const result = await repo.list({ days: 30, endDate: "2024-02-01", limit: 20, offset: 0 });
+      expect(result.totalCount).toBe(1);
+      expect(result.items).toHaveLength(1);
+    });
   });
 
   describe("findById", () => {

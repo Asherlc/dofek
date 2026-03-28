@@ -110,6 +110,27 @@ describe("ActivityRecordingRepository", () => {
       expect(execute).toHaveBeenCalledTimes(4);
     });
 
+    it("creates exactly 1 batch for 500 samples (boundary)", async () => {
+      const samples = Array.from({ length: 500 }, (_, index) => ({
+        recordedAt: `2024-06-15T08:00:00.${String(index).padStart(3, "0")}Z`,
+        lat: 32.0,
+        lng: 34.0,
+        gpsAccuracy: 5,
+        altitude: 100,
+        speed: 3.5,
+      }));
+
+      const { repository, execute } = makeRepository([
+        [], // ensureProvider
+        [{ id: "activity-batch" }], // INSERT RETURNING
+        [], // single batch of 500
+      ]);
+
+      await repository.saveActivity(makeInput({ samples }));
+      // ensureProvider + INSERT activity + 1 batch (exactly 500 fits in BATCH_SIZE)
+      expect(execute).toHaveBeenCalledTimes(3);
+    });
+
     it("handles samples with null values", async () => {
       const samples = [
         {

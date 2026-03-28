@@ -42,6 +42,25 @@ describe("AiCoachRepository", () => {
       expect(context.recentActivities).toEqual(["Morning Run 33min", "Cycling 60min"]);
     });
 
+    it("rounds sleepHours to 1 decimal (distinguishes 1 vs 2 decimal precision)", async () => {
+      const db = makeDb([{ sleep_hours: 7.43, resting_hr: null, hrv: null, readiness: null }], []);
+      const repo = new AiCoachRepository(db, "user-1");
+      const context = await repo.fetchContext();
+      // 7.43 * 10 = 74.3, Math.round(74.3) = 74, /10 = 7.4
+      // If mutated to * 100 / 100, result would be 7.43
+      expect(context.sleepHours).toBe(7.4);
+    });
+
+    it("rounds duration_min to integer in activity label", async () => {
+      const db = makeDb(
+        [{ sleep_hours: null, resting_hr: null, hrv: null, readiness: null }],
+        [{ name: "Run", duration_min: 32.4 }],
+      );
+      const repo = new AiCoachRepository(db, "user-1");
+      const context = await repo.fetchContext();
+      expect(context.recentActivities).toEqual(["Run 32min"]);
+    });
+
     it("filters activities with null name or duration", async () => {
       const db = makeDb(
         [{ sleep_hours: null, resting_hr: null, hrv: null, readiness: null }],

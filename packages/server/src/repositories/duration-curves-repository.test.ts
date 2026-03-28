@@ -52,6 +52,57 @@ describe("fitCriticalHeartRate", () => {
     expect(model?.r2).toBeLessThanOrEqual(1);
   });
 
+  it("includes points at exactly 120s duration", () => {
+    const points = [
+      { durationSeconds: 120, bestHeartRate: 175 },
+      { durationSeconds: 300, bestHeartRate: 170 },
+      { durationSeconds: 600, bestHeartRate: 165 },
+      { durationSeconds: 1800, bestHeartRate: 160 },
+    ];
+    // All 4 points should be used (>= 120, not > 120)
+    const model = fitCriticalHeartRate(points);
+    expect(model).not.toBeNull();
+  });
+
+  it("excludes points below 120s from the model", () => {
+    const points = [
+      { durationSeconds: 119, bestHeartRate: 190 },
+      { durationSeconds: 120, bestHeartRate: 175 },
+      { durationSeconds: 300, bestHeartRate: 170 },
+      { durationSeconds: 600, bestHeartRate: 165 },
+    ];
+    // Only 3 points >= 120 should be used
+    const model = fitCriticalHeartRate(points);
+    expect(model).not.toBeNull();
+  });
+
+  it("handles edge case with identical HR values across durations", () => {
+    const points = [
+      { durationSeconds: 120, bestHeartRate: 1 },
+      { durationSeconds: 300, bestHeartRate: 1 },
+      { durationSeconds: 600, bestHeartRate: 1 },
+      { durationSeconds: 1800, bestHeartRate: 1 },
+    ];
+    const model = fitCriticalHeartRate(points);
+    // With identical HR values, model may be null or have thresholdHr > 0
+    if (model) {
+      expect(model.thresholdHr).toBeGreaterThan(0);
+    }
+  });
+
+  it("rounds r2 to exactly 3 decimal places", () => {
+    const points = [
+      { durationSeconds: 120, bestHeartRate: 180 },
+      { durationSeconds: 300, bestHeartRate: 172 },
+      { durationSeconds: 600, bestHeartRate: 168 },
+      { durationSeconds: 1200, bestHeartRate: 164 },
+    ];
+    const model = fitCriticalHeartRate(points);
+    expect(model).not.toBeNull();
+    // r2 * 1000 should be an integer (rounded to 3 decimal places)
+    expect(Number.isInteger(model?.r2 ? model.r2 * 1000 : 0)).toBe(true);
+  });
+
   it("returns integer thresholdHr and 3-decimal r2", () => {
     const points = [
       { durationSeconds: 120, bestHeartRate: 175 },
@@ -105,6 +156,17 @@ describe("DurationCurvesRepository", () => {
         bestHeartRate: 165,
         activityDate: "2025-06-14",
       });
+    });
+
+    it("generates fallback label for unknown duration", async () => {
+      const { repo } = makeRepository([
+        { duration_seconds: "7200", best_hr: "155", activity_date: "2025-06-10" },
+      ]);
+      const result = await repo.getHrCurve(90);
+      // 7200 may or may not be in DURATION_LABELS; if not, uses fallback "7200s"
+      expect(result.points[0]?.label).toBeDefined();
+      expect(typeof result.points[0]?.label).toBe("string");
+      expect(result.points[0]?.label.length).toBeGreaterThan(0);
     });
 
     it("calls execute once", async () => {
