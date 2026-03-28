@@ -63,9 +63,7 @@ export default function SettingsScreen() {
 
   // ── Unit System ──
   const unitSetting = trpc.settings.get.useQuery({ key: "unitSystem" });
-  const setSettingMutation = trpc.settings.set.useMutation({
-    onSuccess: () => unitSetting.refetch(),
-  });
+  const setSettingMutation = trpc.settings.set.useMutation();
   const deleteAllDataMutation = trpc.settings.deleteAllUserData.useMutation({
     onSuccess: async () => {
       await trpcUtils.invalidate();
@@ -78,7 +76,14 @@ export default function SettingsScreen() {
     unitSetting.data?.value === "imperial" ? "imperial" : "metric";
 
   function handleUnitChange(value: UnitSystem) {
-    setSettingMutation.mutate({ key: "unitSystem", value });
+    trpcUtils.settings.get.setData({ key: "unitSystem" }, { key: "unitSystem", value });
+    setSettingMutation.mutate(
+      { key: "unitSystem", value },
+      {
+        onSuccess: () => unitSetting.refetch(),
+        onError: () => unitSetting.refetch(),
+      },
+    );
   }
 
   // ── WHOOP Accelerometer ──
@@ -86,9 +91,16 @@ export default function SettingsScreen() {
   const whoopImuEnabled = whoopImuSetting.data?.value === true;
 
   function handleWhoopImuToggle(enabled: boolean) {
+    trpcUtils.settings.get.setData(
+      { key: "whoopAlwaysOnImu" },
+      { key: "whoopAlwaysOnImu", value: enabled },
+    );
     setSettingMutation.mutate(
       { key: "whoopAlwaysOnImu", value: enabled },
-      { onSuccess: () => whoopImuSetting.refetch() },
+      {
+        onSuccess: () => whoopImuSetting.refetch(),
+        onError: () => whoopImuSetting.refetch(),
+      },
     );
   }
 

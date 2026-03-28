@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -31,8 +31,22 @@ vi.mock("react-native", () => ({
     },
     hairlineWidth: 1,
   },
-  Switch: ({ value, ...props }: Record<string, unknown>) =>
-    React.createElement("input", { ...stripStyle(props), type: "checkbox", checked: value }),
+  Switch: ({
+    value,
+    onValueChange,
+    disabled,
+    ...props
+  }: Record<string, unknown> & {
+    onValueChange?: (val: boolean) => void;
+    disabled?: boolean;
+  }) =>
+    React.createElement("input", {
+      ...stripStyle(props),
+      type: "checkbox",
+      checked: value,
+      disabled,
+      onChange: () => onValueChange?.(!value),
+    }),
   AppState: {
     addEventListener: vi
       .fn()
@@ -74,8 +88,28 @@ vi.mock("../modules/watch-motion", () => ({
   }),
 }));
 
+let mockSettingsGetData: { key: string; value: unknown } | null = null;
+const mockSettingsRefetch = vi.fn();
+const mockMutate = vi.fn();
+const mockSetData = vi.fn(
+  (_input: { key: string }, data: { key: string; value: unknown } | null) => {
+    mockSettingsGetData = data;
+  },
+);
+let mockMutationCallbacks: {
+  onMutate?: (variables: { key: string; value: unknown }) => void;
+} = {};
+
 vi.mock("../lib/trpc", () => ({
   trpc: {
+    useUtils: () => ({
+      settings: {
+        get: {
+          setData: (input: { key: string }, data: { key: string; value: unknown } | null) =>
+            mockSetData(input, data),
+        },
+      },
+    }),
     accelerometer: {
       getSyncStatus: {
         useQuery: () => ({ data: null, isLoading: false }),
@@ -86,10 +120,31 @@ vi.mock("../lib/trpc", () => ({
     },
     settings: {
       get: {
-        useQuery: () => ({ data: null, isLoading: false }),
+        useQuery: () => ({
+          data: mockSettingsGetData,
+          isLoading: false,
+          refetch: mockSettingsRefetch,
+        }),
       },
       set: {
-        useMutation: () => ({ mutate: vi.fn(), isPending: false }),
+        useMutation: (opts?: {
+          onMutate?: (variables: { key: string; value: unknown }) => void;
+        }) => {
+          if (opts?.onMutate) {
+            mockMutationCallbacks.onMutate = opts.onMutate;
+          }
+          return {
+            mutate: (
+              input: { key: string; value: unknown },
+              callOpts?: { onSuccess?: () => void; onError?: () => void },
+            ) => {
+              // Fire onMutate synchronously like react-query does
+              mockMutationCallbacks.onMutate?.(input);
+              mockMutate(input, callOpts);
+            },
+            isPending: false,
+          };
+        },
       },
     },
   },
@@ -121,6 +176,11 @@ describe("AccelerometerScreen", () => {
     mockIsAccelerometerRecordingAvailable.mockReturnValue(true);
     mockIsRecordingActive.mockReturnValue(false);
     appStateCallback = null;
+    mockSettingsGetData = null;
+    mockMutate.mockReset();
+    mockSetData.mockClear();
+    mockSettingsRefetch.mockReset();
+    mockMutationCallbacks = {};
   });
 
   it("updates permission status when app returns to foreground", async () => {
@@ -146,6 +206,36 @@ describe("AccelerometerScreen", () => {
     const { unmount } = render(React.createElement((await import("./accelerometer")).default));
 
     expect(mockRequestMotionPermission).toHaveBeenCalled();
+
+    unmount();
+  });
+
+  it("optimistically updates the WHOOP IMU toggle without waiting for server", async () => {
+    // Start with the toggle OFF
+    mockSettingsGetData = null;
+
+    const { unmount } = render(React.createElement((await import("./accelerometer")).default));
+
+    // Find the switch — it should be unchecked
+    const toggle = screen.getByRole("checkbox");
+    expect(toggle).toHaveProperty("checked", false);
+
+    // Simulate toggling ON — fireEvent.click triggers onChange on checkboxes
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+
+    // The optimistic update should set the query data immediately
+    expect(mockSetData).toHaveBeenCalledWith(
+      { key: "whoopAlwaysOnImu" },
+      { key: "whoopAlwaysOnImu", value: true },
+    );
+
+    // The mutation should also be called to persist
+    expect(mockMutate).toHaveBeenCalledWith(
+      { key: "whoopAlwaysOnImu", value: true },
+      expect.objectContaining({ onSuccess: expect.any(Function) }),
+    );
 
     unmount();
   });

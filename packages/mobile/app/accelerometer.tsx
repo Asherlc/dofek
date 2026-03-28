@@ -170,14 +170,22 @@ export default function AccelerometerScreen() {
   const syncStatus = trpc.accelerometer.getSyncStatus.useQuery();
   const dailyCounts = trpc.accelerometer.getDailyCounts.useQuery({ days: 30 });
 
+  const trpcUtils = trpc.useUtils();
   const whoopImuSetting = trpc.settings.get.useQuery({ key: "whoopAlwaysOnImu" });
   const setSettingMutation = trpc.settings.set.useMutation();
   const whoopImuEnabled = whoopImuSetting.data?.value === true;
 
   function handleWhoopImuToggle(enabled: boolean) {
+    trpcUtils.settings.get.setData(
+      { key: "whoopAlwaysOnImu" },
+      { key: "whoopAlwaysOnImu", value: enabled },
+    );
     setSettingMutation.mutate(
       { key: "whoopAlwaysOnImu", value: enabled },
-      { onSuccess: () => whoopImuSetting.refetch() },
+      {
+        onSuccess: () => whoopImuSetting.refetch(),
+        onError: () => whoopImuSetting.refetch(),
+      },
     );
   }
 
