@@ -203,6 +203,37 @@ describe("processImportJob", () => {
       });
     });
 
+    it("logs warning when updateProgress rejects", async () => {
+      const progressError = new Error("Redis connection lost");
+
+      mockImportAppleHealthFile.mockImplementation(
+        async (
+          _db: unknown,
+          _path: unknown,
+          _since: unknown,
+          onProgress: (info: {
+            percentage: number;
+            recordCount: number;
+            workoutCount: number;
+            sleepCount: number;
+          }) => void,
+        ) => {
+          onProgress({ percentage: 50, recordCount: 100, workoutCount: 1, sleepCount: 0 });
+          return { recordsSynced: 10, errors: [] };
+        },
+      );
+
+      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
+      job.updateProgress.mockRejectedValue(progressError);
+      await runImportJob(job, mockDb);
+
+      // The catch block should log a warning with the error
+      expect(mockLoggerWarn).toHaveBeenCalledWith(
+        "Failed to update import progress: %s",
+        progressError,
+      );
+    });
+
     it("only logs progress at 10% increments", async () => {
       mockImportAppleHealthFile.mockImplementation(
         async (
