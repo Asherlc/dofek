@@ -490,7 +490,7 @@ describe("computeSleepDebt", () => {
         rollingAvgDuration: null,
       }),
     ];
-    // target=480 - actual=400 = +80 (positive debt, undeslept)
+    // target=480 - actual=400 = +80 (positive debt, under target)
     // If reversed: actual=400 - target=480 = -80
     const debt = computeSleepDebt(nights, 480);
     expect(debt).toBe(80);
