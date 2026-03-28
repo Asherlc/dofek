@@ -542,6 +542,41 @@ describe("computeReadinessComponents", () => {
     expect(boundary.sleepScore).toBe(100);
   });
 
+  it("negates z-score for respiratory rate (higher RR = lower score)", () => {
+    const highRr = computeReadinessComponents({
+      date: "2024-03-15",
+      hrv: null,
+      restingHr: null,
+      respiratoryRate: 20,
+      hrvMean30d: null,
+      hrvSd30d: null,
+      rhrMean30d: null,
+      rhrSd30d: null,
+      rrMean30d: 15,
+      rrSd30d: 2,
+      efficiencyPct: null,
+    });
+    // Higher respiratory rate should produce lower score
+    expect(highRr.respiratoryRateScore).toBeLessThan(62);
+
+    const lowRr = computeReadinessComponents({
+      date: "2024-03-15",
+      hrv: null,
+      restingHr: null,
+      respiratoryRate: 10,
+      hrvMean30d: null,
+      hrvSd30d: null,
+      rhrMean30d: null,
+      rhrSd30d: null,
+      rrMean30d: 15,
+      rrSd30d: 2,
+      efficiencyPct: null,
+    });
+    // Lower respiratory rate should produce higher score
+    expect(lowRr.respiratoryRateScore).toBeGreaterThan(62);
+    expect(lowRr.respiratoryRateScore).toBeGreaterThan(highRr.respiratoryRateScore);
+  });
+
   it("returns default when stddev is 0 (no variation)", () => {
     const components = computeReadinessComponents({
       date: "2024-03-15",

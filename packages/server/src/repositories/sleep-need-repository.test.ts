@@ -180,6 +180,69 @@ describe("SleepNeedRepository", () => {
       expect(jan10?.debtMinutes).toBeNull();
     });
 
+    it("uses last 14 nights (not 7 or 30) for accumulated debt", async () => {
+      // Create 20 nights all with deficit, only the last 14 should be counted
+      const nights = Array.from({ length: 20 }, (_, index) =>
+        makeNightRow({
+          date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+          duration_minutes: 400,
+          good_recovery: false,
+          yesterday_load: 0,
+        }),
+      );
+
+      const db = makeDb([nights]);
+      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const result = await repo.calculate("2024-01-21");
+
+      // baseline = 480 (fewer than 7 good nights), deficit per night = 80
+      // slice(-14) takes last 14 nights: 14 * 80 = 1120
+      expect(result.accumulatedDebtMinutes).toBe(1120);
+      // If it used all 20: would be 20 * 80 = 1600
+      expect(result.accumulatedDebtMinutes).not.toBe(1600);
+      // If it used 7: would be 7 * 80 = 560
+      expect(result.accumulatedDebtMinutes).not.toBe(560);
+    });
+
+    it("strain debt divisor is 5 (not 10 or 4)", async () => {
+      // load = 50, debt = 50/5 = 10
+      const nights = [makeNightRow({ date: "2024-01-14", yesterday_load: 50 })];
+      const db = makeDb([nights]);
+      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const result = await repo.calculate("2024-01-15");
+
+      expect(result.strainDebtMinutes).toBe(10); // 50/5 = 10
+      // If divisor were 10: 50/10 = 5
+      expect(result.strainDebtMinutes).not.toBe(5);
+      // If divisor were 4: 50/4 = 13 (rounded)
+      expect(result.strainDebtMinutes).not.toBe(13);
+    });
+
+    it("debt recovery factor is 0.25 (not 0.5 or 0.1)", async () => {
+      // 4 nights with 400 min, baseline 480 => deficit 80 each => accumulated = 320
+      // recovery = 320 * 0.25 = 80
+      const nights = Array.from({ length: 4 }, (_, index) =>
+        makeNightRow({
+          date: `2024-01-${String(index + 10).padStart(2, "0")}`,
+          duration_minutes: 400,
+          good_recovery: false,
+          yesterday_load: 0,
+        }),
+      );
+
+      const db = makeDb([nights]);
+      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const result = await repo.calculate("2024-01-15");
+
+      // accumulatedDebt = 320, recovery = 320 * 0.25 = 80
+      // totalNeed = 480 + 0 + 80 = 560
+      expect(result.totalNeedMinutes).toBe(560);
+      // If factor were 0.5: recovery = 160, total = 640
+      expect(result.totalNeedMinutes).not.toBe(640);
+      // If factor were 0.1: recovery = 32, total = 512
+      expect(result.totalNeedMinutes).not.toBe(512);
+    });
+
     it("sets canRecommend true when yesterday has sleep data", async () => {
       const nights = [makeNightRow({ date: "2024-01-14", duration_minutes: 420 })];
 

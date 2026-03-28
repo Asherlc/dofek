@@ -20,6 +20,18 @@ describe("minettiCostFactor", () => {
     expect(minettiCostFactor(-0.05)).toBeLessThan(1);
   });
 
+  it("uses downhill factor 1.8 exactly (grade=-0.1 gives 0.82)", () => {
+    // 1 - 0.1 * 1.8 = 0.82 (not 0.8 if factor were 2.0, not 0.85 if factor were 1.5)
+    expect(minettiCostFactor(-0.1)).toBeCloseTo(0.82, 5);
+  });
+
+  it("uses uphill factor 3.5 exactly (grade=0.1 gives 1.35, not 1.3 or 1.4)", () => {
+    // If factor were 3.0, result would be 1.3; if 4.0, result would be 1.4
+    expect(minettiCostFactor(0.1)).not.toBeCloseTo(1.3, 3);
+    expect(minettiCostFactor(0.1)).not.toBeCloseTo(1.4, 3);
+    expect(minettiCostFactor(0.1)).toBeCloseTo(1.35, 5);
+  });
+
   it("floors at 0.5 for steep downhill", () => {
     // At grade -0.30, formula gives 1 - 0.30 * 1.8 = 0.46, floored to 0.5
     expect(minettiCostFactor(-0.3)).toBe(0.5);
@@ -59,5 +71,14 @@ describe("computeGradeAdjustedPace", () => {
 
   it("returns 0 when actual pace is 0", () => {
     expect(computeGradeAdjustedPace(0, 0.1)).toBe(0);
+  });
+
+  it("divides pace by cost factor (not multiplies)", () => {
+    // For 10% uphill: costFactor = 1.35
+    // Division: 6.0 / 1.35 ≈ 4.44
+    // Multiplication would give: 6.0 * 1.35 = 8.1
+    const result = computeGradeAdjustedPace(6.0, 0.1);
+    expect(result).toBeCloseTo(6.0 / 1.35, 2);
+    expect(result).not.toBeCloseTo(6.0 * 1.35, 2);
   });
 });

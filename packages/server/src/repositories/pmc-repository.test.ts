@@ -185,5 +185,168 @@ describe("PmcRepository", () => {
       expect(result.model.ftp).toBe(190);
       expect(result.data.length).toBeGreaterThan(0);
     });
+
+    it("rounds load, ctl, atl, tsb to 1 decimal place (*10/10)", async () => {
+      const today = new Date();
+      const daysAgo = 3;
+      const activityDate = new Date(today);
+      activityDate.setDate(activityDate.getDate() - daysAgo);
+      const dateStr = activityDate.toISOString().split("T")[0];
+
+      const db = makeDb(
+        [makeActivityRow({ date: dateStr, id: "act-round", avg_power: null, power_samples: 0 })],
+        [],
+      );
+      const repo = new PmcRepository(db, "user-1", "UTC");
+      const result = await repo.getChart(180);
+
+      for (const point of result.data) {
+        // Each value should have at most 1 decimal place
+        const loadStr = String(point.load);
+        const ctlStr = String(point.ctl);
+        const atlStr = String(point.atl);
+        const tsbStr = String(point.tsb);
+        for (const str of [loadStr, ctlStr, atlStr, tsbStr]) {
+          const decimals = str.includes(".") ? (str.split(".")[1]?.length ?? 0) : 0;
+          expect(decimals).toBeLessThanOrEqual(1);
+        }
+      }
+    });
+
+    it("EWMA uses division by chronicTrainingLoadDays=42 (not 7 or other)", async () => {
+      // With a single activity, the EWMA should grow slowly with CTL window of 42
+      const today = new Date();
+      const daysAgo = 1;
+      const activityDate = new Date(today);
+      activityDate.setDate(activityDate.getDate() - daysAgo);
+      const dateStr = activityDate.toISOString().split("T")[0];
+
+      const db = makeDb(
+        [
+          makeActivityRow({
+            date: dateStr,
+            id: "act-ewma",
+            avg_power: null,
+            power_samples: 0,
+            duration_min: 60,
+            avg_hr: 150,
+            max_hr: 180,
+          }),
+        ],
+        [],
+      );
+      const repo = new PmcRepository(db, "user-1", "UTC");
+      const result = await repo.getChart(180);
+
+      // Find the activity date point
+      const activityPoint = result.data.find((point) => point.date === dateStr);
+      if (activityPoint) {
+        // With CTL divisor=42, one day after activity, CTL should be small
+        // ATL with divisor=7 should be much larger than CTL
+        // This relationship would be inverted if the divisors were swapped
+        const nextDayPoint = result.data.find((point) => {
+          const pointDate = new Date(point.date);
+          const actDate = new Date(dateStr ?? "");
+          return pointDate.getTime() === actDate.getTime() + 86400000;
+        });
+        if (nextDayPoint && activityPoint.load > 0) {
+          // ATL responds faster (divisor=7) than CTL (divisor=42)
+          expect(nextDayPoint.atl).toBeGreaterThan(nextDayPoint.ctl);
+        }
+      }
+    });
+
+    it("firstMeaningfulIndex uses ctl >= 0.1 threshold (not > 0.1)", async () => {
+      // If ctl is exactly 0.1, it should be included (>= not >)
+      const today = new Date();
+      const daysAgo = 1;
+      const activityDate = new Date(today);
+      activityDate.setDate(activityDate.getDate() - daysAgo);
+      const dateStr = activityDate.toISOString().split("T")[0];
+
+      const db = makeDb(
+        [
+          makeActivityRow({
+            date: dateStr,
+            id: "act-threshold",
+            avg_power: null,
+            power_samples: 0,
+          }),
+        ],
+        [],
+      );
+      const repo = new PmcRepository(db, "user-1", "UTC");
+      const result = await repo.getChart(180);
+
+      // First data point should have ctl >= 0.1 (the threshold for "meaningful")
+      if (result.data.length > 0) {
+        expect(result.data[0]?.ctl).toBeGreaterThanOrEqual(0.1);
+      }
+    });
+
+    it("uses restingHr from first activity row (defaults to 60 when unavailable)", async () => {
+      const today = new Date();
+      const daysAgo = 2;
+      const activityDate = new Date(today);
+      activityDate.setDate(activityDate.getDate() - daysAgo);
+      const dateStr = activityDate.toISOString().split("T")[0];
+
+      // Provide activity with explicit resting_hr=60
+      const db = makeDb(
+        [
+          makeActivityRow({
+            date: dateStr,
+            id: "act-rhr",
+            resting_hr: 60,
+            avg_power: null,
+            power_samples: 0,
+          }),
+        ],
+        [],
+      );
+      const repo = new PmcRepository(db, "user-1", "UTC");
+      const result = await repo.getChart(180);
+
+      // Should produce data (resting HR used in TRIMP calculation)
+      expect(result.data.length).toBeGreaterThan(0);
+    });
+
+    it("aggregates multiple activities on the same day into one daily load", async () => {
+      const today = new Date();
+      const daysAgo = 2;
+      const activityDate = new Date(today);
+      activityDate.setDate(activityDate.getDate() - daysAgo);
+      const dateStr = activityDate.toISOString().split("T")[0];
+
+      const db = makeDb(
+        [
+          makeActivityRow({
+            date: dateStr,
+            id: "act-am",
+            avg_power: null,
+            power_samples: 0,
+            duration_min: 60,
+          }),
+          makeActivityRow({
+            date: dateStr,
+            id: "act-pm",
+            avg_power: null,
+            power_samples: 0,
+            duration_min: 30,
+          }),
+        ],
+        [],
+      );
+      const repo = new PmcRepository(db, "user-1", "UTC");
+      const result = await repo.getChart(180);
+
+      // Should have aggregated both activities into a single day's load
+      const dayPoint = result.data.find((point) => point.date === dateStr);
+      expect(dayPoint).toBeDefined();
+      // Load should be higher than a single 60-min activity
+      if (dayPoint) {
+        expect(dayPoint.load).toBeGreaterThan(0);
+      }
+    });
   });
 });

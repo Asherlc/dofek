@@ -428,5 +428,49 @@ describe("PredictionsRepository", () => {
       // Activity prediction fetches multiple data sources
       expect(execute).toHaveBeenCalled();
     });
+
+    it("calls db.execute for strength activity predictions", async () => {
+      const { repo, execute } = makeRepository([]);
+      await repo.predict("strength_volume", 365);
+      expect(execute).toHaveBeenCalled();
+    });
+
+    it("returns null for daily prediction with insufficient data", async () => {
+      const { repo } = makeRepository([]);
+      const result = await repo.predict("hrv", 365);
+      // With no data, trainPredictor returns null
+      expect(result).toBeNull();
+    });
+
+    it("dispatches to daily pipeline for known daily target IDs", async () => {
+      const { repo, execute } = makeRepository([]);
+      await repo.predict("resting_hr", 365);
+      // Daily prediction fetches 5 data sources in parallel
+      expect(execute).toHaveBeenCalledTimes(5);
+    });
+
+    it("dispatches to activity pipeline for known activity target IDs", async () => {
+      const { repo, execute } = makeRepository([]);
+      await repo.predict("cardio_power", 365);
+      // Activity prediction fetches 5 data sources + 1 activity-specific query
+      expect(execute.mock.calls.length).toBeGreaterThanOrEqual(5);
+    });
+  });
+
+  describe("getTargets", () => {
+    it("returns targets with correct type labels (daily vs activity)", () => {
+      const { repo } = makeRepository();
+      const targets = repo.getTargets();
+      const dailyTargets = targets.filter((target) => target.type === "daily");
+      const activityTargets = targets.filter((target) => target.type === "activity");
+      expect(dailyTargets.length).toBeGreaterThan(0);
+      expect(activityTargets.length).toBeGreaterThan(0);
+      // Each target should have non-empty id, label, unit
+      for (const target of targets) {
+        expect(target.id.length).toBeGreaterThan(0);
+        expect(target.label.length).toBeGreaterThan(0);
+        expect(target.unit.length).toBeGreaterThan(0);
+      }
+    });
   });
 });

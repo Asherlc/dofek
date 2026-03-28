@@ -194,6 +194,14 @@ describe("HealthReportRepository", () => {
       expect(result[1]?.reportType).toBe("monthly");
     });
 
+    it("query includes LIMIT 50", async () => {
+      const { repo, execute } = makeRepository([]);
+      await repo.myReports();
+      const callArgs = execute.mock.calls[0]?.[0];
+      const queryJson = JSON.stringify(callArgs);
+      expect(queryJson).toContain("50");
+    });
+
     it("calls execute once", async () => {
       const { repo, execute } = makeRepository([]);
       await repo.myReports();

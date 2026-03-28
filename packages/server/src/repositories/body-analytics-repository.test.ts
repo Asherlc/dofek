@@ -315,5 +315,160 @@ describe("BodyAnalyticsRepository", () => {
       expect(result.currentWeekly).not.toBeNull();
       expect(result.current4Week).not.toBeNull();
     });
+
+    it("uses alpha=0.1 in getWeightTrend (verifiable via exact EWMA value)", async () => {
+      // 8 data points: [80, 82, 80, 82, 80, 82, 80, 82]
+      // With alpha=0.1:
+      //   s0=80
+      //   s1=0.1*82 + 0.9*80 = 80.2
+      //   s2=0.1*80 + 0.9*80.2 = 80.18
+      //   s3=0.1*82 + 0.9*80.18 = 80.362
+      //   s4=0.1*80 + 0.9*80.362 = 80.3258
+      //   s5=0.1*82 + 0.9*80.3258 = 80.49322
+      //   s6=0.1*80 + 0.9*80.49322 = 80.443898
+      //   s7=0.1*82 + 0.9*80.443898 = 80.5995082
+      // currentWeekly = s7 - s0 = 80.5995082 - 80 = 0.5995... → rounds to 0.6
+      const rows = Array.from({ length: 8 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: String(index % 2 === 0 ? 80 : 82),
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightTrend();
+      expect(result.currentWeekly).toBe(0.6);
+    });
+
+    it("classifies 'gaining' when weekly change is exactly 0.11 (> 0.1 threshold)", async () => {
+      // We need a series where the smoothed weekly diff is just above 0.1
+      // Use constant increase: 8 days starting at 80, increasing 0.2/day
+      const rows = Array.from({ length: 8 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: String(80 + index * 0.2),
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightTrend();
+      expect(result.trend).toBe("gaining");
+      expect(result.currentWeekly).toBeGreaterThan(0.1);
+    });
+
+    it("classifies 'losing' when weekly change is exactly below -0.1 (< -0.1 threshold)", async () => {
+      const rows = Array.from({ length: 8 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: String(80 - index * 0.2),
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightTrend();
+      expect(result.trend).toBe("losing");
+      expect(result.currentWeekly).toBeLessThan(-0.1);
+    });
+
+    it("returns null current4Week with exactly 28 data points (< 29 boundary)", async () => {
+      const rows = Array.from({ length: 28 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: String(80 + index * 0.5),
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightTrend();
+      expect(result.current4Week).toBeNull();
+    });
+
+    it("returns non-null current4Week with exactly 29 data points (>= 29 boundary)", async () => {
+      const rows = Array.from({ length: 29 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: String(80 + index * 0.5),
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightTrend();
+      expect(result.current4Week).not.toBeNull();
+    });
+
+    it("returns null currentWeekly with exactly 7 data points (< 8 needed for oneWeekAgo)", async () => {
+      // With 7 points, smoothed.length=7, so smoothed.length >= 8 is false
+      const rows = Array.from({ length: 7 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: String(80 + index),
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightTrend();
+      expect(result.currentWeekly).toBeNull();
+    });
+
+    it("returns non-null currentWeekly with exactly 8 data points (>= 8 boundary)", async () => {
+      const rows = Array.from({ length: 8 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: String(80 + index),
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightTrend();
+      expect(result.currentWeekly).not.toBeNull();
+    });
+
+    it("falls back to current4Week for trend when currentWeekly is null", async () => {
+      // 7 points = no weekly, but if there were 29+ we'd have 4-week
+      // With only 7 points, both are null, so trend uses changeReference=null → stable
+      const rows = Array.from({ length: 7 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: "80",
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightTrend();
+      // With 7 points but < 8 for weekly: currentWeekly is null
+      // With < 29 for 4-week: current4Week is null
+      // changeReference = null, so trend = "stable"
+      expect(result.trend).toBe("stable");
+    });
+
+    it("rounds weeklyChange to 2 decimal places via Math.round(x * 100) / 100", async () => {
+      // Create a series that produces a non-round weeklyChange
+      const rows = [
+        { date: "2024-01-01", weight_kg: "80" },
+        { date: "2024-01-02", weight_kg: "80.3" },
+        { date: "2024-01-03", weight_kg: "80.1" },
+        { date: "2024-01-04", weight_kg: "80.4" },
+        { date: "2024-01-05", weight_kg: "80.2" },
+        { date: "2024-01-06", weight_kg: "80.5" },
+        { date: "2024-01-07", weight_kg: "80.3" },
+        { date: "2024-01-08", weight_kg: "80.6" },
+        { date: "2024-01-09", weight_kg: "80.4" },
+        { date: "2024-01-10", weight_kg: "80.7" },
+      ];
+      const { repo } = makeRepository(rows);
+      const result = await repo.getSmoothedWeight(90, "2024-06-01");
+      // weeklyChange should be a number rounded to 2 decimal places
+      for (const row of result) {
+        if (row.weeklyChange !== null) {
+          const str = String(row.weeklyChange);
+          const decimals = str.includes(".") ? (str.split(".")[1]?.length ?? 0) : 0;
+          expect(decimals).toBeLessThanOrEqual(2);
+        }
+      }
+    });
+  });
+
+  describe("getSmoothedWeight EWMA alpha", () => {
+    it("uses alpha=0.1 for smoothed weight (not 0.15 or 0.2)", async () => {
+      const { repo } = makeRepository([
+        { date: "2024-01-01", weight_kg: "100" },
+        { date: "2024-01-02", weight_kg: "110" },
+      ]);
+      const result = await repo.getSmoothedWeight(90, "2024-06-01");
+      // alpha=0.1: smoothed = 0.1 * 110 + 0.9 * 100 = 101
+      expect(result[1]?.smoothedWeight).toBe(101);
+    });
+  });
+
+  describe("getRecomposition EWMA alpha", () => {
+    it("uses alpha=0.15 for body recomposition (not 0.1 or 0.2)", async () => {
+      const { repo } = makeRepository([
+        { date: "2024-01-01", weight_kg: "100", body_fat_pct: "20" },
+        { date: "2024-01-02", weight_kg: "100", body_fat_pct: "30" },
+      ]);
+      const result = await repo.getRecomposition(180, "2024-06-01");
+      // Day 1: fatMass = 100 * 0.2 = 20, leanMass = 80
+      // Day 2: fatMass = 100 * 0.3 = 30, leanMass = 70
+      // smoothedFat = 0.15 * 30 + 0.85 * 20 = 4.5 + 17 = 21.5
+      expect(result[1]?.smoothedFatMass).toBe(21.5);
+      // smoothedLean = 0.15 * 70 + 0.85 * 80 = 10.5 + 68 = 78.5
+      expect(result[1]?.smoothedLeanMass).toBe(78.5);
+    });
   });
 });

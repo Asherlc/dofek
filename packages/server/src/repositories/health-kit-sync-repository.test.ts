@@ -352,6 +352,66 @@ describe("HEALTHKIT_STAGE_MAP (via deriveSleepSessionsFromStages stage mapping)"
   });
 });
 
+describe("HEALTHKIT_STAGE_MAP mapped values (via processSleepSamples)", () => {
+  async function getStageInsertSqlJson(stageValue: string): Promise<string> {
+    const execute = vi.fn().mockResolvedValue([{ id: "00000000-0000-0000-0000-000000000001" }]);
+    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const samples: SleepSample[] = [
+      {
+        uuid: "inbed-1",
+        startDate: "2024-01-15T22:00:00Z",
+        endDate: "2024-01-16T06:00:00Z",
+        value: "inBed",
+        sourceName: "Watch",
+      },
+      {
+        uuid: "stage-1",
+        startDate: "2024-01-15T22:00:00Z",
+        endDate: "2024-01-16T06:00:00Z",
+        value: stageValue,
+        sourceName: "Watch",
+      },
+    ];
+    await repo.processSleepSamples(samples);
+    // Collect all execute calls as JSON and find the INSERT INTO fitness.sleep_stage call
+    const allCalls = execute.mock.calls.map((call) => JSON.stringify(call[0]));
+    const stageInsertCall = allCalls.find((callStr) =>
+      callStr.includes("INSERT INTO fitness.sleep_stage"),
+    );
+    return stageInsertCall ?? "";
+  }
+
+  it("maps asleepDeep to 'deep'", async () => {
+    const sqlJson = await getStageInsertSqlJson("asleepDeep");
+    expect(sqlJson).toContain("deep");
+  });
+
+  it("maps asleepCore to 'light'", async () => {
+    const sqlJson = await getStageInsertSqlJson("asleepCore");
+    expect(sqlJson).toContain("light");
+  });
+
+  it("maps asleepREM to 'rem'", async () => {
+    const sqlJson = await getStageInsertSqlJson("asleepREM");
+    expect(sqlJson).toContain("rem");
+  });
+
+  it("maps asleep to 'light'", async () => {
+    const sqlJson = await getStageInsertSqlJson("asleep");
+    expect(sqlJson).toContain("light");
+  });
+
+  it("maps asleepUnspecified to 'light'", async () => {
+    const sqlJson = await getStageInsertSqlJson("asleepUnspecified");
+    expect(sqlJson).toContain("light");
+  });
+
+  it("maps awake to 'awake'", async () => {
+    const sqlJson = await getStageInsertSqlJson("awake");
+    expect(sqlJson).toContain("awake");
+  });
+});
+
 describe("MAX_SLEEP_SESSION_GAP_MS (90 minutes)", () => {
   it("merges stages separated by exactly 90 minutes into one session", () => {
     // Gap of exactly 90 minutes (5,400,000 ms) between end of first and start of second
@@ -372,6 +432,46 @@ describe("MAX_SLEEP_SESSION_GAP_MS (90 minutes)", () => {
       },
     ]);
     expect(sessions).toHaveLength(1);
+  });
+
+  it("is exactly 90 minutes (5,400,000 ms), not 60 or 120 minutes", () => {
+    // 89-minute gap (within 90) => 1 session
+    const merged = deriveSleepSessionsFromStages([
+      {
+        uuid: "1",
+        startDate: "2024-01-15T22:00:00Z",
+        endDate: "2024-01-15T23:00:00Z",
+        value: "asleepCore",
+        sourceName: "Watch",
+      },
+      {
+        uuid: "2",
+        startDate: "2024-01-16T00:29:00Z",
+        endDate: "2024-01-16T06:00:00Z",
+        value: "asleepDeep",
+        sourceName: "Watch",
+      },
+    ]);
+    expect(merged).toHaveLength(1);
+
+    // 61-minute gap: would split if threshold were 60 min, but should merge with 90 min threshold
+    const stillMerged = deriveSleepSessionsFromStages([
+      {
+        uuid: "3",
+        startDate: "2024-01-15T22:00:00Z",
+        endDate: "2024-01-15T23:00:00Z",
+        value: "asleepCore",
+        sourceName: "Watch",
+      },
+      {
+        uuid: "4",
+        startDate: "2024-01-16T00:01:00Z",
+        endDate: "2024-01-16T06:00:00Z",
+        value: "asleepDeep",
+        sourceName: "Watch",
+      },
+    ]);
+    expect(stillMerged).toHaveLength(1);
   });
 
   it("splits stages separated by more than 90 minutes into two sessions", () => {
@@ -436,6 +536,44 @@ describe("workoutActivityTypeMap (via processWorkouts)", () => {
     expect(queryString).toContain("cycling");
   });
 
+  it("maps type 23 to hiking", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    await repo.processWorkouts([
+      {
+        uuid: "w-hike",
+        workoutType: "23",
+        startDate: "2024-01-15T10:00:00Z",
+        endDate: "2024-01-15T11:00:00Z",
+        duration: 3600,
+        sourceName: "Watch",
+        sourceBundle: "com.apple.Health",
+      },
+    ]);
+    const callArgs = execute.mock.calls[0]?.[0];
+    const queryString = String(callArgs?.queryChunks?.join?.("") ?? callArgs);
+    expect(queryString).toContain("hiking");
+  });
+
+  it("maps type 44 to swimming", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    await repo.processWorkouts([
+      {
+        uuid: "w-swim",
+        workoutType: "44",
+        startDate: "2024-01-15T10:00:00Z",
+        endDate: "2024-01-15T11:00:00Z",
+        duration: 3600,
+        sourceName: "Watch",
+        sourceBundle: "com.apple.Health",
+      },
+    ]);
+    const callArgs = execute.mock.calls[0]?.[0];
+    const queryString = String(callArgs?.queryChunks?.join?.("") ?? callArgs);
+    expect(queryString).toContain("swimming");
+  });
+
   it("maps unknown workout type to other", async () => {
     const execute = vi.fn().mockResolvedValue([]);
     const repo = new HealthKitSyncRepository({ execute }, "user-1");
@@ -474,6 +612,60 @@ describe("INTEGER_DAILY_COLUMNS", () => {
     ];
     await repo.processDailyMetrics(samples);
     // Verify execute was called (the rounding happens inside the SQL values)
+    expect(execute).toHaveBeenCalled();
+  });
+
+  it("processes flights climbed as integer column", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    await repo.processDailyMetrics([
+      {
+        type: "HKQuantityTypeIdentifierFlightsClimbed",
+        value: 3.9,
+        unit: "count",
+        startDate: "2024-01-15T10:00:00Z",
+        endDate: "2024-01-15T10:30:00Z",
+        sourceName: "iPhone",
+        sourceBundle: "com.apple.Health",
+        uuid: "int-flights",
+      },
+    ]);
+    expect(execute).toHaveBeenCalled();
+  });
+
+  it("processes exercise minutes as integer column", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    await repo.processDailyMetrics([
+      {
+        type: "HKQuantityTypeIdentifierAppleExerciseTime",
+        value: 32.8,
+        unit: "min",
+        startDate: "2024-01-15T10:00:00Z",
+        endDate: "2024-01-15T10:30:00Z",
+        sourceName: "iPhone",
+        sourceBundle: "com.apple.Health",
+        uuid: "int-exercise",
+      },
+    ]);
+    expect(execute).toHaveBeenCalled();
+  });
+
+  it("processes resting HR as integer column", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    await repo.processDailyMetrics([
+      {
+        type: "HKQuantityTypeIdentifierRestingHeartRate",
+        value: 62.4,
+        unit: "count/min",
+        startDate: "2024-01-15T10:00:00Z",
+        endDate: "2024-01-15T10:30:00Z",
+        sourceName: "iPhone",
+        sourceBundle: "com.apple.Health",
+        uuid: "int-rhr",
+      },
+    ]);
     expect(execute).toHaveBeenCalled();
   });
 });
