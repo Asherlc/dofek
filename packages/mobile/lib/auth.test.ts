@@ -44,9 +44,7 @@ describe("AuthUserSchema", () => {
   });
 
   it("rejects wrong types", () => {
-    expect(() =>
-      AuthUserSchema.parse({ id: 123, name: "Alice", email: null }),
-    ).toThrow();
+    expect(() => AuthUserSchema.parse({ id: 123, name: "Alice", email: null })).toThrow();
   });
 });
 
@@ -89,11 +87,12 @@ describe("fetchCurrentUser", () => {
   });
 
   it("returns parsed user on success", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce({
-      ok: true,
-      json: () =>
-        Promise.resolve({ id: "u1", name: "Bob", email: "bob@test.com" }),
-    } as Response);
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ id: "u1", name: "Bob", email: "bob@test.com" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
 
     const user = await fetchCurrentUser("https://srv", "tok");
     expect(user).toEqual({ id: "u1", name: "Bob", email: "bob@test.com" });
@@ -103,10 +102,7 @@ describe("fetchCurrentUser", () => {
   });
 
   it("returns null on non-ok response", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce({
-      ok: false,
-      status: 401,
-    } as Response);
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 401 }));
 
     expect(await fetchCurrentUser("https://srv", "tok")).toBeNull();
   });
@@ -118,10 +114,12 @@ describe("fetchCurrentUser", () => {
   });
 
   it("returns null when response has wrong shape", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({ wrong: "shape" }),
-    } as Response);
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ wrong: "shape" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
 
     expect(await fetchCurrentUser("https://srv", "tok")).toBeNull();
   });
@@ -137,22 +135,21 @@ describe("fetchConfiguredProviders", () => {
   });
 
   it("returns parsed providers on success", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce({
-      ok: true,
-      json: () =>
-        Promise.resolve({ identity: ["google"], data: ["strava"] }),
-    } as Response);
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ identity: ["google"], data: ["strava"] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
 
     const providers = await fetchConfiguredProviders("https://srv");
     expect(providers).toEqual({ identity: ["google"], data: ["strava"] });
   });
 
   it("throws on non-ok response", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce({
-      ok: false,
-      status: 500,
-      statusText: "Internal Server Error",
-    } as Response);
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(null, { status: 500, statusText: "Internal Server Error" }),
+    );
 
     await expect(fetchConfiguredProviders("https://srv")).rejects.toThrow(
       "Failed to fetch providers: 500 Internal Server Error",
@@ -160,10 +157,12 @@ describe("fetchConfiguredProviders", () => {
   });
 
   it("throws on invalid response shape", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({ identity: "not-an-array" }),
-    } as Response);
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ identity: "not-an-array" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
 
     await expect(fetchConfiguredProviders("https://srv")).rejects.toThrow();
   });

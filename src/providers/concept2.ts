@@ -195,6 +195,10 @@ export class Concept2Provider implements WebhookProvider {
     return null;
   }
 
+  activityUrl(externalId: string): string {
+    return `https://log.concept2.com/results/${externalId}`;
+  }
+
   // ── Webhook implementation ──
 
   async registerWebhook(

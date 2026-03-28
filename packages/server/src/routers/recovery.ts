@@ -446,13 +446,13 @@ export const recoveryRouter = router({
                 efficiency_pct
               FROM (
                 SELECT (COALESCE(ended_at, started_at + interval '8 hours') AT TIME ZONE ${ctx.timezone})::date AS local_date,
-                       efficiency_pct, started_at
+                       efficiency_pct, duration_minutes
                 FROM fitness.v_sleep
                 WHERE user_id = ${ctx.userId}
                   AND is_nap = false
                   AND started_at > ${timestampWindowStart(input.endDate, queryDays)}
               ) sleep_sub
-              ORDER BY local_date, started_at DESC
+              ORDER BY local_date, duration_minutes DESC NULLS LAST
             )
             SELECT
               m.date,
@@ -563,7 +563,7 @@ export const recoveryRouter = router({
         }),
         sql`
           SELECT date, resting_hr, hrv, spo2_avg, respiratory_rate_avg
-          FROM fitness.daily_metrics
+          FROM fitness.v_daily_metrics
           WHERE user_id = ${ctx.userId}
           ORDER BY date DESC
           LIMIT 1
@@ -603,9 +603,9 @@ export const recoveryRouter = router({
           z.object({ efficiency_pct: z.number().nullable() }),
           sql`
             SELECT efficiency_pct
-            FROM fitness.sleep_session
+            FROM fitness.v_sleep
             WHERE user_id = ${ctx.userId}
-              AND sleep_type = 'sleep'
+              AND is_nap = false
             ORDER BY started_at DESC
             LIMIT 1
           `,

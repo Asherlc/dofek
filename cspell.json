@@ -357,7 +357,11 @@
     "Nlcjpw",
     "NOCANON",
     "Nutella",
+    "barrys",
+    "duathlon",
+    "jitsu",
     "padel",
+    "wakeboarding",
     "Repoint",
     "SIDEPLANKL",
     "somebogusstate",
@@ -377,7 +381,10 @@
     "reorderable",
     "Sparkline",
     "subtabs",
-    "unlinkable"
+    "unlinkable",
+    "matviews",
+    "matviewname",
+    "schemaname"
   ],
   "flagWords": [],
   "useGitignore": false,

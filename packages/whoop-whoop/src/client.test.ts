@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { WhoopClient } from "./client.ts";
+import { describe, expect, it, vi } from "vitest";
+import { WhoopClient, WhoopRateLimitError } from "./client.ts";
 import { createMockFetch, createMockResponse, createTypedMockFetch } from "./test-helpers.ts";
 import type { WhoopAuthToken } from "./types.ts";
 
@@ -715,6 +715,156 @@ describe("WhoopClient API error handling", () => {
     await expect(
       client.getHeartRate("2024-01-15T00:00:00Z", "2024-01-15T23:59:59Z"),
     ).rejects.toThrow("WHOOP API error (403): Forbidden");
+  });
+});
+
+// ============================================================
+// Rate limit retry behavior
+// ============================================================
+
+describe("WhoopClient rate limit retry", () => {
+  it("retries on 429 and succeeds on second attempt", async () => {
+    vi.useFakeTimers();
+    const callCount = { value: 0 };
+
+    const fetchFn = createTypedMockFetch();
+    fetchFn.mockImplementation(() => {
+      callCount.value++;
+      if (callCount.value === 1) {
+        return Promise.resolve(
+          createMockResponse({ ok: false, status: 429, body: "Rate Limit Exceeded" }),
+        );
+      }
+      return Promise.resolve(createMockResponse({ body: { values: [{ time: 1, data: 72 }] } }));
+    });
+
+    const client = new WhoopClient(makeToken(), fetchFn);
+    const resultPromise = client.getHeartRate("2024-01-15T00:00:00Z", "2024-01-15T23:59:59Z");
+
+    // Advance past the first retry delay
+    await vi.advanceTimersByTimeAsync(2000);
+
+    const result = await resultPromise;
+    expect(result).toEqual([{ time: 1, data: 72 }]);
+    expect(callCount.value).toBe(2);
+
+    vi.useRealTimers();
+  });
+
+  it("respects Retry-After header when present", async () => {
+    vi.useFakeTimers();
+    const callCount = { value: 0 };
+
+    const fetchFn = createTypedMockFetch();
+    fetchFn.mockImplementation(() => {
+      callCount.value++;
+      if (callCount.value === 1) {
+        const response = createMockResponse({
+          ok: false,
+          status: 429,
+          body: "Rate Limit Exceeded",
+        });
+        response.headers.set("Retry-After", "5");
+        return Promise.resolve(response);
+      }
+      return Promise.resolve(createMockResponse({ body: { values: [] } }));
+    });
+
+    const client = new WhoopClient(makeToken(), fetchFn);
+    const resultPromise = client.getHeartRate("2024-01-15T00:00:00Z", "2024-01-15T23:59:59Z");
+
+    // Should not have retried yet at 4s (Retry-After is 5s)
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(callCount.value).toBe(1);
+
+    // Advance past the 5s Retry-After
+    await vi.advanceTimersByTimeAsync(2000);
+
+    const result = await resultPromise;
+    expect(result).toEqual([]);
+    expect(callCount.value).toBe(2);
+
+    vi.useRealTimers();
+  });
+
+  it("throws WhoopRateLimitError after exhausting retries", async () => {
+    vi.useFakeTimers();
+    const fetchFn = createMockFetch({
+      ok: false,
+      status: 429,
+      body: "Rate Limit Exceeded",
+    });
+
+    const client = new WhoopClient(makeToken(), fetchFn);
+    const resultPromise = client
+      .getHeartRate("2024-01-15T00:00:00Z", "2024-01-15T23:59:59Z")
+      .catch((error: unknown) => error);
+
+    // Advance through all retry delays (1s + 2s + 4s = 7s with 3 retries)
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    const error = await resultPromise;
+    expect(error).toBeInstanceOf(WhoopRateLimitError);
+    if (error instanceof WhoopRateLimitError) {
+      expect(error.message).toContain("429");
+    }
+    // Initial call + 3 retries = 4 total calls
+    expect(fetchFn).toHaveBeenCalledTimes(4);
+
+    vi.useRealTimers();
+  });
+
+  it("WhoopRateLimitError has correct name", () => {
+    const error = new WhoopRateLimitError("rate limited");
+    expect(error.name).toBe("WhoopRateLimitError");
+    expect(error).toBeInstanceOf(Error);
+  });
+
+  it("calls onRequest for every API response including successes", async () => {
+    const events: Array<{ status: number; endpoint: string; attempt: number }> = [];
+    const fetchFn = createMockFetch({ status: 200, ok: true, body: { values: [] } });
+    const client = new WhoopClient(makeToken(), fetchFn, (event) => {
+      events.push({ status: event.status, endpoint: event.endpoint, attempt: event.attempt });
+    });
+
+    await client.getHeartRate("2024-01-15T00:00:00Z", "2024-01-15T23:59:59Z");
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.status).toBe(200);
+    expect(events[0]?.attempt).toBe(0);
+    expect(events[0]?.endpoint).toContain("/metrics-service");
+  });
+
+  it("calls onRequest for each 429 retry and the final success", async () => {
+    vi.useFakeTimers();
+    const events: Array<{ status: number; attempt: number }> = [];
+    const callCount = { value: 0 };
+
+    const fetchFn = createTypedMockFetch();
+    fetchFn.mockImplementation(() => {
+      callCount.value++;
+      if (callCount.value <= 2) {
+        return Promise.resolve(
+          createMockResponse({ ok: false, status: 429, body: "Rate Limit Exceeded" }),
+        );
+      }
+      return Promise.resolve(createMockResponse({ body: { values: [] } }));
+    });
+
+    const client = new WhoopClient(makeToken(), fetchFn, (event) => {
+      events.push({ status: event.status, attempt: event.attempt });
+    });
+
+    const resultPromise = client.getHeartRate("2024-01-15T00:00:00Z", "2024-01-15T23:59:59Z");
+    await vi.advanceTimersByTimeAsync(10_000);
+    await resultPromise;
+
+    expect(events).toHaveLength(3);
+    expect(events[0]).toEqual({ status: 429, attempt: 0 });
+    expect(events[1]).toEqual({ status: 429, attempt: 1 });
+    expect(events[2]).toEqual({ status: 200, attempt: 2 });
+
+    vi.useRealTimers();
   });
 });
 

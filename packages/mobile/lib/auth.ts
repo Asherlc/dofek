@@ -1,8 +1,8 @@
 import {
-  AuthUserSchema,
-  ConfiguredProvidersSchema,
   type AuthUser,
+  AuthUserSchema,
   type ConfiguredProviders,
+  ConfiguredProvidersSchema,
 } from "@dofek/auth/auth";
 import * as SecureStore from "expo-secure-store";
 import * as WebBrowser from "expo-web-browser";
@@ -29,10 +29,7 @@ export async function clearSessionToken(): Promise<void> {
 }
 
 /** Validate the stored session token by calling /api/auth/me. Returns the user or null. */
-export async function fetchCurrentUser(
-  serverUrl: string,
-  token: string,
-): Promise<AuthUser | null> {
+export async function fetchCurrentUser(serverUrl: string, token: string): Promise<AuthUser | null> {
   try {
     const res = await fetch(`${serverUrl}/api/auth/me`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -46,9 +43,7 @@ export async function fetchCurrentUser(
 }
 
 /** Fetch available login providers from the server. */
-export async function fetchConfiguredProviders(
-  serverUrl: string,
-): Promise<ConfiguredProviders> {
+export async function fetchConfiguredProviders(serverUrl: string): Promise<ConfiguredProviders> {
   const res = await fetch(`${serverUrl}/api/auth/providers`);
   if (!res.ok) {
     throw new Error(`Failed to fetch providers: ${res.status} ${res.statusText}`);
@@ -63,9 +58,7 @@ export async function startOAuthLogin(
   providerId: string,
   isDataProvider: boolean,
 ): Promise<string | null> {
-  const loginPath = isDataProvider
-    ? `/auth/login/data/${providerId}`
-    : `/auth/login/${providerId}`;
+  const loginPath = isDataProvider ? `/auth/login/data/${providerId}` : `/auth/login/${providerId}`;
   const loginUrl = `${serverUrl}${loginPath}?redirect_scheme=${APP_SCHEME}`;
   const redirectUrl = `${APP_SCHEME}://auth/callback`;
 

@@ -68,15 +68,11 @@ describe("WorkloadRatio", () => {
     });
 
     it("returns detraining risk for low ratio", () => {
-      expect(new WorkloadRatio(0.5).hint).toBe(
-        "Detraining risk - increase load gradually",
-      );
+      expect(new WorkloadRatio(0.5).hint).toBe("Detraining risk - increase load gradually");
     });
 
     it("returns high load warning", () => {
-      expect(new WorkloadRatio(1.4).hint).toBe(
-        "High load - monitor recovery closely",
-      );
+      expect(new WorkloadRatio(1.4).hint).toBe("High load - monitor recovery closely");
     });
 
     it("returns injury risk for very high ratio", () => {
@@ -120,11 +116,7 @@ describe("aggregateWeeklyVolume", () => {
       { week: "2024-01-01", hours: 3 },
       { week: "2024-01-08", hours: 1 },
     ]);
-    expect(result.map((r) => r.week)).toEqual([
-      "2024-01-01",
-      "2024-01-08",
-      "2024-01-15",
-    ]);
+    expect(result.map((r) => r.week)).toEqual(["2024-01-01", "2024-01-08", "2024-01-15"]);
   });
 
   it("handles empty input", () => {

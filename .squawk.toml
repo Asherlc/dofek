@@ -1,0 +1,11 @@
+# Squawk migration linter configuration
+# https://squawkhq.com/docs/configuration
+
+# Materialized views are read-only — CONCURRENTLY on their indexes
+# provides no benefit (no writes to block) and breaks test migration runners.
+# Regular table migrations also create indexes during initial table setup
+# when the table is empty, making CONCURRENTLY unnecessary.
+excluded_rules = [
+  "require-concurrent-index-creation",
+  "require-timeout-settings",
+]
