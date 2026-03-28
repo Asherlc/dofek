@@ -234,11 +234,16 @@ public class WhoopBleModule: Module {
             self.sampleBuffer.removeAll()
             self.bufferLock.unlock()
 
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let samplingInterval = 1.0 / 50.0 // 50 Hz = 20ms per sample
+
             let result = samples.map { sample -> [String: Any] in
-                // Convert strap timestamp to ISO 8601
-                let date = Date(timeIntervalSince1970: TimeInterval(sample.timestampSeconds))
-                let formatter = ISO8601DateFormatter()
-                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                // Compute per-sample timestamp: base epoch + sub-second offset + sample position
+                let baseTime = TimeInterval(sample.timestampSeconds)
+                    + TimeInterval(sample.subSeconds) / 1000.0
+                let sampleTime = baseTime + Double(sample.sampleIndex) * samplingInterval
+                let date = Date(timeIntervalSince1970: sampleTime)
 
                 return [
                     "timestamp": formatter.string(from: date),
