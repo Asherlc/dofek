@@ -1,14 +1,15 @@
 import { useEffect, useRef } from "react";
-import { trpc } from "./trpc";
 import {
   getRequestStatus,
   isAvailable,
   queryDailyStatistics,
   queryQuantitySamples,
-  queryWorkouts,
   querySleepSamples,
+  queryWorkouts,
 } from "../modules/health-kit";
 import { syncHealthKitToServer } from "./health-kit-sync";
+import { captureException, logger } from "./telemetry";
+import { trpc } from "./trpc";
 
 /** Check whether the latest data date is before today (stale). */
 export function isDataStale(latestDate: string | null | undefined): boolean {
@@ -44,10 +45,7 @@ export function useAutoSync(latestDate: string | null | undefined) {
       .mutateAsync({ sinceDays: 1 })
       .then(async ({ jobId }) => {
         const pollUntilDone = async (): Promise<void> => {
-          const status = await trpcUtils.sync.syncStatus.fetch(
-            { jobId },
-            { staleTime: 0 },
-          );
+          const status = await trpcUtils.sync.syncStatus.fetch({ jobId }, { staleTime: 0 });
           if (!status || status.status === "done" || status.status === "error") {
             await trpcUtils.invalidate();
             return;
@@ -63,9 +61,13 @@ export function useAutoSync(latestDate: string | null | undefined) {
 
     // Trigger HealthKit sync (iOS only)
     if (isAvailable()) {
+      logger.info("auto-sync", "Starting HealthKit sync");
       getRequestStatus()
         .then((status) => {
-          if (status !== "unnecessary") return null;
+          if (status !== "unnecessary") {
+            logger.info("auto-sync", `HealthKit permission status="${status}", skipping`);
+            return null;
+          }
           return syncHealthKitToServer({
             trpcClient: trpcUtils.client,
             healthKit: {
@@ -78,10 +80,20 @@ export function useAutoSync(latestDate: string | null | undefined) {
           });
         })
         .then((result) => {
-          if (result) trpcUtils.invalidate();
+          if (result) {
+            logger.info(
+              "auto-sync",
+              `HealthKit sync complete: ${result.inserted} inserted, ${result.errors.length} errors`,
+            );
+            trpcUtils.invalidate();
+          }
         })
-        .catch(() => {
-          // Silently fail — auto-sync is best-effort
+        .catch((error: unknown) => {
+          logger.warn(
+            "auto-sync",
+            `HealthKit sync failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          captureException(error, { source: "auto-sync-healthkit" });
         });
     }
   }, [latestDate, activeSyncs.isLoading, activeSyncs.data, triggerSync, trpcUtils]);

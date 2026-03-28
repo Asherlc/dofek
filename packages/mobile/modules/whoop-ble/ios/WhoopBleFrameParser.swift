@@ -6,6 +6,7 @@ import Foundation
 struct WhoopImuSample {
     let timestampSeconds: UInt32    // Unix epoch seconds from frame header
     let subSeconds: UInt16          // Millisecond offset within second
+    let sampleIndex: Int            // Position within the frame (for per-sample timing)
     let accelerometerX: Int16
     let accelerometerY: Int16
     let accelerometerZ: Int16
@@ -135,12 +136,13 @@ final class WhoopBleFrameParser {
             samples.reserveCapacity(count)
 
             var offset = 28
-            for _ in 0..<count {
+            for sampleIndex in 0..<count {
                 guard offset + 12 <= payload.count else { break }
 
                 samples.append(WhoopImuSample(
                     timestampSeconds: frame.dataTimestamp,
                     subSeconds: frame.subSeconds,
+                    sampleIndex: sampleIndex,
                     accelerometerX: payload.readInt16LE(at: offset),
                     accelerometerY: payload.readInt16LE(at: offset + 2),
                     accelerometerZ: payload.readInt16LE(at: offset + 4),
@@ -168,6 +170,7 @@ final class WhoopBleFrameParser {
                 samples.append(WhoopImuSample(
                     timestampSeconds: frame.dataTimestamp,
                     subSeconds: frame.subSeconds,
+                    sampleIndex: sampleIndex,
                     accelerometerX: payload.readInt16LE(at: 20 + sampleIndex * 2),
                     accelerometerY: payload.readInt16LE(at: 220 + sampleIndex * 2),
                     accelerometerZ: payload.readInt16LE(at: 420 + sampleIndex * 2),

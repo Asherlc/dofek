@@ -18,6 +18,25 @@ import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../t
 
 const tokenRowSchema = z.object({ provider_id: z.string() });
 
+const AUTH_ERROR_PATTERNS = [
+  "authorization failed",
+  "unauthorized",
+  "re-authenticate",
+  "token expired",
+  "session expired",
+  "authentication failed",
+] as const;
+
+/**
+ * Check if a sync error message indicates an authentication/authorization failure
+ * that requires the user to re-connect the provider.
+ */
+export function isAuthError(errorMessage: string | null): boolean {
+  if (!errorMessage) return false;
+  const lower = errorMessage.toLowerCase();
+  return AUTH_ERROR_PATTERNS.some((pattern) => lower.includes(pattern));
+}
+
 // ── Input schemas ──
 export const triggerSyncInput = z.object({
   providerId: z.string().optional(),
@@ -165,12 +184,16 @@ export const syncRouter = router({
     await ensureProvidersRegistered();
     const all = getAllProviders();
 
-    // Batch: load all tokens + last sync times in 2 queries instead of 2N
+    // Batch: load all tokens, last sync times, and recent auth errors in 3 queries instead of 3N
     const lastSyncRowSchema = z.object({
       provider_id: z.string(),
       last_synced: z.string(),
     });
-    const [allTokens, lastSyncs] = await Promise.all([
+    const latestErrorRowSchema = z.object({
+      provider_id: z.string(),
+      error_message: z.string().nullable(),
+    });
+    const [allTokens, lastSyncs, latestErrors] = await Promise.all([
       executeWithSchema(
         ctx.db,
         tokenRowSchema,
@@ -187,10 +210,27 @@ export const syncRouter = router({
             WHERE user_id = ${ctx.userId}
             GROUP BY provider_id`,
       ),
+      // For each provider, get the error_message of the most recent sync entry —
+      // but only if that most recent entry is an error (not a success).
+      executeWithSchema(
+        ctx.db,
+        latestErrorRowSchema,
+        sql`SELECT DISTINCT ON (provider_id) provider_id, error_message
+            FROM fitness.sync_log
+            WHERE user_id = ${ctx.userId} AND status = 'error'
+              AND synced_at = (
+                SELECT MAX(synced_at) FROM fitness.sync_log s2
+                WHERE s2.provider_id = sync_log.provider_id AND s2.user_id = ${ctx.userId}
+              )
+            ORDER BY provider_id`,
+      ),
     ]);
 
     const tokenSet = new Set(allTokens.map((r) => r.provider_id));
     const lastSyncMap = new Map(lastSyncs.map((r) => [r.provider_id, r.last_synced]));
+    const authErrorProviders = new Set(
+      latestErrors.filter((r) => isAuthError(r.error_message)).map((r) => r.provider_id),
+    );
 
     return all
       .filter((p) => p.validate() === null)
@@ -209,6 +249,7 @@ export const syncRouter = router({
           authorized: model.isConnected,
           lastSyncedAt: model.lastSyncedAt,
           importOnly: model.importOnly,
+          needsReauth: model.isConnected && authErrorProviders.has(model.id),
         };
       });
   }),

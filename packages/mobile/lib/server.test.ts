@@ -26,9 +26,7 @@ describe("SERVER_URL", () => {
 describe("getTrpcUrl", () => {
   it("appends /api/trpc to the server URL", async () => {
     const { getTrpcUrl } = await import("./server");
-    expect(getTrpcUrl("https://dofek.example.com")).toBe(
-      "https://dofek.example.com/api/trpc",
-    );
+    expect(getTrpcUrl("https://dofek.example.com")).toBe("https://dofek.example.com/api/trpc");
   });
 
   it("does not double-slash when server URL has no trailing slash", async () => {

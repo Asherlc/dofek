@@ -1,12 +1,20 @@
-import { useState, useMemo } from "react";
-import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
+import { formatNumber, formatSigned } from "@dofek/format/format";
+import { statusColors } from "@dofek/scoring/colors";
+import { useMemo, useState } from "react";
+import {
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import Svg, { Circle, Line } from "react-native-svg";
 import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
-import { formatNumber, formatSigned } from "@dofek/format/format";
 import { trpc } from "../lib/trpc";
 import { useRefresh } from "../lib/useRefresh";
 import { colors } from "../theme";
-import { statusColors } from "@dofek/scoring/colors";
 
 // ── Constants ──
 
@@ -157,9 +165,7 @@ function CorrelationBar({ rho, label }: { rho: number; label: string }) {
           ]}
         />
       </View>
-      <Text style={[styles.corrBarValue, { color: barColor }]}>
-        {formatSigned(clamped, 2)}
-      </Text>
+      <Text style={[styles.corrBarValue, { color: barColor }]}>{formatSigned(clamped, 2)}</Text>
     </View>
   );
 }
@@ -171,7 +177,7 @@ function ScatterPlot({
   regression,
   rho,
   xLabel,
-  yLabel,
+  yLabel: _yLabel,
   width: chartWidth,
 }: {
   dataPoints: Array<{ x: number; y: number; date: string }>;
@@ -182,8 +188,8 @@ function ScatterPlot({
   width: number;
 }) {
   const padding = { top: 16, right: 16, bottom: 32, left: 48 };
-  const w = chartWidth - padding.left - padding.right;
-  const h = 240;
+  const plotWidth = chartWidth - padding.left - padding.right;
+  const plotHeight = 240;
 
   const xs = dataPoints.map((p) => p.x);
   const ys = dataPoints.map((p) => p.y);
@@ -194,8 +200,8 @@ function ScatterPlot({
   const xRange = xMax - xMin || 1;
   const yRange = yMax - yMin || 1;
 
-  const scaleX = (v: number) => padding.left + ((v - xMin) / xRange) * w;
-  const scaleY = (v: number) => padding.top + h - ((v - yMin) / yRange) * h;
+  const scaleX = (v: number) => padding.left + ((v - xMin) / xRange) * plotWidth;
+  const scaleY = (v: number) => padding.top + plotHeight - ((v - yMin) / yRange) * plotHeight;
 
   const trendColor = rho >= 0 ? statusColors.positive : statusColors.danger;
   const lineY1 = regression.slope * xMin + regression.intercept;
@@ -203,10 +209,24 @@ function ScatterPlot({
 
   return (
     <View style={styles.chartContainer}>
-      <Svg width={chartWidth} height={h + padding.top + padding.bottom}>
+      <Svg width={chartWidth} height={plotHeight + padding.top + padding.bottom}>
         {/* Grid lines */}
-        <Line x1={padding.left} y1={padding.top} x2={padding.left} y2={padding.top + h} stroke="#27272a" strokeWidth={1} />
-        <Line x1={padding.left} y1={padding.top + h} x2={padding.left + w} y2={padding.top + h} stroke="#27272a" strokeWidth={1} />
+        <Line
+          x1={padding.left}
+          y1={padding.top}
+          x2={padding.left}
+          y2={padding.top + plotHeight}
+          stroke="#27272a"
+          strokeWidth={1}
+        />
+        <Line
+          x1={padding.left}
+          y1={padding.top + plotHeight}
+          x2={padding.left + plotWidth}
+          y2={padding.top + plotHeight}
+          stroke="#27272a"
+          strokeWidth={1}
+        />
 
         {/* Regression line */}
         <Line
@@ -221,9 +241,9 @@ function ScatterPlot({
         />
 
         {/* Data points */}
-        {dataPoints.map((p, i) => (
+        {dataPoints.map((p) => (
           <Circle
-            key={`${p.date}-${i}`}
+            key={`${p.date}-${p.x}-${p.y}`}
             cx={scaleX(p.x)}
             cy={scaleY(p.y)}
             r={3}
@@ -263,7 +283,17 @@ export default function CorrelationScreen() {
   const { refreshing, onRefresh } = useRefresh();
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={[styles.content, isWide && styles.contentWide]} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={[styles.content, isWide && styles.contentWide]}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={colors.textSecondary}
+        />
+      }
+    >
       {/* Time range */}
       <Text style={styles.sectionLabel}>Time Range</Text>
       <DaySelector days={days} onChange={setDays} />
@@ -310,8 +340,18 @@ export default function CorrelationScreen() {
                 description="These bars show how strongly the two selected metrics move together."
                 textStyle={styles.cardTitle}
               />
-              <View style={[styles.confidenceBadge, { backgroundColor: `${CONFIDENCE_COLORS[data.confidenceLevel] ?? "#636366"}22` }]}>
-                <Text style={[styles.confidenceBadgeText, { color: CONFIDENCE_COLORS[data.confidenceLevel] ?? "#636366" }]}>
+              <View
+                style={[
+                  styles.confidenceBadge,
+                  { backgroundColor: `${CONFIDENCE_COLORS[data.confidenceLevel] ?? "#636366"}22` },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.confidenceBadgeText,
+                    { color: CONFIDENCE_COLORS[data.confidenceLevel] ?? "#636366" },
+                  ]}
+                >
                   {data.confidenceLevel}
                 </Text>
               </View>
@@ -339,13 +379,15 @@ export default function CorrelationScreen() {
                 <View style={styles.statsGridItem}>
                   <Text style={styles.statsGridLabel}>{xMetric?.label ?? metricX}</Text>
                   <Text style={styles.statsGridValue}>
-                    {formatNumber(data.xStats.mean)} ± {formatNumber(data.xStats.stddev)} {xMetric?.unit}
+                    {formatNumber(data.xStats.mean)} ± {formatNumber(data.xStats.stddev)}{" "}
+                    {xMetric?.unit}
                   </Text>
                 </View>
                 <View style={styles.statsGridItem}>
                   <Text style={styles.statsGridLabel}>{yMetric?.label ?? metricY}</Text>
                   <Text style={styles.statsGridValue}>
-                    {formatNumber(data.yStats.mean)} ± {formatNumber(data.yStats.stddev)} {yMetric?.unit}
+                    {formatNumber(data.yStats.mean)} ± {formatNumber(data.yStats.stddev)}{" "}
+                    {yMetric?.unit}
                   </Text>
                 </View>
               </View>
