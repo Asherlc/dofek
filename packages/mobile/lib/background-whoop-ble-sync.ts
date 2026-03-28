@@ -58,8 +58,7 @@ export async function initBackgroundWhoopBleSync(
     syncing = true;
     syncOnForeground(trpcClient, whoopDeps)
       .catch((error: unknown) => {
-        // Best-effort — don't crash the app
-        captureException(error, { source: "whoop-ble-sync" });
+        Sentry.captureException(error, { tags: { source: "whoop-ble-foreground-sync" } });
       })
       .finally(() => {
         syncing = false;
@@ -72,8 +71,8 @@ export async function initBackgroundWhoopBleSync(
   // re-opens the app. Best-effort: don't let init failures propagate.
   try {
     await syncOnForeground(trpcClient, whoopDeps);
-  } catch {
-    // Best-effort — connection may fail on first attempt
+  } catch (error: unknown) {
+    Sentry.captureException(error, { tags: { source: "whoop-ble-init-sync" } });
   }
 }
 

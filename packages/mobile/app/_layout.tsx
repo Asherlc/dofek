@@ -8,14 +8,12 @@ import { AuthProvider, useAuth } from "../lib/auth-context";
 import { initBackgroundAccelerometerSync } from "../lib/background-accelerometer-sync";
 import { initBackgroundHealthKitSync } from "../lib/background-health-kit-sync";
 import { initBackgroundWatchAccelerometerSync } from "../lib/background-watch-accelerometer-sync";
-import {
-  initBackgroundWhoopBleSync,
-  teardownBackgroundWhoopBleSync,
-} from "../lib/background-whoop-ble-sync";
+import { teardownBackgroundWhoopBleSync } from "../lib/background-whoop-ble-sync";
 import type { SyncTrpcClient } from "../lib/health-kit-sync";
 import { getTrpcUrl } from "../lib/server";
 import { captureException, initTelemetry, logger } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
+import { useWhoopBleSync } from "../lib/useWhoopBleSync";
 import { addBackgroundRefreshListener, scheduleRefresh } from "../modules/background-refresh";
 import {
   findWhoop,
@@ -39,6 +37,49 @@ export const rootStackScreenOptions = {
   headerBackTitleVisible: false,
   headerShadowVisible: false,
 };
+
+/**
+ * Headless component that reactively starts/stops WHOOP BLE accelerometer
+ * sync based on the `whoopAlwaysOnImu` user setting. Must be rendered
+ * inside the tRPC provider tree so it can use tRPC query hooks.
+ *
+ * Previously, WHOOP BLE sync was initialized via a one-shot query in the
+ * main useEffect, which only ran at app startup. Toggling the setting from
+ * the UI had no effect until the app was restarted.
+ */
+function WhoopBleSyncManager({ trpcClient }: { trpcClient: ReturnType<typeof trpc.createClient> }) {
+  const whoopSyncClient = useMemo(
+    () => ({
+      accelerometerSync: {
+        pushAccelerometerSamples: {
+          mutate: (
+            input: Parameters<
+              typeof trpcClient.accelerometerSync.pushAccelerometerSamples.mutate
+            >[0],
+          ) => trpcClient.accelerometerSync.pushAccelerometerSamples.mutate(input),
+        },
+      },
+    }),
+    [trpcClient],
+  );
+
+  const whoopDeps = useMemo(
+    () => ({
+      isBluetoothAvailable,
+      findWhoop,
+      connect: whoopConnect,
+      startImuStreaming,
+      stopImuStreaming,
+      getBufferedSamples: getWhoopSamples,
+      disconnect: whoopDisconnect,
+    }),
+    [],
+  );
+
+  useWhoopBleSync(whoopSyncClient, whoopDeps);
+
+  return null;
+}
 
 function AuthGate() {
   const { user, serverUrl, isLoading, sessionToken } = useAuth();
@@ -118,41 +159,8 @@ function AuthGate() {
       captureException(error, { source: "bg-watch-accel-sync" });
     });
 
-    // Start always-on WHOOP BLE accelerometer sync (if enabled in settings)
-    trpcClient.settings.get
-      .query({ key: "whoopAlwaysOnImu" })
-      .then((setting) => {
-        if (setting?.value !== true) return;
-
-        const whoopSyncClient = {
-          accelerometerSync: {
-            pushAccelerometerSamples: {
-              mutate: (
-                input: Parameters<
-                  typeof trpcClient.accelerometerSync.pushAccelerometerSamples.mutate
-                >[0],
-              ) => trpcClient.accelerometerSync.pushAccelerometerSamples.mutate(input),
-            },
-          },
-        };
-
-        initBackgroundWhoopBleSync(whoopSyncClient, {
-          isBluetoothAvailable,
-          findWhoop,
-          connect: whoopConnect,
-          startImuStreaming,
-          stopImuStreaming,
-          getBufferedSamples: getWhoopSamples,
-          disconnect: whoopDisconnect,
-        }).catch((error: unknown) => {
-          // Best-effort — WHOOP BLE sync is non-critical
-          captureException(error, { source: "bg-whoop-ble-sync" });
-        });
-      })
-      .catch((error: unknown) => {
-        // Best-effort — settings fetch failure is non-critical
-        captureException(error, { source: "whoop-settings-fetch" });
-      });
+    // WHOOP BLE sync is now managed reactively via useWhoopBleSync hook
+    // inside the tRPC provider tree (see WhoopBleSyncManager below).
 
     // Listen for background refresh wakeups (~every 15-30 min, system-decided).
     // On each wake, restart Watch recording and sync accelerometer data so
@@ -201,6 +209,7 @@ function AuthGate() {
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>
+        <WhoopBleSyncManager trpcClient={trpcClient} />
         <Stack screenOptions={rootStackScreenOptions}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen
