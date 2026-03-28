@@ -5,8 +5,8 @@ import SwiftUI
 struct DofekWatchApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
-    @ObservedObject private var recorder = AccelerometerRecorder.shared
-    @ObservedObject private var sessionDelegate = WatchSessionDelegate.shared
+    @StateObject private var recorder = AccelerometerRecorder.shared
+    @StateObject private var sessionDelegate = WatchSessionDelegate.shared
 
     @StateObject private var transferManager = TransferManager(
         recorder: AccelerometerRecorder.shared
