@@ -1,12 +1,20 @@
-import { useState } from "react";
-import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
-import Svg, { Rect, Line, Text as SvgText } from "react-native-svg";
-import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
 import { formatNumber } from "@dofek/format/format";
+import { statusColors } from "@dofek/scoring/colors";
+import { useState } from "react";
+import {
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  useWindowDimensions,
+  View,
+} from "react-native";
+import Svg, { Line, Rect } from "react-native-svg";
+import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
 import { trpc } from "../lib/trpc";
 import { useRefresh } from "../lib/useRefresh";
 import { colors } from "../theme";
-import { statusColors } from "@dofek/scoring/colors";
 
 // ── Types ──
 
@@ -18,11 +26,6 @@ const DAY_OPTIONS = [
 ];
 
 // ── Helpers ──
-
-function formatNullable(value: number | null | undefined, decimals = 0): string {
-  if (value == null || Number.isNaN(value)) return "--";
-  return formatNumber(value, decimals);
-}
 
 function nutrientBarColor(percentRda: number): string {
   if (percentRda >= 100) return statusColors.positive;
@@ -39,7 +42,8 @@ function proteinPerKgColor(value: number): string {
 
 function proteinPerKgRecommendation(value: number): string {
   if (value >= 1.6) return "Meeting recommended intake for active individuals (1.6+ g/kg)";
-  if (value >= 1.2) return "Adequate protein, but below optimal for active individuals. Target 1.6+ g/kg.";
+  if (value >= 1.2)
+    return "Adequate protein, but below optimal for active individuals. Target 1.6+ g/kg.";
   return "Protein intake is low. Aim for at least 1.6 g/kg bodyweight for muscle maintenance.";
 }
 
@@ -54,7 +58,17 @@ export default function NutritionAnalyticsScreen() {
   const { refreshing, onRefresh } = useRefresh();
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={colors.textSecondary}
+        />
+      }
+    >
       {/* Days selector */}
       <View style={styles.daysRow}>
         {DAY_OPTIONS.map((opt) => (
@@ -101,12 +115,8 @@ function AdaptiveTdeeSection({ days }: { days: number }) {
         <>
           <Text style={styles.bigValue}>{Math.round(data.estimatedTdee)} kcal/day</Text>
           <View style={styles.tdeeDetails}>
-            <Text style={styles.cardSubtext}>
-              Confidence: {Math.round(data.confidence)}%
-            </Text>
-            <Text style={styles.cardSubtext}>
-              Based on {data.dataPoints} data points
-            </Text>
+            <Text style={styles.cardSubtext}>Confidence: {Math.round(data.confidence)}%</Text>
+            <Text style={styles.cardSubtext}>Based on {data.dataPoints} data points</Text>
           </View>
         </>
       )}
@@ -127,8 +137,7 @@ function CaloricBalanceSection({ days }: { days: number }) {
   const data = balance.data ?? [];
   if (data.length === 0) return null;
 
-  const avgBalance =
-    data.reduce((sum, d) => sum + d.balance, 0) / data.length;
+  const avgBalance = data.reduce((sum, d) => sum + d.balance, 0) / data.length;
   const latestRollingAvg = data[data.length - 1]?.rollingAvgBalance;
 
   // Chart calculations
@@ -155,7 +164,8 @@ function CaloricBalanceSection({ days }: { days: number }) {
               { color: avgBalance >= 0 ? statusColors.positive : statusColors.danger },
             ]}
           >
-            {avgBalance >= 0 ? "+" : ""}{Math.round(avgBalance)} kcal
+            {avgBalance >= 0 ? "+" : ""}
+            {Math.round(avgBalance)} kcal
           </Text>
         </View>
         <View style={styles.summaryCard}>
@@ -200,14 +210,14 @@ function CaloricBalanceSection({ days }: { days: number }) {
             />
             {data.map((d, i) => {
               const barH = (Math.abs(d.balance) / maxAbs) * (midY - 4);
-              const x = i * (barWidth + 1);
+              const barX = i * (barWidth + 1);
               const isPositive = d.balance >= 0;
-              const y = isPositive ? midY - barH : midY;
+              const barY = isPositive ? midY - barH : midY;
               return (
                 <Rect
                   key={d.date}
-                  x={x}
-                  y={y}
+                  x={barX}
+                  y={barY}
                   width={barWidth}
                   height={Math.max(barH, 1)}
                   rx={1}
@@ -246,9 +256,7 @@ function MacroSummarySection({ days }: { days: number }) {
             <Text style={[styles.bigValue, { color: proteinPerKgColor(proteinPerKg) }]}>
               {formatNumber(proteinPerKg, 1)} g/kg
             </Text>
-            <Text style={styles.cardSubtext}>
-              {proteinPerKgRecommendation(proteinPerKg)}
-            </Text>
+            <Text style={styles.cardSubtext}>{proteinPerKgRecommendation(proteinPerKg)}</Text>
           </>
         ) : (
           <Text style={styles.emptyText}>No data available</Text>
@@ -309,12 +317,7 @@ function MicronutrientAdequacySection({ days }: { days: number }) {
                   ]}
                 />
                 {/* 100% marker */}
-                <View
-                  style={[
-                    styles.nutrientRdaMarker,
-                    { left: `${(100 / 150) * 100}%` },
-                  ]}
-                />
+                <View style={[styles.nutrientRdaMarker, { left: `${(100 / 150) * 100}%` }]} />
               </View>
               <Text style={[styles.nutrientPct, { color: barColor }]}>
                 {Math.round(nutrient.percentRda)}%

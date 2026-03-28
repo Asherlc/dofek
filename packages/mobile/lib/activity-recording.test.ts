@@ -1,13 +1,13 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { AccelerometerService } from "./accelerometer-service.ts";
+import type { RecordingTrpcClient } from "./activity-recording.ts";
 import {
+  type ActivityRecorder,
   createActivityRecorder,
   haversineDistance,
   totalDistance,
-  type ActivityRecorder,
 } from "./activity-recording.ts";
 import type { GpsSample, LocationAdapter } from "./location-service.ts";
-import type { RecordingTrpcClient } from "./activity-recording.ts";
-import type { AccelerometerService } from "./accelerometer-service.ts";
 
 function makeMockLocationAdapter(): LocationAdapter & {
   emitSample(sample: GpsSample): void;
@@ -191,9 +191,7 @@ describe("createActivityRecorder", () => {
   });
 
   it("transitions to error on save failure", async () => {
-    (trpc.activityRecording.save.mutate as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("Network error"),
-    );
+    vi.mocked(trpc.activityRecording.save.mutate).mockRejectedValue(new Error("Network error"));
 
     await recorder.start("running");
     location.emitSample(makeSample());
@@ -280,9 +278,7 @@ describe("createActivityRecorder with accelerometer", () => {
   });
 
   it("does not block recording start when ensureRecording fails", async () => {
-    (accelerometer.ensureRecording as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("Accelerometer error"),
-    );
+    vi.mocked(accelerometer.ensureRecording).mockRejectedValue(new Error("Accelerometer error"));
 
     await recorder.start("running");
 
@@ -303,9 +299,7 @@ describe("createActivityRecorder with accelerometer", () => {
   });
 
   it("saves activity successfully even when accelerometer sync fails", async () => {
-    (accelerometer.syncForTimeRange as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("Sync failed"),
-    );
+    vi.mocked(accelerometer.syncForTimeRange).mockRejectedValue(new Error("Sync failed"));
 
     await recorder.start("cycling");
     location.emitSample(makeSample());

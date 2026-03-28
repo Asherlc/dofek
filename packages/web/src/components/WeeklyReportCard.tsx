@@ -1,16 +1,10 @@
-import { StrainZone } from "@dofek/scoring/scoring";
+import { StrainZone, sleepPerformanceColor } from "@dofek/scoring/scoring";
 import type { WeeklyReportResult } from "dofek-server/types";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface WeeklyReportCardProps {
   data: WeeklyReportResult | undefined;
   loading?: boolean;
-}
-
-function sleepPerfColor(percentage: number): string {
-  if (percentage >= 95) return "#22c55e";
-  if (percentage >= 85) return "#eab308";
-  return "#ef4444";
 }
 
 function formatHoursMinutes(minutes: number): string {
@@ -69,7 +63,7 @@ export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
           label="Sleep"
           value={formatHoursMinutes(current.avgSleepMinutes)}
           sub={
-            <span style={{ color: sleepPerfColor(current.sleepPerformancePct) }}>
+            <span style={{ color: sleepPerformanceColor(current.sleepPerformancePct) }}>
               {current.sleepPerformancePct}% of avg
             </span>
           }

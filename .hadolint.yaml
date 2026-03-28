@@ -1,7 +1,8 @@
 ignored:
   # WORKDIR in conditional block is acceptable (INSTALL_EXTRAS pattern)
   - DL3003
-  # apt-get version pinning in multi-stage builds is impractical
+  # apk/apt version pinning in multi-stage builds is impractical
   - DL3008
+  - DL3018
   # pipefail: the RUN block uses conditional logic, not simple pipes
   - DL4006

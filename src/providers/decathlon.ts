@@ -158,6 +158,10 @@ export class DecathlonProvider implements SyncProvider {
     return null;
   }
 
+  activityUrl(externalId: string): string {
+    return `https://www.decathlon.com/sports-tracking/activity/${externalId}`;
+  }
+
   authSetup(): ProviderAuthSetup {
     const config = decathlonOAuthConfig();
     if (!config) throw new Error("DECATHLON_CLIENT_ID and CLIENT_SECRET required");

@@ -159,12 +159,13 @@ export const sleepNeedRouter = router({
       const totalNeedMinutes = baselineMinutes + strainDebtMinutes + debtRecoveryMinutes;
 
       // Build calendar of last 7 dates (endDate-6 through endDate)
+      // Use UTC noon to avoid any timezone-related date shifts with toISOString()
       const nightsByDate = new Map(nights.map((n) => [n.date, n]));
       const calendarDates: string[] = [];
-      const endDate = new Date(`${input.endDate}T00:00:00`);
+      const anchorDate = new Date(`${input.endDate}T12:00:00Z`);
       for (let i = 6; i >= 0; i--) {
-        const calendarDay = new Date(endDate);
-        calendarDay.setDate(calendarDay.getDate() - i);
+        const calendarDay = new Date(anchorDate);
+        calendarDay.setUTCDate(calendarDay.getUTCDate() - i);
         calendarDates.push(calendarDay.toISOString().slice(0, 10));
       }
 
@@ -189,9 +190,9 @@ export const sleepNeedRouter = router({
       });
 
       // canRecommend: yesterday's sleep must be present for tonight's recommendation
-      const yesterday = new Date(endDate);
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = yesterday.toISOString().slice(0, 10);
+      const yesterdayDate = new Date(`${input.endDate}T12:00:00Z`);
+      yesterdayDate.setUTCDate(yesterdayDate.getUTCDate() - 1);
+      const yesterdayStr = yesterdayDate.toISOString().slice(0, 10);
       const canRecommend = nightsByDate.has(yesterdayStr);
 
       return {

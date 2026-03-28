@@ -11,6 +11,13 @@ import type {
 const WHOOP_API_BASE = "https://api.prod.whoop.com";
 const WHOOP_API_VERSION = "7";
 
+export class WhoopRateLimitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WhoopRateLimitError";
+  }
+}
+
 // Cognito auth config (from id.whoop.com web app)
 const COGNITO_ENDPOINT = `${WHOOP_API_BASE}/auth-service/v3/whoop/`;
 const COGNITO_CLIENT_ID = "37365lrcda1js3fapqfe2n40eh";
@@ -71,15 +78,30 @@ async function cognitoCall(
   return data;
 }
 
+export interface WhoopRequestEvent {
+  userId: number;
+  endpoint: string;
+  status: number;
+  attempt: number;
+  retryAfterSeconds: number | null;
+  timestamp: Date;
+}
+
 export class WhoopClient {
   #accessToken: string;
   #userId: number;
   #fetchFn: typeof globalThis.fetch;
+  #onRequest?: (event: WhoopRequestEvent) => void;
 
-  constructor(token: WhoopAuthToken, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
+  constructor(
+    token: WhoopAuthToken,
+    fetchFn: typeof globalThis.fetch = globalThis.fetch,
+    onRequest?: (event: WhoopRequestEvent) => void,
+  ) {
     this.#accessToken = token.accessToken;
     this.#userId = token.userId;
     this.#fetchFn = fetchFn;
+    this.#onRequest = onRequest;
   }
 
   /**
@@ -295,19 +317,46 @@ export class WhoopClient {
     }
     requestUrl.searchParams.set("apiVersion", WHOOP_API_VERSION);
 
-    const response = await this.#fetchFn(requestUrl.toString(), {
-      headers: {
-        Authorization: `Bearer ${this.#accessToken}`,
-        "User-Agent": "WHOOP/4.0",
-      },
-    });
+    const maxRetries = 3;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const response = await this.#fetchFn(requestUrl.toString(), {
+        headers: {
+          Authorization: `Bearer ${this.#accessToken}`,
+          "User-Agent": "WHOOP/4.0",
+        },
+      });
 
-    if (!response.ok) {
+      const retryAfterHeader = response.status === 429 ? response.headers.get("Retry-After") : null;
+      const retryAfterSeconds = retryAfterHeader ? Number.parseInt(retryAfterHeader, 10) : null;
+
+      this.#onRequest?.({
+        userId: this.#userId,
+        endpoint: requestUrl.pathname,
+        status: response.status,
+        attempt,
+        retryAfterSeconds,
+        timestamp: new Date(),
+      });
+
+      if (response.ok) {
+        return response.json();
+      }
+
+      if (response.status === 429) {
+        if (attempt === maxRetries) {
+          const text = await response.text();
+          throw new WhoopRateLimitError(`WHOOP API rate limit exceeded (429): ${text}`);
+        }
+        const delaySeconds = retryAfterSeconds ?? 2 ** attempt;
+        await new Promise((resolve) => setTimeout(resolve, delaySeconds * 1000));
+        continue;
+      }
+
       const text = await response.text();
       throw new Error(`WHOOP API error (${response.status}): ${text}`);
     }
 
-    return response.json();
+    throw new Error("unreachable");
   }
 
   async getHeartRate(start: string, end: string, step = 6): Promise<WhoopHrValue[]> {

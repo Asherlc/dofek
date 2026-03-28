@@ -1,18 +1,8 @@
-import { useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
 import { providerLabel } from "@dofek/providers/providers";
+import { useEffect, useState } from "react";
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { type ConfiguredProviders, fetchConfiguredProviders, startOAuthLogin } from "../lib/auth";
 import { useAuth } from "../lib/auth-context";
-import {
-  type ConfiguredProviders,
-  fetchConfiguredProviders,
-  startOAuthLogin,
-} from "../lib/auth";
 import { ProviderLogo } from "../components/ProviderLogo";
 import { colors } from "../theme";
 
@@ -84,21 +74,14 @@ export default function LoginScreen() {
               >
                 <View style={styles.providerButtonContent}>
                   <ProviderLogo provider={id} serverUrl={serverUrl} size={20} />
-                  <Text style={styles.providerText}>
-                    Sign in with {providerLabel(id)}
-                  </Text>
+                  <Text style={styles.providerText}>Sign in with {providerLabel(id)}</Text>
                 </View>
               </TouchableOpacity>
             ))}
           </View>
         )}
 
-        {loggingIn ? (
-          <ActivityIndicator
-            color={colors.accent}
-            style={styles.spinner}
-          />
-        ) : null}
+        {loggingIn ? <ActivityIndicator color={colors.accent} style={styles.spinner} /> : null}
       </View>
     </View>
   );
