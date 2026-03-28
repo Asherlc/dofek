@@ -382,7 +382,10 @@
     "Sparkline",
     "subtabs",
     "unlinkable",
-    "stddevs"
+    "stddevs",
+    "matviews",
+    "matviewname",
+    "schemaname"
   ],
   "flagWords": [],
   "useGitignore": false,
