@@ -563,7 +563,7 @@ export const recoveryRouter = router({
         }),
         sql`
           SELECT date, resting_hr, hrv, spo2_avg, respiratory_rate_avg
-          FROM fitness.daily_metrics
+          FROM fitness.v_daily_metrics
           WHERE user_id = ${ctx.userId}
           ORDER BY date DESC
           LIMIT 1
@@ -603,9 +603,9 @@ export const recoveryRouter = router({
           z.object({ efficiency_pct: z.number().nullable() }),
           sql`
             SELECT efficiency_pct
-            FROM fitness.sleep_session
+            FROM fitness.v_sleep
             WHERE user_id = ${ctx.userId}
-              AND sleep_type = 'sleep'
+              AND is_nap = false
             ORDER BY started_at DESC
             LIMIT 1
           `,
