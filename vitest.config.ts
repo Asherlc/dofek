@@ -49,12 +49,14 @@ export default defineConfig({
         "**/node_modules/**",
         "**/routeTree.gen.ts",
       ],
-      thresholds: {
-        lines: 93.5,
-        functions: 94.5,
-        branches: 89,
-        statements: 93.5,
-      },
+      thresholds: process.env.VITEST_COVERAGE_SKIP_THRESHOLDS
+        ? undefined
+        : {
+            lines: 93.5,
+            functions: 94.5,
+            branches: 89,
+            statements: 93.5,
+          },
     },
   },
   resolve: {
