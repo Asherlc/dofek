@@ -50,6 +50,11 @@ vi.mock("@sentry/react-native", () => ({
 
 vi.mock("./telemetry", () => ({
   captureException: vi.fn(),
+  logger: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
 }));
 
 describe("background-whoop-ble-sync", () => {
