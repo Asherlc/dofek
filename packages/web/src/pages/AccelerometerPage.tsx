@@ -38,18 +38,18 @@ function SyncStatusPanel() {
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {data.map((device) => (
         <div
-          key={`${device.device_id}-${device.device_type}`}
+          key={`${device.deviceId}-${device.deviceType}`}
           className="rounded-lg border border-border bg-card p-4"
         >
           <div className="flex items-center gap-2">
             <p className="text-sm font-medium">
-              {deviceLabel(device.device_type, device.device_id)}
+              {deviceLabel(device.deviceType, device.deviceId)}
             </p>
           </div>
-          <p className="text-2xl font-bold">{formatNumber(device.sample_count)} samples</p>
+          <p className="text-2xl font-bold">{formatNumber(device.sampleCount)} samples</p>
           <p className="text-xs text-muted-foreground">
-            {device.earliest_sample
-              ? `${new Date(device.earliest_sample).toLocaleDateString()} — ${new Date(device.latest_sample ?? "").toLocaleDateString()}`
+            {device.earliestSample
+              ? `${new Date(device.earliestSample).toLocaleDateString()} — ${new Date(device.latestSample ?? "").toLocaleDateString()}`
               : "No data"}
           </p>
         </div>
@@ -66,7 +66,7 @@ function DailyCoveragePanel() {
     return <p className="text-sm text-muted-foreground">No daily data available.</p>;
   }
 
-  const maxHours = Math.max(...data.map((day) => day.hours_covered), 1);
+  const maxHours = Math.max(...data.map((day) => day.hoursCovered), 1);
 
   return (
     <div className="space-y-1">
@@ -76,11 +76,11 @@ function DailyCoveragePanel() {
           <div className="flex-1">
             <div
               className="h-4 rounded bg-blue-500/80"
-              style={{ width: `${(day.hours_covered / maxHours) * 100}%` }}
+              style={{ width: `${(day.hoursCovered / maxHours) * 100}%` }}
             />
           </div>
           <span className="w-16 text-right text-muted-foreground">
-            {day.hours_covered.toFixed(1)}h
+            {day.hoursCovered.toFixed(1)}h
           </span>
         </div>
       ))}
