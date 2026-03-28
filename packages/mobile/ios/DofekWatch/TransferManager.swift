@@ -1,4 +1,3 @@
-import Compression
 import Foundation
 import WatchConnectivity
 
@@ -102,70 +101,21 @@ final class TransferManager: ObservableObject {
         }
     }
 
-    /// Compress a file using streaming zlib compression.
+    /// Compress a file using zlib via Foundation's NSData.compressed(using:).
     ///
-    /// Uses `Data(contentsOf:options:.mappedIfSafe)` to memory-map the source file,
-    /// so the OS pages data in on demand (~64 KB at a time) instead of loading the
-    /// entire file into RAM. Output is written in chunks via FileHandle.
+    /// Uses `Data(contentsOf:options:.mappedIfSafe)` to memory-map the source file
+    /// so the OS pages data in on demand rather than loading the entire file into RAM.
+    /// The compressed output is typically 10-15x smaller than the input, so holding
+    /// it in memory is fine even for large recordings.
+    ///
+    /// Uses Foundation (no `import Compression` needed) to avoid framework linking
+    /// issues when CocoaPods manages the DofekWatch target's build settings.
     ///
     /// - Returns: The size of the compressed file in bytes.
     static func compressFile(from sourceURL: URL, to destURL: URL) throws -> Int {
         let sourceData = try Data(contentsOf: sourceURL, options: .mappedIfSafe)
-
-        FileManager.default.createFile(atPath: destURL.path, contents: nil)
-        let outputHandle = try FileHandle(forWritingTo: destURL)
-        defer { outputHandle.closeFile() }
-
-        let bufferSize = 65_536
-        let outputBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
-        defer { outputBuffer.deallocate() }
-
-        var stream = compression_stream()
-        guard compression_stream_init(
-            &stream, COMPRESSION_STREAM_ENCODE, COMPRESSION_ZLIB
-        ) == COMPRESSION_STATUS_OK else {
-            throw NSError(
-                domain: "DofekWatch.Compression", code: -1,
-                userInfo: [NSLocalizedDescriptionKey: "Failed to initialize compression stream"]
-            )
-        }
-        defer { compression_stream_destroy(&stream) }
-
-        var compressedSize = 0
-
-        try sourceData.withUnsafeBytes { (rawBuffer: UnsafeRawBufferPointer) in
-            guard let baseAddress = rawBuffer.baseAddress else { return }
-
-            stream.src_ptr = baseAddress.assumingMemoryBound(to: UInt8.self)
-            stream.src_size = rawBuffer.count
-
-            var status = COMPRESSION_STATUS_OK
-
-            repeat {
-                stream.dst_ptr = outputBuffer
-                stream.dst_size = bufferSize
-
-                let flags: Int32 = stream.src_size == 0
-                    ? COMPRESSION_STREAM_FINALIZE
-                    : 0
-
-                status = compression_stream_process(&stream, flags)
-
-                let produced = bufferSize - stream.dst_size
-                if produced > 0 {
-                    outputHandle.write(Data(bytes: outputBuffer, count: produced))
-                    compressedSize += produced
-                }
-
-                if status == COMPRESSION_STATUS_ERROR {
-                    throw NSError(
-                        domain: "DofekWatch.Compression", code: -2,
-                        userInfo: [NSLocalizedDescriptionKey: "Compression stream error"]
-                    )
-                }
-            } while status == COMPRESSION_STATUS_OK
-        }
-
-        return compressedSize
+        let compressedData = try (sourceData as NSData).compressed(using: .zlib) as Data
+        try compressedData.write(to: destURL)
+        return compressedData.count
     }
 }
