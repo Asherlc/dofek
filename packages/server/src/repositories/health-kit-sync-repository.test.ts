@@ -118,7 +118,7 @@ describe("isSleepStageValue", () => {
     expect(isSleepStageValue("asleepREM")).toBe(true);
     // These similar but wrong values must return false
     expect(isSleepStageValue("Asleep")).toBe(false);
-    expect(isSleepStageValue("asleeplight")).toBe(false);
+    expect(isSleepStageValue("asleep-light")).toBe(false);
     expect(isSleepStageValue("")).toBe(false);
   });
 

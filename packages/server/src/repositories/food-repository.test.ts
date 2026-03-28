@@ -439,7 +439,7 @@ describe("FoodRepository", () => {
         .fn()
         .mockResolvedValueOnce([{ nutrition_data_id: null }]) // SELECT returns null ndId
         .mockResolvedValueOnce([{ id: "new-nd-1" }]) // INSERT nutrition_data
-        .mockResolvedValueOnce([]) // UPDATE food_entry set ndid
+        .mockResolvedValueOnce([]) // UPDATE food_entry set nutrition data id
         .mockResolvedValueOnce([]) // UPDATE nutrition_data set values
         .mockResolvedValueOnce([foodRow]); // SELECT from view
       const db = { execute };
