@@ -206,6 +206,29 @@ describe("runMigrations", () => {
     // Creates in filename order (01_ before 02_)
     expect(createCalls).toHaveLength(2);
   });
+
+  it("skips drop for view files without a CREATE MATERIALIZED VIEW statement", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+
+    mockReaddirSync
+      .mockReturnValueOnce([]) // migrations dir
+      .mockReturnValueOnce(["01_v_activity.sql", "99_comment_only.sql"]); // views dir
+
+    mockExistsSync.mockReturnValue(true);
+    mockSql.mockResolvedValue([]);
+    mockReadFileSync
+      .mockReturnValueOnce("CREATE MATERIALIZED VIEW fitness.v_activity AS SELECT 1")
+      .mockReturnValueOnce("-- This file has no CREATE MATERIALIZED VIEW");
+
+    await runMigrations("postgres://localhost/test", "/tmp/migrations");
+
+    const unsafeCalls = mockSqlUnsafe.mock.calls.map((call) => String(call[0]));
+    const dropCalls = unsafeCalls.filter((call) => call.includes("DROP"));
+
+    // Only drops v_activity, not the comment-only file
+    expect(dropCalls).toHaveLength(1);
+    expect(dropCalls[0]).toContain("v_activity");
+  });
 });
 
 describe("detectDuplicatePrefixes", () => {
