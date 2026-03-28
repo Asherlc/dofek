@@ -149,15 +149,16 @@ export default function AccelerometerScreen() {
   const available = isAccelerometerRecordingAvailable();
   const recording = available && isRecordingActive();
   const authStatus = useMotionPermission(available);
-  const watchStatus = getWatchSyncStatus();
 
-  // WHOOP BLE diagnostics — poll every 3s for live updates
+  // Poll all native device statuses every 3s for live updates
+  const [watchStatus, setWatchStatus] = useState(getWatchSyncStatus);
   const [whoopBleState, setWhoopBleState] = useState(getConnectionState);
   const [bleState, setBleState] = useState(getBluetoothState);
   const [whoopBuffered, setWhoopBuffered] = useState(0);
 
   useEffect(() => {
     const refresh = () => {
+      setWatchStatus(getWatchSyncStatus());
       setWhoopBleState(getConnectionState());
       setBleState(getBluetoothState());
       setWhoopBuffered(getBufferedSampleCount());
@@ -170,14 +171,22 @@ export default function AccelerometerScreen() {
   const syncStatus = trpc.accelerometer.getSyncStatus.useQuery();
   const dailyCounts = trpc.accelerometer.getDailyCounts.useQuery({ days: 30 });
 
+  const trpcUtils = trpc.useUtils();
   const whoopImuSetting = trpc.settings.get.useQuery({ key: "whoopAlwaysOnImu" });
   const setSettingMutation = trpc.settings.set.useMutation();
   const whoopImuEnabled = whoopImuSetting.data?.value === true;
 
   function handleWhoopImuToggle(enabled: boolean) {
+    trpcUtils.settings.get.setData(
+      { key: "whoopAlwaysOnImu" },
+      { key: "whoopAlwaysOnImu", value: enabled },
+    );
     setSettingMutation.mutate(
       { key: "whoopAlwaysOnImu", value: enabled },
-      { onSuccess: () => whoopImuSetting.refetch() },
+      {
+        onSuccess: () => whoopImuSetting.refetch(),
+        onError: () => whoopImuSetting.refetch(),
+      },
     );
   }
 
