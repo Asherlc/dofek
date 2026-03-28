@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
-import { readdirSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { GenericContainer } from "testcontainers";
@@ -63,7 +63,7 @@ export async function setupTestDatabase(): Promise<TestContext> {
     }
   }
 
-  // Run all migrations in order
+  // Run all migrations in order, then recreate canonical views
   const migrationClient = postgres(connectionString, { max: 1 });
   const drizzleDir = resolve(import.meta.dirname, "../../drizzle");
   const migrationFiles = readdirSync(drizzleDir)
@@ -71,8 +71,8 @@ export async function setupTestDatabase(): Promise<TestContext> {
     .sort();
 
   for (const file of migrationFiles) {
-    const sql = readFileSync(resolve(drizzleDir, file), "utf-8");
-    const statements = sql
+    const content = readFileSync(resolve(drizzleDir, file), "utf-8");
+    const statements = content
       .split("--> statement-breakpoint")
       .map((s) => s.trim())
       .filter(Boolean);
@@ -81,6 +81,33 @@ export async function setupTestDatabase(): Promise<TestContext> {
       await migrationClient.unsafe(statement);
     }
   }
+
+  // Recreate materialized views from canonical definitions (same as production runner)
+  const viewsDir = join(drizzleDir, "views");
+  if (existsSync(viewsDir)) {
+    const viewFiles = readdirSync(viewsDir)
+      .filter((f) => f.endsWith(".sql"))
+      .sort();
+
+    // Drop in reverse dependency order
+    for (const file of [...viewFiles].reverse()) {
+      const viewName = file.replace(/\.sql$/, "");
+      await migrationClient.unsafe(`DROP MATERIALIZED VIEW IF EXISTS fitness.${viewName} CASCADE`);
+    }
+
+    // Create in alphabetical order (v_activity before activity_summary)
+    for (const file of viewFiles) {
+      const content = readFileSync(join(viewsDir, file), "utf-8");
+      const statements = content
+        .split("--> statement-breakpoint")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      for (const statement of statements) {
+        await migrationClient.unsafe(statement);
+      }
+    }
+  }
+
   await migrationClient.end();
 
   const client = postgres(connectionString);

@@ -67,9 +67,14 @@ export async function runMigrations(databaseUrl: string, migrationsDir?: string)
       .filter((f) => f.endsWith(".sql"))
       .sort();
 
-    // Detect duplicate prefixes — two migrations sharing a number means
-    // concurrent PRs created conflicting migrations that must be resolved.
-    const duplicates = detectDuplicatePrefixes(files);
+    const applied = await sql`SELECT hash FROM drizzle.__drizzle_migrations`;
+    const appliedSet = new Set(applied.map((r) => r.hash));
+
+    const pendingFiles = files.filter((f) => !appliedSet.has(f));
+
+    // Detect duplicate prefixes among pending migrations — two migrations
+    // sharing a number means concurrent PRs created conflicting migrations.
+    const duplicates = detectDuplicatePrefixes(pendingFiles);
     if (duplicates.length > 0) {
       const details = duplicates
         .map(([prefix, group]) => `  ${prefix}: ${group.join(", ")}`)
@@ -79,12 +84,8 @@ export async function runMigrations(databaseUrl: string, migrationsDir?: string)
       );
     }
 
-    const applied = await sql`SELECT hash FROM drizzle.__drizzle_migrations`;
-    const appliedSet = new Set(applied.map((r) => r.hash));
-
     let count = 0;
-    for (const file of files) {
-      if (appliedSet.has(file)) continue;
+    for (const file of pendingFiles) {
       logger.info(`[migrate] Applying: ${file}`);
       const content = readFileSync(join(dir, file), "utf-8");
       for (const stmt of parseStatements(content)) {
