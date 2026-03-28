@@ -89,29 +89,22 @@ export async function setupTestDatabase(): Promise<TestContext> {
       .filter((f) => f.endsWith(".sql"))
       .sort();
 
-    // Extract view names from canonical SQL files, only drop views we manage
-    const viewNames: Array<string> = [];
-    const viewContents: Array<string> = [];
-    for (const file of viewFiles) {
+    // Parse view files upfront so we know which views to drop.
+    // Only views with canonical definitions in _views/ are dropped and recreated.
+    const parsedViews = viewFiles.map((file) => {
       const content = readFileSync(join(viewsDir, file), "utf-8");
-      viewContents.push(content);
       const match = content.match(/CREATE\s+MATERIALIZED\s+VIEW\s+fitness\.(\w+)/i);
-      if (match?.[1]) {
-        viewNames.push(match[1]);
-      }
-    }
+      return { content, viewName: match?.[1] };
+    });
 
     // Drop managed views in reverse order (dependents first)
-    for (const name of [...viewNames].reverse()) {
-      await migrationClient.unsafe(
-        `DROP MATERIALIZED VIEW IF EXISTS fitness.${name} CASCADE`,
-      );
+    for (const { viewName } of [...parsedViews].reverse()) {
+      if (!viewName) continue;
+      await migrationClient.unsafe(`DROP MATERIALIZED VIEW IF EXISTS fitness.${viewName} CASCADE`);
     }
 
     // Create in filename order (01_v_activity before 02_activity_summary)
-    for (let index = 0; index < viewFiles.length; index++) {
-      const content = viewContents[index];
-      if (!content) continue;
+    for (const { content } of parsedViews) {
       const statements = content
         .split("--> statement-breakpoint")
         .map((s) => s.trim())
