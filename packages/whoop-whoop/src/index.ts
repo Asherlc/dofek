@@ -1,3 +1,4 @@
+export type { WhoopRequestEvent } from "./client.ts";
 export { WhoopClient, WhoopRateLimitError } from "./client.ts";
 export { mapSportId, WHOOP_SPORT_MAP } from "./sports.ts";
 export type {

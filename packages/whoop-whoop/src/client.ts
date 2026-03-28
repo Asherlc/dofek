@@ -78,15 +78,30 @@ async function cognitoCall(
   return data;
 }
 
+export interface WhoopRequestEvent {
+  userId: number;
+  endpoint: string;
+  status: number;
+  attempt: number;
+  retryAfterSeconds: number | null;
+  timestamp: Date;
+}
+
 export class WhoopClient {
   #accessToken: string;
   #userId: number;
   #fetchFn: typeof globalThis.fetch;
+  #onRequest?: (event: WhoopRequestEvent) => void;
 
-  constructor(token: WhoopAuthToken, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
+  constructor(
+    token: WhoopAuthToken,
+    fetchFn: typeof globalThis.fetch = globalThis.fetch,
+    onRequest?: (event: WhoopRequestEvent) => void,
+  ) {
     this.#accessToken = token.accessToken;
     this.#userId = token.userId;
     this.#fetchFn = fetchFn;
+    this.#onRequest = onRequest;
   }
 
   /**
@@ -311,6 +326,18 @@ export class WhoopClient {
         },
       });
 
+      const retryAfterHeader = response.status === 429 ? response.headers.get("Retry-After") : null;
+      const retryAfterSeconds = retryAfterHeader ? Number.parseInt(retryAfterHeader, 10) : null;
+
+      this.#onRequest?.({
+        userId: this.#userId,
+        endpoint: requestUrl.pathname,
+        status: response.status,
+        attempt,
+        retryAfterSeconds,
+        timestamp: new Date(),
+      });
+
       if (response.ok) {
         return response.json();
       }
@@ -320,10 +347,7 @@ export class WhoopClient {
           const text = await response.text();
           throw new WhoopRateLimitError(`WHOOP API rate limit exceeded (429): ${text}`);
         }
-        const retryAfterHeader = response.headers.get("Retry-After");
-        const delaySeconds = retryAfterHeader
-          ? Number.parseInt(retryAfterHeader, 10)
-          : 2 ** attempt;
+        const delaySeconds = retryAfterSeconds ?? 2 ** attempt;
         await new Promise((resolve) => setTimeout(resolve, delaySeconds * 1000));
         continue;
       }

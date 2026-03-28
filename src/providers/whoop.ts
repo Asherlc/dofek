@@ -676,6 +676,17 @@ export class WhoopProvider implements SyncProvider {
       client = new WhoopClient(
         { accessToken: token.accessToken, refreshToken: token.refreshToken, userId },
         this.#fetchFn,
+        (event) => {
+          const logMethod = event.status === 429 ? "warn" : "info";
+          logger[logMethod]("[whoop] API request", {
+            whoopUserId: event.userId,
+            endpoint: event.endpoint,
+            status: event.status,
+            attempt: event.attempt,
+            retryAfterSeconds: event.retryAfterSeconds,
+            timestamp: event.timestamp.toISOString(),
+          });
+        },
       );
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });

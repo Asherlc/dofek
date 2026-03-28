@@ -819,6 +819,53 @@ describe("WhoopClient rate limit retry", () => {
     expect(error.name).toBe("WhoopRateLimitError");
     expect(error).toBeInstanceOf(Error);
   });
+
+  it("calls onRequest for every API response including successes", async () => {
+    const events: Array<{ status: number; endpoint: string; attempt: number }> = [];
+    const fetchFn = createMockFetch({ status: 200, ok: true, body: { values: [] } });
+    const client = new WhoopClient(makeToken(), fetchFn, (event) => {
+      events.push({ status: event.status, endpoint: event.endpoint, attempt: event.attempt });
+    });
+
+    await client.getHeartRate("2024-01-15T00:00:00Z", "2024-01-15T23:59:59Z");
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.status).toBe(200);
+    expect(events[0]?.attempt).toBe(0);
+    expect(events[0]?.endpoint).toContain("/metrics-service");
+  });
+
+  it("calls onRequest for each 429 retry and the final success", async () => {
+    vi.useFakeTimers();
+    const events: Array<{ status: number; attempt: number }> = [];
+    const callCount = { value: 0 };
+
+    const fetchFn = createTypedMockFetch();
+    fetchFn.mockImplementation(() => {
+      callCount.value++;
+      if (callCount.value <= 2) {
+        return Promise.resolve(
+          createMockResponse({ ok: false, status: 429, body: "Rate Limit Exceeded" }),
+        );
+      }
+      return Promise.resolve(createMockResponse({ body: { values: [] } }));
+    });
+
+    const client = new WhoopClient(makeToken(), fetchFn, (event) => {
+      events.push({ status: event.status, attempt: event.attempt });
+    });
+
+    const resultPromise = client.getHeartRate("2024-01-15T00:00:00Z", "2024-01-15T23:59:59Z");
+    await vi.advanceTimersByTimeAsync(10_000);
+    await resultPromise;
+
+    expect(events).toHaveLength(3);
+    expect(events[0]).toEqual({ status: 429, attempt: 0 });
+    expect(events[1]).toEqual({ status: 429, attempt: 1 });
+    expect(events[2]).toEqual({ status: 200, attempt: 2 });
+
+    vi.useRealTimers();
+  });
 });
 
 describe("cognitoCall error handling", () => {
