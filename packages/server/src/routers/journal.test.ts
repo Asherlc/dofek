@@ -143,10 +143,10 @@ describe("journalRouter", () => {
 
   describe("createQuestion", () => {
     it("creates a custom question", async () => {
-      const created = [{ slug: "myquestion", display_name: "My Question" }];
+      const created = [{ slug: "energy_level", display_name: "My Question" }];
       const caller = makeCaller(created);
       const result = await caller.createQuestion({
-        slug: "myquestion",
+        slug: "energy_level",
         displayName: "My Question",
         category: "custom",
         dataType: "numeric",
