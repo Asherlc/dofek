@@ -13,6 +13,7 @@ import {
   fetchConfiguredProviders,
   startOAuthLogin,
 } from "../lib/auth";
+import { ProviderLogo } from "../components/ProviderLogo";
 import { colors } from "../theme";
 
 export default function LoginScreen() {
@@ -81,9 +82,12 @@ export default function LoginScreen() {
                 onPress={() => handleLogin(id, isData)}
                 disabled={loggingIn}
               >
-                <Text style={styles.providerText}>
-                  Sign in with {providerLabel(id)}
-                </Text>
+                <View style={styles.providerButtonContent}>
+                  <ProviderLogo provider={id} serverUrl={serverUrl} size={20} />
+                  <Text style={styles.providerText}>
+                    Sign in with {providerLabel(id)}
+                  </Text>
+                </View>
               </TouchableOpacity>
             ))}
           </View>
@@ -149,7 +153,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderWidth: 1,
     borderColor: colors.surfaceSecondary,
+  },
+  providerButtonContent: {
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
   },
   providerText: {
     color: colors.text,
