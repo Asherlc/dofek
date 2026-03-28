@@ -13,8 +13,14 @@ vi.mock("../lib/start-worker.ts", () => ({
 }));
 
 vi.mock("../logger.ts", () => ({
-  logger: { info: vi.fn(), error: vi.fn() },
+  logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
 }));
+
+const mockUnlink = vi.fn<(path: string) => Promise<void>>().mockResolvedValue(undefined);
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return { ...actual, unlink: (...args: [string]) => mockUnlink(...args) };
+});
 
 vi.mock("dofek/db", () => ({
   createDatabaseFromEnv: vi.fn(() => ({})),
@@ -39,12 +45,16 @@ vi.mock("dofek/jobs/queues", () => ({
   createExportQueue: vi.fn(() => mockQueue),
 }));
 
+import { writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import cookieParser from "cookie-parser";
 import { createDatabaseFromEnv } from "dofek/db";
 import express from "express";
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
+import { logger } from "../logger.ts";
 import { createExportRouter } from "./export.ts";
 
 function createTestApp() {
@@ -254,6 +264,52 @@ describe("createExportRouter", () => {
       const res = await request(app, "get", "/api/export/download/42");
       expect(res.status).toBe(404);
       expect(JSON.parse(res.body).error).toBe("Export file not found");
+    });
+
+    it("warns when unlink fails after download", async () => {
+      const tempFile = join(tmpdir(), `dofek-export-test-${Date.now()}.zip`);
+      writeFileSync(tempFile, "fake-zip-data");
+
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
+      vi.mocked(validateSession).mockResolvedValue({ userId: "user-1" });
+      mockJob.getState.mockResolvedValue("completed");
+      mockJob.data = { userId: "user-1", outputPath: tempFile };
+      mockUnlink.mockRejectedValueOnce(new Error("EPERM"));
+
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/api/export/download/42");
+      expect(res.status).toBe(200);
+
+      // Wait for the download callback's async cleanup to settle
+      await vi.waitFor(() => {
+        expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+          "Failed to clean up export file %s: %s",
+          tempFile,
+          expect.any(Error),
+        );
+      });
+    });
+
+    it("warns when job.remove fails after download", async () => {
+      const tempFile = join(tmpdir(), `dofek-export-test-${Date.now()}.zip`);
+      writeFileSync(tempFile, "fake-zip-data");
+
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
+      vi.mocked(validateSession).mockResolvedValue({ userId: "user-1" });
+      mockJob.getState.mockResolvedValue("completed");
+      mockJob.data = { userId: "user-1", outputPath: tempFile };
+      mockJob.remove.mockRejectedValueOnce(new Error("Redis down"));
+
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/api/export/download/42");
+      expect(res.status).toBe(200);
+
+      await vi.waitFor(() => {
+        expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+          "Failed to remove export job: %s",
+          expect.any(Error),
+        );
+      });
     });
   });
 });
