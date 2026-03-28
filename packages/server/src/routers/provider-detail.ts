@@ -1,7 +1,14 @@
-import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import {
+  DISCONNECT_CHILD_TABLES,
+  ProviderDetailRepository,
+  dataTypeEnum,
+  tableInfo,
+} from "../repositories/provider-detail-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
+
+// Re-export for backward compatibility (used by settings router and tests)
+export { DISCONNECT_CHILD_TABLES, dataTypeEnum, tableInfo };
 
 const REDACTED_ERROR_MESSAGE = "Details hidden";
 
@@ -9,78 +16,6 @@ function redactLogErrorMessage(errorMessage: string | null): string | null {
   if (!errorMessage) return null;
   return REDACTED_ERROR_MESSAGE;
 }
-
-export const dataTypeEnum = z.enum([
-  "activities",
-  "dailyMetrics",
-  "sleepSessions",
-  "bodyMeasurements",
-  "foodEntries",
-  "healthEvents",
-  "metricStream",
-  "nutritionDaily",
-  "labPanels",
-  "labResults",
-  "journalEntries",
-]);
-
-type DataType = z.infer<typeof dataTypeEnum>;
-
-/** Map data type enum to SQL table name and ordering column */
-export function tableInfo(dataType: DataType): {
-  table: string;
-  orderColumn: string;
-  idColumn: string;
-} {
-  switch (dataType) {
-    case "activities":
-      return { table: "fitness.activity", orderColumn: "started_at", idColumn: "id" };
-    case "dailyMetrics":
-      return { table: "fitness.daily_metrics", orderColumn: "date", idColumn: "date" };
-    case "sleepSessions":
-      return { table: "fitness.sleep_session", orderColumn: "started_at", idColumn: "id" };
-    case "bodyMeasurements":
-      return { table: "fitness.body_measurement", orderColumn: "recorded_at", idColumn: "id" };
-    case "foodEntries":
-      return { table: "fitness.food_entry", orderColumn: "date", idColumn: "id" };
-    case "healthEvents":
-      return { table: "fitness.health_event", orderColumn: "start_date", idColumn: "id" };
-    case "metricStream":
-      return {
-        table: "fitness.metric_stream",
-        orderColumn: "recorded_at",
-        idColumn: "recorded_at",
-      };
-    case "nutritionDaily":
-      return { table: "fitness.nutrition_daily", orderColumn: "date", idColumn: "date" };
-    case "labPanels":
-      return { table: "fitness.lab_panel", orderColumn: "recorded_at", idColumn: "id" };
-    case "labResults":
-      return { table: "fitness.lab_result", orderColumn: "recorded_at", idColumn: "id" };
-    case "journalEntries":
-      return { table: "fitness.journal_entry", orderColumn: "date", idColumn: "id" };
-  }
-}
-
-/** Tables to cascade-delete when disconnecting a provider, in deletion order. */
-export const DISCONNECT_CHILD_TABLES = [
-  "fitness.metric_stream",
-  "fitness.exercise_alias",
-  "fitness.strength_workout",
-  "fitness.body_measurement",
-  "fitness.daily_metrics",
-  "fitness.sleep_session",
-  "fitness.nutrition_daily",
-  "fitness.food_entry",
-  "fitness.lab_result",
-  "fitness.lab_panel",
-  "fitness.health_event",
-  "fitness.journal_entry",
-  "fitness.dexa_scan",
-  "fitness.sync_log",
-  "fitness.activity",
-  "fitness.oauth_token",
-];
 
 export const providerDetailRouter = router({
   /** Paginated sync logs for a specific provider */
@@ -121,20 +56,8 @@ export const providerDetailRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const info = tableInfo(input.dataType);
-
-      // Table/column names come from our own enum mapping (safe for sql.raw),
-      // while user inputs are parameterized via the sql template tag.
-      const rowSchema = z.record(z.string(), z.unknown());
-
-      const query = sql`SELECT * FROM ${sql.raw(info.table)}
-                WHERE user_id = ${ctx.userId}
-                  AND provider_id = ${input.providerId}
-                ORDER BY ${sql.raw(info.orderColumn)} DESC
-                LIMIT ${input.limit}
-                OFFSET ${input.offset}`;
-
-      const rows = await executeWithSchema(ctx.db, rowSchema, query);
+      const repo = new ProviderDetailRepository(ctx.db, ctx.userId);
+      const rows = await repo.getRecords(input.providerId, input.dataType, input.limit, input.offset);
       return { rows };
     }),
 
@@ -148,51 +71,22 @@ export const providerDetailRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const info = tableInfo(input.dataType);
-
-      const rowSchema = z.record(z.string(), z.unknown());
-
-      const query = sql`SELECT * FROM ${sql.raw(info.table)}
-                WHERE user_id = ${ctx.userId}
-                  AND provider_id = ${input.providerId}
-                  AND ${sql.raw(info.idColumn)} = ${input.recordId}
-                LIMIT 1`;
-
-      const rows = await executeWithSchema(ctx.db, rowSchema, query);
-      return rows[0] ?? null;
+      const repo = new ProviderDetailRepository(ctx.db, ctx.userId);
+      return repo.getRecordDetail(input.providerId, input.dataType, input.recordId);
     }),
 
   /** Disconnect a provider — removes all data, OAuth tokens, and provider row */
   disconnect: protectedProcedure
     .input(z.object({ providerId: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      // Verify ownership first
-      const ownerCheck = await executeWithSchema(
-        ctx.db,
-        z.object({ id: z.string() }),
-        sql`SELECT id FROM fitness.provider
-            WHERE id = ${input.providerId} AND user_id = ${ctx.userId}`,
-      );
-      if (ownerCheck.length === 0) {
+      const repo = new ProviderDetailRepository(ctx.db, ctx.userId);
+
+      const isOwner = await repo.verifyOwnership(input.providerId);
+      if (!isOwner) {
         throw new Error("Provider not found or not owned by user");
       }
 
-      // Delete all child table rows referencing this provider, then the provider itself.
-      // Order matters: lab_result references lab_panel, so lab_result is deleted first.
-      const childTables = DISCONNECT_CHILD_TABLES;
-
-      await ctx.db.transaction(async (tx) => {
-        for (const table of childTables) {
-          await tx.execute(
-            sql`DELETE FROM ${sql.raw(table)} WHERE provider_id = ${input.providerId}`,
-          );
-        }
-        await tx.execute(
-          sql`DELETE FROM fitness.provider
-              WHERE id = ${input.providerId} AND user_id = ${ctx.userId}`,
-        );
-      });
-
+      await repo.deleteProviderData(input.providerId);
       return { success: true };
     }),
 });
