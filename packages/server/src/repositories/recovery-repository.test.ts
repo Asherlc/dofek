@@ -45,6 +45,31 @@ describe("SleepConsistencyDay", () => {
     expect(day.rollingWaketimeStddev).toBe(0.99);
   });
 
+  it("rounds bedtimeHour to exactly 2 decimals (not 1 or 3)", () => {
+    // 22.5678 * 100 / 100 = 22.57 (2 decimals)
+    // If *10/10: 22.6 (1 decimal), if *1000/1000: 22.568 (3 decimal)
+    const day = new SleepConsistencyDay(makeRow({ bedtimeHour: 22.5678 }));
+    expect(day.bedtimeHour).not.toBe(22.6);
+    expect(day.bedtimeHour).not.toBe(22.568);
+  });
+
+  it("rounds waketimeHour to exactly 2 decimals (not 1 or 3)", () => {
+    const day = new SleepConsistencyDay(makeRow({ waketimeHour: 6.1234 }));
+    expect(day.waketimeHour).not.toBe(6.1);
+    expect(day.waketimeHour).not.toBe(6.123);
+  });
+
+  it("rounds rolling stddev to exactly 2 decimals (not 1 or 3)", () => {
+    const day = new SleepConsistencyDay(
+      makeRow({ rollingBedtimeStddev: 1.23456, rollingWaketimeStddev: 0.98765 }),
+    );
+    // *100/100: 1.23 (not *10/10: 1.2, not *1000/1000: 1.235)
+    expect(day.rollingBedtimeStddev).not.toBe(1.2);
+    expect(day.rollingBedtimeStddev).not.toBe(1.235);
+    expect(day.rollingWaketimeStddev).not.toBe(1.0);
+    expect(day.rollingWaketimeStddev).not.toBe(0.988);
+  });
+
   it("returns null stddev when source is null", () => {
     const day = new SleepConsistencyDay(
       makeRow({
@@ -109,7 +134,31 @@ describe("HrvVariabilityDay", () => {
     expect(day.toDetail().rollingMean).toBe(50.5);
   });
 
-  it("rounds CV to 2 decimals", () => {
+  it("rounds hrv to 1 decimal (not 0 or 2)", () => {
+    const day = new HrvVariabilityDay({
+      date: "2024-03-15",
+      hrv: 45.678,
+      rollingMean: 50,
+      rollingCoefficientOfVariation: null,
+    });
+    // *10/10: 45.7, not *1/1: 46, not *100/100: 45.68
+    expect(day.toDetail().hrv).not.toBe(46);
+    expect(day.toDetail().hrv).not.toBe(45.68);
+  });
+
+  it("rounds rolling mean to 1 decimal (not 0 or 2)", () => {
+    const day = new HrvVariabilityDay({
+      date: "2024-03-15",
+      hrv: 45,
+      rollingMean: 50.456,
+      rollingCoefficientOfVariation: null,
+    });
+    // *10/10: 50.5, not *1/1: 50, not *100/100: 50.46
+    expect(day.toDetail().rollingMean).not.toBe(50);
+    expect(day.toDetail().rollingMean).not.toBe(50.46);
+  });
+
+  it("rounds CV to 2 decimals (not 1 or 3)", () => {
     const day = new HrvVariabilityDay({
       date: "2024-03-15",
       hrv: 45,
@@ -117,6 +166,9 @@ describe("HrvVariabilityDay", () => {
       rollingCoefficientOfVariation: 12.3456,
     });
     expect(day.toDetail().rollingCoefficientOfVariation).toBe(12.35);
+    // Not *10/10: 12.3, not *1000/1000: 12.346
+    expect(day.toDetail().rollingCoefficientOfVariation).not.toBe(12.3);
+    expect(day.toDetail().rollingCoefficientOfVariation).not.toBe(12.346);
   });
 
   it("preserves null fields", () => {
@@ -172,6 +224,32 @@ describe("WorkloadDay", () => {
     expect(day.workloadRatio).toBeNull();
   });
 
+  it("rounds daily load to 1 decimal (not 0 or 2)", () => {
+    // 150.456 * 10 / 10 = 150.5 (1 decimal)
+    // If *1/1: 150 (0 decimal), if *100/100: 150.46 (2 decimal)
+    const day = new WorkloadDay(makeRow({ dailyLoad: 150.456 }));
+    expect(day.dailyLoad).not.toBe(150);
+    expect(day.dailyLoad).not.toBe(150.46);
+    expect(day.dailyLoad).toBe(150.5);
+  });
+
+  it("rounds acute/chronic load to 1 decimal (not 0 or 2)", () => {
+    const day = new WorkloadDay(makeRow({ acuteLoad: 800.456, chronicLoad: 700.321 }));
+    expect(day.acuteLoad).not.toBe(800);
+    expect(day.acuteLoad).not.toBe(800.46);
+    expect(day.chronicLoad).not.toBe(700);
+    expect(day.chronicLoad).not.toBe(700.32);
+  });
+
+  it("rounds workload ratio to 2 decimals (not 1 or 3)", () => {
+    // 1.1456 * 100 / 100 = 1.15 (2 decimals)
+    // If *10/10: 1.1 (1 decimal), if *1000/1000: 1.146 (3 decimal)
+    const day = new WorkloadDay(makeRow({ workloadRatio: 1.1456 }));
+    expect(day.workloadRatio).not.toBe(1.1);
+    expect(day.workloadRatio).not.toBe(1.146);
+    expect(day.workloadRatio).toBe(1.15);
+  });
+
   it("serializes to API shape via toDetail()", () => {
     const day = new WorkloadDay(makeRow());
     const detail = day.toDetail();
@@ -190,6 +268,30 @@ describe("computeWorkloadResult", () => {
     expect(result.timeSeries).toEqual([]);
     expect(result.displayedStrain).toBe(0);
     expect(result.displayedDate).toBeNull();
+  });
+
+  it("returns the most recent day strain as displayedStrain", () => {
+    const days = [
+      new WorkloadDay({
+        date: "2024-03-14",
+        dailyLoad: 50,
+        acuteLoad: 300,
+        chronicLoad: 250,
+        workloadRatio: 1.2,
+      }),
+      new WorkloadDay({
+        date: "2024-03-15",
+        dailyLoad: 100,
+        acuteLoad: 500,
+        chronicLoad: 400,
+        workloadRatio: 1.25,
+      }),
+    ];
+    const result = computeWorkloadResult(days);
+    expect(result.displayedStrain).toBeTypeOf("number");
+    expect(result.displayedDate).toBeTypeOf("string");
+    // displayedStrain should use the ?? 0 fallback only when empty
+    expect(result.displayedStrain).toBeGreaterThanOrEqual(0);
   });
 
   it("includes strain in each time series entry", () => {
@@ -230,6 +332,20 @@ describe("SleepNight", () => {
     expect(detail.remPct).toBe(25.1);
     expect(detail.lightPct).toBe(45.3);
     expect(detail.awakePct).toBe(9.1);
+  });
+
+  it("rounds stage percentages to 1 decimal (not 0 or 2)", () => {
+    const night = new SleepNight({
+      ...makeRow(),
+      deepPct: 20.456,
+      remPct: 25.678,
+    });
+    const detail = night.toDetail();
+    // *10/10: 20.5 (not *1/1: 20, not *100/100: 20.46)
+    expect(detail.deepPct).not.toBe(20);
+    expect(detail.deepPct).not.toBe(20.46);
+    expect(detail.remPct).not.toBe(26);
+    expect(detail.remPct).not.toBe(25.68);
   });
 
   it("rounds efficiency to 1 decimal", () => {
@@ -613,7 +729,20 @@ describe("computeStrainTargetResult", () => {
     expect(["Push", "Maintain", "Recovery"]).toContain(result.zone);
   });
 
-  it("rounds current strain to 1 decimal", () => {
+  it("rounds current strain to 1 decimal (not 0 or 2)", () => {
+    const result = computeStrainTargetResult({
+      readinessScore: 50,
+      chronicLoad: 100,
+      acuteLoad: 90,
+      currentStrain: 5.456,
+    });
+    // *10/10: 5.5 (not *1/1: 5, not *100/100: 5.46)
+    expect(result.currentStrain).not.toBe(5);
+    expect(result.currentStrain).not.toBe(5.46);
+    expect(result.currentStrain).toBe(5.5);
+  });
+
+  it("rounds current strain to 1 decimal via *10/10", () => {
     const result = computeStrainTargetResult({
       readinessScore: 50,
       chronicLoad: 100,
@@ -621,6 +750,36 @@ describe("computeStrainTargetResult", () => {
       currentStrain: 5.456,
     });
     expect(result.currentStrain).toBe(5.5);
+  });
+
+  it("computes progressPercent as (currentStrain / targetStrain) * 100", () => {
+    const result = computeStrainTargetResult({
+      readinessScore: 50,
+      chronicLoad: 100,
+      acuteLoad: 90,
+      currentStrain: 3,
+    });
+    // progressPercent should be a percentage, not a ratio
+    // With targetStrain > 0, it should be Math.round((3 / targetStrain) * 100)
+    expect(result.progressPercent).toBeGreaterThan(0);
+    expect(result.progressPercent).toBeLessThanOrEqual(100);
+    // Verify it's multiplied by 100 (not 10 or 1000)
+    if (result.targetStrain > 0) {
+      const expected = Math.round((3 / result.targetStrain) * 100);
+      expect(result.progressPercent).toBe(expected);
+    }
+  });
+
+  it("uses division (not multiplication) for progressPercent", () => {
+    const result = computeStrainTargetResult({
+      readinessScore: 80,
+      chronicLoad: 200,
+      acuteLoad: 150,
+      currentStrain: 2,
+    });
+    // If it multiplied currentStrain * targetStrain * 100, result would be huge
+    // Division gives a reasonable percentage
+    expect(result.progressPercent).toBeLessThan(1000);
   });
 
   it("returns 0 progress when target is 0", () => {

@@ -121,6 +121,67 @@ describe("SettingsRepository", () => {
       }
     });
 
+    it("returns configured false when only SLACK_CLIENT_ID is set (not signing secret)", async () => {
+      const envBackup = { ...process.env };
+      delete process.env.SLACK_SIGNING_SECRET;
+      delete process.env.SLACK_BOT_TOKEN;
+      delete process.env.SLACK_APP_TOKEN;
+      process.env.SLACK_CLIENT_ID = "only-client-id";
+      try {
+        const { repo } = makeRepository([]);
+        const result = await repo.slackStatus();
+        // && requires both: SLACK_CLIENT_ID && SLACK_SIGNING_SECRET
+        expect(result.configured).toBe(false);
+      } finally {
+        Object.assign(process.env, envBackup);
+      }
+    });
+
+    it("returns configured false when only SLACK_SIGNING_SECRET is set (not client id)", async () => {
+      const envBackup = { ...process.env };
+      delete process.env.SLACK_CLIENT_ID;
+      delete process.env.SLACK_BOT_TOKEN;
+      delete process.env.SLACK_APP_TOKEN;
+      process.env.SLACK_SIGNING_SECRET = "only-signing-secret";
+      try {
+        const { repo } = makeRepository([]);
+        const result = await repo.slackStatus();
+        expect(result.configured).toBe(false);
+      } finally {
+        Object.assign(process.env, envBackup);
+      }
+    });
+
+    it("returns configured false when only SLACK_BOT_TOKEN is set (not app token)", async () => {
+      const envBackup = { ...process.env };
+      delete process.env.SLACK_CLIENT_ID;
+      delete process.env.SLACK_SIGNING_SECRET;
+      delete process.env.SLACK_APP_TOKEN;
+      process.env.SLACK_BOT_TOKEN = "only-bot-token";
+      try {
+        const { repo } = makeRepository([]);
+        const result = await repo.slackStatus();
+        expect(result.configured).toBe(false);
+      } finally {
+        Object.assign(process.env, envBackup);
+      }
+    });
+
+    it("returns configured false when only SLACK_APP_TOKEN is set (not bot token)", async () => {
+      const envBackup = { ...process.env };
+      delete process.env.SLACK_CLIENT_ID;
+      delete process.env.SLACK_SIGNING_SECRET;
+      delete process.env.SLACK_BOT_TOKEN;
+      process.env.SLACK_APP_TOKEN = "only-app-token";
+      try {
+        const { repo } = makeRepository([]);
+        const result = await repo.slackStatus();
+        expect(result.configured).toBe(false);
+      } finally {
+        Object.assign(process.env, envBackup);
+      }
+    });
+
     it("returns configured false when no slack env vars are set", async () => {
       const envBackup = { ...process.env };
       delete process.env.SLACK_CLIENT_ID;
@@ -142,6 +203,27 @@ describe("SettingsRepository", () => {
       const { repo, transaction } = makeRepository([]);
       await repo.deleteAllUserData(["fitness.sync_log", "fitness.activity"]);
       expect(transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it("deletes exactly 4 user-scoped tables (user_settings, life_events, sport_settings, supplement)", async () => {
+      const transactionExecute = vi.fn().mockResolvedValue([]);
+      const transaction = vi
+        .fn()
+        .mockImplementation(
+          async (callback: (tx: { execute: typeof transactionExecute }) => Promise<void>) => {
+            await callback({ execute: transactionExecute });
+          },
+        );
+      const execute = vi.fn().mockResolvedValue([]);
+      const db: Pick<import("dofek/db").Database, "execute" | "transaction"> = {
+        execute,
+        transaction,
+      };
+      const repo = new SettingsRepository(db, "user-1");
+
+      // Pass 0 child tables to isolate user-scoped count: 0 child + 1 provider + 4 user-scoped = 5
+      await repo.deleteAllUserData([]);
+      expect(transactionExecute).toHaveBeenCalledTimes(5);
     });
 
     it("executes deletes for provider child tables, provider, and user-scoped tables", async () => {

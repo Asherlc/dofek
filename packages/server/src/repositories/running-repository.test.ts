@@ -153,6 +153,30 @@ describe("PaceTrendActivity", () => {
     expect(activity.distanceKm).toBe(8.0);
   });
 
+  it("rounds distance to 1 decimal for non-round values", () => {
+    // 7550 / 1000 = 7.55 => 7.55 * 10 = 75.5 => round = 76 => /10 = 7.6
+    const activity = new PaceTrendActivity(makeRow({ totalDistance: 7550 }));
+    expect(activity.distanceKm).toBe(7.6);
+    // If no rounding (*1/1): would be 7.55, if *100/100: would be 7.55
+    expect(activity.distanceKm).not.toBe(7.55);
+  });
+
+  it("uses 1000 (not 100 or 1609) for distance conversion", () => {
+    // 5000 / 1000 = 5.0
+    const activity = new PaceTrendActivity(makeRow({ totalDistance: 5000 }));
+    expect(activity.distanceKm).toBe(5.0);
+    // If divisor were 100: 5000 / 100 = 50.0
+    expect(activity.distanceKm).not.toBe(50.0);
+  });
+
+  it("uses 1000 (not 1609) in pace formula", () => {
+    // 1000 / 2.5 = 400
+    const activity = new PaceTrendActivity(makeRow({ avgSpeed: 2.5 }));
+    expect(activity.paceSecondsPerKm).toBe(400);
+    // If it used 1609: 1609 / 2.5 = 644
+    expect(activity.paceSecondsPerKm).not.toBe(644);
+  });
+
   it("computes duration in whole minutes by dividing seconds by 60", () => {
     // 2400 / 60 = 40
     const activity = new PaceTrendActivity(makeRow({ durationSeconds: 2400 }));

@@ -79,6 +79,45 @@ describe("SleepNeedRepository", () => {
       expect(result.baselineMinutes).toBe(418);
     });
 
+    it("computes baseline from exactly 7 good recovery nights (>= 7 boundary)", async () => {
+      const nights = Array.from({ length: 7 }, (_, index) =>
+        makeNightRow({
+          date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+          duration_minutes: 420,
+          good_recovery: true,
+          next_day_hrv: 60,
+          median_hrv: 50,
+        }),
+      );
+
+      const db = makeDb([nights]);
+      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const result = await repo.calculate("2024-01-15");
+
+      // Exactly 7 good nights should use calculated baseline (420), not default 480
+      expect(result.baselineMinutes).toBe(420);
+      expect(result.baselineMinutes).not.toBe(480);
+    });
+
+    it("falls back to 480 baseline with exactly 6 good recovery nights (< 7 boundary)", async () => {
+      const nights = Array.from({ length: 6 }, (_, index) =>
+        makeNightRow({
+          date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+          duration_minutes: 420,
+          good_recovery: true,
+          next_day_hrv: 60,
+          median_hrv: 50,
+        }),
+      );
+
+      const db = makeDb([nights]);
+      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const result = await repo.calculate("2024-01-15");
+
+      // 6 good nights is fewer than 7 → default baseline
+      expect(result.baselineMinutes).toBe(480);
+    });
+
     it("falls back to 480 baseline when fewer than 7 good recovery nights", async () => {
       const fewNights = Array.from({ length: 5 }, (_, index) =>
         makeNightRow({
