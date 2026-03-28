@@ -348,6 +348,30 @@ describe("syncRouter", () => {
       expect(isAuthError(null)).toBe(false);
       expect(isAuthError("")).toBe(false);
     });
+
+    it("detects each AUTH_ERROR_PATTERNS entry individually", () => {
+      // Each of the 6 patterns must individually trigger true
+      expect(isAuthError("authorization failed")).toBe(true);
+      expect(isAuthError("unauthorized")).toBe(true);
+      expect(isAuthError("re-authenticate")).toBe(true);
+      expect(isAuthError("token expired")).toBe(true);
+      expect(isAuthError("session expired")).toBe(true);
+      expect(isAuthError("authentication failed")).toBe(true);
+    });
+
+    it("is case-insensitive (matches uppercase input)", () => {
+      expect(isAuthError("AUTHORIZATION FAILED")).toBe(true);
+      expect(isAuthError("UNAUTHORIZED")).toBe(true);
+      expect(isAuthError("RE-AUTHENTICATE")).toBe(true);
+      expect(isAuthError("TOKEN EXPIRED")).toBe(true);
+      expect(isAuthError("SESSION EXPIRED")).toBe(true);
+      expect(isAuthError("AUTHENTICATION FAILED")).toBe(true);
+    });
+
+    it("returns false for a partial match that does not contain any pattern", () => {
+      expect(isAuthError("author")).toBe(false);
+      expect(isAuthError("expire")).toBe(false);
+    });
   });
 
   describe("triggerSync", () => {
@@ -1070,6 +1094,17 @@ describe("syncRouter", () => {
 
       const result = await caller.providerStats();
       expect(result).toEqual([]);
+    });
+  });
+
+  describe("REDACTED_ERROR_MESSAGE", () => {
+    it("is a non-empty string constant", () => {
+      expect(typeof REDACTED_ERROR_MESSAGE).toBe("string");
+      expect(REDACTED_ERROR_MESSAGE.length).toBeGreaterThan(0);
+    });
+
+    it("equals 'Details hidden'", () => {
+      expect(REDACTED_ERROR_MESSAGE).toBe("Details hidden");
     });
   });
 

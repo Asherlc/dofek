@@ -1,11 +1,41 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  generateShareToken,
   HealthReportRepository,
   ReportListEntry,
   type ReportListRow,
   SharedReport,
   type SharedReportRow,
 } from "./health-report-repository.ts";
+
+// ---------------------------------------------------------------------------
+// generateShareToken
+// ---------------------------------------------------------------------------
+
+describe("generateShareToken", () => {
+  it("returns a non-empty string", () => {
+    const token = generateShareToken();
+    expect(typeof token).toBe("string");
+    expect(token.length).toBeGreaterThan(0);
+  });
+
+  it("produces URL-safe base64 tokens (no +, /, or = characters)", () => {
+    const token = generateShareToken();
+    expect(token).not.toMatch(/[+/=]/);
+  });
+
+  it("generates unique tokens on each call", () => {
+    const tokenA = generateShareToken();
+    const tokenB = generateShareToken();
+    expect(tokenA).not.toBe(tokenB);
+  });
+
+  it("produces consistent-length tokens (24 bytes = 32 chars in base64url)", () => {
+    const token = generateShareToken();
+    // 24 bytes → base64url = ceil(24 * 4/3) = 32 characters
+    expect(token.length).toBe(32);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // SharedReport domain model

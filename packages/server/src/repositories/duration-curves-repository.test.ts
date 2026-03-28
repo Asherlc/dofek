@@ -76,6 +76,37 @@ describe("fitCriticalHeartRate", () => {
     expect(model).not.toBeNull();
   });
 
+  it("returns a model with exactly 3 valid points (boundary for valid.length < 3)", () => {
+    const points = [
+      { durationSeconds: 120, bestHeartRate: 180 },
+      { durationSeconds: 300, bestHeartRate: 170 },
+      { durationSeconds: 600, bestHeartRate: 165 },
+    ];
+    const model = fitCriticalHeartRate(points);
+    // Exactly 3 valid points should produce a model (not null)
+    expect(model).not.toBeNull();
+    expect(model?.thresholdHr).toBeGreaterThan(0);
+  });
+
+  it("uses multiplication (not division) for ys = HR * duration", () => {
+    // With HR > 1 and duration > 1, HR * duration >> HR / duration
+    // The slope (thresholdHr) from linear regression of (HR*t) vs t gives threshold HR
+    // If we used division, the ys values would be very small fractions
+    // and the regression slope would be tiny (well below 1), yielding null via thresholdHr <= 0 check
+    const points = [
+      { durationSeconds: 120, bestHeartRate: 170 },
+      { durationSeconds: 300, bestHeartRate: 165 },
+      { durationSeconds: 600, bestHeartRate: 160 },
+      { durationSeconds: 1800, bestHeartRate: 155 },
+    ];
+    const model = fitCriticalHeartRate(points);
+    expect(model).not.toBeNull();
+    // With correct multiplication, thresholdHr should be a plausible HR value (100-200)
+    // With division, ys values would be ~1.4, ~0.55, ~0.27, ~0.086 and slope would be near 0
+    expect(model?.thresholdHr).toBeGreaterThan(100);
+    expect(model?.thresholdHr).toBeLessThan(200);
+  });
+
   it("handles edge case with identical HR values across durations", () => {
     const points = [
       { durationSeconds: 120, bestHeartRate: 1 },
