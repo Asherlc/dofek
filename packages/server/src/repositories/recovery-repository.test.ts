@@ -61,6 +61,17 @@ describe("SleepConsistencyDay", () => {
     expect(day.consistencyScore).toBeNull();
   });
 
+  it("returns null consistency score when window count is exactly 6", () => {
+    const day = new SleepConsistencyDay(makeRow({ windowCount: 6 }));
+    expect(day.consistencyScore).toBeNull();
+  });
+
+  it("returns a numeric consistency score when window count is exactly 7", () => {
+    const day = new SleepConsistencyDay(makeRow({ windowCount: 7 }));
+    expect(day.consistencyScore).toBeTypeOf("number");
+    expect(day.consistencyScore).not.toBeNull();
+  });
+
   it("returns a consistency score when window count is 7 or more", () => {
     const day = new SleepConsistencyDay(makeRow({ windowCount: 14 }));
     expect(day.consistencyScore).toBeTypeOf("number");
@@ -327,6 +338,27 @@ describe("computeReadinessComponents", () => {
     expect(components.respiratoryRateScore).toBe(62);
   });
 
+  it("uses default 62 specifically (not 50, 60, or other values) for null efficiencyPct", () => {
+    const components = computeReadinessComponents({
+      date: "2024-03-15",
+      hrv: null,
+      restingHr: null,
+      respiratoryRate: null,
+      hrvMean30d: null,
+      hrvSd30d: null,
+      rhrMean30d: null,
+      rhrSd30d: null,
+      rrMean30d: null,
+      rrSd30d: null,
+      efficiencyPct: null,
+    });
+    // The default is exactly 62, not 50, 60, 65, or any other value
+    expect(components.sleepScore).not.toBe(50);
+    expect(components.sleepScore).not.toBe(60);
+    expect(components.sleepScore).not.toBe(65);
+    expect(components.sleepScore).toBe(62);
+  });
+
   it("scores high HRV above baseline higher", () => {
     const components = computeReadinessComponents({
       date: "2024-03-15",
@@ -391,6 +423,42 @@ describe("computeReadinessComponents", () => {
     expect(low.restingHrScore).toBeGreaterThan(high.restingHrScore);
   });
 
+  it("negates z-score for resting HR (higher HR = lower score, not higher)", () => {
+    // RHR 10 above mean => z = +2 => negated to -2 => low score
+    const highRhr = computeReadinessComponents({
+      date: "2024-03-15",
+      hrv: null,
+      restingHr: 70,
+      respiratoryRate: null,
+      hrvMean30d: null,
+      hrvSd30d: null,
+      rhrMean30d: 60,
+      rhrSd30d: 5,
+      rrMean30d: null,
+      rrSd30d: null,
+      efficiencyPct: null,
+    });
+    // Score should be below default (62) because higher HR is bad
+    expect(highRhr.restingHrScore).toBeLessThan(62);
+
+    // RHR 10 below mean => z = -2 => negated to +2 => high score
+    const lowRhr = computeReadinessComponents({
+      date: "2024-03-15",
+      hrv: null,
+      restingHr: 50,
+      respiratoryRate: null,
+      hrvMean30d: null,
+      hrvSd30d: null,
+      rhrMean30d: 60,
+      rhrSd30d: 5,
+      rrMean30d: null,
+      rrSd30d: null,
+      efficiencyPct: null,
+    });
+    // Score should be above default (62) because lower HR is good
+    expect(lowRhr.restingHrScore).toBeGreaterThan(62);
+  });
+
   it("maps sleep efficiency directly to score clamped 0-100", () => {
     const components = computeReadinessComponents({
       date: "2024-03-15",
@@ -438,6 +506,40 @@ describe("computeReadinessComponents", () => {
       efficiencyPct: -5,
     });
     expect(under.sleepScore).toBe(0);
+  });
+
+  it("clamps at exactly 0 boundary (efficiencyPct = 0)", () => {
+    const boundary = computeReadinessComponents({
+      date: "2024-03-15",
+      hrv: null,
+      restingHr: null,
+      respiratoryRate: null,
+      hrvMean30d: null,
+      hrvSd30d: null,
+      rhrMean30d: null,
+      rhrSd30d: null,
+      rrMean30d: null,
+      rrSd30d: null,
+      efficiencyPct: 0,
+    });
+    expect(boundary.sleepScore).toBe(0);
+  });
+
+  it("clamps at exactly 100 boundary (efficiencyPct = 100)", () => {
+    const boundary = computeReadinessComponents({
+      date: "2024-03-15",
+      hrv: null,
+      restingHr: null,
+      respiratoryRate: null,
+      hrvMean30d: null,
+      hrvSd30d: null,
+      rhrMean30d: null,
+      rhrSd30d: null,
+      rrMean30d: null,
+      rrSd30d: null,
+      efficiencyPct: 100,
+    });
+    expect(boundary.sleepScore).toBe(100);
   });
 
   it("returns default when stddev is 0 (no variation)", () => {

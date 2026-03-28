@@ -57,10 +57,26 @@ describe("RunningDynamicsActivity", () => {
     expect(activity.verticalOscillationMm).toBeNull();
   });
 
-  it("computes pace from average speed", () => {
+  it("computes pace from average speed using 1000 / avgSpeed", () => {
     // 1000 / 3.5 = 285.71... => rounds to 286
     const activity = new RunningDynamicsActivity(makeRow({ avgSpeed: 3.5 }));
     expect(activity.paceSecondsPerKm).toBe(286);
+  });
+
+  it("uses 1000 (not 1609 for miles) in pace formula", () => {
+    // 1000 / 2.5 = 400 exactly
+    const activity = new RunningDynamicsActivity(makeRow({ avgSpeed: 2.5 }));
+    expect(activity.paceSecondsPerKm).toBe(400);
+    // If it used 1609 (miles), the result would be 644
+    expect(activity.paceSecondsPerKm).not.toBe(644);
+  });
+
+  it("divides (not multiplies) 1000 by speed for pace", () => {
+    // If it multiplied 1000 * speed, we'd get 1000 * 5 = 5000
+    // Division gives 1000 / 5 = 200
+    const activity = new RunningDynamicsActivity(makeRow({ avgSpeed: 5 }));
+    expect(activity.paceSecondsPerKm).toBe(200);
+    expect(activity.paceSecondsPerKm).not.toBe(5000);
   });
 
   it("returns 0 pace when speed is 0", () => {
@@ -68,10 +84,16 @@ describe("RunningDynamicsActivity", () => {
     expect(activity.paceSecondsPerKm).toBe(0);
   });
 
-  it("computes distance in km rounded to 1 decimal", () => {
+  it("computes distance in km by dividing by 1000 (m to km)", () => {
     // 10000 / 1000 = 10.0
     const activity = new RunningDynamicsActivity(makeRow({ totalDistance: 10000 }));
     expect(activity.distanceKm).toBe(10.0);
+  });
+
+  it("divides totalDistance by 1000 for km conversion", () => {
+    // 5000 / 1000 = 5.0
+    const activity = new RunningDynamicsActivity(makeRow({ totalDistance: 5000 }));
+    expect(activity.distanceKm).toBe(5.0);
   });
 
   it("rounds distance correctly for non-round values", () => {
@@ -131,10 +153,18 @@ describe("PaceTrendActivity", () => {
     expect(activity.distanceKm).toBe(8.0);
   });
 
-  it("computes duration in whole minutes", () => {
+  it("computes duration in whole minutes by dividing seconds by 60", () => {
     // 2400 / 60 = 40
     const activity = new PaceTrendActivity(makeRow({ durationSeconds: 2400 }));
     expect(activity.durationMinutes).toBe(40);
+  });
+
+  it("divides by 60 (not 3600) for seconds-to-minutes conversion", () => {
+    // 3600 / 60 = 60 minutes
+    // If divided by 3600, would give 1
+    const activity = new PaceTrendActivity(makeRow({ durationSeconds: 3600 }));
+    expect(activity.durationMinutes).toBe(60);
+    expect(activity.durationMinutes).not.toBe(1);
   });
 
   it("rounds duration to nearest minute", () => {

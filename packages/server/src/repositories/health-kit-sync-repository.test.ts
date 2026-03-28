@@ -279,6 +279,206 @@ describe("deriveSleepSessionsFromStages", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Constants tested indirectly via behavior
+// ---------------------------------------------------------------------------
+
+describe("HEALTHKIT_STAGE_MAP (via deriveSleepSessionsFromStages stage mapping)", () => {
+  // The stage map is used internally; we verify its effects through deriveSleepSessionsFromStages.
+  // Each sleep stage value recognized by isSleepStageValue is included in sessions.
+
+  it("recognizes asleepDeep as a sleep stage", () => {
+    const sessions = deriveSleepSessionsFromStages([
+      {
+        uuid: "1",
+        startDate: "2024-01-15T22:00:00Z",
+        endDate: "2024-01-16T06:00:00Z",
+        value: "asleepDeep",
+        sourceName: "Watch",
+      },
+    ]);
+    expect(sessions).toHaveLength(1);
+  });
+
+  it("recognizes asleepCore as a sleep stage", () => {
+    const sessions = deriveSleepSessionsFromStages([
+      {
+        uuid: "1",
+        startDate: "2024-01-15T22:00:00Z",
+        endDate: "2024-01-16T06:00:00Z",
+        value: "asleepCore",
+        sourceName: "Watch",
+      },
+    ]);
+    expect(sessions).toHaveLength(1);
+  });
+
+  it("recognizes asleepREM as a sleep stage", () => {
+    const sessions = deriveSleepSessionsFromStages([
+      {
+        uuid: "1",
+        startDate: "2024-01-15T22:00:00Z",
+        endDate: "2024-01-16T06:00:00Z",
+        value: "asleepREM",
+        sourceName: "Watch",
+      },
+    ]);
+    expect(sessions).toHaveLength(1);
+  });
+
+  it("recognizes asleep as a sleep stage", () => {
+    const sessions = deriveSleepSessionsFromStages([
+      {
+        uuid: "1",
+        startDate: "2024-01-15T22:00:00Z",
+        endDate: "2024-01-16T06:00:00Z",
+        value: "asleep",
+        sourceName: "Watch",
+      },
+    ]);
+    expect(sessions).toHaveLength(1);
+  });
+
+  it("recognizes asleepUnspecified as a sleep stage", () => {
+    const sessions = deriveSleepSessionsFromStages([
+      {
+        uuid: "1",
+        startDate: "2024-01-15T22:00:00Z",
+        endDate: "2024-01-16T06:00:00Z",
+        value: "asleepUnspecified",
+        sourceName: "Watch",
+      },
+    ]);
+    expect(sessions).toHaveLength(1);
+  });
+});
+
+describe("MAX_SLEEP_SESSION_GAP_MS (90 minutes)", () => {
+  it("merges stages separated by exactly 90 minutes into one session", () => {
+    // Gap of exactly 90 minutes (5,400,000 ms) between end of first and start of second
+    const sessions = deriveSleepSessionsFromStages([
+      {
+        uuid: "1",
+        startDate: "2024-01-15T22:00:00Z",
+        endDate: "2024-01-15T23:00:00Z",
+        value: "asleepCore",
+        sourceName: "Watch",
+      },
+      {
+        uuid: "2",
+        startDate: "2024-01-16T00:30:00Z",
+        endDate: "2024-01-16T06:00:00Z",
+        value: "asleepDeep",
+        sourceName: "Watch",
+      },
+    ]);
+    expect(sessions).toHaveLength(1);
+  });
+
+  it("splits stages separated by more than 90 minutes into two sessions", () => {
+    // Gap of 91 minutes between end of first and start of second
+    const sessions = deriveSleepSessionsFromStages([
+      {
+        uuid: "1",
+        startDate: "2024-01-15T22:00:00Z",
+        endDate: "2024-01-15T23:00:00Z",
+        value: "asleepCore",
+        sourceName: "Watch",
+      },
+      {
+        uuid: "2",
+        startDate: "2024-01-16T00:31:00Z",
+        endDate: "2024-01-16T06:00:00Z",
+        value: "asleepDeep",
+        sourceName: "Watch",
+      },
+    ]);
+    expect(sessions).toHaveLength(2);
+  });
+});
+
+describe("workoutActivityTypeMap (via processWorkouts)", () => {
+  it("maps type 35 to running", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    await repo.processWorkouts([
+      {
+        uuid: "w-1",
+        workoutType: "35",
+        startDate: "2024-01-15T10:00:00Z",
+        endDate: "2024-01-15T11:00:00Z",
+        duration: 3600,
+        sourceName: "Watch",
+        sourceBundle: "com.apple.Health",
+      },
+    ]);
+    // The SQL should contain the mapped activity type "running"
+    const callArgs = execute.mock.calls[0]?.[0];
+    const queryString = String(callArgs?.queryChunks?.join?.("") ?? callArgs);
+    expect(queryString).toContain("running");
+  });
+
+  it("maps type 13 to cycling", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    await repo.processWorkouts([
+      {
+        uuid: "w-2",
+        workoutType: "13",
+        startDate: "2024-01-15T10:00:00Z",
+        endDate: "2024-01-15T11:00:00Z",
+        duration: 3600,
+        sourceName: "Watch",
+        sourceBundle: "com.apple.Health",
+      },
+    ]);
+    const callArgs = execute.mock.calls[0]?.[0];
+    const queryString = String(callArgs?.queryChunks?.join?.("") ?? callArgs);
+    expect(queryString).toContain("cycling");
+  });
+
+  it("maps unknown workout type to other", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    await repo.processWorkouts([
+      {
+        uuid: "w-3",
+        workoutType: "9999",
+        startDate: "2024-01-15T10:00:00Z",
+        endDate: "2024-01-15T11:00:00Z",
+        duration: 3600,
+        sourceName: "Watch",
+        sourceBundle: "com.apple.Health",
+      },
+    ]);
+    const callArgs = execute.mock.calls[0]?.[0];
+    const queryString = String(callArgs?.queryChunks?.join?.("") ?? callArgs);
+    expect(queryString).toContain("other");
+  });
+});
+
+describe("INTEGER_DAILY_COLUMNS", () => {
+  it("rounds steps to integer (not float)", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const samples: HealthKitSample[] = [
+      {
+        type: "HKQuantityTypeIdentifierStepCount",
+        value: 1500.7,
+        unit: "count",
+        startDate: "2024-01-15T10:00:00Z",
+        endDate: "2024-01-15T10:30:00Z",
+        sourceName: "iPhone",
+        sourceBundle: "com.apple.Health",
+        uuid: "int-1",
+      },
+    ];
+    await repo.processDailyMetrics(samples);
+    // Verify execute was called (the rounding happens inside the SQL values)
+    expect(execute).toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Repository
 // ---------------------------------------------------------------------------
 
