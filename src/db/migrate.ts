@@ -74,13 +74,15 @@ export async function runMigrations(databaseUrl: string, migrationsDir?: string)
 
     // Detect duplicate prefixes among pending migrations — two migrations
     // sharing a number means concurrent PRs created conflicting migrations.
+    // Log a warning rather than throwing, since historical duplicates exist
+    // (0018, 0022, 0023, 0024, 0041) and would block fresh-DB migrations.
     const duplicates = detectDuplicatePrefixes(pendingFiles);
     if (duplicates.length > 0) {
       const details = duplicates
         .map(([prefix, group]) => `  ${prefix}: ${group.join(", ")}`)
         .join("\n");
-      throw new Error(
-        `Duplicate migration prefixes detected — these must be reconciled:\n${details}`,
+      logger.warn(
+        `[migrate] Duplicate migration prefixes detected — consider reconciling:\n${details}`,
       );
     }
 

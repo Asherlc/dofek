@@ -167,14 +167,15 @@ describe("runMigrations", () => {
     expect(log).toContain("unlock");
   });
 
-  it("rejects duplicate migration prefixes", async () => {
+  it("warns on duplicate migration prefixes instead of throwing", async () => {
     const { runMigrations } = await import("./migrate.ts");
 
     mockReaddirSync.mockReturnValue(["0049_add_timezone.sql", "0049_source_external_ids.sql"]);
+    mockReadFileSync.mockReturnValue("SELECT 1");
+    mockSql.mockResolvedValue([]);
 
-    await expect(runMigrations("postgres://localhost/test", "/tmp/migrations")).rejects.toThrow(
-      "Duplicate migration prefixes",
-    );
+    // Should not throw — just log a warning
+    await runMigrations("postgres://localhost/test", "/tmp/migrations");
   });
 
   it("recreates materialized views from canonical definitions", async () => {
