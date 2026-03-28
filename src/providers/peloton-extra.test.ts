@@ -246,6 +246,16 @@ describe("PelotonClient", () => {
     expect(secondUrl).toContain("/api/user/user-123/workouts");
   });
 
+  it("sends Authorization and peloton-platform headers", async () => {
+    const mockFetch = vi.fn().mockResolvedValue(Response.json({ id: "user-123" }));
+    const client = new PelotonClient("my-secret-token", mockFetch);
+    await client.getUserId();
+
+    const options = mockFetch.mock.calls[0]?.[1];
+    expect(options?.headers?.Authorization).toBe("Bearer my-secret-token");
+    expect(options?.headers?.["peloton-platform"]).toBe("web");
+  });
+
   it("getPerformanceGraph calls correct endpoint", async () => {
     const mockFetch = vi.fn().mockResolvedValue(
       Response.json({
@@ -274,7 +284,21 @@ describe("PelotonProvider", () => {
     process.env = { ...originalEnv };
   });
 
-  it("validate returns error when credentials missing", () => {
+  it("validate returns error when only username missing", () => {
+    delete process.env.PELOTON_USERNAME;
+    process.env.PELOTON_PASSWORD = "pass123";
+    const provider = new PelotonProvider();
+    expect(provider.validate()).toContain("PELOTON_USERNAME");
+  });
+
+  it("validate returns error when only password missing", () => {
+    process.env.PELOTON_USERNAME = "test@test.com";
+    delete process.env.PELOTON_PASSWORD;
+    const provider = new PelotonProvider();
+    expect(provider.validate()).toContain("PELOTON_PASSWORD");
+  });
+
+  it("validate returns error when both credentials missing", () => {
     delete process.env.PELOTON_USERNAME;
     delete process.env.PELOTON_PASSWORD;
     const provider = new PelotonProvider();
@@ -491,6 +515,74 @@ describe("PelotonProvider.sync — workout filtering", () => {
     expect(result.recordsSynced).toBe(0);
     // Should only fetch page 0 (loop exits because startedAt < since sets hasMore=false)
     expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("PelotonProvider.sync — has_pedaling_metrics", () => {
+  it("still fetches performance graph when has_pedaling_metrics is false (for HR data)", async () => {
+    const workout = makeWorkout();
+    workout.has_pedaling_metrics = false;
+
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ id: "user-123" }))
+      .mockResolvedValueOnce(Response.json(makeWorkoutListResponse([workout])))
+      .mockResolvedValueOnce(
+        Response.json(makePerformanceGraph(["heart_rate", "output", "cadence"])),
+      );
+
+    const mockDb = createMockDb();
+
+    const since = new Date((workout.start_time - 1000) * 1000);
+    const provider = new PelotonProvider(mockFetch);
+    const result = await provider.sync(mockDb, since);
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBeGreaterThan(0);
+    // Still fetches the performance graph (3 calls: /api/me + workouts + perf graph)
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+    // Metric stream rows are still inserted (HR present, power/cadence nulled out)
+    expect(mockDb.insert).toHaveBeenCalled();
+  });
+
+  it("keeps all metrics when has_pedaling_metrics is true", async () => {
+    const workout = makeWorkout();
+    workout.has_pedaling_metrics = true;
+
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ id: "user-123" }))
+      .mockResolvedValueOnce(Response.json(makeWorkoutListResponse([workout])))
+      .mockResolvedValueOnce(Response.json(makePerformanceGraph(["heart_rate"])));
+
+    const mockDb = createMockDb();
+
+    const since = new Date((workout.start_time - 1000) * 1000);
+    const provider = new PelotonProvider(mockFetch);
+    const result = await provider.sync(mockDb, since);
+
+    expect(result.errors).toHaveLength(0);
+    // /api/me + workouts page + performance_graph
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps all metrics when has_pedaling_metrics is undefined (backwards compat)", async () => {
+    const workout = makeWorkout();
+
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ id: "user-123" }))
+      .mockResolvedValueOnce(Response.json(makeWorkoutListResponse([workout])))
+      .mockResolvedValueOnce(Response.json(makePerformanceGraph(["heart_rate"])));
+
+    const mockDb = createMockDb();
+
+    const since = new Date((workout.start_time - 1000) * 1000);
+    const provider = new PelotonProvider(mockFetch);
+    const result = await provider.sync(mockDb, since);
+
+    expect(result.errors).toHaveLength(0);
+    expect(mockFetch).toHaveBeenCalledTimes(3);
   });
 });
 

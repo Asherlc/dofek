@@ -80,7 +80,7 @@ async function post(
           resolve({ status: res.status, body: await res.text() });
           server.close();
         })
-        .catch(() => {
+        .catch((_error: unknown) => {
           resolve({ status: 500, body: "fetch error" });
           server.close();
         });

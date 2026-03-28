@@ -436,4 +436,103 @@ describe("PelotonProvider.sync() (integration)", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]?.activityType).toBe("indoor_cycling");
   });
+
+  it("stores timezone and stravaId on activity", async () => {
+    const workouts = [
+      fakeWorkout({
+        id: "workout-tz",
+        start_time: 1709625600,
+        end_time: 1709627400,
+        timezone: "America/New_York",
+        strava_id: "9876543210",
+      }),
+    ];
+
+    server.use(...pelotonHandlers(workouts));
+
+    const provider = new PelotonProvider();
+    await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
+
+    const rows = await ctx.db.select().from(activity).where(eq(activity.externalId, "workout-tz"));
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.timezone).toBe("America/New_York");
+    expect(rows[0]?.stravaId).toBe("9876543210");
+  });
+
+  it("nulls out power and cadence when has_pedaling_metrics is false", async () => {
+    const workouts = [
+      fakeWorkout({
+        id: "workout-no-pedaling",
+        start_time: 1709712000,
+        end_time: 1709713800,
+        has_pedaling_metrics: false,
+      }),
+    ];
+
+    server.use(...pelotonHandlers(workouts));
+
+    const provider = new PelotonProvider();
+    await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
+
+    const streams = await ctx.db
+      .select()
+      .from(metricStream)
+      .where(
+        eq(
+          metricStream.activityId,
+          (
+            await ctx.db
+              .select({ id: activity.id })
+              .from(activity)
+              .where(eq(activity.externalId, "workout-no-pedaling"))
+          )[0]?.id ?? "",
+        ),
+      );
+
+    expect(streams.length).toBeGreaterThan(0);
+    // HR should be present
+    expect(streams[0]?.heartRate).toBe(130);
+    // Power and cadence should be null (pedaling metrics discarded)
+    for (const stream of streams) {
+      expect(stream.power).toBeNull();
+      expect(stream.cadence).toBeNull();
+    }
+  });
+
+  it("keeps power and cadence when has_pedaling_metrics is true", async () => {
+    const workouts = [
+      fakeWorkout({
+        id: "workout-with-pedaling",
+        start_time: 1709798400,
+        end_time: 1709800200,
+        has_pedaling_metrics: true,
+      }),
+    ];
+
+    server.use(...pelotonHandlers(workouts));
+
+    const provider = new PelotonProvider();
+    await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
+
+    const streams = await ctx.db
+      .select()
+      .from(metricStream)
+      .where(
+        eq(
+          metricStream.activityId,
+          (
+            await ctx.db
+              .select({ id: activity.id })
+              .from(activity)
+              .where(eq(activity.externalId, "workout-with-pedaling"))
+          )[0]?.id ?? "",
+        ),
+      );
+
+    expect(streams.length).toBeGreaterThan(0);
+    expect(streams[0]?.heartRate).toBe(130);
+    expect(streams[0]?.power).toBe(180);
+    expect(streams[0]?.cadence).toBe(80);
+  });
 });

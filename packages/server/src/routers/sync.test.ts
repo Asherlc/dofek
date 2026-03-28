@@ -31,7 +31,6 @@ vi.mock("../trpc.ts", async () => {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
     cachedProtectedQuery: () => trpc.procedure,
-    cachedProtectedQueryLight: () => trpc.procedure,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -132,6 +131,7 @@ vi.mock("dofek/db/schema", () => ({
 
 import {
   ensureProvidersRegistered,
+  isAuthError,
   logsInput,
   REDACTED_ERROR_MESSAGE,
   syncRouter,
@@ -208,7 +208,9 @@ describe("syncRouter", () => {
             // First call: oauth tokens
             .mockResolvedValueOnce([{ provider_id: "wahoo" }])
             // Second call: last syncs
-            .mockResolvedValueOnce([{ provider_id: "wahoo", last_synced: "2024-01-01" }]),
+            .mockResolvedValueOnce([{ provider_id: "wahoo", last_synced: "2024-01-01" }])
+            // Third call: latest errors (none)
+            .mockResolvedValueOnce([]),
         },
         userId: "user-1",
         timezone: "UTC",
@@ -226,11 +228,13 @@ describe("syncRouter", () => {
       expect(wahoo?.authorized).toBe(true);
       expect(wahoo?.lastSyncedAt).toBe("2024-01-01");
       expect(wahoo?.importOnly).toBe(false);
+      expect(wahoo?.needsReauth).toBe(false);
 
       // WHOOP: custom auth, not authorized (no token)
       const whoop = result.find((p: { id: string }) => p.id === "whoop");
       expect(whoop?.authType).toBe("custom:whoop");
       expect(whoop?.authorized).toBe(false);
+      expect(whoop?.needsReauth).toBe(false);
 
       // Strong CSV: import only
       const strongCsv = result.find((p: { id: string }) => p.id === "strong-csv");
@@ -239,6 +243,60 @@ describe("syncRouter", () => {
       // Cronometer CSV: import only
       const cronometerCsv = result.find((p: { id: string }) => p.id === "cronometer-csv");
       expect(cronometerCsv?.importOnly).toBe(true);
+    });
+
+    it("returns needsReauth=true when latest sync has auth error", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "polar",
+          name: "Polar",
+          validate: () => null,
+          authSetup: () => ({ oauthConfig: { authUrl: "https://flow.polar.com" } }),
+        },
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          validate: () => null,
+          authSetup: () => ({ oauthConfig: { authUrl: "https://api.wahoo.com" } }),
+        },
+      ]);
+
+      const caller = createCaller({
+        db: {
+          execute: vi
+            .fn()
+            // oauth tokens — both have tokens
+            .mockResolvedValueOnce([{ provider_id: "polar" }, { provider_id: "wahoo" }])
+            // last syncs
+            .mockResolvedValueOnce([
+              { provider_id: "polar", last_synced: "2024-01-01" },
+              { provider_id: "wahoo", last_synced: "2024-01-01" },
+            ])
+            // latest errors — polar has an auth error, wahoo has a non-auth error
+            .mockResolvedValueOnce([
+              {
+                provider_id: "polar",
+                error_message: "Polar authorization failed while syncing exercises",
+              },
+              {
+                provider_id: "wahoo",
+                error_message: "Network timeout after 30s",
+              },
+            ]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.providers();
+
+      const polar = result.find((p: { id: string }) => p.id === "polar");
+      expect(polar?.authorized).toBe(true);
+      expect(polar?.needsReauth).toBe(true);
+
+      const wahoo = result.find((p: { id: string }) => p.id === "wahoo");
+      expect(wahoo?.authorized).toBe(true);
+      expect(wahoo?.needsReauth).toBe(false);
     });
 
     it("handles authSetup throwing", async () => {
@@ -264,6 +322,31 @@ describe("syncRouter", () => {
       const result = await caller.providers();
       expect(result).toHaveLength(1);
       expect(result[0]?.authType).toBe("none");
+    });
+  });
+
+  describe("isAuthError", () => {
+    it("detects authorization failure messages", () => {
+      expect(isAuthError("Polar authorization failed while syncing exercises")).toBe(true);
+      expect(isAuthError("Strava API unauthorized (401): /athlete/activities")).toBe(true);
+      expect(isAuthError("Eight Sleep token expired — please re-authenticate via Settings")).toBe(
+        true,
+      );
+      expect(isAuthError("VeloHero session expired — please re-authenticate via Settings")).toBe(
+        true,
+      );
+      expect(isAuthError("Connect API authentication failed: invalid token")).toBe(true);
+    });
+
+    it("rejects non-auth errors", () => {
+      expect(isAuthError("Network timeout after 30s")).toBe(false);
+      expect(isAuthError("Rate limited by provider")).toBe(false);
+      expect(isAuthError("Internal server error")).toBe(false);
+    });
+
+    it("handles null/empty", () => {
+      expect(isAuthError(null)).toBe(false);
+      expect(isAuthError("")).toBe(false);
     });
   });
 

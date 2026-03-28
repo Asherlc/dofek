@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  type QuickAddFormInput,
-  autoMealType,
-  formatDateYmd,
-  parseQuickAddForm,
-} from "./meal";
+import { autoMealType, formatDateYmd, parseQuickAddForm, type QuickAddFormInput } from "./meal";
 
 describe("autoMealType", () => {
   it("returns breakfast before 10am", () => {

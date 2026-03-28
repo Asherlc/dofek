@@ -1,3 +1,4 @@
+import { formatNumber } from "@dofek/format/format";
 import {
   collapseWeeklyVolumeActivityTypes,
   formatActivityTypeLabel,
@@ -6,18 +7,15 @@ import { useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { ActivityCard } from "../../components/ActivityCard";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
-import { DaySelector } from "../../components/DaySelector";
-import { StrainGauge } from "../../components/charts/StrainGauge";
 import { SparkLine } from "../../components/charts/SparkLine";
+import { StrainGauge } from "../../components/charts/StrainGauge";
+import { DaySelector } from "../../components/DaySelector";
 import { aggregateWeeklyVolume, WorkloadRatio } from "../../lib/scoring";
-import type { WeekSummary } from "../../lib/scoring";
-import { formatNumber } from "@dofek/format/format";
 import { trpc } from "../../lib/trpc";
-import { useRefresh } from "../../lib/useRefresh";
 import { useUnitConverter } from "../../lib/units";
-import type { ActivityRow, WorkloadRatioRow } from "../../types/api";
-import { ActivityRowSchema, WeeklyVolumeRowSchema } from "../../types/api";
+import { useRefresh } from "../../lib/useRefresh";
 import { colors } from "../../theme";
+import { ActivityRowSchema, WeeklyVolumeRowSchema } from "../../types/api";
 
 export default function StrainScreen() {
   const [days, setDays] = useState(30);
@@ -28,10 +26,14 @@ export default function StrainScreen() {
   const todayWorkload = workloadData[workloadData.length - 1];
 
   const activitiesQuery = trpc.training.activityStats.useQuery({ days });
-  const activities = ActivityRowSchema.array().catch([]).parse(activitiesQuery.data ?? []);
+  const activities = ActivityRowSchema.array()
+    .catch([])
+    .parse(activitiesQuery.data ?? []);
 
   const weeklyVolumeQuery = trpc.training.weeklyVolume.useQuery({ days });
-  const weeklyVolume = WeeklyVolumeRowSchema.array().catch([]).parse(weeklyVolumeQuery.data ?? []);
+  const weeklyVolume = WeeklyVolumeRowSchema.array()
+    .catch([])
+    .parse(weeklyVolumeQuery.data ?? []);
   const collapsedWeeklyVolume = collapseWeeklyVolumeActivityTypes(weeklyVolume, 6);
   const activityTypeTotalsMap = new Map<string, number>();
   for (const row of collapsedWeeklyVolume) {
@@ -69,7 +71,13 @@ export default function StrainScreen() {
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={colors.textSecondary}
+        />
+      }
     >
       <DaySelector days={days} onChange={setDays} />
 
@@ -90,15 +98,11 @@ export default function StrainScreen() {
             <Text style={styles.cardTitle}>Training Load</Text>
             <View style={styles.loadGrid}>
               <View style={styles.loadItem}>
-                <Text style={styles.loadValue}>
-                  {formatNumber(acuteLoad)}
-                </Text>
+                <Text style={styles.loadValue}>{formatNumber(acuteLoad)}</Text>
                 <Text style={styles.loadLabel}>Acute (7 day)</Text>
               </View>
               <View style={styles.loadItem}>
-                <Text style={styles.loadValue}>
-                  {formatNumber(chronicLoad)}
-                </Text>
+                <Text style={styles.loadValue}>{formatNumber(chronicLoad)}</Text>
                 <Text style={styles.loadLabel}>Chronic (28 day)</Text>
               </View>
               <View style={styles.loadItem}>
@@ -116,9 +120,7 @@ export default function StrainScreen() {
               </View>
             </View>
             {workloadRatio != null && (
-              <Text style={styles.ratioHint}>
-                {workloadRatioScore.hint}
-              </Text>
+              <Text style={styles.ratioHint}>{workloadRatioScore.hint}</Text>
             )}
           </View>
 
@@ -160,16 +162,9 @@ export default function StrainScreen() {
                       })}
                     </Text>
                     <View style={styles.volumeBarTrack}>
-                      <View
-                        style={[
-                          styles.volumeBarFill,
-                          { width: `${week.fraction * 100}%` },
-                        ]}
-                      />
+                      <View style={[styles.volumeBarFill, { width: `${week.fraction * 100}%` }]} />
                     </View>
-                    <Text style={styles.volumeHours}>
-                      {formatNumber(week.hours)}h
-                    </Text>
+                    <Text style={styles.volumeHours}>{formatNumber(week.hours)}h</Text>
                   </View>
                 ))}
               </View>
