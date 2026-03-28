@@ -16,6 +16,7 @@ import {
   NON_ADDITIVE_QUANTITY_TYPES,
   syncHealthKitToServer,
 } from "../../lib/health-kit-sync";
+import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { useRefresh } from "../../lib/useRefresh";
 import {
@@ -131,8 +132,9 @@ export default function HealthScreen() {
           setPermissionsGranted(true);
         }
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         // Fall through — show Request Permissions button as fallback
+        captureException(error, { source: "health-tab" });
       });
   }, [available]);
 

@@ -31,7 +31,9 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
         const message = counts
           ? `Importing health data (${counts})...`
           : "Importing health data...";
-        job.updateProgress({ percentage: scaledPercentage, message }).catch(() => {});
+        job.updateProgress({ percentage: scaledPercentage, message }).catch((error: unknown) => {
+          logger.warn("Failed to update import progress: %s", error);
+        });
         if (info.percentage >= lastLoggedPercentage + 10) {
           logger.info(`[worker] Apple Health import progress: ${info.percentage}%`);
           lastLoggedPercentage = info.percentage;
@@ -99,12 +101,18 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
   } finally {
     // Clean up uploaded file
     const { unlink } = await import("node:fs/promises");
-    await unlink(filePath).catch(() => {});
+    await unlink(filePath).catch((error: unknown) => {
+      logger.warn("Failed to clean up uploaded file %s: %s", filePath, error);
+    });
   }
 
   // Post-import: refresh views
   try {
-    job.updateProgress({ percentage: 92, message: "Updating max heart rate..." }).catch(() => {});
+    job
+      .updateProgress({ percentage: 92, message: "Updating max heart rate..." })
+      .catch((error: unknown) => {
+        logger.warn("Failed to update progress: %s", error);
+      });
     const { updateUserMaxHr } = await import("../db/dedup.ts");
     await updateUserMaxHr(db);
   } catch (err) {
@@ -114,7 +122,9 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
   try {
     job
       .updateProgress({ percentage: 95, message: "Syncing provider priorities..." })
-      .catch(() => {});
+      .catch((error: unknown) => {
+        logger.warn("Failed to update progress: %s", error);
+      });
     const { loadProviderPriorityConfig, syncProviderPriorities } = await import(
       "../db/provider-priority.ts"
     );
@@ -127,7 +137,11 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
   }
 
   try {
-    job.updateProgress({ percentage: 97, message: "Refreshing views..." }).catch(() => {});
+    job
+      .updateProgress({ percentage: 97, message: "Refreshing views..." })
+      .catch((error: unknown) => {
+        logger.warn("Failed to update progress: %s", error);
+      });
     const { refreshDedupViews } = await import("../db/dedup.ts");
     await refreshDedupViews(db);
   } catch (err) {

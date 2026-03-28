@@ -55,8 +55,9 @@ export function useAutoSync(latestDate: string | null | undefined) {
         };
         await pollUntilDone();
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         // Best-effort — auto-sync is not critical
+        captureException(error, { source: "auto-sync-providers" });
       });
 
     // Trigger HealthKit sync (iOS only)

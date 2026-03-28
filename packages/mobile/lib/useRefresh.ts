@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { captureException } from "./telemetry";
 import { trpc } from "./trpc";
 
 /**
@@ -15,7 +16,12 @@ export function useRefresh(extra?: () => Promise<void> | void): {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await Promise.all([utils.invalidate(), Promise.resolve(extra?.()).catch(() => {})]);
+      await Promise.all([
+        utils.invalidate(),
+        Promise.resolve(extra?.()).catch((error: unknown) => {
+          captureException(error, { source: "useRefresh" });
+        }),
+      ]);
     } catch {
       // invalidate() failure — still stop spinner
     } finally {

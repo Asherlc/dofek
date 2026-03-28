@@ -9,7 +9,6 @@ import {
   type WhoopHrValue,
   type WhoopRecoveryRecord,
   type WhoopSleepRecord,
-  type WhoopV2Activity,
   type WhoopWeightliftingWorkoutResponse,
   type WhoopWorkoutRecord,
 } from "whoop-whoop";
@@ -52,7 +51,6 @@ export type {
   WhoopSleepRecord,
   WhoopSleepScore,
   WhoopSleepStageSummary,
-  WhoopV2Activity,
   WhoopWeightliftingExercise,
   WhoopWeightliftingGroup,
   WhoopWeightliftingSet,

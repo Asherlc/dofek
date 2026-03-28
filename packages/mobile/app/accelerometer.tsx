@@ -9,6 +9,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import {
   getMotionAuthorizationStatus,
@@ -22,7 +23,6 @@ import {
   getBluetoothState,
   getBufferedSampleCount,
   getConnectionState,
-  isBluetoothAvailable,
 } from "../modules/whoop-ble";
 import { colors } from "../theme";
 import { rootStackScreenOptions } from "./_layout";
@@ -67,8 +67,9 @@ function useMotionPermission(available: boolean): MotionAuthorizationStatus | "u
       .then((result) => {
         setStatus(result);
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         // Best-effort — re-read the status in case it changed
+        captureException(error, { source: "accelerometer-motion-permission" });
         refreshStatus();
       });
   }, [status, refreshStatus]);
