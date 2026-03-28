@@ -67,7 +67,6 @@ export async function initBackgroundAccelerometerSync(
       deviceType: "iphone",
     })
       .catch((error: unknown) => {
-        console.warn(`[${TAG}] Sync failed:`, error);
         captureException(error, { source: TAG });
       })
       .finally(() => {

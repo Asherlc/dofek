@@ -43,8 +43,6 @@ export async function initBackgroundWatchAccelerometerSync(
       deviceType: "apple_watch",
     })
       .catch((error: unknown) => {
-        // Best-effort — don't crash the app for background sync failures
-        console.warn(`[${TAG}] Sync failed:`, error);
         captureException(error, { source: TAG });
       })
       .finally(() => {
