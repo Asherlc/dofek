@@ -145,7 +145,7 @@ describe("Router transformation logic", () => {
       });
       expect(status).toBe(200);
       const updated = result.result.data;
-      expect(updated.endedAt).toBeNull();
+      expect(updated.ended_at).toBeNull();
       expect(updated.category).toBeNull();
       expect(updated.notes).toBeNull();
     });
