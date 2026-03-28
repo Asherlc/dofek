@@ -6,6 +6,7 @@ import {
   WhoopClient,
   type WhoopCycle,
   type WhoopHrValue,
+  WhoopRateLimitError,
   type WhoopRecoveryRecord,
   type WhoopSleepRecord,
   type WhoopWeightliftingWorkoutResponse,
@@ -60,7 +61,7 @@ export type {
   WhoopZoneDuration,
 } from "whoop-whoop";
 // Re-export whoop-whoop types and client for dofek consumers
-export { parseDuringRange, WhoopClient } from "whoop-whoop";
+export { parseDuringRange, WhoopClient, WhoopRateLimitError } from "whoop-whoop";
 
 // ============================================================
 // Parsing — pure functions (dofek-specific shapes)
@@ -936,6 +937,7 @@ export class WhoopProvider implements SyncProvider {
     }
 
     // --- Sync strength workouts (exercise-level data) ---
+    let rateLimited = false;
     try {
       const strengthCount = await withSyncLog(
         db,
@@ -1085,6 +1087,9 @@ export class WhoopProvider implements SyncProvider {
       );
       recordsSynced += strengthCount;
     } catch (err) {
+      if (err instanceof WhoopRateLimitError) {
+        rateLimited = true;
+      }
       errors.push({
         message: `strength: ${err instanceof Error ? err.message : String(err)}`,
         cause: err,
@@ -1092,119 +1097,126 @@ export class WhoopProvider implements SyncProvider {
     }
 
     // --- Sync HR stream (6s intervals) ---
-    try {
-      const hrCount = await withSyncLog(
-        db,
-        this.id,
-        "hr_stream",
-        async () => {
-          const weekMs = 7 * 24 * 60 * 60 * 1000;
-          let windowStart = since.getTime();
-          const nowMs = Date.now();
-          let totalRecords = 0;
-          const BATCH_SIZE = 500;
+    if (!rateLimited) {
+      try {
+        const hrCount = await withSyncLog(
+          db,
+          this.id,
+          "hr_stream",
+          async () => {
+            const weekMs = 7 * 24 * 60 * 60 * 1000;
+            let windowStart = since.getTime();
+            const nowMs = Date.now();
+            let totalRecords = 0;
+            const BATCH_SIZE = 500;
 
-          while (windowStart < nowMs) {
-            const windowEnd = Math.min(windowStart + weekMs, nowMs);
-            const startStr = new Date(windowStart).toISOString();
-            const endStr = new Date(windowEnd).toISOString();
+            while (windowStart < nowMs) {
+              const windowEnd = Math.min(windowStart + weekMs, nowMs);
+              const startStr = new Date(windowStart).toISOString();
+              const endStr = new Date(windowEnd).toISOString();
 
-            const values = await client.getHeartRate(startStr, endStr, 6);
-            const parsed = parseHeartRateValues(values);
+              const values = await client.getHeartRate(startStr, endStr, 6);
+              const parsed = parseHeartRateValues(values);
 
-            for (let i = 0; i < parsed.length; i += BATCH_SIZE) {
-              const batch = parsed.slice(i, i + BATCH_SIZE);
-              await db
-                .insert(metricStream)
-                .values(
-                  batch.map((r) => ({
-                    providerId: this.id,
-                    recordedAt: r.recordedAt,
-                    heartRate: r.heartRate,
-                  })),
-                )
-                .onConflictDoNothing();
+              for (let i = 0; i < parsed.length; i += BATCH_SIZE) {
+                const batch = parsed.slice(i, i + BATCH_SIZE);
+                await db
+                  .insert(metricStream)
+                  .values(
+                    batch.map((r) => ({
+                      providerId: this.id,
+                      recordedAt: r.recordedAt,
+                      heartRate: r.heartRate,
+                    })),
+                  )
+                  .onConflictDoNothing();
+              }
+
+              totalRecords += parsed.length;
+              windowStart = windowEnd;
             }
 
-            totalRecords += parsed.length;
-            windowStart = windowEnd;
-          }
-
-          return { recordCount: totalRecords, result: totalRecords };
-        },
-        options?.userId,
-      );
-      recordsSynced += hrCount;
-    } catch (err) {
-      errors.push({
-        message: `hr_stream: ${err instanceof Error ? err.message : String(err)}`,
-        cause: err,
-      });
+            return { recordCount: totalRecords, result: totalRecords };
+          },
+          options?.userId,
+        );
+        recordsSynced += hrCount;
+      } catch (err) {
+        if (err instanceof WhoopRateLimitError) {
+          rateLimited = true;
+        }
+        errors.push({
+          message: `hr_stream: ${err instanceof Error ? err.message : String(err)}`,
+          cause: err,
+        });
+      }
     }
 
     // --- Sync journal entries ---
-    try {
-      const journalCount = await withSyncLog(
-        db,
-        this.id,
-        "journal",
-        async () => {
-          const raw = await client.getJournal(since.toISOString(), new Date().toISOString());
-          logger.info(`[whoop] Journal response shape: ${JSON.stringify(raw).slice(0, 500)}`);
+    if (!rateLimited) {
+      try {
+        const journalCount = await withSyncLog(
+          db,
+          this.id,
+          "journal",
+          async () => {
+            const raw = await client.getJournal(since.toISOString(), new Date().toISOString());
+            logger.info(`[whoop] Journal response shape: ${JSON.stringify(raw).slice(0, 500)}`);
 
-          const entries = parseJournalResponse(raw);
-          let count = 0;
-          for (const entry of entries) {
-            // Ensure the question exists in the reference table
-            await db
-              .insert(journalQuestion)
-              .values({
-                slug: entry.question,
-                displayName: entry.question
-                  .replace(/_/g, " ")
-                  .replace(/\b\w/g, (c) => c.toUpperCase()),
-                category: "custom",
-                dataType: "numeric",
-              })
-              .onConflictDoNothing();
+            const entries = parseJournalResponse(raw);
+            let count = 0;
+            for (const entry of entries) {
+              // Ensure the question exists in the reference table
+              await db
+                .insert(journalQuestion)
+                .values({
+                  slug: entry.question,
+                  displayName: entry.question
+                    .replace(/_/g, " ")
+                    .replace(/\b\w/g, (c) => c.toUpperCase()),
+                  category: "custom",
+                  dataType: "numeric",
+                })
+                .onConflictDoNothing();
 
-            const userId = options?.userId ?? "00000000-0000-0000-0000-000000000001";
-            await db
-              .insert(journalEntry)
-              .values({
-                date: entry.date.toISOString().split("T")[0] ?? "",
-                providerId: this.id,
-                userId,
-                questionSlug: entry.question,
-                answerText: entry.answerText,
-                answerNumeric: entry.answerNumeric,
-                impactScore: entry.impactScore,
-              })
-              .onConflictDoUpdate({
-                target: [
-                  journalEntry.userId,
-                  journalEntry.date,
-                  journalEntry.questionSlug,
-                  journalEntry.providerId,
-                ],
-                set: {
+              const userId = options?.userId ?? "00000000-0000-0000-0000-000000000001";
+              await db
+                .insert(journalEntry)
+                .values({
+                  date: entry.date.toISOString().split("T")[0] ?? "",
+                  providerId: this.id,
+                  userId,
+                  questionSlug: entry.question,
                   answerText: entry.answerText,
                   answerNumeric: entry.answerNumeric,
                   impactScore: entry.impactScore,
-                },
-              });
-            count++;
-          }
-          return { recordCount: count, result: count };
-        },
-        options?.userId,
-      );
-      recordsSynced += journalCount;
-    } catch (err) {
-      errors.push({
-        message: `journal: ${err instanceof Error ? err.message : String(err)}`,
-        cause: err,
-      });
+                })
+                .onConflictDoUpdate({
+                  target: [
+                    journalEntry.userId,
+                    journalEntry.date,
+                    journalEntry.questionSlug,
+                    journalEntry.providerId,
+                  ],
+                  set: {
+                    answerText: entry.answerText,
+                    answerNumeric: entry.answerNumeric,
+                    impactScore: entry.impactScore,
+                  },
+                });
+              count++;
+            }
+            return { recordCount: count, result: count };
+          },
+          options?.userId,
+        );
+        recordsSynced += journalCount;
+      } catch (err) {
+        errors.push({
+          message: `journal: ${err instanceof Error ? err.message : String(err)}`,
+          cause: err,
+        });
+      }
     }
 
     return {
