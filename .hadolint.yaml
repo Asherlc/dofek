@@ -1,6 +1,4 @@
 ignored:
-  # Base images use ARG for GHCR mirror override — tag is in the default value
-  - DL3006
   # WORKDIR in conditional block is acceptable (INSTALL_EXTRAS pattern)
   - DL3003
   # apk/apt version pinning in multi-stage builds is impractical

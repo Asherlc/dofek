@@ -10,41 +10,11 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  seed-images:
-    name: Seed GHCR Mirror
-    runs-on: ubuntu-latest
-    permissions:
-      packages: write
-    steps:
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Mirror missing images
-        run: |
-          mirror() {
-            local source=$1 target=$2
-            if docker manifest inspect "$target" >/dev/null 2>&1; then
-              echo "✓ $target exists"
-            else
-              echo "Mirroring $source → $target"
-              docker pull "$source"
-              docker tag "$source" "$target"
-              docker push "$target"
-            fi
-          }
-          mirror "semgrep/semgrep:latest" "ghcr.io/asherlc/dofek/mirror/semgrep:latest"
-
   scan:
     name: SAST Scan
-    needs: seed-images
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/asherlc/dofek/mirror/semgrep:latest
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+      image: semgrep/semgrep:latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - name: Run project-specific rules (blocking)
