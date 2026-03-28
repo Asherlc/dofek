@@ -202,9 +202,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - uses: ./.github/actions/setup-node-pnpm
-      - run: pnpm exec vitest run --project unit --coverage
-        env:
-          VITEST_COVERAGE_SKIP_THRESHOLDS: "true"
+      - run: pnpm exec vitest run --project unit --coverage --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0
       - uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe # v5
         with:
           files: coverage/lcov.info
@@ -247,10 +245,8 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - uses: ./.github/actions/setup-node-pnpm
-      - run: pnpm exec vitest run --project integration --coverage
+      - run: pnpm exec vitest run --project integration --coverage --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0
         timeout-minutes: 10
-        env:
-          VITEST_COVERAGE_SKIP_THRESHOLDS: "true"
       - uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe # v5
         with:
           files: coverage/lcov.info

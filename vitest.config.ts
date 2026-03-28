@@ -49,16 +49,12 @@ export default defineConfig({
         "**/node_modules/**",
         "**/routeTree.gen.ts",
       ],
-      // Thresholds are skipped in CI per-project runs (each project alone can't
-      // meet combined thresholds). Combined coverage is enforced by nyc merge.
-      thresholds: process.env.VITEST_COVERAGE_SKIP_THRESHOLDS
-        ? undefined
-        : {
-            lines: 93.5,
-            functions: 94.5,
-            branches: 89,
-            statements: 93.5,
-          },
+      thresholds: {
+        lines: 93.5,
+        functions: 94.5,
+        branches: 89,
+        statements: 93.5,
+      },
     },
   },
   resolve: {
