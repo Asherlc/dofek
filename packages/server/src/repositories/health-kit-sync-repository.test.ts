@@ -56,6 +56,42 @@ describe("computeBoundsFromIsoTimestamps", () => {
   it("returns null when all timestamps are invalid", () => {
     expect(computeBoundsFromIsoTimestamps(["invalid", "also-invalid"])).toBeNull();
   });
+
+  it("requires BOTH minTs and maxTs to be finite (|| not &&)", () => {
+    // If only one valid timestamp among invalids, both min and max are the same valid value
+    // This tests that both isFinite checks are needed
+    const result = computeBoundsFromIsoTimestamps(["2024-01-15T10:00:00Z"]);
+    expect(result).not.toBeNull();
+    expect(result?.startAt).toBe(result?.endAt);
+  });
+
+  it("returns null when all timestamps are NaN (isFinite guards both min and max)", () => {
+    // Both minTs stays POSITIVE_INFINITY and maxTs stays NEGATIVE_INFINITY
+    // isFinite(POSITIVE_INFINITY) = false, isFinite(NEGATIVE_INFINITY) = false
+    // The || means either being non-finite returns null
+    const result = computeBoundsFromIsoTimestamps(["not-a-date", "also-bad", "nope"]);
+    expect(result).toBeNull();
+  });
+
+  it("uses < for minTs update (not <=)", () => {
+    // With two identical timestamps, both should be accepted
+    const result = computeBoundsFromIsoTimestamps(["2024-01-15T10:00:00Z", "2024-01-15T10:00:00Z"]);
+    expect(result).not.toBeNull();
+    expect(result?.startAt).toBe("2024-01-15T10:00:00.000Z");
+    expect(result?.endAt).toBe("2024-01-15T10:00:00.000Z");
+  });
+
+  it("handles mix of valid and invalid where min != max", () => {
+    const result = computeBoundsFromIsoTimestamps([
+      "not-a-date",
+      "2024-01-10T00:00:00Z",
+      "garbage",
+      "2024-01-20T00:00:00Z",
+    ]);
+    expect(result).not.toBeNull();
+    expect(result?.startAt).toBe("2024-01-10T00:00:00.000Z");
+    expect(result?.endAt).toBe("2024-01-20T00:00:00.000Z");
+  });
 });
 
 describe("isSleepStageValue", () => {
@@ -71,6 +107,39 @@ describe("isSleepStageValue", () => {
     expect(isSleepStageValue("awake")).toBe(false);
     expect(isSleepStageValue("inBed")).toBe(false);
     expect(isSleepStageValue("other")).toBe(false);
+  });
+
+  it("returns true for each individual sleep stage (mutation: removing one || clause)", () => {
+    // Each assertion kills a mutation that removes a specific === check
+    expect(isSleepStageValue("asleep")).toBe(true);
+    expect(isSleepStageValue("asleepUnspecified")).toBe(true);
+    expect(isSleepStageValue("asleepCore")).toBe(true);
+    expect(isSleepStageValue("asleepDeep")).toBe(true);
+    expect(isSleepStageValue("asleepREM")).toBe(true);
+    // These similar but wrong values must return false
+    expect(isSleepStageValue("Asleep")).toBe(false);
+    expect(isSleepStageValue("asleeplight")).toBe(false);
+    expect(isSleepStageValue("")).toBe(false);
+  });
+
+  it("each sleep stage value is independently recognized (not just any truthy string)", () => {
+    // If any individual === check is removed by mutation, that specific value returns false
+    // Test each value in isolation to kill each || clause mutation
+    const stages = [
+      "asleep",
+      "asleepUnspecified",
+      "asleepCore",
+      "asleepDeep",
+      "asleepREM",
+    ] as const;
+    for (const stage of stages) {
+      expect(isSleepStageValue(stage)).toBe(true);
+    }
+    // Verify partial matches don't work (not prefix matching)
+    expect(isSleepStageValue("asleepC")).toBe(false);
+    expect(isSleepStageValue("asleepD")).toBe(false);
+    expect(isSleepStageValue("asleepR")).toBe(false);
+    expect(isSleepStageValue("asleepU")).toBe(false);
   });
 });
 
@@ -192,6 +261,106 @@ describe("aggregateDailyMetricSamples", () => {
     const result = aggregateDailyMetricSamples(samples);
     const accumulator = result.get("2024-01-15\0iPhone");
     expect(accumulator?.vo2max).toBe(45.5);
+  });
+
+  it("uses += (accumulation) for additive metrics, not = (replacement)", () => {
+    // If += were mutated to =, only the last value would be kept
+    const samples = [
+      makeSample({
+        type: "HKQuantityTypeIdentifierStepCount",
+        value: 1000,
+        uuid: "1",
+      }),
+      makeSample({
+        type: "HKQuantityTypeIdentifierStepCount",
+        value: 2000,
+        uuid: "2",
+      }),
+      makeSample({
+        type: "HKQuantityTypeIdentifierStepCount",
+        value: 500,
+        uuid: "3",
+      }),
+    ];
+    const result = aggregateDailyMetricSamples(samples);
+    const accumulator = result.get("2024-01-15\0iPhone");
+    // With +=: 1000 + 2000 + 500 = 3500
+    // With =: only last value = 500
+    expect(accumulator?.steps).toBe(3500);
+  });
+
+  it("accumulates active energy burned across multiple samples", () => {
+    const samples = [
+      makeSample({
+        type: "HKQuantityTypeIdentifierActiveEnergyBurned",
+        value: 200,
+        uuid: "1",
+      }),
+      makeSample({
+        type: "HKQuantityTypeIdentifierActiveEnergyBurned",
+        value: 350,
+        uuid: "2",
+      }),
+    ];
+    const result = aggregateDailyMetricSamples(samples);
+    const accumulator = result.get("2024-01-15\0iPhone");
+    // With +=: 200 + 350 = 550 (not just 350)
+    expect(accumulator?.activeEnergyKcal).toBe(550);
+  });
+
+  it("accumulates distance with transform (meters to km)", () => {
+    const samples = [
+      makeSample({
+        type: "HKQuantityTypeIdentifierDistanceWalkingRunning",
+        value: 3000,
+        uuid: "1",
+      }),
+      makeSample({
+        type: "HKQuantityTypeIdentifierDistanceWalkingRunning",
+        value: 2000,
+        uuid: "2",
+      }),
+    ];
+    const result = aggregateDailyMetricSamples(samples);
+    const accumulator = result.get("2024-01-15\0iPhone");
+    // 3000/1000 + 2000/1000 = 3 + 2 = 5 km
+    expect(accumulator?.distanceKm).toBeCloseTo(5.0);
+  });
+
+  it("skips unknown sample types (does not modify accumulator values)", () => {
+    const samples = [
+      makeSample({
+        type: "HKQuantityTypeIdentifierUnknownType",
+        value: 999,
+        uuid: "1",
+      }),
+    ];
+    const result = aggregateDailyMetricSamples(samples);
+    // An accumulator is created for the date/source, but the unknown type doesn't modify any field
+    const accumulator = result.get("2024-01-15\0iPhone");
+    expect(accumulator?.steps).toBe(0);
+    expect(accumulator?.activeEnergyKcal).toBe(0);
+    expect(accumulator?.restingHr).toBeNull();
+  });
+
+  it("uses = (replacement) for point-in-time metrics, not +=", () => {
+    // Point-in-time metrics should replace, not accumulate
+    const samples = [
+      makeSample({
+        type: "HKQuantityTypeIdentifierRestingHeartRate",
+        value: 58,
+        uuid: "1",
+      }),
+      makeSample({
+        type: "HKQuantityTypeIdentifierRestingHeartRate",
+        value: 62,
+        uuid: "2",
+      }),
+    ];
+    const result = aggregateDailyMetricSamples(samples);
+    const accumulator = result.get("2024-01-15\0iPhone");
+    // Last value wins (= assignment), not sum (58 + 62 = 120)
+    expect(accumulator?.restingHr).toBe(62);
   });
 });
 

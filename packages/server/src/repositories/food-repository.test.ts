@@ -213,6 +213,32 @@ describe("FoodRepository", () => {
       await repo.list("2024-06-01", "2024-06-30");
       expect(execute).toHaveBeenCalledTimes(1);
     });
+
+    it("returns FoodEntry instances when meal is provided", async () => {
+      const { repo } = makeRepository([makeFoodEntryRow({ meal: "dinner" })]);
+      const result = await repo.list("2024-06-01", "2024-06-30", "dinner");
+      expect(result).toHaveLength(1);
+      expect(result[0]).toBeInstanceOf(FoodEntry);
+      expect(result[0]?.meal).toBe("dinner");
+    });
+
+    it("uses different SQL for meal vs no-meal (branch coverage)", async () => {
+      // Verify both branches produce FoodEntry arrays from the same mock data
+      const row = makeFoodEntryRow();
+      const executeMeal = vi.fn().mockResolvedValue([row]);
+      const repoMeal = new FoodRepository({ execute: executeMeal }, "user-1", "UTC");
+      const withMeal = await repoMeal.list("2024-06-01", "2024-06-30", "lunch");
+
+      const executeNoMeal = vi.fn().mockResolvedValue([row]);
+      const repoNoMeal = new FoodRepository({ execute: executeNoMeal }, "user-1", "UTC");
+      const withoutMeal = await repoNoMeal.list("2024-06-01", "2024-06-30");
+
+      expect(withMeal).toHaveLength(1);
+      expect(withoutMeal).toHaveLength(1);
+      // Both branches call execute once but with different SQL
+      expect(executeMeal).toHaveBeenCalledTimes(1);
+      expect(executeNoMeal).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe("byDate", () => {
@@ -333,6 +359,50 @@ describe("FoodRepository", () => {
         }),
       ).rejects.toThrow("Failed to insert food entry");
     });
+
+    it("skips junction table insert when nutrients is empty (length === 0)", async () => {
+      const foodRow = makeFoodEntryRow();
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([]) // ensureDofekProvider
+        .mockResolvedValueOnce([{ id: "entry-1" }]) // insert CTE
+        .mockResolvedValueOnce([foodRow]); // select from view
+      const db = { execute };
+      const repo = new FoodRepository(db, "user-1", "UTC");
+
+      const result = await repo.create({
+        date: "2024-06-15",
+        foodName: "Plain Rice",
+        nutrients: {},
+      });
+
+      // Only 3 calls: ensureProvider, insert CTE, select view
+      // No junction table insert because nutrients is empty
+      expect(execute).toHaveBeenCalledTimes(3);
+      expect(result.nutrients).toEqual({});
+    });
+
+    it("inserts into junction table when nutrients has multiple entries (length > 0)", async () => {
+      const foodRow = makeFoodEntryRow();
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([]) // ensureDofekProvider
+        .mockResolvedValueOnce([{ id: "entry-1" }]) // insert CTE
+        .mockResolvedValueOnce([foodRow]) // select from view
+        .mockResolvedValueOnce([]); // junction table insert
+      const db = { execute };
+      const repo = new FoodRepository(db, "user-1", "UTC");
+
+      const result = await repo.create({
+        date: "2024-06-15",
+        foodName: "Enriched Food",
+        nutrients: { "vitamin-c": 25, iron: 8, zinc: 3 },
+      });
+
+      // 4 calls: ensureProvider, insert CTE, select view, junction insert
+      expect(execute).toHaveBeenCalledTimes(4);
+      expect(result.nutrients).toEqual({ "vitamin-c": 25, iron: 8, zinc: 3 });
+    });
   });
 
   describe("update", () => {
@@ -340,6 +410,109 @@ describe("FoodRepository", () => {
       const { repo } = makeRepository([]);
       const result = await repo.update({ id: "entry-1" });
       expect(result).toBeNull();
+    });
+
+    it("returns null when only undefined fields are passed (no actual changes)", async () => {
+      const { repo } = makeRepository([]);
+      const result = await repo.update({ id: "entry-1", foodName: undefined });
+      expect(result).toBeNull();
+    });
+
+    it("processes nutrient updates with existing nutrition_data_id", async () => {
+      const foodRow = makeFoodEntryRow({ calories: 500 });
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([{ nutrition_data_id: "nd-1" }]) // SELECT nutrition_data_id
+        .mockResolvedValueOnce([]) // UPDATE nutrition_data
+        .mockResolvedValueOnce([foodRow]); // SELECT from view
+      const db = { execute };
+      const repo = new FoodRepository(db, "user-1", "UTC");
+
+      const result = await repo.update({ id: "entry-1", calories: 500 });
+      expect(result).not.toBeNull();
+      expect(execute).toHaveBeenCalledTimes(3);
+    });
+
+    it("creates new nutrition_data when entry has no nutrition_data_id", async () => {
+      const foodRow = makeFoodEntryRow({ calories: 300 });
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([{ nutrition_data_id: null }]) // SELECT returns null ndId
+        .mockResolvedValueOnce([{ id: "new-nd-1" }]) // INSERT nutrition_data
+        .mockResolvedValueOnce([]) // UPDATE food_entry set ndid
+        .mockResolvedValueOnce([]) // UPDATE nutrition_data set values
+        .mockResolvedValueOnce([foodRow]); // SELECT from view
+      const db = { execute };
+      const repo = new FoodRepository(db, "user-1", "UTC");
+
+      const result = await repo.update({ id: "entry-1", calories: 300 });
+      expect(result).not.toBeNull();
+    });
+
+    it("handles nutrients replacement in junction table", async () => {
+      const foodRow = makeFoodEntryRow();
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([]) // DELETE from junction table
+        .mockResolvedValueOnce([]) // INSERT into junction table
+        .mockResolvedValueOnce([foodRow]); // SELECT from view
+      const db = { execute };
+      const repo = new FoodRepository(db, "user-1", "UTC");
+
+      const result = await repo.update({ id: "entry-1", nutrients: { "vitamin-c": 30 } });
+      expect(result).not.toBeNull();
+    });
+
+    it("handles nutrients with empty object (deletes but no inserts)", async () => {
+      const foodRow = makeFoodEntryRow();
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([]) // DELETE from junction table
+        .mockResolvedValueOnce([foodRow]); // SELECT from view
+      const db = { execute };
+      const repo = new FoodRepository(db, "user-1", "UTC");
+
+      const result = await repo.update({ id: "entry-1", nutrients: {} });
+      expect(result).not.toBeNull();
+    });
+
+    it("handles date field with null value", async () => {
+      const foodRow = makeFoodEntryRow();
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([]) // UPDATE food_entry
+        .mockResolvedValueOnce([foodRow]); // SELECT from view
+      const db = { execute };
+      const repo = new FoodRepository(db, "user-1", "UTC");
+
+      const result = await repo.update({ id: "entry-1", date: null });
+      expect(result).not.toBeNull();
+    });
+
+    it("handles date field with a value", async () => {
+      const foodRow = makeFoodEntryRow({ date: "2024-07-01" });
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([]) // UPDATE food_entry
+        .mockResolvedValueOnce([foodRow]); // SELECT from view
+      const db = { execute };
+      const repo = new FoodRepository(db, "user-1", "UTC");
+
+      const result = await repo.update({ id: "entry-1", date: "2024-07-01" });
+      expect(result?.date).toBe("2024-07-01");
+    });
+
+    it("handles non-date food field with null value", async () => {
+      const foodRow = makeFoodEntryRow({ meal: null });
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([]) // UPDATE food_entry
+        .mockResolvedValueOnce([foodRow]); // SELECT from view
+      const db = { execute };
+      const repo = new FoodRepository(db, "user-1", "UTC");
+
+      const result = await repo.update({ id: "entry-1", meal: null });
+      expect(result).not.toBeNull();
     });
 
     it("returns updated row when food fields change", async () => {
@@ -353,6 +526,68 @@ describe("FoodRepository", () => {
 
       const result = await repo.update({ id: "entry-1", foodName: "Updated Chicken" });
       expect(result?.food_name).toBe("Updated Chicken");
+    });
+
+    it("returns null when all three conditions are falsy (foodEntryClauses=0, nutrientClauses=0, no nutrients)", async () => {
+      // This tests the complex && condition:
+      // if (foodEntryClauses.length === 0 && nutrientClauses.length === 0 && !nutrients) return null
+      const { repo } = makeRepository([]);
+      // No recognized fields, no nutrients => all three conditions are true => null
+      const result = await repo.update({ id: "entry-1" });
+      expect(result).toBeNull();
+    });
+
+    it("does NOT return null when nutrients is provided even if clauses are empty", async () => {
+      // nutrients is truthy => the && check fails => does NOT return null early
+      const foodRow = makeFoodEntryRow();
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([]) // DELETE from junction table
+        .mockResolvedValueOnce([foodRow]); // SELECT from view
+      const db = { execute };
+      const repo = new FoodRepository(db, "user-1", "UTC");
+
+      const result = await repo.update({ id: "entry-1", nutrients: {} });
+      expect(result).not.toBeNull();
+    });
+
+    it("does NOT return null when foodEntryClauses > 0 even if nutrientClauses=0 and no nutrients", async () => {
+      // foodEntryClauses.length > 0 => first condition is false => does NOT return null
+      const foodRow = makeFoodEntryRow({ meal: "dinner" });
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([]) // UPDATE food_entry
+        .mockResolvedValueOnce([foodRow]); // SELECT from view
+      const db = { execute };
+      const repo = new FoodRepository(db, "user-1", "UTC");
+
+      const result = await repo.update({ id: "entry-1", meal: "dinner" });
+      expect(result).not.toBeNull();
+    });
+
+    it("handles non-null non-date food field value", async () => {
+      const foodRow = makeFoodEntryRow({ food_description: "Spicy" });
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([]) // UPDATE food_entry
+        .mockResolvedValueOnce([foodRow]); // SELECT from view
+      const db = { execute };
+      const repo = new FoodRepository(db, "user-1", "UTC");
+
+      const result = await repo.update({ id: "entry-1", foodDescription: "Spicy" });
+      expect(result).not.toBeNull();
+    });
+
+    it("returns null from SELECT when row no longer exists", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([]) // UPDATE food_entry
+        .mockResolvedValueOnce([]); // SELECT returns nothing
+      const db = { execute };
+      const repo = new FoodRepository(db, "user-1", "UTC");
+
+      const result = await repo.update({ id: "entry-1", foodName: "Gone" });
+      expect(result).toBeNull();
     });
   });
 

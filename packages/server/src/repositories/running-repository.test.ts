@@ -102,6 +102,42 @@ describe("RunningDynamicsActivity", () => {
     expect(activity.distanceKm).toBe(7.6);
   });
 
+  it("returns 0 pace for negative speed (same as 0)", () => {
+    const activity = new RunningDynamicsActivity(makeRow({ avgSpeed: -1 }));
+    // -1 is not > 0, so falls into the else branch returning 0
+    expect(activity.paceSecondsPerKm).toBe(0);
+  });
+
+  it("pace check uses > 0 (speed of exactly 0 returns 0, not Infinity)", () => {
+    const activity = new RunningDynamicsActivity(makeRow({ avgSpeed: 0 }));
+    expect(activity.paceSecondsPerKm).toBe(0);
+    expect(Number.isFinite(activity.paceSecondsPerKm)).toBe(true);
+  });
+
+  it("distance divides by 1000 then multiplies by 10 for rounding (correct order)", () => {
+    // 1234 / 1000 = 1.234, *10 = 12.34, round = 12, /10 = 1.2
+    const activity = new RunningDynamicsActivity(makeRow({ totalDistance: 1234 }));
+    expect(activity.distanceKm).toBe(1.2);
+  });
+
+  it("uses Math.round for pace (not floor or ceil)", () => {
+    // 1000 / 3 = 333.33... → Math.round = 333
+    const activity = new RunningDynamicsActivity(makeRow({ avgSpeed: 3 }));
+    expect(activity.paceSecondsPerKm).toBe(333);
+    // Math.ceil would give 334, Math.floor would also give 333 but check with .7 case
+    const activity2 = new RunningDynamicsActivity(makeRow({ avgSpeed: 3.7 }));
+    // 1000 / 3.7 = 270.27 → Math.round = 270
+    expect(activity2.paceSecondsPerKm).toBe(270);
+  });
+
+  it("distance uses division by 1000 (not subtraction or multiplication)", () => {
+    // totalDistance = 1000 → 1000/1000 = 1.0
+    const activity = new RunningDynamicsActivity(makeRow({ totalDistance: 1000 }));
+    expect(activity.distanceKm).toBe(1.0);
+    // If it multiplied: 1000 * 1000 = 1000000
+    expect(activity.distanceKm).not.toBe(1000000);
+  });
+
   it("serializes to API shape via toDetail()", () => {
     const activity = new RunningDynamicsActivity(makeRow());
     const detail = activity.toDetail();
@@ -195,6 +231,33 @@ describe("PaceTrendActivity", () => {
     // 2530 / 60 = 42.16... => rounds to 42
     const activity = new PaceTrendActivity(makeRow({ durationSeconds: 2530 }));
     expect(activity.durationMinutes).toBe(42);
+  });
+
+  it("pace check uses > 0 (speed of exactly 0 returns 0, not Infinity)", () => {
+    const activity = new PaceTrendActivity(makeRow({ avgSpeed: 0 }));
+    expect(activity.paceSecondsPerKm).toBe(0);
+    expect(Number.isFinite(activity.paceSecondsPerKm)).toBe(true);
+  });
+
+  it("returns 0 pace for negative speed", () => {
+    const activity = new PaceTrendActivity(makeRow({ avgSpeed: -2 }));
+    expect(activity.paceSecondsPerKm).toBe(0);
+  });
+
+  it("distance rounding preserves 1 decimal precision for fractional km", () => {
+    // 1234 / 1000 = 1.234, *10 = 12.34, round = 12, /10 = 1.2
+    const activity = new PaceTrendActivity(makeRow({ totalDistance: 1234 }));
+    expect(activity.distanceKm).toBe(1.2);
+  });
+
+  it("duration uses Math.round (not floor or ceil)", () => {
+    // 2570 / 60 = 42.83 => Math.round = 43 (ceil would also be 43, floor would be 42)
+    // Use 2510 / 60 = 41.83 => Math.round = 42, Math.floor = 41
+    const activity = new PaceTrendActivity(makeRow({ durationSeconds: 2510 }));
+    expect(activity.durationMinutes).toBe(42);
+    // 2520 / 60 = 42.0 exactly
+    const activity2 = new PaceTrendActivity(makeRow({ durationSeconds: 2520 }));
+    expect(activity2.durationMinutes).toBe(42);
   });
 
   it("serializes to API shape via toDetail()", () => {

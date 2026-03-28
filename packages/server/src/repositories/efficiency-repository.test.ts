@@ -78,6 +78,26 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
     expect(result.activities[0]?.z2Samples).toBe(1800);
   });
 
+  it("returns maxHr as number from first row when rows exist (rows.length > 0)", async () => {
+    // This tests the boundary: rows.length > 0 vs >= 0
+    // With exactly 1 row, maxHr should be extracted (not null)
+    const { repo } = makeRepository([
+      {
+        max_hr: "192",
+        date: "2025-06-01",
+        activity_type: "cycling",
+        name: "Ride",
+        avg_power_z2: "180",
+        avg_hr_z2: "135",
+        efficiency_factor: "1.333",
+        z2_samples: "400",
+      },
+    ]);
+    const result = await repo.getAerobicEfficiency(180);
+    expect(result.maxHr).toBe(192);
+    expect(result.maxHr).not.toBeNull();
+  });
+
   it("extracts maxHr from first row", async () => {
     const { repo } = makeRepository([
       {
@@ -195,6 +215,21 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
     expect(execute).toHaveBeenCalledTimes(1);
   });
 
+  it("returns maxHr as number (not null) when rows.length > 0", async () => {
+    const { repo } = makeRepository([
+      {
+        max_hr: "188",
+        week: "2025-05-26",
+        z1_seconds: "3000",
+        z2_seconds: "1000",
+        z3_seconds: "500",
+      },
+    ]);
+    const result = await repo.getPolarizationTrend(180);
+    expect(result.maxHr).toBe(188);
+    expect(result.maxHr).not.toBeNull();
+  });
+
   it("maps rows and computes polarization index", async () => {
     const { repo } = makeRepository([
       {
@@ -256,5 +291,78 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
     expect(result.weeks).toHaveLength(2);
     expect(result.weeks[0]?.week).toBe("2025-05-19");
     expect(result.weeks[1]?.week).toBe("2025-05-26");
+  });
+
+  it("returns null maxHr when rows is empty (rows.length > 0 boundary)", async () => {
+    // Specifically verifies that `rows.length > 0` is the condition, not `rows.length >= 0`
+    // With 0 rows: maxHr must be null
+    const { repo: emptyRepo } = makeRepository([]);
+    const emptyResult = await emptyRepo.getPolarizationTrend(180);
+    expect(emptyResult.maxHr).toBeNull();
+
+    // With 1 row: maxHr must NOT be null
+    const { repo: oneRowRepo } = makeRepository([
+      {
+        max_hr: "195",
+        week: "2025-06-02",
+        z1_seconds: "100",
+        z2_seconds: "100",
+        z3_seconds: "100",
+      },
+    ]);
+    const oneRowResult = await oneRowRepo.getPolarizationTrend(180);
+    expect(oneRowResult.maxHr).toBe(195);
+    expect(oneRowResult.maxHr).not.toBeNull();
+  });
+
+  it("converts zone seconds to numbers for polarization index", async () => {
+    const { repo } = makeRepository([
+      {
+        max_hr: "190",
+        week: "2025-05-26",
+        z1_seconds: "7200",
+        z2_seconds: "600",
+        z3_seconds: "1200",
+      },
+    ]);
+    const result = await repo.getPolarizationTrend(180);
+    const week = result.weeks[0];
+    expect(week?.z1Seconds).toBe(7200);
+    expect(week?.z2Seconds).toBe(600);
+    expect(week?.z3Seconds).toBe(1200);
+    // The polarization index should match the shared computation
+    expect(week?.polarizationIndex).toBe(computePolarizationIndex(7200, 600, 1200));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getAerobicEfficiency — rows.length > 0 boundary
+// ---------------------------------------------------------------------------
+
+describe("EfficiencyRepository.getAerobicEfficiency (rows.length boundary)", () => {
+  it("returns null maxHr when rows.length is 0, non-null when >= 1", async () => {
+    // 0 rows => null
+    const executeEmpty = vi.fn().mockResolvedValue([]);
+    const repoEmpty = new EfficiencyRepository({ execute: executeEmpty }, "user-1", "UTC");
+    const emptyResult = await repoEmpty.getAerobicEfficiency(180);
+    expect(emptyResult.maxHr).toBeNull();
+
+    // 1 row => Number(rows[0].max_hr)
+    const executeOne = vi.fn().mockResolvedValue([
+      {
+        max_hr: "200",
+        date: "2025-06-01",
+        activity_type: "cycling",
+        name: "Ride",
+        avg_power_z2: "180",
+        avg_hr_z2: "135",
+        efficiency_factor: "1.333",
+        z2_samples: "500",
+      },
+    ]);
+    const repoOne = new EfficiencyRepository({ execute: executeOne }, "user-1", "UTC");
+    const oneResult = await repoOne.getAerobicEfficiency(180);
+    expect(oneResult.maxHr).toBe(200);
+    expect(oneResult.maxHr).not.toBeNull();
   });
 });

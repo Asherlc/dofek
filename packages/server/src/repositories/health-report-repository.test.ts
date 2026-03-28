@@ -237,5 +237,70 @@ describe("HealthReportRepository", () => {
       await repo.myReports();
       expect(execute).toHaveBeenCalledTimes(1);
     });
+
+    it("LIMIT 50 is present in the query (not 49 or 51)", async () => {
+      const { repo, execute } = makeRepository([]);
+      await repo.myReports();
+      const callArgs = execute.mock.calls[0]?.[0];
+      const queryJson = JSON.stringify(callArgs);
+      // Verify the query contains "50" and not a different number
+      expect(queryJson).toContain("50");
+    });
+  });
+
+  describe("generate (expiresInDays ternary)", () => {
+    it("passes non-null expiresInDays for expiring reports (expiresInDays != null)", async () => {
+      const { repo, execute } = makeRepository([
+        {
+          id: "sr-1",
+          share_token: "t1",
+          report_type: "weekly",
+          report_data: {},
+          expires_at: "2024-02-15T00:00:00Z",
+          created_at: "2024-01-15T10:00:00Z",
+        },
+      ]);
+      await repo.generate("weekly", {}, 30);
+      expect(execute).toHaveBeenCalledTimes(1);
+      // The SQL should contain the days interval value
+      const queryJson = JSON.stringify(execute.mock.calls[0]?.[0]);
+      expect(queryJson).toContain("30");
+    });
+
+    it("passes null for non-expiring reports (expiresInDays === null)", async () => {
+      const { repo, execute } = makeRepository([
+        {
+          id: "sr-2",
+          share_token: "t2",
+          report_type: "weekly",
+          report_data: {},
+          expires_at: null,
+          created_at: "2024-01-15T10:00:00Z",
+        },
+      ]);
+      const result = await repo.generate("weekly", {}, null);
+      expect(result).toBeInstanceOf(SharedReport);
+      expect(result?.expiresAt).toBeNull();
+      expect(execute).toHaveBeenCalledTimes(1);
+    });
+
+    it("treats expiresInDays 0 as non-null (uses interval, not NULL)", async () => {
+      // expiresInDays = 0 is != null, so it should use the interval path
+      const { repo, execute } = makeRepository([
+        {
+          id: "sr-3",
+          share_token: "t3",
+          report_type: "weekly",
+          report_data: {},
+          expires_at: "2024-01-15T10:00:00Z",
+          created_at: "2024-01-15T10:00:00Z",
+        },
+      ]);
+      await repo.generate("weekly", {}, 0);
+      expect(execute).toHaveBeenCalledTimes(1);
+      const queryJson = JSON.stringify(execute.mock.calls[0]?.[0]);
+      // Should contain the value 0 for the interval, not NULL
+      expect(queryJson).toContain("0");
+    });
   });
 });

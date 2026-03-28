@@ -157,5 +157,31 @@ describe("SleepRepository", () => {
       await repo.getLatest();
       expect(execute).toHaveBeenCalledTimes(1);
     });
+
+    it("returns first row (rows[0]) not second row when multiple rows exist", async () => {
+      const { repo } = makeRepository([
+        {
+          started_at: "2026-03-28T00:00:00Z",
+          duration_minutes: "500",
+          deep_minutes: "110",
+          rem_minutes: "130",
+          light_minutes: "210",
+          awake_minutes: "50",
+          efficiency_pct: "92",
+        },
+        {
+          started_at: "2026-03-27T00:00:00Z",
+          duration_minutes: "400",
+          deep_minutes: "80",
+          rem_minutes: "100",
+          light_minutes: "180",
+          awake_minutes: "40",
+          efficiency_pct: "85",
+        },
+      ]);
+      const result = await repo.getLatest();
+      expect(result?.duration_minutes).toBe(500);
+      expect(result?.duration_minutes).not.toBe(400);
+    });
   });
 });

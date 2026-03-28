@@ -77,86 +77,18 @@ export const trainingRouter = router({
 
       const { latestMetric } = data;
 
-      let hrvScore = 62;
-      if (
-        latestMetric?.hrv != null &&
-        latestMetric.hrv_mean_30d != null &&
-        latestMetric.hrv_sd_30d != null &&
-        latestMetric.hrv_sd_30d > 0
-      ) {
-        const hrvZ = (latestMetric.hrv - latestMetric.hrv_mean_30d) / latestMetric.hrv_sd_30d;
-        hrvScore = zScoreToRecoveryScore(hrvZ);
-      }
-
-      let restingHrScore = 62;
-      if (
-        latestMetric?.resting_hr != null &&
-        latestMetric.rhr_mean_30d != null &&
-        latestMetric.rhr_sd_30d != null &&
-        latestMetric.rhr_sd_30d > 0
-      ) {
-        const rhrZ =
-          (latestMetric.resting_hr - latestMetric.rhr_mean_30d) / latestMetric.rhr_sd_30d;
-        restingHrScore = zScoreToRecoveryScore(-rhrZ);
-      }
-
-      const sleepScore =
-        data.latestSleepEfficiency != null
-          ? clamp(Math.round(data.latestSleepEfficiency), 0, 100)
-          : 62;
-
-      let respiratoryRateScore = 62;
-      if (
-        latestMetric?.respiratory_rate != null &&
-        latestMetric.rr_mean_30d != null &&
-        latestMetric.rr_sd_30d != null &&
-        latestMetric.rr_sd_30d > 0
-      ) {
-        const rrZ =
-          (latestMetric.respiratory_rate - latestMetric.rr_mean_30d) / latestMetric.rr_sd_30d;
-        respiratoryRateScore = zScoreToRecoveryScore(-rrZ);
-      }
-
-      const readinessScoreRaw = latestMetric
-        ? hrvScore * weights.hrv +
-          restingHrScore * weights.restingHr +
-          sleepScore * weights.sleep +
-          respiratoryRateScore * weights.respiratoryRate
-        : null;
-      const readinessScore = readinessScoreRaw != null ? Math.round(readinessScoreRaw) : null;
+      const scores = computeComponentScores(latestMetric, data.latestSleepEfficiency);
+      const readinessScore = computeReadinessScore(scores, weights, latestMetric != null);
       const readinessLevel = getReadinessLevel(readinessScore);
 
       const todayDate = input.endDate;
       const lastStrengthDaysAgo = daysAgoFromDate(data.balance.last_strength_date, todayDate);
       const lastEnduranceDaysAgo = daysAgoFromDate(data.balance.last_endurance_date, todayDate);
 
-      const freshMuscles = data.muscleFreshness
-        .map((row) => ({
-          name: normalizeMuscleName(row.muscle_group),
-          daysAgo: daysAgoFromDate(row.last_trained_date, todayDate),
-        }))
-        .filter((row): row is { name: string; daysAgo: number } => row.daysAgo != null)
-        .sort((a, b) => b.daysAgo - a.daysAgo);
-      const focusMuscles = uniqueStrings(
-        freshMuscles.filter((m) => m.daysAgo >= 2).map((m) => m.name),
-      );
-      const orderedFocusMuscles = (
-        focusMuscles.length > 0 ? focusMuscles : uniqueStrings(freshMuscles.map((m) => m.name))
-      ).slice(0, 3);
+      const orderedFocusMuscles = computeFocusMuscles(data.muscleFreshness, todayDate);
 
-      const { zoneTotals } = data;
-      const totalZoneSamples =
-        zoneTotals.zone1 +
-        zoneTotals.zone2 +
-        zoneTotals.zone3 +
-        zoneTotals.zone4 +
-        zoneTotals.zone5;
-      const highIntensitySamples = zoneTotals.zone4 + zoneTotals.zone5;
-      const moderateSamples = zoneTotals.zone3;
-      const lowSamples = zoneTotals.zone1 + zoneTotals.zone2;
-      const highIntensityPct = totalZoneSamples > 0 ? highIntensitySamples / totalZoneSamples : 0;
-      const lowIntensityPct = totalZoneSamples > 0 ? lowSamples / totalZoneSamples : 0;
-      const moderateIntensityPct = totalZoneSamples > 0 ? moderateSamples / totalZoneSamples : 0;
+      const { totalZoneSamples, highIntensityPct, lowIntensityPct, moderateIntensityPct } =
+        computeZonePercentages(data.zoneTotals);
       const daysSinceLastHiit = daysAgoFromDate(data.hiitLoad.last_hiit_date, todayDate);
 
       const consecutiveTrainingDays = computeTrainingStreak(data.trainingDates);
@@ -180,10 +112,9 @@ export const trainingRouter = router({
         rationale.push(`Hard cardio sessions in last 7 days: ${data.hiitLoad.hiit_count_7d}.`);
       }
 
-      const acwrHighRisk = data.acwr != null && data.acwr > ACWR_HIGH_RISK_THRESHOLD;
       const limitedReadiness =
         readinessScore != null && readinessScore < READINESS_LIMITED_THRESHOLD;
-      const preferRest = readinessLevel === "low" || consecutiveTrainingDays >= 6 || acwrHighRisk;
+      const preferRest = shouldPreferRest(readinessLevel, consecutiveTrainingDays, data.acwr);
       const strengthUnderTarget = strengthSessions7d < 2;
       const cardioUnderTarget = enduranceSessions7d < 3;
       const strengthReady =
@@ -239,10 +170,13 @@ export const trainingRouter = router({
         } satisfies NextWorkoutRecommendation;
       }
 
-      const shouldDoStrength =
-        strengthReady &&
-        (strengthUnderTarget ||
-          (!cardioUnderTarget && (lastStrengthDaysAgo ?? 99) >= (lastEnduranceDaysAgo ?? 99)));
+      const shouldDoStrength = shouldDoStrengthToday({
+        strengthReady,
+        strengthUnderTarget,
+        cardioUnderTarget,
+        lastStrengthDaysAgo,
+        lastEnduranceDaysAgo,
+      });
 
       if (shouldDoStrength) {
         const split = pickStrengthSplit(orderedFocusMuscles);
@@ -318,6 +252,152 @@ export const trainingRouter = router({
 });
 
 // Exported for unit testing — these are pure helpers with no side effects.
+
+export interface ZoneTotalsInput {
+  zone1: number;
+  zone2: number;
+  zone3: number;
+  zone4: number;
+  zone5: number;
+}
+
+export function computeZonePercentages(zoneTotals: ZoneTotalsInput): {
+  totalZoneSamples: number;
+  highIntensityPct: number;
+  lowIntensityPct: number;
+  moderateIntensityPct: number;
+} {
+  const totalZoneSamples =
+    zoneTotals.zone1 + zoneTotals.zone2 + zoneTotals.zone3 + zoneTotals.zone4 + zoneTotals.zone5;
+  const highIntensitySamples = zoneTotals.zone4 + zoneTotals.zone5;
+  const moderateSamples = zoneTotals.zone3;
+  const lowSamples = zoneTotals.zone1 + zoneTotals.zone2;
+  const highIntensityPct = totalZoneSamples > 0 ? highIntensitySamples / totalZoneSamples : 0;
+  const lowIntensityPct = totalZoneSamples > 0 ? lowSamples / totalZoneSamples : 0;
+  const moderateIntensityPct = totalZoneSamples > 0 ? moderateSamples / totalZoneSamples : 0;
+  return { totalZoneSamples, highIntensityPct, lowIntensityPct, moderateIntensityPct };
+}
+
+export interface LatestMetricInput {
+  hrv: number | null;
+  hrv_mean_30d: number | null;
+  hrv_sd_30d: number | null;
+  resting_hr: number | null;
+  rhr_mean_30d: number | null;
+  rhr_sd_30d: number | null;
+  respiratory_rate: number | null;
+  rr_mean_30d: number | null;
+  rr_sd_30d: number | null;
+}
+
+export function computeComponentScores(
+  latestMetric: LatestMetricInput | null,
+  latestSleepEfficiency: number | null,
+): {
+  hrvScore: number;
+  restingHrScore: number;
+  sleepScore: number;
+  respiratoryRateScore: number;
+} {
+  let hrvScore = 62;
+  if (
+    latestMetric?.hrv != null &&
+    latestMetric.hrv_mean_30d != null &&
+    latestMetric.hrv_sd_30d != null &&
+    latestMetric.hrv_sd_30d > 0
+  ) {
+    const hrvZ = (latestMetric.hrv - latestMetric.hrv_mean_30d) / latestMetric.hrv_sd_30d;
+    hrvScore = zScoreToRecoveryScore(hrvZ);
+  }
+
+  let restingHrScore = 62;
+  if (
+    latestMetric?.resting_hr != null &&
+    latestMetric.rhr_mean_30d != null &&
+    latestMetric.rhr_sd_30d != null &&
+    latestMetric.rhr_sd_30d > 0
+  ) {
+    const rhrZ = (latestMetric.resting_hr - latestMetric.rhr_mean_30d) / latestMetric.rhr_sd_30d;
+    restingHrScore = zScoreToRecoveryScore(-rhrZ);
+  }
+
+  const sleepScore =
+    latestSleepEfficiency != null ? clamp(Math.round(latestSleepEfficiency), 0, 100) : 62;
+
+  let respiratoryRateScore = 62;
+  if (
+    latestMetric?.respiratory_rate != null &&
+    latestMetric.rr_mean_30d != null &&
+    latestMetric.rr_sd_30d != null &&
+    latestMetric.rr_sd_30d > 0
+  ) {
+    const rrZ = (latestMetric.respiratory_rate - latestMetric.rr_mean_30d) / latestMetric.rr_sd_30d;
+    respiratoryRateScore = zScoreToRecoveryScore(-rrZ);
+  }
+
+  return { hrvScore, restingHrScore, sleepScore, respiratoryRateScore };
+}
+
+export function computeReadinessScore(
+  scores: {
+    hrvScore: number;
+    restingHrScore: number;
+    sleepScore: number;
+    respiratoryRateScore: number;
+  },
+  weights: { hrv: number; restingHr: number; sleep: number; respiratoryRate: number },
+  hasMetric: boolean,
+): number | null {
+  if (!hasMetric) return null;
+  const raw =
+    scores.hrvScore * weights.hrv +
+    scores.restingHrScore * weights.restingHr +
+    scores.sleepScore * weights.sleep +
+    scores.respiratoryRateScore * weights.respiratoryRate;
+  return Math.round(raw);
+}
+
+export function shouldPreferRest(
+  readinessLevel: ReadinessLevel,
+  consecutiveTrainingDays: number,
+  acwr: number | null,
+): boolean {
+  const acwrHighRisk = acwr != null && acwr > ACWR_HIGH_RISK_THRESHOLD;
+  return readinessLevel === "low" || consecutiveTrainingDays >= 6 || acwrHighRisk;
+}
+
+export function shouldDoStrengthToday(input: {
+  strengthReady: boolean;
+  strengthUnderTarget: boolean;
+  cardioUnderTarget: boolean;
+  lastStrengthDaysAgo: number | null;
+  lastEnduranceDaysAgo: number | null;
+}): boolean {
+  return (
+    input.strengthReady &&
+    (input.strengthUnderTarget ||
+      (!input.cardioUnderTarget &&
+        (input.lastStrengthDaysAgo ?? 99) >= (input.lastEnduranceDaysAgo ?? 99)))
+  );
+}
+
+export function computeFocusMuscles(
+  muscleFreshness: Array<{ muscle_group: string; last_trained_date: string }>,
+  todayDate: string,
+): string[] {
+  const freshMuscles = muscleFreshness
+    .map((row) => ({
+      name: normalizeMuscleName(row.muscle_group),
+      daysAgo: daysAgoFromDate(row.last_trained_date, todayDate),
+    }))
+    .filter((row): row is { name: string; daysAgo: number } => row.daysAgo != null)
+    .sort((a, b) => b.daysAgo - a.daysAgo);
+  const focusMuscles = uniqueStrings(freshMuscles.filter((m) => m.daysAgo >= 2).map((m) => m.name));
+  return (
+    focusMuscles.length > 0 ? focusMuscles : uniqueStrings(freshMuscles.map((m) => m.name))
+  ).slice(0, 3);
+}
+
 export function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
