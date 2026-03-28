@@ -1,6 +1,7 @@
 import * as Sentry from "@sentry/react-native";
 import { AppState, type AppStateStatus } from "react-native";
 import type { AccelerometerUploadClient } from "./accelerometer-service";
+import { captureException } from "./telemetry";
 
 const UPLOAD_BATCH_SIZE = 5000;
 
@@ -146,7 +147,9 @@ export function teardownBackgroundWhoopBleSync(): void {
 
   if (connected && currentDeps) {
     try {
-      currentDeps.stopImuStreaming().catch(() => {});
+      currentDeps.stopImuStreaming().catch((error: unknown) => {
+        captureException(error, { source: "whoop-ble-teardown" });
+      });
     } catch {
       // Best-effort cleanup
     }

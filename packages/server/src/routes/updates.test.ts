@@ -110,7 +110,7 @@ async function request(
           });
           server.close();
         })
-        .catch(() => {
+        .catch((_error: unknown) => {
           resolve({
             status: 500,
             body: "fetch error",

@@ -9,6 +9,12 @@ import {
 } from "./activity-recording.ts";
 import type { GpsSample, LocationAdapter } from "./location-service.ts";
 
+const mockCaptureException = vi.fn();
+
+vi.mock("./telemetry", () => ({
+  captureException: (...args: unknown[]) => mockCaptureException(...args),
+}));
+
 function makeMockLocationAdapter(): LocationAdapter & {
   emitSample(sample: GpsSample): void;
 } {
@@ -283,6 +289,20 @@ describe("createActivityRecorder with accelerometer", () => {
     await recorder.start("running");
 
     expect(recorder.getSnapshot().state).toBe("recording");
+  });
+
+  it("calls captureException when ensureRecording rejects", async () => {
+    const accelError = new Error("Accelerometer error");
+    vi.mocked(accelerometer.ensureRecording).mockRejectedValue(accelError);
+
+    await recorder.start("running");
+
+    // The catch is async (fire-and-forget), so wait for it to settle
+    await vi.waitFor(() => {
+      expect(mockCaptureException).toHaveBeenCalledWith(accelError, {
+        source: "activity-recording",
+      });
+    });
   });
 
   it("calls syncForTimeRange on save with activity timestamps", async () => {

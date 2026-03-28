@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -391,7 +392,7 @@ jobs:
           fetch-depth: 0
       - id: check
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
+          if [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- packages/mobile/)
@@ -845,7 +846,7 @@ jobs:
   check-native-changes:
     name: Check Native iOS Changes
     needs: [ci-gate]
-    if: github.ref == 'refs/heads/main'
+    if: always() && needs.ci-gate.result == 'success' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
       changed: ${{ steps.check.outputs.changed }}
@@ -855,25 +856,30 @@ jobs:
           fetch-depth: 2
       - id: check
         run: |
-          CHANGED=$(git diff --name-only HEAD~1...HEAD -- \
-            'packages/mobile/ios/**' \
-            'packages/mobile/modules/*/ios/**' \
-            'packages/mobile/modules/*/Package.swift' \
-            'packages/mobile/app.json' \
-            'packages/mobile/modules/*/expo-module.config.json')
-          if [ -n "$CHANGED" ]; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "Native iOS files changed:"
-            echo "$CHANGED"
+            echo "Manual dispatch — forcing TestFlight upload"
           else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "No native iOS changes, skipping TestFlight upload"
+            CHANGED=$(git diff --name-only HEAD~1...HEAD -- \
+              'packages/mobile/ios/**' \
+              'packages/mobile/modules/*/ios/**' \
+              'packages/mobile/modules/*/Package.swift' \
+              'packages/mobile/app.json' \
+              'packages/mobile/modules/*/expo-module.config.json')
+            if [ -n "$CHANGED" ]; then
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              echo "Native iOS files changed:"
+              echo "$CHANGED"
+            else
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+              echo "No native iOS changes, skipping TestFlight upload"
+            fi
           fi
 
   ios-release:
     name: iOS TestFlight
     needs: check-native-changes
-    if: needs.check-native-changes.outputs.changed == 'true'
+    if: always() && needs.check-native-changes.result == 'success' && needs.check-native-changes.outputs.changed == 'true'
     runs-on: macos-26
     timeout-minutes: 60
     env:
@@ -1033,7 +1039,7 @@ jobs:
   ota-deploy:
     name: OTA Deploy
     needs: [ci-gate]
-    if: github.ref == 'refs/heads/main'
+    if: always() && needs.ci-gate.result == 'success' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
@@ -1092,7 +1098,7 @@ jobs:
   deploy-config:
     name: Deploy Config
     needs: [ci-gate]
-    if: github.ref == 'refs/heads/main'
+    if: always() && needs.ci-gate.result == 'success' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
@@ -1143,7 +1149,7 @@ jobs:
   docker:
     name: Docker (${{ matrix.target }})
     needs: [ci-gate]
-    if: github.ref == 'refs/heads/main'
+    if: always() && needs.ci-gate.result == 'success' && github.ref == 'refs/heads/main'
     concurrency:
       group: docker
       cancel-in-progress: false

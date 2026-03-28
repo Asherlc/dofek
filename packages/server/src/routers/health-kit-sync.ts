@@ -1,19 +1,46 @@
+import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
 import { healthKitPushTotal, healthKitRecordsTotal } from "dofek/sync-metrics";
+import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
-import {
-  aggregateDailyMetricSamples,
-  categorize,
-  computeBoundsFromIsoTimestamps,
-  deriveSleepSessionsFromStages,
-  type HealthKitSample,
-  HealthKitSyncRepository,
-  isSleepStageValue,
-  type SleepSample,
-} from "../repositories/health-kit-sync-repository.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 
-// ── Zod input schemas (tRPC input validation) ──
+const PROVIDER_ID = "apple_health";
+const BATCH_SIZE = 500;
+
+/** daily_metrics columns that are integer/smallint and require Math.round() before insert */
+const INTEGER_DAILY_COLUMNS = new Set([
+  "steps",
+  "flights_climbed",
+  "exercise_minutes",
+  "resting_hr",
+  "stand_hours",
+]);
+
+/** metric_stream columns that are smallint/integer and require Math.round() before insert */
+const INTEGER_METRIC_STREAM_COLUMNS = new Set([
+  "heart_rate",
+  "power",
+  "cadence",
+  "gps_accuracy",
+  "accumulated_power",
+  "stress",
+]);
+
+type Database = Parameters<Parameters<typeof protectedProcedure.mutation>[0]>[0]["ctx"]["db"];
+
+/** Refresh a single materialized view (CONCURRENTLY if possible). */
+async function refreshView(db: Database, view: string): Promise<void> {
+  try {
+    await db.execute(sql.raw(`REFRESH MATERIALIZED VIEW CONCURRENTLY ${view}`));
+  } catch {
+    await db.execute(sql.raw(`REFRESH MATERIALIZED VIEW ${view}`));
+  }
+}
+const MAX_SLEEP_SESSION_GAP_MS = 90 * 60 * 1000;
+
+// ── Zod schemas ──
 
 const healthKitSampleSchema = z.object({
   type: z.string(),
@@ -46,15 +73,892 @@ const sleepSampleSchema = z.object({
   sourceName: z.string(),
 });
 
-// Re-export types and pure functions that other modules may depend on
-export type { HealthKitSample, SleepSample };
-export {
-  aggregateDailyMetricSamples,
-  computeBoundsFromIsoTimestamps,
-  deriveSleepSessionsFromStages,
-  isSleepStageValue,
+export type HealthKitSample = z.infer<typeof healthKitSampleSchema>;
+type WorkoutSample = z.infer<typeof workoutSampleSchema>;
+export type SleepSample = z.infer<typeof sleepSampleSchema>;
+
+// ── Type routing maps ──
+
+/** Body measurement types and their column names */
+const bodyMeasurementTypes: Record<
+  string,
+  { column: string; transform?: (value: number) => number }
+> = {
+  HKQuantityTypeIdentifierBodyMass: { column: "weight_kg" },
+  HKQuantityTypeIdentifierBodyFatPercentage: {
+    column: "body_fat_pct",
+    transform: (value) => value * 100,
+  },
+  HKQuantityTypeIdentifierBodyMassIndex: { column: "bmi" },
+  HKQuantityTypeIdentifierHeight: { column: "height_cm" },
 };
-export type { DailyMetricAccumulator } from "../repositories/health-kit-sync-repository.ts";
+
+/** Additive daily metrics -- values that should be summed within a day */
+const additiveDailyMetricTypes: Record<
+  string,
+  { column: string; transform?: (value: number) => number }
+> = {
+  HKQuantityTypeIdentifierStepCount: { column: "steps" },
+  HKQuantityTypeIdentifierActiveEnergyBurned: { column: "active_energy_kcal" },
+  HKQuantityTypeIdentifierBasalEnergyBurned: { column: "basal_energy_kcal" },
+  HKQuantityTypeIdentifierDistanceWalkingRunning: {
+    column: "distance_km",
+    transform: (value) => value / 1000,
+  },
+  HKQuantityTypeIdentifierDistanceCycling: {
+    column: "cycling_distance_km",
+    transform: (value) => value / 1000,
+  },
+  HKQuantityTypeIdentifierFlightsClimbed: { column: "flights_climbed" },
+  HKQuantityTypeIdentifierAppleExerciseTime: { column: "exercise_minutes" },
+};
+
+/** Point-in-time daily metrics -- use latest value for the day */
+const pointInTimeDailyMetricTypes: Record<string, { column: string }> = {
+  HKQuantityTypeIdentifierRestingHeartRate: { column: "resting_hr" },
+  HKQuantityTypeIdentifierHeartRateVariabilitySDNN: { column: "hrv" },
+  HKQuantityTypeIdentifierVO2Max: { column: "vo2max" },
+  HKQuantityTypeIdentifierWalkingSpeed: { column: "walking_speed" },
+  HKQuantityTypeIdentifierWalkingStepLength: { column: "walking_step_length" },
+  HKQuantityTypeIdentifierWalkingDoubleSupportPercentage: { column: "walking_double_support_pct" },
+  HKQuantityTypeIdentifierWalkingAsymmetryPercentage: { column: "walking_asymmetry_pct" },
+};
+
+/** Metric stream types and their column names */
+const metricStreamTypes: Record<string, { column: string }> = {
+  HKQuantityTypeIdentifierHeartRate: { column: "heart_rate" },
+  HKQuantityTypeIdentifierOxygenSaturation: { column: "spo2" },
+  HKQuantityTypeIdentifierRespiratoryRate: { column: "respiratory_rate" },
+  HKQuantityTypeIdentifierBloodGlucose: { column: "blood_glucose" },
+  HKQuantityTypeIdentifierEnvironmentalAudioExposure: { column: "audio_exposure" },
+  HKQuantityTypeIdentifierAppleSleepingWristTemperature: { column: "skin_temperature" },
+};
+
+/** HKWorkoutActivityType raw values to activity type strings */
+const workoutActivityTypeMap: Record<string, string> = {
+  "1": "americanFootball",
+  "2": "archery",
+  "3": "australianFootball",
+  "4": "badminton",
+  "5": "baseball",
+  "6": "basketball",
+  "7": "bowling",
+  "8": "boxing",
+  "9": "climbing",
+  "10": "cricket",
+  "11": "crossTraining",
+  "12": "curling",
+  "13": "cycling",
+  "14": "dance",
+  "15": "elliptical",
+  "16": "equestrianSports",
+  "17": "fencing",
+  "18": "fishing",
+  "19": "functionalStrengthTraining",
+  "20": "golf",
+  "21": "gymnastics",
+  "22": "handball",
+  "23": "hiking",
+  "24": "hockey",
+  "25": "hunting",
+  "26": "lacrosse",
+  "27": "martialArts",
+  "28": "mindAndBody",
+  "29": "paddleSports",
+  "30": "play",
+  "31": "preparationAndRecovery",
+  "32": "racquetball",
+  "33": "rowing",
+  "34": "rugby",
+  "35": "running",
+  "36": "sailing",
+  "37": "running",
+  "38": "snowSports",
+  "39": "soccer",
+  "40": "softball",
+  "41": "squash",
+  "42": "stairClimbing",
+  "43": "surfingSports",
+  "44": "swimming",
+  "45": "tableTennis",
+  "46": "swimming",
+  "47": "tennis",
+  "48": "trackAndField",
+  "49": "traditionalStrengthTraining",
+  "50": "volleyball",
+  "51": "walking",
+  "52": "walking",
+  "53": "waterFitness",
+  "54": "waterPolo",
+  "55": "waterSports",
+  "56": "wrestling",
+  "57": "yoga",
+  "58": "barre",
+  "59": "coreTraining",
+  "60": "crossCountrySkiing",
+  "61": "downhillSkiing",
+  "62": "flexibility",
+  "63": "highIntensityIntervalTraining",
+  "64": "jumpRope",
+  "65": "kickboxing",
+  "66": "pilates",
+  "67": "snowboarding",
+  "68": "stairs",
+  "69": "stepTraining",
+  "70": "wheelchairWalkPace",
+  "71": "wheelchairRunPace",
+  "72": "taiChi",
+  "73": "mixedCardio",
+  "74": "handCycling",
+  "75": "discSports",
+  "76": "fitnessGaming",
+  "77": "cardioDance",
+  "78": "socialDance",
+  "79": "pickleball",
+  "80": "cooldown",
+};
+
+/** Ensure the apple_health provider row exists */
+async function ensureProvider(db: Database) {
+  await db.execute(
+    sql`INSERT INTO fitness.provider (id, name)
+        VALUES (${PROVIDER_ID}, 'Apple Health')
+        ON CONFLICT (id) DO NOTHING`,
+  );
+}
+
+/** Extract date string (YYYY-MM-DD) from an ISO timestamp.
+ *
+ * When the timestamp includes a timezone offset (e.g. "2024-01-14T21:30:00-0700"),
+ * the first 10 characters are the local date. For UTC timestamps ending in "Z",
+ * the first 10 characters are the UTC date — which may differ from the user's
+ * local date for evening readings. The iOS app should send local-timezone offsets
+ * so this function returns the correct calendar date.
+ */
+function extractDate(isoString: string): string {
+  return isoString.slice(0, 10);
+}
+
+export function computeBoundsFromIsoTimestamps(
+  timestamps: string[],
+): { startAt: string; endAt: string } | null {
+  if (timestamps.length === 0) return null;
+
+  let minTs = Number.POSITIVE_INFINITY;
+  let maxTs = Number.NEGATIVE_INFINITY;
+  for (const ts of timestamps) {
+    const ms = Date.parse(ts);
+    if (Number.isNaN(ms)) continue;
+    if (ms < minTs) minTs = ms;
+    if (ms > maxTs) maxTs = ms;
+  }
+
+  if (!Number.isFinite(minTs) || !Number.isFinite(maxTs)) return null;
+  return {
+    startAt: new Date(minTs).toISOString(),
+    endAt: new Date(maxTs).toISOString(),
+  };
+}
+
+function parseIsoTimestamp(value: string): number | null {
+  const milliseconds = Date.parse(value);
+  if (Number.isNaN(milliseconds)) return null;
+  return milliseconds;
+}
+
+export function isSleepStageValue(value: string): boolean {
+  return (
+    value === "asleep" ||
+    value === "asleepUnspecified" ||
+    value === "asleepCore" ||
+    value === "asleepDeep" ||
+    value === "asleepREM"
+  );
+}
+
+export function deriveSleepSessionsFromStages(samples: SleepSample[]): SleepSample[] {
+  const sessions: SleepSample[] = [];
+  const bySource = new Map<string, SleepSample[]>();
+
+  for (const sample of samples) {
+    if (!isSleepStageValue(sample.value) && sample.value !== "awake") continue;
+    const sourceSamples = bySource.get(sample.sourceName) ?? [];
+    sourceSamples.push(sample);
+    bySource.set(sample.sourceName, sourceSamples);
+  }
+
+  for (const [sourceName, sourceSamples] of bySource) {
+    const sorted = sourceSamples
+      .map((sample) => ({
+        sample,
+        startMs: parseIsoTimestamp(sample.startDate),
+        endMs: parseIsoTimestamp(sample.endDate),
+      }))
+      .filter((entry): entry is { sample: SleepSample; startMs: number; endMs: number } => {
+        if (entry.startMs === null || entry.endMs === null) return false;
+        return entry.endMs > entry.startMs;
+      })
+      .sort((a, b) => a.startMs - b.startMs);
+
+    if (sorted.length === 0) continue;
+
+    const firstEntry = sorted[0];
+    if (!firstEntry) continue;
+
+    let currentStart = firstEntry.startMs;
+    let currentEnd = firstEntry.endMs;
+    let currentUuid = firstEntry.sample.uuid;
+    let currentHasSleepStage = isSleepStageValue(firstEntry.sample.value);
+
+    for (let index = 1; index < sorted.length; index++) {
+      const entry = sorted[index];
+      if (!entry) continue;
+
+      if (entry.startMs <= currentEnd + MAX_SLEEP_SESSION_GAP_MS) {
+        if (entry.endMs > currentEnd) {
+          currentEnd = entry.endMs;
+        }
+        if (isSleepStageValue(entry.sample.value)) {
+          currentHasSleepStage = true;
+        }
+        continue;
+      }
+
+      if (currentHasSleepStage) {
+        sessions.push({
+          uuid: currentUuid,
+          startDate: new Date(currentStart).toISOString(),
+          endDate: new Date(currentEnd).toISOString(),
+          value: "inBed",
+          sourceName,
+        });
+      }
+
+      currentStart = entry.startMs;
+      currentEnd = entry.endMs;
+      currentUuid = entry.sample.uuid;
+      currentHasSleepStage = isSleepStageValue(entry.sample.value);
+    }
+
+    if (currentHasSleepStage) {
+      sessions.push({
+        uuid: currentUuid,
+        startDate: new Date(currentStart).toISOString(),
+        endDate: new Date(currentEnd).toISOString(),
+        value: "inBed",
+        sourceName,
+      });
+    }
+  }
+
+  return sessions;
+}
+
+const HEALTHKIT_STAGE_MAP: Record<string, string> = {
+  asleepDeep: "deep",
+  asleepCore: "light",
+  asleep: "light",
+  asleepUnspecified: "light",
+  asleepREM: "rem",
+  awake: "awake",
+};
+
+function mapHealthKitStage(value: string): string | null {
+  return HEALTHKIT_STAGE_MAP[value] ?? null;
+}
+
+async function linkUnassignedHeartRateToWorkouts(
+  db: Database,
+  userId: string,
+  bounds?: { startAt?: string; endAt?: string },
+): Promise<number> {
+  const filters = [
+    sql`ms.user_id = ${userId}`,
+    sql`ms.provider_id = ${PROVIDER_ID}`,
+    sql`ms.activity_id IS NULL`,
+    sql`ms.heart_rate IS NOT NULL`,
+  ];
+  if (bounds?.startAt) filters.push(sql`ms.recorded_at >= ${bounds.startAt}::timestamptz`);
+  if (bounds?.endAt) filters.push(sql`ms.recorded_at <= ${bounds.endAt}::timestamptz`);
+
+  const linked = await db.execute(
+    sql`UPDATE fitness.metric_stream ms
+        SET activity_id = (
+          SELECT a.id
+          FROM fitness.activity a
+          WHERE a.user_id = ${userId}
+            AND a.provider_id = ${PROVIDER_ID}
+            AND ms.recorded_at >= a.started_at
+            AND ms.recorded_at <= a.ended_at
+          ORDER BY a.started_at DESC
+          LIMIT 1
+        )
+        WHERE ${sql.join(filters, sql` AND `)}
+          AND EXISTS (
+            SELECT 1
+            FROM fitness.activity a
+            WHERE a.user_id = ${userId}
+              AND a.provider_id = ${PROVIDER_ID}
+              AND ms.recorded_at >= a.started_at
+              AND ms.recorded_at <= a.ended_at
+          )
+        RETURNING ms.recorded_at`,
+  );
+
+  return Array.isArray(linked) ? linked.length : 0;
+}
+
+/** Route a sample to its destination category */
+function categorize(
+  type: string,
+):
+  | "bodyMeasurement"
+  | "additiveDailyMetric"
+  | "pointInTimeDailyMetric"
+  | "metricStream"
+  | "healthEvent" {
+  if (type in bodyMeasurementTypes) return "bodyMeasurement";
+  if (type in additiveDailyMetricTypes) return "additiveDailyMetric";
+  if (type in pointInTimeDailyMetricTypes) return "pointInTimeDailyMetric";
+  if (type in metricStreamTypes) return "metricStream";
+  return "healthEvent";
+}
+
+/** Process body measurement samples */
+async function processBodyMeasurements(
+  db: Database,
+  userId: string,
+  samples: HealthKitSample[],
+): Promise<number> {
+  let inserted = 0;
+  for (let i = 0; i < samples.length; i += BATCH_SIZE) {
+    const batch = samples.slice(i, i + BATCH_SIZE);
+    for (const sample of batch) {
+      const mapping = bodyMeasurementTypes[sample.type];
+      if (!mapping) continue;
+      const value = mapping.transform ? mapping.transform(sample.value) : sample.value;
+      const externalId = `hk:${sample.uuid}`;
+
+      await db.execute(
+        sql`INSERT INTO fitness.body_measurement (user_id, provider_id, external_id, recorded_at, ${sql.identifier(mapping.column)})
+            VALUES (${userId}, ${PROVIDER_ID}, ${externalId}, ${sample.startDate}::timestamptz, ${value})
+            ON CONFLICT (provider_id, external_id) DO UPDATE
+              SET ${sql.identifier(mapping.column)} = ${value}`,
+      );
+      inserted++;
+    }
+  }
+  return inserted;
+}
+
+/** Aggregated daily metric values for a single date */
+export interface DailyMetricAccumulator {
+  steps: number;
+  activeEnergyKcal: number;
+  basalEnergyKcal: number;
+  distanceKm: number;
+  cyclingDistanceKm: number;
+  flightsClimbed: number;
+  exerciseMinutes: number;
+  restingHr: number | null;
+  hrv: number | null;
+  vo2max: number | null;
+  walkingSpeed: number | null;
+  walkingStepLength: number | null;
+  walkingDoubleSupportPct: number | null;
+  walkingAsymmetryPct: number | null;
+}
+
+function createEmptyAccumulator(): DailyMetricAccumulator {
+  return {
+    steps: 0,
+    activeEnergyKcal: 0,
+    basalEnergyKcal: 0,
+    distanceKm: 0,
+    cyclingDistanceKm: 0,
+    flightsClimbed: 0,
+    exerciseMinutes: 0,
+    restingHr: null,
+    hrv: null,
+    vo2max: null,
+    walkingSpeed: null,
+    walkingStepLength: null,
+    walkingDoubleSupportPct: null,
+    walkingAsymmetryPct: null,
+  };
+}
+
+/** Column name to accumulator key mapping */
+const columnToAccumulatorKey: Record<string, keyof DailyMetricAccumulator> = {
+  steps: "steps",
+  active_energy_kcal: "activeEnergyKcal",
+  basal_energy_kcal: "basalEnergyKcal",
+  distance_km: "distanceKm",
+  cycling_distance_km: "cyclingDistanceKm",
+  flights_climbed: "flightsClimbed",
+  exercise_minutes: "exerciseMinutes",
+  resting_hr: "restingHr",
+  hrv: "hrv",
+  vo2max: "vo2max",
+  walking_speed: "walkingSpeed",
+  walking_step_length: "walkingStepLength",
+  walking_double_support_pct: "walkingDoubleSupportPct",
+  walking_asymmetry_pct: "walkingAsymmetryPct",
+};
+
+/** Aggregate daily metrics per (date, source). Key is "date\0sourceName". */
+export function aggregateDailyMetricSamples(
+  samples: HealthKitSample[],
+): Map<string, DailyMetricAccumulator> {
+  const byDateSource = new Map<string, DailyMetricAccumulator>();
+  const heartRateVariabilitySamplesByDateSource = new Map<
+    string,
+    Array<{ value: number; startDate: string }>
+  >();
+
+  for (const sample of samples) {
+    const dateStr = extractDate(sample.startDate);
+    const compoundKey = `${dateStr}\0${sample.sourceName}`;
+    let accumulator = byDateSource.get(compoundKey);
+    if (!accumulator) {
+      accumulator = createEmptyAccumulator();
+      byDateSource.set(compoundKey, accumulator);
+    }
+
+    const additiveMapping = additiveDailyMetricTypes[sample.type];
+    if (additiveMapping) {
+      const value = additiveMapping.transform
+        ? additiveMapping.transform(sample.value)
+        : sample.value;
+      const key = columnToAccumulatorKey[additiveMapping.column];
+      if (key) {
+        (accumulator[key] as number) += value;
+      }
+      continue;
+    }
+
+    const pointMapping = pointInTimeDailyMetricTypes[sample.type];
+    if (!pointMapping) continue;
+
+    if (pointMapping.column === "hrv") {
+      const daySamples = heartRateVariabilitySamplesByDateSource.get(compoundKey) ?? [];
+      daySamples.push({ value: sample.value, startDate: sample.startDate });
+      heartRateVariabilitySamplesByDateSource.set(compoundKey, daySamples);
+      continue;
+    }
+
+    const key = columnToAccumulatorKey[pointMapping.column];
+    if (key) {
+      (accumulator[key] as number | null) = sample.value;
+    }
+  }
+
+  // Select overnight HRV for each (date, source) using shared logic
+  for (const [
+    compoundKey,
+    heartRateVariabilitySamples,
+  ] of heartRateVariabilitySamplesByDateSource) {
+    const accumulator = byDateSource.get(compoundKey);
+    if (accumulator) {
+      accumulator.hrv = selectDailyHeartRateVariability(heartRateVariabilitySamples);
+    }
+  }
+
+  return byDateSource;
+}
+
+/** Process daily metric samples (both additive and point-in-time) */
+async function processDailyMetrics(
+  db: Database,
+  userId: string,
+  samples: HealthKitSample[],
+): Promise<number> {
+  const byDateSource = aggregateDailyMetricSamples(samples);
+
+  // Upsert each (date, source)
+  for (const [compoundKey, accumulator] of byDateSource) {
+    const [dateStr, sourceName] = compoundKey.split("\0");
+    const setClauses: ReturnType<typeof sql>[] = [];
+    const insertColumns: ReturnType<typeof sql>[] = [];
+    const insertValues: ReturnType<typeof sql>[] = [];
+
+    insertColumns.push(sql`date`);
+    insertValues.push(sql`${dateStr}::date`);
+    insertColumns.push(sql`provider_id`);
+    insertValues.push(sql`${PROVIDER_ID}`);
+    insertColumns.push(sql`user_id`);
+    insertValues.push(sql`${userId}`);
+    insertColumns.push(sql`source_name`);
+    insertValues.push(sql`${sourceName ?? null}`);
+
+    // Additive fields: replace with the complete day-total from this sync.
+    // Each iOS sync sends all samples for the 7-day window, so the in-memory
+    // accumulator already contains the full sum — no need to add to existing.
+    const additiveFields: Array<{ column: string; key: keyof DailyMetricAccumulator }> = [
+      { column: "steps", key: "steps" },
+      { column: "active_energy_kcal", key: "activeEnergyKcal" },
+      { column: "basal_energy_kcal", key: "basalEnergyKcal" },
+      { column: "distance_km", key: "distanceKm" },
+      { column: "cycling_distance_km", key: "cyclingDistanceKm" },
+      { column: "flights_climbed", key: "flightsClimbed" },
+      { column: "exercise_minutes", key: "exerciseMinutes" },
+    ];
+
+    for (const { column, key } of additiveFields) {
+      const raw = Number(accumulator[key]);
+      if (raw > 0) {
+        // Integer columns (steps, flights_climbed, exercise_minutes) need rounding;
+        // real columns (active_energy_kcal, basal_energy_kcal, distance_km, cycling_distance_km) don't.
+        const value = INTEGER_DAILY_COLUMNS.has(column) ? Math.round(raw) : raw;
+        insertColumns.push(sql`${sql.identifier(column)}`);
+        insertValues.push(sql`${value}`);
+        setClauses.push(sql`${sql.identifier(column)} = EXCLUDED.${sql.identifier(column)}`);
+      }
+    }
+
+    // Point-in-time fields: overwrite with aggregated day values (HRV is day-averaged upstream)
+    const pointFields: Array<{ column: string; key: keyof DailyMetricAccumulator }> = [
+      { column: "resting_hr", key: "restingHr" },
+      { column: "hrv", key: "hrv" },
+      { column: "vo2max", key: "vo2max" },
+      { column: "walking_speed", key: "walkingSpeed" },
+      { column: "walking_step_length", key: "walkingStepLength" },
+      { column: "walking_double_support_pct", key: "walkingDoubleSupportPct" },
+      { column: "walking_asymmetry_pct", key: "walkingAsymmetryPct" },
+    ];
+
+    for (const { column, key } of pointFields) {
+      const raw = accumulator[key];
+      if (raw !== null) {
+        const value = INTEGER_DAILY_COLUMNS.has(column) ? Math.round(raw) : raw;
+        insertColumns.push(sql`${sql.identifier(column)}`);
+        insertValues.push(sql`${value}`);
+        setClauses.push(sql`${sql.identifier(column)} = EXCLUDED.${sql.identifier(column)}`);
+      }
+    }
+
+    if (setClauses.length === 0) continue;
+
+    const columnsSql = sql.join(insertColumns, sql`, `);
+    const valuesSql = sql.join(insertValues, sql`, `);
+    const setSql = sql.join(setClauses, sql`, `);
+
+    await db.execute(
+      sql`INSERT INTO fitness.daily_metrics (${columnsSql})
+          VALUES (${valuesSql})
+          ON CONFLICT (date, provider_id, source_name) DO UPDATE SET ${setSql}`,
+    );
+  }
+
+  return samples.length;
+}
+
+/** Process metric stream samples */
+async function processMetricStream(
+  db: Database,
+  userId: string,
+  samples: HealthKitSample[],
+): Promise<number> {
+  let inserted = 0;
+  for (let i = 0; i < samples.length; i += BATCH_SIZE) {
+    const batch = samples.slice(i, i + BATCH_SIZE);
+    for (const sample of batch) {
+      const mapping = metricStreamTypes[sample.type];
+      if (!mapping) continue;
+
+      const metricValue = INTEGER_METRIC_STREAM_COLUMNS.has(mapping.column)
+        ? Math.round(sample.value)
+        : sample.value;
+      await db.execute(
+        sql`INSERT INTO fitness.metric_stream (user_id, provider_id, recorded_at, ${sql.identifier(mapping.column)}, raw)
+            VALUES (
+              ${userId},
+              ${PROVIDER_ID},
+              ${sample.startDate}::timestamptz,
+              ${metricValue},
+              ${JSON.stringify({ uuid: sample.uuid, type: sample.type, sourceName: sample.sourceName })}::jsonb
+            )`,
+      );
+      inserted++;
+    }
+  }
+  return inserted;
+}
+
+/** Process health event samples (catch-all) */
+async function processHealthEvents(
+  db: Database,
+  userId: string,
+  samples: HealthKitSample[],
+): Promise<number> {
+  let inserted = 0;
+  for (let i = 0; i < samples.length; i += BATCH_SIZE) {
+    const batch = samples.slice(i, i + BATCH_SIZE);
+    for (const sample of batch) {
+      const externalId = `hk:${sample.uuid}`;
+      await db.execute(
+        sql`INSERT INTO fitness.health_event (user_id, provider_id, external_id, type, value, unit, source_name, start_date, end_date)
+            VALUES (${userId}, ${PROVIDER_ID}, ${externalId}, ${sample.type}, ${sample.value}, ${sample.unit}, ${sample.sourceName}, ${sample.startDate}::timestamptz, ${sample.endDate}::timestamptz)
+            ON CONFLICT (provider_id, external_id) DO NOTHING`,
+      );
+      inserted++;
+    }
+  }
+  return inserted;
+}
+
+/** Process workout samples */
+async function processWorkouts(
+  db: Database,
+  userId: string,
+  workouts: WorkoutSample[],
+): Promise<number> {
+  let inserted = 0;
+  for (let i = 0; i < workouts.length; i += BATCH_SIZE) {
+    const batch = workouts.slice(i, i + BATCH_SIZE);
+    for (const workout of batch) {
+      const externalId = `hk:workout:${workout.uuid}`;
+      const activityType = workoutActivityTypeMap[workout.workoutType] ?? "other";
+
+      const rawData = JSON.stringify({
+        duration: workout.duration,
+        totalEnergyBurned: workout.totalEnergyBurned,
+        totalDistance: workout.totalDistance,
+        sourceName: workout.sourceName,
+        workoutType: workout.workoutType,
+      });
+
+      await db.execute(
+        sql`INSERT INTO fitness.activity (user_id, provider_id, external_id, activity_type, started_at, ended_at, raw)
+            VALUES (
+              ${userId},
+              ${PROVIDER_ID},
+              ${externalId},
+              ${activityType},
+              ${workout.startDate}::timestamptz,
+              ${workout.endDate}::timestamptz,
+              ${rawData}::jsonb
+            )
+            ON CONFLICT (provider_id, external_id) DO UPDATE SET
+              activity_type = ${activityType},
+              started_at = ${workout.startDate}::timestamptz,
+              ended_at = ${workout.endDate}::timestamptz`,
+      );
+      inserted++;
+    }
+  }
+
+  if (workouts.length > 0) {
+    const bounds = computeBoundsFromIsoTimestamps(
+      workouts.flatMap((w) => [w.startDate, w.endDate]),
+    );
+    await linkUnassignedHeartRateToWorkouts(db, userId, bounds ?? undefined);
+  }
+
+  return inserted;
+}
+
+/** Process sleep samples, grouping by inBed boundaries */
+async function processSleepSamples(
+  db: Database,
+  userId: string,
+  samples: SleepSample[],
+): Promise<number> {
+  const explicitInBedSamples = samples.filter((s) => s.value === "inBed");
+  const inBedSamples =
+    explicitInBedSamples.length > 0 ? explicitInBedSamples : deriveSleepSessionsFromStages(samples);
+  const stageSamples = samples.filter((s) => s.value !== "inBed");
+
+  if (inBedSamples.length === 0) return 0;
+
+  let inserted = 0;
+  for (const session of inBedSamples) {
+    const sessionStart = new Date(session.startDate).getTime();
+    const sessionEnd = new Date(session.endDate).getTime();
+
+    // Filter stages that overlap this session
+    const overlapping = stageSamples.filter((stage) => {
+      const stageStart = new Date(stage.startDate).getTime();
+      const stageEnd = new Date(stage.endDate).getTime();
+      return stageStart >= sessionStart && stageEnd <= sessionEnd;
+    });
+
+    // Group stages by source so each source gets its own row.
+    // The v_sleep materialized view handles deduplication via device/provider priority.
+    const stagesBySource = new Map<string, SleepSample[]>();
+    for (const stage of overlapping) {
+      const existing = stagesBySource.get(stage.sourceName) ?? [];
+      existing.push(stage);
+      stagesBySource.set(stage.sourceName, existing);
+    }
+
+    const durationMinutes = Math.round((sessionEnd - sessionStart) / (1000 * 60));
+
+    // Clean up legacy single-source row (old format without source suffix)
+    const legacyExternalId = `hk:sleep:${session.uuid}`;
+    await db.execute(
+      sql`DELETE FROM fitness.sleep_session
+          WHERE provider_id = ${PROVIDER_ID} AND external_id = ${legacyExternalId}`,
+    );
+
+    // Determine sources to insert: one row per source, or one row with session source if no stages
+    const sources: Array<[string, SleepSample[]]> =
+      stagesBySource.size > 0 ? [...stagesBySource.entries()] : [[session.sourceName, []]];
+
+    for (const [sourceName, stages] of sources) {
+      let deepMinutes = 0;
+      let remMinutes = 0;
+      let lightMinutes = 0;
+      let awakeMinutes = 0;
+
+      for (const stage of stages) {
+        const stageStart = new Date(stage.startDate).getTime();
+        const stageEnd = new Date(stage.endDate).getTime();
+        const stageDuration = Math.round((stageEnd - stageStart) / (1000 * 60));
+        switch (stage.value) {
+          case "asleep":
+          case "asleepUnspecified":
+            lightMinutes += stageDuration;
+            break;
+          case "asleepDeep":
+            deepMinutes += stageDuration;
+            break;
+          case "asleepREM":
+            remMinutes += stageDuration;
+            break;
+          case "asleepCore":
+            lightMinutes += stageDuration;
+            break;
+          case "awake":
+            awakeMinutes += stageDuration;
+            break;
+        }
+      }
+
+      const externalId = `hk:sleep:${session.uuid}:${sourceName}`;
+      const sessionResult = await executeWithSchema(
+        db,
+        z.object({ id: z.string().uuid() }),
+        sql`INSERT INTO fitness.sleep_session (user_id, provider_id, external_id, started_at, ended_at, duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, sleep_type, source_name)
+            VALUES (
+              ${userId},
+              ${PROVIDER_ID},
+              ${externalId},
+              ${session.startDate}::timestamptz,
+              ${session.endDate}::timestamptz,
+              ${durationMinutes},
+              ${deepMinutes},
+              ${remMinutes},
+              ${lightMinutes},
+              ${awakeMinutes},
+              ${null},
+              ${sourceName}
+            )
+            ON CONFLICT (provider_id, external_id) DO UPDATE SET
+              started_at = ${session.startDate}::timestamptz,
+              ended_at = ${session.endDate}::timestamptz,
+              duration_minutes = ${durationMinutes},
+              deep_minutes = ${deepMinutes},
+              rem_minutes = ${remMinutes},
+              light_minutes = ${lightMinutes},
+              awake_minutes = ${awakeMinutes},
+              sleep_type = ${null},
+              source_name = ${sourceName}
+            RETURNING id`,
+      );
+
+      // Insert individual sleep stage intervals
+      const sessionId = sessionResult[0]?.id;
+      if (sessionId && stages.length > 0) {
+        await db.execute(
+          sql`DELETE FROM fitness.sleep_stage WHERE session_id = ${sessionId}::uuid`,
+        );
+
+        const stageValues = stages
+          .map((stage) => {
+            const mapped = mapHealthKitStage(stage.value);
+            if (!mapped) return null;
+            return sql`(${sessionId}::uuid, ${mapped}, ${stage.startDate}::timestamptz, ${stage.endDate}::timestamptz, ${stage.sourceName})`;
+          })
+          .filter((v): v is NonNullable<typeof v> => v !== null);
+
+        if (stageValues.length > 0) {
+          await db.execute(
+            sql`INSERT INTO fitness.sleep_stage (session_id, stage, started_at, ended_at, source_name)
+                VALUES ${sql.join(stageValues, sql`, `)}`,
+          );
+        }
+      }
+
+      inserted++;
+    }
+  }
+
+  return inserted;
+}
+
+/**
+ * Aggregate SpO2 readings from metric_stream into daily_metrics.spo2_avg.
+ * Apple Health stores SpO2 as fractions (0-1) in metric_stream; this converts
+ * the daily average to a percentage (0-100) for consistency with other providers
+ * (WHOOP, Oura, Garmin) that report SpO2 as a percentage.
+ */
+async function aggregateSpO2ToDailyMetrics(
+  db: Database,
+  userId: string,
+  bounds: { startAt: string; endAt: string },
+  timezone: string,
+): Promise<void> {
+  await db.execute(
+    sql`INSERT INTO fitness.daily_metrics (date, provider_id, user_id, source_name, spo2_avg)
+        SELECT
+          (recorded_at AT TIME ZONE ${timezone})::date AS date,
+          provider_id,
+          user_id,
+          source_name,
+          AVG(spo2) * 100 AS spo2_avg
+        FROM fitness.metric_stream
+        WHERE provider_id = ${PROVIDER_ID}
+          AND user_id = ${userId}
+          AND spo2 IS NOT NULL
+          AND recorded_at >= ${bounds.startAt}::timestamptz
+          AND recorded_at <= ${bounds.endAt}::timestamptz
+        GROUP BY 1, provider_id, user_id, source_name
+        ON CONFLICT (date, provider_id, source_name) DO UPDATE SET
+          spo2_avg = EXCLUDED.spo2_avg`,
+  );
+}
+
+/**
+ * Aggregate wrist temperature readings from metric_stream into daily_metrics.skin_temp_c.
+ * Apple Watch reports sleeping wrist temperature in °C; this computes the daily
+ * average and stores it alongside other daily metrics.
+ */
+async function aggregateSkinTempToDailyMetrics(
+  db: Database,
+  userId: string,
+  bounds: { startAt: string; endAt: string },
+  timezone: string,
+): Promise<void> {
+  await db.execute(
+    sql`INSERT INTO fitness.daily_metrics (date, provider_id, user_id, source_name, skin_temp_c)
+        SELECT
+          (recorded_at AT TIME ZONE ${timezone})::date AS date,
+          provider_id,
+          user_id,
+          source_name,
+          AVG(skin_temperature) AS skin_temp_c
+        FROM fitness.metric_stream
+        WHERE provider_id = ${PROVIDER_ID}
+          AND user_id = ${userId}
+          AND skin_temperature IS NOT NULL
+          AND recorded_at >= ${bounds.startAt}::timestamptz
+          AND recorded_at <= ${bounds.endAt}::timestamptz
+        GROUP BY 1, provider_id, user_id, source_name
+        ON CONFLICT (date, provider_id, source_name) DO UPDATE SET
+          skin_temp_c = EXCLUDED.skin_temp_c`,
+  );
+}
 
 // ── Router ──
 
@@ -62,8 +966,7 @@ export const healthKitSyncRouter = router({
   pushQuantitySamples: protectedProcedure
     .input(z.object({ samples: z.array(healthKitSampleSchema) }))
     .mutation(async ({ ctx, input }) => {
-      const repository = new HealthKitSyncRepository(ctx.db, ctx.userId);
-      await repository.ensureProvider();
+      await ensureProvider(ctx.db);
 
       const bodyMeasurements: HealthKitSample[] = [];
       const dailyMetricSamples: HealthKitSample[] = [];
@@ -91,54 +994,59 @@ export const healthKitSyncRouter = router({
 
       let inserted = 0;
       const errors: string[] = [];
+      let needsDailyMetricsRefresh = false;
 
       try {
-        inserted += await repository.processBodyMeasurements(bodyMeasurements);
+        inserted += await processBodyMeasurements(ctx.db, ctx.userId, bodyMeasurements);
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         errors.push(`Body measurements: ${message}`);
       }
 
       try {
-        inserted += await repository.processDailyMetrics(dailyMetricSamples);
+        const dailyInserted = await processDailyMetrics(ctx.db, ctx.userId, dailyMetricSamples);
+        inserted += dailyInserted;
+        if (dailyInserted > 0) {
+          needsDailyMetricsRefresh = true;
+        }
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         errors.push(`Daily metrics: ${message}`);
       }
 
       try {
-        inserted += await repository.processMetricStream(metricStreamSamples);
+        inserted += await processMetricStream(ctx.db, ctx.userId, metricStreamSamples);
         if (metricStreamSamples.length > 0) {
           const bounds = computeBoundsFromIsoTimestamps(
-            metricStreamSamples.map((sample) => sample.startDate),
+            metricStreamSamples.map((s) => s.startDate),
           );
-          await repository.linkUnassignedHeartRateToWorkouts(bounds ?? undefined);
+          await linkUnassignedHeartRateToWorkouts(ctx.db, ctx.userId, bounds ?? undefined);
 
           // Aggregate SpO2 and skin temperature from metric_stream into daily_metrics
           let aggregatedDailyMetrics = false;
           if (bounds) {
             const hasSpo2 = metricStreamSamples.some(
-              (sample) => sample.type === "HKQuantityTypeIdentifierOxygenSaturation",
+              (s) => s.type === "HKQuantityTypeIdentifierOxygenSaturation",
             );
             if (hasSpo2) {
-              await repository.aggregateSpO2ToDailyMetrics(bounds, ctx.timezone);
+              await aggregateSpO2ToDailyMetrics(ctx.db, ctx.userId, bounds, ctx.timezone);
               aggregatedDailyMetrics = true;
             }
             const skinTempSamples = metricStreamSamples.filter(
-              (sample) => sample.type === "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
+              (s) => s.type === "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
             );
             if (skinTempSamples.length > 0) {
               logger.info(
                 `[apple_health] Received ${skinTempSamples.length} skin temperature samples, aggregating to daily_metrics`,
               );
-              await repository.aggregateSkinTempToDailyMetrics(bounds, ctx.timezone);
+              await aggregateSkinTempToDailyMetrics(ctx.db, ctx.userId, bounds, ctx.timezone);
               aggregatedDailyMetrics = true;
             }
           }
 
           // Refresh the daily metrics view so the dashboard picks up new data immediately
           if (aggregatedDailyMetrics) {
-            await repository.refreshDailyMetricsView();
+            needsDailyMetricsRefresh = true;
           }
         }
       } catch (error: unknown) {
@@ -147,10 +1055,26 @@ export const healthKitSyncRouter = router({
       }
 
       try {
-        inserted += await repository.processHealthEvents(healthEventSamples);
+        inserted += await processHealthEvents(ctx.db, ctx.userId, healthEventSamples);
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         errors.push(`Health events: ${message}`);
+      }
+
+      // Refresh materialized views so the dashboard picks up new data immediately
+      if (needsDailyMetricsRefresh) {
+        try {
+          await refreshView(ctx.db, "fitness.v_daily_metrics");
+        } catch (error) {
+          logger.error(`[apple_health] Failed to refresh v_daily_metrics: ${error}`);
+        }
+      }
+      if (bodyMeasurements.length > 0) {
+        try {
+          await refreshView(ctx.db, "fitness.v_body_measurement");
+        } catch (error) {
+          logger.error(`[apple_health] Failed to refresh v_body_measurement: ${error}`);
+        }
       }
 
       healthKitPushTotal.add(1, {
@@ -180,9 +1104,19 @@ export const healthKitSyncRouter = router({
   pushWorkouts: protectedProcedure
     .input(z.object({ workouts: z.array(workoutSampleSchema) }))
     .mutation(async ({ ctx, input }) => {
-      const repository = new HealthKitSyncRepository(ctx.db, ctx.userId);
-      await repository.ensureProvider();
-      const inserted = await repository.processWorkouts(input.workouts);
+      await ensureProvider(ctx.db);
+      const inserted = await processWorkouts(ctx.db, ctx.userId, input.workouts);
+
+      // Refresh activity views so dashboard picks up new workouts immediately
+      if (inserted > 0) {
+        try {
+          await refreshView(ctx.db, "fitness.v_activity");
+          await refreshView(ctx.db, "fitness.activity_summary");
+        } catch (error) {
+          logger.error(`[apple_health] Failed to refresh activity views: ${error}`);
+        }
+      }
+
       healthKitPushTotal.add(1, { endpoint: "pushWorkouts", status: "success" });
       healthKitRecordsTotal.add(input.workouts.length, {
         endpoint: "pushWorkouts",
@@ -194,9 +1128,18 @@ export const healthKitSyncRouter = router({
   pushSleepSamples: protectedProcedure
     .input(z.object({ samples: z.array(sleepSampleSchema) }))
     .mutation(async ({ ctx, input }) => {
-      const repository = new HealthKitSyncRepository(ctx.db, ctx.userId);
-      await repository.ensureProvider();
-      const inserted = await repository.processSleepSamples(input.samples);
+      await ensureProvider(ctx.db);
+      const inserted = await processSleepSamples(ctx.db, ctx.userId, input.samples);
+
+      // Refresh v_sleep so sleep queries pick up new data immediately
+      if (inserted > 0) {
+        try {
+          await refreshView(ctx.db, "fitness.v_sleep");
+        } catch (error) {
+          logger.error(`[apple_health] Failed to refresh v_sleep: ${error}`);
+        }
+      }
+
       healthKitPushTotal.add(1, { endpoint: "pushSleepSamples", status: "success" });
       healthKitRecordsTotal.add(input.samples.length, {
         endpoint: "pushSleepSamples",

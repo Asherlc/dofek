@@ -110,7 +110,9 @@ export async function runMigrations(databaseUrl: string, migrationsDir?: string)
 
     return count;
   } finally {
-    await sql`SELECT pg_advisory_unlock(${MIGRATION_LOCK_KEY})`.catch(() => {});
+    await sql`SELECT pg_advisory_unlock(${MIGRATION_LOCK_KEY})`.catch((error: unknown) => {
+      logger.warn("Advisory unlock failed: %s", error);
+    });
     await sql.end();
   }
 }

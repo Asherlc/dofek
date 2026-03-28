@@ -22,7 +22,9 @@ class BullJobTransport extends Transport {
   log(info: { message: string; level: string }, callback: () => void) {
     const job = jobContext.getStore();
     if (job) {
-      job.log(`[${info.level}] ${info.message}`).catch(() => {});
+      job.log(`[${info.level}] ${info.message}`).catch((_error: unknown) => {
+        /* BullMQ job.log is non-critical */
+      });
     }
     callback();
   }
