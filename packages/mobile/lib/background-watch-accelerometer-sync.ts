@@ -1,13 +1,12 @@
 import { AppState, type AppStateStatus } from "react-native";
-import { isWatchPaired, isWatchAppInstalled } from "../modules/watch-motion";
-import { createWatchCoreMotionAdapter } from "./watch-accelerometer-adapter";
-import {
-	syncAccelerometerToServer,
-	type AccelerometerSyncTrpcClient,
-} from "./accelerometer-sync";
+import { isWatchAppInstalled, isWatchPaired, requestWatchRecording } from "../modules/watch-motion";
+import type { AccelerometerSyncTrpcClient } from "./accelerometer-sync";
+import { captureException } from "./telemetry";
+import { syncWatchAccelerometerFiles } from "./watch-file-sync";
 
-let appStateSubscription: ReturnType<typeof AppState.addEventListener> | null =
-	null;
+const TAG = "bg-watch-accel-sync";
+
+let appStateSubscription: ReturnType<typeof AppState.addEventListener> | null = null;
 let syncing = false;
 
 /**
@@ -15,49 +14,62 @@ let syncing = false;
  *
  * - Checks if a Watch is paired with the Dofek app installed
  * - Listens for app foreground events and syncs any pending transferred data
+ * - Runs an initial sync immediately (AppState listener only fires on transitions)
  * - Should be called once after authentication is established
+ *
+ * Uses per-file sync: each Watch transfer file is processed independently,
+ * so a failure in one file does not block others from being uploaded and
+ * acknowledged.
  */
 export async function initBackgroundWatchAccelerometerSync(
-	trpcClient: AccelerometerSyncTrpcClient,
+  trpcClient: AccelerometerSyncTrpcClient,
 ): Promise<void> {
-	if (!isWatchPaired() || !isWatchAppInstalled()) return;
+  if (!isWatchPaired() || !isWatchAppInstalled()) return;
 
-	// Clean up existing listener
-	if (appStateSubscription) {
-		appStateSubscription.remove();
-		appStateSubscription = null;
-	}
+  // Clean up existing listener
+  if (appStateSubscription) {
+    appStateSubscription.remove();
+    appStateSubscription = null;
+  }
 
-	const adapter = createWatchCoreMotionAdapter();
+  // Sync whenever the app comes to foreground
+  appStateSubscription = AppState.addEventListener("change", (nextState: AppStateStatus) => {
+    if (nextState !== "active") return;
+    if (syncing) return;
 
-	// Sync whenever the app comes to foreground
-	appStateSubscription = AppState.addEventListener(
-		"change",
-		(nextState: AppStateStatus) => {
-			if (nextState !== "active") return;
-			if (syncing) return;
+    syncing = true;
+    syncAndRecord(trpcClient)
+      .catch((error: unknown) => {
+        captureException(error, { source: TAG });
+      })
+      .finally(() => {
+        syncing = false;
+      });
+  });
 
-			syncing = true;
-			syncAccelerometerToServer({
-				trpcClient,
-				coreMotion: adapter,
-				deviceId: "Apple Watch",
-				deviceType: "apple_watch",
-			})
-				.catch(() => {
-					// Best-effort — don't crash the app for background sync failures
-				})
-				.finally(() => {
-					syncing = false;
-				});
-		},
-	);
+  // Run an initial sync immediately. The app is already active when init runs,
+  // so no AppState "active" event fires until the next background → foreground cycle.
+  await syncAndRecord(trpcClient);
+}
+
+/**
+ * Sync pending Watch files and request the Watch to continue recording.
+ */
+async function syncAndRecord(trpcClient: AccelerometerSyncTrpcClient): Promise<void> {
+  await syncWatchAccelerometerFiles(trpcClient);
+
+  // Ask the Watch to restart recording and send any new data
+  try {
+    await requestWatchRecording();
+  } catch {
+    // Best-effort — Watch may not be reachable
+  }
 }
 
 /** Clean up background Watch accelerometer sync listeners. */
 export function teardownBackgroundWatchAccelerometerSync(): void {
-	if (appStateSubscription) {
-		appStateSubscription.remove();
-		appStateSubscription = null;
-	}
+  if (appStateSubscription) {
+    appStateSubscription.remove();
+    appStateSubscription = null;
+  }
 }

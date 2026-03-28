@@ -46,14 +46,17 @@ export default function FoodScreen() {
   const dateString = formatDateForQuery(selectedDate);
 
   const calorieGoalQuery = trpc.settings.get.useQuery({ key: "calorieGoal" });
-  const calorieGoal = typeof calorieGoalQuery.data?.value === "number" ? calorieGoalQuery.data.value : 2000;
+  const calorieGoal =
+    typeof calorieGoalQuery.data?.value === "number" ? calorieGoalQuery.data.value : 2000;
 
   const foodQuery = trpc.food.byDate.useQuery({ date: dateString });
   const deleteMutation = trpc.food.delete.useMutation({
     onSuccess: () => foodQuery.refetch(),
   });
 
-  const entries = FoodEntrySchema.array().catch([]).parse(foodQuery.data ?? []);
+  const entries = FoodEntrySchema.array()
+    .catch([])
+    .parse(foodQuery.data ?? []);
 
   const dailyTotals = useMemo(() => {
     let totalCalories = 0;
@@ -108,7 +111,17 @@ export default function FoodScreen() {
 
   return (
     <View style={styles.container}>
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.textSecondary}
+          />
+        }
+      >
         {/* Date navigation */}
         <View style={styles.dateNav}>
           <TouchableOpacity onPress={goToPreviousDay} style={styles.dateArrow}>

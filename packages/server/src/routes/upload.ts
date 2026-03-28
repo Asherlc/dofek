@@ -238,7 +238,9 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
             const stale = activeUploads.get(uploadId);
             if (stale) {
               activeUploads.delete(uploadId);
-              await rm(stale.dir, { recursive: true, force: true }).catch(() => {});
+              await rm(stale.dir, { recursive: true, force: true }).catch((error: unknown) => {
+                logger.warn("Failed to clean up stale upload dir %s: %s", stale.dir, error);
+              });
               setUploadStatus(uploadId, {
                 status: "error",
                 progress: 0,
@@ -307,7 +309,9 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
           uploadStatuses.delete(uploadId);
         } catch (err: unknown) {
           logger.error(`[upload] Assembly/enqueue failed for ${uploadId}: ${err}`);
-          await rm(chunkDir, { recursive: true, force: true }).catch(() => {});
+          await rm(chunkDir, { recursive: true, force: true }).catch((error: unknown) => {
+            logger.warn("Failed to clean up chunk dir %s: %s", chunkDir, error);
+          });
           setUploadStatus(uploadId, {
             status: "error",
             progress: 0,
@@ -322,7 +326,9 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
       const upload = activeUploads.get(uploadId);
       if (upload) {
         activeUploads.delete(uploadId);
-        await rm(upload.dir, { recursive: true, force: true }).catch(() => {});
+        await rm(upload.dir, { recursive: true, force: true }).catch((error: unknown) => {
+          logger.warn("Failed to clean up upload dir %s: %s", upload.dir, error);
+        });
       }
       setUploadStatus(uploadId, { status: "error", progress: 0, message: "Upload failed", userId });
       cleanupUploadStatus(uploadId);

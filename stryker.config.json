@@ -40,7 +40,6 @@
   ],
   "ignorePatterns": [
     "dist/**",
-    "drizzle/**",
     ".codex/**",
     ".claude/**",
     ".context/**"
@@ -54,7 +53,7 @@
   "thresholds": {
     "high": 100,
     "low": 90,
-    "break": 70
+    "break": 80
   },
   "reporters": ["clear-text", "progress"]
 }

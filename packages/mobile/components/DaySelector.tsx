@@ -31,9 +31,7 @@ export function DaySelector({
           onPress={() => onChange(opt.value)}
           activeOpacity={0.7}
         >
-          <Text style={[styles.text, days === opt.value && styles.textActive]}>
-            {opt.label}
-          </Text>
+          <Text style={[styles.text, days === opt.value && styles.textActive]}>{opt.label}</Text>
         </TouchableOpacity>
       ))}
     </View>

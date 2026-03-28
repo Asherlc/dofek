@@ -1,0 +1,7 @@
+`$promise.catch(() => { $body })` where {
+  register_diagnostic(
+    span = $body,
+    message = "Catch handler silently discards the error. Capture the error parameter and call captureException() to report it.",
+    severity = "error"
+  )
+}

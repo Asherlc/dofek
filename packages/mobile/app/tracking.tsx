@@ -42,16 +42,16 @@ function categoryEmoji(category: string | null): string {
 }
 
 function formatDateDisplay(dateString: string): string {
-  const d = new Date(`${dateString}T00:00:00`);
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  const date = new Date(`${dateString}T00:00:00`);
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 function todayString(): string {
   const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function ChipPicker<T extends string>({
@@ -85,7 +85,17 @@ export default function TrackingScreen() {
   const { refreshing, onRefresh } = useRefresh();
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={colors.textSecondary}
+        />
+      }
+    >
       <Text style={styles.title}>Journal</Text>
       <JournalSection />
       <Text style={[styles.title, { marginTop: 32 }]}>Life Events</Text>
@@ -214,7 +224,11 @@ function JournalDayGroup({
   date,
   entries,
   onDelete,
-}: { date: string; entries: JournalEntry[]; onDelete: (id: string) => void }) {
+}: {
+  date: string;
+  entries: JournalEntry[];
+  onDelete: (id: string) => void;
+}) {
   const dateDisplay = new Date(`${date}T12:00:00`).toLocaleDateString("en-US", {
     weekday: "short",
     month: "short",
@@ -240,7 +254,14 @@ function JournalDayGroup({
       <View style={styles.card}>
         {byCategory.map(({ category, entries: catEntries }) => (
           <View key={category} style={{ marginBottom: 8 }}>
-            <Text style={{ fontSize: 11, fontWeight: "600", color: colors.textTertiary, marginBottom: 4 }}>
+            <Text
+              style={{
+                fontSize: 11,
+                fontWeight: "600",
+                color: colors.textTertiary,
+                marginBottom: 4,
+              }}
+            >
               {CATEGORY_LABELS[category] ?? category}
             </Text>
             {catEntries.map((entry) => (
@@ -271,7 +292,9 @@ function JournalDayGroup({
                   </TouchableOpacity>
                 )}
                 {entry.provider_id !== "dofek" && (
-                  <Text style={{ fontSize: 11, color: colors.textTertiary }}>{entry.provider_id}</Text>
+                  <Text style={{ fontSize: 11, color: colors.textTertiary }}>
+                    {entry.provider_id}
+                  </Text>
                 )}
               </View>
             ))}
@@ -597,7 +620,7 @@ function AddEventForm({
       <ChipPicker
         options={CATEGORIES.map((c) => ({ value: c.value, label: `${c.emoji} ${c.label}` }))}
         value={category}
-        onChange={(v) => setCategory(v as EventCategory | "")}
+        onChange={(v) => setCategory(v)}
       />
 
       <Text style={styles.formLabel}>Start Date (YYYY-MM-DD)</Text>
@@ -660,7 +683,12 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 16, paddingTop: 24, paddingBottom: 40 },
   title: { fontSize: 28, fontWeight: "800", color: colors.text, marginBottom: 16 },
-  sectionHeader: { flexDirection: "row", justifyContent: "flex-end", alignItems: "center", marginBottom: 12 },
+  sectionHeader: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    marginBottom: 12,
+  },
   card: { backgroundColor: colors.surface, borderRadius: 12, padding: 14, marginBottom: 8 },
   cardRow: { flexDirection: "row", alignItems: "center" },
   cardContent: { flex: 1, marginRight: 8 },
@@ -668,22 +696,63 @@ const styles = StyleSheet.create({
   cardSub: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
   cardNotes: { fontSize: 12, color: colors.textTertiary, marginTop: 4, fontStyle: "italic" },
   eventEmoji: { fontSize: 24, marginRight: 12 },
-  addButton: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.surfaceSecondary },
+  addButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.surfaceSecondary,
+  },
   addButtonText: { fontSize: 14, fontWeight: "600", color: colors.accent },
   deleteButton: { paddingHorizontal: 12, paddingVertical: 6 },
   deleteButtonText: { fontSize: 13, color: colors.danger, fontWeight: "500" },
-  saveButton: { backgroundColor: colors.accent, borderRadius: 10, paddingVertical: 14, alignItems: "center", marginTop: 16 },
+  saveButton: {
+    backgroundColor: colors.accent,
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: "center",
+    marginTop: 16,
+  },
   saveButtonDisabled: { opacity: 0.5 },
   saveButtonText: { color: colors.text, fontSize: 16, fontWeight: "700" },
   formCard: { backgroundColor: colors.surface, borderRadius: 12, padding: 16, marginBottom: 12 },
-  formLabel: { fontSize: 13, fontWeight: "600", color: colors.textSecondary, marginBottom: 6, marginTop: 12 },
-  input: { backgroundColor: colors.surfaceSecondary, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10, fontSize: 16, color: colors.text },
-  toggleRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 12 },
+  formLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.textSecondary,
+    marginBottom: 6,
+    marginTop: 12,
+  },
+  input: {
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 16,
+    color: colors.text,
+  },
+  toggleRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 12,
+  },
   chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  chip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, backgroundColor: colors.surfaceSecondary },
+  chip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceSecondary,
+  },
   chipSelected: { backgroundColor: colors.accent },
   chipText: { fontSize: 13, color: colors.textSecondary, fontWeight: "500" },
   chipTextSelected: { color: colors.text },
-  loadingText: { fontSize: 14, color: colors.textSecondary, textAlign: "center", paddingVertical: 16 },
+  loadingText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: "center",
+    paddingVertical: 16,
+  },
   emptyText: { fontSize: 14, color: colors.textTertiary, textAlign: "center", paddingVertical: 16 },
 });

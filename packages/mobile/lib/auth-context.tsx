@@ -1,18 +1,18 @@
 import {
   createContext,
+  type ReactNode,
   useCallback,
   useContext,
   useEffect,
   useMemo,
   useState,
-  type ReactNode,
 } from "react";
 import {
   type AuthUser,
+  logout as authLogout,
   clearSessionToken,
   fetchCurrentUser,
   getSessionToken,
-  logout as authLogout,
   saveSessionToken,
 } from "./auth";
 import { SERVER_URL } from "./server";
