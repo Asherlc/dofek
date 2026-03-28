@@ -2,6 +2,7 @@ import type { CanonicalActivityType } from "@dofek/training/training";
 import { and, eq } from "drizzle-orm";
 import {
   mapSportId,
+  mapV2ActivityType,
   parseDuringRange,
   WhoopClient,
   type WhoopCycle,
@@ -9,6 +10,7 @@ import {
   WhoopRateLimitError,
   type WhoopRecoveryRecord,
   type WhoopSleepRecord,
+  type WhoopV2Activity,
   type WhoopWeightliftingWorkoutResponse,
   type WhoopWorkoutRecord,
 } from "whoop-whoop";
@@ -263,7 +265,30 @@ export interface ParsedWorkout {
   percentRecorded?: number;
 }
 
-export function parseWorkout(record: WhoopWorkoutRecord): ParsedWorkout {
+/**
+ * Resolve the canonical activity type for a WHOOP workout.
+ * Uses sport_id as the primary source; falls back to the v2_activity type
+ * name when the sport_id is unknown or maps to "other".
+ */
+export function resolveActivityType(
+  sportId: number,
+  v2ActivityTypeName?: string,
+): CanonicalActivityType {
+  const fromSportId = mapSportId(sportId);
+  if (fromSportId !== "other") return fromSportId;
+
+  if (v2ActivityTypeName) {
+    const fromTypeName = mapV2ActivityType(v2ActivityTypeName);
+    if (fromTypeName) return fromTypeName;
+  }
+
+  return "other";
+}
+
+export function parseWorkout(
+  record: WhoopWorkoutRecord,
+  v2ActivityTypeName?: string,
+): ParsedWorkout {
   // BFF v0 uses `during` range; fall back to legacy `start`/`end`
   let startedAt: Date;
   let endedAt: Date;
@@ -278,7 +303,7 @@ export function parseWorkout(record: WhoopWorkoutRecord): ParsedWorkout {
 
   return {
     externalId: record.activity_id ?? String(record.id ?? ""),
-    activityType: mapSportId(record.sport_id),
+    activityType: resolveActivityType(record.sport_id, v2ActivityTypeName),
     startedAt,
     endedAt,
     durationSeconds: Math.round((endedAt.getTime() - startedAt.getTime()) / 1000),
@@ -330,6 +355,27 @@ export function extractSleepIdsFromCycle(cycle: WhoopCycle): string[] {
   }
 
   return [...ids];
+}
+
+// ============================================================
+// v2_activity type lookup
+// ============================================================
+
+/**
+ * Build a Map from activity_id → v2_activity type name from all cycles.
+ * Used as a fallback for activity type resolution when sport_id is
+ * unknown or maps to "other".
+ */
+export function buildV2ActivityTypeLookup(cycles: WhoopCycle[]): Map<string, string> {
+  const lookup = new Map<string, string>();
+  for (const cycle of cycles) {
+    for (const v2Activity of cycle.v2_activities ?? []) {
+      if (v2Activity.id && v2Activity.type) {
+        lookup.set(v2Activity.id, v2Activity.type);
+      }
+    }
+  }
+  return lookup;
 }
 
 // ============================================================
@@ -765,11 +811,15 @@ export class WhoopProvider implements SyncProvider {
                   },
                 });
               count++;
-            } else {
+            } else if (recoveryState === "SCORED") {
+              // Has SCORED state but no parseable biometric data — likely an API change
               logger.warn(
-                `[whoop] Skipping unrecognized recovery format: ` +
-                  `state=${recoveryState}, keys=${Object.keys(cycle.recovery).join(",")}`,
+                `[whoop] SCORED recovery with no parseable data: ` +
+                  `keys=${Object.keys(cycle.recovery).join(",")}`,
               );
+            } else {
+              // Pending/unscored recovery (current day before sleep, etc.) — expected
+              logger.info(`[whoop] Skipping unscored recovery: state=${recoveryState}`);
             }
           }
           logger.info(
@@ -875,7 +925,10 @@ export class WhoopProvider implements SyncProvider {
     }
 
     // --- Collect all workouts from cycles (BFF v0 or legacy shape) ---
+    // Also build a lookup from activity_id → v2_activity type name so we can
+    // fall back to the human-readable type when sport_id maps to "other".
     const allWorkouts: WhoopWorkoutRecord[] = [];
+    const v2ActivityTypeByActivityId = buildV2ActivityTypeLookup(cycles);
     for (const cycle of cycles) {
       const workouts = cycle.workouts ?? cycle.strain?.workouts ?? [];
       allWorkouts.push(...workouts);
@@ -891,7 +944,10 @@ export class WhoopProvider implements SyncProvider {
           let count = 0;
           for (const workoutRecord of allWorkouts) {
             try {
-              const parsed = parseWorkout(workoutRecord);
+              const v2TypeName = workoutRecord.activity_id
+                ? v2ActivityTypeByActivityId.get(workoutRecord.activity_id)
+                : undefined;
+              const parsed = parseWorkout(workoutRecord, v2TypeName);
 
               await db
                 .insert(activity)

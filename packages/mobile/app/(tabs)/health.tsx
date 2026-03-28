@@ -1,8 +1,23 @@
-import { useCallback, useEffect, useState } from "react";
-import { Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import { useRouter } from "expo-router";
+import { useCallback, useEffect, useState } from "react";
+import {
+  Alert,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import { useAuth } from "../../lib/auth-context";
-import { colors } from "../../theme";
+import {
+  ADDITIVE_QUANTITY_TYPES,
+  NON_ADDITIVE_QUANTITY_TYPES,
+  syncHealthKitToServer,
+} from "../../lib/health-kit-sync";
+import { trpc } from "../../lib/trpc";
+import { useRefresh } from "../../lib/useRefresh";
 import {
   enableBackgroundDelivery,
   getRequestStatus,
@@ -14,13 +29,7 @@ import {
   queryWorkouts,
   requestPermissions,
 } from "../../modules/health-kit";
-import { trpc } from "../../lib/trpc";
-import { useRefresh } from "../../lib/useRefresh";
-import {
-  ADDITIVE_QUANTITY_TYPES,
-  NON_ADDITIVE_QUANTITY_TYPES,
-  syncHealthKitToServer,
-} from "../../lib/health-kit-sync";
+import { colors } from "../../theme";
 
 interface SyncStatus {
   lastSync: Date | null;
@@ -42,12 +51,42 @@ const HEALTHKIT_BACKFILL_COMPLETED_KEY = "healthkit_backfill_completed";
 const ALL_QUANTITY_TYPES = [...ADDITIVE_QUANTITY_TYPES, ...NON_ADDITIVE_QUANTITY_TYPES];
 
 const NAV_LINKS = [
-  { route: "/sleep" as const, label: "Sleep", emoji: "\uD83C\uDF19", description: "Sleep stages, debt & patterns" },
-  { route: "/correlation" as const, label: "Correlation Explorer", emoji: "\u{1F50D}", description: "See how any two metrics relate" },
-  { route: "/accelerometer" as const, label: "Accelerometer", emoji: "\uD83D\uDCF1", description: "Raw motion data & recording status" },
-  { route: "/providers" as const, label: "Data Sources", emoji: "\uD83D\uDD17", description: "Manage providers & sync history" },
-  { route: "/tracking" as const, label: "Tracking", emoji: "\uD83D\uDCCB", description: "Life events" },
-  { route: "/settings" as const, label: "Settings", emoji: "\u2699\uFE0F", description: "Accounts, units & export" },
+  {
+    route: "/sleep" as const,
+    label: "Sleep",
+    emoji: "\uD83C\uDF19",
+    description: "Sleep stages, debt & patterns",
+  },
+  {
+    route: "/correlation" as const,
+    label: "Correlation Explorer",
+    emoji: "\u{1F50D}",
+    description: "See how any two metrics relate",
+  },
+  {
+    route: "/accelerometer" as const,
+    label: "Accelerometer",
+    emoji: "\uD83D\uDCF1",
+    description: "Raw motion data & recording status",
+  },
+  {
+    route: "/providers" as const,
+    label: "Data Sources",
+    emoji: "\uD83D\uDD17",
+    description: "Manage providers & sync history",
+  },
+  {
+    route: "/tracking" as const,
+    label: "Tracking",
+    emoji: "\uD83D\uDCCB",
+    description: "Life events",
+  },
+  {
+    route: "/settings" as const,
+    label: "Settings",
+    emoji: "\u2699\uFE0F",
+    description: "Accounts, units & export",
+  },
 ];
 
 export default function HealthScreen() {
@@ -69,13 +108,14 @@ export default function HealthScreen() {
   const [syncRange, setSyncRange] = useState<number | null | undefined>(undefined);
 
   // Resolve the effective sync range: user selection takes priority, then backfill status
-  const effectiveSyncRange = syncRange !== undefined
-    ? syncRange
-    : backfillSetting.isLoading
-      ? 7 // safe default while loading
-      : backfillCompleted
-        ? 7
-        : null; // first time = All
+  const effectiveSyncRange =
+    syncRange !== undefined
+      ? syncRange
+      : backfillSetting.isLoading
+        ? 7 // safe default while loading
+        : backfillCompleted
+          ? 7
+          : null; // first time = All
 
   const { refreshing, onRefresh } = useRefresh();
   const trpcClient = trpc.useUtils().client;
@@ -125,8 +165,7 @@ export default function HealthScreen() {
           querySleepSamples,
         },
         syncRangeDays: effectiveSyncRange,
-        onProgress: (message) =>
-          setStatus((prev) => ({ ...prev, progress: message })),
+        onProgress: (message) => setStatus((prev) => ({ ...prev, progress: message })),
       });
 
       // Mark backfill as completed after successful all-time sync
@@ -137,9 +176,10 @@ export default function HealthScreen() {
         });
       }
 
-      const resultMessage = result.errors.length > 0
-        ? `Synced ${result.inserted} records with ${result.errors.length} errors`
-        : `Synced ${result.inserted} records`;
+      const resultMessage =
+        result.errors.length > 0
+          ? `Synced ${result.inserted} records with ${result.errors.length} errors`
+          : `Synced ${result.inserted} records`;
 
       setStatus({
         lastSync: new Date(),
@@ -175,7 +215,17 @@ export default function HealthScreen() {
   const isWide = width >= 600;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={[styles.content, isWide && styles.contentWide]} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={[styles.content, isWide && styles.contentWide]}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={colors.textSecondary}
+        />
+      }
+    >
       {/* Navigation links */}
       {NAV_LINKS.map((link) => (
         <TouchableOpacity
@@ -210,7 +260,11 @@ export default function HealthScreen() {
                 : "Grant access to sync heart rate, heart rate variability, steps, sleep, and other health data."}
             </Text>
             {!permissionsGranted && (
-              <TouchableOpacity style={styles.button} onPress={handleRequestPermissions} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={styles.button}
+                onPress={handleRequestPermissions}
+                activeOpacity={0.7}
+              >
                 <Text style={styles.buttonText}>Request Permissions</Text>
               </TouchableOpacity>
             )}
@@ -252,9 +306,7 @@ export default function HealthScreen() {
               activeOpacity={0.7}
               disabled={status.syncing}
             >
-              <Text style={styles.buttonText}>
-                {status.syncing ? "Syncing..." : "Sync Now"}
-              </Text>
+              <Text style={styles.buttonText}>{status.syncing ? "Syncing..." : "Sync Now"}</Text>
             </TouchableOpacity>
           </View>
 
@@ -264,9 +316,7 @@ export default function HealthScreen() {
             <View style={styles.statusRow}>
               <Text style={styles.statusLabel}>Last sync</Text>
               <Text style={styles.statusValue}>
-                {status.lastSync
-                  ? status.lastSync.toLocaleTimeString()
-                  : "Never"}
+                {status.lastSync ? status.lastSync.toLocaleTimeString() : "Never"}
               </Text>
             </View>
             {status.progress && (
@@ -278,7 +328,12 @@ export default function HealthScreen() {
             {status.lastResult && (
               <View style={styles.statusRow}>
                 <Text style={styles.statusLabel}>Result</Text>
-                <Text style={[styles.statusValue, status.lastResult.startsWith("Error") && styles.errorText]}>
+                <Text
+                  style={[
+                    styles.statusValue,
+                    status.lastResult.startsWith("Error") && styles.errorText,
+                  ]}
+                >
                   {status.lastResult}
                 </Text>
               </View>
