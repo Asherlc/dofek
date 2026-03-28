@@ -10,6 +10,7 @@ import WatchConnectivity
 final class TransferManager: ObservableObject {
     private let recorder: AccelerometerRecorder
     private let session: WCSession
+    private let workQueue = DispatchQueue(label: "com.dofek.watch.transfer", qos: .utility)
 
     @Published var isTransferring: Bool = false
     @Published var lastTransferStatus: String = "Idle"
@@ -23,7 +24,7 @@ final class TransferManager: ObservableObject {
     /// to the paired iPhone via WCSession.
     ///
     /// Safe to call from any thread. @Published updates are dispatched to main.
-    /// Heavy work (sample iteration, compression) runs on a detached Task.
+    /// Heavy work (sample iteration, compression) runs on a background queue.
     func transferNewSamples() {
         // Bounce to main thread for @Published property checks
         guard Thread.isMainThread else {
@@ -46,25 +47,24 @@ final class TransferManager: ObservableObject {
         isTransferring = true
         lastTransferStatus = "Querying samples..."
 
-        Task.detached(priority: .utility) { [weak self] in
-            guard let self else { return }
-            await self.performTransfer()
+        workQueue.async { [weak self] in
+            self?.performTransfer()
         }
     }
 
-    private func performTransfer() async {
+    private func performTransfer() {
         // Stream samples to a temp JSON file (memory-efficient)
         guard let result = recorder.streamSamplesToFile() else {
-            await MainActor.run {
-                self.isTransferring = false
-                self.lastTransferStatus = "No new samples"
+            DispatchQueue.main.async { [weak self] in
+                self?.isTransferring = false
+                self?.lastTransferStatus = "No new samples"
             }
             return
         }
 
-        await MainActor.run {
-            self.recorder.samplesSinceLastTransfer = result.count
-            self.lastTransferStatus = "Compressing \(result.count) samples..."
+        DispatchQueue.main.async { [weak self] in
+            self?.recorder.samplesSinceLastTransfer = result.count
+            self?.lastTransferStatus = "Compressing \(result.count) samples..."
         }
 
         do {
@@ -85,19 +85,19 @@ final class TransferManager: ObservableObject {
 
             session.transferFile(compressedURL, metadata: metadata)
 
-            await MainActor.run {
-                self.recorder.markTransferComplete()
-                self.lastTransferStatus = "Sent \(result.count) samples (\(compressedSize / 1024) KB)"
-                self.isTransferring = false
+            DispatchQueue.main.async { [weak self] in
+                self?.recorder.markTransferComplete()
+                self?.lastTransferStatus = "Sent \(result.count) samples (\(compressedSize / 1024) KB)"
+                self?.isTransferring = false
             }
 
         } catch {
             // Clean up temp files on error
             try? FileManager.default.removeItem(at: result.url)
 
-            await MainActor.run {
-                self.lastTransferStatus = "Error: \(error.localizedDescription)"
-                self.isTransferring = false
+            DispatchQueue.main.async { [weak self] in
+                self?.lastTransferStatus = "Error: \(error.localizedDescription)"
+                self?.isTransferring = false
             }
         }
     }
