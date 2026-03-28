@@ -568,16 +568,24 @@ export default function ActivityDetailScreen() {
               const link = activity.sourceLinks.find(
                 (sourceLink) => sourceLink.providerId === providerId,
               );
+              if (link) {
+                return (
+                  <View key={providerId} style={styles.sourceLinkRow}>
+                    {index > 0 && <Text style={styles.source}>, </Text>}
+                    <Pressable
+                      onPress={() => Linking.openURL(link.url)}
+                      hitSlop={4}
+                      style={styles.sourceLinkPressable}
+                    >
+                      <Text style={styles.sourceLink}>{link.label} ↗</Text>
+                    </Pressable>
+                  </View>
+                );
+              }
               return (
                 <Text key={providerId} style={styles.source}>
                   {index > 0 && ", "}
-                  {link ? (
-                    <Text style={styles.sourceLink} onPress={() => Linking.openURL(link.url)}>
-                      {link.label}
-                    </Text>
-                  ) : (
-                    providerLabel(providerId)
-                  )}
+                  {providerLabel(providerId)}
                 </Text>
               );
             })}
@@ -719,6 +727,15 @@ const styles = StyleSheet.create({
   source: {
     fontSize: 12,
     color: colors.textTertiary,
+  },
+  sourceLinkRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  sourceLinkPressable: {
+    paddingVertical: 2,
+    paddingHorizontal: 4,
+    borderRadius: 4,
   },
   sourceLink: {
     fontSize: 12,
