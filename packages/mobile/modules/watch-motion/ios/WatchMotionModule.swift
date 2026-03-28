@@ -102,6 +102,33 @@ public class WatchMotionModule: Module {
             self.deletePendingFiles()
         }
 
+        /// List the file names in the pending transfer directory.
+        /// Used by the per-file sync to process files individually.
+        Function("getPendingWatchFileNames") { () -> [String] in
+            return self.listPendingFileNames()
+        }
+
+        /// Read and parse a single pending Watch transfer file.
+        /// Returns the parsed accelerometer samples from that file.
+        AsyncFunction("readWatchFile") { (fileName: String, promise: Promise) in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let fileURL = self.pendingDirectory.appendingPathComponent(fileName)
+                do {
+                    let fileData = try Data(contentsOf: fileURL)
+                    let samples = try SampleFileParser.parse(fileData)
+                    promise.resolve(samples)
+                } catch {
+                    promise.reject("PARSE_ERROR", "Failed to parse \(fileName): \(error.localizedDescription)")
+                }
+            }
+        }
+
+        /// Delete a single pending Watch transfer file after successful upload.
+        Function("deleteWatchFile") { (fileName: String) in
+            let fileURL = self.pendingDirectory.appendingPathComponent(fileName)
+            try? FileManager.default.removeItem(at: fileURL)
+        }
+
         Function("getLastWatchSyncTimestamp") { () -> String? in
             return self.defaults.string(forKey: self.lastSyncKey)
         }
@@ -132,6 +159,14 @@ public class WatchMotionModule: Module {
     }
 
     // MARK: - Pending file operations
+
+    private func listPendingFileNames() -> [String] {
+        let contents = try? FileManager.default.contentsOfDirectory(
+            at: pendingDirectory,
+            includingPropertiesForKeys: nil
+        )
+        return contents?.map { $0.lastPathComponent } ?? []
+    }
 
     private func countPendingFiles() -> Int {
         let contents = try? FileManager.default.contentsOfDirectory(
