@@ -40,6 +40,20 @@ describe("PredictionTargetEntry", () => {
     });
   });
 
+  it("toDetail returns id, label, unit, and type as distinct values", () => {
+    const entry = new PredictionTargetEntry({
+      id: "weight",
+      label: "Body Weight",
+      unit: "kg",
+      type: "daily",
+    });
+    const detail = entry.toDetail();
+    expect(detail.id).toBe("weight");
+    expect(detail.label).toBe("Body Weight");
+    expect(detail.unit).toBe("kg");
+    expect(detail.type).toBe("daily");
+  });
+
   it("exposes getters for all fields", () => {
     const entry = new PredictionTargetEntry({
       id: "resting_hr",
@@ -249,6 +263,56 @@ describe("buildDailyContext", () => {
     expect(day?.calories).toBe(2200);
   });
 
+  it("returns null exerciseMinutes when no exercise data for date", () => {
+    const metrics = [
+      {
+        date: "2024-01-15",
+        resting_hr: 60,
+        hrv: 45,
+        spo2_avg: null,
+        steps: null,
+        active_energy_kcal: null,
+        skin_temp_c: null,
+      },
+    ];
+    const result = buildDailyContext(metrics, [], [], []);
+    expect(result[0]?.exerciseMinutes).toStrictEqual(null);
+  });
+
+  it("returns null weightKg when no body comp data exists", () => {
+    const metrics = [
+      {
+        date: "2024-01-15",
+        resting_hr: 60,
+        hrv: 45,
+        spo2_avg: null,
+        steps: null,
+        active_energy_kcal: null,
+        skin_temp_c: null,
+      },
+    ];
+    const result = buildDailyContext(metrics, [], [], []);
+    expect(result[0]?.weightKg).toStrictEqual(null);
+  });
+
+  it("handles null exercise_minutes in exercise data", () => {
+    const metrics = [
+      {
+        date: "2024-01-15",
+        resting_hr: 60,
+        hrv: 45,
+        spo2_avg: null,
+        steps: null,
+        active_energy_kcal: null,
+        skin_temp_c: null,
+      },
+    ];
+    const exerciseMinutes = [{ date: "2024-01-15", exercise_minutes: null }];
+    const result = buildDailyContext(metrics, [], [], [], exerciseMinutes);
+    // null exercise_minutes should not be added to the map
+    expect(result[0]?.exerciseMinutes).toStrictEqual(null);
+  });
+
   it("sorts output by date", () => {
     const metrics = [
       {
@@ -343,6 +407,12 @@ describe("PredictionsRepository", () => {
       const { repo } = makeRepository([]);
       const result = await repo.predict("nonexistent_target", 365);
       expect(result).toBeNull();
+    });
+
+    it("returns null for a target that matches neither daily nor activity types", async () => {
+      const { repo } = makeRepository([]);
+      const result = await repo.predict("totally_fake_id", 90);
+      expect(result).toStrictEqual(null);
     });
 
     it("calls db.execute for daily predictions", async () => {

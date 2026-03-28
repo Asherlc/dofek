@@ -29,6 +29,17 @@ describe("ewmaSmooth", () => {
     expect(result[4]).toBeCloseTo(80.0369, 10);
   });
 
+  it("uses the correct alpha coefficient (distinguishes 0.1 from 0.2)", () => {
+    const values = [100, 110];
+    const resultAlpha01 = ewmaSmooth(values, 0.1);
+    // 0.1 * 110 + 0.9 * 100 = 101
+    expect(resultAlpha01[1]).toBe(101);
+
+    const resultAlpha02 = ewmaSmooth(values, 0.2);
+    // 0.2 * 110 + 0.8 * 100 = 102
+    expect(resultAlpha02[1]).toBe(102);
+  });
+
   it("applies EWMA with alpha=0.15 correctly", () => {
     const values = [10, 12, 11];
     const result = ewmaSmooth(values, 0.15);
@@ -95,6 +106,19 @@ describe("BodyAnalyticsRepository", () => {
       expect(typeof result[7]?.weeklyChange).toBe("number");
     });
 
+    it("returns null weeklyChange for first 7 entries (index < 7 boundary)", async () => {
+      const rows = Array.from({ length: 8 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: String(80 + index * 0.5),
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getSmoothedWeight(90, "2024-06-01");
+      // Index 6 (7th entry) should still have null weeklyChange
+      expect(result[6]?.weeklyChange).toBeNull();
+      // Index 7 (8th entry) should have non-null weeklyChange
+      expect(result[7]?.weeklyChange).not.toBeNull();
+    });
+
     it("rounds values to 2 decimal places", async () => {
       const { repo } = makeRepository([
         { date: "2024-01-01", weight_kg: "80.123" },
@@ -149,6 +173,17 @@ describe("BodyAnalyticsRepository", () => {
       expect(result[1]?.smoothedFatMass).toBeCloseTo(16.31, 2);
       // smoothedLean = 0.15 * 63.96 + 0.85 * 64 = 63.994
       expect(result[1]?.smoothedLeanMass).toBeCloseTo(63.99, 2);
+    });
+
+    it("divides bodyFatPct by 100 for fat mass (not 10 or 1000)", async () => {
+      const { repo } = makeRepository([
+        { date: "2024-01-01", weight_kg: "100", body_fat_pct: "25" },
+      ]);
+      const result = await repo.getRecomposition(180, "2024-06-01");
+      // fatMass = 100 * 25/100 = 25
+      expect(result[0]?.fatMassKg).toBe(25);
+      // leanMass = 100 - 25 = 75
+      expect(result[0]?.leanMassKg).toBe(75);
     });
 
     it("rounds bodyFatPct to 1 decimal place", async () => {
@@ -224,6 +259,47 @@ describe("BodyAnalyticsRepository", () => {
       const result = await repo.getWeightTrend();
 
       expect(result.trend).toBe("stable");
+    });
+
+    it("returns insufficient with exactly 6 data points (boundary < 7)", async () => {
+      const rows = Array.from({ length: 6 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: "80",
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightTrend();
+      expect(result.trend).toBe("insufficient");
+    });
+
+    it("returns non-insufficient with exactly 7 data points (boundary)", async () => {
+      const rows = Array.from({ length: 7 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: "80",
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightTrend();
+      expect(result.trend).not.toBe("insufficient");
+    });
+
+    it("classifies stable when weight is constant (0 change)", async () => {
+      const rows = Array.from({ length: 10 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: "80",
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightTrend();
+      expect(result.trend).toBe("stable");
+      expect(result.currentWeekly).toBe(0);
+    });
+
+    it("returns null for current4Week when fewer than 29 data points", async () => {
+      const rows = Array.from({ length: 10 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: String(80 + index),
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightTrend();
+      expect(result.current4Week).toBeNull();
     });
 
     it("provides 4-week change when enough data", async () => {

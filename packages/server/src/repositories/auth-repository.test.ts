@@ -80,6 +80,11 @@ describe("AuthRepository", () => {
       const { repo } = makeRepository([]);
       expect(await repo.getAccountCount()).toBe(0);
     });
+
+    it("returns exactly 0 (not just falsy) for empty results", async () => {
+      const { repo } = makeRepository([]);
+      expect(await repo.getAccountCount()).toStrictEqual(0);
+    });
   });
 
   describe("deleteAccount", () => {
@@ -91,6 +96,11 @@ describe("AuthRepository", () => {
     it("returns null when account not found", async () => {
       const { repo } = makeRepository([]);
       expect(await repo.deleteAccount("nonexistent")).toBeNull();
+    });
+
+    it("returns exactly null (not undefined) when account not found", async () => {
+      const { repo } = makeRepository([]);
+      expect(await repo.deleteAccount("x")).toStrictEqual(null);
     });
 
     it("calls execute once", async () => {

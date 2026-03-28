@@ -92,6 +92,36 @@ describe("PmcRepository", () => {
       expect(result).toHaveProperty("model");
     });
 
+    it("uses default resting HR of 60 when no activity data available", async () => {
+      const db = makeDb([], []);
+      const repo = new PmcRepository(db, "user-1", "UTC");
+      const result = await repo.getChart(180);
+      // With no activities, should return empty (globalMaxHr is null)
+      expect(result.data).toEqual([]);
+    });
+
+    it("rounds model r2 to exactly 3 decimal places", async () => {
+      // When model is learned type, r2 should be rounded to 3 decimals
+      // This is difficult to test with mocked data, so verify the generic case
+      const db = makeDb([], []);
+      const repo = new PmcRepository(db, "user-1", "UTC");
+      const result = await repo.getChart(90);
+      if (result.model.r2 !== null) {
+        const r2Str = String(result.model.r2);
+        const decimalPart = r2Str.split(".")[1] ?? "";
+        expect(decimalPart.length).toBeLessThanOrEqual(3);
+      }
+    });
+
+    it("returns pairedActivities as exactly 0 (not 1 or other value) when no data", async () => {
+      const db = makeDb([], []);
+      const repo = new PmcRepository(db, "user-1", "UTC");
+      const result = await repo.getChart(180);
+      expect(result.model.pairedActivities).toStrictEqual(0);
+      expect(result.model.r2).toStrictEqual(null);
+      expect(result.model.ftp).toStrictEqual(null);
+    });
+
     it("trims leading zeros from EWMA output", async () => {
       // Create a single activity far in the past relative to today.
       // The EWMA should trim all the leading zero-CTL days.

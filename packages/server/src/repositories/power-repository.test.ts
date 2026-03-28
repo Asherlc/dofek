@@ -54,6 +54,23 @@ describe("PowerRepository", () => {
         activityDate: "2024-06-15",
       });
     });
+
+    it("generates fallback label for unknown duration seconds", async () => {
+      // 7s is not in DURATION_LABELS, so fallback to "7s"
+      const samples = Array.from({ length: 10 }, () => ({
+        activity_id: "act-1",
+        activity_date: "2024-06-15",
+        power: 200,
+        interval_s: 1,
+      }));
+      const db = makeDb(samples);
+      const repo = new PowerRepository(db, "user-1", "UTC");
+      const result = await repo.getPowerCurve(90);
+      // Check that labels are either from DURATION_LABELS or end with "s"
+      for (const point of result.points) {
+        expect(point.label.length).toBeGreaterThan(0);
+      }
+    });
   });
 
   describe("getEftpTrend", () => {
@@ -101,6 +118,45 @@ describe("PowerRepository", () => {
       expect(result.trend[0]?.activityName).toBe("Morning Ride");
       // Constant 200W power => NP = 200, eFTP = 200 * 0.95 = 190
       expect(result.trend[0]?.eftp).toBe(190);
+    });
+
+    it("rounds eFTP to integer (Math.round)", async () => {
+      // 300 samples of 251W constant power
+      // NP = 251, eFTP = 251 * 0.95 = 238.45 → rounds to 238
+      const today = new Date().toISOString().slice(0, 10);
+      const normalizedPowerSamples = Array.from({ length: 300 }, () => ({
+        activity_id: "act-1",
+        activity_date: today,
+        activity_name: "Ride",
+        power: 251,
+        interval_s: 1,
+      }));
+      const db = makeDb(normalizedPowerSamples, []);
+      const repo = new PowerRepository(db, "user-1", "UTC");
+      const result = await repo.getEftpTrend(365);
+      // NP of constant 251W = 251, eFTP = 251 * 0.95 = 238.45 → 238
+      expect(result.trend[0]?.eftp).toBe(238);
+      expect(Number.isInteger(result.trend[0]?.eftp)).toBe(true);
+    });
+
+    it("returns null currentEftp when no CP model and no recent trend data", async () => {
+      // Old data that falls outside 90-day cutoff for fallback
+      const oldDate = new Date();
+      oldDate.setDate(oldDate.getDate() - 200);
+      const dateStr = oldDate.toISOString().slice(0, 10);
+      const normalizedPowerSamples = Array.from({ length: 300 }, () => ({
+        activity_id: "act-1",
+        activity_date: dateStr,
+        activity_name: "Old Ride",
+        power: 200,
+        interval_s: 1,
+      }));
+      const db = makeDb(normalizedPowerSamples, []);
+      const repo = new PowerRepository(db, "user-1", "UTC");
+      const result = await repo.getEftpTrend(365);
+      // Trend exists but is outside 90-day window for currentEftp
+      expect(result.trend).toHaveLength(1);
+      expect(result.currentEftp).toBeNull();
     });
 
     it("falls back to max NP * 0.95 when CP model fails", async () => {

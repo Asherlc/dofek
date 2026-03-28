@@ -39,6 +39,29 @@ describe("BehaviorImpact", () => {
     expect(impact.impactPercent).toBe(8.3);
   });
 
+  it("computes impactPercent with exact formula: round((yes-no)/no * 1000) / 10", () => {
+    // (72 - 68) / 68 * 1000 = 58.8235... → round = 59 → /10 = 5.9
+    const impact = new BehaviorImpact(makeRow({ avgReadinessYes: 72, avgReadinessNo: 68 }));
+    expect(impact.impactPercent).toBe(5.9);
+  });
+
+  it("exposes all getters correctly", () => {
+    const impact = new BehaviorImpact(
+      makeRow({
+        questionSlug: "caffeine",
+        displayName: "Caffeine",
+        category: "diet",
+        yesCount: 42,
+        noCount: 33,
+      }),
+    );
+    expect(impact.questionSlug).toBe("caffeine");
+    expect(impact.displayName).toBe("Caffeine");
+    expect(impact.category).toBe("diet");
+    expect(impact.yesCount).toBe(42);
+    expect(impact.noCount).toBe(33);
+  });
+
   it("serializes to API shape via toDetail()", () => {
     const impact = new BehaviorImpact(
       makeRow({ avgReadinessYes: 75, avgReadinessNo: 60, yesCount: 15, noCount: 12 }),

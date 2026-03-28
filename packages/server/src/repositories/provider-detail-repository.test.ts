@@ -95,6 +95,10 @@ describe("DISCONNECT_CHILD_TABLES", () => {
     expect(DISCONNECT_CHILD_TABLES).toContain("fitness.oauth_token");
   });
 
+  it("starts with fitness.metric_stream (first to delete)", () => {
+    expect(DISCONNECT_CHILD_TABLES[0]).toBe("fitness.metric_stream");
+  });
+
   it("ends with activity then oauth_token (FK order)", () => {
     const lastTwo = DISCONNECT_CHILD_TABLES.slice(-2);
     expect(lastTwo).toEqual(["fitness.activity", "fitness.oauth_token"]);
@@ -166,6 +170,12 @@ describe("ProviderDetailRepository", () => {
       expect(result).toBeNull();
     });
 
+    it("getRecordDetail returns exactly null (not undefined) for missing record", async () => {
+      const { repo } = makeRepository([]);
+      const result = await repo.getRecordDetail("strava", "activities", "nonexistent");
+      expect(result).toStrictEqual(null);
+    });
+
     it("calls execute once per query", async () => {
       const { repo, execute } = makeRepository([]);
       await repo.getRecordDetail("strava", "activities", "act-1");
@@ -182,10 +192,22 @@ describe("ProviderDetailRepository", () => {
       expect(result).toBe(true);
     });
 
+    it("verifyOwnership returns exactly true (not truthy) for existing provider", async () => {
+      const { repo } = makeRepository([{ id: "strava" }]);
+      const result = await repo.verifyOwnership("strava");
+      expect(result).toStrictEqual(true);
+    });
+
     it("returns false when provider does not exist for user", async () => {
       const { repo } = makeRepository([]);
       const result = await repo.verifyOwnership("unknown");
       expect(result).toBe(false);
+    });
+
+    it("verifyOwnership returns exactly false (not falsy) for missing provider", async () => {
+      const { repo } = makeRepository([]);
+      const result = await repo.verifyOwnership("unknown");
+      expect(result).toStrictEqual(false);
     });
 
     it("calls execute once", async () => {

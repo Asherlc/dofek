@@ -65,6 +65,94 @@ describe("PersonalizationRepository", () => {
       expect(result.parameters.sleepTarget).toEqual({ minutes: 450, sampleCount: 30 });
     });
 
+    it("returns isPersonalized=true when only exponentialMovingAverage is fitted", async () => {
+      mockedLoadParams.mockResolvedValue({
+        version: 1,
+        fittedAt: "2025-06-01T00:00:00Z",
+        exponentialMovingAverage: {
+          chronicTrainingLoadDays: 42,
+          acuteTrainingLoadDays: 7,
+          sampleCount: 100,
+          correlation: 0.85,
+        },
+        readinessWeights: null,
+        sleepTarget: null,
+        stressThresholds: null,
+        trainingImpulseConstants: null,
+      });
+      const { repo } = makeRepository();
+      const result = await repo.getStatus();
+      expect(result.isPersonalized).toBe(true);
+    });
+
+    it("returns isPersonalized=true when only readinessWeights is fitted", async () => {
+      mockedLoadParams.mockResolvedValue({
+        version: 1,
+        fittedAt: "2025-06-01T00:00:00Z",
+        exponentialMovingAverage: null,
+        readinessWeights: {
+          hrv: 0.4,
+          restingHr: 0.3,
+          sleep: 0.2,
+          respiratoryRate: 0.1,
+          sampleCount: 50,
+          correlation: 0.8,
+        },
+        sleepTarget: null,
+        stressThresholds: null,
+        trainingImpulseConstants: null,
+      });
+      const { repo } = makeRepository();
+      const result = await repo.getStatus();
+      expect(result.isPersonalized).toBe(true);
+    });
+
+    it("returns isPersonalized=true when only stressThresholds is fitted", async () => {
+      mockedLoadParams.mockResolvedValue({
+        version: 1,
+        fittedAt: "2025-06-01T00:00:00Z",
+        exponentialMovingAverage: null,
+        readinessWeights: null,
+        sleepTarget: null,
+        stressThresholds: {
+          hrvThresholds: [30, 50, 70] satisfies [number, number, number],
+          rhrThresholds: [50, 60, 70] satisfies [number, number, number],
+          sampleCount: 30,
+        },
+        trainingImpulseConstants: null,
+      });
+      const { repo } = makeRepository();
+      const result = await repo.getStatus();
+      expect(result.isPersonalized).toBe(true);
+    });
+
+    it("returns isPersonalized=true when only trainingImpulseConstants is fitted", async () => {
+      mockedLoadParams.mockResolvedValue({
+        version: 1,
+        fittedAt: "2025-06-01T00:00:00Z",
+        exponentialMovingAverage: null,
+        readinessWeights: null,
+        sleepTarget: null,
+        stressThresholds: null,
+        trainingImpulseConstants: {
+          genderFactor: 1.92,
+          exponent: 1.67,
+          sampleCount: 100,
+          r2: 0.95,
+        },
+      });
+      const { repo } = makeRepository();
+      const result = await repo.getStatus();
+      expect(result.isPersonalized).toBe(true);
+    });
+
+    it("returns fittedAt as null when stored params are null", async () => {
+      mockedLoadParams.mockResolvedValue(null);
+      const { repo } = makeRepository();
+      const result = await repo.getStatus();
+      expect(result.fittedAt).toStrictEqual(null);
+    });
+
     it("returns isPersonalized=false when stored params exist but all are null", async () => {
       mockedLoadParams.mockResolvedValue({
         version: 1,
