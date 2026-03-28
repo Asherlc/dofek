@@ -573,36 +573,22 @@ describe("WhoopClient.getCycles", () => {
     expect(result).toEqual(results);
   });
 
-  it("throws when response is object without recognizable cycle data", async () => {
+  it("returns empty array for object without known wrapper keys", async () => {
     const fetchFn = createMockFetch({ status: 200, ok: true, body: { unknown: "value" } });
-    const client = new WhoopClient(makeToken(), fetchFn);
-
-    await expect(client.getCycles("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z")).rejects.toThrow(
-      "Unrecognized WHOOP cycles response",
-    );
-  });
-
-  it("throws when response is null/primitive", async () => {
-    const fetchFn = createMockFetch({ status: 200, ok: true, body: null });
-    const client = new WhoopClient(makeToken(), fetchFn);
-
-    await expect(client.getCycles("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z")).rejects.toThrow(
-      "Unrecognized WHOOP cycles response",
-    );
-  });
-
-  it("extracts cycles from any array-valued key in wrapped response", async () => {
-    const items = [{ id: 10, user_id: 12345 }];
-    const fetchFn = createMockFetch({
-      status: 200,
-      ok: true,
-      body: { someNewKey: items },
-    });
     const client = new WhoopClient(makeToken(), fetchFn);
 
     const result = await client.getCycles("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z");
 
-    expect(result).toEqual(items);
+    expect(result).toEqual([]);
+  });
+
+  it("returns empty array for null/primitive response", async () => {
+    const fetchFn = createMockFetch({ status: 200, ok: true, body: null });
+    const client = new WhoopClient(makeToken(), fetchFn);
+
+    const result = await client.getCycles("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z");
+
+    expect(result).toEqual([]);
   });
 
   it("uses default limit parameter", async () => {

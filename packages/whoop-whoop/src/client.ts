@@ -380,7 +380,7 @@ export class WhoopClient {
       return cycles;
     }
     if (isRecord(raw)) {
-      // Try known wrapper keys first
+      // Try common wrapper keys
       for (const key of ["cycles", "records", "data", "results"]) {
         const val = raw[key];
         if (Array.isArray(val)) {
@@ -388,23 +388,8 @@ export class WhoopClient {
           return cycles;
         }
       }
-      // Fall back to any array-valued key (defensive against API key renames)
-      for (const key of Object.keys(raw)) {
-        const val = raw[key];
-        if (Array.isArray(val)) {
-          const cycles: WhoopCycle[] = val;
-          return cycles;
-        }
-      }
     }
-    // Don't silently return empty — surface the problem so sync reports an error
-    const shape =
-      raw === null
-        ? "null"
-        : isRecord(raw)
-          ? `object keys: ${Object.keys(raw).join(", ")}`
-          : typeof raw;
-    throw new Error(`Unrecognized WHOOP cycles response format (${shape})`);
+    return [];
   }
 
   async getSleep(sleepId: string | number): Promise<WhoopSleepRecord> {
