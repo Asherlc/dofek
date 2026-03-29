@@ -96,15 +96,47 @@ export default function BleProbeScreen() {
           }
 
           case "whoop": {
-            addLog("Checking for already-connected WHOOP straps...");
+            // Use the whoop-ble module's connection (which has state restoration
+            // and the bonded CBCentralManager) instead of ble-probe's separate one.
+            // This ensures BLE Probe sees the same connection state as the background sync.
+            addLog("Checking whoop-ble module connection...");
+            try {
+              const whoopBle = require("../modules/whoop-ble");
+              const stats = whoopBle.getDataPathStats();
+              if (stats.connectionState !== "idle" && stats.hasDataCharacteristic) {
+                addLog(`whoop-ble already connected (state: ${stats.connectionState})`);
+                addLog(`  samples extracted: ${stats.totalSamplesExtracted}`);
+                addLog(`  notifications: ${stats.dataReceivedCount}`);
+                addLog(`  isNotifying: ${stats.isNotifying}`);
+                setConnectedDevice("whoop-ble-managed");
+                addLog("Using whoop-ble module's connection.");
+                break;
+              }
+              // Try findWhoop via whoop-ble module (has state restoration + bonded manager)
+              addLog("Searching via whoop-ble module...");
+              const device = await whoopBle.findWhoop();
+              if (device) {
+                addLog(`Found: ${device.name ?? "unnamed"} [${device.id}]`);
+                addLog("Connecting via whoop-ble module...");
+                await whoopBle.connect(device.id);
+                setConnectedDevice(device.id);
+                addLog("Connected via whoop-ble module!");
+                const newStats = whoopBle.getDataPathStats();
+                addLog(`  state: ${newStats.connectionState}`);
+                break;
+              }
+            } catch (error) {
+              addLog(`whoop-ble module error: ${error}`, "error");
+            }
+            // Fall back to ble-probe module's own scan
+            addLog("Falling back to ble-probe scan...");
             const connected = getConnectedPeripherals(WHOOP_SERVICES);
             if (connected.length > 0) {
               const device = connected[0];
               addLog(`Found: ${device.name ?? "unnamed"} [${device.id}]`);
-              addLog("Auto-connecting...");
               const result = await connect(device.id);
               setConnectedDevice(result.id);
-              addLog(`Connected! Discovering services...`);
+              addLog(`Connected! Discovering...`);
               const services = await discoverServices();
               for (const service of services) {
                 const chars = await discoverCharacteristics(service.uuid);
@@ -115,17 +147,16 @@ export default function BleProbeScreen() {
               addLog("Subscribing to 0003 + 0005...");
               try { await subscribe("0003"); addLog("  0003 subscribed"); } catch { addLog("  0003 failed"); }
               try { await subscribe("0005"); addLog("  0005 subscribed"); } catch { addLog("  0005 failed"); }
-              addLog("Ready! Tap IMU Mode to send command.");
+              addLog("Ready!");
             } else {
-              addLog("No connected straps. Scanning (5s)...");
+              addLog("Scanning (5s)...");
               const results = await scan(WHOOP_SERVICES, 5);
               if (results.length > 0) {
-                addLog(`Found ${results.length} — connecting to first...`);
                 const result = await connect(results[0].id);
                 setConnectedDevice(result.id);
                 addLog(`Connected to ${result.name ?? "unnamed"}`);
               } else {
-                addLog("No WHOOP straps found. Is the WHOOP app open?");
+                addLog("No WHOOP straps found.", "error");
               }
             }
             break;
@@ -206,8 +237,20 @@ export default function BleProbeScreen() {
           }
 
           case "status": {
-            addLog(`Connected: ${isConnected() ? connectedDevice : "no"}`);
-            addLog(`Notifications received: ${notificationCount}`);
+            addLog(`ble-probe connected: ${isConnected() ? connectedDevice : "no"}`);
+            addLog(`ble-probe notifications: ${notificationCount}`);
+            try {
+              const whoopBle = require("../modules/whoop-ble");
+              const stats = whoopBle.getDataPathStats();
+              addLog(`whoop-ble state: ${stats.connectionState}`);
+              addLog(`whoop-ble samples: ${stats.totalSamplesExtracted}`);
+              addLog(`whoop-ble notifications: ${stats.dataReceivedCount}`);
+              addLog(`whoop-ble frames: ${stats.totalFramesParsed}`);
+              addLog(`whoop-ble isNotifying: ${stats.isNotifying}`);
+              addLog(`whoop-ble buffered: ${whoopBle.getBufferedSampleCount()}`);
+            } catch {
+              addLog("whoop-ble module not available", "error");
+            }
             break;
           }
 
