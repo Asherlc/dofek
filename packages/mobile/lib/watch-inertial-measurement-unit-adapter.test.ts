@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AccelerometerSample } from "../modules/core-motion";
+import type { InertialMeasurementUnitSample } from "../modules/core-motion";
 
 const mockIsWatchPaired = vi.fn(() => true);
 const mockIsWatchAppInstalled = vi.fn(() => true);
@@ -20,16 +20,16 @@ vi.mock("../modules/watch-motion", () => ({
 	requestWatchRecording: () => mockRequestWatchRecording(),
 }));
 
-import { createWatchCoreMotionAdapter } from "./watch-accelerometer-adapter.ts";
+import { createWatchInertialMeasurementUnitAdapter } from "./watch-inertial-measurement-unit-adapter.ts";
 
-describe("WatchCoreMotionAdapter", () => {
-	let adapter: ReturnType<typeof createWatchCoreMotionAdapter>;
+describe("WatchInertialMeasurementUnitAdapter", () => {
+	let adapter: ReturnType<typeof createWatchInertialMeasurementUnitAdapter>;
 
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mockIsWatchPaired.mockReturnValue(true);
 		mockIsWatchAppInstalled.mockReturnValue(true);
-		adapter = createWatchCoreMotionAdapter();
+		adapter = createWatchInertialMeasurementUnitAdapter();
 	});
 
 	describe("isAccelerometerRecordingAvailable", () => {
@@ -39,20 +39,20 @@ describe("WatchCoreMotionAdapter", () => {
 
 		it("returns false when Watch is not paired", () => {
 			mockIsWatchPaired.mockReturnValue(false);
-			adapter = createWatchCoreMotionAdapter();
+			adapter = createWatchInertialMeasurementUnitAdapter();
 			expect(adapter.isAccelerometerRecordingAvailable()).toBe(false);
 		});
 
 		it("returns false when Watch app is not installed", () => {
 			mockIsWatchAppInstalled.mockReturnValue(false);
-			adapter = createWatchCoreMotionAdapter();
+			adapter = createWatchInertialMeasurementUnitAdapter();
 			expect(adapter.isAccelerometerRecordingAvailable()).toBe(false);
 		});
 	});
 
 	describe("queryRecordedData", () => {
 		it("returns samples from pending Watch files", async () => {
-			const mockSamples: AccelerometerSample[] = [
+			const mockSamples: InertialMeasurementUnitSample[] = [
 				{ timestamp: "2026-03-25T10:00:00.000Z", x: 0.01, y: -0.98, z: 0.04 },
 				{ timestamp: "2026-03-25T10:00:00.020Z", x: 0.02, y: -0.97, z: 0.05 },
 			];
@@ -76,6 +76,30 @@ describe("WatchCoreMotionAdapter", () => {
 			);
 
 			expect(result).toEqual([]);
+		});
+
+		it("passes through gyroscope data from Watch", async () => {
+			const samplesWithGyro: InertialMeasurementUnitSample[] = [
+				{
+					timestamp: "2026-03-25T10:00:00.000Z",
+					x: 0.01,
+					y: -0.98,
+					z: 0.04,
+					gyroscopeX: 0.15,
+					gyroscopeY: -0.22,
+					gyroscopeZ: 0.08,
+				},
+			];
+			mockGetPendingWatchSamples.mockResolvedValue(samplesWithGyro);
+
+			const result = await adapter.queryRecordedData(
+				"2026-03-25T00:00:00Z",
+				"2026-03-25T23:59:59Z",
+			);
+
+			expect(result[0].gyroscopeX).toBe(0.15);
+			expect(result[0].gyroscopeY).toBe(-0.22);
+			expect(result[0].gyroscopeZ).toBe(0.08);
 		});
 	});
 
@@ -117,7 +141,6 @@ describe("WatchCoreMotionAdapter", () => {
 
 			const result = await adapter.startRecording(43200);
 
-			// Still returns true — the Watch records autonomously
 			expect(result).toBe(true);
 		});
 	});
@@ -129,7 +152,7 @@ describe("WatchCoreMotionAdapter", () => {
 
 		it("returns false when Watch is not paired", () => {
 			mockIsWatchPaired.mockReturnValue(false);
-			adapter = createWatchCoreMotionAdapter();
+			adapter = createWatchInertialMeasurementUnitAdapter();
 			expect(adapter.isRecordingActive()).toBe(false);
 		});
 	});

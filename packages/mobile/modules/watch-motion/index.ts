@@ -1,5 +1,5 @@
 import WatchMotionModule from "./src/WatchMotionModule";
-import type { AccelerometerSample } from "../core-motion";
+import type { InertialMeasurementUnitSample } from "../core-motion";
 
 export interface WatchSyncStatus {
 	isSupported: boolean;
@@ -47,7 +47,7 @@ export async function requestWatchRecording(): Promise<boolean> {
 /** Read all pending accelerometer sample files transferred from the Watch.
  * Files are gzip-compressed JSON arrays. Parsing happens on a background thread.
  * @returns Flattened array of all samples from all pending files. */
-export async function getPendingWatchSamples(): Promise<AccelerometerSample[]> {
+export async function getPendingWatchSamples(): Promise<InertialMeasurementUnitSample[]> {
 	return WatchMotionModule.getPendingWatchSamples();
 }
 

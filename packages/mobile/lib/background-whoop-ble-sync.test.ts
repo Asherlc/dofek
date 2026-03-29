@@ -5,7 +5,7 @@ import {
 	teardownBackgroundWhoopBleSync,
 	type WhoopBleSyncDeps,
 } from "./background-whoop-ble-sync.ts";
-import type { AccelerometerUploadClient } from "./accelerometer-service.ts";
+import type { InertialMeasurementUnitUploadClient } from "./inertial-measurement-unit-service.ts";
 
 function makeMockDeps(): WhoopBleSyncDeps {
 	return {
@@ -19,10 +19,10 @@ function makeMockDeps(): WhoopBleSyncDeps {
 	};
 }
 
-function makeMockTrpcClient(): AccelerometerUploadClient {
+function makeMockTrpcClient(): InertialMeasurementUnitUploadClient {
 	return {
-		accelerometerSync: {
-			pushAccelerometerSamples: {
+		inertialMeasurementUnitSync: {
+			pushSamples: {
 				mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
 			},
 		},
@@ -43,7 +43,7 @@ vi.mock("react-native", () => ({
 
 describe("background-whoop-ble-sync", () => {
 	let whoopDeps: WhoopBleSyncDeps;
-	let trpcClient: AccelerometerUploadClient;
+	let trpcClient: InertialMeasurementUnitUploadClient;
 
 	beforeEach(() => {
 		whoopDeps = makeMockDeps();
@@ -75,7 +75,7 @@ describe("background-whoop-ble-sync", () => {
 		expect(whoopDeps.connect).toHaveBeenCalledWith("whoop-123");
 	});
 
-	it("uploads buffered samples on foreground", async () => {
+	it("uploads buffered samples with gyroscope data on foreground", async () => {
 		const samples = [
 			{ timestamp: "2026-03-25T08:00:00.000Z", accelerometerX: 100, accelerometerY: -200, accelerometerZ: 300, gyroscopeX: 10, gyroscopeY: -20, gyroscopeZ: 30 },
 		];
@@ -85,12 +85,20 @@ describe("background-whoop-ble-sync", () => {
 		appStateCallback?.("active");
 
 		await vi.waitFor(() => {
-			expect(trpcClient.accelerometerSync.pushAccelerometerSamples.mutate).toHaveBeenCalledWith({
+			expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith({
 				deviceId: "WHOOP Strap",
 				deviceType: "whoop",
-				samples: expect.arrayContaining([
-					expect.objectContaining({ timestamp: "2026-03-25T08:00:00.000Z" }),
-				]),
+				samples: [
+					{
+						timestamp: "2026-03-25T08:00:00.000Z",
+						x: 100,
+						y: -200,
+						z: 300,
+						gyroscopeX: 10,
+						gyroscopeY: -20,
+						gyroscopeZ: 30,
+					},
+				],
 			});
 		});
 	});
@@ -117,7 +125,7 @@ describe("background-whoop-ble-sync", () => {
 		await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
 		await appStateCallback?.("active");
 
-		expect(trpcClient.accelerometerSync.pushAccelerometerSamples.mutate).not.toHaveBeenCalled();
+		expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).not.toHaveBeenCalled();
 	});
 
 	it("ignores non-active state changes", async () => {

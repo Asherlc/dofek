@@ -2,13 +2,14 @@ import SwiftUI
 
 struct ContentView: View {
     @ObservedObject var recorder: AccelerometerRecorder
+    @ObservedObject var gyroscopeRecorder: GyroscopeRecorder
     @ObservedObject var transferManager: TransferManager
     @ObservedObject var sessionDelegate: WatchSessionDelegate
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                // Recording status
+                // Accelerometer status
                 Section {
                     HStack {
                         Image(systemName: recorder.isRecording ? "waveform.circle.fill" : "waveform.circle")
@@ -28,6 +29,30 @@ struct ContentView: View {
                         .foregroundColor(.secondary)
                 }
 
+                // Gyroscope status
+                Section {
+                    HStack {
+                        Image(systemName: gyroscopeRecorder.isRecording ? "gyroscope" : "gyroscope")
+                            .foregroundColor(gyroscopeRecorder.isRecording ? .blue : .gray)
+                        Text(gyroscopeRecorder.isRecording ? "Recording" : "Inactive")
+                            .font(.headline)
+                    }
+
+                    Text("Active in foreground only")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    if !GyroscopeRecorder.isAvailable {
+                        Text("Gyroscope not available on this device")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                } header: {
+                    Text("Gyroscope")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
                 Divider()
 
                 // Sync info
@@ -39,7 +64,11 @@ struct ContentView: View {
                             .font(.subheadline)
                     }
 
-                    Text("\(recorder.samplesSinceLastTransfer) pending samples")
+                    Text("\(recorder.samplesSinceLastTransfer) pending accel samples")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+
+                    Text("\(gyroscopeRecorder.bufferedSampleCount) pending gyro samples")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
 
@@ -94,12 +123,14 @@ struct ContentView: View {
             }
 
             // Handle recording requests from iPhone
-            sessionDelegate.onRecordingRequested = { [weak recorder] in
+            sessionDelegate.onRecordingRequested = { [weak recorder, weak gyroscopeRecorder] in
                 recorder?.startRecording()
+                gyroscopeRecorder?.startRecording()
             }
 
             // Start recording immediately
             recorder.startRecording()
+            gyroscopeRecorder.startRecording()
         }
     }
 }

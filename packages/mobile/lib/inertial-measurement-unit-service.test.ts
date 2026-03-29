@@ -1,9 +1,9 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import {
-	createAccelerometerService,
-	type AccelerometerService,
-	type AccelerometerServiceDeps,
-} from "./accelerometer-service.ts";
+	createInertialMeasurementUnitService,
+	type InertialMeasurementUnitService,
+	type InertialMeasurementUnitServiceDeps,
+} from "./inertial-measurement-unit-service.ts";
 
 function makeMockWhoopBle() {
 	return {
@@ -15,7 +15,7 @@ function makeMockWhoopBle() {
 	};
 }
 
-function makeMockDeps(): AccelerometerServiceDeps {
+function makeMockDeps(): InertialMeasurementUnitServiceDeps {
 	return {
 		coreMotion: {
 			isAccelerometerRecordingAvailable: vi.fn().mockReturnValue(true),
@@ -30,8 +30,8 @@ function makeMockDeps(): AccelerometerServiceDeps {
 		},
 		whoopBle: makeMockWhoopBle(),
 		trpcClient: {
-			accelerometerSync: {
-				pushAccelerometerSamples: {
+			inertialMeasurementUnitSync: {
+				pushSamples: {
 					mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
 				},
 			},
@@ -40,13 +40,13 @@ function makeMockDeps(): AccelerometerServiceDeps {
 	};
 }
 
-describe("AccelerometerService", () => {
-	let deps: AccelerometerServiceDeps;
-	let service: AccelerometerService;
+describe("InertialMeasurementUnitService", () => {
+	let deps: InertialMeasurementUnitServiceDeps;
+	let service: InertialMeasurementUnitService;
 
 	beforeEach(() => {
 		deps = makeMockDeps();
-		service = createAccelerometerService(deps);
+		service = createInertialMeasurementUnitService(deps);
 	});
 
 	describe("ensureRecording", () => {
@@ -109,7 +109,7 @@ describe("AccelerometerService", () => {
 			await service.syncForTimeRange(startedAt, endedAt);
 
 			expect(deps.coreMotion.queryRecordedData).toHaveBeenCalledWith(startedAt, endedAt);
-			expect(deps.trpcClient.accelerometerSync.pushAccelerometerSamples.mutate).toHaveBeenCalledWith({
+			expect(deps.trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith({
 				deviceId: "iPhone 15 Pro",
 				deviceType: "iphone",
 				samples,
@@ -124,7 +124,7 @@ describe("AccelerometerService", () => {
 
 			await service.syncForTimeRange(startedAt, endedAt);
 
-			expect(deps.trpcClient.accelerometerSync.pushAccelerometerSamples.mutate).toHaveBeenCalledWith({
+			expect(deps.trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith({
 				deviceId: "Apple Watch",
 				deviceType: "apple_watch",
 				samples: watchSamples,
@@ -138,7 +138,7 @@ describe("AccelerometerService", () => {
 
 			await service.syncForTimeRange(startedAt, endedAt);
 
-			expect(deps.trpcClient.accelerometerSync.pushAccelerometerSamples.mutate).not.toHaveBeenCalled();
+			expect(deps.trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).not.toHaveBeenCalled();
 		});
 
 		it("skips CoreMotion query when unavailable", async () => {
@@ -168,7 +168,7 @@ describe("AccelerometerService", () => {
 		it("does not throw when upload fails", async () => {
 			const samples = [{ timestamp: "2026-03-25T08:00:00.100Z", x: 0.01, y: -0.98, z: 0.04 }];
 			(deps.coreMotion.queryRecordedData as ReturnType<typeof vi.fn>).mockResolvedValue(samples);
-			(deps.trpcClient.accelerometerSync.pushAccelerometerSamples.mutate as ReturnType<typeof vi.fn>).mockRejectedValue(
+			(deps.trpcClient.inertialMeasurementUnitSync.pushSamples.mutate as ReturnType<typeof vi.fn>).mockRejectedValue(
 				new Error("Upload failed"),
 			);
 
@@ -178,7 +178,7 @@ describe("AccelerometerService", () => {
 		it("does not acknowledge Watch samples when upload fails", async () => {
 			const watchSamples = [{ timestamp: "2026-03-25T08:00:00.100Z", x: 0.1, y: -0.9, z: 0.0 }];
 			(deps.watch.getPendingSamples as ReturnType<typeof vi.fn>).mockResolvedValue(watchSamples);
-			(deps.trpcClient.accelerometerSync.pushAccelerometerSamples.mutate as ReturnType<typeof vi.fn>).mockRejectedValue(
+			(deps.trpcClient.inertialMeasurementUnitSync.pushSamples.mutate as ReturnType<typeof vi.fn>).mockRejectedValue(
 				new Error("Upload failed"),
 			);
 
@@ -198,8 +198,7 @@ describe("AccelerometerService", () => {
 
 			await service.syncForTimeRange(startedAt, endedAt);
 
-			// 12000 samples / 5000 batch = 3 calls for phone data
-			const calls = (deps.trpcClient.accelerometerSync.pushAccelerometerSamples.mutate as ReturnType<typeof vi.fn>).mock.calls;
+			const calls = (deps.trpcClient.inertialMeasurementUnitSync.pushSamples.mutate as ReturnType<typeof vi.fn>).mock.calls;
 			const phoneCalls = calls.filter(
 				(call: Array<{ deviceType: string }>) => call[0].deviceType === "iphone",
 			);
@@ -254,7 +253,7 @@ describe("AccelerometerService", () => {
 
 			await service.syncForTimeRange(startedAt, endedAt);
 
-			const calls = (deps.trpcClient.accelerometerSync.pushAccelerometerSamples.mutate as ReturnType<typeof vi.fn>).mock.calls;
+			const calls = (deps.trpcClient.inertialMeasurementUnitSync.pushSamples.mutate as ReturnType<typeof vi.fn>).mock.calls;
 			const whoopCalls = calls.filter(
 				(call: Array<{ deviceType: string }>) => call[0].deviceType === "whoop",
 			);
@@ -274,7 +273,7 @@ describe("AccelerometerService", () => {
 
 			await service.syncForTimeRange(startedAt, endedAt);
 
-			const calls = (deps.trpcClient.accelerometerSync.pushAccelerometerSamples.mutate as ReturnType<typeof vi.fn>).mock.calls;
+			const calls = (deps.trpcClient.inertialMeasurementUnitSync.pushSamples.mutate as ReturnType<typeof vi.fn>).mock.calls;
 			const whoopCalls = calls.filter(
 				(call: Array<{ deviceType: string }>) => call[0].deviceType === "whoop",
 			);
@@ -284,7 +283,7 @@ describe("AccelerometerService", () => {
 		it("works without whoopBle deps (optional)", async () => {
 			const depsWithoutWhoop = makeMockDeps();
 			delete depsWithoutWhoop.whoopBle;
-			const serviceWithoutWhoop = createAccelerometerService(depsWithoutWhoop);
+			const serviceWithoutWhoop = createInertialMeasurementUnitService(depsWithoutWhoop);
 
 			await expect(serviceWithoutWhoop.ensureRecording()).resolves.toBeUndefined();
 			await expect(serviceWithoutWhoop.syncForTimeRange(startedAt, endedAt)).resolves.toBeUndefined();

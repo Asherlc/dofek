@@ -1,4 +1,4 @@
-import type { AccelerometerSample } from "../modules/core-motion";
+import type { InertialMeasurementUnitSample } from "../modules/core-motion";
 
 const TWELVE_HOURS_SECONDS = 12 * 3600;
 const UPLOAD_BATCH_SIZE = 5000;
@@ -10,14 +10,14 @@ export interface CoreMotionDeps {
 	queryRecordedData(
 		fromDate: string,
 		toDate: string,
-	): Promise<AccelerometerSample[]>;
+	): Promise<InertialMeasurementUnitSample[]>;
 }
 
 /** Abstraction over Watch motion module for activity recording */
 export interface WatchDeps {
 	isAvailable(): boolean;
 	requestSync(): Promise<boolean>;
-	getPendingSamples(): Promise<AccelerometerSample[]>;
+	getPendingSamples(): Promise<InertialMeasurementUnitSample[]>;
 	acknowledgeSamples(): void;
 }
 
@@ -27,59 +27,57 @@ export interface WhoopBleDeps {
 	findAndConnect(): Promise<boolean>;
 	startStreaming(): Promise<boolean>;
 	stopStreaming(): Promise<boolean>;
-	getBufferedSamples(): Promise<
-		Array<{ timestamp: string; x: number; y: number; z: number }>
-	>;
+	getBufferedSamples(): Promise<InertialMeasurementUnitSample[]>;
 }
 
-/** tRPC client interface for accelerometer upload */
-export interface AccelerometerUploadClient {
-	accelerometerSync: {
-		pushAccelerometerSamples: {
+/** tRPC client interface for IMU sample upload */
+export interface InertialMeasurementUnitUploadClient {
+	inertialMeasurementUnitSync: {
+		pushSamples: {
 			mutate(input: {
 				deviceId: string;
 				deviceType: string;
-				samples: AccelerometerSample[];
+				samples: InertialMeasurementUnitSample[];
 			}): Promise<{ inserted: number }>;
 		};
 	};
 }
 
-export interface AccelerometerServiceDeps {
+export interface InertialMeasurementUnitServiceDeps {
 	coreMotion: CoreMotionDeps;
 	watch: WatchDeps;
 	whoopBle?: WhoopBleDeps;
-	trpcClient: AccelerometerUploadClient;
+	trpcClient: InertialMeasurementUnitUploadClient;
 	deviceId: string;
 }
 
-/** Service for managing accelerometer recording during activity recording */
-export interface AccelerometerService {
+/** Service for managing IMU recording during activity recording */
+export interface InertialMeasurementUnitService {
 	/** Ensure phone + watch accelerometer recording is active */
 	ensureRecording(): Promise<void>;
-	/** Sync accelerometer data for a specific time range (after activity save) */
+	/** Sync IMU data for a specific time range (after activity save) */
 	syncForTimeRange(startedAt: string, endedAt: string): Promise<void>;
 }
 
 /**
- * Create an accelerometer service that manages phone + watch accelerometer
+ * Create an IMU service that manages phone + watch accelerometer
  * recording during activity recording.
  *
  * - `ensureRecording()` starts a CoreMotion session and requests Watch sync
- * - `syncForTimeRange()` queries and uploads accelerometer data for the activity window
+ * - `syncForTimeRange()` queries and uploads IMU data for the activity window
  *
  * All operations are best-effort — errors are caught to avoid disrupting
  * the GPS recording or activity save.
  */
-export function createAccelerometerService(
-	deps: AccelerometerServiceDeps,
-): AccelerometerService {
+export function createInertialMeasurementUnitService(
+	deps: InertialMeasurementUnitServiceDeps,
+): InertialMeasurementUnitService {
 	const { coreMotion, watch, whoopBle, trpcClient, deviceId } = deps;
 
 	async function uploadBatched(
 		uploadDeviceId: string,
 		deviceType: string,
-		samples: AccelerometerSample[],
+		samples: InertialMeasurementUnitSample[],
 	): Promise<void> {
 		for (
 			let offset = 0;
@@ -87,7 +85,7 @@ export function createAccelerometerService(
 			offset += UPLOAD_BATCH_SIZE
 		) {
 			const batch = samples.slice(offset, offset + UPLOAD_BATCH_SIZE);
-			await trpcClient.accelerometerSync.pushAccelerometerSamples.mutate({
+			await trpcClient.inertialMeasurementUnitSync.pushSamples.mutate({
 				deviceId: uploadDeviceId,
 				deviceType,
 				samples: batch,
@@ -147,7 +145,7 @@ export function createAccelerometerService(
 				}
 			}
 
-			// Sync Watch accelerometer data
+			// Sync Watch IMU data
 			if (watch.isAvailable()) {
 				try {
 					const watchSamples = await watch.getPendingSamples();

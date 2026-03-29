@@ -70,7 +70,7 @@ export default function SettingsScreen() {
     setSettingMutation.mutate({ key: "unitSystem", value });
   }
 
-  // ── WHOOP Accelerometer ──
+  // ── WHOOP Motion Sensors ──
   const whoopImuSetting = trpc.settings.get.useQuery({ key: "whoopAlwaysOnImu" });
   const whoopImuEnabled = whoopImuSetting.data?.value === true;
 
@@ -268,11 +268,11 @@ export default function SettingsScreen() {
         </View>
       </View>
 
-      {/* ── WHOOP Accelerometer ── */}
+      {/* ── WHOOP Motion Sensors ── */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>WHOOP Accelerometer</Text>
+        <Text style={styles.sectionTitle}>WHOOP Motion Sensors</Text>
         <Text style={styles.sectionDescription}>
-          Record accelerometer data from your WHOOP strap continuously via Bluetooth.
+          Record accelerometer and gyroscope data from your WHOOP strap continuously via Bluetooth.
           Reduces strap battery life from ~5 days to ~3-4 days.
         </Text>
         <View style={styles.card}>
@@ -280,7 +280,7 @@ export default function SettingsScreen() {
             <View style={styles.toggleInfo}>
               <Text style={styles.toggleLabel}>Always-on recording</Text>
               <Text style={styles.toggleDescription}>
-                Streams accelerometer data whenever the app is open
+                Streams accelerometer and gyroscope data whenever the app is open
               </Text>
             </View>
             <Switch

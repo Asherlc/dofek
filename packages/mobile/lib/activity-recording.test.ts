@@ -7,7 +7,7 @@ import {
 } from "./activity-recording.ts";
 import type { GpsSample, LocationAdapter } from "./location-service.ts";
 import type { RecordingTrpcClient } from "./activity-recording.ts";
-import type { AccelerometerService } from "./accelerometer-service.ts";
+import type { InertialMeasurementUnitService } from "./inertial-measurement-unit-service.ts";
 
 function makeMockLocationAdapter(): LocationAdapter & {
   emitSample(sample: GpsSample): void;
@@ -253,35 +253,35 @@ describe("createActivityRecorder", () => {
   });
 });
 
-function makeMockAccelerometerService(): AccelerometerService {
+function makeMockImuService(): InertialMeasurementUnitService {
   return {
     ensureRecording: vi.fn().mockResolvedValue(undefined),
     syncForTimeRange: vi.fn().mockResolvedValue(undefined),
   };
 }
 
-describe("createActivityRecorder with accelerometer", () => {
+describe("createActivityRecorder with IMU service", () => {
   let location: ReturnType<typeof makeMockLocationAdapter>;
   let trpcClient: RecordingTrpcClient;
-  let accelerometer: AccelerometerService;
+  let imuService: InertialMeasurementUnitService;
   let recorder: ActivityRecorder;
 
   beforeEach(() => {
     location = makeMockLocationAdapter();
     trpcClient = makeMockTrpcClient();
-    accelerometer = makeMockAccelerometerService();
-    recorder = createActivityRecorder(location, trpcClient, "Dofek iOS", accelerometer);
+    imuService = makeMockImuService();
+    recorder = createActivityRecorder(location, trpcClient, "Dofek iOS", imuService);
   });
 
   it("calls ensureRecording on start", async () => {
     await recorder.start("running");
 
-    expect(accelerometer.ensureRecording).toHaveBeenCalled();
+    expect(imuService.ensureRecording).toHaveBeenCalled();
   });
 
   it("does not block recording start when ensureRecording fails", async () => {
-    (accelerometer.ensureRecording as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("Accelerometer error"),
+    (imuService.ensureRecording as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("IMU error"),
     );
 
     await recorder.start("running");
@@ -296,14 +296,14 @@ describe("createActivityRecorder with accelerometer", () => {
 
     await recorder.save("Morning run", null);
 
-    expect(accelerometer.syncForTimeRange).toHaveBeenCalledWith(
+    expect(imuService.syncForTimeRange).toHaveBeenCalledWith(
       expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
       expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
     );
   });
 
-  it("saves activity successfully even when accelerometer sync fails", async () => {
-    (accelerometer.syncForTimeRange as ReturnType<typeof vi.fn>).mockRejectedValue(
+  it("saves activity successfully even when IMU sync fails", async () => {
+    (imuService.syncForTimeRange as ReturnType<typeof vi.fn>).mockRejectedValue(
       new Error("Sync failed"),
     );
 
@@ -317,14 +317,14 @@ describe("createActivityRecorder with accelerometer", () => {
     expect(recorder.getSnapshot().state).toBe("idle");
   });
 
-  it("works without accelerometer service (backwards compatible)", async () => {
-    const recorderWithoutAccel = createActivityRecorder(location, trpcClient, "Dofek iOS");
+  it("works without IMU service (backwards compatible)", async () => {
+    const recorderWithoutImu = createActivityRecorder(location, trpcClient, "Dofek iOS");
 
-    await recorderWithoutAccel.start("running");
+    await recorderWithoutImu.start("running");
     location.emitSample(makeSample());
-    recorderWithoutAccel.stop();
+    recorderWithoutImu.stop();
 
-    const activityId = await recorderWithoutAccel.save(null, null);
+    const activityId = await recorderWithoutImu.save(null, null);
     expect(activityId).toBe("activity-123");
   });
 });

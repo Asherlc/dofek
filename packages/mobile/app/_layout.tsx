@@ -8,7 +8,7 @@ import { trpc } from "../lib/trpc";
 import { AuthProvider, useAuth } from "../lib/auth-context";
 import { initBackgroundAccelerometerSync } from "../lib/background-accelerometer-sync";
 import { initBackgroundHealthKitSync } from "../lib/background-health-kit-sync";
-import { initBackgroundWatchAccelerometerSync } from "../lib/background-watch-accelerometer-sync";
+import { initBackgroundWatchInertialMeasurementUnitSync } from "../lib/background-watch-inertial-measurement-unit-sync";
 import {
   initBackgroundWhoopBleSync,
   teardownBackgroundWhoopBleSync,
@@ -89,44 +89,28 @@ function AuthGate() {
     });
 
     // Start continuous accelerometer recording and background sync
-    initBackgroundAccelerometerSync({
-      accelerometerSync: {
-        pushAccelerometerSamples: {
-          mutate: (input) =>
-            trpcClient.accelerometerSync.pushAccelerometerSamples.mutate(input),
-        },
-      },
-    }).catch(() => {
-      // Best-effort — accelerometer sync is non-critical
-    });
-
-    // Start Apple Watch accelerometer sync (if Watch is paired)
-    const watchSyncClient = {
-      accelerometerSync: {
-        pushAccelerometerSamples: {
-          mutate: (input: Parameters<typeof trpcClient.accelerometerSync.pushAccelerometerSamples.mutate>[0]) =>
-            trpcClient.accelerometerSync.pushAccelerometerSamples.mutate(input),
+    const imuSyncClient = {
+      inertialMeasurementUnitSync: {
+        pushSamples: {
+          mutate: (input: Parameters<typeof trpcClient.inertialMeasurementUnitSync.pushSamples.mutate>[0]) =>
+            trpcClient.inertialMeasurementUnitSync.pushSamples.mutate(input),
         },
       },
     };
-    initBackgroundWatchAccelerometerSync(watchSyncClient).catch(() => {
+    initBackgroundAccelerometerSync(imuSyncClient).catch(() => {
+      // Best-effort — accelerometer sync is non-critical
+    });
+
+    // Start Apple Watch IMU sync (if Watch is paired)
+    initBackgroundWatchInertialMeasurementUnitSync(imuSyncClient).catch(() => {
       // Best-effort — Watch sync is non-critical
     });
 
-    // Start always-on WHOOP BLE accelerometer sync (if enabled in settings)
+    // Start always-on WHOOP BLE IMU sync (if enabled in settings)
     trpcClient.settings.get.query({ key: "whoopAlwaysOnImu" }).then((setting) => {
       if (setting?.value !== true) return;
 
-      const whoopSyncClient = {
-        accelerometerSync: {
-          pushAccelerometerSamples: {
-            mutate: (input: Parameters<typeof trpcClient.accelerometerSync.pushAccelerometerSamples.mutate>[0]) =>
-              trpcClient.accelerometerSync.pushAccelerometerSamples.mutate(input),
-          },
-        },
-      };
-
-      initBackgroundWhoopBleSync(whoopSyncClient, {
+      initBackgroundWhoopBleSync(imuSyncClient, {
         isBluetoothAvailable,
         findWhoop,
         connect: whoopConnect,
@@ -142,21 +126,14 @@ function AuthGate() {
     });
 
     // Listen for background refresh wakeups (~every 15-30 min, system-decided).
-    // On each wake, restart Watch recording and sync accelerometer data so
+    // On each wake, restart Watch recording and sync IMU data so
     // coverage continues even if the user never opens the app.
     const refreshSubscription = addBackgroundRefreshListener(() => {
-      // Restart Watch accelerometer recording
-      initBackgroundWatchAccelerometerSync(watchSyncClient).catch(() => {});
+      // Restart Watch IMU recording
+      initBackgroundWatchInertialMeasurementUnitSync(imuSyncClient).catch(() => {});
 
       // Restart phone accelerometer recording
-      initBackgroundAccelerometerSync({
-        accelerometerSync: {
-          pushAccelerometerSamples: {
-            mutate: (input) =>
-              trpcClient.accelerometerSync.pushAccelerometerSamples.mutate(input),
-          },
-        },
-      }).catch(() => {});
+      initBackgroundAccelerometerSync(imuSyncClient).catch(() => {});
 
       // Re-schedule for next wakeup
       scheduleRefresh();

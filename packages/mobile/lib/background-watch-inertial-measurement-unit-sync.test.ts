@@ -13,8 +13,8 @@ vi.mock("../modules/watch-motion", () => ({
 	requestWatchSync: vi.fn(() => Promise.resolve(true)),
 }));
 
-vi.mock("./watch-accelerometer-adapter", () => ({
-	createWatchCoreMotionAdapter: vi.fn(() => ({
+vi.mock("./watch-inertial-measurement-unit-adapter", () => ({
+	createWatchInertialMeasurementUnitAdapter: vi.fn(() => ({
 		isAccelerometerRecordingAvailable: () => true,
 		queryRecordedData: () => Promise.resolve([]),
 		getLastSyncTimestamp: () => null,
@@ -24,36 +24,36 @@ vi.mock("./watch-accelerometer-adapter", () => ({
 	})),
 }));
 
-vi.mock("./accelerometer-sync", () => ({
-	syncAccelerometerToServer: vi.fn(() =>
+vi.mock("./inertial-measurement-unit-sync", () => ({
+	syncInertialMeasurementUnitToServer: vi.fn(() =>
 		Promise.resolve({ inserted: 0, recording: true }),
 	),
 }));
 
 import {
-	initBackgroundWatchAccelerometerSync,
-	teardownBackgroundWatchAccelerometerSync,
-} from "./background-watch-accelerometer-sync";
+	initBackgroundWatchInertialMeasurementUnitSync,
+	teardownBackgroundWatchInertialMeasurementUnitSync,
+} from "./background-watch-inertial-measurement-unit-sync";
 
-describe("backgroundWatchAccelerometerSync", () => {
+describe("backgroundWatchInertialMeasurementUnitSync", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mockIsWatchPaired.mockReturnValue(true);
 		mockIsWatchAppInstalled.mockReturnValue(true);
-		teardownBackgroundWatchAccelerometerSync();
+		teardownBackgroundWatchInertialMeasurementUnitSync();
 	});
 
 	it("initializes without throwing when Watch is paired", async () => {
 		const mockClient = {
-			accelerometerSync: {
-				pushAccelerometerSamples: {
+			inertialMeasurementUnitSync: {
+				pushSamples: {
 					mutate: vi.fn(() => Promise.resolve({ inserted: 0 })),
 				},
 			},
 		};
 
 		await expect(
-			initBackgroundWatchAccelerometerSync(mockClient),
+			initBackgroundWatchInertialMeasurementUnitSync(mockClient),
 		).resolves.not.toThrow();
 	});
 
@@ -61,33 +61,31 @@ describe("backgroundWatchAccelerometerSync", () => {
 		mockIsWatchPaired.mockReturnValue(false);
 
 		const mockClient = {
-			accelerometerSync: {
-				pushAccelerometerSamples: {
+			inertialMeasurementUnitSync: {
+				pushSamples: {
 					mutate: vi.fn(() => Promise.resolve({ inserted: 0 })),
 				},
 			},
 		};
 
-		await initBackgroundWatchAccelerometerSync(mockClient);
-		// Should return early — no error, no crash
+		await initBackgroundWatchInertialMeasurementUnitSync(mockClient);
 	});
 
 	it("skips initialization when Watch app is not installed", async () => {
 		mockIsWatchAppInstalled.mockReturnValue(false);
 
 		const mockClient = {
-			accelerometerSync: {
-				pushAccelerometerSamples: {
+			inertialMeasurementUnitSync: {
+				pushSamples: {
 					mutate: vi.fn(() => Promise.resolve({ inserted: 0 })),
 				},
 			},
 		};
 
-		await initBackgroundWatchAccelerometerSync(mockClient);
-		// Should return early — no error, no crash
+		await initBackgroundWatchInertialMeasurementUnitSync(mockClient);
 	});
 
 	it("tears down without throwing even when not initialized", () => {
-		expect(() => teardownBackgroundWatchAccelerometerSync()).not.toThrow();
+		expect(() => teardownBackgroundWatchInertialMeasurementUnitSync()).not.toThrow();
 	});
 });

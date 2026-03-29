@@ -29,7 +29,7 @@ import { Route as CoachRouteImport } from './routes/coach'
 import { Route as BreathworkRouteImport } from './routes/breathwork'
 import { Route as BodyRouteImport } from './routes/body'
 import { Route as BehaviorImpactRouteImport } from './routes/behavior-impact'
-import { Route as AccelerometerRouteImport } from './routes/accelerometer'
+import { Route as InertialMeasurementUnitRouteImport } from './routes/inertial-measurement-unit'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TrainingIndexRouteImport } from './routes/training/index'
 import { Route as ProvidersIndexRouteImport } from './routes/providers/index'
@@ -145,9 +145,9 @@ const BehaviorImpactRoute = BehaviorImpactRouteImport.update({
   path: '/behavior-impact',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AccelerometerRoute = AccelerometerRouteImport.update({
-  id: '/accelerometer',
-  path: '/accelerometer',
+const InertialMeasurementUnitRoute = InertialMeasurementUnitRouteImport.update({
+  id: '/inertial-measurement-unit',
+  path: '/inertial-measurement-unit',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -223,7 +223,7 @@ const ActivityIdRoute = ActivityIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/accelerometer': typeof AccelerometerRoute
+  '/inertial-measurement-unit': typeof InertialMeasurementUnitRoute
   '/behavior-impact': typeof BehaviorImpactRoute
   '/body': typeof BodyRoute
   '/breathwork': typeof BreathworkRoute
@@ -260,7 +260,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/accelerometer': typeof AccelerometerRoute
+  '/inertial-measurement-unit': typeof InertialMeasurementUnitRoute
   '/behavior-impact': typeof BehaviorImpactRoute
   '/body': typeof BodyRoute
   '/breathwork': typeof BreathworkRoute
@@ -295,7 +295,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/accelerometer': typeof AccelerometerRoute
+  '/inertial-measurement-unit': typeof InertialMeasurementUnitRoute
   '/behavior-impact': typeof BehaviorImpactRoute
   '/body': typeof BodyRoute
   '/breathwork': typeof BreathworkRoute
@@ -334,7 +334,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/accelerometer'
+    | '/inertial-measurement-unit'
     | '/behavior-impact'
     | '/body'
     | '/breathwork'
@@ -371,7 +371,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/accelerometer'
+    | '/inertial-measurement-unit'
     | '/behavior-impact'
     | '/body'
     | '/breathwork'
@@ -405,7 +405,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
-    | '/accelerometer'
+    | '/inertial-measurement-unit'
     | '/behavior-impact'
     | '/body'
     | '/breathwork'
@@ -443,7 +443,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  AccelerometerRoute: typeof AccelerometerRoute
+  InertialMeasurementUnitRoute: typeof InertialMeasurementUnitRoute
   BehaviorImpactRoute: typeof BehaviorImpactRoute
   BodyRoute: typeof BodyRoute
   BreathworkRoute: typeof BreathworkRoute
@@ -609,11 +609,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BehaviorImpactRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/accelerometer': {
-      id: '/accelerometer'
-      path: '/accelerometer'
-      fullPath: '/accelerometer'
-      preLoaderRoute: typeof AccelerometerRouteImport
+    '/inertial-measurement-unit': {
+      id: '/inertial-measurement-unit'
+      path: '/inertial-measurement-unit'
+      fullPath: '/inertial-measurement-unit'
+      preLoaderRoute: typeof InertialMeasurementUnitRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -773,7 +773,7 @@ const TrainingRouteWithChildren = TrainingRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  AccelerometerRoute: AccelerometerRoute,
+  InertialMeasurementUnitRoute: InertialMeasurementUnitRoute,
   BehaviorImpactRoute: BehaviorImpactRoute,
   BodyRoute: BodyRoute,
   BreathworkRoute: BreathworkRoute,

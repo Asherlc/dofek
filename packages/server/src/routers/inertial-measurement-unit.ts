@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { protectedProcedure, router } from "../trpc.ts";
 
-export const accelerometerRouter = router({
+export const inertialMeasurementUnitRouter = router({
   /** Daily sample counts for the last N days — powers the coverage chart */
   getDailyCounts: protectedProcedure
     .input(z.object({ days: z.number().int().min(1).max(365).default(90) }))
@@ -16,7 +16,7 @@ export const accelerometerRouter = router({
             date_trunc('day', recorded_at)::date::text AS date,
             count(*)::int AS sample_count,
             (count(*)::float / (50.0 * 3600))::numeric(6,2)::float AS hours_covered
-          FROM fitness.accelerometer_sample
+          FROM fitness.inertial_measurement_unit_sample
           WHERE user_id = ${ctx.userId}::uuid
             AND recorded_at > now() - make_interval(days => ${input.days})
           GROUP BY 1
@@ -40,7 +40,7 @@ export const accelerometerRouter = router({
           count(*)::int AS sample_count,
           max(recorded_at)::text AS latest_sample,
           min(recorded_at)::text AS earliest_sample
-        FROM fitness.accelerometer_sample
+        FROM fitness.inertial_measurement_unit_sample
         WHERE user_id = ${ctx.userId}::uuid
         GROUP BY device_id, device_type`,
     );
@@ -68,11 +68,15 @@ export const accelerometerRouter = router({
         x: number;
         y: number;
         z: number;
+        gyroscope_x: number | null;
+        gyroscope_y: number | null;
+        gyroscope_z: number | null;
       }>(
         sql`SELECT
             recorded_at::text,
-            x, y, z
-          FROM fitness.accelerometer_sample
+            x, y, z,
+            gyroscope_x, gyroscope_y, gyroscope_z
+          FROM fitness.inertial_measurement_unit_sample
           WHERE user_id = ${ctx.userId}::uuid
             AND recorded_at >= ${start.toISOString()}::timestamptz
             AND recorded_at < ${clampedEnd.toISOString()}::timestamptz

@@ -607,11 +607,11 @@ export const metricStream = fitness.table(
 );
 
 // ============================================================
-// Accelerometer (high-frequency IMU data, 50 Hz)
+// Inertial Measurement Unit (high-frequency 6-axis IMU data, 50 Hz)
 // ============================================================
 
-export const accelerometerSample = fitness.table(
-  "accelerometer_sample",
+export const inertialMeasurementUnitSample = fitness.table(
+  "inertial_measurement_unit_sample",
   {
     recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
     userId: uuid("user_id")
@@ -626,8 +626,11 @@ export const accelerometerSample = fitness.table(
     x: real("x").notNull(), // acceleration in g
     y: real("y").notNull(), // acceleration in g
     z: real("z").notNull(), // acceleration in g
+    gyroscopeX: real("gyroscope_x"), // rotation rate in rad/s (nullable — accel-only sources)
+    gyroscopeY: real("gyroscope_y"), // rotation rate in rad/s
+    gyroscopeZ: real("gyroscope_z"), // rotation rate in rad/s
   },
-  (table) => [index("accelerometer_user_time_idx").on(table.userId, table.recordedAt)],
+  (table) => [index("inertial_measurement_unit_user_time_idx").on(table.userId, table.recordedAt)],
 );
 
 // ============================================================

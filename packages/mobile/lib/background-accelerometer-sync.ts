@@ -9,9 +9,9 @@ import {
 	isRecordingActive,
 } from "../modules/core-motion";
 import {
-	syncAccelerometerToServer,
-	type AccelerometerSyncTrpcClient,
-} from "./accelerometer-sync";
+	syncInertialMeasurementUnitToServer,
+	type InertialMeasurementUnitSyncTrpcClient,
+} from "./inertial-measurement-unit-sync";
 
 const TWELVE_HOURS_SECONDS = 12 * 3600;
 
@@ -27,7 +27,7 @@ let syncing = false;
  * - Should be called once after authentication is established
  */
 export async function initBackgroundAccelerometerSync(
-	trpcClient: AccelerometerSyncTrpcClient,
+	trpcClient: InertialMeasurementUnitSyncTrpcClient,
 ): Promise<void> {
 	if (!isAccelerometerRecordingAvailable()) return;
 
@@ -53,7 +53,7 @@ export async function initBackgroundAccelerometerSync(
 			if (syncing) return;
 
 			syncing = true;
-			syncAccelerometerToServer({
+			syncInertialMeasurementUnitToServer({
 				trpcClient,
 				coreMotion: {
 					isAccelerometerRecordingAvailable,

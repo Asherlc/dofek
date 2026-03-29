@@ -8,20 +8,23 @@ const INSERT_BATCH_SIZE = 5000;
 
 // ── Zod schemas ──
 
-const accelerometerSampleSchema = z.object({
+const inertialMeasurementUnitSampleSchema = z.object({
   timestamp: z.string(), // ISO 8601 with millisecond precision
   x: z.number(),
   y: z.number(),
   z: z.number(),
+  gyroscopeX: z.number().optional(),
+  gyroscopeY: z.number().optional(),
+  gyroscopeZ: z.number().optional(),
 });
 
-const pushAccelerometerInput = z.object({
+const pushSamplesInput = z.object({
   deviceId: z.string().min(1),
   deviceType: z.string().min(1),
-  samples: z.array(accelerometerSampleSchema),
+  samples: z.array(inertialMeasurementUnitSampleSchema),
 });
 
-export type AccelerometerSample = z.infer<typeof accelerometerSampleSchema>;
+export type InertialMeasurementUnitSample = z.infer<typeof inertialMeasurementUnitSampleSchema>;
 
 type Database = Parameters<Parameters<typeof protectedProcedure.mutation>[0]>[0]["ctx"]["db"];
 
@@ -35,7 +38,7 @@ async function ensureProvider(db: Database) {
 }
 
 /**
- * Bulk-insert accelerometer samples using multi-row VALUES.
+ * Bulk-insert IMU samples using multi-row VALUES.
  * At 50 Hz, a 12-hour sync produces ~2.16M samples.
  * Single-row inserts would be unacceptably slow — multi-row is critical.
  */
@@ -44,7 +47,7 @@ async function insertBatch(
   userId: string,
   deviceId: string,
   deviceType: string,
-  samples: AccelerometerSample[],
+  samples: InertialMeasurementUnitSample[],
 ): Promise<number> {
   if (samples.length === 0) return 0;
 
@@ -54,13 +57,13 @@ async function insertBatch(
     const batch = samples.slice(offset, offset + INSERT_BATCH_SIZE);
 
     const valuesClauses = batch.map(
-      (s) =>
-        sql`(${s.timestamp}::timestamptz, ${userId}::uuid, ${deviceId}, ${deviceType}, ${PROVIDER_ID}, ${s.x}, ${s.y}, ${s.z})`,
+      (sample) =>
+        sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${deviceId}, ${deviceType}, ${PROVIDER_ID}, ${sample.x}, ${sample.y}, ${sample.z}, ${sample.gyroscopeX ?? null}, ${sample.gyroscopeY ?? null}, ${sample.gyroscopeZ ?? null})`,
     );
 
     await db.execute(
-      sql`INSERT INTO fitness.accelerometer_sample
-          (recorded_at, user_id, device_id, device_type, provider_id, x, y, z)
+      sql`INSERT INTO fitness.inertial_measurement_unit_sample
+          (recorded_at, user_id, device_id, device_type, provider_id, x, y, z, gyroscope_x, gyroscope_y, gyroscope_z)
           VALUES ${sql.join(valuesClauses, sql`, `)}`,
     );
 
@@ -72,31 +75,29 @@ async function insertBatch(
 
 // ── Router ──
 
-export const accelerometerSyncRouter = router({
-  pushAccelerometerSamples: protectedProcedure
-    .input(pushAccelerometerInput)
-    .mutation(async ({ ctx, input }) => {
-      await ensureProvider(ctx.db);
+export const inertialMeasurementUnitSyncRouter = router({
+  pushSamples: protectedProcedure.input(pushSamplesInput).mutation(async ({ ctx, input }) => {
+    await ensureProvider(ctx.db);
 
-      if (input.samples.length === 0) {
-        return { inserted: 0 };
-      }
+    if (input.samples.length === 0) {
+      return { inserted: 0 };
+    }
 
-      const inserted = await insertBatch(
-        ctx.db,
-        ctx.userId,
-        input.deviceId,
-        input.deviceType,
-        input.samples,
-      );
+    const inserted = await insertBatch(
+      ctx.db,
+      ctx.userId,
+      input.deviceId,
+      input.deviceType,
+      input.samples,
+    );
 
-      logger.info("Accelerometer samples pushed", {
-        userId: ctx.userId,
-        deviceId: input.deviceId,
-        deviceType: input.deviceType,
-        sampleCount: inserted,
-      });
+    logger.info("IMU samples pushed", {
+      userId: ctx.userId,
+      deviceId: input.deviceId,
+      deviceType: input.deviceType,
+      sampleCount: inserted,
+    });
 
-      return { inserted };
-    }),
+    return { inserted };
+  }),
 });

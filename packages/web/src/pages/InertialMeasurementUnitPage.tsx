@@ -7,15 +7,14 @@ function formatNumber(n: number): string {
 }
 
 function SyncStatusPanel() {
-  const { data, isLoading } = trpc.accelerometer.getSyncStatus.useQuery();
+  const { data, isLoading } = trpc.inertialMeasurementUnit.getSyncStatus.useQuery();
 
   if (isLoading) return <p className="text-sm text-muted-foreground">Loading...</p>;
   if (!data || data.length === 0) {
     return (
       <div className="rounded-lg border border-border bg-card p-6 text-center">
         <p className="text-muted-foreground">
-          No accelerometer data yet. Install the iOS app and grant motion permission to start
-          recording.
+          No motion data yet. Install the iOS app and grant motion permission to start recording.
         </p>
       </div>
     );
@@ -31,7 +30,11 @@ function SyncStatusPanel() {
           <div className="flex items-center gap-2">
             <p className="text-sm font-medium text-muted-foreground">{device.device_id}</p>
             <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-              {device.device_type === "apple_watch" ? "Apple Watch" : "iPhone"}
+              {device.device_type === "apple_watch"
+                ? "Apple Watch"
+                : device.device_type === "whoop"
+                  ? "WHOOP"
+                  : "iPhone"}
             </span>
           </div>
           <p className="text-2xl font-bold">{formatNumber(device.sample_count)} samples</p>
@@ -47,7 +50,7 @@ function SyncStatusPanel() {
 }
 
 function DailyCoveragePanel() {
-  const { data, isLoading } = trpc.accelerometer.getDailyCounts.useQuery({ days: 30 });
+  const { data, isLoading } = trpc.inertialMeasurementUnit.getDailyCounts.useQuery({ days: 30 });
 
   if (isLoading) return <p className="text-sm text-muted-foreground">Loading...</p>;
   if (!data || data.length === 0) {
@@ -76,16 +79,16 @@ function DailyCoveragePanel() {
   );
 }
 
-export function AccelerometerPage() {
+export function InertialMeasurementUnitPage() {
   return (
     <PageLayout>
       <PageSection
-        title="Accelerometer"
-        subtitle="Continuous 50 Hz motion data from iPhone and Apple Watch"
+        title="Inertial Measurement Unit"
+        subtitle="Continuous 50 Hz motion data (accelerometer + gyroscope) from iPhone, Apple Watch, and WHOOP"
       >
         <SyncStatusPanel />
       </PageSection>
-      <PageSection title="Daily Coverage" subtitle="Hours of accelerometer data recorded per day">
+      <PageSection title="Daily Coverage" subtitle="Hours of motion data recorded per day">
         <DailyCoveragePanel />
       </PageSection>
     </PageLayout>

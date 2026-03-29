@@ -1,16 +1,15 @@
-import type { AccelerometerSample } from "../modules/core-motion";
+import type { InertialMeasurementUnitSample } from "../modules/core-motion";
 
 const UPLOAD_BATCH_SIZE = 5000;
 const TWELVE_HOURS_SECONDS = 12 * 3600;
-const ONE_HOUR_MS = 60 * 60 * 1000;
 
 /** Abstraction over CoreMotion native module for testability */
-export interface CoreMotionAdapter {
+export interface InertialMeasurementUnitAdapter {
 	isAccelerometerRecordingAvailable(): boolean;
 	queryRecordedData(
 		fromDate: string,
 		toDate: string,
-	): Promise<AccelerometerSample[]>;
+	): Promise<InertialMeasurementUnitSample[]>;
 	getLastSyncTimestamp(): string | null;
 	setLastSyncTimestamp(timestamp: string): void;
 	startRecording(durationSeconds: number): Promise<boolean>;
@@ -18,33 +17,33 @@ export interface CoreMotionAdapter {
 }
 
 /** Abstraction over tRPC client for testability */
-export interface AccelerometerSyncTrpcClient {
-	accelerometerSync: {
-		pushAccelerometerSamples: {
+export interface InertialMeasurementUnitSyncTrpcClient {
+	inertialMeasurementUnitSync: {
+		pushSamples: {
 			mutate(input: {
 				deviceId: string;
 				deviceType: string;
-				samples: AccelerometerSample[];
+				samples: InertialMeasurementUnitSample[];
 			}): Promise<{ inserted: number }>;
 		};
 	};
 }
 
-export interface AccelerometerSyncOptions {
-	trpcClient: AccelerometerSyncTrpcClient;
-	coreMotion: CoreMotionAdapter;
+export interface InertialMeasurementUnitSyncOptions {
+	trpcClient: InertialMeasurementUnitSyncTrpcClient;
+	coreMotion: InertialMeasurementUnitAdapter;
 	deviceId: string;
 	deviceType: string;
 	onProgress?: (message: string) => void;
 }
 
-export interface AccelerometerSyncResult {
+export interface InertialMeasurementUnitSyncResult {
 	inserted: number;
 	recording: boolean;
 }
 
 /**
- * Sync recorded accelerometer data from CMSensorRecorder to the server.
+ * Sync recorded IMU data from CMSensorRecorder to the server.
  *
  * 1. Queries from lastSyncTimestamp (or 3 days ago) to now
  * 2. Batches samples into 5,000-sample chunks
@@ -52,9 +51,9 @@ export interface AccelerometerSyncResult {
  * 4. Advances the sync cursor only after all batches succeed
  * 5. Ensures recording is active (restarts if needed)
  */
-export async function syncAccelerometerToServer(
-	options: AccelerometerSyncOptions,
-): Promise<AccelerometerSyncResult> {
+export async function syncInertialMeasurementUnitToServer(
+	options: InertialMeasurementUnitSyncOptions,
+): Promise<InertialMeasurementUnitSyncResult> {
 	const { trpcClient, coreMotion, deviceId, deviceType, onProgress } = options;
 
 	if (!coreMotion.isAccelerometerRecordingAvailable()) {
@@ -75,20 +74,20 @@ export async function syncAccelerometerToServer(
 		return { inserted: 0, recording: true };
 	}
 
-	onProgress?.(`Querying accelerometer data from ${fromDate.toISOString()}...`);
+	onProgress?.(`Querying IMU data from ${fromDate.toISOString()}...`);
 	const samples = await coreMotion.queryRecordedData(
 		fromDate.toISOString(),
 		now.toISOString(),
 	);
 
 	if (samples.length === 0) {
-		onProgress?.("No new accelerometer samples");
+		onProgress?.("No new IMU samples");
 		coreMotion.setLastSyncTimestamp(now.toISOString());
 		await ensureRecording(coreMotion, onProgress);
 		return { inserted: 0, recording: true };
 	}
 
-	onProgress?.(`Uploading ${samples.length} accelerometer samples...`);
+	onProgress?.(`Uploading ${samples.length} IMU samples...`);
 
 	let totalInserted = 0;
 	const totalBatches = Math.ceil(samples.length / UPLOAD_BATCH_SIZE);
@@ -102,7 +101,7 @@ export async function syncAccelerometerToServer(
 		);
 
 		const result =
-			await trpcClient.accelerometerSync.pushAccelerometerSamples.mutate({
+			await trpcClient.inertialMeasurementUnitSync.pushSamples.mutate({
 				deviceId,
 				deviceType,
 				samples: batch,
@@ -113,7 +112,7 @@ export async function syncAccelerometerToServer(
 
 	// All batches succeeded — advance the cursor
 	coreMotion.setLastSyncTimestamp(now.toISOString());
-	onProgress?.(`Synced ${totalInserted} accelerometer samples`);
+	onProgress?.(`Synced ${totalInserted} IMU samples`);
 
 	await ensureRecording(coreMotion, onProgress);
 
@@ -125,7 +124,7 @@ export async function syncAccelerometerToServer(
  * If no recording is running (or it's about to expire), start a new 12-hour session.
  */
 async function ensureRecording(
-	coreMotion: CoreMotionAdapter,
+	coreMotion: InertialMeasurementUnitAdapter,
 	onProgress?: (message: string) => void,
 ): Promise<void> {
 	if (!coreMotion.isAccelerometerRecordingAvailable()) return;

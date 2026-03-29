@@ -12,17 +12,20 @@ struct DofekWatchApp: App {
     }
 
     @StateObject private var recorder = AccelerometerRecorder()
+    @StateObject private var gyroscopeRecorder = GyroscopeRecorder()
     @StateObject private var sessionDelegate = WatchSessionDelegate.shared
 
     @StateObject private var transferManager: TransferManager = {
         let recorder = AccelerometerRecorder()
-        return TransferManager(recorder: recorder)
+        let gyroscope = GyroscopeRecorder()
+        return TransferManager(accelerometerRecorder: recorder, gyroscopeRecorder: gyroscope)
     }()
 
     var body: some Scene {
         WindowGroup {
             ContentView(
                 recorder: recorder,
+                gyroscopeRecorder: gyroscopeRecorder,
                 transferManager: transferManager,
                 sessionDelegate: sessionDelegate
             )
@@ -30,13 +33,17 @@ struct DofekWatchApp: App {
         .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {
             case .active:
-                // Start recording on every foreground (extends existing session)
+                // Start accelerometer recording on every foreground (extends existing session)
                 recorder.startRecording()
+                // Start gyroscope recording (foreground only)
+                gyroscopeRecorder.startRecording()
                 // Transfer any queued data
                 transferManager.transferNewSamples()
             case .background:
-                // Ensure recording continues in background
+                // Ensure accelerometer continues in background
                 recorder.startRecording()
+                // Stop gyroscope — CMMotionManager requires foreground
+                gyroscopeRecorder.stopRecording()
             case .inactive:
                 break
             @unknown default:

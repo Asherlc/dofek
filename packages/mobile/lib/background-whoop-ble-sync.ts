@@ -1,5 +1,5 @@
 import { AppState, type AppStateStatus } from "react-native";
-import type { AccelerometerUploadClient } from "./accelerometer-service";
+import type { InertialMeasurementUnitUploadClient } from "./inertial-measurement-unit-service";
 
 const UPLOAD_BATCH_SIZE = 5000;
 
@@ -38,7 +38,7 @@ let currentDeps: WhoopBleSyncDeps | null = null;
  * - Should be called once after authentication when the setting is enabled
  */
 export async function initBackgroundWhoopBleSync(
-	trpcClient: AccelerometerUploadClient,
+	trpcClient: InertialMeasurementUnitUploadClient,
 	whoopDeps: WhoopBleSyncDeps,
 ): Promise<void> {
 	currentDeps = whoopDeps;
@@ -69,7 +69,7 @@ export async function initBackgroundWhoopBleSync(
 }
 
 async function syncOnForeground(
-	trpcClient: AccelerometerUploadClient,
+	trpcClient: InertialMeasurementUnitUploadClient,
 	whoopDeps: WhoopBleSyncDeps,
 ): Promise<void> {
 	if (!whoopDeps.isBluetoothAvailable()) return;
@@ -87,12 +87,15 @@ async function syncOnForeground(
 	// Upload any buffered samples
 	const samples = await whoopDeps.getBufferedSamples();
 	if (samples.length > 0) {
-		// Convert to the accelerometer sample format (x/y/z) for the upload endpoint
+		// Convert to the IMU sample format (accel + gyro) for the upload endpoint
 		const uploadSamples = samples.map((sample) => ({
 			timestamp: sample.timestamp,
 			x: sample.accelerometerX,
 			y: sample.accelerometerY,
 			z: sample.accelerometerZ,
+			gyroscopeX: sample.gyroscopeX,
+			gyroscopeY: sample.gyroscopeY,
+			gyroscopeZ: sample.gyroscopeZ,
 		}));
 
 		for (
@@ -101,7 +104,7 @@ async function syncOnForeground(
 			offset += UPLOAD_BATCH_SIZE
 		) {
 			const batch = uploadSamples.slice(offset, offset + UPLOAD_BATCH_SIZE);
-			await trpcClient.accelerometerSync.pushAccelerometerSamples.mutate({
+			await trpcClient.inertialMeasurementUnitSync.pushSamples.mutate({
 				deviceId: "WHOOP Strap",
 				deviceType: "whoop",
 				samples: batch,

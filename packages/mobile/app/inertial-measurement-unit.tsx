@@ -19,14 +19,14 @@ function StatusBadge({ label, value, color }: { label: string; value: string; co
 	);
 }
 
-export default function AccelerometerScreen() {
+export default function InertialMeasurementUnitScreen() {
 	const available = isAccelerometerRecordingAvailable();
 	const recording = available && isRecordingActive();
 	const authStatus = available ? getMotionAuthorizationStatus() : "unavailable";
 	const watchStatus = getWatchSyncStatus();
 
-	const syncStatus = trpc.accelerometer.getSyncStatus.useQuery();
-	const dailyCounts = trpc.accelerometer.getDailyCounts.useQuery({ days: 30 });
+	const syncStatus = trpc.inertialMeasurementUnit.getSyncStatus.useQuery();
+	const dailyCounts = trpc.inertialMeasurementUnit.getDailyCounts.useQuery({ days: 30 });
 
 	const totalSamples =
 		syncStatus.data?.reduce(
@@ -40,7 +40,7 @@ export default function AccelerometerScreen() {
 
 	return (
 		<>
-			<Stack.Screen options={{ ...rootStackScreenOptions, title: "Accelerometer" }} />
+			<Stack.Screen options={{ ...rootStackScreenOptions, title: "Motion Sensors" }} />
 			<ScrollView style={styles.container}>
 				<View style={styles.section}>
 					<Text style={styles.sectionTitle}>Recording Status</Text>

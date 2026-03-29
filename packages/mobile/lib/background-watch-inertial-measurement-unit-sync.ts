@@ -1,24 +1,24 @@
 import { AppState, type AppStateStatus } from "react-native";
 import { isWatchPaired, isWatchAppInstalled } from "../modules/watch-motion";
-import { createWatchCoreMotionAdapter } from "./watch-accelerometer-adapter";
+import { createWatchInertialMeasurementUnitAdapter } from "./watch-inertial-measurement-unit-adapter";
 import {
-	syncAccelerometerToServer,
-	type AccelerometerSyncTrpcClient,
-} from "./accelerometer-sync";
+	syncInertialMeasurementUnitToServer,
+	type InertialMeasurementUnitSyncTrpcClient,
+} from "./inertial-measurement-unit-sync";
 
 let appStateSubscription: ReturnType<typeof AppState.addEventListener> | null =
 	null;
 let syncing = false;
 
 /**
- * Initialize background Apple Watch accelerometer sync.
+ * Initialize background Apple Watch IMU sync.
  *
  * - Checks if a Watch is paired with the Dofek app installed
  * - Listens for app foreground events and syncs any pending transferred data
  * - Should be called once after authentication is established
  */
-export async function initBackgroundWatchAccelerometerSync(
-	trpcClient: AccelerometerSyncTrpcClient,
+export async function initBackgroundWatchInertialMeasurementUnitSync(
+	trpcClient: InertialMeasurementUnitSyncTrpcClient,
 ): Promise<void> {
 	if (!isWatchPaired() || !isWatchAppInstalled()) return;
 
@@ -28,7 +28,7 @@ export async function initBackgroundWatchAccelerometerSync(
 		appStateSubscription = null;
 	}
 
-	const adapter = createWatchCoreMotionAdapter();
+	const adapter = createWatchInertialMeasurementUnitAdapter();
 
 	// Sync whenever the app comes to foreground
 	appStateSubscription = AppState.addEventListener(
@@ -38,7 +38,7 @@ export async function initBackgroundWatchAccelerometerSync(
 			if (syncing) return;
 
 			syncing = true;
-			syncAccelerometerToServer({
+			syncInertialMeasurementUnitToServer({
 				trpcClient,
 				coreMotion: adapter,
 				deviceId: "Apple Watch",
@@ -54,8 +54,8 @@ export async function initBackgroundWatchAccelerometerSync(
 	);
 }
 
-/** Clean up background Watch accelerometer sync listeners. */
-export function teardownBackgroundWatchAccelerometerSync(): void {
+/** Clean up background Watch IMU sync listeners. */
+export function teardownBackgroundWatchInertialMeasurementUnitSync(): void {
 	if (appStateSubscription) {
 		appStateSubscription.remove();
 		appStateSubscription = null;
