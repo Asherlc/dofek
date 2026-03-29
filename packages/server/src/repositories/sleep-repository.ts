@@ -40,22 +40,29 @@ export class SleepRepository {
     this.#timezone = timezone;
   }
 
-  /** All sleep sessions within the given day window, oldest first. */
+  /** All sleep sessions within the given day window, deduplicated per calendar date, oldest first. */
   async list(days: number, endDate: string) {
     return executeWithSchema(
       this.#db,
       sleepListRowSchema,
-      sql`SELECT
-						to_char(started_at AT TIME ZONE ${this.#timezone}, 'YYYY-MM-DD"T"HH24:MI:SS') AS started_at,
-						duration_minutes,
-						deep_minutes,
-						rem_minutes,
-						light_minutes,
-						awake_minutes,
-						efficiency_pct
-					FROM fitness.v_sleep
-					WHERE user_id = ${this.#userId}
-						AND started_at > ${timestampWindowStart(endDate, days)}
+      sql`WITH raw_sleep AS (
+						SELECT
+							to_char(started_at AT TIME ZONE ${this.#timezone}, 'YYYY-MM-DD"T"HH24:MI:SS') AS started_at,
+							(started_at AT TIME ZONE ${this.#timezone})::date AS sleep_date,
+							duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, efficiency_pct
+						FROM fitness.v_sleep
+						WHERE user_id = ${this.#userId}
+							AND is_nap = false
+							AND started_at > ${timestampWindowStart(endDate, days)}
+					),
+					deduped AS (
+						SELECT DISTINCT ON (sleep_date)
+							started_at, duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, efficiency_pct
+						FROM raw_sleep
+						ORDER BY sleep_date, duration_minutes DESC NULLS LAST
+					)
+					SELECT started_at, duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, efficiency_pct
+					FROM deduped
 					ORDER BY started_at ASC`,
     );
   }
