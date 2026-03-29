@@ -519,6 +519,36 @@ describe("weeklyReportRouter", () => {
       expect(currentWeek?.activityCount).toBe(5);
     });
 
+    it("uses default weeks (12) when not specified", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+      // Should not throw — default weeks (12) is applied
+      const result = await caller.report({ endDate: "2026-03-24" });
+      expect(result.current).toBeNull();
+      expect(result.history).toEqual([]);
+    });
+
+    it("rejects weeks below 1", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+      await expect(caller.report({ weeks: 0, endDate: "2026-03-24" })).rejects.toThrow();
+    });
+
+    it("rejects weeks above 52", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+      await expect(caller.report({ weeks: 53, endDate: "2026-03-24" })).rejects.toThrow();
+    });
+
     it("uses avgDailyLoad || 0 correctly when avg_daily_load is non-zero (kills && mutant)", async () => {
       // With `Number(row.avg_daily_load) && 0`, a non-zero value becomes 0
       const rows = [

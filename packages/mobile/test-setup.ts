@@ -195,6 +195,7 @@ vi.mock("react-native-svg", () => {
     __esModule: true,
     default: svgComponent("Svg"),
     Svg: svgComponent("Svg"),
+    SvgXml: svgComponent("SvgXml"),
     Circle: svgComponent("Circle"),
     Line: svgComponent("Line"),
     Polyline: svgComponent("Polyline"),
@@ -248,6 +249,15 @@ vi.mock("expo-router", () => ({
   Stack: ({ children }: { children: ReactNode }) => createElement("Stack", null, children),
   Tabs: ({ children }: { children: ReactNode }) => createElement("Tabs", null, children),
   Link: ({ children }: { children: ReactNode }) => createElement("Link", null, children),
+}));
+
+vi.mock("expo-apple-authentication", () => ({
+  isAvailableAsync: vi.fn(() => Promise.resolve(true)),
+  signInAsync: vi.fn(),
+  AppleAuthenticationScope: { FULL_NAME: 0, EMAIL: 1 },
+  AppleAuthenticationButton: () => null,
+  AppleAuthenticationButtonType: { SIGN_IN: 0 },
+  AppleAuthenticationButtonStyle: { WHITE: 0 },
 }));
 
 vi.mock("expo-camera", () => ({

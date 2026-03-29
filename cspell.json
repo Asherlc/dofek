@@ -28,6 +28,7 @@
     "shadcn",
     "tailwindcss",
     "biome",
+    "healthz",
     "biomejs",
     "vitest",
     "stryker",
@@ -383,6 +384,9 @@
     "Sparkline",
     "subtabs",
     "unlinkable",
+    "unmappable",
+    "novalid",
+    "stddevs",
     "matviews",
     "matviewname",
     "schemaname",
@@ -396,7 +400,8 @@
     "MOSKOWITZ",
     "UCSF",
     "Azja",
-    "Razepam"
+    "Razepam",
+    "jdoe"
   ],
   "flagWords": [],
   "useGitignore": false,

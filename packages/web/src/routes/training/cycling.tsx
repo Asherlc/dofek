@@ -66,7 +66,7 @@ function CyclingTab() {
   const bodyData = trpc.body.list.useQuery({ days: 365 });
 
   // Extract latest weight for w/kg calculations
-  const rawWeight = bodyData.data?.[0]?.weight_kg;
+  const rawWeight = bodyData.data?.[0]?.weightKg;
   const latestWeight = typeof rawWeight === "number" ? rawWeight : undefined;
 
   // Build lookup: duration → best power for each period

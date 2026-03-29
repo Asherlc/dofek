@@ -15,6 +15,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { ProviderLogo } from "../components/ProviderLogo";
 import { ProviderStatsBreakdown } from "../components/ProviderStatsBreakdown";
 import { useAuth } from "../lib/auth-context";
 import { importSharedFile, type ShareImportProgress } from "../lib/share-import";
@@ -112,12 +113,14 @@ export function ProviderCard({
   onConnect: () => void;
   onPress: () => void;
 }) {
+  const { serverUrl } = useAuth();
   const dotColor = statusDotColor(provider.authStatus);
 
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.7}>
       <View style={styles.cardHeader}>
         <View style={styles.cardTitleRow}>
+          <ProviderLogo provider={provider.id} serverUrl={serverUrl} size={24} />
           <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
           <Text style={styles.cardTitle}>{provider.label}</Text>
         </View>

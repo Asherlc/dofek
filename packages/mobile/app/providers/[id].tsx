@@ -16,6 +16,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { ProviderLogo } from "../../components/ProviderLogo";
 import { ProviderStatsBreakdown } from "../../components/ProviderStatsBreakdown";
 import { useAuth } from "../../lib/auth-context";
 import { trpc } from "../../lib/trpc";
@@ -800,9 +801,12 @@ export default function ProviderDetailScreen() {
       <View style={styles.headerCard}>
         <View style={styles.headerRow}>
           <View style={styles.headerInfo}>
-            <Text style={styles.providerName}>
-              {provider?.name ?? formatProviderName(providerId)}
-            </Text>
+            <View style={styles.providerNameRow}>
+              <ProviderLogo provider={providerId} serverUrl={serverUrl} size={28} />
+              <Text style={styles.providerName}>
+                {provider?.name ?? formatProviderName(providerId)}
+              </Text>
+            </View>
             {provider && (
               <View style={styles.statusRow}>
                 {provider.authorized ? (
@@ -957,6 +961,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.text,
     fontWeight: "500",
+  },
+  providerNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
   },
   providerName: {
     fontSize: 20,

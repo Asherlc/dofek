@@ -9,7 +9,12 @@ vi.mock("@bull-board/api/bullMQAdapter", () => ({
 vi.mock("@bull-board/express", () => ({
   ExpressAdapter: vi.fn(() => ({
     setBasePath: vi.fn(),
-    getRouter: vi.fn(() => vi.fn()),
+    getRouter: vi.fn(
+      () =>
+        (_req: unknown, res: { status: (code: number) => { send: (body: string) => void } }) => {
+          res.status(200).send("bull-board");
+        },
+    ),
   })),
 }));
 vi.mock("@trpc/server/adapters/express", () => ({
@@ -129,6 +134,15 @@ describe("createApp HTTP routes", () => {
     await close();
   });
 
+  describe("GET /healthz", () => {
+    it("returns 200 with status ok", async () => {
+      const res = await fetch(`${baseUrl}/healthz`);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body).toEqual({ status: "ok" });
+    });
+  });
+
   describe("GET /metrics", () => {
     it("returns 200 with metrics content type", async () => {
       const res = await fetch(`${baseUrl}/metrics`);
@@ -156,16 +170,22 @@ describe("createApp HTTP routes", () => {
   });
 
   describe("request duration middleware", () => {
-    it("logger.info is configured as a mock (metrics middleware uses it)", () => {
-      // Verify the logger mock is in place — the request duration middleware
-      // calls logger.info on every request finish event
-      expect(vi.mocked(logger.info)).toBeDefined();
-      expect(typeof vi.mocked(logger.info)).toBe("function");
+    it("logs request method, path, and status code on response finish", async () => {
+      vi.mocked(logger.info).mockClear();
+      // Use /api/trpc which goes through the logging middleware
+      await fetch(`${baseUrl}/api/trpc/nonexistent`);
+      expect(vi.mocked(logger.info)).toHaveBeenCalledWith(
+        expect.stringMatching(/\[web\].*GET.*\/api\/trpc\/nonexistent.*\d+ms/),
+      );
     });
 
-    it("httpRequestDuration object is defined and observe is a function", () => {
-      expect(httpRequestDuration).toBeDefined();
-      expect(typeof httpRequestDuration.observe).toBe("function");
+    it("observes request duration in histogram", async () => {
+      vi.mocked(httpRequestDuration.observe).mockClear();
+      await fetch(`${baseUrl}/api/trpc/nonexistent`);
+      expect(httpRequestDuration.observe).toHaveBeenCalledWith(
+        expect.objectContaining({ method: "GET" }),
+        expect.any(Number),
+      );
     });
   });
 
@@ -222,6 +242,36 @@ describe("createApp HTTP routes", () => {
       vi.mocked(validateSession).mockResolvedValue(null);
       await fetch(`${baseUrl}/admin/queues`);
       expect(vi.mocked(isAdmin)).not.toHaveBeenCalled();
+    });
+
+    it("delegates to Bull Board router when admin is authenticated", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("admin-session");
+      vi.mocked(validateSession).mockResolvedValue({
+        userId: "admin-1",
+        expiresAt: new Date("2027-01-01"),
+      });
+      vi.mocked(isAdmin).mockResolvedValue(true);
+      const res = await fetch(`${baseUrl}/admin/queues`);
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toBe("bull-board");
+    });
+
+    it("initializes Bull Board only once across multiple admin requests", async () => {
+      const { createBullBoard: mockCreateBullBoard } = await import("@bull-board/api");
+      vi.mocked(mockCreateBullBoard).mockClear();
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("admin-session");
+      vi.mocked(validateSession).mockResolvedValue({
+        userId: "admin-1",
+        expiresAt: new Date("2027-01-01"),
+      });
+      vi.mocked(isAdmin).mockResolvedValue(true);
+
+      await fetch(`${baseUrl}/admin/queues`);
+      await fetch(`${baseUrl}/admin/queues`);
+
+      // createBullBoard should only be called once (lazy init)
+      expect(vi.mocked(mockCreateBullBoard)).toHaveBeenCalledTimes(1);
     });
   });
 

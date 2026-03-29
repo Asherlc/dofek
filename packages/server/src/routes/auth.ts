@@ -3,7 +3,8 @@ import { IDENTITY_PROVIDER_NAMES } from "@dofek/auth/auth";
 import { getOAuthRedirectUri } from "dofek/auth/oauth";
 import { DEFAULT_USER_ID } from "dofek/db/schema";
 import { sql } from "drizzle-orm";
-import { Router } from "express";
+import express, { Router } from "express";
+import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import { resolveOrCreateUser } from "../auth/account-linking.ts";
 import {
@@ -156,6 +157,15 @@ async function startDataProviderOAuth(
 // Module-level db reference, set during router creation
 let db: import("dofek/db").Database;
 
+// Rate limiter for auth endpoints (login, callback, native sign-in)
+const authRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: 30, // 30 attempts per window per IP
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: "Too many authentication attempts — please try again later",
+});
+
 export function createAuthRouter(database: import("dofek/db").Database): Router {
   db = database;
   const router = Router();
@@ -190,7 +200,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
     try {
       const providerNameRaw = req.params.provider;
       if (!isIdentityProviderName(providerNameRaw)) {
-        res.status(404).send(`Unknown identity provider: ${providerNameRaw}`);
+        res.status(404).type("text/plain").send("Unknown identity provider");
         return;
       }
       const providerName = providerNameRaw;
@@ -234,7 +244,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
     try {
       const providerNameRaw = req.params.provider;
       if (!isIdentityProviderName(providerNameRaw)) {
-        res.status(404).send(`Unknown identity provider: ${providerNameRaw}`);
+        res.status(404).type("text/plain").send("Unknown identity provider");
         return;
       }
       const providerName = providerNameRaw;
@@ -272,25 +282,31 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
     }
   });
 
-  router.get("/auth/callback/:provider", async (req, res) => {
+  // Apple Sign In uses response_mode=form_post, which sends code/state as POST body
+  async function handleIdentityCallback(
+    req: import("express").Request<{ provider: string }>,
+    res: import("express").Response,
+  ) {
     try {
       const providerNameRaw = req.params.provider;
       if (!isIdentityProviderName(providerNameRaw)) {
-        res.status(404).send(`Unknown identity provider: ${providerNameRaw}`);
+        res.status(404).type("text/plain").send("Unknown identity provider");
         return;
       }
       const providerName = providerNameRaw;
 
-      const code = typeof req.query.code === "string" ? req.query.code : undefined;
-      const stateParam = typeof req.query.state === "string" ? req.query.state : undefined;
-      const error = typeof req.query.error === "string" ? req.query.error : undefined;
+      // Read code/state/error from query params (GET) or body (POST form_post)
+      const params = req.method === "POST" ? req.body : req.query;
+      const code = typeof params.code === "string" ? params.code : undefined;
+      const stateParam = typeof params.state === "string" ? params.state : undefined;
+      const error = typeof params.error === "string" ? params.error : undefined;
 
       if (error) {
-        res.status(400).send(`Authorization denied: ${error}`);
+        res.status(400).type("text/plain").send("Authorization denied");
         return;
       }
       if (!code || !stateParam) {
-        res.status(400).send("Missing code or state parameter");
+        res.status(400).type("text/plain").send("Missing code or state parameter");
         return;
       }
 
@@ -345,7 +361,69 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       logger.error(`[auth] Identity callback failed: ${message}`);
       res.status(500).send("Login failed — please try again");
     }
-  });
+  }
+
+  router.get("/auth/callback/:provider", authRateLimiter, handleIdentityCallback);
+  // Apple Sign In uses response_mode=form_post, sending code/state as POST body
+  router.post(
+    "/auth/callback/:provider",
+    authRateLimiter,
+    express.urlencoded({ extended: false }),
+    handleIdentityCallback,
+  );
+
+  // ── Native Apple Sign In (iOS) ──
+  // iOS uses ASAuthorizationController which returns an authorization code + identity token directly.
+  // This endpoint exchanges the code for tokens and creates a session.
+  router.post(
+    "/auth/apple/native",
+    authRateLimiter,
+    express.urlencoded({ extended: false }),
+    express.json(),
+    async (req, res) => {
+      try {
+        if (!isProviderConfigured("apple")) {
+          res.status(400).send("Apple Sign In is not configured");
+          return;
+        }
+
+        const authorizationCode =
+          typeof req.body.authorizationCode === "string" ? req.body.authorizationCode : undefined;
+        if (!authorizationCode) {
+          res.status(400).send("Missing authorizationCode");
+          return;
+        }
+
+        // Apple only provides name on first sign-in; the native SDK returns it separately
+        const givenName = typeof req.body.givenName === "string" ? req.body.givenName : undefined;
+        const familyName =
+          typeof req.body.familyName === "string" ? req.body.familyName : undefined;
+        const fullName = [givenName, familyName].filter(Boolean).join(" ") || null;
+
+        const provider = getIdentityProvider("apple");
+        // Apple doesn't use PKCE, so pass empty string as codeVerifier
+        const { user: identityUser } = await provider.validateCallback(authorizationCode, "");
+
+        // Use the name from the native SDK if the identity token didn't include it
+        const userName = identityUser.name ?? fullName;
+
+        const { userId } = await resolveOrCreateUser(db, "apple", {
+          providerAccountId: identityUser.sub,
+          email: identityUser.email,
+          name: userName,
+          groups: identityUser.groups,
+        });
+
+        const sessionInfo = await createSession(db, userId);
+        logger.info(`[auth] User ${userId} logged in via native Apple Sign In`);
+        res.json({ session: sessionInfo.sessionId });
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.error(`[auth] Native Apple Sign In failed: ${message}`);
+        res.status(500).send("Apple Sign In failed — please try again");
+      }
+    },
+  );
 
   router.post("/auth/logout", async (req, res) => {
     const sessionId = getSessionIdFromRequest(req);
@@ -495,7 +573,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       }
 
       if (error) {
-        res.status(400).send(`Authorization denied: ${error}`);
+        res.status(400).type("text/plain").send("Authorization denied");
         return;
       }
 
