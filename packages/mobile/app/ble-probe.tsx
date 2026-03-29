@@ -48,7 +48,9 @@ export default function BleProbeScreen() {
       setNotificationCount((count) => count + 1);
       // Stream to Metro console for terminal-side analysis
       // biome-ignore lint/suspicious/noConsole: intentional debug logging for BLE RE
-      console.log(`[BLE] #${notification.index} [${notification.suffix}] ${notification.bytes}B: ${notification.hex}`);
+      console.log(
+        `[BLE] #${notification.index} [${notification.suffix}] ${notification.bytes}B: ${notification.hex}`,
+      );
       // Only show first 20 and then every 50th in the UI to avoid flooding
       const index = notification.index;
       if (index <= 20 || index % 50 === 0) {
@@ -60,18 +62,6 @@ export default function BleProbeScreen() {
     });
     return () => subscription.remove();
   }, [addLog]);
-
-  // === AUTO-COMMAND: edit this to send commands from the terminal ===
-  // Every time this file is saved, this runs on the phone via hot-reload.
-  // Change the command string below and save to execute it remotely.
-  useEffect(() => {
-    const autoCommand = ""; // disabled
-    if (autoCommand) {
-      // biome-ignore lint/suspicious/noConsole: intentional debug logging
-      console.log(`[BLE-AUTO] executing: ${autoCommand}`);
-      executeCommand(autoCommand);
-    }
-  }, [executeCommand]);
 
   const executeCommand = useCallback(
     async (input: string) => {
@@ -145,8 +135,18 @@ export default function BleProbeScreen() {
                 }
               }
               addLog("Subscribing to 0003 + 0005...");
-              try { await subscribe("0003"); addLog("  0003 subscribed"); } catch { addLog("  0003 failed"); }
-              try { await subscribe("0005"); addLog("  0005 subscribed"); } catch { addLog("  0005 failed"); }
+              try {
+                await subscribe("0003");
+                addLog("  0003 subscribed");
+              } catch {
+                addLog("  0003 failed");
+              }
+              try {
+                await subscribe("0005");
+                addLog("  0005 subscribed");
+              } catch {
+                addLog("  0005 failed");
+              }
               addLog("Ready!");
             } else {
               addLog("Scanning (5s)...");
@@ -285,6 +285,17 @@ export default function BleProbeScreen() {
     },
     [addLog, connectedDevice, notificationCount],
   );
+
+  // === AUTO-COMMAND: edit this to send commands from the terminal ===
+  // Change the command string below and save to execute it remotely via hot-reload.
+  useEffect(() => {
+    const autoCommand = ""; // disabled
+    if (autoCommand) {
+      // biome-ignore lint/suspicious/noConsole: intentional debug logging
+      console.log(`[BLE-AUTO] executing: ${autoCommand}`);
+      executeCommand(autoCommand);
+    }
+  }, [executeCommand]);
 
   const handleSubmit = useCallback(() => {
     executeCommand(commandInput);

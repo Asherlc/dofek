@@ -168,11 +168,15 @@ function AuthGate() {
       });
 
       // Retry WHOOP BLE connection (checks retrieveConnectedPeripherals + scans)
-      import("../modules/whoop-ble").then(({ retryConnection }) => {
-        retryConnection().catch((error: unknown) => {
-          captureException(error, { source: "bg-refresh-whoop-retry" });
+      import("../modules/whoop-ble")
+        .then(({ retryConnection }) => {
+          retryConnection().catch((error: unknown) => {
+            captureException(error, { source: "bg-refresh-whoop-retry" });
+          });
+        })
+        .catch((error: unknown) => {
+          captureException(error, { source: "bg-refresh-whoop-import" });
         });
-      }).catch(() => {});
 
       // Re-schedule for next wakeup
       scheduleRefresh();

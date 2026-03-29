@@ -86,7 +86,6 @@ export default function SettingsScreen() {
     );
   }
 
-
   function handleUnlink(accountId: string) {
     Alert.alert("Unlink Account", "Are you sure you want to unlink this account?", [
       { text: "Cancel", style: "cancel" },
