@@ -166,6 +166,62 @@ describe("FHIR Lab Result Parsing", () => {
       expect(result.loincCode).toBeUndefined();
       expect(result.testName).toBe("Custom Test");
     });
+
+    it("falls back to coding display when text is missing", () => {
+      const obs: FhirObservation = {
+        ...numericObservation,
+        id: "obs-display-fallback",
+        code: { coding: [{ display: "BUN Test", system: "http://loinc.org", code: "3094-0" }] },
+      };
+      const result = parseFhirObservation(obs, "Test");
+      expect(result.testName).toBe("BUN Test");
+    });
+
+    it("falls back to coding code when text and display are missing", () => {
+      const obs: FhirObservation = {
+        ...numericObservation,
+        id: "obs-code-fallback",
+        code: { coding: [{ system: "http://loinc.org", code: "3094-0" }] },
+      };
+      const result = parseFhirObservation(obs, "Test");
+      expect(result.testName).toBe("3094-0");
+    });
+
+    it("returns Unknown when code has no text, display, or coding", () => {
+      const obs: FhirObservation = {
+        ...numericObservation,
+        id: "obs-unknown-name",
+        code: {},
+      };
+      const result = parseFhirObservation(obs, "Test");
+      expect(result.testName).toBe("Unknown");
+    });
+
+    it("sets valueText but not value for text-only observations", () => {
+      const result = parseFhirObservation(textObservation, "Test");
+      expect(result.value).toBeUndefined();
+      expect(result.unit).toBeUndefined();
+      expect(result.valueText).toBe("NEGATIVE");
+    });
+
+    it("does not set referenceRangeText when structured range exists", () => {
+      const obs: FhirObservation = {
+        ...numericObservation,
+        id: "obs-range-both",
+        referenceRange: [
+          {
+            low: { value: 7.0, unit: "mg/dL" },
+            high: { value: 25.0, unit: "mg/dL" },
+            text: "7-25",
+          },
+        ],
+      };
+      const result = parseFhirObservation(obs, "Test");
+      expect(result.referenceRangeLow).toBe(7.0);
+      expect(result.referenceRangeHigh).toBe(25.0);
+      // Text should NOT be set when structured low/high exist
+      expect(result.referenceRangeText).toBeUndefined();
+    });
   });
 
   describe("parseFhirDiagnosticReport", () => {
@@ -522,6 +578,37 @@ describe("FHIR MedicationRequest Parsing", () => {
       expect(result.reasonSnomedCode).toBeUndefined();
     });
 
+    it("returns Unknown Medication when no name sources exist", () => {
+      const resource: FhirMedicationRequest = {
+        resourceType: "MedicationRequest",
+        id: "med-no-name",
+      };
+      const result = parseFhirMedicationRequest(resource, "Test");
+      expect(result.name).toBe("Unknown Medication");
+    });
+
+    it("extracts form from contained medication", () => {
+      const result = parseFhirMedicationRequest(medicationRequestFull, "Test");
+      expect(result.form).toBe("Capsule");
+    });
+
+    it("returns undefined form when no contained medication", () => {
+      const resource: FhirMedicationRequest = {
+        resourceType: "MedicationRequest",
+        id: "med-no-contained",
+        medicationReference: { display: "Some Med" },
+      };
+      const result = parseFhirMedicationRequest(resource, "Test");
+      expect(result.form).toBeUndefined();
+      expect(result.rxnormCode).toBeUndefined();
+    });
+
+    it("extracts bounds period start and end dates", () => {
+      const result = parseFhirMedicationRequest(medicationRequestFull, "Test");
+      expect(result.startDate).toBe("2011-07-19");
+      expect(result.endDate).toBe("2011-09-04");
+    });
+
     it("prefers patientInstruction over text for dosage", () => {
       const result = parseFhirMedicationRequest(medicationRequestFull, "Test");
       // patientInstruction is "Take 1 capsule orally 2 times a day"
@@ -558,6 +645,17 @@ describe("FHIR Condition Parsing", () => {
       expect(result.abatementDate).toBe("2024-06-27");
       expect(result.recordedDate).toBe("2023-06-02");
       expect(result.sourceName).toBe("UCSF Health");
+    });
+
+    it("falls back to text for clinical status when coding is missing", () => {
+      const resource: FhirCondition = {
+        resourceType: "Condition",
+        id: "cond-text-status",
+        code: { text: "Headache" },
+        clinicalStatus: { text: "Active" },
+      };
+      const result = parseFhirCondition(resource, "Test");
+      expect(result.clinicalStatus).toBe("active");
     });
 
     it("handles minimal condition with only name", () => {
@@ -599,6 +697,17 @@ describe("FHIR AllergyIntolerance Parsing", () => {
         { manifestation: "Other (See Comments)", description: "Other (See Comments)" },
       ]);
       expect(result.sourceName).toBe("UCSF Health");
+    });
+
+    it("handles allergy with reaction that has no manifestation text", () => {
+      const resource: FhirAllergyIntolerance = {
+        resourceType: "AllergyIntolerance",
+        id: "allergy-no-manifest",
+        code: { text: "Penicillin" },
+        reaction: [{ description: "Hives" }],
+      };
+      const result = parseFhirAllergyIntolerance(resource, "Test");
+      expect(result.reactions).toEqual([{ manifestation: undefined, description: "Hives" }]);
     });
 
     it("handles minimal allergy with no code", () => {
