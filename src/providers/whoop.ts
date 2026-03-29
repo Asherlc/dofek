@@ -2,10 +2,12 @@ import type { CanonicalActivityType } from "@dofek/training/training";
 import { and, eq } from "drizzle-orm";
 import {
   mapSportId,
+  mapV2ActivityType,
   parseDuringRange,
   WhoopClient,
   type WhoopCycle,
   type WhoopHrValue,
+  WhoopRateLimitError,
   type WhoopRecoveryRecord,
   type WhoopSleepRecord,
   type WhoopWeightliftingWorkoutResponse,
@@ -50,7 +52,6 @@ export type {
   WhoopSleepRecord,
   WhoopSleepScore,
   WhoopSleepStageSummary,
-  WhoopV2Activity,
   WhoopWeightliftingExercise,
   WhoopWeightliftingGroup,
   WhoopWeightliftingSet,
@@ -60,7 +61,7 @@ export type {
   WhoopZoneDuration,
 } from "whoop-whoop";
 // Re-export whoop-whoop types and client for dofek consumers
-export { parseDuringRange, WhoopClient } from "whoop-whoop";
+export { parseDuringRange, WhoopClient, WhoopRateLimitError } from "whoop-whoop";
 
 // ============================================================
 // Parsing — pure functions (dofek-specific shapes)
@@ -262,7 +263,30 @@ export interface ParsedWorkout {
   percentRecorded?: number;
 }
 
-export function parseWorkout(record: WhoopWorkoutRecord): ParsedWorkout {
+/**
+ * Resolve the canonical activity type for a WHOOP workout.
+ * Uses sport_id as the primary source; falls back to the v2_activity type
+ * name when the sport_id is unknown or maps to "other".
+ */
+export function resolveActivityType(
+  sportId: number,
+  v2ActivityTypeName?: string,
+): CanonicalActivityType {
+  const fromSportId = mapSportId(sportId);
+  if (fromSportId !== "other") return fromSportId;
+
+  if (v2ActivityTypeName) {
+    const fromTypeName = mapV2ActivityType(v2ActivityTypeName);
+    if (fromTypeName) return fromTypeName;
+  }
+
+  return "other";
+}
+
+export function parseWorkout(
+  record: WhoopWorkoutRecord,
+  v2ActivityTypeName?: string,
+): ParsedWorkout {
   // BFF v0 uses `during` range; fall back to legacy `start`/`end`
   let startedAt: Date;
   let endedAt: Date;
@@ -277,7 +301,7 @@ export function parseWorkout(record: WhoopWorkoutRecord): ParsedWorkout {
 
   return {
     externalId: record.activity_id ?? String(record.id ?? ""),
-    activityType: mapSportId(record.sport_id),
+    activityType: resolveActivityType(record.sport_id, v2ActivityTypeName),
     startedAt,
     endedAt,
     durationSeconds: Math.round((endedAt.getTime() - startedAt.getTime()) / 1000),
@@ -329,6 +353,27 @@ export function extractSleepIdsFromCycle(cycle: WhoopCycle): string[] {
   }
 
   return [...ids];
+}
+
+// ============================================================
+// v2_activity type lookup
+// ============================================================
+
+/**
+ * Build a Map from activity_id → v2_activity type name from all cycles.
+ * Used as a fallback for activity type resolution when sport_id is
+ * unknown or maps to "other".
+ */
+export function buildV2ActivityTypeLookup(cycles: WhoopCycle[]): Map<string, string> {
+  const lookup = new Map<string, string>();
+  for (const cycle of cycles) {
+    for (const v2Activity of cycle.v2_activities ?? []) {
+      if (v2Activity.id && v2Activity.type) {
+        lookup.set(v2Activity.id, v2Activity.type);
+      }
+    }
+  }
+  return lookup;
 }
 
 // ============================================================
@@ -675,6 +720,17 @@ export class WhoopProvider implements SyncProvider {
       client = new WhoopClient(
         { accessToken: token.accessToken, refreshToken: token.refreshToken, userId },
         this.#fetchFn,
+        (event) => {
+          const logMethod = event.status === 429 ? "warn" : "info";
+          logger[logMethod]("[whoop] API request", {
+            whoopUserId: event.userId,
+            endpoint: event.endpoint,
+            status: event.status,
+            attempt: event.attempt,
+            retryAfterSeconds: event.retryAfterSeconds,
+            timestamp: event.timestamp.toISOString(),
+          });
+        },
       );
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
@@ -753,11 +809,15 @@ export class WhoopProvider implements SyncProvider {
                   },
                 });
               count++;
-            } else {
+            } else if (recoveryState === "SCORED") {
+              // Has SCORED state but no parseable biometric data — likely an API change
               logger.warn(
-                `[whoop] Skipping unrecognized recovery format: ` +
-                  `state=${recoveryState}, keys=${Object.keys(cycle.recovery).join(",")}`,
+                `[whoop] SCORED recovery with no parseable data: ` +
+                  `keys=${Object.keys(cycle.recovery).join(",")}`,
               );
+            } else {
+              // Pending/unscored recovery (current day before sleep, etc.) — expected
+              logger.info(`[whoop] Skipping unscored recovery: state=${recoveryState}`);
             }
           }
           logger.info(
@@ -863,7 +923,10 @@ export class WhoopProvider implements SyncProvider {
     }
 
     // --- Collect all workouts from cycles (BFF v0 or legacy shape) ---
+    // Also build a lookup from activity_id → v2_activity type name so we can
+    // fall back to the human-readable type when sport_id maps to "other".
     const allWorkouts: WhoopWorkoutRecord[] = [];
+    const v2ActivityTypeByActivityId = buildV2ActivityTypeLookup(cycles);
     for (const cycle of cycles) {
       const workouts = cycle.workouts ?? cycle.strain?.workouts ?? [];
       allWorkouts.push(...workouts);
@@ -879,7 +942,10 @@ export class WhoopProvider implements SyncProvider {
           let count = 0;
           for (const workoutRecord of allWorkouts) {
             try {
-              const parsed = parseWorkout(workoutRecord);
+              const v2TypeName = workoutRecord.activity_id
+                ? v2ActivityTypeByActivityId.get(workoutRecord.activity_id)
+                : undefined;
+              const parsed = parseWorkout(workoutRecord, v2TypeName);
 
               await db
                 .insert(activity)
@@ -936,6 +1002,7 @@ export class WhoopProvider implements SyncProvider {
     }
 
     // --- Sync strength workouts (exercise-level data) ---
+    let rateLimited = false;
     try {
       const strengthCount = await withSyncLog(
         db,
@@ -1085,6 +1152,9 @@ export class WhoopProvider implements SyncProvider {
       );
       recordsSynced += strengthCount;
     } catch (err) {
+      if (err instanceof WhoopRateLimitError) {
+        rateLimited = true;
+      }
       errors.push({
         message: `strength: ${err instanceof Error ? err.message : String(err)}`,
         cause: err,
@@ -1092,119 +1162,126 @@ export class WhoopProvider implements SyncProvider {
     }
 
     // --- Sync HR stream (6s intervals) ---
-    try {
-      const hrCount = await withSyncLog(
-        db,
-        this.id,
-        "hr_stream",
-        async () => {
-          const weekMs = 7 * 24 * 60 * 60 * 1000;
-          let windowStart = since.getTime();
-          const nowMs = Date.now();
-          let totalRecords = 0;
-          const BATCH_SIZE = 500;
+    if (!rateLimited) {
+      try {
+        const hrCount = await withSyncLog(
+          db,
+          this.id,
+          "hr_stream",
+          async () => {
+            const weekMs = 7 * 24 * 60 * 60 * 1000;
+            let windowStart = since.getTime();
+            const nowMs = Date.now();
+            let totalRecords = 0;
+            const BATCH_SIZE = 500;
 
-          while (windowStart < nowMs) {
-            const windowEnd = Math.min(windowStart + weekMs, nowMs);
-            const startStr = new Date(windowStart).toISOString();
-            const endStr = new Date(windowEnd).toISOString();
+            while (windowStart < nowMs) {
+              const windowEnd = Math.min(windowStart + weekMs, nowMs);
+              const startStr = new Date(windowStart).toISOString();
+              const endStr = new Date(windowEnd).toISOString();
 
-            const values = await client.getHeartRate(startStr, endStr, 6);
-            const parsed = parseHeartRateValues(values);
+              const values = await client.getHeartRate(startStr, endStr, 6);
+              const parsed = parseHeartRateValues(values);
 
-            for (let i = 0; i < parsed.length; i += BATCH_SIZE) {
-              const batch = parsed.slice(i, i + BATCH_SIZE);
-              await db
-                .insert(metricStream)
-                .values(
-                  batch.map((r) => ({
-                    providerId: this.id,
-                    recordedAt: r.recordedAt,
-                    heartRate: r.heartRate,
-                  })),
-                )
-                .onConflictDoNothing();
+              for (let i = 0; i < parsed.length; i += BATCH_SIZE) {
+                const batch = parsed.slice(i, i + BATCH_SIZE);
+                await db
+                  .insert(metricStream)
+                  .values(
+                    batch.map((r) => ({
+                      providerId: this.id,
+                      recordedAt: r.recordedAt,
+                      heartRate: r.heartRate,
+                    })),
+                  )
+                  .onConflictDoNothing();
+              }
+
+              totalRecords += parsed.length;
+              windowStart = windowEnd;
             }
 
-            totalRecords += parsed.length;
-            windowStart = windowEnd;
-          }
-
-          return { recordCount: totalRecords, result: totalRecords };
-        },
-        options?.userId,
-      );
-      recordsSynced += hrCount;
-    } catch (err) {
-      errors.push({
-        message: `hr_stream: ${err instanceof Error ? err.message : String(err)}`,
-        cause: err,
-      });
+            return { recordCount: totalRecords, result: totalRecords };
+          },
+          options?.userId,
+        );
+        recordsSynced += hrCount;
+      } catch (err) {
+        if (err instanceof WhoopRateLimitError) {
+          rateLimited = true;
+        }
+        errors.push({
+          message: `hr_stream: ${err instanceof Error ? err.message : String(err)}`,
+          cause: err,
+        });
+      }
     }
 
     // --- Sync journal entries ---
-    try {
-      const journalCount = await withSyncLog(
-        db,
-        this.id,
-        "journal",
-        async () => {
-          const raw = await client.getJournal(since.toISOString(), new Date().toISOString());
-          logger.info(`[whoop] Journal response shape: ${JSON.stringify(raw).slice(0, 500)}`);
+    if (!rateLimited) {
+      try {
+        const journalCount = await withSyncLog(
+          db,
+          this.id,
+          "journal",
+          async () => {
+            const raw = await client.getJournal(since.toISOString(), new Date().toISOString());
+            logger.info(`[whoop] Journal response shape: ${JSON.stringify(raw).slice(0, 500)}`);
 
-          const entries = parseJournalResponse(raw);
-          let count = 0;
-          for (const entry of entries) {
-            // Ensure the question exists in the reference table
-            await db
-              .insert(journalQuestion)
-              .values({
-                slug: entry.question,
-                displayName: entry.question
-                  .replace(/_/g, " ")
-                  .replace(/\b\w/g, (c) => c.toUpperCase()),
-                category: "custom",
-                dataType: "numeric",
-              })
-              .onConflictDoNothing();
+            const entries = parseJournalResponse(raw);
+            let count = 0;
+            for (const entry of entries) {
+              // Ensure the question exists in the reference table
+              await db
+                .insert(journalQuestion)
+                .values({
+                  slug: entry.question,
+                  displayName: entry.question
+                    .replace(/_/g, " ")
+                    .replace(/\b\w/g, (c) => c.toUpperCase()),
+                  category: "custom",
+                  dataType: "numeric",
+                })
+                .onConflictDoNothing();
 
-            const userId = options?.userId ?? "00000000-0000-0000-0000-000000000001";
-            await db
-              .insert(journalEntry)
-              .values({
-                date: entry.date.toISOString().split("T")[0] ?? "",
-                providerId: this.id,
-                userId,
-                questionSlug: entry.question,
-                answerText: entry.answerText,
-                answerNumeric: entry.answerNumeric,
-                impactScore: entry.impactScore,
-              })
-              .onConflictDoUpdate({
-                target: [
-                  journalEntry.userId,
-                  journalEntry.date,
-                  journalEntry.questionSlug,
-                  journalEntry.providerId,
-                ],
-                set: {
+              const userId = options?.userId ?? "00000000-0000-0000-0000-000000000001";
+              await db
+                .insert(journalEntry)
+                .values({
+                  date: entry.date.toISOString().split("T")[0] ?? "",
+                  providerId: this.id,
+                  userId,
+                  questionSlug: entry.question,
                   answerText: entry.answerText,
                   answerNumeric: entry.answerNumeric,
                   impactScore: entry.impactScore,
-                },
-              });
-            count++;
-          }
-          return { recordCount: count, result: count };
-        },
-        options?.userId,
-      );
-      recordsSynced += journalCount;
-    } catch (err) {
-      errors.push({
-        message: `journal: ${err instanceof Error ? err.message : String(err)}`,
-        cause: err,
-      });
+                })
+                .onConflictDoUpdate({
+                  target: [
+                    journalEntry.userId,
+                    journalEntry.date,
+                    journalEntry.questionSlug,
+                    journalEntry.providerId,
+                  ],
+                  set: {
+                    answerText: entry.answerText,
+                    answerNumeric: entry.answerNumeric,
+                    impactScore: entry.impactScore,
+                  },
+                });
+              count++;
+            }
+            return { recordCount: count, result: count };
+          },
+          options?.userId,
+        );
+        recordsSynced += journalCount;
+      } catch (err) {
+        errors.push({
+          message: `journal: ${err instanceof Error ? err.message : String(err)}`,
+          cause: err,
+        });
+      }
     }
 
     return {

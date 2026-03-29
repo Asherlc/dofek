@@ -419,6 +419,10 @@ export class StravaProvider implements WebhookProvider {
     return null;
   }
 
+  activityUrl(externalId: string): string {
+    return `https://www.strava.com/activities/${externalId}`;
+  }
+
   // ── Webhook implementation ──
 
   async registerWebhook(
@@ -571,7 +575,7 @@ export class StravaProvider implements WebhookProvider {
   async syncWebhookEvent(
     db: SyncDatabase,
     event: WebhookEvent,
-    options?: SyncOptions,
+    _options?: SyncOptions,
   ): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];

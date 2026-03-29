@@ -6,6 +6,7 @@ import Foundation
 struct WhoopImuSample {
     let timestampSeconds: UInt32    // Unix epoch seconds from frame header
     let subSeconds: UInt16          // Millisecond offset within second
+    let sampleIndex: Int            // Position within the frame (for per-sample timing)
     let accelerometerX: Int16
     let accelerometerY: Int16
     let accelerometerZ: Int16
@@ -58,7 +59,18 @@ final class WhoopBleFrameParser {
         // Try to parse the current accumulator
         if let frame = WhoopBleFrameParser.parseFrame(accumulator) {
             frames.append(frame)
-            accumulator = Data()
+            // Advance past the consumed frame, preserving any trailing bytes
+            // that belong to the next frame (header + payload + CRC32)
+            let payloadLen = Int(accumulator[1]) | (Int(accumulator[2]) << 8)
+            let consumed = min(
+                WhoopBleConstants.headerSize + payloadLen + 4,
+                accumulator.count
+            )
+            if consumed < accumulator.count {
+                accumulator = Data(accumulator[consumed...])
+            } else {
+                accumulator = Data()
+            }
         }
 
         return frames
@@ -82,10 +94,12 @@ final class WhoopBleFrameParser {
 
         let payloadLen = Int(data[1]) | (Int(data[2]) << 8) // u16 LE
         let headerSize = WhoopBleConstants.headerSize
-        let expectedTotal = headerSize + payloadLen + 4 // +4 for CRC32
 
-        // Allow slightly short frames (BLE edge cases) but payload must have at least type byte
-        guard data.count >= headerSize + min(payloadLen, 1) else { return nil }
+        // Require the full payload before accepting the frame.
+        // This prevents premature parsing when BLE notifications fragment
+        // a large frame across multiple packets. We tolerate a missing CRC32
+        // trailer (4 bytes) since we don't validate it.
+        guard data.count >= headerSize + payloadLen else { return nil }
 
         let payloadEnd = min(headerSize + payloadLen, data.count)
         let payload = data[headerSize..<payloadEnd]
@@ -135,12 +149,13 @@ final class WhoopBleFrameParser {
             samples.reserveCapacity(count)
 
             var offset = 28
-            for _ in 0..<count {
+            for sampleIndex in 0..<count {
                 guard offset + 12 <= payload.count else { break }
 
                 samples.append(WhoopImuSample(
                     timestampSeconds: frame.dataTimestamp,
                     subSeconds: frame.subSeconds,
+                    sampleIndex: sampleIndex,
                     accelerometerX: payload.readInt16LE(at: offset),
                     accelerometerY: payload.readInt16LE(at: offset + 2),
                     accelerometerZ: payload.readInt16LE(at: offset + 4),
@@ -168,6 +183,7 @@ final class WhoopBleFrameParser {
                 samples.append(WhoopImuSample(
                     timestampSeconds: frame.dataTimestamp,
                     subSeconds: frame.subSeconds,
+                    sampleIndex: sampleIndex,
                     accelerometerX: payload.readInt16LE(at: 20 + sampleIndex * 2),
                     accelerometerY: payload.readInt16LE(at: 220 + sampleIndex * 2),
                     accelerometerZ: payload.readInt16LE(at: 420 + sampleIndex * 2),

@@ -79,8 +79,18 @@ export const accelerometerSyncRouter = router({
       await ensureProvider(ctx.db);
 
       if (input.samples.length === 0) {
+        logger.info("Accelerometer push with 0 samples", {
+          userId: ctx.userId,
+          deviceId: input.deviceId,
+          deviceType: input.deviceType,
+        });
         return { inserted: 0 };
       }
+
+      // Log timestamp range to detect stale/future data
+      const firstTimestamp = input.samples[0]?.timestamp;
+      const lastTimestamp = input.samples[input.samples.length - 1]?.timestamp;
+      const nowIso = new Date().toISOString();
 
       const inserted = await insertBatch(
         ctx.db,
@@ -95,6 +105,9 @@ export const accelerometerSyncRouter = router({
         deviceId: input.deviceId,
         deviceType: input.deviceType,
         sampleCount: inserted,
+        firstTimestamp,
+        lastTimestamp,
+        serverTime: nowIso,
       });
 
       return { inserted };
