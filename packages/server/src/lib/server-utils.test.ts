@@ -29,7 +29,7 @@ describe("streamToFile", () => {
 
   afterEach(async () => {
     for (const f of tmpFiles) {
-      await unlink(f).catch(() => {});
+      await unlink(f).catch((_error: unknown) => {});
     }
     tmpFiles.length = 0;
   });
@@ -75,7 +75,7 @@ describe("assembleChunks", () => {
 
   afterEach(async () => {
     for (const f of tmpPaths) {
-      await unlink(f).catch(() => {});
+      await unlink(f).catch((_error: unknown) => {});
     }
     tmpPaths.length = 0;
   });

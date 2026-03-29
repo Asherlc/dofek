@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { queryCache } from "../lib/cache.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
-import { CacheTTL, cachedProtectedQueryLight, protectedProcedure, router } from "../trpc.ts";
+import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 import { DISCONNECT_CHILD_TABLES } from "./provider-detail.ts";
 
 const settingRowSchema = z.object({ key: z.string(), value: z.unknown() });
@@ -16,7 +16,7 @@ const USER_SCOPED_DELETE_TABLES = [
 ];
 
 export const settingsRouter = router({
-  get: cachedProtectedQueryLight(CacheTTL.LONG)
+  get: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ key: z.string() }))
     .query(async ({ ctx, input }) => {
       const rows = await executeWithSchema(
@@ -29,7 +29,7 @@ export const settingsRouter = router({
       return { key: row.key, value: row.value };
     }),
 
-  getAll: cachedProtectedQueryLight(CacheTTL.LONG).query(async ({ ctx }) => {
+  getAll: cachedProtectedQuery(CacheTTL.LONG).query(async ({ ctx }) => {
     const rows = await executeWithSchema(
       ctx.db,
       settingRowSchema,
@@ -59,7 +59,7 @@ export const settingsRouter = router({
       return { key: result.key, value: result.value };
     }),
 
-  slackStatus: cachedProtectedQueryLight(CacheTTL.MEDIUM).query(async ({ ctx }) => {
+  slackStatus: cachedProtectedQuery(CacheTTL.MEDIUM).query(async ({ ctx }) => {
     const rows = await executeWithSchema(
       ctx.db,
       providerAccountRowSchema,

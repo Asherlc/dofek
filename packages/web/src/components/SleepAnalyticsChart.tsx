@@ -1,3 +1,4 @@
+import { sleepDebtColor } from "@dofek/scoring/scoring";
 import type { SleepNightlyRow } from "dofek-server/types";
 import { dofekAxis, dofekGrid, dofekLegend, dofekSeries, dofekTooltip } from "../lib/chartTheme.ts";
 import { formatNumber } from "../lib/format.ts";
@@ -12,7 +13,7 @@ interface SleepAnalyticsChartProps {
 export function buildSleepAnalyticsOption(nightly: SleepNightlyRow[], sleepDebt: number) {
   const debtHours = Math.round((sleepDebt / 60) * 10) / 10;
   const debtLabel = sleepDebt > 0 ? `${debtHours}h deficit` : `${Math.abs(debtHours)}h surplus`;
-  const debtColor = sleepDebt > 120 ? "#ef4444" : sleepDebt > 0 ? "#eab308" : "#22c55e";
+  const debtColor = sleepDebtColor(sleepDebt);
 
   return {
     // Reserve vertical space for both the legend row and sleep debt status row.

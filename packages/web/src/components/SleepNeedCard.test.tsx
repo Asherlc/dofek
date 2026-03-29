@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { statusColors } from "@dofek/scoring/colors";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -97,11 +98,11 @@ describe("SleepNeedCard", () => {
     render(<SleepNeedCard data={mockData} />);
     const bars = getBarSeriesData();
     // Night 0: 420 < 480 → red
-    expect(bars[0]?.itemStyle.color).toBe("#ef4444");
+    expect(bars[0]?.itemStyle.color).toBe(statusColors.danger);
     // Night 1: 500 >= 480 → green
-    expect(bars[1]?.itemStyle.color).toBe("#22c55e");
+    expect(bars[1]?.itemStyle.color).toBe(statusColors.positive);
     // Night 2: 390 < 480 → red
-    expect(bars[2]?.itemStyle.color).toBe("#ef4444");
+    expect(bars[2]?.itemStyle.color).toBe(statusColors.danger);
   });
 
   it("renders placeholder bars for null nights (missing data)", () => {

@@ -1,7 +1,7 @@
-import { StyleSheet, Text, View } from "react-native";
 import { formatDurationRange, formatNumber, parseValidDate } from "@dofek/format/format";
 import { formatActivityTypeLabel } from "@dofek/training/training";
-import { type UnitConverter } from "../lib/units";
+import { StyleSheet, Text, View } from "react-native";
+import type { UnitConverter } from "../lib/units";
 import { colors } from "../theme";
 
 interface ActivityCardProps {
@@ -88,15 +88,9 @@ export function ActivityCard({
         {calories != null && calories > 0 && (
           <Stat value={Math.round(calories)} label="Calories" unit="kcal" />
         )}
-        {avgHr != null && (
-          <Stat value={Math.round(avgHr)} label="Avg HR" unit="bpm" />
-        )}
-        {maxHr != null && (
-          <Stat value={Math.round(maxHr)} label="Max HR" unit="bpm" />
-        )}
-        {avgPower != null && (
-          <Stat value={Math.round(avgPower)} label="Avg Power" unit="W" />
-        )}
+        {avgHr != null && <Stat value={Math.round(avgHr)} label="Avg HR" unit="bpm" />}
+        {maxHr != null && <Stat value={Math.round(maxHr)} label="Max HR" unit="bpm" />}
+        {avgPower != null && <Stat value={Math.round(avgPower)} label="Avg Power" unit="W" />}
       </View>
     </View>
   );

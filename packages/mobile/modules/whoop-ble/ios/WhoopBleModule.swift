@@ -65,7 +65,10 @@ public class WhoopBleModule: Module {
         // MARK: - Availability
 
         Function("isBluetoothAvailable") { () -> Bool in
-            return self.ensureCentralManager().state == .poweredOn
+            let manager = self.ensureCentralManager()
+            let available = manager.state == .poweredOn
+            NSLog("[WhoopBLE] isBluetoothAvailable: %@ (state=%ld)", available ? "true" : "false", manager.state.rawValue)
+            return available
         }
 
         // MARK: - Discovery
@@ -73,17 +76,20 @@ public class WhoopBleModule: Module {
         AsyncFunction("findWhoop") { (promise: Promise) in
             let manager = self.ensureCentralManager()
             guard manager.state == .poweredOn else {
+                NSLog("[WhoopBLE] findWhoop: Bluetooth not poweredOn (state=%ld), resolving nil", manager.state.rawValue)
                 promise.resolve(nil)
                 return
             }
 
             self.bleQueue.async {
+                NSLog("[WhoopBLE] findWhoop: checking already-connected peripherals")
                 // First, check for already-connected peripherals (fast path)
                 for serviceUUID in WhoopBleConstants.allServiceUUIDs {
                     let connected = manager.retrieveConnectedPeripherals(
                         withServices: [serviceUUID]
                     )
                     if let peripheral = connected.first {
+                        NSLog("[WhoopBLE] findWhoop: found connected peripheral %@ (%@)", peripheral.identifier.uuidString, peripheral.name ?? "unnamed")
                         let result: [String: Any?] = [
                             "id": peripheral.identifier.uuidString,
                             "name": peripheral.name,
@@ -94,6 +100,7 @@ public class WhoopBleModule: Module {
                 }
 
                 // Fallback: scan for 5 seconds
+                NSLog("[WhoopBLE] findWhoop: no connected peripheral found, scanning for 5s")
                 self.findPromise = promise
                 self.state = .scanning
                 manager.scanForPeripherals(
@@ -104,6 +111,7 @@ public class WhoopBleModule: Module {
                 // Timeout after 5 seconds
                 self.bleQueue.asyncAfter(deadline: .now() + 5) {
                     if self.state == .scanning {
+                        NSLog("[WhoopBLE] findWhoop: scan timed out, no WHOOP found")
                         manager.stopScan()
                         self.state = .idle
                         self.findPromise?.resolve(nil)
@@ -155,10 +163,12 @@ public class WhoopBleModule: Module {
                 guard self.state == .ready,
                       let peripheral = self.connectedPeripheral,
                       let cmdChar = self.cmdCharacteristic else {
+                    NSLog("[WhoopBLE] startImuStreaming: NOT_READY (state=%@, peripheral=%@, cmdChar=%@)", self.state.rawValue, self.connectedPeripheral == nil ? "nil" : "set", self.cmdCharacteristic == nil ? "nil" : "set")
                     promise.reject("NOT_READY", "Not connected or service not discovered")
                     return
                 }
 
+                NSLog("[WhoopBLE] startImuStreaming: sending TOGGLE_IMU_MODE command")
                 // Send TOGGLE_IMU_MODE command
                 let commandData = WhoopBleFrameParser.buildCommandData(
                     command: WhoopBleConstants.commandToggleImuMode
@@ -172,6 +182,7 @@ public class WhoopBleModule: Module {
                 self.sampleBuffer.removeAll()
                 self.bufferLock.unlock()
 
+                NSLog("[WhoopBLE] startImuStreaming: now streaming, buffer cleared")
                 promise.resolve(true)
             }
         }
@@ -198,6 +209,34 @@ public class WhoopBleModule: Module {
             }
         }
 
+        // MARK: - Diagnostics
+
+        Function("getConnectionState") { () -> String in
+            return self.state.rawValue
+        }
+
+        Function("getBluetoothState") { () -> String in
+            guard let manager = self.centralManager else {
+                return "uninitialized"
+            }
+            switch manager.state {
+            case .unknown: return "unknown"
+            case .resetting: return "resetting"
+            case .unsupported: return "unsupported"
+            case .unauthorized: return "unauthorized"
+            case .poweredOff: return "poweredOff"
+            case .poweredOn: return "poweredOn"
+            @unknown default: return "unknown"
+            }
+        }
+
+        Function("getBufferedSampleCount") { () -> Int in
+            self.bufferLock.lock()
+            let count = self.sampleBuffer.count
+            self.bufferLock.unlock()
+            return count
+        }
+
         // MARK: - Buffer access
 
         AsyncFunction("getBufferedSamples") { (promise: Promise) in
@@ -206,11 +245,18 @@ public class WhoopBleModule: Module {
             self.sampleBuffer.removeAll()
             self.bufferLock.unlock()
 
+            NSLog("[WhoopBLE] getBufferedSamples: draining %d samples from buffer", samples.count)
+
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let samplingInterval = 1.0 / 50.0 // 50 Hz = 20ms per sample
+
             let result = samples.map { sample -> [String: Any] in
-                // Convert strap timestamp to ISO 8601
-                let date = Date(timeIntervalSince1970: TimeInterval(sample.timestampSeconds))
-                let formatter = ISO8601DateFormatter()
-                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                // Compute per-sample timestamp: base epoch + sub-second offset + sample position
+                let baseTime = TimeInterval(sample.timestampSeconds)
+                    + TimeInterval(sample.subSeconds) / 1000.0
+                let sampleTime = baseTime + Double(sample.sampleIndex) * samplingInterval
+                let date = Date(timeIntervalSince1970: sampleTime)
 
                 return [
                     "timestamp": formatter.string(from: date),
@@ -242,10 +288,19 @@ public class WhoopBleModule: Module {
     // MARK: - Internal handlers (called by delegate)
 
     func handleCentralManagerPoweredOn() {
-        // If we have a restored peripheral waiting to reconnect, start service discovery
+        // If we have a restored peripheral waiting to reconnect
         if let peripheral = connectedPeripheral, state == .idle {
-            state = .discoveringServices
-            peripheral.discoverServices(WhoopBleConstants.allServiceUUIDs)
+            if peripheral.state == .connected {
+                // Already connected — proceed to service discovery
+                state = .discoveringServices
+                peripheral.discoverServices(WhoopBleConstants.allServiceUUIDs)
+            } else {
+                // Peripheral was disconnected while the app was suspended/killed —
+                // initiate a new connection instead of trying to discover services
+                // on a disconnected peripheral (which silently fails).
+                state = .connecting
+                centralManager?.connect(peripheral, options: nil)
+            }
         }
     }
 
@@ -281,6 +336,7 @@ public class WhoopBleModule: Module {
     }
 
     func handlePeripheralConnected(_ peripheral: CBPeripheral) {
+        NSLog("[WhoopBLE] peripheral connected: %@ (state=%@)", peripheral.identifier.uuidString, state.rawValue)
         guard state == .connecting else { return }
 
         state = .discoveringServices
@@ -288,6 +344,7 @@ public class WhoopBleModule: Module {
     }
 
     func handlePeripheralDisconnected(_ peripheral: CBPeripheral, error: Error?) {
+        NSLog("[WhoopBLE] peripheral disconnected: %@ (wasState=%@, error=%@, autoReconnect=%@)", peripheral.identifier.uuidString, state.rawValue, error?.localizedDescription ?? "none", autoReconnect ? "true" : "false")
         wasStreaming = state == .streaming
         let shouldReconnect = autoReconnect
 
@@ -315,12 +372,15 @@ public class WhoopBleModule: Module {
     }
 
     func handleServicesDiscovered(_ peripheral: CBPeripheral) {
+        let serviceUUIDs = peripheral.services?.map { $0.uuid.uuidString } ?? []
+        NSLog("[WhoopBLE] services discovered: %@", serviceUUIDs.joined(separator: ", "))
         guard state == .discoveringServices else { return }
 
         // Find the WHOOP service
         guard let service = peripheral.services?.first(where: { service in
             WhoopBleConstants.allServiceUUIDs.contains(service.uuid)
         }) else {
+            NSLog("[WhoopBLE] NO WHOOP service found among discovered services")
             connectPromise?.reject("NO_SERVICE", "WHOOP service not found")
             connectPromise = nil
             state = .idle
@@ -334,6 +394,8 @@ public class WhoopBleModule: Module {
     }
 
     func handleCharacteristicsDiscovered(_ peripheral: CBPeripheral, service: CBService) {
+        let charUUIDs = service.characteristics?.map { $0.uuid.uuidString } ?? []
+        NSLog("[WhoopBLE] characteristics discovered for service %@: %@", service.uuid.uuidString, charUUIDs.joined(separator: ", "))
         guard state == .discoveringServices else { return }
 
         let cmdUUID = WhoopBleConstants.cmdToStrapUUID(forService: service.uuid)
@@ -343,6 +405,7 @@ public class WhoopBleModule: Module {
         dataCharacteristic = service.characteristics?.first { $0.uuid == dataUUID }
 
         guard let cmdChar = cmdCharacteristic, let dataChar = dataCharacteristic else {
+            NSLog("[WhoopBLE] missing characteristics: cmd=%@, data=%@", cmdCharacteristic == nil ? "MISSING" : "found", dataCharacteristic == nil ? "MISSING" : "found")
             connectPromise?.reject("NO_CHARACTERISTICS", "Required characteristics not found")
             connectPromise = nil
             state = .idle
@@ -350,6 +413,7 @@ public class WhoopBleModule: Module {
         }
 
         // Subscribe to DATA_FROM_STRAP notifications
+        NSLog("[WhoopBLE] subscribing to DATA_FROM_STRAP notifications")
         peripheral.setNotifyValue(true, for: dataChar)
 
         state = .ready
@@ -373,10 +437,27 @@ public class WhoopBleModule: Module {
         }
     }
 
+    /// Counter to throttle data-path logs (avoid flooding at 80 Hz)
+    private var dataReceivedCount: UInt64 = 0
+    private var totalFramesParsed: UInt64 = 0
+    private var totalSamplesExtracted: UInt64 = 0
+    private var droppedForNonStreaming: UInt64 = 0
+    private var emptyExtractions: UInt64 = 0
+    private var bufferOverflows: UInt64 = 0
+
     func handleDataReceived(_ data: Data) {
-        guard state == .streaming else { return }
+        dataReceivedCount += 1
+
+        guard state == .streaming else {
+            droppedForNonStreaming += 1
+            if droppedForNonStreaming == 1 || droppedForNonStreaming % 100 == 0 {
+                NSLog("[WhoopBLE] handleDataReceived: dropped %llu notifications (state=%@, not streaming)", droppedForNonStreaming, state.rawValue)
+            }
+            return
+        }
 
         let frames = frameParser.feed(data)
+        totalFramesParsed += UInt64(frames.count)
 
         var newSamples: [WhoopImuSample] = []
         for frame in frames {
@@ -384,15 +465,32 @@ public class WhoopBleModule: Module {
             newSamples.append(contentsOf: samples)
         }
 
-        guard !newSamples.isEmpty else { return }
+        if newSamples.isEmpty {
+            emptyExtractions += 1
+            if emptyExtractions == 1 || emptyExtractions % 100 == 0 {
+                NSLog("[WhoopBLE] handleDataReceived: %llu empty extractions so far (notifications=%llu, frames=%llu, bytes=%d)", emptyExtractions, dataReceivedCount, totalFramesParsed, data.count)
+            }
+            return
+        }
+
+        totalSamplesExtracted += UInt64(newSamples.count)
 
         bufferLock.lock()
         sampleBuffer.append(contentsOf: newSamples)
         // Cap buffer size to prevent memory issues
         if sampleBuffer.count > WhoopBleModule.maxBufferSize {
-            sampleBuffer.removeFirst(sampleBuffer.count - WhoopBleModule.maxBufferSize)
+            let overflow = sampleBuffer.count - WhoopBleModule.maxBufferSize
+            sampleBuffer.removeFirst(overflow)
+            bufferOverflows += 1
+            NSLog("[WhoopBLE] buffer overflow: dropped %d oldest samples (overflow #%llu)", overflow, bufferOverflows)
         }
+        let bufferSize = sampleBuffer.count
         bufferLock.unlock()
+
+        // Log stats every 500 notifications (~6s at 80Hz) to avoid flooding
+        if dataReceivedCount % 500 == 0 {
+            NSLog("[WhoopBLE] stats: notifications=%llu frames=%llu samples=%llu buffer=%d emptyExtractions=%llu", dataReceivedCount, totalFramesParsed, totalSamplesExtracted, bufferSize, emptyExtractions)
+        }
     }
 
     /// Lazily create the CBCentralManager on first use instead of at module init.
@@ -483,7 +581,10 @@ private class BleDelegate: NSObject, CBCentralManagerDelegate, CBPeripheralDeleg
     // MARK: CBPeripheralDelegate
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
-        guard error == nil else { return }
+        if let error = error {
+            NSLog("[WhoopBLE] service discovery error: %@", error.localizedDescription)
+            return
+        }
         module?.handleServicesDiscovered(peripheral)
     }
 
@@ -492,7 +593,10 @@ private class BleDelegate: NSObject, CBCentralManagerDelegate, CBPeripheralDeleg
         didDiscoverCharacteristicsFor service: CBService,
         error: Error?
     ) {
-        guard error == nil else { return }
+        if let error = error {
+            NSLog("[WhoopBLE] characteristic discovery error: %@", error.localizedDescription)
+            return
+        }
         module?.handleCharacteristicsDiscovered(peripheral, service: service)
     }
 
@@ -501,7 +605,14 @@ private class BleDelegate: NSObject, CBCentralManagerDelegate, CBPeripheralDeleg
         didUpdateValueFor characteristic: CBCharacteristic,
         error: Error?
     ) {
-        guard error == nil, let data = characteristic.value else { return }
+        if let error = error {
+            NSLog("[WhoopBLE] data notification error: %@", error.localizedDescription)
+            return
+        }
+        guard let data = characteristic.value else {
+            NSLog("[WhoopBLE] data notification with nil value")
+            return
+        }
         module?.handleDataReceived(data)
     }
 }

@@ -1,3 +1,4 @@
+import { formatRelativeTime, formatTime } from "@dofek/format/format";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { DATA_TYPE_LABELS } from "@dofek/providers/provider-stats";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -7,7 +8,6 @@ import {
   Alert,
   Linking,
   Modal,
-  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -16,9 +16,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { formatRelativeTime, formatTime } from "@dofek/format/format";
-import { useAuth } from "../../lib/auth-context";
 import { ProviderStatsBreakdown } from "../../components/ProviderStatsBreakdown";
+import { useAuth } from "../../lib/auth-context";
 import { trpc } from "../../lib/trpc";
 import { useRefresh } from "../../lib/useRefresh";
 import { colors } from "../../theme";
@@ -59,26 +58,15 @@ function RecordDetailModal({
   const rawValue = record.raw;
   const raw = typeof rawValue === "object" && rawValue !== null ? rawValue : null;
 
-  const fields = Object.entries(record).filter(
-    ([key]) => key !== "raw" && key !== "user_id",
-  );
-  const populatedFields = fields.filter(
-    ([, value]) => value !== null && value !== undefined,
-  );
-  const nullFields = fields.filter(
-    ([, value]) => value === null || value === undefined,
-  );
+  const fields = Object.entries(record).filter(([key]) => key !== "raw" && key !== "user_id");
+  const populatedFields = fields.filter(([, value]) => value !== null && value !== undefined);
+  const nullFields = fields.filter(([, value]) => value === null || value === undefined);
 
   const [showNullFields, setShowNullFields] = useState(false);
   const [showRawData, setShowRawData] = useState(true);
 
   return (
-    <Modal
-      visible
-      animationType="slide"
-      presentationStyle="pageSheet"
-      onRequestClose={onClose}
-    >
+    <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <View style={modalStyles.container}>
         <View style={modalStyles.header}>
           <Text style={modalStyles.title}>Record Detail</Text>
@@ -134,10 +122,7 @@ function RecordDetailModal({
           {/* Raw provider data */}
           {raw && (
             <View style={modalStyles.collapsibleSection}>
-              <TouchableOpacity
-                onPress={() => setShowRawData(!showRawData)}
-                activeOpacity={0.7}
-              >
+              <TouchableOpacity onPress={() => setShowRawData(!showRawData)} activeOpacity={0.7}>
                 <Text style={modalStyles.sectionTitle}>
                   {showRawData ? "\u25bc" : "\u25b6"} Raw Provider Data
                 </Text>
@@ -148,9 +133,7 @@ function RecordDetailModal({
                   style={modalStyles.rawDataScroll}
                   contentContainerStyle={modalStyles.rawDataContent}
                 >
-                  <Text style={modalStyles.rawDataText}>
-                    {JSON.stringify(raw, null, 2)}
-                  </Text>
+                  <Text style={modalStyles.rawDataText}>{JSON.stringify(raw, null, 2)}</Text>
                 </ScrollView>
               )}
             </View>
@@ -264,18 +247,9 @@ const modalStyles = StyleSheet.create({
 
 // ── Records Table ──
 
-function RecordsTable({
-  providerId,
-  dataType,
-}: {
-  providerId: string;
-  dataType: DataType;
-}) {
+function RecordsTable({ providerId, dataType }: { providerId: string; dataType: DataType }) {
   const [page, setPage] = useState(0);
-  const [selectedRecord, setSelectedRecord] = useState<Record<
-    string,
-    unknown
-  > | null>(null);
+  const [selectedRecord, setSelectedRecord] = useState<Record<string, unknown> | null>(null);
   const pageSize = 25;
 
   const records = trpc.providerDetail.records.useQuery({
@@ -311,18 +285,8 @@ function RecordsTable({
   }
 
   const excludedColumns = new Set(["raw", "user_id"]);
-  const columns = Object.keys(rows[0] ?? {}).filter(
-    (col) => !excludedColumns.has(col),
-  );
-  const priorityCols = [
-    "id",
-    "name",
-    "date",
-    "started_at",
-    "recorded_at",
-    "activity_type",
-    "type",
-  ];
+  const columns = Object.keys(rows[0] ?? {}).filter((col) => !excludedColumns.has(col));
+  const priorityCols = ["id", "name", "date", "started_at", "recorded_at", "activity_type", "type"];
   const sortedColumns = [
     ...priorityCols.filter((c) => columns.includes(c)),
     ...columns.filter((c) => !priorityCols.includes(c)),
@@ -335,18 +299,13 @@ function RecordsTable({
         {rows.map((row, idx) => (
           <TouchableOpacity
             key={String(row.id ?? row.date ?? idx)}
-            style={[
-              recordStyles.row,
-              idx < rows.length - 1 && recordStyles.rowBorder,
-            ]}
+            style={[recordStyles.row, idx < rows.length - 1 && recordStyles.rowBorder]}
             onPress={() => setSelectedRecord(row)}
             activeOpacity={0.7}
           >
             {visibleColumns.map((col) => (
               <View key={col} style={recordStyles.cell}>
-                <Text style={recordStyles.cellLabel}>
-                  {formatColumnName(col)}
-                </Text>
+                <Text style={recordStyles.cellLabel}>{formatColumnName(col)}</Text>
                 <Text style={recordStyles.cellValue} numberOfLines={1}>
                   {formatCellValue(row[col])}
                 </Text>
@@ -363,12 +322,7 @@ function RecordsTable({
           disabled={page === 0}
           activeOpacity={0.7}
         >
-          <Text
-            style={[
-              recordStyles.pageButton,
-              page === 0 && recordStyles.pageButtonDisabled,
-            ]}
-          >
+          <Text style={[recordStyles.pageButton, page === 0 && recordStyles.pageButtonDisabled]}>
             Previous
           </Text>
         </TouchableOpacity>
@@ -390,10 +344,7 @@ function RecordsTable({
       </View>
 
       {selectedRecord && (
-        <RecordDetailModal
-          record={selectedRecord}
-          onClose={() => setSelectedRecord(null)}
-        />
+        <RecordDetailModal record={selectedRecord} onClose={() => setSelectedRecord(null)} />
       )}
     </View>
   );
@@ -495,10 +446,7 @@ function SyncHistory({ providerId }: { providerId: string }) {
           return (
             <View
               key={row.id}
-              style={[
-                syncStyles.row,
-                idx < rows.length - 1 && syncStyles.rowBorder,
-              ]}
+              style={[syncStyles.row, idx < rows.length - 1 && syncStyles.rowBorder]}
             >
               <View style={syncStyles.rowTop}>
                 <View style={syncStyles.statusRow}>
@@ -506,26 +454,18 @@ function SyncHistory({ providerId }: { providerId: string }) {
                     style={[
                       syncStyles.statusDot,
                       {
-                        backgroundColor: isError
-                          ? colors.danger
-                          : colors.positive,
+                        backgroundColor: isError ? colors.danger : colors.positive,
                       },
                     ]}
                   />
                   <Text style={syncStyles.dataType}>{row.dataType}</Text>
                 </View>
-                <Text style={syncStyles.recordCount}>
-                  {row.recordCount ?? "\u2014"} records
-                </Text>
+                <Text style={syncStyles.recordCount}>{row.recordCount ?? "\u2014"} records</Text>
               </View>
               <View style={syncStyles.rowBottom}>
-                <Text style={syncStyles.metaText}>
-                  {formatTime(row.syncedAt)}
-                </Text>
+                <Text style={syncStyles.metaText}>{formatTime(row.syncedAt)}</Text>
                 {row.durationMs != null && (
-                  <Text style={syncStyles.metaText}>
-                    {(row.durationMs / 1000).toFixed(1)}s
-                  </Text>
+                  <Text style={syncStyles.metaText}>{(row.durationMs / 1000).toFixed(1)}s</Text>
                 )}
               </View>
               {isError && row.errorMessage ? (
@@ -545,12 +485,7 @@ function SyncHistory({ providerId }: { providerId: string }) {
           disabled={page === 0}
           activeOpacity={0.7}
         >
-          <Text
-            style={[
-              recordStyles.pageButton,
-              page === 0 && recordStyles.pageButtonDisabled,
-            ]}
-          >
+          <Text style={[recordStyles.pageButton, page === 0 && recordStyles.pageButtonDisabled]}>
             Previous
           </Text>
         </TouchableOpacity>
@@ -651,17 +586,13 @@ function RecordsBrowser({
     return stats[dt.key] > 0;
   });
 
-  const [activeTab, setActiveTab] = useState<DataType>(
-    availableTypes[0]?.key ?? "activities",
-  );
+  const [activeTab, setActiveTab] = useState<DataType>(availableTypes[0]?.key ?? "activities");
 
   if (availableTypes.length === 0) {
     return (
       <View>
         <Text style={styles.sectionTitle}>Records</Text>
-        <Text style={recordStyles.emptyText}>
-          No records yet for this provider.
-        </Text>
+        <Text style={recordStyles.emptyText}>No records yet for this provider.</Text>
       </View>
     );
   }
@@ -681,18 +612,10 @@ function RecordsBrowser({
           <TouchableOpacity
             key={dt.key}
             onPress={() => setActiveTab(dt.key)}
-            style={[
-              tabStyles.tab,
-              activeTab === dt.key && tabStyles.activeTab,
-            ]}
+            style={[tabStyles.tab, activeTab === dt.key && tabStyles.activeTab]}
             activeOpacity={0.7}
           >
-            <Text
-              style={[
-                tabStyles.tabText,
-                activeTab === dt.key && tabStyles.activeTabText,
-              ]}
-            >
+            <Text style={[tabStyles.tabText, activeTab === dt.key && tabStyles.activeTabText]}>
               {dt.label}
               {stats ? ` (${stats[dt.key].toLocaleString()})` : ""}
             </Text>
@@ -749,9 +672,7 @@ export default function ProviderDetailScreen() {
   const [customDays, setCustomDays] = useState("30");
   const pollingRef = useRef(false);
 
-  const provider = (providers.data ?? []).find(
-    (p: { id: string }) => p.id === providerId,
-  );
+  const provider = (providers.data ?? []).find((p: { id: string }) => p.id === providerId);
   const providerStats = (stats.data ?? []).find(
     (s: { providerId: string }) => s.providerId === providerId,
   );
@@ -853,6 +774,8 @@ export default function ProviderDetailScreen() {
     Linking.openURL(`${serverUrl}/auth/provider/${providerId}`);
   }, [providerId, serverUrl]);
 
+  const { refreshing, onRefresh } = useRefresh();
+
   if (providers.isLoading || !providerId) {
     return (
       <View style={styles.loadingContainer}>
@@ -861,10 +784,18 @@ export default function ProviderDetailScreen() {
     );
   }
 
-  const { refreshing, onRefresh } = useRefresh();
-
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={colors.textSecondary}
+        />
+      }
+    >
       {/* Provider header */}
       <View style={styles.headerCard}>
         <View style={styles.headerRow}>
@@ -931,7 +862,11 @@ export default function ProviderDetailScreen() {
               placeholderTextColor={colors.textTertiary}
             />
             <TouchableOpacity
-              style={[styles.syncButton, styles.syncRangeButton, isSyncing && styles.syncButtonDisabled]}
+              style={[
+                styles.syncButton,
+                styles.syncRangeButton,
+                isSyncing && styles.syncButtonDisabled,
+              ]}
               onPress={() => {
                 const days = Number.parseInt(customDays, 10);
                 if (days >= 1 && days <= 3650) {
@@ -947,16 +882,9 @@ export default function ProviderDetailScreen() {
           {isSyncing && (
             <View style={styles.syncProgressContainer}>
               <View style={styles.syncProgressTrack}>
-                <View
-                  style={[
-                    styles.syncProgressFill,
-                    { width: `${syncProgress ?? 0}%` },
-                  ]}
-                />
+                <View style={[styles.syncProgressFill, { width: `${syncProgress ?? 0}%` }]} />
               </View>
-              {syncMessage != null && (
-                <Text style={styles.syncMessageText}>{syncMessage}</Text>
-              )}
+              {syncMessage != null && <Text style={styles.syncMessageText}>{syncMessage}</Text>}
             </View>
           )}
           {!isSyncing && syncMessage != null && (
