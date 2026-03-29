@@ -512,25 +512,6 @@ public class WhoopBleModule: Module {
         return manager
     }
 
-    /// Lazily create the CBCentralManager on first use instead of at module init.
-    /// This avoids a launch crash if the NSBluetoothAlwaysUsageDescription key
-    /// is missing or if Bluetooth is restricted by MDM.
-    private func ensureCentralManager() -> CBCentralManager {
-        if let existing = centralManager {
-            return existing
-        }
-        let manager = CBCentralManager(
-            delegate: delegate,
-            queue: bleQueue,
-            options: [
-                CBCentralManagerOptionShowPowerAlertKey: false,
-                CBCentralManagerOptionRestoreIdentifierKey: WhoopBleModule.restoreIdentifier,
-            ]
-        )
-        centralManager = manager
-        return manager
-    }
-
     private func cleanup() {
         state = .idle
         connectedPeripheral = nil
