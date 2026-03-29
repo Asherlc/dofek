@@ -97,6 +97,54 @@ const diagnosticReport = {
   result: [{ reference: "Observation/obs-glucose-001" }],
 };
 
+const medicationRequest = {
+  resourceType: "MedicationRequest",
+  id: "med-ceph-001",
+  status: "stopped",
+  authoredOn: "2024-01-10",
+  medicationReference: { display: "Cephalexin 500 mg Cap" },
+  contained: [
+    {
+      resourceType: "Medication",
+      code: {
+        text: "Cephalexin 500 mg Cap",
+        coding: [{ system: "http://www.nlm.nih.gov/research/umls/rxnorm", code: "2231" }],
+      },
+      form: { text: "Capsule" },
+    },
+  ],
+  dosageInstruction: [{ patientInstruction: "Take 1 capsule 2x daily", route: { text: "Oral" } }],
+  requester: { display: "Dr. Smith" },
+};
+
+const conditionResource = {
+  resourceType: "Condition",
+  id: "cond-anxiety-001",
+  code: {
+    text: "Anxiety",
+    coding: [
+      { system: "http://hl7.org/fhir/sid/icd-10-cm", code: "F41.9" },
+      { system: "http://snomed.info/sct", code: "48694002" },
+    ],
+  },
+  clinicalStatus: { coding: [{ code: "active" }] },
+  verificationStatus: { coding: [{ code: "confirmed" }] },
+  onsetDateTime: "2023-06-02",
+};
+
+const allergyResource = {
+  resourceType: "AllergyIntolerance",
+  id: "allergy-lactase-001",
+  code: {
+    text: "LACTASE",
+    coding: [{ system: "http://www.nlm.nih.gov/research/umls/rxnorm", code: "41397" }],
+  },
+  type: "allergy",
+  clinicalStatus: { coding: [{ code: "active" }] },
+  onsetDateTime: "2023-03-27",
+  reaction: [{ manifestation: [{ text: "GI distress" }], description: "GI distress" }],
+};
+
 // ============================================================
 // Mock DB helper
 // ============================================================
@@ -585,6 +633,101 @@ describe("importClinicalRecords", () => {
     expect(panelValues[0].name).toBe("Metabolic Panel");
     expect(panelValues[0].providerId).toBe("test-provider");
     expect(panelValues[0].sourceName).toBe("Unknown");
+  });
+
+  it("imports MedicationRequest resources", async () => {
+    const zipPath = createClinicalZip(tmpDir, "med-import", [
+      { name: "MedicationRequest-001.json", content: JSON.stringify(medicationRequest) },
+    ]);
+    const xmlPath = createTestXml(tmpDir, "med-import.xml", [
+      { sourceName: "UCSF Health", resourceFilePath: "/clinical-records/MedicationRequest-001.json" },
+    ]);
+    const { db, spies } = createImportMockDb();
+
+    const result = await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
+
+    expect(result.inserted).toBe(1);
+    expect(result.errors).toHaveLength(0);
+
+    const allValuesCalls = spies.values.mock.calls;
+    const medicationBatch = allValuesCalls.find(
+      (call) => call[0]?.[0]?.name === "Cephalexin 500 mg Cap",
+    )?.[0];
+    expect(medicationBatch).toBeDefined();
+    expect(medicationBatch[0].rxnormCode).toBe("2231");
+    expect(medicationBatch[0].sourceName).toBe("UCSF Health");
+    expect(medicationBatch[0].prescriberName).toBe("Dr. Smith");
+  });
+
+  it("imports Condition resources", async () => {
+    const zipPath = createClinicalZip(tmpDir, "cond-import", [
+      { name: "Condition-001.json", content: JSON.stringify(conditionResource) },
+    ]);
+    const xmlPath = createTestXml(tmpDir, "cond-import.xml", [
+      { sourceName: "UCSF Health", resourceFilePath: "/clinical-records/Condition-001.json" },
+    ]);
+    const { db, spies } = createImportMockDb();
+
+    const result = await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
+
+    expect(result.inserted).toBe(1);
+    expect(result.errors).toHaveLength(0);
+
+    const allValuesCalls = spies.values.mock.calls;
+    const conditionBatch = allValuesCalls.find(
+      (call) => call[0]?.[0]?.name === "Anxiety",
+    )?.[0];
+    expect(conditionBatch).toBeDefined();
+    expect(conditionBatch[0].icd10Code).toBe("F41.9");
+    expect(conditionBatch[0].snomedCode).toBe("48694002");
+    expect(conditionBatch[0].clinicalStatus).toBe("active");
+  });
+
+  it("imports AllergyIntolerance resources", async () => {
+    const zipPath = createClinicalZip(tmpDir, "allergy-import", [
+      { name: "AllergyIntolerance-001.json", content: JSON.stringify(allergyResource) },
+    ]);
+    const xmlPath = createTestXml(tmpDir, "allergy-import.xml", [
+      {
+        sourceName: "UCSF Health",
+        resourceFilePath: "/clinical-records/AllergyIntolerance-001.json",
+      },
+    ]);
+    const { db, spies } = createImportMockDb();
+
+    const result = await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
+
+    expect(result.inserted).toBe(1);
+    expect(result.errors).toHaveLength(0);
+
+    const allValuesCalls = spies.values.mock.calls;
+    const allergyBatch = allValuesCalls.find(
+      (call) => call[0]?.[0]?.name === "LACTASE",
+    )?.[0];
+    expect(allergyBatch).toBeDefined();
+    expect(allergyBatch[0].type).toBe("allergy");
+    expect(allergyBatch[0].rxnormCode).toBe("41397");
+  });
+
+  it("imports mixed clinical record types together", async () => {
+    const zipPath = createClinicalZip(tmpDir, "mixed-clinical", [
+      { name: "obs-glucose.json", content: JSON.stringify(labObservation) },
+      { name: "MedicationRequest-001.json", content: JSON.stringify(medicationRequest) },
+      { name: "Condition-001.json", content: JSON.stringify(conditionResource) },
+      { name: "AllergyIntolerance-001.json", content: JSON.stringify(allergyResource) },
+      { name: "dr-panel.json", content: JSON.stringify(diagnosticReport) },
+    ]);
+    const xmlPath = createTestXml(tmpDir, "mixed-clinical.xml", [
+      { sourceName: "Quest", resourceFilePath: "/clinical-records/obs-glucose.json" },
+    ]);
+    const panelRows = [{ id: "panel-uuid-mix2", externalId: "dr-metabolic-001" }];
+    const { db } = createImportMockDb(panelRows);
+
+    const result = await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
+
+    // 1 lab + 1 medication + 1 condition + 1 allergy = 4
+    expect(result.inserted).toBe(4);
+    expect(result.errors).toHaveLength(0);
   });
 
   it("only reads JSON files from clinical-records directory", async () => {
