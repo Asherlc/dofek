@@ -9,7 +9,12 @@ vi.mock("@bull-board/api/bullMQAdapter", () => ({
 vi.mock("@bull-board/express", () => ({
   ExpressAdapter: vi.fn(() => ({
     setBasePath: vi.fn(),
-    getRouter: vi.fn(() => vi.fn()),
+    getRouter: vi.fn(
+      () =>
+        (_req: unknown, res: { status: (code: number) => { send: (body: string) => void } }) => {
+          res.status(200).send("bull-board");
+        },
+    ),
   })),
 }));
 vi.mock("@trpc/server/adapters/express", () => ({
@@ -239,6 +244,35 @@ describe("createApp HTTP routes", () => {
       expect(vi.mocked(isAdmin)).not.toHaveBeenCalled();
     });
 
+    it("delegates to Bull Board router when admin is authenticated", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("admin-session");
+      vi.mocked(validateSession).mockResolvedValue({
+        userId: "admin-1",
+        expiresAt: new Date("2027-01-01"),
+      });
+      vi.mocked(isAdmin).mockResolvedValue(true);
+      const res = await fetch(`${baseUrl}/admin/queues`);
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toBe("bull-board");
+    });
+
+    it("initializes Bull Board only once across multiple admin requests", async () => {
+      const { createBullBoard: mockCreateBullBoard } = await import("@bull-board/api");
+      vi.mocked(mockCreateBullBoard).mockClear();
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("admin-session");
+      vi.mocked(validateSession).mockResolvedValue({
+        userId: "admin-1",
+        expiresAt: new Date("2027-01-01"),
+      });
+      vi.mocked(isAdmin).mockResolvedValue(true);
+
+      await fetch(`${baseUrl}/admin/queues`);
+      await fetch(`${baseUrl}/admin/queues`);
+
+      // createBullBoard should only be called once (lazy init)
+      expect(vi.mocked(mockCreateBullBoard)).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe("tRPC middleware mounting", () => {
