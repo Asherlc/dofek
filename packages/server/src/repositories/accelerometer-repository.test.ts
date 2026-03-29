@@ -107,12 +107,11 @@ describe("AccelerometerRepository", () => {
 
       await repo.getTimeSeries(start, end);
 
-      // The execute call should have been made with clamped end time
       expect(execute).toHaveBeenCalledTimes(1);
-      // We verify the clamping works by checking the SQL was built with the clamped end
-      // The clamped end should be 10 minutes after start: 2025-01-15T10:10:00.000Z
-      const sqlQuery = execute.mock.calls[0]?.[0];
-      expect(sqlQuery).toBeDefined();
+      // Verify the SQL contains the clamped end (10 min after start), not the original end
+      const queryJson = JSON.stringify(execute.mock.calls[0]?.[0]);
+      expect(queryJson).toContain("2025-01-15T10:10:00.000Z");
+      expect(queryJson).not.toContain("2025-01-15T11:00:00.000Z");
     });
 
     it("does not clamp when end is within 10 minutes", async () => {
@@ -122,6 +121,27 @@ describe("AccelerometerRepository", () => {
 
       await repo.getTimeSeries(start, end);
       expect(execute).toHaveBeenCalledTimes(1);
+      // Verify the original end is used, not the maxEnd
+      const queryJson = JSON.stringify(execute.mock.calls[0]?.[0]);
+      expect(queryJson).toContain("2025-01-15T10:05:00.000Z");
+    });
+
+    it("uses the original end when it equals the max window boundary", async () => {
+      const { repo, execute } = makeRepository([]);
+      const start = "2025-01-15T10:00:00Z";
+      const end = "2025-01-15T10:10:00.000Z"; // exactly 10 minutes
+
+      await repo.getTimeSeries(start, end);
+      expect(execute).toHaveBeenCalledTimes(1);
+      const queryJson = JSON.stringify(execute.mock.calls[0]?.[0]);
+      expect(queryJson).toContain("2025-01-15T10:10:00.000Z");
+    });
+
+    it("uses start date in the SQL query", async () => {
+      const { repo, execute } = makeRepository([]);
+      await repo.getTimeSeries("2025-01-15T10:00:00Z", "2025-01-15T10:05:00Z");
+      const queryJson = JSON.stringify(execute.mock.calls[0]?.[0]);
+      expect(queryJson).toContain("2025-01-15T10:00:00.000Z");
     });
   });
 });

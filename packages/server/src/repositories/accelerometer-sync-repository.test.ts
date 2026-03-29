@@ -71,5 +71,35 @@ describe("AccelerometerSyncRepository", () => {
       expect(result).toBe(5000);
       expect(execute).toHaveBeenCalledTimes(1);
     });
+
+    it("passes device parameters to the SQL query", async () => {
+      const { repository, execute } = makeRepository();
+      const samples = [makeSample()];
+      await repository.insertBatch("device-abc", "Watch", samples);
+      const queryJson = JSON.stringify(execute.mock.calls[0]?.[0]);
+      expect(queryJson).toContain("device-abc");
+      expect(queryJson).toContain("Watch");
+    });
+
+    it("includes sample values in the SQL query", async () => {
+      const { repository, execute } = makeRepository();
+      const samples = [makeSample({ x: 0.123, y: -0.456, z: 9.876 })];
+      await repository.insertBatch("device-1", "iPhone", samples);
+      const queryJson = JSON.stringify(execute.mock.calls[0]?.[0]);
+      expect(queryJson).toContain("0.123");
+      expect(queryJson).toContain("-0.456");
+      expect(queryJson).toContain("9.876");
+    });
+
+    it("returns count matching total across multiple batches (not just last batch)", async () => {
+      const { repository, execute } = makeRepository();
+      // 5001 samples: 2 batches of 5000 + 1
+      const samples = Array.from({ length: 5001 }, (_, index) =>
+        makeSample({ timestamp: `2024-01-15T10:00:00.${String(index).padStart(4, "0")}Z` }),
+      );
+      const result = await repository.insertBatch("device-1", "iPhone", samples);
+      expect(result).toBe(5001);
+      expect(execute).toHaveBeenCalledTimes(2);
+    });
   });
 });

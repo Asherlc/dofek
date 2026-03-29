@@ -75,5 +75,87 @@ describe("AiCoachRepository", () => {
 
       expect(context.recentActivities).toEqual(["Swimming 45min"]);
     });
+
+    it("filters require BOTH name AND duration (not OR)", async () => {
+      // If filter used || instead of &&, activities with EITHER name or duration would pass
+      const db = makeDb(
+        [{ sleep_hours: null, resting_hr: null, hrv: null, readiness: null }],
+        [
+          { name: null, duration_min: 30 },
+          { name: "Yoga", duration_min: null },
+        ],
+      );
+      const repo = new AiCoachRepository(db, "user-1");
+      const context = await repo.fetchContext();
+      // With &&: both filtered out. With ||: both would pass.
+      expect(context.recentActivities).toEqual([]);
+    });
+
+    it("uses != null check (not just truthy) for metrics", async () => {
+      const db = makeDb(
+        [{ sleep_hours: 0, resting_hr: 0, hrv: 0, readiness: 0 }],
+        [],
+      );
+      const repo = new AiCoachRepository(db, "user-1");
+      const context = await repo.fetchContext();
+      // 0 is falsy but != null, so these should be defined
+      expect(context.sleepHours).toBe(0);
+      expect(context.restingHr).toBe(0);
+      expect(context.hrv).toBe(0);
+      expect(context.readiness).toBe(0);
+    });
+
+    it("rounds restingHr to integer (not 1 decimal)", async () => {
+      const db = makeDb(
+        [{ sleep_hours: null, resting_hr: 52.7, hrv: null, readiness: null }],
+        [],
+      );
+      const repo = new AiCoachRepository(db, "user-1");
+      const context = await repo.fetchContext();
+      expect(context.restingHr).toBe(53);
+    });
+
+    it("rounds hrv to integer (not 1 decimal)", async () => {
+      const db = makeDb(
+        [{ sleep_hours: null, resting_hr: null, hrv: 68.3, readiness: null }],
+        [],
+      );
+      const repo = new AiCoachRepository(db, "user-1");
+      const context = await repo.fetchContext();
+      expect(context.hrv).toBe(68);
+    });
+
+    it("rounds readiness to integer", async () => {
+      const db = makeDb(
+        [{ sleep_hours: null, resting_hr: null, hrv: null, readiness: 85.6 }],
+        [],
+      );
+      const repo = new AiCoachRepository(db, "user-1");
+      const context = await repo.fetchContext();
+      expect(context.readiness).toBe(86);
+    });
+
+    it("formats activity label as 'name Xmin'", async () => {
+      const db = makeDb(
+        [{ sleep_hours: null, resting_hr: null, hrv: null, readiness: null }],
+        [{ name: "Run", duration_min: 45 }],
+      );
+      const repo = new AiCoachRepository(db, "user-1");
+      const context = await repo.fetchContext();
+      expect(context.recentActivities[0]).toBe("Run 45min");
+    });
+
+    it("returns undefined (not null) for absent metric values", async () => {
+      const db = makeDb(
+        [{ sleep_hours: null, resting_hr: null, hrv: null, readiness: null }],
+        [],
+      );
+      const repo = new AiCoachRepository(db, "user-1");
+      const context = await repo.fetchContext();
+      expect(context.sleepHours).toBeUndefined();
+      expect(context.restingHr).toBeUndefined();
+      expect(context.hrv).toBeUndefined();
+      expect(context.readiness).toBeUndefined();
+    });
   });
 });

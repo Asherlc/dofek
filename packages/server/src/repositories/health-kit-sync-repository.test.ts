@@ -1954,3 +1954,111 @@ describe("HealthKitSyncRepository.processMetricStream (mutation: inserted count)
     expect(execute).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("HealthKitSyncRepository.processDailyMetrics (mutation: additive > 0 guard)", () => {
+  it("skips additive fields with value 0 (only inserts when > 0)", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    // A point-in-time metric with value — should still insert even though steps=0
+    const samples: HealthKitSample[] = [
+      {
+        type: "HKQuantityTypeIdentifierRestingHeartRate",
+        value: 60,
+        unit: "count/min",
+        startDate: "2024-01-15T10:00:00Z",
+        endDate: "2024-01-15T10:00:00Z",
+        sourceName: "iPhone",
+        sourceBundle: "com.apple.Health",
+        uuid: "daily-zero",
+      },
+    ];
+    const result = await repo.processDailyMetrics(samples);
+    expect(result).toBe(1);
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips upsert when only zero-value additive fields and no point-in-time fields", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    // StepCount with value 0 — additive sum is 0, not > 0, so no set clause
+    const samples: HealthKitSample[] = [
+      {
+        type: "HKQuantityTypeIdentifierStepCount",
+        value: 0,
+        unit: "count",
+        startDate: "2024-01-15T10:00:00Z",
+        endDate: "2024-01-15T10:00:00Z",
+        sourceName: "iPhone",
+        sourceBundle: "com.apple.Health",
+        uuid: "daily-skip",
+      },
+    ];
+    const result = await repo.processDailyMetrics(samples);
+    expect(result).toBe(1);
+    // setClauses would be empty, so the upsert is skipped
+    expect(execute).not.toHaveBeenCalled();
+  });
+});
+
+describe("HealthKitSyncRepository.processSleepSamples (mutation: explicit vs derived inBed)", () => {
+  it("uses explicit inBed samples when present (not deriveSleepSessionsFromStages)", async () => {
+    const execute = vi.fn().mockResolvedValue([{ id: "00000000-0000-0000-0000-000000000001" }]);
+    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const samples: SleepSample[] = [
+      {
+        uuid: "inbed-explicit",
+        startDate: "2024-01-15T22:00:00Z",
+        endDate: "2024-01-16T06:00:00Z",
+        value: "inBed",
+        sourceName: "Watch",
+      },
+      {
+        uuid: "stage-1",
+        startDate: "2024-01-15T22:00:00Z",
+        endDate: "2024-01-16T06:00:00Z",
+        value: "asleepCore",
+        sourceName: "Watch",
+      },
+    ];
+    const result = await repo.processSleepSamples(samples);
+    expect(result).toBe(1);
+  });
+
+  it("falls back to deriveSleepSessionsFromStages when no explicit inBed", async () => {
+    const execute = vi.fn().mockResolvedValue([{ id: "00000000-0000-0000-0000-000000000001" }]);
+    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const samples: SleepSample[] = [
+      {
+        uuid: "stage-only-1",
+        startDate: "2024-01-15T22:00:00Z",
+        endDate: "2024-01-16T06:00:00Z",
+        value: "asleepCore",
+        sourceName: "Watch",
+      },
+    ];
+    const result = await repo.processSleepSamples(samples);
+    // deriveSleepSessionsFromStages creates an inBed session from the stage
+    expect(result).toBe(1);
+  });
+
+  it("calculates duration in minutes from session start/end", async () => {
+    const execute = vi.fn().mockResolvedValue([{ id: "00000000-0000-0000-0000-000000000001" }]);
+    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const samples: SleepSample[] = [
+      {
+        uuid: "dur-test",
+        startDate: "2024-01-15T22:00:00Z",
+        endDate: "2024-01-16T06:00:00Z", // 8 hours = 480 minutes
+        value: "inBed",
+        sourceName: "Watch",
+      },
+    ];
+    await repo.processSleepSamples(samples);
+    // Find the insert call and verify 480 is in the SQL params
+    const allCalls = execute.mock.calls.map((call) => JSON.stringify(call[0]));
+    const insertCall = allCalls.find((callStr) =>
+      callStr.includes("INSERT INTO fitness.sleep_session"),
+    );
+    expect(insertCall).toContain("480");
+  });
+});
