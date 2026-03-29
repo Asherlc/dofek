@@ -615,6 +615,24 @@ describe("computeComponentScores", () => {
     expect(result.hrvScore).toBeGreaterThan(62);
   });
 
+  it("computes exact HRV score using division (not multiplication) for z-score", () => {
+    const metric = {
+      hrv: 60,
+      hrv_mean_30d: 50,
+      hrv_sd_30d: 5,
+      resting_hr: null,
+      rhr_mean_30d: null,
+      rhr_sd_30d: null,
+      respiratory_rate: null,
+      rr_mean_30d: null,
+      rr_sd_30d: null,
+    };
+    const result = computeComponentScores(metric, null);
+    // z = (60-50)/5 = 2.0 → zScoreToRecoveryScore(2.0) = 92
+    // If mutated to multiplication: z = (60-50)*5 = 50 → score = 100
+    expect(result.hrvScore).toBe(92);
+  });
+
   it("does NOT negate HRV z-score (higher HRV → higher score)", () => {
     const highHrv = {
       hrv: 70,
@@ -669,6 +687,24 @@ describe("computeComponentScores", () => {
     const high = computeComponentScores(highRhr, null);
     const low = computeComponentScores(lowRhr, null);
     expect(high.restingHrScore).toBeLessThan(low.restingHrScore);
+  });
+
+  it("computes exact RHR score using division (not multiplication) for z-score", () => {
+    const metric = {
+      hrv: null,
+      hrv_mean_30d: null,
+      hrv_sd_30d: null,
+      resting_hr: 70,
+      rhr_mean_30d: 60,
+      rhr_sd_30d: 5,
+      respiratory_rate: null,
+      rr_mean_30d: null,
+      rr_sd_30d: null,
+    };
+    const result = computeComponentScores(metric, null);
+    // rhrZ = (70-60)/5 = 2.0, negated = -2.0 → zScoreToRecoveryScore(-2.0) = 12
+    // If mutated to multiplication: rhrZ = (70-60)*5 = 50, negated = -50 → score = 0
+    expect(result.restingHrScore).toBe(12);
   });
 
   it("negates respiratory rate z-score (higher RR → lower score)", () => {
@@ -943,6 +979,18 @@ describe("computeFocusMuscles", () => {
     const result = computeFocusMuscles(muscles, "2024-01-15");
     // Falls back to all fresh muscles since none >= 2
     expect(result).toContain("chest");
+  });
+
+  it("includes exactly-2-day-old muscle in focus and excludes 1-day-old muscle (kills >= to > boundary mutant)", () => {
+    const muscles = [
+      { muscle_group: "chest", last_trained_date: "2024-01-13" }, // exactly 2 days ago
+      { muscle_group: "back", last_trained_date: "2024-01-14" }, // 1 day ago
+    ];
+    const result = computeFocusMuscles(muscles, "2024-01-15");
+    // With >= 2: focusMuscles = ["chest"], returns ["chest"]
+    // With > 2 (mutant): focusMuscles = [], fallback = ["chest", "back"], returns ["chest", "back"]
+    expect(result).toContain("chest");
+    expect(result).not.toContain("back");
   });
 
   it("normalizes muscle names through aliases", () => {
