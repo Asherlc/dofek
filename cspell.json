@@ -383,6 +383,8 @@
     "Sparkline",
     "subtabs",
     "unlinkable",
+    "unmappable",
+    "novalid",
     "stddevs",
     "matviews",
     "matviewname",
