@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { AccelerometerRepository } from "./accelerometer-repository.ts";
+import { InertialMeasurementUnitRepository } from "./inertial-measurement-unit-repository.ts";
 
-describe("AccelerometerRepository", () => {
+describe("InertialMeasurementUnitRepository", () => {
   function makeRepository(rows: Record<string, unknown>[] = []) {
     const execute = vi.fn().mockResolvedValue(rows);
-    const repo = new AccelerometerRepository({ execute }, "user-1");
+    const repo = new InertialMeasurementUnitRepository({ execute }, "user-1");
     return { repo, execute };
   }
 
@@ -92,12 +92,30 @@ describe("AccelerometerRepository", () => {
       expect(await repo.getTimeSeries("2025-01-15T10:00:00Z", "2025-01-15T10:05:00Z")).toEqual([]);
     });
 
-    it("maps DB rows to AccelerometerSample objects", async () => {
+    it("maps DB rows to InertialMeasurementUnitSample objects", async () => {
       const { repo } = makeRepository([
-        { recorded_at: "2025-01-15T10:00:00Z", x: "0.01", y: "-9.81", z: "0.02" },
+        {
+          recorded_at: "2025-01-15T10:00:00Z",
+          x: "0.01",
+          y: "-9.81",
+          z: "0.02",
+          gyroscope_x: "0.1",
+          gyroscope_y: "-0.2",
+          gyroscope_z: null,
+        },
       ]);
       const result = await repo.getTimeSeries("2025-01-15T10:00:00Z", "2025-01-15T10:01:00Z");
-      expect(result).toEqual([{ recordedAt: "2025-01-15T10:00:00Z", x: 0.01, y: -9.81, z: 0.02 }]);
+      expect(result).toEqual([
+        {
+          recordedAt: "2025-01-15T10:00:00Z",
+          x: 0.01,
+          y: -9.81,
+          z: 0.02,
+          gyroscopeX: 0.1,
+          gyroscopeY: -0.2,
+          gyroscopeZ: null,
+        },
+      ]);
     });
 
     it("clamps end date to 10 minutes after start", async () => {

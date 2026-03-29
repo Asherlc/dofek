@@ -21,7 +21,7 @@ function deviceLabel(deviceType: string, deviceId: string): string {
 }
 
 function SyncStatusPanel() {
-  const { data, isLoading } = trpc.accelerometer.getSyncStatus.useQuery();
+  const { data, isLoading } = trpc.inertialMeasurementUnit.getSyncStatus.useQuery();
 
   if (isLoading) return <p className="text-sm text-muted-foreground">Loading...</p>;
   if (!data || data.length === 0) {
@@ -57,7 +57,7 @@ function SyncStatusPanel() {
 }
 
 function DailyCoveragePanel() {
-  const { data, isLoading } = trpc.accelerometer.getDailyCounts.useQuery({ days: 30 });
+  const { data, isLoading } = trpc.inertialMeasurementUnit.getDailyCounts.useQuery({ days: 30 });
 
   if (isLoading) return <p className="text-sm text-muted-foreground">Loading...</p>;
   if (!data || data.length === 0) {
@@ -86,12 +86,12 @@ function DailyCoveragePanel() {
   );
 }
 
-export function AccelerometerPage() {
+export function InertialMeasurementUnitPage() {
   return (
     <PageLayout>
       <PageSection
         title="Motion Tracking"
-        subtitle="Motion data from iPhone, Apple Watch, and WHOOP Strap"
+        subtitle="Continuous 50 Hz motion data (accelerometer + gyroscope) from iPhone, Apple Watch, and WHOOP"
       >
         <SyncStatusPanel />
       </PageSection>

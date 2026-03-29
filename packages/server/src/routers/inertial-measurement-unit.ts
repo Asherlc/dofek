@@ -1,19 +1,19 @@
 import { z } from "zod";
-import { AccelerometerRepository } from "../repositories/accelerometer-repository.ts";
+import { InertialMeasurementUnitRepository } from "../repositories/inertial-measurement-unit-repository.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 
-export const accelerometerRouter = router({
+export const inertialMeasurementUnitRouter = router({
   /** Daily sample counts for the last N days — powers the coverage chart */
   getDailyCounts: protectedProcedure
     .input(z.object({ days: z.number().int().min(1).max(365).default(90) }))
     .query(async ({ ctx, input }) => {
-      const repo = new AccelerometerRepository(ctx.db, ctx.userId);
+      const repo = new InertialMeasurementUnitRepository(ctx.db, ctx.userId);
       return repo.getDailyCounts(input.days);
     }),
 
   /** Sync status: latest sync time, total samples, device breakdown */
   getSyncStatus: protectedProcedure.query(async ({ ctx }) => {
-    const repo = new AccelerometerRepository(ctx.db, ctx.userId);
+    const repo = new InertialMeasurementUnitRepository(ctx.db, ctx.userId);
     return repo.getSyncStatus();
   }),
 
@@ -27,7 +27,7 @@ export const accelerometerRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const repo = new AccelerometerRepository(ctx.db, ctx.userId);
+      const repo = new InertialMeasurementUnitRepository(ctx.db, ctx.userId);
       return repo.getTimeSeries(input.startDate, input.endDate);
     }),
 });

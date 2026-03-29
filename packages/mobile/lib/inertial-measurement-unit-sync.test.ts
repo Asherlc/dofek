@@ -1,12 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
-import type { AccelerometerSample } from "../modules/core-motion";
+import type { InertialMeasurementUnitSample } from "../modules/core-motion";
 import {
-  type AccelerometerSyncTrpcClient,
-  type CoreMotionAdapter,
-  syncAccelerometerToServer,
-} from "./accelerometer-sync";
+  type InertialMeasurementUnitAdapter,
+  type InertialMeasurementUnitSyncTrpcClient,
+  syncInertialMeasurementUnitToServer,
+} from "./inertial-measurement-unit-sync";
 
-function makeCoreMotion(overrides: Partial<CoreMotionAdapter> = {}): CoreMotionAdapter {
+function makeAdapter(
+  overrides: Partial<InertialMeasurementUnitAdapter> = {},
+): InertialMeasurementUnitAdapter {
   return {
     isAccelerometerRecordingAvailable: () => true,
     queryRecordedData: vi.fn().mockResolvedValue([]),
@@ -22,17 +24,17 @@ function makeTrpcClient(
   overrides: Partial<{
     pushResult: { inserted: number };
   }> = {},
-): AccelerometerSyncTrpcClient {
+): InertialMeasurementUnitSyncTrpcClient {
   return {
-    accelerometerSync: {
-      pushAccelerometerSamples: {
+    inertialMeasurementUnitSync: {
+      pushSamples: {
         mutate: vi.fn().mockResolvedValue(overrides.pushResult ?? { inserted: 0 }),
       },
     },
   };
 }
 
-function makeSamples(count: number): AccelerometerSample[] {
+function makeSamples(count: number): InertialMeasurementUnitSample[] {
   return Array.from({ length: count }, (_, index) => ({
     timestamp: new Date(Date.now() - (count - index) * 20).toISOString(),
     x: Math.random() * 2 - 1,
@@ -41,14 +43,14 @@ function makeSamples(count: number): AccelerometerSample[] {
   }));
 }
 
-describe("syncAccelerometerToServer", () => {
+describe("syncInertialMeasurementUnitToServer", () => {
   it("returns zero when accelerometer is not available", async () => {
-    const coreMotion = makeCoreMotion({
+    const coreMotion = makeAdapter({
       isAccelerometerRecordingAvailable: () => false,
     });
     const trpcClient = makeTrpcClient();
 
-    const result = await syncAccelerometerToServer({
+    const result = await syncInertialMeasurementUnitToServer({
       trpcClient,
       coreMotion,
       deviceId: "iPhone 15 Pro",
@@ -62,13 +64,13 @@ describe("syncAccelerometerToServer", () => {
   it("queries from lastSyncTimestamp when available", async () => {
     const queryRecordedData = vi.fn().mockResolvedValue([]);
     const lastSync = new Date(Date.now() - 60_000).toISOString();
-    const coreMotion = makeCoreMotion({
+    const coreMotion = makeAdapter({
       getLastSyncTimestamp: () => lastSync,
       queryRecordedData,
     });
     const trpcClient = makeTrpcClient();
 
-    await syncAccelerometerToServer({
+    await syncInertialMeasurementUnitToServer({
       trpcClient,
       coreMotion,
       deviceId: "iPhone 15 Pro",
@@ -82,19 +84,19 @@ describe("syncAccelerometerToServer", () => {
 
   it("uploads samples in batches of 5000", async () => {
     const samples = makeSamples(7500);
-    const coreMotion = makeCoreMotion({
+    const coreMotion = makeAdapter({
       queryRecordedData: vi.fn().mockResolvedValue(samples),
     });
     const trpcClient = makeTrpcClient({ pushResult: { inserted: 5000 } });
 
-    await syncAccelerometerToServer({
+    await syncInertialMeasurementUnitToServer({
       trpcClient,
       coreMotion,
       deviceId: "iPhone 15 Pro",
       deviceType: "iphone",
     });
 
-    const mutate = trpcClient.accelerometerSync.pushAccelerometerSamples.mutate;
+    const mutate = trpcClient.inertialMeasurementUnitSync.pushSamples.mutate;
     expect(mutate).toHaveBeenCalledTimes(2);
 
     // First batch: 5000 samples
@@ -111,13 +113,13 @@ describe("syncAccelerometerToServer", () => {
   it("advances sync cursor only after all batches succeed", async () => {
     const samples = makeSamples(100);
     const setLastSyncTimestamp = vi.fn();
-    const coreMotion = makeCoreMotion({
+    const coreMotion = makeAdapter({
       queryRecordedData: vi.fn().mockResolvedValue(samples),
       setLastSyncTimestamp,
     });
     const trpcClient = makeTrpcClient({ pushResult: { inserted: 100 } });
 
-    await syncAccelerometerToServer({
+    await syncInertialMeasurementUnitToServer({
       trpcClient,
       coreMotion,
       deviceId: "iPhone 15 Pro",
@@ -133,17 +135,17 @@ describe("syncAccelerometerToServer", () => {
   it("does not advance cursor when upload fails", async () => {
     const samples = makeSamples(100);
     const setLastSyncTimestamp = vi.fn();
-    const coreMotion = makeCoreMotion({
+    const coreMotion = makeAdapter({
       queryRecordedData: vi.fn().mockResolvedValue(samples),
       setLastSyncTimestamp,
     });
     const trpcClient = makeTrpcClient();
-    vi.mocked(trpcClient.accelerometerSync.pushAccelerometerSamples.mutate).mockRejectedValue(
+    vi.mocked(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).mockRejectedValue(
       new Error("Network error"),
     );
 
     await expect(
-      syncAccelerometerToServer({
+      syncInertialMeasurementUnitToServer({
         trpcClient,
         coreMotion,
         deviceId: "iPhone 15 Pro",
@@ -156,10 +158,10 @@ describe("syncAccelerometerToServer", () => {
 
   it("restarts recording after sync", async () => {
     const startRecording = vi.fn().mockResolvedValue(true);
-    const coreMotion = makeCoreMotion({ startRecording });
+    const coreMotion = makeAdapter({ startRecording });
     const trpcClient = makeTrpcClient();
 
-    await syncAccelerometerToServer({
+    await syncInertialMeasurementUnitToServer({
       trpcClient,
       coreMotion,
       deviceId: "iPhone 15 Pro",
@@ -171,13 +173,13 @@ describe("syncAccelerometerToServer", () => {
 
   it("handles empty data gracefully", async () => {
     const setLastSyncTimestamp = vi.fn();
-    const coreMotion = makeCoreMotion({
+    const coreMotion = makeAdapter({
       queryRecordedData: vi.fn().mockResolvedValue([]),
       setLastSyncTimestamp,
     });
     const trpcClient = makeTrpcClient();
 
-    const result = await syncAccelerometerToServer({
+    const result = await syncInertialMeasurementUnitToServer({
       trpcClient,
       coreMotion,
       deviceId: "iPhone 15 Pro",
@@ -188,6 +190,38 @@ describe("syncAccelerometerToServer", () => {
     // Should still advance cursor (no data to sync = up to date)
     expect(setLastSyncTimestamp).toHaveBeenCalledTimes(1);
     // Should not call push mutation
-    expect(trpcClient.accelerometerSync.pushAccelerometerSamples.mutate).not.toHaveBeenCalled();
+    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).not.toHaveBeenCalled();
+  });
+
+  it("passes gyroscope data through to server", async () => {
+    const samplesWithGyro: InertialMeasurementUnitSample[] = [
+      {
+        timestamp: new Date().toISOString(),
+        x: 0.01,
+        y: -0.98,
+        z: 0.04,
+        gyroscopeX: 0.15,
+        gyroscopeY: -0.22,
+        gyroscopeZ: 0.08,
+      },
+    ];
+    const coreMotion = makeAdapter({
+      queryRecordedData: vi.fn().mockResolvedValue(samplesWithGyro),
+    });
+    const trpcClient = makeTrpcClient({ pushResult: { inserted: 1 } });
+
+    await syncInertialMeasurementUnitToServer({
+      trpcClient,
+      coreMotion,
+      deviceId: "Apple Watch",
+      deviceType: "apple_watch",
+    });
+
+    const mutate = trpcClient.inertialMeasurementUnitSync.pushSamples.mutate;
+    expect(mutate).toHaveBeenCalledTimes(1);
+    const call = vi.mocked(mutate).mock.calls[0][0];
+    expect(call.samples[0].gyroscopeX).toBe(0.15);
+    expect(call.samples[0].gyroscopeY).toBe(-0.22);
+    expect(call.samples[0].gyroscopeZ).toBe(0.08);
   });
 });

@@ -65,10 +65,10 @@ const NAV_LINKS = [
     description: "See how any two metrics relate",
   },
   {
-    route: "/accelerometer" as const,
-    label: "Accelerometer",
+    route: "/inertial-measurement-unit" as const,
+    label: "Motion Sensors",
     emoji: "\uD83D\uDCF1",
-    description: "Raw motion data & recording status",
+    description: "Raw accelerometer & gyroscope data",
   },
   {
     route: "/providers" as const,

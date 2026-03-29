@@ -2,8 +2,8 @@
 
 import { renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AccelerometerUploadClient } from "./accelerometer-service";
 import type { WhoopBleSyncDeps } from "./background-whoop-ble-sync";
+import type { InertialMeasurementUnitUploadClient } from "./inertial-measurement-unit-service";
 
 // --- Hoisted mocks (vi.mock factories are hoisted, so refs must be too) ---
 
@@ -46,10 +46,10 @@ function makeMockDeps(): WhoopBleSyncDeps {
   };
 }
 
-function makeMockUploadClient(): AccelerometerUploadClient {
+function makeMockUploadClient(): InertialMeasurementUnitUploadClient {
   return {
-    accelerometerSync: {
-      pushAccelerometerSamples: {
+    inertialMeasurementUnitSync: {
+      pushSamples: {
         mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
       },
     },
@@ -57,7 +57,7 @@ function makeMockUploadClient(): AccelerometerUploadClient {
 }
 
 describe("useWhoopBleSync", () => {
-  let uploadClient: AccelerometerUploadClient;
+  let uploadClient: InertialMeasurementUnitUploadClient;
   let whoopDeps: WhoopBleSyncDeps;
 
   beforeEach(() => {
