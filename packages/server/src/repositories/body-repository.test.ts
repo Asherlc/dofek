@@ -148,6 +148,123 @@ describe("BodyRepository", () => {
     expect(detail?.createdAt).toBe("2024-01-15T08:01:00Z");
   });
 
+  it("maps null external_id to null externalId", async () => {
+    const { repo } = makeRepository([
+      {
+        id: "bm-1",
+        recorded_at: "2024-01-15T08:00:00Z",
+        provider_id: "withings",
+        user_id: "user-1",
+        external_id: null,
+        weight_kg: null,
+        body_fat_pct: null,
+        muscle_mass_kg: null,
+        bone_mass_kg: null,
+        water_pct: null,
+        bmi: null,
+        height_cm: null,
+        waist_circumference_cm: null,
+        systolic_bp: null,
+        diastolic_bp: null,
+        heart_pulse: null,
+        temperature_c: null,
+        source_name: null,
+        created_at: "2024-01-15T08:01:00Z",
+      },
+    ]);
+    const result = await repo.list(90);
+    const detail = result[0]?.toDetail();
+    expect(detail?.externalId).toBeNull();
+    expect(detail?.weightKg).toBeNull();
+    expect(detail?.bodyFatPct).toBeNull();
+    expect(detail?.muscleMassKg).toBeNull();
+    expect(detail?.boneMassKg).toBeNull();
+    expect(detail?.waterPct).toBeNull();
+    expect(detail?.bmi).toBeNull();
+    expect(detail?.heightCm).toBeNull();
+    expect(detail?.waistCircumferenceCm).toBeNull();
+    expect(detail?.systolicBp).toBeNull();
+    expect(detail?.diastolicBp).toBeNull();
+    expect(detail?.heartPulse).toBeNull();
+    expect(detail?.temperatureC).toBeNull();
+    expect(detail?.sourceName).toBeNull();
+  });
+
+  it("maps non-null external_id to string externalId", async () => {
+    const { repo } = makeRepository([
+      {
+        id: "bm-2",
+        recorded_at: "2024-01-15T08:00:00Z",
+        provider_id: "withings",
+        user_id: "user-1",
+        external_id: "ext-456",
+        weight_kg: "80.5",
+        body_fat_pct: "20.1",
+        muscle_mass_kg: "60.2",
+        bone_mass_kg: "3.5",
+        water_pct: "55.3",
+        bmi: "24.1",
+        height_cm: "175",
+        waist_circumference_cm: "85.5",
+        systolic_bp: "125",
+        diastolic_bp: "82",
+        heart_pulse: "65",
+        temperature_c: "36.8",
+        source_name: "Scale Pro",
+        created_at: "2024-01-15T08:01:00Z",
+      },
+    ]);
+    const result = await repo.list(90);
+    const detail = result[0]?.toDetail();
+    expect(detail?.externalId).toBe("ext-456");
+    expect(detail?.weightKg).toBe(80.5);
+    expect(detail?.bodyFatPct).toBe(20.1);
+    expect(detail?.muscleMassKg).toBe(60.2);
+    expect(detail?.boneMassKg).toBe(3.5);
+    expect(detail?.waterPct).toBe(55.3);
+    expect(detail?.bmi).toBe(24.1);
+    expect(detail?.heightCm).toBe(175);
+    expect(detail?.waistCircumferenceCm).toBe(85.5);
+    expect(detail?.systolicBp).toBe(125);
+    expect(detail?.diastolicBp).toBe(82);
+    expect(detail?.heartPulse).toBe(65);
+    expect(detail?.temperatureC).toBe(36.8);
+    expect(detail?.sourceName).toBe("Scale Pro");
+  });
+
+  it("preserves id, recordedAt, providerId, userId, createdAt from mapping", async () => {
+    const { repo } = makeRepository([
+      {
+        id: "bm-99",
+        recorded_at: "2024-03-20T10:30:00Z",
+        provider_id: "garmin",
+        user_id: "user-42",
+        external_id: null,
+        weight_kg: null,
+        body_fat_pct: null,
+        muscle_mass_kg: null,
+        bone_mass_kg: null,
+        water_pct: null,
+        bmi: null,
+        height_cm: null,
+        waist_circumference_cm: null,
+        systolic_bp: null,
+        diastolic_bp: null,
+        heart_pulse: null,
+        temperature_c: null,
+        source_name: null,
+        created_at: "2024-03-20T10:31:00Z",
+      },
+    ]);
+    const result = await repo.list(90);
+    const detail = result[0]?.toDetail();
+    expect(detail?.id).toBe("bm-99");
+    expect(detail?.recordedAt).toBe("2024-03-20T10:30:00Z");
+    expect(detail?.providerId).toBe("garmin");
+    expect(detail?.userId).toBe("user-42");
+    expect(detail?.createdAt).toBe("2024-03-20T10:31:00Z");
+  });
+
   it("calls execute once", async () => {
     const { repo, execute } = makeRepository([]);
     await repo.list(30);

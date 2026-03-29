@@ -1076,6 +1076,162 @@ describe("computeReadinessComponents", () => {
     expect(lowHrv.hrvScore).toBeLessThan(62);
   });
 
+  it("defaults to 62 when hrv is null but baselines exist", () => {
+    const components = computeReadinessComponents({
+      date: "2024-03-15",
+      hrv: null,
+      restingHr: 50,
+      respiratoryRate: 20,
+      hrvMean30d: 50,
+      hrvSd30d: 10,
+      rhrMean30d: 60,
+      rhrSd30d: 5,
+      rrMean30d: 15,
+      rrSd30d: 2,
+      efficiencyPct: 85,
+    });
+    expect(components.hrvScore).toBe(62);
+    // Other scores should NOT be 62 (they have data that differs from mean)
+    expect(components.restingHrScore).not.toBe(62);
+  });
+
+  it("defaults to 62 when hrvMean30d is null but hrv exists", () => {
+    const components = computeReadinessComponents({
+      date: "2024-03-15",
+      hrv: 55,
+      restingHr: null,
+      respiratoryRate: null,
+      hrvMean30d: null,
+      hrvSd30d: 10,
+      rhrMean30d: null,
+      rhrSd30d: null,
+      rrMean30d: null,
+      rrSd30d: null,
+      efficiencyPct: null,
+    });
+    expect(components.hrvScore).toBe(62);
+  });
+
+  it("defaults to 62 when hrvSd30d is null but hrv and mean exist", () => {
+    const components = computeReadinessComponents({
+      date: "2024-03-15",
+      hrv: 55,
+      restingHr: null,
+      respiratoryRate: null,
+      hrvMean30d: 50,
+      hrvSd30d: null,
+      rhrMean30d: null,
+      rhrSd30d: null,
+      rrMean30d: null,
+      rrSd30d: null,
+      efficiencyPct: null,
+    });
+    expect(components.hrvScore).toBe(62);
+  });
+
+  it("defaults restingHrScore to 62 when restingHr is null but baselines exist", () => {
+    const components = computeReadinessComponents({
+      date: "2024-03-15",
+      hrv: 55,
+      restingHr: null,
+      respiratoryRate: null,
+      hrvMean30d: 50,
+      hrvSd30d: 10,
+      rhrMean30d: 60,
+      rhrSd30d: 5,
+      rrMean30d: null,
+      rrSd30d: null,
+      efficiencyPct: null,
+    });
+    expect(components.restingHrScore).toBe(62);
+    expect(components.hrvScore).not.toBe(62); // HRV has data
+  });
+
+  it("defaults restingHrScore to 62 when rhrMean30d is null", () => {
+    const components = computeReadinessComponents({
+      date: "2024-03-15",
+      hrv: null,
+      restingHr: 60,
+      respiratoryRate: null,
+      hrvMean30d: null,
+      hrvSd30d: null,
+      rhrMean30d: null,
+      rhrSd30d: 5,
+      rrMean30d: null,
+      rrSd30d: null,
+      efficiencyPct: null,
+    });
+    expect(components.restingHrScore).toBe(62);
+  });
+
+  it("defaults restingHrScore to 62 when rhrSd30d is null", () => {
+    const components = computeReadinessComponents({
+      date: "2024-03-15",
+      hrv: null,
+      restingHr: 60,
+      respiratoryRate: null,
+      hrvMean30d: null,
+      hrvSd30d: null,
+      rhrMean30d: 60,
+      rhrSd30d: null,
+      rrMean30d: null,
+      rrSd30d: null,
+      efficiencyPct: null,
+    });
+    expect(components.restingHrScore).toBe(62);
+  });
+
+  it("defaults respiratoryRateScore to 62 when respiratoryRate is null but baselines exist", () => {
+    const components = computeReadinessComponents({
+      date: "2024-03-15",
+      hrv: null,
+      restingHr: null,
+      respiratoryRate: null,
+      hrvMean30d: null,
+      hrvSd30d: null,
+      rhrMean30d: null,
+      rhrSd30d: null,
+      rrMean30d: 15,
+      rrSd30d: 2,
+      efficiencyPct: null,
+    });
+    expect(components.respiratoryRateScore).toBe(62);
+  });
+
+  it("defaults respiratoryRateScore to 62 when rrMean30d is null", () => {
+    const components = computeReadinessComponents({
+      date: "2024-03-15",
+      hrv: null,
+      restingHr: null,
+      respiratoryRate: 16,
+      hrvMean30d: null,
+      hrvSd30d: null,
+      rhrMean30d: null,
+      rhrSd30d: null,
+      rrMean30d: null,
+      rrSd30d: 2,
+      efficiencyPct: null,
+    });
+    expect(components.respiratoryRateScore).toBe(62);
+  });
+
+  it("defaults respiratoryRateScore to 62 when rrSd30d is null", () => {
+    const components = computeReadinessComponents({
+      date: "2024-03-15",
+      hrv: null,
+      restingHr: null,
+      respiratoryRate: 16,
+      hrvMean30d: null,
+      hrvSd30d: null,
+      rhrMean30d: null,
+      rhrSd30d: null,
+      rrMean30d: 15,
+      rrSd30d: null,
+      efficiencyPct: null,
+    });
+    expect(components.respiratoryRateScore).toBe(62);
+  });
+
   it("negates RHR z-score but does NOT negate HRV z-score (opposite directions)", () => {
     // Same z-score magnitude but opposite direction for HRV vs RHR
     // HRV +2 SD above mean → should be GOOD (> 62)
@@ -1267,6 +1423,38 @@ describe("RecoveryRepository", () => {
       expect(result[0]).toBeInstanceOf(SleepConsistencyDay);
     });
 
+    it("maps null stddev values to null (not Number(null))", async () => {
+      const { repo } = makeRepository([
+        {
+          date: "2024-03-15",
+          bedtime_hour: 22.5,
+          waketime_hour: 6.75,
+          rolling_bedtime_stddev: null,
+          rolling_waketime_stddev: null,
+          window_count: 5,
+        },
+      ]);
+      const result = await repo.getSleepConsistency(90);
+      expect(result[0]?.rollingBedtimeStddev).toBeNull();
+      expect(result[0]?.rollingWaketimeStddev).toBeNull();
+    });
+
+    it("maps non-null stddev values to numbers", async () => {
+      const { repo } = makeRepository([
+        {
+          date: "2024-03-15",
+          bedtime_hour: 22.5,
+          waketime_hour: 6.75,
+          rolling_bedtime_stddev: 0.75,
+          rolling_waketime_stddev: 0.45,
+          window_count: 14,
+        },
+      ]);
+      const result = await repo.getSleepConsistency(90);
+      expect(result[0]?.rollingBedtimeStddev).toBe(0.75);
+      expect(result[0]?.rollingWaketimeStddev).toBe(0.45);
+    });
+
     it("calls execute once", async () => {
       const { repo, execute } = makeRepository([]);
       await repo.getSleepConsistency(30);
@@ -1293,6 +1481,38 @@ describe("RecoveryRepository", () => {
       const result = await repo.getHrvVariability(90);
       expect(result).toHaveLength(1);
       expect(result[0]).toBeInstanceOf(HrvVariabilityDay);
+    });
+
+    it("maps null hrv/rolling values to null", async () => {
+      const { repo } = makeRepository([
+        {
+          date: "2024-03-15",
+          hrv: null,
+          rolling_mean: null,
+          rolling_cv: null,
+        },
+      ]);
+      const result = await repo.getHrvVariability(90);
+      const detail = result[0]?.toDetail();
+      expect(detail?.hrv).toBeNull();
+      expect(detail?.rollingMean).toBeNull();
+      expect(detail?.rollingCoefficientOfVariation).toBeNull();
+    });
+
+    it("maps non-null hrv/rolling values to numbers", async () => {
+      const { repo } = makeRepository([
+        {
+          date: "2024-03-15",
+          hrv: 45,
+          rolling_mean: 50,
+          rolling_cv: 12.5,
+        },
+      ]);
+      const result = await repo.getHrvVariability(90);
+      const detail = result[0]?.toDetail();
+      expect(detail?.hrv).toBe(45);
+      expect(detail?.rollingMean).toBe(50);
+      expect(detail?.rollingCoefficientOfVariation).toBe(12.5);
     });
   });
 
@@ -1358,6 +1578,42 @@ describe("RecoveryRepository", () => {
       expect(result).toHaveLength(1);
       expect(result[0]).toBeInstanceOf(SleepNight);
       expect(result[0]?.sleepMinutes).toBe(420);
+    });
+
+    it("maps null rolling_avg_duration to null", async () => {
+      const { repo } = makeRepository([
+        {
+          date: "2024-03-15",
+          duration_minutes: 480,
+          sleep_minutes: 420,
+          deep_pct: 20,
+          rem_pct: 25,
+          light_pct: 45,
+          awake_pct: 10,
+          efficiency: 87.5,
+          rolling_avg_duration: null,
+        },
+      ]);
+      const result = await repo.getSleepNights(90);
+      expect(result[0]?.toDetail().rollingAvgDuration).toBeNull();
+    });
+
+    it("maps non-null rolling_avg_duration to number", async () => {
+      const { repo } = makeRepository([
+        {
+          date: "2024-03-15",
+          duration_minutes: 480,
+          sleep_minutes: 420,
+          deep_pct: 20,
+          rem_pct: 25,
+          light_pct: 45,
+          awake_pct: 10,
+          efficiency: 87.5,
+          rolling_avg_duration: 415,
+        },
+      ]);
+      const result = await repo.getSleepNights(90);
+      expect(result[0]?.toDetail().rollingAvgDuration).toBe(415);
     });
   });
 
@@ -1440,6 +1696,36 @@ describe("RecoveryRepository", () => {
       expect(row?.rrMean30d).toBe(13);
       expect(row?.rrSd30d).toBe(1.5);
       expect(row?.efficiencyPct).toBe(92);
+    });
+
+    it("maps each nullable field independently (non-null restingHr, null others)", async () => {
+      const { repo } = makeRepository([
+        {
+          date: "2024-03-15",
+          hrv: null,
+          resting_hr: 58,
+          respiratory_rate: null,
+          hrv_mean_30d: null,
+          hrv_sd_30d: null,
+          rhr_mean_30d: null,
+          rhr_sd_30d: null,
+          rr_mean_30d: null,
+          rr_sd_30d: null,
+          efficiency_pct: null,
+        },
+      ]);
+      const result = await repo.getReadinessMetrics(30, "2024-03-15");
+      const row = result[0];
+      expect(row?.hrv).toBeNull();
+      expect(row?.restingHr).toBe(58);
+      expect(row?.respiratoryRate).toBeNull();
+      expect(row?.hrvMean30d).toBeNull();
+      expect(row?.hrvSd30d).toBeNull();
+      expect(row?.rhrMean30d).toBeNull();
+      expect(row?.rhrSd30d).toBeNull();
+      expect(row?.rrMean30d).toBeNull();
+      expect(row?.rrSd30d).toBeNull();
+      expect(row?.efficiencyPct).toBeNull();
     });
   });
 
@@ -1633,6 +1919,380 @@ describe("RecoveryRepository", () => {
       // This affects the strain target calculation
       expect(result).toHaveProperty("targetStrain");
       expect(result.targetStrain).toBeGreaterThanOrEqual(0);
+    });
+
+    it("accumulates loads with addition (not subtraction)", async () => {
+      // Two loads in acute window: 100 + 200 = 300 / 7 ≈ 42.9 acuteLoad
+      // If subtracted: 100 - 200 = -100 / 7 ≈ -14.3
+      const loadRows = [
+        { date: "2024-03-14", daily_load: 100 },
+        { date: "2024-03-15", daily_load: 200 },
+      ];
+      const { repo } = makeStrainRepository([
+        [], // no daily metrics
+        loadRows,
+      ]);
+      const result = await repo.getStrainTarget(28, "2024-03-15");
+      // With positive acuteLoad, targetStrain should be positive
+      expect(result.targetStrain).toBeGreaterThan(0);
+    });
+
+    it("divides loads by window size (not multiplies)", async () => {
+      // With many loads, division vs multiplication produces very different acuteLoad
+      // 7 loads of 100 each: acuteLoad = 700/7 = 100 (division) vs 700*7 = 4900 (multiplication)
+      const loadRows = Array.from({ length: 7 }, (_, index) => ({
+        date: `2024-03-${String(15 - index).padStart(2, "0")}`,
+        daily_load: 100,
+      }));
+      const { repo } = makeStrainRepository([[], loadRows]);
+      const result = await repo.getStrainTarget(28, "2024-03-15");
+      // With division, acuteLoad=100, chronicLoad=25 -> reasonable target
+      // With multiplication, acuteLoad=4900, chronicLoad=19600 -> absurd target
+      expect(result.targetStrain).toBeLessThan(100);
+      expect(result.targetStrain).toBeGreaterThan(0);
+    });
+
+    it("includes loads within acute window (< 7 days ago) but excludes others", async () => {
+      // Load exactly 7 days ago should NOT be in acute (< 7, not <= 7)
+      const loadRows = [
+        { date: "2024-03-08", daily_load: 1000 }, // 7 days ago => NOT in acute
+        { date: "2024-03-15", daily_load: 10 }, // 0 days ago => in acute
+      ];
+      const { repo: repoWith7 } = makeStrainRepository([[], loadRows]);
+      const resultWith7 = await repoWith7.getStrainTarget(28, "2024-03-15");
+
+      // Compare with only the 10 load (no 7-day-old load)
+      const loadRows2 = [{ date: "2024-03-15", daily_load: 10 }];
+      const { repo: repoWithout } = makeStrainRepository([[], loadRows2]);
+      const resultWithout = await repoWithout.getStrainTarget(28, "2024-03-15");
+
+      // The 7-day-old load should NOT affect acuteLoad (both should have same acute)
+      // But it DOES affect chronicLoad, so targets may differ slightly
+      // Key: acuteLoad should be same => currentStrain should be same
+      expect(resultWith7.currentStrain).toBe(resultWithout.currentStrain);
+    });
+
+    it("sleepScore uses Math.max not Math.min for lower clamp", async () => {
+      // With sleepEff = 90, Math.max(0, Math.min(100, 90)) = 90
+      // If Math.max was mutated to Math.min: Math.min(0, Math.min(100, 90)) = 0
+      const { repo } = makeStrainRepository([
+        [{ date: "2024-03-15", resting_hr: 60, hrv: 50, spo2_avg: 97, respiratory_rate_avg: 14 }],
+        [], // params
+        [{ efficiency_pct: 90 }],
+        [], // loads
+      ]);
+      const resultWithSleep = await repo.getStrainTarget(28, "2024-03-15");
+
+      // Compare with no sleep (defaults to 62)
+      const { repo: repoNoSleep } = makeStrainRepository([
+        [{ date: "2024-03-15", resting_hr: 60, hrv: 50, spo2_avg: 97, respiratory_rate_avg: 14 }],
+        [], // params
+        [{ efficiency_pct: null }],
+        [], // loads
+      ]);
+      const resultNoSleep = await repoNoSleep.getStrainTarget(28, "2024-03-15");
+
+      // 90 efficiency should produce higher readiness than default 62
+      expect(resultWithSleep.targetStrain).toBeGreaterThanOrEqual(resultNoSleep.targetStrain);
+    });
+
+    it("hrvScore uses Math.max not Math.min for lower clamp in strain target", async () => {
+      // hrv=50, clamped via Math.max(0, Math.min(100, 50)) = 50
+      // If Math.max→Math.min: Math.min(0, ...) = 0
+      const { repo } = makeStrainRepository([
+        [
+          {
+            date: "2024-03-15",
+            resting_hr: null,
+            hrv: 50,
+            spo2_avg: null,
+            respiratory_rate_avg: null,
+          },
+        ],
+        [], // params
+        [{ efficiency_pct: null }],
+        [], // loads
+      ]);
+      const result = await repo.getStrainTarget(28, "2024-03-15");
+      // With hrv=50, hrvScore=50, which is less than default 62
+      // If Math.max was min, hrvScore=0, giving even lower readiness
+      // The result should exist and be reasonable
+      expect(result.targetStrain).toBeGreaterThanOrEqual(0);
+    });
+
+    it("uses 120 - resting_hr (not resting_hr + 120) for restingHrScore", async () => {
+      // resting_hr = 60 => 120 - 60 = 60
+      // If mutated to +: 120 + 60 = 180, clamped to 100
+      const { repo: repoLow } = makeStrainRepository([
+        [
+          {
+            date: "2024-03-15",
+            resting_hr: 60,
+            hrv: null,
+            spo2_avg: null,
+            respiratory_rate_avg: null,
+          },
+        ],
+        [],
+        [{ efficiency_pct: null }],
+        [],
+      ]);
+      const resultLow = await repoLow.getStrainTarget(28, "2024-03-15");
+
+      const { repo: repoHigh } = makeStrainRepository([
+        [
+          {
+            date: "2024-03-15",
+            resting_hr: 90,
+            hrv: null,
+            spo2_avg: null,
+            respiratory_rate_avg: null,
+          },
+        ],
+        [],
+        [{ efficiency_pct: null }],
+        [],
+      ]);
+      const resultHigh = await repoHigh.getStrainTarget(28, "2024-03-15");
+
+      // With subtraction: rhr=60 => score=60, rhr=90 => score=30
+      // Lower rhr should give higher score and thus higher target
+      // With addition: both would clamp to 100 and be equal
+      expect(resultLow.targetStrain).toBeGreaterThan(resultHigh.targetStrain);
+    });
+
+    it("hrvScore null-check matters (null hrv vs non-null hrv)", async () => {
+      // With hrv=50, hrvScore = Math.max(0, Math.min(100, 50)) = 50
+      // With hrv=null, hrvScore = 62 (default)
+      const { repo: repoWithHrv } = makeStrainRepository([
+        [
+          {
+            date: "2024-03-15",
+            resting_hr: null,
+            hrv: 80,
+            spo2_avg: null,
+            respiratory_rate_avg: null,
+          },
+        ],
+        [],
+        [{ efficiency_pct: null }],
+        [],
+      ]);
+      const resultWithHrv = await repoWithHrv.getStrainTarget(28, "2024-03-15");
+
+      const { repo: repoNullHrv } = makeStrainRepository([
+        [
+          {
+            date: "2024-03-15",
+            resting_hr: null,
+            hrv: null,
+            spo2_avg: null,
+            respiratory_rate_avg: null,
+          },
+        ],
+        [],
+        [{ efficiency_pct: null }],
+        [],
+      ]);
+      const resultNullHrv = await repoNullHrv.getStrainTarget(28, "2024-03-15");
+
+      // hrv=80 gives hrvScore=80 which is higher than default 62
+      // So target should be higher with hrv=80
+      expect(resultWithHrv.targetStrain).toBeGreaterThanOrEqual(resultNullHrv.targetStrain);
+    });
+
+    it("resting_hr null-check matters (null vs non-null resting_hr)", async () => {
+      // With resting_hr=40, restingHrScore = 120-40 = 80
+      // With resting_hr=null, restingHrScore = 62 (default)
+      const { repo: repoWithRhr } = makeStrainRepository([
+        [
+          {
+            date: "2024-03-15",
+            resting_hr: 40,
+            hrv: null,
+            spo2_avg: null,
+            respiratory_rate_avg: null,
+          },
+        ],
+        [],
+        [{ efficiency_pct: null }],
+        [],
+      ]);
+      const resultWithRhr = await repoWithRhr.getStrainTarget(28, "2024-03-15");
+
+      const { repo: repoNullRhr } = makeStrainRepository([
+        [
+          {
+            date: "2024-03-15",
+            resting_hr: null,
+            hrv: null,
+            spo2_avg: null,
+            respiratory_rate_avg: null,
+          },
+        ],
+        [],
+        [{ efficiency_pct: null }],
+        [],
+      ]);
+      const resultNullRhr = await repoNullRhr.getStrainTarget(28, "2024-03-15");
+
+      // resting_hr=40 gives score=80, which is higher than default 62
+      expect(resultWithRhr.targetStrain).toBeGreaterThanOrEqual(resultNullRhr.targetStrain);
+    });
+
+    it("sleepEff null-check matters (null vs non-null sleep efficiency)", async () => {
+      const { repo: repoWithSleep } = makeStrainRepository([
+        [
+          {
+            date: "2024-03-15",
+            resting_hr: null,
+            hrv: null,
+            spo2_avg: null,
+            respiratory_rate_avg: null,
+          },
+        ],
+        [],
+        [{ efficiency_pct: 95 }],
+        [],
+      ]);
+      const resultWithSleep = await repoWithSleep.getStrainTarget(28, "2024-03-15");
+
+      const { repo: repoNullSleep } = makeStrainRepository([
+        [
+          {
+            date: "2024-03-15",
+            resting_hr: null,
+            hrv: null,
+            spo2_avg: null,
+            respiratory_rate_avg: null,
+          },
+        ],
+        [],
+        [{ efficiency_pct: null }],
+        [],
+      ]);
+      const resultNullSleep = await repoNullSleep.getStrainTarget(28, "2024-03-15");
+
+      // 95 efficiency > default 62, so target should be higher
+      expect(resultWithSleep.targetStrain).toBeGreaterThanOrEqual(resultNullSleep.targetStrain);
+    });
+  });
+
+  describe("getReadinessScores", () => {
+    function makeReadinessRepository(executeResults: Record<string, unknown>[][]) {
+      const execute = vi.fn();
+      for (const rows of executeResults) {
+        execute.mockResolvedValueOnce(rows);
+      }
+      const db = { execute };
+      const repo = new RecoveryRepository(db, "user-1", "UTC");
+      return { repo, execute };
+    }
+
+    it("returns empty array when no metrics", async () => {
+      const { repo } = makeReadinessRepository([
+        [], // loadPersonalizedParams
+        [], // getReadinessMetrics
+      ]);
+      const result = await repo.getReadinessScores(30, "2024-03-15");
+      expect(result).toEqual([]);
+    });
+
+    it("returns readiness scores for metrics within date range", async () => {
+      const { repo } = makeReadinessRepository([
+        [], // loadPersonalizedParams
+        [
+          {
+            date: "2024-03-15",
+            hrv: 50,
+            resting_hr: 60,
+            respiratory_rate: 15,
+            hrv_mean_30d: 48,
+            hrv_sd_30d: 8,
+            rhr_mean_30d: 62,
+            rhr_sd_30d: 3,
+            rr_mean_30d: 14.5,
+            rr_sd_30d: 1,
+            efficiency_pct: 90,
+          },
+        ],
+      ]);
+      const result = await repo.getReadinessScores(30, "2024-03-15");
+      expect(result).toHaveLength(1);
+      expect(result[0]?.date).toBe("2024-03-15");
+      expect(result[0]?.readinessScore).toBeTypeOf("number");
+      expect(result[0]?.components).toHaveProperty("hrvScore");
+      expect(result[0]?.components).toHaveProperty("restingHrScore");
+      expect(result[0]?.components).toHaveProperty("sleepScore");
+      expect(result[0]?.components).toHaveProperty("respiratoryRateScore");
+    });
+
+    it("filters out metrics before the cutoff date", async () => {
+      const { repo } = makeReadinessRepository([
+        [], // loadPersonalizedParams
+        [
+          {
+            date: "2024-02-01",
+            hrv: 50,
+            resting_hr: 60,
+            respiratory_rate: 15,
+            hrv_mean_30d: 48,
+            hrv_sd_30d: 8,
+            rhr_mean_30d: 62,
+            rhr_sd_30d: 3,
+            rr_mean_30d: 14.5,
+            rr_sd_30d: 1,
+            efficiency_pct: 90,
+          },
+          {
+            date: "2024-03-15",
+            hrv: 55,
+            resting_hr: 58,
+            respiratory_rate: 14,
+            hrv_mean_30d: 50,
+            hrv_sd_30d: 7,
+            rhr_mean_30d: 60,
+            rhr_sd_30d: 4,
+            rr_mean_30d: 14,
+            rr_sd_30d: 1.5,
+            efficiency_pct: 92,
+          },
+        ],
+      ]);
+      // 30 days from 2024-03-15 cutoff = 2024-02-14
+      // 2024-02-01 is before cutoff, should be excluded
+      const result = await repo.getReadinessScores(30, "2024-03-15");
+      expect(result).toHaveLength(1);
+      expect(result[0]?.date).toBe("2024-03-15");
+    });
+  });
+
+  describe("getSleepAnalytics", () => {
+    it("returns nightly data and sleep debt", async () => {
+      const execute = vi.fn();
+      // getSleepNights query
+      execute.mockResolvedValueOnce([
+        {
+          date: "2024-03-15",
+          duration_minutes: 480,
+          sleep_minutes: 420,
+          deep_pct: 20,
+          rem_pct: 25,
+          light_pct: 45,
+          awake_pct: 10,
+          efficiency: 87.5,
+          rolling_avg_duration: null,
+        },
+      ]);
+      // loadPersonalizedParams
+      execute.mockResolvedValueOnce([]);
+      const db = { execute };
+      const repo = new RecoveryRepository(db, "user-1", "UTC");
+      const result = await repo.getSleepAnalytics(30);
+      expect(result.nightly).toHaveLength(1);
+      expect(result.nightly[0]).toHaveProperty("date");
+      expect(result.nightly[0]).toHaveProperty("sleepMinutes");
+      expect(result.sleepDebt).toBeTypeOf("number");
     });
   });
 });

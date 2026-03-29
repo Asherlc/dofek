@@ -255,4 +255,101 @@ describe("ProviderDetailRepository", () => {
       expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length + 1);
     });
   });
+
+  // ── getRecordDetail precise value mapping ──
+
+  describe("getRecordDetail value mapping", () => {
+    it("returns the first row (not second or empty object) when rows exist", async () => {
+      const { repo } = makeRepository([
+        { id: "rec-1", field: "value-1" },
+        { id: "rec-2", field: "value-2" },
+      ]);
+      const result = await repo.getRecordDetail("strava", "activities", "rec-1");
+      expect(result).toStrictEqual({ id: "rec-1", field: "value-1" });
+    });
+
+    it("returns null (not undefined or empty object) when no rows match", async () => {
+      const { repo } = makeRepository([]);
+      const result = await repo.getRecordDetail("strava", "activities", "none");
+      expect(result).toStrictEqual(null);
+      expect(result).not.toBe(undefined);
+    });
+  });
+
+  // ── verifyOwnership length check ──
+
+  describe("verifyOwnership length check", () => {
+    it("returns true when exactly one row (rows.length > 0, not >= 0)", async () => {
+      const { repo } = makeRepository([{ id: "p-1" }]);
+      expect(await repo.verifyOwnership("p-1")).toStrictEqual(true);
+    });
+
+    it("returns false when zero rows (rows.length > 0 is false)", async () => {
+      const { repo } = makeRepository([]);
+      expect(await repo.verifyOwnership("p-1")).toStrictEqual(false);
+    });
+  });
+
+  // ── tableInfo return value precision ──
+
+  describe("tableInfo precise return values", () => {
+    it("returns exactly {table, orderColumn, idColumn} for each type", () => {
+      // Verify exact shape (no extra properties, correct values)
+      expect(tableInfo("activities")).toStrictEqual({
+        table: "fitness.activity",
+        orderColumn: "started_at",
+        idColumn: "id",
+      });
+      expect(tableInfo("dailyMetrics")).toStrictEqual({
+        table: "fitness.daily_metrics",
+        orderColumn: "date",
+        idColumn: "date",
+      });
+      expect(tableInfo("sleepSessions")).toStrictEqual({
+        table: "fitness.sleep_session",
+        orderColumn: "started_at",
+        idColumn: "id",
+      });
+      expect(tableInfo("bodyMeasurements")).toStrictEqual({
+        table: "fitness.body_measurement",
+        orderColumn: "recorded_at",
+        idColumn: "id",
+      });
+      expect(tableInfo("foodEntries")).toStrictEqual({
+        table: "fitness.food_entry",
+        orderColumn: "date",
+        idColumn: "id",
+      });
+      expect(tableInfo("healthEvents")).toStrictEqual({
+        table: "fitness.health_event",
+        orderColumn: "start_date",
+        idColumn: "id",
+      });
+      expect(tableInfo("metricStream")).toStrictEqual({
+        table: "fitness.metric_stream",
+        orderColumn: "recorded_at",
+        idColumn: "recorded_at",
+      });
+      expect(tableInfo("nutritionDaily")).toStrictEqual({
+        table: "fitness.nutrition_daily",
+        orderColumn: "date",
+        idColumn: "date",
+      });
+      expect(tableInfo("labPanels")).toStrictEqual({
+        table: "fitness.lab_panel",
+        orderColumn: "recorded_at",
+        idColumn: "id",
+      });
+      expect(tableInfo("labResults")).toStrictEqual({
+        table: "fitness.lab_result",
+        orderColumn: "recorded_at",
+        idColumn: "id",
+      });
+      expect(tableInfo("journalEntries")).toStrictEqual({
+        table: "fitness.journal_entry",
+        orderColumn: "date",
+        idColumn: "id",
+      });
+    });
+  });
 });

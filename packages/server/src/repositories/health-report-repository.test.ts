@@ -69,9 +69,42 @@ describe("SharedReport", () => {
     expect(report.expiresAt).toBeNull();
   });
 
+  it("handles non-null expiresAt", () => {
+    const report = new SharedReport(makeRow({ expiresAt: "2024-12-31T23:59:59Z" }));
+    expect(report.expiresAt).toBe("2024-12-31T23:59:59Z");
+    expect(typeof report.expiresAt).toBe("string");
+  });
+
   it("serializes all fields via toDetail()", () => {
     const row = makeRow();
     expect(new SharedReport(row).toDetail()).toEqual(row);
+  });
+
+  it("toDetail() returns a copy, not the original", () => {
+    const row = makeRow();
+    const report = new SharedReport(row);
+    const detail1 = report.toDetail();
+    const detail2 = report.toDetail();
+    expect(detail1).not.toBe(detail2);
+    expect(detail1).toEqual(detail2);
+  });
+
+  it("toDetail() includes all fields with correct values", () => {
+    const row = makeRow({
+      id: "sr-complete",
+      shareToken: "complete-token",
+      reportType: "deep-dive",
+      reportData: { a: 1, b: [2, 3] },
+      expiresAt: "2025-01-01T00:00:00Z",
+      createdAt: "2024-06-01T00:00:00Z",
+    });
+    const detail = new SharedReport(row).toDetail();
+    expect(detail.id).toBe("sr-complete");
+    expect(detail.shareToken).toBe("complete-token");
+    expect(detail.reportType).toBe("deep-dive");
+    expect(detail.reportData).toEqual({ a: 1, b: [2, 3] });
+    expect(detail.expiresAt).toBe("2025-01-01T00:00:00Z");
+    expect(detail.createdAt).toBe("2024-06-01T00:00:00Z");
   });
 });
 
@@ -103,6 +136,31 @@ describe("ReportListEntry", () => {
   it("serializes all fields via toDetail()", () => {
     const row = makeRow();
     expect(new ReportListEntry(row).toDetail()).toEqual(row);
+  });
+
+  it("handles non-null expiresAt", () => {
+    const entry = new ReportListEntry(makeRow({ expiresAt: "2024-06-15T00:00:00Z" }));
+    expect(entry.expiresAt).toBe("2024-06-15T00:00:00Z");
+    expect(typeof entry.expiresAt).toBe("string");
+  });
+
+  it("toDetail() returns a copy, not the original", () => {
+    const row = makeRow();
+    const entry = new ReportListEntry(row);
+    const detail1 = entry.toDetail();
+    const detail2 = entry.toDetail();
+    expect(detail1).not.toBe(detail2);
+    expect(detail1).toEqual(detail2);
+  });
+
+  it("toDetail() includes all fields with correct values", () => {
+    const row = makeRow({ expiresAt: "2024-12-31T23:59:59Z" });
+    const detail = new ReportListEntry(row).toDetail();
+    expect(detail.id).toBe("sr-1");
+    expect(detail.shareToken).toBe("abc123token");
+    expect(detail.reportType).toBe("monthly");
+    expect(detail.expiresAt).toBe("2024-12-31T23:59:59Z");
+    expect(detail.createdAt).toBe("2024-01-15T10:00:00Z");
   });
 });
 
@@ -245,6 +303,159 @@ describe("HealthReportRepository", () => {
       const queryJson = JSON.stringify(callArgs);
       // Verify the query contains "50" and not a different number
       expect(queryJson).toContain("50");
+    });
+  });
+
+  describe("generate — toSharedReport mapping", () => {
+    it("maps all DB row fields to SharedReport domain model fields", async () => {
+      const { repo } = makeRepository([
+        {
+          id: "sr-map",
+          share_token: "mapped-token-123",
+          report_type: "monthly",
+          report_data: { metrics: [1, 2, 3] },
+          expires_at: "2024-03-15T00:00:00Z",
+          created_at: "2024-02-15T12:00:00Z",
+        },
+      ]);
+
+      const result = await repo.generate("monthly", { metrics: [1, 2, 3] }, 30);
+      expect(result).not.toBeNull();
+      expect(result?.id).toBe("sr-map");
+      expect(result?.shareToken).toBe("mapped-token-123");
+      expect(result?.reportType).toBe("monthly");
+      expect(result?.reportData).toEqual({ metrics: [1, 2, 3] });
+      expect(result?.expiresAt).toBe("2024-03-15T00:00:00.000Z");
+      expect(result?.createdAt).toBe("2024-02-15T12:00:00.000Z");
+    });
+
+    it("maps null expires_at correctly to null expiresAt", async () => {
+      const { repo } = makeRepository([
+        {
+          id: "sr-null-exp",
+          share_token: "token-null-exp",
+          report_type: "weekly",
+          report_data: {},
+          expires_at: null,
+          created_at: "2024-01-15T10:00:00Z",
+        },
+      ]);
+
+      const result = await repo.generate("weekly", {}, null);
+      expect(result).not.toBeNull();
+      expect(result?.expiresAt).toBeNull();
+    });
+
+    it("maps non-null expires_at correctly to string expiresAt", async () => {
+      const { repo } = makeRepository([
+        {
+          id: "sr-exp",
+          share_token: "token-exp",
+          report_type: "weekly",
+          report_data: {},
+          expires_at: "2024-04-15T00:00:00Z",
+          created_at: "2024-01-15T10:00:00Z",
+        },
+      ]);
+
+      const result = await repo.generate("weekly", {}, 90);
+      expect(result).not.toBeNull();
+      expect(result?.expiresAt).toBe("2024-04-15T00:00:00.000Z");
+      expect(typeof result?.expiresAt).toBe("string");
+    });
+  });
+
+  describe("myReports — toReportListEntry mapping", () => {
+    it("maps all DB row fields to ReportListEntry domain model fields", async () => {
+      const { repo } = makeRepository([
+        {
+          id: "sr-list",
+          share_token: "list-token",
+          report_type: "healthspan",
+          expires_at: "2024-05-01T00:00:00Z",
+          created_at: "2024-03-01T10:00:00Z",
+        },
+      ]);
+
+      const result = await repo.myReports();
+      expect(result).toHaveLength(1);
+      const entry = result[0];
+      expect(entry?.id).toBe("sr-list");
+      expect(entry?.shareToken).toBe("list-token");
+      expect(entry?.reportType).toBe("healthspan");
+      expect(entry?.expiresAt).toBe("2024-05-01T00:00:00.000Z");
+      expect(entry?.createdAt).toBe("2024-03-01T10:00:00.000Z");
+    });
+
+    it("maps null expires_at to null expiresAt in list entries", async () => {
+      const { repo } = makeRepository([
+        {
+          id: "sr-list-null",
+          share_token: "list-token-null",
+          report_type: "weekly",
+          expires_at: null,
+          created_at: "2024-03-01T10:00:00Z",
+        },
+      ]);
+
+      const result = await repo.myReports();
+      expect(result[0]?.expiresAt).toBeNull();
+    });
+
+    it("maps non-null expires_at to string expiresAt in list entries", async () => {
+      const { repo } = makeRepository([
+        {
+          id: "sr-list-exp",
+          share_token: "list-token-exp",
+          report_type: "weekly",
+          expires_at: "2024-12-31T23:59:59Z",
+          created_at: "2024-03-01T10:00:00Z",
+        },
+      ]);
+
+      const result = await repo.myReports();
+      expect(result[0]?.expiresAt).toBe("2024-12-31T23:59:59.000Z");
+      expect(typeof result[0]?.expiresAt).toBe("string");
+    });
+  });
+
+  describe("getShared — toSharedReport mapping", () => {
+    it("maps all DB row fields correctly in static method", async () => {
+      const execute = vi.fn().mockResolvedValue([
+        {
+          id: "sr-shared",
+          share_token: "shared-token-abc",
+          report_type: "deep-dive",
+          report_data: { sections: ["sleep", "hrv"] },
+          expires_at: null,
+          created_at: "2024-06-01T08:00:00Z",
+        },
+      ]);
+
+      const result = await HealthReportRepository.getShared({ execute }, "shared-token-abc");
+      expect(result).not.toBeNull();
+      expect(result?.id).toBe("sr-shared");
+      expect(result?.shareToken).toBe("shared-token-abc");
+      expect(result?.reportType).toBe("deep-dive");
+      expect(result?.reportData).toEqual({ sections: ["sleep", "hrv"] });
+      expect(result?.expiresAt).toBeNull();
+      expect(result?.createdAt).toBe("2024-06-01T08:00:00.000Z");
+    });
+
+    it("maps non-null expires_at in static method", async () => {
+      const execute = vi.fn().mockResolvedValue([
+        {
+          id: "sr-shared-exp",
+          share_token: "token-exp",
+          report_type: "weekly",
+          report_data: {},
+          expires_at: "2024-09-01T00:00:00Z",
+          created_at: "2024-06-01T08:00:00Z",
+        },
+      ]);
+
+      const result = await HealthReportRepository.getShared({ execute }, "token-exp");
+      expect(result?.expiresAt).toBe("2024-09-01T00:00:00.000Z");
     });
   });
 

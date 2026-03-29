@@ -344,6 +344,38 @@ describe("PmcRepository", () => {
       expect(db.execute).toHaveBeenCalledTimes(1);
     });
 
+    it("returns generic model with exact field values when no globalMaxHr", async () => {
+      const db = makeDb([], []);
+      const repo = new PmcRepository(db, "user-1", "UTC");
+      const result = await repo.getChart(90);
+
+      // Kill ObjectLiteral mutations: verify every field of the early-return model
+      expect(result.model.type).toStrictEqual("generic");
+      expect(result.model.pairedActivities).toStrictEqual(0);
+      expect(result.model.r2).toStrictEqual(null);
+      expect(result.model.ftp).toStrictEqual(null);
+      expect(result.data).toStrictEqual([]);
+    });
+
+    it("returns model with type exactly 'generic' not 'learned' when no paired data", async () => {
+      const today = new Date();
+      const daysAgo = 5;
+      const activityDate = new Date(today);
+      activityDate.setDate(activityDate.getDate() - daysAgo);
+      const dateStr = activityDate.toISOString().split("T")[0];
+
+      // Activity with HR but no power -> generic model
+      const db = makeDb(
+        [makeActivityRow({ date: dateStr, id: "act-gen", avg_power: null, power_samples: 0 })],
+        [],
+      );
+      const repo = new PmcRepository(db, "user-1", "UTC");
+      const result = await repo.getChart(180);
+
+      expect(result.model.type).toStrictEqual("generic");
+      expect(result.model.r2).toStrictEqual(null);
+    });
+
     it("aggregates multiple activities on the same day into one daily load", async () => {
       const today = new Date();
       const daysAgo = 2;

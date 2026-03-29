@@ -366,3 +366,125 @@ describe("EfficiencyRepository.getAerobicEfficiency (rows.length boundary)", () 
     expect(oneResult.maxHr).not.toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// getAerobicEfficiency — String() conversions in map
+// ---------------------------------------------------------------------------
+
+describe("EfficiencyRepository.getAerobicEfficiency (String conversions)", () => {
+  it("uses String() for date, activityType, and name fields", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        max_hr: "190",
+        date: "2025-07-01",
+        activity_type: "running",
+        name: "Tempo Run",
+        avg_power_z2: "200",
+        avg_hr_z2: "140",
+        efficiency_factor: "1.429",
+        z2_samples: "500",
+      },
+    ]);
+    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
+    const result = await repo.getAerobicEfficiency(180);
+    const activity = result.activities[0];
+    expect(typeof activity?.date).toBe("string");
+    expect(typeof activity?.activityType).toBe("string");
+    expect(typeof activity?.name).toBe("string");
+    expect(activity?.date).toBe("2025-07-01");
+    expect(activity?.activityType).toBe("running");
+    expect(activity?.name).toBe("Tempo Run");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getAerobicDecoupling — String() conversions in map
+// ---------------------------------------------------------------------------
+
+describe("EfficiencyRepository.getAerobicDecoupling (String conversions)", () => {
+  it("uses String() for date, activityType, and name fields", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        date: "2025-07-01",
+        activity_type: "running",
+        name: "Easy Run",
+        first_half_ratio: "1.250",
+        second_half_ratio: "1.200",
+        decoupling_pct: "4.00",
+        total_samples: "2400",
+      },
+    ]);
+    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
+    const result = await repo.getAerobicDecoupling(180);
+    const activity = result[0];
+    expect(typeof activity?.date).toBe("string");
+    expect(typeof activity?.activityType).toBe("string");
+    expect(typeof activity?.name).toBe("string");
+    expect(activity?.date).toBe("2025-07-01");
+    expect(activity?.activityType).toBe("running");
+    expect(activity?.name).toBe("Easy Run");
+  });
+
+  it("converts numeric string fields to numbers", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        date: "2025-07-01",
+        activity_type: "cycling",
+        name: "Ride",
+        first_half_ratio: "1.333",
+        second_half_ratio: "1.222",
+        decoupling_pct: "8.33",
+        total_samples: "5000",
+      },
+    ]);
+    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
+    const result = await repo.getAerobicDecoupling(180);
+    const activity = result[0];
+    expect(typeof activity?.firstHalfRatio).toBe("number");
+    expect(typeof activity?.secondHalfRatio).toBe("number");
+    expect(typeof activity?.decouplingPct).toBe("number");
+    expect(typeof activity?.totalSamples).toBe("number");
+    expect(activity?.firstHalfRatio).toBe(1.333);
+    expect(activity?.secondHalfRatio).toBe(1.222);
+    expect(activity?.decouplingPct).toBe(8.33);
+    expect(activity?.totalSamples).toBe(5000);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getPolarizationTrend — String() conversions in map
+// ---------------------------------------------------------------------------
+
+describe("EfficiencyRepository.getPolarizationTrend (String conversion)", () => {
+  it("uses String() for week field", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        max_hr: "190",
+        week: "2025-06-02",
+        z1_seconds: "3600",
+        z2_seconds: "1200",
+        z3_seconds: "600",
+      },
+    ]);
+    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
+    const result = await repo.getPolarizationTrend(180);
+    expect(typeof result.weeks[0]?.week).toBe("string");
+    expect(result.weeks[0]?.week).toBe("2025-06-02");
+  });
+
+  it("uses Number() for maxHr from first row", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        max_hr: "193",
+        week: "2025-06-02",
+        z1_seconds: "100",
+        z2_seconds: "100",
+        z3_seconds: "100",
+      },
+    ]);
+    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
+    const result = await repo.getPolarizationTrend(180);
+    expect(typeof result.maxHr).toBe("number");
+    expect(result.maxHr).toBe(193);
+  });
+});

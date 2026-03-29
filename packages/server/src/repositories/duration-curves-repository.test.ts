@@ -340,5 +340,80 @@ describe("DurationCurvesRepository", () => {
       await repo.getPaceCurve(30);
       expect(execute).toHaveBeenCalledTimes(1);
     });
+
+    it("converts numeric string fields to proper numbers", async () => {
+      const { repo } = makeRepository([
+        { duration_seconds: "60", best_pace: "300.0", activity_date: "2025-06-15" },
+      ]);
+      const result = await repo.getPaceCurve(90);
+      expect(typeof result.points[0]?.durationSeconds).toBe("number");
+      expect(typeof result.points[0]?.bestPaceSecondsPerKm).toBe("number");
+      expect(result.points[0]?.durationSeconds).toBe(60);
+      expect(result.points[0]?.bestPaceSecondsPerKm).toBe(300);
+      expect(result.points[0]?.activityDate).toBe("2025-06-15");
+    });
+
+    it("uses String() for activityDate (not Number())", async () => {
+      const { repo } = makeRepository([
+        { duration_seconds: "300", best_pace: "250", activity_date: "2025-06-15" },
+      ]);
+      const result = await repo.getPaceCurve(90);
+      expect(typeof result.points[0]?.activityDate).toBe("string");
+      expect(result.points[0]?.activityDate).toBe("2025-06-15");
+    });
+  });
+
+  describe("getHrCurve — mapping field types", () => {
+    it("converts all numeric string fields to numbers via Number()", async () => {
+      const { repo } = makeRepository([
+        { duration_seconds: "120", best_hr: "175", activity_date: "2025-06-10" },
+      ]);
+      const result = await repo.getHrCurve(90);
+      expect(typeof result.points[0]?.durationSeconds).toBe("number");
+      expect(typeof result.points[0]?.bestHeartRate).toBe("number");
+      expect(result.points[0]?.durationSeconds).toBe(120);
+      expect(result.points[0]?.bestHeartRate).toBe(175);
+    });
+
+    it("uses String() for activityDate (not Number())", async () => {
+      const { repo } = makeRepository([
+        { duration_seconds: "300", best_hr: "170", activity_date: "2025-06-15" },
+      ]);
+      const result = await repo.getHrCurve(90);
+      expect(typeof result.points[0]?.activityDate).toBe("string");
+      expect(result.points[0]?.activityDate).toBe("2025-06-15");
+    });
+
+    it("uses ?? fallback for unknown duration labels", async () => {
+      const { repo } = makeRepository([
+        { duration_seconds: "99999", best_hr: "155", activity_date: "2025-06-10" },
+      ]);
+      const result = await repo.getHrCurve(90);
+      // Unknown duration falls back to "99999s" format
+      expect(result.points[0]?.label).toBe("99999s");
+    });
+
+    it("attaches fitCriticalHeartRate model when enough data", async () => {
+      const { repo } = makeRepository([
+        { duration_seconds: "120", best_hr: "180", activity_date: "2025-06-01" },
+        { duration_seconds: "300", best_hr: "172", activity_date: "2025-06-01" },
+        { duration_seconds: "600", best_hr: "168", activity_date: "2025-06-01" },
+        { duration_seconds: "1200", best_hr: "164", activity_date: "2025-06-01" },
+      ]);
+      const result = await repo.getHrCurve(90);
+      expect(result.model).not.toBeNull();
+      expect(result.model?.thresholdHr).toBeGreaterThan(100);
+      expect(result.model?.r2).toBeGreaterThan(0);
+    });
+  });
+
+  describe("getPaceCurve — mapping field types", () => {
+    it("uses ?? fallback for unknown duration labels", async () => {
+      const { repo } = makeRepository([
+        { duration_seconds: "88888", best_pace: "300", activity_date: "2025-06-10" },
+      ]);
+      const result = await repo.getPaceCurve(90);
+      expect(result.points[0]?.label).toBe("88888s");
+    });
   });
 });

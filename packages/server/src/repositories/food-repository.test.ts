@@ -130,6 +130,66 @@ describe("FoodEntry", () => {
     const entry = new FoodEntry(makeFoodEntryRow({ nutrition_data_id: null }));
     expect(entry.nutritionDataId).toBeNull();
   });
+
+  it("toDetail() returns complete row with all fields", () => {
+    const row = makeFoodEntryRow();
+    const entry = new FoodEntry(row);
+    const detail = entry.toDetail();
+    expect(detail.id).toBe("entry-1");
+    expect(detail.provider_id).toBe("dofek");
+    expect(detail.user_id).toBe("user-1");
+    expect(detail.date).toBe("2024-06-15");
+    expect(detail.meal).toBe("lunch");
+    expect(detail.food_name).toBe("Chicken Breast");
+    expect(detail.food_description).toBe("Grilled, 200g");
+    expect(detail.category).toBe("meat");
+    expect(detail.number_of_units).toBe(1);
+    expect(detail.nutrition_data_id).toBe("nd-1");
+    expect(detail.confirmed).toBe(true);
+    expect(detail.calories).toBe(330);
+    expect(detail.protein_g).toBe(40);
+    expect(detail.carbs_g).toBe(0);
+    expect(detail.fat_g).toBe(8);
+  });
+
+  it("toDetail() returns a copy, not the original reference", () => {
+    const row = makeFoodEntryRow();
+    const entry = new FoodEntry(row);
+    const detail1 = entry.toDetail();
+    const detail2 = entry.toDetail();
+    expect(detail1).not.toBe(detail2);
+    expect(detail1).toEqual(detail2);
+  });
+
+  it("handles non-null values for all nullable fields", () => {
+    const entry = new FoodEntry(
+      makeFoodEntryRow({
+        external_id: "ext-1",
+        food_description: "Grilled, 200g",
+        category: "meat",
+        provider_food_id: "pf-1",
+        provider_serving_id: "ps-1",
+        number_of_units: 2,
+        logged_at: "2024-06-15T12:00:00Z",
+        barcode: "1234567890",
+        serving_unit: "g",
+        serving_weight_grams: 200,
+        nutrition_data_id: "nd-1",
+      }),
+    );
+    const detail = entry.toDetail();
+    expect(detail.external_id).toBe("ext-1");
+    expect(detail.food_description).toBe("Grilled, 200g");
+    expect(detail.category).toBe("meat");
+    expect(detail.provider_food_id).toBe("pf-1");
+    expect(detail.provider_serving_id).toBe("ps-1");
+    expect(detail.number_of_units).toBe(2);
+    expect(detail.logged_at).toBe("2024-06-15T12:00:00Z");
+    expect(detail.barcode).toBe("1234567890");
+    expect(detail.serving_unit).toBe("g");
+    expect(detail.serving_weight_grams).toBe(200);
+    expect(detail.nutrition_data_id).toBe("nd-1");
+  });
 });
 
 describe("DailyTotals", () => {
@@ -155,6 +215,27 @@ describe("DailyTotals", () => {
     const totals = new DailyTotals(makeDailyTotalsRow({ calories: null }));
     expect(totals.calories).toBeNull();
   });
+
+  it("toDetail() returns all fields including nullable macros", () => {
+    const totals = new DailyTotals(
+      makeDailyTotalsRow({ protein_g: null, carbs_g: null, fat_g: null, fiber_g: null }),
+    );
+    const detail = totals.toDetail();
+    expect(detail.protein_g).toBeNull();
+    expect(detail.carbs_g).toBeNull();
+    expect(detail.fat_g).toBeNull();
+    expect(detail.fiber_g).toBeNull();
+    expect(detail.date).toBe("2024-06-15");
+  });
+
+  it("toDetail() returns a copy, not the original reference", () => {
+    const row = makeDailyTotalsRow();
+    const totals = new DailyTotals(row);
+    const detail1 = totals.toDetail();
+    const detail2 = totals.toDetail();
+    expect(detail1).not.toBe(detail2);
+    expect(detail1).toEqual(detail2);
+  });
 });
 
 describe("FoodSearchResult", () => {
@@ -172,6 +253,49 @@ describe("FoodSearchResult", () => {
   it("handles null description", () => {
     const result = new FoodSearchResult(makeFoodSearchRow({ food_description: null }));
     expect(result.toDetail().food_description).toBeNull();
+  });
+
+  it("toDetail() returns all fields with correct values", () => {
+    const detail = new FoodSearchResult(makeFoodSearchRow()).toDetail();
+    expect(detail).toEqual({
+      food_name: "Chicken Breast",
+      food_description: "Grilled, 200g",
+      category: "meat",
+      calories: 330,
+      protein_g: 40,
+      carbs_g: 0,
+      fat_g: 8,
+      fiber_g: 0,
+      number_of_units: 1,
+    });
+  });
+
+  it("handles null category", () => {
+    const result = new FoodSearchResult(makeFoodSearchRow({ category: null }));
+    expect(result.toDetail().category).toBeNull();
+  });
+
+  it("handles null number_of_units", () => {
+    const result = new FoodSearchResult(makeFoodSearchRow({ number_of_units: null }));
+    expect(result.toDetail().number_of_units).toBeNull();
+  });
+
+  it("handles all nullable nutrition fields as null", () => {
+    const result = new FoodSearchResult(
+      makeFoodSearchRow({
+        calories: null,
+        protein_g: null,
+        carbs_g: null,
+        fat_g: null,
+        fiber_g: null,
+      }),
+    );
+    const detail = result.toDetail();
+    expect(detail.calories).toBeNull();
+    expect(detail.protein_g).toBeNull();
+    expect(detail.carbs_g).toBeNull();
+    expect(detail.fat_g).toBeNull();
+    expect(detail.fiber_g).toBeNull();
   });
 });
 

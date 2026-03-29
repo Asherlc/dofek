@@ -673,6 +673,251 @@ describe("AnomalyDetectionRepository", () => {
   });
 
   // -----------------------------------------------------------------------
+  // Null-check mutation killing: verify each field individually
+  // -----------------------------------------------------------------------
+
+  describe("check null-field isolation", () => {
+    it("skips resting HR when resting_hr is null but other fields non-null", async () => {
+      const db = makeDb([checkRow({ resting_hr: null, rhr_mean: 60, rhr_sd: 3, rhr_count: 20 })]);
+      const repo = new AnomalyDetectionRepository(db, "user-1", "UTC");
+      const result = await repo.check("2024-06-15");
+      expect(result.checkedMetrics).not.toContain("resting_hr");
+    });
+
+    it("skips resting HR when rhr_mean is null but resting_hr is non-null", async () => {
+      const db = makeDb([checkRow({ resting_hr: 70, rhr_mean: null, rhr_sd: 3, rhr_count: 20 })]);
+      const repo = new AnomalyDetectionRepository(db, "user-1", "UTC");
+      const result = await repo.check("2024-06-15");
+      expect(result.checkedMetrics).not.toContain("resting_hr");
+    });
+
+    it("skips resting HR when rhr_sd is null but others non-null", async () => {
+      const db = makeDb([checkRow({ resting_hr: 70, rhr_mean: 60, rhr_sd: null, rhr_count: 20 })]);
+      const repo = new AnomalyDetectionRepository(db, "user-1", "UTC");
+      const result = await repo.check("2024-06-15");
+      expect(result.checkedMetrics).not.toContain("resting_hr");
+    });
+
+    it("skips HRV when hrv is null but other fields non-null", async () => {
+      const db = makeDb([checkRow({ hrv: null, hrv_mean: 50, hrv_sd: 5, hrv_count: 20 })]);
+      const repo = new AnomalyDetectionRepository(db, "user-1", "UTC");
+      const result = await repo.check("2024-06-15");
+      expect(result.checkedMetrics).not.toContain("hrv");
+    });
+
+    it("skips HRV when hrv_mean is null but hrv is non-null", async () => {
+      const db = makeDb([checkRow({ hrv: 30, hrv_mean: null, hrv_sd: 5, hrv_count: 20 })]);
+      const repo = new AnomalyDetectionRepository(db, "user-1", "UTC");
+      const result = await repo.check("2024-06-15");
+      expect(result.checkedMetrics).not.toContain("hrv");
+    });
+
+    it("skips HRV when hrv_sd is null but others non-null", async () => {
+      const db = makeDb([checkRow({ hrv: 30, hrv_mean: 50, hrv_sd: null, hrv_count: 20 })]);
+      const repo = new AnomalyDetectionRepository(db, "user-1", "UTC");
+      const result = await repo.check("2024-06-15");
+      expect(result.checkedMetrics).not.toContain("hrv");
+    });
+
+    it("skips sleep when duration_minutes is null but other sleep fields non-null", async () => {
+      const db = makeDb([
+        checkRow({ duration_minutes: null, sleep_mean: 420, sleep_sd: 30, sleep_count: 20 }),
+      ]);
+      const repo = new AnomalyDetectionRepository(db, "user-1", "UTC");
+      const result = await repo.check("2024-06-15");
+      expect(result.checkedMetrics).not.toContain("sleep_duration");
+    });
+
+    it("skips sleep when sleep_mean is null but duration_minutes is non-null", async () => {
+      const db = makeDb([
+        checkRow({ duration_minutes: 300, sleep_mean: null, sleep_sd: 30, sleep_count: 20 }),
+      ]);
+      const repo = new AnomalyDetectionRepository(db, "user-1", "UTC");
+      const result = await repo.check("2024-06-15");
+      expect(result.checkedMetrics).not.toContain("sleep_duration");
+    });
+
+    it("skips sleep when sleep_sd is null but others non-null", async () => {
+      const db = makeDb([
+        checkRow({ duration_minutes: 300, sleep_mean: 420, sleep_sd: null, sleep_count: 20 }),
+      ]);
+      const repo = new AnomalyDetectionRepository(db, "user-1", "UTC");
+      const result = await repo.check("2024-06-15");
+      expect(result.checkedMetrics).not.toContain("sleep_duration");
+    });
+  });
+
+  describe("check anomaly property values", () => {
+    it("sets correct date on resting HR anomaly output", async () => {
+      const db = makeDb([
+        checkRow({
+          date: "2024-06-15",
+          resting_hr: 70,
+          rhr_mean: 60,
+          rhr_sd: 3,
+          rhr_count: 20,
+        }),
+      ]);
+      const repo = new AnomalyDetectionRepository(db, "user-1", "UTC");
+      const result = await repo.check("2024-06-15");
+      expect(result.anomalies[0]?.date).toBe("2024-06-15");
+    });
+
+    it("sets the raw resting_hr as value (not mean or sd)", async () => {
+      const db = makeDb([checkRow({ resting_hr: 72, rhr_mean: 60, rhr_sd: 3, rhr_count: 20 })]);
+      const repo = new AnomalyDetectionRepository(db, "user-1", "UTC");
+      const result = await repo.check("2024-06-15");
+      expect(result.anomalies[0]?.value).toBe(72);
+    });
+
+    it("sets the raw hrv as value in HRV anomaly", async () => {
+      const db = makeDb([checkRow({ hrv: 38, hrv_mean: 50, hrv_sd: 5, hrv_count: 20 })]);
+      const repo = new AnomalyDetectionRepository(db, "user-1", "UTC");
+      const result = await repo.check("2024-06-15");
+      expect(result.anomalies[0]?.value).toBe(38);
+    });
+
+    it("sets correct date on HRV anomaly output", async () => {
+      const db = makeDb([
+        checkRow({
+          date: "2024-07-01",
+          hrv: 30,
+          hrv_mean: 50,
+          hrv_sd: 5,
+          hrv_count: 20,
+        }),
+      ]);
+      const repo = new AnomalyDetectionRepository(db, "user-1", "UTC");
+      const result = await repo.check("2024-07-01");
+      expect(result.anomalies[0]?.date).toBe("2024-07-01");
+    });
+
+    it("sets correct date on sleep anomaly output", async () => {
+      const db = makeDb([
+        checkRow({
+          date: "2024-08-01",
+          duration_minutes: 300,
+          sleep_mean: 420,
+          sleep_sd: 30,
+          sleep_count: 20,
+        }),
+      ]);
+      const repo = new AnomalyDetectionRepository(db, "user-1", "UTC");
+      const result = await repo.check("2024-08-01");
+      expect(result.anomalies[0]?.date).toBe("2024-08-01");
+      expect(result.anomalies[0]?.metric).toBe("Sleep Duration");
+    });
+  });
+
+  describe("getHistory null-field isolation", () => {
+    it("skips resting HR when resting_hr is null in history row", async () => {
+      const db = makeDb([
+        historyRow({
+          date: "2024-06-10",
+          resting_hr: null,
+          rhr_mean: 60,
+          rhr_sd: 3,
+          rhr_count: 20,
+        }),
+      ]);
+      const repo = new AnomalyDetectionRepository(db, "user-1", "UTC");
+      const result = await repo.getHistory(90, "2024-06-15");
+      expect(result).toEqual([]);
+    });
+
+    it("skips resting HR when rhr_mean is null in history row", async () => {
+      const db = makeDb([
+        historyRow({
+          date: "2024-06-10",
+          resting_hr: 70,
+          rhr_mean: null,
+          rhr_sd: 3,
+          rhr_count: 20,
+        }),
+      ]);
+      const repo = new AnomalyDetectionRepository(db, "user-1", "UTC");
+      const result = await repo.getHistory(90, "2024-06-15");
+      expect(result).toEqual([]);
+    });
+
+    it("skips resting HR when rhr_sd is null in history row", async () => {
+      const db = makeDb([
+        historyRow({
+          date: "2024-06-10",
+          resting_hr: 70,
+          rhr_mean: 60,
+          rhr_sd: null,
+          rhr_count: 20,
+        }),
+      ]);
+      const repo = new AnomalyDetectionRepository(db, "user-1", "UTC");
+      const result = await repo.getHistory(90, "2024-06-15");
+      expect(result).toEqual([]);
+    });
+
+    it("skips HRV when hrv is null in history row", async () => {
+      const db = makeDb([
+        historyRow({
+          date: "2024-06-10",
+          hrv: null,
+          hrv_mean: 50,
+          hrv_sd: 5,
+          hrv_count: 20,
+        }),
+      ]);
+      const repo = new AnomalyDetectionRepository(db, "user-1", "UTC");
+      const result = await repo.getHistory(90, "2024-06-15");
+      expect(result).toEqual([]);
+    });
+
+    it("skips HRV when hrv_mean is null in history row", async () => {
+      const db = makeDb([
+        historyRow({
+          date: "2024-06-10",
+          hrv: 30,
+          hrv_mean: null,
+          hrv_sd: 5,
+          hrv_count: 20,
+        }),
+      ]);
+      const repo = new AnomalyDetectionRepository(db, "user-1", "UTC");
+      const result = await repo.getHistory(90, "2024-06-15");
+      expect(result).toEqual([]);
+    });
+
+    it("skips HRV when hrv_sd is null in history row", async () => {
+      const db = makeDb([
+        historyRow({
+          date: "2024-06-10",
+          hrv: 30,
+          hrv_mean: 50,
+          hrv_sd: null,
+          hrv_count: 20,
+        }),
+      ]);
+      const repo = new AnomalyDetectionRepository(db, "user-1", "UTC");
+      const result = await repo.getHistory(90, "2024-06-15");
+      expect(result).toEqual([]);
+    });
+
+    it("preserves date string from history row", async () => {
+      const db = makeDb([
+        historyRow({
+          date: "2024-06-10",
+          hrv: 30,
+          hrv_mean: 50,
+          hrv_sd: 5,
+          hrv_count: 20,
+        }),
+      ]);
+      const repo = new AnomalyDetectionRepository(db, "user-1", "UTC");
+      const result = await repo.getHistory(90, "2024-06-15");
+      expect(result[0]?.date).toBe("2024-06-10");
+      expect(result[0]?.value).toBe(30);
+    });
+  });
+
+  // -----------------------------------------------------------------------
   // check() z-score computation direction
   // -----------------------------------------------------------------------
 

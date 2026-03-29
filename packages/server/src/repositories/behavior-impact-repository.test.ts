@@ -107,6 +107,77 @@ describe("BehaviorImpactRepository", () => {
     expect(result[0]?.impactPercent).toBeCloseTo(25.0, 1);
   });
 
+  it("maps all DB row fields to correct BehaviorImpact properties", async () => {
+    const { repo } = makeRepository([
+      {
+        question_slug: "stretching",
+        display_name: "Stretching",
+        category: "exercise",
+        avg_readiness_yes: 80,
+        avg_readiness_no: 65,
+        yes_count: 25,
+        no_count: 18,
+      },
+    ]);
+    const result = await repo.getImpactSummary(90);
+    const impact = result[0];
+    expect(impact?.questionSlug).toBe("stretching");
+    expect(impact?.displayName).toBe("Stretching");
+    expect(impact?.category).toBe("exercise");
+    expect(impact?.yesCount).toBe(25);
+    expect(impact?.noCount).toBe(18);
+  });
+
+  it("maps avgReadinessYes and avgReadinessNo to Number correctly", async () => {
+    const { repo } = makeRepository([
+      {
+        question_slug: "sleep_mask",
+        display_name: "Sleep Mask",
+        category: "sleep",
+        avg_readiness_yes: "72.5",
+        avg_readiness_no: "68.3",
+        yes_count: "10",
+        no_count: "12",
+      },
+    ]);
+    const result = await repo.getImpactSummary(90);
+    const detail = result[0]?.toDetail();
+    // impactPercent = round((72.5 - 68.3) / 68.3 * 1000) / 10
+    // = round(4.2 / 68.3 * 1000) / 10 = round(61.493...) / 10 = 61 / 10 = 6.1
+    expect(detail?.impactPercent).toBe(6.1);
+    expect(detail?.yesCount).toBe(10);
+    expect(detail?.noCount).toBe(12);
+  });
+
+  it("maps multiple DB rows to multiple BehaviorImpact instances", async () => {
+    const { repo } = makeRepository([
+      {
+        question_slug: "a",
+        display_name: "A",
+        category: "cat1",
+        avg_readiness_yes: 50,
+        avg_readiness_no: 50,
+        yes_count: 5,
+        no_count: 5,
+      },
+      {
+        question_slug: "b",
+        display_name: "B",
+        category: "cat2",
+        avg_readiness_yes: 60,
+        avg_readiness_no: 40,
+        yes_count: 8,
+        no_count: 7,
+      },
+    ]);
+    const result = await repo.getImpactSummary(90);
+    expect(result).toHaveLength(2);
+    expect(result[0]?.questionSlug).toBe("a");
+    expect(result[1]?.questionSlug).toBe("b");
+    expect(result[1]?.displayName).toBe("B");
+    expect(result[1]?.category).toBe("cat2");
+  });
+
   it("calls execute once", async () => {
     const { repo, execute } = makeRepository([]);
     await repo.getImpactSummary(30);

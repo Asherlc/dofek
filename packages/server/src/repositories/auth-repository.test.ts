@@ -65,6 +65,95 @@ describe("AuthRepository", () => {
     });
   });
 
+  describe("getLinkedAccounts field mapping isolation", () => {
+    it("maps auth_provider to authProvider (not to any other field)", async () => {
+      const { repo } = makeRepository([
+        {
+          id: "acc-1",
+          auth_provider: "github",
+          email: "test@test.com",
+          name: "User",
+          created_at: "2025-01-10T08:00:00Z",
+        },
+      ]);
+      const result = await repo.getLinkedAccounts();
+      expect(result[0]?.authProvider).toBe("github");
+      expect(result[0]?.id).toBe("acc-1");
+    });
+
+    it("maps email field correctly when non-null", async () => {
+      const { repo } = makeRepository([
+        {
+          id: "acc-1",
+          auth_provider: "google",
+          email: "specific@email.com",
+          name: "User",
+          created_at: "2025-01-10T08:00:00Z",
+        },
+      ]);
+      const result = await repo.getLinkedAccounts();
+      expect(result[0]?.email).toBe("specific@email.com");
+    });
+
+    it("maps name field correctly when non-null", async () => {
+      const { repo } = makeRepository([
+        {
+          id: "acc-1",
+          auth_provider: "google",
+          email: "test@test.com",
+          name: "Specific Name",
+          created_at: "2025-01-10T08:00:00Z",
+        },
+      ]);
+      const result = await repo.getLinkedAccounts();
+      expect(result[0]?.name).toBe("Specific Name");
+    });
+
+    it("maps email as null independently of name", async () => {
+      const { repo } = makeRepository([
+        {
+          id: "acc-1",
+          auth_provider: "google",
+          email: null,
+          name: "Has Name",
+          created_at: "2025-01-10T08:00:00Z",
+        },
+      ]);
+      const result = await repo.getLinkedAccounts();
+      expect(result[0]?.email).toBeNull();
+      expect(result[0]?.name).toBe("Has Name");
+    });
+
+    it("maps name as null independently of email", async () => {
+      const { repo } = makeRepository([
+        {
+          id: "acc-1",
+          auth_provider: "google",
+          email: "has@email.com",
+          name: null,
+          created_at: "2025-01-10T08:00:00Z",
+        },
+      ]);
+      const result = await repo.getLinkedAccounts();
+      expect(result[0]?.name).toBeNull();
+      expect(result[0]?.email).toBe("has@email.com");
+    });
+
+    it("maps created_at to createdAt string", async () => {
+      const { repo } = makeRepository([
+        {
+          id: "acc-1",
+          auth_provider: "google",
+          email: null,
+          name: null,
+          created_at: "2025-06-20T14:30:00Z",
+        },
+      ]);
+      const result = await repo.getLinkedAccounts();
+      expect(result[0]?.createdAt).toBe("2025-06-20T14:30:00.000Z");
+    });
+  });
+
   describe("getAccountCount", () => {
     it("returns 0 when no accounts exist", async () => {
       const { repo } = makeRepository([{ count: "0" }]);

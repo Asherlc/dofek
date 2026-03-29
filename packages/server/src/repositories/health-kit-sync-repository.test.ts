@@ -343,6 +343,187 @@ describe("aggregateDailyMetricSamples", () => {
     expect(accumulator?.restingHr).toBeNull();
   });
 
+  it("accumulates cycling distance with transform (meters to km)", () => {
+    const samples = [
+      makeSample({
+        type: "HKQuantityTypeIdentifierDistanceCycling",
+        value: 10000,
+        uuid: "1",
+      }),
+      makeSample({
+        type: "HKQuantityTypeIdentifierDistanceCycling",
+        value: 5000,
+        uuid: "2",
+      }),
+    ];
+    const result = aggregateDailyMetricSamples(samples);
+    const accumulator = result.get("2024-01-15\0iPhone");
+    // 10000/1000 + 5000/1000 = 10 + 5 = 15 km
+    expect(accumulator?.cyclingDistanceKm).toBeCloseTo(15.0);
+  });
+
+  it("accumulates basal energy burned", () => {
+    const samples = [
+      makeSample({
+        type: "HKQuantityTypeIdentifierBasalEnergyBurned",
+        value: 800,
+        uuid: "1",
+      }),
+      makeSample({
+        type: "HKQuantityTypeIdentifierBasalEnergyBurned",
+        value: 600,
+        uuid: "2",
+      }),
+    ];
+    const result = aggregateDailyMetricSamples(samples);
+    const accumulator = result.get("2024-01-15\0iPhone");
+    expect(accumulator?.basalEnergyKcal).toBe(1400);
+  });
+
+  it("accumulates flights climbed", () => {
+    const samples = [
+      makeSample({
+        type: "HKQuantityTypeIdentifierFlightsClimbed",
+        value: 3,
+        uuid: "1",
+      }),
+      makeSample({
+        type: "HKQuantityTypeIdentifierFlightsClimbed",
+        value: 5,
+        uuid: "2",
+      }),
+    ];
+    const result = aggregateDailyMetricSamples(samples);
+    const accumulator = result.get("2024-01-15\0iPhone");
+    expect(accumulator?.flightsClimbed).toBe(8);
+  });
+
+  it("accumulates exercise minutes", () => {
+    const samples = [
+      makeSample({
+        type: "HKQuantityTypeIdentifierAppleExerciseTime",
+        value: 15,
+        uuid: "1",
+      }),
+      makeSample({
+        type: "HKQuantityTypeIdentifierAppleExerciseTime",
+        value: 20,
+        uuid: "2",
+      }),
+    ];
+    const result = aggregateDailyMetricSamples(samples);
+    const accumulator = result.get("2024-01-15\0iPhone");
+    expect(accumulator?.exerciseMinutes).toBe(35);
+  });
+
+  it("handles walking speed as point-in-time metric", () => {
+    const samples = [
+      makeSample({
+        type: "HKQuantityTypeIdentifierWalkingSpeed",
+        value: 1.2,
+        uuid: "1",
+      }),
+      makeSample({
+        type: "HKQuantityTypeIdentifierWalkingSpeed",
+        value: 1.4,
+        uuid: "2",
+      }),
+    ];
+    const result = aggregateDailyMetricSamples(samples);
+    const accumulator = result.get("2024-01-15\0iPhone");
+    // Last value wins for point-in-time
+    expect(accumulator?.walkingSpeed).toBe(1.4);
+  });
+
+  it("handles walking step length as point-in-time metric", () => {
+    const samples = [
+      makeSample({
+        type: "HKQuantityTypeIdentifierWalkingStepLength",
+        value: 0.72,
+        uuid: "1",
+      }),
+    ];
+    const result = aggregateDailyMetricSamples(samples);
+    const accumulator = result.get("2024-01-15\0iPhone");
+    expect(accumulator?.walkingStepLength).toBe(0.72);
+  });
+
+  it("handles walking double support percentage as point-in-time", () => {
+    const samples = [
+      makeSample({
+        type: "HKQuantityTypeIdentifierWalkingDoubleSupportPercentage",
+        value: 28.5,
+        uuid: "1",
+      }),
+    ];
+    const result = aggregateDailyMetricSamples(samples);
+    const accumulator = result.get("2024-01-15\0iPhone");
+    expect(accumulator?.walkingDoubleSupportPct).toBe(28.5);
+  });
+
+  it("handles walking asymmetry percentage as point-in-time", () => {
+    const samples = [
+      makeSample({
+        type: "HKQuantityTypeIdentifierWalkingAsymmetryPercentage",
+        value: 5.2,
+        uuid: "1",
+      }),
+    ];
+    const result = aggregateDailyMetricSamples(samples);
+    const accumulator = result.get("2024-01-15\0iPhone");
+    expect(accumulator?.walkingAsymmetryPct).toBe(5.2);
+  });
+
+  it("collects HRV samples separately for overnight selection", () => {
+    // HRV uses selectDailyHeartRateVariability instead of simple last-value-wins
+    const samples = [
+      makeSample({
+        type: "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
+        value: 45,
+        startDate: "2024-01-15T03:00:00Z",
+        uuid: "1",
+      }),
+      makeSample({
+        type: "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
+        value: 52,
+        startDate: "2024-01-15T04:00:00Z",
+        uuid: "2",
+      }),
+    ];
+    const result = aggregateDailyMetricSamples(samples);
+    const accumulator = result.get("2024-01-15\0iPhone");
+    // HRV should be set (not null) since there are valid samples
+    expect(accumulator?.hrv).not.toBeNull();
+    expect(typeof accumulator?.hrv).toBe("number");
+  });
+
+  it("initializes all accumulator fields correctly", () => {
+    // A single sample creates an accumulator; verify all fields have correct defaults
+    const samples = [
+      makeSample({
+        type: "HKQuantityTypeIdentifierStepCount",
+        value: 100,
+        uuid: "1",
+      }),
+    ];
+    const result = aggregateDailyMetricSamples(samples);
+    const accumulator = result.get("2024-01-15\0iPhone");
+    expect(accumulator?.steps).toBe(100);
+    expect(accumulator?.activeEnergyKcal).toBe(0);
+    expect(accumulator?.basalEnergyKcal).toBe(0);
+    expect(accumulator?.distanceKm).toBe(0);
+    expect(accumulator?.cyclingDistanceKm).toBe(0);
+    expect(accumulator?.flightsClimbed).toBe(0);
+    expect(accumulator?.exerciseMinutes).toBe(0);
+    expect(accumulator?.restingHr).toBeNull();
+    expect(accumulator?.hrv).toBeNull();
+    expect(accumulator?.vo2max).toBeNull();
+    expect(accumulator?.walkingSpeed).toBeNull();
+    expect(accumulator?.walkingStepLength).toBeNull();
+    expect(accumulator?.walkingDoubleSupportPct).toBeNull();
+    expect(accumulator?.walkingAsymmetryPct).toBeNull();
+  });
+
   it("uses = (replacement) for point-in-time metrics, not +=", () => {
     // Point-in-time metrics should replace, not accumulate
     const samples = [
@@ -906,6 +1087,70 @@ describe("HealthKitSyncRepository", () => {
       expect(result).toBe(0);
       expect(execute).not.toHaveBeenCalled();
     });
+
+    it("applies body fat percentage transform (value * 100)", async () => {
+      const { repository, execute } = makeRepository();
+      const samples = [
+        makeSample({
+          type: "HKQuantityTypeIdentifierBodyFatPercentage",
+          value: 0.185,
+          uuid: "bf-1",
+        }),
+      ];
+      const result = await repository.processBodyMeasurements(samples);
+      expect(result).toBe(1);
+      expect(execute).toHaveBeenCalledTimes(1);
+      // The transformed value (0.185 * 100 = 18.5) is used in the SQL
+      const queryJson = JSON.stringify(execute.mock.calls[0]?.[0]);
+      expect(queryJson).toContain("18.5");
+    });
+
+    it("inserts BMI without transform", async () => {
+      const { repository, execute } = makeRepository();
+      const samples = [
+        makeSample({
+          type: "HKQuantityTypeIdentifierBodyMassIndex",
+          value: 23.4,
+          uuid: "bmi-1",
+        }),
+      ];
+      const result = await repository.processBodyMeasurements(samples);
+      expect(result).toBe(1);
+      expect(execute).toHaveBeenCalledTimes(1);
+    });
+
+    it("inserts height without transform", async () => {
+      const { repository, execute } = makeRepository();
+      const samples = [
+        makeSample({
+          type: "HKQuantityTypeIdentifierHeight",
+          value: 175.5,
+          uuid: "height-1",
+        }),
+      ];
+      const result = await repository.processBodyMeasurements(samples);
+      expect(result).toBe(1);
+      expect(execute).toHaveBeenCalledTimes(1);
+    });
+
+    it("processes multiple body measurement samples in batch", async () => {
+      const { repository, execute } = makeRepository();
+      const samples = [
+        makeSample({
+          type: "HKQuantityTypeIdentifierBodyMass",
+          value: 75.5,
+          uuid: "bm-1",
+        }),
+        makeSample({
+          type: "HKQuantityTypeIdentifierBodyFatPercentage",
+          value: 0.15,
+          uuid: "bm-2",
+        }),
+      ];
+      const result = await repository.processBodyMeasurements(samples);
+      expect(result).toBe(2);
+      expect(execute).toHaveBeenCalledTimes(2);
+    });
   });
 
   describe("processDailyMetrics", () => {
@@ -971,6 +1216,52 @@ describe("HealthKitSyncRepository", () => {
       const result = await repository.processMetricStream(samples);
       expect(result).toBe(0);
       expect(execute).not.toHaveBeenCalled();
+    });
+
+    it("rounds integer metric stream columns (heart_rate)", async () => {
+      const { repository, execute } = makeRepository();
+      const samples = [
+        makeSample({
+          type: "HKQuantityTypeIdentifierHeartRate",
+          value: 72.7,
+          uuid: "hr-round",
+        }),
+      ];
+      const result = await repository.processMetricStream(samples);
+      expect(result).toBe(1);
+      // heart_rate is in INTEGER_METRIC_STREAM_COLUMNS so it should be Math.round(72.7) = 73
+      const queryJson = JSON.stringify(execute.mock.calls[0]?.[0]);
+      expect(queryJson).toContain("73");
+    });
+
+    it("inserts non-integer metric stream columns without rounding (spo2)", async () => {
+      const { repository, execute } = makeRepository();
+      const samples = [
+        makeSample({
+          type: "HKQuantityTypeIdentifierOxygenSaturation",
+          value: 0.975,
+          uuid: "spo2-1",
+        }),
+      ];
+      const result = await repository.processMetricStream(samples);
+      expect(result).toBe(1);
+      // spo2 is NOT in INTEGER_METRIC_STREAM_COLUMNS, value should be passed as-is
+      const queryJson = JSON.stringify(execute.mock.calls[0]?.[0]);
+      expect(queryJson).toContain("0.975");
+    });
+
+    it("inserts respiratory rate without rounding", async () => {
+      const { repository, execute } = makeRepository();
+      const samples = [
+        makeSample({
+          type: "HKQuantityTypeIdentifierRespiratoryRate",
+          value: 14.5,
+          uuid: "rr-1",
+        }),
+      ];
+      const result = await repository.processMetricStream(samples);
+      expect(result).toBe(1);
+      expect(execute).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -1073,6 +1364,50 @@ describe("HealthKitSyncRepository", () => {
       const { repository } = makeRepository();
       const result = await repository.linkUnassignedHeartRateToWorkouts();
       expect(result).toBe(0);
+    });
+
+    it("handles non-array return value gracefully", async () => {
+      const execute = vi.fn().mockResolvedValue(42);
+      const db = { execute };
+      const repository = new HealthKitSyncRepository(db, "user-1");
+      const result = await repository.linkUnassignedHeartRateToWorkouts();
+      // Non-array returns 0
+      expect(result).toBe(0);
+    });
+
+    it("includes startAt filter when bounds.startAt is provided", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const db = { execute };
+      const repository = new HealthKitSyncRepository(db, "user-1");
+      await repository.linkUnassignedHeartRateToWorkouts({
+        startAt: "2024-01-15T10:00:00Z",
+      });
+      expect(execute).toHaveBeenCalledTimes(1);
+      const queryJson = JSON.stringify(execute.mock.calls[0]?.[0]);
+      expect(queryJson).toContain("2024-01-15T10:00:00Z");
+    });
+
+    it("includes endAt filter when bounds.endAt is provided", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const db = { execute };
+      const repository = new HealthKitSyncRepository(db, "user-1");
+      await repository.linkUnassignedHeartRateToWorkouts({
+        endAt: "2024-01-15T11:00:00Z",
+      });
+      expect(execute).toHaveBeenCalledTimes(1);
+      const queryJson = JSON.stringify(execute.mock.calls[0]?.[0]);
+      expect(queryJson).toContain("2024-01-15T11:00:00Z");
+    });
+
+    it("works with both startAt and endAt bounds", async () => {
+      const execute = vi.fn().mockResolvedValue([{ recorded_at: "2024-01-15T10:30:00Z" }]);
+      const db = { execute };
+      const repository = new HealthKitSyncRepository(db, "user-1");
+      const result = await repository.linkUnassignedHeartRateToWorkouts({
+        startAt: "2024-01-15T10:00:00Z",
+        endAt: "2024-01-15T11:00:00Z",
+      });
+      expect(result).toBe(1);
     });
   });
 

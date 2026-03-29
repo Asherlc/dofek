@@ -66,6 +66,36 @@ describe("PredictionTargetEntry", () => {
     expect(entry.unit).toBe("bpm");
     expect(entry.type).toBe("daily");
   });
+
+  it("maps id from constructor row.id (not row.label or row.unit)", () => {
+    const entry = new PredictionTargetEntry({
+      id: "unique_id",
+      label: "unique_label",
+      unit: "unique_unit",
+      type: "activity",
+    });
+    expect(entry.id).toStrictEqual("unique_id");
+    expect(entry.label).toStrictEqual("unique_label");
+    expect(entry.unit).toStrictEqual("unique_unit");
+    expect(entry.type).toStrictEqual("activity");
+  });
+
+  it("toDetail maps each field independently (not returning same value for all)", () => {
+    const entry = new PredictionTargetEntry({
+      id: "field_a",
+      label: "field_b",
+      unit: "field_c",
+      type: "daily",
+    });
+    const detail = entry.toDetail();
+    expect(detail.id).toBe("field_a");
+    expect(detail.label).toBe("field_b");
+    expect(detail.unit).toBe("field_c");
+    expect(detail.type).toBe("daily");
+    // Verify fields are not swapped
+    expect(detail.id).not.toBe(detail.label);
+    expect(detail.label).not.toBe(detail.unit);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -337,6 +367,189 @@ describe("buildDailyContext", () => {
     const result = buildDailyContext(metrics, [], [], []);
     expect(result[0]?.date).toBe("2024-01-15");
     expect(result[1]?.date).toBe("2024-01-17");
+  });
+
+  it("maps all null fields to null via ?? null (not undefined or 0)", () => {
+    const metrics = [
+      {
+        date: "2024-01-15",
+        resting_hr: null,
+        hrv: null,
+        spo2_avg: null,
+        steps: null,
+        active_energy_kcal: null,
+        skin_temp_c: null,
+      },
+    ];
+    const result = buildDailyContext(metrics, [], [], []);
+    expect(result).toHaveLength(1);
+    const day = result[0];
+    expect(day?.hrv).toStrictEqual(null);
+    expect(day?.restingHr).toStrictEqual(null);
+    expect(day?.steps).toStrictEqual(null);
+    expect(day?.sleepDurationMin).toStrictEqual(null);
+    expect(day?.deepMin).toStrictEqual(null);
+    expect(day?.sleepEfficiency).toStrictEqual(null);
+    expect(day?.calories).toStrictEqual(null);
+    expect(day?.proteinG).toStrictEqual(null);
+    expect(day?.weightKg).toStrictEqual(null);
+    expect(day?.exerciseMinutes).toStrictEqual(null);
+  });
+
+  it("maps all non-null fields to their exact values (not null or 0)", () => {
+    const metrics = [
+      {
+        date: "2024-01-15",
+        resting_hr: 58,
+        hrv: 52,
+        spo2_avg: 98,
+        steps: 12000,
+        active_energy_kcal: 600,
+        skin_temp_c: 36.8,
+      },
+    ];
+    const sleep = [
+      {
+        started_at: "2024-01-14T23:00:00Z",
+        duration_minutes: 420,
+        deep_minutes: 80,
+        rem_minutes: 95,
+        light_minutes: 210,
+        awake_minutes: 35,
+        efficiency_pct: 88,
+        is_nap: false,
+      },
+    ];
+    const nutrition = [
+      {
+        date: "2024-01-15",
+        calories: 2400,
+        protein_g: 160,
+        carbs_g: 280,
+        fat_g: 85,
+        fiber_g: 32,
+        water_ml: 2800,
+      },
+    ];
+    const bodyComp = [{ recorded_at: "2024-01-15T07:00:00Z", weight_kg: 80.2, body_fat_pct: 18 }];
+    const exercise = [{ date: "2024-01-15", exercise_minutes: 55 }];
+
+    const result = buildDailyContext(metrics, sleep, nutrition, bodyComp, exercise);
+    expect(result).toHaveLength(1);
+    const day = result[0];
+    expect(day?.hrv).toBe(52);
+    expect(day?.restingHr).toBe(58);
+    expect(day?.steps).toBe(12000);
+    expect(day?.sleepDurationMin).toBe(420);
+    expect(day?.deepMin).toBe(80);
+    expect(day?.sleepEfficiency).toBe(88);
+    expect(day?.calories).toBe(2400);
+    expect(day?.proteinG).toBe(160);
+    expect(day?.weightKg).toBe(80.2);
+    expect(day?.exerciseMinutes).toBe(55);
+  });
+
+  it("maps hrv from metricsRow.hrv (not resting_hr or steps)", () => {
+    const metrics = [
+      {
+        date: "2024-01-15",
+        resting_hr: 60,
+        hrv: 45,
+        spo2_avg: 97,
+        steps: 8000,
+        active_energy_kcal: 500,
+        skin_temp_c: 36.5,
+      },
+    ];
+    const result = buildDailyContext(metrics, [], [], []);
+    // hrv should be 45 (from hrv), not 60 (from resting_hr) or 8000 (from steps)
+    expect(result[0]?.hrv).toBe(45);
+    expect(result[0]?.restingHr).toBe(60);
+  });
+
+  it("maps sleepDurationMin from duration_minutes (not deep_minutes or awake_minutes)", () => {
+    const sleep = [
+      {
+        started_at: "2024-01-14T22:00:00Z",
+        duration_minutes: 480,
+        deep_minutes: 90,
+        rem_minutes: 100,
+        light_minutes: 250,
+        awake_minutes: 40,
+        efficiency_pct: 92,
+        is_nap: false,
+      },
+    ];
+    const result = buildDailyContext([], sleep, [], []);
+    expect(result[0]?.sleepDurationMin).toBe(480);
+    expect(result[0]?.deepMin).toBe(90);
+    expect(result[0]?.sleepEfficiency).toBe(92);
+  });
+
+  it("maps calories from nutrition calories (not protein_g or fat_g)", () => {
+    const nutrition = [
+      {
+        date: "2024-01-15",
+        calories: 2200,
+        protein_g: 150,
+        carbs_g: 250,
+        fat_g: 80,
+        fiber_g: 30,
+        water_ml: 2500,
+      },
+    ];
+    const result = buildDailyContext([], [], nutrition, []);
+    expect(result[0]?.calories).toBe(2200);
+    expect(result[0]?.proteinG).toBe(150);
+  });
+
+  it("handles Date objects for nutrition and exercise date fields", () => {
+    const nutrition = [
+      {
+        date: new Date("2024-01-15"),
+        calories: 1800,
+        protein_g: 120,
+        carbs_g: 200,
+        fat_g: 60,
+        fiber_g: 25,
+        water_ml: 2000,
+      },
+    ];
+    const exercise = [{ date: new Date("2024-01-15"), exercise_minutes: 30 }];
+    const result = buildDailyContext([], [], nutrition, [], exercise);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.date).toBe("2024-01-15");
+    expect(result[0]?.calories).toBe(1800);
+    expect(result[0]?.exerciseMinutes).toBe(30);
+  });
+
+  it("weight carry-forward uses last non-null weight_kg (not body_fat_pct)", () => {
+    const metrics = [
+      {
+        date: "2024-01-15",
+        resting_hr: 60,
+        hrv: 45,
+        spo2_avg: null,
+        steps: null,
+        active_energy_kcal: null,
+        skin_temp_c: null,
+      },
+      {
+        date: "2024-01-16",
+        resting_hr: 62,
+        hrv: 42,
+        spo2_avg: null,
+        steps: null,
+        active_energy_kcal: null,
+        skin_temp_c: null,
+      },
+    ];
+    const bodyComp = [{ recorded_at: "2024-01-15T08:00:00Z", weight_kg: 75.5, body_fat_pct: 15.2 }];
+    const result = buildDailyContext(metrics, [], [], bodyComp);
+    // Day 1: weight is 75.5 (not 15.2 which is body_fat_pct)
+    expect(result[0]?.weightKg).toBe(75.5);
+    // Day 2: weight carries forward as 75.5
+    expect(result[1]?.weightKg).toBe(75.5);
   });
 });
 

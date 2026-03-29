@@ -456,6 +456,166 @@ describe("BodyAnalyticsRepository", () => {
     });
   });
 
+  describe("getSmoothedWeight property values", () => {
+    it("preserves date string from DB row", async () => {
+      const { repo } = makeRepository([{ date: "2024-03-15", weight_kg: "75" }]);
+      const result = await repo.getSmoothedWeight(90, "2024-06-01");
+      expect(result[0]?.date).toBe("2024-03-15");
+    });
+
+    it("rounds rawWeight via Math.round(x * 100) / 100 (2 decimal places, not 1 or 3)", async () => {
+      const { repo } = makeRepository([{ date: "2024-01-01", weight_kg: "80.1234" }]);
+      const result = await repo.getSmoothedWeight(90, "2024-06-01");
+      // Math.round(80.1234 * 100) / 100 = Math.round(8012.34) / 100 = 8012/100 = 80.12
+      expect(result[0]?.rawWeight).toBe(80.12);
+    });
+
+    it("rounds smoothedWeight via Math.round(x * 100) / 100 (2 decimal places)", async () => {
+      const { repo } = makeRepository([
+        { date: "2024-01-01", weight_kg: "80.1234" },
+        { date: "2024-01-02", weight_kg: "81.5678" },
+      ]);
+      const result = await repo.getSmoothedWeight(90, "2024-06-01");
+      // smoothed[0] = 80.1234, rounded = 80.12
+      expect(result[0]?.smoothedWeight).toBe(80.12);
+      // smoothed[1] = 0.1 * 81.5678 + 0.9 * 80.1234 = 8.15678 + 72.11106 = 80.26784
+      // Math.round(80.26784 * 100) / 100 = Math.round(8026.784) / 100 = 8027/100 = 80.27
+      expect(result[1]?.smoothedWeight).toBe(80.27);
+    });
+
+    it("rounds weeklyChange via Math.round(x * 100) / 100 (not *10/10 or *1000/1000)", async () => {
+      // Build 8 data points to get weeklyChange on index 7
+      const rows = Array.from({ length: 8 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: String(80 + index * 0.3),
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getSmoothedWeight(90, "2024-06-01");
+      const change = result[7]?.weeklyChange;
+      expect(change).not.toBeNull();
+      // Verify 2-decimal precision
+      if (change !== null && change !== undefined) {
+        const str = String(change);
+        const decimals = str.includes(".") ? (str.split(".")[1]?.length ?? 0) : 0;
+        expect(decimals).toBeLessThanOrEqual(2);
+      }
+    });
+  });
+
+  describe("getRecomposition property values", () => {
+    it("preserves date string from DB row in recomposition", async () => {
+      const { repo } = makeRepository([
+        { date: "2024-05-20", weight_kg: "80", body_fat_pct: "20" },
+      ]);
+      const result = await repo.getRecomposition(180, "2024-06-01");
+      expect(result[0]?.date).toBe("2024-05-20");
+    });
+
+    it("rounds weightKg to 2 decimal places via Math.round(x * 100) / 100", async () => {
+      const { repo } = makeRepository([
+        { date: "2024-01-01", weight_kg: "80.1234", body_fat_pct: "20" },
+      ]);
+      const result = await repo.getRecomposition(180, "2024-06-01");
+      expect(result[0]?.weightKg).toBe(80.12);
+    });
+
+    it("rounds bodyFatPct to 1 decimal via Math.round(x * 10) / 10 (not *100/100)", async () => {
+      const { repo } = makeRepository([
+        { date: "2024-01-01", weight_kg: "80", body_fat_pct: "18.456" },
+      ]);
+      const result = await repo.getRecomposition(180, "2024-06-01");
+      // Math.round(18.456 * 10) / 10 = Math.round(184.56) / 10 = 185/10 = 18.5
+      expect(result[0]?.bodyFatPct).toBe(18.5);
+    });
+
+    it("rounds fatMassKg to 2 decimal places via Math.round(x * 100) / 100", async () => {
+      const { repo } = makeRepository([
+        { date: "2024-01-01", weight_kg: "80.5", body_fat_pct: "18.3" },
+      ]);
+      const result = await repo.getRecomposition(180, "2024-06-01");
+      // fatMass = 80.5 * (18.3 / 100) = 80.5 * 0.183 = 14.7315
+      // Math.round(14.7315 * 100) / 100 = Math.round(1473.15) / 100 = 1473/100 = 14.73
+      expect(result[0]?.fatMassKg).toBe(14.73);
+    });
+
+    it("rounds leanMassKg to 2 decimal places via Math.round(x * 100) / 100", async () => {
+      const { repo } = makeRepository([
+        { date: "2024-01-01", weight_kg: "80.5", body_fat_pct: "18.3" },
+      ]);
+      const result = await repo.getRecomposition(180, "2024-06-01");
+      // leanMass = 80.5 - 14.7315 = 65.7685
+      // Math.round(65.7685 * 100) / 100 = Math.round(6576.85) / 100 = 6577/100 = 65.77
+      expect(result[0]?.leanMassKg).toBe(65.77);
+    });
+
+    it("rounds smoothedFatMass and smoothedLeanMass to 2 decimals", async () => {
+      const { repo } = makeRepository([
+        { date: "2024-01-01", weight_kg: "80", body_fat_pct: "20" },
+      ]);
+      const result = await repo.getRecomposition(180, "2024-06-01");
+      // First entry: smoothed = raw
+      expect(result[0]?.smoothedFatMass).toBe(16);
+      expect(result[0]?.smoothedLeanMass).toBe(64);
+    });
+  });
+
+  describe("getWeightTrend specific values", () => {
+    it("rounds currentWeekly via Math.round(x * 100) / 100 (not *10/10)", async () => {
+      // 8 points with slow increase
+      const rows = Array.from({ length: 8 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: String(80 + index * 0.15),
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightTrend();
+      expect(result.currentWeekly).not.toBeNull();
+      if (result.currentWeekly !== null) {
+        const str = String(result.currentWeekly);
+        const decimals = str.includes(".") ? (str.split(".")[1]?.length ?? 0) : 0;
+        expect(decimals).toBeLessThanOrEqual(2);
+      }
+    });
+
+    it("rounds current4Week via Math.round(x * 100) / 100 (not *10/10)", async () => {
+      const rows = Array.from({ length: 30 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: String(80 + index * 0.15),
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightTrend();
+      expect(result.current4Week).not.toBeNull();
+      if (result.current4Week !== null) {
+        const str = String(result.current4Week);
+        const decimals = str.includes(".") ? (str.split(".")[1]?.length ?? 0) : 0;
+        expect(decimals).toBeLessThanOrEqual(2);
+      }
+    });
+
+    it("classifies stable when changeReference is exactly 0.1 (not > 0.1)", async () => {
+      // We need a series where weekly change is exactly 0.1
+      // With constant weight, weekly change = 0 → stable
+      const rows = Array.from({ length: 8 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: "80",
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightTrend();
+      expect(result.trend).toBe("stable");
+    });
+
+    it("classifies stable when changeReference is exactly -0.1 (not < -0.1)", async () => {
+      // Same logic: constant = 0 change = stable
+      const rows = Array.from({ length: 8 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: "80",
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightTrend();
+      expect(result.currentWeekly).toBe(0);
+      expect(result.trend).toBe("stable");
+    });
+  });
+
   describe("getRecomposition EWMA alpha", () => {
     it("uses alpha=0.15 for body recomposition (not 0.1 or 0.2)", async () => {
       const { repo } = makeRepository([

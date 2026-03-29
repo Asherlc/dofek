@@ -250,4 +250,158 @@ describe("PowerRepository", () => {
       }
     });
   });
+
+  describe("getPowerCurve mapping", () => {
+    it("maps each field to the correct property (durationSeconds, label, bestPower, activityDate)", async () => {
+      const samples = Array.from({ length: 10 }, (_, index) => ({
+        activity_id: "act-map",
+        activity_date: "2024-08-01",
+        power: 250 + index,
+        interval_s: 1,
+      }));
+      const db = makeDb(samples);
+      const repo = new PowerRepository(db, "user-1", "UTC");
+      const result = await repo.getPowerCurve(90);
+
+      expect(result.points.length).toBeGreaterThan(0);
+      for (const point of result.points) {
+        // durationSeconds should be a positive number
+        expect(point.durationSeconds).toBeGreaterThan(0);
+        // label should be a non-empty string
+        expect(typeof point.label).toBe("string");
+        expect(point.label.length).toBeGreaterThan(0);
+        // bestPower should be a positive number
+        expect(point.bestPower).toBeGreaterThan(0);
+        // activityDate should be "2024-08-01"
+        expect(point.activityDate).toBe("2024-08-01");
+      }
+    });
+
+    it("returns model as null when not enough data for CP fitting", async () => {
+      const samples = Array.from({ length: 10 }, () => ({
+        activity_id: "act-1",
+        activity_date: "2024-06-15",
+        power: 200,
+        interval_s: 1,
+      }));
+      const db = makeDb(samples);
+      const repo = new PowerRepository(db, "user-1", "UTC");
+      const result = await repo.getPowerCurve(90);
+      // With only one short activity, CP model cannot be fitted
+      expect(result.model).toStrictEqual(null);
+    });
+  });
+
+  describe("getEftpTrend mapping", () => {
+    it("maps activityName to trend output correctly (non-null case)", async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      const normalizedPowerSamples = Array.from({ length: 300 }, () => ({
+        activity_id: "act-named",
+        activity_date: today,
+        activity_name: "Evening Ride",
+        power: 220,
+        interval_s: 1,
+      }));
+      const db = makeDb(normalizedPowerSamples, []);
+      const repo = new PowerRepository(db, "user-1", "UTC");
+      const result = await repo.getEftpTrend(365);
+
+      expect(result.trend).toHaveLength(1);
+      expect(result.trend[0]?.activityName).toStrictEqual("Evening Ride");
+      expect(result.trend[0]?.date).toBe(today);
+      // NP=220, eFTP=220*0.95=209
+      expect(result.trend[0]?.eftp).toBe(209);
+    });
+
+    it("maps activityName as null when activity has no name", async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      const normalizedPowerSamples = Array.from({ length: 300 }, () => ({
+        activity_id: "act-noname",
+        activity_date: today,
+        activity_name: null,
+        power: 200,
+        interval_s: 1,
+      }));
+      const db = makeDb(normalizedPowerSamples, []);
+      const repo = new PowerRepository(db, "user-1", "UTC");
+      const result = await repo.getEftpTrend(365);
+
+      expect(result.trend).toHaveLength(1);
+      expect(result.trend[0]?.activityName).toStrictEqual(null);
+    });
+
+    it("currentEftp uses model.cp when CP model is available", async () => {
+      // We need enough varied power data to fit a CP model
+      // Create multiple activities with different durations and powers for the CP query
+      const today = new Date().toISOString().slice(0, 10);
+      const npSamples = Array.from({ length: 300 }, () => ({
+        activity_id: "act-cp",
+        activity_date: today,
+        activity_name: "Test",
+        power: 250,
+        interval_s: 1,
+      }));
+
+      // For CP model fitting, we need samples across multiple durations
+      // Build two activities with different power profiles for the power curve query
+      const pcSamples = [
+        // Short high-power activity (sprint-like)
+        ...Array.from({ length: 120 }, () => ({
+          activity_id: "pc-sprint",
+          activity_date: today,
+          power: 400,
+          interval_s: 1,
+        })),
+        // Longer moderate-power activity
+        ...Array.from({ length: 1200 }, () => ({
+          activity_id: "pc-endurance",
+          activity_date: today,
+          power: 200,
+          interval_s: 1,
+        })),
+      ];
+
+      const db = makeDb(npSamples, pcSamples);
+      const repo = new PowerRepository(db, "user-1", "UTC");
+      const result = await repo.getEftpTrend(365);
+
+      // If a CP model was fitted, currentEftp should equal model.cp
+      if (result.model) {
+        expect(result.currentEftp).toBe(result.model.cp);
+      }
+    });
+
+    it("selects max eFTP from recent trend when CP model is null", async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().slice(0, 10);
+
+      // Two activities with different power levels
+      const normalizedPowerSamples = [
+        ...Array.from({ length: 300 }, () => ({
+          activity_id: "act-high",
+          activity_date: today,
+          activity_name: "Strong Ride",
+          power: 300,
+          interval_s: 1,
+        })),
+        ...Array.from({ length: 300 }, () => ({
+          activity_id: "act-low",
+          activity_date: yesterdayStr,
+          activity_name: "Easy Ride",
+          power: 200,
+          interval_s: 1,
+        })),
+      ];
+      const db = makeDb(normalizedPowerSamples, []);
+      const repo = new PowerRepository(db, "user-1", "UTC");
+      const result = await repo.getEftpTrend(365);
+
+      expect(result.trend).toHaveLength(2);
+      expect(result.model).toStrictEqual(null);
+      // Fallback: max of 300*0.95=285 and 200*0.95=190 -> 285
+      expect(result.currentEftp).toBe(285);
+    });
+  });
 });

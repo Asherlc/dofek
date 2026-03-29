@@ -389,5 +389,144 @@ describe("PersonalizationRepository", () => {
       expect(result.parameters.stressThresholds?.hrvThresholds).toEqual([25, 45, 65]);
       expect(result.parameters.trainingImpulseConstants?.genderFactor).toBe(1.85);
     });
+
+    it("maps each refit parameter to the correct output key (not swapped)", async () => {
+      mockedRefitAll.mockResolvedValue({
+        version: 1,
+        fittedAt: "2025-07-01T00:00:00Z",
+        exponentialMovingAverage: {
+          chronicTrainingLoadDays: 50,
+          acuteTrainingLoadDays: 8,
+          sampleCount: 120,
+          correlation: 0.88,
+        },
+        readinessWeights: {
+          hrv: 0.5,
+          restingHr: 0.2,
+          sleep: 0.15,
+          respiratoryRate: 0.15,
+          sampleCount: 80,
+          correlation: 0.75,
+        },
+        sleepTarget: { minutes: 470, sampleCount: 45 },
+        stressThresholds: {
+          hrvThresholds: [20, 40, 60] satisfies [number, number, number],
+          rhrThresholds: [45, 55, 65] satisfies [number, number, number],
+          sampleCount: 35,
+        },
+        trainingImpulseConstants: {
+          genderFactor: 1.9,
+          exponent: 1.65,
+          sampleCount: 180,
+          r2: 0.93,
+        },
+      });
+      const { repo } = makeRepository();
+      const result = await repo.refit();
+
+      // Verify fittedAt comes from params.fittedAt
+      expect(result.fittedAt).toBe("2025-07-01T00:00:00Z");
+
+      // Verify each parameter object is mapped to the correct key
+      expect(result.parameters.exponentialMovingAverage).toStrictEqual({
+        chronicTrainingLoadDays: 50,
+        acuteTrainingLoadDays: 8,
+        sampleCount: 120,
+        correlation: 0.88,
+      });
+      expect(result.parameters.readinessWeights).toStrictEqual({
+        hrv: 0.5,
+        restingHr: 0.2,
+        sleep: 0.15,
+        respiratoryRate: 0.15,
+        sampleCount: 80,
+        correlation: 0.75,
+      });
+      expect(result.parameters.sleepTarget).toStrictEqual({
+        minutes: 470,
+        sampleCount: 45,
+      });
+      expect(result.parameters.stressThresholds).toStrictEqual({
+        hrvThresholds: [20, 40, 60],
+        rhrThresholds: [45, 55, 65],
+        sampleCount: 35,
+      });
+      expect(result.parameters.trainingImpulseConstants).toStrictEqual({
+        genderFactor: 1.9,
+        exponent: 1.65,
+        sampleCount: 180,
+        r2: 0.93,
+      });
+    });
+
+    it("maps refit parameters with all null sub-params", async () => {
+      mockedRefitAll.mockResolvedValue({
+        version: 1,
+        fittedAt: "2025-07-01T00:00:00Z",
+        exponentialMovingAverage: null,
+        readinessWeights: null,
+        sleepTarget: null,
+        stressThresholds: null,
+        trainingImpulseConstants: null,
+      });
+      const { repo } = makeRepository();
+      const result = await repo.refit();
+
+      expect(result.parameters.exponentialMovingAverage).toStrictEqual(null);
+      expect(result.parameters.readinessWeights).toStrictEqual(null);
+      expect(result.parameters.sleepTarget).toStrictEqual(null);
+      expect(result.parameters.stressThresholds).toStrictEqual(null);
+      expect(result.parameters.trainingImpulseConstants).toStrictEqual(null);
+    });
+  });
+
+  describe("getStatus ?? null coalescing", () => {
+    it("maps each parameter via ?? null, not using defaults when stored has values", async () => {
+      const ema = {
+        chronicTrainingLoadDays: 42,
+        acuteTrainingLoadDays: 7,
+        sampleCount: 100,
+        correlation: 0.85,
+      };
+      const weights = {
+        hrv: 0.4,
+        restingHr: 0.3,
+        sleep: 0.2,
+        respiratoryRate: 0.1,
+        sampleCount: 50,
+        correlation: 0.8,
+      };
+      const sleep = { minutes: 450, sampleCount: 30 };
+      const stress = {
+        hrvThresholds: [30, 50, 70] satisfies [number, number, number],
+        rhrThresholds: [50, 60, 70] satisfies [number, number, number],
+        sampleCount: 30,
+      };
+      const trimp = {
+        genderFactor: 1.92,
+        exponent: 1.67,
+        sampleCount: 100,
+        r2: 0.95,
+      };
+
+      mockedLoadParams.mockResolvedValue({
+        version: 1,
+        fittedAt: "2025-06-01T00:00:00Z",
+        exponentialMovingAverage: ema,
+        readinessWeights: weights,
+        sleepTarget: sleep,
+        stressThresholds: stress,
+        trainingImpulseConstants: trimp,
+      });
+      const { repo } = makeRepository();
+      const result = await repo.getStatus();
+
+      // Each parameter should be exactly the stored value, not null
+      expect(result.parameters.exponentialMovingAverage).toStrictEqual(ema);
+      expect(result.parameters.readinessWeights).toStrictEqual(weights);
+      expect(result.parameters.sleepTarget).toStrictEqual(sleep);
+      expect(result.parameters.stressThresholds).toStrictEqual(stress);
+      expect(result.parameters.trainingImpulseConstants).toStrictEqual(trimp);
+    });
   });
 });
