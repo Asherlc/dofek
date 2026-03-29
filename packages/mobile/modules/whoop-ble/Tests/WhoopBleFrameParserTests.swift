@@ -21,8 +21,8 @@ final class WhoopBleFrameParserTests: XCTestCase {
     }
 
     func testParseFrameExtractsPacketType() {
-        // SOF + payloadLen=1 + crc8 + payload(1 byte: type=0x33) + crc32(4)
-        var data = Data([0xAA, 0x01, 0x00, 0x00])  // header
+        // Format: [SOF:0xAA] [version:0x01] [payloadLen:u16 LE=1] [payload:0x33] [crc32 x4]
+        var data = Data([0xAA, 0x01, 0x01, 0x00])  // header: SOF, version, len=1
         data.append(0x33)  // payload: packet type = REALTIME_IMU
         data.append(contentsOf: [0x00, 0x00, 0x00, 0x00])  // CRC32 placeholder
         let frame = WhoopBleFrameParser.parseFrame(data)
@@ -31,13 +31,12 @@ final class WhoopBleFrameParserTests: XCTestCase {
     }
 
     func testParseFrameExtractsTimestampAndSubSeconds() {
-        // Build the complete frame byte-by-byte to avoid slicing issues
-        // Format: [0xAA][lenLo][lenHi][crc8][...payload...][crc32 x4]
+        // Format: [SOF:0xAA] [version:0x01] [payloadLen:u16 LE] [payload...] [crc32]
         // Payload = 14 bytes
         let data = Data([
             0xAA,                           // [0]  SOF
-            0x0E, 0x00,                     // [1-2] payload length = 14
-            0x00,                           // [3]  header crc8
+            0x01,                           // [1]  version
+            0x0E, 0x00,                     // [2-3] payload length = 14
             // Payload starts at [4]:
             0x33,                           // [4]  packet type = REALTIME_IMU
             0x05,                           // [5]  record type = 5
@@ -207,10 +206,12 @@ final class WhoopBleFrameParserTests: XCTestCase {
     func testBuildCommandFrameForToggleImuMode() {
         let data = WhoopBleFrameParser.buildCommandData(command: WhoopBleConstants.commandToggleImuMode)
 
+        // Format: [SOF:0xAA] [version:0x01] [payloadLen:u16 LE=2] [0x23] [0x6A]
         XCTAssertEqual(data.count, 6)
         XCTAssertEqual(data[0], 0xAA)  // SOF
-        XCTAssertEqual(data[1], 0x02)  // payload length low
-        XCTAssertEqual(data[2], 0x00)  // payload length high
+        XCTAssertEqual(data[1], 0x01)  // version
+        XCTAssertEqual(data[2], 0x02)  // payload length low
+        XCTAssertEqual(data[3], 0x00)  // payload length high
         XCTAssertEqual(data[4], 0x23)  // COMMAND packet type
         XCTAssertEqual(data[5], 0x6A)  // TOGGLE_IMU_MODE
     }
@@ -226,8 +227,8 @@ final class WhoopBleFrameParserTests: XCTestCase {
     func testFrameParserAccumulatesFragmentedNotifications() {
         let parser = WhoopBleFrameParser()
 
-        // Build a complete frame, then split into two notifications
-        var fullFrame = Data([0xAA, 0x01, 0x00, 0x00])  // header
+        // Build a complete frame: [SOF] [version] [len=1] [payload:0x33] [crc32]
+        var fullFrame = Data([0xAA, 0x01, 0x01, 0x00])  // header
         fullFrame.append(0x33)  // payload
         fullFrame.append(contentsOf: [0x00, 0x00, 0x00, 0x00])  // CRC32
 
@@ -240,7 +241,7 @@ final class WhoopBleFrameParserTests: XCTestCase {
 
         // Send a new SOF-bearing notification that triggers parsing of accumulated data
         // and starts a new frame
-        var newFrame = Data([0xAA, 0x01, 0x00, 0x00, 0x28])
+        var newFrame = Data([0xAA, 0x01, 0x01, 0x00, 0x28])
         newFrame.append(contentsOf: [0x00, 0x00, 0x00, 0x00])
 
         // The accumulated data won't form a valid frame (it was truncated),
@@ -252,18 +253,15 @@ final class WhoopBleFrameParserTests: XCTestCase {
     }
 
     func testFrameParserAccumulatesLargeIMUFrameAcrossNotifications() {
-        // Regression test: a large IMU frame (240-byte payload) arrives in 20-byte
-        // BLE notifications. The parser must wait for the full payload before
-        // returning a frame — not prematurely parse the first notification.
+        // Regression test: a large IMU frame arrives in 20-byte BLE notifications.
         let parser = WhoopBleFrameParser()
 
         // Build a realistic IMU frame: header(4) + payload(52) + CRC(4) = 60 bytes
-        // Payload has 2 IMU samples at offset 28
         let payloadLen = 52  // 28 header bytes + 2*12 sample bytes
         var fullFrame = Data([
-            0xAA,
-            UInt8(payloadLen & 0xFF), UInt8(payloadLen >> 8),
-            0x00  // header CRC
+            0xAA,                                                 // SOF
+            0x01,                                                 // version
+            UInt8(payloadLen & 0xFF), UInt8(payloadLen >> 8),     // payload length
         ])
         var payload = Data(count: payloadLen)
         payload[0] = WhoopBleConstants.packetTypeRealtimeIMU  // 0x33
@@ -316,14 +314,14 @@ final class WhoopBleFrameParserTests: XCTestCase {
         let parser = WhoopBleFrameParser()
 
         // Feed partial data
-        let partial = Data([0xAA, 0x05, 0x00])
+        let partial = Data([0xAA, 0x01, 0x05, 0x00])
         _ = parser.feed(partial)
 
         // Reset
         parser.reset()
 
         // New frame should parse cleanly (no leftover bytes)
-        var frame = Data([0xAA, 0x01, 0x00, 0x00, 0x33])
+        var frame = Data([0xAA, 0x01, 0x01, 0x00, 0x33])
         frame.append(contentsOf: [0x00, 0x00, 0x00, 0x00])
         let frames = parser.feed(frame)
         XCTAssertEqual(frames.count, 1)

@@ -114,21 +114,13 @@ final class WhoopBleFrameParser {
 
         let headerSize = WhoopBleConstants.headerSize
 
-        // Try u16 LE format first (Gen 4)
-        let payloadLenU16 = Int(data[1]) | (Int(data[2]) << 8)
-        var payloadLen = payloadLenU16
+        // Frame format: [0xAA] [version:u8] [payloadLen:u16 LE] [payload...] [crc32]
+        // Byte 1 is the version (always 0x01), NOT the low byte of payload length.
+        // Payload length is u16 LE at bytes 2-3.
+        let payloadLen = Int(data[2]) | (Int(data[3]) << 8)
 
-        // If u16 LE length exceeds available data, try u8 format (newer straps).
-        // In the u8 format, byte[1] is a frame type and byte[2] is the payload length.
-        if data.count < headerSize + payloadLenU16 {
-            let payloadLenU8 = Int(data[2])
-            if data.count >= headerSize + payloadLenU8 {
-                payloadLen = payloadLenU8
-            } else {
-                // Neither format has enough data — need more BLE notifications
-                return nil
-            }
-        }
+        // Require the full payload before accepting the frame.
+        guard data.count >= headerSize + payloadLen else { return nil }
 
         let payloadEnd = min(headerSize + payloadLen, data.count)
         let payload = data[headerSize..<payloadEnd]
@@ -229,18 +221,18 @@ final class WhoopBleFrameParser {
 
     /// Build a command frame to write to CMD_TO_STRAP.
     ///
-    /// Constructs a minimal WHOOP command frame:
+    /// Frame format (from docs/whoop.md):
     /// ```
-    /// [0xAA] [0x02 0x00] [0x00] [0x23 commandByte]
+    /// [0xAA] [version:0x01] [payloadLen:u16 LE] [payload: 0x23 commandByte]
     /// ```
-    /// Note: CRC is omitted for simplicity — the strap accepts commands without
-    /// strict CRC validation based on observed behavior in captures.
+    /// CRC32 trailer is omitted — the strap accepts commands without strict
+    /// CRC validation based on observed behavior in captures.
     static func buildCommandData(command: UInt8) -> Data {
         var data = Data()
-        data.append(WhoopBleConstants.startOfFrame)  // SOF
+        data.append(WhoopBleConstants.startOfFrame)  // SOF = 0xAA
+        data.append(0x01)                              // version
         data.append(0x02)                              // payload length low byte
         data.append(0x00)                              // payload length high byte
-        data.append(0x00)                              // header CRC8 (placeholder)
         data.append(WhoopBleConstants.packetTypeCommand)  // 0x23 = COMMAND
         data.append(command)                           // the actual command byte
         return data

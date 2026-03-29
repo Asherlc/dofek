@@ -56,10 +56,10 @@ enum WhoopBleConstants {
     /// Start-of-frame marker byte
     static let startOfFrame: UInt8 = 0xAA
 
-    /// Minimum frame size: SOF(1) + len(2) + crc8(1) + type(1) + crc32(4) = 9
+    /// Minimum frame size: SOF(1) + version(1) + len(2) + type(1) + crc32(4) = 9
     static let minimumFrameSize = 9
 
-    /// Header size before payload: SOF(1) + len(2) + crc8(1)
+    /// Header size before payload: SOF(1) + version(1) + len(2)
     static let headerSize = 4
 
     // MARK: - Packet types (first byte of payload)
