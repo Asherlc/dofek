@@ -1,7 +1,7 @@
 import { AppState, type AppStateStatus } from "react-native";
 import { isWatchAppInstalled, isWatchPaired, requestWatchRecording } from "../modules/watch-motion";
 import type { AccelerometerSyncTrpcClient } from "./accelerometer-sync";
-import { captureException } from "./telemetry";
+import { captureException, logger } from "./telemetry";
 import { syncWatchAccelerometerFiles } from "./watch-file-sync";
 
 const TAG = "bg-watch-accel-sync";
@@ -24,7 +24,11 @@ let syncing = false;
 export async function initBackgroundWatchAccelerometerSync(
   trpcClient: AccelerometerSyncTrpcClient,
 ): Promise<void> {
-  if (!isWatchPaired() || !isWatchAppInstalled()) return;
+  const paired = isWatchPaired();
+  const installed = isWatchAppInstalled();
+  logger.info(TAG, `init: paired=${paired}, appInstalled=${installed}`);
+
+  if (!paired || !installed) return;
 
   // Clean up existing listener
   if (appStateSubscription) {
@@ -34,12 +38,15 @@ export async function initBackgroundWatchAccelerometerSync(
 
   // Sync whenever the app comes to foreground
   appStateSubscription = AppState.addEventListener("change", (nextState: AppStateStatus) => {
+    logger.info(TAG, `AppState changed to: ${nextState}, syncing=${syncing}`);
     if (nextState !== "active") return;
     if (syncing) return;
 
     syncing = true;
     syncAndRecord(trpcClient)
       .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error(TAG, `sync failed: ${message}`);
         captureException(error, { source: TAG });
       })
       .finally(() => {
@@ -49,7 +56,9 @@ export async function initBackgroundWatchAccelerometerSync(
 
   // Run an initial sync immediately. The app is already active when init runs,
   // so no AppState "active" event fires until the next background → foreground cycle.
+  logger.info(TAG, "Running initial sync");
   await syncAndRecord(trpcClient);
+  logger.info(TAG, "Initial sync complete");
 }
 
 /**

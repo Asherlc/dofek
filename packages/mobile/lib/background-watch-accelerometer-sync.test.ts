@@ -38,6 +38,7 @@ const mockCaptureException = vi.fn();
 
 vi.mock("./telemetry", () => ({
   captureException: (...args: unknown[]) => mockCaptureException(...args),
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
 const { initBackgroundWatchAccelerometerSync, teardownBackgroundWatchAccelerometerSync } =
