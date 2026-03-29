@@ -114,7 +114,7 @@ describe("trendsRouter", () => {
     it("returns weekly trend rows", async () => {
       const rows = [
         {
-          week: "2024-01-15",
+          period: "2024-01-15",
           avg_hr: 150,
           max_hr: 185,
           avg_power: 210,

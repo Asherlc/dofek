@@ -32,6 +32,7 @@
     "@trpc/react-query": "11.12.0",
     "dofek-server": "workspace:*",
     "expo": "55.0.6",
+    "expo-apple-authentication": "55.0.10-canary-20260328-bdc6273",
     "expo-camera": "55.0.9",
     "expo-file-system": "55.0.11",
     "expo-location": "55.1.4",

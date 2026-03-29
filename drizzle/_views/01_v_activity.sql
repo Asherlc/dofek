@@ -1,6 +1,6 @@
 -- Canonical definition of the fitness.v_activity materialized view.
 -- This file is the single source of truth — the migration runner recreates
--- the view from this definition after every migration run.
+-- the view from this definition after every migration run (only if changed).
 --
 -- To change v_activity: edit THIS file. Do NOT add DROP/CREATE to a migration.
 -- Git merge conflicts here force developers to reconcile concurrent changes.

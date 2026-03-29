@@ -194,7 +194,7 @@ describe("Router transformation logic", () => {
       const settings = result.result.data;
       expect(settings.sport).toBe("cycling");
       expect(settings.ftp).toBe(250);
-      expect(settings.threshold_hr).toBe(165);
+      expect(settings.thresholdHr).toBe(165);
       settingsId = settings.id;
     });
 
@@ -1035,10 +1035,10 @@ describe("Router transformation logic", () => {
         asOfDate: "2025-03-15",
       });
       const settings = getResult.result.data;
-      expect(settings.threshold_hr).toBe(175);
-      expect(settings.threshold_pace_per_km).toBeCloseTo(4.5);
-      expect(settings.hr_zone_pcts).toEqual([0.6, 0.7, 0.8, 0.9, 1.0]);
-      expect(settings.pace_zone_pcts).toEqual(powerZones);
+      expect(settings.thresholdHr).toBe(175);
+      expect(settings.thresholdPacePerKm).toBeCloseTo(4.5);
+      expect(settings.hrZonePcts).toEqual([0.6, 0.7, 0.8, 0.9, 1.0]);
+      expect(settings.paceZonePcts).toEqual(powerZones);
     });
   });
 });

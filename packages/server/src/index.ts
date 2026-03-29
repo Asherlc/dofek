@@ -36,6 +36,11 @@ export function createApp(db: import("dofek/db").Database): express.Express {
 }
 
 function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
+  // ── Health check (before all middleware — no logging, no auth) ──
+  app.get("/healthz", (_req, res) => {
+    res.json({ status: "ok" });
+  });
+
   // ── Compression + Cookies ──
   app.use(compression());
   app.use(cookieParser());
