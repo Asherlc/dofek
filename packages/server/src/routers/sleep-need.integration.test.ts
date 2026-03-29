@@ -274,13 +274,18 @@ describe("sleep data consistency: multiple sessions per date", () => {
     return first?.result?.data;
   }
 
-  it("v_sleep keeps both sessions when overlap < 80% (sanity check)", async () => {
+  it("sleep.list deduplicates to one session per date (longest wins)", async () => {
     await queryCache.invalidateAll();
     const rows = await query<{ duration_minutes: number | null }[]>("sleep.list", {
       days: 14,
     });
-    // With 14 nights × 2 providers, v_sleep should have 28 rows (not deduped)
-    expect(rows.length).toBe(28);
+    // v_sleep has 28 rows (14 nights × 2 providers), but sleep.list
+    // deduplicates to one per date, picking the longest session
+    expect(rows.length).toBe(14);
+    for (const row of rows) {
+      // Each row should be the WHOOP session (480 min), not Apple Health (330 min)
+      expect(row.duration_minutes).toBe(480);
+    }
   });
 
   it("sleepNeed.calculate must pick the longest session per date, not an arbitrary one", async () => {
