@@ -46,7 +46,9 @@ export default function BleProbeScreen() {
   useEffect(() => {
     const subscription = addNotificationListener((notification: BleNotification) => {
       setNotificationCount((count) => count + 1);
-      // Only log first 20 and then every 50th to avoid flooding
+      // Stream all notifications to Metro console for analysis
+      console.log(`[BLE] #${notification.index} [${notification.suffix}] ${notification.bytes}B: ${notification.hex}`);
+      // Only show first 20 and then every 50th in the UI to avoid flooding
       const index = notification.index;
       if (index <= 20 || index % 50 === 0) {
         addLog(
@@ -57,6 +59,17 @@ export default function BleProbeScreen() {
     });
     return () => subscription.remove();
   }, [addLog]);
+
+  // === AUTO-COMMAND: edit this to send commands from the terminal ===
+  // Every time this file is saved, this runs on the phone via hot-reload.
+  // Change the command string below and save to execute it remotely.
+  useEffect(() => {
+    const autoCommand = ""; // disabled
+    if (autoCommand) {
+      console.log(`[BLE-AUTO] executing: ${autoCommand}`);
+      executeCommand(autoCommand);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const executeCommand = useCallback(
     async (input: string) => {
@@ -83,15 +96,34 @@ export default function BleProbeScreen() {
           case "whoop": {
             addLog("Checking for already-connected WHOOP straps...");
             const connected = getConnectedPeripherals(WHOOP_SERVICES);
-            for (const device of connected) {
-              addLog(`  Connected: ${device.name ?? "unnamed"} [${device.id}]`);
-            }
-            if (connected.length === 0) {
-              addLog("Scanning for WHOOP straps (5s)...");
+            if (connected.length > 0) {
+              const device = connected[0];
+              addLog(`Found: ${device.name ?? "unnamed"} [${device.id}]`);
+              addLog("Auto-connecting...");
+              const result = await connect(device.id);
+              setConnectedDevice(result.id);
+              addLog(`Connected! Discovering services...`);
+              const services = await discoverServices();
+              for (const service of services) {
+                const chars = await discoverCharacteristics(service.uuid);
+                for (const char of chars) {
+                  addLog(`  ....${char.suffix} [${char.properties}]`);
+                }
+              }
+              addLog("Subscribing to 0003 + 0005...");
+              try { await subscribe("0003"); addLog("  0003 subscribed"); } catch { addLog("  0003 failed"); }
+              try { await subscribe("0005"); addLog("  0005 subscribed"); } catch { addLog("  0005 failed"); }
+              addLog("Ready! Tap IMU Mode to send command.");
+            } else {
+              addLog("No connected straps. Scanning (5s)...");
               const results = await scan(WHOOP_SERVICES, 5);
-              addLog(`Found ${results.length} WHOOP straps:`);
-              for (const device of results) {
-                addLog(`  ${device.name ?? "unnamed"} [${device.id}] RSSI=${device.rssi}`);
+              if (results.length > 0) {
+                addLog(`Found ${results.length} — connecting to first...`);
+                const result = await connect(results[0].id);
+                setConnectedDevice(result.id);
+                addLog(`Connected to ${result.name ?? "unnamed"}`);
+              } else {
+                addLog("No WHOOP straps found. Is the WHOOP app open?");
               }
             }
             break;
@@ -161,13 +193,13 @@ export default function BleProbeScreen() {
 
           case "raw": {
             if (!args[0]) {
-              addLog("Usage: raw <hex bytes> (writes to 0002)", "error");
+              addLog("Usage: raw <hex bytes> (writes to 0002 without response)", "error");
               break;
             }
             const hex = args.join("");
-            addLog(`Writing to ....0002: ${hex}`);
-            await writeRaw("0002", hex);
-            addLog("Write succeeded");
+            addLog(`Writing to ....0002 (noResp): ${hex}`);
+            await writeRaw("0002", hex, false);
+            addLog("Write sent");
             break;
           }
 
@@ -270,21 +302,44 @@ export default function BleProbeScreen() {
       <View style={styles.quickButtons}>
         <Pressable
           style={[styles.quickButton, { backgroundColor: "#2a3a2a" }]}
-          onPress={() => executeCommand("raw aa010c000001e74123016a0101000000")}
+          onPress={() => executeCommand("raw aa010c000001e74125016a0101000000")}
         >
-          <Text style={styles.quickButtonText}>IMU Mode</Text>
+          <Text style={styles.quickButtonText}>PUFFIN IMU</Text>
         </Pressable>
         <Pressable
           style={[styles.quickButton, { backgroundColor: "#2a3a2a" }]}
-          onPress={() => executeCommand("raw aa010c000001e74123025101010000")}
+          onPress={() => executeCommand("raw aa0104006a010100")}
         >
-          <Text style={styles.quickButtonText}>Start Raw</Text>
+          <Text style={styles.quickButtonText}>IMU v2</Text>
         </Pressable>
         <Pressable
-          style={[styles.quickButton, { backgroundColor: "#3a2a2a" }]}
-          onPress={() => executeCommand("raw aa010c000001e74123035201010000")}
+          style={[styles.quickButton, { backgroundColor: "#2a3a2a" }]}
+          onPress={() => executeCommand("raw aa0102006a01")}
         >
-          <Text style={styles.quickButtonText}>Stop Raw</Text>
+          <Text style={styles.quickButtonText}>IMU v3</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.quickButton, { backgroundColor: "#2a3a2a" }]}
+          onPress={() => executeCommand("raw aa0101006a")}
+        >
+          <Text style={styles.quickButtonText}>IMU v4</Text>
+        </Pressable>
+      </View>
+      <View style={styles.quickButtons}>
+        <Pressable
+          style={[styles.quickButton, { backgroundColor: "#2a3a2a" }]}
+          onPress={() => executeCommand("raw aa010100016a")}
+        >
+          <Text style={styles.quickButtonText}>IMU v5</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.quickButton, { backgroundColor: "#2a3a2a" }]}
+          onPress={() => executeCommand("raw aa01020051016a0101000000")}
+        >
+          <Text style={styles.quickButtonText}>Start+IMU</Text>
+        </Pressable>
+        <Pressable style={styles.quickButton} onPress={() => executeCommand("status")}>
+          <Text style={styles.quickButtonText}>Status</Text>
         </Pressable>
         <Pressable style={styles.quickButton} onPress={() => executeCommand("clear")}>
           <Text style={styles.quickButtonText}>Clear</Text>
@@ -359,16 +414,17 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   quickButton: {
-    backgroundColor: colors.card,
+    backgroundColor: "#333",
     paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
+    paddingVertical: 8,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: "#555",
   },
   quickButtonText: {
-    color: colors.text,
-    fontSize: 12,
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
     fontFamily: fonts.mono,
   },
   inputContainer: {
