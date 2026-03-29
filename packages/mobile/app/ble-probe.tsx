@@ -46,7 +46,8 @@ export default function BleProbeScreen() {
   useEffect(() => {
     const subscription = addNotificationListener((notification: BleNotification) => {
       setNotificationCount((count) => count + 1);
-      // Stream all notifications to Metro console for analysis
+      // Stream to Metro console for terminal-side analysis
+      // biome-ignore lint/suspicious/noConsole: intentional debug logging for BLE RE
       console.log(`[BLE] #${notification.index} [${notification.suffix}] ${notification.bytes}B: ${notification.hex}`);
       // Only show first 20 and then every 50th in the UI to avoid flooding
       const index = notification.index;
@@ -66,10 +67,11 @@ export default function BleProbeScreen() {
   useEffect(() => {
     const autoCommand = ""; // disabled
     if (autoCommand) {
+      // biome-ignore lint/suspicious/noConsole: intentional debug logging
       console.log(`[BLE-AUTO] executing: ${autoCommand}`);
       executeCommand(autoCommand);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [executeCommand]);
 
   const executeCommand = useCallback(
     async (input: string) => {
@@ -302,9 +304,9 @@ export default function BleProbeScreen() {
       <View style={styles.quickButtons}>
         <Pressable
           style={[styles.quickButton, { backgroundColor: "#2a3a2a" }]}
-          onPress={() => executeCommand("raw aa010c000001e74125016a0101000000")}
+          onPress={() => executeCommand("raw aa010c000001e74123016a010100000081d31f98")}
         >
-          <Text style={styles.quickButtonText}>PUFFIN IMU</Text>
+          <Text style={styles.quickButtonText}>IMU+CRC</Text>
         </Pressable>
         <Pressable
           style={[styles.quickButton, { backgroundColor: "#2a3a2a" }]}
