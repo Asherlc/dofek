@@ -89,17 +89,16 @@ async function syncOnForeground(
   trpcClient: AccelerometerUploadClient,
   whoopDeps: WhoopBleSyncDeps,
 ): Promise<void> {
-  if (!whoopDeps.isBluetoothAvailable()) {
-    logger.warn(LOG_CATEGORY, "Bluetooth not available, skipping sync");
-    Sentry.addBreadcrumb({
-      category: "whoop-ble",
-      message: "Bluetooth not available, skipping sync",
-      level: "warning",
-    });
-    return;
-  }
-
-  // Connect if not already connected
+  // Connect if not already connected.
+  //
+  // Note: we skip the isBluetoothAvailable() pre-check because it suffers
+  // from a race condition on the very first call. The CBCentralManager is
+  // created lazily by ensureCentralManager(), but state starts as .unknown
+  // and transitions to .poweredOn asynchronously via a delegate callback.
+  // So the first isBluetoothAvailable() call always returns false, aborting
+  // the sync before findWhoop() can even run. Instead, we let findWhoop()
+  // handle unavailable Bluetooth by returning null (it checks state internally
+  // after the manager has had time to initialize).
   if (!connected) {
     logger.info(LOG_CATEGORY, "not connected, searching for WHOOP strap");
     const device = await whoopDeps.findWhoop();

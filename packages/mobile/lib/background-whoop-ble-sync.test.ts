@@ -150,13 +150,15 @@ describe("background-whoop-ble-sync", () => {
     });
   });
 
-  it("skips when Bluetooth is unavailable", async () => {
-    vi.mocked(whoopDeps.isBluetoothAvailable).mockReturnValue(false);
+  it("skips when findWhoop returns null (Bluetooth unavailable or no strap)", async () => {
+    vi.mocked(whoopDeps.findWhoop).mockResolvedValue(null);
 
     await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
-    await appStateCallback?.("active");
 
-    expect(whoopDeps.findWhoop).not.toHaveBeenCalled();
+    // findWhoop was called (we no longer pre-check isBluetoothAvailable)
+    expect(whoopDeps.findWhoop).toHaveBeenCalled();
+    // But connect was never called since findWhoop returned null
+    expect(whoopDeps.connect).not.toHaveBeenCalled();
   });
 
   it("skips when WHOOP not found", async () => {

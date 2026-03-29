@@ -44,6 +44,10 @@ public class WhoopBleModule: Module {
     private let bufferLock = NSLock()
     private static let maxBufferSize = 500_000 // ~100 minutes at 80 Hz
 
+    /// Pending promise waiting for CBCentralManager to reach .poweredOn state.
+    /// Only one findWhoop call can be pending at a time.
+    private var pendingFindPromise: Promise?
+
     // Pending promises for async operations
     private var findPromise: Promise?
     private var connectPromise: Promise?
@@ -75,47 +79,26 @@ public class WhoopBleModule: Module {
 
         AsyncFunction("findWhoop") { (promise: Promise) in
             let manager = self.ensureCentralManager()
-            guard manager.state == .poweredOn else {
-                NSLog("[WhoopBLE] findWhoop: Bluetooth not poweredOn (state=%ld), resolving nil", manager.state.rawValue)
-                promise.resolve(nil)
-                return
-            }
 
+            // If the manager is already powered on, search immediately.
+            // Otherwise, wait up to 3 seconds for it to reach .poweredOn.
+            // This handles the first-call race: CBCentralManager starts in
+            // .unknown state and transitions to .poweredOn asynchronously
+            // via the delegate callback. The original guard returned nil
+            // immediately, which always aborted the first findWhoop() call.
             self.bleQueue.async {
-                NSLog("[WhoopBLE] findWhoop: checking already-connected peripherals")
-                // First, check for already-connected peripherals (fast path)
-                for serviceUUID in WhoopBleConstants.allServiceUUIDs {
-                    let connected = manager.retrieveConnectedPeripherals(
-                        withServices: [serviceUUID]
-                    )
-                    if let peripheral = connected.first {
-                        NSLog("[WhoopBLE] findWhoop: found connected peripheral %@ (%@)", peripheral.identifier.uuidString, peripheral.name ?? "unnamed")
-                        let result: [String: Any?] = [
-                            "id": peripheral.identifier.uuidString,
-                            "name": peripheral.name,
-                        ]
-                        promise.resolve(result)
-                        return
-                    }
-                }
-
-                // Fallback: scan for 5 seconds
-                NSLog("[WhoopBLE] findWhoop: no connected peripheral found, scanning for 5s")
-                self.findPromise = promise
-                self.state = .scanning
-                manager.scanForPeripherals(
-                    withServices: WhoopBleConstants.allServiceUUIDs,
-                    options: nil
-                )
-
-                // Timeout after 5 seconds
-                self.bleQueue.asyncAfter(deadline: .now() + 5) {
-                    if self.state == .scanning {
-                        NSLog("[WhoopBLE] findWhoop: scan timed out, no WHOOP found")
-                        manager.stopScan()
-                        self.state = .idle
-                        self.findPromise?.resolve(nil)
-                        self.findPromise = nil
+                if manager.state == .poweredOn {
+                    NSLog("[WhoopBLE] findWhoop: Bluetooth poweredOn, searching immediately")
+                    self.performFindWhoop(manager: manager, promise: promise)
+                } else {
+                    NSLog("[WhoopBLE] findWhoop: Bluetooth not ready (state=%ld), waiting for poweredOn", manager.state.rawValue)
+                    self.pendingFindPromise = promise
+                    // Timeout — don't wait forever for Bluetooth
+                    self.bleQueue.asyncAfter(deadline: .now() + 3) {
+                        guard let pending = self.pendingFindPromise else { return }
+                        NSLog("[WhoopBLE] findWhoop: timed out waiting for poweredOn (state=%ld)", manager.state.rawValue)
+                        self.pendingFindPromise = nil
+                        pending.resolve(nil)
                     }
                 }
             }
@@ -288,6 +271,15 @@ public class WhoopBleModule: Module {
     // MARK: - Internal handlers (called by delegate)
 
     func handleCentralManagerPoweredOn() {
+        NSLog("[WhoopBLE] centralManager poweredOn")
+
+        // Resolve any pending findWhoop call that was waiting for .poweredOn
+        if let pending = pendingFindPromise, let manager = centralManager {
+            NSLog("[WhoopBLE] resolving pending findWhoop after poweredOn")
+            pendingFindPromise = nil
+            performFindWhoop(manager: manager, promise: pending)
+        }
+
         // If we have a restored peripheral waiting to reconnect
         if let peripheral = connectedPeripheral, state == .idle {
             if peripheral.state == .connected {
@@ -300,6 +292,46 @@ public class WhoopBleModule: Module {
                 // on a disconnected peripheral (which silently fails).
                 state = .connecting
                 centralManager?.connect(peripheral, options: nil)
+            }
+        }
+    }
+
+    /// Perform the actual WHOOP strap search (called after manager is .poweredOn).
+    private func performFindWhoop(manager: CBCentralManager, promise: Promise) {
+        NSLog("[WhoopBLE] performFindWhoop: checking already-connected peripherals")
+        // First, check for already-connected peripherals (fast path)
+        for serviceUUID in WhoopBleConstants.allServiceUUIDs {
+            let connected = manager.retrieveConnectedPeripherals(
+                withServices: [serviceUUID]
+            )
+            if let peripheral = connected.first {
+                NSLog("[WhoopBLE] performFindWhoop: found connected peripheral %@ (%@)", peripheral.identifier.uuidString, peripheral.name ?? "unnamed")
+                let result: [String: Any?] = [
+                    "id": peripheral.identifier.uuidString,
+                    "name": peripheral.name,
+                ]
+                promise.resolve(result)
+                return
+            }
+        }
+
+        // Fallback: scan for 5 seconds
+        NSLog("[WhoopBLE] performFindWhoop: no connected peripheral found, scanning for 5s")
+        self.findPromise = promise
+        self.state = .scanning
+        manager.scanForPeripherals(
+            withServices: WhoopBleConstants.allServiceUUIDs,
+            options: nil
+        )
+
+        // Timeout after 5 seconds
+        self.bleQueue.asyncAfter(deadline: .now() + 5) {
+            if self.state == .scanning {
+                NSLog("[WhoopBLE] performFindWhoop: scan timed out, no WHOOP found")
+                manager.stopScan()
+                self.state = .idle
+                self.findPromise?.resolve(nil)
+                self.findPromise = nil
             }
         }
     }
