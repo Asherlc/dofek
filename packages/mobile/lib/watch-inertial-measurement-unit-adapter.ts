@@ -26,10 +26,7 @@ export function createWatchInertialMeasurementUnitAdapter(): InertialMeasurement
       return paired && installed;
     },
 
-    async queryRecordedData(
-      _fromDate: string,
-      _toDate: string,
-    ) {
+    async queryRecordedData(_fromDate: string, _toDate: string) {
       // Watch transfers entire files — we return all pending samples.
       // Date filtering is not needed because the Watch only sends
       // samples newer than the last acknowledged sync.

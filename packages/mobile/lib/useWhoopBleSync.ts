@@ -1,6 +1,6 @@
 import * as Sentry from "@sentry/react-native";
 import { useEffect } from "react";
-import type { AccelerometerUploadClient } from "./accelerometer-service";
+import type { InertialMeasurementUnitUploadClient } from "./inertial-measurement-unit-service";
 import {
   initBackgroundWhoopBleSync,
   teardownBackgroundWhoopBleSync,
@@ -18,7 +18,7 @@ import { trpc } from "./trpc";
  * Must be rendered inside a tRPC provider.
  */
 export function useWhoopBleSync(
-  uploadClient: AccelerometerUploadClient,
+  uploadClient: InertialMeasurementUnitUploadClient,
   whoopDeps: WhoopBleSyncDeps,
 ): void {
   const whoopImuSetting = trpc.settings.get.useQuery({ key: "whoopAlwaysOnImu" });

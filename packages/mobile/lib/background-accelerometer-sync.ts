@@ -10,8 +10,8 @@ import {
   startRecording,
 } from "../modules/core-motion";
 import {
-  syncInertialMeasurementUnitToServer,
   type InertialMeasurementUnitSyncTrpcClient,
+  syncInertialMeasurementUnitToServer,
 } from "./inertial-measurement-unit-sync";
 import { captureException } from "./telemetry";
 

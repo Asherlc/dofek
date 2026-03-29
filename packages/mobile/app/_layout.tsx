@@ -53,9 +53,7 @@ function WhoopBleSyncManager({ trpcClient }: { trpcClient: ReturnType<typeof trp
       inertialMeasurementUnitSync: {
         pushSamples: {
           mutate: (
-            input: Parameters<
-              typeof trpcClient.inertialMeasurementUnitSync.pushSamples.mutate
-            >[0],
+            input: Parameters<typeof trpcClient.inertialMeasurementUnitSync.pushSamples.mutate>[0],
           ) => trpcClient.inertialMeasurementUnitSync.pushSamples.mutate(input),
         },
       },
@@ -135,9 +133,7 @@ function AuthGate() {
       inertialMeasurementUnitSync: {
         pushSamples: {
           mutate: (
-            input: Parameters<
-              typeof trpcClient.inertialMeasurementUnitSync.pushSamples.mutate
-            >[0],
+            input: Parameters<typeof trpcClient.inertialMeasurementUnitSync.pushSamples.mutate>[0],
           ) => trpcClient.inertialMeasurementUnitSync.pushSamples.mutate(input),
         },
       },

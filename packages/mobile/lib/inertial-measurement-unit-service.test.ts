@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  createInertialMeasurementUnitService,
   type InertialMeasurementUnitService,
   type InertialMeasurementUnitServiceDeps,
-  createInertialMeasurementUnitService,
 } from "./inertial-measurement-unit-service.ts";
 
 function makeMockWhoopBle() {
@@ -105,9 +105,7 @@ describe("InertialMeasurementUnitService", () => {
       await service.syncForTimeRange(startedAt, endedAt);
 
       expect(deps.coreMotion.queryRecordedData).toHaveBeenCalledWith(startedAt, endedAt);
-      expect(
-        deps.trpcClient.inertialMeasurementUnitSync.pushSamples.mutate,
-      ).toHaveBeenCalledWith({
+      expect(deps.trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith({
         deviceId: "iPhone 15 Pro",
         deviceType: "iphone",
         samples,
@@ -120,9 +118,7 @@ describe("InertialMeasurementUnitService", () => {
 
       await service.syncForTimeRange(startedAt, endedAt);
 
-      expect(
-        deps.trpcClient.inertialMeasurementUnitSync.pushSamples.mutate,
-      ).toHaveBeenCalledWith({
+      expect(deps.trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith({
         deviceId: "Apple Watch",
         deviceType: "apple_watch",
         samples: watchSamples,
@@ -136,9 +132,7 @@ describe("InertialMeasurementUnitService", () => {
 
       await service.syncForTimeRange(startedAt, endedAt);
 
-      expect(
-        deps.trpcClient.inertialMeasurementUnitSync.pushSamples.mutate,
-      ).not.toHaveBeenCalled();
+      expect(deps.trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).not.toHaveBeenCalled();
     });
 
     it("skips CoreMotion query when unavailable", async () => {
@@ -166,9 +160,9 @@ describe("InertialMeasurementUnitService", () => {
     it("does not throw when upload fails", async () => {
       const samples = [{ timestamp: "2026-03-25T08:00:00.100Z", x: 0.01, y: -0.98, z: 0.04 }];
       vi.mocked(deps.coreMotion.queryRecordedData).mockResolvedValue(samples);
-      vi.mocked(
-        deps.trpcClient.inertialMeasurementUnitSync.pushSamples.mutate,
-      ).mockRejectedValue(new Error("Upload failed"));
+      vi.mocked(deps.trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).mockRejectedValue(
+        new Error("Upload failed"),
+      );
 
       await expect(service.syncForTimeRange(startedAt, endedAt)).resolves.toBeUndefined();
     });
@@ -176,9 +170,9 @@ describe("InertialMeasurementUnitService", () => {
     it("does not acknowledge Watch samples when upload fails", async () => {
       const watchSamples = [{ timestamp: "2026-03-25T08:00:00.100Z", x: 0.1, y: -0.9, z: 0.0 }];
       vi.mocked(deps.watch.getPendingSamples).mockResolvedValue(watchSamples);
-      vi.mocked(
-        deps.trpcClient.inertialMeasurementUnitSync.pushSamples.mutate,
-      ).mockRejectedValue(new Error("Upload failed"));
+      vi.mocked(deps.trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).mockRejectedValue(
+        new Error("Upload failed"),
+      );
 
       await service.syncForTimeRange(startedAt, endedAt);
 
@@ -197,8 +191,8 @@ describe("InertialMeasurementUnitService", () => {
       await service.syncForTimeRange(startedAt, endedAt);
 
       // 12000 samples / 5000 batch = 3 calls for phone data
-      const calls = vi.mocked(deps.trpcClient.inertialMeasurementUnitSync.pushSamples.mutate)
-        .mock.calls;
+      const calls = vi.mocked(deps.trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).mock
+        .calls;
       const phoneCalls = calls.filter(
         (call: Array<{ deviceType: string }>) => call[0].deviceType === "iphone",
       );
@@ -259,8 +253,8 @@ describe("InertialMeasurementUnitService", () => {
 
       await service.syncForTimeRange(startedAt, endedAt);
 
-      const calls = vi.mocked(deps.trpcClient.inertialMeasurementUnitSync.pushSamples.mutate)
-        .mock.calls;
+      const calls = vi.mocked(deps.trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).mock
+        .calls;
       const whoopCalls = calls.filter(
         (call: Array<{ deviceType: string }>) => call[0].deviceType === "whoop",
       );
@@ -282,8 +276,8 @@ describe("InertialMeasurementUnitService", () => {
 
       await service.syncForTimeRange(startedAt, endedAt);
 
-      const calls = vi.mocked(deps.trpcClient.inertialMeasurementUnitSync.pushSamples.mutate)
-        .mock.calls;
+      const calls = vi.mocked(deps.trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).mock
+        .calls;
       const whoopCalls = calls.filter(
         (call: Array<{ deviceType: string }>) => call[0].deviceType === "whoop",
       );

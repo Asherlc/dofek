@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AccelerometerSample } from "../modules/core-motion";
+import type { InertialMeasurementUnitSample } from "../modules/core-motion";
 
 const mockGetPendingWatchFileNames = vi.fn((): string[] => []);
-const mockReadWatchFile = vi.fn((): Promise<AccelerometerSample[]> => Promise.resolve([]));
+const mockReadWatchFile = vi.fn((): Promise<InertialMeasurementUnitSample[]> => Promise.resolve([]));
 const mockDeleteWatchFile = vi.fn();
 const mockRequestWatchRecording = vi.fn(() => Promise.resolve(true));
 
@@ -20,10 +20,10 @@ vi.mock("./telemetry", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-import type { AccelerometerSyncTrpcClient } from "./accelerometer-sync.ts";
+import type { InertialMeasurementUnitSyncTrpcClient } from "./inertial-measurement-unit-sync.ts";
 import { syncWatchAccelerometerFiles } from "./watch-file-sync.ts";
 
-function makeSamples(count: number): AccelerometerSample[] {
+function makeSamples(count: number): InertialMeasurementUnitSample[] {
   return Array.from({ length: count }, (_, index) => ({
     timestamp: new Date(Date.now() - (count - index) * 20).toISOString(),
     x: Math.random() * 2 - 1,
@@ -32,10 +32,10 @@ function makeSamples(count: number): AccelerometerSample[] {
   }));
 }
 
-function makeTrpcClient(): AccelerometerSyncTrpcClient {
+function makeTrpcClient(): InertialMeasurementUnitSyncTrpcClient {
   return {
-    accelerometerSync: {
-      pushAccelerometerSamples: {
+    inertialMeasurementUnitSync: {
+      pushSamples: {
         mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
       },
     },
@@ -43,7 +43,7 @@ function makeTrpcClient(): AccelerometerSyncTrpcClient {
 }
 
 describe("syncWatchAccelerometerFiles", () => {
-  let trpcClient: AccelerometerSyncTrpcClient;
+  let trpcClient: InertialMeasurementUnitSyncTrpcClient;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -56,14 +56,14 @@ describe("syncWatchAccelerometerFiles", () => {
     const result = await syncWatchAccelerometerFiles(trpcClient);
 
     expect(result).toEqual({ totalInserted: 0, filesProcessed: 0, filesFailed: 0 });
-    expect(trpcClient.accelerometerSync.pushAccelerometerSamples.mutate).not.toHaveBeenCalled();
+    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).not.toHaveBeenCalled();
   });
 
   it("processes a single file and deletes it on success", async () => {
     const samples = makeSamples(100);
     mockGetPendingWatchFileNames.mockReturnValue(["watch-accel-001.json.gz"]);
     mockReadWatchFile.mockResolvedValue(samples);
-    vi.mocked(trpcClient.accelerometerSync.pushAccelerometerSamples.mutate).mockResolvedValue({
+    vi.mocked(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).mockResolvedValue({
       inserted: 100,
     });
 
@@ -80,7 +80,7 @@ describe("syncWatchAccelerometerFiles", () => {
     const samples2 = makeSamples(75);
     mockGetPendingWatchFileNames.mockReturnValue(["file-a.json.gz", "file-b.json.gz"]);
     mockReadWatchFile.mockResolvedValueOnce(samples1).mockResolvedValueOnce(samples2);
-    vi.mocked(trpcClient.accelerometerSync.pushAccelerometerSamples.mutate)
+    vi.mocked(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate)
       .mockResolvedValueOnce({ inserted: 50 })
       .mockResolvedValueOnce({ inserted: 75 });
 
@@ -99,7 +99,7 @@ describe("syncWatchAccelerometerFiles", () => {
     mockReadWatchFile
       .mockRejectedValueOnce(new Error("PARSE_ERROR: corrupt file"))
       .mockResolvedValueOnce(goodSamples);
-    vi.mocked(trpcClient.accelerometerSync.pushAccelerometerSamples.mutate).mockResolvedValue({
+    vi.mocked(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).mockResolvedValue({
       inserted: 50,
     });
 
@@ -119,7 +119,7 @@ describe("syncWatchAccelerometerFiles", () => {
     const samples2 = makeSamples(30);
     mockGetPendingWatchFileNames.mockReturnValue(["fail-upload.json.gz", "ok-upload.json.gz"]);
     mockReadWatchFile.mockResolvedValueOnce(samples1).mockResolvedValueOnce(samples2);
-    vi.mocked(trpcClient.accelerometerSync.pushAccelerometerSamples.mutate)
+    vi.mocked(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate)
       .mockRejectedValueOnce(new Error("Server error 500"))
       .mockResolvedValueOnce({ inserted: 30 });
 
@@ -144,20 +144,20 @@ describe("syncWatchAccelerometerFiles", () => {
     expect(result.filesProcessed).toBe(1);
     expect(result.filesFailed).toBe(0);
     expect(mockDeleteWatchFile).toHaveBeenCalledWith("empty-file.json.gz");
-    expect(trpcClient.accelerometerSync.pushAccelerometerSamples.mutate).not.toHaveBeenCalled();
+    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).not.toHaveBeenCalled();
   });
 
   it("uploads samples in batches of 5000", async () => {
     const samples = makeSamples(7500);
     mockGetPendingWatchFileNames.mockReturnValue(["big-file.json.gz"]);
     mockReadWatchFile.mockResolvedValue(samples);
-    vi.mocked(trpcClient.accelerometerSync.pushAccelerometerSamples.mutate).mockResolvedValue({
+    vi.mocked(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).mockResolvedValue({
       inserted: 5000,
     });
 
     await syncWatchAccelerometerFiles(trpcClient);
 
-    const mutate = trpcClient.accelerometerSync.pushAccelerometerSamples.mutate;
+    const mutate = trpcClient.inertialMeasurementUnitSync.pushSamples.mutate;
     expect(mutate).toHaveBeenCalledTimes(2);
     const firstBatch = vi.mocked(mutate).mock.calls[0][0];
     expect(firstBatch.samples).toHaveLength(5000);
@@ -183,7 +183,7 @@ describe("syncWatchAccelerometerFiles", () => {
     const samples = makeSamples(7500);
     mockGetPendingWatchFileNames.mockReturnValue(["partial-fail.json.gz"]);
     mockReadWatchFile.mockResolvedValue(samples);
-    vi.mocked(trpcClient.accelerometerSync.pushAccelerometerSamples.mutate)
+    vi.mocked(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate)
       .mockResolvedValueOnce({ inserted: 5000 })
       .mockRejectedValueOnce(new Error("Timeout on batch 2"));
 

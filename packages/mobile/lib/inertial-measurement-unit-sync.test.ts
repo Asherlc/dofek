@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type { InertialMeasurementUnitSample } from "../modules/core-motion";
 import {
-  syncInertialMeasurementUnitToServer,
-  type InertialMeasurementUnitSyncTrpcClient,
   type InertialMeasurementUnitAdapter,
+  type InertialMeasurementUnitSyncTrpcClient,
+  syncInertialMeasurementUnitToServer,
 } from "./inertial-measurement-unit-sync";
 
 function makeAdapter(

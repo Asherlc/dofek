@@ -1,11 +1,11 @@
 import { AppState } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { InertialMeasurementUnitUploadClient } from "./inertial-measurement-unit-service.ts";
 import {
   initBackgroundWhoopBleSync,
   teardownBackgroundWhoopBleSync,
   type WhoopBleSyncDeps,
 } from "./background-whoop-ble-sync.ts";
+import type { InertialMeasurementUnitUploadClient } from "./inertial-measurement-unit-service.ts";
 
 function makeMockDeps(): WhoopBleSyncDeps {
   return {
