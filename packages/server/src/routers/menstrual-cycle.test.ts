@@ -101,6 +101,31 @@ describe("menstrualCycleRouter", () => {
       expect(result[0]?.startDate).toBe("2026-01-15");
       expect(result[1]?.startDate).toBe("2026-02-12");
     });
+
+    it("uses default months (6) when not specified", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+      const result = await caller.history({});
+      expect(result).toEqual([]);
+    });
+
+    it("rejects months below 1", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+      await expect(caller.history({ months: 0 })).rejects.toThrow();
+    });
+
+    it("rejects months above 24", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+      await expect(caller.history({ months: 25 })).rejects.toThrow();
+    });
   });
 
   describe("logPeriod", () => {
