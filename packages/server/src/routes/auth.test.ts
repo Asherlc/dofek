@@ -961,11 +961,7 @@ describe("createAuthRouter", () => {
       const { app } = createTestApp();
 
       // Start login flow with redirect_scheme to populate server-side state
-      const loginRes = await request(
-        app,
-        "get",
-        "/auth/login/apple?redirect_scheme=dofek",
-      );
+      const loginRes = await request(app, "get", "/auth/login/apple?redirect_scheme=dofek");
       expect(loginRes.status).toBe(302);
 
       // POST callback — mobileScheme should come from server-side state
@@ -999,11 +995,7 @@ describe("createAuthRouter", () => {
       const { app } = createTestApp();
 
       // Start login flow with return_to
-      const loginRes = await request(
-        app,
-        "get",
-        "/auth/login/apple?return_to=%2Fdashboard",
-      );
+      const loginRes = await request(app, "get", "/auth/login/apple?return_to=%2Fdashboard");
       expect(loginRes.status).toBe(302);
 
       // POST callback — returnTo should come from server-side state
