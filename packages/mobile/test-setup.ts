@@ -16,6 +16,19 @@ console.error = (...args: unknown[]) => {
   originalError.call(console, ...args);
 };
 
+// ── Sentry React Native mock ─────────────────────────────────────────
+// @sentry/react-native internally requires react-native/Libraries/Promise
+// (a sub-path not covered by the react-native mock below). Mocking
+// the whole package avoids loading real react-native internals.
+vi.mock("@sentry/react-native", () => ({
+  init: vi.fn(),
+  captureException: vi.fn(),
+  addBreadcrumb: vi.fn(),
+  withScope: vi.fn(),
+  setTag: vi.fn(),
+  setExtra: vi.fn(),
+}));
+
 // ── React Native mock ────────────────────────────────────────────────
 // react-native uses Flow syntax that Vitest can't parse. Provide minimal
 // component implementations backed by plain React elements.
@@ -29,12 +42,17 @@ vi.mock("react-native", () => {
     if (Array.isArray(style)) {
       return Object.assign({}, ...style.map(flattenStyle));
     }
-    return style as Record<string, unknown>;
+    if (typeof style === "object" && !Array.isArray(style)) return style;
+    return undefined;
+  }
+
+  function el(tag: string, props: Record<string, unknown>, children?: unknown) {
+    return React.createElement(tag, props, ...(children != null ? [children] : []));
   }
 
   function createMockComponent(name: string) {
     const component = ({ children, style, ...props }: Record<string, unknown>) =>
-      React.createElement(name, { ...props, style: flattenStyle(style) }, children as ReactNode);
+      el(name, { ...props, style: flattenStyle(style) }, children);
     component.displayName = name;
     return component;
   }
@@ -62,7 +80,7 @@ vi.mock("react-native", () => {
         style: flattenStyle(style),
         type: "button",
       },
-      children as ReactNode,
+      children,
     );
   Pressable.displayName = "Pressable";
   const TextInput = createMockComponent("TextInput");
@@ -77,16 +95,11 @@ vi.mock("react-native", () => {
     });
   ActivityIndicator.displayName = "ActivityIndicator";
 
-  const TouchableOpacity = ({
-    children,
-    onPress,
-    style,
-    ...props
-  }: Record<string, unknown>) =>
-    React.createElement(
+  const TouchableOpacity = ({ children, onPress, style, ...props }: Record<string, unknown>) =>
+    el(
       "button",
       { ...props, onClick: onPress, style: flattenStyle(style), type: "button" },
-      children as ReactNode,
+      children,
     );
   TouchableOpacity.displayName = "TouchableOpacity";
 
@@ -96,10 +109,8 @@ vi.mock("react-native", () => {
     const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(styles)) {
       if (typeof value === "object" && value !== null && !Array.isArray(value)) {
-        result[key] = sanitizeStyles(value as Record<string, unknown>);
+        result[key] = sanitizeStyles(Object.fromEntries(Object.entries(value)));
       } else if (Array.isArray(value)) {
-        // RN arrays like fontVariant: ["tabular-nums"] → skip
-        continue;
       } else {
         result[key] = value;
       }
@@ -108,10 +119,16 @@ vi.mock("react-native", () => {
   }
 
   const StyleSheet = {
-    create: <T extends Record<string, Record<string, unknown>>>(styles: T): T =>
-      Object.fromEntries(
-        Object.entries(styles).map(([k, v]) => [k, sanitizeStyles(v)]),
-      ) as T,
+    create: <T extends Record<string, Record<string, unknown>>>(styles: T): T => {
+      for (const key of Object.keys(styles)) {
+        const sanitized = sanitizeStyles(styles[key]);
+        for (const prop of Object.keys(styles[key])) {
+          delete styles[key][prop];
+        }
+        Object.assign(styles[key], sanitized);
+      }
+      return styles;
+    },
     flatten: (style: unknown) => style,
   };
 
@@ -124,12 +141,7 @@ vi.mock("react-native", () => {
 
   const RefreshControl = createMockComponent("RefreshControl");
 
-  const Switch = ({
-    value,
-    onValueChange,
-    disabled,
-    ...props
-  }: Record<string, unknown>) =>
+  const Switch = ({ value, onValueChange, disabled, ...props }: Record<string, unknown>) =>
     React.createElement("input", {
       ...props,
       type: "checkbox",
@@ -142,7 +154,7 @@ vi.mock("react-native", () => {
   Switch.displayName = "Switch";
 
   const AppState = {
-    currentState: "active" as string,
+    currentState: String("active"),
     addEventListener: vi.fn(() => ({ remove: vi.fn() })),
     removeEventListener: vi.fn(),
   };
@@ -174,7 +186,7 @@ vi.mock("react-native-svg", () => {
 
   function svgComponent(name: string) {
     const component = ({ children, ...props }: Record<string, unknown>) =>
-      React.createElement(name, props, children as ReactNode);
+      React.createElement(name, props, ...(children != null ? [children] : []));
     component.displayName = name;
     return component;
   }
@@ -202,7 +214,7 @@ vi.mock("react-native-safe-area-context", () => {
   return {
     SafeAreaProvider: ({ children }: { children: ReactNode }) => children,
     SafeAreaView: ({ children, ...props }: Record<string, unknown>) =>
-      React.createElement("SafeAreaView", props, children as ReactNode),
+      React.createElement("SafeAreaView", props, ...(children != null ? [children] : [])),
     useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
   };
 });
@@ -233,12 +245,9 @@ vi.mock("expo-router", () => ({
   }),
   useLocalSearchParams: () => ({}),
   useGlobalSearchParams: () => ({}),
-  Stack: ({ children }: { children: ReactNode }) =>
-    createElement("Stack", null, children),
-  Tabs: ({ children }: { children: ReactNode }) =>
-    createElement("Tabs", null, children),
-  Link: ({ children }: { children: ReactNode }) =>
-    createElement("Link", null, children),
+  Stack: ({ children }: { children: ReactNode }) => createElement("Stack", null, children),
+  Tabs: ({ children }: { children: ReactNode }) => createElement("Tabs", null, children),
+  Link: ({ children }: { children: ReactNode }) => createElement("Link", null, children),
 }));
 
 vi.mock("expo-camera", () => ({

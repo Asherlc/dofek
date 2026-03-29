@@ -1,10 +1,19 @@
-import { useState, useMemo, useCallback } from "react";
-import { LayoutAnimation, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import { formatDateYmd, formatNumber, formatSigned } from "@dofek/format/format";
+import { statusColors } from "@dofek/scoring/colors";
+import { useCallback, useMemo, useState } from "react";
+import {
+  LayoutAnimation,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import { trpc } from "../lib/trpc";
 import { useRefresh } from "../lib/useRefresh";
 import { colors } from "../theme";
-import { statusColors } from "@dofek/scoring/colors";
 
 // ── Types ──
 
@@ -54,11 +63,24 @@ const CATEGORY_EMOJIS: Record<string, string> = {
 // ── Helpers ──
 
 function categorize(metric: string): string {
-  const m = metric.toLowerCase();
-  if (m.includes("hr") || m.includes("hrv")) return "Recovery";
-  if (m.includes("sleep") || m.includes("deep") || m.includes("rem") || m.includes("efficiency")) return "Sleep";
-  if (m.includes("weight") || m.includes("body") || m.includes("bmi")) return "Body";
-  if (m.includes("step") || m.includes("energy") || m.includes("vo2") || m.includes("power")) return "Performance";
+  const lowerMetric = metric.toLowerCase();
+  if (lowerMetric.includes("hr") || lowerMetric.includes("hrv")) return "Recovery";
+  if (
+    lowerMetric.includes("sleep") ||
+    lowerMetric.includes("deep") ||
+    lowerMetric.includes("rem") ||
+    lowerMetric.includes("efficiency")
+  )
+    return "Sleep";
+  if (lowerMetric.includes("weight") || lowerMetric.includes("body") || lowerMetric.includes("bmi"))
+    return "Body";
+  if (
+    lowerMetric.includes("step") ||
+    lowerMetric.includes("energy") ||
+    lowerMetric.includes("vo2") ||
+    lowerMetric.includes("power")
+  )
+    return "Performance";
   return "Other";
 }
 
@@ -117,12 +139,15 @@ function ConfidenceFilterRow({
 function EffectSizeBar({ effectSize }: { effectSize: number }) {
   const absEffect = Math.min(Math.abs(effectSize), 2);
   const fillPercent = (absEffect / 2) * 100;
-  const barColor = absEffect >= 0.8 ? statusColors.positive : absEffect >= 0.5 ? statusColors.warning : "#636366";
+  const barColor =
+    absEffect >= 0.8 ? statusColors.positive : absEffect >= 0.5 ? statusColors.warning : "#636366";
 
   return (
     <View style={styles.effectBarContainer}>
       <View style={styles.effectBarTrack}>
-        <View style={[styles.effectBarFill, { width: `${fillPercent}%`, backgroundColor: barColor }]} />
+        <View
+          style={[styles.effectBarFill, { width: `${fillPercent}%`, backgroundColor: barColor }]}
+        />
       </View>
       <Text style={styles.effectBarLabel}>{formatNumber(Math.abs(effectSize), 2)}</Text>
     </View>
@@ -239,7 +264,17 @@ export default function InsightsScreen() {
   const { refreshing, onRefresh } = useRefresh();
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={[styles.content, isWide && styles.contentWide]} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={[styles.content, isWide && styles.contentWide]}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={colors.textSecondary}
+        />
+      }
+    >
       {/* Days selector */}
       <Text style={styles.sectionLabel}>Time Range</Text>
       <DaySelector days={days} onChange={setDays} />
@@ -296,9 +331,7 @@ export default function InsightsScreen() {
               </View>
             </TouchableOpacity>
             {!isCollapsed &&
-              categoryInsights.map((insight) => (
-                <InsightCard key={insight.id} insight={insight} />
-              ))}
+              categoryInsights.map((insight) => <InsightCard key={insight.id} insight={insight} />)}
           </View>
         );
       })}

@@ -2,11 +2,11 @@ import { DEFAULT_PARAMS, getEffectiveParams } from "dofek/personalization/params
 import { refitAllParams } from "dofek/personalization/refit";
 import { loadPersonalizedParams, SETTINGS_KEY } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
-import { CacheTTL, cachedProtectedQueryLight, protectedProcedure, router } from "../trpc.ts";
+import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
 export const personalizationRouter = router({
   /** Current personalization status: learned params, effective params, and quality indicators */
-  status: cachedProtectedQueryLight(CacheTTL.MEDIUM).query(async ({ ctx }) => {
+  status: cachedProtectedQuery(CacheTTL.MEDIUM).query(async ({ ctx }) => {
     const stored = await loadPersonalizedParams(ctx.db, ctx.userId);
     const effective = getEffectiveParams(stored);
 

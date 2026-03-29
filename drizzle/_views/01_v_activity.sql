@@ -1,6 +1,9 @@
 -- Canonical definition of the fitness.v_activity materialized view.
 -- This file is the single source of truth — the migration runner recreates
 -- the view from this definition after every migration run (only if changed).
+--
+-- To change v_activity: edit THIS file. Do NOT add DROP/CREATE to a migration.
+-- Git merge conflicts here force developers to reconcile concurrent changes.
 
 CREATE MATERIALIZED VIEW fitness.v_activity AS
 WITH RECURSIVE ranked AS (
@@ -81,6 +84,9 @@ merged AS (
     (SELECT r.notes FROM final_groups fg2 JOIN ranked r ON r.id = fg2.activity_id
      WHERE fg2.group_id = b.group_id AND r.notes IS NOT NULL
      ORDER BY r.prio ASC LIMIT 1) AS notes,
+    (SELECT r.timezone FROM final_groups fg2 JOIN ranked r ON r.id = fg2.activity_id
+     WHERE fg2.group_id = b.group_id AND r.timezone IS NOT NULL
+     ORDER BY r.prio ASC LIMIT 1) AS timezone,
     (SELECT jsonb_object_agg(key, value)
      FROM (
        SELECT key, value, ROW_NUMBER() OVER (PARTITION BY key ORDER BY r.prio ASC) AS rn
@@ -92,7 +98,16 @@ merged AS (
     ) AS raw,
     (SELECT array_agg(DISTINCT r.provider_id ORDER BY r.provider_id)
      FROM final_groups fg2 JOIN ranked r ON r.id = fg2.activity_id
-     WHERE fg2.group_id = b.group_id) AS source_providers
+     WHERE fg2.group_id = b.group_id) AS source_providers,
+    (SELECT jsonb_agg(
+       jsonb_build_object('providerId', r.provider_id, 'externalId', r.external_id)
+       ORDER BY r.provider_id
+     )
+     FROM final_groups fg2 JOIN ranked r ON r.id = fg2.activity_id
+     WHERE fg2.group_id = b.group_id
+       AND r.external_id IS NOT NULL
+       AND r.external_id <> ''
+    ) AS source_external_ids
   FROM best_per_group b
 )
 SELECT
@@ -106,13 +121,21 @@ SELECT
   m.source_name,
   m.name,
   m.notes,
+  m.timezone,
   m.raw,
-  m.source_providers
+  m.source_providers,
+  m.source_external_ids
 FROM merged m
 ORDER BY m.started_at DESC;
 
 --> statement-breakpoint
 
-CREATE UNIQUE INDEX v_activity_id_idx ON fitness.v_activity (id);
-CREATE INDEX v_activity_time_idx ON fitness.v_activity (started_at DESC);
-CREATE INDEX v_activity_user_time_idx ON fitness.v_activity (user_id, started_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS v_activity_id_idx ON fitness.v_activity (id);
+
+--> statement-breakpoint
+
+CREATE INDEX IF NOT EXISTS v_activity_time_idx ON fitness.v_activity (started_at DESC);
+
+--> statement-breakpoint
+
+CREATE INDEX IF NOT EXISTS v_activity_user_time_idx ON fitness.v_activity (user_id, started_at DESC);

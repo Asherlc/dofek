@@ -36,6 +36,10 @@ export class ZwiftProvider implements SyncProvider {
     return null;
   }
 
+  activityUrl(externalId: string): string {
+    return `https://www.zwift.com/activity/${externalId}`;
+  }
+
   authSetup(): ProviderAuthSetup {
     const fetchFn = this.#fetchFn;
     return {
