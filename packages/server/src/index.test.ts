@@ -129,6 +129,15 @@ describe("createApp HTTP routes", () => {
     await close();
   });
 
+  describe("GET /healthz", () => {
+    it("returns 200 with status ok", async () => {
+      const res = await fetch(`${baseUrl}/healthz`);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body).toEqual({ status: "ok" });
+    });
+  });
+
   describe("GET /metrics", () => {
     it("returns 200 with metrics content type", async () => {
       const res = await fetch(`${baseUrl}/metrics`);
