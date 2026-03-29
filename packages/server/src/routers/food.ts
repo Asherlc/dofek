@@ -1,14 +1,8 @@
-import {
-  NUTRIENT_COLUMN_MAP,
-  NUTRIENT_SQL_COLUMNS,
-  nutrientFieldsSchema,
-  nutrientRowSchema,
-} from "dofek/db/nutrient-columns";
-import { sql } from "drizzle-orm";
+import { nutrientFieldsSchema } from "dofek/db/nutrient-columns";
 import { z } from "zod";
 import { analyzeNutrition } from "../lib/ai-nutrition.ts";
-import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
+import { FoodRepository } from "../repositories/food-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
 const mealValues = ["breakfast", "lunch", "dinner", "snack", "other"] as const;
@@ -66,76 +60,6 @@ const updateFoodEntrySchema = z
   })
   .merge(nutrientFieldsSchema.partial());
 
-const DOFEK_PROVIDER_ID = "dofek";
-
-/** Ensure the 'dofek' provider row exists (for self-created entries) */
-async function ensureDofekProvider(
-  db: Parameters<Parameters<typeof protectedProcedure.mutation>[0]>[0]["ctx"]["db"],
-) {
-  await db.execute(
-    sql`INSERT INTO fitness.provider (id, name)
-        VALUES (${DOFEK_PROVIDER_ID}, 'Dofek App')
-        ON CONFLICT (id) DO NOTHING`,
-  );
-}
-
-/** Map of camelCase field names to SQL column names (food_entry-specific + nutrients) */
-const fieldColumnMap: Record<string, string> = {
-  date: "date",
-  meal: "meal",
-  foodName: "food_name",
-  foodDescription: "food_description",
-  category: "category",
-  numberOfUnits: "number_of_units",
-};
-
-/** Zod schema for v_food_entry_with_nutrition rows */
-const foodEntryRowSchema = z
-  .object({
-    id: z.string(),
-    provider_id: z.string(),
-    user_id: z.string(),
-    external_id: z.string().nullable(),
-    date: z.string(),
-    meal: z.string().nullable(),
-    food_name: z.string(),
-    food_description: z.string().nullable(),
-    category: z.string().nullable(),
-    provider_food_id: z.string().nullable(),
-    provider_serving_id: z.string().nullable(),
-    number_of_units: z.coerce.number().nullable(),
-    logged_at: z.string().nullable(),
-    barcode: z.string().nullable(),
-    serving_unit: z.string().nullable(),
-    serving_weight_grams: z.coerce.number().nullable(),
-    nutrition_data_id: z.string().nullable(),
-    raw: z.unknown().nullable(),
-    confirmed: z.boolean(),
-    created_at: z.string(),
-  })
-  .merge(nutrientRowSchema);
-
-const dailyTotalsRowSchema = z.object({
-  date: z.string(),
-  calories: z.coerce.number().nullable(),
-  protein_g: z.coerce.number().nullable(),
-  carbs_g: z.coerce.number().nullable(),
-  fat_g: z.coerce.number().nullable(),
-  fiber_g: z.coerce.number().nullable(),
-});
-
-const foodSearchRowSchema = z.object({
-  food_name: z.string(),
-  food_description: z.string().nullable(),
-  category: z.string().nullable(),
-  calories: z.coerce.number().nullable(),
-  protein_g: z.coerce.number().nullable(),
-  carbs_g: z.coerce.number().nullable(),
-  fat_g: z.coerce.number().nullable(),
-  fiber_g: z.coerce.number().nullable(),
-  number_of_units: z.coerce.number().nullable(),
-});
-
 export const foodRouter = router({
   /** List food entries for a date range, optionally filtered by meal */
   list: cachedProtectedQuery(CacheTTL.SHORT)
@@ -147,75 +71,30 @@ export const foodRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      if (input.meal) {
-        const rows = await executeWithSchema(
-          ctx.db,
-          foodEntryRowSchema,
-          sql`SELECT * FROM fitness.v_food_entry_with_nutrition
-              WHERE user_id = ${ctx.userId}
-                AND confirmed = true
-                AND date >= ${input.startDate}::date
-                AND date <= ${input.endDate}::date
-                AND meal = ${input.meal}
-              ORDER BY date ASC, meal ASC, food_name ASC`,
-        );
-        return rows;
-      }
-      const rows = await executeWithSchema(
-        ctx.db,
-        foodEntryRowSchema,
-        sql`SELECT * FROM fitness.v_food_entry_with_nutrition
-            WHERE user_id = ${ctx.userId}
-              AND confirmed = true
-              AND date >= ${input.startDate}::date
-              AND date <= ${input.endDate}::date
-            ORDER BY date ASC, meal ASC, food_name ASC`,
-      );
-      return rows;
+      const repo = new FoodRepository(ctx.db, ctx.userId, ctx.timezone);
+      const entries = await repo.list(input.startDate, input.endDate, input.meal);
+      return entries.map((entry) => entry.toDetail());
     }),
 
   /** Get all food entries for a specific date, ordered by meal */
   byDate: cachedProtectedQuery(CacheTTL.SHORT)
     .input(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }))
     .query(async ({ ctx, input }) => {
-      const rows = await executeWithSchema(
-        ctx.db,
-        foodEntryRowSchema,
-        sql`SELECT * FROM fitness.v_food_entry_with_nutrition
-            WHERE user_id = ${ctx.userId}
-              AND confirmed = true
-              AND date = ${input.date}::date
-            ORDER BY meal ASC, food_name ASC`,
-      );
-      if (rows.length === 0) {
+      const repo = new FoodRepository(ctx.db, ctx.userId, ctx.timezone);
+      const entries = await repo.byDate(input.date);
+      if (entries.length === 0) {
         logger.info(`[food] byDate returned 0 rows for userId=${ctx.userId} date=${input.date}`);
       }
-      return rows;
+      return entries.map((entry) => entry.toDetail());
     }),
 
   /** Get daily calorie/macro totals aggregated by day */
   dailyTotals: cachedProtectedQuery(CacheTTL.SHORT)
     .input(z.object({ days: z.number().default(30) }))
     .query(async ({ ctx, input }) => {
-      const rows = await executeWithSchema(
-        ctx.db,
-        dailyTotalsRowSchema,
-        sql`SELECT
-              fe.date,
-              SUM(nd.calories) as calories,
-              SUM(nd.protein_g)::numeric(10,1) as protein_g,
-              SUM(nd.carbs_g)::numeric(10,1) as carbs_g,
-              SUM(nd.fat_g)::numeric(10,1) as fat_g,
-              SUM(nd.fiber_g)::numeric(10,1) as fiber_g
-            FROM fitness.food_entry fe
-            JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id
-            WHERE fe.user_id = ${ctx.userId}
-              AND fe.confirmed = true
-              AND fe.date > CURRENT_DATE - ${input.days}::int
-            GROUP BY fe.date
-            ORDER BY fe.date ASC`,
-      );
-      return rows;
+      const repo = new FoodRepository(ctx.db, ctx.userId, ctx.timezone);
+      const totals = await repo.dailyTotals(input.days);
+      return totals.map((total) => total.toDetail());
     }),
 
   /** Search food entries by name for quick re-logging */
@@ -227,224 +106,29 @@ export const foodRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const searchPattern = `%${input.query}%`;
-      const rows = await executeWithSchema(
-        ctx.db,
-        foodSearchRowSchema,
-        sql`SELECT DISTINCT ON (fe.food_name)
-              fe.food_name, fe.food_description, fe.category,
-              nd.calories, nd.protein_g, nd.carbs_g, nd.fat_g, nd.fiber_g,
-              fe.number_of_units
-            FROM fitness.food_entry fe
-            LEFT JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id
-            WHERE fe.user_id = ${ctx.userId}
-              AND fe.confirmed = true
-              AND fe.food_name ILIKE ${searchPattern}
-            ORDER BY fe.food_name ASC
-            LIMIT ${input.limit}`,
-      );
-      return rows;
+      const repo = new FoodRepository(ctx.db, ctx.userId, ctx.timezone);
+      const results = await repo.search(input.query, input.limit);
+      return results.map((result) => result.toDetail());
     }),
 
   /** Create a new food entry */
   create: protectedProcedure.input(createFoodEntrySchema).mutation(async ({ ctx, input }) => {
-    await ensureDofekProvider(ctx.db);
-
-    // Insert nutrition_data + food_entry in a CTE, return the new entry ID
-    const idRows = await executeWithSchema(
-      ctx.db,
-      z.object({ id: z.string() }),
-      sql`WITH new_nutrition AS (
-            INSERT INTO fitness.nutrition_data (
-              ${sql.raw(NUTRIENT_SQL_COLUMNS)}
-            ) VALUES (
-              ${input.calories ?? null}, ${input.proteinG ?? null},
-              ${input.carbsG ?? null}, ${input.fatG ?? null},
-              ${input.saturatedFatG ?? null}, ${input.polyunsaturatedFatG ?? null},
-              ${input.monounsaturatedFatG ?? null}, ${input.transFatG ?? null},
-              ${input.cholesterolMg ?? null}, ${input.sodiumMg ?? null},
-              ${input.potassiumMg ?? null}, ${input.fiberG ?? null}, ${input.sugarG ?? null},
-              ${input.vitaminAMcg ?? null}, ${input.vitaminCMg ?? null},
-              ${input.vitaminDMcg ?? null}, ${input.vitaminEMg ?? null},
-              ${input.vitaminKMcg ?? null},
-              ${input.vitaminB1Mg ?? null}, ${input.vitaminB2Mg ?? null},
-              ${input.vitaminB3Mg ?? null}, ${input.vitaminB5Mg ?? null},
-              ${input.vitaminB6Mg ?? null},
-              ${input.vitaminB7Mcg ?? null}, ${input.vitaminB9Mcg ?? null},
-              ${input.vitaminB12Mcg ?? null},
-              ${input.calciumMg ?? null}, ${input.ironMg ?? null},
-              ${input.magnesiumMg ?? null}, ${input.zincMg ?? null},
-              ${input.seleniumMcg ?? null},
-              ${input.copperMg ?? null}, ${input.manganeseMg ?? null},
-              ${input.chromiumMcg ?? null}, ${input.iodineMcg ?? null},
-              ${input.omega3Mg ?? null}, ${input.omega6Mg ?? null}
-            ) RETURNING id
-          )
-          INSERT INTO fitness.food_entry (
-            user_id, provider_id, date, meal, food_name, food_description,
-            category, number_of_units, nutrition_data_id
-          ) VALUES (
-            ${ctx.userId}, ${DOFEK_PROVIDER_ID}, ${input.date}::date,
-            ${input.meal ?? null}, ${input.foodName}, ${input.foodDescription ?? null},
-            ${input.category ?? null}, ${input.numberOfUnits ?? null},
-            (SELECT id FROM new_nutrition)
-          ) RETURNING id`,
-    );
-    const newId = idRows[0]?.id;
-
-    // Fetch the full row from the view
-    const rows = await executeWithSchema(
-      ctx.db,
-      foodEntryRowSchema,
-      sql`SELECT * FROM fitness.v_food_entry_with_nutrition WHERE id = ${newId}`,
-    );
-    const inserted = rows[0];
-    if (!inserted) throw new Error("Failed to insert food entry");
-
-    // Insert nutrients into junction table
-    const nutrientEntries = Object.entries(input.nutrients);
-    if (nutrientEntries.length > 0) {
-      const valuesClauses = nutrientEntries.map(
-        ([nutrientId, amount]) => sql`(${inserted.id}::uuid, ${nutrientId}, ${amount})`,
-      );
-      await ctx.db.execute(
-        sql`INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
-            VALUES ${sql.join(valuesClauses, sql`, `)}
-            ON CONFLICT (food_entry_id, nutrient_id) DO UPDATE SET amount = EXCLUDED.amount`,
-      );
-    }
-
-    return { ...inserted, nutrients: input.nutrients };
+    const repo = new FoodRepository(ctx.db, ctx.userId, ctx.timezone);
+    return repo.create(input);
   }),
 
   /** Update an existing food entry by id */
   update: protectedProcedure.input(updateFoodEntrySchema).mutation(async ({ ctx, input }) => {
-    const { id, nutrients, ...fields } = input;
-
-    // Separate food_entry fields from nutrient fields
-    const foodEntryClauses: ReturnType<typeof sql>[] = [];
-    const nutrientClauses: ReturnType<typeof sql>[] = [];
-
-    for (const [fieldName, value] of Object.entries(fields)) {
-      if (value === undefined) continue;
-
-      // Check if it's a food_entry field
-      const foodColumn = fieldColumnMap[fieldName];
-      if (foodColumn) {
-        if (fieldName === "date") {
-          foodEntryClauses.push(
-            value !== null
-              ? sql`${sql.identifier(foodColumn)} = ${String(value)}::date`
-              : sql`${sql.identifier(foodColumn)} = NULL`,
-          );
-        } else if (value === null) {
-          foodEntryClauses.push(sql`${sql.identifier(foodColumn)} = NULL`);
-        } else {
-          foodEntryClauses.push(sql`${sql.identifier(foodColumn)} = ${value}`);
-        }
-        continue;
-      }
-
-      // Check if it's a nutrient field
-      const nutrientColumn = NUTRIENT_COLUMN_MAP[fieldName];
-      if (nutrientColumn) {
-        if (value === null) {
-          nutrientClauses.push(sql`${sql.identifier(nutrientColumn)} = NULL`);
-        } else {
-          nutrientClauses.push(sql`${sql.identifier(nutrientColumn)} = ${value}`);
-        }
-      }
-    }
-
-    if (foodEntryClauses.length === 0 && nutrientClauses.length === 0 && !nutrients) return null;
-
-    // Update nutrition_data if any nutrient fields changed
-    if (nutrientClauses.length > 0) {
-      const nutrientSetExpression = sql.join(nutrientClauses, sql`, `);
-      // Check if food_entry has a nutrition_data row; create one if missing
-      const ndIdRows = await ctx.db.execute<{ nutrition_data_id: string | null }>(
-        sql`SELECT nutrition_data_id FROM fitness.food_entry WHERE user_id = ${ctx.userId} AND confirmed = true AND id = ${id}`,
-      );
-      const existingNdId = ndIdRows[0]?.nutrition_data_id;
-      if (existingNdId) {
-        await ctx.db.execute(
-          sql`UPDATE fitness.nutrition_data SET ${nutrientSetExpression} WHERE id = ${existingNdId}`,
-        );
-      } else if (ndIdRows.length > 0) {
-        // Food entry exists but has no nutrition_data — create one and link it
-        const [newNd] = await ctx.db.execute<{ id: string }>(
-          sql`INSERT INTO fitness.nutrition_data (calories) VALUES (NULL) RETURNING id`,
-        );
-        if (newNd?.id) {
-          await ctx.db.execute(
-            sql`UPDATE fitness.food_entry SET nutrition_data_id = ${newNd.id}
-                WHERE user_id = ${ctx.userId} AND confirmed = true AND id = ${id}`,
-          );
-          await ctx.db.execute(
-            sql`UPDATE fitness.nutrition_data SET ${nutrientSetExpression} WHERE id = ${newNd.id}`,
-          );
-        }
-      }
-    }
-
-    // Update food_entry if any food fields changed
-    if (foodEntryClauses.length > 0) {
-      const foodSetExpression = sql.join(foodEntryClauses, sql`, `);
-      await ctx.db.execute(
-        sql`UPDATE fitness.food_entry SET ${foodSetExpression} WHERE user_id = ${ctx.userId} AND confirmed = true AND id = ${id}`,
-      );
-    }
-
-    // Replace nutrients in junction table if provided (scoped by user ownership)
-    if (nutrients) {
-      await ctx.db.execute(
-        sql`DELETE FROM fitness.food_entry_nutrient
-            WHERE food_entry_id = (
-              SELECT id FROM fitness.food_entry
-              WHERE id = ${id}::uuid AND user_id = ${ctx.userId}
-            )`,
-      );
-      const nutrientEntries = Object.entries(nutrients);
-      if (nutrientEntries.length > 0) {
-        const valuesClauses = nutrientEntries.map(
-          ([nutrientId, amount]) => sql`(${id}::uuid, ${nutrientId}, ${amount})`,
-        );
-        await ctx.db.execute(
-          sql`INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
-              SELECT food_entry_id, nutrient_id, amount
-              FROM (VALUES ${sql.join(valuesClauses, sql`, `)}) AS vals(food_entry_id, nutrient_id, amount)
-              WHERE food_entry_id IN (
-                SELECT id FROM fitness.food_entry WHERE id = ${id}::uuid AND user_id = ${ctx.userId}
-              )`,
-        );
-      }
-    }
-
-    // Return the updated row from the view
-    const rows = await executeWithSchema(
-      ctx.db,
-      foodEntryRowSchema,
-      sql`SELECT * FROM fitness.v_food_entry_with_nutrition WHERE id = ${id} AND user_id = ${ctx.userId}`,
-    );
-    return rows[0] ?? null;
+    const repo = new FoodRepository(ctx.db, ctx.userId, ctx.timezone);
+    return repo.update(input);
   }),
 
   /** Delete a food entry by id */
   delete: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
-      // Delete food_entry (nutrition_data row remains orphaned but harmless,
-      // or we can cascade — for now, delete both)
-      await ctx.db.execute(
-        sql`WITH deleted_entry AS (
-              DELETE FROM fitness.food_entry
-              WHERE user_id = ${ctx.userId} AND confirmed = true AND id = ${input.id}
-              RETURNING nutrition_data_id
-            )
-            DELETE FROM fitness.nutrition_data
-            WHERE id = (SELECT nutrition_data_id FROM deleted_entry)`,
-      );
-      return { success: true };
+      const repo = new FoodRepository(ctx.db, ctx.userId, ctx.timezone);
+      return repo.delete(input.id);
     }),
 
   /** Analyze a food description with AI and return estimated nutrition data */
@@ -468,32 +152,7 @@ export const foodRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      await ensureDofekProvider(ctx.db);
-
-      const idRows = await executeWithSchema(
-        ctx.db,
-        z.object({ id: z.string() }),
-        sql`WITH new_nutrition AS (
-              INSERT INTO fitness.nutrition_data (calories, protein_g, carbs_g, fat_g)
-              VALUES (${input.calories}, ${input.proteinG ?? null},
-                      ${input.carbsG ?? null}, ${input.fatG ?? null})
-              RETURNING id
-            )
-            INSERT INTO fitness.food_entry (
-              user_id, provider_id, date, meal, food_name, nutrition_data_id
-            ) VALUES (
-              ${ctx.userId}, ${DOFEK_PROVIDER_ID}, ${input.date}::date,
-              ${input.meal}, ${input.foodName},
-              (SELECT id FROM new_nutrition)
-            ) RETURNING id`,
-      );
-      const newId = idRows[0]?.id;
-
-      const rows = await executeWithSchema(
-        ctx.db,
-        foodEntryRowSchema,
-        sql`SELECT * FROM fitness.v_food_entry_with_nutrition WHERE id = ${newId}`,
-      );
-      return rows[0] ? { ...rows[0], nutrients: {} } : undefined;
+      const repo = new FoodRepository(ctx.db, ctx.userId, ctx.timezone);
+      return repo.quickAdd(input);
     }),
 });

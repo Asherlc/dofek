@@ -7,9 +7,7 @@ describe("redirectSystemPath", () => {
       path: "file:///tmp/Strong%20Export.csv",
       initial: true,
     });
-    expect(result).toBe(
-      "/providers?sharedFile=file%3A%2F%2F%2Ftmp%2FStrong%2520Export.csv",
-    );
+    expect(result).toBe("/providers?sharedFile=file%3A%2F%2F%2Ftmp%2FStrong%2520Export.csv");
   });
 
   it("keeps non-file paths unchanged", () => {

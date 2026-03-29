@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { fitCriticalHeartRate } from "./duration-curves.ts";
 
 describe("fitCriticalHeartRate", () => {
@@ -44,5 +44,93 @@ describe("fitCriticalHeartRate", () => {
     expect(model).not.toBeNull();
     expect(model?.thresholdHr).toBe(170);
     expect(model?.r2).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Router procedure tests (kill delegation mutations in duration-curves.ts)
+// ---------------------------------------------------------------------------
+
+vi.mock("../trpc.ts", async () => {
+  const { initTRPC } = await import("@trpc/server");
+  const trpc = initTRPC
+    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .create();
+  return {
+    router: trpc.router,
+    protectedProcedure: trpc.procedure,
+    cachedProtectedQuery: () => trpc.procedure,
+    CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
+  };
+});
+
+vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../lib/typed-sql.ts")>();
+  return {
+    ...original,
+    executeWithSchema: vi.fn(
+      async (
+        db: { execute: (q: unknown) => Promise<unknown[]> },
+        _schema: unknown,
+        query: unknown,
+      ) => db.execute(query),
+    ),
+  };
+});
+
+const { durationCurvesRouter } = await import("./duration-curves.ts");
+const { createTestCallerFactory } = await import("./test-helpers.ts");
+
+const createCaller = createTestCallerFactory(durationCurvesRouter);
+
+function makeCaller(rows: Record<string, unknown>[] = []) {
+  return createCaller({
+    db: { execute: vi.fn().mockResolvedValue(rows) },
+    userId: "user-1",
+    timezone: "UTC",
+  });
+}
+
+describe("durationCurvesRouter", () => {
+  describe("hrCurve", () => {
+    it("returns heart rate curve data", async () => {
+      const rows = [
+        { duration_seconds: 300, best_heart_rate: 185 },
+        { duration_seconds: 600, best_heart_rate: 180 },
+      ];
+      const caller = makeCaller(rows);
+      const result = await caller.hrCurve({ days: 90 });
+      expect(result.points).toHaveLength(2);
+    });
+
+    it("uses default days (90) when not specified", async () => {
+      const caller = makeCaller([]);
+      const result = await caller.hrCurve({});
+      expect(result.points).toEqual([]);
+    });
+
+    it("returns empty points when no data", async () => {
+      const caller = makeCaller([]);
+      const result = await caller.hrCurve({ days: 30 });
+      expect(result.points).toEqual([]);
+    });
+  });
+
+  describe("paceCurve", () => {
+    it("returns pace curve data", async () => {
+      const rows = [
+        { duration_seconds: 300, best_pace_s_per_km: 240 },
+        { duration_seconds: 600, best_pace_s_per_km: 260 },
+      ];
+      const caller = makeCaller(rows);
+      const result = await caller.paceCurve({ days: 90 });
+      expect(result.points).toHaveLength(2);
+    });
+
+    it("uses default days (90) when not specified", async () => {
+      const caller = makeCaller([]);
+      const result = await caller.paceCurve({});
+      expect(result.points).toEqual([]);
+    });
   });
 });

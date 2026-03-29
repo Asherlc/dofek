@@ -1,7 +1,7 @@
+import { formatNumber } from "@dofek/format/format";
 import { StrainScore } from "@dofek/scoring/scoring";
 import { StyleSheet, Text, View } from "react-native";
 import Svg, { Circle } from "react-native-svg";
-import { formatNumber } from "@dofek/format/format";
 import { colors } from "../../theme";
 
 interface StrainGaugeProps {
@@ -13,11 +13,7 @@ interface StrainGaugeProps {
   size?: number;
 }
 
-export function StrainGauge({
-  strain,
-  maxStrain = 21,
-  size = 120,
-}: StrainGaugeProps) {
+export function StrainGauge({ strain, maxStrain = 21, size = 120 }: StrainGaugeProps) {
   const strokeWidth = 10;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;

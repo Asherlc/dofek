@@ -1,4 +1,122 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { createTestCallerFactory } from "./test-helpers.ts";
+
+vi.mock("../trpc.ts", async () => {
+  const { initTRPC } = await import("@trpc/server");
+  const trpc = initTRPC
+    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .create();
+  return {
+    router: trpc.router,
+    protectedProcedure: trpc.procedure,
+    cachedProtectedQuery: () => trpc.procedure,
+    CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
+  };
+});
+
+vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../lib/typed-sql.ts")>();
+  return {
+    ...original,
+    executeWithSchema: vi.fn(
+      async (
+        db: { execute: (q: unknown) => Promise<unknown[]> },
+        _schema: unknown,
+        query: unknown,
+      ) => db.execute(query),
+    ),
+  };
+});
+
+// Mock drizzle functions used by SupplementsRepository
+vi.mock("drizzle-orm", async (importOriginal) => {
+  const original = await importOriginal<typeof import("drizzle-orm")>();
+  return {
+    ...original,
+    eq: vi.fn(() => true),
+  };
+});
+
+// ---------------------------------------------------------------------------
+// Router procedure tests
+// ---------------------------------------------------------------------------
+
+describe("supplementsRouter", () => {
+  async function makeCaller(executeResult: unknown[] = []) {
+    const execute = vi.fn().mockResolvedValue(executeResult);
+    // Mock select/from/where for the list query
+    const where = vi.fn().mockResolvedValue(executeResult);
+    const from = vi.fn(() => ({ where }));
+    const select = vi.fn(() => ({ from }));
+    const insert = vi.fn(() => ({ values: vi.fn(() => ({ onConflictDoUpdate: vi.fn() })) }));
+    const deleteFn = vi.fn(() => ({ where: vi.fn() }));
+    const transaction = vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => {
+      const tx = { execute, select, insert, delete: deleteFn };
+      return callback(tx);
+    });
+    const db = { execute, select, insert, delete: deleteFn, transaction };
+
+    const { supplementsRouter } = await import("./supplements.ts");
+    const callerFactory = createTestCallerFactory(supplementsRouter);
+    return {
+      caller: callerFactory({ db, userId: "user-1", timezone: "UTC" }),
+      execute,
+    };
+  }
+
+  describe("list", () => {
+    it("returns result from repository", async () => {
+      const { caller } = await makeCaller([]);
+      const result = await caller.list();
+      expect(result).toBeDefined();
+    });
+  });
+
+  describe("save", () => {
+    it("rejects empty supplement name", async () => {
+      const { caller } = await makeCaller([]);
+      await expect(caller.save({ supplements: [{ name: "" }] })).rejects.toThrow();
+    });
+
+    it("rejects supplement name exceeding 200 chars", async () => {
+      const { caller } = await makeCaller([]);
+      await expect(caller.save({ supplements: [{ name: "x".repeat(201) }] })).rejects.toThrow();
+    });
+
+    it("accepts name at exactly 200 chars (boundary)", async () => {
+      const { caller } = await makeCaller([]);
+      // This will fail with DB error, but should NOT fail with validation error
+      try {
+        await caller.save({ supplements: [{ name: "x".repeat(200) }] });
+      } catch (error) {
+        // Should not be a ZodError (input validation should pass)
+        expect(String(error)).not.toContain("String must contain at most 200");
+      }
+    });
+
+    it("rejects negative amount", async () => {
+      const { caller } = await makeCaller([]);
+      await expect(caller.save({ supplements: [{ name: "Test", amount: -1 }] })).rejects.toThrow();
+    });
+
+    it("rejects zero amount", async () => {
+      const { caller } = await makeCaller([]);
+      await expect(caller.save({ supplements: [{ name: "Test", amount: 0 }] })).rejects.toThrow();
+    });
+
+    it("rejects unit exceeding 10 chars", async () => {
+      const { caller } = await makeCaller([]);
+      await expect(
+        caller.save({ supplements: [{ name: "Test", unit: "x".repeat(11) }] }),
+      ).rejects.toThrow();
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// toApiSupplement utility tests
+// ---------------------------------------------------------------------------
+
 import { toApiSupplement } from "./supplements.ts";
 
 describe("toApiSupplement()", () => {
