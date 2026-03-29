@@ -71,9 +71,7 @@ public class WhoopBleModule: Module {
 
         Function("isBluetoothAvailable") { () -> Bool in
             let manager = self.ensureCentralManager()
-            let available = manager.state == .poweredOn
-            NSLog("[WhoopBLE] isBluetoothAvailable: %@ (state=%ld)", available ? "true" : "false", manager.state.rawValue)
-            return available
+            return manager.state == .poweredOn
         }
 
         // MARK: - Discovery
@@ -241,8 +239,6 @@ public class WhoopBleModule: Module {
                 "connectionState": self.state.rawValue,
                 "hasDataCharacteristic": self.dataCharacteristic != nil,
                 "isNotifying": self.dataCharacteristic?.isNotifying ?? false,
-                "recentNotifications": self.recentNotificationHexDumps,
-                "commandResponses": self.commandResponseHexDumps,
                 "hasCmdCharacteristic": self.cmdCharacteristic != nil,
                 "hasCmdResponseCharacteristic": self.cmdResponseCharacteristic != nil,
                 "lastWriteError": self.lastWriteError ?? "none",
@@ -586,14 +582,6 @@ public class WhoopBleModule: Module {
         }
     }
 
-    /// First few BLE notification hex dumps for JS-visible debugging
-    private var recentNotificationHexDumps: [String] = []
-    private static let maxHexDumps = 5
-
-    /// Command response hex dumps (CMD_FROM_STRAP)
-    private var commandResponseHexDumps: [String] = []
-    private static let maxCmdResponseDumps = 10
-
     /// Last write error for debugging (internal for delegate access)
     var lastWriteError: String?
 
@@ -608,17 +596,6 @@ public class WhoopBleModule: Module {
     func handleDataReceived(_ data: Data) {
         dataReceivedCount += 1
 
-        // Capture first few notifications as hex for JS-visible debugging
-        if recentNotificationHexDumps.count < WhoopBleModule.maxHexDumps {
-            let hex = data.prefix(64).map { String(format: "%02x", $0) }.joined(separator: " ")
-            recentNotificationHexDumps.append("[\(data.count)B] \(hex)")
-            NSLog("[WhoopBLE] notification #%llu (%d bytes): %@", dataReceivedCount, data.count, hex)
-        }
-
-        // Always process incoming data — raw IMU packets (type 0x2B R21)
-        // flow passively during the WHOOP app's normal sync. No need to
-        // explicitly enter "streaming" state via TOGGLE_IMU_MODE.
-
         let frames = frameParser.feed(data)
         totalFramesParsed += UInt64(frames.count)
 
@@ -630,9 +607,6 @@ public class WhoopBleModule: Module {
 
         if newSamples.isEmpty {
             emptyExtractions += 1
-            if emptyExtractions == 1 || emptyExtractions % 100 == 0 {
-                NSLog("[WhoopBLE] handleDataReceived: %llu empty extractions so far (notifications=%llu, frames=%llu, bytes=%d)", emptyExtractions, dataReceivedCount, totalFramesParsed, data.count)
-            }
             return
         }
 
@@ -650,10 +624,6 @@ public class WhoopBleModule: Module {
         let bufferSize = sampleBuffer.count
         bufferLock.unlock()
 
-        // Log stats every 500 notifications (~6s at 80Hz) to avoid flooding
-        if dataReceivedCount % 500 == 0 {
-            NSLog("[WhoopBLE] stats: notifications=%llu frames=%llu samples=%llu buffer=%d emptyExtractions=%llu", dataReceivedCount, totalFramesParsed, totalSamplesExtracted, bufferSize, emptyExtractions)
-        }
     }
 
     /// Lazily create the CBCentralManager on first use instead of at module init.
@@ -673,14 +643,6 @@ public class WhoopBleModule: Module {
         )
         centralManager = manager
         return manager
-    }
-
-    func handleCommandResponse(_ data: Data) {
-        let hex = data.prefix(64).map { String(format: "%02x", $0) }.joined(separator: " ")
-        NSLog("[WhoopBLE] CMD_FROM_STRAP response (%d bytes): %@", data.count, hex)
-        if commandResponseHexDumps.count < WhoopBleModule.maxCmdResponseDumps {
-            commandResponseHexDumps.append("[\(data.count)B] \(hex)")
-        }
     }
 
     /// Exposed for the BLE delegate to identify CMD_FROM_STRAP notifications.
@@ -802,12 +764,6 @@ private class BleDelegate: NSObject, CBCentralManagerDelegate, CBPeripheralDeleg
         }
         guard let data = characteristic.value else {
             NSLog("[WhoopBLE] data notification with nil value on %@", characteristic.uuid.uuidString)
-            return
-        }
-
-        // Log CMD_FROM_STRAP responses (command acknowledgments)
-        if let cmdRespUUID = module?.cmdResponseCharacteristicUUID, characteristic.uuid == cmdRespUUID {
-            module?.handleCommandResponse(data)
             return
         }
 

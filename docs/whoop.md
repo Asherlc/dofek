@@ -158,12 +158,14 @@ SELECT refresh_token FROM fitness.oauth_token WHERE provider_id = 'whoop';
 
 **Caveat:** Data flows during active WHOOP app sync sessions. When the WHOOP app finishes syncing and goes to background, R21 packets may stop. Continuous 24/7 capture may still require TOGGLE_IMU_MODE (which we confirmed is accepted on the bonded iOS connection — got 0x24 ACK).
 
-**Remaining work:**
-- Fix strap epoch → Unix timestamp conversion (currently shows 1970 dates)
-- Fix tRPC endpoint routing for upload
-- Update tests for Maverick 8-byte header format
-- Verify data continues flowing after WHOOP app sync completes
-- Clean up diagnostic logging
+**Completed:**
+- ✅ Fixed timestamp offset (payload byte 7, not 3 — confirmed via live capture)
+- ✅ Fixed migration (0049 adds RENAME + gyroscope columns)
+- ✅ Updated Swift tests for Maverick 8-byte header format (22 tests passing)
+- ✅ Cleaned up diagnostic logging (removed hex dumps, verbose NSLog)
+- ✅ Removed settings toggle — always connects to WHOOP strap automatically
+- ✅ TOGGLE_IMU_MODE re-enabled for continuous streaming beyond WHOOP app sync
+- ⚠️ Verify data continues flowing after WHOOP app sync completes (needs long-term testing)
 
 There are **three paths** to getting raw accelerometer data from a Whoop strap. Path D (passive BLE capture) is now the primary working approach.
 

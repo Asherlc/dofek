@@ -40,13 +40,9 @@ final class WhoopBleFrameParser {
         accumulator = Data()
     }
 
-    /// Counter for debugging feed calls
-    private var feedCount: UInt64 = 0
-
     /// Feed raw BLE notification data into the parser.
     /// Returns any complete frames that were assembled.
     func feed(_ data: Data) -> [WhoopFrame] {
-        feedCount += 1
         var frames: [WhoopFrame] = []
 
         // If this notification starts with SOF and we have accumulated data,
@@ -54,9 +50,6 @@ final class WhoopBleFrameParser {
         if !data.isEmpty && data[0] == WhoopBleConstants.startOfFrame && !accumulator.isEmpty {
             if let frame = WhoopBleFrameParser.parseFrame(accumulator) {
                 frames.append(frame)
-            } else if feedCount <= 20 {
-                let accHex = accumulator.prefix(32).map { String(format: "%02x", $0) }.joined(separator: " ")
-                NSLog("[WhoopBLE] feed #%llu: SOF in new data, old accumulator (%d bytes) failed to parse (first 32: %@)", feedCount, accumulator.count, accHex)
             }
             accumulator = Data()
         }
@@ -66,11 +59,6 @@ final class WhoopBleFrameParser {
         // Try to parse the current accumulator
         if let frame = WhoopBleFrameParser.parseFrame(accumulator) {
             frames.append(frame)
-            if feedCount <= 20 {
-                NSLog("[WhoopBLE] feed #%llu: parsed frame type=0x%02x record=%d payload=%d bytes", feedCount, frame.packetType, frame.recordType, frame.payload.count)
-            }
-            // Advance past the consumed frame.
-            // Maverick header is 8 bytes, payload includes CRC32.
             let payloadLen = Int(accumulator[2]) | (Int(accumulator[3]) << 8)
             let consumed = min(8 + payloadLen, accumulator.count)
             if consumed < accumulator.count {
@@ -78,9 +66,6 @@ final class WhoopBleFrameParser {
             } else {
                 accumulator = Data()
             }
-        } else if feedCount <= 20 {
-            let accHex = accumulator.prefix(32).map { String(format: "%02x", $0) }.joined(separator: " ")
-            NSLog("[WhoopBLE] feed #%llu: accumulator %d bytes, no complete frame yet (first 32: %@)", feedCount, accumulator.count, accHex)
         }
 
         return frames
@@ -133,10 +118,14 @@ final class WhoopBleFrameParser {
         var dataTimestamp: UInt32 = 0
         var subSeconds: UInt16 = 0
 
-        // Data packets with standard header (13+ bytes in payload)
+        // Data packets with Maverick header:
+        // [0] packetType, [1] recordType, [2-6] other fields,
+        // [7-10] Unix timestamp (u32 LE), [11-12] sub-seconds (u16 LE)
+        // Note: timestamp is at offset 7, NOT 3. Confirmed via live capture
+        // analysis — offset 3 produced 1970 dates, offset 7 gives correct 2026 dates.
         if payload.count >= 13 {
             recordType = payload[payload.startIndex + 1]
-            dataTimestamp = payload.readUInt32LE(at: payload.startIndex + 3)
+            dataTimestamp = payload.readUInt32LE(at: payload.startIndex + 7)
             subSeconds = payload.readUInt16LE(at: payload.startIndex + 11)
         }
 
