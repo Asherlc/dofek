@@ -1,11 +1,10 @@
-# Squawk migration linter configuration
+# Squawk migration linter config
 # https://squawkhq.com/docs/configuration
 
-# Materialized views are read-only — CONCURRENTLY on their indexes
-# provides no benefit (no writes to block) and breaks test migration runners.
-# Regular table migrations also create indexes during initial table setup
-# when the table is empty, making CONCURRENTLY unnecessary.
+# Exclude rules that are intentionally violated:
+# - renaming-table: We intentionally rename accelerometer_sample → inertial_measurement_unit_sample
+# - prefer-robust-stmts: TimescaleDB compression policies can't run inside transactions
 excluded_rules = [
-  "require-concurrent-index-creation",
-  "require-timeout-settings",
+  "renaming-table",
+  "prefer-robust-stmts",
 ]
