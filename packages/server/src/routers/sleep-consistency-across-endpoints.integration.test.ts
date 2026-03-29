@@ -154,15 +154,12 @@ describe("sleep data consistency across endpoints", () => {
       headers: { "Content-Type": "application/json", Cookie: sessionCookie },
       body: JSON.stringify({ "0": input }),
     });
-    const data = (await res.json()) as Record<
-      string,
-      { result?: { data?: T }; error?: { message: string } }
-    >;
-    const first = data[0];
+    const data = await res.json();
+    const first: { result?: { data?: T }; error?: { message: string } } = data[0];
     if (first?.error) {
       throw new Error(`${path} error: ${JSON.stringify(first.error)}`);
     }
-    return first?.result?.data as T;
+    return first?.result?.data;
   }
 
   const endDate = new Date().toISOString().slice(0, 10);
