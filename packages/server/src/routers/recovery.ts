@@ -104,16 +104,21 @@ export const recoveryRouter = router({
       const rows = await executeWithSchema(
         ctx.db,
         consistencyRowSchema,
-        sql`WITH nightly AS (
+        sql`WITH raw_sleep AS (
               SELECT
                 (started_at AT TIME ZONE ${tz})::date AS date,
                 EXTRACT(HOUR FROM started_at AT TIME ZONE ${tz}) + EXTRACT(MINUTE FROM started_at AT TIME ZONE ${tz}) / 60.0 AS bedtime_hour,
-                EXTRACT(HOUR FROM ended_at AT TIME ZONE ${tz}) + EXTRACT(MINUTE FROM ended_at AT TIME ZONE ${tz}) / 60.0 AS waketime_hour
+                EXTRACT(HOUR FROM ended_at AT TIME ZONE ${tz}) + EXTRACT(MINUTE FROM ended_at AT TIME ZONE ${tz}) / 60.0 AS waketime_hour,
+                duration_minutes
               FROM fitness.v_sleep
               WHERE user_id = ${ctx.userId}
                 AND is_nap = false
                 AND started_at > NOW() - ${queryDays}::int * INTERVAL '1 day'
-              ORDER BY started_at ASC
+            ),
+            nightly AS (
+              SELECT DISTINCT ON (date) date, bedtime_hour, waketime_hour
+              FROM raw_sleep
+              ORDER BY date, duration_minutes DESC NULLS LAST
             )
             SELECT
               date::text,
@@ -320,7 +325,7 @@ export const recoveryRouter = router({
       const rows = await executeWithSchema(
         ctx.db,
         sleepRowSchema,
-        sql`WITH nightly AS (
+        sql`WITH raw_sleep AS (
               SELECT
                 (started_at AT TIME ZONE ${tz})::date AS date,
                 duration_minutes,
@@ -345,7 +350,13 @@ export const recoveryRouter = router({
               WHERE user_id = ${ctx.userId}
                 AND is_nap = false
                 AND started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
-              ORDER BY started_at ASC
+            ),
+            nightly AS (
+              SELECT DISTINCT ON (date)
+                date, duration_minutes, sleep_minutes, deep_minutes, rem_minutes,
+                light_minutes, awake_minutes, efficiency_pct, deep_pct, rem_pct, light_pct, awake_pct
+              FROM raw_sleep
+              ORDER BY date, duration_minutes DESC NULLS LAST
             )
             SELECT
               date::text AS date,
@@ -446,13 +457,13 @@ export const recoveryRouter = router({
                 efficiency_pct
               FROM (
                 SELECT (COALESCE(ended_at, started_at + interval '8 hours') AT TIME ZONE ${ctx.timezone})::date AS local_date,
-                       efficiency_pct, started_at
+                       efficiency_pct, duration_minutes
                 FROM fitness.v_sleep
                 WHERE user_id = ${ctx.userId}
                   AND is_nap = false
                   AND started_at > ${timestampWindowStart(input.endDate, queryDays)}
               ) sleep_sub
-              ORDER BY local_date, started_at DESC
+              ORDER BY local_date, duration_minutes DESC NULLS LAST
             )
             SELECT
               m.date,

@@ -27,17 +27,24 @@ export const sleepRouter = router({
       return executeWithSchema(
         ctx.db,
         sleepListRowSchema,
-        sql`SELECT
-              to_char(started_at AT TIME ZONE ${ctx.timezone}, 'YYYY-MM-DD"T"HH24:MI:SS') AS started_at,
-              duration_minutes,
-              deep_minutes,
-              rem_minutes,
-              light_minutes,
-              awake_minutes,
-              efficiency_pct
-            FROM fitness.v_sleep
-            WHERE user_id = ${ctx.userId}
-              AND started_at > ${timestampWindowStart(input.endDate, input.days)}
+        sql`WITH raw_sleep AS (
+              SELECT
+                to_char(started_at AT TIME ZONE ${ctx.timezone}, 'YYYY-MM-DD"T"HH24:MI:SS') AS started_at,
+                (started_at AT TIME ZONE ${ctx.timezone})::date AS sleep_date,
+                duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, efficiency_pct
+              FROM fitness.v_sleep
+              WHERE user_id = ${ctx.userId}
+                AND is_nap = false
+                AND started_at > ${timestampWindowStart(input.endDate, input.days)}
+            ),
+            deduped AS (
+              SELECT DISTINCT ON (sleep_date)
+                started_at, duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, efficiency_pct
+              FROM raw_sleep
+              ORDER BY sleep_date, duration_minutes DESC NULLS LAST
+            )
+            SELECT started_at, duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, efficiency_pct
+            FROM deduped
             ORDER BY started_at ASC`,
       );
     }),
