@@ -153,8 +153,9 @@ function AuthGate() {
     // inside the tRPC provider tree (see WhoopBleSyncManager below).
 
     // Listen for background refresh wakeups (~every 15-30 min, system-decided).
-    // On each wake, restart Watch recording and sync IMU data so
-    // coverage continues even if the user never opens the app.
+    // On each wake, restart Watch recording, sync IMU data, and
+    // retry WHOOP BLE connection so coverage continues even if the user
+    // never opens the app.
     const refreshSubscription = addBackgroundRefreshListener(() => {
       // Restart Watch IMU recording
       initBackgroundWatchInertialMeasurementUnitSync(imuSyncClient).catch((error: unknown) => {
@@ -165,6 +166,17 @@ function AuthGate() {
       initBackgroundAccelerometerSync(imuSyncClient).catch((error: unknown) => {
         captureException(error, { source: "bg-refresh-accel-sync" });
       });
+
+      // Retry WHOOP BLE connection (checks retrieveConnectedPeripherals + scans)
+      import("../modules/whoop-ble")
+        .then(({ retryConnection }) => {
+          retryConnection().catch((error: unknown) => {
+            captureException(error, { source: "bg-refresh-whoop-retry" });
+          });
+        })
+        .catch((error: unknown) => {
+          captureException(error, { source: "bg-refresh-whoop-import" });
+        });
 
       // Re-schedule for next wakeup
       scheduleRefresh();
@@ -288,6 +300,12 @@ function AuthGate() {
             name="correlation"
             options={{
               title: "Correlation Explorer",
+            }}
+          />
+          <Stack.Screen
+            name="ble-probe"
+            options={{
+              title: "BLE Probe",
             }}
           />
         </Stack>

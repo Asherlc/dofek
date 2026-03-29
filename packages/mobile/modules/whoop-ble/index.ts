@@ -94,6 +94,34 @@ export function getBufferedSampleCount(): number {
   return WhoopBleModule.getBufferedSampleCount();
 }
 
+/** Get BLE data path statistics for debugging. */
+export function getDataPathStats(): {
+  dataReceivedCount: number;
+  totalFramesParsed: number;
+  totalSamplesExtracted: number;
+  droppedForNonStreaming: number;
+  emptyExtractions: number;
+  bufferOverflows: number;
+  connectionState: string;
+  hasDataCharacteristic: boolean;
+  isNotifying: boolean;
+} {
+  return WhoopBleModule.getDataPathStats();
+}
+
+/**
+ * Try to reconnect to the WHOOP strap in the background.
+ *
+ * Checks retrieveConnectedPeripherals first (finds straps connected by the
+ * WHOOP app), then falls back to a 10-second BLE scan. Call from background
+ * refresh handlers to maintain the connection.
+ *
+ * @returns true if a strap was found and connection initiated.
+ */
+export async function retryConnection(): Promise<boolean> {
+  return WhoopBleModule.retryConnection();
+}
+
 /** Disconnect from the WHOOP strap. */
 export function disconnect(): void {
   WhoopBleModule.disconnect();

@@ -89,17 +89,16 @@ async function syncOnForeground(
   trpcClient: InertialMeasurementUnitUploadClient,
   whoopDeps: WhoopBleSyncDeps,
 ): Promise<void> {
-  if (!whoopDeps.isBluetoothAvailable()) {
-    logger.warn(LOG_CATEGORY, "Bluetooth not available, skipping sync");
-    Sentry.addBreadcrumb({
-      category: "whoop-ble",
-      message: "Bluetooth not available, skipping sync",
-      level: "warning",
-    });
-    return;
-  }
-
-  // Connect if not already connected
+  // Connect if not already connected.
+  //
+  // Note: we skip the isBluetoothAvailable() pre-check because it suffers
+  // from a race condition on the very first call. The CBCentralManager is
+  // created lazily by ensureCentralManager(), but state starts as .unknown
+  // and transitions to .poweredOn asynchronously via a delegate callback.
+  // So the first isBluetoothAvailable() call always returns false, aborting
+  // the sync before findWhoop() can even run. Instead, we let findWhoop()
+  // handle unavailable Bluetooth by returning null (it checks state internally
+  // after the manager has had time to initialize).
   if (!connected) {
     logger.info(LOG_CATEGORY, "not connected, searching for WHOOP strap");
     const device = await whoopDeps.findWhoop();
@@ -121,10 +120,19 @@ async function syncOnForeground(
       level: "info",
     });
     await whoopDeps.connect(device.id);
-    logger.info(LOG_CATEGORY, "connected, starting IMU streaming");
-    await whoopDeps.startImuStreaming();
+    logger.info(LOG_CATEGORY, "connected, sending TOGGLE_IMU_MODE");
+    // Send TOGGLE_IMU_MODE to keep IMU data flowing even when the WHOOP
+    // app isn't actively syncing. R21 data also flows passively during
+    // WHOOP app sync, but this ensures continuous capture regardless.
+    try {
+      await whoopDeps.startImuStreaming();
+      logger.info(LOG_CATEGORY, "TOGGLE_IMU_MODE sent");
+    } catch (error: unknown) {
+      // Best-effort — passive data may still flow without the command
+      logger.warn(LOG_CATEGORY, `startImuStreaming failed (passive data may still work): ${error}`);
+    }
     connected = true;
-    logger.info(LOG_CATEGORY, "streaming started");
+    logger.info(LOG_CATEGORY, "listening for IMU data");
     Sentry.addBreadcrumb({
       category: "whoop-ble",
       message: "Connected and streaming",
@@ -132,6 +140,18 @@ async function syncOnForeground(
     });
   } else {
     logger.info(LOG_CATEGORY, "already connected, uploading buffer");
+  }
+
+  // Log data path stats for debugging (exposed from native module)
+  try {
+    // Dynamic import to avoid coupling the interface to diagnostic functions
+    const bleModule = require("../modules/whoop-ble");
+    if (typeof bleModule.getDataPathStats === "function") {
+      const stats = bleModule.getDataPathStats();
+      logger.info(LOG_CATEGORY, `data path stats: ${JSON.stringify(stats)}`);
+    }
+  } catch {
+    // Diagnostic-only, ignore errors
   }
 
   // Upload any buffered samples
