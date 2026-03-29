@@ -53,7 +53,7 @@ const FEATURES = [
     title: "Training Intelligence",
     subtitle: "Train smarter with real data",
     description:
-      "Performance Management Charts, critical power curves, training monotony and strain analysis, HR zone distribution, and 80/20 polarization tracking. See exactly when to push and when to rest.",
+      "Performance Management Charts, power duration curves, training monotony and strain analysis, HR zone distribution, and 80/20 polarization tracking. See exactly when to push and when to rest.",
     icon: TrainingIcon,
     color: "#d97706",
   },
@@ -85,9 +85,9 @@ const FEATURES = [
 
 /* ── Stats ── */
 const STATS = [
-  { value: "30+", label: "Data providers" },
+  { value: "27+", label: "Data providers" },
   { value: "6", label: "Health domains unified" },
-  { value: "24/7", label: "Continuous sync" },
+  { value: "Auto", label: "Background sync" },
   { value: "0", label: "Data sold to third parties" },
 ];
 
@@ -96,7 +96,7 @@ const ML_INSIGHTS = [
   {
     title: "Cross-device correlation",
     description:
-      "Discover that your HRV drops 12% the morning after high-carb dinners, or that your sleep quality predicts next-day training performance. These patterns span devices and data sources that no single app can see.",
+      "Discover that your HRV drops on days with high carb intake, or that your sleep efficiency correlates with next-day resting heart rate. These patterns span devices and data sources that no single app can see.",
     icon: CorrelationIcon,
   },
   {
@@ -108,7 +108,7 @@ const ML_INSIGHTS = [
   {
     title: "Predictive insights",
     description:
-      "Know your likely readiness score tomorrow based on today's training, nutrition, and sleep patterns. Plan your week with predictions grounded in your own historical data, not generic guidelines.",
+      "Predict tomorrow's HRV, resting heart rate, and sleep efficiency based on today's training, nutrition, and sleep. Plan your week with predictions grounded in your own historical data, not generic guidelines.",
     icon: PredictionIcon,
   },
 ] as const;
@@ -199,9 +199,9 @@ function HeroSection() {
           </h1>
 
           <p className="text-lg sm:text-xl text-muted max-w-2xl mx-auto mb-8 leading-relaxed">
-            Dofek unifies 30+ health and fitness platforms into one intelligent dashboard. Machine
-            learning finds the patterns hiding across your devices — correlations, anomalies, and
-            predictions that no single app can see.
+            Dofek unifies 27+ health and fitness platforms into one intelligent dashboard.
+            Statistical analysis finds the patterns hiding across your devices — correlations,
+            anomalies, and predictions that no single app can see.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
@@ -434,7 +434,7 @@ function IntelligenceSection() {
           </p>
           <p className="text-muted mt-3 max-w-2xl mx-auto">
             Your WHOOP doesn't know what you ate. Your food tracker doesn't know how you slept.
-            Dofek connects every data source and uses machine learning to find the patterns that
+            Dofek connects every data source and uses statistical analysis to find the patterns that
             matter — across devices, across health domains, across time.
           </p>
         </div>
@@ -463,8 +463,8 @@ function IntelligenceSection() {
             <div>
               <p className="text-sm font-semibold text-foreground mb-1">Example insight</p>
               <p className="text-sm text-muted leading-relaxed">
-                "Your deep sleep is 23% higher on days when you finish eating 3+ hours before bed
-                and your training load stays below 150 TSS. This pattern held for 89% of the last 60
+                "Your deep sleep is 23% higher on days when your caloric intake is below average and
+                your training load stays below 150 TSS. This pattern held for 89% of the last 60
                 days."
               </p>
               <p className="text-xs text-subtle mt-2">
@@ -491,7 +491,7 @@ function ProviderGrid() {
           </h2>
           <p className="text-2xl sm:text-3xl font-bold">Connects to everything you already use</p>
           <p className="text-muted mt-3 max-w-xl mx-auto">
-            30+ providers spanning fitness, sleep, nutrition, body composition, and recovery. The
+            27+ providers spanning fitness, sleep, nutrition, body composition, and recovery. The
             more you connect, the smarter your insights get.
           </p>
         </div>
@@ -615,9 +615,9 @@ function ComparisonSection() {
             <ul className="space-y-3 text-sm text-muted">
               {[
                 "One dashboard with every metric from every device",
-                "ML-powered correlation discovery across all health domains",
+                "Cross-device correlation discovery across all health domains",
                 "Anomaly detection that catches what you'd miss alone",
-                "Predictive readiness based on your full data picture",
+                "Next-day predictions for HRV, resting HR, and sleep efficiency",
                 "Switch devices anytime — your complete history stays intact",
                 "Your data stays yours, never sold or shared",
               ].map((item) => (
@@ -686,8 +686,8 @@ function FinalCta() {
       <div className="mx-auto max-w-3xl px-4 sm:px-6 text-center">
         <h2 className="text-2xl sm:text-3xl font-bold mb-4">Ready to see the full picture?</h2>
         <p className="text-muted mb-8 max-w-lg mx-auto">
-          Connect your devices, let the intelligence layer do the rest. Discover what your health
-          data has been trying to tell you.
+          Connect your devices and let the analysis do the rest. Discover what your health data has
+          been trying to tell you.
         </p>
         <Link
           to="/login"
