@@ -35,6 +35,8 @@ PODS:
     - ExpoModulesCore
   - ExpoBackgroundRefresh (0.1.0):
     - ExpoModulesCore
+  - ExpoBleProbe (0.1.0):
+    - ExpoModulesCore
   - ExpoCamera (55.0.9):
     - ExpoModulesCore
     - ZXingObjC/OneD
@@ -2114,6 +2116,7 @@ DEPENDENCIES:
   - "Expo (from `../../../node_modules/.pnpm/expo@55.0.6_@babel+core@7.29.0_@expo+dom-webview@55.0.3_expo-router@5.0.7_react-dom@19._73c6a4280ae8d9447991bebd80cf187b/node_modules/expo`)"
   - "ExpoAsset (from `../../../node_modules/.pnpm/expo-asset@55.0.8_expo@55.0.6_react-native@0.83.4_@babel+core@7.29.0_@types+react@19.2._767ee00b038601cbcd5d73ebfa4e8c7f/node_modules/expo-asset/ios`)"
   - ExpoBackgroundRefresh (from `../modules/background-refresh/ios`)
+  - ExpoBleProbe (from `../modules/ble-probe/ios`)
   - "ExpoCamera (from `../../../node_modules/.pnpm/expo-camera@55.0.9_@types+emscripten@1.41.5_expo@55.0.6_react-native@0.83.4_@babel+core_2cc1d6b838828d6d9f964e30bd99e2cb/node_modules/expo-camera/ios`)"
   - ExpoCoreMotion (from `../modules/core-motion/ios`)
   - "ExpoDomWebView (from `../../../node_modules/.pnpm/@expo+dom-webview@55.0.3_expo@55.0.6_react-native@0.83.4_@babel+core@7.29.0_@types+reac_1939027815ccac4da6f27261c670dffc/node_modules/@expo/dom-webview/ios`)"
@@ -2235,6 +2238,8 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/.pnpm/expo-asset@55.0.8_expo@55.0.6_react-native@0.83.4_@babel+core@7.29.0_@types+react@19.2._767ee00b038601cbcd5d73ebfa4e8c7f/node_modules/expo-asset/ios"
   ExpoBackgroundRefresh:
     :path: "../modules/background-refresh/ios"
+  ExpoBleProbe:
+    :path: "../modules/ble-probe/ios"
   ExpoCamera:
     :path: "../../../node_modules/.pnpm/expo-camera@55.0.9_@types+emscripten@1.41.5_expo@55.0.6_react-native@0.83.4_@babel+core_2cc1d6b838828d6d9f964e30bd99e2cb/node_modules/expo-camera/ios"
   ExpoCoreMotion:
@@ -2443,6 +2448,7 @@ SPEC CHECKSUMS:
   Expo: 9a502b466698a5e33c0ba6b749ef50d7f8a02477
   ExpoAsset: bdc7bc21fe25d197c3aa7547e14c12c42087d9c9
   ExpoBackgroundRefresh: 2d2e50db10c33761478fc0e6a359d4070239b38c
+  ExpoBleProbe: ffc2030645c13e22a7d1838da8693255e98890b3
   ExpoCamera: bf0ce92035d27e22103bc7cad38e348c6ce2ffd3
   ExpoCoreMotion: a4219c6b672d7b000a9b55c3c53c825399d61aa7
   ExpoDomWebView: f101fb3db4b6eec4163fca51f7507189b7e48661

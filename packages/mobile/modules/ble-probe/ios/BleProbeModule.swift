@@ -371,7 +371,7 @@ public class BleProbeModule: Module {
         }
     }
 
-    private func describeProperties(_ props: CBCharacteristicProperties) -> String {
+    func describeProperties(_ props: CBCharacteristicProperties) -> String {
         var parts: [String] = []
         if props.contains(.read) { parts.append("read") }
         if props.contains(.write) { parts.append("write") }
