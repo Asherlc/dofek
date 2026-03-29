@@ -11,12 +11,12 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { createAccelerometerService } from "../lib/accelerometer-service";
 import {
   type ActivityRecorder,
   createActivityRecorder,
   type RecordingSnapshot,
 } from "../lib/activity-recording";
+import { createInertialMeasurementUnitService } from "../lib/inertial-measurement-unit-service";
 import { createLocationAdapter } from "../lib/location-service";
 import { trpc } from "../lib/trpc";
 import {
@@ -90,10 +90,10 @@ export default function RecordScreen() {
   const [activityName, setActivityName] = useState("");
   const [activityNotes, setActivityNotes] = useState("");
 
-  // Create recorder once (with accelerometer service for phone + watch)
+  // Create recorder once (with IMU service for phone + watch)
   const recorder = useMemo(() => {
     if (!recorderRef.current) {
-      const accelerometerService = createAccelerometerService({
+      const imuService = createInertialMeasurementUnitService({
         coreMotion: {
           isAccelerometerRecordingAvailable,
           startRecording,
@@ -121,6 +121,9 @@ export default function RecordScreen() {
               x: sample.accelerometerX,
               y: sample.accelerometerY,
               z: sample.accelerometerZ,
+              gyroscopeX: sample.gyroscopeX,
+              gyroscopeY: sample.gyroscopeY,
+              gyroscopeZ: sample.gyroscopeZ,
             }));
           },
         },
@@ -132,7 +135,7 @@ export default function RecordScreen() {
         createLocationAdapter(),
         trpcClient,
         "Dofek iOS",
-        accelerometerService,
+        imuService,
       );
     }
     return recorderRef.current;

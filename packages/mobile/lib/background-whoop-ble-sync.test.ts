@@ -1,11 +1,11 @@
 import { AppState } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AccelerometerUploadClient } from "./accelerometer-service.ts";
 import {
   initBackgroundWhoopBleSync,
   teardownBackgroundWhoopBleSync,
   type WhoopBleSyncDeps,
 } from "./background-whoop-ble-sync.ts";
+import type { InertialMeasurementUnitUploadClient } from "./inertial-measurement-unit-service.ts";
 
 function makeMockDeps(): WhoopBleSyncDeps {
   return {
@@ -19,10 +19,10 @@ function makeMockDeps(): WhoopBleSyncDeps {
   };
 }
 
-function makeMockTrpcClient(): AccelerometerUploadClient {
+function makeMockTrpcClient(): InertialMeasurementUnitUploadClient {
   return {
-    accelerometerSync: {
-      pushAccelerometerSamples: {
+    inertialMeasurementUnitSync: {
+      pushSamples: {
         mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
       },
     },
@@ -59,7 +59,7 @@ vi.mock("./telemetry", () => ({
 
 describe("background-whoop-ble-sync", () => {
   let whoopDeps: WhoopBleSyncDeps;
-  let trpcClient: AccelerometerUploadClient;
+  let trpcClient: InertialMeasurementUnitUploadClient;
 
   beforeEach(() => {
     whoopDeps = makeMockDeps();
@@ -88,26 +88,36 @@ describe("background-whoop-ble-sync", () => {
     expect(whoopDeps.startImuStreaming).toHaveBeenCalled();
   });
 
-  it("uploads buffered samples immediately on init", async () => {
+  it("uploads buffered samples with gyroscope data immediately on init", async () => {
     const samples = [
       {
         timestamp: "2026-03-27T10:00:00.000Z",
         accelerometerX: 1,
         accelerometerY: 2,
         accelerometerZ: 3,
-        gyroscopeX: 0,
-        gyroscopeY: 0,
-        gyroscopeZ: 0,
+        gyroscopeX: 10,
+        gyroscopeY: -20,
+        gyroscopeZ: 30,
       },
     ];
     vi.mocked(whoopDeps.getBufferedSamples).mockResolvedValue(samples);
 
     await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
 
-    expect(trpcClient.accelerometerSync.pushAccelerometerSamples.mutate).toHaveBeenCalledWith({
+    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith({
       deviceId: "WHOOP Strap",
       deviceType: "whoop",
-      samples: [{ timestamp: "2026-03-27T10:00:00.000Z", x: 1, y: 2, z: 3 }],
+      samples: [
+        {
+          timestamp: "2026-03-27T10:00:00.000Z",
+          x: 1,
+          y: 2,
+          z: 3,
+          gyroscopeX: 10,
+          gyroscopeY: -20,
+          gyroscopeZ: 30,
+        },
+      ],
     });
   });
 
@@ -140,7 +150,7 @@ describe("background-whoop-ble-sync", () => {
     appStateCallback?.("active");
 
     await vi.waitFor(() => {
-      expect(trpcClient.accelerometerSync.pushAccelerometerSamples.mutate).toHaveBeenCalledWith({
+      expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith({
         deviceId: "WHOOP Strap",
         deviceType: "whoop",
         samples: expect.arrayContaining([
@@ -172,7 +182,7 @@ describe("background-whoop-ble-sync", () => {
     await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
     await appStateCallback?.("active");
 
-    expect(trpcClient.accelerometerSync.pushAccelerometerSamples.mutate).not.toHaveBeenCalled();
+    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).not.toHaveBeenCalled();
   });
 
   it("ignores non-active state changes", async () => {

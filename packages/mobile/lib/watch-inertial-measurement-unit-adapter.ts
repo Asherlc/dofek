@@ -7,17 +7,17 @@ import {
   requestWatchRecording,
   setLastWatchSyncTimestamp,
 } from "../modules/watch-motion";
-import type { CoreMotionAdapter } from "./accelerometer-sync";
+import type { InertialMeasurementUnitAdapter } from "./inertial-measurement-unit-sync";
 
 /**
- * Creates a CoreMotionAdapter that reads accelerometer data from a paired
+ * Creates an InertialMeasurementUnitAdapter that reads IMU data from a paired
  * Apple Watch via WCSession file transfers, rather than from the local
  * iPhone's CMSensorRecorder.
  *
- * This adapter plugs into the existing `syncAccelerometerToServer()` pipeline
+ * This adapter plugs into the existing `syncInertialMeasurementUnitToServer()` pipeline
  * unchanged — the only difference is where the samples come from.
  */
-export function createWatchCoreMotionAdapter(): CoreMotionAdapter {
+export function createWatchInertialMeasurementUnitAdapter(): InertialMeasurementUnitAdapter {
   const paired = isWatchPaired();
   const installed = isWatchAppInstalled();
 
@@ -26,10 +26,7 @@ export function createWatchCoreMotionAdapter(): CoreMotionAdapter {
       return paired && installed;
     },
 
-    async queryRecordedData(
-      _fromDate: string,
-      _toDate: string,
-    ): Promise<Array<{ timestamp: string; x: number; y: number; z: number }>> {
+    async queryRecordedData(_fromDate: string, _toDate: string) {
       // Watch transfers entire files — we return all pending samples.
       // Date filtering is not needed because the Watch only sends
       // samples newer than the last acknowledged sync.

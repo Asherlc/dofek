@@ -26,6 +26,9 @@ const timeSeriesRowSchema = z.object({
   x: z.coerce.number(),
   y: z.coerce.number(),
   z: z.coerce.number(),
+  gyroscope_x: z.coerce.number().nullable(),
+  gyroscope_y: z.coerce.number().nullable(),
+  gyroscope_z: z.coerce.number().nullable(),
 });
 
 // ---------------------------------------------------------------------------
@@ -46,11 +49,14 @@ export interface DeviceSyncStatus {
   earliestSample: string | null;
 }
 
-export interface AccelerometerSample {
+export interface InertialMeasurementUnitSample {
   recordedAt: string;
   x: number;
   y: number;
   z: number;
+  gyroscopeX: number | null;
+  gyroscopeY: number | null;
+  gyroscopeZ: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -64,8 +70,8 @@ const MAX_WINDOW_MS = 10 * 60 * 1000;
 // Repository
 // ---------------------------------------------------------------------------
 
-/** Data access for accelerometer sample records. */
-export class AccelerometerRepository {
+/** Data access for inertial measurement unit sample records. */
+export class InertialMeasurementUnitRepository {
   readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
 
@@ -83,7 +89,7 @@ export class AccelerometerRepository {
           date_trunc('day', recorded_at)::date::text AS date,
           count(*)::int AS sample_count,
           (count(*)::float / (50.0 * 3600))::numeric(6,2)::float AS hours_covered
-        FROM fitness.accelerometer_sample
+        FROM fitness.inertial_measurement_unit_sample
         WHERE user_id = ${this.#userId}::uuid
           AND recorded_at > now() - make_interval(days => ${days})
         GROUP BY 1
@@ -108,7 +114,7 @@ export class AccelerometerRepository {
           count(*)::int AS sample_count,
           max(recorded_at)::text AS latest_sample,
           min(recorded_at)::text AS earliest_sample
-        FROM fitness.accelerometer_sample
+        FROM fitness.inertial_measurement_unit_sample
         WHERE user_id = ${this.#userId}::uuid
         GROUP BY device_id, device_type`,
     );
@@ -126,7 +132,10 @@ export class AccelerometerRepository {
    * Raw time series for a short window — for waveform visualization.
    * Clamps the window to a maximum of 10 minutes (30,000 samples at 50 Hz).
    */
-  async getTimeSeries(startDate: string, endDate: string): Promise<AccelerometerSample[]> {
+  async getTimeSeries(
+    startDate: string,
+    endDate: string,
+  ): Promise<InertialMeasurementUnitSample[]> {
     const start = new Date(startDate);
     const end = new Date(endDate);
     const maxEnd = new Date(start.getTime() + MAX_WINDOW_MS);
@@ -137,8 +146,9 @@ export class AccelerometerRepository {
       timeSeriesRowSchema,
       sql`SELECT
           recorded_at::text,
-          x, y, z
-        FROM fitness.accelerometer_sample
+          x, y, z,
+          gyroscope_x, gyroscope_y, gyroscope_z
+        FROM fitness.inertial_measurement_unit_sample
         WHERE user_id = ${this.#userId}::uuid
           AND recorded_at >= ${start.toISOString()}::timestamptz
           AND recorded_at < ${clampedEnd.toISOString()}::timestamptz
@@ -150,6 +160,9 @@ export class AccelerometerRepository {
       x: row.x,
       y: row.y,
       z: row.z,
+      gyroscopeX: row.gyroscope_x,
+      gyroscopeY: row.gyroscope_y,
+      gyroscopeZ: row.gyroscope_z,
     }));
   }
 }

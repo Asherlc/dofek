@@ -1,4 +1,4 @@
-import type { AccelerometerSample } from "../core-motion";
+import type { InertialMeasurementUnitSample } from "../core-motion";
 import WatchMotionModule from "./src/WatchMotionModule";
 
 export interface WatchSyncStatus {
@@ -47,7 +47,7 @@ export async function requestWatchRecording(): Promise<boolean> {
 /** Read all pending accelerometer sample files transferred from the Watch.
  * Files are gzip-compressed JSON arrays. Parsing happens on a background thread.
  * @returns Flattened array of all samples from all pending files. */
-export async function getPendingWatchSamples(): Promise<AccelerometerSample[]> {
+export async function getPendingWatchSamples(): Promise<InertialMeasurementUnitSample[]> {
   return WatchMotionModule.getPendingWatchSamples();
 }
 
@@ -65,7 +65,7 @@ export function getPendingWatchFileNames(): string[] {
 /** Read and parse a single pending Watch transfer file.
  * @param fileName — file name within the pending directory
  * @returns Parsed accelerometer samples from that file */
-export async function readWatchFile(fileName: string): Promise<AccelerometerSample[]> {
+export async function readWatchFile(fileName: string): Promise<InertialMeasurementUnitSample[]> {
   return WatchMotionModule.readWatchFile(fileName);
 }
 

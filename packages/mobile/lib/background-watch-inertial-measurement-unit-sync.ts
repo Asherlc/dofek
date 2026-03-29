@@ -1,6 +1,6 @@
 import { AppState, type AppStateStatus } from "react-native";
 import { isWatchAppInstalled, isWatchPaired, requestWatchRecording } from "../modules/watch-motion";
-import type { AccelerometerSyncTrpcClient } from "./accelerometer-sync";
+import type { InertialMeasurementUnitSyncTrpcClient } from "./inertial-measurement-unit-sync";
 import { captureException, logger } from "./telemetry";
 import { syncWatchAccelerometerFiles } from "./watch-file-sync";
 
@@ -10,7 +10,7 @@ let appStateSubscription: ReturnType<typeof AppState.addEventListener> | null = 
 let syncing = false;
 
 /**
- * Initialize background Apple Watch accelerometer sync.
+ * Initialize background Apple Watch IMU sync.
  *
  * - Checks if a Watch is paired with the Dofek app installed
  * - Listens for app foreground events and syncs any pending transferred data
@@ -21,8 +21,8 @@ let syncing = false;
  * so a failure in one file does not block others from being uploaded and
  * acknowledged.
  */
-export async function initBackgroundWatchAccelerometerSync(
-  trpcClient: AccelerometerSyncTrpcClient,
+export async function initBackgroundWatchInertialMeasurementUnitSync(
+  trpcClient: InertialMeasurementUnitSyncTrpcClient,
 ): Promise<void> {
   const paired = isWatchPaired();
   const installed = isWatchAppInstalled();
@@ -55,7 +55,7 @@ export async function initBackgroundWatchAccelerometerSync(
   });
 
   // Run an initial sync immediately. The app is already active when init runs,
-  // so no AppState "active" event fires until the next background → foreground cycle.
+  // so no AppState "active" event fires until the next background -> foreground cycle.
   logger.info(TAG, "Running initial sync");
   await syncAndRecord(trpcClient);
   logger.info(TAG, "Initial sync complete");
@@ -64,7 +64,7 @@ export async function initBackgroundWatchAccelerometerSync(
 /**
  * Sync pending Watch files and request the Watch to continue recording.
  */
-async function syncAndRecord(trpcClient: AccelerometerSyncTrpcClient): Promise<void> {
+async function syncAndRecord(trpcClient: InertialMeasurementUnitSyncTrpcClient): Promise<void> {
   await syncWatchAccelerometerFiles(trpcClient);
 
   // Ask the Watch to restart recording and send any new data
@@ -75,8 +75,8 @@ async function syncAndRecord(trpcClient: AccelerometerSyncTrpcClient): Promise<v
   }
 }
 
-/** Clean up background Watch accelerometer sync listeners. */
-export function teardownBackgroundWatchAccelerometerSync(): void {
+/** Clean up background Watch IMU sync listeners. */
+export function teardownBackgroundWatchInertialMeasurementUnitSync(): void {
   if (appStateSubscription) {
     appStateSubscription.remove();
     appStateSubscription = null;

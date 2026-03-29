@@ -75,7 +75,7 @@ function useMotionPermission(available: boolean): MotionAuthorizationStatus | "u
   }, [status, refreshStatus]);
 
   // Re-read permission when the app returns to foreground (the iOS
-  // permission dialog causes a background→active transition)
+  // permission dialog causes a background->active transition)
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextState: AppStateStatus) => {
       if (nextState === "active") {
@@ -145,7 +145,7 @@ function getWhoopWarning(bleState: string, connectionState: string): string | nu
   return null;
 }
 
-export default function AccelerometerScreen() {
+export default function InertialMeasurementUnitScreen() {
   const available = isAccelerometerRecordingAvailable();
   const recording = available && isRecordingActive();
   const authStatus = useMotionPermission(available);
@@ -168,8 +168,8 @@ export default function AccelerometerScreen() {
     return () => clearInterval(interval);
   }, []);
 
-  const syncStatus = trpc.accelerometer.getSyncStatus.useQuery();
-  const dailyCounts = trpc.accelerometer.getDailyCounts.useQuery({ days: 30 });
+  const syncStatus = trpc.inertialMeasurementUnit.getSyncStatus.useQuery();
+  const dailyCounts = trpc.inertialMeasurementUnit.getDailyCounts.useQuery({ days: 30 });
 
   const trpcUtils = trpc.useUtils();
   const whoopImuSetting = trpc.settings.get.useQuery({ key: "whoopAlwaysOnImu" });

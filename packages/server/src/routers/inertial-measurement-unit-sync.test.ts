@@ -10,16 +10,24 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
-import { accelerometerSyncRouter } from "./accelerometer-sync.ts";
+import { inertialMeasurementUnitSyncRouter } from "./inertial-measurement-unit-sync.ts";
 
-const createCaller = createTestCallerFactory(accelerometerSyncRouter);
+const createCaller = createTestCallerFactory(inertialMeasurementUnitSyncRouter);
 
 function makeExecute() {
   return vi.fn().mockResolvedValue([]);
 }
 
 function makeSample(
-  overrides: Partial<{ timestamp: string; x: number; y: number; z: number }> = {},
+  overrides: Partial<{
+    timestamp: string;
+    x: number;
+    y: number;
+    z: number;
+    gyroscopeX: number;
+    gyroscopeY: number;
+    gyroscopeZ: number;
+  }> = {},
 ) {
   return {
     timestamp: "2026-03-25T10:00:00.020Z",
@@ -30,13 +38,13 @@ function makeSample(
   };
 }
 
-describe("accelerometerSyncRouter", () => {
-  describe("pushAccelerometerSamples", () => {
+describe("inertialMeasurementUnitSyncRouter", () => {
+  describe("pushSamples", () => {
     it("inserts samples with correct SQL", async () => {
       const execute = makeExecute();
       const caller = createCaller({ db: { execute }, userId: "user-1" });
 
-      const result = await caller.pushAccelerometerSamples({
+      const result = await caller.pushSamples({
         deviceId: "iPhone 15 Pro",
         deviceType: "iphone",
         samples: [makeSample(), makeSample({ timestamp: "2026-03-25T10:00:00.040Z", x: 0.015 })],
@@ -51,7 +59,7 @@ describe("accelerometerSyncRouter", () => {
       const execute = makeExecute();
       const caller = createCaller({ db: { execute }, userId: "user-1" });
 
-      const result = await caller.pushAccelerometerSamples({
+      const result = await caller.pushSamples({
         deviceId: "iPhone 15 Pro",
         deviceType: "iphone",
         samples: [],
@@ -66,10 +74,9 @@ describe("accelerometerSyncRouter", () => {
       const execute = makeExecute();
       const caller = createCaller({ db: { execute }, userId: "user-1" });
 
-      // Build an invalid sample missing y and z — Zod should reject at runtime
       const invalidSample = { timestamp: "2026-03-25T10:00:00Z", x: 0.1 };
       await expect(
-        caller.pushAccelerometerSamples({
+        caller.pushSamples({
           deviceId: "iPhone 15 Pro",
           deviceType: "iphone",
           samples: [invalidSample],
@@ -82,7 +89,7 @@ describe("accelerometerSyncRouter", () => {
       const caller = createCaller({ db: { execute }, userId: "user-1" });
 
       await expect(
-        caller.pushAccelerometerSamples({
+        caller.pushSamples({
           deviceId: "",
           deviceType: "iphone",
           samples: [makeSample()],
@@ -94,14 +101,13 @@ describe("accelerometerSyncRouter", () => {
       const execute = makeExecute();
       const caller = createCaller({ db: { execute }, userId: "user-1" });
 
-      // Create 7500 samples — should produce 2 batches (5000 + 2500)
-      const samples = Array.from({ length: 7500 }, (_, i) =>
+      const samples = Array.from({ length: 7500 }, (_, index) =>
         makeSample({
-          timestamp: `2026-03-25T10:00:${String(Math.floor(i / 50)).padStart(2, "0")}.${String((i % 50) * 20).padStart(3, "0")}Z`,
+          timestamp: `2026-03-25T10:00:${String(Math.floor(index / 50)).padStart(2, "0")}.${String((index % 50) * 20).padStart(3, "0")}Z`,
         }),
       );
 
-      const result = await caller.pushAccelerometerSamples({
+      const result = await caller.pushSamples({
         deviceId: "iPhone 15 Pro",
         deviceType: "iphone",
         samples,
@@ -110,6 +116,48 @@ describe("accelerometerSyncRouter", () => {
       expect(result.inserted).toBe(7500);
       // 1 ensureProvider + 2 batch inserts
       expect(execute).toHaveBeenCalledTimes(3);
+    });
+
+    it("accepts samples with optional gyroscope fields", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({ db: { execute }, userId: "user-1" });
+
+      const result = await caller.pushSamples({
+        deviceId: "WHOOP Strap",
+        deviceType: "whoop",
+        samples: [
+          makeSample({
+            gyroscopeX: 0.15,
+            gyroscopeY: -0.22,
+            gyroscopeZ: 0.08,
+          }),
+        ],
+      });
+
+      expect(result.inserted).toBe(1);
+      expect(execute).toHaveBeenCalledTimes(2);
+    });
+
+    it("accepts a mix of samples with and without gyroscope", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({ db: { execute }, userId: "user-1" });
+
+      const result = await caller.pushSamples({
+        deviceId: "Apple Watch",
+        deviceType: "apple_watch",
+        samples: [
+          makeSample(), // accel only
+          makeSample({
+            timestamp: "2026-03-25T10:00:00.040Z",
+            gyroscopeX: 0.1,
+            gyroscopeY: 0.2,
+            gyroscopeZ: 0.3,
+          }), // accel + gyro
+        ],
+      });
+
+      expect(result.inserted).toBe(2);
+      expect(execute).toHaveBeenCalledTimes(2);
     });
   });
 });

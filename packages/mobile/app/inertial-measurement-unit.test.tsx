@@ -112,7 +112,7 @@ vi.mock("../lib/trpc", () => ({
         },
       },
     }),
-    accelerometer: {
+    inertialMeasurementUnit: {
       getSyncStatus: {
         useQuery: () => ({ data: null, isLoading: false }),
       },
@@ -171,7 +171,7 @@ vi.mock("./_layout", () => ({
   rootStackScreenOptions: {},
 }));
 
-describe("AccelerometerScreen", () => {
+describe("InertialMeasurementUnitScreen", () => {
   beforeEach(() => {
     mockGetMotionAuthorizationStatus.mockReturnValue("notDetermined");
     mockRequestMotionPermission.mockResolvedValue("authorized");
@@ -187,7 +187,9 @@ describe("AccelerometerScreen", () => {
 
   it("updates permission status when app returns to foreground", async () => {
     // Start with notDetermined
-    const { unmount } = render(React.createElement((await import("./accelerometer")).default));
+    const { unmount } = render(
+      React.createElement((await import("./inertial-measurement-unit")).default),
+    );
 
     expect(screen.getByText("notDetermined")).toBeTruthy();
 
@@ -205,7 +207,9 @@ describe("AccelerometerScreen", () => {
   });
 
   it("requests permission on mount when status is notDetermined", async () => {
-    const { unmount } = render(React.createElement((await import("./accelerometer")).default));
+    const { unmount } = render(
+      React.createElement((await import("./inertial-measurement-unit")).default),
+    );
 
     expect(mockRequestMotionPermission).toHaveBeenCalled();
 
@@ -216,7 +220,9 @@ describe("AccelerometerScreen", () => {
     // Start with the toggle OFF
     mockSettingsGetData = null;
 
-    const { unmount } = render(React.createElement((await import("./accelerometer")).default));
+    const { unmount } = render(
+      React.createElement((await import("./inertial-measurement-unit")).default),
+    );
 
     // Find the switch — it should be unchecked
     const toggle = screen.getByRole("checkbox");
@@ -254,7 +260,9 @@ describe("AccelerometerScreen", () => {
       pendingFileCount: 0,
     });
 
-    const { unmount } = render(React.createElement((await import("./accelerometer")).default));
+    const { unmount } = render(
+      React.createElement((await import("./inertial-measurement-unit")).default),
+    );
 
     // Watch shows "No" for Paired and App Installed
     const initialNoLabels = screen.getAllByText("No");
