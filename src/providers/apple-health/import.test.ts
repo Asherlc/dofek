@@ -11,6 +11,7 @@ import {
   findLatestExport,
   importClinicalRecords,
   readZipEntries,
+  runImport,
 } from "./import.ts";
 import type { ProgressInfo } from "./streaming.ts";
 
@@ -238,6 +239,152 @@ ${records}
   writeFileSync(xmlPath, xml, "utf8");
   return xmlPath;
 }
+
+// ============================================================
+// runImport
+// ============================================================
+
+function createRunImportMockDb() {
+  const deleteWhere = vi.fn().mockResolvedValue(undefined);
+  const deleteFn = vi.fn().mockReturnValue({ where: deleteWhere });
+
+  const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
+  const onConflictDoNothing = vi.fn().mockResolvedValue(undefined);
+  const values = vi.fn().mockReturnValue({ onConflictDoUpdate, onConflictDoNothing });
+  const insertFn = vi.fn().mockReturnValue({ values });
+
+  const selectWhere = vi.fn().mockResolvedValue([]);
+  const selectFrom = vi.fn().mockReturnValue({ where: selectWhere });
+  const selectFn = vi.fn().mockReturnValue({ from: selectFrom });
+
+  const execute = vi.fn().mockResolvedValue([]);
+
+  return {
+    db: { select: selectFn, insert: insertFn, delete: deleteFn, execute } as SyncDatabase,
+    spies: { deleteFn, deleteWhere, insertFn, values, onConflictDoUpdate, onConflictDoNothing },
+  };
+}
+
+describe("runImport", () => {
+  let tmpDir: string;
+
+  beforeAll(() => {
+    tmpDir = join(tmpdir(), `run-import-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterAll(() => {
+    try {
+      rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      /* best effort */
+    }
+  });
+
+  it("returns zero records for empty XML", async () => {
+    const xmlPath = join(tmpDir, "empty-import.xml");
+    writeFileSync(
+      xmlPath,
+      '<?xml version="1.0" encoding="UTF-8"?><HealthData locale="en_US"></HealthData>',
+      "utf8",
+    );
+    const { db, spies } = createRunImportMockDb();
+
+    const result = await runImport(db, "apple_health", xmlPath, new Date("2020-01-01"));
+
+    expect(result.provider).toBe("apple_health");
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(0);
+    expect(result.duration).toBeGreaterThan(0);
+    // Should still delete existing rows
+    expect(spies.deleteFn).toHaveBeenCalled();
+  });
+
+  it("imports heart rate records from XML", async () => {
+    const xmlPath = join(tmpDir, "hr-import.xml");
+    writeFileSync(
+      xmlPath,
+      `<?xml version="1.0" encoding="UTF-8"?>
+<HealthData locale="en_US">
+  <Record type="HKQuantityTypeIdentifierHeartRate"
+    sourceName="Apple Watch" unit="count/min" value="72"
+    startDate="2024-06-15 10:00:00 -0700"
+    endDate="2024-06-15 10:00:05 -0700" />
+  <Record type="HKQuantityTypeIdentifierHeartRate"
+    sourceName="Apple Watch" unit="count/min" value="75"
+    startDate="2024-06-15 10:01:00 -0700"
+    endDate="2024-06-15 10:01:05 -0700" />
+</HealthData>`,
+      "utf8",
+    );
+    const { db } = createRunImportMockDb();
+
+    const result = await runImport(db, "apple_health", xmlPath, new Date("2024-01-01"));
+
+    expect(result.recordsSynced).toBe(2);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it("filters records by since date", async () => {
+    const xmlPath = join(tmpDir, "since-filter.xml");
+    writeFileSync(
+      xmlPath,
+      `<?xml version="1.0" encoding="UTF-8"?>
+<HealthData locale="en_US">
+  <Record type="HKQuantityTypeIdentifierHeartRate"
+    sourceName="Watch" unit="count/min" value="72"
+    startDate="2023-01-01 10:00:00 -0700"
+    endDate="2023-01-01 10:00:05 -0700" />
+  <Record type="HKQuantityTypeIdentifierHeartRate"
+    sourceName="Watch" unit="count/min" value="75"
+    startDate="2024-06-15 10:00:00 -0700"
+    endDate="2024-06-15 10:00:05 -0700" />
+</HealthData>`,
+      "utf8",
+    );
+    const { db } = createRunImportMockDb();
+
+    const result = await runImport(db, "apple_health", xmlPath, new Date("2024-01-01"));
+
+    // Only the 2024 record should be imported
+    expect(result.recordsSynced).toBe(1);
+  });
+
+  it("handles XML parse errors gracefully", async () => {
+    const xmlPath = join(tmpDir, "bad-xml.xml");
+    writeFileSync(xmlPath, "this is not xml at all", "utf8");
+    const { db } = createRunImportMockDb();
+
+    const result = await runImport(db, "apple_health", xmlPath, new Date("2020-01-01"));
+
+    expect(result.errors).toHaveLength(1);
+  });
+
+  it("reports progress via callback", async () => {
+    const xmlPath = join(tmpDir, "progress-import.xml");
+    writeFileSync(
+      xmlPath,
+      `<?xml version="1.0" encoding="UTF-8"?>
+<HealthData locale="en_US">
+  <Record type="HKQuantityTypeIdentifierStepCount"
+    sourceName="iPhone" unit="count" value="1000"
+    startDate="2024-06-15 10:00:00 -0700"
+    endDate="2024-06-15 11:00:00 -0700" />
+</HealthData>`,
+      "utf8",
+    );
+    const { db } = createRunImportMockDb();
+    const progressCalls: number[] = [];
+
+    await runImport(db, "apple_health", xmlPath, new Date("2024-01-01"), (info) => {
+      progressCalls.push(info.percentage);
+    });
+
+    // Should have received at least one progress callback ending at 100
+    expect(progressCalls.length).toBeGreaterThan(0);
+    expect(progressCalls[progressCalls.length - 1]).toBe(100);
+  });
+});
 
 // ============================================================
 // extractExportXml
