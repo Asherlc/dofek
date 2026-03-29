@@ -327,7 +327,7 @@ describe("RideWithGpsProvider — constructor stores fetchFn", () => {
     const setup = provider.authSetup();
     const getUserIdentity = setup.getUserIdentity;
     expect(getUserIdentity).toBeDefined();
-    getUserIdentity?.("tok").catch(() => {});
+    getUserIdentity?.("tok").catch((_error: unknown) => {});
     expect(customFetch).toHaveBeenCalled();
   });
 });

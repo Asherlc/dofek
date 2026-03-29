@@ -35,12 +35,7 @@ export function MacroSummary({
         <Text style={styles.calorieCount}>{calories}</Text>
         <Text style={styles.calorieLabel}>of {caloriesGoal} cal</Text>
         <View style={styles.progressBarBackground}>
-          <View
-            style={[
-              styles.progressBarFill,
-              { width: `${progressFraction * 100}%` },
-            ]}
-          />
+          <View style={[styles.progressBarFill, { width: `${progressFraction * 100}%` }]} />
         </View>
         <Text style={styles.remainingText}>
           {caloriesRemaining > 0 ? `${caloriesRemaining} remaining` : "Goal reached"}

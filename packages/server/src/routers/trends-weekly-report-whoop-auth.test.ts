@@ -10,7 +10,6 @@ vi.mock("../trpc.ts", async () => {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
     cachedProtectedQuery: () => trpc.procedure,
-    cachedProtectedQueryLight: () => trpc.procedure,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -115,7 +114,7 @@ describe("trendsRouter", () => {
     it("returns weekly trend rows", async () => {
       const rows = [
         {
-          week: "2024-01-15",
+          period: "2024-01-15",
           avg_hr: 150,
           max_hr: 185,
           avg_power: 210,

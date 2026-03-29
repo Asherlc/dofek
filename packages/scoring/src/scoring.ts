@@ -196,6 +196,13 @@ export function sleepDebtColor(minutes: number): string {
   return statusColors.danger;
 }
 
+/** Get the color for a sleep performance percentage (actual vs target) */
+export function sleepPerformanceColor(percentage: number): string {
+  if (percentage >= 95) return statusColors.positive;
+  if (percentage >= 85) return statusColors.warning;
+  return statusColors.danger;
+}
+
 /** Form zone boundaries (intervals.icu defaults) */
 export const FORM_ZONE_TRANSITION = 25;
 export const FORM_ZONE_FRESH = 5;

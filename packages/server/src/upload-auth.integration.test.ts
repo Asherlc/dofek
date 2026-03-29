@@ -165,7 +165,7 @@ describe("Upload & Auth - extended coverage", () => {
       const res = await fetch(`${baseUrl}/auth/callback/authentik?error=consent_required`);
       expect(res.status).toBe(400);
       const body = await res.text();
-      expect(body).toContain("consent_required");
+      expect(body).toContain("Authorization denied");
     });
 
     it("GET /auth/callback/:provider with valid provider but no code/state/error", async () => {
