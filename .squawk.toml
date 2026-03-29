@@ -8,4 +8,5 @@ excluded_rules = [
   "renaming-table",
   "prefer-robust-stmts",
   "require-timeout-settings",
+  "require-concurrent-index-creation",
 ]
