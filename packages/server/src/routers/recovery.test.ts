@@ -894,6 +894,168 @@ describe("recoveryRouter.readinessScore", () => {
     expect(result[0]?.components.sleepScore).toBe(0);
   });
 
+  it("defaults to 62 for HRV score when only hrv is null (mean/sd present)", async () => {
+    const today = new Date();
+    const recentDate = new Date(today);
+    recentDate.setDate(today.getDate() - 5);
+    const dateStr = recentDate.toISOString().split("T")[0];
+
+    const rows = [
+      {
+        date: dateStr,
+        hrv: null, // null hrv but valid stats
+        resting_hr: 45, // very low → high score when inverted
+        respiratory_rate: 15,
+        hrv_mean_30d: 50,
+        hrv_sd_30d: 10,
+        rhr_mean_30d: 60,
+        rhr_sd_30d: 5,
+        rr_mean_30d: 15,
+        rr_sd_30d: 1,
+        efficiency_pct: 85,
+      },
+    ];
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.readinessScore({});
+
+    expect(result[0]?.components.hrvScore).toBe(62);
+    // RHR should compute: z=(45-60)/5=-3, inverted=+3 → high score
+    expect(result[0]?.components.restingHrScore).toBeGreaterThan(80);
+  });
+
+  it("defaults to 62 for HRV score when only hrv_mean_30d is null", async () => {
+    const today = new Date();
+    const recentDate = new Date(today);
+    recentDate.setDate(today.getDate() - 5);
+    const dateStr = recentDate.toISOString().split("T")[0];
+
+    const rows = [
+      {
+        date: dateStr,
+        hrv: 55,
+        resting_hr: 60,
+        respiratory_rate: 15,
+        hrv_mean_30d: null, // null mean
+        hrv_sd_30d: 10,
+        rhr_mean_30d: 60,
+        rhr_sd_30d: 5,
+        rr_mean_30d: 15,
+        rr_sd_30d: 1,
+        efficiency_pct: 85,
+      },
+    ];
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.readinessScore({});
+
+    expect(result[0]?.components.hrvScore).toBe(62);
+  });
+
+  it("defaults to 62 for RHR score when only resting_hr is null", async () => {
+    const today = new Date();
+    const recentDate = new Date(today);
+    recentDate.setDate(today.getDate() - 5);
+    const dateStr = recentDate.toISOString().split("T")[0];
+
+    const rows = [
+      {
+        date: dateStr,
+        hrv: 80, // far above mean → high HRV score
+        resting_hr: null, // null resting HR
+        respiratory_rate: 15,
+        hrv_mean_30d: 50,
+        hrv_sd_30d: 10,
+        rhr_mean_30d: 60,
+        rhr_sd_30d: 5,
+        rr_mean_30d: 15,
+        rr_sd_30d: 1,
+        efficiency_pct: 85,
+      },
+    ];
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.readinessScore({});
+
+    expect(result[0]?.components.restingHrScore).toBe(62);
+    // HRV: z=(80-50)/10=+3 → high score
+    expect(result[0]?.components.hrvScore).toBeGreaterThan(80);
+  });
+
+  it("defaults to 62 for RHR score when only rhr_mean_30d is null", async () => {
+    const today = new Date();
+    const recentDate = new Date(today);
+    recentDate.setDate(today.getDate() - 5);
+    const dateStr = recentDate.toISOString().split("T")[0];
+
+    const rows = [
+      {
+        date: dateStr,
+        hrv: 55,
+        resting_hr: 60,
+        respiratory_rate: 15,
+        hrv_mean_30d: 50,
+        hrv_sd_30d: 10,
+        rhr_mean_30d: null, // null mean
+        rhr_sd_30d: 5,
+        rr_mean_30d: 15,
+        rr_sd_30d: 1,
+        efficiency_pct: 85,
+      },
+    ];
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.readinessScore({});
+
+    expect(result[0]?.components.restingHrScore).toBe(62);
+  });
+
+  it("defaults to 62 for respiratory score when only respiratory_rate is null", async () => {
+    const today = new Date();
+    const recentDate = new Date(today);
+    recentDate.setDate(today.getDate() - 5);
+    const dateStr = recentDate.toISOString().split("T")[0];
+
+    const rows = [
+      {
+        date: dateStr,
+        hrv: 80, // far above mean → high score
+        resting_hr: 45, // far below mean → high score (inverted)
+        respiratory_rate: null, // null respiratory rate
+        hrv_mean_30d: 50,
+        hrv_sd_30d: 10,
+        rhr_mean_30d: 60,
+        rhr_sd_30d: 5,
+        rr_mean_30d: 15,
+        rr_sd_30d: 1,
+        efficiency_pct: 85,
+      },
+    ];
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.readinessScore({});
+
+    expect(result[0]?.components.respiratoryRateScore).toBe(62);
+    // HRV and RHR should compute to high scores
+    expect(result[0]?.components.hrvScore).toBeGreaterThan(80);
+    expect(result[0]?.components.restingHrScore).toBeGreaterThan(80);
+  });
+
   it("high HRV (positive z-score) produces higher HRV score", async () => {
     const today = new Date();
     const recentDate = new Date(today);
