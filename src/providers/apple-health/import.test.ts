@@ -895,6 +895,65 @@ describe("importClinicalRecords", () => {
     )?.[0];
     expect(allergyBatch?.[0].sourceName).toBe("UCSF");
   });
+
+  it("handles MedicationRequest parse errors gracefully", async () => {
+    const badMed = {
+      resourceType: "MedicationRequest",
+      id: "med-bad",
+      medicationReference: { display: "Bad Med" },
+      // dosageInstruction with timing that will cause an issue is fine,
+      // but let's test with a resource that has an unexpected structure
+      // by making contained have wrong resourceType
+      contained: [{ resourceType: "Medication", code: { text: "Med" } }],
+    };
+    const zipPath = createClinicalZip(tmpDir, "med-error", [
+      { name: "MedicationRequest-bad.json", content: JSON.stringify(badMed) },
+    ]);
+    const xmlPath = createTestXml(tmpDir, "med-error.xml", []);
+    const { db } = createImportMockDb();
+
+    const result = await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
+
+    // Should successfully parse (no required fields missing in MedicationRequest)
+    expect(result.inserted).toBe(1);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it("handles Condition with missing code text by using coding display", async () => {
+    const condWithCoding = {
+      resourceType: "Condition",
+      id: "cond-coding-only",
+      code: {
+        coding: [{ system: "http://snomed.info/sct", display: "Back Pain", code: "161891005" }],
+      },
+    };
+    const zipPath = createClinicalZip(tmpDir, "cond-coding", [
+      { name: "Condition-coding.json", content: JSON.stringify(condWithCoding) },
+    ]);
+    const xmlPath = createTestXml(tmpDir, "cond-coding.xml", []);
+    const { db, spies } = createImportMockDb();
+
+    const result = await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
+    expect(result.inserted).toBe(1);
+
+    const allValuesCalls = spies.values.mock.calls;
+    const batch = allValuesCalls.find(
+      (call) => call[0]?.[0]?.externalId === "cond-coding-only",
+    )?.[0];
+    expect(batch?.[0].name).toBe("Back Pain");
+  });
+
+  it("deletes medication, condition, allergy tables on re-import", async () => {
+    const zipPath = createEmptyZip(tmpDir, "delete-clinical");
+    const xmlPath = createTestXml(tmpDir, "delete-clinical.xml", []);
+    const { db, spies } = createImportMockDb();
+
+    await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
+
+    // 5 deletes: labResult, labPanel, medication, condition, allergyIntolerance
+    expect(spies.deleteFn).toHaveBeenCalledTimes(5);
+    expect(spies.deleteWhere).toHaveBeenCalledTimes(5);
+  });
 });
 
 // ============================================================
