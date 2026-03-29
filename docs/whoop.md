@@ -297,12 +297,23 @@ In the iOS capture, these mapped to ATT handles: `0x099b` (CMD_TO_STRAP), `0x099
 All BLE payloads use this frame structure:
 
 ```
-[0xAA] [version:u8] [payloadLen:u16 LE] [headerFields...] [payload...] [crc32:u32 LE]
+[0xAA] [version:u8] [payloadLen:u16 LE] [payload...] [crc32:u32 LE]
 ```
 
 - `0xAA` = start-of-frame marker
-- Version is typically `0x01`
+- Version byte is `0x01` (at offset 1 — NOT part of the payload length)
+- Payload length is u16 LE at **byte offsets 2-3** (not 1-2)
+- Header is 4 bytes total: SOF(1) + version(1) + payloadLen(2)
 - CRC32 is over the entire frame excluding the CRC itself
+- CRC32 trailer can be omitted in commands — the strap accepts commands without strict CRC validation
+
+**Confirmed (March 2026) via live hex dump analysis:** Raw BLE notifications from a WHOOP 4.0 strap showed `AA 01 2C 00` → SOF=0xAA, version=0x01, payloadLen=0x002C=44. With 4-byte header + 44-byte payload + 4-byte CRC32 = 52 bytes, exactly matching the notification size. Similarly `AA 01 44 00` → payloadLen=68, total=76 bytes. Previous implementation incorrectly read payloadLen from bytes 1-2 (producing 11265 for a 52-byte frame), causing all frame parsing to fail.
+
+**Command frame format:** Commands written to CMD_TO_STRAP must also include the version byte:
+```
+[0xAA] [0x01] [payloadLen:u16 LE] [0x23] [commandByte]
+```
+Previous implementation omitted the version byte (`AA 02 00 00 23 6A`), producing malformed frames that the strap silently ignored.
 
 #### Packet types
 
@@ -407,6 +418,29 @@ Each sample is 12 bytes (6 × int16 LE). Channels a = accelerometer XYZ, channel
 **Current limitation (March 2026):** Our capture only shows the standard sync (HR + quaternion). To capture raw IMU packets, we need to either:
 - Start a Strength Trainer workout (the app sends `TOGGLE_IMU_MODE` automatically)
 - Build a custom BLE client that sends the `0x69` command directly (requires stealing the BLE connection from the Whoop app)
+
+### Live BLE investigation (March 28, 2026)
+
+Deployed a debug build to a physical iPhone connected to a WHOOP 4.0 strap ("WHOOP MGB0542854") via BLE. Key findings:
+
+1. **BLE connection works**: `retrieveConnectedPeripherals` finds the strap already connected by the WHOOP app. Our app successfully connects, discovers services/characteristics, and subscribes to DATA_FROM_STRAP notifications. iOS allows multiple apps to share a BLE peripheral.
+
+2. **Data flows but contains no IMU packets**: 697-944 BLE notifications arrive on DATA_FROM_STRAP. All are console log packets (packet type 0x01 at payload offset 0) containing ASCII firmware debug output like `"BLE: hist transfer"`, `"response ack, start burst"`, `"History burst success"`. These are the strap's internal debug logs during its normal historical data sync with the WHOOP app. No IMU packets (type 0x33/0x34) were observed.
+
+3. **TOGGLE_IMU_MODE command appears to be ignored**: After fixing the command frame format (adding the version byte), the strap still doesn't enter IMU mode. Possible reasons under investigation:
+   - The strap may require a `GET_HELLO (0x91)` handshake before accepting commands
+   - The strap may reject commands while a historical sync is in progress (the WHOOP app was actively syncing)
+   - The command may need a valid CRC32 trailer (currently omitted)
+   - There may be additional config commands needed (the standard sync sequence sends 17 `SEND_PERSISTENT_CONFIG` commands before data transfer)
+   - The strap's firmware may have changed the command protocol
+
+4. **CMD_FROM_STRAP shows no responses**: After subscribing to CMD_FROM_STRAP (suffix 0003), no command acknowledgments were received, suggesting the commands were either not parsed by the strap or the response goes to a different characteristic.
+
+**Next steps for investigation:**
+- Capture a Strength Trainer workout with PacketLogger to see the exact command sequence the WHOOP app sends before IMU mode activates
+- Test sending GET_HELLO (0x91) before TOGGLE_IMU_MODE
+- Test with the WHOOP app closed (not actively syncing) to avoid conflicts
+- Verify the command write succeeds at the GATT level (`didWriteValueFor` callback)
 
 ### Investigation history
 
