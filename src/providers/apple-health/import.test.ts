@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { mkdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -7,6 +7,7 @@ import type { SyncDatabase } from "../../db/index.ts";
 import {
   buildSourceNameMap,
   defaultConsoleProgress,
+  extractExportXml,
   findLatestExport,
   importClinicalRecords,
   readZipEntries,
@@ -237,6 +238,76 @@ ${records}
   writeFileSync(xmlPath, xml, "utf8");
   return xmlPath;
 }
+
+// ============================================================
+// extractExportXml
+// ============================================================
+
+describe("extractExportXml", () => {
+  let tmpDir: string;
+
+  beforeAll(() => {
+    tmpDir = join(tmpdir(), `extract-xml-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterAll(() => {
+    try {
+      rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      /* best effort */
+    }
+  });
+
+  it("extracts export.xml from a zip file", async () => {
+    const exportDir = join(tmpDir, "good-zip", "apple_health_export");
+    mkdirSync(exportDir, { recursive: true });
+    writeFileSync(join(exportDir, "export.xml"), "<HealthData/>", "utf8");
+    const zipPath = join(tmpDir, "good-zip.zip");
+    execSync(`cd "${join(tmpDir, "good-zip")}" && zip -r "${zipPath}" apple_health_export/`);
+
+    const xmlPath = await extractExportXml(zipPath);
+    expect(existsSync(xmlPath)).toBe(true);
+    expect(xmlPath).toContain("export.xml");
+    const content = readFileSync(xmlPath, "utf8");
+    expect(content).toBe("<HealthData/>");
+
+    // Clean up temp file
+    try {
+      const { dirname } = await import("node:path");
+      rmSync(dirname(xmlPath), { recursive: true, force: true });
+    } catch {
+      /* best effort */
+    }
+  });
+
+  it("finds export.xml in subdirectory", async () => {
+    const exportDir = join(tmpDir, "nested-zip", "some_dir");
+    mkdirSync(exportDir, { recursive: true });
+    writeFileSync(join(exportDir, "export.xml"), "<HealthData><Me/></HealthData>", "utf8");
+    const zipPath = join(tmpDir, "nested-zip.zip");
+    execSync(`cd "${join(tmpDir, "nested-zip")}" && zip -r "${zipPath}" some_dir/`);
+
+    const xmlPath = await extractExportXml(zipPath);
+    expect(existsSync(xmlPath)).toBe(true);
+    const content = readFileSync(xmlPath, "utf8");
+    expect(content).toContain("<HealthData>");
+  });
+
+  it("rejects when zip has no export.xml", async () => {
+    const dir = join(tmpDir, "no-xml-zip");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "other.txt"), "data", "utf8");
+    const zipPath = join(tmpDir, "no-xml.zip");
+    execSync(`cd "${dir}" && zip -r "${zipPath}" other.txt`);
+
+    await expect(extractExportXml(zipPath)).rejects.toThrow("No export.xml found");
+  });
+
+  it("rejects when zip file does not exist", async () => {
+    await expect(extractExportXml(join(tmpDir, "nonexistent.zip"))).rejects.toThrow();
+  });
+});
 
 // ============================================================
 // defaultConsoleProgress (exercises formatBytes indirectly)
