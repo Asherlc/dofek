@@ -165,16 +165,22 @@ describe("createApp HTTP routes", () => {
   });
 
   describe("request duration middleware", () => {
-    it("logger.info is configured as a mock (metrics middleware uses it)", () => {
-      // Verify the logger mock is in place — the request duration middleware
-      // calls logger.info on every request finish event
-      expect(vi.mocked(logger.info)).toBeDefined();
-      expect(typeof vi.mocked(logger.info)).toBe("function");
+    it("logs request method, path, and status code on response finish", async () => {
+      vi.mocked(logger.info).mockClear();
+      // Use /api/trpc which goes through the logging middleware
+      await fetch(`${baseUrl}/api/trpc/nonexistent`);
+      expect(vi.mocked(logger.info)).toHaveBeenCalledWith(
+        expect.stringMatching(/\[web\].*GET.*\/api\/trpc\/nonexistent.*\d+ms/),
+      );
     });
 
-    it("httpRequestDuration object is defined and observe is a function", () => {
-      expect(httpRequestDuration).toBeDefined();
-      expect(typeof httpRequestDuration.observe).toBe("function");
+    it("observes request duration in histogram", async () => {
+      vi.mocked(httpRequestDuration.observe).mockClear();
+      await fetch(`${baseUrl}/api/trpc/nonexistent`);
+      expect(httpRequestDuration.observe).toHaveBeenCalledWith(
+        expect.objectContaining({ method: "GET" }),
+        expect.any(Number),
+      );
     });
   });
 
@@ -232,6 +238,7 @@ describe("createApp HTTP routes", () => {
       await fetch(`${baseUrl}/admin/queues`);
       expect(vi.mocked(isAdmin)).not.toHaveBeenCalled();
     });
+
   });
 
   describe("tRPC middleware mounting", () => {
