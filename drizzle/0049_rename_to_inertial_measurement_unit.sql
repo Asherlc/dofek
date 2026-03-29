@@ -1,35 +1,18 @@
--- Rename accelerometer_sample to inertial_measurement_unit_sample and add
--- gyroscope columns. With gyroscope data from Apple Watch (CMMotionManager)
--- and WHOOP BLE, this table stores full 6-axis IMU data, not just accelerometer.
+-- Add gyroscope columns to the inertial measurement unit sample table.
+-- With gyroscope data from Apple Watch (CMMotionManager) and WHOOP BLE,
+-- this table stores full 6-axis IMU data, not just accelerometer.
+--
+-- Note: The table rename from accelerometer_sample to inertial_measurement_unit_sample
+-- is handled in 0043_accelerometer_hypertable.sql (updated in-place).
 
--- 1. Rename table (idempotent: skip if already renamed)
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'fitness' AND tablename = 'accelerometer_sample') THEN
-    ALTER TABLE fitness.accelerometer_sample RENAME TO inertial_measurement_unit_sample;
-  END IF;
-END $$;
---> statement-breakpoint
-
--- 2. Rename index (idempotent: skip if already renamed)
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'accelerometer_user_time_idx') THEN
-    ALTER INDEX accelerometer_user_time_idx RENAME TO inertial_measurement_unit_user_time_idx;
-  END IF;
-END $$;
---> statement-breakpoint
-
--- 3. Add gyroscope columns (nullable — existing accel-only data keeps nulls)
+-- 1. Add gyroscope columns (nullable — existing accel-only data keeps nulls)
 ALTER TABLE fitness.inertial_measurement_unit_sample
   ADD COLUMN IF NOT EXISTS gyroscope_x real,
   ADD COLUMN IF NOT EXISTS gyroscope_y real,
   ADD COLUMN IF NOT EXISTS gyroscope_z real;
 --> statement-breakpoint
 
--- 4. Recreate compression settings to include gyroscope columns.
--- TimescaleDB requires dropping and re-adding the policy when changing
--- compress settings on a hypertable.
+-- 2. Recreate compression settings to include gyroscope columns.
 SELECT remove_compression_policy('fitness.inertial_measurement_unit_sample', if_exists => TRUE);
 --> statement-breakpoint
 
