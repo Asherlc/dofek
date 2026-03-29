@@ -640,7 +640,10 @@ describe("importClinicalRecords", () => {
       { name: "MedicationRequest-001.json", content: JSON.stringify(medicationRequest) },
     ]);
     const xmlPath = createTestXml(tmpDir, "med-import.xml", [
-      { sourceName: "UCSF Health", resourceFilePath: "/clinical-records/MedicationRequest-001.json" },
+      {
+        sourceName: "UCSF Health",
+        resourceFilePath: "/clinical-records/MedicationRequest-001.json",
+      },
     ]);
     const { db, spies } = createImportMockDb();
 
@@ -674,9 +677,7 @@ describe("importClinicalRecords", () => {
     expect(result.errors).toHaveLength(0);
 
     const allValuesCalls = spies.values.mock.calls;
-    const conditionBatch = allValuesCalls.find(
-      (call) => call[0]?.[0]?.name === "Anxiety",
-    )?.[0];
+    const conditionBatch = allValuesCalls.find((call) => call[0]?.[0]?.name === "Anxiety")?.[0];
     expect(conditionBatch).toBeDefined();
     expect(conditionBatch[0].icd10Code).toBe("F41.9");
     expect(conditionBatch[0].snomedCode).toBe("48694002");
@@ -701,9 +702,7 @@ describe("importClinicalRecords", () => {
     expect(result.errors).toHaveLength(0);
 
     const allValuesCalls = spies.values.mock.calls;
-    const allergyBatch = allValuesCalls.find(
-      (call) => call[0]?.[0]?.name === "LACTASE",
-    )?.[0];
+    const allergyBatch = allValuesCalls.find((call) => call[0]?.[0]?.name === "LACTASE")?.[0];
     expect(allergyBatch).toBeDefined();
     expect(allergyBatch[0].type).toBe("allergy");
     expect(allergyBatch[0].rxnormCode).toBe("41397");
