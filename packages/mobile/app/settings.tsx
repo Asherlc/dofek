@@ -8,7 +8,6 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TouchableOpacity,
   useWindowDimensions,
@@ -335,15 +334,42 @@ export default function SettingsScreen() {
       {/* ── Developer Tools ── */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Developer Tools</Text>
-        <TouchableOpacity
-          style={styles.exportButton}
-          onPress={() => {
-            const { router } = require("expo-router");
-            router.push("/ble-probe");
-          }}
-        >
-          <Text style={styles.exportButtonText}>BLE Probe</Text>
-        </TouchableOpacity>
+        <Text style={styles.sectionDescription}>Debugging and diagnostics</Text>
+        <View style={styles.card}>
+          <TouchableOpacity
+            style={styles.devToolRow}
+            onPress={() => {
+              const { router } = require("expo-router");
+              router.push("/ble-probe");
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.devToolLabel}>BLE Probe</Text>
+            <Text style={styles.devToolChevron}>›</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.devToolRow}
+            onPress={() => {
+              const { router } = require("expo-router");
+              router.push("/accelerometer");
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.devToolLabel}>Accelerometer Status</Text>
+            <Text style={styles.devToolChevron}>›</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.devToolRow, styles.devToolRowLast]}
+            onPress={() => {
+              const { router } = require("expo-router");
+              router.push("/imu-visualization");
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.devToolLabel}>IMU Visualization</Text>
+            <Text style={styles.devToolChevron}>›</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* ── Danger Zone ── */}
@@ -552,6 +578,28 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: colors.text,
+  },
+
+  // ── Developer Tools ──
+  devToolRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.surfaceSecondary,
+  },
+  devToolRowLast: {
+    borderBottomWidth: 0,
+  },
+  devToolLabel: {
+    fontSize: 15,
+    fontWeight: "500",
+    color: colors.text,
+  },
+  devToolChevron: {
+    fontSize: 18,
+    color: colors.textTertiary,
   },
 
   // ── Danger Zone ──

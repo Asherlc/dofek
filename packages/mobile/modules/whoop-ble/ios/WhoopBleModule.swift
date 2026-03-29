@@ -45,6 +45,12 @@ public class WhoopBleModule: Module {
     private let bufferLock = NSLock()
     private static let maxBufferSize = 500_000 // ~100 minutes at 80 Hz
 
+    /// Madgwick AHRS filter for real-time orientation estimation
+    private let orientationFilter = MadgwickFilter(sampleRate: 100, beta: 0.1)
+    /// Throttle orientation events to ~30 Hz (emit every 3rd sample at 100 Hz input)
+    private var orientationSampleCounter: Int = 0
+    private static let orientationEmitInterval = 3
+
     /// Pending promise waiting for CBCentralManager to reach .poweredOn state.
     /// Only one findWhoop call can be pending at a time.
     private var pendingFindPromise: Promise?
@@ -57,7 +63,7 @@ public class WhoopBleModule: Module {
     public func definition() -> ModuleDefinition {
         Name("WhoopBle")
 
-        Events("onConnectionStateChanged")
+        Events("onConnectionStateChanged", "onOrientation")
 
         OnCreate {
             self.delegate.module = self
@@ -168,6 +174,8 @@ public class WhoopBleModule: Module {
 
                 self.state = .streaming
                 self.frameParser.reset()
+                self.orientationFilter.reset()
+                self.orientationSampleCounter = 0
 
                 self.bufferLock.lock()
                 self.sampleBuffer.removeAll()
@@ -612,6 +620,34 @@ public class WhoopBleModule: Module {
 
         totalSamplesExtracted += UInt64(newSamples.count)
 
+        // Feed samples into orientation filter and emit throttled events
+        for sample in newSamples {
+            orientationFilter.update(
+                accelerometerX: sample.accelerometerX,
+                accelerometerY: sample.accelerometerY,
+                accelerometerZ: sample.accelerometerZ,
+                gyroscopeX: sample.gyroscopeX,
+                gyroscopeY: sample.gyroscopeY,
+                gyroscopeZ: sample.gyroscopeZ
+            )
+
+            orientationSampleCounter += 1
+            if orientationSampleCounter >= WhoopBleModule.orientationEmitInterval {
+                orientationSampleCounter = 0
+                let quaternion = orientationFilter.quaternion
+                let euler = orientationFilter.eulerAngles
+                sendEvent("onOrientation", [
+                    "w": quaternion.w,
+                    "x": quaternion.x,
+                    "y": quaternion.y,
+                    "z": quaternion.z,
+                    "roll": euler.roll,
+                    "pitch": euler.pitch,
+                    "yaw": euler.yaw,
+                ])
+            }
+        }
+
         bufferLock.lock()
         sampleBuffer.append(contentsOf: newSamples)
         // Cap buffer size to prevent memory issues
@@ -621,9 +657,7 @@ public class WhoopBleModule: Module {
             bufferOverflows += 1
             NSLog("[WhoopBLE] buffer overflow: dropped %d oldest samples (overflow #%llu)", overflow, bufferOverflows)
         }
-        let bufferSize = sampleBuffer.count
         bufferLock.unlock()
-
     }
 
     /// Lazily create the CBCentralManager on first use instead of at module init.
