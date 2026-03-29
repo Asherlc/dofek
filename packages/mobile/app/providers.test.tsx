@@ -91,6 +91,12 @@ vi.mock("react-native", () => ({
     const { animationType: _at, transparent: _t, ...rest } = props;
     return React.createElement("div", { role: "dialog", ...rest }, children);
   },
+  Image: ({
+    source: _source,
+    style: _style,
+    accessibilityElementsHidden: _aeh,
+    ...props
+  }: Record<string, unknown>) => React.createElement("img", props),
   ActivityIndicator: () => React.createElement("span", null, "Loading..."),
   StyleSheet: {
     create: <T extends Record<string, unknown>>(styles: T): T => styles,

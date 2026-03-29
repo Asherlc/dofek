@@ -103,6 +103,12 @@ vi.mock("react-native", () => ({
     const { animationType: _at, transparent: _t, presentationStyle: _ps, ...rest } = props;
     return React.createElement("div", { role: "dialog", ...rest }, children);
   },
+  Image: ({
+    source: _source,
+    style: _style,
+    accessibilityElementsHidden: _aeh,
+    ...props
+  }: Record<string, unknown>) => React.createElement("img", props),
   ActivityIndicator: () => React.createElement("span", null, "Loading..."),
   Alert: { alert: mockAlertFn },
   Linking: { openURL: vi.fn() },
