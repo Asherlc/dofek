@@ -19,6 +19,7 @@ import { useRefresh } from "../lib/useRefresh";
 import { useAuth } from "../lib/auth-context";
 import { importSharedFile, type ShareImportProgress } from "../lib/share-import";
 import { ProviderStatsBreakdown } from "../components/ProviderStatsBreakdown";
+import { ProviderLogo } from "../components/ProviderLogo";
 import { colors } from "../theme";
 import { formatRelativeTime } from "@dofek/format/format";
 
@@ -119,6 +120,7 @@ export function ProviderCard({
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.7}>
       <View style={styles.cardHeader}>
         <View style={styles.cardTitleRow}>
+          <ProviderLogo provider={provider.id} size={24} />
           <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
           <Text style={styles.cardTitle}>{provider.label}</Text>
         </View>

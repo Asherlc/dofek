@@ -183,6 +183,7 @@ vi.mock("react-native-svg", () => {
     __esModule: true,
     default: svgComponent("Svg"),
     Svg: svgComponent("Svg"),
+    SvgXml: svgComponent("SvgXml"),
     Circle: svgComponent("Circle"),
     Line: svgComponent("Line"),
     Polyline: svgComponent("Polyline"),

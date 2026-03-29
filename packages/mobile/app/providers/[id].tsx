@@ -19,6 +19,7 @@ import {
 import { formatRelativeTime, formatTime } from "@dofek/format/format";
 import { useAuth } from "../../lib/auth-context";
 import { ProviderStatsBreakdown } from "../../components/ProviderStatsBreakdown";
+import { ProviderLogo } from "../../components/ProviderLogo";
 import { trpc } from "../../lib/trpc";
 import { useRefresh } from "../../lib/useRefresh";
 import { colors } from "../../theme";
@@ -869,9 +870,12 @@ export default function ProviderDetailScreen() {
       <View style={styles.headerCard}>
         <View style={styles.headerRow}>
           <View style={styles.headerInfo}>
-            <Text style={styles.providerName}>
-              {provider?.name ?? formatProviderName(providerId)}
-            </Text>
+            <View style={styles.providerNameRow}>
+              <ProviderLogo provider={providerId} size={28} />
+              <Text style={styles.providerName}>
+                {provider?.name ?? formatProviderName(providerId)}
+              </Text>
+            </View>
             {provider && (
               <View style={styles.statusRow}>
                 {provider.authorized ? (
@@ -1029,6 +1033,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.text,
     fontWeight: "500",
+  },
+  providerNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
   },
   providerName: {
     fontSize: 20,

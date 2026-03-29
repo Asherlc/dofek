@@ -42,6 +42,8 @@ vi.mock("react-native", () => ({
 		const { animationType: _at, transparent: _t, presentationStyle: _ps, ...rest } = props;
 		return React.createElement("div", { role: "dialog", ...rest }, children as React.ReactNode);
 	},
+	Image: ({ source: _source, style: _style, resizeMode: _rm, ...props }: Record<string, unknown>) =>
+		React.createElement("img", props),
 	ActivityIndicator: () => React.createElement("span", null, "Loading..."),
 	Alert: { alert: mockAlertFn },
 	Linking: { openURL: vi.fn() },
@@ -49,6 +51,11 @@ vi.mock("react-native", () => ({
 		create: <T extends Record<string, unknown>>(s: T): T => s,
 		hairlineWidth: 1,
 	},
+}));
+
+vi.mock("react-native-svg", () => ({
+	SvgXml: ({ xml: _xml, ...props }: Record<string, unknown>) =>
+		React.createElement("svg", props),
 }));
 
 const mockBack = vi.fn();
