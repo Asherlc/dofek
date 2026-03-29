@@ -657,9 +657,7 @@ public class WhoopBleModule: Module {
             bufferOverflows += 1
             NSLog("[WhoopBLE] buffer overflow: dropped %d oldest samples (overflow #%llu)", overflow, bufferOverflows)
         }
-        let bufferSize = sampleBuffer.count
         bufferLock.unlock()
-
     }
 
     /// Lazily create the CBCentralManager on first use instead of at module init.
@@ -684,25 +682,6 @@ public class WhoopBleModule: Module {
     /// Exposed for the BLE delegate to identify CMD_FROM_STRAP notifications.
     var cmdResponseCharacteristicUUID: CBUUID? {
         cmdResponseCharacteristic?.uuid
-    }
-
-    /// Lazily create the CBCentralManager on first use instead of at module init.
-    /// This avoids a launch crash if the NSBluetoothAlwaysUsageDescription key
-    /// is missing or if Bluetooth is restricted by MDM.
-    private func ensureCentralManager() -> CBCentralManager {
-        if let existing = centralManager {
-            return existing
-        }
-        let manager = CBCentralManager(
-            delegate: delegate,
-            queue: bleQueue,
-            options: [
-                CBCentralManagerOptionShowPowerAlertKey: false,
-                CBCentralManagerOptionRestoreIdentifierKey: WhoopBleModule.restoreIdentifier,
-            ]
-        )
-        centralManager = manager
-        return manager
     }
 
     private func cleanup() {

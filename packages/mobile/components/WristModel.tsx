@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { StyleSheet, View } from "react-native";
-import Svg, { Line, Circle, Text as SvgText } from "react-native-svg";
+import Svg, { Circle, Line, Text as SvgText } from "react-native-svg";
 import type { OrientationEvent } from "../modules/whoop-ble";
 import { colors } from "../theme";
 
@@ -23,16 +23,22 @@ const halfWidth = STRAP_WIDTH / 2;
 const halfHeight = STRAP_HEIGHT / 2;
 const halfDepth = STRAP_DEPTH / 2;
 
+/** Labeled vertex for stable React keys */
+interface LabeledVertex {
+  label: string;
+  coords: Vertex;
+}
+
 /** 8 vertices of a rectangular prism centered at origin */
-const vertices: Vertex[] = [
-  [-halfWidth, -halfHeight, -halfDepth], // 0: back-bottom-left
-  [halfWidth, -halfHeight, -halfDepth], // 1: back-bottom-right
-  [halfWidth, halfHeight, -halfDepth], // 2: back-top-right
-  [-halfWidth, halfHeight, -halfDepth], // 3: back-top-left
-  [-halfWidth, -halfHeight, halfDepth], // 4: front-bottom-left
-  [halfWidth, -halfHeight, halfDepth], // 5: front-bottom-right
-  [halfWidth, halfHeight, halfDepth], // 6: front-top-right
-  [-halfWidth, halfHeight, halfDepth], // 7: front-top-left
+const labeledVertices: LabeledVertex[] = [
+  { label: "bbl", coords: [-halfWidth, -halfHeight, -halfDepth] },
+  { label: "bbr", coords: [halfWidth, -halfHeight, -halfDepth] },
+  { label: "btr", coords: [halfWidth, halfHeight, -halfDepth] },
+  { label: "btl", coords: [-halfWidth, halfHeight, -halfDepth] },
+  { label: "fbl", coords: [-halfWidth, -halfHeight, halfDepth] },
+  { label: "fbr", coords: [halfWidth, -halfHeight, halfDepth] },
+  { label: "ftr", coords: [halfWidth, halfHeight, halfDepth] },
+  { label: "ftl", coords: [-halfWidth, halfHeight, halfDepth] },
 ];
 
 /** 12 edges of the rectangular prism */
@@ -64,10 +70,7 @@ const axisEndY: Vertex = [0, AXIS_LENGTH, 0];
 const axisEndZ: Vertex = [0, 0, AXIS_LENGTH];
 
 /** Rotate a vertex by a quaternion */
-function rotateByQuaternion(
-  vertex: Vertex,
-  quaternion: OrientationEvent,
-): Vertex {
+function rotateByQuaternion(vertex: Vertex, quaternion: OrientationEvent): Vertex {
   const [vx, vy, vz] = vertex;
   const { w, x, y, z } = quaternion;
 
@@ -118,9 +121,9 @@ export function WristModel({ orientation, size = 250 }: WristModelProps) {
 
   const projected = useMemo(() => {
     // Rotate and project all box vertices
-    const boxPoints: [number, number][] = vertices.map((vertex) => {
-      const rotated = rotateByQuaternion(vertex, orientation);
-      return project(rotated, scale, center, center);
+    const boxPoints = labeledVertices.map(({ label, coords }) => {
+      const rotated = rotateByQuaternion(coords, orientation);
+      return { label, point: project(rotated, scale, center, center) };
     });
 
     // Rotate and project axis indicator vertices (origin, X, Y, Z)
@@ -206,10 +209,10 @@ export function WristModel({ orientation, size = 250 }: WristModelProps) {
           return (
             <Line
               key={`${startIndex}-${endIndex}`}
-              x1={start[0]}
-              y1={start[1]}
-              x2={end[0]}
-              y2={end[1]}
+              x1={start.point[0]}
+              y1={start.point[1]}
+              x2={end.point[0]}
+              y2={end.point[1]}
               stroke={colors.accent}
               strokeWidth={2}
             />
@@ -217,23 +220,12 @@ export function WristModel({ orientation, size = 250 }: WristModelProps) {
         })}
 
         {/* Vertex dots */}
-        {projected.boxPoints.map((point, index) => (
-          <Circle
-            key={`v${index}`}
-            cx={point[0]}
-            cy={point[1]}
-            r={3}
-            fill={colors.accent}
-          />
+        {projected.boxPoints.map(({ label, point }) => (
+          <Circle key={label} cx={point[0]} cy={point[1]} r={3} fill={colors.accent} />
         ))}
 
         {/* Origin dot */}
-        <Circle
-          cx={projected.origin[0]}
-          cy={projected.origin[1]}
-          r={4}
-          fill={colors.text}
-        />
+        <Circle cx={projected.origin[0]} cy={projected.origin[1]} r={4} fill={colors.text} />
       </Svg>
     </View>
   );

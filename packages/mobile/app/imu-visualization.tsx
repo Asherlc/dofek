@@ -1,17 +1,17 @@
+import { Stack } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { Stack } from "expo-router";
+import { WristModel } from "../components/WristModel";
+import type { OrientationEvent } from "../modules/whoop-ble";
 import {
   addOrientationListener,
-  findWhoop,
   connect,
+  disconnect,
+  findWhoop,
+  isBluetoothAvailable,
   startImuStreaming,
   stopImuStreaming,
-  disconnect,
-  isBluetoothAvailable,
 } from "../modules/whoop-ble";
-import type { OrientationEvent } from "../modules/whoop-ble";
-import { WristModel } from "../components/WristModel";
 import { colors } from "../theme";
 import { rootStackScreenOptions } from "./_layout";
 
@@ -81,9 +81,7 @@ export default function ImuVisualizationScreen() {
       setStatus("searching");
       const device = await findWhoop();
       if (!device) {
-        setError(
-          "No WHOOP strap found. Make sure the WHOOP app is connected.",
-        );
+        setError("No WHOOP strap found. Make sure the WHOOP app is connected.");
         setStatus("error");
         return;
       }
@@ -97,9 +95,7 @@ export default function ImuVisualizationScreen() {
       setStatus("streaming");
     } catch (connectionError) {
       setError(
-        connectionError instanceof Error
-          ? connectionError.message
-          : String(connectionError),
+        connectionError instanceof Error ? connectionError.message : String(connectionError),
       );
       setStatus("error");
     }
@@ -120,16 +116,11 @@ export default function ImuVisualizationScreen() {
   };
 
   const isStreaming = status === "streaming";
-  const isBusy =
-    status === "searching" ||
-    status === "connecting" ||
-    status === "connected";
+  const isBusy = status === "searching" || status === "connecting" || status === "connected";
 
   return (
     <>
-      <Stack.Screen
-        options={{ ...rootStackScreenOptions, title: "IMU Visualization" }}
-      />
+      <Stack.Screen options={{ ...rootStackScreenOptions, title: "IMU Visualization" }} />
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         {/* 3D Model */}
         <View style={styles.modelContainer}>
@@ -141,28 +132,16 @@ export default function ImuVisualizationScreen() {
           <Text style={styles.sectionTitle}>Orientation</Text>
           <View style={styles.anglesRow}>
             <View style={styles.angleBox}>
-              <Text style={[styles.angleLabel, { color: colors.danger }]}>
-                Roll (X)
-              </Text>
-              <Text style={styles.angleValue}>
-                {formatDegrees(orientation.roll)}
-              </Text>
+              <Text style={[styles.angleLabel, { color: colors.danger }]}>Roll (X)</Text>
+              <Text style={styles.angleValue}>{formatDegrees(orientation.roll)}</Text>
             </View>
             <View style={styles.angleBox}>
-              <Text style={[styles.angleLabel, { color: colors.green }]}>
-                Pitch (Y)
-              </Text>
-              <Text style={styles.angleValue}>
-                {formatDegrees(orientation.pitch)}
-              </Text>
+              <Text style={[styles.angleLabel, { color: colors.green }]}>Pitch (Y)</Text>
+              <Text style={styles.angleValue}>{formatDegrees(orientation.pitch)}</Text>
             </View>
             <View style={styles.angleBox}>
-              <Text style={[styles.angleLabel, { color: colors.blue }]}>
-                Yaw (Z)
-              </Text>
-              <Text style={styles.angleValue}>
-                {formatDegrees(orientation.yaw)}
-              </Text>
+              <Text style={[styles.angleLabel, { color: colors.blue }]}>Yaw (Z)</Text>
+              <Text style={styles.angleValue}>{formatDegrees(orientation.yaw)}</Text>
             </View>
           </View>
         </View>
@@ -171,18 +150,10 @@ export default function ImuVisualizationScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Quaternion</Text>
           <View style={styles.quaternionRow}>
-            <Text style={styles.quaternionLabel}>
-              w={orientation.w.toFixed(3)}
-            </Text>
-            <Text style={styles.quaternionLabel}>
-              x={orientation.x.toFixed(3)}
-            </Text>
-            <Text style={styles.quaternionLabel}>
-              y={orientation.y.toFixed(3)}
-            </Text>
-            <Text style={styles.quaternionLabel}>
-              z={orientation.z.toFixed(3)}
-            </Text>
+            <Text style={styles.quaternionLabel}>w={orientation.w.toFixed(3)}</Text>
+            <Text style={styles.quaternionLabel}>x={orientation.x.toFixed(3)}</Text>
+            <Text style={styles.quaternionLabel}>y={orientation.y.toFixed(3)}</Text>
+            <Text style={styles.quaternionLabel}>z={orientation.z.toFixed(3)}</Text>
           </View>
         </View>
 
@@ -194,9 +165,7 @@ export default function ImuVisualizationScreen() {
               style={[
                 styles.statusValue,
                 {
-                  color: isStreaming
-                    ? colors.positive
-                    : colors.textSecondary,
+                  color: isStreaming ? colors.positive : colors.textSecondary,
                 },
               ]}
             >
@@ -220,15 +189,10 @@ export default function ImuVisualizationScreen() {
               onPress={handleStart}
               disabled={isBusy}
             >
-              <Text style={styles.buttonText}>
-                {isBusy ? "Connecting..." : "Start Streaming"}
-              </Text>
+              <Text style={styles.buttonText}>{isBusy ? "Connecting..." : "Start Streaming"}</Text>
             </Pressable>
           ) : (
-            <Pressable
-              style={[styles.button, styles.buttonStop]}
-              onPress={handleStop}
-            >
+            <Pressable style={[styles.button, styles.buttonStop]} onPress={handleStop}>
               <Text style={styles.buttonText}>Stop</Text>
             </Pressable>
           )}
