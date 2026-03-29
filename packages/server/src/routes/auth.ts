@@ -4,6 +4,7 @@ import { getOAuthRedirectUri } from "dofek/auth/oauth";
 import { DEFAULT_USER_ID } from "dofek/db/schema";
 import { sql } from "drizzle-orm";
 import express, { Router } from "express";
+import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import { resolveOrCreateUser } from "../auth/account-linking.ts";
 import {
@@ -156,6 +157,15 @@ async function startDataProviderOAuth(
 // Module-level db reference, set during router creation
 let db: import("dofek/db").Database;
 
+// Rate limiter for auth endpoints (login, callback, native sign-in)
+const authRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: 30, // 30 attempts per window per IP
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: "Too many authentication attempts — please try again later",
+});
+
 export function createAuthRouter(database: import("dofek/db").Database): Router {
   db = database;
   const router = Router();
@@ -190,7 +200,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
     try {
       const providerNameRaw = req.params.provider;
       if (!isIdentityProviderName(providerNameRaw)) {
-        res.status(404).send(`Unknown identity provider: ${providerNameRaw}`);
+        res.status(404).type("text/plain").send("Unknown identity provider");
         return;
       }
       const providerName = providerNameRaw;
@@ -234,7 +244,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
     try {
       const providerNameRaw = req.params.provider;
       if (!isIdentityProviderName(providerNameRaw)) {
-        res.status(404).send(`Unknown identity provider: ${providerNameRaw}`);
+        res.status(404).type("text/plain").send("Unknown identity provider");
         return;
       }
       const providerName = providerNameRaw;
@@ -280,7 +290,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
     try {
       const providerNameRaw = req.params.provider;
       if (!isIdentityProviderName(providerNameRaw)) {
-        res.status(404).send(`Unknown identity provider: ${providerNameRaw}`);
+        res.status(404).type("text/plain").send("Unknown identity provider");
         return;
       }
       const providerName = providerNameRaw;
@@ -353,10 +363,11 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
     }
   }
 
-  router.get("/auth/callback/:provider", handleIdentityCallback);
+  router.get("/auth/callback/:provider", authRateLimiter, handleIdentityCallback);
   // Apple Sign In uses response_mode=form_post, sending code/state as POST body
   router.post(
     "/auth/callback/:provider",
+    authRateLimiter,
     express.urlencoded({ extended: false }),
     handleIdentityCallback,
   );
@@ -366,6 +377,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
   // This endpoint exchanges the code for tokens and creates a session.
   router.post(
     "/auth/apple/native",
+    authRateLimiter,
     express.urlencoded({ extended: false }),
     express.json(),
     async (req, res) => {
