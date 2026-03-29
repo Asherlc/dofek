@@ -863,6 +863,99 @@ describe("WhoopProvider.sync() — recovery sync", () => {
 
     expect(result.provider).toBe("whoop");
   });
+
+  it("logs info (not warn) for unscored recovery with undefined state", async () => {
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValueOnce({
+      accessToken: "tok",
+      refreshToken: "ref",
+      expiresAt: futureExpiry,
+      scopes: "userId:42",
+    });
+
+    const { logger } = await import("../logger.ts");
+    const warnSpy = vi.spyOn(logger, "warn");
+    const infoSpy = vi.spyOn(logger, "info");
+
+    const cycles = [
+      {
+        days: ["2026-03-01"],
+        recovery: {
+          cycle_id: 3,
+          user_id: 42,
+          created_at: "2026-03-01T06:00:00Z",
+          updated_at: "2026-03-01T06:00:00Z",
+          // No score_state, no state, no biometric data — unscored cycle
+        },
+        sleep: null,
+        workouts: [],
+      },
+    ];
+
+    const mockFetch = makeSyncMockFetch({
+      cycles,
+      journalData: [],
+      hrValues: [],
+    });
+    const provider = new WhoopProvider(mockFetch);
+    const db = makeChainableMock();
+    await provider.sync(db, new Date("2026-03-01"));
+
+    expect(infoSpy).toHaveBeenCalledWith(expect.stringContaining("Skipping unscored recovery"));
+    // Should NOT produce a warning for expected unscored cycles
+    const recoveryWarns = warnSpy.mock.calls.filter((call) => {
+      const msg = String(call[0]);
+      return msg.includes("[whoop]") && msg.includes("recovery");
+    });
+    expect(recoveryWarns).toHaveLength(0);
+
+    warnSpy.mockRestore();
+    infoSpy.mockRestore();
+  });
+
+  it("warns when SCORED recovery has no parseable biometric data", async () => {
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValueOnce({
+      accessToken: "tok",
+      refreshToken: "ref",
+      expiresAt: futureExpiry,
+      scopes: "userId:42",
+    });
+
+    const { logger } = await import("../logger.ts");
+    const warnSpy = vi.spyOn(logger, "warn");
+
+    const cycles = [
+      {
+        days: ["2026-03-01"],
+        recovery: {
+          cycle_id: 3,
+          user_id: 42,
+          created_at: "2026-03-01T06:00:00Z",
+          updated_at: "2026-03-01T06:00:00Z",
+          score_state: "SCORED",
+          // SCORED but no `score` object and no flat biometric fields — API change
+        },
+        sleep: null,
+        workouts: [],
+      },
+    ];
+
+    const mockFetch = makeSyncMockFetch({
+      cycles,
+      journalData: [],
+      hrValues: [],
+    });
+    const provider = new WhoopProvider(mockFetch);
+    const db = makeChainableMock();
+    await provider.sync(db, new Date("2026-03-01"));
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("SCORED recovery with no parseable data"),
+    );
+
+    warnSpy.mockRestore();
+  });
 });
 
 describe("WhoopProvider.sync() — workout collection from cycles", () => {
@@ -1520,7 +1613,7 @@ describe("WhoopProvider.sync() — sleep sync", () => {
     const db = makeChainableMock();
     db.onConflictDoUpdate = vi.fn().mockReturnValue(db);
     db.returning = vi.fn().mockResolvedValue([]);
-    const result = await provider.sync(db, new Date("2026-03-01"));
+    await provider.sync(db, new Date("2026-03-01"));
 
     const valuesCallArgs = getValuesCallArgs(db);
     const sleepInsert = findValuesRecord(

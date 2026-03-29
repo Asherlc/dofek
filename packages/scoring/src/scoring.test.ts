@@ -17,6 +17,7 @@ import {
   scoreColor,
   scoreLabel,
   sleepDebtColor,
+  sleepPerformanceColor,
   trendColor,
   trendDirection,
   WorkloadRatio,
@@ -375,6 +376,23 @@ describe("sleepDebtColor", () => {
 
   it("returns danger for high debt", () => {
     expect(sleepDebtColor(300)).toBe(statusColors.danger);
+  });
+});
+
+describe("sleepPerformanceColor", () => {
+  it("returns positive for >= 95%", () => {
+    expect(sleepPerformanceColor(95)).toBe(statusColors.positive);
+    expect(sleepPerformanceColor(100)).toBe(statusColors.positive);
+  });
+
+  it("returns warning for >= 85% and < 95%", () => {
+    expect(sleepPerformanceColor(85)).toBe(statusColors.warning);
+    expect(sleepPerformanceColor(94)).toBe(statusColors.warning);
+  });
+
+  it("returns danger for < 85%", () => {
+    expect(sleepPerformanceColor(84)).toBe(statusColors.danger);
+    expect(sleepPerformanceColor(0)).toBe(statusColors.danger);
   });
 });
 

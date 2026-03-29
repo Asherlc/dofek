@@ -251,6 +251,67 @@ final class WhoopBleFrameParserTests: XCTestCase {
         XCTAssertEqual(frames2[0].packetType, 0x28)
     }
 
+    func testFrameParserAccumulatesLargeIMUFrameAcrossNotifications() {
+        // Regression test: a large IMU frame (240-byte payload) arrives in 20-byte
+        // BLE notifications. The parser must wait for the full payload before
+        // returning a frame — not prematurely parse the first notification.
+        let parser = WhoopBleFrameParser()
+
+        // Build a realistic IMU frame: header(4) + payload(52) + CRC(4) = 60 bytes
+        // Payload has 2 IMU samples at offset 28
+        let payloadLen = 52  // 28 header bytes + 2*12 sample bytes
+        var fullFrame = Data([
+            0xAA,
+            UInt8(payloadLen & 0xFF), UInt8(payloadLen >> 8),
+            0x00  // header CRC
+        ])
+        var payload = Data(count: payloadLen)
+        payload[0] = WhoopBleConstants.packetTypeRealtimeIMU  // 0x33
+        payload[1] = 0  // record type
+        // Timestamp at payload offset 3
+        payload[3] = 0xE8; payload[4] = 0x03; payload[5] = 0x00; payload[6] = 0x00  // 1000
+        // Sub-seconds at payload offset 11
+        payload[11] = 0x64; payload[12] = 0x00  // 100
+        // Sample counts at payload offsets 24-27
+        payload[24] = 0x02; payload[25] = 0x00  // countA = 2
+        payload[26] = 0x02; payload[27] = 0x00  // countB = 2
+        // Sample 1 at offset 28: accel XYZ = 100, -200, 300
+        writeInt16LE(&payload, offset: 28, value: 100)
+        writeInt16LE(&payload, offset: 30, value: -200)
+        writeInt16LE(&payload, offset: 32, value: 300)
+        writeInt16LE(&payload, offset: 34, value: 10)
+        writeInt16LE(&payload, offset: 36, value: -20)
+        writeInt16LE(&payload, offset: 38, value: 30)
+        // Sample 2 at offset 40
+        writeInt16LE(&payload, offset: 40, value: 400)
+        writeInt16LE(&payload, offset: 42, value: -500)
+        writeInt16LE(&payload, offset: 44, value: 600)
+        writeInt16LE(&payload, offset: 46, value: 40)
+        writeInt16LE(&payload, offset: 48, value: -50)
+        writeInt16LE(&payload, offset: 50, value: 60)
+
+        fullFrame.append(payload)
+        fullFrame.append(contentsOf: [0x00, 0x00, 0x00, 0x00])  // CRC32
+
+        // Split into 20-byte BLE notifications (typical MTU)
+        let notificationSize = 20
+        var allFrames: [WhoopFrame] = []
+        for offset in stride(from: 0, to: fullFrame.count, by: notificationSize) {
+            let end = min(offset + notificationSize, fullFrame.count)
+            let notification = Data(fullFrame[offset..<end])
+            allFrames.append(contentsOf: parser.feed(notification))
+        }
+
+        // Must get exactly 1 frame with 2 IMU samples
+        XCTAssertEqual(allFrames.count, 1, "Expected 1 frame from fragmented notifications")
+
+        let samples = WhoopBleFrameParser.extractImuSamples(from: allFrames[0])
+        XCTAssertEqual(samples.count, 2, "Expected 2 IMU samples from the assembled frame")
+        XCTAssertEqual(samples[0].accelerometerX, 100)
+        XCTAssertEqual(samples[0].accelerometerY, -200)
+        XCTAssertEqual(samples[1].accelerometerX, 400)
+    }
+
     func testFrameParserResetClearsAccumulator() {
         let parser = WhoopBleFrameParser()
 

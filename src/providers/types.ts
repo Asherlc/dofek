@@ -95,6 +95,12 @@ interface BaseProvider {
   validate(): string | null;
 
   /**
+   * Returns a deep link URL to view a specific activity on the provider's
+   * website/app, or null if the provider doesn't support activity deep links.
+   */
+  activityUrl?(externalId: string): string;
+
+  /**
    * Returns OAuth configuration for providers that support the `auth` command.
    * Returns undefined if OAuth is not supported or not configured (e.g. missing env vars).
    * Call sites should treat undefined as "not available for login" and surface configuration errors to the user.

@@ -1,22 +1,21 @@
 import { AppState, type AppStateStatus, Platform } from "react-native";
 import {
-	getMotionAuthorizationStatus,
-	isAccelerometerRecordingAvailable,
-	queryRecordedData,
-	getLastSyncTimestamp,
-	setLastSyncTimestamp,
-	startRecording,
-	isRecordingActive,
+  getLastSyncTimestamp,
+  getMotionAuthorizationStatus,
+  isAccelerometerRecordingAvailable,
+  isRecordingActive,
+  queryRecordedData,
+  requestMotionPermission,
+  setLastSyncTimestamp,
+  startRecording,
 } from "../modules/core-motion";
-import {
-	syncAccelerometerToServer,
-	type AccelerometerSyncTrpcClient,
-} from "./accelerometer-sync";
+import { type AccelerometerSyncTrpcClient, syncAccelerometerToServer } from "./accelerometer-sync";
+import { captureException } from "./telemetry";
 
+const TAG = "bg-accel-sync";
 const TWELVE_HOURS_SECONDS = 12 * 3600;
 
-let appStateSubscription: ReturnType<typeof AppState.addEventListener> | null =
-	null;
+let appStateSubscription: ReturnType<typeof AppState.addEventListener> | null = null;
 let syncing = false;
 
 /**
@@ -27,59 +26,59 @@ let syncing = false;
  * - Should be called once after authentication is established
  */
 export async function initBackgroundAccelerometerSync(
-	trpcClient: AccelerometerSyncTrpcClient,
+  trpcClient: AccelerometerSyncTrpcClient,
 ): Promise<void> {
-	if (!isAccelerometerRecordingAvailable()) return;
+  if (!isAccelerometerRecordingAvailable()) return;
 
-	const status = getMotionAuthorizationStatus();
-	if (status !== "authorized") return;
+  let status = getMotionAuthorizationStatus();
+  if (status === "notDetermined") {
+    status = await requestMotionPermission();
+  }
+  if (status !== "authorized") return;
 
-	// Start recording immediately
-	await startRecording(TWELVE_HOURS_SECONDS);
+  // Start recording immediately
+  await startRecording(TWELVE_HOURS_SECONDS);
 
-	// Clean up existing listener
-	if (appStateSubscription) {
-		appStateSubscription.remove();
-		appStateSubscription = null;
-	}
+  // Clean up existing listener
+  if (appStateSubscription) {
+    appStateSubscription.remove();
+    appStateSubscription = null;
+  }
 
-	const deviceId = `iPhone (${Platform.OS} ${Platform.Version})`;
+  const deviceId = `iPhone (${Platform.OS} ${Platform.Version})`;
 
-	// Sync whenever the app comes to foreground
-	appStateSubscription = AppState.addEventListener(
-		"change",
-		(nextState: AppStateStatus) => {
-			if (nextState !== "active") return;
-			if (syncing) return;
+  // Sync whenever the app comes to foreground
+  appStateSubscription = AppState.addEventListener("change", (nextState: AppStateStatus) => {
+    if (nextState !== "active") return;
+    if (syncing) return;
 
-			syncing = true;
-			syncAccelerometerToServer({
-				trpcClient,
-				coreMotion: {
-					isAccelerometerRecordingAvailable,
-					queryRecordedData,
-					getLastSyncTimestamp,
-					setLastSyncTimestamp,
-					startRecording,
-					isRecordingActive,
-				},
-				deviceId,
-				deviceType: "iphone",
-			})
-				.catch(() => {
-					// Best-effort — don't crash the app for background sync failures
-				})
-				.finally(() => {
-					syncing = false;
-				});
-		},
-	);
+    syncing = true;
+    syncAccelerometerToServer({
+      trpcClient,
+      coreMotion: {
+        isAccelerometerRecordingAvailable,
+        queryRecordedData,
+        getLastSyncTimestamp,
+        setLastSyncTimestamp,
+        startRecording,
+        isRecordingActive,
+      },
+      deviceId,
+      deviceType: "iphone",
+    })
+      .catch((error: unknown) => {
+        captureException(error, { source: TAG });
+      })
+      .finally(() => {
+        syncing = false;
+      });
+  });
 }
 
 /** Clean up background accelerometer sync listeners */
 export function teardownBackgroundAccelerometerSync(): void {
-	if (appStateSubscription) {
-		appStateSubscription.remove();
-		appStateSubscription = null;
-	}
+  if (appStateSubscription) {
+    appStateSubscription.remove();
+    appStateSubscription = null;
+  }
 }
