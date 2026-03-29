@@ -1,9 +1,5 @@
 -- Canonical definition of the fitness.activity_summary materialized view.
--- This file is the single source of truth — the migration runner recreates
--- the view from this definition after every migration run.
---
--- To change activity_summary: edit THIS file. Do NOT add DROP/CREATE to a migration.
--- Depends on: v_activity (recreated first by the runner).
+-- This view depends on fitness.v_activity — it must be created after 01_v_activity.sql.
 
 CREATE MATERIALIZED VIEW fitness.activity_summary AS
 WITH altitude_deltas AS (

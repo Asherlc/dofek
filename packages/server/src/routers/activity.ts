@@ -1,78 +1,16 @@
-import { mapHrZones } from "@dofek/zones/zones";
 import { TRPCError } from "@trpc/server";
 import { getProvider } from "dofek/providers/registry";
-import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { endDateSchema, timestampWindowStart } from "../lib/date-window.ts";
-import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
+import { endDateSchema } from "../lib/date-window.ts";
 import { Activity, type ActivityDetail } from "../models/activity.ts";
+import {
+  ActivityRepository,
+  StreamPoint as StreamPointModel,
+} from "../repositories/activity-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 import { ensureProvidersRegistered } from "./sync.ts";
 
-const activityListRowSchema = z
-  .object({
-    id: z.string(),
-    activity_type: z.string(),
-    started_at: timestampStringSchema,
-    ended_at: timestampStringSchema.nullable(),
-    name: z.string().nullable(),
-    provider_id: z.string(),
-    source_providers: z.array(z.string()),
-    avg_hr: z.number().nullable(),
-    max_hr: z.number().nullable(),
-    avg_power: z.number().nullable(),
-    distance_meters: z.number().nullable(),
-    calories: z.number().nullable(),
-    total_count: z.coerce.number(),
-  })
-  .passthrough();
-
-const sourceExternalIdSchema = z.object({
-  providerId: z.string(),
-  externalId: z.string(),
-});
-
-const activityDetailRowSchema = z.object({
-  id: z.string(),
-  activity_type: z.string(),
-  started_at: timestampStringSchema,
-  ended_at: timestampStringSchema.nullable(),
-  name: z.string().nullable(),
-  notes: z.string().nullable(),
-  provider_id: z.string(),
-  source_providers: z.array(z.string()),
-  source_external_ids: z.array(sourceExternalIdSchema).nullable(),
-  avg_hr: z.number().nullable(),
-  max_hr: z.number().nullable(),
-  avg_power: z.number().nullable(),
-  max_power: z.number().nullable(),
-  avg_speed: z.number().nullable(),
-  max_speed: z.number().nullable(),
-  avg_cadence: z.number().nullable(),
-  total_distance: z.number().nullable(),
-  elevation_gain_m: z.number().nullable(),
-  elevation_loss_m: z.number().nullable(),
-  calories: z.number().nullable(),
-  sample_count: z.number().nullable(),
-});
-
 export type { ActivityDetail, SourceLink } from "../models/activity.ts";
-
-const streamPointRowSchema = z.object({
-  recorded_at: timestampStringSchema,
-  heart_rate: z.number().nullable(),
-  power: z.number().nullable(),
-  speed: z.number().nullable(),
-  cadence: z.number().nullable(),
-  altitude: z.number().nullable(),
-  lat: z.number().nullable(),
-  lng: z.number().nullable(),
-});
-
-const hrZoneRowSchema = z.object({
-  zone: z.coerce.number(),
-  seconds: z.coerce.number(),
-});
 
 export interface StreamPoint {
   recordedAt: string;
@@ -99,82 +37,16 @@ export const activityRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const rows = await executeWithSchema(
-        ctx.db,
-        activityListRowSchema,
-        sql`SELECT
-              a.id,
-              a.activity_type,
-              a.started_at::text AS started_at,
-              a.ended_at::text AS ended_at,
-              a.name,
-              a.provider_id,
-              a.source_providers,
-              s.avg_hr,
-              s.max_hr,
-              s.avg_power,
-              s.total_distance AS distance_meters,
-              COALESCE(
-                (a.raw->>'calories')::REAL,
-                (a.raw->>'totalEnergyBurned')::REAL,
-                (a.raw->>'total_energy_burned')::REAL
-              ) AS calories,
-              COUNT(*) OVER()::int AS total_count
-            FROM fitness.v_activity a
-            LEFT JOIN fitness.activity_summary s ON s.activity_id = a.id
-            WHERE a.user_id = ${ctx.userId}
-              AND a.started_at > ${timestampWindowStart(input.endDate, input.days)}
-            ORDER BY a.started_at DESC
-            LIMIT ${input.limit} OFFSET ${input.offset}`,
-      );
-      const totalCount = rows.length > 0 ? (rows[0]?.total_count ?? 0) : 0;
-      const items = rows.map(({ total_count, ...rest }) => rest);
-      return { items, totalCount };
+      const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone);
+      return repo.list(input);
     }),
 
-  /**
-   * Get a single activity with its summary data.
-   * Joins v_activity with activity_summary for aggregated metrics.
-   */
   byId: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }): Promise<ActivityDetail> => {
-      const rows = await executeWithSchema(
-        ctx.db,
-        activityDetailRowSchema,
-        sql`SELECT
-              a.id,
-              a.activity_type,
-              a.started_at::text AS started_at,
-              a.ended_at::text AS ended_at,
-              a.name,
-              a.notes,
-              a.provider_id,
-              a.source_providers,
-              a.source_external_ids,
-              s.avg_hr,
-              s.max_hr,
-              s.avg_power,
-              s.max_power,
-              s.avg_speed,
-              s.max_speed,
-              s.avg_cadence,
-              s.total_distance,
-              s.elevation_gain_m,
-              s.elevation_loss_m,
-              COALESCE(
-                (a.raw->>'calories')::REAL,
-                (a.raw->>'totalEnergyBurned')::REAL,
-                (a.raw->>'total_energy_burned')::REAL
-              ) AS calories,
-              s.sample_count
-            FROM fitness.v_activity a
-            LEFT JOIN fitness.activity_summary s ON s.activity_id = a.id
-            WHERE a.id = ${input.id}
-              AND a.user_id = ${ctx.userId}`,
-      );
+      const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone);
+      const row = await repo.findById(input.id);
 
-      const row = rows[0];
       if (!row) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
       }
@@ -183,10 +55,6 @@ export const activityRouter = router({
       return new Activity(row, getProvider).toDetail();
     }),
 
-  /**
-   * Get downsampled metric stream data for a single activity.
-   * Uses row numbering to evenly sample points, defaulting to 500 max points.
-   */
   stream: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(
       z.object({
@@ -195,108 +63,28 @@ export const activityRouter = router({
       }),
     )
     .query(async ({ ctx, input }): Promise<StreamPoint[]> => {
-      const rows = await executeWithSchema(
-        ctx.db,
-        streamPointRowSchema,
-        sql`WITH numbered AS (
-              SELECT ms.*, ROW_NUMBER() OVER (ORDER BY ms.recorded_at) AS rn,
-                     COUNT(*) OVER () AS total
-              FROM fitness.metric_stream ms
-              JOIN fitness.v_activity a ON a.id = ms.activity_id AND a.user_id = ${ctx.userId}
-              WHERE ms.activity_id = ${input.id}
-            )
-            SELECT recorded_at::text AS recorded_at,
-                   heart_rate, power, speed, cadence, altitude, lat, lng
-            FROM numbered
-            WHERE rn % GREATEST(1, total / ${input.maxPoints}) = 0
-            ORDER BY recorded_at`,
-      );
-
-      return rows.map(mapStreamPoint);
+      const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone);
+      const points = await repo.getStream(input.id, input.maxPoints);
+      return points.map((point) => point.toDetail());
     }),
 
-  /**
-   * Get HR zone distribution for a single activity.
-   * Computes Karvonen (Heart Rate Reserve) zones at query time using
-   * the user's max_hr from their profile and resting_hr from the
-   * closest daily metrics record.
-   *
-   * 5-zone model:
-   *   Z1 (Recovery):   50-60% HRR
-   *   Z2 (Aerobic):    60-70% HRR
-   *   Z3 (Tempo):      70-80% HRR
-   *   Z4 (Threshold):  80-90% HRR
-   *   Z5 (Anaerobic):  90-100% HRR
-   */
   hrZones: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }): Promise<ActivityHrZones> => {
-      const rows = await executeWithSchema(
-        ctx.db,
-        hrZoneRowSchema,
-        sql`WITH params AS (
-              SELECT
-                up.max_hr,
-                COALESCE(rhr.resting_hr, 60) AS resting_hr
-              FROM fitness.user_profile up
-              LEFT JOIN LATERAL (
-                SELECT dm.resting_hr
-                FROM fitness.v_daily_metrics dm
-                WHERE dm.user_id = up.id
-                  AND dm.date <= (
-                    SELECT (a.started_at AT TIME ZONE ${ctx.timezone})::date FROM fitness.v_activity a
-                    WHERE a.id = ${input.id} AND a.user_id = ${ctx.userId}
-                  )
-                  AND dm.resting_hr IS NOT NULL
-                ORDER BY dm.date DESC
-                LIMIT 1
-              ) rhr ON true
-              WHERE up.id = ${ctx.userId}
-                AND up.max_hr IS NOT NULL
-            ),
-            hr_samples AS (
-              SELECT ms.heart_rate
-              FROM fitness.metric_stream ms
-              JOIN fitness.v_activity a ON a.id = ms.activity_id AND a.user_id = ${ctx.userId}
-              WHERE ms.activity_id = ${input.id}
-                AND ms.heart_rate IS NOT NULL
-            )
-            SELECT
-              z.zone,
-              COUNT(hs.heart_rate)::int AS seconds
-            FROM params p
-            CROSS JOIN (VALUES (1), (2), (3), (4), (5)) AS z(zone)
-            LEFT JOIN hr_samples hs ON
-              CASE z.zone
-                WHEN 1 THEN hs.heart_rate >= p.resting_hr + (p.max_hr - p.resting_hr) * 0.5
-                           AND hs.heart_rate < p.resting_hr + (p.max_hr - p.resting_hr) * 0.6
-                WHEN 2 THEN hs.heart_rate >= p.resting_hr + (p.max_hr - p.resting_hr) * 0.6
-                           AND hs.heart_rate < p.resting_hr + (p.max_hr - p.resting_hr) * 0.7
-                WHEN 3 THEN hs.heart_rate >= p.resting_hr + (p.max_hr - p.resting_hr) * 0.7
-                           AND hs.heart_rate < p.resting_hr + (p.max_hr - p.resting_hr) * 0.8
-                WHEN 4 THEN hs.heart_rate >= p.resting_hr + (p.max_hr - p.resting_hr) * 0.8
-                           AND hs.heart_rate < p.resting_hr + (p.max_hr - p.resting_hr) * 0.9
-                WHEN 5 THEN hs.heart_rate >= p.resting_hr + (p.max_hr - p.resting_hr) * 0.9
-              END
-            GROUP BY z.zone
-            ORDER BY z.zone`,
-      );
-
-      return mapHrZones(rows);
+      const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone);
+      return repo.getHrZones(input.id);
     }),
 
   delete: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
-      await ctx.db.execute(sql`
-        DELETE FROM fitness.activity
-        WHERE id = ${input.id}::uuid AND user_id = ${ctx.userId}
-      `);
+      const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone);
+      await repo.delete(input.id);
       return { success: true };
     }),
 });
 
-/** Map a raw stream row to a StreamPoint. Exported for unit testing. */
+/** Map a raw stream row to a StreamPoint. Exported for backward compatibility. */
 export function mapStreamPoint(row: {
   recorded_at: string;
   heart_rate: number | null;
@@ -307,16 +95,7 @@ export function mapStreamPoint(row: {
   lat: number | null;
   lng: number | null;
 }): StreamPoint {
-  return {
-    recordedAt: String(row.recorded_at),
-    heartRate: row.heart_rate != null ? Number(row.heart_rate) : null,
-    power: row.power != null ? Number(row.power) : null,
-    speed: row.speed != null ? Number(row.speed) : null,
-    cadence: row.cadence != null ? Number(row.cadence) : null,
-    altitude: row.altitude != null ? Number(row.altitude) : null,
-    lat: row.lat != null ? Number(row.lat) : null,
-    lng: row.lng != null ? Number(row.lng) : null,
-  };
+  return new StreamPointModel(row).toDetail();
 }
 
 // Re-export mapHrZones for backward compatibility with consumers

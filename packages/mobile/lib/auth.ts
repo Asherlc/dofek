@@ -4,8 +4,11 @@ import {
   type ConfiguredProviders,
   ConfiguredProvidersSchema,
 } from "@dofek/auth/auth";
+import * as AppleAuthentication from "expo-apple-authentication";
 import * as SecureStore from "expo-secure-store";
 import * as WebBrowser from "expo-web-browser";
+import { Platform } from "react-native";
+import { z } from "zod";
 
 export { AuthUserSchema, ConfiguredProvidersSchema };
 export type { AuthUser, ConfiguredProviders };
@@ -72,6 +75,53 @@ export async function startOAuthLogin(
   const url = new URL(result.url);
   const session = url.searchParams.get("session");
   return session;
+}
+
+/** Whether native Apple Sign In is available (iOS 13+). */
+export function isNativeAppleSignInAvailable(): boolean {
+  return Platform.OS === "ios" && AppleAuthentication.isAvailableAsync !== undefined;
+}
+
+/** Sign in using the native iOS Apple Sign In sheet. Returns session token or null if cancelled. */
+export async function startNativeAppleSignIn(serverUrl: string): Promise<string | null> {
+  const credential = await AppleAuthentication.signInAsync({
+    requestedScopes: [
+      AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+      AppleAuthentication.AppleAuthenticationScope.EMAIL,
+    ],
+  });
+
+  if (!credential.authorizationCode) {
+    return null;
+  }
+
+  const body: Record<string, string> = {
+    authorizationCode: credential.authorizationCode,
+  };
+  if (credential.identityToken) {
+    body.identityToken = credential.identityToken;
+  }
+  if (credential.fullName?.givenName) {
+    body.givenName = credential.fullName.givenName;
+  }
+  if (credential.fullName?.familyName) {
+    body.familyName = credential.fullName.familyName;
+  }
+
+  const response = await fetch(`${serverUrl}/auth/apple/native`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `Apple Sign In failed: ${response.status}`);
+  }
+
+  const data: unknown = await response.json();
+  const parsed = z.object({ session: z.string() }).safeParse(data);
+  return parsed.success ? parsed.data.session : null;
 }
 
 /** Log out: delete session on server and clear local token. */

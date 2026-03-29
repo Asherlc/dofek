@@ -42,13 +42,13 @@ describe("accelerometerRouter", () => {
       expect(result).toHaveLength(2);
       expect(result[0]).toEqual({
         date: "2026-03-25",
-        sample_count: 4320000,
-        hours_covered: 24.0,
+        sampleCount: 4320000,
+        hoursCovered: 24.0,
       });
       expect(result[1]).toEqual({
         date: "2026-03-24",
-        sample_count: 2160000,
-        hours_covered: 12.0,
+        sampleCount: 2160000,
+        hoursCovered: 12.0,
       });
     });
 
@@ -117,11 +117,11 @@ describe("accelerometerRouter", () => {
 
       expect(result).toHaveLength(1);
       expect(result[0]).toEqual({
-        device_id: "iPhone 15 Pro",
-        device_type: "iphone",
-        sample_count: 8640000,
-        latest_sample: "2026-03-25T12:00:00Z",
-        earliest_sample: "2026-03-23T00:00:00Z",
+        deviceId: "iPhone 15 Pro",
+        deviceType: "iphone",
+        sampleCount: 8640000,
+        latestSample: "2026-03-25T12:00:00Z",
+        earliestSample: "2026-03-23T00:00:00Z",
       });
     });
 
@@ -161,13 +161,13 @@ describe("accelerometerRouter", () => {
 
       expect(result).toHaveLength(2);
       expect(result[0]).toEqual({
-        recorded_at: "2026-03-25T10:00:00.000Z",
+        recordedAt: "2026-03-25T10:00:00.000Z",
         x: 0.01,
         y: -0.98,
         z: 0.04,
       });
       expect(result[1]).toEqual({
-        recorded_at: "2026-03-25T10:00:00.020Z",
+        recordedAt: "2026-03-25T10:00:00.020Z",
         x: 0.02,
         y: -0.97,
         z: 0.05,
