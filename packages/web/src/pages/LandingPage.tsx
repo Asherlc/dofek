@@ -74,22 +74,44 @@ const FEATURES = [
     color: "#dc2626",
   },
   {
-    title: "AI-Powered Insights",
-    subtitle: "Discover patterns you'd never find manually",
+    title: "Body Composition",
+    subtitle: "Track changes over time",
     description:
-      "Automatic correlation discovery across all your health data. Anomaly detection that flags unusual readings. ML-powered predictions for recovery and performance. Your personal health researcher, running 24/7.",
-    icon: InsightsIcon,
-    color: "#0284c7",
+      "Weight, body fat, muscle mass, and BMI trends from Withings, Garmin, and manual entries. See how your training and nutrition translate to real body composition changes over weeks and months.",
+    icon: BodyIcon,
+    color: "#6366f1",
   },
 ] as const;
 
 /* ── Stats ── */
 const STATS = [
   { value: "30+", label: "Data providers" },
-  { value: "7", label: "Reverse-engineered APIs" },
-  { value: "100%", label: "Open source" },
+  { value: "6", label: "Health domains unified" },
+  { value: "24/7", label: "Continuous sync" },
   { value: "0", label: "Data sold to third parties" },
 ];
+
+/* ── ML insight examples ── */
+const ML_INSIGHTS = [
+  {
+    title: "Cross-device correlation",
+    description:
+      "Discover that your HRV drops 12% the morning after high-carb dinners, or that your sleep quality predicts next-day training performance. These patterns span devices and data sources that no single app can see.",
+    icon: CorrelationIcon,
+  },
+  {
+    title: "Anomaly detection",
+    description:
+      "Get alerted when your resting heart rate is unusually elevated, your sleep efficiency drops below your personal baseline, or your recovery score diverges from your training load trend.",
+    icon: AnomalyIcon,
+  },
+  {
+    title: "Predictive insights",
+    description:
+      "Know your likely readiness score tomorrow based on today's training, nutrition, and sleep patterns. Plan your week with predictions grounded in your own historical data, not generic guidelines.",
+    icon: PredictionIcon,
+  },
+] as const;
 
 /* ── Component ── */
 
@@ -98,8 +120,9 @@ export function LandingPage() {
     <div className="min-h-screen bg-page text-foreground">
       <LandingNav />
       <HeroSection />
-      <ProviderGrid />
       <StatsBar />
+      <IntelligenceSection />
+      <ProviderGrid />
       <FeaturesSection />
       <ComparisonSection />
       <PrivacySection />
@@ -121,10 +144,10 @@ function LandingNav() {
         </div>
         <div className="flex items-center gap-4">
           <a
-            href="#features"
+            href="#intelligence"
             className="hidden sm:inline text-sm text-muted hover:text-foreground transition-colors"
           >
-            Features
+            Intelligence
           </a>
           <a
             href="#integrations"
@@ -133,10 +156,10 @@ function LandingNav() {
             Integrations
           </a>
           <a
-            href="#privacy"
+            href="#features"
             className="hidden sm:inline text-sm text-muted hover:text-foreground transition-colors"
           >
-            Privacy
+            Features
           </a>
           <Link
             to="/login"
@@ -165,19 +188,20 @@ function HeroSection() {
         <div className="text-center max-w-3xl mx-auto">
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-accent/10 border border-accent/20 text-accent text-xs font-medium mb-6">
             <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
-            Open source health data platform
+            Insights no single app can give you
           </div>
 
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight leading-[1.1] mb-6">
-            All your health data.{" "}
+            Your health data is scattered.{" "}
             <span className="bg-gradient-to-r from-accent to-accent-secondary bg-clip-text text-transparent">
-              One clear picture.
+              Your insights shouldn't be.
             </span>
           </h1>
 
           <p className="text-lg sm:text-xl text-muted max-w-2xl mx-auto mb-8 leading-relaxed">
-            Dofek connects to 30+ health and fitness platforms, pulling every metric into a single
-            dashboard with AI-powered insights. No more app-switching. No more scattered data.
+            Dofek unifies 30+ health and fitness platforms into one intelligent dashboard. Machine
+            learning finds the patterns hiding across your devices — correlations, anomalies, and
+            predictions that no single app can see.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
@@ -188,13 +212,10 @@ function HeroSection() {
               Get started
             </Link>
             <a
-              href="https://github.com/Asherlc/dofek"
-              target="_blank"
-              rel="noopener noreferrer"
+              href="#intelligence"
               className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-surface-solid border border-border-strong text-foreground font-semibold text-base hover:bg-surface-hover transition-all press flex items-center justify-center gap-2"
             >
-              <GitHubIcon />
-              View on GitHub
+              See how it works
             </a>
           </div>
         </div>
@@ -381,6 +402,83 @@ function MockChart({
   );
 }
 
+/* ── Stats Bar ── */
+
+function StatsBar() {
+  return (
+    <section className="py-12 bg-accent/5 border-y border-border">
+      <div className="mx-auto max-w-4xl px-4 sm:px-6 grid grid-cols-2 sm:grid-cols-4 gap-8">
+        {STATS.map(({ value, label }) => (
+          <div key={label} className="text-center">
+            <div className="text-3xl sm:text-4xl font-extrabold text-accent">{value}</div>
+            <div className="text-sm text-muted mt-1">{label}</div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/* ── Intelligence Section (ML / cross-data insights — the key differentiator) ── */
+
+function IntelligenceSection() {
+  return (
+    <section id="intelligence" className="py-16 sm:py-24">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6">
+        <div className="text-center mb-16">
+          <h2 className="text-sm font-semibold text-accent uppercase tracking-wider mb-3">
+            Intelligence
+          </h2>
+          <p className="text-2xl sm:text-3xl font-bold">
+            Insights that are impossible with a single app
+          </p>
+          <p className="text-muted mt-3 max-w-2xl mx-auto">
+            Your WHOOP doesn't know what you ate. Your food tracker doesn't know how you slept.
+            Dofek connects every data source and uses machine learning to find the patterns that
+            matter — across devices, across health domains, across time.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {ML_INSIGHTS.map(({ title, description, icon: Icon }) => (
+            <div key={title} className="card p-6 relative overflow-hidden group">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-accent/5 rounded-full -translate-y-1/2 translate-x-1/2 group-hover:scale-150 transition-transform duration-500" />
+              <div className="relative">
+                <div className="w-12 h-12 rounded-xl bg-accent/10 flex items-center justify-center mb-4">
+                  <Icon />
+                </div>
+                <h3 className="text-lg font-semibold mb-2">{title}</h3>
+                <p className="text-sm text-muted leading-relaxed">{description}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Example insight callout */}
+        <div className="mt-12 card p-6 sm:p-8 bg-accent/5 border-accent/20 max-w-3xl mx-auto">
+          <div className="flex items-start gap-4">
+            <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center shrink-0 mt-0.5">
+              <BulbIcon />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-foreground mb-1">Example insight</p>
+              <p className="text-sm text-muted leading-relaxed">
+                "Your deep sleep is 23% higher on days when you finish eating 3+ hours before bed
+                and your training load stays below 150 TSS. This pattern held for 89% of the last 60
+                days."
+              </p>
+              <p className="text-xs text-subtle mt-2">
+                Combining data from Oura (sleep), FatSecret (nutrition), and Garmin (training) —
+                something none of those apps can do alone.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ── Provider Grid ── */
 
 function ProviderGrid() {
@@ -393,8 +491,8 @@ function ProviderGrid() {
           </h2>
           <p className="text-2xl sm:text-3xl font-bold">Connects to everything you already use</p>
           <p className="text-muted mt-3 max-w-xl mx-auto">
-            30+ providers including 7 reverse-engineered APIs for platforms that don't offer
-            developer access. If a device tracks health data, Dofek probably supports it.
+            30+ providers spanning fitness, sleep, nutrition, body composition, and recovery. The
+            more you connect, the smarter your insights get.
           </p>
         </div>
 
@@ -426,28 +524,11 @@ function ProviderGrid() {
   );
 }
 
-/* ── Stats Bar ── */
-
-function StatsBar() {
-  return (
-    <section className="py-12 bg-accent/5 border-y border-border">
-      <div className="mx-auto max-w-4xl px-4 sm:px-6 grid grid-cols-2 sm:grid-cols-4 gap-8">
-        {STATS.map(({ value, label }) => (
-          <div key={label} className="text-center">
-            <div className="text-3xl sm:text-4xl font-extrabold text-accent">{value}</div>
-            <div className="text-sm text-muted mt-1">{label}</div>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 /* ── Features Section ── */
 
 function FeaturesSection() {
   return (
-    <section id="features" className="py-16 sm:py-24">
+    <section id="features" className="py-16 sm:py-24 border-t border-border">
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <div className="text-center mb-16">
           <h2 className="text-sm font-semibold text-accent uppercase tracking-wider mb-3">
@@ -492,7 +573,9 @@ function ComparisonSection() {
           <h2 className="text-sm font-semibold text-accent uppercase tracking-wider mb-3">
             Why Dofek?
           </h2>
-          <p className="text-2xl sm:text-3xl font-bold">One platform instead of many</p>
+          <p className="text-2xl sm:text-3xl font-bold">
+            Your apps see slices. Dofek sees the whole picture.
+          </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
@@ -509,9 +592,9 @@ function ComparisonSection() {
                 "Check WHOOP for recovery, Garmin for training, Oura for sleep, FatSecret for nutrition",
                 "No way to correlate data across devices",
                 "Each app shows only its own limited view",
-                "Your data is siloed across 5+ company clouds",
-                "Paying for multiple premium subscriptions",
-                "Lose everything if you switch devices",
+                "Patterns across sleep, nutrition, and training stay invisible",
+                "Paying for multiple premium subscriptions that don't talk to each other",
+                "Switch devices and lose your history",
               ].map((item) => (
                 <li key={item} className="flex gap-2">
                   <span className="shrink-0 mt-0.5 text-red-400">&mdash;</span>
@@ -532,11 +615,11 @@ function ComparisonSection() {
             <ul className="space-y-3 text-sm text-muted">
               {[
                 "One dashboard with every metric from every device",
-                "Automatic cross-device correlation and insights",
-                "AI-powered anomaly detection and predictions",
-                "Self-hosted: your data stays on your server",
-                "Free and open source, forever",
-                "Switch devices anytime, your data history is preserved",
+                "ML-powered correlation discovery across all health domains",
+                "Anomaly detection that catches what you'd miss alone",
+                "Predictive readiness based on your full data picture",
+                "Switch devices anytime — your complete history stays intact",
+                "Your data stays yours, never sold or shared",
               ].map((item) => (
                 <li key={item} className="flex gap-2">
                   <span className="shrink-0 mt-0.5 text-accent">&#10003;</span>
@@ -560,28 +643,28 @@ function PrivacySection() {
         <div className="w-16 h-16 rounded-2xl bg-accent/10 flex items-center justify-center mx-auto mb-6">
           <ShieldIcon />
         </div>
-        <h2 className="text-2xl sm:text-3xl font-bold mb-4">Your data. Your server. Period.</h2>
+        <h2 className="text-2xl sm:text-3xl font-bold mb-4">Your data stays yours</h2>
         <p className="text-muted max-w-2xl mx-auto text-lg leading-relaxed mb-8">
-          Dofek is fully self-hosted. Your health data never touches a third-party cloud. Deploy on
-          your own server with Docker, encrypted secrets, and full control. No accounts, no
-          subscriptions, no data harvesting.
+          Health data is some of the most personal information you have. Dofek is built with privacy
+          as a core principle — your data is never sold, shared with advertisers, or used to train
+          third-party models.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 max-w-3xl mx-auto">
           {[
             {
-              title: "Self-hosted",
+              title: "No data selling",
               description:
-                "Deploy on your own Hetzner, DigitalOcean, or home server with a single Terraform command",
+                "Your health data is never sold to advertisers, insurers, or data brokers. It exists to serve you and only you.",
             },
             {
-              title: "Encrypted secrets",
+              title: "Encrypted at rest",
               description:
-                "All API credentials are SOPS + Age encrypted at rest. No plaintext secrets, ever",
+                "All API credentials and sensitive data are encrypted. Your data is protected at every layer of the stack.",
             },
             {
-              title: "Open source",
+              title: "Transparent practices",
               description:
-                "Every line of code is on GitHub. Audit it, fork it, contribute to it. MIT licensed",
+                "Clear privacy policy, no dark patterns. You can export or delete your data at any time.",
             },
           ].map(({ title, description }) => (
             <div key={title} className="card p-5 text-left">
@@ -603,25 +686,15 @@ function FinalCta() {
       <div className="mx-auto max-w-3xl px-4 sm:px-6 text-center">
         <h2 className="text-2xl sm:text-3xl font-bold mb-4">Ready to see the full picture?</h2>
         <p className="text-muted mb-8 max-w-lg mx-auto">
-          Stop app-switching. Start understanding your health data as a whole.
+          Connect your devices, let the intelligence layer do the rest. Discover what your health
+          data has been trying to tell you.
         </p>
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-          <Link
-            to="/login"
-            className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-accent text-white font-semibold text-base hover:bg-accent/90 transition-all hover:shadow-lg hover:shadow-accent/20 press"
-          >
-            Get started
-          </Link>
-          <a
-            href="https://github.com/Asherlc/dofek"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-surface-solid border border-border-strong text-foreground font-semibold text-base hover:bg-surface-hover transition-all press flex items-center justify-center gap-2"
-          >
-            <GitHubIcon />
-            Star on GitHub
-          </a>
-        </div>
+        <Link
+          to="/login"
+          className="inline-flex px-8 py-3.5 rounded-xl bg-accent text-white font-semibold text-base hover:bg-accent/90 transition-all hover:shadow-lg hover:shadow-accent/20 press"
+        >
+          Get started
+        </Link>
       </div>
     </section>
   );
@@ -635,17 +708,9 @@ function Footer() {
       <div className="mx-auto max-w-6xl px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-2">
           <img src="/icon.svg" alt="" width={20} height={20} className="rounded" />
-          <span className="text-sm text-muted">Dofek &mdash; Open source health data platform</span>
+          <span className="text-sm text-muted">Dofek &mdash; Intelligent health data platform</span>
         </div>
         <div className="flex items-center gap-4 text-xs text-dim">
-          <a
-            href="https://github.com/Asherlc/dofek"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-foreground transition-colors"
-          >
-            GitHub
-          </a>
           <Link to="/privacy" className="hover:text-foreground transition-colors">
             Privacy
           </Link>
@@ -659,14 +724,6 @@ function Footer() {
 }
 
 /* ── Icons ── */
-
-function GitHubIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
-    </svg>
-  );
-}
 
 function DashboardIcon({ color }: { color: string }) {
   return (
@@ -765,7 +822,7 @@ function RecoveryIcon({ color }: { color: string }) {
   );
 }
 
-function InsightsIcon({ color }: { color: string }) {
+function BodyIcon({ color }: { color: string }) {
   return (
     <svg
       width="20"
@@ -778,9 +835,88 @@ function InsightsIcon({ color }: { color: string }) {
       strokeLinejoin="round"
       aria-hidden="true"
     >
-      <circle cx="12" cy="12" r="10" />
-      <line x1="12" y1="16" x2="12" y2="12" />
-      <line x1="12" y1="8" x2="12.01" y2="8" />
+      <circle cx="12" cy="5" r="3" />
+      <path d="M12 8v8" />
+      <path d="M8 12h8" />
+      <path d="M9 21l3-5 3 5" />
+    </svg>
+  );
+}
+
+function CorrelationIcon() {
+  return (
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="#0284c7"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="6" cy="18" r="3" />
+      <circle cx="18" cy="6" r="3" />
+      <path d="M8.59 15.41L15.41 8.59" />
+    </svg>
+  );
+}
+
+function AnomalyIcon() {
+  return (
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="#dc2626"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+      <line x1="12" y1="9" x2="12" y2="13" />
+      <line x1="12" y1="17" x2="12.01" y2="17" />
+    </svg>
+  );
+}
+
+function PredictionIcon() {
+  return (
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="#7c5cbf"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+    </svg>
+  );
+}
+
+function BulbIcon() {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="#d97706"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M9 18h6" />
+      <path d="M10 22h4" />
+      <path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0018 8 6 6 0 006 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 018.91 14" />
     </svg>
   );
 }
