@@ -68,6 +68,25 @@ const oauth1Secrets = new Map<
   { providerId: string; tokenSecret: string; userId: string }
 >();
 
+/**
+ * Server-side state store for identity provider OAuth flows.
+ * Cookies (SameSite=Lax) aren't sent on cross-site POST requests, which
+ * breaks Apple Sign In (response_mode=form_post). This map provides a
+ * fallback when cookies are unavailable.
+ */
+interface IdentityFlowEntry {
+  codeVerifier: string;
+  linkUserId?: string;
+  mobileScheme?: string;
+  returnTo?: string;
+}
+const identityFlowMap = new Map<string, IdentityFlowEntry>();
+
+function storeIdentityFlow(state: string, entry: IdentityFlowEntry): void {
+  identityFlowMap.set(state, entry);
+  setTimeout(() => identityFlowMap.delete(state), 10 * 60 * 1000);
+}
+
 function isIdentityProviderName(value: string): value is IdentityProviderName {
   return IDENTITY_PROVIDER_NAMES.some((p) => p === value);
 }
@@ -226,10 +245,17 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         setMobileSchemeCookie(res, redirectScheme);
       }
 
-      setPostLoginRedirectCookie(
-        res,
-        typeof req.query.return_to === "string" ? req.query.return_to : undefined,
-      );
+      const returnTo = typeof req.query.return_to === "string" ? req.query.return_to : undefined;
+      setPostLoginRedirectCookie(res, returnTo);
+
+      // Server-side fallback for providers that use form_post (Apple):
+      // SameSite=Lax cookies aren't sent on cross-site POST requests.
+      storeIdentityFlow(statePayload, {
+        codeVerifier,
+        mobileScheme:
+          redirectScheme && isValidMobileScheme(redirectScheme) ? redirectScheme : undefined,
+        returnTo,
+      });
 
       res.redirect(url.toString());
     } catch (err: unknown) {
@@ -274,6 +300,13 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
 
       setOAuthFlowCookies(res, statePayload, codeVerifier);
       setLinkUserCookie(res, session.userId);
+
+      // Server-side fallback (same reason as login handler above)
+      storeIdentityFlow(statePayload, {
+        codeVerifier,
+        linkUserId: session.userId,
+      });
+
       res.redirect(url.toString());
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -282,7 +315,12 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
     }
   });
 
-  // Apple Sign In uses response_mode=form_post, which sends code/state as POST body
+  /**
+   * Shared handler for identity provider OAuth callbacks.
+   * Accepts code/state/error from either query params (GET) or form body (POST).
+   * Apple Sign In uses response_mode=form_post, so the callback comes as a POST
+   * where SameSite=Lax cookies are not sent. Falls back to server-side state map.
+   */
   async function handleIdentityCallback(
     req: import("express").Request<{ provider: string }>,
     res: import("express").Response,
@@ -296,10 +334,10 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       const providerName = providerNameRaw;
 
       // Read code/state/error from query params (GET) or body (POST form_post)
-      const params = req.method === "POST" ? req.body : req.query;
-      const code = typeof params.code === "string" ? params.code : undefined;
-      const stateParam = typeof params.state === "string" ? params.state : undefined;
-      const error = typeof params.error === "string" ? params.error : undefined;
+      const rawParams = req.method === "POST" ? req.body : req.query;
+      const code = typeof rawParams.code === "string" ? rawParams.code : undefined;
+      const stateParam = typeof rawParams.state === "string" ? rawParams.state : undefined;
+      const error = typeof rawParams.error === "string" ? rawParams.error : undefined;
 
       if (error) {
         res.status(400).type("text/plain").send("Authorization denied");
@@ -310,14 +348,31 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         return;
       }
 
-      const { state: storedState, codeVerifier } = getOAuthFlowCookies(req);
-      const linkUserId = getLinkUserCookie(req);
-      const mobileScheme = getMobileSchemeCookie(req);
-      const returnTo = getPostLoginRedirectCookie(req);
+      // Try cookies first (works for GET redirects from Google/Authentik)
+      const cookieFlow = getOAuthFlowCookies(req);
+      let storedState = cookieFlow.state;
+      let codeVerifier = cookieFlow.codeVerifier;
+      let linkUserId = getLinkUserCookie(req);
+      let mobileScheme = getMobileSchemeCookie(req);
+      let returnTo = getPostLoginRedirectCookie(req);
       clearOAuthFlowCookies(res);
 
+      // Fall back to server-side map when cookies are unavailable
+      // (Apple form_post: SameSite=Lax cookies aren't sent on cross-site POST)
+      if (!storedState || !codeVerifier) {
+        const flowEntry = identityFlowMap.get(stateParam);
+        if (flowEntry) {
+          storedState = stateParam;
+          codeVerifier = flowEntry.codeVerifier;
+          linkUserId = linkUserId ?? flowEntry.linkUserId;
+          mobileScheme = mobileScheme ?? flowEntry.mobileScheme;
+          returnTo = returnTo ?? flowEntry.returnTo;
+          identityFlowMap.delete(stateParam);
+        }
+      }
+
       if (!storedState || !codeVerifier || stateParam !== storedState) {
-        res.status(400).send("Invalid state — please try logging in again");
+        res.status(400).type("text/plain").send("Invalid state — please try logging in again");
         return;
       }
 
