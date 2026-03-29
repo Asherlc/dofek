@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./migrate.ts", () => ({ runMigrations: vi.fn() }));
+vi.mock("./sync-views.ts", () => ({
+  syncMaterializedViews: vi.fn().mockResolvedValue({ synced: 0, skipped: 0 }),
+}));
 vi.mock("../logger.ts", () => ({
   logger: { info: vi.fn(), error: vi.fn() },
 }));
