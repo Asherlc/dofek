@@ -37,6 +37,30 @@ let readTypes: Set<HKObjectType> = {
         .bloodGlucose,
         .environmentalAudioExposure,
         .headphoneAudioExposure,
+        // Blood pressure
+        .bloodPressureSystolic,
+        .bloodPressureDiastolic,
+        // Dietary micronutrients
+        .dietaryFiber,
+        .dietarySodium,
+        .dietarySugar,
+        .dietaryCholesterol,
+        .dietaryFatSaturated,
+        .dietaryPotassium,
+        .dietaryVitaminA,
+        .dietaryVitaminC,
+        .dietaryVitaminD,
+        .dietaryCalcium,
+        .dietaryIron,
+        .dietaryMagnesium,
+        .dietaryZinc,
+        // Accessibility
+        .pushCount,
+        .distanceWheelchair,
+        // Environment
+        .uvExposure,
+        // Electrodermal
+        .electrodermalActivity,
     ]
     for id in quantityTypes {
         if let type = HKQuantityType.quantityType(forIdentifier: id) {
@@ -44,8 +68,17 @@ let readTypes: Set<HKObjectType> = {
         }
     }
     // Category types
-    if let sleepType = HKCategoryType.categoryType(forIdentifier: .sleepAnalysis) {
-        types.insert(sleepType)
+    let categoryTypes: [HKCategoryTypeIdentifier] = [
+        .sleepAnalysis,
+        .menstrualFlow,
+        .mindfulSession,
+        .handwashingEvent,
+        .toothbrushingEvent,
+    ]
+    for id in categoryTypes {
+        if let type = HKCategoryType.categoryType(forIdentifier: id) {
+            types.insert(type)
+        }
     }
     // Workout type
     types.insert(HKWorkoutType.workoutType())

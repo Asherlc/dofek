@@ -342,9 +342,9 @@ describe("importClinicalRecords", () => {
 
     await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
 
-    // Should delete lab_result then lab_panel
-    expect(spies.deleteFn).toHaveBeenCalledTimes(2);
-    expect(spies.deleteWhere).toHaveBeenCalledTimes(2);
+    // Should delete lab_result, lab_panel, medication, condition, allergy_intolerance
+    expect(spies.deleteFn).toHaveBeenCalledTimes(5);
+    expect(spies.deleteWhere).toHaveBeenCalledTimes(5);
   });
 
   it("returns early with zero counts when ZIP has no clinical records", async () => {

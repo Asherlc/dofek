@@ -1,9 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   buildPanelMap,
+  extractCodeBySystem,
+  type FhirAllergyIntolerance,
+  type FhirCondition,
   type FhirDiagnosticReport,
+  type FhirMedicationRequest,
   type FhirObservation,
+  fhirResourceSchema,
+  parseFhirAllergyIntolerance,
+  parseFhirCondition,
   parseFhirDiagnosticReport,
+  parseFhirMedicationRequest,
   parseFhirObservation,
 } from "./fhir.ts";
 
@@ -237,6 +245,28 @@ describe("FHIR Lab Result Parsing", () => {
     });
   });
 
+  describe("extractCodeBySystem", () => {
+    it("finds code by system URL", () => {
+      const concept = {
+        coding: [
+          { system: "http://snomed.info/sct", code: "48694002", display: "Anxiety" },
+          { system: "http://hl7.org/fhir/sid/icd-10-cm", code: "F41.9" },
+        ],
+      };
+      expect(extractCodeBySystem(concept, "http://snomed.info/sct")).toBe("48694002");
+      expect(extractCodeBySystem(concept, "http://hl7.org/fhir/sid/icd-10-cm")).toBe("F41.9");
+    });
+
+    it("returns undefined when system not found", () => {
+      const concept = { coding: [{ system: "http://loinc.org", code: "123" }] };
+      expect(extractCodeBySystem(concept, "http://snomed.info/sct")).toBeUndefined();
+    });
+
+    it("returns undefined when coding is empty", () => {
+      expect(extractCodeBySystem({}, "http://loinc.org")).toBeUndefined();
+    });
+  });
+
   describe("buildPanelMap", () => {
     it("maps observation IDs to panel names", () => {
       const reports = [diagnosticReport];
@@ -275,5 +305,353 @@ describe("FHIR Lab Result Parsing", () => {
       expect(panelMap.get("obs-wbc")).toBe("CBC");
       expect(panelMap.get("obs-rbc")).toBe("CBC");
     });
+  });
+});
+
+// ============================================================
+// MedicationRequest fixtures (based on real export data)
+// ============================================================
+
+const medicationRequestFull: FhirMedicationRequest = {
+  resourceType: "MedicationRequest",
+  id: "med-cephalexin-001",
+  status: "stopped",
+  intent: "order",
+  authoredOn: "2011-07-19",
+  medicationReference: { display: "Cephalexin 500 mg Cap" },
+  contained: [
+    {
+      resourceType: "Medication",
+      id: "med-contained-001",
+      code: {
+        text: "Cephalexin 500 mg Cap",
+        coding: [
+          { system: "http://www.nlm.nih.gov/research/umls/rxnorm", code: "2231" },
+          { system: "http://www.whocc.no/atc", code: "J01DB01" },
+        ],
+      },
+      form: { text: "Capsule" },
+    },
+  ],
+  dosageInstruction: [
+    {
+      text: "Take 1 capsule orally 2 times a day, Disp-100, R-1, Fill Now",
+      patientInstruction: "Take 1 capsule orally 2 times a day",
+      route: { text: "Oral" },
+      timing: {
+        repeat: {
+          boundsPeriod: { start: "2011-07-19", end: "2011-09-04" },
+        },
+      },
+    },
+  ],
+  requester: { display: "DAVID GREGORY MOSKOWITZ MD" },
+  reasonCode: [
+    {
+      text: "ACNE",
+      coding: [
+        { system: "http://snomed.info/sct", display: "Acne (disorder)", code: "11381005" },
+        {
+          system: "http://hl7.org/fhir/sid/icd-10-cm",
+          display: "ACNE, UNSPECIFIED",
+          code: "L70.9",
+        },
+      ],
+    },
+  ],
+};
+
+const medicationRequestMinimal: FhirMedicationRequest = {
+  resourceType: "MedicationRequest",
+  id: "med-lorazepam-001",
+  status: "stopped",
+  authoredOn: "2025-09-29",
+  medicationReference: { display: "LORazepam 0.5mg Tab" },
+  contained: [
+    {
+      resourceType: "Medication",
+      code: {
+        text: "LORazepam 0.5mg Tab",
+        coding: [{ system: "http://www.nlm.nih.gov/research/umls/rxnorm", code: "6470" }],
+      },
+      form: { text: "Tab" },
+    },
+  ],
+  dosageInstruction: [{ text: "Patient reported" }],
+  // requester has data-absent-reason instead of display
+  requester: {},
+  recorder: { display: "Azja A" },
+};
+
+// ============================================================
+// Condition fixtures
+// ============================================================
+
+const conditionResolved: FhirCondition = {
+  resourceType: "Condition",
+  id: "cond-anxiety-001",
+  code: {
+    text: "Anxiety",
+    coding: [
+      {
+        system: "http://hl7.org/fhir/sid/icd-10-cm",
+        display: "Anxiety disorder, unspecified",
+        code: "F41.9",
+      },
+      { system: "http://snomed.info/sct", display: "Anxiety", code: "48694002" },
+    ],
+  },
+  clinicalStatus: {
+    text: "Resolved",
+    coding: [
+      { code: "resolved", system: "http://terminology.hl7.org/CodeSystem/condition-clinical" },
+    ],
+  },
+  verificationStatus: {
+    text: "Confirmed",
+    coding: [
+      { code: "confirmed", system: "http://terminology.hl7.org/CodeSystem/condition-ver-status" },
+    ],
+  },
+  onsetDateTime: "2023-06-02",
+  abatementDateTime: "2024-06-27",
+  recordedDate: "2023-06-02",
+};
+
+const conditionMinimal: FhirCondition = {
+  resourceType: "Condition",
+  id: "cond-minimal-001",
+  code: { text: "Back pain" },
+};
+
+// ============================================================
+// AllergyIntolerance fixtures
+// ============================================================
+
+const allergyWithReaction: FhirAllergyIntolerance = {
+  resourceType: "AllergyIntolerance",
+  id: "allergy-lactase-001",
+  code: {
+    text: "LACTASE",
+    coding: [
+      { system: "http://www.nlm.nih.gov/research/umls/rxnorm", display: "LACTASE", code: "41397" },
+    ],
+  },
+  type: "allergy",
+  clinicalStatus: {
+    coding: [
+      {
+        code: "active",
+        system: "http://terminology.hl7.org/CodeSystem/allergyintolerance-clinical",
+      },
+    ],
+  },
+  verificationStatus: {
+    coding: [{ code: "confirmed" }],
+  },
+  onsetDateTime: "2023-03-27",
+  reaction: [
+    {
+      manifestation: [{ text: "Other (See Comments)" }],
+      description: "Other (See Comments)",
+    },
+  ],
+};
+
+const allergyMinimal: FhirAllergyIntolerance = {
+  resourceType: "AllergyIntolerance",
+  id: "allergy-minimal-001",
+};
+
+// ============================================================
+// MedicationRequest tests
+// ============================================================
+
+describe("FHIR MedicationRequest Parsing", () => {
+  describe("parseFhirMedicationRequest", () => {
+    it("parses full medication request with all fields", () => {
+      const result = parseFhirMedicationRequest(medicationRequestFull, "UCSF Health");
+
+      expect(result.externalId).toBe("med-cephalexin-001");
+      expect(result.name).toBe("Cephalexin 500 mg Cap");
+      expect(result.status).toBe("stopped");
+      expect(result.authoredOn).toBe("2011-07-19");
+      expect(result.startDate).toBe("2011-07-19");
+      expect(result.endDate).toBe("2011-09-04");
+      expect(result.dosageText).toBe("Take 1 capsule orally 2 times a day");
+      expect(result.route).toBe("Oral");
+      expect(result.form).toBe("Capsule");
+      expect(result.rxnormCode).toBe("2231");
+      expect(result.prescriberName).toBe("DAVID GREGORY MOSKOWITZ MD");
+      expect(result.reasonText).toBe("ACNE");
+      expect(result.reasonSnomedCode).toBe("11381005");
+      expect(result.sourceName).toBe("UCSF Health");
+    });
+
+    it("falls back to contained medication name when medicationReference.display is missing", () => {
+      const resource: FhirMedicationRequest = {
+        ...medicationRequestFull,
+        id: "med-no-ref-display",
+        medicationReference: {},
+      };
+      const result = parseFhirMedicationRequest(resource, "Test");
+      expect(result.name).toBe("Cephalexin 500 mg Cap");
+    });
+
+    it("falls back to recorder when requester has no display", () => {
+      const result = parseFhirMedicationRequest(medicationRequestMinimal, "Test");
+      expect(result.prescriberName).toBe("Azja A");
+    });
+
+    it("handles missing dosage instruction", () => {
+      const resource: FhirMedicationRequest = {
+        resourceType: "MedicationRequest",
+        id: "med-no-dosage",
+        medicationReference: { display: "Some Med" },
+      };
+      const result = parseFhirMedicationRequest(resource, "Test");
+      expect(result.dosageText).toBeUndefined();
+      expect(result.route).toBeUndefined();
+      expect(result.startDate).toBeUndefined();
+      expect(result.endDate).toBeUndefined();
+    });
+
+    it("handles missing reason code", () => {
+      const result = parseFhirMedicationRequest(medicationRequestMinimal, "Test");
+      expect(result.reasonText).toBeUndefined();
+      expect(result.reasonSnomedCode).toBeUndefined();
+    });
+
+    it("prefers patientInstruction over text for dosage", () => {
+      const result = parseFhirMedicationRequest(medicationRequestFull, "Test");
+      // patientInstruction is "Take 1 capsule orally 2 times a day"
+      // text is "Take 1 capsule orally 2 times a day, Disp-100, R-1, Fill Now"
+      expect(result.dosageText).toBe("Take 1 capsule orally 2 times a day");
+    });
+
+    it("stores raw FHIR resource", () => {
+      const result = parseFhirMedicationRequest(medicationRequestFull, "Test");
+      expect(result.raw).toMatchObject({
+        resourceType: "MedicationRequest",
+        id: "med-cephalexin-001",
+      });
+    });
+  });
+});
+
+// ============================================================
+// Condition tests
+// ============================================================
+
+describe("FHIR Condition Parsing", () => {
+  describe("parseFhirCondition", () => {
+    it("parses condition with all fields", () => {
+      const result = parseFhirCondition(conditionResolved, "UCSF Health");
+
+      expect(result.externalId).toBe("cond-anxiety-001");
+      expect(result.name).toBe("Anxiety");
+      expect(result.clinicalStatus).toBe("resolved");
+      expect(result.verificationStatus).toBe("confirmed");
+      expect(result.icd10Code).toBe("F41.9");
+      expect(result.snomedCode).toBe("48694002");
+      expect(result.onsetDate).toBe("2023-06-02");
+      expect(result.abatementDate).toBe("2024-06-27");
+      expect(result.recordedDate).toBe("2023-06-02");
+      expect(result.sourceName).toBe("UCSF Health");
+    });
+
+    it("handles minimal condition with only name", () => {
+      const result = parseFhirCondition(conditionMinimal, "Test");
+
+      expect(result.name).toBe("Back pain");
+      expect(result.clinicalStatus).toBeUndefined();
+      expect(result.verificationStatus).toBeUndefined();
+      expect(result.icd10Code).toBeUndefined();
+      expect(result.snomedCode).toBeUndefined();
+      expect(result.onsetDate).toBeUndefined();
+      expect(result.abatementDate).toBeUndefined();
+    });
+
+    it("stores raw FHIR resource", () => {
+      const result = parseFhirCondition(conditionResolved, "Test");
+      expect(result.raw).toMatchObject({ resourceType: "Condition", id: "cond-anxiety-001" });
+    });
+  });
+});
+
+// ============================================================
+// AllergyIntolerance tests
+// ============================================================
+
+describe("FHIR AllergyIntolerance Parsing", () => {
+  describe("parseFhirAllergyIntolerance", () => {
+    it("parses allergy with reactions", () => {
+      const result = parseFhirAllergyIntolerance(allergyWithReaction, "UCSF Health");
+
+      expect(result.externalId).toBe("allergy-lactase-001");
+      expect(result.name).toBe("LACTASE");
+      expect(result.type).toBe("allergy");
+      expect(result.clinicalStatus).toBe("active");
+      expect(result.verificationStatus).toBe("confirmed");
+      expect(result.rxnormCode).toBe("41397");
+      expect(result.onsetDate).toBe("2023-03-27");
+      expect(result.reactions).toEqual([
+        { manifestation: "Other (See Comments)", description: "Other (See Comments)" },
+      ]);
+      expect(result.sourceName).toBe("UCSF Health");
+    });
+
+    it("handles minimal allergy with no code", () => {
+      const result = parseFhirAllergyIntolerance(allergyMinimal, "Test");
+
+      expect(result.name).toBe("Unknown Allergen");
+      expect(result.type).toBeUndefined();
+      expect(result.clinicalStatus).toBeUndefined();
+      expect(result.rxnormCode).toBeUndefined();
+      expect(result.reactions).toEqual([]);
+    });
+
+    it("stores raw FHIR resource", () => {
+      const result = parseFhirAllergyIntolerance(allergyWithReaction, "Test");
+      expect(result.raw).toMatchObject({
+        resourceType: "AllergyIntolerance",
+        id: "allergy-lactase-001",
+      });
+    });
+  });
+});
+
+// ============================================================
+// fhirResourceSchema discriminated union
+// ============================================================
+
+describe("fhirResourceSchema", () => {
+  it("parses MedicationRequest", () => {
+    const result = fhirResourceSchema.safeParse(medicationRequestFull);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.resourceType).toBe("MedicationRequest");
+    }
+  });
+
+  it("parses Condition", () => {
+    const result = fhirResourceSchema.safeParse(conditionResolved);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.resourceType).toBe("Condition");
+    }
+  });
+
+  it("parses AllergyIntolerance", () => {
+    const result = fhirResourceSchema.safeParse(allergyWithReaction);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.resourceType).toBe("AllergyIntolerance");
+    }
+  });
+
+  it("rejects unknown resource types", () => {
+    const result = fhirResourceSchema.safeParse({ resourceType: "DocumentReference", id: "doc-1" });
+    expect(result.success).toBe(false);
   });
 });

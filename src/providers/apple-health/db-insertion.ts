@@ -61,6 +61,7 @@ export const METRIC_STREAM_TYPES: Record<string, string> = {
   HKQuantityTypeIdentifierEnvironmentalAudioExposure: "audioExposure",
   HKQuantityTypeIdentifierHeadphoneAudioExposure: "audioExposure",
   HKQuantityTypeIdentifierAppleSleepingWristTemperature: "skinTemperature",
+  HKQuantityTypeIdentifierElectrodermalActivity: "electrodermalActivity",
 };
 
 // Records that map to body_measurement
@@ -96,6 +97,9 @@ export const DAILY_METRIC_TYPES = new Set([
   "HKQuantityTypeIdentifierWalkingAsymmetryPercentage",
   "HKQuantityTypeIdentifierAppleWalkingSteadiness",
   "HKQuantityTypeIdentifierWalkingHeartRateAverage",
+  "HKQuantityTypeIdentifierPushCount",
+  "HKQuantityTypeIdentifierDistanceWheelchair",
+  "HKQuantityTypeIdentifierUVExposure",
 ]);
 
 // Additive daily metrics (summed across all records in a day)
@@ -108,6 +112,8 @@ const ADDITIVE_DAILY_TYPES = new Set([
   "HKQuantityTypeIdentifierFlightsClimbed",
   "HKQuantityTypeIdentifierAppleExerciseTime",
   "HKQuantityTypeIdentifierAppleStandTime",
+  "HKQuantityTypeIdentifierPushCount",
+  "HKQuantityTypeIdentifierDistanceWheelchair",
 ]);
 
 // Nutrition records -> nutritionDaily (aggregate by day)
@@ -118,6 +124,18 @@ export const NUTRITION_TYPES: Record<string, string> = {
   HKQuantityTypeIdentifierDietaryFatTotal: "fatG",
   HKQuantityTypeIdentifierDietaryFiber: "fiberG",
   HKQuantityTypeIdentifierDietaryWater: "waterMl",
+  HKQuantityTypeIdentifierDietarySodium: "sodiumMg",
+  HKQuantityTypeIdentifierDietarySugar: "sugarG",
+  HKQuantityTypeIdentifierDietaryCholesterol: "cholesterolMg",
+  HKQuantityTypeIdentifierDietaryFatSaturated: "saturatedFatG",
+  HKQuantityTypeIdentifierDietaryPotassium: "potassiumMg",
+  HKQuantityTypeIdentifierDietaryVitaminA: "vitaminAMcg",
+  HKQuantityTypeIdentifierDietaryVitaminC: "vitaminCMg",
+  HKQuantityTypeIdentifierDietaryVitaminD: "vitaminDMcg",
+  HKQuantityTypeIdentifierDietaryCalcium: "calciumMg",
+  HKQuantityTypeIdentifierDietaryIron: "ironMg",
+  HKQuantityTypeIdentifierDietaryMagnesium: "magnesiumMg",
+  HKQuantityTypeIdentifierDietaryZinc: "zincMg",
 };
 
 // All explicitly routed types -- anything not here goes to health_event
@@ -169,6 +187,9 @@ export async function upsertMetricStreamBatch(
         break;
       case "skinTemperature":
         rows.push({ ...base, skinTemperature: record.value });
+        break;
+      case "electrodermalActivity":
+        rows.push({ ...base, electrodermalActivity: record.value });
         break;
     }
   }
@@ -390,6 +411,15 @@ export async function upsertDailyMetricsBatch(
         case "HKQuantityTypeIdentifierWalkingHeartRateAverage":
           row.restingHr = row.restingHr ?? Math.round(value);
           break;
+        case "HKQuantityTypeIdentifierPushCount":
+          row.pushCount = Math.round(value);
+          break;
+        case "HKQuantityTypeIdentifierDistanceWheelchair":
+          row.wheelchairDistanceKm = value / 1000;
+          break;
+        case "HKQuantityTypeIdentifierUVExposure":
+          row.uvExposure = value;
+          break;
       }
     }
     rows.push({ row });
@@ -431,6 +461,10 @@ export async function upsertDailyMetricsBatch(
               flightsClimbed: sql`coalesce(${dailyMetrics.flightsClimbed}, 0) + coalesce(excluded.flights_climbed, 0)`,
               exerciseMinutes: sql`coalesce(${dailyMetrics.exerciseMinutes}, 0) + coalesce(excluded.exercise_minutes, 0)`,
               standHours: sql`coalesce(${dailyMetrics.standHours}, 0) + coalesce(excluded.stand_hours, 0)`,
+              pushCount: sql`coalesce(${dailyMetrics.pushCount}, 0) + coalesce(excluded.push_count, 0)`,
+              wheelchairDistanceKm: sql`coalesce(${dailyMetrics.wheelchairDistanceKm}, 0) + coalesce(excluded.wheelchair_distance_km, 0)`,
+              // Point-in-time: UV exposure
+              uvExposure: sql`coalesce(excluded.uv_exposure, ${dailyMetrics.uvExposure})`,
             },
           }),
     );
@@ -523,6 +557,9 @@ export async function upsertNutritionBatch(
         case "calories":
           row.calories = Math.round(value);
           break;
+        case "waterMl":
+          row.waterMl = Math.round(value);
+          break;
         case "proteinG":
           row.proteinG = value;
           break;
@@ -535,8 +572,41 @@ export async function upsertNutritionBatch(
         case "fiberG":
           row.fiberG = value;
           break;
-        case "waterMl":
-          row.waterMl = Math.round(value);
+        case "sodiumMg":
+          row.sodiumMg = value;
+          break;
+        case "sugarG":
+          row.sugarG = value;
+          break;
+        case "cholesterolMg":
+          row.cholesterolMg = value;
+          break;
+        case "saturatedFatG":
+          row.saturatedFatG = value;
+          break;
+        case "potassiumMg":
+          row.potassiumMg = value;
+          break;
+        case "vitaminAMcg":
+          row.vitaminAMcg = value;
+          break;
+        case "vitaminCMg":
+          row.vitaminCMg = value;
+          break;
+        case "vitaminDMcg":
+          row.vitaminDMcg = value;
+          break;
+        case "calciumMg":
+          row.calciumMg = value;
+          break;
+        case "ironMg":
+          row.ironMg = value;
+          break;
+        case "magnesiumMg":
+          row.magnesiumMg = value;
+          break;
+        case "zincMg":
+          row.zincMg = value;
           break;
       }
     }
@@ -565,6 +635,18 @@ export async function upsertNutritionBatch(
               fatG: sql`coalesce(${nutritionDaily.fatG}, 0) + coalesce(excluded.fat_g, 0)`,
               fiberG: sql`coalesce(${nutritionDaily.fiberG}, 0) + coalesce(excluded.fiber_g, 0)`,
               waterMl: sql`coalesce(${nutritionDaily.waterMl}, 0) + coalesce(excluded.water_ml, 0)`,
+              sodiumMg: sql`coalesce(${nutritionDaily.sodiumMg}, 0) + coalesce(excluded.sodium_mg, 0)`,
+              sugarG: sql`coalesce(${nutritionDaily.sugarG}, 0) + coalesce(excluded.sugar_g, 0)`,
+              cholesterolMg: sql`coalesce(${nutritionDaily.cholesterolMg}, 0) + coalesce(excluded.cholesterol_mg, 0)`,
+              saturatedFatG: sql`coalesce(${nutritionDaily.saturatedFatG}, 0) + coalesce(excluded.saturated_fat_g, 0)`,
+              potassiumMg: sql`coalesce(${nutritionDaily.potassiumMg}, 0) + coalesce(excluded.potassium_mg, 0)`,
+              vitaminAMcg: sql`coalesce(${nutritionDaily.vitaminAMcg}, 0) + coalesce(excluded.vitamin_a_mcg, 0)`,
+              vitaminCMg: sql`coalesce(${nutritionDaily.vitaminCMg}, 0) + coalesce(excluded.vitamin_c_mg, 0)`,
+              vitaminDMcg: sql`coalesce(${nutritionDaily.vitaminDMcg}, 0) + coalesce(excluded.vitamin_d_mcg, 0)`,
+              calciumMg: sql`coalesce(${nutritionDaily.calciumMg}, 0) + coalesce(excluded.calcium_mg, 0)`,
+              ironMg: sql`coalesce(${nutritionDaily.ironMg}, 0) + coalesce(excluded.iron_mg, 0)`,
+              magnesiumMg: sql`coalesce(${nutritionDaily.magnesiumMg}, 0) + coalesce(excluded.magnesium_mg, 0)`,
+              zincMg: sql`coalesce(${nutritionDaily.zincMg}, 0) + coalesce(excluded.zinc_mg, 0)`,
             },
           }),
     );

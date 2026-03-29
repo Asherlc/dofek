@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 // ============================================================
-// FHIR Clinical Records -- Lab Results
+// FHIR Clinical Records
 // ============================================================
 
 const fhirCodingSchema = z.object({
@@ -51,14 +51,91 @@ const fhirDiagnosticReportSchema = z.object({
   result: z.array(z.object({ reference: z.string() })).optional(),
 });
 
+const fhirMedicationSchema = z.object({
+  resourceType: z.literal("Medication"),
+  id: z.string().optional(),
+  code: fhirCodeableConceptSchema.optional(),
+  form: fhirCodeableConceptSchema.optional(),
+});
+
+const fhirMedicationRequestSchema = z.object({
+  resourceType: z.literal("MedicationRequest"),
+  id: z.string(),
+  status: z.string().optional(),
+  intent: z.string().optional(),
+  authoredOn: z.string().optional(),
+  medicationReference: z
+    .object({ display: z.string().optional(), reference: z.string().optional() })
+    .optional(),
+  contained: z.array(fhirMedicationSchema).optional(),
+  dosageInstruction: z
+    .array(
+      z.object({
+        text: z.string().optional(),
+        patientInstruction: z.string().optional(),
+        route: fhirCodeableConceptSchema.optional(),
+        timing: z
+          .object({
+            repeat: z
+              .object({
+                boundsPeriod: z
+                  .object({ start: z.string().optional(), end: z.string().optional() })
+                  .optional(),
+              })
+              .optional(),
+          })
+          .optional(),
+      }),
+    )
+    .optional(),
+  requester: z.object({ display: z.string().optional() }).passthrough().optional(),
+  recorder: z.object({ display: z.string().optional() }).passthrough().optional(),
+  reasonCode: z.array(fhirCodeableConceptSchema).optional(),
+  courseOfTherapyType: fhirCodeableConceptSchema.optional(),
+});
+
+const fhirConditionSchema = z.object({
+  resourceType: z.literal("Condition"),
+  id: z.string(),
+  code: fhirCodeableConceptSchema,
+  clinicalStatus: fhirCodeableConceptSchema.optional(),
+  verificationStatus: fhirCodeableConceptSchema.optional(),
+  onsetDateTime: z.string().optional(),
+  abatementDateTime: z.string().optional(),
+  recordedDate: z.string().optional(),
+});
+
+const fhirReactionSchema = z.object({
+  manifestation: z.array(fhirCodeableConceptSchema).optional(),
+  description: z.string().optional(),
+});
+
+const fhirAllergyIntoleranceSchema = z.object({
+  resourceType: z.literal("AllergyIntolerance"),
+  id: z.string(),
+  code: fhirCodeableConceptSchema.optional(),
+  type: z.string().optional(),
+  clinicalStatus: fhirCodeableConceptSchema.optional(),
+  verificationStatus: fhirCodeableConceptSchema.optional(),
+  onsetDateTime: z.string().optional(),
+  recordedDate: z.string().optional(),
+  reaction: z.array(fhirReactionSchema).optional(),
+});
+
 export const fhirResourceSchema = z.discriminatedUnion("resourceType", [
   fhirObservationSchema,
   fhirDiagnosticReportSchema,
+  fhirMedicationRequestSchema,
+  fhirConditionSchema,
+  fhirAllergyIntoleranceSchema,
 ]);
 
 export type FhirCodeableConcept = z.infer<typeof fhirCodeableConceptSchema>;
 export type FhirObservation = z.infer<typeof fhirObservationSchema>;
 export type FhirDiagnosticReport = z.infer<typeof fhirDiagnosticReportSchema>;
+export type FhirMedicationRequest = z.infer<typeof fhirMedicationRequestSchema>;
+export type FhirCondition = z.infer<typeof fhirConditionSchema>;
+export type FhirAllergyIntolerance = z.infer<typeof fhirAllergyIntoleranceSchema>;
 
 export const VALID_LAB_STATUSES: ReadonlyArray<string> = [
   "final",
@@ -103,10 +180,28 @@ export interface ParsedLabResult {
 }
 
 /**
+ * Extract a code from a FHIR CodeableConcept's coding array by system URL.
+ */
+export function extractCodeBySystem(
+  concept: FhirCodeableConcept,
+  systemUrl: string,
+): string | undefined {
+  return concept.coding?.find((c) => c.system === systemUrl)?.code;
+}
+
+/**
  * Extract the LOINC code from a FHIR CodeableConcept's coding array.
  */
 function extractLoincCode(concept: FhirCodeableConcept): string | undefined {
-  return concept.coding?.find((c) => c.system === "http://loinc.org")?.code;
+  return extractCodeBySystem(concept, "http://loinc.org");
+}
+
+/**
+ * Extract the first status code from a FHIR CodeableConcept (clinicalStatus/verificationStatus).
+ */
+function extractStatusCode(concept: FhirCodeableConcept | undefined): string | undefined {
+  if (!concept) return undefined;
+  return concept.coding?.[0]?.code ?? concept.text?.toLowerCase();
 }
 
 /**
@@ -181,6 +276,161 @@ export function parseFhirDiagnosticReport(
     issuedAt: report.issued ? new Date(report.issued) : undefined,
     raw: { ...report },
     observationIds: (report.result ?? []).map((ref) => ref.reference.replace(/^Observation\//, "")),
+  };
+}
+
+// ============================================================
+// FHIR Clinical Records -- Medications, Conditions, Allergies
+// ============================================================
+
+export interface ParsedMedication {
+  externalId: string;
+  name: string;
+  status?: string;
+  authoredOn?: string;
+  startDate?: string;
+  endDate?: string;
+  dosageText?: string;
+  route?: string;
+  form?: string;
+  rxnormCode?: string;
+  prescriberName?: string;
+  reasonText?: string;
+  reasonSnomedCode?: string;
+  sourceName: string;
+  raw: Record<string, unknown>;
+}
+
+export interface ParsedCondition {
+  externalId: string;
+  name: string;
+  clinicalStatus?: string;
+  verificationStatus?: string;
+  icd10Code?: string;
+  snomedCode?: string;
+  onsetDate?: string;
+  abatementDate?: string;
+  recordedDate?: string;
+  sourceName: string;
+  raw: Record<string, unknown>;
+}
+
+export interface ParsedAllergyIntolerance {
+  externalId: string;
+  name: string;
+  type?: string;
+  clinicalStatus?: string;
+  verificationStatus?: string;
+  rxnormCode?: string;
+  onsetDate?: string;
+  reactions: Array<{ manifestation?: string; description?: string }>;
+  sourceName: string;
+  raw: Record<string, unknown>;
+}
+
+/**
+ * Parse a FHIR MedicationRequest into a ParsedMedication.
+ */
+export function parseFhirMedicationRequest(
+  resource: FhirMedicationRequest,
+  sourceName: string,
+): ParsedMedication {
+  // Medication name: prefer medicationReference.display, fall back to contained Medication
+  const containedMed = resource.contained?.[0];
+  const name =
+    resource.medicationReference?.display ?? containedMed?.code?.text ?? "Unknown Medication";
+
+  // RxNorm code from contained Medication
+  const rxnormCode = containedMed?.code
+    ? extractCodeBySystem(containedMed.code, "http://www.nlm.nih.gov/research/umls/rxnorm")
+    : undefined;
+
+  // Form from contained Medication
+  const form = containedMed?.form?.text;
+
+  // Dosage instruction
+  const dosage = resource.dosageInstruction?.[0];
+  const dosageText = dosage?.patientInstruction ?? dosage?.text;
+  const route = dosage?.route?.text;
+  const boundsPeriod = dosage?.timing?.repeat?.boundsPeriod;
+
+  // Prescriber: prefer requester, fall back to recorder
+  const prescriberName = resource.requester?.display ?? resource.recorder?.display;
+
+  // Reason
+  const reasonCode = resource.reasonCode?.[0];
+  const reasonText = reasonCode ? getDisplayName(reasonCode) : undefined;
+  const reasonSnomedCode = reasonCode
+    ? extractCodeBySystem(reasonCode, "http://snomed.info/sct")
+    : undefined;
+
+  return {
+    externalId: resource.id,
+    name,
+    status: resource.status,
+    authoredOn: resource.authoredOn,
+    startDate: boundsPeriod?.start,
+    endDate: boundsPeriod?.end,
+    dosageText,
+    route,
+    form,
+    rxnormCode,
+    prescriberName,
+    reasonText,
+    reasonSnomedCode,
+    sourceName,
+    raw: { ...resource },
+  };
+}
+
+/**
+ * Parse a FHIR Condition into a ParsedCondition.
+ */
+export function parseFhirCondition(resource: FhirCondition, sourceName: string): ParsedCondition {
+  return {
+    externalId: resource.id,
+    name: getDisplayName(resource.code),
+    clinicalStatus: extractStatusCode(resource.clinicalStatus),
+    verificationStatus: extractStatusCode(resource.verificationStatus),
+    icd10Code: extractCodeBySystem(resource.code, "http://hl7.org/fhir/sid/icd-10-cm"),
+    snomedCode: extractCodeBySystem(resource.code, "http://snomed.info/sct"),
+    onsetDate: resource.onsetDateTime,
+    abatementDate: resource.abatementDateTime,
+    recordedDate: resource.recordedDate,
+    sourceName,
+    raw: { ...resource },
+  };
+}
+
+/**
+ * Parse a FHIR AllergyIntolerance into a ParsedAllergyIntolerance.
+ */
+export function parseFhirAllergyIntolerance(
+  resource: FhirAllergyIntolerance,
+  sourceName: string,
+): ParsedAllergyIntolerance {
+  const name = resource.code ? getDisplayName(resource.code) : "Unknown Allergen";
+
+  const rxnormCode = resource.code
+    ? extractCodeBySystem(resource.code, "http://www.nlm.nih.gov/research/umls/rxnorm")
+    : undefined;
+
+  const reactions = (resource.reaction ?? []).map((reaction) => ({
+    manifestation: reaction.manifestation?.[0]?.text,
+    description: reaction.description,
+  }));
+
+  return {
+    externalId: resource.id,
+    name,
+    type: resource.type,
+    clinicalStatus: extractStatusCode(resource.clinicalStatus),
+    verificationStatus: extractStatusCode(resource.verificationStatus),
+    rxnormCode,
+    onsetDate: resource.onsetDateTime,
+    reactions,
+    sourceName,
+    raw: { ...resource },
   };
 }
 

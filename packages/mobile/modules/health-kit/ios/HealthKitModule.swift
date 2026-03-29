@@ -178,6 +178,41 @@ public class HealthKitModule: Module {
             self.healthStore.execute(query)
         }
 
+        AsyncFunction("queryCategorySamples") { (typeIdentifier: String, startDateStr: String, endDateStr: String, promise: Promise) in
+            guard let categoryType = HKCategoryType.categoryType(forIdentifier: HKCategoryTypeIdentifier(rawValue: typeIdentifier)) else {
+                promise.reject("INVALID_TYPE", "Unknown category type: \(typeIdentifier)")
+                return
+            }
+            guard let startDate = HealthKitQueries.parseDate(startDateStr),
+                  let endDate = HealthKitQueries.parseDate(endDateStr) else {
+                promise.reject("INVALID_DATE", "Invalid ISO 8601 date format")
+                return
+            }
+
+            let predicate = HealthKitQueries.datePredicate(start: startDate, end: endDate)
+            let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+
+            let query = HKSampleQuery(sampleType: categoryType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]) { _, results, error in
+                if let error = error {
+                    promise.reject("QUERY_ERROR", error.localizedDescription)
+                    return
+                }
+                let samples = (results as? [HKCategorySample])?.map { sample -> [String: Any] in
+                    return [
+                        "uuid": sample.uuid.uuidString,
+                        "type": typeIdentifier,
+                        "value": sample.value,
+                        "startDate": HealthKitQueries.formatDate(sample.startDate),
+                        "endDate": HealthKitQueries.formatDate(sample.endDate),
+                        "sourceName": sample.sourceRevision.source.name,
+                        "sourceBundle": sample.sourceRevision.source.bundleIdentifier,
+                    ]
+                } ?? []
+                promise.resolve(samples)
+            }
+            self.healthStore.execute(query)
+        }
+
         AsyncFunction("writeDietaryEnergy") { (calories: Double, dateStr: String, promise: Promise) in
             guard let type = HKQuantityType.quantityType(forIdentifier: .dietaryEnergyConsumed) else {
                 promise.reject("INVALID_TYPE", "Dietary energy type not available")
@@ -362,6 +397,89 @@ public class HealthKitModule: Module {
             }
 
             promise.resolve(true)
+        }
+
+        // ============================================================
+        // iOS 26+ Medications API
+        // ============================================================
+
+        if #available(iOS 26.0, *) {
+            AsyncFunction("requestMedicationPermissions") { (promise: Promise) in
+                guard HKHealthStore.isHealthDataAvailable() else {
+                    promise.resolve(false)
+                    return
+                }
+                Task {
+                    do {
+                        try await self.healthStore.requestPerObjectReadAuthorization(for: HKUserAnnotatedMedicationType())
+                        promise.resolve(true)
+                    } catch {
+                        promise.reject("MEDICATION_AUTH_ERROR", error.localizedDescription)
+                    }
+                }
+            }
+
+            AsyncFunction("queryMedications") { (promise: Promise) in
+                guard HKHealthStore.isHealthDataAvailable() else {
+                    promise.resolve([])
+                    return
+                }
+                Task {
+                    do {
+                        let descriptor = HKUserAnnotatedMedicationQueryDescriptor()
+                        let medications = try await descriptor.result(for: self.healthStore)
+                        let results: [[String: Any]] = medications.map { medication in
+                            var dict: [String: Any] = [
+                                "isArchived": medication.isArchived,
+                                "hasSchedule": medication.hasSchedule,
+                            ]
+                            if let nickname = medication.nickname {
+                                dict["nickname"] = nickname
+                            }
+                            if let concept = medication.medicationConcept {
+                                dict["conceptIdentifier"] = concept.identifier
+                                dict["displayName"] = concept.displayName
+                            }
+                            return dict
+                        }
+                        promise.resolve(results)
+                    } catch {
+                        promise.reject("MEDICATION_QUERY_ERROR", error.localizedDescription)
+                    }
+                }
+            }
+
+            AsyncFunction("queryMedicationDoseEvents") { (startDateStr: String, endDateStr: String, promise: Promise) in
+                guard let startDate = HealthKitQueries.parseDate(startDateStr),
+                      let endDate = HealthKitQueries.parseDate(endDateStr) else {
+                    promise.reject("INVALID_DATE", "Invalid ISO 8601 date format")
+                    return
+                }
+                let doseEventType = HKMedicationDoseEvent.self
+                let predicate = HealthKitQueries.datePredicate(start: startDate, end: endDate)
+                let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+
+                let query = HKSampleQuery(sampleType: HKObjectType.clinicalType(forIdentifier: .medicationDoseEvent)!, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]) { _, results, error in
+                    if let error = error {
+                        promise.reject("QUERY_ERROR", error.localizedDescription)
+                        return
+                    }
+                    let samples = (results as? [HKMedicationDoseEvent])?.map { event -> [String: Any] in
+                        var dict: [String: Any] = [
+                            "uuid": event.uuid.uuidString,
+                            "startDate": HealthKitQueries.formatDate(event.startDate),
+                            "endDate": HealthKitQueries.formatDate(event.endDate),
+                            "status": String(describing: event.status),
+                        ]
+                        if let conceptId = event.medicationConceptIdentifier {
+                            dict["medicationConceptIdentifier"] = conceptId
+                        }
+                        return dict
+                    } ?? []
+                    promise.resolve(samples)
+                }
+                self.healthStore.execute(query)
+            }
         }
     }
 
