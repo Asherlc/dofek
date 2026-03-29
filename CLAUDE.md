@@ -84,7 +84,7 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 
 ## CI
 - **GitHub Actions** runs on every push/PR: lint, typecheck, knip, test (unit + integration with coverage), e2e (Docker-based), mutation (Stryker, PR-only).
-- **Use the `gh` CLI** to check build status and read job logs — never scrape the web UI or use raw API calls with curl. Example: `gh run list`, `gh run view <id>`.
+- **Use the `gh` CLI** to check build status and read job logs — never scrape the web UI or use raw API calls with curl. Example: `gh run list`, `gh run view <id>`. See `docs/ci-debugging.md` for how to extract actual error messages from truncated CI logs (especially iOS builds where xcodebuild output is piped through `tail -40`).
 - **Periodically check CI runs** to catch failures early. Before starting work, check if CI is green.
 
 ## Package Manager

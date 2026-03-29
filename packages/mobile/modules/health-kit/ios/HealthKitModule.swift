@@ -399,10 +399,100 @@ public class HealthKitModule: Module {
             promise.resolve(true)
         }
 
-        // TODO: iOS 26+ Medications API (HKMedicationDoseEvent, HKUserAnnotatedMedication)
-        // Requires per-object authorization via requestPerObjectReadAuthorization.
-        // DB table (medication_dose_event) is ready — add Swift implementation when
-        // verifying against the actual iOS 26 SDK.
+        // ============================================================
+        // iOS 26+ Medications API
+        // ============================================================
+
+        AsyncFunction("requestMedicationPermissions") { (promise: Promise) in
+            guard HKHealthStore.isHealthDataAvailable() else {
+                promise.resolve(false)
+                return
+            }
+            if #available(iOS 26.0, *) {
+                Task {
+                    do {
+                        try await self.healthStore.requestPerObjectReadAuthorization(
+                            for: HKObjectType.userAnnotatedMedicationType(),
+                            predicate: nil
+                        )
+                        promise.resolve(true)
+                    } catch {
+                        promise.reject("MEDICATION_AUTH_ERROR", error.localizedDescription)
+                    }
+                }
+            } else {
+                promise.reject("UNSUPPORTED", "Medications API requires iOS 26+")
+            }
+        }
+
+        AsyncFunction("queryMedications") { (promise: Promise) in
+            guard HKHealthStore.isHealthDataAvailable() else {
+                promise.resolve([])
+                return
+            }
+            if #available(iOS 26.0, *) {
+                Task {
+                    do {
+                        let descriptor = HKUserAnnotatedMedicationQueryDescriptor()
+                        let medications = try await descriptor.result(for: self.healthStore)
+                        let results: [[String: Any]] = medications.map { medication in
+                            var dict: [String: Any] = [
+                                "isArchived": medication.isArchived,
+                                "hasSchedule": medication.hasSchedule,
+                                "conceptIdentifier": medication.medication.identifier,
+                                "displayName": medication.medication.displayText,
+                            ]
+                            if let nickname = medication.nickname {
+                                dict["nickname"] = nickname
+                            }
+                            return dict
+                        }
+                        promise.resolve(results)
+                    } catch {
+                        promise.reject("MEDICATION_QUERY_ERROR", error.localizedDescription)
+                    }
+                }
+            } else {
+                promise.resolve([])
+            }
+        }
+
+        AsyncFunction("queryMedicationDoseEvents") { (startDateStr: String, endDateStr: String, promise: Promise) in
+            guard let startDate = HealthKitQueries.parseDate(startDateStr),
+                  let endDate = HealthKitQueries.parseDate(endDateStr) else {
+                promise.reject("INVALID_DATE", "Invalid ISO 8601 date format")
+                return
+            }
+            if #available(iOS 26.0, *) {
+                let doseEventType = HKObjectType.medicationDoseEventType()
+                let predicate = HealthKitQueries.datePredicate(start: startDate, end: endDate)
+                let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+
+                let query = HKSampleQuery(sampleType: doseEventType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]) { _, results, error in
+                    if let error = error {
+                        promise.reject("QUERY_ERROR", error.localizedDescription)
+                        return
+                    }
+                    let samples = (results as? [HKMedicationDoseEvent])?.map { event -> [String: Any] in
+                        var dict: [String: Any] = [
+                            "uuid": event.uuid.uuidString,
+                            "startDate": HealthKitQueries.formatDate(event.startDate),
+                            "endDate": HealthKitQueries.formatDate(event.endDate),
+                            "logStatus": event.logStatus.rawValue,
+                            "medicationConceptIdentifier": event.medicationConceptIdentifier,
+                        ]
+                        if let scheduledDate = event.scheduledDate {
+                            dict["scheduledDate"] = HealthKitQueries.formatDate(scheduledDate)
+                        }
+                        return dict
+                    } ?? []
+                    promise.resolve(samples)
+                }
+                self.healthStore.execute(query)
+            } else {
+                promise.resolve([])
+            }
+        }
     }
 
 }
