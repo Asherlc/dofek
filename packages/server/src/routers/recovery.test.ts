@@ -642,13 +642,14 @@ describe("recoveryRouter.readinessScore", () => {
 
     expect(result).toHaveLength(1);
     expect(result[0]?.date).toBe(dateStr);
-    expect(result[0]?.readinessScore).toBeGreaterThan(0);
-    expect(result[0]?.readinessScore).toBeLessThanOrEqual(100);
-    expect(result[0]?.components).toBeDefined();
-    expect(result[0]?.components.hrvScore).toBeDefined();
-    expect(result[0]?.components.restingHrScore).toBeDefined();
-    expect(result[0]?.components.sleepScore).toBeDefined();
-    expect(result[0]?.components.respiratoryRateScore).toBeDefined();
+    // HRV: z=(55-50)/10=0.5 → 72, RHR: z=(58-60)/5=-0.4 inverted=0.4 → 70
+    // RR: z=(15-15)/1=0 inverted=0 → 62, Sleep: 92
+    // Weighted: 72*0.5 + 70*0.2 + 92*0.15 + 62*0.15 = 73.1 → 73
+    expect(result[0]?.components.hrvScore).toBe(72);
+    expect(result[0]?.components.restingHrScore).toBe(70);
+    expect(result[0]?.components.respiratoryRateScore).toBe(62);
+    expect(result[0]?.components.sleepScore).toBe(92);
+    expect(result[0]?.readinessScore).toBe(73);
   });
 
   it("filters out dates beyond cutoff", async () => {
@@ -1084,8 +1085,8 @@ describe("recoveryRouter.readinessScore", () => {
     });
     const result = await caller.readinessScore({});
 
-    // z = (70-50)/10 = +2, should map to ~93
-    expect(result[0]?.components.hrvScore).toBeGreaterThan(80);
+    // z = (70-50)/10 = +2, zScoreToRecoveryScore(2) = 92
+    expect(result[0]?.components.hrvScore).toBe(92);
   });
 
   it("low resting HR (negative z-score, inverted) produces higher RHR score", async () => {
