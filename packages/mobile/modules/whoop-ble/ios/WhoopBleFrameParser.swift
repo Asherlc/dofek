@@ -69,14 +69,10 @@ final class WhoopBleFrameParser {
             if feedCount <= 20 {
                 NSLog("[WhoopBLE] feed #%llu: parsed frame type=0x%02x record=%d payload=%d bytes", feedCount, frame.packetType, frame.recordType, frame.payload.count)
             }
-            // Advance past the consumed frame, preserving any trailing bytes
-            // that belong to the next frame (header + payload + CRC32).
-            // Use actual parsed payload size (not raw header bytes) to handle
-            // both u16 LE and u8 length formats.
-            let consumed = min(
-                WhoopBleConstants.headerSize + frame.payload.count + 4,
-                accumulator.count
-            )
+            // Advance past the consumed frame.
+            // Maverick header is 8 bytes, payload includes CRC32.
+            let payloadLen = Int(accumulator[2]) | (Int(accumulator[3]) << 8)
+            let consumed = min(8 + payloadLen, accumulator.count)
             if consumed < accumulator.count {
                 accumulator = Data(accumulator[consumed...])
             } else {
@@ -112,18 +108,22 @@ final class WhoopBleFrameParser {
         guard data.count >= WhoopBleConstants.minimumFrameSize else { return nil }
         guard data[0] == WhoopBleConstants.startOfFrame else { return nil }
 
-        let headerSize = WhoopBleConstants.headerSize
-
-        // Frame format: [0xAA] [version:u8] [payloadLen:u16 LE] [payload...] [crc32]
-        // Byte 1 is the version (always 0x01), NOT the low byte of payload length.
-        // Payload length is u16 LE at bytes 2-3.
+        // Maverick/Puffin frame format (8-byte header):
+        // [SOF: 0xAA] [ver: 0x01] [payloadLen: u16 LE] [role1] [role2] [CRC16: u16 LE]
+        // [payload: payloadLen bytes (includes trailing CRC32)]
+        //
+        // payloadLen at bytes 2-3 is the number of bytes AFTER the 8-byte header.
+        let maverickHeaderSize = WhoopBleConstants.maverickHeaderSize
         let payloadLen = Int(data[2]) | (Int(data[3]) << 8)
 
-        // Require the full payload before accepting the frame.
-        guard data.count >= headerSize + payloadLen else { return nil }
+        // Need at least the full header
+        guard data.count >= maverickHeaderSize else { return nil }
 
-        let payloadEnd = min(headerSize + payloadLen, data.count)
-        let payload = data[headerSize..<payloadEnd]
+        // Require the full payload before accepting the frame.
+        guard data.count >= maverickHeaderSize + payloadLen else { return nil }
+
+        let payloadEnd = min(maverickHeaderSize + payloadLen, data.count)
+        let payload = data[maverickHeaderSize..<payloadEnd]
 
         guard !payload.isEmpty else { return nil }
 
@@ -189,10 +189,12 @@ final class WhoopBleFrameParser {
             return samples
         }
 
-        // R21 Maverick raw packet (type 0x2B, record type 21, ~1244 bytes)
+        // R21 Maverick raw packet (type 0x2B, record type 21)
+        // Payload is ~1232-1236 bytes (depending on whether CRC32 is included).
+        // Need at least 1032 + 200 = 1232 bytes for the gyroscope Z array.
         if frame.packetType == WhoopBleConstants.packetTypeRealtimeRawData &&
            frame.recordType == 21 &&
-           payload.count >= 1244 {
+           payload.count >= 1232 {
 
             let countA = min(Int(payload.readUInt16LE(at: 16)), 100)
             let countB = min(Int(payload.readUInt16LE(at: 622)), 100)

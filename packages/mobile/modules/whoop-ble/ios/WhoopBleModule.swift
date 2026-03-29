@@ -533,13 +533,9 @@ public class WhoopBleModule: Module {
             NSLog("[WhoopBLE] notification #%llu (%d bytes): %@", dataReceivedCount, data.count, hex)
         }
 
-        guard state == .streaming else {
-            droppedForNonStreaming += 1
-            if droppedForNonStreaming == 1 || droppedForNonStreaming % 100 == 0 {
-                NSLog("[WhoopBLE] handleDataReceived: dropped %llu notifications (state=%@, not streaming)", droppedForNonStreaming, state.rawValue)
-            }
-            return
-        }
+        // Always process incoming data — raw IMU packets (type 0x2B R21)
+        // flow passively during the WHOOP app's normal sync. No need to
+        // explicitly enter "streaming" state via TOGGLE_IMU_MODE.
 
         let frames = frameParser.feed(data)
         totalFramesParsed += UInt64(frames.count)
