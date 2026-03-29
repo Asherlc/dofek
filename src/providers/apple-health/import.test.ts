@@ -259,8 +259,15 @@ function createRunImportMockDb() {
 
   const execute = vi.fn().mockResolvedValue([]);
 
+  const db: SyncDatabase = {
+    select: selectFn,
+    insert: insertFn,
+    delete: deleteFn,
+    execute,
+  };
+
   return {
-    db: { select: selectFn, insert: insertFn, delete: deleteFn, execute } as SyncDatabase,
+    db,
     spies: { deleteFn, deleteWhere, insertFn, values, onConflictDoUpdate, onConflictDoNothing },
   };
 }
