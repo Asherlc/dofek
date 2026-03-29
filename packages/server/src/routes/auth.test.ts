@@ -112,6 +112,7 @@ async function request(
   app: express.Express,
   method: "get" | "post",
   path: string,
+  options?: { formBody?: Record<string, string> },
 ): Promise<{
   status: number;
   body: string;
@@ -120,7 +121,12 @@ async function request(
   return new Promise((resolve) => {
     const server = app.listen(0, () => {
       const port = getPort(server);
-      fetch(`http://localhost:${port}${path}`, { method: method.toUpperCase(), redirect: "manual" })
+      const fetchOptions: RequestInit = { method: method.toUpperCase(), redirect: "manual" };
+      if (options?.formBody) {
+        fetchOptions.headers = { "Content-Type": "application/x-www-form-urlencoded" };
+        fetchOptions.body = new URLSearchParams(options.formBody).toString();
+      }
+      fetch(`http://localhost:${port}${path}`, fetchOptions)
         .then(async (res) => {
           const body = await res.text();
           const headers: Record<string, string | string[] | undefined> = {};
@@ -695,6 +701,112 @@ describe("createAuthRouter", () => {
       expect(location).toContain("dofek://auth/callback?session=");
       // Restore
       vi.mocked(getMobileSchemeCookie).mockReturnValue(undefined);
+    });
+  });
+
+  describe("POST /auth/callback/:provider (Apple form_post)", () => {
+    it("returns 404 for unknown provider", async () => {
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/auth/callback/unknown", {
+        formBody: { code: "x", state: "y" },
+      });
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 400 when error param is present", async () => {
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/auth/callback/google", {
+        formBody: { error: "access_denied" },
+      });
+      expect(res.status).toBe(400);
+      expect(res.body).toContain("Authorization denied");
+    });
+
+    it("returns 400 when code or state is missing", async () => {
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/auth/callback/google", {
+        formBody: {},
+      });
+      expect(res.status).toBe(400);
+      expect(res.body).toContain("Missing code or state");
+    });
+
+    it("succeeds with server-side state when cookies are missing (Apple form_post)", async () => {
+      const mockValidate = vi.fn(() =>
+        Promise.resolve({
+          tokens: {},
+          user: { sub: "apple-1", email: "alice@icloud.com", name: null },
+        }),
+      );
+      vi.mocked(getIdentityProvider).mockReturnValue({
+        createAuthorizationUrl: vi.fn(() => new URL("https://appleid.apple.com/auth")),
+        validateCallback: mockValidate,
+      });
+      // Cookies return empty (simulating SameSite=Lax not sent on cross-site POST)
+      vi.mocked(getOAuthFlowCookies).mockReturnValue({
+        state: undefined,
+        codeVerifier: undefined,
+      });
+
+      const { app } = createTestApp();
+
+      // Step 1: Hit /auth/login/apple to populate server-side state map
+      // (isProviderConfigured already returns true for google only, so configure apple)
+      vi.mocked(isProviderConfigured).mockReturnValue(true);
+      const loginRes = await request(app, "get", "/auth/login/apple");
+      expect(loginRes.status).toBe(302);
+      const location = loginRes.headers.location;
+      expect(typeof location).toBe("string");
+
+      // The state is encoded as "apple:mock-state" by the login handler
+      const statePayload = "apple:mock-state";
+
+      // Step 2: POST callback with state from form body (no cookies)
+      const callbackRes = await request(app, "post", "/auth/callback/apple", {
+        formBody: { code: "apple-auth-code", state: statePayload },
+      });
+      expect(callbackRes.status).toBe(302); // redirect to /
+      expect(mockValidate).toHaveBeenCalledWith("apple-auth-code", "mock-verifier");
+
+      // Restore
+      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "google");
+    });
+  });
+
+  describe("GET /auth/callback/:provider (server-side state fallback)", () => {
+    it("falls back to server-side state when cookies are missing", async () => {
+      const mockValidate = vi.fn(() =>
+        Promise.resolve({
+          tokens: {},
+          user: { sub: "goog-1", email: "alice@test.com", name: "Alice" },
+        }),
+      );
+      vi.mocked(getIdentityProvider).mockReturnValue({
+        createAuthorizationUrl: vi.fn(() => new URL("https://accounts.google.com/authorize")),
+        validateCallback: mockValidate,
+      });
+      // Cookies return empty (simulating bounce tracking prevention)
+      vi.mocked(getOAuthFlowCookies).mockReturnValue({
+        state: undefined,
+        codeVerifier: undefined,
+      });
+
+      const { app } = createTestApp();
+
+      // Step 1: Hit /auth/login/google to populate server-side state map
+      const loginRes = await request(app, "get", "/auth/login/google");
+      expect(loginRes.status).toBe(302);
+
+      const statePayload = "google:mock-state";
+
+      // Step 2: GET callback with state in query (no cookies)
+      const callbackRes = await request(
+        app,
+        "get",
+        `/auth/callback/google?code=authcode&state=${statePayload}`,
+      );
+      expect(callbackRes.status).toBe(302);
+      expect(mockValidate).toHaveBeenCalledWith("authcode", "mock-verifier");
     });
   });
 

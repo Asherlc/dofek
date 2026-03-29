@@ -188,7 +188,7 @@ describe("auth/providers", () => {
       expect(provider).toBeDefined();
     });
 
-    it("creates Apple authorization URL (no PKCE)", () => {
+    it("creates Apple authorization URL with response_mode=form_post", () => {
       process.env.APPLE_CLIENT_ID = "id";
       process.env.APPLE_TEAM_ID = "team";
       process.env.APPLE_KEY_ID = "key";
@@ -199,6 +199,7 @@ describe("auth/providers", () => {
       const provider = getIdentityProvider("apple");
       const url = provider.createAuthorizationUrl("state-abc", "verifier-unused");
       expect(url).toBeInstanceOf(URL);
+      expect(url.searchParams.get("response_mode")).toBe("form_post");
     });
 
     it("creates Authentik authorization URL with PKCE", () => {
