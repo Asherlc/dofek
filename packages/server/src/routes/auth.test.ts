@@ -112,6 +112,7 @@ async function request(
   app: express.Express,
   method: "get" | "post",
   path: string,
+  options?: { formBody?: Record<string, string> },
 ): Promise<{
   status: number;
   body: string;
@@ -120,7 +121,12 @@ async function request(
   return new Promise((resolve) => {
     const server = app.listen(0, () => {
       const port = getPort(server);
-      fetch(`http://localhost:${port}${path}`, { method: method.toUpperCase(), redirect: "manual" })
+      const fetchOptions: RequestInit = { method: method.toUpperCase(), redirect: "manual" };
+      if (options?.formBody) {
+        fetchOptions.body = new URLSearchParams(options.formBody).toString();
+        fetchOptions.headers = { "Content-Type": "application/x-www-form-urlencoded" };
+      }
+      fetch(`http://localhost:${port}${path}`, fetchOptions)
         .then(async (res) => {
           const body = await res.text();
           const headers: Record<string, string | string[] | undefined> = {};
@@ -406,6 +412,56 @@ describe("createAuthRouter", () => {
       );
       expect(res.status).toBe(302);
       expect(res.headers.location).toBe("/dashboard?onboarding=true");
+    });
+  });
+
+  describe("POST /auth/callback/:provider (Apple form_post)", () => {
+    it("handles Apple form_post callback with code and state in POST body", async () => {
+      const mockValidate = vi.fn(() =>
+        Promise.resolve({
+          tokens: {},
+          user: { sub: "apple-1", email: "alice@icloud.com", name: null },
+        }),
+      );
+      vi.mocked(getIdentityProvider).mockReturnValue({
+        createAuthorizationUrl: vi.fn(() => new URL("https://appleid.apple.com/auth/authorize")),
+        validateCallback: mockValidate,
+      });
+      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "apple");
+      vi.mocked(getOAuthFlowCookies).mockReturnValue({
+        state: "apple:state-post",
+        codeVerifier: "verifier",
+      });
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/auth/callback/apple", {
+        formBody: { code: "apple-authcode", state: "apple:state-post" },
+      });
+      expect(res.status).toBe(302);
+      expect(mockValidate).toHaveBeenCalledWith("apple-authcode", "verifier");
+      // Restore
+      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "google");
+    });
+
+    it("returns 400 when POST body has error param", async () => {
+      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "apple");
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/auth/callback/apple", {
+        formBody: { error: "access_denied" },
+      });
+      expect(res.status).toBe(400);
+      expect(res.body).toContain("Authorization denied");
+      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "google");
+    });
+
+    it("returns 400 when POST body is missing code", async () => {
+      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "apple");
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/auth/callback/apple", {
+        formBody: { state: "apple:some-state" },
+      });
+      expect(res.status).toBe(400);
+      expect(res.body).toContain("Missing code or state");
+      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "google");
     });
   });
 
@@ -846,6 +902,78 @@ describe("createAuthRouter", () => {
         createAuthorizationUrl: vi.fn(() => new URL("https://accounts.google.com/authorize")),
         validateCallback: vi.fn(),
       });
+    });
+  });
+
+  describe("POST /auth/apple/native", () => {
+    it("returns 400 when Apple is not configured", async () => {
+      vi.mocked(isProviderConfigured).mockReturnValue(false);
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/auth/apple/native", {
+        formBody: { authorizationCode: "code", identityToken: "token" },
+      });
+      expect(res.status).toBe(400);
+      expect(res.body).toContain("not configured");
+      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "google");
+    });
+
+    it("returns 400 when authorizationCode is missing", async () => {
+      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "apple");
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/auth/apple/native", {
+        formBody: { identityToken: "token" },
+      });
+      expect(res.status).toBe(400);
+      expect(res.body).toContain("authorizationCode");
+      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "google");
+    });
+
+    it("returns session token on success", async () => {
+      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "apple");
+      const mockValidate = vi.fn(() =>
+        Promise.resolve({
+          tokens: {},
+          user: { sub: "apple-native-1", email: "alice@icloud.com", name: null, groups: null },
+        }),
+      );
+      vi.mocked(getIdentityProvider).mockReturnValue({
+        createAuthorizationUrl: vi.fn(() => new URL("https://appleid.apple.com/auth/authorize")),
+        validateCallback: mockValidate,
+      });
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/auth/apple/native", {
+        formBody: { authorizationCode: "native-code", identityToken: "jwt-token" },
+      });
+      expect(res.status).toBe(200);
+      const data = JSON.parse(res.body);
+      expect(data.session).toBeDefined();
+      expect(mockValidate).toHaveBeenCalledWith("native-code", "");
+      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "google");
+    });
+
+    it("accepts optional fullName fields", async () => {
+      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "apple");
+      const mockValidate = vi.fn(() =>
+        Promise.resolve({
+          tokens: {},
+          user: { sub: "apple-native-2", email: "bob@icloud.com", name: null, groups: null },
+        }),
+      );
+      vi.mocked(getIdentityProvider).mockReturnValue({
+        createAuthorizationUrl: vi.fn(() => new URL("https://appleid.apple.com/auth/authorize")),
+        validateCallback: mockValidate,
+      });
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/auth/apple/native", {
+        formBody: {
+          authorizationCode: "native-code",
+          identityToken: "jwt-token",
+          givenName: "Bob",
+          familyName: "Smith",
+        },
+      });
+      expect(res.status).toBe(200);
+      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "google");
     });
   });
 });
