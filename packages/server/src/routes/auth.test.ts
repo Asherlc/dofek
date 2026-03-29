@@ -74,6 +74,12 @@ vi.mock("dofek/providers/types", () => ({
   isWebhookProvider: vi.fn(() => false),
 }));
 
+// Disable rate limiting in tests — the module-level limiter is shared across
+// all test cases and 30 req/15 min is easily exceeded.
+vi.mock("express-rate-limit", () => ({
+  default: () => (_req: unknown, _res: unknown, next: () => void) => next(),
+}));
+
 vi.mock("./webhooks.ts", () => ({
   registerWebhookForProvider: vi.fn(() => Promise.resolve()),
 }));
@@ -990,6 +996,8 @@ describe("createAuthRouter", () => {
         state: undefined,
         codeVerifier: undefined,
       });
+      // Ensure no stale returnTo from cookie mock
+      vi.mocked(getPostLoginRedirectCookie).mockReturnValue(undefined);
       vi.mocked(isProviderConfigured).mockReturnValue(true);
 
       const { app } = createTestApp();
