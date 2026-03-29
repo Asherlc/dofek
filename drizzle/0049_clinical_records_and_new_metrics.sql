@@ -117,7 +117,7 @@ ALTER TABLE fitness.metric_stream
   ADD COLUMN IF NOT EXISTS electrodermal_activity REAL;
 
 ALTER TABLE fitness.daily_metrics
-  ADD COLUMN IF NOT EXISTS push_count INTEGER,
+  ADD COLUMN IF NOT EXISTS push_count BIGINT,
   ADD COLUMN IF NOT EXISTS wheelchair_distance_km REAL,
   ADD COLUMN IF NOT EXISTS uv_exposure REAL;
 
