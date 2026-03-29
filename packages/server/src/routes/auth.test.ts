@@ -880,6 +880,184 @@ describe("createAuthRouter", () => {
     });
   });
 
+  describe("server-side state fallback — mutation killers", () => {
+    it("returns Invalid state when server-side state is also missing", async () => {
+      // Cookies empty AND no server-side state entry → must fail
+      vi.mocked(getOAuthFlowCookies).mockReturnValue({
+        state: undefined,
+        codeVerifier: undefined,
+      });
+      const { app } = createTestApp();
+      const res = await request(
+        app,
+        "get",
+        "/auth/callback/google?code=authcode&state=unknown-state",
+      );
+      expect(res.status).toBe(400);
+      expect(res.body).toContain("Invalid state");
+    });
+
+    it("preserves linkUserId from server-side state in link flow (POST)", async () => {
+      const mockValidate = vi.fn(() =>
+        Promise.resolve({
+          tokens: {},
+          user: { sub: "apple-1", email: "alice@icloud.com", name: null },
+        }),
+      );
+      vi.mocked(getIdentityProvider).mockReturnValue({
+        createAuthorizationUrl: vi.fn(() => new URL("https://appleid.apple.com/auth")),
+        validateCallback: mockValidate,
+      });
+      vi.mocked(getOAuthFlowCookies).mockReturnValue({
+        state: undefined,
+        codeVerifier: undefined,
+      });
+      vi.mocked(isProviderConfigured).mockReturnValue(true);
+
+      // Simulate logged-in user for link flow
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
+      vi.mocked(validateSession).mockResolvedValue({
+        userId: "user-1",
+        expiresAt: new Date("2027-01-01"),
+      });
+
+      const { app } = createTestApp();
+
+      // Start link flow to populate server-side state with linkUserId
+      const linkRes = await request(app, "get", "/auth/link/apple");
+      expect(linkRes.status).toBe(302);
+
+      // POST callback — linkUserId should come from server-side state
+      const callbackRes = await request(app, "post", "/auth/callback/apple", {
+        formBody: { code: "apple-code", state: "apple:mock-state" },
+      });
+      expect(callbackRes.status).toBe(302);
+      // Link flow redirects to /settings
+      expect(callbackRes.headers.location).toBe("/settings");
+
+      // Restore
+      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "google");
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
+      vi.mocked(validateSession).mockResolvedValue(null);
+    });
+
+    it("preserves mobileScheme from server-side state (POST)", async () => {
+      const mockValidate = vi.fn(() =>
+        Promise.resolve({
+          tokens: {},
+          user: { sub: "apple-1", email: "alice@icloud.com", name: null },
+        }),
+      );
+      vi.mocked(getIdentityProvider).mockReturnValue({
+        createAuthorizationUrl: vi.fn(() => new URL("https://appleid.apple.com/auth")),
+        validateCallback: mockValidate,
+      });
+      vi.mocked(getOAuthFlowCookies).mockReturnValue({
+        state: undefined,
+        codeVerifier: undefined,
+      });
+      vi.mocked(isProviderConfigured).mockReturnValue(true);
+
+      const { app } = createTestApp();
+
+      // Start login flow with redirect_scheme to populate server-side state
+      const loginRes = await request(
+        app,
+        "get",
+        "/auth/login/apple?redirect_scheme=dofek",
+      );
+      expect(loginRes.status).toBe(302);
+
+      // POST callback — mobileScheme should come from server-side state
+      const callbackRes = await request(app, "post", "/auth/callback/apple", {
+        formBody: { code: "apple-code", state: "apple:mock-state" },
+      });
+      expect(callbackRes.status).toBe(302);
+      expect(callbackRes.headers.location).toContain("dofek://auth/callback?session=");
+
+      // Restore
+      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "google");
+    });
+
+    it("preserves returnTo from server-side state (POST)", async () => {
+      const mockValidate = vi.fn(() =>
+        Promise.resolve({
+          tokens: {},
+          user: { sub: "apple-1", email: "alice@icloud.com", name: null },
+        }),
+      );
+      vi.mocked(getIdentityProvider).mockReturnValue({
+        createAuthorizationUrl: vi.fn(() => new URL("https://appleid.apple.com/auth")),
+        validateCallback: mockValidate,
+      });
+      vi.mocked(getOAuthFlowCookies).mockReturnValue({
+        state: undefined,
+        codeVerifier: undefined,
+      });
+      vi.mocked(isProviderConfigured).mockReturnValue(true);
+
+      const { app } = createTestApp();
+
+      // Start login flow with return_to
+      const loginRes = await request(
+        app,
+        "get",
+        "/auth/login/apple?return_to=%2Fdashboard",
+      );
+      expect(loginRes.status).toBe(302);
+
+      // POST callback — returnTo should come from server-side state
+      const callbackRes = await request(app, "post", "/auth/callback/apple", {
+        formBody: { code: "apple-code", state: "apple:mock-state" },
+      });
+      expect(callbackRes.status).toBe(302);
+      expect(callbackRes.headers.location).toBe("/dashboard");
+
+      // Restore
+      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "google");
+    });
+
+    it("server-side state is consumed (single use)", async () => {
+      const mockValidate = vi.fn(() =>
+        Promise.resolve({
+          tokens: {},
+          user: { sub: "goog-1", email: "alice@test.com", name: "Alice" },
+        }),
+      );
+      vi.mocked(getIdentityProvider).mockReturnValue({
+        createAuthorizationUrl: vi.fn(() => new URL("https://accounts.google.com/authorize")),
+        validateCallback: mockValidate,
+      });
+      vi.mocked(getOAuthFlowCookies).mockReturnValue({
+        state: undefined,
+        codeVerifier: undefined,
+      });
+
+      const { app } = createTestApp();
+
+      // Populate server-side state
+      const loginRes = await request(app, "get", "/auth/login/google");
+      expect(loginRes.status).toBe(302);
+
+      // First callback succeeds
+      const res1 = await request(
+        app,
+        "get",
+        "/auth/callback/google?code=authcode&state=google:mock-state",
+      );
+      expect(res1.status).toBe(302);
+
+      // Second callback with same state fails (consumed)
+      const res2 = await request(
+        app,
+        "get",
+        "/auth/callback/google?code=authcode&state=google:mock-state",
+      );
+      expect(res2.status).toBe(400);
+      expect(res2.body).toContain("Invalid state");
+    });
+  });
+
   describe("GET /auth/callback/:provider (link flow)", () => {
     it("redirects to /settings on successful link callback", async () => {
       const mockValidate = vi.fn(() =>
