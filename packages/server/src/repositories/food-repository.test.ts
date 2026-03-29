@@ -953,17 +953,13 @@ describe("FoodRepository", () => {
 
 describe("FoodEntry (mutation: getter field mapping)", () => {
   it("id getter returns id field, not another field", () => {
-    const entry = new FoodEntry(
-      makeFoodEntryRow({ id: "unique-id-123", provider_id: "other-id" }),
-    );
+    const entry = new FoodEntry(makeFoodEntryRow({ id: "unique-id-123", provider_id: "other-id" }));
     expect(entry.id).toBe("unique-id-123");
     expect(entry.id).not.toBe("other-id");
   });
 
   it("providerId returns provider_id, not id", () => {
-    const entry = new FoodEntry(
-      makeFoodEntryRow({ id: "entry-id", provider_id: "provider-abc" }),
-    );
+    const entry = new FoodEntry(makeFoodEntryRow({ id: "entry-id", provider_id: "provider-abc" }));
     expect(entry.providerId).toBe("provider-abc");
     expect(entry.providerId).not.toBe("entry-id");
   });

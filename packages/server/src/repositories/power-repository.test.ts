@@ -634,7 +634,11 @@ describe("PowerRepository", () => {
         // Every label should be non-empty
         expect(point.label.length).toBeGreaterThan(0);
         // If it's a fallback label, it should end with 's'
-        if (!point.label.includes("min") && !point.label.includes("sec") && !point.label.includes("hr")) {
+        if (
+          !point.label.includes("min") &&
+          !point.label.includes("sec") &&
+          !point.label.includes("hr")
+        ) {
           expect(point.label).toMatch(/\d+s$/);
         }
       }
@@ -651,7 +655,7 @@ describe("PowerRepository", () => {
     it("getEftpTrend trend maps date from activityDate (not activityName)", async () => {
       const today = new Date().toISOString().slice(0, 10);
       const normalizedPowerSamples = Array.from({ length: 300 }, () => ({
-        activity_id: "act-datemap",
+        activity_id: "act-date-map",
         activity_date: today,
         activity_name: "Not A Date",
         power: 200,

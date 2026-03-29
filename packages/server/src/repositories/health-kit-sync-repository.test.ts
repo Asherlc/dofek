@@ -1489,18 +1489,12 @@ describe("computeBoundsFromIsoTimestamps (mutation-killing)", () => {
 
   it("updates minTs with < comparison (not <=, >, or >=)", () => {
     // With timestamps where the earlier one appears second in the array
-    const result = computeBoundsFromIsoTimestamps([
-      "2024-01-20T00:00:00Z",
-      "2024-01-10T00:00:00Z",
-    ]);
+    const result = computeBoundsFromIsoTimestamps(["2024-01-20T00:00:00Z", "2024-01-10T00:00:00Z"]);
     expect(result?.startAt).toBe("2024-01-10T00:00:00.000Z");
   });
 
   it("updates maxTs with > comparison (not >=, <, or <=)", () => {
-    const result = computeBoundsFromIsoTimestamps([
-      "2024-01-10T00:00:00Z",
-      "2024-01-20T00:00:00Z",
-    ]);
+    const result = computeBoundsFromIsoTimestamps(["2024-01-10T00:00:00Z", "2024-01-20T00:00:00Z"]);
     expect(result?.endAt).toBe("2024-01-20T00:00:00.000Z");
   });
 
@@ -1546,9 +1540,7 @@ describe("categorize (mutation-killing: priority order)", () => {
       "pointInTimeDailyMetric",
     );
     expect(categorize("HKQuantityTypeIdentifierWalkingSpeed")).toBe("pointInTimeDailyMetric");
-    expect(categorize("HKQuantityTypeIdentifierWalkingStepLength")).toBe(
-      "pointInTimeDailyMetric",
-    );
+    expect(categorize("HKQuantityTypeIdentifierWalkingStepLength")).toBe("pointInTimeDailyMetric");
     expect(categorize("HKQuantityTypeIdentifierWalkingDoubleSupportPercentage")).toBe(
       "pointInTimeDailyMetric",
     );

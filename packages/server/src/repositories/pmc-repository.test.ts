@@ -520,7 +520,14 @@ describe("PmcRepository", () => {
       const dateStr = activityDate.toISOString().split("T")[0];
 
       const db = makeDb(
-        [makeActivityRow({ date: dateStr, id: "act-nonneg", avg_power: null, power_samples: 0 })],
+        [
+          makeActivityRow({
+            date: dateStr,
+            id: "act-non-negative",
+            avg_power: null,
+            power_samples: 0,
+          }),
+        ],
         [],
       );
       const repo = new PmcRepository(db, "user-1", "UTC");
@@ -627,7 +634,14 @@ describe("PmcRepository", () => {
       const dateStr = activityDate.toISOString().split("T")[0];
 
       const db = makeDb(
-        [makeActivityRow({ date: dateStr, id: "act-dayidx", avg_power: null, power_samples: 0 })],
+        [
+          makeActivityRow({
+            date: dateStr,
+            id: "act-day-index",
+            avg_power: null,
+            power_samples: 0,
+          }),
+        ],
         [],
       );
       const repo = new PmcRepository(db, "user-1", "UTC");
@@ -695,7 +709,7 @@ describe("PmcRepository", () => {
       const dateStr = activityDate.toISOString().split("T")[0];
 
       const db = makeDb(
-        [makeActivityRow({ date: dateStr, id: "act-atldiv", avg_power: null, power_samples: 0 })],
+        [makeActivityRow({ date: dateStr, id: "act-atl-div", avg_power: null, power_samples: 0 })],
         [],
       );
       const repo = new PmcRepository(db, "user-1", "UTC");
@@ -817,7 +831,14 @@ describe("PmcRepository", () => {
       const dateStr = activityDate.toISOString().split("T")[0];
 
       const db = makeDb(
-        [makeActivityRow({ date: dateStr, id: "act-consec", avg_power: null, power_samples: 0 })],
+        [
+          makeActivityRow({
+            date: dateStr,
+            id: "act-consecutive",
+            avg_power: null,
+            power_samples: 0,
+          }),
+        ],
         [],
       );
       const repo = new PmcRepository(db, "user-1", "UTC");

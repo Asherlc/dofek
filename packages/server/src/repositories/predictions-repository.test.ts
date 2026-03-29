@@ -951,9 +951,7 @@ describe("buildDailyContext mutation-killing", () => {
   });
 
   it("allDates set collects from bodyComp map too", () => {
-    const bodyComp = [
-      { recorded_at: "2024-02-01T08:00:00Z", weight_kg: 80.0, body_fat_pct: 20 },
-    ];
+    const bodyComp = [{ recorded_at: "2024-02-01T08:00:00Z", weight_kg: 80.0, body_fat_pct: 20 }];
     const result = buildDailyContext([], [], [], bodyComp);
     expect(result).toHaveLength(1);
     expect(result[0]?.date).toBe("2024-02-01");
