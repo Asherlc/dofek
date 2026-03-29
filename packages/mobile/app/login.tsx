@@ -1,8 +1,15 @@
 import { providerLabel } from "@dofek/providers/providers";
+import * as AppleAuthentication from "expo-apple-authentication";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ProviderLogo } from "../components/ProviderLogo";
-import { type ConfiguredProviders, fetchConfiguredProviders, startOAuthLogin } from "../lib/auth";
+import {
+  type ConfiguredProviders,
+  fetchConfiguredProviders,
+  isNativeAppleSignInAvailable,
+  startNativeAppleSignIn,
+  startOAuthLogin,
+} from "../lib/auth";
 import { useAuth } from "../lib/auth-context";
 import { colors } from "../theme";
 
@@ -31,20 +38,36 @@ export default function LoginScreen() {
     setError(null);
 
     try {
-      const token = await startOAuthLogin(serverUrl, providerId, isDataProvider);
+      let token: string | null;
+
+      // Use native Apple Sign In on iOS for the apple identity provider
+      if (providerId === "apple" && !isDataProvider && isNativeAppleSignInAvailable()) {
+        token = await startNativeAppleSignIn(serverUrl);
+      } else {
+        token = await startOAuthLogin(serverUrl, providerId, isDataProvider);
+      }
+
       if (token) {
         await onLoginSuccess(token);
       }
     } catch (err: unknown) {
+      // User cancelled native Apple Sign In — not an error
+      if (err instanceof Error && err.message.includes("ERR_CANCELED")) {
+        return;
+      }
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
       setLoggingIn(false);
     }
   }
 
+  const useNativeApple = isNativeAppleSignInAvailable() && providers?.identity.includes("apple");
   const allProviders = providers
     ? [
-        ...providers.identity.map((id) => ({ id, isData: false })),
+        // Exclude Apple from generic list when native sign-in is available
+        ...providers.identity
+          .filter((id) => !(useNativeApple && id === "apple"))
+          .map((id) => ({ id, isData: false })),
         ...providers.data.map((id) => ({ id, isData: true })),
       ]
     : [];
@@ -61,10 +84,19 @@ export default function LoginScreen() {
           <View style={styles.errorContainer}>
             <Text style={styles.error}>{error}</Text>
           </View>
-        ) : allProviders.length === 0 ? (
+        ) : allProviders.length === 0 && !useNativeApple ? (
           <Text style={styles.noProviders}>No login providers configured on this server.</Text>
         ) : (
           <View style={styles.providerList}>
+            {useNativeApple ? (
+              <AppleAuthentication.AppleAuthenticationButton
+                buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
+                cornerRadius={12}
+                style={styles.appleButton}
+                onPress={() => handleLogin("apple", false)}
+              />
+            ) : null}
             {allProviders.map(({ id, isData }) => (
               <TouchableOpacity
                 key={id}
@@ -128,6 +160,10 @@ const styles = StyleSheet.create({
   },
   providerList: {
     gap: 12,
+  },
+  appleButton: {
+    height: 48,
+    width: "100%",
   },
   providerButton: {
     backgroundColor: colors.surface,

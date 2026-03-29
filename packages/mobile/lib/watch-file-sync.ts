@@ -1,5 +1,5 @@
 import { deleteWatchFile, getPendingWatchFileNames, readWatchFile } from "../modules/watch-motion";
-import type { AccelerometerSyncTrpcClient } from "./accelerometer-sync";
+import type { InertialMeasurementUnitSyncTrpcClient } from "./inertial-measurement-unit-sync";
 import { captureException, logger } from "./telemetry";
 
 const TAG = "watch-file-sync";
@@ -22,7 +22,7 @@ export interface WatchFileSyncResult {
  * delete. A failure in one file does not block others.
  */
 export async function syncWatchAccelerometerFiles(
-  trpcClient: AccelerometerSyncTrpcClient,
+  trpcClient: InertialMeasurementUnitSyncTrpcClient,
 ): Promise<WatchFileSyncResult> {
   const fileNames = getPendingWatchFileNames();
 
@@ -57,7 +57,7 @@ export async function syncWatchAccelerometerFiles(
           TAG,
           `${fileName}: uploading batch ${batchIndex}/${totalBatches} (${batch.length} samples)`,
         );
-        const result = await trpcClient.accelerometerSync.pushAccelerometerSamples.mutate({
+        const result = await trpcClient.inertialMeasurementUnitSync.pushSamples.mutate({
           deviceId: "Apple Watch",
           deviceType: "apple_watch",
           samples: batch,

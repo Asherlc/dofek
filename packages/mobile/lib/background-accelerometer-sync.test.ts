@@ -1,6 +1,6 @@
 import { AppState } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AccelerometerSyncTrpcClient } from "./accelerometer-sync.ts";
+import type { InertialMeasurementUnitSyncTrpcClient } from "./inertial-measurement-unit-sync.ts";
 
 let appStateCallback: ((state: string) => void) | null = null;
 const mockRemove = vi.fn();
@@ -38,12 +38,13 @@ vi.mock("../modules/core-motion", () => ({
   setLastSyncTimestamp: (...args: unknown[]) => mockSetLastSyncTimestamp(...args),
 }));
 
-const mockSyncAccelerometerToServer = vi.fn(() =>
+const mockSyncInertialMeasurementUnitToServer = vi.fn(() =>
   Promise.resolve({ inserted: 0, recording: true }),
 );
 
-vi.mock("./accelerometer-sync", () => ({
-  syncAccelerometerToServer: (...args: unknown[]) => mockSyncAccelerometerToServer(...args),
+vi.mock("./inertial-measurement-unit-sync", () => ({
+  syncInertialMeasurementUnitToServer: (...args: unknown[]) =>
+    mockSyncInertialMeasurementUnitToServer(...args),
 }));
 
 const mockCaptureException = vi.fn();
@@ -56,10 +57,10 @@ const { initBackgroundAccelerometerSync, teardownBackgroundAccelerometerSync } =
   "./background-accelerometer-sync.ts"
 );
 
-function makeMockTrpcClient(): AccelerometerSyncTrpcClient {
+function makeMockTrpcClient(): InertialMeasurementUnitSyncTrpcClient {
   return {
-    accelerometerSync: {
-      pushAccelerometerSamples: {
+    inertialMeasurementUnitSync: {
+      pushSamples: {
         mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
       },
     },
@@ -67,15 +68,15 @@ function makeMockTrpcClient(): AccelerometerSyncTrpcClient {
 }
 
 describe("background-accelerometer-sync", () => {
-  let trpcClient: AccelerometerSyncTrpcClient;
+  let trpcClient: InertialMeasurementUnitSyncTrpcClient;
 
   beforeEach(() => {
     trpcClient = makeMockTrpcClient();
     appStateCallback = null;
     mockRemove.mockClear();
     mockCaptureException.mockClear();
-    mockSyncAccelerometerToServer.mockReset();
-    mockSyncAccelerometerToServer.mockResolvedValue({ inserted: 0, recording: true });
+    mockSyncInertialMeasurementUnitToServer.mockReset();
+    mockSyncInertialMeasurementUnitToServer.mockResolvedValue({ inserted: 0, recording: true });
     mockIsAccelerometerRecordingAvailable.mockReturnValue(true);
     mockGetMotionAuthorizationStatus.mockReturnValue("authorized");
     vi.mocked(AppState.addEventListener).mockClear();
@@ -112,7 +113,7 @@ describe("background-accelerometer-sync", () => {
     await initBackgroundAccelerometerSync(trpcClient);
 
     const syncError = new Error("sync failed");
-    mockSyncAccelerometerToServer.mockRejectedValue(syncError);
+    mockSyncInertialMeasurementUnitToServer.mockRejectedValue(syncError);
 
     appStateCallback?.("active");
 
@@ -126,7 +127,7 @@ describe("background-accelerometer-sync", () => {
   it("resets syncing flag after error so next foreground event can sync", async () => {
     await initBackgroundAccelerometerSync(trpcClient);
 
-    mockSyncAccelerometerToServer.mockRejectedValue(new Error("first failure"));
+    mockSyncInertialMeasurementUnitToServer.mockRejectedValue(new Error("first failure"));
     appStateCallback?.("active");
 
     await vi.waitFor(() => {
@@ -134,12 +135,12 @@ describe("background-accelerometer-sync", () => {
     });
 
     mockCaptureException.mockClear();
-    mockSyncAccelerometerToServer.mockResolvedValue({ inserted: 5, recording: true });
+    mockSyncInertialMeasurementUnitToServer.mockResolvedValue({ inserted: 5, recording: true });
 
     appStateCallback?.("active");
 
     await vi.waitFor(() => {
-      expect(mockSyncAccelerometerToServer).toHaveBeenCalledTimes(2);
+      expect(mockSyncInertialMeasurementUnitToServer).toHaveBeenCalledTimes(2);
     });
   });
 

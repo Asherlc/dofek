@@ -28,6 +28,7 @@
     "shadcn",
     "tailwindcss",
     "biome",
+    "healthz",
     "biomejs",
     "vitest",
     "stryker",
@@ -383,9 +384,14 @@
     "Sparkline",
     "subtabs",
     "unlinkable",
+    "unmappable",
+    "novalid",
+    "stddevs",
     "matviews",
     "matviewname",
-    "schemaname"
+    "schemaname",
+    "maxhr",
+    "jdoe"
   ],
   "flagWords": [],
   "useGitignore": false,

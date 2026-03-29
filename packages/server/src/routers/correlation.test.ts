@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { JoinedDay } from "../insights/engine.ts";
 import {
   computeCorrelation,
@@ -395,5 +395,109 @@ describe("emptyStats", () => {
   it("returns all fields as 0", () => {
     const stats = emptyStats();
     expect(stats).toEqual({ mean: 0, median: 0, stddev: 0, min: 0, max: 0, n: 0 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Router procedure tests (kill delegation mutations in correlation.ts)
+// ---------------------------------------------------------------------------
+
+vi.mock("../trpc.ts", async () => {
+  const { initTRPC } = await import("@trpc/server");
+  const trpc = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  return {
+    router: trpc.router,
+    protectedProcedure: trpc.procedure,
+    cachedProtectedQuery: () => trpc.procedure,
+    CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
+  };
+});
+
+vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../lib/typed-sql.ts")>();
+  return {
+    ...original,
+    executeWithSchema: vi.fn(
+      async (
+        db: { execute: (q: unknown) => Promise<unknown[]> },
+        _schema: unknown,
+        query: unknown,
+      ) => db.execute(query),
+    ),
+  };
+});
+
+// Must import router AFTER vi.mock declarations
+const { correlationRouter } = await import("./correlation.ts");
+const { createTestCallerFactory } = await import("./test-helpers.ts");
+
+const createCaller = createTestCallerFactory(correlationRouter);
+
+describe("correlationRouter", () => {
+  describe("metrics", () => {
+    it("returns available correlation metrics", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+      const result = await caller.metrics();
+
+      expect(Array.isArray(result)).toBe(true);
+      expect(result.length).toBeGreaterThan(0);
+      expect(result[0]).toHaveProperty("id");
+      expect(result[0]).toHaveProperty("label");
+    });
+  });
+
+  describe("compute", () => {
+    it("returns correlation result with insufficient data", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+      const result = await caller.compute({
+        metricX: "resting_hr",
+        metricY: "hrv",
+        days: 90,
+        lag: 0,
+      });
+
+      expect(result).toHaveProperty("sampleCount");
+      expect(result).toHaveProperty("pearsonR");
+      expect(result.confidenceLevel).toBe("insufficient");
+    });
+
+    it("uses default days (365) and lag (0) when not specified", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+      // Should not throw — defaults should apply
+      const result = await caller.compute({
+        metricX: "resting_hr",
+        metricY: "hrv",
+      });
+      expect(result).toHaveProperty("sampleCount");
+    });
+
+    it("rejects lag below 0", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+      await expect(
+        caller.compute({ metricX: "resting_hr", metricY: "hrv", lag: -1 }),
+      ).rejects.toThrow();
+    });
+
+    it("rejects lag above 7", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+      await expect(
+        caller.compute({ metricX: "resting_hr", metricY: "hrv", lag: 8 }),
+      ).rejects.toThrow();
+    });
   });
 });

@@ -97,7 +97,10 @@ function initApple(): IdentityProvider {
   return {
     createAuthorizationUrl(state, _codeVerifier) {
       // Apple doesn't use PKCE
-      return client.createAuthorizationURL(state, ["name", "email"]);
+      const url = client.createAuthorizationURL(state, ["name", "email"]);
+      // Apple requires response_mode=form_post when requesting name or email scopes
+      url.searchParams.set("response_mode", "form_post");
+      return url;
     },
     async validateCallback(code, _codeVerifier) {
       // Apple doesn't use PKCE
