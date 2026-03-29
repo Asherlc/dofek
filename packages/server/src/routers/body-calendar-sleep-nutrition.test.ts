@@ -50,7 +50,10 @@ describe("bodyRouter", () => {
       const rows = [{ id: "1", weight_kg: 80, recorded_at: "2024-01-01" }];
       const caller = makeCaller(bodyRouter, rows);
       const result = await caller.list({ days: 90 });
-      expect(result).toEqual(rows);
+      expect(result).toHaveLength(1);
+      expect(result[0]?.id).toBe("1");
+      expect(result[0]?.weightKg).toBe(80);
+      expect(result[0]?.recordedAt).toBe("2024-01-01");
     });
 
     it("returns empty array when no data", async () => {
@@ -133,7 +136,10 @@ describe("nutritionRouter", () => {
       const rows = [{ date: "2024-01-15", calories: 2000, protein_g: 150 }];
       const caller = makeCaller(nutritionRouter, rows);
       const result = await caller.daily({ days: 30 });
-      expect(result).toEqual(rows);
+      expect(result).toHaveLength(1);
+      expect(result[0]?.date).toBe("2024-01-15");
+      expect(result[0]?.calories).toBe(2000);
+      expect(result[0]?.proteinGrams).toBe(150);
     });
   });
 });
