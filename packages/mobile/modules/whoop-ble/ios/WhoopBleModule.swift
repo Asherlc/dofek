@@ -31,6 +31,7 @@ public class WhoopBleModule: Module {
 
     private var connectedPeripheral: CBPeripheral?
     private var cmdCharacteristic: CBCharacteristic?
+    private var cmdResponseCharacteristic: CBCharacteristic?
     private var dataCharacteristic: CBCharacteristic?
     private var state: ConnectionState = .idle
 
@@ -159,11 +160,19 @@ public class WhoopBleModule: Module {
                     return
                 }
 
-                NSLog("[WhoopBLE] startImuStreaming: sending TOGGLE_IMU_MODE command")
-                // Send TOGGLE_IMU_MODE command
+                // Send GET_HELLO handshake first — the strap may require it
+                // before accepting other commands (observed in standard sync sequence).
+                let helloData = WhoopBleFrameParser.buildCommandData(
+                    command: WhoopBleConstants.commandGetHello
+                )
+                NSLog("[WhoopBLE] startImuStreaming: sending GET_HELLO (0x91)")
+                peripheral.writeValue(helloData, for: cmdChar, type: .withResponse)
+
+                // Then send TOGGLE_IMU_MODE
                 let commandData = WhoopBleFrameParser.buildCommandData(
                     command: WhoopBleConstants.commandToggleImuMode
                 )
+                NSLog("[WhoopBLE] startImuStreaming: sending TOGGLE_IMU_MODE (0x6A)")
                 peripheral.writeValue(commandData, for: cmdChar, type: .withResponse)
 
                 self.state = .streaming
@@ -240,6 +249,10 @@ public class WhoopBleModule: Module {
                 "hasDataCharacteristic": self.dataCharacteristic != nil,
                 "isNotifying": self.dataCharacteristic?.isNotifying ?? false,
                 "recentNotifications": self.recentNotificationHexDumps,
+                "commandResponses": self.commandResponseHexDumps,
+                "hasCmdCharacteristic": self.cmdCharacteristic != nil,
+                "hasCmdResponseCharacteristic": self.cmdResponseCharacteristic != nil,
+                "lastWriteError": self.lastWriteError ?? "none",
             ]
         }
 
@@ -442,10 +455,11 @@ public class WhoopBleModule: Module {
             return
         }
 
-        // Discover characteristics
+        // Discover characteristics (CMD_TO_STRAP, CMD_FROM_STRAP, DATA_FROM_STRAP)
         let cmdUUID = WhoopBleConstants.cmdToStrapUUID(forService: service.uuid)
+        let cmdRespUUID = WhoopBleConstants.cmdFromStrapUUID(forService: service.uuid)
         let dataUUID = WhoopBleConstants.dataFromStrapUUID(forService: service.uuid)
-        peripheral.discoverCharacteristics([cmdUUID, dataUUID], for: service)
+        peripheral.discoverCharacteristics([cmdUUID, cmdRespUUID, dataUUID], for: service)
     }
 
     func handleCharacteristicsDiscovered(_ peripheral: CBPeripheral, service: CBService) {
@@ -454,9 +468,11 @@ public class WhoopBleModule: Module {
         guard state == .discoveringServices else { return }
 
         let cmdUUID = WhoopBleConstants.cmdToStrapUUID(forService: service.uuid)
+        let cmdRespUUID = WhoopBleConstants.cmdFromStrapUUID(forService: service.uuid)
         let dataUUID = WhoopBleConstants.dataFromStrapUUID(forService: service.uuid)
 
         cmdCharacteristic = service.characteristics?.first { $0.uuid == cmdUUID }
+        cmdResponseCharacteristic = service.characteristics?.first { $0.uuid == cmdRespUUID }
         dataCharacteristic = service.characteristics?.first { $0.uuid == dataUUID }
 
         guard let cmdChar = cmdCharacteristic, let dataChar = dataCharacteristic else {
@@ -467,9 +483,12 @@ public class WhoopBleModule: Module {
             return
         }
 
-        // Subscribe to DATA_FROM_STRAP notifications
-        NSLog("[WhoopBLE] subscribing to DATA_FROM_STRAP notifications")
+        // Subscribe to DATA_FROM_STRAP and CMD_FROM_STRAP notifications
+        NSLog("[WhoopBLE] subscribing to DATA_FROM_STRAP + CMD_FROM_STRAP notifications")
         peripheral.setNotifyValue(true, for: dataChar)
+        if let cmdRespChar = cmdResponseCharacteristic {
+            peripheral.setNotifyValue(true, for: cmdRespChar)
+        }
 
         state = .ready
         connectPromise?.resolve(true)
@@ -495,6 +514,13 @@ public class WhoopBleModule: Module {
     /// First few BLE notification hex dumps for JS-visible debugging
     private var recentNotificationHexDumps: [String] = []
     private static let maxHexDumps = 5
+
+    /// Command response hex dumps (CMD_FROM_STRAP)
+    private var commandResponseHexDumps: [String] = []
+    private static let maxCmdResponseDumps = 10
+
+    /// Last write error for debugging (internal for delegate access)
+    var lastWriteError: String?
 
     /// Counter to throttle data-path logs (avoid flooding at 80 Hz)
     private var dataReceivedCount: UInt64 = 0
@@ -578,10 +604,24 @@ public class WhoopBleModule: Module {
         return manager
     }
 
+    func handleCommandResponse(_ data: Data) {
+        let hex = data.prefix(64).map { String(format: "%02x", $0) }.joined(separator: " ")
+        NSLog("[WhoopBLE] CMD_FROM_STRAP response (%d bytes): %@", data.count, hex)
+        if commandResponseHexDumps.count < WhoopBleModule.maxCmdResponseDumps {
+            commandResponseHexDumps.append("[\(data.count)B] \(hex)")
+        }
+    }
+
+    /// Exposed for the BLE delegate to identify CMD_FROM_STRAP notifications.
+    var cmdResponseCharacteristicUUID: CBUUID? {
+        cmdResponseCharacteristic?.uuid
+    }
+
     private func cleanup() {
         state = .idle
         connectedPeripheral = nil
         cmdCharacteristic = nil
+        cmdResponseCharacteristic = nil
         dataCharacteristic = nil
         frameParser.reset()
     }
@@ -668,17 +708,38 @@ private class BleDelegate: NSObject, CBCentralManagerDelegate, CBPeripheralDeleg
 
     func peripheral(
         _ peripheral: CBPeripheral,
+        didWriteValueFor characteristic: CBCharacteristic,
+        error: Error?
+    ) {
+        if let error = error {
+            NSLog("[WhoopBLE] write error on %@: %@", characteristic.uuid.uuidString, error.localizedDescription)
+            module?.lastWriteError = error.localizedDescription
+        } else {
+            NSLog("[WhoopBLE] write succeeded on %@", characteristic.uuid.uuidString)
+            module?.lastWriteError = nil
+        }
+    }
+
+    func peripheral(
+        _ peripheral: CBPeripheral,
         didUpdateValueFor characteristic: CBCharacteristic,
         error: Error?
     ) {
         if let error = error {
-            NSLog("[WhoopBLE] data notification error: %@", error.localizedDescription)
+            NSLog("[WhoopBLE] data notification error on %@: %@", characteristic.uuid.uuidString, error.localizedDescription)
             return
         }
         guard let data = characteristic.value else {
-            NSLog("[WhoopBLE] data notification with nil value")
+            NSLog("[WhoopBLE] data notification with nil value on %@", characteristic.uuid.uuidString)
             return
         }
+
+        // Log CMD_FROM_STRAP responses (command acknowledgments)
+        if let cmdRespUUID = module?.cmdResponseCharacteristicUUID, characteristic.uuid == cmdRespUUID {
+            module?.handleCommandResponse(data)
+            return
+        }
+
         module?.handleDataReceived(data)
     }
 }

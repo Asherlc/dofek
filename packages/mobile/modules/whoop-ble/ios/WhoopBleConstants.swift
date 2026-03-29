@@ -71,8 +71,14 @@ enum WhoopBleConstants {
 
     // MARK: - Command bytes (written to CMD_TO_STRAP)
 
+    static let commandGetHello: UInt8 = 0x91
     static let commandStartRawData: UInt8 = 0x51
     static let commandStopRawData: UInt8 = 0x52
     static let commandToggleImuModeHistorical: UInt8 = 0x69
     static let commandToggleImuMode: UInt8 = 0x6A
+
+    /// CMD_FROM_STRAP characteristic (notify): suffix 0003
+    static func cmdFromStrapUUID(forService serviceUUID: CBUUID) -> CBUUID {
+        characteristicUUID(forService: serviceUUID, suffix: "0003")
+    }
 }
