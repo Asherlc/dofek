@@ -727,6 +727,40 @@ describe("importClinicalRecords", () => {
     // 1 lab + 1 medication + 1 condition + 1 allergy = 4
     expect(result.inserted).toBe(4);
     expect(result.errors).toHaveLength(0);
+    expect(result.skipped).toBe(0);
+  });
+
+  it("verifies insert call count matches clinical record types", async () => {
+    const zipPath = createClinicalZip(tmpDir, "insert-count", [
+      { name: "obs-glucose.json", content: JSON.stringify(labObservation) },
+      { name: "dr-panel.json", content: JSON.stringify(diagnosticReport) },
+      { name: "MedicationRequest-ic.json", content: JSON.stringify(medicationRequest) },
+      { name: "Condition-ic.json", content: JSON.stringify(conditionResource) },
+      { name: "AllergyIntolerance-ic.json", content: JSON.stringify(allergyResource) },
+    ]);
+    const xmlPath = createTestXml(tmpDir, "insert-count.xml", []);
+    const panelRows = [{ id: "panel-uuid-ic", externalId: "dr-metabolic-001" }];
+    const { db, spies } = createImportMockDb(panelRows);
+
+    await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
+
+    // insert calls: 1 panel batch + 1 lab batch + 1 medication batch + 1 condition batch + 1 allergy batch = 5
+    expect(spies.insertFn).toHaveBeenCalledTimes(5);
+  });
+
+  it("returns correct skipped count for non-lab observations in mixed import", async () => {
+    const zipPath = createClinicalZip(tmpDir, "skip-count", [
+      { name: "obs-vital.json", content: JSON.stringify(vitalObservation) },
+      { name: "obs-no-cat.json", content: JSON.stringify(observationWithNoCategory) },
+      { name: "MedicationRequest-sc.json", content: JSON.stringify(medicationRequest) },
+    ]);
+    const xmlPath = createTestXml(tmpDir, "skip-count.xml", []);
+    const { db } = createImportMockDb();
+
+    const result = await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
+
+    expect(result.inserted).toBe(1); // only medication
+    expect(result.skipped).toBe(2); // vital + no-category observations
   });
 
   it("only reads JSON files from clinical-records directory", async () => {
