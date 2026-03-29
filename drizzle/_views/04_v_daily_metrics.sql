@@ -40,4 +40,4 @@ GROUP BY dm.date, dm.user_id;
 
 --> statement-breakpoint
 
-CREATE UNIQUE INDEX v_daily_metrics_date_idx ON fitness.v_daily_metrics (date, user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS v_daily_metrics_date_idx ON fitness.v_daily_metrics (date, user_id);

@@ -70,5 +70,8 @@ ORDER BY b.recorded_at DESC;
 
 --> statement-breakpoint
 
-CREATE UNIQUE INDEX v_body_measurement_id_idx ON fitness.v_body_measurement (id);
-CREATE INDEX v_body_measurement_time_idx ON fitness.v_body_measurement (recorded_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS v_body_measurement_id_idx ON fitness.v_body_measurement (id);
+
+--> statement-breakpoint
+
+CREATE INDEX IF NOT EXISTS v_body_measurement_time_idx ON fitness.v_body_measurement (recorded_at DESC);

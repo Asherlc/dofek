@@ -106,6 +106,12 @@ ORDER BY b.started_at DESC;
 
 --> statement-breakpoint
 
-CREATE UNIQUE INDEX v_sleep_id_idx ON fitness.v_sleep (id);
-CREATE INDEX v_sleep_time_idx ON fitness.v_sleep (started_at DESC);
-CREATE INDEX v_sleep_user_nap_time_idx ON fitness.v_sleep (user_id, is_nap, started_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS v_sleep_id_idx ON fitness.v_sleep (id);
+
+--> statement-breakpoint
+
+CREATE INDEX IF NOT EXISTS v_sleep_time_idx ON fitness.v_sleep (started_at DESC);
+
+--> statement-breakpoint
+
+CREATE INDEX IF NOT EXISTS v_sleep_user_nap_time_idx ON fitness.v_sleep (user_id, is_nap, started_at DESC);

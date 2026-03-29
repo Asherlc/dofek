@@ -78,7 +78,7 @@ export async function syncMaterializedViews(
       const existing =
         await sql`SELECT hash FROM drizzle.__view_hashes WHERE view_name = ${viewName}`;
       const storedHash = existing[0]?.hash;
-    if (storedHash === hash) {
+      if (storedHash === hash) {
         logger.info(`[views] ${viewName} unchanged, skipping`);
         skipped++;
         continue;
