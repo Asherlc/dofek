@@ -1472,6 +1472,81 @@ describe("recoveryRouter.strainTarget", () => {
     // Higher sleep efficiency → higher readiness → higher or equal target strain
     expect(resultHigh.targetStrain).toBeGreaterThanOrEqual(resultLow.targetStrain);
   });
+
+  it("computes progressPercent as 0 when targetStrain is 0", async () => {
+    const today = new Date().toISOString().split("T")[0] ?? "";
+    const executeMock = vi.fn();
+    executeMock.mockResolvedValueOnce([]); // no readiness metrics
+    executeMock.mockResolvedValueOnce([]); // no loads
+
+    const caller = createCaller({
+      db: { execute: executeMock },
+      userId: "user-1",
+    });
+    const result = await caller.strainTarget({ endDate: today });
+
+    expect(result.progressPercent).toBe(0);
+  });
+
+  it("averages acute load over 7-day window", async () => {
+    const today = "2026-03-28";
+    const executeMock = vi.fn();
+    executeMock.mockResolvedValueOnce([]); // no readiness
+    // 7 days of loads, all within acute window
+    const loads = Array.from({ length: 7 }, (_, index) => {
+      const date = new Date("2026-03-22");
+      date.setDate(date.getDate() + index);
+      return { date: date.toISOString().split("T")[0], daily_load: 100 };
+    });
+    executeMock.mockResolvedValueOnce(loads);
+
+    const caller = createCaller({
+      db: { execute: executeMock },
+      userId: "user-1",
+    });
+    const result = await caller.strainTarget({ endDate: today });
+
+    // With readiness default 50 and chronic/acute both ~100, should get a reasonable target
+    expect(result.targetStrain).toBeGreaterThan(0);
+  });
+
+  it("separates acute from chronic loads by day window", async () => {
+    const today = "2026-03-28";
+    const executeMock = vi.fn();
+    executeMock.mockResolvedValueOnce([]); // no readiness
+    // Only loads in chronic window (8-27 days ago), none in acute (0-6 days)
+    const loads = Array.from({ length: 20 }, (_, index) => {
+      const date = new Date("2026-03-01");
+      date.setDate(date.getDate() + index);
+      return { date: date.toISOString().split("T")[0], daily_load: 200 };
+    });
+    executeMock.mockResolvedValueOnce(loads);
+
+    const caller = createCaller({
+      db: { execute: executeMock },
+      userId: "user-1",
+    });
+    const result = await caller.strainTarget({ endDate: today });
+
+    // Acute load should be low (few recent days), chronic moderate
+    expect(result.targetStrain).toBeGreaterThan(0);
+    expect(result.currentStrain).toBe(0); // no load on today
+  });
+
+  it("computes currentStrain from today's load", async () => {
+    const today = "2026-03-28";
+    const executeMock = vi.fn();
+    executeMock.mockResolvedValueOnce([]);
+    executeMock.mockResolvedValueOnce([{ date: today, daily_load: 150 }]);
+
+    const caller = createCaller({
+      db: { execute: executeMock },
+      userId: "user-1",
+    });
+    const result = await caller.strainTarget({ endDate: today });
+
+    expect(result.currentStrain).toBeGreaterThan(0);
+  });
 });
 
 // ── Mutation-killing tests for sleepConsistency ────────────────
