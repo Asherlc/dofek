@@ -85,6 +85,27 @@ export async function initBackgroundWhoopBleSync(
   }
 }
 
+/**
+ * Run a single WHOOP BLE sync cycle: connect if needed, then upload buffered samples.
+ *
+ * Exported so that the background refresh handler can call this directly
+ * (every ~15-30 min) without waiting for the user to open the app.
+ * Errors are caught and reported to telemetry — never throws.
+ */
+export async function syncWhoopBle(
+  trpcClient: InertialMeasurementUnitUploadClient,
+  whoopDeps: WhoopBleSyncDeps,
+): Promise<void> {
+  try {
+    logger.info(LOG_CATEGORY, "background refresh — starting sync");
+    await syncOnForeground(trpcClient, whoopDeps);
+    logger.info(LOG_CATEGORY, "background refresh — sync complete");
+  } catch (error: unknown) {
+    logger.error(LOG_CATEGORY, `background refresh sync error: ${error}`);
+    Sentry.captureException(error, { tags: { source: "whoop-ble-background-refresh" } });
+  }
+}
+
 async function syncOnForeground(
   trpcClient: InertialMeasurementUnitUploadClient,
   whoopDeps: WhoopBleSyncDeps,
@@ -219,9 +240,9 @@ export function teardownBackgroundWhoopBleSync(): void {
       // Best-effort cleanup
     }
     currentDeps.disconnect();
-    connected = false;
   }
 
+  connected = false;
   currentDeps = null;
   syncing = false;
 }

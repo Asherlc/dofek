@@ -8,7 +8,7 @@ import { AuthProvider, useAuth } from "../lib/auth-context";
 import { initBackgroundAccelerometerSync } from "../lib/background-accelerometer-sync";
 import { initBackgroundHealthKitSync } from "../lib/background-health-kit-sync";
 import { initBackgroundWatchInertialMeasurementUnitSync } from "../lib/background-watch-inertial-measurement-unit-sync";
-import { teardownBackgroundWhoopBleSync } from "../lib/background-whoop-ble-sync";
+import { syncWhoopBle, teardownBackgroundWhoopBleSync } from "../lib/background-whoop-ble-sync";
 import type { SyncTrpcClient } from "../lib/health-kit-sync";
 import { getTrpcUrl } from "../lib/server";
 import { captureException, initTelemetry, logger } from "../lib/telemetry";
@@ -167,7 +167,7 @@ function AuthGate() {
         captureException(error, { source: "bg-refresh-accel-sync" });
       });
 
-      // Retry WHOOP BLE connection (checks retrieveConnectedPeripherals + scans)
+      // Retry WHOOP BLE connection and flush buffered IMU samples
       import("../modules/whoop-ble")
         .then(({ retryConnection }) => {
           retryConnection().catch((error: unknown) => {
@@ -177,6 +177,19 @@ function AuthGate() {
         .catch((error: unknown) => {
           captureException(error, { source: "bg-refresh-whoop-import" });
         });
+
+      // Upload any WHOOP BLE samples buffered since last sync
+      syncWhoopBle(imuSyncClient, {
+        isBluetoothAvailable,
+        findWhoop,
+        connect: whoopConnect,
+        startImuStreaming,
+        stopImuStreaming,
+        getBufferedSamples: getWhoopSamples,
+        disconnect: whoopDisconnect,
+      }).catch((error: unknown) => {
+        captureException(error, { source: "bg-refresh-whoop-flush" });
+      });
 
       // Re-schedule for next wakeup
       scheduleRefresh();
