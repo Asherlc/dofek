@@ -251,6 +251,15 @@ vi.mock("expo-router", () => ({
   Link: ({ children }: { children: ReactNode }) => createElement("Link", null, children),
 }));
 
+vi.mock("expo-apple-authentication", () => ({
+  isAvailableAsync: vi.fn(() => Promise.resolve(true)),
+  signInAsync: vi.fn(),
+  AppleAuthenticationScope: { FULL_NAME: 0, EMAIL: 1 },
+  AppleAuthenticationButton: () => null,
+  AppleAuthenticationButtonType: { SIGN_IN: 0 },
+  AppleAuthenticationButtonStyle: { WHITE: 0 },
+}));
+
 vi.mock("expo-camera", () => ({
   CameraView: () => null,
   useCameraPermissions: () => [{ granted: false }, vi.fn()],
