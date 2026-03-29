@@ -145,10 +145,7 @@ describe("sleep data consistency across endpoints", () => {
     await testCtx?.cleanup();
   });
 
-  async function query<T = unknown>(
-    path: string,
-    input: Record<string, unknown> = {},
-  ): Promise<T> {
+  async function query<T = unknown>(path: string, input: Record<string, unknown> = {}): Promise<T> {
     const res = await fetch(`${baseUrl}/api/trpc/${path}?batch=1`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Cookie: sessionCookie },
@@ -196,10 +193,9 @@ describe("sleep data consistency across endpoints", () => {
     }
 
     for (const [date, count] of dateCount) {
-      expect(
-        count,
-        `recovery.sleepAnalytics returned ${count} rows for ${date}, expected 1`,
-      ).toBe(1);
+      expect(count, `recovery.sleepAnalytics returned ${count} rows for ${date}, expected 1`).toBe(
+        1,
+      );
     }
   });
 
