@@ -163,8 +163,9 @@ function AuthGate() {
     // inside the tRPC provider tree (see WhoopBleSyncManager below).
 
     // Listen for background refresh wakeups (~every 15-30 min, system-decided).
-    // On each wake, restart Watch recording and sync accelerometer data so
-    // coverage continues even if the user never opens the app.
+    // On each wake, restart Watch recording, sync accelerometer data, and
+    // retry WHOOP BLE connection so coverage continues even if the user
+    // never opens the app.
     const refreshSubscription = addBackgroundRefreshListener(() => {
       // Restart Watch accelerometer recording
       initBackgroundWatchAccelerometerSync(watchSyncClient).catch((error: unknown) => {
@@ -181,6 +182,13 @@ function AuthGate() {
       }).catch((error: unknown) => {
         captureException(error, { source: "bg-refresh-accel-sync" });
       });
+
+      // Retry WHOOP BLE connection (checks retrieveConnectedPeripherals + scans)
+      import("../modules/whoop-ble").then(({ retryConnection }) => {
+        retryConnection().catch((error: unknown) => {
+          captureException(error, { source: "bg-refresh-whoop-retry" });
+        });
+      }).catch(() => {});
 
       // Re-schedule for next wakeup
       scheduleRefresh();

@@ -284,6 +284,63 @@ public class WhoopBleModule: Module {
             promise.resolve(result)
         }
 
+        // MARK: - Background reconnection
+
+        /// Try to reconnect to the WHOOP strap. Checks retrieveConnectedPeripherals
+        /// first (instant, finds straps connected by the WHOOP app), then falls back
+        /// to a 10-second background scan. Call from background refresh handlers.
+        AsyncFunction("retryConnection") { (promise: Promise) in
+            let manager = self.ensureCentralManager()
+
+            self.bleQueue.async {
+                // Already connected — nothing to do
+                if self.connectedPeripheral?.state == .connected {
+                    NSLog("[WhoopBLE] retryConnection: already connected")
+                    promise.resolve(true)
+                    return
+                }
+
+                guard manager.state == .poweredOn else {
+                    NSLog("[WhoopBLE] retryConnection: Bluetooth not ready")
+                    promise.resolve(false)
+                    return
+                }
+
+                // Check retrieveConnectedPeripherals (instant — finds WHOOP app's connection)
+                for serviceUUID in WhoopBleConstants.allServiceUUIDs {
+                    let connected = manager.retrieveConnectedPeripherals(withServices: [serviceUUID])
+                    if let peripheral = connected.first {
+                        NSLog("[WhoopBLE] retryConnection: found connected strap %@, connecting", peripheral.identifier.uuidString)
+                        self.connectedPeripheral = peripheral
+                        peripheral.delegate = self.delegate
+                        self.state = .connecting
+                        self.autoReconnect = true
+                        manager.connect(peripheral, options: nil)
+                        promise.resolve(true)
+                        return
+                    }
+                }
+
+                // Fall back to scan (catches straps advertising nearby)
+                NSLog("[WhoopBLE] retryConnection: no connected strap found, scanning 10s")
+                self.autoReconnect = true  // enable auto-connect on discovery
+                manager.scanForPeripherals(
+                    withServices: WhoopBleConstants.allServiceUUIDs,
+                    options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
+                )
+
+                // Stop scan after 10 seconds
+                self.bleQueue.asyncAfter(deadline: .now() + 10) {
+                    if self.connectedPeripheral == nil {
+                        manager.stopScan()
+                        NSLog("[WhoopBLE] retryConnection: scan timeout, no strap found")
+                    }
+                }
+
+                promise.resolve(false)
+            }
+        }
+
         // MARK: - Disconnect
 
         Function("disconnect") {
@@ -307,6 +364,18 @@ public class WhoopBleModule: Module {
             NSLog("[WhoopBLE] resolving pending findWhoop after poweredOn")
             pendingFindPromise = nil
             performFindWhoop(manager: manager, promise: pending)
+        }
+
+        // If no strap connected and no pending find, start background scanning.
+        // This catches the case where the WHOOP app connects to the strap while
+        // our app is in the background — we'll detect the strap via scan and
+        // auto-connect.
+        if connectedPeripheral == nil && pendingFindPromise == nil && autoReconnect {
+            NSLog("[WhoopBLE] no strap connected, starting background scan for WHOOP")
+            centralManager?.scanForPeripherals(
+                withServices: WhoopBleConstants.allServiceUUIDs,
+                options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
+            )
         }
 
         // If we have a restored peripheral waiting to reconnect
@@ -383,17 +452,30 @@ public class WhoopBleModule: Module {
     }
 
     func handlePeripheralDiscovered(_ peripheral: CBPeripheral) {
-        guard state == .scanning else { return }
+        // If we're scanning for findWhoop(), resolve the promise
+        if state == .scanning {
+            centralManager?.stopScan()
+            state = .idle
 
-        centralManager?.stopScan()
-        state = .idle
+            let result: [String: Any?] = [
+                "id": peripheral.identifier.uuidString,
+                "name": peripheral.name,
+            ]
+            findPromise?.resolve(result)
+            findPromise = nil
+            return
+        }
 
-        let result: [String: Any?] = [
-            "id": peripheral.identifier.uuidString,
-            "name": peripheral.name,
-        ]
-        findPromise?.resolve(result)
-        findPromise = nil
+        // Background auto-connect: if we're not in a findWhoop scan but
+        // found a WHOOP strap via background scanning, auto-connect to it.
+        if connectedPeripheral == nil && autoReconnect {
+            NSLog("[WhoopBLE] background scan found WHOOP strap %@ (%@), auto-connecting", peripheral.identifier.uuidString, peripheral.name ?? "unnamed")
+            centralManager?.stopScan()
+            connectedPeripheral = peripheral
+            peripheral.delegate = delegate
+            state = .connecting
+            centralManager?.connect(peripheral, options: nil)
+        }
     }
 
     func handlePeripheralConnected(_ peripheral: CBPeripheral) {

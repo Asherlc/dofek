@@ -109,6 +109,19 @@ export function getDataPathStats(): {
   return WhoopBleModule.getDataPathStats();
 }
 
+/**
+ * Try to reconnect to the WHOOP strap in the background.
+ *
+ * Checks retrieveConnectedPeripherals first (finds straps connected by the
+ * WHOOP app), then falls back to a 10-second BLE scan. Call from background
+ * refresh handlers to maintain the connection.
+ *
+ * @returns true if a strap was found and connection initiated.
+ */
+export async function retryConnection(): Promise<boolean> {
+  return WhoopBleModule.retryConnection();
+}
+
 /** Disconnect from the WHOOP strap. */
 export function disconnect(): void {
   WhoopBleModule.disconnect();
