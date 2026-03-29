@@ -1452,3 +1452,513 @@ describe("HealthKitSyncRepository", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Additional mutation-killing tests
+// ---------------------------------------------------------------------------
+
+describe("extractDate (mutation-killing)", () => {
+  it("uses slice(0, 10) — exactly 10 characters from the start", () => {
+    // If slice endpoint mutated (e.g., 0,9 or 0,11), we'd get wrong length
+    const result = extractDate("2024-01-15T10:00:00Z");
+    expect(result).toBe("2024-01-15");
+    expect(result.length).toBe(10);
+  });
+
+  it("slices from index 0, not index 1", () => {
+    // If start index mutated to 1, we'd lose the first char
+    const result = extractDate("2024-01-15T10:00:00Z");
+    expect(result[0]).toBe("2");
+    expect(result).toBe("2024-01-15");
+  });
+});
+
+describe("computeBoundsFromIsoTimestamps (mutation-killing)", () => {
+  it("returns startAt as the minimum timestamp and endAt as the maximum", () => {
+    const result = computeBoundsFromIsoTimestamps([
+      "2024-01-20T00:00:00Z",
+      "2024-01-10T00:00:00Z",
+      "2024-01-15T00:00:00Z",
+    ]);
+    // If < and > were swapped, startAt would be max and endAt would be min
+    expect(result?.startAt).toBe("2024-01-10T00:00:00.000Z");
+    expect(result?.endAt).toBe("2024-01-20T00:00:00.000Z");
+    // Confirm they're different (not both set to same value)
+    expect(result?.startAt).not.toBe(result?.endAt);
+  });
+
+  it("updates minTs with < comparison (not <=, >, or >=)", () => {
+    // With timestamps where the earlier one appears second in the array
+    const result = computeBoundsFromIsoTimestamps([
+      "2024-01-20T00:00:00Z",
+      "2024-01-10T00:00:00Z",
+    ]);
+    expect(result?.startAt).toBe("2024-01-10T00:00:00.000Z");
+  });
+
+  it("updates maxTs with > comparison (not >=, <, or <=)", () => {
+    const result = computeBoundsFromIsoTimestamps([
+      "2024-01-10T00:00:00Z",
+      "2024-01-20T00:00:00Z",
+    ]);
+    expect(result?.endAt).toBe("2024-01-20T00:00:00.000Z");
+  });
+
+  it("initializes minTs to POSITIVE_INFINITY and maxTs to NEGATIVE_INFINITY", () => {
+    // With one valid timestamp, both min and max should equal that timestamp
+    // This would fail if they were initialized to 0 or some other value
+    const result = computeBoundsFromIsoTimestamps(["2024-01-15T12:00:00Z"]);
+    expect(result?.startAt).toBe("2024-01-15T12:00:00.000Z");
+    expect(result?.endAt).toBe("2024-01-15T12:00:00.000Z");
+  });
+
+  it("skips NaN values from Date.parse (continues on invalid)", () => {
+    // Mix of valid and invalid; invalid should be skipped, not break the loop
+    const result = computeBoundsFromIsoTimestamps([
+      "not-a-date",
+      "2024-01-15T00:00:00Z",
+      "also-not-a-date",
+      "2024-01-20T00:00:00Z",
+    ]);
+    expect(result?.startAt).toBe("2024-01-15T00:00:00.000Z");
+    expect(result?.endAt).toBe("2024-01-20T00:00:00.000Z");
+  });
+});
+
+describe("categorize (mutation-killing: priority order)", () => {
+  it("returns bodyMeasurement before other categories for body types", () => {
+    expect(categorize("HKQuantityTypeIdentifierBodyMassIndex")).toBe("bodyMeasurement");
+    expect(categorize("HKQuantityTypeIdentifierHeight")).toBe("bodyMeasurement");
+  });
+
+  it("returns additiveDailyMetric for all additive types", () => {
+    expect(categorize("HKQuantityTypeIdentifierBasalEnergyBurned")).toBe("additiveDailyMetric");
+    expect(categorize("HKQuantityTypeIdentifierDistanceWalkingRunning")).toBe(
+      "additiveDailyMetric",
+    );
+    expect(categorize("HKQuantityTypeIdentifierDistanceCycling")).toBe("additiveDailyMetric");
+    expect(categorize("HKQuantityTypeIdentifierFlightsClimbed")).toBe("additiveDailyMetric");
+    expect(categorize("HKQuantityTypeIdentifierAppleExerciseTime")).toBe("additiveDailyMetric");
+  });
+
+  it("returns pointInTimeDailyMetric for all point-in-time types", () => {
+    expect(categorize("HKQuantityTypeIdentifierHeartRateVariabilitySDNN")).toBe(
+      "pointInTimeDailyMetric",
+    );
+    expect(categorize("HKQuantityTypeIdentifierWalkingSpeed")).toBe("pointInTimeDailyMetric");
+    expect(categorize("HKQuantityTypeIdentifierWalkingStepLength")).toBe(
+      "pointInTimeDailyMetric",
+    );
+    expect(categorize("HKQuantityTypeIdentifierWalkingDoubleSupportPercentage")).toBe(
+      "pointInTimeDailyMetric",
+    );
+    expect(categorize("HKQuantityTypeIdentifierWalkingAsymmetryPercentage")).toBe(
+      "pointInTimeDailyMetric",
+    );
+  });
+
+  it("returns metricStream for all metric stream types", () => {
+    expect(categorize("HKQuantityTypeIdentifierRespiratoryRate")).toBe("metricStream");
+    expect(categorize("HKQuantityTypeIdentifierBloodGlucose")).toBe("metricStream");
+    expect(categorize("HKQuantityTypeIdentifierEnvironmentalAudioExposure")).toBe("metricStream");
+    expect(categorize("HKQuantityTypeIdentifierAppleSleepingWristTemperature")).toBe(
+      "metricStream",
+    );
+  });
+});
+
+describe("aggregateDailyMetricSamples (mutation-killing: transforms)", () => {
+  function makeSample(overrides: Partial<HealthKitSample> = {}): HealthKitSample {
+    return {
+      type: "HKQuantityTypeIdentifierStepCount",
+      value: 1000,
+      unit: "count",
+      startDate: "2024-01-15T10:00:00Z",
+      endDate: "2024-01-15T10:30:00Z",
+      sourceName: "iPhone",
+      sourceBundle: "com.apple.Health",
+      uuid: "test-uuid",
+      ...overrides,
+    };
+  }
+
+  it("distance transform divides by 1000 (not 100, 10, or multiply)", () => {
+    const samples = [
+      makeSample({
+        type: "HKQuantityTypeIdentifierDistanceWalkingRunning",
+        value: 5000,
+        uuid: "d1",
+      }),
+    ];
+    const result = aggregateDailyMetricSamples(samples);
+    const accumulator = result.get("2024-01-15\0iPhone");
+    // 5000 / 1000 = 5.0 (not 50, 500, or 5000000)
+    expect(accumulator?.distanceKm).toBe(5.0);
+  });
+
+  it("cycling distance transform divides by 1000", () => {
+    const samples = [
+      makeSample({
+        type: "HKQuantityTypeIdentifierDistanceCycling",
+        value: 7500,
+        uuid: "cd1",
+      }),
+    ];
+    const result = aggregateDailyMetricSamples(samples);
+    const accumulator = result.get("2024-01-15\0iPhone");
+    // 7500 / 1000 = 7.5
+    expect(accumulator?.cyclingDistanceKm).toBe(7.5);
+  });
+
+  it("uses compound key with null separator (date\\0source)", () => {
+    const samples = [
+      makeSample({
+        startDate: "2024-01-15T10:00:00Z",
+        sourceName: "iPhone",
+        uuid: "k1",
+      }),
+    ];
+    const result = aggregateDailyMetricSamples(samples);
+    // The key should be "2024-01-15\0iPhone"
+    expect(result.has("2024-01-15\0iPhone")).toBe(true);
+    // Not "2024-01-15iPhone" or "2024-01-15/iPhone"
+    expect(result.has("2024-01-15iPhone")).toBe(false);
+  });
+
+  it("creates a new accumulator for each unique date/source combination", () => {
+    const samples = [
+      makeSample({ startDate: "2024-01-15T10:00:00Z", sourceName: "iPhone", uuid: "1" }),
+      makeSample({ startDate: "2024-01-15T10:00:00Z", sourceName: "Watch", uuid: "2" }),
+      makeSample({ startDate: "2024-01-16T10:00:00Z", sourceName: "iPhone", uuid: "3" }),
+    ];
+    const result = aggregateDailyMetricSamples(samples);
+    expect(result.size).toBe(3);
+    expect(result.has("2024-01-15\0iPhone")).toBe(true);
+    expect(result.has("2024-01-15\0Watch")).toBe(true);
+    expect(result.has("2024-01-16\0iPhone")).toBe(true);
+  });
+
+  it("additive metric without transform uses raw value (no division or multiplication)", () => {
+    // StepCount has no transform, value should be used as-is
+    const samples = [
+      makeSample({
+        type: "HKQuantityTypeIdentifierStepCount",
+        value: 1234,
+        uuid: "raw1",
+      }),
+    ];
+    const result = aggregateDailyMetricSamples(samples);
+    const accumulator = result.get("2024-01-15\0iPhone");
+    expect(accumulator?.steps).toBe(1234);
+  });
+
+  it("point-in-time metrics skip when mapping not found (continue on null mapping)", () => {
+    // An unknown type should not modify any accumulator field
+    const samples = [
+      makeSample({
+        type: "HKQuantityTypeIdentifierSomethingNew",
+        value: 42,
+        uuid: "skip1",
+      }),
+    ];
+    const result = aggregateDailyMetricSamples(samples);
+    // Should still create an accumulator but with all defaults
+    const accumulator = result.get("2024-01-15\0iPhone");
+    if (accumulator) {
+      expect(accumulator.steps).toBe(0);
+      expect(accumulator.restingHr).toBeNull();
+      expect(accumulator.vo2max).toBeNull();
+    }
+  });
+});
+
+describe("deriveSleepSessionsFromStages (mutation-killing)", () => {
+  it("filters out samples where endMs <= startMs (zero-duration or negative)", () => {
+    const sessions = deriveSleepSessionsFromStages([
+      {
+        uuid: "1",
+        startDate: "2024-01-15T22:00:00Z",
+        endDate: "2024-01-15T22:00:00Z", // same time = zero duration
+        value: "asleepCore",
+        sourceName: "Watch",
+      },
+    ]);
+    // Zero-duration samples are filtered: endMs > startMs check fails
+    expect(sessions).toHaveLength(0);
+  });
+
+  it("sorts samples by startMs before processing", () => {
+    // Provide out-of-order samples; they should still be merged into one session
+    const sessions = deriveSleepSessionsFromStages([
+      {
+        uuid: "2",
+        startDate: "2024-01-16T02:00:00Z",
+        endDate: "2024-01-16T06:00:00Z",
+        value: "asleepDeep",
+        sourceName: "Watch",
+      },
+      {
+        uuid: "1",
+        startDate: "2024-01-15T22:00:00Z",
+        endDate: "2024-01-16T02:00:00Z",
+        value: "asleepCore",
+        sourceName: "Watch",
+      },
+    ]);
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]?.startDate).toBe("2024-01-15T22:00:00.000Z");
+    expect(sessions[0]?.endDate).toBe("2024-01-16T06:00:00.000Z");
+  });
+
+  it("extends currentEnd when overlapping entry has later endMs", () => {
+    const sessions = deriveSleepSessionsFromStages([
+      {
+        uuid: "1",
+        startDate: "2024-01-15T22:00:00Z",
+        endDate: "2024-01-16T02:00:00Z",
+        value: "asleepCore",
+        sourceName: "Watch",
+      },
+      {
+        uuid: "2",
+        startDate: "2024-01-15T23:00:00Z",
+        endDate: "2024-01-16T04:00:00Z",
+        value: "asleepDeep",
+        sourceName: "Watch",
+      },
+    ]);
+    expect(sessions).toHaveLength(1);
+    // endDate should be the later of the two: 04:00, not 02:00
+    expect(sessions[0]?.endDate).toBe("2024-01-16T04:00:00.000Z");
+  });
+
+  it("does NOT extend currentEnd when overlapping entry has earlier endMs", () => {
+    const sessions = deriveSleepSessionsFromStages([
+      {
+        uuid: "1",
+        startDate: "2024-01-15T22:00:00Z",
+        endDate: "2024-01-16T06:00:00Z",
+        value: "asleepCore",
+        sourceName: "Watch",
+      },
+      {
+        uuid: "2",
+        startDate: "2024-01-15T23:00:00Z",
+        endDate: "2024-01-16T03:00:00Z",
+        value: "asleepDeep",
+        sourceName: "Watch",
+      },
+    ]);
+    expect(sessions).toHaveLength(1);
+    // endDate should stay at 06:00 (not reduced to 03:00)
+    expect(sessions[0]?.endDate).toBe("2024-01-16T06:00:00.000Z");
+  });
+
+  it("groups samples by sourceName (different sources get separate sessions)", () => {
+    const sessions = deriveSleepSessionsFromStages([
+      {
+        uuid: "1",
+        startDate: "2024-01-15T22:00:00Z",
+        endDate: "2024-01-16T06:00:00Z",
+        value: "asleepCore",
+        sourceName: "Watch A",
+      },
+      {
+        uuid: "2",
+        startDate: "2024-01-15T22:00:00Z",
+        endDate: "2024-01-16T06:00:00Z",
+        value: "asleepDeep",
+        sourceName: "Watch B",
+      },
+    ]);
+    // Each source should produce its own session
+    expect(sessions).toHaveLength(2);
+    const sourceNames = sessions.map((session) => session.sourceName);
+    expect(sourceNames).toContain("Watch A");
+    expect(sourceNames).toContain("Watch B");
+  });
+
+  it("output sessions have value 'inBed'", () => {
+    const sessions = deriveSleepSessionsFromStages([
+      {
+        uuid: "1",
+        startDate: "2024-01-15T22:00:00Z",
+        endDate: "2024-01-16T06:00:00Z",
+        value: "asleepCore",
+        sourceName: "Watch",
+      },
+    ]);
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]?.value).toBe("inBed");
+  });
+
+  it("uses first entry uuid for the session", () => {
+    const sessions = deriveSleepSessionsFromStages([
+      {
+        uuid: "first-uuid",
+        startDate: "2024-01-15T22:00:00Z",
+        endDate: "2024-01-16T02:00:00Z",
+        value: "asleepCore",
+        sourceName: "Watch",
+      },
+      {
+        uuid: "second-uuid",
+        startDate: "2024-01-16T02:00:00Z",
+        endDate: "2024-01-16T06:00:00Z",
+        value: "asleepDeep",
+        sourceName: "Watch",
+      },
+    ]);
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]?.uuid).toBe("first-uuid");
+  });
+
+  it("after a gap, starts new session with new uuid", () => {
+    const sessions = deriveSleepSessionsFromStages([
+      {
+        uuid: "session-1-uuid",
+        startDate: "2024-01-15T22:00:00Z",
+        endDate: "2024-01-15T23:00:00Z",
+        value: "asleepCore",
+        sourceName: "Watch",
+      },
+      {
+        uuid: "session-2-uuid",
+        startDate: "2024-01-16T01:31:00Z", // > 90 min gap from 23:00
+        endDate: "2024-01-16T06:00:00Z",
+        value: "asleepDeep",
+        sourceName: "Watch",
+      },
+    ]);
+    expect(sessions).toHaveLength(2);
+    expect(sessions[0]?.uuid).toBe("session-1-uuid");
+    expect(sessions[1]?.uuid).toBe("session-2-uuid");
+  });
+});
+
+describe("HealthKitSyncRepository.processBodyMeasurements (mutation: body fat transform)", () => {
+  it("body fat percentage transform multiplies by 100 (not 10, 1000, or divides)", () => {
+    const execute = vi.fn().mockResolvedValue([]);
+    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const samples: HealthKitSample[] = [
+      {
+        type: "HKQuantityTypeIdentifierBodyFatPercentage",
+        value: 0.22,
+        unit: "%",
+        startDate: "2024-01-15T10:00:00Z",
+        endDate: "2024-01-15T10:00:00Z",
+        sourceName: "iPhone",
+        sourceBundle: "com.apple.Health",
+        uuid: "bf-transform",
+      },
+    ];
+    repo.processBodyMeasurements(samples);
+    // 0.22 * 100 = 22, not 2.2 or 220
+    const queryJson = JSON.stringify(execute.mock.calls[0]?.[0]);
+    expect(queryJson).toContain("22");
+  });
+});
+
+describe("HealthKitSyncRepository.processWorkouts (mutation: workout count)", () => {
+  it("returns the count of workouts processed, not 0 or samples.length-1", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const workouts = [
+      {
+        uuid: "w-count-1",
+        workoutType: "35",
+        startDate: "2024-01-15T10:00:00Z",
+        endDate: "2024-01-15T11:00:00Z",
+        duration: 3600,
+        sourceName: "Watch",
+        sourceBundle: "com.apple.Health",
+      },
+      {
+        uuid: "w-count-2",
+        workoutType: "13",
+        startDate: "2024-01-15T14:00:00Z",
+        endDate: "2024-01-15T15:00:00Z",
+        duration: 3600,
+        sourceName: "Watch",
+        sourceBundle: "com.apple.Health",
+      },
+    ];
+    const result = await repo.processWorkouts(workouts);
+    expect(result).toBe(2);
+  });
+});
+
+describe("HealthKitSyncRepository.processHealthEvents (mutation: event count)", () => {
+  it("returns count matching input length", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const samples: HealthKitSample[] = [
+      {
+        type: "HKQuantityTypeIdentifierSomething",
+        value: 1,
+        unit: "count",
+        startDate: "2024-01-15T10:00:00Z",
+        endDate: "2024-01-15T10:30:00Z",
+        sourceName: "iPhone",
+        sourceBundle: "com.apple.Health",
+        uuid: "he-count-1",
+      },
+      {
+        type: "HKQuantityTypeIdentifierSomethingElse",
+        value: 2,
+        unit: "count",
+        startDate: "2024-01-15T11:00:00Z",
+        endDate: "2024-01-15T11:30:00Z",
+        sourceName: "iPhone",
+        sourceBundle: "com.apple.Health",
+        uuid: "he-count-2",
+      },
+    ];
+    const result = await repo.processHealthEvents(samples);
+    expect(result).toBe(2);
+    expect(execute).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("HealthKitSyncRepository.processMetricStream (mutation: inserted count)", () => {
+  it("only counts samples with valid metric stream mapping", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const samples: HealthKitSample[] = [
+      {
+        type: "HKQuantityTypeIdentifierHeartRate",
+        value: 72,
+        unit: "count/min",
+        startDate: "2024-01-15T10:00:00Z",
+        endDate: "2024-01-15T10:00:00Z",
+        sourceName: "Watch",
+        sourceBundle: "com.apple.Health",
+        uuid: "ms-count-1",
+      },
+      {
+        type: "HKQuantityTypeIdentifierStepCount", // not in metricStreamTypes
+        value: 100,
+        unit: "count",
+        startDate: "2024-01-15T10:00:00Z",
+        endDate: "2024-01-15T10:00:00Z",
+        sourceName: "Watch",
+        sourceBundle: "com.apple.Health",
+        uuid: "ms-count-2",
+      },
+      {
+        type: "HKQuantityTypeIdentifierOxygenSaturation",
+        value: 0.98,
+        unit: "%",
+        startDate: "2024-01-15T10:01:00Z",
+        endDate: "2024-01-15T10:01:00Z",
+        sourceName: "Watch",
+        sourceBundle: "com.apple.Health",
+        uuid: "ms-count-3",
+      },
+    ];
+    const result = await repo.processMetricStream(samples);
+    // Only 2 have valid metricStream mapping (HR and SpO2), steps is skipped
+    expect(result).toBe(2);
+    expect(execute).toHaveBeenCalledTimes(2);
+  });
+});

@@ -488,3 +488,293 @@ describe("EfficiencyRepository.getPolarizationTrend (String conversion)", () => 
     expect(result.maxHr).toBe(193);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Mutation-killing tests: object literal shapes
+// ---------------------------------------------------------------------------
+
+describe("EfficiencyRepository.getAerobicEfficiency (object shape)", () => {
+  it("returns result with exactly maxHr and activities keys", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
+    const result = await repo.getAerobicEfficiency(180);
+    expect(Object.keys(result).sort()).toStrictEqual(["activities", "maxHr"]);
+  });
+
+  it("each activity has all 7 required properties", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        max_hr: "190",
+        date: "2025-06-01",
+        activity_type: "cycling",
+        name: "Ride",
+        avg_power_z2: "180",
+        avg_hr_z2: "135",
+        efficiency_factor: "1.333",
+        z2_samples: "500",
+      },
+    ]);
+    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
+    const result = await repo.getAerobicEfficiency(180);
+    const activity = result.activities[0];
+    expect(Object.keys(activity ?? {}).sort()).toStrictEqual([
+      "activityType",
+      "avgHrZ2",
+      "avgPowerZ2",
+      "date",
+      "efficiencyFactor",
+      "name",
+      "z2Samples",
+    ]);
+  });
+});
+
+describe("EfficiencyRepository.getAerobicDecoupling (object shape)", () => {
+  it("each activity has all 7 required properties", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        date: "2025-06-01",
+        activity_type: "cycling",
+        name: "Ride",
+        first_half_ratio: "1.350",
+        second_half_ratio: "1.280",
+        decoupling_pct: "5.19",
+        total_samples: "7200",
+      },
+    ]);
+    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
+    const result = await repo.getAerobicDecoupling(180);
+    expect(Object.keys(result[0] ?? {}).sort()).toStrictEqual([
+      "activityType",
+      "date",
+      "decouplingPct",
+      "firstHalfRatio",
+      "name",
+      "secondHalfRatio",
+      "totalSamples",
+    ]);
+  });
+});
+
+describe("EfficiencyRepository.getPolarizationTrend (object shape)", () => {
+  it("returns result with exactly maxHr and weeks keys", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
+    const result = await repo.getPolarizationTrend(180);
+    expect(Object.keys(result).sort()).toStrictEqual(["maxHr", "weeks"]);
+  });
+
+  it("each week has all 5 required properties", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        max_hr: "190",
+        week: "2025-05-26",
+        z1_seconds: "5000",
+        z2_seconds: "1000",
+        z3_seconds: "500",
+      },
+    ]);
+    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
+    const result = await repo.getPolarizationTrend(180);
+    expect(Object.keys(result.weeks[0] ?? {}).sort()).toStrictEqual([
+      "polarizationIndex",
+      "week",
+      "z1Seconds",
+      "z2Seconds",
+      "z3Seconds",
+    ]);
+  });
+
+  it("zone seconds are passed to computePolarizationIndex in correct order (z1, z2, z3)", async () => {
+    // If z1 and z2 were swapped, the polarization index would differ
+    const execute = vi.fn().mockResolvedValue([
+      {
+        max_hr: "190",
+        week: "2025-05-26",
+        z1_seconds: "7200",
+        z2_seconds: "300",
+        z3_seconds: "1500",
+      },
+    ]);
+    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
+    const result = await repo.getPolarizationTrend(180);
+    const week = result.weeks[0];
+    // Correct order: z1=7200, z2=300, z3=1500
+    const expectedIndex = computePolarizationIndex(7200, 300, 1500);
+    // Swapped order would give different result
+    const swappedIndex = computePolarizationIndex(300, 7200, 1500);
+    expect(expectedIndex).not.toBe(swappedIndex);
+    expect(week?.polarizationIndex).toBe(expectedIndex);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Mutation-killing tests: exact field mapping correctness
+// ---------------------------------------------------------------------------
+
+describe("EfficiencyRepository.getAerobicEfficiency (mutation: field mapping)", () => {
+  it("maps avg_power_z2 to avgPowerZ2, not to avgHrZ2 or other field", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        max_hr: "190",
+        date: "2025-06-01",
+        activity_type: "cycling",
+        name: "Ride",
+        avg_power_z2: "200",
+        avg_hr_z2: "140",
+        efficiency_factor: "1.429",
+        z2_samples: "500",
+      },
+    ]);
+    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
+    const result = await repo.getAerobicEfficiency(180);
+    const activity = result.activities[0];
+    // If field mapping were swapped (avgPowerZ2 ↔ avgHrZ2), values would be wrong
+    expect(activity?.avgPowerZ2).toBe(200);
+    expect(activity?.avgHrZ2).toBe(140);
+    expect(activity?.avgPowerZ2).not.toBe(140);
+    expect(activity?.avgHrZ2).not.toBe(200);
+  });
+
+  it("efficiencyFactor and z2Samples are mapped to their exact fields", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        max_hr: "190",
+        date: "2025-06-01",
+        activity_type: "cycling",
+        name: "Ride",
+        avg_power_z2: "180",
+        avg_hr_z2: "135",
+        efficiency_factor: "1.333",
+        z2_samples: "900",
+      },
+    ]);
+    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
+    const result = await repo.getAerobicEfficiency(180);
+    const activity = result.activities[0];
+    // These two fields should not be swapped
+    expect(activity?.efficiencyFactor).toBe(1.333);
+    expect(activity?.z2Samples).toBe(900);
+    expect(activity?.efficiencyFactor).not.toBe(900);
+    expect(activity?.z2Samples).not.toBe(1.333);
+  });
+});
+
+describe("EfficiencyRepository.getAerobicDecoupling (mutation: field mapping)", () => {
+  it("maps firstHalfRatio and secondHalfRatio to their exact fields", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        date: "2025-06-01",
+        activity_type: "cycling",
+        name: "Ride",
+        first_half_ratio: "1.500",
+        second_half_ratio: "1.200",
+        decoupling_pct: "20.00",
+        total_samples: "3000",
+      },
+    ]);
+    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
+    const result = await repo.getAerobicDecoupling(180);
+    const activity = result[0];
+    // If first/second were swapped, values would be wrong
+    expect(activity?.firstHalfRatio).toBe(1.5);
+    expect(activity?.secondHalfRatio).toBe(1.2);
+    expect(activity?.firstHalfRatio).not.toBe(1.2);
+    expect(activity?.secondHalfRatio).not.toBe(1.5);
+  });
+
+  it("maps decouplingPct and totalSamples to their exact fields", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        date: "2025-06-01",
+        activity_type: "cycling",
+        name: "Ride",
+        first_half_ratio: "1.350",
+        second_half_ratio: "1.280",
+        decoupling_pct: "5.19",
+        total_samples: "7200",
+      },
+    ]);
+    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
+    const result = await repo.getAerobicDecoupling(180);
+    const activity = result[0];
+    expect(activity?.decouplingPct).toBe(5.19);
+    expect(activity?.totalSamples).toBe(7200);
+    expect(activity?.decouplingPct).not.toBe(7200);
+    expect(activity?.totalSamples).not.toBe(5.19);
+  });
+});
+
+describe("EfficiencyRepository.getPolarizationTrend (mutation: field mapping)", () => {
+  it("maps z1, z2, z3 seconds to their exact fields", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        max_hr: "190",
+        week: "2025-05-26",
+        z1_seconds: "4000",
+        z2_seconds: "2000",
+        z3_seconds: "1000",
+      },
+    ]);
+    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
+    const result = await repo.getPolarizationTrend(180);
+    const week = result.weeks[0];
+    // Each zone must map to its correct field
+    expect(week?.z1Seconds).toBe(4000);
+    expect(week?.z2Seconds).toBe(2000);
+    expect(week?.z3Seconds).toBe(1000);
+    // Verify they are not swapped
+    expect(week?.z1Seconds).not.toBe(2000);
+    expect(week?.z2Seconds).not.toBe(4000);
+    expect(week?.z3Seconds).not.toBe(4000);
+  });
+
+  it("maxHr uses Number() conversion from first row", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        max_hr: "187",
+        week: "2025-06-02",
+        z1_seconds: "100",
+        z2_seconds: "100",
+        z3_seconds: "100",
+      },
+    ]);
+    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
+    const result = await repo.getPolarizationTrend(180);
+    // Number("187") = 187, not String("187")
+    expect(result.maxHr).toStrictEqual(187);
+    expect(typeof result.maxHr).toBe("number");
+  });
+});
+
+describe("EfficiencyRepository.getAerobicEfficiency (mutation: maxHr ternary)", () => {
+  it("maxHr is extracted from the first row (index 0), not a later row", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        max_hr: "185",
+        date: "2025-06-01",
+        activity_type: "cycling",
+        name: "Ride",
+        avg_power_z2: "180",
+        avg_hr_z2: "135",
+        efficiency_factor: "1.333",
+        z2_samples: "500",
+      },
+      {
+        max_hr: "190",
+        date: "2025-06-02",
+        activity_type: "cycling",
+        name: "Ride 2",
+        avg_power_z2: "175",
+        avg_hr_z2: "132",
+        efficiency_factor: "1.326",
+        z2_samples: "400",
+      },
+    ]);
+    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
+    const result = await repo.getAerobicEfficiency(180);
+    // Should come from rows[0].max_hr, not rows[1].max_hr
+    expect(result.maxHr).toBe(185);
+    expect(result.maxHr).not.toBe(190);
+  });
+});

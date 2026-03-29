@@ -515,3 +515,181 @@ describe("HealthReportRepository", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Mutation-killing tests: toSharedReport field mapping
+// ---------------------------------------------------------------------------
+
+describe("toSharedReport field mapping (mutation-killing)", () => {
+  it("maps share_token to shareToken, not to id or reportType", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        id: "id-value",
+        share_token: "token-value",
+        report_type: "type-value",
+        report_data: {},
+        expires_at: null,
+        created_at: "2024-01-15T10:00:00Z",
+      },
+    ]);
+    const repo = new HealthReportRepository({ execute }, "user-1");
+    const result = await repo.generate("weekly", {}, null);
+    expect(result?.shareToken).toBe("token-value");
+    expect(result?.shareToken).not.toBe("id-value");
+    expect(result?.shareToken).not.toBe("type-value");
+  });
+
+  it("maps id to id, report_type to reportType, report_data to reportData", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        id: "the-id",
+        share_token: "the-token",
+        report_type: "the-type",
+        report_data: { key: "data-value" },
+        expires_at: null,
+        created_at: "2024-01-15T10:00:00Z",
+      },
+    ]);
+    const repo = new HealthReportRepository({ execute }, "user-1");
+    const result = await repo.generate("weekly", {}, null);
+    expect(result?.id).toBe("the-id");
+    expect(result?.reportType).toBe("the-type");
+    expect(result?.reportData).toStrictEqual({ key: "data-value" });
+    // Ensure fields are not swapped
+    expect(result?.id).not.toBe("the-token");
+    expect(result?.reportType).not.toBe("the-id");
+  });
+});
+
+describe("toReportListEntry field mapping (mutation-killing)", () => {
+  it("maps each DB field to correct domain field", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        id: "list-id",
+        share_token: "list-token",
+        report_type: "list-type",
+        expires_at: "2024-06-01T00:00:00Z",
+        created_at: "2024-01-01T00:00:00Z",
+      },
+    ]);
+    const repo = new HealthReportRepository({ execute }, "user-1");
+    const result = await repo.myReports();
+    const entry = result[0];
+    expect(entry?.id).toBe("list-id");
+    expect(entry?.shareToken).toBe("list-token");
+    expect(entry?.reportType).toBe("list-type");
+    // Verify no field swapping
+    expect(entry?.id).not.toBe("list-token");
+    expect(entry?.shareToken).not.toBe("list-id");
+    expect(entry?.reportType).not.toBe("list-id");
+  });
+});
+
+describe("SharedReport getters (mutation-killing)", () => {
+  it("each getter returns its own field, not another", () => {
+    const report = new SharedReport({
+      id: "id-1",
+      shareToken: "token-1",
+      reportType: "type-1",
+      reportData: { data: true },
+      expiresAt: "2024-06-01T00:00:00Z",
+      createdAt: "2024-01-01T00:00:00Z",
+    });
+    // Each getter must return its specific field
+    expect(report.id).toBe("id-1");
+    expect(report.shareToken).toBe("token-1");
+    expect(report.reportType).toBe("type-1");
+    expect(report.reportData).toStrictEqual({ data: true });
+    expect(report.expiresAt).toBe("2024-06-01T00:00:00Z");
+    expect(report.createdAt).toBe("2024-01-01T00:00:00Z");
+    // Verify no cross-contamination
+    expect(report.id).not.toBe("token-1");
+    expect(report.shareToken).not.toBe("id-1");
+    expect(report.expiresAt).not.toBe("2024-01-01T00:00:00Z");
+    expect(report.createdAt).not.toBe("2024-06-01T00:00:00Z");
+  });
+});
+
+describe("ReportListEntry getters (mutation-killing)", () => {
+  it("each getter returns its own field, not another", () => {
+    const entry = new ReportListEntry({
+      id: "entry-id",
+      shareToken: "entry-token",
+      reportType: "entry-type",
+      expiresAt: "2024-12-01T00:00:00Z",
+      createdAt: "2024-06-01T00:00:00Z",
+    });
+    expect(entry.id).toBe("entry-id");
+    expect(entry.shareToken).toBe("entry-token");
+    expect(entry.reportType).toBe("entry-type");
+    expect(entry.expiresAt).toBe("2024-12-01T00:00:00Z");
+    expect(entry.createdAt).toBe("2024-06-01T00:00:00Z");
+    // Cross-check
+    expect(entry.id).not.toBe("entry-token");
+    expect(entry.shareToken).not.toBe("entry-id");
+    expect(entry.expiresAt).not.toBe("2024-06-01T00:00:00Z");
+    expect(entry.createdAt).not.toBe("2024-12-01T00:00:00Z");
+  });
+});
+
+describe("generateShareToken (mutation-killing)", () => {
+  it("uses 24 bytes (not 16, 32, or other)", () => {
+    const token = generateShareToken();
+    // 24 bytes in base64url = 32 characters
+    expect(token.length).toBe(32);
+  });
+
+  it("uses base64url encoding (not hex or base64)", () => {
+    const token = generateShareToken();
+    // base64url uses only [A-Za-z0-9_-]
+    expect(token).toMatch(/^[A-Za-z0-9_-]+$/);
+    // hex would only use [0-9a-f] and be 48 chars for 24 bytes
+    // base64 would potentially include + / =
+  });
+});
+
+describe("HealthReportRepository.generate — JSON.stringify on reportData", () => {
+  it("serializes reportData as jsonb in the query", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        id: "sr-json",
+        share_token: "t-json",
+        report_type: "weekly",
+        report_data: { nested: { value: 42 } },
+        expires_at: null,
+        created_at: "2024-01-15T10:00:00Z",
+      },
+    ]);
+    const repo = new HealthReportRepository({ execute }, "user-1");
+    await repo.generate("weekly", { nested: { value: 42 } }, null);
+    const queryJson = JSON.stringify(execute.mock.calls[0]?.[0]);
+    // The reportData should be JSON.stringify'd in the query
+    expect(queryJson).toContain("nested");
+    expect(queryJson).toContain("42");
+  });
+});
+
+describe("HealthReportRepository.getShared — returns null vs SharedReport", () => {
+  it("returns SharedReport (not null) when exactly one row is returned", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        id: "sr-single",
+        share_token: "single-token",
+        report_type: "weekly",
+        report_data: {},
+        expires_at: null,
+        created_at: "2024-01-15T10:00:00Z",
+      },
+    ]);
+    const result = await HealthReportRepository.getShared({ execute }, "single-token");
+    expect(result).not.toBeNull();
+    expect(result).toBeInstanceOf(SharedReport);
+  });
+
+  it("returns null when zero rows are returned (not undefined)", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+    const result = await HealthReportRepository.getShared({ execute }, "missing");
+    expect(result).toBeNull();
+    expect(result).not.toBeUndefined();
+  });
+});

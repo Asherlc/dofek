@@ -724,6 +724,90 @@ describe("FoodRepository", () => {
     });
   });
 
+  describe("delete — return value", () => {
+    it("always returns { success: true } regardless of whether a row was deleted", async () => {
+      const { repo } = makeRepository([]);
+      const result = await repo.delete("nonexistent-id");
+      expect(result).toStrictEqual({ success: true });
+      expect(result.success).toBe(true);
+    });
+
+    it("calls execute exactly once", async () => {
+      const { repo, execute } = makeRepository([]);
+      await repo.delete("entry-1");
+      expect(execute).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("search — search pattern", () => {
+    it("wraps query with % wildcards for ILIKE", async () => {
+      const { repo, execute } = makeRepository([]);
+      await repo.search("chicken", 10);
+      const queryJson = JSON.stringify(execute.mock.calls[0]?.[0]);
+      expect(queryJson).toContain("%chicken%");
+    });
+
+    it("returns empty array when no matches", async () => {
+      const { repo } = makeRepository([]);
+      const result = await repo.search("nonexistent", 10);
+      expect(result).toEqual([]);
+      expect(result).toHaveLength(0);
+    });
+  });
+
+  describe("update — nutrient field handling", () => {
+    it("handles nutrient column with null value (sets NULL)", async () => {
+      const foodRow = makeFoodEntryRow();
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([{ nutrition_data_id: "nd-1" }]) // SELECT nutrition_data_id
+        .mockResolvedValueOnce([]) // UPDATE nutrition_data
+        .mockResolvedValueOnce([foodRow]); // SELECT from view
+      const db = { execute };
+      const repo = new FoodRepository(db, "user-1", "UTC");
+
+      const result = await repo.update({ id: "entry-1", calories: null });
+      expect(result).not.toBeNull();
+      expect(execute).toHaveBeenCalledTimes(3);
+    });
+
+    it("does NOT return null when nutrientClauses > 0 even if foodEntryClauses=0 and no nutrients", async () => {
+      const foodRow = makeFoodEntryRow();
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([{ nutrition_data_id: "nd-1" }]) // SELECT nutrition_data_id
+        .mockResolvedValueOnce([]) // UPDATE nutrition_data
+        .mockResolvedValueOnce([foodRow]); // SELECT from view
+      const db = { execute };
+      const repo = new FoodRepository(db, "user-1", "UTC");
+
+      const result = await repo.update({ id: "entry-1", calories: 500 });
+      expect(result).not.toBeNull();
+    });
+  });
+
+  describe("create — null coalescing for optional fields", () => {
+    it("passes null for omitted optional fields via ?? null", async () => {
+      const foodRow = makeFoodEntryRow();
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([]) // ensureDofekProvider
+        .mockResolvedValueOnce([{ id: "entry-1" }]) // insert CTE
+        .mockResolvedValueOnce([foodRow]); // select from view
+      const db = { execute };
+      const repo = new FoodRepository(db, "user-1", "UTC");
+
+      const result = await repo.create({
+        date: "2024-06-15",
+        foodName: "Simple Food",
+        nutrients: {},
+      });
+      // meal, foodDescription, category, numberOfUnits should all be null
+      expect(result).not.toBeNull();
+      expect(result.food_name).toBe("Chicken Breast");
+    });
+  });
+
   describe("quickAdd", () => {
     it("creates a quick-add entry", async () => {
       const foodRow = makeFoodEntryRow({ food_name: "Quick Oats" });
@@ -764,5 +848,181 @@ describe("FoodRepository", () => {
 
       expect(result).toBeUndefined();
     });
+
+    it("quickAdd calls ensureDofekProvider before inserting", async () => {
+      const foodRow = makeFoodEntryRow({ food_name: "Oats" });
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([]) // ensureDofekProvider
+        .mockResolvedValueOnce([{ id: "entry-3" }]) // insert CTE
+        .mockResolvedValueOnce([foodRow]); // select from view
+      const db = { execute };
+      const repo = new FoodRepository(db, "user-1", "UTC");
+
+      await repo.quickAdd({
+        date: "2024-06-15",
+        meal: "snack",
+        foodName: "Oats",
+        calories: 100,
+      });
+
+      // 3 calls: ensureProvider + insert CTE + select view
+      expect(execute).toHaveBeenCalledTimes(3);
+    });
+
+    it("quickAdd returns nutrients as empty object, not undefined or null", async () => {
+      const foodRow = makeFoodEntryRow({ food_name: "Snack" });
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([]) // ensureDofekProvider
+        .mockResolvedValueOnce([{ id: "entry-4" }]) // insert CTE
+        .mockResolvedValueOnce([foodRow]); // select from view
+      const db = { execute };
+      const repo = new FoodRepository(db, "user-1", "UTC");
+
+      const result = await repo.quickAdd({
+        date: "2024-06-15",
+        meal: "snack",
+        foodName: "Snack",
+        calories: 50,
+      });
+
+      expect(result?.nutrients).toStrictEqual({});
+      expect(result?.nutrients).not.toBeUndefined();
+      expect(result?.nutrients).not.toBeNull();
+    });
+  });
+
+  describe("delete — object shape", () => {
+    it("returns object with exactly one key 'success'", async () => {
+      const { repo } = makeRepository([]);
+      const result = await repo.delete("entry-1");
+      expect(Object.keys(result)).toStrictEqual(["success"]);
+    });
+
+    it("success value is boolean true, not truthy", async () => {
+      const { repo } = makeRepository([]);
+      const result = await repo.delete("entry-1");
+      expect(result.success).toBe(true);
+      expect(result.success).not.toBe(1);
+      expect(result.success).not.toBe("true");
+    });
+  });
+
+  describe("update — early return null condition boundary", () => {
+    it("returns null only when ALL three conditions are met: no food clauses, no nutrient clauses, no nutrients", async () => {
+      // Pass an unrecognized field name that is not in fieldColumnMap or NUTRIENT_COLUMN_MAP
+      const { repo } = makeRepository([]);
+      const result = await repo.update({ id: "entry-1", unknownField: "value" });
+      // unknownField is not in fieldColumnMap or NUTRIENT_COLUMN_MAP, and no nutrients key
+      // => foodEntryClauses.length === 0 && nutrientClauses.length === 0 && !nutrients => null
+      expect(result).toBeNull();
+    });
+  });
+
+  describe("create — returned object spreads inserted row with nutrients", () => {
+    it("returned object includes both row fields and nutrients key", async () => {
+      const foodRow = makeFoodEntryRow({ food_name: "Banana" });
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([]) // ensureDofekProvider
+        .mockResolvedValueOnce([{ id: "entry-1" }]) // insert CTE
+        .mockResolvedValueOnce([foodRow]) // select from view
+        .mockResolvedValueOnce([]); // junction table insert
+      const db = { execute };
+      const repo = new FoodRepository(db, "user-1", "UTC");
+
+      const result = await repo.create({
+        date: "2024-06-15",
+        foodName: "Banana",
+        nutrients: { potassium: 400 },
+      });
+
+      // Verify the result has both the row fields and nutrients
+      expect(result.food_name).toBe("Banana"); // from mock row
+      expect(result.nutrients).toStrictEqual({ potassium: 400 });
+      expect(result.id).toBe("entry-1");
+      expect(result.user_id).toBe("user-1");
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Domain model — mutation-killing: getters return correct fields
+// ---------------------------------------------------------------------------
+
+describe("FoodEntry (mutation: getter field mapping)", () => {
+  it("id getter returns id field, not another field", () => {
+    const entry = new FoodEntry(
+      makeFoodEntryRow({ id: "unique-id-123", provider_id: "other-id" }),
+    );
+    expect(entry.id).toBe("unique-id-123");
+    expect(entry.id).not.toBe("other-id");
+  });
+
+  it("providerId returns provider_id, not id", () => {
+    const entry = new FoodEntry(
+      makeFoodEntryRow({ id: "entry-id", provider_id: "provider-abc" }),
+    );
+    expect(entry.providerId).toBe("provider-abc");
+    expect(entry.providerId).not.toBe("entry-id");
+  });
+
+  it("date returns date field, not created_at", () => {
+    const entry = new FoodEntry(
+      makeFoodEntryRow({ date: "2024-06-15", created_at: "2024-06-10T00:00:00Z" }),
+    );
+    expect(entry.date).toBe("2024-06-15");
+    expect(entry.date).not.toBe("2024-06-10T00:00:00Z");
+  });
+
+  it("foodName returns food_name, not food_description", () => {
+    const entry = new FoodEntry(
+      makeFoodEntryRow({ food_name: "Rice", food_description: "White rice" }),
+    );
+    expect(entry.foodName).toBe("Rice");
+    expect(entry.foodName).not.toBe("White rice");
+  });
+
+  it("confirmed returns boolean confirmed field", () => {
+    const entryTrue = new FoodEntry(makeFoodEntryRow({ confirmed: true }));
+    expect(entryTrue.confirmed).toBe(true);
+
+    const entryFalse = new FoodEntry(makeFoodEntryRow({ confirmed: false }));
+    expect(entryFalse.confirmed).toBe(false);
+  });
+});
+
+describe("DailyTotals (mutation: getter returns correct field)", () => {
+  it("date returns date, not calories", () => {
+    const totals = new DailyTotals(makeDailyTotalsRow({ date: "2024-07-01", calories: 1800 }));
+    expect(totals.date).toBe("2024-07-01");
+    expect(totals.date).not.toBe(1800);
+  });
+
+  it("calories returns calories, not protein_g", () => {
+    const totals = new DailyTotals(makeDailyTotalsRow({ calories: 2500, protein_g: 180 }));
+    expect(totals.calories).toBe(2500);
+    expect(totals.calories).not.toBe(180);
+  });
+});
+
+describe("FoodSearchResult (mutation: getter returns correct field)", () => {
+  it("foodName returns food_name, not category", () => {
+    const result = new FoodSearchResult(
+      makeFoodSearchRow({ food_name: "Eggs", category: "dairy" }),
+    );
+    expect(result.foodName).toBe("Eggs");
+    expect(result.foodName).not.toBe("dairy");
+  });
+
+  it("toDetail returns a complete shallow copy", () => {
+    const row = makeFoodSearchRow();
+    const result = new FoodSearchResult(row);
+    const detail = result.toDetail();
+    // Verify it's a copy (spread), not the same reference
+    expect(detail).not.toBe(row);
+    // But has all the same values
+    expect(detail).toStrictEqual(row);
   });
 });

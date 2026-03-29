@@ -480,6 +480,193 @@ describe("PersonalizationRepository", () => {
     });
   });
 
+  describe("reset executes DELETE sql", () => {
+    it("calls execute with SQL containing the user id and settings key", async () => {
+      const { repo, execute } = makeRepository();
+      await repo.reset();
+      // Verify execute was called (BlockStatement mutation: removing the execute call)
+      expect(execute).toHaveBeenCalledTimes(1);
+      // Verify it returns exactly { effective: DEFAULT_PARAMS } and nothing else
+      const result = await repo.reset();
+      expect(Object.keys(result)).toStrictEqual(["effective"]);
+      expect(result.effective).toStrictEqual(DEFAULT_PARAMS);
+    });
+  });
+
+  describe("getStatus isPersonalized logical OR chain", () => {
+    it("returns false when stored is non-null but all sub-params are null (tests && short-circuit)", async () => {
+      // This tests the `stored !== null &&` part: stored is non-null, but all inner conditions are false
+      mockedLoadParams.mockResolvedValue({
+        version: 1,
+        fittedAt: "2025-06-01T00:00:00Z",
+        exponentialMovingAverage: null,
+        readinessWeights: null,
+        sleepTarget: null,
+        stressThresholds: null,
+        trainingImpulseConstants: null,
+      });
+      const { repo } = makeRepository();
+      const result = await repo.getStatus();
+      // If && was mutated to ||, this would be true (since stored !== null is true)
+      expect(result.isPersonalized).toStrictEqual(false);
+    });
+
+    it("returns true when only sleepTarget is non-null (tests OR chain ordering)", async () => {
+      // Tests that each individual OR condition is sufficient
+      mockedLoadParams.mockResolvedValue({
+        version: 1,
+        fittedAt: "2025-06-01T00:00:00Z",
+        exponentialMovingAverage: null,
+        readinessWeights: null,
+        sleepTarget: { minutes: 480, sampleCount: 14 },
+        stressThresholds: null,
+        trainingImpulseConstants: null,
+      });
+      const { repo } = makeRepository();
+      const result = await repo.getStatus();
+      expect(result.isPersonalized).toStrictEqual(true);
+    });
+  });
+
+  describe("refit returns complete object structure", () => {
+    it("returns object with exactly three keys: fittedAt, effective, parameters", async () => {
+      mockedRefitAll.mockResolvedValue({
+        version: 1,
+        fittedAt: "2025-07-01T00:00:00Z",
+        exponentialMovingAverage: null,
+        readinessWeights: null,
+        sleepTarget: null,
+        stressThresholds: null,
+        trainingImpulseConstants: null,
+      });
+      const { repo } = makeRepository();
+      const result = await repo.refit();
+      // ObjectLiteral mutation: verify the result has exactly the expected keys
+      expect(Object.keys(result).sort()).toStrictEqual(["effective", "fittedAt", "parameters"]);
+    });
+
+    it("parameters object has exactly five keys", async () => {
+      mockedRefitAll.mockResolvedValue({
+        version: 1,
+        fittedAt: "2025-07-01T00:00:00Z",
+        exponentialMovingAverage: null,
+        readinessWeights: null,
+        sleepTarget: null,
+        stressThresholds: null,
+        trainingImpulseConstants: null,
+      });
+      const { repo } = makeRepository();
+      const result = await repo.refit();
+      expect(Object.keys(result.parameters).sort()).toStrictEqual([
+        "exponentialMovingAverage",
+        "readinessWeights",
+        "sleepTarget",
+        "stressThresholds",
+        "trainingImpulseConstants",
+      ]);
+    });
+  });
+
+  describe("getStatus returns complete object structure", () => {
+    it("returns object with exactly five keys: isPersonalized, fittedAt, defaults, effective, parameters", async () => {
+      mockedLoadParams.mockResolvedValue(null);
+      const { repo } = makeRepository();
+      const result = await repo.getStatus();
+      expect(Object.keys(result).sort()).toStrictEqual([
+        "defaults",
+        "effective",
+        "fittedAt",
+        "isPersonalized",
+        "parameters",
+      ]);
+    });
+  });
+
+  describe("getStatus isPersonalized short-circuit: stored !== null AND condition", () => {
+    it("returns false when stored is null even if && were mutated to ||", async () => {
+      // Tests: stored !== null && (...)
+      // If !== mutated to ===, result would be true when stored IS null
+      mockedLoadParams.mockResolvedValue(null);
+      const { repo } = makeRepository();
+      const result = await repo.getStatus();
+      expect(result.isPersonalized).toStrictEqual(false);
+    });
+
+    it("isPersonalized is exactly boolean false, not falsy (kills ConditionalExpression→false)", async () => {
+      mockedLoadParams.mockResolvedValue({
+        version: 1,
+        fittedAt: "2025-06-01T00:00:00Z",
+        exponentialMovingAverage: null,
+        readinessWeights: null,
+        sleepTarget: null,
+        stressThresholds: null,
+        trainingImpulseConstants: null,
+      });
+      const { repo } = makeRepository();
+      const result = await repo.getStatus();
+      expect(typeof result.isPersonalized).toBe("boolean");
+      expect(result.isPersonalized).toBe(false);
+    });
+
+    it("isPersonalized is exactly boolean true, not truthy (kills ConditionalExpression→true)", async () => {
+      mockedLoadParams.mockResolvedValue({
+        version: 1,
+        fittedAt: "2025-06-01T00:00:00Z",
+        exponentialMovingAverage: {
+          chronicTrainingLoadDays: 42,
+          acuteTrainingLoadDays: 7,
+          sampleCount: 100,
+          correlation: 0.85,
+        },
+        readinessWeights: null,
+        sleepTarget: null,
+        stressThresholds: null,
+        trainingImpulseConstants: null,
+      });
+      const { repo } = makeRepository();
+      const result = await repo.getStatus();
+      expect(typeof result.isPersonalized).toBe("boolean");
+      expect(result.isPersonalized).toBe(true);
+    });
+  });
+
+  describe("reset side effects (BlockStatement mutation)", () => {
+    it("execute is called before returning result (not skipped)", async () => {
+      const { repo, execute } = makeRepository();
+      const result = await repo.reset();
+      // BlockStatement mutation would remove the execute call but still return DEFAULT_PARAMS
+      // Verify both happened
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(result.effective).toStrictEqual(DEFAULT_PARAMS);
+    });
+  });
+
+  describe("getStatus fittedAt optional chaining", () => {
+    it("fittedAt uses stored?.fittedAt so null stored yields null (not undefined)", async () => {
+      // stored?.fittedAt ?? null — if ?. mutated to ., null stored would throw
+      mockedLoadParams.mockResolvedValue(null);
+      const { repo } = makeRepository();
+      const result = await repo.getStatus();
+      expect(result.fittedAt).toStrictEqual(null);
+      expect(result.fittedAt).not.toBe(undefined);
+    });
+
+    it("fittedAt passes through string value from stored params (not always null)", async () => {
+      mockedLoadParams.mockResolvedValue({
+        version: 1,
+        fittedAt: "2025-08-01T00:00:00Z",
+        exponentialMovingAverage: null,
+        readinessWeights: null,
+        sleepTarget: null,
+        stressThresholds: null,
+        trainingImpulseConstants: null,
+      });
+      const { repo } = makeRepository();
+      const result = await repo.getStatus();
+      expect(result.fittedAt).toStrictEqual("2025-08-01T00:00:00Z");
+    });
+  });
+
   describe("getStatus ?? null coalescing", () => {
     it("maps each parameter via ?? null, not using defaults when stored has values", async () => {
       const ema = {

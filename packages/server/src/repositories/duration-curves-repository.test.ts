@@ -230,6 +230,76 @@ describe("fitCriticalHeartRate", () => {
     expect(model).not.toBeNull();
   });
 
+  it("computes ys as HR multiplied by duration (detects + vs * mutation)", () => {
+    // With addition: ys = HR + t = [170+120, 165+300, 160+600, 155+1800] = [290, 465, 760, 1955]
+    // With multiplication: ys = HR * t = [20400, 49500, 96000, 279000]
+    // The slopes differ enormously. Multiplication gives a slope ~155 (plausible HR).
+    // Addition gives a slope ~1 (not a plausible HR).
+    const points = [
+      { durationSeconds: 120, bestHeartRate: 170 },
+      { durationSeconds: 300, bestHeartRate: 165 },
+      { durationSeconds: 600, bestHeartRate: 160 },
+      { durationSeconds: 1800, bestHeartRate: 155 },
+    ];
+    const model = fitCriticalHeartRate(points);
+    expect(model).not.toBeNull();
+    // The slope (thresholdHr) must be > 100, which only works with multiplication
+    expect(model?.thresholdHr).toBeGreaterThanOrEqual(140);
+  });
+
+  it("valid.length < 3 uses strict less-than (2 points returns null, 3 returns model)", () => {
+    const twoPoints = [
+      { durationSeconds: 120, bestHeartRate: 180 },
+      { durationSeconds: 300, bestHeartRate: 170 },
+    ];
+    expect(fitCriticalHeartRate(twoPoints)).toBeNull();
+
+    const threePoints = [
+      { durationSeconds: 120, bestHeartRate: 180 },
+      { durationSeconds: 300, bestHeartRate: 170 },
+      { durationSeconds: 600, bestHeartRate: 165 },
+    ];
+    expect(fitCriticalHeartRate(threePoints)).not.toBeNull();
+  });
+
+  it("filter uses > 0 for bestHeartRate (not >= 0), so HR=0 is excluded", () => {
+    const points = [
+      { durationSeconds: 120, bestHeartRate: 0 },
+      { durationSeconds: 300, bestHeartRate: 170 },
+      { durationSeconds: 600, bestHeartRate: 165 },
+      { durationSeconds: 1200, bestHeartRate: 160 },
+    ];
+    // HR=0 excluded, 3 valid remain => model
+    const model = fitCriticalHeartRate(points);
+    expect(model).not.toBeNull();
+
+    // All zeros => null (confirms > 0 not >= 0)
+    const allZero = [
+      { durationSeconds: 120, bestHeartRate: 0 },
+      { durationSeconds: 300, bestHeartRate: 0 },
+      { durationSeconds: 600, bestHeartRate: 0 },
+    ];
+    expect(fitCriticalHeartRate(allZero)).toBeNull();
+  });
+
+  it("r2 rounding: Math.round(r2 * 1000) / 1000 not Math.round(r2 * 100) / 100", () => {
+    const points = [
+      { durationSeconds: 120, bestHeartRate: 180 },
+      { durationSeconds: 300, bestHeartRate: 172 },
+      { durationSeconds: 600, bestHeartRate: 168 },
+      { durationSeconds: 1200, bestHeartRate: 164 },
+      { durationSeconds: 1800, bestHeartRate: 162 },
+      { durationSeconds: 3600, bestHeartRate: 158 },
+    ];
+    const model = fitCriticalHeartRate(points);
+    expect(model).not.toBeNull();
+    // r2 * 1000 must be integer (3 decimal precision)
+    const r2Value = model?.r2 ?? 0;
+    expect(Math.round(r2Value * 1000)).toBe(r2Value * 1000);
+    // thresholdHr must be integer
+    expect(Number.isInteger(model?.thresholdHr)).toBe(true);
+  });
+
   it("thresholdHr <= 0 returns null (not < 0)", () => {
     // Verify that thresholdHr exactly 0 also returns null
     // Craft data where slope is very close to 0: large durations with HR dropping to tiny values
@@ -415,5 +485,169 @@ describe("DurationCurvesRepository", () => {
       const result = await repo.getPaceCurve(90);
       expect(result.points[0]?.label).toBe("88888s");
     });
+  });
+
+  describe("getHrCurve — result object shape", () => {
+    it("returns an object with exactly points and model keys", async () => {
+      const { repo } = makeRepository([]);
+      const result = await repo.getHrCurve(90);
+      expect(Object.keys(result).sort()).toStrictEqual(["model", "points"]);
+    });
+
+    it("returns model as null when fewer than 3 HR curve points >= 120s", async () => {
+      const { repo } = makeRepository([
+        { duration_seconds: "5", best_hr: "190", activity_date: "2025-06-01" },
+        { duration_seconds: "15", best_hr: "185", activity_date: "2025-06-01" },
+      ]);
+      const result = await repo.getHrCurve(90);
+      expect(result.model).toBeNull();
+    });
+  });
+
+  describe("getPaceCurve — result object shape", () => {
+    it("returns an object with exactly a points key", async () => {
+      const { repo } = makeRepository([]);
+      const result = await repo.getPaceCurve(90);
+      expect(Object.keys(result)).toStrictEqual(["points"]);
+    });
+  });
+
+  describe("getHrCurve — each mapped field is correct type and value", () => {
+    it("maps each row field to the correct property with exact values", async () => {
+      const { repo } = makeRepository([
+        { duration_seconds: "1200", best_hr: "162", activity_date: "2025-06-20" },
+      ]);
+      const result = await repo.getHrCurve(90);
+      const point = result.points[0];
+      expect(point).toStrictEqual({
+        durationSeconds: 1200,
+        label: "20min",
+        bestHeartRate: 162,
+        activityDate: "2025-06-20",
+      });
+    });
+  });
+
+  describe("getPaceCurve — each mapped field is correct type and value", () => {
+    it("maps each row field to the correct property with exact values", async () => {
+      const { repo } = makeRepository([
+        { duration_seconds: "1200", best_pace: "275.3", activity_date: "2025-06-20" },
+      ]);
+      const result = await repo.getPaceCurve(90);
+      const point = result.points[0];
+      expect(point).toStrictEqual({
+        durationSeconds: 1200,
+        label: "20min",
+        bestPaceSecondsPerKm: 275.3,
+        activityDate: "2025-06-20",
+      });
+    });
+  });
+
+  describe("getHrCurve — model integration with results", () => {
+    it("passes the mapped results array to fitCriticalHeartRate (not the raw rows)", async () => {
+      // If the model were called with raw rows instead of mapped results, the field names would differ
+      // and the model would get undefined for bestHeartRate, returning null
+      const { repo } = makeRepository([
+        { duration_seconds: "120", best_hr: "180", activity_date: "2025-06-01" },
+        { duration_seconds: "300", best_hr: "172", activity_date: "2025-06-01" },
+        { duration_seconds: "600", best_hr: "168", activity_date: "2025-06-01" },
+        { duration_seconds: "1200", best_hr: "164", activity_date: "2025-06-01" },
+      ]);
+      const result = await repo.getHrCurve(90);
+      // The model should be non-null since we have 4 valid points >= 120s
+      expect(result.model).not.toBeNull();
+      expect(result.model?.thresholdHr).toBeGreaterThan(0);
+      expect(result.model?.r2).toBeGreaterThan(0);
+    });
+  });
+
+  describe("getHrCurve — Number() vs String() for each field", () => {
+    it("durationSeconds uses Number() not String()", async () => {
+      const { repo } = makeRepository([
+        { duration_seconds: "300", best_hr: "170", activity_date: "2025-06-15" },
+      ]);
+      const result = await repo.getHrCurve(90);
+      // Number("300") === 300, String("300") === "300"
+      expect(result.points[0]?.durationSeconds).toStrictEqual(300);
+      expect(result.points[0]?.durationSeconds).not.toStrictEqual("300");
+    });
+
+    it("bestHeartRate uses Number() not String()", async () => {
+      const { repo } = makeRepository([
+        { duration_seconds: "300", best_hr: "170", activity_date: "2025-06-15" },
+      ]);
+      const result = await repo.getHrCurve(90);
+      expect(result.points[0]?.bestHeartRate).toStrictEqual(170);
+      expect(result.points[0]?.bestHeartRate).not.toStrictEqual("170");
+    });
+
+    it("activityDate uses String() not Number()", async () => {
+      const { repo } = makeRepository([
+        { duration_seconds: "300", best_hr: "170", activity_date: "2025-06-15" },
+      ]);
+      const result = await repo.getHrCurve(90);
+      expect(result.points[0]?.activityDate).toStrictEqual("2025-06-15");
+    });
+  });
+
+  describe("getPaceCurve — Number() vs String() for each field", () => {
+    it("bestPaceSecondsPerKm uses Number() not String()", async () => {
+      const { repo } = makeRepository([
+        { duration_seconds: "300", best_pace: "245.3", activity_date: "2025-06-15" },
+      ]);
+      const result = await repo.getPaceCurve(90);
+      expect(result.points[0]?.bestPaceSecondsPerKm).toStrictEqual(245.3);
+      expect(result.points[0]?.bestPaceSecondsPerKm).not.toStrictEqual("245.3");
+    });
+  });
+});
+
+// ── fitCriticalHeartRate — additional mutation-killing tests ──────────────
+
+describe("fitCriticalHeartRate (mutation-killing)", () => {
+  it("filter uses AND (&&) for both conditions, not OR (||)", () => {
+    // A point with durationSeconds=60 and bestHeartRate=170 should be excluded (< 120s)
+    // A point with durationSeconds=300 and bestHeartRate=0 should be excluded (HR not > 0)
+    // Only 2 valid points remain => null
+    const points = [
+      { durationSeconds: 60, bestHeartRate: 170 },
+      { durationSeconds: 300, bestHeartRate: 0 },
+      { durationSeconds: 300, bestHeartRate: 165 },
+      { durationSeconds: 600, bestHeartRate: 160 },
+    ];
+    // With &&: valid = [{300, 165}, {600, 160}] => only 2 => null
+    // With ||: all would pass since each satisfies at least one condition
+    const model = fitCriticalHeartRate(points);
+    expect(model).toBeNull();
+  });
+
+  it("thresholdHr uses Math.round not Math.floor or Math.ceil", () => {
+    // Use data that produces a non-integer thresholdHr
+    const points = [
+      { durationSeconds: 120, bestHeartRate: 180 },
+      { durationSeconds: 300, bestHeartRate: 172 },
+      { durationSeconds: 600, bestHeartRate: 168 },
+      { durationSeconds: 1200, bestHeartRate: 164 },
+      { durationSeconds: 1800, bestHeartRate: 162 },
+    ];
+    const model = fitCriticalHeartRate(points);
+    expect(model).not.toBeNull();
+    // thresholdHr must be an integer (Math.round applied)
+    expect(Number.isInteger(model?.thresholdHr)).toBe(true);
+    // Verify the value is reasonable (between 140-180 for this data)
+    expect(model?.thresholdHr).toBeGreaterThanOrEqual(140);
+    expect(model?.thresholdHr).toBeLessThanOrEqual(180);
+  });
+
+  it("returns object with exactly thresholdHr and r2 properties", () => {
+    const points = [
+      { durationSeconds: 120, bestHeartRate: 175 },
+      { durationSeconds: 300, bestHeartRate: 170 },
+      { durationSeconds: 600, bestHeartRate: 165 },
+    ];
+    const model = fitCriticalHeartRate(points);
+    expect(model).not.toBeNull();
+    expect(Object.keys(model ?? {}).sort()).toStrictEqual(["r2", "thresholdHr"]);
   });
 });

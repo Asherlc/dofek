@@ -352,4 +352,131 @@ describe("ProviderDetailRepository", () => {
       });
     });
   });
+
+  describe("mutation-killing: boundary and operator tests", () => {
+    it("verifyOwnership uses rows.length > 0 (not >= 0 which is always true)", async () => {
+      // With empty rows, length is 0, > 0 is false -> returns false
+      // If mutated to >= 0, 0 >= 0 is true -> would return true incorrectly
+      const { repo } = makeRepository([]);
+      const result = await repo.verifyOwnership("nonexistent");
+      expect(result).toStrictEqual(false);
+    });
+
+    it("verifyOwnership returns true with multiple rows (> 0 still true)", async () => {
+      const { repo } = makeRepository([{ id: "p1" }, { id: "p2" }]);
+      const result = await repo.verifyOwnership("p1");
+      expect(result).toStrictEqual(true);
+    });
+
+    it("getRecordDetail returns first row via rows[0] (not rows[1] or last)", async () => {
+      // rows[0] ?? null — must be first element
+      const { repo } = makeRepository([
+        { id: "first", value: 1 },
+        { id: "second", value: 2 },
+      ]);
+      const result = await repo.getRecordDetail("strava", "activities", "first");
+      expect(result).toStrictEqual({ id: "first", value: 1 });
+      expect(result).not.toStrictEqual({ id: "second", value: 2 });
+    });
+
+    it("getRecordDetail returns null via ?? null (not undefined via ?? undefined)", async () => {
+      const { repo } = makeRepository([]);
+      const result = await repo.getRecordDetail("strava", "activities", "missing");
+      expect(result).toStrictEqual(null);
+      expect(result === null).toBe(true);
+    });
+
+    it("deleteProviderData calls transaction (BlockStatement mutation would skip it)", async () => {
+      const txExecute = vi.fn().mockResolvedValue([]);
+      const mockTransaction = vi
+        .fn()
+        .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<void>) => {
+          await fn({ execute: txExecute });
+        });
+      const { repo } = makeRepository([], mockTransaction);
+
+      await repo.deleteProviderData("test-provider");
+      // If the await this.#db.transaction() block was removed, transaction would not be called
+      expect(mockTransaction).toHaveBeenCalledTimes(1);
+    });
+
+    it("deleteProviderData deletes from exactly DISCONNECT_CHILD_TABLES.length + 1 tables", async () => {
+      const txExecute = vi.fn().mockResolvedValue([]);
+      const mockTransaction = vi
+        .fn()
+        .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<void>) => {
+          await fn({ execute: txExecute });
+        });
+      const { repo } = makeRepository([], mockTransaction);
+
+      await repo.deleteProviderData("test-provider");
+      // 16 child tables + 1 provider row = 17
+      expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length + 1);
+      // Verify it's exactly 17, not 16 (BlockStatement removing the final delete)
+      expect(txExecute).toHaveBeenCalledTimes(17);
+    });
+
+    it("DISCONNECT_CHILD_TABLES is an array (not empty array from ArrayDeclaration mutation)", () => {
+      expect(DISCONNECT_CHILD_TABLES.length).toBe(16);
+      expect(DISCONNECT_CHILD_TABLES[0]).toBe("fitness.metric_stream");
+      expect(DISCONNECT_CHILD_TABLES[15]).toBe("fitness.oauth_token");
+    });
+
+    it("tableInfo returns three-key objects (not empty objects from ObjectLiteral mutation)", () => {
+      for (const dataType of dataTypeEnum.options) {
+        const info = tableInfo(dataType);
+        expect(Object.keys(info)).toHaveLength(3);
+        expect(Object.keys(info).sort()).toStrictEqual(["idColumn", "orderColumn", "table"]);
+        expect(info.table.length).toBeGreaterThan(0);
+        expect(info.orderColumn.length).toBeGreaterThan(0);
+        expect(info.idColumn.length).toBeGreaterThan(0);
+      }
+    });
+
+    it("tableInfo metricStream has matching idColumn and orderColumn (both recorded_at)", () => {
+      // This is unique: idColumn === orderColumn = "recorded_at"
+      // If one was mutated to "id", they would differ
+      const info = tableInfo("metricStream");
+      expect(info.idColumn).toBe("recorded_at");
+      expect(info.orderColumn).toBe("recorded_at");
+      expect(info.idColumn).toBe(info.orderColumn);
+    });
+
+    it("tableInfo dailyMetrics has idColumn 'date' (not 'id')", () => {
+      const info = tableInfo("dailyMetrics");
+      expect(info.idColumn).toBe("date");
+      expect(info.idColumn).not.toBe("id");
+    });
+
+    it("tableInfo nutritionDaily has idColumn 'date' (not 'id')", () => {
+      const info = tableInfo("nutritionDaily");
+      expect(info.idColumn).toBe("date");
+      expect(info.idColumn).not.toBe("id");
+    });
+
+    it("getRecords returns array (not null or single object)", async () => {
+      const { repo } = makeRepository([
+        { id: "r1", data: "a" },
+        { id: "r2", data: "b" },
+      ]);
+      const result = await repo.getRecords("strava", "activities", 50, 0);
+      expect(Array.isArray(result)).toBe(true);
+      expect(result).toHaveLength(2);
+    });
+
+    it("dataTypeEnum has exactly 11 options (not 10 or 12 from ArrayDeclaration mutation)", () => {
+      expect(dataTypeEnum.options).toHaveLength(11);
+      // Verify first and last entries specifically
+      expect(dataTypeEnum.options[0]).toBe("activities");
+      expect(dataTypeEnum.options[10]).toBe("journalEntries");
+    });
+
+    it("DISCONNECT_CHILD_TABLES ordering: activity comes before oauth_token", () => {
+      const activityIndex = DISCONNECT_CHILD_TABLES.indexOf("fitness.activity");
+      const oauthIndex = DISCONNECT_CHILD_TABLES.indexOf("fitness.oauth_token");
+      expect(activityIndex).toBeLessThan(oauthIndex);
+      expect(activityIndex).toBe(14);
+      expect(oauthIndex).toBe(15);
+    });
+  });
 });
