@@ -267,6 +267,29 @@ export default function BleProbeScreen() {
           <Text style={styles.quickButtonText}>Status</Text>
         </Pressable>
       </View>
+      <View style={styles.quickButtons}>
+        <Pressable
+          style={[styles.quickButton, { backgroundColor: "#2a3a2a" }]}
+          onPress={() => executeCommand("raw aa010c000001e74123016a0101000000")}
+        >
+          <Text style={styles.quickButtonText}>IMU Mode</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.quickButton, { backgroundColor: "#2a3a2a" }]}
+          onPress={() => executeCommand("raw aa010c000001e74123025101010000")}
+        >
+          <Text style={styles.quickButtonText}>Start Raw</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.quickButton, { backgroundColor: "#3a2a2a" }]}
+          onPress={() => executeCommand("raw aa010c000001e74123035201010000")}
+        >
+          <Text style={styles.quickButtonText}>Stop Raw</Text>
+        </Pressable>
+        <Pressable style={styles.quickButton} onPress={() => executeCommand("clear")}>
+          <Text style={styles.quickButtonText}>Clear</Text>
+        </Pressable>
+      </View>
 
       <View style={styles.inputContainer}>
         <TextInput
