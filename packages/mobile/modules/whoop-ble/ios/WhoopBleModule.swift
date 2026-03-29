@@ -239,6 +239,7 @@ public class WhoopBleModule: Module {
                 "connectionState": self.state.rawValue,
                 "hasDataCharacteristic": self.dataCharacteristic != nil,
                 "isNotifying": self.dataCharacteristic?.isNotifying ?? false,
+                "recentNotifications": self.recentNotificationHexDumps,
             ]
         }
 
@@ -491,6 +492,10 @@ public class WhoopBleModule: Module {
         }
     }
 
+    /// First few BLE notification hex dumps for JS-visible debugging
+    private var recentNotificationHexDumps: [String] = []
+    private static let maxHexDumps = 5
+
     /// Counter to throttle data-path logs (avoid flooding at 80 Hz)
     private var dataReceivedCount: UInt64 = 0
     private var totalFramesParsed: UInt64 = 0
@@ -501,6 +506,13 @@ public class WhoopBleModule: Module {
 
     func handleDataReceived(_ data: Data) {
         dataReceivedCount += 1
+
+        // Capture first few notifications as hex for JS-visible debugging
+        if recentNotificationHexDumps.count < WhoopBleModule.maxHexDumps {
+            let hex = data.prefix(64).map { String(format: "%02x", $0) }.joined(separator: " ")
+            recentNotificationHexDumps.append("[\(data.count)B] \(hex)")
+            NSLog("[WhoopBLE] notification #%llu (%d bytes): %@", dataReceivedCount, data.count, hex)
+        }
 
         guard state == .streaming else {
             droppedForNonStreaming += 1
