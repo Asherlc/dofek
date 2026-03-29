@@ -288,10 +288,19 @@ public class WhoopBleModule: Module {
     // MARK: - Internal handlers (called by delegate)
 
     func handleCentralManagerPoweredOn() {
-        // If we have a restored peripheral waiting to reconnect, start service discovery
+        // If we have a restored peripheral waiting to reconnect
         if let peripheral = connectedPeripheral, state == .idle {
-            state = .discoveringServices
-            peripheral.discoverServices(WhoopBleConstants.allServiceUUIDs)
+            if peripheral.state == .connected {
+                // Already connected — proceed to service discovery
+                state = .discoveringServices
+                peripheral.discoverServices(WhoopBleConstants.allServiceUUIDs)
+            } else {
+                // Peripheral was disconnected while the app was suspended/killed —
+                // initiate a new connection instead of trying to discover services
+                // on a disconnected peripheral (which silently fails).
+                state = .connecting
+                centralManager?.connect(peripheral, options: nil)
+            }
         }
     }
 

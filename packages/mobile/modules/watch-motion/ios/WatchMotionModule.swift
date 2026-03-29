@@ -105,7 +105,9 @@ public class WatchMotionModule: Module {
         /// List the file names in the pending transfer directory.
         /// Used by the per-file sync to process files individually.
         Function("getPendingWatchFileNames") { () -> [String] in
-            return self.listPendingFileNames()
+            let names = self.listPendingFileNames()
+            NSLog("[WatchMotion] getPendingWatchFileNames: %d files", names.count)
+            return names
         }
 
         /// Read and parse a single pending Watch transfer file.
@@ -115,9 +117,12 @@ public class WatchMotionModule: Module {
                 let fileURL = self.pendingDirectory.appendingPathComponent(fileName)
                 do {
                     let fileData = try Data(contentsOf: fileURL)
+                    NSLog("[WatchMotion] readWatchFile %@: %d bytes", fileName, fileData.count)
                     let samples = try SampleFileParser.parse(fileData)
+                    NSLog("[WatchMotion] readWatchFile %@: parsed %d samples", fileName, samples.count)
                     promise.resolve(samples)
                 } catch {
+                    NSLog("[WatchMotion] readWatchFile %@ FAILED: %@", fileName, error.localizedDescription)
                     promise.reject("PARSE_ERROR", "Failed to parse \(fileName): \(error.localizedDescription)")
                 }
             }
@@ -126,6 +131,7 @@ public class WatchMotionModule: Module {
         /// Delete a single pending Watch transfer file after successful upload.
         Function("deleteWatchFile") { (fileName: String) in
             let fileURL = self.pendingDirectory.appendingPathComponent(fileName)
+            NSLog("[WatchMotion] deleteWatchFile: %@", fileName)
             try? FileManager.default.removeItem(at: fileURL)
         }
 
@@ -141,17 +147,22 @@ public class WatchMotionModule: Module {
     // MARK: - File received from Watch
 
     func handleReceivedFile(fileURL: URL, metadata: [String: Any]?) {
+        let sampleCount = metadata?["sampleCount"] as? Int ?? -1
+        NSLog("[WatchMotion] Received file from Watch: %@ (%d samples)", fileURL.lastPathComponent, sampleCount)
+
         // Move the file to our pending directory
         let destinationName = "watch-accel-\(UUID().uuidString).json.gz"
         let destination = pendingDirectory.appendingPathComponent(destinationName)
 
         do {
             try FileManager.default.moveItem(at: fileURL, to: destination)
+            NSLog("[WatchMotion] Saved to pending: %@ (total pending: %d)", destinationName, countPendingFiles())
             sendEvent("onWatchFileReceived", [
                 "fileName": destinationName,
                 "metadata": metadata ?? [:],
             ])
         } catch {
+            NSLog("[WatchMotion] Move failed for %@: %@, trying copy", fileURL.lastPathComponent, error.localizedDescription)
             // If move fails, try copy + delete
             try? FileManager.default.copyItem(at: fileURL, to: destination)
             try? FileManager.default.removeItem(at: fileURL)
@@ -221,7 +232,9 @@ private class WatchSessionDelegateHolder: NSObject, WCSessionDelegate {
     weak var module: WatchMotionModule?
 
     func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
-        // Activation complete — no action needed
+        NSLog("[WatchMotion] WCSession activation: %@ (error: %@)",
+              activationState == .activated ? "activated" : "failed",
+              error?.localizedDescription ?? "none")
     }
 
     func sessionDidBecomeInactive(_ session: WCSession) {}
@@ -231,6 +244,13 @@ private class WatchSessionDelegateHolder: NSObject, WCSessionDelegate {
     }
 
     func session(_ session: WCSession, didReceive file: WCSessionFile) {
-        module?.handleReceivedFile(fileURL: file.fileURL, metadata: file.metadata as? [String: Any])
+        NSLog("[WatchMotion] didReceive file: %@, module attached: %@",
+              file.fileURL.lastPathComponent,
+              module != nil ? "YES" : "NO")
+        if let module = module {
+            module.handleReceivedFile(fileURL: file.fileURL, metadata: file.metadata as? [String: Any])
+        } else {
+            NSLog("[WatchMotion] ERROR: module is nil, file will be lost: %@", file.fileURL.lastPathComponent)
+        }
     }
 }

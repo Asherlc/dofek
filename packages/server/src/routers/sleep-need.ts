@@ -75,17 +75,18 @@ export const sleepNeedRouter = router({
       const rows = await executeWithSchema(
         ctx.db,
         sleepNeedRowSchema,
-        sql`WITH sleep_nights AS (
+        sql`WITH raw_sleep AS (
+              SELECT
+                (started_at AT TIME ZONE ${ctx.timezone})::date AS date,
+                COALESCE(duration_minutes, EXTRACT(EPOCH FROM (ended_at - started_at)) / 60)::int AS duration_minutes
+              FROM fitness.v_sleep
+              WHERE user_id = ${ctx.userId}
+                AND is_nap = false
+                AND started_at > ${timestampWindowStart(input.endDate, 90)}
+            ),
+            sleep_nights AS (
               SELECT DISTINCT ON (date) date, duration_minutes
-              FROM (
-                SELECT
-                  (started_at AT TIME ZONE ${ctx.timezone})::date AS date,
-                  COALESCE(duration_minutes, EXTRACT(EPOCH FROM (ended_at - started_at)) / 60)::int AS duration_minutes
-                FROM fitness.v_sleep
-                WHERE user_id = ${ctx.userId}
-                  AND is_nap = false
-                  AND started_at > ${timestampWindowStart(input.endDate, 90)}
-              ) raw
+              FROM raw_sleep
               ORDER BY date, duration_minutes DESC NULLS LAST
             ),
             daily_hrv AS (
