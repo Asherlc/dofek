@@ -70,10 +70,11 @@ final class WhoopBleFrameParser {
                 NSLog("[WhoopBLE] feed #%llu: parsed frame type=0x%02x record=%d payload=%d bytes", feedCount, frame.packetType, frame.recordType, frame.payload.count)
             }
             // Advance past the consumed frame, preserving any trailing bytes
-            // that belong to the next frame (header + payload + CRC32)
-            let payloadLen = Int(accumulator[1]) | (Int(accumulator[2]) << 8)
+            // that belong to the next frame (header + payload + CRC32).
+            // Use actual parsed payload size (not raw header bytes) to handle
+            // both u16 LE and u8 length formats.
             let consumed = min(
-                WhoopBleConstants.headerSize + payloadLen + 4,
+                WhoopBleConstants.headerSize + frame.payload.count + 4,
                 accumulator.count
             )
             if consumed < accumulator.count {
@@ -93,26 +94,41 @@ final class WhoopBleFrameParser {
 
     /// Parse a single WHOOP frame from raw bytes.
     ///
-    /// Frame format:
+    /// Supports two header formats observed across WHOOP hardware generations:
+    ///
+    /// **Gen 4 (Harvard)** — u16 LE payload length:
     /// ```
-    /// [0xAA]              1 byte   Start-of-frame
-    /// [payloadLen]        2 bytes  Little-endian u16
-    /// [crc8]              1 byte   Header checksum
-    /// [payload...]        N bytes  Payload (packetType at offset 0)
-    /// [crc32]             4 bytes  Little-endian u32 (over all preceding bytes)
+    /// [0xAA] [payloadLen: u16 LE] [crc8] [payload...] [crc32]
     /// ```
+    ///
+    /// **Newer straps (Maverick/Puffin)** — u8 payload length with frame type:
+    /// ```
+    /// [0xAA] [frameType: u8] [payloadLen: u8] [crc8] [payload...] [crc32]
+    /// ```
+    ///
+    /// We try u16 LE first. If the resulting length exceeds the buffer but
+    /// interpreting byte[2] as a u8 length produces a valid frame, use that.
     static func parseFrame(_ data: Data) -> WhoopFrame? {
         guard data.count >= WhoopBleConstants.minimumFrameSize else { return nil }
         guard data[0] == WhoopBleConstants.startOfFrame else { return nil }
 
-        let payloadLen = Int(data[1]) | (Int(data[2]) << 8) // u16 LE
         let headerSize = WhoopBleConstants.headerSize
 
-        // Require the full payload before accepting the frame.
-        // This prevents premature parsing when BLE notifications fragment
-        // a large frame across multiple packets. We tolerate a missing CRC32
-        // trailer (4 bytes) since we don't validate it.
-        guard data.count >= headerSize + payloadLen else { return nil }
+        // Try u16 LE format first (Gen 4)
+        let payloadLenU16 = Int(data[1]) | (Int(data[2]) << 8)
+        var payloadLen = payloadLenU16
+
+        // If u16 LE length exceeds available data, try u8 format (newer straps).
+        // In the u8 format, byte[1] is a frame type and byte[2] is the payload length.
+        if data.count < headerSize + payloadLenU16 {
+            let payloadLenU8 = Int(data[2])
+            if data.count >= headerSize + payloadLenU8 {
+                payloadLen = payloadLenU8
+            } else {
+                // Neither format has enough data — need more BLE notifications
+                return nil
+            }
+        }
 
         let payloadEnd = min(headerSize + payloadLen, data.count)
         let payload = data[headerSize..<payloadEnd]
