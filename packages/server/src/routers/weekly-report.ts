@@ -113,7 +113,7 @@ export const weeklyReportRouter = router({
               FROM date_series ds
               LEFT JOIN daily_training dt ON dt.date = ds.date
             ),
-            sleep_daily AS (
+            raw_sleep AS (
               SELECT
                 (started_at AT TIME ZONE ${ctx.timezone})::date AS date,
                 duration_minutes
@@ -121,6 +121,11 @@ export const weeklyReportRouter = router({
               WHERE user_id = ${ctx.userId}
                 AND is_nap = false
                 AND started_at > ${timestampWindowStart(input.endDate, totalDays)}
+            ),
+            sleep_daily AS (
+              SELECT DISTINCT ON (date) date, duration_minutes
+              FROM raw_sleep
+              ORDER BY date, duration_minutes DESC NULLS LAST
             ),
             metrics_daily AS (
               SELECT
@@ -163,7 +168,7 @@ export const weeklyReportRouter = router({
         const avgDailyLoad = Number(row.avg_daily_load) || 0;
         const chronicAvgLoad = Number(row.chronic_avg_load) || 0;
         const avgSleepMin = row.avg_sleep_min != null ? Number(row.avg_sleep_min) : 0;
-        const prev3wkSleep = row.prev_3wk_avg_sleep != null ? Number(row.prev_3wk_avg_sleep) : null;
+        const prev3wkSleep = Number(row.prev_3wk_avg_sleep) || 0;
 
         return {
           weekStart: row.week_start,
@@ -173,9 +178,7 @@ export const weeklyReportRouter = router({
           avgDailyLoad: Math.round(avgDailyLoad * 10) / 10,
           avgSleepMinutes: Math.round(avgSleepMin),
           sleepPerformancePct:
-            prev3wkSleep != null && prev3wkSleep > 0
-              ? Math.round((avgSleepMin / prev3wkSleep) * 100)
-              : 100,
+            prev3wkSleep > 0 ? Math.round((avgSleepMin / prev3wkSleep) * 100) : 100,
           avgReadiness: 0, // filled below
           avgRestingHr:
             row.avg_resting_hr != null ? Math.round(Number(row.avg_resting_hr) * 10) / 10 : null,
@@ -185,7 +188,7 @@ export const weeklyReportRouter = router({
 
       // Only return the requested number of weeks
       const cutoffWeeks = parsed.slice(-input.weeks);
-      const current = cutoffWeeks.length > 0 ? (cutoffWeeks[cutoffWeeks.length - 1] ?? null) : null;
+      const current = cutoffWeeks[cutoffWeeks.length - 1] ?? null;
       const history = cutoffWeeks.slice(0, -1);
 
       return { current, history };

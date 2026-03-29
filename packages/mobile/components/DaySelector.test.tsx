@@ -1,19 +1,14 @@
 // @vitest-environment jsdom
-import React from "react";
+
 import { fireEvent, render, screen } from "@testing-library/react";
+import React from "react";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("react-native", () => ({
-  View: ({ children, ...props }: Record<string, unknown>) =>
-    React.createElement("div", {}, children as React.ReactNode),
-  Text: ({ children }: Record<string, unknown>) =>
-    React.createElement("span", {}, children as React.ReactNode),
-  TouchableOpacity: ({ children, onPress }: Record<string, unknown>) =>
-    React.createElement(
-      "button",
-      { type: "button", onClick: onPress },
-      children as React.ReactNode,
-    ),
+  View: ({ children }: { children?: React.ReactNode }) => React.createElement("div", {}, children),
+  Text: ({ children }: { children?: React.ReactNode }) => React.createElement("span", {}, children),
+  TouchableOpacity: ({ children, onPress }: { children?: React.ReactNode; onPress?: () => void }) =>
+    React.createElement("button", { type: "button", onClick: onPress }, children),
   StyleSheet: {
     create: <T extends Record<string, unknown>>(styles: T): T => styles,
   },

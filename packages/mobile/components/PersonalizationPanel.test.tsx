@@ -1,7 +1,7 @@
-import { render, screen, fireEvent } from "@testing-library/react";
-import { describe, expect, it, vi, beforeEach } from "vitest";
-import { PersonalizationPanel } from "./PersonalizationPanel";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { trpc } from "../lib/trpc";
+import { PersonalizationPanel } from "./PersonalizationPanel";
 
 // Mock TRPC
 vi.mock("../lib/trpc", () => ({
@@ -58,28 +58,40 @@ describe("PersonalizationPanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Default mock implementation for mutations to avoid undefined errors
-    (trpc.personalization.refit.useMutation as any).mockReturnValue({ mutate: vi.fn(), isPending: false });
-    (trpc.personalization.reset.useMutation as any).mockReturnValue({ mutate: vi.fn(), isPending: false });
+    vi.mocked(trpc.personalization.refit.useMutation).mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    });
+    vi.mocked(trpc.personalization.reset.useMutation).mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    });
   });
 
   it("renders loading state", () => {
-    (trpc.personalization.status.useQuery as any).mockReturnValue({ isLoading: true });
+    vi.mocked(trpc.personalization.status.useQuery).mockReturnValue({ isLoading: true });
     render(<PersonalizationPanel />);
     // Our mock renders ActivityIndicator as an <activityindicator> tag with progressbar role
     expect(screen.getByRole("progressbar", { hidden: true })).toBeTruthy();
   });
 
   it("renders personalized status", () => {
-    (trpc.personalization.status.useQuery as any).mockReturnValue({ data: mockData, isLoading: false });
+    vi.mocked(trpc.personalization.status.useQuery).mockReturnValue({
+      data: mockData,
+      isLoading: false,
+    });
     render(<PersonalizationPanel />);
     expect(screen.getByText("Personalized")).toBeTruthy();
     expect(screen.getByText(/Updated/)).toBeTruthy();
   });
 
   it("renders parameter cards with learned data", () => {
-    (trpc.personalization.status.useQuery as any).mockReturnValue({ data: mockData, isLoading: false });
+    vi.mocked(trpc.personalization.status.useQuery).mockReturnValue({
+      data: mockData,
+      isLoading: false,
+    });
     render(<PersonalizationPanel />);
-    
+
     expect(screen.getByText("Training Load Windows")).toBeTruthy();
     // Use getAllByText because it appears both in Value and in Default value footer
     expect(screen.getAllByText(/Fitness: 42d, Fatigue: 7d/).length).toBeGreaterThanOrEqual(1);
@@ -88,9 +100,12 @@ describe("PersonalizationPanel", () => {
 
   it("shows refit button and handles click", () => {
     const mutate = vi.fn();
-    (trpc.personalization.status.useQuery as any).mockReturnValue({ data: mockData, isLoading: false });
-    (trpc.personalization.refit.useMutation as any).mockReturnValue({ mutate, isPending: false });
-    
+    vi.mocked(trpc.personalization.status.useQuery).mockReturnValue({
+      data: mockData,
+      isLoading: false,
+    });
+    vi.mocked(trpc.personalization.refit.useMutation).mockReturnValue({ mutate, isPending: false });
+
     render(<PersonalizationPanel />);
     const refitButton = screen.getByText("Refit Now");
     // In our test-setup TouchableOpacity/Pressable are rendered as <button>
@@ -99,21 +114,21 @@ describe("PersonalizationPanel", () => {
   });
 
   it("shows reset button when personalized", () => {
-    (trpc.personalization.status.useQuery as any).mockReturnValue({ 
+    vi.mocked(trpc.personalization.status.useQuery).mockReturnValue({
       data: { ...mockData, isPersonalized: true },
-      isLoading: false
+      isLoading: false,
     });
-    
+
     render(<PersonalizationPanel />);
     expect(screen.getByText("Reset to Defaults")).toBeTruthy();
   });
 
   it("hides reset button when not personalized", () => {
-    (trpc.personalization.status.useQuery as any).mockReturnValue({ 
+    vi.mocked(trpc.personalization.status.useQuery).mockReturnValue({
       data: { ...mockData, isPersonalized: false },
-      isLoading: false
+      isLoading: false,
     });
-    
+
     render(<PersonalizationPanel />);
     expect(screen.queryByText("Reset to Defaults")).toBeNull();
   });

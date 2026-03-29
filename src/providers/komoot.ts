@@ -149,6 +149,10 @@ export class KomootProvider implements SyncProvider {
     return null;
   }
 
+  activityUrl(externalId: string): string {
+    return `https://www.komoot.com/tour/${externalId}`;
+  }
+
   authSetup(): ProviderAuthSetup {
     const config = komootOAuthConfig();
     if (!config) throw new Error("KOMOOT_CLIENT_ID and CLIENT_SECRET required");

@@ -68,11 +68,14 @@ export const sleepNeedRouter = router({
         yesterday_load: z.coerce.number(),
       });
 
-      // Fetch 90 days of sleep + next-day HRV + yesterday's training load in one query
+      // Fetch 90 days of sleep + next-day HRV + yesterday's training load in one query.
+      // When v_sleep has multiple non-nap sessions per date (e.g. WHOOP + Apple Health
+      // that don't overlap >80%), pick the longest per date to avoid arbitrary Map
+      // overwrites and inconsistent duration reporting across endpoints.
       const rows = await executeWithSchema(
         ctx.db,
         sleepNeedRowSchema,
-        sql`WITH sleep_nights AS (
+        sql`WITH raw_sleep AS (
               SELECT
                 (started_at AT TIME ZONE ${ctx.timezone})::date AS date,
                 COALESCE(duration_minutes, EXTRACT(EPOCH FROM (ended_at - started_at)) / 60)::int AS duration_minutes
@@ -80,7 +83,11 @@ export const sleepNeedRouter = router({
               WHERE user_id = ${ctx.userId}
                 AND is_nap = false
                 AND started_at > ${timestampWindowStart(input.endDate, 90)}
-              ORDER BY started_at ASC
+            ),
+            sleep_nights AS (
+              SELECT DISTINCT ON (date) date, duration_minutes
+              FROM raw_sleep
+              ORDER BY date, duration_minutes DESC NULLS LAST
             ),
             daily_hrv AS (
               SELECT
@@ -159,12 +166,13 @@ export const sleepNeedRouter = router({
       const totalNeedMinutes = baselineMinutes + strainDebtMinutes + debtRecoveryMinutes;
 
       // Build calendar of last 7 dates (endDate-6 through endDate)
+      // Use UTC noon to avoid any timezone-related date shifts with toISOString()
       const nightsByDate = new Map(nights.map((n) => [n.date, n]));
       const calendarDates: string[] = [];
-      const endDate = new Date(`${input.endDate}T00:00:00`);
+      const anchorDate = new Date(`${input.endDate}T12:00:00Z`);
       for (let i = 6; i >= 0; i--) {
-        const calendarDay = new Date(endDate);
-        calendarDay.setDate(calendarDay.getDate() - i);
+        const calendarDay = new Date(anchorDate);
+        calendarDay.setUTCDate(calendarDay.getUTCDate() - i);
         calendarDates.push(calendarDay.toISOString().slice(0, 10));
       }
 
@@ -189,9 +197,9 @@ export const sleepNeedRouter = router({
       });
 
       // canRecommend: yesterday's sleep must be present for tonight's recommendation
-      const yesterday = new Date(endDate);
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = yesterday.toISOString().slice(0, 10);
+      const yesterdayDate = new Date(`${input.endDate}T12:00:00Z`);
+      yesterdayDate.setUTCDate(yesterdayDate.getUTCDate() - 1);
+      const yesterdayStr = yesterdayDate.toISOString().slice(0, 10);
       const canRecommend = nightsByDate.has(yesterdayStr);
 
       return {
@@ -223,9 +231,9 @@ export const sleepNeedRouter = router({
         sql`
           SELECT duration_minutes, efficiency_pct,
             (COALESCE(ended_at, started_at + interval '8 hours') AT TIME ZONE ${tz})::date::text AS sleep_date
-          FROM fitness.sleep_session
+          FROM fitness.v_sleep
           WHERE user_id = ${ctx.userId}
-            AND sleep_type = 'sleep'
+            AND is_nap = false
           ORDER BY started_at DESC
           LIMIT 1
         `,
@@ -245,9 +253,9 @@ export const sleepNeedRouter = router({
         z.object({ avg_duration: z.coerce.number().nullable() }),
         sql`
           SELECT AVG(duration_minutes) AS avg_duration
-          FROM fitness.sleep_session
+          FROM fitness.v_sleep
           WHERE user_id = ${ctx.userId}
-            AND sleep_type = 'sleep'
+            AND is_nap = false
             AND started_at > ${timestampWindowStart(input.endDate, 90)}
             AND duration_minutes IS NOT NULL
         `,

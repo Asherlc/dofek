@@ -14,12 +14,7 @@ interface RecoveryRingProps {
   label?: string;
 }
 
-export function RecoveryRing({
-  score,
-  size = 200,
-  strokeWidth = 14,
-  label,
-}: RecoveryRingProps) {
+export function RecoveryRing({ score, size = 200, strokeWidth = 14, label }: RecoveryRingProps) {
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const progress = Math.min(Math.max(score / 100, 0), 1);

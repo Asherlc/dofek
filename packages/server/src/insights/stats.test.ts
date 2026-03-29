@@ -218,7 +218,7 @@ d("cohensD()", () => {
 
   it("computes known medium effect size", () => {
     const effectSize = cohensD([0, 2], [1, 3]);
-    expect(effectSize).toBeCloseTo(-0.707, 2);
+    expect(effectSize).toBeCloseTo(-Math.SQRT1_2, 2);
   });
 
   it("works with minimal valid groups of size 2", () => {
