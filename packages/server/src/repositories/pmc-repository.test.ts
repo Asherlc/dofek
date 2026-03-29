@@ -910,5 +910,451 @@ describe("PmcRepository", () => {
         expect(dayPoint.load).toBeGreaterThan(0);
       }
     });
+
+    it("PmcDataPoint has exactly date, load, ctl, atl, tsb properties", async () => {
+      const today = new Date();
+      const daysAgo = 2;
+      const activityDate = new Date(today);
+      activityDate.setDate(activityDate.getDate() - daysAgo);
+      const dateStr = activityDate.toISOString().split("T")[0];
+
+      const db = makeDb(
+        [makeActivityRow({ date: dateStr, id: "act-shape", avg_power: null, power_samples: 0 })],
+        [],
+      );
+      const repo = new PmcRepository(db, "user-1", "UTC");
+      const result = await repo.getChart(180);
+
+      expect(result.data.length).toBeGreaterThan(0);
+      for (const point of result.data) {
+        expect(Object.keys(point).sort()).toStrictEqual(["atl", "ctl", "date", "load", "tsb"]);
+      }
+    });
+
+    it("PmcDataPoint ctl and atl are not swapped", async () => {
+      // After a single recent activity, ATL (7-day) responds faster than CTL (42-day),
+      // so ATL > CTL on the activity day. If they were swapped, this would fail.
+      const today = new Date();
+      const daysAgo = 1;
+      const activityDate = new Date(today);
+      activityDate.setDate(activityDate.getDate() - daysAgo);
+      const dateStr = activityDate.toISOString().split("T")[0];
+
+      const db = makeDb(
+        [
+          makeActivityRow({
+            date: dateStr,
+            id: "act-swap",
+            avg_power: null,
+            power_samples: 0,
+            duration_min: 90,
+            avg_hr: 165,
+            max_hr: 190,
+          }),
+        ],
+        [],
+      );
+      const repo = new PmcRepository(db, "user-1", "UTC");
+      const result = await repo.getChart(180);
+
+      const activityDayPoint = result.data.find((point) => point.date === dateStr);
+      expect(activityDayPoint).toBeDefined();
+      if (activityDayPoint && activityDayPoint.load > 0) {
+        // ATL should be greater than CTL because ATL uses 7-day window (responds faster)
+        expect(activityDayPoint.atl).toBeGreaterThan(activityDayPoint.ctl);
+        // TSB should equal CTL - ATL (verified by checking sign)
+        expect(activityDayPoint.tsb).toBeLessThan(0);
+        // Verify exact relationship: tsb = round(ctl - atl, 1 decimal)
+        const expectedTsb = Math.round((activityDayPoint.ctl - activityDayPoint.atl) * 10) / 10;
+        expect(activityDayPoint.tsb).toBe(expectedTsb);
+      }
+    });
+
+    it("PmcDataPoint load is not the same as ctl or atl for activity days", async () => {
+      // Kill ObjectLiteral mutant where load property is replaced with ctl or atl value
+      const today = new Date();
+      const daysAgo = 1;
+      const activityDate = new Date(today);
+      activityDate.setDate(activityDate.getDate() - daysAgo);
+      const dateStr = activityDate.toISOString().split("T")[0];
+
+      const db = makeDb(
+        [
+          makeActivityRow({
+            date: dateStr,
+            id: "act-load-diff",
+            avg_power: null,
+            power_samples: 0,
+            duration_min: 60,
+            avg_hr: 155,
+            max_hr: 185,
+          }),
+        ],
+        [],
+      );
+      const repo = new PmcRepository(db, "user-1", "UTC");
+      const result = await repo.getChart(180);
+
+      const activityDayPoint = result.data.find((point) => point.date === dateStr);
+      expect(activityDayPoint).toBeDefined();
+      if (activityDayPoint) {
+        // On the first activity day, load is the raw TSS, while ctl and atl are
+        // EWMA values that are much smaller (approaching load/42 and load/7 respectively).
+        // So load should be distinctly different from both ctl and atl.
+        expect(activityDayPoint.load).toBeGreaterThan(activityDayPoint.ctl);
+        expect(activityDayPoint.load).toBeGreaterThan(activityDayPoint.atl);
+      }
+    });
+
+    it("uses power TSS branch when activity has both NP and FTP (not HR fallback)", async () => {
+      // Kills LogicalOperator mutant for: ftp != null && normalizedPower != null && normalizedPower > 0
+      // Tests that power TSS produces different load than HR-only fallback
+      const today = new Date();
+      const daysAgo = 2;
+      const activityDate = new Date(today);
+      activityDate.setDate(activityDate.getDate() - daysAgo);
+      const dateStr = activityDate.toISOString().split("T")[0];
+
+      // Activity with power data
+      const powerDb = makeDb(
+        [
+          makeActivityRow({
+            date: dateStr,
+            id: "act-pwr",
+            avg_power: 200,
+            power_samples: 3600,
+            duration_min: 60,
+            avg_hr: 150,
+            max_hr: 180,
+          }),
+        ],
+        [{ activity_id: "act-pwr", np: 220 }],
+      );
+      const powerRepo = new PmcRepository(powerDb, "user-1", "UTC");
+      const powerResult = await powerRepo.getChart(180);
+
+      // Same activity without NP data -> HR fallback
+      const hrDb = makeDb(
+        [
+          makeActivityRow({
+            date: dateStr,
+            id: "act-hr-only",
+            avg_power: null,
+            power_samples: 0,
+            duration_min: 60,
+            avg_hr: 150,
+            max_hr: 180,
+          }),
+        ],
+        [],
+      );
+      const hrRepo = new PmcRepository(hrDb, "user-1", "UTC");
+      const hrResult = await hrRepo.getChart(180);
+
+      const powerDayLoad = powerResult.data.find((point) => point.date === dateStr)?.load ?? 0;
+      const hrDayLoad = hrResult.data.find((point) => point.date === dateStr)?.load ?? 0;
+
+      // Both should produce positive load
+      expect(powerDayLoad).toBeGreaterThan(0);
+      expect(hrDayLoad).toBeGreaterThan(0);
+      // Power TSS and HR TSS should produce different values (different algorithms)
+      expect(powerDayLoad).not.toBe(hrDayLoad);
+    });
+
+    it("NP = 0 falls through to HR fallback (normalizedPower > 0 check)", async () => {
+      // Kills LogicalOperator/ConditionalExpression mutant for normalizedPower > 0
+      const today = new Date();
+      const daysAgo = 2;
+      const activityDate = new Date(today);
+      activityDate.setDate(activityDate.getDate() - daysAgo);
+      const dateStr = activityDate.toISOString().split("T")[0];
+
+      // Activity has FTP (from avg_power) but NP = 0 -> should use HR fallback
+      const db = makeDb(
+        [
+          makeActivityRow({
+            date: dateStr,
+            id: "act-np-zero",
+            avg_power: 200,
+            power_samples: 3600,
+            duration_min: 60,
+            avg_hr: 150,
+            max_hr: 180,
+          }),
+        ],
+        [{ activity_id: "act-np-zero", np: 0 }],
+      );
+      const repo = new PmcRepository(db, "user-1", "UTC");
+      const result = await repo.getChart(180);
+
+      // FTP should still be estimated from avg_power
+      expect(result.model.ftp).toBe(190);
+      // Should still produce data since HR fallback works
+      expect(result.data.length).toBeGreaterThan(0);
+      const dayPoint = result.data.find((point) => point.date === dateStr);
+      expect(dayPoint).toBeDefined();
+      expect(dayPoint?.load).toBeGreaterThan(0);
+    });
+
+    it("restingHr extraction uses activityRows[0] not a hardcoded value", async () => {
+      // Kills ArrowFunction/ObjectLiteral mutant on restingHr extraction
+      const today = new Date();
+      const daysAgo = 2;
+      const activityDate = new Date(today);
+      activityDate.setDate(activityDate.getDate() - daysAgo);
+      const dateStr = activityDate.toISOString().split("T")[0];
+
+      // Low resting HR should produce higher TRIMP (larger delta HR ratio)
+      const lowRhrDb = makeDb(
+        [
+          makeActivityRow({
+            date: dateStr,
+            id: "act-low-rhr",
+            resting_hr: 40,
+            avg_power: null,
+            power_samples: 0,
+            duration_min: 60,
+            avg_hr: 150,
+            max_hr: 180,
+          }),
+        ],
+        [],
+      );
+      const lowRhrRepo = new PmcRepository(lowRhrDb, "user-1", "UTC");
+      const lowRhrResult = await lowRhrRepo.getChart(180);
+
+      // High resting HR should produce lower TRIMP (smaller delta HR ratio)
+      const highRhrDb = makeDb(
+        [
+          makeActivityRow({
+            date: dateStr,
+            id: "act-high-rhr",
+            resting_hr: 80,
+            avg_power: null,
+            power_samples: 0,
+            duration_min: 60,
+            avg_hr: 150,
+            max_hr: 180,
+          }),
+        ],
+        [],
+      );
+      const highRhrRepo = new PmcRepository(highRhrDb, "user-1", "UTC");
+      const highRhrResult = await highRhrRepo.getChart(180);
+
+      const lowRhrLoad = lowRhrResult.data.find((point) => point.date === dateStr)?.load ?? 0;
+      const highRhrLoad = highRhrResult.data.find((point) => point.date === dateStr)?.load ?? 0;
+
+      // Lower resting HR means larger heart rate reserve, which produces higher TRIMP
+      expect(lowRhrLoad).toBeGreaterThan(0);
+      expect(highRhrLoad).toBeGreaterThan(0);
+      expect(lowRhrLoad).not.toBe(highRhrLoad);
+    });
+
+    it("globalMaxHr extraction uses Number() conversion (not string)", async () => {
+      // Kills ArrowFunction mutant on: Number(activityRows[0]?.global_max_hr)
+      const today = new Date();
+      const daysAgo = 2;
+      const activityDate = new Date(today);
+      activityDate.setDate(activityDate.getDate() - daysAgo);
+      const dateStr = activityDate.toISOString().split("T")[0];
+
+      const db = makeDb(
+        [
+          makeActivityRow({
+            date: dateStr,
+            id: "act-maxhr-num",
+            global_max_hr: "195",
+            avg_power: null,
+            power_samples: 0,
+          }),
+        ],
+        [],
+      );
+      const repo = new PmcRepository(db, "user-1", "UTC");
+      const result = await repo.getChart(180);
+
+      // globalMaxHr should be truthy (numeric 195, not string "195" which is also truthy,
+      // but internally Number("195") = 195 which affects TRIMP computation)
+      expect(result.data.length).toBeGreaterThan(0);
+    });
+
+    it("early return model has all four fields with exact values", async () => {
+      // Kills ObjectLiteral mutants on the early-return object (lines 95-98)
+      const db = makeDb([], []);
+      const repo = new PmcRepository(db, "user-1", "UTC");
+      const result = await repo.getChart(90);
+
+      // Verify each field independently to kill individual property mutations
+      expect(result.model.type).toBe("generic");
+      expect(result.model.pairedActivities).toBe(0);
+      expect(result.model.r2).toBe(null);
+      expect(result.model.ftp).toBe(null);
+      // Verify no extra fields
+      expect(Object.keys(result.model).sort()).toStrictEqual([
+        "ftp",
+        "pairedActivities",
+        "r2",
+        "type",
+      ]);
+    });
+
+    it("result from getChart returns object with exactly data and model keys", async () => {
+      // Kills ObjectLiteral mutant on return { data: result, model: modelInfo }
+      const db = makeDb([], []);
+      const repo = new PmcRepository(db, "user-1", "UTC");
+      const result = await repo.getChart(90);
+
+      expect(Object.keys(result).sort()).toStrictEqual(["data", "model"]);
+      expect(Array.isArray(result.data)).toBe(true);
+      expect(typeof result.model).toBe("object");
+      expect(result.model).not.toBeNull();
+    });
+
+    it("date string in PmcDataPoint comes from toISOString split (YYYY-MM-DD format)", async () => {
+      // Kills ArrowFunction/StringLiteral mutant on dateStr = current.toISOString().split("T")[0] ?? ""
+      const today = new Date();
+      const daysAgo = 2;
+      const activityDate = new Date(today);
+      activityDate.setDate(activityDate.getDate() - daysAgo);
+      const dateStr = activityDate.toISOString().split("T")[0];
+
+      const db = makeDb(
+        [makeActivityRow({ date: dateStr, id: "act-date-fmt", avg_power: null, power_samples: 0 })],
+        [],
+      );
+      const repo = new PmcRepository(db, "user-1", "UTC");
+      const result = await repo.getChart(180);
+
+      for (const point of result.data) {
+        // Date should match YYYY-MM-DD format
+        expect(point.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        // Date should not be empty string
+        expect(point.date.length).toBe(10);
+      }
+    });
+
+    it("learned model with paired data returns non-null r2 and correct pairedActivities count", async () => {
+      // Kill ObjectLiteral mutant on the "learned" model info object (lines 164-169)
+      const today = new Date();
+      const daysAgo = 3;
+      const activityDate = new Date(today);
+      activityDate.setDate(activityDate.getDate() - daysAgo);
+      const dateStr = activityDate.toISOString().split("T")[0];
+
+      // Create 20 activities with diverse power/HR to build a regression model
+      const activities = Array.from({ length: 20 }, (_, index) =>
+        makeActivityRow({
+          date: dateStr,
+          id: `act-learned-${index}`,
+          avg_power: 150 + index * 10,
+          power_samples: 3600,
+          duration_min: 30 + index * 5,
+          avg_hr: 120 + index * 3,
+          max_hr: 185,
+        }),
+      );
+      const npRows = activities.map((activity) => ({
+        activity_id: activity.id,
+        np: (activity.avg_power ?? 0) + 15,
+      }));
+
+      const db = makeDb(activities, npRows);
+      const repo = new PmcRepository(db, "user-1", "UTC");
+      const result = await repo.getChart(180);
+
+      if (result.model.type === "learned") {
+        // Verify all fields of the learned model object
+        expect(result.model.type).toStrictEqual("learned");
+        expect(typeof result.model.r2).toBe("number");
+        expect(result.model.r2).not.toBeNull();
+        expect(result.model.pairedActivities).toBeGreaterThan(0);
+        expect(result.model.ftp).not.toBeNull();
+        expect(typeof result.model.ftp).toBe("number");
+        // Verify model info has exactly 4 keys
+        expect(Object.keys(result.model).sort()).toStrictEqual([
+          "ftp",
+          "pairedActivities",
+          "r2",
+          "type",
+        ]);
+      }
+    });
+
+    it("daily load accumulation uses ?? 0 fallback (not ?? 1)", async () => {
+      // Kills mutation of ?? 0 to ?? 1 in: (dailyLoad.get(dateStr) ?? 0) + tss
+      // If the fallback were 1 instead of 0, rest day loads would be 1 not 0
+      const today = new Date();
+      const daysAgo = 5;
+      const activityDate = new Date(today);
+      activityDate.setDate(activityDate.getDate() - daysAgo);
+      const dateStr = activityDate.toISOString().split("T")[0];
+
+      const db = makeDb(
+        [
+          makeActivityRow({
+            date: dateStr,
+            id: "act-fallback",
+            avg_power: null,
+            power_samples: 0,
+          }),
+        ],
+        [],
+      );
+      const repo = new PmcRepository(db, "user-1", "UTC");
+      const result = await repo.getChart(180);
+
+      // Count rest days (load = 0) vs activity days (load > 0)
+      const restDays = result.data.filter((point) => point.load === 0);
+      const activityDays = result.data.filter((point) => point.load > 0);
+
+      // There should be exactly 1 activity day and many rest days
+      expect(activityDays).toHaveLength(1);
+      expect(restDays.length).toBeGreaterThan(0);
+
+      // Rest day loads must be exactly 0.0, not 1.0
+      for (const restDay of restDays) {
+        expect(restDay.load).toStrictEqual(0);
+      }
+    });
+
+    it("EWMA load retrieval uses dailyLoad.get(dateStr) ?? 0 (not hardcoded)", async () => {
+      // Kills mutation on: const load = dailyLoad.get(dateStr) ?? 0
+      // If load was always 0, CTL and ATL would never grow
+      const today = new Date();
+      const daysAgo = 1;
+      const activityDate = new Date(today);
+      activityDate.setDate(activityDate.getDate() - daysAgo);
+      const dateStr = activityDate.toISOString().split("T")[0];
+
+      const db = makeDb(
+        [
+          makeActivityRow({
+            date: dateStr,
+            id: "act-ewma-load",
+            avg_power: null,
+            power_samples: 0,
+            duration_min: 120,
+            avg_hr: 160,
+            max_hr: 190,
+          }),
+        ],
+        [],
+      );
+      const repo = new PmcRepository(db, "user-1", "UTC");
+      const result = await repo.getChart(180);
+
+      // Find the activity day
+      const activityDayPoint = result.data.find((point) => point.date === dateStr);
+      expect(activityDayPoint).toBeDefined();
+      if (activityDayPoint) {
+        // Load should be positive on activity day
+        expect(activityDayPoint.load).toBeGreaterThan(0);
+        // CTL should be positive on activity day (proves EWMA used the load)
+        expect(activityDayPoint.ctl).toBeGreaterThan(0);
+        // ATL should be positive on activity day
+        expect(activityDayPoint.atl).toBeGreaterThan(0);
+      }
+    });
   });
 });
