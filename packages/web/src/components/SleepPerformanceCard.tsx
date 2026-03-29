@@ -2,10 +2,10 @@ import type { SleepPerformanceInfo } from "dofek-server/types";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 const tierColors: Record<string, string> = {
-  Peak: "#22c55e",
-  Perform: "#3b82f6",
-  "Get By": "#eab308",
-  Low: "#ef4444",
+  Excellent: "#22c55e",
+  Good: "#3b82f6",
+  Fair: "#eab308",
+  Poor: "#ef4444",
 };
 
 interface SleepPerformanceCardProps {

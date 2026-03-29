@@ -38,7 +38,7 @@ const mockWorkloadRatio = {
 
 const mockSleepPerformance = {
   score: 82,
-  tier: "Perform" as const,
+  tier: "Good" as const,
   actualMinutes: 420,
   neededMinutes: 480,
   efficiency: 88,
@@ -190,7 +190,7 @@ describe("DailyOverview", () => {
         }}
         sleepPerformance={{
           score: 82,
-          tier: "Perform" as const,
+          tier: "Good" as const,
           actualMinutes: 420,
           neededMinutes: 480,
           efficiency: 88,

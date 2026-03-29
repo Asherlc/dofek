@@ -33,7 +33,7 @@ export default defineConfig({
       "packages/trainingpeaks-connect/src/**/*.test.ts",
       "packages/mobile/**/*.test.{ts,tsx}",
     ],
-    exclude: ["**/*.integration.test.ts", "**/node_modules/**"],
+    exclude: ["**/node_modules/**"],
     setupFiles: ["packages/mobile/test-setup.ts"],
     environmentMatchGlobs: [["packages/mobile/**", "jsdom"]],
   },

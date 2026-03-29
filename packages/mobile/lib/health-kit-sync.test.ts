@@ -24,9 +24,7 @@ describe("syncHealthKitToServer", () => {
 
   function createMockHealthKit() {
     return {
-      queryDailyStatistics: vi.fn().mockResolvedValue([
-        { date: "2026-03-21", value: 5000 },
-      ]),
+      queryDailyStatistics: vi.fn().mockResolvedValue([{ date: "2026-03-21", value: 5000 }]),
       queryQuantitySamples: vi.fn().mockResolvedValue([
         {
           type: "HKQuantityTypeIdentifierHeartRate",
@@ -75,9 +73,7 @@ describe("syncHealthKitToServer", () => {
     });
 
     expect(result.inserted).toBeGreaterThan(0);
-    expect(healthKit.queryDailyStatistics).toHaveBeenCalledTimes(
-      ADDITIVE_QUANTITY_TYPES.length,
-    );
+    expect(healthKit.queryDailyStatistics).toHaveBeenCalledTimes(ADDITIVE_QUANTITY_TYPES.length);
     expect(healthKit.queryQuantitySamples).toHaveBeenCalledTimes(
       NON_ADDITIVE_QUANTITY_TYPES.length,
     );
@@ -98,12 +94,8 @@ describe("syncHealthKitToServer", () => {
     });
 
     expect(onProgress).toHaveBeenCalled();
-    const progressMessages = onProgress.mock.calls.map(
-      (call: string[]) => call[0],
-    );
-    expect(progressMessages.some((m: string) => m.includes("Querying"))).toBe(
-      true,
-    );
+    const progressMessages = onProgress.mock.calls.map((call: string[]) => call[0]);
+    expect(progressMessages.some((m: string) => m.includes("Querying"))).toBe(true);
   });
 
   it("uses full history when syncRangeDays is null", async () => {
@@ -200,18 +192,12 @@ describe("syncHealthKitToServer", () => {
 
 describe("quantity type constants", () => {
   it("additive types include steps and active energy", () => {
-    expect(ADDITIVE_QUANTITY_TYPES).toContain(
-      "HKQuantityTypeIdentifierStepCount",
-    );
-    expect(ADDITIVE_QUANTITY_TYPES).toContain(
-      "HKQuantityTypeIdentifierActiveEnergyBurned",
-    );
+    expect(ADDITIVE_QUANTITY_TYPES).toContain("HKQuantityTypeIdentifierStepCount");
+    expect(ADDITIVE_QUANTITY_TYPES).toContain("HKQuantityTypeIdentifierActiveEnergyBurned");
   });
 
   it("non-additive types include heart rate and HRV", () => {
-    expect(NON_ADDITIVE_QUANTITY_TYPES).toContain(
-      "HKQuantityTypeIdentifierHeartRate",
-    );
+    expect(NON_ADDITIVE_QUANTITY_TYPES).toContain("HKQuantityTypeIdentifierHeartRate");
     expect(NON_ADDITIVE_QUANTITY_TYPES).toContain(
       "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
     );

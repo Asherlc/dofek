@@ -1,5 +1,6 @@
 import { logger } from "../logger.ts";
 import { runMigrations } from "./migrate.ts";
+import { syncMaterializedViews } from "./sync-views.ts";
 
 export async function main(): Promise<void> {
   const databaseUrl = process.env.DATABASE_URL;
@@ -9,6 +10,10 @@ export async function main(): Promise<void> {
 
   const count = await runMigrations(databaseUrl);
   logger.info(`[migrate] Done — ${count} migration(s) applied`);
+
+  // Sync materialized view definitions (only recreates views whose SQL changed)
+  const { synced, skipped } = await syncMaterializedViews(databaseUrl);
+  logger.info(`[views] Done — ${synced} recreated, ${skipped} unchanged`);
 }
 
 // Only run when executed directly (not imported for testing)

@@ -75,6 +75,18 @@ describe("logger", () => {
     expect(mockJob.log).toHaveBeenCalledWith(expect.stringContaining("warning here"));
   });
 
+  it("does not throw when job.log() rejects", async () => {
+    const mockJob = { log: vi.fn().mockRejectedValue(new Error("Redis gone")) };
+
+    await jobContext.run(mockJob, async () => {
+      // Should not throw even when job.log rejects
+      expect(() => logger.info("will fail to log")).not.toThrow();
+      await new Promise((r) => setTimeout(r, 50));
+    });
+
+    expect(mockJob.log).toHaveBeenCalled();
+  });
+
   it("does not call job.log() when outside jobContext", () => {
     const mockJob = { log: vi.fn() };
     // Logging outside jobContext should not throw and not call any job

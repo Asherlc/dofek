@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import type { WhoopCycle } from "whoop-whoop";
 import {
+  buildV2ActivityTypeLookup,
   type InlineSleepRecord,
   parseHeartRateValues,
   parseInlineSleep,
@@ -8,6 +10,7 @@ import {
   parseSleep,
   parseWeightliftingWorkout,
   parseWorkout,
+  resolveActivityType,
   WhoopClient,
   type WhoopRecoveryRecord,
   type WhoopSleepRecord,
@@ -531,6 +534,103 @@ describe("parseWorkout — edge cases", () => {
     expect(parseWorkout(makeRecord(18)).activityType).toBe("rowing");
     expect(parseWorkout(makeRecord(65)).activityType).toBe("elliptical");
     expect(parseWorkout(makeRecord(29)).activityType).toBe("skiing");
+  });
+
+  it("falls back to v2_activity type name when sport_id maps to other", () => {
+    const record: WhoopWorkoutRecord = {
+      activity_id: "uuid-walk-fallback",
+      during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
+      timezone_offset: "-05:00",
+      sport_id: 9999, // unknown sport_id → "other"
+      score: 3,
+      average_heart_rate: 100,
+      max_heart_rate: 120,
+      kilojoules: 500,
+    };
+
+    // Without v2 type name → "other"
+    expect(parseWorkout(record).activityType).toBe("other");
+
+    // With v2 type name "walk" → "walking"
+    expect(parseWorkout(record, "walk").activityType).toBe("walking");
+  });
+
+  it("prefers sport_id mapping over v2_activity type when sport_id is known", () => {
+    const record: WhoopWorkoutRecord = {
+      activity_id: "uuid-sport-id-wins",
+      during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
+      timezone_offset: "-05:00",
+      sport_id: 63, // walking
+      score: 3,
+      average_heart_rate: 100,
+      max_heart_rate: 120,
+      kilojoules: 500,
+    };
+
+    // sport_id 63 → "walking" even if v2 type says something else
+    expect(parseWorkout(record, "run").activityType).toBe("walking");
+  });
+});
+
+describe("resolveActivityType", () => {
+  it("returns sport_id mapping when it is not other", () => {
+    expect(resolveActivityType(63)).toBe("walking");
+    expect(resolveActivityType(0)).toBe("running");
+    expect(resolveActivityType(1)).toBe("cycling");
+  });
+
+  it("falls back to v2 type name when sport_id maps to other", () => {
+    expect(resolveActivityType(9999, "walk")).toBe("walking");
+    expect(resolveActivityType(9999, "dog-walk")).toBe("walking");
+    expect(resolveActivityType(9999, "spin")).toBe("indoor_cycling");
+    expect(resolveActivityType(9999, "functional-fitness")).toBe("functional_fitness");
+  });
+
+  it("returns other when both sport_id and v2 type are unknown", () => {
+    expect(resolveActivityType(9999)).toBe("other");
+    expect(resolveActivityType(9999, "unknown-activity")).toBe("other");
+  });
+
+  it("is case-insensitive for v2 type names", () => {
+    expect(resolveActivityType(9999, "Walk")).toBe("walking");
+    expect(resolveActivityType(9999, "WALK")).toBe("walking");
+    expect(resolveActivityType(9999, "Dog-Walk")).toBe("walking");
+  });
+});
+
+describe("buildV2ActivityTypeLookup", () => {
+  it("builds a map from activity ID to type name", () => {
+    const cycles: WhoopCycle[] = [
+      {
+        v2_activities: [
+          {
+            id: "activity-1",
+            type: "walk",
+            during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
+            score_state: "SCORED",
+            score_type: "CARDIO",
+          },
+          {
+            id: "activity-2",
+            type: "spin",
+            during: "['2026-03-01T12:00:00Z','2026-03-01T13:00:00Z')",
+            score_state: "SCORED",
+            score_type: "CARDIO",
+          },
+        ],
+      },
+    ];
+
+    const lookup = buildV2ActivityTypeLookup(cycles);
+    expect(lookup.get("activity-1")).toBe("walk");
+    expect(lookup.get("activity-2")).toBe("spin");
+    expect(lookup.size).toBe(2);
+  });
+
+  it("returns empty map for cycles without v2_activities", () => {
+    const cycles: WhoopCycle[] = [{}];
+    const lookup = buildV2ActivityTypeLookup(cycles);
+    expect(lookup.size).toBe(0);
   });
 });
 
