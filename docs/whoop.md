@@ -294,26 +294,39 @@ In the iOS capture, these mapped to ATT handles: `0x099b` (CMD_TO_STRAP), `0x099
 
 #### Frame format
 
-All BLE payloads use this frame structure:
+There are two frame formats depending on hardware generation:
 
+**Gen4 (Harvard) — 5-byte header with CRC8:**
 ```
-[0xAA] [version:u8] [payloadLen:u16 LE] [payload...] [crc32:u32 LE]
+[SOF: 0xAA] [version: u8] [payloadLen: u16 LE] [headerCRC8: u8]
+[payload: payloadLen bytes]
 ```
+- CRC8 uses the table in `C28184c.f111541c`
+- Class: `dm0/C15397c` (Gen4PacketFrame)
 
-- `0xAA` = start-of-frame marker
-- Version byte is `0x01` (at offset 1 — NOT part of the payload length)
-- Payload length is u16 LE at **byte offsets 2-3** (not 1-2)
-- Header is 4 bytes total: SOF(1) + version(1) + payloadLen(2)
-- CRC32 is over the entire frame excluding the CRC itself
-- CRC32 trailer can be omitted in commands — the strap accepts commands without strict CRC validation
-
-**Confirmed (March 2026) via live hex dump analysis:** Raw BLE notifications from a WHOOP 4.0 strap showed `AA 01 2C 00` → SOF=0xAA, version=0x01, payloadLen=0x002C=44. With 4-byte header + 44-byte payload + 4-byte CRC32 = 52 bytes, exactly matching the notification size. Similarly `AA 01 44 00` → payloadLen=68, total=76 bytes. Previous implementation incorrectly read payloadLen from bytes 1-2 (producing 11265 for a 52-byte frame), causing all frame parsing to fail.
-
-**Command frame format:** Commands written to CMD_TO_STRAP must also include the version byte:
+**Maverick/Puffin — 8-byte header with CRC16 + CRC32 payload (CONFIRMED):**
 ```
-[0xAA] [0x01] [payloadLen:u16 LE] [0x23] [commandByte]
+[SOF: 0xAA] [ver: 0x01] [payloadLen: u16 LE] [role1: 0x00] [role2: 0x01] [headerCRC16: u16 LE]
+[command: payloadLen - 4 bytes]
+[payloadCRC32: u32 LE]
 ```
-Previous implementation omitted the version byte (`AA 02 00 00 23 6A`), producing malformed frames that the strap silently ignored.
+- **Header CRC16**: CRC16-MODBUS of the first 6 header bytes, stored as u16 LE at bytes 6-7
+- **Payload CRC32**: Standard Java `CRC32` (`java.util.zip.CRC32` = IEEE 802.3) of the command bytes only (not including the CRC32 itself), stored as u32 LE at the end of the payload
+- `role1 = 0x00` = `AbstractC15395a.c` (role "c")
+- `role2 = 0x01` = `AbstractC15395a.b` (role "b")
+- Class: `dm0/C15399e` (MaverickPacketFrame)
+- **payloadLen includes the 4-byte CRC32** — so command bytes = payloadLen - 4
+
+**Verified (March 29, 2026):** Built frames match PacketLogger capture byte-for-byte:
+- Frame 7: `aa010c000001e74123f16a010100000058e961fc` — header CRC16 `e741` = CRC16-MODBUS(`aa010c000001`), payload CRC32 `58e961fc` = CRC32(`23f16a0101000000`)
+- Frame 13: `aa010c000001e74123f36a010100000071f8fe6b` — same header CRC (same header bytes), payload CRC `71f8fe6b` = CRC32(`23f36a0101000000`)
+
+**Command payload structure:**
+```
+[packetType: 0x23 or 0x25] [seqNum: u8] [commandByte: u8] [params...]
+```
+- 0x23 = COMMAND (Gen4/Maverick)
+- 0x25 = PUFFIN_COMMAND (Puffin-specific)
 
 #### Packet types
 
