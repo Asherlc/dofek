@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@sentry/node", () => ({
+  captureException: vi.fn(),
+  init: vi.fn(),
+}));
 vi.mock("@bull-board/api", () => ({
   createBullBoard: vi.fn(),
 }));
@@ -76,14 +80,18 @@ vi.mock("dofek/db", () => ({
   createDatabaseFromEnv: vi.fn(() => ({})),
 }));
 
+import * as Sentry from "@sentry/node";
 import { createDatabaseFromEnv } from "dofek/db";
+import express from "express";
 import { isAdmin } from "./auth/admin.ts";
 import { getSessionIdFromRequest } from "./auth/cookies.ts";
 import { validateSession } from "./auth/session.ts";
-import { createApp } from "./index.ts";
+import { createApp, runStartupTasks } from "./index.ts";
 import { httpRequestDuration, registry } from "./lib/metrics.ts";
+import { warmCache } from "./lib/warm-cache.ts";
 import { logger } from "./logger.ts";
 import { createAuthRouter } from "./routes/auth.ts";
+import { startSlackBot } from "./slack/bot.ts";
 
 function startApp(
   app: ReturnType<typeof createApp>,
@@ -286,5 +294,42 @@ describe("createApp HTTP routes", () => {
     it("calls createAuthRouter during app setup", () => {
       expect(vi.mocked(createAuthRouter)).toHaveBeenCalled();
     });
+  });
+});
+
+describe("runStartupTasks", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("reports warmCache errors to Sentry", async () => {
+    const error = new Error("cache boom");
+    vi.mocked(warmCache).mockRejectedValueOnce(error);
+    vi.mocked(startSlackBot).mockResolvedValueOnce(undefined);
+
+    const fakeDb = createDatabaseFromEnv();
+    const app = express();
+    runStartupTasks(fakeDb, app);
+
+    // Let the microtask queue flush so .catch() handlers run
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(vi.mocked(logger.error)).toHaveBeenCalledWith(expect.stringContaining("cache boom"));
+    expect(vi.mocked(Sentry.captureException)).toHaveBeenCalledWith(error);
+  });
+
+  it("reports startSlackBot errors to Sentry", async () => {
+    const error = new Error("slack boom");
+    vi.mocked(warmCache).mockResolvedValueOnce(undefined);
+    vi.mocked(startSlackBot).mockRejectedValueOnce(error);
+
+    const fakeDb = createDatabaseFromEnv();
+    const app = express();
+    runStartupTasks(fakeDb, app);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(vi.mocked(logger.error)).toHaveBeenCalledWith(expect.stringContaining("slack boom"));
+    expect(vi.mocked(Sentry.captureException)).toHaveBeenCalledWith(error);
   });
 });

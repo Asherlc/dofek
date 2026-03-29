@@ -151,6 +151,25 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
   );
 }
 
+/**
+ * Fire-and-forget startup tasks. Exported for testability.
+ * Errors are logged and reported to Sentry but don't crash the server.
+ */
+export function runStartupTasks(
+  db: ReturnType<typeof createDatabaseFromEnv>,
+  app: express.Express,
+) {
+  warmCache(db).catch((err) => {
+    logger.error(`[cache] Warm failed: ${err}`);
+    Sentry.captureException(err);
+  });
+
+  startSlackBot(db, app).catch((err) => {
+    logger.error(`[slack] Slack bot error: ${err}`);
+    Sentry.captureException(err);
+  });
+}
+
 async function main() {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
@@ -162,18 +181,7 @@ async function main() {
   app.listen(PORT, () => {
     logger.info(`[server] API running at http://localhost:${PORT}`);
     logger.info(`[server] tRPC at http://localhost:${PORT}/api/trpc`);
-
-    // Warm cache with common dashboard queries (fire-and-forget)
-    warmCache(db).catch((err) => {
-      logger.error(`[cache] Warm failed: ${err}`);
-      Sentry.captureException(err);
-    });
-
-    // Start Slack bot if configured (fire-and-forget)
-    startSlackBot(db, app).catch((err) => {
-      logger.error(`[slack] Slack bot error: ${err}`);
-      Sentry.captureException(err);
-    });
+    runStartupTasks(db, app);
   });
 }
 
