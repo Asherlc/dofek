@@ -2,12 +2,18 @@ import { describe, expect, it } from "vitest";
 import {
   cardioPlan,
   clamp,
+  computeComponentScores,
+  computeFocusMuscles,
+  computeReadinessScore,
   computeTrainingStreak,
+  computeZonePercentages,
   daysAgoFromDate,
   getReadinessLevel,
   normalizeMuscleName,
   pickCardioFocus,
   pickStrengthSplit,
+  shouldDoStrengthToday,
+  shouldPreferRest,
   uniqueStrings,
 } from "./training.ts";
 
@@ -500,5 +506,538 @@ describe("cardioPlan", () => {
     expect(plan.details[0]).toContain("steady");
     expect(plan.details[1]).toContain("hydrate");
     expect(plan.details[2]).toContain("cooldown");
+  });
+});
+
+describe("computeZonePercentages", () => {
+  it("sums all five zones for totalZoneSamples", () => {
+    const result = computeZonePercentages({
+      zone1: 10,
+      zone2: 20,
+      zone3: 30,
+      zone4: 25,
+      zone5: 15,
+    });
+    expect(result.totalZoneSamples).toBe(100);
+  });
+
+  it("computes high intensity as zone4 + zone5 (not zone3)", () => {
+    const result = computeZonePercentages({ zone1: 0, zone2: 0, zone3: 50, zone4: 30, zone5: 20 });
+    expect(result.highIntensityPct).toBeCloseTo(0.5, 5);
+    // If mutation changed to zone3+zone4 or zone4+zone5+zone3, would be wrong
+  });
+
+  it("computes low intensity as zone1 + zone2 (not zone3)", () => {
+    const result = computeZonePercentages({
+      zone1: 40,
+      zone2: 30,
+      zone3: 10,
+      zone4: 10,
+      zone5: 10,
+    });
+    expect(result.lowIntensityPct).toBeCloseTo(0.7, 5);
+  });
+
+  it("computes moderate intensity as zone3 only", () => {
+    const result = computeZonePercentages({
+      zone1: 20,
+      zone2: 30,
+      zone3: 25,
+      zone4: 15,
+      zone5: 10,
+    });
+    expect(result.moderateIntensityPct).toBeCloseTo(0.25, 5);
+  });
+
+  it("returns 0 percentages when totalZoneSamples is 0", () => {
+    const result = computeZonePercentages({ zone1: 0, zone2: 0, zone3: 0, zone4: 0, zone5: 0 });
+    expect(result.totalZoneSamples).toBe(0);
+    expect(result.highIntensityPct).toBe(0);
+    expect(result.lowIntensityPct).toBe(0);
+    expect(result.moderateIntensityPct).toBe(0);
+  });
+
+  it("divides by total (not multiplies)", () => {
+    const result = computeZonePercentages({ zone1: 0, zone2: 0, zone3: 0, zone4: 50, zone5: 50 });
+    // Division: 100/100 = 1.0; Multiplication would give 100*100 = 10000
+    expect(result.highIntensityPct).toBe(1);
+    expect(result.highIntensityPct).not.toBeGreaterThan(1);
+  });
+
+  it("uses > 0 not >= 0 for division guard (avoids divide by zero)", () => {
+    // With all zeros, should return 0 not NaN/Infinity
+    const result = computeZonePercentages({ zone1: 0, zone2: 0, zone3: 0, zone4: 0, zone5: 0 });
+    expect(Number.isFinite(result.highIntensityPct)).toBe(true);
+    expect(Number.isFinite(result.lowIntensityPct)).toBe(true);
+    expect(Number.isFinite(result.moderateIntensityPct)).toBe(true);
+  });
+});
+
+describe("computeComponentScores", () => {
+  it("returns default 62 for all scores when latestMetric is null", () => {
+    const result = computeComponentScores(null, null);
+    expect(result.hrvScore).toBe(62);
+    expect(result.restingHrScore).toBe(62);
+    expect(result.sleepScore).toBe(62);
+    expect(result.respiratoryRateScore).toBe(62);
+  });
+
+  it("returns default 62 (not 50, 60, or 65) for HRV when SD is 0", () => {
+    const metric = {
+      hrv: 50,
+      hrv_mean_30d: 45,
+      hrv_sd_30d: 0,
+      resting_hr: null,
+      rhr_mean_30d: null,
+      rhr_sd_30d: null,
+      respiratory_rate: null,
+      rr_mean_30d: null,
+      rr_sd_30d: null,
+    };
+    const result = computeComponentScores(metric, null);
+    expect(result.hrvScore).toBe(62);
+  });
+
+  it("computes HRV score from z-score when all values present", () => {
+    const metric = {
+      hrv: 60,
+      hrv_mean_30d: 50,
+      hrv_sd_30d: 5,
+      resting_hr: null,
+      rhr_mean_30d: null,
+      rhr_sd_30d: null,
+      respiratory_rate: null,
+      rr_mean_30d: null,
+      rr_sd_30d: null,
+    };
+    const result = computeComponentScores(metric, null);
+    // z = (60-50)/5 = 2.0, positive z → score > 62
+    expect(result.hrvScore).toBeGreaterThan(62);
+  });
+
+  it("computes exact HRV score using division (not multiplication) for z-score", () => {
+    const metric = {
+      hrv: 60,
+      hrv_mean_30d: 50,
+      hrv_sd_30d: 5,
+      resting_hr: null,
+      rhr_mean_30d: null,
+      rhr_sd_30d: null,
+      respiratory_rate: null,
+      rr_mean_30d: null,
+      rr_sd_30d: null,
+    };
+    const result = computeComponentScores(metric, null);
+    // z = (60-50)/5 = 2.0 → zScoreToRecoveryScore(2.0) = 92
+    // If mutated to multiplication: z = (60-50)*5 = 50 → score = 100
+    expect(result.hrvScore).toBe(92);
+  });
+
+  it("does NOT negate HRV z-score (higher HRV → higher score)", () => {
+    const highHrv = {
+      hrv: 70,
+      hrv_mean_30d: 50,
+      hrv_sd_30d: 10,
+      resting_hr: null,
+      rhr_mean_30d: null,
+      rhr_sd_30d: null,
+      respiratory_rate: null,
+      rr_mean_30d: null,
+      rr_sd_30d: null,
+    };
+    const lowHrv = {
+      hrv: 30,
+      hrv_mean_30d: 50,
+      hrv_sd_30d: 10,
+      resting_hr: null,
+      rhr_mean_30d: null,
+      rhr_sd_30d: null,
+      respiratory_rate: null,
+      rr_mean_30d: null,
+      rr_sd_30d: null,
+    };
+    const high = computeComponentScores(highHrv, null);
+    const low = computeComponentScores(lowHrv, null);
+    expect(high.hrvScore).toBeGreaterThan(low.hrvScore);
+  });
+
+  it("negates RHR z-score (higher RHR → lower score)", () => {
+    const highRhr = {
+      hrv: null,
+      hrv_mean_30d: null,
+      hrv_sd_30d: null,
+      resting_hr: 70,
+      rhr_mean_30d: 60,
+      rhr_sd_30d: 5,
+      respiratory_rate: null,
+      rr_mean_30d: null,
+      rr_sd_30d: null,
+    };
+    const lowRhr = {
+      hrv: null,
+      hrv_mean_30d: null,
+      hrv_sd_30d: null,
+      resting_hr: 50,
+      rhr_mean_30d: 60,
+      rhr_sd_30d: 5,
+      respiratory_rate: null,
+      rr_mean_30d: null,
+      rr_sd_30d: null,
+    };
+    const high = computeComponentScores(highRhr, null);
+    const low = computeComponentScores(lowRhr, null);
+    expect(high.restingHrScore).toBeLessThan(low.restingHrScore);
+  });
+
+  it("computes exact RHR score using division (not multiplication) for z-score", () => {
+    const metric = {
+      hrv: null,
+      hrv_mean_30d: null,
+      hrv_sd_30d: null,
+      resting_hr: 70,
+      rhr_mean_30d: 60,
+      rhr_sd_30d: 5,
+      respiratory_rate: null,
+      rr_mean_30d: null,
+      rr_sd_30d: null,
+    };
+    const result = computeComponentScores(metric, null);
+    // rhrZ = (70-60)/5 = 2.0, negated = -2.0 → zScoreToRecoveryScore(-2.0) = 12
+    // If mutated to multiplication: rhrZ = (70-60)*5 = 50, negated = -50 → score = 0
+    expect(result.restingHrScore).toBe(12);
+  });
+
+  it("negates respiratory rate z-score (higher RR → lower score)", () => {
+    const highRr = {
+      hrv: null,
+      hrv_mean_30d: null,
+      hrv_sd_30d: null,
+      resting_hr: null,
+      rhr_mean_30d: null,
+      rhr_sd_30d: null,
+      respiratory_rate: 20,
+      rr_mean_30d: 15,
+      rr_sd_30d: 2,
+    };
+    const lowRr = {
+      hrv: null,
+      hrv_mean_30d: null,
+      hrv_sd_30d: null,
+      resting_hr: null,
+      rhr_mean_30d: null,
+      rhr_sd_30d: null,
+      respiratory_rate: 10,
+      rr_mean_30d: 15,
+      rr_sd_30d: 2,
+    };
+    const high = computeComponentScores(highRr, null);
+    const low = computeComponentScores(lowRr, null);
+    expect(high.respiratoryRateScore).toBeLessThan(low.respiratoryRateScore);
+  });
+
+  it("clamps sleep score between 0 and 100", () => {
+    expect(computeComponentScores(null, 150).sleepScore).toBe(100);
+    expect(computeComponentScores(null, -10).sleepScore).toBe(0);
+  });
+
+  it("rounds sleep score to integer", () => {
+    const result = computeComponentScores(null, 85.7);
+    expect(result.sleepScore).toBe(86);
+    expect(Number.isInteger(result.sleepScore)).toBe(true);
+  });
+
+  it("uses sleep efficiency when non-null (not default 62)", () => {
+    const result = computeComponentScores(null, 90);
+    expect(result.sleepScore).toBe(90);
+    expect(result.sleepScore).not.toBe(62);
+  });
+
+  it("uses default 62 for sleep when efficiency is null", () => {
+    const result = computeComponentScores(null, null);
+    expect(result.sleepScore).toBe(62);
+  });
+
+  it("uses SD > 0 check (not >= 0)", () => {
+    const zeroSd = {
+      hrv: 60,
+      hrv_mean_30d: 50,
+      hrv_sd_30d: 0,
+      resting_hr: 55,
+      rhr_mean_30d: 60,
+      rhr_sd_30d: 0,
+      respiratory_rate: 15,
+      rr_mean_30d: 14,
+      rr_sd_30d: 0,
+    };
+    const result = computeComponentScores(zeroSd, null);
+    // With SD=0, should fall back to default 62 (division by zero would be bad)
+    expect(result.hrvScore).toBe(62);
+    expect(result.restingHrScore).toBe(62);
+    expect(result.respiratoryRateScore).toBe(62);
+  });
+});
+
+describe("computeReadinessScore", () => {
+  const equalWeights = { hrv: 0.25, restingHr: 0.25, sleep: 0.25, respiratoryRate: 0.25 };
+  const scores = { hrvScore: 80, restingHrScore: 60, sleepScore: 70, respiratoryRateScore: 50 };
+
+  it("returns null when hasMetric is false", () => {
+    expect(computeReadinessScore(scores, equalWeights, false)).toBeNull();
+  });
+
+  it("returns weighted sum when hasMetric is true", () => {
+    const result = computeReadinessScore(scores, equalWeights, true);
+    // (80+60+70+50) * 0.25 = 260 * 0.25 = 65
+    expect(result).toBe(65);
+  });
+
+  it("rounds to integer", () => {
+    const result = computeReadinessScore(
+      { hrvScore: 81, restingHrScore: 60, sleepScore: 70, respiratoryRateScore: 50 },
+      equalWeights,
+      true,
+    );
+    // (81+60+70+50)/4 = 65.25 → 65
+    expect(result).toBe(65);
+    expect(Number.isInteger(result)).toBe(true);
+  });
+
+  it("multiplies scores by weights (not adds)", () => {
+    const heavyHrv = { hrv: 0.7, restingHr: 0.1, sleep: 0.1, respiratoryRate: 0.1 };
+    const result = computeReadinessScore(scores, heavyHrv, true);
+    // 80*0.7 + 60*0.1 + 70*0.1 + 50*0.1 = 56 + 6 + 7 + 5 = 74
+    expect(result).toBe(74);
+  });
+});
+
+describe("shouldPreferRest", () => {
+  it("returns true for low readiness", () => {
+    expect(shouldPreferRest("low", 0, null)).toBe(true);
+  });
+
+  it("returns true for consecutive training >= 6", () => {
+    expect(shouldPreferRest("high", 6, null)).toBe(true);
+  });
+
+  it("returns false for consecutive training of 5", () => {
+    expect(shouldPreferRest("high", 5, null)).toBe(false);
+  });
+
+  it("returns true for ACWR > 1.5", () => {
+    expect(shouldPreferRest("high", 0, 1.6)).toBe(true);
+  });
+
+  it("returns false for ACWR exactly 1.5 (uses > not >=)", () => {
+    expect(shouldPreferRest("high", 0, 1.5)).toBe(false);
+  });
+
+  it("returns false for ACWR just below threshold", () => {
+    expect(shouldPreferRest("high", 0, 1.4)).toBe(false);
+  });
+
+  it("returns false for null ACWR", () => {
+    expect(shouldPreferRest("high", 0, null)).toBe(false);
+  });
+
+  it("returns false for moderate readiness with no other triggers", () => {
+    expect(shouldPreferRest("moderate", 0, null)).toBe(false);
+  });
+
+  it("uses || not && (any single trigger is enough)", () => {
+    // Low readiness alone should trigger rest
+    expect(shouldPreferRest("low", 0, null)).toBe(true);
+    // High streak alone should trigger rest
+    expect(shouldPreferRest("high", 7, null)).toBe(true);
+    // High ACWR alone should trigger rest
+    expect(shouldPreferRest("high", 0, 2.0)).toBe(true);
+  });
+});
+
+describe("shouldDoStrengthToday", () => {
+  it("returns true when strength is ready and under target", () => {
+    expect(
+      shouldDoStrengthToday({
+        strengthReady: true,
+        strengthUnderTarget: true,
+        cardioUnderTarget: true,
+        lastStrengthDaysAgo: 3,
+        lastEnduranceDaysAgo: 1,
+      }),
+    ).toBe(true);
+  });
+
+  it("returns false when strength is not ready", () => {
+    expect(
+      shouldDoStrengthToday({
+        strengthReady: false,
+        strengthUnderTarget: true,
+        cardioUnderTarget: false,
+        lastStrengthDaysAgo: 3,
+        lastEnduranceDaysAgo: 1,
+      }),
+    ).toBe(false);
+  });
+
+  it("returns true when cardio is not under target and strength more overdue", () => {
+    expect(
+      shouldDoStrengthToday({
+        strengthReady: true,
+        strengthUnderTarget: false,
+        cardioUnderTarget: false,
+        lastStrengthDaysAgo: 5,
+        lastEnduranceDaysAgo: 2,
+      }),
+    ).toBe(true);
+  });
+
+  it("returns false when cardio under target and strength not under target", () => {
+    expect(
+      shouldDoStrengthToday({
+        strengthReady: true,
+        strengthUnderTarget: false,
+        cardioUnderTarget: true,
+        lastStrengthDaysAgo: 5,
+        lastEnduranceDaysAgo: 2,
+      }),
+    ).toBe(false);
+  });
+
+  it("uses ?? 99 for null lastStrengthDaysAgo", () => {
+    expect(
+      shouldDoStrengthToday({
+        strengthReady: true,
+        strengthUnderTarget: false,
+        cardioUnderTarget: false,
+        lastStrengthDaysAgo: null,
+        lastEnduranceDaysAgo: 2,
+      }),
+    ).toBe(true);
+  });
+
+  it("uses ?? 99 for null lastEnduranceDaysAgo", () => {
+    expect(
+      shouldDoStrengthToday({
+        strengthReady: true,
+        strengthUnderTarget: false,
+        cardioUnderTarget: false,
+        lastStrengthDaysAgo: 2,
+        lastEnduranceDaysAgo: null,
+      }),
+    ).toBe(false);
+  });
+
+  it("uses >= not > for days comparison (equal days favors strength)", () => {
+    expect(
+      shouldDoStrengthToday({
+        strengthReady: true,
+        strengthUnderTarget: false,
+        cardioUnderTarget: false,
+        lastStrengthDaysAgo: 3,
+        lastEnduranceDaysAgo: 3,
+      }),
+    ).toBe(true);
+  });
+
+  it("returns false when strength days < endurance days and neither under target", () => {
+    expect(
+      shouldDoStrengthToday({
+        strengthReady: true,
+        strengthUnderTarget: false,
+        cardioUnderTarget: false,
+        lastStrengthDaysAgo: 1,
+        lastEnduranceDaysAgo: 3,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("computeFocusMuscles", () => {
+  it("returns empty array for empty input", () => {
+    expect(computeFocusMuscles([], "2024-01-15")).toEqual([]);
+  });
+
+  it("filters muscles trained >= 2 days ago", () => {
+    const muscles = [
+      { muscle_group: "chest", last_trained_date: "2024-01-10" },
+      { muscle_group: "back", last_trained_date: "2024-01-14" },
+    ];
+    // chest: 5 days ago (>= 2), back: 1 day ago (< 2)
+    const result = computeFocusMuscles(muscles, "2024-01-15");
+    expect(result).toContain("chest");
+    expect(result).not.toContain("back");
+  });
+
+  it("uses >= 2 boundary (exactly 2 days ago is included)", () => {
+    const muscles = [{ muscle_group: "chest", last_trained_date: "2024-01-13" }];
+    const result = computeFocusMuscles(muscles, "2024-01-15");
+    expect(result).toContain("chest");
+  });
+
+  it("uses >= 2 boundary (exactly 1 day ago is excluded)", () => {
+    const muscles = [{ muscle_group: "chest", last_trained_date: "2024-01-14" }];
+    // 1 day ago, < 2 → excluded from focus, falls back to all muscles
+    const result = computeFocusMuscles(muscles, "2024-01-15");
+    // Falls back to all fresh muscles since none >= 2
+    expect(result).toContain("chest");
+  });
+
+  it("includes exactly-2-day-old muscle in focus and excludes 1-day-old muscle (kills >= to > boundary mutant)", () => {
+    const muscles = [
+      { muscle_group: "chest", last_trained_date: "2024-01-13" }, // exactly 2 days ago
+      { muscle_group: "back", last_trained_date: "2024-01-14" }, // 1 day ago
+    ];
+    const result = computeFocusMuscles(muscles, "2024-01-15");
+    // With >= 2: focusMuscles = ["chest"], returns ["chest"]
+    // With > 2 (mutant): focusMuscles = [], fallback = ["chest", "back"], returns ["chest", "back"]
+    expect(result).toContain("chest");
+    expect(result).not.toContain("back");
+  });
+
+  it("normalizes muscle names through aliases", () => {
+    const muscles = [{ muscle_group: "delts", last_trained_date: "2024-01-10" }];
+    const result = computeFocusMuscles(muscles, "2024-01-15");
+    expect(result).toContain("shoulders");
+    expect(result).not.toContain("delts");
+  });
+
+  it("limits to 3 muscles max", () => {
+    const muscles = [
+      { muscle_group: "chest", last_trained_date: "2024-01-05" },
+      { muscle_group: "back", last_trained_date: "2024-01-06" },
+      { muscle_group: "shoulders", last_trained_date: "2024-01-07" },
+      { muscle_group: "biceps", last_trained_date: "2024-01-08" },
+    ];
+    const result = computeFocusMuscles(muscles, "2024-01-15");
+    expect(result).toHaveLength(3);
+  });
+
+  it("sorts by most days ago first (most recovered first)", () => {
+    const muscles = [
+      { muscle_group: "chest", last_trained_date: "2024-01-10" },
+      { muscle_group: "back", last_trained_date: "2024-01-05" },
+    ];
+    const result = computeFocusMuscles(muscles, "2024-01-15");
+    // back (10 days) should come before chest (5 days)
+    expect(result[0]).toBe("back");
+    expect(result[1]).toBe("chest");
+  });
+
+  it("deduplicates normalized names", () => {
+    const muscles = [
+      { muscle_group: "abs", last_trained_date: "2024-01-05" },
+      { muscle_group: "obliques", last_trained_date: "2024-01-06" },
+    ];
+    // Both normalize to "core"
+    const result = computeFocusMuscles(muscles, "2024-01-15");
+    expect(result.filter((m) => m === "core")).toHaveLength(1);
+  });
+
+  it("falls back to all muscles when none >= 2 days ago", () => {
+    const muscles = [
+      { muscle_group: "chest", last_trained_date: "2024-01-14" },
+      { muscle_group: "back", last_trained_date: "2024-01-15" },
+    ];
+    const result = computeFocusMuscles(muscles, "2024-01-15");
+    expect(result.length).toBeGreaterThan(0);
   });
 });

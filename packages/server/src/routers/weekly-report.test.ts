@@ -9,7 +9,6 @@ vi.mock("../trpc.ts", async () => {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
     cachedProtectedQuery: () => trpc.procedure,
-    cachedProtectedQueryLight: () => trpc.procedure,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -518,6 +517,36 @@ describe("weeklyReportRouter", () => {
       // strainZone: 4.56 / 3.78 = 1.206 → between 0.8 and 1.3 → optimal
       expect(currentWeek?.strainZone).toBe("optimal");
       expect(currentWeek?.activityCount).toBe(5);
+    });
+
+    it("uses default weeks (12) when not specified", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+      // Should not throw — default weeks (12) is applied
+      const result = await caller.report({ endDate: "2026-03-24" });
+      expect(result.current).toBeNull();
+      expect(result.history).toEqual([]);
+    });
+
+    it("rejects weeks below 1", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+      await expect(caller.report({ weeks: 0, endDate: "2026-03-24" })).rejects.toThrow();
+    });
+
+    it("rejects weeks above 52", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+      await expect(caller.report({ weeks: 53, endDate: "2026-03-24" })).rejects.toThrow();
     });
 
     it("uses avgDailyLoad || 0 correctly when avg_daily_load is non-zero (kills && mutant)", async () => {

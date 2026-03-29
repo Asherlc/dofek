@@ -8,7 +8,13 @@ let package = Package(
         .target(
             name: "WatchMotionLib",
             path: "ios",
-            exclude: ["WatchMotionModule.swift", "ExpoWatchMotion.podspec"]
+            exclude: ["WatchMotionModule.swift", "ExpoWatchMotion.podspec"],
+            sources: ["SampleFileParser.swift"]
+        ),
+        .testTarget(
+            name: "WatchMotionTests",
+            dependencies: ["WatchMotionLib"],
+            path: "Tests"
         ),
     ]
 )

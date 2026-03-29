@@ -60,7 +60,7 @@ export const monthlyReportRouter = router({
               FROM per_activity
               GROUP BY date
             ),
-            sleep_daily AS (
+            raw_sleep AS (
               SELECT
                 started_at::date AS date,
                 duration_minutes
@@ -68,6 +68,11 @@ export const monthlyReportRouter = router({
               WHERE user_id = ${ctx.userId}
                 AND is_nap = false
                 AND started_at >= date_trunc('month', CURRENT_DATE) - (${input.months}::int || ' months')::interval
+            ),
+            sleep_daily AS (
+              SELECT DISTINCT ON (date) date, duration_minutes
+              FROM raw_sleep
+              ORDER BY date, duration_minutes DESC NULLS LAST
             ),
             metrics_daily AS (
               SELECT date, resting_hr, hrv

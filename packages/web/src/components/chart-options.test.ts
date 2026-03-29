@@ -1,3 +1,4 @@
+import { statusColors } from "@dofek/scoring/colors";
 import { describe, expect, it } from "vitest";
 import { buildPolarizationTrendOption } from "./PolarizationTrendChart.tsx";
 import { buildRampRateOption } from "./RampRateChart.tsx";
@@ -345,6 +346,6 @@ describe("SleepAnalyticsChart option builder", () => {
 
     expect(firstGraphic.style.text).toContain("14d Sleep Debt:");
     expect(firstGraphic.style.text).toContain("deficit");
-    expect(firstGraphic.style.fill).toBe("#ef4444");
+    expect(firstGraphic.style.fill).toBe(statusColors.danger);
   });
 });
