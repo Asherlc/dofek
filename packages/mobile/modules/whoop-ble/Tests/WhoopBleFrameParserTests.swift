@@ -206,20 +206,33 @@ final class WhoopBleFrameParserTests: XCTestCase {
     func testBuildCommandFrameForToggleImuMode() {
         let data = WhoopBleFrameParser.buildCommandData(command: WhoopBleConstants.commandToggleImuMode)
 
-        // Format: [SOF:0xAA] [version:0x01] [payloadLen:u16 LE=2] [0x23] [0x6A]
-        XCTAssertEqual(data.count, 6)
-        XCTAssertEqual(data[0], 0xAA)  // SOF
-        XCTAssertEqual(data[1], 0x01)  // version
-        XCTAssertEqual(data[2], 0x02)  // payload length low
-        XCTAssertEqual(data[3], 0x00)  // payload length high
-        XCTAssertEqual(data[4], 0x23)  // COMMAND packet type
-        XCTAssertEqual(data[5], 0x6A)  // TOGGLE_IMU_MODE
+        // Format from capture: [SOF] [ver] [len=12 u16LE] [preamble:4] [0x23] [seq] [cmd] [params:5]
+        XCTAssertEqual(data.count, 16)  // header(4) + payload(12), no CRC
+        XCTAssertEqual(data[0], 0xAA)   // SOF
+        XCTAssertEqual(data[1], 0x01)   // version
+        XCTAssertEqual(data[2], 0x0C)   // payload length low = 12
+        XCTAssertEqual(data[3], 0x00)   // payload length high = 0
+        // Preamble
+        XCTAssertEqual(data[4], 0x00)
+        XCTAssertEqual(data[5], 0x01)
+        XCTAssertEqual(data[6], 0xE7)
+        XCTAssertEqual(data[7], 0x41)
+        // Command
+        XCTAssertEqual(data[8], 0x23)   // COMMAND type
+        // data[9] = sequence number (varies)
+        XCTAssertEqual(data[10], 0x6A)  // TOGGLE_IMU_MODE
+        // Parameters
+        XCTAssertEqual(data[11], 0x01)
+        XCTAssertEqual(data[12], 0x01)
     }
 
-    func testBuildCommandFrameForStopRawData() {
-        let data = WhoopBleFrameParser.buildCommandData(command: WhoopBleConstants.commandStopRawData)
+    func testBuildCommandFrameSequenceIncrements() {
+        let data1 = WhoopBleFrameParser.buildCommandData(command: WhoopBleConstants.commandToggleImuMode)
+        let data2 = WhoopBleFrameParser.buildCommandData(command: WhoopBleConstants.commandToggleImuMode)
 
-        XCTAssertEqual(data[5], 0x52)  // STOP_RAW_DATA
+        let seq1 = data1[9]
+        let seq2 = data2[9]
+        XCTAssertEqual(seq2, seq1 &+ 1, "Sequence number should increment")
     }
 
     // MARK: - Frame parser (stateful accumulator)

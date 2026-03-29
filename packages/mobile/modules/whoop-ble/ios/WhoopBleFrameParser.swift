@@ -219,23 +219,40 @@ final class WhoopBleFrameParser {
         return []
     }
 
+    /// Sequence counter for command frames (increments per command sent).
+    private static var commandSequence: UInt8 = 0x01
+
     /// Build a command frame to write to CMD_TO_STRAP.
     ///
-    /// Frame format (from docs/whoop.md):
+    /// Format observed in PacketLogger capture of the WHOOP app:
     /// ```
-    /// [0xAA] [version:0x01] [payloadLen:u16 LE] [payload: 0x23 commandByte]
+    /// [0xAA] [0x01] [payloadLen:u16 LE = 12]
+    /// [preamble: 00 01 E7 41] [0x23] [seq] [cmd] [01 01 00 00 00]
     /// ```
-    /// CRC32 trailer is omitted — the strap accepts commands without strict
-    /// CRC validation based on observed behavior in captures.
+    ///
+    /// The 4-byte preamble (`00 01 E7 41`) and trailing params (`01 01 00 00 00`)
+    /// are constant for TOGGLE_IMU_MODE, observed across multiple captures.
+    /// CRC32 uses a non-standard algorithm that we haven't reverse-engineered,
+    /// so we omit it — testing whether the strap accepts commands without it.
     static func buildCommandData(command: UInt8) -> Data {
-        var data = Data()
-        data.append(WhoopBleConstants.startOfFrame)  // SOF = 0xAA
-        data.append(0x01)                              // version
-        data.append(0x02)                              // payload length low byte
-        data.append(0x00)                              // payload length high byte
-        data.append(WhoopBleConstants.packetTypeCommand)  // 0x23 = COMMAND
-        data.append(command)                           // the actual command byte
-        return data
+        let seq = commandSequence
+        commandSequence &+= 1
+
+        var frame = Data()
+        // Header
+        frame.append(WhoopBleConstants.startOfFrame)  // SOF = 0xAA
+        frame.append(0x01)                              // version
+        frame.append(0x0C)                              // payload length low = 12
+        frame.append(0x00)                              // payload length high = 0
+
+        // Payload (12 bytes) — format from PacketLogger capture analysis
+        frame.append(contentsOf: [0x00, 0x01, 0xE7, 0x41])  // preamble
+        frame.append(WhoopBleConstants.packetTypeCommand)     // 0x23
+        frame.append(seq)                                      // sequence number
+        frame.append(command)                                  // actual command byte
+        frame.append(contentsOf: [0x01, 0x01, 0x00, 0x00, 0x00])  // parameters
+
+        return frame
     }
 }
 

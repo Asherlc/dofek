@@ -160,15 +160,8 @@ public class WhoopBleModule: Module {
                     return
                 }
 
-                // Send GET_HELLO handshake first — the strap may require it
-                // before accepting other commands (observed in standard sync sequence).
-                let helloData = WhoopBleFrameParser.buildCommandData(
-                    command: WhoopBleConstants.commandGetHello
-                )
-                NSLog("[WhoopBLE] startImuStreaming: sending GET_HELLO (0x91)")
-                peripheral.writeValue(helloData, for: cmdChar, type: .withResponse)
-
-                // Then send TOGGLE_IMU_MODE
+                // Send TOGGLE_IMU_MODE — capture analysis shows the WHOOP app
+                // sends this directly without a GET_HELLO handshake first.
                 let commandData = WhoopBleFrameParser.buildCommandData(
                     command: WhoopBleConstants.commandToggleImuMode
                 )
