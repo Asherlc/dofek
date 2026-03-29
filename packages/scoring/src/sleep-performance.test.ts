@@ -2,29 +2,29 @@ import { describe, expect, it } from "vitest";
 import { computeRecommendedBedtime, computeSleepPerformance } from "./sleep-performance.ts";
 
 describe("computeSleepPerformance", () => {
-  it("returns Peak tier for 90%+ performance", () => {
+  it("returns Excellent tier for 90%+ performance", () => {
     const result = computeSleepPerformance(480, 480, 95);
-    expect(result.tier).toBe("Peak");
+    expect(result.tier).toBe("Excellent");
     expect(result.score).toBeGreaterThanOrEqual(90);
   });
 
-  it("returns Perform tier for 70-89% performance", () => {
+  it("returns Good tier for 70-89% performance", () => {
     const result = computeSleepPerformance(400, 480, 90);
-    expect(result.tier).toBe("Perform");
+    expect(result.tier).toBe("Good");
     expect(result.score).toBeGreaterThanOrEqual(70);
     expect(result.score).toBeLessThan(90);
   });
 
-  it("returns Get By tier for 50-69% performance", () => {
+  it("returns Fair tier for 50-69% performance", () => {
     const result = computeSleepPerformance(300, 480, 85);
-    expect(result.tier).toBe("Get By");
+    expect(result.tier).toBe("Fair");
     expect(result.score).toBeGreaterThanOrEqual(50);
     expect(result.score).toBeLessThan(70);
   });
 
-  it("returns Low tier for <50% performance", () => {
+  it("returns Poor tier for <50% performance", () => {
     const result = computeSleepPerformance(180, 480, 70);
-    expect(result.tier).toBe("Low");
+    expect(result.tier).toBe("Poor");
     expect(result.score).toBeLessThan(50);
   });
 

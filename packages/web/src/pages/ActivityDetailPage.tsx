@@ -1,3 +1,4 @@
+import { providerLabel } from "@dofek/providers/providers";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import type { ActivityHrZone } from "@dofek/zones/zones";
 import { HEART_RATE_ZONE_COLORS } from "@dofek/zones/zones";
@@ -232,7 +233,7 @@ function ActivityHeader({ activity, units }: { activity: ActivityDetail; units: 
           {formatActivityTypeLabel(activity.activityType)}
         </span>
       </div>
-      <p className="text-sm text-subtle mb-4">
+      <p className="text-sm text-subtle">
         {new Date(activity.startedAt).toLocaleDateString(undefined, {
           weekday: "long",
           year: "numeric",
@@ -245,6 +246,11 @@ function ActivityHeader({ activity, units }: { activity: ActivityDetail; units: 
           minute: "2-digit",
         })}
       </p>
+      {(activity.sourceLinks.length > 0 || activity.sourceProviders.length > 0) && (
+        <p className="text-xs text-subtle mb-4">
+          Source: <SourceLinks activity={activity} />
+        </p>
+      )}
 
       {stats.length > 0 && (
         <div className="flex flex-wrap gap-4">
@@ -257,6 +263,35 @@ function ActivityHeader({ activity, units }: { activity: ActivityDetail; units: 
         </div>
       )}
     </div>
+  );
+}
+
+function SourceLinks({ activity }: { activity: ActivityDetail }) {
+  const linkMap = new Map(activity.sourceLinks.map((link) => [link.providerId, link]));
+
+  return (
+    <>
+      {activity.sourceProviders.map((providerId, index) => {
+        const link = linkMap.get(providerId);
+        return (
+          <span key={providerId}>
+            {index > 0 && ", "}
+            {link ? (
+              <a
+                href={link.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-accent hover:text-accent-secondary underline"
+              >
+                {link.label}
+              </a>
+            ) : (
+              providerLabel(providerId)
+            )}
+          </span>
+        );
+      })}
+    </>
   );
 }
 
@@ -364,6 +399,7 @@ function MetricsChart({
     yAxes.push(
       dofekAxis.value({
         name: "Heart Rate (bpm)",
+        min: "dataMin",
         position: "left",
         showSplitLine: axisIndex === 0,
         axisLabel: { color: CHART_COLORS.heartRate },
@@ -385,6 +421,7 @@ function MetricsChart({
     yAxes.push(
       dofekAxis.value({
         name: "Power (W)",
+        min: "dataMin",
         position: axisIndex === 0 ? "left" : "right",
         showSplitLine: axisIndex === 0,
         axisLabel: { color: CHART_COLORS.power },
@@ -406,6 +443,7 @@ function MetricsChart({
     yAxes.push({
       ...dofekAxis.value({
         name: `Speed (${units.speedLabel})`,
+        min: "dataMin",
         position: axisIndex === 0 ? "left" : "right",
         showSplitLine: axisIndex === 0,
         axisLabel: { color: CHART_COLORS.speed },
@@ -430,6 +468,7 @@ function MetricsChart({
     yAxes.push({
       ...dofekAxis.value({
         name: "Cadence (rpm)",
+        min: "dataMin",
         position: axisIndex === 0 ? "left" : "right",
         showSplitLine: axisIndex === 0,
         axisLabel: { color: CHART_COLORS.cadence },

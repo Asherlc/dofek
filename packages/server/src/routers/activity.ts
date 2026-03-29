@@ -1,10 +1,13 @@
 import { mapHrZones } from "@dofek/zones/zones";
 import { TRPCError } from "@trpc/server";
+import { getProvider } from "dofek/providers/registry";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { endDateSchema, timestampWindowStart } from "../lib/date-window.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
+import { Activity, type ActivityDetail } from "../models/activity.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
+import { ensureProvidersRegistered } from "./sync.ts";
 
 const activityListRowSchema = z
   .object({
@@ -24,6 +27,11 @@ const activityListRowSchema = z
   })
   .passthrough();
 
+const sourceExternalIdSchema = z.object({
+  providerId: z.string(),
+  externalId: z.string(),
+});
+
 const activityDetailRowSchema = z.object({
   id: z.string(),
   activity_type: z.string(),
@@ -33,6 +41,7 @@ const activityDetailRowSchema = z.object({
   notes: z.string().nullable(),
   provider_id: z.string(),
   source_providers: z.array(z.string()),
+  source_external_ids: z.array(sourceExternalIdSchema).nullable(),
   avg_hr: z.number().nullable(),
   max_hr: z.number().nullable(),
   avg_power: z.number().nullable(),
@@ -46,6 +55,8 @@ const activityDetailRowSchema = z.object({
   calories: z.number().nullable(),
   sample_count: z.number().nullable(),
 });
+
+export type { ActivityDetail, SourceLink } from "../models/activity.ts";
 
 const streamPointRowSchema = z.object({
   recorded_at: timestampStringSchema,
@@ -62,29 +73,6 @@ const hrZoneRowSchema = z.object({
   zone: z.coerce.number(),
   seconds: z.coerce.number(),
 });
-
-export interface ActivityDetail {
-  id: string;
-  activityType: string;
-  startedAt: string;
-  endedAt: string | null;
-  name: string | null;
-  notes: string | null;
-  providerId: string;
-  sourceProviders: string[];
-  avgHr: number | null;
-  maxHr: number | null;
-  avgPower: number | null;
-  maxPower: number | null;
-  avgSpeed: number | null;
-  maxSpeed: number | null;
-  avgCadence: number | null;
-  totalDistance: number | null;
-  elevationGain: number | null;
-  elevationLoss: number | null;
-  calories: number | null;
-  sampleCount: number | null;
-}
 
 export interface StreamPoint {
   recordedAt: string;
@@ -163,6 +151,7 @@ export const activityRouter = router({
               a.notes,
               a.provider_id,
               a.source_providers,
+              a.source_external_ids,
               s.avg_hr,
               s.max_hr,
               s.avg_power,
@@ -190,7 +179,8 @@ export const activityRouter = router({
         throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
       }
 
-      return mapActivityDetail(row);
+      await ensureProvidersRegistered();
+      return new Activity(row, getProvider).toDetail();
     }),
 
   /**
@@ -305,53 +295,6 @@ export const activityRouter = router({
       return { success: true };
     }),
 });
-
-/** Map a raw DB row to an ActivityDetail. Exported for unit testing. */
-export function mapActivityDetail(row: {
-  id: string;
-  activity_type: string;
-  started_at: string;
-  ended_at: string | null;
-  name: string | null;
-  notes: string | null;
-  provider_id: string;
-  source_providers: string[];
-  avg_hr: number | null;
-  max_hr: number | null;
-  avg_power: number | null;
-  max_power: number | null;
-  avg_speed: number | null;
-  max_speed: number | null;
-  avg_cadence: number | null;
-  total_distance: number | null;
-  elevation_gain_m: number | null;
-  elevation_loss_m: number | null;
-  calories: number | null;
-  sample_count: number | null;
-}): ActivityDetail {
-  return {
-    id: String(row.id),
-    activityType: String(row.activity_type),
-    startedAt: String(row.started_at),
-    endedAt: row.ended_at ? String(row.ended_at) : null,
-    name: row.name ? String(row.name) : null,
-    notes: row.notes ? String(row.notes) : null,
-    providerId: String(row.provider_id),
-    sourceProviders: row.source_providers ?? [],
-    avgHr: row.avg_hr != null ? Number(row.avg_hr) : null,
-    maxHr: row.max_hr != null ? Number(row.max_hr) : null,
-    avgPower: row.avg_power != null ? Number(row.avg_power) : null,
-    maxPower: row.max_power != null ? Number(row.max_power) : null,
-    avgSpeed: row.avg_speed != null ? Number(row.avg_speed) : null,
-    maxSpeed: row.max_speed != null ? Number(row.max_speed) : null,
-    avgCadence: row.avg_cadence != null ? Number(row.avg_cadence) : null,
-    totalDistance: row.total_distance != null ? Number(row.total_distance) : null,
-    elevationGain: row.elevation_gain_m != null ? Number(row.elevation_gain_m) : null,
-    elevationLoss: row.elevation_loss_m != null ? Number(row.elevation_loss_m) : null,
-    calories: row.calories != null ? Number(row.calories) : null,
-    sampleCount: row.sample_count != null ? Number(row.sample_count) : null,
-  };
-}
 
 /** Map a raw stream row to a StreamPoint. Exported for unit testing. */
 export function mapStreamPoint(row: {

@@ -11,14 +11,9 @@ import {
   TouchableWithoutFeedback,
   View,
 } from "react-native";
-import {
-  type MealType,
-  autoMealType,
-  formatDateYmd,
-  parseQuickAddForm,
-} from "../lib/meal";
-import { colors } from "../theme";
+import { autoMealType, formatDateYmd, type MealType, parseQuickAddForm } from "../lib/meal";
 import { trpc } from "../lib/trpc";
+import { colors } from "../theme";
 
 const MEAL_OPTIONS: { key: MealType; label: string }[] = [
   { key: "breakfast", label: "Breakfast" },
@@ -83,12 +78,7 @@ export function QuickAddFood({ visible, onClose }: QuickAddFoodProps) {
   }
 
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      transparent
-      onRequestClose={resetAndClose}
-    >
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={resetAndClose}>
       <View style={styles.container}>
         <TouchableWithoutFeedback onPress={resetAndClose}>
           <View style={StyleSheet.absoluteFillObject} />
@@ -98,98 +88,92 @@ export function QuickAddFood({ visible, onClose }: QuickAddFoodProps) {
           style={styles.sheetWrapper}
           behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
-        <View style={styles.sheet}>
-          {/* Drag handle */}
-          <View style={styles.handle} />
+          <View style={styles.sheet}>
+            {/* Drag handle */}
+            <View style={styles.handle} />
 
-          <Text style={styles.title}>Quick Add</Text>
+            <Text style={styles.title}>Quick Add</Text>
 
-          {/* Food name */}
-          <TextInput
-            style={styles.nameInput}
-            value={foodName}
-            onChangeText={setFoodName}
-            placeholder="Food name"
-            placeholderTextColor={colors.textTertiary}
-            selectTextOnFocus
-          />
-
-          {/* Meal selector */}
-          <View style={styles.mealRow}>
-            {MEAL_OPTIONS.map(({ key, label }) => (
-              <TouchableOpacity
-                key={key}
-                style={[
-                  styles.mealChip,
-                  selectedMeal === key && styles.mealChipSelected,
-                ]}
-                onPress={() => setSelectedMeal(key)}
-                activeOpacity={0.7}
-              >
-                <Text
-                  style={[
-                    styles.mealChipText,
-                    selectedMeal === key && styles.mealChipTextSelected,
-                  ]}
-                >
-                  {label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* Calories — big input */}
-          <View style={styles.calorieSection}>
+            {/* Food name */}
             <TextInput
-              style={styles.calorieInput}
-              value={calories}
-              onChangeText={setCalories}
-              placeholder="0"
+              style={styles.nameInput}
+              value={foodName}
+              onChangeText={setFoodName}
+              placeholder="Food name"
               placeholderTextColor={colors.textTertiary}
-              keyboardType="number-pad"
-              autoFocus
+              selectTextOnFocus
             />
-            <Text style={styles.calorieUnit}>cal</Text>
-          </View>
 
-          {/* Macros — optional row */}
-          <View style={styles.macroRow}>
-            <MacroField
-              label="Protein"
-              value={proteinGrams}
-              onChangeText={setProteinGrams}
-              color={colors.positive}
-            />
-            <MacroField
-              label="Carbs"
-              value={carbsGrams}
-              onChangeText={setCarbsGrams}
-              color={colors.warning}
-            />
-            <MacroField
-              label="Fat"
-              value={fatGrams}
-              onChangeText={setFatGrams}
-              color={colors.danger}
-            />
-          </View>
+            {/* Meal selector */}
+            <View style={styles.mealRow}>
+              {MEAL_OPTIONS.map(({ key, label }) => (
+                <TouchableOpacity
+                  key={key}
+                  style={[styles.mealChip, selectedMeal === key && styles.mealChipSelected]}
+                  onPress={() => setSelectedMeal(key)}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[
+                      styles.mealChipText,
+                      selectedMeal === key && styles.mealChipTextSelected,
+                    ]}
+                  >
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
 
-          {/* Save button */}
-          <TouchableOpacity
-            style={[
-              styles.saveButton,
-              quickAddMutation.isPending && styles.saveButtonDisabled,
-            ]}
-            onPress={handleSave}
-            activeOpacity={0.8}
-            disabled={quickAddMutation.isPending}
-          >
-            <Text style={styles.saveButtonText}>
-              {quickAddMutation.isPending ? "Saving..." : "Log"}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </KeyboardAvoidingView>
+            {/* Calories — big input */}
+            <View style={styles.calorieSection}>
+              <TextInput
+                style={styles.calorieInput}
+                value={calories}
+                onChangeText={setCalories}
+                placeholder="0"
+                placeholderTextColor={colors.textTertiary}
+                keyboardType="number-pad"
+                autoFocus
+              />
+              <Text style={styles.calorieUnit}>cal</Text>
+            </View>
+
+            {/* Macros — optional row */}
+            <View style={styles.macroRow}>
+              <MacroField
+                label="Protein"
+                value={proteinGrams}
+                onChangeText={setProteinGrams}
+                color={colors.positive}
+              />
+              <MacroField
+                label="Carbs"
+                value={carbsGrams}
+                onChangeText={setCarbsGrams}
+                color={colors.warning}
+              />
+              <MacroField
+                label="Fat"
+                value={fatGrams}
+                onChangeText={setFatGrams}
+                color={colors.danger}
+              />
+            </View>
+
+            {/* Save button */}
+            <TouchableOpacity
+              style={[styles.saveButton, quickAddMutation.isPending && styles.saveButtonDisabled]}
+              onPress={handleSave}
+              activeOpacity={0.8}
+              disabled={quickAddMutation.isPending}
+            >
+              <Text style={styles.saveButtonText}>
+                {quickAddMutation.isPending ? "Saving..." : "Log"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );
