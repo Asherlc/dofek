@@ -389,7 +389,8 @@
     "stddevs",
     "matviews",
     "matviewname",
-    "schemaname"
+    "schemaname",
+    "jdoe"
   ],
   "flagWords": [],
   "useGitignore": false,
