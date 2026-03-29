@@ -143,11 +143,19 @@ public class WhoopBleModule: Module {
 
         AsyncFunction("startImuStreaming") { (promise: Promise) in
             self.bleQueue.async {
+                // Already streaming (e.g., auto-resumed after state restoration) — success
+                if self.state == .streaming {
+                    NSLog("[WhoopBLE] startImuStreaming: already streaming, returning success")
+                    promise.resolve(true)
+                    return
+                }
+
                 guard self.state == .ready,
                       let peripheral = self.connectedPeripheral,
                       let cmdChar = self.cmdCharacteristic else {
-                    NSLog("[WhoopBLE] startImuStreaming: NOT_READY (state=%@, peripheral=%@, cmdChar=%@)", self.state.rawValue, self.connectedPeripheral == nil ? "nil" : "set", self.cmdCharacteristic == nil ? "nil" : "set")
-                    promise.reject("NOT_READY", "Not connected or service not discovered")
+                    let detail = "state=\(self.state.rawValue) peripheral=\(self.connectedPeripheral == nil ? "nil" : "set") cmdChar=\(self.cmdCharacteristic == nil ? "nil" : "set") dataChar=\(self.dataCharacteristic == nil ? "nil" : "set")"
+                    NSLog("[WhoopBLE] startImuStreaming: NOT_READY (%@)", detail)
+                    promise.reject("NOT_READY", "Not ready: \(detail)")
                     return
                 }
 
