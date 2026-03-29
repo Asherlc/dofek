@@ -304,15 +304,26 @@ export default function BleProbeScreen() {
       <View style={styles.quickButtons}>
         <Pressable
           style={[styles.quickButton, { backgroundColor: "#2a3a2a" }]}
-          onPress={() => executeCommand("raw aa010c000001e74123016a010100000081d31f98")}
+          onPress={async () => {
+            addLog("> Sending GET_HELLO + TOGGLE_IMU_MODE...", "command");
+            try {
+              await writeRaw("0002", "aa0108000001e67123019101363e5c8d", false);
+              addLog("GET_HELLO sent", "info");
+              await new Promise((resolve) => setTimeout(resolve, 500));
+              await writeRaw("0002", "aa010c000001e74123026a01010000001cc9f7a9", false);
+              addLog("TOGGLE_IMU_MODE sent — watching for response...", "info");
+            } catch (error) {
+              addLog(`Error: ${error}`, "error");
+            }
+          }}
         >
-          <Text style={styles.quickButtonText}>IMU+CRC</Text>
+          <Text style={styles.quickButtonText}>Hello+IMU</Text>
         </Pressable>
         <Pressable
           style={[styles.quickButton, { backgroundColor: "#2a3a2a" }]}
-          onPress={() => executeCommand("raw aa0104006a010100")}
+          onPress={() => executeCommand("raw aa010c000001e741236b6a01010000002ac0d9b7")}
         >
-          <Text style={styles.quickButtonText}>IMU v2</Text>
+          <Text style={styles.quickButtonText}>IMU seq=6B</Text>
         </Pressable>
         <Pressable
           style={[styles.quickButton, { backgroundColor: "#2a3a2a" }]}
