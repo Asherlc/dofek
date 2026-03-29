@@ -385,7 +385,8 @@
     "unlinkable",
     "matviews",
     "matviewname",
-    "schemaname"
+    "schemaname",
+    "maxhr"
   ],
   "flagWords": [],
   "useGitignore": false,
