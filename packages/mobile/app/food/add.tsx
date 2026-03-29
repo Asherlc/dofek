@@ -20,6 +20,7 @@ import { BarcodeScanner } from "../../components/BarcodeScanner";
 import { useAuth } from "../../lib/auth-context";
 import { type FoodDatabaseResult, OpenFoodFactsClient } from "../../lib/food-database";
 import { getTrpcUrl, SERVER_URL } from "../../lib/server";
+import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { colors } from "../../theme";
 
@@ -125,14 +126,20 @@ export default function AddFoodScreen() {
         body: JSON.stringify({ "0": { date } }),
       })
         .then((r) => r.json())
-        .catch(() => null),
+        .catch((error: unknown) => {
+          captureException(error, { source: "food-add-recent-today" });
+          return null;
+        }),
       fetch(`${apiUrl}/food.byDate?batch=1`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify({ "0": { date: yStr } }),
       })
         .then((r) => r.json())
-        .catch(() => null),
+        .catch((error: unknown) => {
+          captureException(error, { source: "food-add-recent-yesterday" });
+          return null;
+        }),
     ]).then(([todayData, yesterdayData]) => {
       const todayRaw: unknown[] = todayData?.[0]?.result?.data ?? [];
       const yesterdayRaw: unknown[] = yesterdayData?.[0]?.result?.data ?? [];
@@ -236,7 +243,10 @@ export default function AddFoodScreen() {
             ];
           });
         })
-        .catch((): SearchResult[] => []);
+        .catch((error: unknown): SearchResult[] => {
+          captureException(error, { source: "food-add-history-search" });
+          return [];
+        });
 
       setSearchResults(historyResults);
       setSearching(false);
@@ -266,7 +276,8 @@ export default function AddFoodScreen() {
         barcode: r.barcode,
       }));
       setOpenFoodFactsResults(mapped);
-    } catch {
+    } catch (error: unknown) {
+      captureException(error, { source: "food-add-openfoodfacts-search" });
       if (openFoodFactsRequestCounterRef.current !== requestId) return;
       setOpenFoodFactsResults([]);
     } finally {
@@ -303,7 +314,13 @@ export default function AddFoodScreen() {
     setActiveTab("search");
     setScanningBarcode(true);
 
-    const result = await foodClient.lookupBarcode(barcodeValue);
+    let result: Awaited<ReturnType<typeof foodClient.lookupBarcode>>;
+    try {
+      result = await foodClient.lookupBarcode(barcodeValue);
+    } catch (error: unknown) {
+      captureException(error, { source: "food-add-barcode-lookup" });
+      result = null;
+    }
     setScanningBarcode(false);
 
     if (result) {

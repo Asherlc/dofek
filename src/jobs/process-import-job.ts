@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/node";
 import type { SyncDatabase } from "../db/index.ts";
 import { logSync } from "../db/sync-log.ts";
 import { logger } from "../logger.ts";
@@ -117,6 +118,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
     await updateUserMaxHr(db);
   } catch (err) {
     logger.error(`[worker] Failed to update max HR: ${err}`);
+    Sentry.captureException(err, { tags: { phase: "post-import-max-hr" } });
   }
 
   try {
@@ -134,6 +136,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
     }
   } catch (err) {
     logger.error(`[worker] Failed to sync provider priorities: ${err}`);
+    Sentry.captureException(err, { tags: { phase: "post-import-provider-priorities" } });
   }
 
   try {
@@ -146,5 +149,6 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
     await refreshDedupViews(db);
   } catch (err) {
     logger.error(`[worker] Failed to refresh views: ${err}`);
+    Sentry.captureException(err, { tags: { phase: "post-import-refresh-views" } });
   }
 }

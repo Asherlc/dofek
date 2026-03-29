@@ -1,6 +1,7 @@
 import { createBullBoard } from "@bull-board/api";
 import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
 import { ExpressAdapter } from "@bull-board/express";
+import * as Sentry from "@sentry/node";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import compression from "compression";
 import cookieParser from "cookie-parser";
@@ -163,10 +164,16 @@ async function main() {
     logger.info(`[server] tRPC at http://localhost:${PORT}/api/trpc`);
 
     // Warm cache with common dashboard queries (fire-and-forget)
-    warmCache(db).catch((err) => logger.error(`[cache] Warm failed: ${err}`));
+    warmCache(db).catch((err) => {
+      logger.error(`[cache] Warm failed: ${err}`);
+      Sentry.captureException(err);
+    });
 
     // Start Slack bot if configured (fire-and-forget)
-    startSlackBot(db, app).catch((err) => logger.error(`[slack] Slack bot error: ${err}`));
+    startSlackBot(db, app).catch((err) => {
+      logger.error(`[slack] Slack bot error: ${err}`);
+      Sentry.captureException(err);
+    });
   });
 }
 
