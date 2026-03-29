@@ -3,7 +3,7 @@ import { IDENTITY_PROVIDER_NAMES } from "@dofek/auth/auth";
 import { getOAuthRedirectUri } from "dofek/auth/oauth";
 import { DEFAULT_USER_ID } from "dofek/db/schema";
 import { sql } from "drizzle-orm";
-import express, { Router, urlencoded } from "express";
+import express, { Router } from "express";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import { resolveOrCreateUser } from "../auth/account-linking.ts";
@@ -245,8 +245,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         setMobileSchemeCookie(res, redirectScheme);
       }
 
-      const returnTo =
-        typeof req.query.return_to === "string" ? req.query.return_to : undefined;
+      const returnTo = typeof req.query.return_to === "string" ? req.query.return_to : undefined;
       setPostLoginRedirectCookie(res, returnTo);
 
       // Server-side fallback for providers that use form_post (Apple):
@@ -379,10 +378,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
 
       // Validate the authorization code
       const provider = getIdentityProvider(providerName);
-      const { user: identityUser } = await provider.validateCallback(
-        code,
-        codeVerifier,
-      );
+      const { user: identityUser } = await provider.validateCallback(code, codeVerifier);
 
       // Resolve or create user (with email-based auto-linking and optional logged-in linking)
       const { userId } = await resolveOrCreateUser(
