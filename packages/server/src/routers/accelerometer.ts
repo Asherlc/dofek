@@ -38,8 +38,8 @@ export const accelerometerRouter = router({
           device_id,
           device_type,
           count(*)::int AS sample_count,
-          max(recorded_at)::text AS latest_sample,
-          min(recorded_at)::text AS earliest_sample
+          to_char(max(recorded_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS latest_sample,
+          to_char(min(recorded_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS earliest_sample
         FROM fitness.accelerometer_sample
         WHERE user_id = ${ctx.userId}::uuid
         GROUP BY device_id, device_type`,
@@ -70,7 +70,7 @@ export const accelerometerRouter = router({
         z: number;
       }>(
         sql`SELECT
-            recorded_at::text,
+            to_char(recorded_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS recorded_at,
             x, y, z
           FROM fitness.accelerometer_sample
           WHERE user_id = ${ctx.userId}::uuid

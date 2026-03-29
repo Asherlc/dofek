@@ -36,8 +36,8 @@ function SyncStatusPanel() {
           </div>
           <p className="text-2xl font-bold">{formatNumber(device.sample_count)} samples</p>
           <p className="text-xs text-muted-foreground">
-            {device.earliest_sample
-              ? `${new Date(device.earliest_sample).toLocaleDateString()} — ${new Date(device.latest_sample ?? "").toLocaleDateString()}`
+            {device.earliest_sample && device.latest_sample
+              ? `${new Date(device.earliest_sample).toLocaleDateString()} — ${new Date(device.latest_sample).toLocaleDateString()}`
               : "No data"}
           </p>
         </div>
