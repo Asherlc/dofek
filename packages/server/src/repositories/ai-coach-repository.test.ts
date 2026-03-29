@@ -92,10 +92,7 @@ describe("AiCoachRepository", () => {
     });
 
     it("uses != null check (not just truthy) for metrics", async () => {
-      const db = makeDb(
-        [{ sleep_hours: 0, resting_hr: 0, hrv: 0, readiness: 0 }],
-        [],
-      );
+      const db = makeDb([{ sleep_hours: 0, resting_hr: 0, hrv: 0, readiness: 0 }], []);
       const repo = new AiCoachRepository(db, "user-1");
       const context = await repo.fetchContext();
       // 0 is falsy but != null, so these should be defined
@@ -106,30 +103,21 @@ describe("AiCoachRepository", () => {
     });
 
     it("rounds restingHr to integer (not 1 decimal)", async () => {
-      const db = makeDb(
-        [{ sleep_hours: null, resting_hr: 52.7, hrv: null, readiness: null }],
-        [],
-      );
+      const db = makeDb([{ sleep_hours: null, resting_hr: 52.7, hrv: null, readiness: null }], []);
       const repo = new AiCoachRepository(db, "user-1");
       const context = await repo.fetchContext();
       expect(context.restingHr).toBe(53);
     });
 
     it("rounds hrv to integer (not 1 decimal)", async () => {
-      const db = makeDb(
-        [{ sleep_hours: null, resting_hr: null, hrv: 68.3, readiness: null }],
-        [],
-      );
+      const db = makeDb([{ sleep_hours: null, resting_hr: null, hrv: 68.3, readiness: null }], []);
       const repo = new AiCoachRepository(db, "user-1");
       const context = await repo.fetchContext();
       expect(context.hrv).toBe(68);
     });
 
     it("rounds readiness to integer", async () => {
-      const db = makeDb(
-        [{ sleep_hours: null, resting_hr: null, hrv: null, readiness: 85.6 }],
-        [],
-      );
+      const db = makeDb([{ sleep_hours: null, resting_hr: null, hrv: null, readiness: 85.6 }], []);
       const repo = new AiCoachRepository(db, "user-1");
       const context = await repo.fetchContext();
       expect(context.readiness).toBe(86);
@@ -146,10 +134,7 @@ describe("AiCoachRepository", () => {
     });
 
     it("returns undefined (not null) for absent metric values", async () => {
-      const db = makeDb(
-        [{ sleep_hours: null, resting_hr: null, hrv: null, readiness: null }],
-        [],
-      );
+      const db = makeDb([{ sleep_hours: null, resting_hr: null, hrv: null, readiness: null }], []);
       const repo = new AiCoachRepository(db, "user-1");
       const context = await repo.fetchContext();
       expect(context.sleepHours).toBeUndefined();
