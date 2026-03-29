@@ -120,12 +120,19 @@ async function syncOnForeground(
       level: "info",
     });
     await whoopDeps.connect(device.id);
-    logger.info(LOG_CATEGORY, "connected — raw IMU data flows passively during WHOOP app sync");
-    // No need to call startImuStreaming() — R21 raw data (type 0x2B)
-    // flows automatically when the WHOOP app is syncing with the strap.
-    // The strap sends 100-sample packets at ~1Hz during normal operation.
+    logger.info(LOG_CATEGORY, "connected, sending TOGGLE_IMU_MODE");
+    // Send TOGGLE_IMU_MODE to keep IMU data flowing even when the WHOOP
+    // app isn't actively syncing. R21 data also flows passively during
+    // WHOOP app sync, but this ensures continuous capture regardless.
+    try {
+      await whoopDeps.startImuStreaming();
+      logger.info(LOG_CATEGORY, "TOGGLE_IMU_MODE sent");
+    } catch (error: unknown) {
+      // Best-effort — passive data may still flow without the command
+      logger.warn(LOG_CATEGORY, `startImuStreaming failed (passive data may still work): ${error}`);
+    }
     connected = true;
-    logger.info(LOG_CATEGORY, "listening for passive IMU data");
+    logger.info(LOG_CATEGORY, "listening for IMU data");
     Sentry.addBreadcrumb({
       category: "whoop-ble",
       message: "Connected and streaming",
