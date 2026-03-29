@@ -220,6 +220,20 @@ public class WhoopBleModule: Module {
             return count
         }
 
+        Function("getDataPathStats") { () -> [String: Any] in
+            return [
+                "dataReceivedCount": Int(self.dataReceivedCount),
+                "totalFramesParsed": Int(self.totalFramesParsed),
+                "totalSamplesExtracted": Int(self.totalSamplesExtracted),
+                "droppedForNonStreaming": Int(self.droppedForNonStreaming),
+                "emptyExtractions": Int(self.emptyExtractions),
+                "bufferOverflows": Int(self.bufferOverflows),
+                "connectionState": self.state.rawValue,
+                "hasDataCharacteristic": self.dataCharacteristic != nil,
+                "isNotifying": self.dataCharacteristic?.isNotifying ?? false,
+            ]
+        }
+
         // MARK: - Buffer access
 
         AsyncFunction("getBufferedSamples") { (promise: Promise) in

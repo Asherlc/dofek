@@ -133,6 +133,18 @@ async function syncOnForeground(
     logger.info(LOG_CATEGORY, "already connected, uploading buffer");
   }
 
+  // Log data path stats for debugging (exposed from native module)
+  try {
+    // Dynamic import to avoid coupling the interface to diagnostic functions
+    const bleModule = require("../modules/whoop-ble");
+    if (typeof bleModule.getDataPathStats === "function") {
+      const stats = bleModule.getDataPathStats();
+      logger.info(LOG_CATEGORY, `data path stats: ${JSON.stringify(stats)}`);
+    }
+  } catch {
+    // Diagnostic-only, ignore errors
+  }
+
   // Upload any buffered samples
   const samples = await whoopDeps.getBufferedSamples();
   logger.info(LOG_CATEGORY, `getBufferedSamples returned ${samples.length} samples`);

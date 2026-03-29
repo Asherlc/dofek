@@ -94,6 +94,21 @@ export function getBufferedSampleCount(): number {
   return WhoopBleModule.getBufferedSampleCount();
 }
 
+/** Get BLE data path statistics for debugging. */
+export function getDataPathStats(): {
+  dataReceivedCount: number;
+  totalFramesParsed: number;
+  totalSamplesExtracted: number;
+  droppedForNonStreaming: number;
+  emptyExtractions: number;
+  bufferOverflows: number;
+  connectionState: string;
+  hasDataCharacteristic: boolean;
+  isNotifying: boolean;
+} {
+  return WhoopBleModule.getDataPathStats();
+}
+
 /** Disconnect from the WHOOP strap. */
 export function disconnect(): void {
   WhoopBleModule.disconnect();
