@@ -423,54 +423,69 @@ func printHelp() {
 print("BLE Probe v0.1 — type 'help' for commands")
 print("Waiting for Bluetooth to power on...")
 
-// Give CBCentralManager time to initialize
-Thread.sleep(forTimeInterval: 1.0)
-
-// REPL
-while true {
-    print("\n> ", terminator: "")
-    guard let line = readLine()?.trimmingCharacters(in: .whitespaces) else {
-        break
+// Process commands from stdin on a background thread so the main
+// run loop stays free for CoreBluetooth delegate callbacks.
+DispatchQueue.global(qos: .userInteractive).async {
+    // Wait for Bluetooth to initialize (needs run loop processing)
+    for _ in 0..<30 {
+        if probe.centralManager.state == .poweredOn { break }
+        Thread.sleep(forTimeInterval: 0.1)
     }
-    if line.isEmpty { continue }
+    if probe.centralManager.state == .poweredOn {
+        print("✅ Bluetooth ready")
+    } else {
+        print("⚠️  Bluetooth not powered on after 3s (state: \(probe.centralManager.state.rawValue))")
+    }
 
-    let parts = line.split(separator: " ", maxSplits: 1).map(String.init)
-    let command = parts[0].lowercased()
-    let arg = parts.count > 1 ? parts[1] : ""
-
-    switch command {
-    case "help", "?", "h":
-        printHelp()
-    case "scan":
-        probe.scan()
-    case "whoop":
-        probe.scanWhoop()
-    case "connect", "c":
-        probe.connect(arg)
-    case "discover", "disc", "d":
-        probe.discover()
-    case "subscribe", "sub", "s":
-        probe.subscribe(arg)
-    case "unsubscribe", "unsub":
-        probe.unsubscribe(arg)
-    case "cmd":
-        guard let byte = UInt8(arg.replacingOccurrences(of: "0x", with: ""), radix: 16) else {
-            print("❌ Invalid hex byte: \(arg)")
-            continue
+    // REPL
+    while true {
+        print("\n> ", terminator: "")
+        guard let line = readLine()?.trimmingCharacters(in: .whitespaces) else {
+            exit(0)
         }
-        probe.sendCommand(byte)
-    case "raw":
-        probe.sendRaw(arg)
-    case "stats":
-        probe.stats()
-    case "reset":
-        probe.resetStats()
-    case "verbose", "v":
-        probe.verbose.toggle()
-        print("Verbose mode: \(probe.verbose ? "ON" : "OFF")")
-    case "quit", "exit", "q":
-        exit(0)
-    default:
-        print("❌ Unknown command: \(command). Type 'help' for commands.")
+        if line.isEmpty { continue }
+
+        let parts = line.split(separator: " ", maxSplits: 1).map(String.init)
+        let command = parts[0].lowercased()
+        let arg = parts.count > 1 ? parts[1] : ""
+
+        switch command {
+        case "help", "?", "h":
+            printHelp()
+        case "scan":
+            probe.scan()
+        case "whoop":
+            probe.scanWhoop()
+        case "connect", "c":
+            probe.connect(arg)
+        case "discover", "disc", "d":
+            probe.discover()
+        case "subscribe", "sub", "s":
+            probe.subscribe(arg)
+        case "unsubscribe", "unsub":
+            probe.unsubscribe(arg)
+        case "cmd":
+            guard let byte = UInt8(arg.replacingOccurrences(of: "0x", with: ""), radix: 16) else {
+                print("❌ Invalid hex byte: \(arg)")
+                continue
+            }
+            probe.sendCommand(byte)
+        case "raw":
+            probe.sendRaw(arg)
+        case "stats":
+            probe.stats()
+        case "reset":
+            probe.resetStats()
+        case "verbose", "v":
+            probe.verbose.toggle()
+            print("Verbose mode: \(probe.verbose ? "ON" : "OFF")")
+        case "quit", "exit", "q":
+            exit(0)
+        default:
+            print("❌ Unknown command: \(command). Type 'help' for commands.")
+        }
     }
 }
+
+// Keep the main run loop alive for CoreBluetooth callbacks
+RunLoop.main.run()

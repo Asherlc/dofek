@@ -7,7 +7,15 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "ble-probe",
-            path: "Sources/BleProbe"
+            path: "Sources/BleProbe",
+            linkerSettings: [
+                .unsafeFlags([
+                    "-Xlinker", "-sectcreate",
+                    "-Xlinker", "__TEXT",
+                    "-Xlinker", "__info_plist",
+                    "-Xlinker", "Sources/BleProbe/Info.plist",
+                ]),
+            ]
         ),
     ]
 )
