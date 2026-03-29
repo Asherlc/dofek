@@ -2,14 +2,22 @@
 -- gyroscope columns. With gyroscope data from Apple Watch (CMMotionManager)
 -- and WHOOP BLE, this table stores full 6-axis IMU data, not just accelerometer.
 
--- 1. Rename table
-ALTER TABLE fitness.accelerometer_sample
-  RENAME TO inertial_measurement_unit_sample;
+-- 1. Rename table (idempotent: skip if already renamed)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'fitness' AND tablename = 'accelerometer_sample') THEN
+    ALTER TABLE fitness.accelerometer_sample RENAME TO inertial_measurement_unit_sample;
+  END IF;
+END $$;
 --> statement-breakpoint
 
--- 2. Rename index
-ALTER INDEX accelerometer_user_time_idx
-  RENAME TO inertial_measurement_unit_user_time_idx;
+-- 2. Rename index (idempotent: skip if already renamed)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'accelerometer_user_time_idx') THEN
+    ALTER INDEX accelerometer_user_time_idx RENAME TO inertial_measurement_unit_user_time_idx;
+  END IF;
+END $$;
 --> statement-breakpoint
 
 -- 3. Add gyroscope columns (nullable — existing accel-only data keeps nulls)
