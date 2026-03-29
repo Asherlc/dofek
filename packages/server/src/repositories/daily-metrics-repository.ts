@@ -130,7 +130,7 @@ export class DailyMetricsRepository {
     return rows.filter((row) => row.date >= cutoffStr);
   }
 
-  /** Aggregate trends (averages, stddevs) and latest values for the date window. */
+  /** Aggregate trends (averages, standard deviations) and latest values for the date window. */
   async getTrends(days: number, endDate: string): Promise<TrendsRow | null> {
     const rows = await executeWithSchema(
       this.#db,
