@@ -86,23 +86,6 @@ export default function SettingsScreen() {
     );
   }
 
-  // ── WHOOP Motion Sensors ──
-  const whoopImuSetting = trpc.settings.get.useQuery({ key: "whoopAlwaysOnImu" });
-  const whoopImuEnabled = whoopImuSetting.data?.value === true;
-
-  function handleWhoopImuToggle(enabled: boolean) {
-    trpcUtils.settings.get.setData(
-      { key: "whoopAlwaysOnImu" },
-      { key: "whoopAlwaysOnImu", value: enabled },
-    );
-    setSettingMutation.mutate(
-      { key: "whoopAlwaysOnImu", value: enabled },
-      {
-        onSuccess: () => whoopImuSetting.refetch(),
-        onError: () => whoopImuSetting.refetch(),
-      },
-    );
-  }
 
   function handleUnlink(accountId: string) {
     Alert.alert("Unlink Account", "Are you sure you want to unlink this account?", [
@@ -294,31 +277,6 @@ export default function SettingsScreen() {
               </TouchableOpacity>
             );
           })}
-        </View>
-      </View>
-
-      {/* ── WHOOP Motion Sensors ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>WHOOP Motion Sensors</Text>
-        <Text style={styles.sectionDescription}>
-          Record accelerometer and gyroscope data from your WHOOP strap continuously via Bluetooth.
-          Reduces strap battery life from ~5 days to ~3-4 days.
-        </Text>
-        <View style={styles.card}>
-          <View style={styles.toggleRow}>
-            <View style={styles.toggleInfo}>
-              <Text style={styles.toggleLabel}>Always-on recording</Text>
-              <Text style={styles.toggleDescription}>
-                Streams accelerometer and gyroscope data whenever the app is open
-              </Text>
-            </View>
-            <Switch
-              value={whoopImuEnabled}
-              onValueChange={handleWhoopImuToggle}
-              disabled={setSettingMutation.isPending}
-              trackColor={{ false: colors.surfaceSecondary, true: colors.accent }}
-            />
-          </View>
         </View>
       </View>
 
