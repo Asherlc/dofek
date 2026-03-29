@@ -302,11 +302,11 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       const error = typeof params.error === "string" ? params.error : undefined;
 
       if (error) {
-        res.status(400).send(`Authorization denied: ${error}`);
+        res.status(400).type("text/plain").send("Authorization denied");
         return;
       }
       if (!code || !stateParam) {
-        res.status(400).send("Missing code or state parameter");
+        res.status(400).type("text/plain").send("Missing code or state parameter");
         return;
       }
 
@@ -573,7 +573,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       }
 
       if (error) {
-        res.status(400).send(`Authorization denied: ${error}`);
+        res.status(400).type("text/plain").send("Authorization denied");
         return;
       }
 
