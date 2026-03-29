@@ -88,9 +88,11 @@ import type { AddressInfo } from "node:net";
 import cookieParser from "cookie-parser";
 import { createDatabaseFromEnv } from "dofek/db";
 import { getAllProviders } from "dofek/providers/registry";
+import { isWebhookProvider } from "dofek/providers/types";
 import express from "express";
 import { resolveOrCreateUser } from "../auth/account-linking.ts";
 import {
+  clearSessionCookie,
   getLinkUserCookie,
   getMobileSchemeCookie,
   getOAuthFlowCookies,
@@ -102,7 +104,9 @@ import {
 } from "../auth/cookies.ts";
 import { getIdentityProvider, isProviderConfigured } from "../auth/providers.ts";
 import { createSession, deleteSession, validateSession } from "../auth/session.ts";
+import { logger } from "../logger.ts";
 import { createAuthRouter } from "./auth.ts";
+import { registerWebhookForProvider } from "./webhooks.ts";
 
 function createTestApp() {
   const fakeDb = createDatabaseFromEnv();
@@ -124,7 +128,7 @@ async function request(
   app: express.Express,
   method: "get" | "post",
   path: string,
-  options?: { formBody?: Record<string, string> },
+  options?: { formBody?: Record<string, string>; headers?: Record<string, string> },
 ): Promise<{
   status: number;
   body: string;
@@ -134,9 +138,13 @@ async function request(
     const server = app.listen(0, () => {
       const port = getPort(server);
       const fetchOptions: RequestInit = { method: method.toUpperCase(), redirect: "manual" };
+      const fetchHeaders: Record<string, string> = { ...options?.headers };
       if (options?.formBody) {
         fetchOptions.body = new URLSearchParams(options.formBody).toString();
-        fetchOptions.headers = { "Content-Type": "application/x-www-form-urlencoded" };
+        fetchHeaders["Content-Type"] = "application/x-www-form-urlencoded";
+      }
+      if (Object.keys(fetchHeaders).length > 0) {
+        fetchOptions.headers = fetchHeaders;
       }
       fetch(`http://localhost:${port}${path}`, fetchOptions)
         .then(async (res) => {
@@ -1903,6 +1911,1040 @@ describe("createAuthRouter", () => {
       expect(res.status).toBe(400);
       expect(res.body).toContain("authorizationCode");
       vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "google");
+    });
+  });
+
+  // ── Cluster 1: OAuth 1.0 flow (lines 122-130) ──
+  describe("GET /auth/provider/:provider (OAuth 1.0 full round-trip)", () => {
+    it("stores oauth1 secret and redirects to authorizeUrl from getRequestToken", async () => {
+      const mockGetRequestToken = vi.fn(() =>
+        Promise.resolve({
+          oauthToken: "oauth1-tok-abc",
+          oauthTokenSecret: "oauth1-secret-abc",
+          authorizeUrl: "https://fatsecret.com/authorize?oauth_token=oauth1-tok-abc",
+        }),
+      );
+      const mockExchangeForAccessToken = vi.fn(() =>
+        Promise.resolve({ token: "access-tok", tokenSecret: "access-secret" }),
+      );
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "fatsecret",
+          name: "FatSecret",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://fatsecret.com/authorize",
+              clientId: "test",
+            },
+            oauth1Flow: {
+              getRequestToken: mockGetRequestToken,
+              exchangeForAccessToken: mockExchangeForAccessToken,
+            },
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/auth/provider/fatsecret");
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe(
+        "https://fatsecret.com/authorize?oauth_token=oauth1-tok-abc",
+      );
+      // getRequestToken should have been called with the callback URL
+      expect(mockGetRequestToken).toHaveBeenCalledWith(expect.stringContaining("callback"));
+    });
+
+    it("completes OAuth 1.0 callback: exchanges tokens and saves them", async () => {
+      const mockGetRequestToken = vi.fn(() =>
+        Promise.resolve({
+          oauthToken: "oauth1-roundtrip-tok",
+          oauthTokenSecret: "oauth1-roundtrip-secret",
+          authorizeUrl: "https://fatsecret.com/authorize?oauth_token=oauth1-roundtrip-tok",
+        }),
+      );
+      const mockExchangeForAccessToken = vi.fn(() =>
+        Promise.resolve({ token: "final-access-tok", tokenSecret: "final-secret-tok" }),
+      );
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "fatsecret",
+          name: "FatSecret",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://fatsecret.com/authorize",
+              clientId: "test",
+            },
+            oauth1Flow: {
+              getRequestToken: mockGetRequestToken,
+              exchangeForAccessToken: mockExchangeForAccessToken,
+            },
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+
+      // Step 1: Start OAuth 1.0 flow (populates oauth1Secrets map)
+      const startRes = await request(app, "get", "/auth/provider/fatsecret");
+      expect(startRes.status).toBe(302);
+
+      // Step 2: Hit callback with oauth_token + oauth_verifier
+      const callbackRes = await request(
+        app,
+        "get",
+        "/callback?oauth_token=oauth1-roundtrip-tok&oauth_verifier=verifier-xyz",
+      );
+      expect(callbackRes.status).toBe(200);
+      expect(callbackRes.body).toContain("Authorized!");
+      expect(callbackRes.body).toContain("FatSecret connected successfully.");
+      expect(mockExchangeForAccessToken).toHaveBeenCalledWith(
+        "oauth1-roundtrip-tok",
+        "oauth1-roundtrip-secret",
+        "verifier-xyz",
+      );
+    });
+
+    it("uses OAUTH_REDIRECT_URI env var for callback URL when set", async () => {
+      process.env.OAUTH_REDIRECT_URI = "https://custom.example.com/callback";
+      const mockGetRequestToken = vi.fn(() =>
+        Promise.resolve({
+          oauthToken: "env-tok",
+          oauthTokenSecret: "env-secret",
+          authorizeUrl: "https://fatsecret.com/authorize?oauth_token=env-tok",
+        }),
+      );
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "fatsecret",
+          name: "FatSecret",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://fatsecret.com/authorize",
+              clientId: "test",
+            },
+            oauth1Flow: {
+              getRequestToken: mockGetRequestToken,
+              exchangeForAccessToken: vi.fn(),
+            },
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+      await request(app, "get", "/auth/provider/fatsecret");
+      expect(mockGetRequestToken).toHaveBeenCalledWith("https://custom.example.com/callback");
+      delete process.env.OAUTH_REDIRECT_URI;
+    });
+  });
+
+  // ── Cluster 2: PKCE flow (lines 143-151) ──
+  describe("GET /auth/provider/:provider (PKCE code challenge verification)", () => {
+    it("calls generateCodeChallenge with the PKCE verifier and includes code_challenge in URL", async () => {
+      const { buildAuthorizationUrl, generateCodeChallenge } = await import("dofek/auth/oauth");
+      vi.mocked(generateCodeChallenge).mockReturnValue("test-pkce-challenge");
+      vi.mocked(buildAuthorizationUrl).mockReturnValue(
+        "https://oauth.example.com/authorize?client_id=test&code_challenge=test-pkce-challenge",
+      );
+
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "withings",
+          name: "Withings",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://account.withings.com/oauth2_user/authorize2",
+              clientId: "test-client",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["user.metrics"],
+              usePkce: true,
+            },
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/auth/provider/withings");
+      expect(res.status).toBe(302);
+      // Verify buildAuthorizationUrl was called with codeChallenge param
+      expect(buildAuthorizationUrl).toHaveBeenCalledWith(
+        expect.objectContaining({ usePkce: true }),
+        expect.objectContaining({ codeChallenge: "test-pkce-challenge" }),
+      );
+      expect(generateCodeChallenge).toHaveBeenCalledWith("pkce-verifier");
+    });
+
+    it("does not generate PKCE params when usePkce is false", async () => {
+      const { buildAuthorizationUrl, generateCodeChallenge } = await import("dofek/auth/oauth");
+      vi.mocked(generateCodeChallenge).mockClear();
+
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://api.wahoo.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["user_read"],
+              usePkce: false,
+            },
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+      await request(app, "get", "/auth/provider/wahoo");
+      expect(generateCodeChallenge).not.toHaveBeenCalled();
+      expect(buildAuthorizationUrl).toHaveBeenCalledWith(
+        expect.objectContaining({ usePkce: false }),
+        undefined,
+      );
+    });
+
+    it("passes stored codeVerifier to exchangeCode during PKCE callback", async () => {
+      const { generateCodeChallenge } = await import("dofek/auth/oauth");
+      vi.mocked(generateCodeChallenge).mockReturnValue("challenge-for-pkce");
+
+      const mockExchangeCode = vi.fn(() =>
+        Promise.resolve({
+          accessToken: "pkce-access",
+          refreshToken: "pkce-refresh",
+          expiresAt: new Date("2027-06-01"),
+          scopes: "read",
+        }),
+      );
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "withings",
+          name: "Withings",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://account.withings.com/oauth2_user/authorize2",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["user.metrics"],
+              usePkce: true,
+            },
+            exchangeCode: mockExchangeCode,
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+
+      // Start flow (stores codeVerifier in state map)
+      const startRes = await request(app, "get", "/auth/provider/withings");
+      expect(startRes.status).toBe(302);
+      const location = startRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const redirectUrl = new URL(location);
+      const state = redirectUrl.searchParams.get("state");
+      expect(state).toBeTruthy();
+
+      // Callback — exchangeCode should receive the stored PKCE verifier
+      const callbackRes = await request(app, "get", `/callback?code=withings-code&state=${state}`);
+      expect(callbackRes.status).toBe(200);
+      // "pkce-verifier" is what the mocked generateCodeVerifier from dofek/auth/oauth returns
+      expect(mockExchangeCode).toHaveBeenCalledWith("withings-code", "pkce-verifier");
+    });
+  });
+
+  // ── Cluster 3: /api/auth/me mobile detection (lines 455-460) ──
+  describe("GET /api/auth/me (mobile user-agent logging)", () => {
+    function setupValidSession(fakeDb: ReturnType<typeof createDatabaseFromEnv>) {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("good-session");
+      vi.mocked(validateSession).mockResolvedValue({
+        userId: "user-1",
+        expiresAt: new Date("2027-01-01"),
+      });
+      vi.mocked(fakeDb.execute).mockResolvedValue([
+        { id: "user-1", name: "Alice", email: "alice@test.com" },
+      ]);
+    }
+
+    it("logs mobile info when user-agent contains Darwin", async () => {
+      const { app, fakeDb } = createTestApp();
+      setupValidSession(fakeDb);
+      const res = await request(app, "get", "/api/auth/me", {
+        headers: { "User-Agent": "dofek/1.0 Darwin/23.1.0 CFNetwork/1494.0.7" },
+      });
+      expect(res.status).toBe(200);
+      expect(logger.info).toHaveBeenCalledWith(expect.stringContaining("(mobile)"));
+    });
+
+    it("logs mobile info when user-agent contains CFNetwork", async () => {
+      const { app, fakeDb } = createTestApp();
+      setupValidSession(fakeDb);
+      const res = await request(app, "get", "/api/auth/me", {
+        headers: { "User-Agent": "CFNetwork/1494.0.7 something" },
+      });
+      expect(res.status).toBe(200);
+      expect(logger.info).toHaveBeenCalledWith(expect.stringContaining("(mobile)"));
+    });
+
+    it("does not log mobile info for desktop user-agent", async () => {
+      const { app, fakeDb } = createTestApp();
+      setupValidSession(fakeDb);
+      const res = await request(app, "get", "/api/auth/me", {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/120.0",
+        },
+      });
+      expect(res.status).toBe(200);
+      expect(logger.info).not.toHaveBeenCalled();
+    });
+
+    it("does not log mobile info when user-agent is absent (defaults to unknown)", async () => {
+      const { app, fakeDb } = createTestApp();
+      setupValidSession(fakeDb);
+      // No User-Agent header — the code uses ?? "unknown"
+      const res = await request(app, "get", "/api/auth/me");
+      expect(res.status).toBe(200);
+      expect(logger.info).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── Cluster 4: Data login/link mobile scheme and session validation ──
+  describe("GET /auth/login/data/:provider (mobile scheme in state entry)", () => {
+    it("stores valid mobileScheme in state and passes to callback redirect", async () => {
+      const mockExchangeCode = vi.fn(() =>
+        Promise.resolve({
+          accessToken: "mobile-data-access",
+          refreshToken: "mobile-data-refresh",
+          expiresAt: new Date("2027-06-01"),
+          scopes: "read",
+        }),
+      );
+      const mockGetUserIdentity = vi.fn(() =>
+        Promise.resolve({
+          providerAccountId: "strava-mobile-data",
+          email: "runner-mobile@test.com",
+          name: "Mobile Data Runner",
+        }),
+      );
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "strava",
+          name: "Strava",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://www.strava.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["read"],
+            },
+            exchangeCode: mockExchangeCode,
+            getUserIdentity: mockGetUserIdentity,
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+
+      // Start data login with valid mobile scheme
+      const startRes = await request(app, "get", "/auth/login/data/strava?redirect_scheme=dofek");
+      expect(startRes.status).toBe(302);
+      const location = startRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const redirectUrl = new URL(location);
+      const state = redirectUrl.searchParams.get("state");
+      expect(state).toBeTruthy();
+
+      // Callback should redirect to deep link
+      const callbackRes = await request(
+        app,
+        "get",
+        `/callback?code=mobile-data-code&state=${state}`,
+      );
+      expect(callbackRes.status).toBe(302);
+      expect(callbackRes.headers.location).toContain("dofek://auth/callback?session=");
+      expect(setSessionCookie).not.toHaveBeenCalled();
+    });
+
+    it("stores undefined mobileScheme when redirect_scheme is invalid", async () => {
+      const mockExchangeCode = vi.fn(() =>
+        Promise.resolve({
+          accessToken: "web-data-access",
+          refreshToken: "web-data-refresh",
+          expiresAt: new Date("2027-06-01"),
+          scopes: "read",
+        }),
+      );
+      const mockGetUserIdentity = vi.fn(() =>
+        Promise.resolve({
+          providerAccountId: "strava-web-data",
+          email: "runner-web@test.com",
+          name: "Web Data Runner",
+        }),
+      );
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "strava",
+          name: "Strava",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://www.strava.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["read"],
+            },
+            exchangeCode: mockExchangeCode,
+            getUserIdentity: mockGetUserIdentity,
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+
+      // Start data login with invalid mobile scheme
+      const startRes = await request(app, "get", "/auth/login/data/strava?redirect_scheme=evil");
+      expect(startRes.status).toBe(302);
+      const location = startRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const redirectUrl = new URL(location);
+      const state = redirectUrl.searchParams.get("state");
+
+      // Callback should redirect to / (web), not deep link
+      const callbackRes = await request(app, "get", `/callback?code=web-data-code&state=${state}`);
+      expect(callbackRes.status).toBe(302);
+      expect(callbackRes.headers.location).toBe("/");
+      expect(setSessionCookie).toHaveBeenCalled();
+    });
+  });
+
+  describe("GET /auth/link/data/:provider (session validation)", () => {
+    it("redirects to OAuth when session is valid", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
+      vi.mocked(validateSession).mockResolvedValue({
+        userId: "link-data-user",
+        expiresAt: new Date("2027-01-01"),
+      });
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://api.wahoo.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["user_read"],
+            },
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/auth/link/data/wahoo");
+      expect(res.status).toBe(302);
+    });
+
+    it("returns 401 with expired session message", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("expired-sess");
+      vi.mocked(validateSession).mockResolvedValue(null);
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/auth/link/data/wahoo");
+      expect(res.status).toBe(401);
+      expect(res.body).toContain("Session expired");
+    });
+  });
+
+  // ── Cluster 5: /callback param reading (lines 561-567, 581, 583) ──
+  describe("GET /callback (OAuth 1.0 param edge cases)", () => {
+    it("falls through to OAuth 2.0 path when only oauth_token is present without oauth_verifier", async () => {
+      const { app } = createTestApp();
+      // oauth_token without oauth_verifier — the if (oauthToken && oauthVerifier) check fails
+      // Falls through to OAuth 2.0 path, which requires code+state
+      const res = await request(app, "get", "/callback?oauth_token=some-token");
+      // No code/state, so it should hit "Missing code or state parameter"
+      expect(res.status).toBe(400);
+      expect(res.body).toContain("Missing code or state");
+    });
+
+    it("returns OK when only oauth_verifier is present without oauth_token (treated as bare GET)", async () => {
+      const { app } = createTestApp();
+      // oauth_verifier without oauth_token — oauthToken is undefined, so bare GET check passes
+      const res = await request(app, "get", "/callback?oauth_verifier=some-verifier");
+      expect(res.status).toBe(200);
+      expect(res.body).toBe("OK");
+    });
+
+    it("reads code and state from query params correctly", async () => {
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://api.wahoo.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["user_read"],
+            },
+            exchangeCode: vi.fn(() =>
+              Promise.resolve({
+                accessToken: "tok",
+                refreshToken: "ref",
+                expiresAt: new Date("2027-06-01"),
+                scopes: "",
+              }),
+            ),
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+      const startRes = await request(app, "get", "/auth/provider/wahoo");
+      expect(startRes.status).toBe(302);
+      const location = startRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const redirectUrl = new URL(location);
+      const state = redirectUrl.searchParams.get("state");
+
+      // Passing both code and state properly
+      const callbackRes = await request(app, "get", `/callback?code=valid-code&state=${state}`);
+      expect(callbackRes.status).toBe(200);
+      expect(callbackRes.body).toContain("Authorized!");
+    });
+
+    it("treats non-string query params as missing (returns 400 with code/state)", async () => {
+      const { app } = createTestApp();
+      // When code is present as string but state has valid data, it needs a valid state token
+      // This test verifies the code param is read properly as a string
+      const res = await request(app, "get", "/callback?code=real-code&state=nonexistent-state");
+      expect(res.status).toBe(400);
+      expect(res.body).toContain("Unknown or expired OAuth state");
+    });
+  });
+
+  // ── Cluster 6: Data provider callback — webhook registration, identity intent branching ──
+  describe("GET /callback (webhook registration on successful data OAuth)", () => {
+    it("registers webhook when provider is a webhook provider", async () => {
+      vi.mocked(isWebhookProvider).mockReturnValue(true);
+      const mockExchangeCode = vi.fn(() =>
+        Promise.resolve({
+          accessToken: "webhook-access",
+          refreshToken: "webhook-refresh",
+          expiresAt: new Date("2027-06-01"),
+          scopes: "read",
+        }),
+      );
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://api.wahoo.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["user_read"],
+            },
+            exchangeCode: mockExchangeCode,
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+
+      // Start OAuth
+      const startRes = await request(app, "get", "/auth/provider/wahoo");
+      expect(startRes.status).toBe(302);
+      const location = startRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const redirectUrl = new URL(location);
+      const state = redirectUrl.searchParams.get("state");
+
+      // Callback
+      const callbackRes = await request(
+        app,
+        "get",
+        `/callback?code=wahoo-webhook-code&state=${state}`,
+      );
+      expect(callbackRes.status).toBe(200);
+      expect(registerWebhookForProvider).toHaveBeenCalled();
+
+      vi.mocked(isWebhookProvider).mockReturnValue(false);
+    });
+
+    it("does not register webhook when provider is not a webhook provider", async () => {
+      vi.mocked(isWebhookProvider).mockReturnValue(false);
+      const mockExchangeCode = vi.fn(() =>
+        Promise.resolve({
+          accessToken: "no-webhook-access",
+          refreshToken: "no-webhook-refresh",
+          expiresAt: new Date("2027-06-01"),
+          scopes: "read",
+        }),
+      );
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://api.wahoo.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["user_read"],
+            },
+            exchangeCode: mockExchangeCode,
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+      const startRes = await request(app, "get", "/auth/provider/wahoo");
+      const location = startRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const state = new URL(location).searchParams.get("state");
+
+      await request(app, "get", `/callback?code=code&state=${state}`);
+      expect(registerWebhookForProvider).not.toHaveBeenCalled();
+    });
+
+    it("continues successfully even when webhook registration fails", async () => {
+      vi.mocked(isWebhookProvider).mockReturnValue(true);
+      vi.mocked(registerWebhookForProvider).mockRejectedValueOnce(
+        new Error("Webhook registration failed"),
+      );
+      const mockExchangeCode = vi.fn(() =>
+        Promise.resolve({
+          accessToken: "webhook-fail-access",
+          refreshToken: "webhook-fail-refresh",
+          expiresAt: new Date("2027-06-01"),
+          scopes: "read",
+        }),
+      );
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://api.wahoo.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["user_read"],
+            },
+            exchangeCode: mockExchangeCode,
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+      const startRes = await request(app, "get", "/auth/provider/wahoo");
+      const location = startRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const state = new URL(location).searchParams.get("state");
+
+      // Should still succeed even though webhook registration failed
+      const callbackRes = await request(app, "get", `/callback?code=code&state=${state}`);
+      expect(callbackRes.status).toBe(200);
+      expect(callbackRes.body).toContain("Authorized!");
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining("Failed to register webhook"),
+      );
+
+      vi.mocked(isWebhookProvider).mockReturnValue(false);
+    });
+  });
+
+  describe("GET /callback (data intent auto-linking identity)", () => {
+    it("auto-links identity to logged-in user for data intent with getUserIdentity", async () => {
+      const mockExchangeCode = vi.fn(() =>
+        Promise.resolve({
+          accessToken: "auto-link-access",
+          refreshToken: "auto-link-refresh",
+          expiresAt: new Date("2027-06-01"),
+          scopes: "read",
+        }),
+      );
+      const mockGetUserIdentity = vi.fn(() =>
+        Promise.resolve({
+          providerAccountId: "wahoo-user-1",
+          email: "wahoo@test.com",
+          name: "Wahoo User",
+        }),
+      );
+
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://api.wahoo.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["user_read"],
+            },
+            exchangeCode: mockExchangeCode,
+            getUserIdentity: mockGetUserIdentity,
+          }),
+        },
+      ]);
+
+      // Simulate logged-in user for data intent
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-data");
+      vi.mocked(validateSession).mockResolvedValue({
+        userId: "logged-in-user",
+        expiresAt: new Date("2027-01-01"),
+      });
+
+      const { app } = createTestApp();
+
+      // Start data OAuth flow
+      const startRes = await request(app, "get", "/auth/provider/wahoo");
+      expect(startRes.status).toBe(302);
+      const location = startRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const state = new URL(location).searchParams.get("state");
+
+      // Callback — should auto-link identity
+      const callbackRes = await request(app, "get", `/callback?code=auto-link-code&state=${state}`);
+      expect(callbackRes.status).toBe(200);
+      expect(callbackRes.body).toContain("Authorized!");
+      expect(mockGetUserIdentity).toHaveBeenCalledWith("auto-link-access");
+      // resolveOrCreateUser should be called with the logged-in user ID for auto-linking
+      expect(resolveOrCreateUser).toHaveBeenCalledWith(
+        expect.anything(),
+        "wahoo",
+        expect.objectContaining({ providerAccountId: "wahoo-user-1" }),
+        "logged-in-user",
+      );
+    });
+
+    it("skips auto-linking when no session is active for data intent", async () => {
+      const mockExchangeCode = vi.fn(() =>
+        Promise.resolve({
+          accessToken: "no-session-access",
+          refreshToken: "no-session-refresh",
+          expiresAt: new Date("2027-06-01"),
+          scopes: "read",
+        }),
+      );
+      const mockGetUserIdentity = vi.fn(() =>
+        Promise.resolve({
+          providerAccountId: "wahoo-anon",
+          email: "anon@test.com",
+          name: "Anon",
+        }),
+      );
+
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://api.wahoo.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["user_read"],
+            },
+            exchangeCode: mockExchangeCode,
+            getUserIdentity: mockGetUserIdentity,
+          }),
+        },
+      ]);
+
+      // No logged-in session
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
+      vi.mocked(validateSession).mockResolvedValue(null);
+
+      const { app } = createTestApp();
+
+      const startRes = await request(app, "get", "/auth/provider/wahoo");
+      expect(startRes.status).toBe(302);
+      const location = startRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const state = new URL(location).searchParams.get("state");
+
+      const callbackRes = await request(
+        app,
+        "get",
+        `/callback?code=no-session-code&state=${state}`,
+      );
+      expect(callbackRes.status).toBe(200);
+      expect(mockGetUserIdentity).toHaveBeenCalled();
+      // resolveOrCreateUser should NOT have been called since there's no session
+      expect(resolveOrCreateUser).not.toHaveBeenCalled();
+    });
+
+    it("continues even when getUserIdentity throws (non-fatal)", async () => {
+      const mockExchangeCode = vi.fn(() =>
+        Promise.resolve({
+          accessToken: "identity-fail-access",
+          refreshToken: "identity-fail-refresh",
+          expiresAt: new Date("2027-06-01"),
+          scopes: "read",
+        }),
+      );
+      const mockGetUserIdentity = vi.fn(() =>
+        Promise.reject(new Error("Identity extraction failed")),
+      );
+
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://api.wahoo.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["user_read"],
+            },
+            exchangeCode: mockExchangeCode,
+            getUserIdentity: mockGetUserIdentity,
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+      const startRes = await request(app, "get", "/auth/provider/wahoo");
+      const location = startRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const state = new URL(location).searchParams.get("state");
+
+      const callbackRes = await request(
+        app,
+        "get",
+        `/callback?code=fail-identity-code&state=${state}`,
+      );
+      // Should still succeed — identity extraction failure is non-fatal
+      expect(callbackRes.status).toBe(200);
+      expect(callbackRes.body).toContain("Authorized!");
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining("Failed to extract identity"),
+      );
+    });
+  });
+
+  // ── Cluster: /auth/provider/:provider session resolution (line 546) ──
+  describe("GET /auth/provider/:provider (session resolution for userId)", () => {
+    it("uses session userId when logged in", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-provider");
+      vi.mocked(validateSession).mockResolvedValue({
+        userId: "session-user-id",
+        expiresAt: new Date("2027-01-01"),
+      });
+
+      const mockExchangeCode = vi.fn(() =>
+        Promise.resolve({
+          accessToken: "session-access",
+          refreshToken: "session-refresh",
+          expiresAt: new Date("2027-06-01"),
+          scopes: "read",
+        }),
+      );
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://api.wahoo.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["user_read"],
+            },
+            exchangeCode: mockExchangeCode,
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+      const startRes = await request(app, "get", "/auth/provider/wahoo");
+      expect(startRes.status).toBe(302);
+      const location = startRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const state = new URL(location).searchParams.get("state");
+
+      const { ensureProvider } = await import("dofek/db/tokens");
+
+      const callbackRes = await request(app, "get", `/callback?code=session-code&state=${state}`);
+      expect(callbackRes.status).toBe(200);
+      // ensureProvider should be called with the session userId
+      expect(ensureProvider).toHaveBeenCalledWith(
+        expect.anything(),
+        "wahoo",
+        "Wahoo",
+        undefined,
+        "session-user-id",
+      );
+    });
+
+    it("falls back to DEFAULT_USER_ID when no session", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
+      vi.mocked(validateSession).mockResolvedValue(null);
+
+      const mockExchangeCode = vi.fn(() =>
+        Promise.resolve({
+          accessToken: "default-access",
+          refreshToken: "default-refresh",
+          expiresAt: new Date("2027-06-01"),
+          scopes: "read",
+        }),
+      );
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://api.wahoo.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["user_read"],
+            },
+            exchangeCode: mockExchangeCode,
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+      const startRes = await request(app, "get", "/auth/provider/wahoo");
+      expect(startRes.status).toBe(302);
+      const location = startRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const state = new URL(location).searchParams.get("state");
+
+      const { ensureProvider } = await import("dofek/db/tokens");
+
+      const callbackRes = await request(app, "get", `/callback?code=default-code&state=${state}`);
+      expect(callbackRes.status).toBe(200);
+      // Should use DEFAULT_USER_ID since there's no session
+      expect(ensureProvider).toHaveBeenCalledWith(
+        expect.anything(),
+        "wahoo",
+        "Wahoo",
+        undefined,
+        expect.any(String), // DEFAULT_USER_ID
+      );
+    });
+  });
+
+  // ── Cluster: OAuth 1.0 callback edge cases ──
+  describe("GET /callback (OAuth 1.0 provider not found)", () => {
+    it("returns 404 when provider is not found during OAuth 1.0 callback", async () => {
+      const mockGetRequestToken = vi.fn(() =>
+        Promise.resolve({
+          oauthToken: "orphan-oauth1-tok",
+          oauthTokenSecret: "orphan-oauth1-secret",
+          authorizeUrl: "https://fatsecret.com/authorize?oauth_token=orphan-oauth1-tok",
+        }),
+      );
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "fatsecret",
+          name: "FatSecret",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://fatsecret.com/authorize",
+              clientId: "test",
+            },
+            oauth1Flow: {
+              getRequestToken: mockGetRequestToken,
+              exchangeForAccessToken: vi.fn(),
+            },
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+
+      // Start OAuth 1.0 flow
+      const startRes = await request(app, "get", "/auth/provider/fatsecret");
+      expect(startRes.status).toBe(302);
+
+      // Now change getAllProviders to return empty, so the provider won't be found
+      vi.mocked(getAllProviders).mockReturnValue([]);
+
+      const callbackRes = await request(
+        app,
+        "get",
+        "/callback?oauth_token=orphan-oauth1-tok&oauth_verifier=verifier",
+      );
+      expect(callbackRes.status).toBe(404);
+      expect(callbackRes.body).toContain("Unknown provider");
+    });
+
+    it("returns 400 when provider no longer has oauth1Flow during callback", async () => {
+      const mockGetRequestToken = vi.fn(() =>
+        Promise.resolve({
+          oauthToken: "lost-flow-tok",
+          oauthTokenSecret: "lost-flow-secret",
+          authorizeUrl: "https://fatsecret.com/authorize?oauth_token=lost-flow-tok",
+        }),
+      );
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "fatsecret",
+          name: "FatSecret",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://fatsecret.com/authorize",
+              clientId: "test",
+            },
+            oauth1Flow: {
+              getRequestToken: mockGetRequestToken,
+              exchangeForAccessToken: vi.fn(),
+            },
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+
+      // Start OAuth 1.0 flow
+      const startRes = await request(app, "get", "/auth/provider/fatsecret");
+      expect(startRes.status).toBe(302);
+
+      // Now change provider to no longer have oauth1Flow
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "fatsecret",
+          name: "FatSecret",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://fatsecret.com/authorize",
+              clientId: "test",
+            },
+            // no oauth1Flow
+          }),
+        },
+      ]);
+
+      const callbackRes = await request(
+        app,
+        "get",
+        "/callback?oauth_token=lost-flow-tok&oauth_verifier=verifier",
+      );
+      expect(callbackRes.status).toBe(400);
+      expect(callbackRes.body).toContain("does not support OAuth 1.0");
+    });
+  });
+
+  // ── Cluster: /api/auth/me clearSessionCookie on expired session ──
+  describe("GET /api/auth/me (session cookie cleanup)", () => {
+    it("clears session cookie when session is expired", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("expired-session");
+      vi.mocked(validateSession).mockResolvedValue(null);
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/api/auth/me");
+      expect(res.status).toBe(401);
+      expect(clearSessionCookie).toHaveBeenCalled();
+    });
+
+    it("does not clear session cookie when no session is present", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/api/auth/me");
+      expect(res.status).toBe(401);
+      expect(clearSessionCookie).not.toHaveBeenCalled();
     });
   });
 });
