@@ -2,8 +2,8 @@
 
 import { renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { InertialMeasurementUnitUploadClient } from "./inertial-measurement-unit-service";
 import type { WhoopBleSyncDeps } from "./background-whoop-ble-sync";
+import type { InertialMeasurementUnitUploadClient } from "./inertial-measurement-unit-service";
 
 // --- Hoisted mocks (vi.mock factories are hoisted, so refs must be too) ---
 

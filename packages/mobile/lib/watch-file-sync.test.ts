@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { InertialMeasurementUnitSample } from "../modules/core-motion";
 
 const mockGetPendingWatchFileNames = vi.fn((): string[] => []);
-const mockReadWatchFile = vi.fn((): Promise<InertialMeasurementUnitSample[]> => Promise.resolve([]));
+const mockReadWatchFile = vi.fn(
+  (): Promise<InertialMeasurementUnitSample[]> => Promise.resolve([]),
+);
 const mockDeleteWatchFile = vi.fn();
 const mockRequestWatchRecording = vi.fn(() => Promise.resolve(true));
 

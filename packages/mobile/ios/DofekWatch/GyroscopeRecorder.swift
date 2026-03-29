@@ -6,6 +6,8 @@ import Foundation
 /// CMMotionManager requires an active session — gyroscope recording
 /// only runs while the Watch app is in the foreground.
 final class GyroscopeRecorder: ObservableObject {
+    static let shared = GyroscopeRecorder()
+
     private let motionManager = CMMotionManager()
     private let operationQueue: OperationQueue = {
         let queue = OperationQueue()
