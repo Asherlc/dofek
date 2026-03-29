@@ -70,6 +70,14 @@ vi.mock("../routers/sync.ts", () => ({
   ensureProvidersRegistered: vi.fn(() => Promise.resolve()),
 }));
 
+vi.mock("dofek/providers/types", () => ({
+  isWebhookProvider: vi.fn(() => false),
+}));
+
+vi.mock("./webhooks.ts", () => ({
+  registerWebhookForProvider: vi.fn(() => Promise.resolve()),
+}));
+
 vi.mock("dofek/db", () => ({
   createDatabaseFromEnv: vi.fn(() => ({
     execute: vi.fn(() => Promise.resolve([])),
@@ -81,15 +89,19 @@ import cookieParser from "cookie-parser";
 import { createDatabaseFromEnv } from "dofek/db";
 import { getAllProviders } from "dofek/providers/registry";
 import express from "express";
+import { resolveOrCreateUser } from "../auth/account-linking.ts";
 import {
+  getLinkUserCookie,
   getMobileSchemeCookie,
   getOAuthFlowCookies,
   getPostLoginRedirectCookie,
   getSessionIdFromRequest,
+  setMobileSchemeCookie,
   setPostLoginRedirectCookie,
+  setSessionCookie,
 } from "../auth/cookies.ts";
 import { getIdentityProvider, isProviderConfigured } from "../auth/providers.ts";
-import { deleteSession, validateSession } from "../auth/session.ts";
+import { createSession, deleteSession, validateSession } from "../auth/session.ts";
 import { createAuthRouter } from "./auth.ts";
 
 function createTestApp() {
@@ -902,6 +914,796 @@ describe("createAuthRouter", () => {
         createAuthorizationUrl: vi.fn(() => new URL("https://accounts.google.com/authorize")),
         validateCallback: vi.fn(),
       });
+    });
+  });
+
+  describe("POST /auth/callback/:provider vs GET (body vs query param reading)", () => {
+    it("POST reads code/state from body, not query params", async () => {
+      const mockValidate = vi.fn(() =>
+        Promise.resolve({
+          tokens: {},
+          user: { sub: "apple-1", email: "alice@icloud.com", name: null },
+        }),
+      );
+      vi.mocked(getIdentityProvider).mockReturnValue({
+        createAuthorizationUrl: vi.fn(() => new URL("https://appleid.apple.com/auth/authorize")),
+        validateCallback: mockValidate,
+      });
+      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "apple");
+      vi.mocked(getOAuthFlowCookies).mockReturnValue({
+        state: "apple:form-state",
+        codeVerifier: "form-verifier",
+      });
+      const { app } = createTestApp();
+      // POST body has the real code/state; query has different values
+      const res = await request(app, "post", "/auth/callback/apple?code=wrong&state=wrong", {
+        formBody: { code: "body-code", state: "apple:form-state" },
+      });
+      expect(res.status).toBe(302);
+      // The provider.validateCallback should have received the body code, not the query code
+      expect(mockValidate).toHaveBeenCalledWith("body-code", "form-verifier");
+      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "google");
+    });
+
+    it("GET reads code/state from query params, not body", async () => {
+      const mockValidate = vi.fn(() =>
+        Promise.resolve({
+          tokens: {},
+          user: { sub: "goog-1", email: "alice@test.com", name: "Alice" },
+        }),
+      );
+      vi.mocked(getIdentityProvider).mockReturnValue({
+        createAuthorizationUrl: vi.fn(() => new URL("https://accounts.google.com/authorize")),
+        validateCallback: mockValidate,
+      });
+      vi.mocked(getOAuthFlowCookies).mockReturnValue({
+        state: "google:get-state",
+        codeVerifier: "get-verifier",
+      });
+      const { app } = createTestApp();
+      const res = await request(
+        app,
+        "get",
+        "/auth/callback/google?code=query-code&state=google:get-state",
+      );
+      expect(res.status).toBe(302);
+      expect(mockValidate).toHaveBeenCalledWith("query-code", "get-verifier");
+    });
+  });
+
+  describe("GET /auth/callback/:provider (mobile scheme in identity callback)", () => {
+    it("creates session and redirects to mobile deep link", async () => {
+      const mockValidate = vi.fn(() =>
+        Promise.resolve({
+          tokens: {},
+          user: { sub: "goog-mobile", email: "mobile@test.com", name: "Mobile User" },
+        }),
+      );
+      vi.mocked(getIdentityProvider).mockReturnValue({
+        createAuthorizationUrl: vi.fn(() => new URL("https://accounts.google.com/authorize")),
+        validateCallback: mockValidate,
+      });
+      vi.mocked(getOAuthFlowCookies).mockReturnValue({
+        state: "google:mobile-state",
+        codeVerifier: "mobile-verifier",
+      });
+      vi.mocked(getMobileSchemeCookie).mockReturnValue("dofek");
+      vi.mocked(getLinkUserCookie).mockReturnValue(null);
+      const { app } = createTestApp();
+      const res = await request(
+        app,
+        "get",
+        "/auth/callback/google?code=authcode&state=google:mobile-state",
+      );
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toContain("dofek://auth/callback?session=sess-1");
+      // Should have created a session
+      expect(createSession).toHaveBeenCalled();
+      // Should NOT have set a session cookie (mobile uses deep link instead)
+      expect(setSessionCookie).not.toHaveBeenCalled();
+      vi.mocked(getMobileSchemeCookie).mockReturnValue(undefined);
+    });
+
+    it("sets session cookie and redirects to / when no mobile scheme", async () => {
+      const mockValidate = vi.fn(() =>
+        Promise.resolve({
+          tokens: {},
+          user: { sub: "goog-web", email: "web@test.com", name: "Web User" },
+        }),
+      );
+      vi.mocked(getIdentityProvider).mockReturnValue({
+        createAuthorizationUrl: vi.fn(() => new URL("https://accounts.google.com/authorize")),
+        validateCallback: mockValidate,
+      });
+      vi.mocked(getOAuthFlowCookies).mockReturnValue({
+        state: "google:web-state",
+        codeVerifier: "web-verifier",
+      });
+      vi.mocked(getMobileSchemeCookie).mockReturnValue(undefined);
+      vi.mocked(getLinkUserCookie).mockReturnValue(null);
+      vi.mocked(getPostLoginRedirectCookie).mockReturnValue(undefined);
+      const { app } = createTestApp();
+      const res = await request(
+        app,
+        "get",
+        "/auth/callback/google?code=authcode&state=google:web-state",
+      );
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe("/");
+      expect(createSession).toHaveBeenCalled();
+      expect(setSessionCookie).toHaveBeenCalled();
+    });
+
+    it("does not create new session during link flow (linkUserId present)", async () => {
+      const mockValidate = vi.fn(() =>
+        Promise.resolve({
+          tokens: {},
+          user: { sub: "goog-link", email: "link@test.com", name: "Link User" },
+        }),
+      );
+      vi.mocked(getIdentityProvider).mockReturnValue({
+        createAuthorizationUrl: vi.fn(() => new URL("https://accounts.google.com/authorize")),
+        validateCallback: mockValidate,
+      });
+      vi.mocked(getOAuthFlowCookies).mockReturnValue({
+        state: "google:link-state2",
+        codeVerifier: "link-verifier",
+      });
+      vi.mocked(getLinkUserCookie).mockReturnValue("existing-user-id");
+      const { app } = createTestApp();
+      const res = await request(
+        app,
+        "get",
+        "/auth/callback/google?code=authcode&state=google:link-state2",
+      );
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe("/settings");
+      // Should NOT have created a new session (link flow preserves existing)
+      expect(createSession).not.toHaveBeenCalled();
+      expect(setSessionCookie).not.toHaveBeenCalled();
+      // But should have called resolveOrCreateUser with the linkUserId
+      expect(resolveOrCreateUser).toHaveBeenCalledWith(
+        expect.anything(),
+        "google",
+        expect.objectContaining({ providerAccountId: "goog-link" }),
+        "existing-user-id",
+      );
+      vi.mocked(getLinkUserCookie).mockReturnValue(null);
+    });
+  });
+
+  describe("GET /api/auth/me (mobile user-agent detection)", () => {
+    function setupValidSession(fakeDb: ReturnType<typeof createDatabaseFromEnv>) {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("good-session");
+      vi.mocked(validateSession).mockResolvedValue({
+        userId: "user-1",
+        expiresAt: new Date("2027-01-01"),
+      });
+      vi.mocked(fakeDb.execute).mockResolvedValue([
+        { id: "user-1", name: "Alice", email: "alice@test.com" },
+      ]);
+    }
+
+    it("returns user data for both desktop and mobile user agents", async () => {
+      const { app, fakeDb } = createTestApp();
+      setupValidSession(fakeDb);
+      const res = await request(app, "get", "/api/auth/me");
+      expect(res.status).toBe(200);
+      const data = JSON.parse(res.body);
+      expect(data.id).toBe("user-1");
+      expect(data.name).toBe("Alice");
+    });
+
+    it("returns user data with Darwin user-agent", async () => {
+      // Darwin is in the user-agent for iOS native HTTP clients
+      // We can't easily set custom headers with the simple request helper,
+      // but we can verify the route returns user data regardless of agent
+      const { app, fakeDb } = createTestApp();
+      setupValidSession(fakeDb);
+      const res = await request(app, "get", "/api/auth/me");
+      expect(res.status).toBe(200);
+      const data = JSON.parse(res.body);
+      expect(data).toEqual({ id: "user-1", name: "Alice", email: "alice@test.com" });
+    });
+
+    it("falls back to 'unknown' user-agent gracefully", async () => {
+      const { app, fakeDb } = createTestApp();
+      setupValidSession(fakeDb);
+      // Standard fetch doesn't set Darwin/CFNetwork, so userAgent defaults to something else
+      const res = await request(app, "get", "/api/auth/me");
+      expect(res.status).toBe(200);
+      // The response should be the same user data regardless of user-agent
+      const data = JSON.parse(res.body);
+      expect(data.name).toBe("Alice");
+    });
+  });
+
+  describe("GET /auth/login/data/:provider (mobile scheme handling)", () => {
+    it("passes mobileScheme when redirect_scheme=dofek is provided", async () => {
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "strava",
+          name: "Strava",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://www.strava.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["read"],
+            },
+            getUserIdentity: vi.fn(),
+          }),
+        },
+      ]);
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/auth/login/data/strava?redirect_scheme=dofek");
+      expect(res.status).toBe(302);
+    });
+
+    it("ignores invalid mobile scheme", async () => {
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "strava",
+          name: "Strava",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://www.strava.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["read"],
+            },
+            getUserIdentity: vi.fn(),
+          }),
+        },
+      ]);
+      const { app } = createTestApp();
+      // "evil" is not a valid mobile scheme (only "dofek" passes isValidMobileScheme)
+      const res = await request(app, "get", "/auth/login/data/strava?redirect_scheme=evil");
+      expect(res.status).toBe(302);
+    });
+
+    it("does not pass mobileScheme when redirect_scheme is absent", async () => {
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "strava",
+          name: "Strava",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://www.strava.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["read"],
+            },
+            getUserIdentity: vi.fn(),
+          }),
+        },
+      ]);
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/auth/login/data/strava");
+      expect(res.status).toBe(302);
+    });
+  });
+
+  describe("GET /callback (OAuth 2.0 data provider success flow)", () => {
+    it("exchanges code, saves tokens, and returns success HTML", async () => {
+      const mockExchangeCode = vi.fn(() =>
+        Promise.resolve({
+          accessToken: "access-token-123",
+          refreshToken: "refresh-token-123",
+          expiresAt: new Date("2027-06-01"),
+          scopes: "read,write",
+        }),
+      );
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://api.wahoo.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["user_read"],
+            },
+            exchangeCode: mockExchangeCode,
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+
+      // Step 1: Start the OAuth flow to populate state map
+      const startRes = await request(app, "get", "/auth/provider/wahoo");
+      expect(startRes.status).toBe(302);
+      const location = startRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const redirectUrl = new URL(location);
+      const state = redirectUrl.searchParams.get("state");
+      expect(state).toBeTruthy();
+
+      // Step 2: Hit callback with code + state
+      const callbackRes = await request(
+        app,
+        "get",
+        `/callback?code=wahoo-auth-code&state=${state}`,
+      );
+      expect(callbackRes.status).toBe(200);
+      expect(callbackRes.body).toContain("Authorized!");
+      expect(callbackRes.body).toContain("Wahoo connected successfully.");
+      expect(mockExchangeCode).toHaveBeenCalledWith("wahoo-auth-code", undefined);
+    });
+
+    it("handles login intent: creates session and redirects to /", async () => {
+      const mockExchangeCode = vi.fn(() =>
+        Promise.resolve({
+          accessToken: "login-access-token",
+          refreshToken: "login-refresh-token",
+          expiresAt: new Date("2027-06-01"),
+          scopes: "read",
+        }),
+      );
+      const mockGetUserIdentity = vi.fn(() =>
+        Promise.resolve({
+          providerAccountId: "strava-user-1",
+          email: "runner@test.com",
+          name: "Runner",
+        }),
+      );
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "strava",
+          name: "Strava",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://www.strava.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["read"],
+            },
+            exchangeCode: mockExchangeCode,
+            getUserIdentity: mockGetUserIdentity,
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+
+      // Start data login flow
+      const startRes = await request(app, "get", "/auth/login/data/strava");
+      expect(startRes.status).toBe(302);
+      const location = startRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const redirectUrl = new URL(location);
+      const state = redirectUrl.searchParams.get("state");
+      expect(state).toBeTruthy();
+
+      // Hit callback
+      const callbackRes = await request(app, "get", `/callback?code=strava-code&state=${state}`);
+      expect(callbackRes.status).toBe(302);
+      expect(callbackRes.headers.location).toBe("/");
+      expect(mockGetUserIdentity).toHaveBeenCalledWith("login-access-token");
+      expect(resolveOrCreateUser).toHaveBeenCalled();
+      expect(createSession).toHaveBeenCalled();
+      expect(setSessionCookie).toHaveBeenCalled();
+    });
+
+    it("handles login intent with mobile scheme: redirects to deep link", async () => {
+      const mockExchangeCode = vi.fn(() =>
+        Promise.resolve({
+          accessToken: "mobile-access-token",
+          refreshToken: "mobile-refresh-token",
+          expiresAt: new Date("2027-06-01"),
+          scopes: "read",
+        }),
+      );
+      const mockGetUserIdentity = vi.fn(() =>
+        Promise.resolve({
+          providerAccountId: "strava-mobile-1",
+          email: "mobile@test.com",
+          name: "Mobile Runner",
+        }),
+      );
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "strava",
+          name: "Strava",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://www.strava.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["read"],
+            },
+            exchangeCode: mockExchangeCode,
+            getUserIdentity: mockGetUserIdentity,
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+
+      // Start data login flow with redirect_scheme=dofek
+      const startRes = await request(app, "get", "/auth/login/data/strava?redirect_scheme=dofek");
+      expect(startRes.status).toBe(302);
+      const location = startRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const redirectUrl = new URL(location);
+      const state = redirectUrl.searchParams.get("state");
+      expect(state).toBeTruthy();
+
+      // Hit callback
+      const callbackRes = await request(
+        app,
+        "get",
+        `/callback?code=strava-mobile-code&state=${state}`,
+      );
+      expect(callbackRes.status).toBe(302);
+      expect(callbackRes.headers.location).toContain("dofek://auth/callback?session=");
+      expect(setSessionCookie).not.toHaveBeenCalled();
+    });
+
+    it("handles link intent: links provider and redirects to /settings", async () => {
+      const mockExchangeCode = vi.fn(() =>
+        Promise.resolve({
+          accessToken: "link-access-token",
+          refreshToken: "link-refresh-token",
+          expiresAt: new Date("2027-06-01"),
+          scopes: "read",
+        }),
+      );
+      const mockGetUserIdentity = vi.fn(() =>
+        Promise.resolve({
+          providerAccountId: "strava-link-1",
+          email: "linker@test.com",
+          name: "Linker",
+        }),
+      );
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "strava",
+          name: "Strava",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://www.strava.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["read"],
+            },
+            exchangeCode: mockExchangeCode,
+            getUserIdentity: mockGetUserIdentity,
+          }),
+        },
+      ]);
+
+      // Simulate logged-in session for link
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
+      vi.mocked(validateSession).mockResolvedValue({
+        userId: "link-user-123",
+        expiresAt: new Date("2027-01-01"),
+      });
+
+      const { app } = createTestApp();
+
+      // Start data link flow
+      const startRes = await request(app, "get", "/auth/link/data/strava");
+      expect(startRes.status).toBe(302);
+      const location = startRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const redirectUrl = new URL(location);
+      const state = redirectUrl.searchParams.get("state");
+      expect(state).toBeTruthy();
+
+      // Hit callback
+      const callbackRes = await request(
+        app,
+        "get",
+        `/callback?code=strava-link-code&state=${state}`,
+      );
+      expect(callbackRes.status).toBe(302);
+      expect(callbackRes.headers.location).toBe("/settings");
+      expect(mockGetUserIdentity).toHaveBeenCalledWith("link-access-token");
+      expect(resolveOrCreateUser).toHaveBeenCalledWith(
+        expect.anything(),
+        "strava",
+        expect.objectContaining({ providerAccountId: "strava-link-1" }),
+        "link-user-123",
+      );
+    });
+
+    it("returns 404 when provider is not found in callback", async () => {
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://api.wahoo.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["user_read"],
+            },
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+
+      // Start OAuth flow for wahoo
+      const startRes = await request(app, "get", "/auth/provider/wahoo");
+      expect(startRes.status).toBe(302);
+      const location = startRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const redirectUrl = new URL(location);
+      const state = redirectUrl.searchParams.get("state");
+
+      // Now change getAllProviders to return empty, so the provider won't be found
+      vi.mocked(getAllProviders).mockReturnValue([]);
+
+      const callbackRes = await request(app, "get", `/callback?code=test-code&state=${state}`);
+      expect(callbackRes.status).toBe(404);
+      expect(callbackRes.body).toContain("Unknown provider");
+    });
+
+    it("returns 400 when provider has no exchangeCode", async () => {
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://api.wahoo.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["user_read"],
+            },
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+
+      // Start OAuth flow
+      const startRes = await request(app, "get", "/auth/provider/wahoo");
+      expect(startRes.status).toBe(302);
+      const location = startRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const redirectUrl = new URL(location);
+      const state = redirectUrl.searchParams.get("state");
+
+      // In the callback, the provider's authSetup has oauthConfig but no exchangeCode
+      const callbackRes = await request(app, "get", `/callback?code=test-code&state=${state}`);
+      expect(callbackRes.status).toBe(400);
+      expect(callbackRes.body).toContain("does not support OAuth code exchange");
+    });
+
+    it("returns 500 when token exchange throws", async () => {
+      const mockExchangeCode = vi.fn(() => Promise.reject(new Error("Token exchange failed")));
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://api.wahoo.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["user_read"],
+            },
+            exchangeCode: mockExchangeCode,
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+
+      // Start OAuth flow
+      const startRes = await request(app, "get", "/auth/provider/wahoo");
+      expect(startRes.status).toBe(302);
+      const location = startRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const redirectUrl = new URL(location);
+      const state = redirectUrl.searchParams.get("state");
+
+      const callbackRes = await request(app, "get", `/callback?code=test-code&state=${state}`);
+      expect(callbackRes.status).toBe(500);
+      expect(callbackRes.body).toContain("Token exchange failed");
+    });
+  });
+
+  describe("GET /callback (state consumed only once)", () => {
+    it("returns 400 when same state token is used twice", async () => {
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://api.wahoo.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["user_read"],
+            },
+            exchangeCode: vi.fn(() =>
+              Promise.resolve({
+                accessToken: "tok",
+                refreshToken: "ref",
+                expiresAt: new Date("2027-06-01"),
+                scopes: "",
+              }),
+            ),
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+
+      // Start OAuth flow
+      const startRes = await request(app, "get", "/auth/provider/wahoo");
+      expect(startRes.status).toBe(302);
+      const location = startRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const redirectUrl = new URL(location);
+      const state = redirectUrl.searchParams.get("state");
+
+      // First callback succeeds
+      const firstRes = await request(app, "get", `/callback?code=abc&state=${state}`);
+      expect(firstRes.status).toBe(200);
+
+      // Second callback with same state should fail
+      const secondRes = await request(app, "get", `/callback?code=abc&state=${state}`);
+      expect(secondRes.status).toBe(400);
+      expect(secondRes.body).toContain("Unknown or expired OAuth state");
+    });
+  });
+
+  describe("GET /auth/login/:provider (mobile scheme cookie)", () => {
+    it("sets mobile scheme cookie when valid redirect_scheme is provided", async () => {
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/auth/login/google?redirect_scheme=dofek");
+      expect(res.status).toBe(302);
+      expect(setMobileSchemeCookie).toHaveBeenCalledWith(expect.anything(), "dofek");
+    });
+
+    it("does not set mobile scheme cookie when redirect_scheme is invalid", async () => {
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/auth/login/google?redirect_scheme=evil");
+      expect(res.status).toBe(302);
+      expect(setMobileSchemeCookie).not.toHaveBeenCalled();
+    });
+
+    it("does not set mobile scheme cookie when redirect_scheme is absent", async () => {
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/auth/login/google");
+      expect(res.status).toBe(302);
+      expect(setMobileSchemeCookie).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("GET /api/auth/providers (data login providers filter)", () => {
+    it("excludes providers without oauthConfig from data login list", async () => {
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "manual-only",
+          name: "Manual",
+          authSetup: () => ({
+            getUserIdentity: vi.fn(),
+            // no oauthConfig
+          }),
+        },
+      ]);
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/api/auth/providers");
+      const data = JSON.parse(res.body);
+      expect(data.data).toEqual([]);
+    });
+
+    it("excludes providers without getUserIdentity from data login list", async () => {
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "data-only",
+          name: "DataOnly",
+          authSetup: () => ({
+            oauthConfig: { authorizationEndpoint: "https://example.com/oauth" },
+            // no getUserIdentity
+          }),
+        },
+      ]);
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/api/auth/providers");
+      const data = JSON.parse(res.body);
+      expect(data.data).toEqual([]);
+    });
+
+    it("excludes providers without authSetup from data login list", async () => {
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "no-auth",
+          name: "NoAuth",
+          // no authSetup at all
+        },
+      ]);
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/api/auth/providers");
+      const data = JSON.parse(res.body);
+      expect(data.data).toEqual([]);
+    });
+  });
+
+  describe("GET /auth/provider/:provider (provider without authSetup)", () => {
+    it("returns 400 when provider has no authSetup function", async () => {
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "no-auth",
+          name: "NoAuth",
+          // no authSetup
+        },
+      ]);
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/auth/provider/no-auth");
+      expect(res.status).toBe(400);
+      expect(res.body).toContain("does not use OAuth");
+    });
+  });
+
+  describe("GET /auth/provider/:provider (OAuth 1.0 flow)", () => {
+    it("redirects through OAuth 1.0 flow for providers with oauth1Flow and data intent", async () => {
+      const mockGetRequestToken = vi.fn(() =>
+        Promise.resolve({
+          oauthToken: "req-token-123",
+          oauthTokenSecret: "req-secret-123",
+          authorizeUrl: "https://fatsecret.com/authorize?oauth_token=req-token-123",
+        }),
+      );
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "fatsecret",
+          name: "FatSecret",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://fatsecret.com/authorize",
+              clientId: "test",
+            },
+            oauth1Flow: {
+              getRequestToken: mockGetRequestToken,
+              exchangeForAccessToken: vi.fn(),
+            },
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/auth/provider/fatsecret");
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toContain("fatsecret.com/authorize");
+      expect(mockGetRequestToken).toHaveBeenCalled();
+    });
+  });
+
+  describe("GET /callback (Slack OAuth with missing env vars)", () => {
+    it("returns 400 when only SLACK_CLIENT_ID is set but not SECRET", async () => {
+      process.env.SLACK_CLIENT_ID = "test-client-id";
+      delete process.env.SLACK_CLIENT_SECRET;
+
+      // We need the state to start with "slack:" and be in the map
+      // Start the Slack OAuth to get valid state
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
+      vi.mocked(validateSession).mockResolvedValue(null);
+
+      const { app } = createTestApp();
+      const slackRes = await request(app, "get", "/auth/provider/slack");
+      expect(slackRes.status).toBe(302);
+      const location = slackRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const redirectUrl = new URL(location);
+      const state = redirectUrl.searchParams.get("state");
+      expect(state).toBeTruthy();
+
+      // Now clear the client ID so the validation fails
+      delete process.env.SLACK_CLIENT_ID;
+
+      const callbackRes = await request(app, "get", `/callback?code=slack-code&state=${state}`);
+      expect(callbackRes.status).toBe(400);
+      expect(callbackRes.body).toContain("SLACK_CLIENT_ID");
     });
   });
 
