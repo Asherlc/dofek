@@ -375,6 +375,20 @@ export default function SettingsScreen() {
         </View>
       </View>
 
+      {/* ── Developer Tools ── */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Developer Tools</Text>
+        <TouchableOpacity
+          style={styles.exportButton}
+          onPress={() => {
+            const { router } = require("expo-router");
+            router.push("/ble-probe");
+          }}
+        >
+          <Text style={styles.exportButtonText}>BLE Probe</Text>
+        </TouchableOpacity>
+      </View>
+
       {/* ── Danger Zone ── */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Danger Zone</Text>

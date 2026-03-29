@@ -306,6 +306,12 @@ function AuthGate() {
               title: "Correlation Explorer",
             }}
           />
+          <Stack.Screen
+            name="ble-probe"
+            options={{
+              title: "BLE Probe",
+            }}
+          />
         </Stack>
       </QueryClientProvider>
     </trpc.Provider>
