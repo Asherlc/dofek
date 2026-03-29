@@ -3,9 +3,15 @@ import { AppState } from "react-native";
 import {
 	initBackgroundWhoopBleSync,
 	teardownBackgroundWhoopBleSync,
+	syncWhoopBle,
 	type WhoopBleSyncDeps,
 } from "./background-whoop-ble-sync.ts";
 import type { AccelerometerUploadClient } from "./accelerometer-service.ts";
+import * as telemetry from "./telemetry";
+
+vi.mock("./telemetry", () => ({
+	captureException: vi.fn(),
+}));
 
 function makeMockDeps(): WhoopBleSyncDeps {
 	return {
@@ -161,7 +167,12 @@ describe("background-whoop-ble-sync", () => {
 	it("teardown stops streaming and disconnects", async () => {
 		await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
 		// Simulate a foreground to establish connection
-		await appStateCallback?.("active");
+		appStateCallback?.("active");
+
+		// Wait for the async foreground sync to finish connecting
+		await vi.waitFor(() => {
+			expect(whoopDeps.startImuStreaming).toHaveBeenCalled();
+		});
 
 		teardownBackgroundWhoopBleSync();
 
@@ -180,5 +191,112 @@ describe("background-whoop-ble-sync", () => {
 			expect(whoopDeps.connect).toHaveBeenCalled();
 		});
 		// No throw — best-effort
+	});
+
+	it("reports errors to telemetry when connection fails", async () => {
+		const bleError = new Error("BLE error");
+		(whoopDeps.connect as ReturnType<typeof vi.fn>).mockRejectedValue(bleError);
+
+		await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+		appStateCallback?.("active");
+
+		await vi.waitFor(() => {
+			expect(telemetry.captureException).toHaveBeenCalledWith(
+				bleError,
+				expect.objectContaining({ context: "whoop-ble-sync" }),
+			);
+		});
+	});
+
+	it("reports errors to telemetry when upload fails", async () => {
+		const uploadError = new Error("Upload failed");
+		const samples = [
+			{ timestamp: "2026-03-25T08:00:00.000Z", accelerometerX: 100, accelerometerY: -200, accelerometerZ: 300, gyroscopeX: 10, gyroscopeY: -20, gyroscopeZ: 30 },
+		];
+		(whoopDeps.getBufferedSamples as ReturnType<typeof vi.fn>).mockResolvedValue(samples);
+		(trpcClient.accelerometerSync.pushAccelerometerSamples.mutate as ReturnType<typeof vi.fn>).mockRejectedValue(uploadError);
+
+		await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+		appStateCallback?.("active");
+
+		await vi.waitFor(() => {
+			expect(telemetry.captureException).toHaveBeenCalledWith(
+				uploadError,
+				expect.objectContaining({ context: "whoop-ble-sync" }),
+			);
+		});
+	});
+});
+
+describe("syncWhoopBle", () => {
+	let whoopDeps: WhoopBleSyncDeps;
+	let trpcClient: AccelerometerUploadClient;
+
+	beforeEach(() => {
+		teardownBackgroundWhoopBleSync();
+		whoopDeps = makeMockDeps();
+		trpcClient = makeMockTrpcClient();
+		(telemetry.captureException as ReturnType<typeof vi.fn>).mockClear();
+	});
+
+	afterEach(() => {
+		teardownBackgroundWhoopBleSync();
+	});
+
+	it("connects and uploads buffered samples", async () => {
+		const samples = [
+			{ timestamp: "2026-03-25T08:00:00.000Z", accelerometerX: 100, accelerometerY: -200, accelerometerZ: 300, gyroscopeX: 10, gyroscopeY: -20, gyroscopeZ: 30 },
+		];
+		(whoopDeps.getBufferedSamples as ReturnType<typeof vi.fn>).mockResolvedValue(samples);
+
+		await syncWhoopBle(trpcClient, whoopDeps);
+
+		expect(whoopDeps.findWhoop).toHaveBeenCalled();
+		expect(whoopDeps.connect).toHaveBeenCalledWith("whoop-123");
+		expect(whoopDeps.startImuStreaming).toHaveBeenCalled();
+		expect(trpcClient.accelerometerSync.pushAccelerometerSamples.mutate).toHaveBeenCalledWith({
+			deviceId: "WHOOP Strap",
+			deviceType: "whoop",
+			samples: expect.arrayContaining([
+				expect.objectContaining({ timestamp: "2026-03-25T08:00:00.000Z" }),
+			]),
+		});
+	});
+
+	it("skips when Bluetooth unavailable", async () => {
+		(whoopDeps.isBluetoothAvailable as ReturnType<typeof vi.fn>).mockReturnValue(false);
+
+		await syncWhoopBle(trpcClient, whoopDeps);
+
+		expect(whoopDeps.findWhoop).not.toHaveBeenCalled();
+	});
+
+	it("skips when WHOOP not found", async () => {
+		(whoopDeps.findWhoop as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+
+		await syncWhoopBle(trpcClient, whoopDeps);
+
+		expect(whoopDeps.connect).not.toHaveBeenCalled();
+	});
+
+	it("reports errors to telemetry", async () => {
+		const bleError = new Error("BLE error");
+		(whoopDeps.connect as ReturnType<typeof vi.fn>).mockRejectedValue(bleError);
+
+		await syncWhoopBle(trpcClient, whoopDeps);
+
+		await vi.waitFor(() => {
+			expect(telemetry.captureException).toHaveBeenCalledWith(
+				bleError,
+				expect.objectContaining({ context: "whoop-ble-sync" }),
+			);
+		});
+	});
+
+	it("does not throw on errors", async () => {
+		(whoopDeps.connect as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("BLE error"));
+
+		// Should not throw
+		await syncWhoopBle(trpcClient, whoopDeps);
 	});
 });

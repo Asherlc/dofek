@@ -278,9 +278,9 @@ export default function SettingsScreen() {
         <View style={styles.card}>
           <View style={styles.toggleRow}>
             <View style={styles.toggleInfo}>
-              <Text style={styles.toggleLabel}>Always-on recording</Text>
+              <Text style={styles.toggleLabel}>Continuous recording</Text>
               <Text style={styles.toggleDescription}>
-                Streams accelerometer data whenever the app is open
+                Streams accelerometer data continuously, even in the background
               </Text>
             </View>
             <Switch

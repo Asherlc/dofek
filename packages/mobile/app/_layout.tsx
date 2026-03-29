@@ -12,6 +12,7 @@ import { initBackgroundWatchAccelerometerSync } from "../lib/background-watch-ac
 import {
   initBackgroundWhoopBleSync,
   teardownBackgroundWhoopBleSync,
+  syncWhoopBle,
 } from "../lib/background-whoop-ble-sync";
 import {
   addBackgroundRefreshListener,
@@ -113,28 +114,32 @@ function AuthGate() {
       // Best-effort — Watch sync is non-critical
     });
 
+    // WHOOP BLE deps (shared between init and background refresh)
+    const whoopSyncClient = {
+      accelerometerSync: {
+        pushAccelerometerSamples: {
+          mutate: (input: Parameters<typeof trpcClient.accelerometerSync.pushAccelerometerSamples.mutate>[0]) =>
+            trpcClient.accelerometerSync.pushAccelerometerSamples.mutate(input),
+        },
+      },
+    };
+    const whoopDeps = {
+      isBluetoothAvailable,
+      findWhoop,
+      connect: whoopConnect,
+      startImuStreaming,
+      stopImuStreaming,
+      getBufferedSamples: getWhoopSamples,
+      disconnect: whoopDisconnect,
+    };
+
     // Start always-on WHOOP BLE accelerometer sync (if enabled in settings)
+    let whoopImuEnabled = false;
     trpcClient.settings.get.query({ key: "whoopAlwaysOnImu" }).then((setting) => {
       if (setting?.value !== true) return;
+      whoopImuEnabled = true;
 
-      const whoopSyncClient = {
-        accelerometerSync: {
-          pushAccelerometerSamples: {
-            mutate: (input: Parameters<typeof trpcClient.accelerometerSync.pushAccelerometerSamples.mutate>[0]) =>
-              trpcClient.accelerometerSync.pushAccelerometerSamples.mutate(input),
-          },
-        },
-      };
-
-      initBackgroundWhoopBleSync(whoopSyncClient, {
-        isBluetoothAvailable,
-        findWhoop,
-        connect: whoopConnect,
-        startImuStreaming,
-        stopImuStreaming,
-        getBufferedSamples: getWhoopSamples,
-        disconnect: whoopDisconnect,
-      }).catch(() => {
+      initBackgroundWhoopBleSync(whoopSyncClient, whoopDeps).catch(() => {
         // Best-effort — WHOOP BLE sync is non-critical
       });
     }).catch(() => {
@@ -142,8 +147,8 @@ function AuthGate() {
     });
 
     // Listen for background refresh wakeups (~every 15-30 min, system-decided).
-    // On each wake, restart Watch recording and sync accelerometer data so
-    // coverage continues even if the user never opens the app.
+    // On each wake, restart Watch recording, sync accelerometer data, and
+    // flush WHOOP BLE buffer so coverage continues even if the user never opens the app.
     const refreshSubscription = addBackgroundRefreshListener(() => {
       // Restart Watch accelerometer recording
       initBackgroundWatchAccelerometerSync(watchSyncClient).catch(() => {});
@@ -157,6 +162,11 @@ function AuthGate() {
           },
         },
       }).catch(() => {});
+
+      // Reconnect WHOOP BLE and flush buffered IMU samples
+      if (whoopImuEnabled) {
+        syncWhoopBle(whoopSyncClient, whoopDeps).catch(() => {});
+      }
 
       // Re-schedule for next wakeup
       scheduleRefresh();

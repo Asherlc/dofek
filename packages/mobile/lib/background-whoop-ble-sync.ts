@@ -1,5 +1,6 @@
 import { AppState, type AppStateStatus } from "react-native";
 import type { AccelerometerUploadClient } from "./accelerometer-service";
+import { captureException } from "./telemetry";
 
 const UPLOAD_BATCH_SIZE = 5000;
 
@@ -58,14 +59,38 @@ export async function initBackgroundWhoopBleSync(
 
 			syncing = true;
 			syncOnForeground(trpcClient, whoopDeps)
-				.catch(() => {
-					// Best-effort — don't crash the app
+				.catch((error) => {
+					captureException(error, {
+						context: "whoop-ble-sync",
+						trigger: "foreground",
+					});
 				})
 				.finally(() => {
 					syncing = false;
 				});
 		},
 	);
+}
+
+/**
+ * Run a single WHOOP BLE sync cycle: connect if needed, then upload buffered samples.
+ *
+ * Exported so that the background refresh handler can call this directly
+ * (every ~15-30 min) without waiting for the user to open the app.
+ * Errors are caught and reported to telemetry — never throws.
+ */
+export async function syncWhoopBle(
+	trpcClient: AccelerometerUploadClient,
+	whoopDeps: WhoopBleSyncDeps,
+): Promise<void> {
+	try {
+		await syncOnForeground(trpcClient, whoopDeps);
+	} catch (error) {
+		captureException(error, {
+			context: "whoop-ble-sync",
+			trigger: "background-refresh",
+		});
+	}
 }
 
 async function syncOnForeground(
@@ -124,9 +149,9 @@ export function teardownBackgroundWhoopBleSync(): void {
 			// Best-effort cleanup
 		}
 		currentDeps.disconnect();
-		connected = false;
 	}
 
+	connected = false;
 	currentDeps = null;
 	syncing = false;
 }
