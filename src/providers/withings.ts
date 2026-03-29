@@ -298,7 +298,7 @@ export class WithingsProvider implements WebhookProvider {
   // ── Webhook implementation ──
 
   async registerWebhook(
-    callbackUrl: string,
+    _callbackUrl: string,
     _verifyToken: string,
   ): Promise<{ subscriptionId: string; signingSecret?: string; expiresAt?: Date }> {
     // Withings notification subscriptions are per-user and require the user's access token.

@@ -1,13 +1,6 @@
-import {
-  ActivityIndicator,
-  Alert,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
-import { colors } from "../theme";
+import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { trpc } from "../lib/trpc";
+import { colors } from "../theme";
 
 const PARAM_LABELS: Record<string, { label: string; description: string }> = {
   exponentialMovingAverage: {
@@ -210,7 +203,9 @@ function ParamCard({
     <View style={styles.paramCard}>
       <View style={styles.paramHeader}>
         <Text style={styles.paramLabel}>{meta?.label ?? paramKey}</Text>
-        <Text style={[styles.paramBadge, isPersonalized ? styles.badgeLearned : styles.badgeDefault]}>
+        <Text
+          style={[styles.paramBadge, isPersonalized ? styles.badgeLearned : styles.badgeDefault]}
+        >
           {isPersonalized ? "Learned" : "Default"}
         </Text>
       </View>

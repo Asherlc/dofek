@@ -6,6 +6,20 @@ function formatNumber(n: number): string {
   return n.toLocaleString();
 }
 
+/** Map raw device_type from the server to a user-friendly label */
+function deviceLabel(deviceType: string, deviceId: string): string {
+  switch (deviceType) {
+    case "iphone":
+      return "iPhone";
+    case "apple_watch":
+      return "Apple Watch";
+    case "whoop":
+      return "WHOOP Strap";
+    default:
+      return deviceId;
+  }
+}
+
 function SyncStatusPanel() {
   const { data, isLoading } = trpc.inertialMeasurementUnit.getSyncStatus.useQuery();
 
@@ -28,19 +42,14 @@ function SyncStatusPanel() {
           className="rounded-lg border border-border bg-card p-4"
         >
           <div className="flex items-center gap-2">
-            <p className="text-sm font-medium text-muted-foreground">{device.device_id}</p>
-            <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-              {device.device_type === "apple_watch"
-                ? "Apple Watch"
-                : device.device_type === "whoop"
-                  ? "WHOOP"
-                  : "iPhone"}
-            </span>
+            <p className="text-sm font-medium">
+              {deviceLabel(device.device_type, device.device_id)}
+            </p>
           </div>
           <p className="text-2xl font-bold">{formatNumber(device.sample_count)} samples</p>
           <p className="text-xs text-muted-foreground">
-            {device.earliest_sample
-              ? `${new Date(device.earliest_sample).toLocaleDateString()} — ${new Date(device.latest_sample ?? "").toLocaleDateString()}`
+            {device.earliest_sample && device.latest_sample
+              ? `${new Date(device.earliest_sample).toLocaleDateString()} — ${new Date(device.latest_sample).toLocaleDateString()}`
               : "No data"}
           </p>
         </div>
@@ -83,7 +92,7 @@ export function InertialMeasurementUnitPage() {
   return (
     <PageLayout>
       <PageSection
-        title="Inertial Measurement Unit"
+        title="Motion Tracking"
         subtitle="Continuous 50 Hz motion data (accelerometer + gyroscope) from iPhone, Apple Watch, and WHOOP"
       >
         <SyncStatusPanel />

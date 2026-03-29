@@ -659,7 +659,7 @@ describe("WithingsProvider webhook methods", () => {
       const result = setup.exchangeCode("test-code");
       expect(result).toBeInstanceOf(Promise);
       // Catch the rejection since there's no real server
-      result.catch(() => {});
+      result.catch((_error: unknown) => {});
     });
 
     it("returns apiBaseUrl as the Withings API base", () => {

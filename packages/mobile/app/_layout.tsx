@@ -1,34 +1,29 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink } from "@trpc/client";
+import { Stack } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
-import { Stack } from "expo-router";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { trpc } from "../lib/trpc";
 import { AuthProvider, useAuth } from "../lib/auth-context";
 import { initBackgroundAccelerometerSync } from "../lib/background-accelerometer-sync";
 import { initBackgroundHealthKitSync } from "../lib/background-health-kit-sync";
 import { initBackgroundWatchInertialMeasurementUnitSync } from "../lib/background-watch-inertial-measurement-unit-sync";
-import {
-  initBackgroundWhoopBleSync,
-  teardownBackgroundWhoopBleSync,
-} from "../lib/background-whoop-ble-sync";
-import {
-  addBackgroundRefreshListener,
-  scheduleRefresh,
-} from "../modules/background-refresh";
-import {
-  isBluetoothAvailable,
-  findWhoop,
-  connect as whoopConnect,
-  startImuStreaming,
-  stopImuStreaming,
-  getBufferedSamples as getWhoopSamples,
-  disconnect as whoopDisconnect,
-} from "../modules/whoop-ble";
+import { teardownBackgroundWhoopBleSync } from "../lib/background-whoop-ble-sync";
 import type { SyncTrpcClient } from "../lib/health-kit-sync";
 import { getTrpcUrl } from "../lib/server";
-import { initTelemetry } from "../lib/telemetry";
+import { captureException, initTelemetry, logger } from "../lib/telemetry";
+import { trpc } from "../lib/trpc";
+import { useWhoopBleSync } from "../lib/useWhoopBleSync";
+import { addBackgroundRefreshListener, scheduleRefresh } from "../modules/background-refresh";
+import {
+  findWhoop,
+  getBufferedSamples as getWhoopSamples,
+  isBluetoothAvailable,
+  startImuStreaming,
+  stopImuStreaming,
+  connect as whoopConnect,
+  disconnect as whoopDisconnect,
+} from "../modules/whoop-ble";
 import { colors } from "../theme";
 import LoginScreen from "./login";
 
@@ -42,6 +37,49 @@ export const rootStackScreenOptions = {
   headerBackTitleVisible: false,
   headerShadowVisible: false,
 };
+
+/**
+ * Headless component that reactively starts/stops WHOOP BLE accelerometer
+ * sync based on the `whoopAlwaysOnImu` user setting. Must be rendered
+ * inside the tRPC provider tree so it can use tRPC query hooks.
+ *
+ * Previously, WHOOP BLE sync was initialized via a one-shot query in the
+ * main useEffect, which only ran at app startup. Toggling the setting from
+ * the UI had no effect until the app was restarted.
+ */
+function WhoopBleSyncManager({ trpcClient }: { trpcClient: ReturnType<typeof trpc.createClient> }) {
+  const whoopSyncClient = useMemo(
+    () => ({
+      inertialMeasurementUnitSync: {
+        pushSamples: {
+          mutate: (
+            input: Parameters<
+              typeof trpcClient.inertialMeasurementUnitSync.pushSamples.mutate
+            >[0],
+          ) => trpcClient.inertialMeasurementUnitSync.pushSamples.mutate(input),
+        },
+      },
+    }),
+    [trpcClient],
+  );
+
+  const whoopDeps = useMemo(
+    () => ({
+      isBluetoothAvailable,
+      findWhoop,
+      connect: whoopConnect,
+      startImuStreaming,
+      stopImuStreaming,
+      getBufferedSamples: getWhoopSamples,
+      disconnect: whoopDisconnect,
+    }),
+    [],
+  );
+
+  useWhoopBleSync(whoopSyncClient, whoopDeps);
+
+  return null;
+}
 
 function AuthGate() {
   const { user, serverUrl, isLoading, sessionToken } = useAuth();
@@ -84,56 +122,53 @@ function AuthGate() {
     };
     initBackgroundHealthKitSync(syncClient, () => {
       queryClient.invalidateQueries();
-    }).catch(() => {
-      // Best-effort — don't block the app for background sync setup failures
+    }).catch((error: unknown) => {
+      logger.warn(
+        "bg-healthkit-sync",
+        `Init failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      captureException(error, { source: "bg-healthkit-sync" });
     });
 
     // Start continuous accelerometer recording and background sync
     const imuSyncClient = {
       inertialMeasurementUnitSync: {
         pushSamples: {
-          mutate: (input: Parameters<typeof trpcClient.inertialMeasurementUnitSync.pushSamples.mutate>[0]) =>
-            trpcClient.inertialMeasurementUnitSync.pushSamples.mutate(input),
+          mutate: (
+            input: Parameters<
+              typeof trpcClient.inertialMeasurementUnitSync.pushSamples.mutate
+            >[0],
+          ) => trpcClient.inertialMeasurementUnitSync.pushSamples.mutate(input),
         },
       },
     };
-    initBackgroundAccelerometerSync(imuSyncClient).catch(() => {
+    initBackgroundAccelerometerSync(imuSyncClient).catch((error: unknown) => {
       // Best-effort — accelerometer sync is non-critical
+      captureException(error, { source: "bg-accelerometer-sync" });
     });
 
     // Start Apple Watch IMU sync (if Watch is paired)
-    initBackgroundWatchInertialMeasurementUnitSync(imuSyncClient).catch(() => {
+    initBackgroundWatchInertialMeasurementUnitSync(imuSyncClient).catch((error: unknown) => {
       // Best-effort — Watch sync is non-critical
+      captureException(error, { source: "bg-watch-accel-sync" });
     });
 
-    // Start always-on WHOOP BLE IMU sync (if enabled in settings)
-    trpcClient.settings.get.query({ key: "whoopAlwaysOnImu" }).then((setting) => {
-      if (setting?.value !== true) return;
-
-      initBackgroundWhoopBleSync(imuSyncClient, {
-        isBluetoothAvailable,
-        findWhoop,
-        connect: whoopConnect,
-        startImuStreaming,
-        stopImuStreaming,
-        getBufferedSamples: getWhoopSamples,
-        disconnect: whoopDisconnect,
-      }).catch(() => {
-        // Best-effort — WHOOP BLE sync is non-critical
-      });
-    }).catch(() => {
-      // Best-effort — settings fetch failure is non-critical
-    });
+    // WHOOP BLE sync is now managed reactively via useWhoopBleSync hook
+    // inside the tRPC provider tree (see WhoopBleSyncManager below).
 
     // Listen for background refresh wakeups (~every 15-30 min, system-decided).
     // On each wake, restart Watch recording and sync IMU data so
     // coverage continues even if the user never opens the app.
     const refreshSubscription = addBackgroundRefreshListener(() => {
       // Restart Watch IMU recording
-      initBackgroundWatchInertialMeasurementUnitSync(imuSyncClient).catch(() => {});
+      initBackgroundWatchInertialMeasurementUnitSync(imuSyncClient).catch((error: unknown) => {
+        captureException(error, { source: "bg-refresh-watch-sync" });
+      });
 
       // Restart phone accelerometer recording
-      initBackgroundAccelerometerSync(imuSyncClient).catch(() => {});
+      initBackgroundAccelerometerSync(imuSyncClient).catch((error: unknown) => {
+        captureException(error, { source: "bg-refresh-accel-sync" });
+      });
 
       // Re-schedule for next wakeup
       scheduleRefresh();
@@ -143,7 +178,7 @@ function AuthGate() {
       teardownBackgroundWhoopBleSync();
       refreshSubscription.remove();
     };
-  }, [user, trpcClient]);
+  }, [user, trpcClient, queryClient]);
 
   if (isLoading) {
     return (
@@ -162,9 +197,8 @@ function AuthGate() {
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>
-        <Stack
-          screenOptions={rootStackScreenOptions}
-        >
+        <WhoopBleSyncManager trpcClient={trpcClient} />
+        <Stack screenOptions={rootStackScreenOptions}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen
             name="food/add"
@@ -175,9 +209,7 @@ function AuthGate() {
               headerTintColor: colors.text,
               headerLeft: () => (
                 <Pressable onPress={() => navigation.goBack()}>
-                  <Text style={{ color: colors.accent, fontSize: 17 }}>
-                    Cancel
-                  </Text>
+                  <Text style={{ color: colors.accent, fontSize: 17 }}>Cancel</Text>
                 </Pressable>
               ),
             })}

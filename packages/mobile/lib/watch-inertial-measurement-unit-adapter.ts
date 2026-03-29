@@ -1,11 +1,11 @@
 import {
-	acknowledgeWatchSamples,
-	getLastWatchSyncTimestamp,
-	getPendingWatchSamples,
-	isWatchAppInstalled,
-	isWatchPaired,
-	requestWatchRecording,
-	setLastWatchSyncTimestamp,
+  acknowledgeWatchSamples,
+  getLastWatchSyncTimestamp,
+  getPendingWatchSamples,
+  isWatchAppInstalled,
+  isWatchPaired,
+  requestWatchRecording,
+  setLastWatchSyncTimestamp,
 } from "../modules/watch-motion";
 import type { InertialMeasurementUnitAdapter } from "./inertial-measurement-unit-sync";
 
@@ -18,46 +18,46 @@ import type { InertialMeasurementUnitAdapter } from "./inertial-measurement-unit
  * unchanged — the only difference is where the samples come from.
  */
 export function createWatchInertialMeasurementUnitAdapter(): InertialMeasurementUnitAdapter {
-	const paired = isWatchPaired();
-	const installed = isWatchAppInstalled();
+  const paired = isWatchPaired();
+  const installed = isWatchAppInstalled();
 
-	return {
-		isAccelerometerRecordingAvailable(): boolean {
-			return paired && installed;
-		},
+  return {
+    isAccelerometerRecordingAvailable(): boolean {
+      return paired && installed;
+    },
 
-		async queryRecordedData(
-			_fromDate: string,
-			_toDate: string,
-		) {
-			// Watch transfers entire files — we return all pending samples.
-			// Date filtering is not needed because the Watch only sends
-			// samples newer than the last acknowledged sync.
-			return getPendingWatchSamples();
-		},
+    async queryRecordedData(
+      _fromDate: string,
+      _toDate: string,
+    ) {
+      // Watch transfers entire files — we return all pending samples.
+      // Date filtering is not needed because the Watch only sends
+      // samples newer than the last acknowledged sync.
+      return getPendingWatchSamples();
+    },
 
-		getLastSyncTimestamp(): string | null {
-			return getLastWatchSyncTimestamp();
-		},
+    getLastSyncTimestamp(): string | null {
+      return getLastWatchSyncTimestamp();
+    },
 
-		setLastSyncTimestamp(timestamp: string): void {
-			setLastWatchSyncTimestamp(timestamp);
-			// After advancing the cursor, delete the processed transfer files
-			acknowledgeWatchSamples();
-		},
+    setLastSyncTimestamp(timestamp: string): void {
+      setLastWatchSyncTimestamp(timestamp);
+      // After advancing the cursor, delete the processed transfer files
+      acknowledgeWatchSamples();
+    },
 
-		async startRecording(_durationSeconds: number): Promise<boolean> {
-			// Ask the Watch to restart recording AND transfer data.
-			// This keeps the 12-hour CMSensorRecorder sessions rolling
-			// even if the user never opens the Watch app.
-			await requestWatchRecording();
-			return true;
-		},
+    async startRecording(_durationSeconds: number): Promise<boolean> {
+      // Ask the Watch to restart recording AND transfer data.
+      // This keeps the 12-hour CMSensorRecorder sessions rolling
+      // even if the user never opens the Watch app.
+      await requestWatchRecording();
+      return true;
+    },
 
-		isRecordingActive(): boolean {
-			// The Watch app records continuously when installed.
-			// We report active if the Watch is paired + app installed.
-			return paired && installed;
-		},
-	};
+    isRecordingActive(): boolean {
+      // The Watch app records continuously when installed.
+      // We report active if the Watch is paired + app installed.
+      return paired && installed;
+    },
+  };
 }

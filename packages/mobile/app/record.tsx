@@ -12,34 +12,34 @@ import {
   View,
 } from "react-native";
 import {
-  createActivityRecorder,
   type ActivityRecorder,
+  createActivityRecorder,
   type RecordingSnapshot,
 } from "../lib/activity-recording";
 import { createInertialMeasurementUnitService } from "../lib/inertial-measurement-unit-service";
 import { createLocationAdapter } from "../lib/location-service";
+import { trpc } from "../lib/trpc";
 import {
   isAccelerometerRecordingAvailable,
-  startRecording,
   queryRecordedData,
+  startRecording,
 } from "../modules/core-motion";
 import {
-  isWatchPaired,
-  isWatchAppInstalled,
-  requestWatchSync,
-  getPendingWatchSamples,
   acknowledgeWatchSamples,
+  getPendingWatchSamples,
+  isWatchAppInstalled,
+  isWatchPaired,
+  requestWatchSync,
 } from "../modules/watch-motion";
 import {
-  isBluetoothAvailable,
   findWhoop,
-  connect as whoopConnect,
+  getBufferedSamples as getWhoopSamples,
+  isBluetoothAvailable,
   startImuStreaming,
   stopImuStreaming,
-  getBufferedSamples as getWhoopSamples,
+  connect as whoopConnect,
 } from "../modules/whoop-ble";
-import { trpc } from "../lib/trpc";
-import { colors, fonts, fontSize, fontWeight, radius, spacing } from "../theme";
+import { colors, fontSize, fonts, fontWeight, radius, spacing } from "../theme";
 
 /** Activity types available for recording (GPS-based outdoor activities) */
 const RECORDABLE_TYPES = [
@@ -242,7 +242,10 @@ export default function RecordScreen() {
 
         <View style={styles.summaryCard}>
           <MetricRow label="Duration" value={formatElapsed(snapshot?.elapsedMs ?? 0)} />
-          <MetricRow label="Distance" value={`${formatDistanceKm(snapshot?.distanceMeters ?? 0)} km`} />
+          <MetricRow
+            label="Distance"
+            value={`${formatDistanceKm(snapshot?.distanceMeters ?? 0)} km`}
+          />
           <MetricRow label="Samples" value={String(snapshot?.samples.length ?? 0)} />
         </View>
 
@@ -270,7 +273,11 @@ export default function RecordScreen() {
           <Pressable style={styles.saveButton} onPress={handleSave} accessibilityRole="button">
             <Text style={styles.saveButtonText}>Save</Text>
           </Pressable>
-          <Pressable style={styles.discardButton} onPress={handleDiscard} accessibilityRole="button">
+          <Pressable
+            style={styles.discardButton}
+            onPress={handleDiscard}
+            accessibilityRole="button"
+          >
             <Text style={styles.discardButtonText}>Discard</Text>
           </Pressable>
         </View>
@@ -328,9 +335,7 @@ export default function RecordScreen() {
             <Text style={styles.metricLabel}>Pace (min/km)</Text>
           </View>
           <View style={styles.metricCell}>
-            <Text style={styles.metricValue}>
-              {formatSpeed(snapshot?.currentSpeedMs ?? null)}
-            </Text>
+            <Text style={styles.metricValue}>{formatSpeed(snapshot?.currentSpeedMs ?? null)}</Text>
             <Text style={styles.metricLabel}>Speed (km/h)</Text>
           </View>
         </View>

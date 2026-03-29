@@ -1,13 +1,19 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { RecordingTrpcClient } from "./activity-recording.ts";
 import {
+  type ActivityRecorder,
   createActivityRecorder,
   haversineDistance,
   totalDistance,
-  type ActivityRecorder,
 } from "./activity-recording.ts";
-import type { GpsSample, LocationAdapter } from "./location-service.ts";
-import type { RecordingTrpcClient } from "./activity-recording.ts";
 import type { InertialMeasurementUnitService } from "./inertial-measurement-unit-service.ts";
+import type { GpsSample, LocationAdapter } from "./location-service.ts";
+
+const mockCaptureException = vi.fn();
+
+vi.mock("./telemetry", () => ({
+  captureException: (...args: unknown[]) => mockCaptureException(...args),
+}));
 
 function makeMockLocationAdapter(): LocationAdapter & {
   emitSample(sample: GpsSample): void;
@@ -191,9 +197,7 @@ describe("createActivityRecorder", () => {
   });
 
   it("transitions to error on save failure", async () => {
-    (trpc.activityRecording.save.mutate as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("Network error"),
-    );
+    vi.mocked(trpc.activityRecording.save.mutate).mockRejectedValue(new Error("Network error"));
 
     await recorder.start("running");
     location.emitSample(makeSample());
@@ -280,13 +284,25 @@ describe("createActivityRecorder with IMU service", () => {
   });
 
   it("does not block recording start when ensureRecording fails", async () => {
-    (imuService.ensureRecording as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("IMU error"),
-    );
+    vi.mocked(imuService.ensureRecording).mockRejectedValue(new Error("IMU error"));
 
     await recorder.start("running");
 
     expect(recorder.getSnapshot().state).toBe("recording");
+  });
+
+  it("calls captureException when ensureRecording rejects", async () => {
+    const imuError = new Error("IMU error");
+    vi.mocked(imuService.ensureRecording).mockRejectedValue(imuError);
+
+    await recorder.start("running");
+
+    // The catch is async (fire-and-forget), so wait for it to settle
+    await vi.waitFor(() => {
+      expect(mockCaptureException).toHaveBeenCalledWith(imuError, {
+        source: "activity-recording",
+      });
+    });
   });
 
   it("calls syncForTimeRange on save with activity timestamps", async () => {
@@ -303,9 +319,7 @@ describe("createActivityRecorder with IMU service", () => {
   });
 
   it("saves activity successfully even when IMU sync fails", async () => {
-    (imuService.syncForTimeRange as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("Sync failed"),
-    );
+    vi.mocked(imuService.syncForTimeRange).mockRejectedValue(new Error("Sync failed"));
 
     await recorder.start("cycling");
     location.emitSample(makeSample());

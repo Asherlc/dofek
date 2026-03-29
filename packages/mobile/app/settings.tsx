@@ -1,14 +1,25 @@
-import { useState } from "react";
-import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
+import { providerLabel } from "@dofek/providers/providers";
 import { File as ExpoFile, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
+import { useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TouchableOpacity,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import { z } from "zod";
-import { providerLabel } from "@dofek/providers/providers";
 import { PersonalizationPanel } from "../components/PersonalizationPanel";
 import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel";
+import { useAuth } from "../lib/auth-context";
 import { trpc } from "../lib/trpc";
 import { useRefresh } from "../lib/useRefresh";
-import { useAuth } from "../lib/auth-context";
 import { colors } from "../theme";
 
 type UnitSystem = "metric" | "imperial";
@@ -52,9 +63,7 @@ export default function SettingsScreen() {
 
   // ── Unit System ──
   const unitSetting = trpc.settings.get.useQuery({ key: "unitSystem" });
-  const setSettingMutation = trpc.settings.set.useMutation({
-    onSuccess: () => unitSetting.refetch(),
-  });
+  const setSettingMutation = trpc.settings.set.useMutation();
   const deleteAllDataMutation = trpc.settings.deleteAllUserData.useMutation({
     onSuccess: async () => {
       await trpcUtils.invalidate();
@@ -67,7 +76,14 @@ export default function SettingsScreen() {
     unitSetting.data?.value === "imperial" ? "imperial" : "metric";
 
   function handleUnitChange(value: UnitSystem) {
-    setSettingMutation.mutate({ key: "unitSystem", value });
+    trpcUtils.settings.get.setData({ key: "unitSystem" }, { key: "unitSystem", value });
+    setSettingMutation.mutate(
+      { key: "unitSystem", value },
+      {
+        onSuccess: () => unitSetting.refetch(),
+        onError: () => unitSetting.refetch(),
+      },
+    );
   }
 
   // ── WHOOP Motion Sensors ──
@@ -75,9 +91,16 @@ export default function SettingsScreen() {
   const whoopImuEnabled = whoopImuSetting.data?.value === true;
 
   function handleWhoopImuToggle(enabled: boolean) {
+    trpcUtils.settings.get.setData(
+      { key: "whoopAlwaysOnImu" },
+      { key: "whoopAlwaysOnImu", value: enabled },
+    );
     setSettingMutation.mutate(
       { key: "whoopAlwaysOnImu", value: enabled },
-      { onSuccess: () => whoopImuSetting.refetch() },
+      {
+        onSuccess: () => whoopImuSetting.refetch(),
+        onError: () => whoopImuSetting.refetch(),
+      },
     );
   }
 
@@ -202,7 +225,17 @@ export default function SettingsScreen() {
   const { refreshing, onRefresh } = useRefresh();
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={[styles.content, isWide && styles.contentWide]} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={[styles.content, isWide && styles.contentWide]}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={colors.textSecondary}
+        />
+      }
+    >
       {/* ── Linked Accounts ── */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Linked Accounts</Text>
@@ -216,12 +249,8 @@ export default function SettingsScreen() {
             accounts.map((account) => (
               <View key={account.id} style={styles.accountRow}>
                 <View style={styles.accountInfo}>
-                  <Text style={styles.accountProvider}>
-                    {providerLabel(account.authProvider)}
-                  </Text>
-                  {account.email ? (
-                    <Text style={styles.accountEmail}>{account.email}</Text>
-                  ) : null}
+                  <Text style={styles.accountProvider}>{providerLabel(account.authProvider)}</Text>
+                  {account.email ? <Text style={styles.accountEmail}>{account.email}</Text> : null}
                 </View>
                 <TouchableOpacity
                   onPress={() => handleUnlink(account.id)}
@@ -328,14 +357,13 @@ export default function SettingsScreen() {
               <Text style={styles.exportMessageText}>{exportMessage}</Text>
             </View>
           )}
-          {exportState === "done" && (
-            <Text style={styles.exportDoneText}>Export complete</Text>
-          )}
-          {exportState === "error" && (
-            <Text style={styles.exportErrorText}>{exportMessage}</Text>
-          )}
+          {exportState === "done" && <Text style={styles.exportDoneText}>Export complete</Text>}
+          {exportState === "error" && <Text style={styles.exportErrorText}>{exportMessage}</Text>}
           <TouchableOpacity
-            style={[styles.exportButton, exportState === "processing" && styles.exportButtonDisabled]}
+            style={[
+              styles.exportButton,
+              exportState === "processing" && styles.exportButtonDisabled,
+            ]}
             onPress={handleExport}
             activeOpacity={0.7}
             disabled={exportState === "processing"}

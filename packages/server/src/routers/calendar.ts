@@ -1,14 +1,6 @@
-import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import { CalendarRepository } from "../repositories/calendar-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
-
-const calendarRowSchema = z.object({
-  date: dateStringSchema,
-  activity_count: z.coerce.number(),
-  total_minutes: z.coerce.number(),
-  activity_types: z.array(z.string()),
-});
 
 export interface CalendarDay {
   date: string;
@@ -19,33 +11,10 @@ export interface CalendarDay {
 
 export const calendarRouter = router({
   calendarData: cachedProtectedQuery(CacheTTL.LONG)
-    .input(
-      z.object({
-        days: z.number().default(365),
-      }),
-    )
+    .input(z.object({ days: z.number().default(365) }))
     .query(async ({ ctx, input }): Promise<CalendarDay[]> => {
-      const rows = await executeWithSchema(
-        ctx.db,
-        calendarRowSchema,
-        sql`SELECT
-          (a.started_at AT TIME ZONE ${ctx.timezone})::date as date,
-          COUNT(*)::int as activity_count,
-          ROUND(SUM(EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60)::numeric) as total_minutes,
-          array_agg(DISTINCT a.activity_type) as activity_types
-        FROM fitness.v_activity a
-        WHERE a.user_id = ${ctx.userId}
-          AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
-          AND a.ended_at IS NOT NULL
-        GROUP BY 1
-        ORDER BY date`,
-      );
-
-      return rows.map((r) => ({
-        date: r.date,
-        activityCount: r.activity_count,
-        totalMinutes: r.total_minutes,
-        activityTypes: r.activity_types,
-      }));
+      const repo = new CalendarRepository(ctx.db, ctx.userId, ctx.timezone);
+      const days = await repo.getCalendarData(input.days);
+      return days.map((day) => day.toDetail());
     }),
 });

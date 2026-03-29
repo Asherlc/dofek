@@ -4,10 +4,14 @@ import WatchConnectivity
 /// Coordinates querying accelerometer + gyroscope samples and sending them
 /// to the paired iPhone via WCSession.transferFile().
 /// Files are gzip-compressed JSON arrays.
+///
+/// All heavy work (sample querying, compression, file I/O) runs on a background
+/// queue to avoid blocking the main thread and triggering watchdog kills.
 final class TransferManager: ObservableObject {
     private let accelerometerRecorder: AccelerometerRecorder
     private let gyroscopeRecorder: GyroscopeRecorder
     private let session: WCSession
+    private let workQueue = DispatchQueue(label: "com.dofek.watch.transfer", qos: .utility)
 
     /// Maximum time difference (in seconds) for merging an accel sample
     /// with a gyro sample into a single 6-axis IMU sample.
@@ -28,7 +32,19 @@ final class TransferManager: ObservableObject {
 
     /// Query new samples from both recorders, merge by timestamp, serialize
     /// to gzip JSON, and transfer to the paired iPhone via WCSession.
+    ///
+    /// Safe to call from any thread. @Published updates are dispatched to main.
+    /// Heavy work (sample iteration, compression) runs on a background queue.
     func transferNewSamples() {
+        // Bounce to main thread for @Published property checks
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.transferNewSamples()
+            }
+            return
+        }
+
+        guard !isTransferring else { return }
         guard session.activationState == .activated else {
             lastTransferStatus = "Session not active"
             return
@@ -41,50 +57,95 @@ final class TransferManager: ObservableObject {
         isTransferring = true
         lastTransferStatus = "Querying samples..."
 
-        let accelSamples = accelerometerRecorder.queryNewSamples()
-        let gyroSamples = gyroscopeRecorder.queryNewSamples()
+        workQueue.async { [weak self] in
+            self?.performTransfer()
+        }
+    }
 
-        let merged = mergeSamples(accel: accelSamples, gyro: gyroSamples)
-
-        guard !merged.isEmpty else {
-            isTransferring = false
-            lastTransferStatus = "No new samples"
+    private func performTransfer() {
+        // Stream samples to a temp JSON file (memory-efficient)
+        guard let result = accelerometerRecorder.streamSamplesToFile() else {
+            DispatchQueue.main.async { [weak self] in
+                self?.isTransferring = false
+                self?.lastTransferStatus = "No new samples"
+            }
             return
         }
 
-        lastTransferStatus = "Compressing \(merged.count) samples..."
+        let gyroSamples = gyroscopeRecorder.queryNewSamples()
+
+        DispatchQueue.main.async { [weak self] in
+            self?.accelerometerRecorder.samplesSinceLastTransfer = result.count
+            self?.lastTransferStatus = "Compressing \(result.count) samples..."
+        }
 
         do {
-            // Serialize to JSON
-            let jsonData = try JSONSerialization.data(withJSONObject: merged)
+            // If we have gyroscope data, re-read the accel file, merge, and rewrite
+            let fileToCompress: URL
+            if !gyroSamples.isEmpty {
+                let mergedURL = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("imu-merged-\(ISO8601DateFormatter().string(from: Date())).json")
+                try mergeGyroscopeIntoFile(accelFileURL: result.url, gyroSamples: gyroSamples, outputURL: mergedURL)
+                try? FileManager.default.removeItem(at: result.url)
+                fileToCompress = mergedURL
+            } else {
+                fileToCompress = result.url
+            }
 
-            // Gzip compress
-            let compressedData = try (jsonData as NSData).compressed(using: .zlib) as Data
+            // Compress the JSON file using streaming compression (memory-mapped read)
+            let compressedURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("imu-\(ISO8601DateFormatter().string(from: Date())).json.gz")
+            let compressedSize = try Self.compressFile(from: fileToCompress, to: compressedURL)
 
-            // Write to temp file
-            let tempDirectory = FileManager.default.temporaryDirectory
-            let fileName = "imu-\(ISO8601DateFormatter().string(from: Date())).json.gz"
-            let fileURL = tempDirectory.appendingPathComponent(fileName)
-            try compressedData.write(to: fileURL)
+            // Clean up the uncompressed temp file
+            try? FileManager.default.removeItem(at: fileToCompress)
 
             // Transfer via WCSession
             let metadata: [String: Any] = [
                 "type": "accelerometer_samples",
-                "sampleCount": merged.count,
+                "sampleCount": result.count,
                 "hasGyroscope": !gyroSamples.isEmpty,
                 "transferredAt": ISO8601DateFormatter().string(from: Date()),
             ]
 
-            session.transferFile(fileURL, metadata: metadata)
+            session.transferFile(compressedURL, metadata: metadata)
 
-            accelerometerRecorder.markTransferComplete()
-            lastTransferStatus = "Sent \(merged.count) samples (\(compressedData.count / 1024) KB)"
-            isTransferring = false
+            DispatchQueue.main.async { [weak self] in
+                self?.accelerometerRecorder.markTransferComplete()
+                self?.lastTransferStatus = "Sent \(result.count) samples (\(compressedSize / 1024) KB)"
+                self?.isTransferring = false
+            }
 
         } catch {
-            lastTransferStatus = "Error: \(error.localizedDescription)"
-            isTransferring = false
+            // Clean up temp files on error
+            try? FileManager.default.removeItem(at: result.url)
+
+            DispatchQueue.main.async { [weak self] in
+                self?.lastTransferStatus = "Error: \(error.localizedDescription)"
+                self?.isTransferring = false
+            }
         }
+    }
+
+    /// Merge gyroscope data into an accelerometer JSON file.
+    ///
+    /// Reads the accel JSON, matches gyro samples by timestamp within 20ms,
+    /// and writes the merged 6-axis data to a new file.
+    private func mergeGyroscopeIntoFile(
+        accelFileURL: URL,
+        gyroSamples: [[String: Any]],
+        outputURL: URL
+    ) throws {
+        let accelData = try Data(contentsOf: accelFileURL, options: .mappedIfSafe)
+        guard let accelArray = try JSONSerialization.jsonObject(with: accelData) as? [[String: Any]] else {
+            // If we can't parse, just copy the original file
+            try FileManager.default.copyItem(at: accelFileURL, to: outputURL)
+            return
+        }
+
+        let merged = mergeSamples(accel: accelArray, gyro: gyroSamples)
+        let mergedData = try JSONSerialization.data(withJSONObject: merged)
+        try mergedData.write(to: outputURL)
     }
 
     /// Merge accelerometer and gyroscope samples by timestamp.
@@ -169,5 +230,23 @@ final class TransferManager: ObservableObject {
         }
 
         return bestIndex
+    }
+
+    /// Compress a file using zlib via Foundation's NSData.compressed(using:).
+    ///
+    /// Uses `Data(contentsOf:options:.mappedIfSafe)` to memory-map the source file
+    /// so the OS pages data in on demand rather than loading the entire file into RAM.
+    /// The compressed output is typically 10-15x smaller than the input, so holding
+    /// it in memory is fine even for large recordings.
+    ///
+    /// Uses Foundation (no `import Compression` needed) to avoid framework linking
+    /// issues when CocoaPods manages the DofekWatch target's build settings.
+    ///
+    /// - Returns: The size of the compressed file in bytes.
+    static func compressFile(from sourceURL: URL, to destURL: URL) throws -> Int {
+        let sourceData = try Data(contentsOf: sourceURL, options: .mappedIfSafe)
+        let compressedData = try (sourceData as NSData).compressed(using: .zlib) as Data
+        try compressedData.write(to: destURL)
+        return compressedData.count
     }
 }
