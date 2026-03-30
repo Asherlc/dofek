@@ -298,6 +298,15 @@ vi.mock("./modules/background-refresh", () => ({
   addBackgroundRefreshListener: vi.fn(() => ({ remove: vi.fn() })),
 }));
 
+// ── expo-updates mock ─────────────────────────────────────────────
+vi.mock("expo-updates", () => ({
+  updateId: null,
+  channel: null,
+  runtimeVersion: null,
+  createdAt: null,
+  isEmbeddedLaunch: true,
+}));
+
 // ── WHOOP BLE native module mock ───────────────────────────────────
 vi.mock("./modules/whoop-ble", () => ({
   isBluetoothAvailable: vi.fn(() => false),

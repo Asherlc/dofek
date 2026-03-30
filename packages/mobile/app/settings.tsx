@@ -374,9 +374,12 @@ export default function SettingsScreen() {
             <View>
               <Text style={styles.devToolLabel}>OTA Update</Text>
               <Text style={styles.devToolDetail}>
-                {Updates.updateId ?? "embedded bundle"}{"\n"}
-                Channel: {Updates.channel ?? "none"}{"\n"}
-                Runtime: {Updates.runtimeVersion ?? "unknown"}{"\n"}
+                {Updates.updateId ?? "embedded bundle"}
+                {"\n"}
+                Channel: {Updates.channel ?? "none"}
+                {"\n"}
+                Runtime: {Updates.runtimeVersion ?? "unknown"}
+                {"\n"}
                 Created: {Updates.createdAt?.toISOString() ?? "n/a"}
               </Text>
             </View>
