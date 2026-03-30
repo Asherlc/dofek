@@ -257,8 +257,8 @@ async function drainBuffer(
         );
       }
     }
-  } catch {
-    // Diagnostic-only
+  } catch (error) {
+    captureException(error);
   }
   // Drain IMU buffer
   let totalImuUploaded = 0;

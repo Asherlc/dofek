@@ -12,7 +12,7 @@ const realtimeDataSampleSchema = z.object({
   timestamp: z.string(), // ISO 8601 with millisecond precision
   heartRate: z.number().int().min(0).max(255),
   /** R-R interval in milliseconds (beat-to-beat timing from PPG). 0 when unavailable. */
-  rrIntervalMs: z.number().int().min(0).max(65535).default(0),
+  rrIntervalMs: z.number().int().min(0).max(32767).default(0),
   quaternionW: z.number(),
   quaternionX: z.number(),
   quaternionY: z.number(),
