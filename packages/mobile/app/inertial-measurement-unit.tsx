@@ -352,9 +352,7 @@ export default function InertialMeasurementUnitScreen() {
               <Text style={styles.statValue}>{device.sampleCount.toLocaleString()} samples</Text>
             </View>
           ))}
-          {syncStatus.isError && (
-            <Text style={styles.errorText}>Failed to load motion data.</Text>
-          )}
+          {syncStatus.isError && <Text style={styles.errorText}>Failed to load motion data.</Text>}
           {!syncStatus.isError && (!syncStatus.data || syncStatus.data.length === 0) && (
             <Text style={styles.emptyText}>No motion data recorded yet</Text>
           )}
