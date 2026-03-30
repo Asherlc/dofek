@@ -657,6 +657,19 @@ describe("FHIR MedicationRequest Parsing", () => {
       expect(result.name).toBe("Unknown Medication");
     });
 
+    it("handles dosage with no timing property at all", () => {
+      const resource: FhirMedicationRequest = {
+        resourceType: "MedicationRequest",
+        id: "med-no-timing",
+        medicationReference: { display: "Med" },
+        dosageInstruction: [{ text: "As needed" }],
+      };
+      const result = parseFhirMedicationRequest(resource, "Test");
+      expect(result.dosageText).toBe("As needed");
+      expect(result.startDate).toBeUndefined();
+      expect(result.endDate).toBeUndefined();
+    });
+
     it("extracts form from contained medication", () => {
       const result = parseFhirMedicationRequest(medicationRequestFull, "Test");
       expect(result.form).toBe("Capsule");
