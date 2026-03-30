@@ -38,6 +38,13 @@ export interface PostSyncJobData {
   userId: string;
 }
 
+export interface TrainingExportJobData {
+  /** Optional: only export data after this timestamp */
+  since?: string;
+  /** Optional: only export data before this timestamp */
+  until?: string;
+}
+
 // ── Queue names ──
 
 export const SYNC_QUEUE = "sync";
@@ -46,6 +53,7 @@ export const IMPORT_QUEUE = "import";
 export const EXPORT_QUEUE = "export";
 export const SCHEDULED_SYNC_QUEUE = "scheduled-sync";
 export const POST_SYNC_QUEUE = "post-sync";
+export const TRAINING_EXPORT_QUEUE = "training-export";
 
 /** Get the per-provider queue name for a given provider ID. */
 export function providerSyncQueueName(providerId: string): string {
@@ -100,4 +108,10 @@ export function createScheduledSyncQueue(
 
 export function createPostSyncQueue(connection?: ConnectionOptions): Queue<PostSyncJobData> {
   return new Queue(POST_SYNC_QUEUE, { connection: connection ?? getRedisConnection() });
+}
+
+export function createTrainingExportQueue(
+  connection?: ConnectionOptions,
+): Queue<TrainingExportJobData> {
+  return new Queue(TRAINING_EXPORT_QUEUE, { connection: connection ?? getRedisConnection() });
 }

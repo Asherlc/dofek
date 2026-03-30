@@ -7,6 +7,7 @@ import { processImportJob } from "./process-import-job.ts";
 import { processPostSyncJob } from "./process-post-sync-job.ts";
 import { processScheduledSyncJob } from "./process-scheduled-sync-job.ts";
 import { processSyncJob } from "./process-sync-job.ts";
+import { processTrainingExportJob } from "./process-training-export-job.ts";
 import { getConfiguredProviderIds, getProviderQueueConfig } from "./provider-queue-config.ts";
 import {
   EXPORT_QUEUE,
@@ -21,6 +22,8 @@ import {
   type ScheduledSyncJobData,
   SYNC_QUEUE,
   type SyncJobData,
+  TRAINING_EXPORT_QUEUE,
+  type TrainingExportJobData,
 } from "./queues.ts";
 import { setupScheduledSync } from "./scheduled-sync.ts";
 
@@ -90,6 +93,11 @@ const postSyncWorker = new Worker<PostSyncJobData>(
   (job) => jobContext.run(job, () => processPostSyncJob(job, db)),
   { connection, concurrency: 1 },
 );
+const trainingExportWorker = new Worker<TrainingExportJobData>(
+  TRAINING_EXPORT_QUEUE,
+  (job) => jobContext.run(job, () => processTrainingExportJob(job, db)),
+  { connection },
+);
 
 // ── Idle spin-down ──
 
@@ -118,6 +126,7 @@ const allWorkers: Worker[] = [
   exportWorker,
   scheduledSyncWorker,
   postSyncWorker,
+  trainingExportWorker,
 ];
 
 for (const worker of allWorkers) {
