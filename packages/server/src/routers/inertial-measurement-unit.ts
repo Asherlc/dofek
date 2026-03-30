@@ -17,6 +17,14 @@ export const inertialMeasurementUnitRouter = router({
     return repo.getSyncStatus();
   }),
 
+  /** 5-minute bucket coverage for a single day — shows connection gaps */
+  getCoverageTimeline: protectedProcedure
+    .input(z.object({ date: z.string().date() }))
+    .query(async ({ ctx, input }) => {
+      const repo = new InertialMeasurementUnitRepository(ctx.db, ctx.userId);
+      return repo.getCoverageTimeline(input.date);
+    }),
+
   /** Raw time series for a short window — for waveform visualization.
    * Limited to 10 minutes (30,000 samples at 50 Hz) to avoid huge responses. */
   getTimeSeries: protectedProcedure

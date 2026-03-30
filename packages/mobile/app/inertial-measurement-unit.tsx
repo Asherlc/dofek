@@ -7,8 +7,11 @@ import {
   StyleSheet,
   Switch,
   Text,
+  TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
+import Svg, { Rect } from "react-native-svg";
 import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import {
@@ -26,6 +29,89 @@ import {
 } from "../modules/whoop-ble";
 import { colors } from "../theme";
 import { rootStackScreenOptions } from "./_layout";
+
+function formatDateForQuery(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+const MAX_SAMPLES_PER_BUCKET = 15000; // 50 Hz * 300 seconds
+
+function CoverageTimeline() {
+  const [selectedDate, setSelectedDate] = useState(() => new Date());
+  const { width: screenWidth } = useWindowDimensions();
+  const chartWidth = screenWidth - 32;
+  const chartHeight = 120;
+
+  const dateString = formatDateForQuery(selectedDate);
+  const { data, isLoading } = trpc.inertialMeasurementUnit.getCoverageTimeline.useQuery({
+    date: dateString,
+  });
+
+  const goToPreviousDay = () =>
+    setSelectedDate((previous) => new Date(previous.getTime() - 86400000));
+  const goToNextDay = () => setSelectedDate((previous) => new Date(previous.getTime() + 86400000));
+
+  const dateLabel = selectedDate.toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+
+  const barColor = (ratio: number) => {
+    if (ratio > 0.9) return colors.positive;
+    if (ratio > 0.5) return colors.accent;
+    return "#f97316";
+  };
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>Connection Timeline</Text>
+      <Text style={styles.sectionDescription}>
+        5-minute coverage — gaps indicate lost connection
+      </Text>
+      <View style={styles.dateNav}>
+        <TouchableOpacity onPress={goToPreviousDay} style={styles.dateNavButton}>
+          <Text style={styles.dateNavArrow}>‹</Text>
+        </TouchableOpacity>
+        <Text style={styles.dateNavLabel}>{dateLabel}</Text>
+        <TouchableOpacity onPress={goToNextDay} style={styles.dateNavButton}>
+          <Text style={styles.dateNavArrow}>›</Text>
+        </TouchableOpacity>
+      </View>
+      {isLoading && <Text style={styles.emptyText}>Loading...</Text>}
+      {!isLoading && (!data || data.length === 0) && (
+        <Text style={styles.emptyText}>No motion data for this day</Text>
+      )}
+      {!isLoading && data && data.length > 0 && (
+        <View style={{ alignItems: "center", marginTop: 8 }}>
+          <Svg width={chartWidth} height={chartHeight}>
+            {data.map((row, index) => {
+              const bucketDate = new Date(row.bucket);
+              const dayStart = new Date(bucketDate);
+              dayStart.setHours(0, 0, 0, 0);
+              const minuteOfDay = (bucketDate.getTime() - dayStart.getTime()) / 60000;
+              const barX = (minuteOfDay / 1440) * chartWidth;
+              const ratio = row.sampleCount / MAX_SAMPLES_PER_BUCKET;
+              const barH = Math.max(2, ratio * (chartHeight - 4));
+              const barW = Math.max(2, chartWidth / 288);
+              return (
+                <Rect
+                  key={row.bucket}
+                  x={barX}
+                  y={chartHeight - barH}
+                  width={barW}
+                  height={barH}
+                  rx={1}
+                  fill={barColor(ratio)}
+                />
+              );
+            })}
+          </Svg>
+        </View>
+      )}
+    </View>
+  );
+}
 
 function StatusBadge({ label, value, color }: { label: string; value: string; color: string }) {
   return (
@@ -357,6 +443,8 @@ export default function InertialMeasurementUnitScreen() {
           )}
         </View>
 
+        <CoverageTimeline />
+
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Daily Coverage</Text>
           <Text style={styles.sectionDescription}>
@@ -467,5 +555,15 @@ const styles = StyleSheet.create({
     color: colors.negative,
     lineHeight: 20,
     paddingLeft: 4,
+  },
+  dateNav: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 12 },
+  dateNavButton: { padding: 8 },
+  dateNavArrow: { fontSize: 22, color: colors.textSecondary, fontWeight: "600" },
+  dateNavLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.text,
+    minWidth: 120,
+    textAlign: "center",
   },
 });
