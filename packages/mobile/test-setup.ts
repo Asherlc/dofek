@@ -304,6 +304,14 @@ vi.mock("expo-status-bar", () => ({
   StatusBar: () => null,
 }));
 
+vi.mock("expo-haptics", () => ({
+  selectionAsync: vi.fn(() => Promise.resolve()),
+  impactAsync: vi.fn(() => Promise.resolve()),
+  notificationAsync: vi.fn(() => Promise.resolve()),
+  ImpactFeedbackStyle: { Light: "light", Medium: "medium", Heavy: "heavy" },
+  NotificationFeedbackType: { Success: "success", Warning: "warning", Error: "error" },
+}));
+
 // ── HealthKit native module mock ─────────────────────────────────────
 vi.mock("./modules/health-kit", () => ({
   getRequestStatus: vi.fn(() => Promise.resolve("shouldRequest")),
