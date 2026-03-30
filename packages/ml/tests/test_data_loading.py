@@ -1,4 +1,4 @@
-"""Tests for fetch_training_data.py -- manifest parsing and data loading helpers."""
+"""Tests for dofek_ml.data_loading -- manifest parsing and data loading helpers."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 import pandas as pd
 import pytest
 
-from fetch_training_data import (
+from dofek_ml.data_loading import (
     load_from_local,
     load_manifest_local,
     read_csv_local,
@@ -147,13 +147,11 @@ class TestLoadFromLocal:
         }
         (tmp_path / "manifest.json").write_text(json.dumps(manifest))
 
-        csv_content: str = (
-            "timestamp,activity_type,heart_rate\n" "2024-01-01T00:00:00,cycling,140\n"
-        )
+        csv_content: str = "timestamp,activity_type,heart_rate\n2024-01-01T00:00:00,cycling,140\n"
         (tmp_path / "metric_001.csv").write_text(csv_content)
         (tmp_path / "metric_002.csv").write_text(csv_content)
 
-        device_csv: str = "timestamp,device_type,accel_x\n" "2024-01-01T00:00:00,watch,0.1\n"
+        device_csv: str = "timestamp,device_type,accel_x\n2024-01-01T00:00:00,watch,0.1\n"
         (tmp_path / "device_001.csv").write_text(device_csv)
 
         metric_df, _ = load_from_local(tmp_path)

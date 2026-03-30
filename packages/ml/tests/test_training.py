@@ -1,4 +1,4 @@
-"""Tests for train_activity_classifier.py -- label simplification and channel discovery."""
+"""Tests for dofek_ml.training -- label simplification and channel discovery."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import torch
 
-from train_activity_classifier import (
+from dofek_ml.training import (
     DEFAULT_LABEL,
     DEVICE_GRID_SIZE,
     LABEL_MAP,
@@ -35,9 +35,9 @@ class TestSimplifyLabel:
             "virtual_cycling",
         ]
         for activity_type in cycling_types:
-            assert (
-                simplify_label(activity_type) == "cycling"
-            ), f"Expected 'cycling' for '{activity_type}'"
+            assert simplify_label(activity_type) == "cycling", (
+                f"Expected 'cycling' for '{activity_type}'"
+            )
 
     def test_maps_hiking_to_hiking(self) -> None:
         assert simplify_label("hiking") == "hiking"
@@ -67,9 +67,9 @@ class TestSimplifyLabel:
         """Every value in LABEL_MAP should be a valid simplified label."""
         valid_labels: set[str] = {"cycling", "hiking", "walking"}
         for raw, simplified in LABEL_MAP.items():
-            assert (
-                simplified in valid_labels
-            ), f"LABEL_MAP['{raw}'] = '{simplified}' is not a valid label"
+            assert simplified in valid_labels, (
+                f"LABEL_MAP['{raw}'] = '{simplified}' is not a valid label"
+            )
 
 
 class TestDiscoverMetricChannels:

@@ -42,7 +42,7 @@ import torch.optim as optim
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.model_selection import train_test_split
 
-from fetch_training_data import load_training_data
+from dofek_ml.data_loading import load_training_data
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -202,7 +202,7 @@ def build_metric_windows(
         window_end: pd.Timestamp = window_start + pd.Timedelta(seconds=WINDOW_DURATION_SECONDS)
 
         # Select rows that fall within this window
-        mask: pd.Series = (metric_df["timestamp"] >= window_start) & (  # type: ignore[type-arg]
+        mask: pd.Series = (metric_df["timestamp"] >= window_start) & (
             metric_df["timestamp"] < window_end
         )
         window_data: pd.DataFrame = metric_df.loc[mask]
@@ -211,7 +211,7 @@ def build_metric_windows(
             # Place each sample at its correct time slot within the window.
             # At 1 Hz, the slot index is just the number of seconds since
             # the window start. This preserves temporal gaps as zeros.
-            offsets: pd.Series = (  # type: ignore[type-arg]
+            offsets: pd.Series = (
                 (window_data["timestamp"] - window_start)
                 .dt.total_seconds()
                 .astype(int)
@@ -277,7 +277,7 @@ def build_device_windows(
 
         for i, window_start in enumerate(window_start_times):
             window_end: pd.Timestamp = window_start + pd.Timedelta(seconds=WINDOW_DURATION_SECONDS)
-            mask: pd.Series = (dev_data["timestamp"] >= window_start) & (  # type: ignore[type-arg]
+            mask: pd.Series = (dev_data["timestamp"] >= window_start) & (
                 dev_data["timestamp"] < window_end
             )
             window_data: pd.DataFrame = dev_data.loc[mask]
@@ -285,10 +285,10 @@ def build_device_windows(
             if len(window_data) > 0:
                 # Compute each sample's position in the 3000-slot grid.
                 # At 50 Hz, offset_seconds * 50 gives the slot index.
-                offsets_seconds: pd.Series = (  # type: ignore[type-arg]
-                    (window_data["timestamp"] - window_start).dt.total_seconds()
-                )
-                slot_indices: pd.Series = (offsets_seconds * DEVICE_SAMPLE_RATE_HZ).astype(int)  # type: ignore[type-arg]
+                offsets_seconds: pd.Series = (
+                    window_data["timestamp"] - window_start
+                ).dt.total_seconds()
+                slot_indices: pd.Series = (offsets_seconds * DEVICE_SAMPLE_RATE_HZ).astype(int)
                 slot_indices = slot_indices.clip(0, DEVICE_GRID_SIZE - 1)
 
                 for ch_idx, ch_name in enumerate(channels):
@@ -575,7 +575,7 @@ def train_model(
 
             # Backward pass
             optimizer.zero_grad()
-            loss.backward()  # type: ignore[no-untyped-call]
+            loss.backward()  # type: ignore[no-untyped-call]  # torch stubs incomplete
             optimizer.step()
 
             epoch_loss += loss.item()
@@ -703,8 +703,7 @@ def main() -> None:
         "--local-path",
         type=str,
         default=None,
-        help="Path to local directory with training CSVs. "
-        "If omitted, reads from R2 via env vars.",
+        help="Path to local directory with training CSVs. If omitted, reads from R2 via env vars.",
     )
     parser.add_argument(
         "--epochs",
@@ -759,7 +758,7 @@ def main() -> None:
         print(f"  Device '{dt}' channels ({len(channels)}): {channels}")
 
     # Show label distribution before simplification
-    raw_labels: pd.Series = metric_df["activity_type"].value_counts(dropna=False)  # type: ignore[type-arg]
+    raw_labels: pd.Series = metric_df["activity_type"].value_counts(dropna=False)
     print(f"\n  Raw label distribution:\n{raw_labels.to_string()}")
 
     # -----------------------------------------------------------------------

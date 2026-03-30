@@ -31,3 +31,8 @@ coverage/
 .swiftpm/
 # Muter mutation testing
 muter_logs/
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
