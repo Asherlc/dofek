@@ -155,7 +155,7 @@ export const adminRouter = router({
         UNION ALL SELECT 'supplement', COUNT(*)::text FROM fitness.supplement
         UNION ALL SELECT 'life_events', COUNT(*)::text FROM fitness.life_events
         UNION ALL SELECT 'nutrition_data', COUNT(*)::text FROM fitness.nutrition_data
-        UNION ALL SELECT 'accelerometer_sample', COUNT(*)::text FROM fitness.accelerometer_sample
+        UNION ALL SELECT 'inertial_measurement_unit_sample', COUNT(*)::text FROM fitness.inertial_measurement_unit_sample
         UNION ALL SELECT 'metric_stream', COUNT(*)::text FROM fitness.metric_stream
       ) counts ORDER BY row_count DESC`,
     );

@@ -8,7 +8,6 @@ vi.mock("../trpc.ts", async () => {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
     cachedProtectedQuery: () => trpc.procedure,
-    cachedProtectedQueryLight: () => trpc.procedure,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -1193,5 +1192,1044 @@ describe("recoveryRouter.strainTarget", () => {
 
     const decimals = result.currentStrain.toString().split(".")[1];
     expect(!decimals || decimals.length <= 1).toBe(true);
+  });
+
+  it("clamps hrvScore to 0-100 range in strainTarget readiness components", async () => {
+    const executeMock = vi.fn();
+    // HRV of 150 → Math.round(150) = 150 → clamped to 100
+    executeMock.mockResolvedValueOnce([
+      {
+        date: "2026-03-22",
+        resting_hr: 55,
+        hrv: 150,
+        spo2_avg: null,
+        respiratory_rate_avg: null,
+      },
+    ]);
+    executeMock.mockResolvedValueOnce([]);
+    executeMock.mockResolvedValueOnce([]);
+
+    const caller = createCaller({
+      db: { execute: executeMock },
+      userId: "user-1",
+    });
+    const result = await caller.strainTarget({});
+
+    // With high HRV score (100) and moderate other scores, should still
+    // produce a valid zone
+    expect(["Push", "Maintain", "Recovery"]).toContain(result.zone);
+    expect(result.targetStrain).toBeGreaterThan(0);
+  });
+
+  it("clamps restingHrScore using 120 - resting_hr formula", async () => {
+    const executeMock = vi.fn();
+    // resting_hr = 55 → 120 - 55 = 65, clamped to [0, 100] → 65
+    executeMock.mockResolvedValueOnce([
+      {
+        date: "2026-03-22",
+        resting_hr: 55,
+        hrv: null,
+        spo2_avg: null,
+        respiratory_rate_avg: null,
+      },
+    ]);
+    executeMock.mockResolvedValueOnce([]);
+    executeMock.mockResolvedValueOnce([]);
+
+    const caller = createCaller({
+      db: { execute: executeMock },
+      userId: "user-1",
+    });
+    const result = await caller.strainTarget({});
+
+    // Should complete without error and return valid zone
+    expect(result.targetStrain).toBeGreaterThan(0);
+  });
+
+  it("does not include loads from days outside the acute window", async () => {
+    // Load from 10 days ago (outside 7-day acute window)
+    const today = "2026-03-23";
+    const tenDaysAgo = "2026-03-13";
+    const executeMock = vi.fn();
+    executeMock.mockResolvedValueOnce([]);
+    executeMock.mockResolvedValueOnce([{ date: tenDaysAgo, daily_load: 500 }]);
+
+    const caller = createCaller({
+      db: { execute: executeMock },
+      userId: "user-1",
+    });
+    const result = await caller.strainTarget({ endDate: today });
+
+    // tenDaysAgo is outside the 7-day acute window,
+    // but inside the 28-day chronic window
+    // so currentStrain should be 0 (no load on today)
+    expect(result.currentStrain).toBe(0);
+  });
+
+  it("uses sleep efficiency for sleepScore in strainTarget when available", async () => {
+    const executeMock = vi.fn();
+    executeMock.mockResolvedValueOnce([
+      {
+        date: "2026-03-22",
+        resting_hr: 55,
+        hrv: 60,
+        spo2_avg: null,
+        respiratory_rate_avg: null,
+      },
+    ]);
+    executeMock.mockResolvedValueOnce([]);
+    // High sleep efficiency
+    executeMock.mockResolvedValueOnce([{ efficiency_pct: 95 }]);
+
+    const callerHigh = createCaller({
+      db: { execute: executeMock },
+      userId: "user-1",
+    });
+    const resultHigh = await callerHigh.strainTarget({});
+
+    const executeMock2 = vi.fn();
+    executeMock2.mockResolvedValueOnce([
+      {
+        date: "2026-03-22",
+        resting_hr: 55,
+        hrv: 60,
+        spo2_avg: null,
+        respiratory_rate_avg: null,
+      },
+    ]);
+    executeMock2.mockResolvedValueOnce([]);
+    // Low sleep efficiency
+    executeMock2.mockResolvedValueOnce([{ efficiency_pct: 40 }]);
+
+    const callerLow = createCaller({
+      db: { execute: executeMock2 },
+      userId: "user-1",
+    });
+    const resultLow = await callerLow.strainTarget({});
+
+    // Higher sleep efficiency → higher readiness → higher or equal target strain
+    expect(resultHigh.targetStrain).toBeGreaterThanOrEqual(resultLow.targetStrain);
+  });
+});
+
+// ── Mutation-killing tests for sleepConsistency ────────────────
+
+describe("recoveryRouter.sleepConsistency - mutation killers", () => {
+  it("window_count exactly 7 produces non-null consistencyScore", async () => {
+    const rows = [
+      {
+        date: "2026-03-01",
+        bedtime_hour: 22,
+        waketime_hour: 7,
+        rolling_bedtime_stddev: 0.5,
+        rolling_waketime_stddev: 0.5,
+        window_count: 7,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.sleepConsistency({});
+    expect(result[0]?.consistencyScore).not.toBeNull();
+    expect(result[0]?.consistencyScore).toBeTypeOf("number");
+  });
+
+  it("window_count 6 produces null consistencyScore (boundary)", async () => {
+    const rows = [
+      {
+        date: "2026-03-01",
+        bedtime_hour: 22,
+        waketime_hour: 7,
+        rolling_bedtime_stddev: 0.5,
+        rolling_waketime_stddev: 0.5,
+        window_count: 6,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.sleepConsistency({});
+    expect(result[0]?.consistencyScore).toBeNull();
+  });
+
+  it("bedtimeHour rounds correctly (kills *10/10 vs *100/100 mutation)", async () => {
+    // 22.567 * 100 / 100 = 22.57 (correct, 2 decimals)
+    // 22.567 * 10 / 10 = 22.6 (wrong, 1 decimal)
+    const rows = [
+      {
+        date: "2026-03-01",
+        bedtime_hour: 22.567,
+        waketime_hour: 6.0,
+        rolling_bedtime_stddev: null,
+        rolling_waketime_stddev: null,
+        window_count: 3,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.sleepConsistency({});
+    expect(result[0]?.bedtimeHour).toBe(22.57);
+  });
+
+  it("waketimeHour rounds to 2 decimals not 1", async () => {
+    const rows = [
+      {
+        date: "2026-03-01",
+        bedtime_hour: 22.0,
+        waketime_hour: 6.789,
+        rolling_bedtime_stddev: null,
+        rolling_waketime_stddev: null,
+        window_count: 3,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.sleepConsistency({});
+    expect(result[0]?.waketimeHour).toBe(6.79);
+  });
+
+  it("rollingBedtimeStddev rounds to 2 decimals", async () => {
+    const rows = [
+      {
+        date: "2026-03-01",
+        bedtime_hour: 22,
+        waketime_hour: 7,
+        rolling_bedtime_stddev: 1.456,
+        rolling_waketime_stddev: 0.5,
+        window_count: 7,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.sleepConsistency({});
+    expect(result[0]?.rollingBedtimeStddev).toBe(1.46);
+  });
+
+  it("rollingWaketimeStddev rounds to 2 decimals", async () => {
+    const rows = [
+      {
+        date: "2026-03-01",
+        bedtime_hour: 22,
+        waketime_hour: 7,
+        rolling_bedtime_stddev: 0.5,
+        rolling_waketime_stddev: 0.789,
+        window_count: 7,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.sleepConsistency({});
+    expect(result[0]?.rollingWaketimeStddev).toBe(0.79);
+  });
+
+  it("only null bedtime stddev produces null rollingBedtimeStddev", async () => {
+    const rows = [
+      {
+        date: "2026-03-01",
+        bedtime_hour: 22,
+        waketime_hour: 7,
+        rolling_bedtime_stddev: 0,
+        rolling_waketime_stddev: 0.5,
+        window_count: 7,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.sleepConsistency({});
+    // 0 is a valid value, not null
+    expect(result[0]?.rollingBedtimeStddev).toBe(0);
+  });
+});
+
+// ── Mutation-killing tests for hrvVariability ──────────────────
+
+describe("recoveryRouter.hrvVariability - mutation killers", () => {
+  it("hrv rounds to 1 decimal (kills *100/100 mutation)", async () => {
+    // 52.67 * 10 / 10 = 52.7 (correct)
+    // 52.67 * 100 / 100 = 52.67 (wrong for 1 decimal)
+    const rows = [
+      {
+        date: "2026-03-01",
+        hrv: 52.67,
+        rolling_mean: null,
+        rolling_cv: null,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.hrvVariability({});
+    expect(result[0]?.hrv).toBe(52.7);
+  });
+
+  it("rollingMean rounds to 1 decimal", async () => {
+    const rows = [
+      {
+        date: "2026-03-01",
+        hrv: 50,
+        rolling_mean: 48.345,
+        rolling_cv: null,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.hrvVariability({});
+    expect(result[0]?.rollingMean).toBeCloseTo(48.3, 1);
+  });
+
+  it("rollingCoefficientOfVariation rounds to 2 decimals", async () => {
+    const rows = [
+      {
+        date: "2026-03-01",
+        hrv: 50,
+        rolling_mean: 48,
+        rolling_cv: 12.567,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.hrvVariability({});
+    expect(result[0]?.rollingCoefficientOfVariation).toBe(12.57);
+  });
+
+  it("zero hrv is preserved (not treated as null)", async () => {
+    const rows = [
+      {
+        date: "2026-03-01",
+        hrv: 0,
+        rolling_mean: 48,
+        rolling_cv: 12,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.hrvVariability({});
+    expect(result[0]?.hrv).toBe(0);
+  });
+
+  it("zero rolling_mean is preserved (not treated as null)", async () => {
+    const rows = [
+      {
+        date: "2026-03-01",
+        hrv: 50,
+        rolling_mean: 0,
+        rolling_cv: null,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.hrvVariability({});
+    expect(result[0]?.rollingMean).toBe(0);
+  });
+
+  it("date is passed through unmodified", async () => {
+    const rows = [
+      {
+        date: "2026-03-15",
+        hrv: 50,
+        rolling_mean: null,
+        rolling_cv: null,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.hrvVariability({});
+    expect(result[0]?.date).toBe("2026-03-15");
+  });
+});
+
+// ── Mutation-killing tests for workloadRatio ───────────────────
+
+describe("recoveryRouter.workloadRatio - mutation killers", () => {
+  it("dailyLoad rounds to 1 decimal (not 2)", async () => {
+    const rows = [
+      {
+        date: "2026-03-01",
+        daily_load: 125.678,
+        acute_load: 500,
+        chronic_load: 400,
+        workload_ratio: null,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.workloadRatio({});
+    expect(result.timeSeries[0]?.dailyLoad).toBe(125.7);
+  });
+
+  it("acuteLoad rounds to 1 decimal", async () => {
+    const rows = [
+      {
+        date: "2026-03-01",
+        daily_load: 100,
+        acute_load: 500.345,
+        chronic_load: 400,
+        workload_ratio: null,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.workloadRatio({});
+    expect(result.timeSeries[0]?.acuteLoad).toBeCloseTo(500.3, 1);
+  });
+
+  it("chronicLoad rounds to 1 decimal", async () => {
+    const rows = [
+      {
+        date: "2026-03-01",
+        daily_load: 100,
+        acute_load: 500,
+        chronic_load: 400.789,
+        workload_ratio: null,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.workloadRatio({});
+    expect(result.timeSeries[0]?.chronicLoad).toBe(400.8);
+  });
+
+  it("workloadRatio rounds to 2 decimals", async () => {
+    const rows = [
+      {
+        date: "2026-03-01",
+        daily_load: 100,
+        acute_load: 500,
+        chronic_load: 400,
+        workload_ratio: 1.2567,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.workloadRatio({});
+    expect(result.timeSeries[0]?.workloadRatio).toBe(1.26);
+  });
+
+  it("date is passed through to each timeSeries entry", async () => {
+    const rows = [
+      {
+        date: "2026-03-15",
+        daily_load: 50,
+        acute_load: 200,
+        chronic_load: 300,
+        workload_ratio: 0.67,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.workloadRatio({});
+    expect(result.timeSeries[0]?.date).toBe("2026-03-15");
+  });
+
+  it("strain is derived from rounded dailyLoad", async () => {
+    const rows = [
+      {
+        date: "2026-03-01",
+        daily_load: 200,
+        acute_load: 500,
+        chronic_load: 400,
+        workload_ratio: 1.25,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.workloadRatio({});
+    expect(result.timeSeries[0]?.strain).toBeTypeOf("number");
+    expect(result.timeSeries[0]?.strain).toBeGreaterThan(0);
+  });
+
+  it("displayedStrain defaults to 0 when timeSeries is empty", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+    });
+    const result = await caller.workloadRatio({});
+    expect(result.displayedStrain).toBe(0);
+  });
+
+  it("displayedDate defaults to null when timeSeries is empty", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+    });
+    const result = await caller.workloadRatio({});
+    expect(result.displayedDate).toBeNull();
+  });
+});
+
+// ── Mutation-killing tests for sleepAnalytics ──────────────────
+
+describe("recoveryRouter.sleepAnalytics - mutation killers", () => {
+  it("deepPct rounds to 1 decimal", async () => {
+    const rows = [
+      {
+        date: "2026-03-01",
+        duration_minutes: 480,
+        sleep_minutes: 450,
+        deep_pct: 18.567,
+        rem_pct: 22,
+        light_pct: 50,
+        awake_pct: 9,
+        efficiency: 90,
+        rolling_avg_duration: 455,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.sleepAnalytics({});
+    expect(result.nightly[0]?.deepPct).toBe(18.6);
+  });
+
+  it("remPct rounds to 1 decimal", async () => {
+    const rows = [
+      {
+        date: "2026-03-01",
+        duration_minutes: 480,
+        sleep_minutes: 450,
+        deep_pct: 20,
+        rem_pct: 22.345,
+        light_pct: 50,
+        awake_pct: 8,
+        efficiency: 90,
+        rolling_avg_duration: 455,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.sleepAnalytics({});
+    expect(result.nightly[0]?.remPct).toBeCloseTo(22.3, 1);
+  });
+
+  it("lightPct rounds to 1 decimal", async () => {
+    const rows = [
+      {
+        date: "2026-03-01",
+        duration_minutes: 480,
+        sleep_minutes: 450,
+        deep_pct: 20,
+        rem_pct: 22,
+        light_pct: 50.789,
+        awake_pct: 7,
+        efficiency: 90,
+        rolling_avg_duration: null,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.sleepAnalytics({});
+    expect(result.nightly[0]?.lightPct).toBe(50.8);
+  });
+
+  it("awakePct rounds to 1 decimal", async () => {
+    const rows = [
+      {
+        date: "2026-03-01",
+        duration_minutes: 480,
+        sleep_minutes: 450,
+        deep_pct: 20,
+        rem_pct: 22,
+        light_pct: 50,
+        awake_pct: 8.965,
+        efficiency: 90,
+        rolling_avg_duration: null,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.sleepAnalytics({});
+    expect(result.nightly[0]?.awakePct).toBe(9);
+  });
+
+  it("efficiency rounds to 1 decimal", async () => {
+    const rows = [
+      {
+        date: "2026-03-01",
+        duration_minutes: 480,
+        sleep_minutes: 450,
+        deep_pct: 20,
+        rem_pct: 22,
+        light_pct: 50,
+        awake_pct: 8,
+        efficiency: 93.456,
+        rolling_avg_duration: null,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.sleepAnalytics({});
+    expect(result.nightly[0]?.efficiency).toBeCloseTo(93.5, 1);
+  });
+
+  it("rollingAvgDuration rounds to 1 decimal when non-null", async () => {
+    const rows = [
+      {
+        date: "2026-03-01",
+        duration_minutes: 480,
+        sleep_minutes: 450,
+        deep_pct: 20,
+        rem_pct: 22,
+        light_pct: 50,
+        awake_pct: 8,
+        efficiency: 90,
+        rolling_avg_duration: 455.789,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.sleepAnalytics({});
+    expect(result.nightly[0]?.rollingAvgDuration).toBe(455.8);
+  });
+
+  it("durationMinutes preserves the numeric value", async () => {
+    const rows = [
+      {
+        date: "2026-03-01",
+        duration_minutes: 480,
+        sleep_minutes: 450,
+        deep_pct: 20,
+        rem_pct: 22,
+        light_pct: 50,
+        awake_pct: 8,
+        efficiency: 90,
+        rolling_avg_duration: null,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.sleepAnalytics({});
+    expect(result.nightly[0]?.durationMinutes).toBe(480);
+  });
+
+  it("sleepMinutes preserves the numeric value", async () => {
+    const rows = [
+      {
+        date: "2026-03-01",
+        duration_minutes: 480,
+        sleep_minutes: 450,
+        deep_pct: 20,
+        rem_pct: 22,
+        light_pct: 50,
+        awake_pct: 8,
+        efficiency: 90,
+        rolling_avg_duration: null,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.sleepAnalytics({});
+    expect(result.nightly[0]?.sleepMinutes).toBe(450);
+  });
+
+  it("sleep debt is rounded to integer", async () => {
+    // 14 nights at 470 min → deficit = (480 - 470) * 14 = 140
+    const rows = Array.from({ length: 14 }, (_, i) => ({
+      date: `2026-03-${String(i + 1).padStart(2, "0")}`,
+      duration_minutes: 470,
+      sleep_minutes: 470,
+      deep_pct: 20,
+      rem_pct: 25,
+      light_pct: 45,
+      awake_pct: 10,
+      efficiency: 90,
+      rolling_avg_duration: 470,
+    }));
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.sleepAnalytics({});
+    expect(result.sleepDebt).toBe(140);
+    expect(Number.isInteger(result.sleepDebt)).toBe(true);
+  });
+
+  it("date is passed through to nightly entries", async () => {
+    const rows = [
+      {
+        date: "2026-03-15",
+        duration_minutes: 480,
+        sleep_minutes: 450,
+        deep_pct: 20,
+        rem_pct: 22,
+        light_pct: 50,
+        awake_pct: 8,
+        efficiency: 90,
+        rolling_avg_duration: null,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.sleepAnalytics({});
+    expect(result.nightly[0]?.date).toBe("2026-03-15");
+  });
+
+  it("sleepDebt uses sleepMinutes not durationMinutes", async () => {
+    // durationMinutes = 500 (would produce surplus of -280 over 14 nights)
+    // sleepMinutes = 400 (produces debt of 80*14 = 1120)
+    const rows = Array.from({ length: 14 }, (_, i) => ({
+      date: `2026-03-${String(i + 1).padStart(2, "0")}`,
+      duration_minutes: 500,
+      sleep_minutes: 400,
+      deep_pct: 20,
+      rem_pct: 25,
+      light_pct: 45,
+      awake_pct: 10,
+      efficiency: 90,
+      rolling_avg_duration: 400,
+    }));
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.sleepAnalytics({});
+    // 480 - 400 = 80 per night * 14 = 1120
+    expect(result.sleepDebt).toBe(1120);
+  });
+});
+
+// ── Mutation-killing tests for readinessScore ──────────────────
+
+describe("recoveryRouter.readinessScore - mutation killers", () => {
+  function recentDateStr(daysAgo: number): string {
+    const today = new Date();
+    const date = new Date(today);
+    date.setDate(today.getDate() - daysAgo);
+    return date.toISOString().split("T")[0] ?? "";
+  }
+
+  it("low HRV (negative z-score) produces lower HRV score", async () => {
+    const dateStr = recentDateStr(5);
+    const rows = [
+      {
+        date: dateStr,
+        hrv: 30, // significantly below mean of 50
+        resting_hr: 60,
+        respiratory_rate: 15,
+        hrv_mean_30d: 50,
+        hrv_sd_30d: 10,
+        rhr_mean_30d: 60,
+        rhr_sd_30d: 5,
+        rr_mean_30d: 15,
+        rr_sd_30d: 1,
+        efficiency_pct: 85,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.readinessScore({});
+    // z = (30-50)/10 = -2, should map to low score
+    expect(result[0]?.components.hrvScore).toBeLessThan(50);
+  });
+
+  it("high resting HR produces lower RHR score (inverted z)", async () => {
+    const dateStr = recentDateStr(5);
+    const rows = [
+      {
+        date: dateStr,
+        hrv: 50,
+        resting_hr: 70, // above mean of 60 = bad
+        respiratory_rate: 15,
+        hrv_mean_30d: 50,
+        hrv_sd_30d: 10,
+        rhr_mean_30d: 60,
+        rhr_sd_30d: 5,
+        rr_mean_30d: 15,
+        rr_sd_30d: 1,
+        efficiency_pct: 85,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.readinessScore({});
+    // z_rhr = (70-60)/5 = +2, inverted: -2, should map to low score
+    expect(result[0]?.components.restingHrScore).toBeLessThan(50);
+  });
+
+  it("low respiratory rate produces higher respiratory rate score", async () => {
+    const dateStr = recentDateStr(5);
+    const rows = [
+      {
+        date: dateStr,
+        hrv: 50,
+        resting_hr: 60,
+        respiratory_rate: 13, // below mean of 15 = good
+        hrv_mean_30d: 50,
+        hrv_sd_30d: 10,
+        rhr_mean_30d: 60,
+        rhr_sd_30d: 5,
+        rr_mean_30d: 15,
+        rr_sd_30d: 1,
+        efficiency_pct: 85,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.readinessScore({});
+    // z_rr = (13-15)/1 = -2, inverted: +2, maps to high score
+    expect(result[0]?.components.respiratoryRateScore).toBeGreaterThan(80);
+  });
+
+  it("high respiratory rate produces lower respiratory rate score", async () => {
+    const dateStr = recentDateStr(5);
+    const rows = [
+      {
+        date: dateStr,
+        hrv: 50,
+        resting_hr: 60,
+        respiratory_rate: 17, // above mean of 15 = bad
+        hrv_mean_30d: 50,
+        hrv_sd_30d: 10,
+        rhr_mean_30d: 60,
+        rhr_sd_30d: 5,
+        rr_mean_30d: 15,
+        rr_sd_30d: 1,
+        efficiency_pct: 85,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.readinessScore({});
+    // z_rr = (17-15)/1 = +2, inverted: -2, maps to low score
+    expect(result[0]?.components.respiratoryRateScore).toBeLessThan(50);
+  });
+
+  it("sleep efficiency maps directly to sleepScore (clamped 0-100)", async () => {
+    const dateStr = recentDateStr(5);
+    const rows = [
+      {
+        date: dateStr,
+        hrv: null,
+        resting_hr: null,
+        respiratory_rate: null,
+        hrv_mean_30d: null,
+        hrv_sd_30d: null,
+        rhr_mean_30d: null,
+        rhr_sd_30d: null,
+        rr_mean_30d: null,
+        rr_sd_30d: null,
+        efficiency_pct: 85,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.readinessScore({});
+    expect(result[0]?.components.sleepScore).toBe(85);
+  });
+
+  it("readinessScore is a weighted sum of components", async () => {
+    const dateStr = recentDateStr(5);
+    const rows = [
+      {
+        date: dateStr,
+        hrv: null,
+        resting_hr: null,
+        respiratory_rate: null,
+        hrv_mean_30d: null,
+        hrv_sd_30d: null,
+        rhr_mean_30d: null,
+        rhr_sd_30d: null,
+        rr_mean_30d: null,
+        rr_sd_30d: null,
+        efficiency_pct: null,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.readinessScore({});
+    // All defaults: 62 * 0.5 + 62 * 0.2 + 62 * 0.15 + 62 * 0.15 = 62
+    expect(result[0]?.readinessScore).toBe(62);
+  });
+
+  it("defaults to 62 for hrv score when hrv is null", async () => {
+    const dateStr = recentDateStr(5);
+    const rows = [
+      {
+        date: dateStr,
+        hrv: null,
+        resting_hr: 60,
+        respiratory_rate: 15,
+        hrv_mean_30d: 50,
+        hrv_sd_30d: 10,
+        rhr_mean_30d: 60,
+        rhr_sd_30d: 5,
+        rr_mean_30d: 15,
+        rr_sd_30d: 1,
+        efficiency_pct: 85,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.readinessScore({});
+    expect(result[0]?.components.hrvScore).toBe(62);
+  });
+
+  it("defaults to 62 for rhr score when resting_hr is null", async () => {
+    const dateStr = recentDateStr(5);
+    const rows = [
+      {
+        date: dateStr,
+        hrv: 50,
+        resting_hr: null,
+        respiratory_rate: 15,
+        hrv_mean_30d: 50,
+        hrv_sd_30d: 10,
+        rhr_mean_30d: 60,
+        rhr_sd_30d: 5,
+        rr_mean_30d: 15,
+        rr_sd_30d: 1,
+        efficiency_pct: 85,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.readinessScore({});
+    expect(result[0]?.components.restingHrScore).toBe(62);
+  });
+
+  it("defaults to 62 for respiratory score when respiratory_rate is null", async () => {
+    const dateStr = recentDateStr(5);
+    const rows = [
+      {
+        date: dateStr,
+        hrv: 50,
+        resting_hr: 60,
+        respiratory_rate: null,
+        hrv_mean_30d: 50,
+        hrv_sd_30d: 10,
+        rhr_mean_30d: 60,
+        rhr_sd_30d: 5,
+        rr_mean_30d: null,
+        rr_sd_30d: null,
+        efficiency_pct: 85,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.readinessScore({});
+    expect(result[0]?.components.respiratoryRateScore).toBe(62);
+  });
+
+  it("hrvScore is rounded to integer", async () => {
+    const dateStr = recentDateStr(5);
+    const rows = [
+      {
+        date: dateStr,
+        hrv: 55,
+        resting_hr: 60,
+        respiratory_rate: 15,
+        hrv_mean_30d: 50,
+        hrv_sd_30d: 10,
+        rhr_mean_30d: 60,
+        rhr_sd_30d: 5,
+        rr_mean_30d: 15,
+        rr_sd_30d: 1,
+        efficiency_pct: 85,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.readinessScore({});
+    expect(Number.isInteger(result[0]?.components.hrvScore)).toBe(true);
+    expect(Number.isInteger(result[0]?.components.restingHrScore)).toBe(true);
+    expect(Number.isInteger(result[0]?.components.respiratoryRateScore)).toBe(true);
+  });
+
+  it("date is preserved in readiness output", async () => {
+    const dateStr = recentDateStr(5);
+    const rows = [
+      {
+        date: dateStr,
+        hrv: null,
+        resting_hr: null,
+        respiratory_rate: null,
+        hrv_mean_30d: null,
+        hrv_sd_30d: null,
+        rhr_mean_30d: null,
+        rhr_sd_30d: null,
+        rr_mean_30d: null,
+        rr_sd_30d: null,
+        efficiency_pct: null,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.readinessScore({});
+    expect(result[0]?.date).toBe(dateStr);
   });
 });

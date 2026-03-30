@@ -1,31 +1,38 @@
-import { useMemo, useState } from "react";
+import {
+  formatDateYmd,
+  formatDurationMinutes,
+  formatNumber,
+  formatSleepDebtInline,
+  isToday,
+  isYesterday,
+} from "@dofek/format/format";
 import type { NextWorkoutRecommendation } from "dofek-server/types";
 import { useRouter } from "expo-router";
-import {
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { useMemo, useState } from "react";
+import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import Svg, { Polyline } from "react-native-svg";
 import { ActivityCard } from "../../components/ActivityCard";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
-import { MetricCard } from "../../components/MetricCard";
-import { OnboardingWelcome } from "../../components/OnboardingWelcome";
 import { RecoveryRing } from "../../components/charts/RecoveryRing";
 import { SleepBar } from "../../components/charts/SleepBar";
 import { StrainGauge } from "../../components/charts/StrainGauge";
-import { formatDateYmd, formatDurationMinutes, formatNumber, formatSleepDebtInline, isToday, isYesterday } from "@dofek/format/format";
-import { readinessLevelColor, scoreColor, scoreLabel, StrainZone, trendColor, trendDirection as computeTrend } from "../../lib/scoring";
+import { MetricCard } from "../../components/MetricCard";
+import { OnboardingWelcome } from "../../components/OnboardingWelcome";
+import {
+  trendDirection as computeTrend,
+  readinessLevelColor,
+  StrainZone,
+  scoreColor,
+  scoreLabel,
+  trendColor,
+} from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useAutoSync } from "../../lib/useAutoSync";
-import { useRefresh } from "../../lib/useRefresh";
 import { useOnboarding } from "../../lib/useOnboarding";
-import { ActivityRowSchema } from "../../types/api";
+import { useRefresh } from "../../lib/useRefresh";
 import { colors, statusColors } from "../../theme";
+import { ActivityRowSchema } from "../../types/api";
 
 function todayString(): string {
   const now = new Date();
@@ -46,9 +53,7 @@ function trendArrow(trend: string | null): string {
   return "";
 }
 
-function recommendationTypeColor(
-  type: NextWorkoutRecommendation["recommendationType"],
-): string {
+function recommendationTypeColor(type: NextWorkoutRecommendation["recommendationType"]): string {
   if (type === "rest") return colors.orange;
   if (type === "strength") return colors.positive;
   return colors.blue;
@@ -126,7 +131,10 @@ export default function OverviewScreen() {
   useAutoSync(metrics?.latest_date);
 
   // Weekly report
-  const weeklyReportQuery = trpc.weeklyReport.report.useQuery({ weeks: Math.max(Math.ceil(days / 7), 1), endDate });
+  const weeklyReportQuery = trpc.weeklyReport.report.useQuery({
+    weeks: Math.max(Math.ceil(days / 7), 1),
+    endDate,
+  });
   const weeklyReport = weeklyReportQuery.data;
 
   // Next workout recommendation
@@ -138,7 +146,10 @@ export default function OverviewScreen() {
   const sleepNeed = sleepNeedQuery.data;
 
   // Healthspan
-  const healthspanQuery = trpc.healthspan.score.useQuery({ weeks: Math.max(Math.ceil(days / 7), 4), endDate });
+  const healthspanQuery = trpc.healthspan.score.useQuery({
+    weeks: Math.max(Math.ceil(days / 7), 4),
+    endDate,
+  });
   const healthspan = healthspanQuery.data;
 
   // Nutrition
@@ -146,7 +157,10 @@ export default function OverviewScreen() {
   const nutritionData = nutritionQuery.data ?? [];
 
   // Body analytics
-  const weightQuery = trpc.bodyAnalytics.smoothedWeight.useQuery({ days: Math.max(days, 90), endDate });
+  const weightQuery = trpc.bodyAnalytics.smoothedWeight.useQuery({
+    days: Math.max(days, 90),
+    endDate,
+  });
   const weightData = weightQuery.data ?? [];
 
   // Anomaly detection
@@ -181,38 +195,43 @@ export default function OverviewScreen() {
     return isToday(new Date(`${last.date}T00:00:00`)) ? last : null;
   })();
 
-  const latestWeight = weightData.length > 0
-    ? weightData[weightData.length - 1]
-    : null;
+  const latestWeight = weightData.length > 0 ? weightData[weightData.length - 1] : null;
 
-  const latestSteps = stepsData.length > 0
-    ? stepsData[stepsData.length - 1]
-    : null;
+  const latestSteps = stepsData.length > 0 ? stepsData[stepsData.length - 1] : null;
 
-  const stepsAvg7d = stepsData.length > 0
-    ? Math.round(
-        stepsData.reduce((sum: number, d: Record<string, unknown>) => sum + (Number(d.steps) || 0), 0) / 7,
-      )
-    : null;
+  const stepsAvg7d =
+    stepsData.length > 0
+      ? Math.round(
+          stepsData.reduce(
+            (sum: number, d: Record<string, unknown>) => sum + (Number(d.steps) || 0),
+            0,
+          ) / 7,
+        )
+      : null;
 
-  const spo2Trend: (number | null)[] = stepsData
-    .map((d: Record<string, unknown>) => d.spo2_avg != null ? Number(d.spo2_avg) : null);
+  const spo2Trend: (number | null)[] = stepsData.map((d: Record<string, unknown>) =>
+    d.spo2_avg != null ? Number(d.spo2_avg) : null,
+  );
 
-  const skinTempTrend: (number | null)[] = stepsData
-    .map((d: Record<string, unknown>) => d.skin_temp_c != null ? units.convertTemperature(Number(d.skin_temp_c)) : null);
+  const skinTempTrend: (number | null)[] = stepsData.map((d: Record<string, unknown>) =>
+    d.skin_temp_c != null ? units.convertTemperature(Number(d.skin_temp_c)) : null,
+  );
 
   return (
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={colors.textSecondary}
+        />
+      }
     >
       {/* Onboarding — shown to new users with no connected providers */}
       {onboarding.showOnboarding && (
-        <OnboardingWelcome
-          onDismiss={onboarding.dismiss}
-          providers={onboarding.providers}
-        />
+        <OnboardingWelcome onDismiss={onboarding.dismiss} providers={onboarding.providers} />
       )}
 
       {/* Anomaly Alert Banner — at the very top before date */}
@@ -220,9 +239,8 @@ export default function OverviewScreen() {
         <View style={styles.anomalyBanner}>
           <Text style={styles.anomalyIcon}>{"\u26A0\uFE0F"}</Text>
           <Text style={styles.anomalyText}>
-            {anomalies.anomalies[0]?.metric}: {anomalies.anomalies[0]?.value}{" "}
-            (baseline {anomalies.anomalies[0]?.baselineMean} ±{" "}
-            {anomalies.anomalies[0]?.baselineStddev})
+            {anomalies.anomalies[0]?.metric}: {anomalies.anomalies[0]?.value} (baseline{" "}
+            {anomalies.anomalies[0]?.baselineMean} ± {anomalies.anomalies[0]?.baselineStddev})
           </Text>
         </View>
       )}
@@ -299,10 +317,7 @@ export default function OverviewScreen() {
               label="Resting Heart Rate"
               score={todayReadiness.components.restingHrScore}
             />
-            <ComponentRow
-              label="Sleep Quality"
-              score={todayReadiness.components.sleepScore}
-            />
+            <ComponentRow label="Sleep Quality" score={todayReadiness.components.sleepScore} />
             <ComponentRow
               label="Respiratory Rate"
               score={todayReadiness.components.respiratoryRateScore}
@@ -327,482 +342,462 @@ export default function OverviewScreen() {
             awakePercentage={lastNight.awakePct}
           />
           {sleepDebt > 0 && (
-            <Text style={styles.sleepDebt}>
-              {formatSleepDebtInline(sleepDebt)}
-            </Text>
+            <Text style={styles.sleepDebt}>{formatSleepDebtInline(sleepDebt)}</Text>
           )}
         </View>
       )}
 
       {/* Key metrics row */}
       <View style={styles.metricsGrid}>
-            <MetricCard
-              title="Heart Rate Variability"
-              value={latestHrv?.hrv != null ? String(Math.round(latestHrv.hrv)) : "--"}
-              unit="ms"
-              trend={hrvData.filter((d) => d.hrv != null).map((d) => d.hrv as number)}
-              color={colors.positive}
-              trendDirection={
-                hrvData.length >= 2
-                  ? computeTrend(
-                      hrvData[hrvData.length - 1]?.hrv ?? 0,
-                      hrvData[hrvData.length - 2]?.hrv ?? 0,
-                    )
-                  : undefined
-              }
-            />
-            <MetricCard
-              title="Stress"
-              value={
-                stressData?.latestScore != null
-                  ? formatNumber(stressData.latestScore)
-                  : "--"
-              }
-              unit="/ 3"
-              color={
-                (stressData?.latestScore ?? 0) >= 2
-                  ? colors.danger
-                  : (stressData?.latestScore ?? 0) >= 1
-                    ? colors.warning
-                    : colors.positive
-              }
-              subtitle={stressData?.trend ? `Trend: ${stressData.trend}` : undefined}
-            />
-            {metrics?.latest_spo2 != null && (
-              <MetricCard
-                title="Blood Oxygen"
-                value={String(Math.round(metrics.latest_spo2))}
-                unit="%"
-                trend={spo2Trend}
-                color={colors.blue}
-                trendDirection={(() => {
-                  const nonNull = spo2Trend.filter((v): v is number => v != null);
-                  return nonNull.length >= 2
-                    ? computeTrend(nonNull[nonNull.length - 1] ?? 0, nonNull[nonNull.length - 2] ?? 0)
-                    : undefined;
-                })()}
-              />
-            )}
-            {metrics?.latest_skin_temp != null && (
-              <MetricCard
-                title="Skin Temperature"
-                value={formatNumber(units.convertTemperature(metrics.latest_skin_temp))}
-                unit={units.temperatureLabel}
-                trend={skinTempTrend}
-                color={colors.orange}
-                trendDirection={(() => {
-                  const nonNull = skinTempTrend.filter((v): v is number => v != null);
-                  return nonNull.length >= 2
-                    ? computeTrend(nonNull[nonNull.length - 1] ?? 0, nonNull[nonNull.length - 2] ?? 0)
-                    : undefined;
-                })()}
-              />
-            )}
+        <MetricCard
+          title="Heart Rate Variability"
+          value={latestHrv?.hrv != null ? String(Math.round(latestHrv.hrv)) : "--"}
+          unit="ms"
+          trend={hrvData.flatMap((d) => (d.hrv != null ? [d.hrv] : []))}
+          color={colors.positive}
+          trendDirection={
+            hrvData.length >= 2
+              ? computeTrend(
+                  hrvData[hrvData.length - 1]?.hrv ?? 0,
+                  hrvData[hrvData.length - 2]?.hrv ?? 0,
+                )
+              : undefined
+          }
+        />
+        <MetricCard
+          title="Stress"
+          value={stressData?.latestScore != null ? formatNumber(stressData.latestScore) : "--"}
+          unit="/ 3"
+          color={
+            (stressData?.latestScore ?? 0) >= 2
+              ? colors.danger
+              : (stressData?.latestScore ?? 0) >= 1
+                ? colors.warning
+                : colors.positive
+          }
+          subtitle={stressData?.trend ? `Trend: ${stressData.trend}` : undefined}
+        />
+        {metrics?.latest_spo2 != null && (
+          <MetricCard
+            title="Blood Oxygen"
+            value={String(Math.round(metrics.latest_spo2))}
+            unit="%"
+            trend={spo2Trend}
+            color={colors.blue}
+            trendDirection={(() => {
+              const nonNull = spo2Trend.filter((v): v is number => v != null);
+              return nonNull.length >= 2
+                ? computeTrend(nonNull[nonNull.length - 1] ?? 0, nonNull[nonNull.length - 2] ?? 0)
+                : undefined;
+            })()}
+          />
+        )}
+        {metrics?.latest_skin_temp != null && (
+          <MetricCard
+            title="Skin Temperature"
+            value={formatNumber(units.convertTemperature(metrics.latest_skin_temp))}
+            unit={units.temperatureLabel}
+            trend={skinTempTrend}
+            color={colors.orange}
+            trendDirection={(() => {
+              const nonNull = skinTempTrend.filter((v): v is number => v != null);
+              return nonNull.length >= 2
+                ? computeTrend(nonNull[nonNull.length - 1] ?? 0, nonNull[nonNull.length - 2] ?? 0)
+                : undefined;
+            })()}
+          />
+        )}
+      </View>
+
+      {/* Recent activities */}
+      {recentActivities.length > 0 && (
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Recent Activities</Text>
+            <TouchableOpacity onPress={() => router.push("/activities")}>
+              <Text style={styles.viewAllLink}>View All</Text>
+            </TouchableOpacity>
           </View>
-
-          {/* Recent activities */}
-          {recentActivities.length > 0 && (
-            <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Recent Activities</Text>
-                <TouchableOpacity onPress={() => router.push("/activities")}>
-                  <Text style={styles.viewAllLink}>View All</Text>
-                </TouchableOpacity>
-              </View>
-              <View style={styles.activitiesStack}>
-                {recentActivities.map((activity) => (
-                  <TouchableOpacity
-                    key={String(activity.id)}
-                    activeOpacity={0.7}
-                    onPress={() => router.push(`/activity/${activity.id}`)}
-                  >
-                    <ActivityCard
-                      name={activity.name ?? ""}
-                      activityType={activity.activity_type ?? ""}
-                      startedAt={activity.started_at}
-                      endedAt={activity.ended_at ?? null}
-                      avgHr={activity.avg_hr ?? null}
-                      maxHr={activity.max_hr ?? null}
-                      avgPower={activity.avg_power ?? null}
-                      distanceKm={activity.distance_meters ? activity.distance_meters / 1000 : null}
-                      calories={activity.calories ?? null}
-                      units={units}
-                    />
-                  </TouchableOpacity>
-                ))}
-              </View>
-              {recentActivitiesTotalPages > 1 && (
-                <View style={styles.paginationRow}>
-                  <TouchableOpacity
-                    onPress={() => setRecentActivityPage((p) => Math.max(0, p - 1))}
-                    disabled={recentActivityPage <= 0}
-                    style={[
-                      styles.pageButton,
-                      recentActivityPage <= 0 && styles.pageButtonDisabled,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.pageButtonText,
-                        recentActivityPage <= 0 && styles.pageButtonTextDisabled,
-                      ]}
-                    >
-                      Previous
-                    </Text>
-                  </TouchableOpacity>
-                  <Text style={styles.pageInfo}>
-                    {recentActivityPage + 1} / {recentActivitiesTotalPages}
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() =>
-                      setRecentActivityPage((p) =>
-                        Math.min(recentActivitiesTotalPages - 1, p + 1),
-                      )
-                    }
-                    disabled={recentActivityPage >= recentActivitiesTotalPages - 1}
-                    style={[
-                      styles.pageButton,
-                      recentActivityPage >= recentActivitiesTotalPages - 1 &&
-                        styles.pageButtonDisabled,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.pageButtonText,
-                        recentActivityPage >= recentActivitiesTotalPages - 1 &&
-                          styles.pageButtonTextDisabled,
-                      ]}
-                    >
-                      Next
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
-          )}
-
-          {/* Health Status Bar — horizontal scrolling mini metrics */}
-          {showDetailedSections && metrics != null && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Health Status</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.healthStatusRow}
+          <View style={styles.activitiesStack}>
+            {recentActivities.map((activity) => (
+              <TouchableOpacity
+                key={String(activity.id)}
+                activeOpacity={0.7}
+                onPress={() => router.push(`/activity/${activity.id}`)}
               >
-                <MiniMetricCard
-                  label="Resting HR"
-                  value={metrics.latest_resting_hr != null ? String(Math.round(metrics.latest_resting_hr)) : "--"}
-                  unit="bpm"
+                <ActivityCard
+                  name={activity.name ?? ""}
+                  activityType={activity.activity_type ?? ""}
+                  startedAt={activity.started_at}
+                  endedAt={activity.ended_at ?? null}
+                  avgHr={activity.avg_hr ?? null}
+                  maxHr={activity.max_hr ?? null}
+                  avgPower={activity.avg_power ?? null}
+                  distanceKm={activity.distance_meters ? activity.distance_meters / 1000 : null}
+                  calories={activity.calories ?? null}
+                  units={units}
                 />
-                <MiniMetricCard
-                  label="Heart Rate Variability"
-                  value={metrics.latest_hrv != null ? String(Math.round(metrics.latest_hrv)) : "--"}
-                  unit="ms"
-                />
-                <MiniMetricCard
-                  label="Blood Oxygen"
-                  value={metrics.latest_spo2 != null ? String(Math.round(metrics.latest_spo2)) : "--"}
-                  unit="%"
-                />
-                <MiniMetricCard
-                  label="Steps"
-                  value={metrics.latest_steps != null ? String(Math.round(metrics.latest_steps)) : "--"}
-                />
-                <MiniMetricCard
-                  label="Active Energy"
-                  value={metrics.latest_active_energy != null ? String(Math.round(metrics.latest_active_energy)) : "--"}
-                  unit="kcal"
-                />
-                <MiniMetricCard
-                  label="Skin Temp"
-                  value={metrics.latest_skin_temp != null ? formatNumber(units.convertTemperature(metrics.latest_skin_temp)) : "--"}
-                  unit={units.temperatureLabel}
-                />
-              </ScrollView>
-            </View>
-          )}
-
-          {/* Weekly Report */}
-          {showDetailedSections && currentWeek != null && (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Weekly Report</Text>
-              <View style={styles.weeklyReportContent}>
-                {(() => {
-                  const zone = new StrainZone(currentWeek.strainZone);
-                  return (
-                    <View style={styles.weeklyReportRow}>
-                      <Text style={styles.weeklyLabel}>Strain Balance</Text>
-                      <Text
-                        style={[
-                          styles.weeklyValue,
-                          { color: zone.color },
-                        ]}
-                      >
-                        {zone.label}
-                      </Text>
-                    </View>
-                  );
-                })()}
-                <View style={styles.weeklyReportRow}>
-                  <Text style={styles.weeklyLabel}>Sleep vs Baseline</Text>
-                  <Text
-                    style={[
-                      styles.weeklyValue,
-                      {
-                        color:
-                          currentWeek.sleepPerformancePct >= 100
-                            ? statusColors.positive
-                            : currentWeek.sleepPerformancePct >= 90
-                              ? statusColors.warning
-                              : statusColors.danger,
-                      },
-                    ]}
-                  >
-                    {currentWeek.sleepPerformancePct}%
-                  </Text>
-                </View>
-                {currentWeek.avgRestingHr != null && (
-                  <View style={styles.weeklyReportRow}>
-                    <Text style={styles.weeklyLabel}>Avg Resting HR</Text>
-                    <Text style={styles.weeklyValue}>
-                      {Math.round(currentWeek.avgRestingHr)} bpm
-                    </Text>
-                  </View>
-                )}
-                {currentWeek.avgHrv != null && (
-                  <View style={styles.weeklyReportRow}>
-                    <Text style={styles.weeklyLabel}>Avg Heart Rate Variability</Text>
-                    <Text style={styles.weeklyValue}>
-                      {Math.round(currentWeek.avgHrv)} ms
-                    </Text>
-                  </View>
-                )}
-              </View>
-            </View>
-          )}
-
-          {/* Next Workout */}
-          {nextWorkout != null && isToday(new Date(nextWorkout.generatedAt)) && (
-            <View style={styles.card}>
-              <View style={styles.nextWorkoutHeader}>
-                <View style={styles.nextWorkoutTitleWrap}>
-                  <Text style={styles.cardTitle}>Next Workout</Text>
-                  <Text style={styles.nextWorkoutTitle}>{nextWorkout.title}</Text>
-                </View>
-                <View
-                  style={[
-                    styles.nextWorkoutTypeBadge,
-                    {
-                      borderColor: recommendationTypeColor(nextWorkout.recommendationType),
-                      backgroundColor: `${recommendationTypeColor(nextWorkout.recommendationType)}20`,
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.nextWorkoutTypeLabel,
-                      { color: recommendationTypeColor(nextWorkout.recommendationType) },
-                    ]}
-                  >
-                    {capitalize(nextWorkout.recommendationType)}
-                  </Text>
-                </View>
-              </View>
-
-              <Text style={styles.nextWorkoutSummary}>{nextWorkout.shortBlurb}</Text>
-              <Text
-                style={[
-                  styles.nextWorkoutReadiness,
-                  { color: readinessLevelColor(nextWorkout.readiness.level) },
-                ]}
+              </TouchableOpacity>
+            ))}
+          </View>
+          {recentActivitiesTotalPages > 1 && (
+            <View style={styles.paginationRow}>
+              <TouchableOpacity
+                onPress={() => setRecentActivityPage((p) => Math.max(0, p - 1))}
+                disabled={recentActivityPage <= 0}
+                style={[styles.pageButton, recentActivityPage <= 0 && styles.pageButtonDisabled]}
               >
-                Readiness:{" "}
-                {nextWorkout.readiness.score != null
-                  ? `${nextWorkout.readiness.score}/100 (${nextWorkout.readiness.level})`
-                  : "Unavailable"}
-              </Text>
-
-              {nextWorkout.cardio != null && (
-                <Text style={styles.nextWorkoutMeta}>
-                  Cardio: {nextWorkout.cardio.durationMinutes} minutes ({nextWorkout.cardio.focus})
-                </Text>
-              )}
-              {nextWorkout.strength != null && nextWorkout.strength.focusMuscles.length > 0 && (
-                <Text style={styles.nextWorkoutMeta}>
-                  Strength focus: {nextWorkout.strength.focusMuscles.join(", ")}
-                </Text>
-              )}
-
-              {nextWorkout.details.length > 0 && (
-                <View style={styles.nextWorkoutList}>
-                  <Text style={styles.nextWorkoutListTitle}>Plan</Text>
-                  {nextWorkout.details.slice(0, 3).map((detail, index) => (
-                    <Text key={`next-workout-detail-${index}`} style={styles.nextWorkoutListItem}>
-                      {"\u2022"} {detail}
-                    </Text>
-                  ))}
-                </View>
-              )}
-            </View>
-          )}
-
-          {/* Sleep Coach */}
-          {showDetailedSections && sleepNeed != null && (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Sleep Coach</Text>
-              {sleepNeed.canRecommend ? (
-                <>
-                  <Text style={styles.sleepNeedTotal}>
-                    {formatDurationMinutes(sleepNeed.totalNeedMinutes)}
-                  </Text>
-                  <Text style={styles.sleepNeedSubtitle}>recommended tonight</Text>
-                </>
-              ) : (
-                <Text style={styles.sleepNeedMissing}>
-                  Need last night's sleep for recommendation
-                </Text>
-              )}
-              <View style={styles.sleepNeedBreakdown}>
-                <View style={styles.sleepNeedRow}>
-                  <Text style={styles.sleepNeedLabel}>Baseline need</Text>
-                  <Text style={styles.sleepNeedValue}>
-                    {formatDurationMinutes(sleepNeed.baselineMinutes)}
-                  </Text>
-                </View>
-                <View style={styles.sleepNeedRow}>
-                  <Text style={styles.sleepNeedLabel}>Strain debt</Text>
-                  <Text style={styles.sleepNeedValue}>
-                    +{formatDurationMinutes(sleepNeed.strainDebtMinutes)}
-                  </Text>
-                </View>
-                <View style={styles.sleepNeedRow}>
-                  <Text style={styles.sleepNeedLabel}>Accumulated debt</Text>
-                  <Text style={styles.sleepNeedValue}>
-                    +{formatDurationMinutes(Math.round(sleepNeed.accumulatedDebtMinutes * 0.25))}
-                  </Text>
-                </View>
-              </View>
-            </View>
-          )}
-
-          {/* Healthspan Score */}
-          {showDetailedSections &&
-            healthspan != null &&
-            healthspan.healthspanScore != null &&
-            healthspan.metrics.length > 0 && (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Healthspan Score</Text>
-              <View style={styles.healthspanRow}>
                 <Text
                   style={[
-                    styles.healthspanScore,
+                    styles.pageButtonText,
+                    recentActivityPage <= 0 && styles.pageButtonTextDisabled,
+                  ]}
+                >
+                  Previous
+                </Text>
+              </TouchableOpacity>
+              <Text style={styles.pageInfo}>
+                {recentActivityPage + 1} / {recentActivitiesTotalPages}
+              </Text>
+              <TouchableOpacity
+                onPress={() =>
+                  setRecentActivityPage((p) => Math.min(recentActivitiesTotalPages - 1, p + 1))
+                }
+                disabled={recentActivityPage >= recentActivitiesTotalPages - 1}
+                style={[
+                  styles.pageButton,
+                  recentActivityPage >= recentActivitiesTotalPages - 1 && styles.pageButtonDisabled,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.pageButtonText,
+                    recentActivityPage >= recentActivitiesTotalPages - 1 &&
+                      styles.pageButtonTextDisabled,
+                  ]}
+                >
+                  Next
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* Health Status Bar — horizontal scrolling mini metrics */}
+      {showDetailedSections && metrics != null && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Health Status</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.healthStatusRow}
+          >
+            <MiniMetricCard
+              label="Resting HR"
+              value={
+                metrics.latest_resting_hr != null
+                  ? String(Math.round(metrics.latest_resting_hr))
+                  : "--"
+              }
+              unit="bpm"
+            />
+            <MiniMetricCard
+              label="Heart Rate Variability"
+              value={metrics.latest_hrv != null ? String(Math.round(metrics.latest_hrv)) : "--"}
+              unit="ms"
+            />
+            <MiniMetricCard
+              label="Blood Oxygen"
+              value={metrics.latest_spo2 != null ? String(Math.round(metrics.latest_spo2)) : "--"}
+              unit="%"
+            />
+            <MiniMetricCard
+              label="Steps"
+              value={metrics.latest_steps != null ? String(Math.round(metrics.latest_steps)) : "--"}
+            />
+            <MiniMetricCard
+              label="Active Energy"
+              value={
+                metrics.latest_active_energy != null
+                  ? String(Math.round(metrics.latest_active_energy))
+                  : "--"
+              }
+              unit="kcal"
+            />
+            <MiniMetricCard
+              label="Skin Temp"
+              value={
+                metrics.latest_skin_temp != null
+                  ? formatNumber(units.convertTemperature(metrics.latest_skin_temp))
+                  : "--"
+              }
+              unit={units.temperatureLabel}
+            />
+          </ScrollView>
+        </View>
+      )}
+
+      {/* Weekly Report */}
+      {showDetailedSections && currentWeek != null && (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Weekly Report</Text>
+          <View style={styles.weeklyReportContent}>
+            {(() => {
+              const zone = new StrainZone(currentWeek.strainZone);
+              return (
+                <View style={styles.weeklyReportRow}>
+                  <Text style={styles.weeklyLabel}>Strain Balance</Text>
+                  <Text style={[styles.weeklyValue, { color: zone.color }]}>{zone.label}</Text>
+                </View>
+              );
+            })()}
+            <View style={styles.weeklyReportRow}>
+              <Text style={styles.weeklyLabel}>Sleep vs Baseline</Text>
+              <Text
+                style={[
+                  styles.weeklyValue,
+                  {
+                    color:
+                      currentWeek.sleepPerformancePct >= 100
+                        ? statusColors.positive
+                        : currentWeek.sleepPerformancePct >= 90
+                          ? statusColors.warning
+                          : statusColors.danger,
+                  },
+                ]}
+              >
+                {currentWeek.sleepPerformancePct}%
+              </Text>
+            </View>
+            {currentWeek.avgRestingHr != null && (
+              <View style={styles.weeklyReportRow}>
+                <Text style={styles.weeklyLabel}>Avg Resting HR</Text>
+                <Text style={styles.weeklyValue}>{Math.round(currentWeek.avgRestingHr)} bpm</Text>
+              </View>
+            )}
+            {currentWeek.avgHrv != null && (
+              <View style={styles.weeklyReportRow}>
+                <Text style={styles.weeklyLabel}>Avg Heart Rate Variability</Text>
+                <Text style={styles.weeklyValue}>{Math.round(currentWeek.avgHrv)} ms</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      )}
+
+      {/* Next Workout */}
+      {nextWorkout != null && isToday(new Date(nextWorkout.generatedAt)) && (
+        <View style={styles.card}>
+          <View style={styles.nextWorkoutHeader}>
+            <View style={styles.nextWorkoutTitleWrap}>
+              <Text style={styles.cardTitle}>Next Workout</Text>
+              <Text style={styles.nextWorkoutTitle}>{nextWorkout.title}</Text>
+            </View>
+            <View
+              style={[
+                styles.nextWorkoutTypeBadge,
+                {
+                  borderColor: recommendationTypeColor(nextWorkout.recommendationType),
+                  backgroundColor: `${recommendationTypeColor(nextWorkout.recommendationType)}20`,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.nextWorkoutTypeLabel,
+                  { color: recommendationTypeColor(nextWorkout.recommendationType) },
+                ]}
+              >
+                {capitalize(nextWorkout.recommendationType)}
+              </Text>
+            </View>
+          </View>
+
+          <Text style={styles.nextWorkoutSummary}>{nextWorkout.shortBlurb}</Text>
+          <Text
+            style={[
+              styles.nextWorkoutReadiness,
+              { color: readinessLevelColor(nextWorkout.readiness.level) },
+            ]}
+          >
+            Readiness:{" "}
+            {nextWorkout.readiness.score != null
+              ? `${nextWorkout.readiness.score}/100 (${nextWorkout.readiness.level})`
+              : "Unavailable"}
+          </Text>
+
+          {nextWorkout.cardio != null && (
+            <Text style={styles.nextWorkoutMeta}>
+              Cardio: {nextWorkout.cardio.durationMinutes} minutes ({nextWorkout.cardio.focus})
+            </Text>
+          )}
+          {nextWorkout.strength != null && nextWorkout.strength.focusMuscles.length > 0 && (
+            <Text style={styles.nextWorkoutMeta}>
+              Strength focus: {nextWorkout.strength.focusMuscles.join(", ")}
+            </Text>
+          )}
+
+          {nextWorkout.details.length > 0 && (
+            <View style={styles.nextWorkoutList}>
+              <Text style={styles.nextWorkoutListTitle}>Plan</Text>
+              {nextWorkout.details.slice(0, 3).map((detail) => (
+                <Text key={detail} style={styles.nextWorkoutListItem}>
+                  {"\u2022"} {detail}
+                </Text>
+              ))}
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* Sleep Coach */}
+      {showDetailedSections && sleepNeed != null && (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Sleep Coach</Text>
+          {sleepNeed.canRecommend ? (
+            <>
+              <Text style={styles.sleepNeedTotal}>
+                {formatDurationMinutes(sleepNeed.totalNeedMinutes)}
+              </Text>
+              <Text style={styles.sleepNeedSubtitle}>recommended tonight</Text>
+            </>
+          ) : (
+            <Text style={styles.sleepNeedMissing}>Need last night's sleep for recommendation</Text>
+          )}
+          <View style={styles.sleepNeedBreakdown}>
+            <View style={styles.sleepNeedRow}>
+              <Text style={styles.sleepNeedLabel}>Baseline need</Text>
+              <Text style={styles.sleepNeedValue}>
+                {formatDurationMinutes(sleepNeed.baselineMinutes)}
+              </Text>
+            </View>
+            <View style={styles.sleepNeedRow}>
+              <Text style={styles.sleepNeedLabel}>Strain debt</Text>
+              <Text style={styles.sleepNeedValue}>
+                +{formatDurationMinutes(sleepNeed.strainDebtMinutes)}
+              </Text>
+            </View>
+            <View style={styles.sleepNeedRow}>
+              <Text style={styles.sleepNeedLabel}>Accumulated debt</Text>
+              <Text style={styles.sleepNeedValue}>
+                +{formatDurationMinutes(Math.round(sleepNeed.accumulatedDebtMinutes * 0.25))}
+              </Text>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* Healthspan Score */}
+      {showDetailedSections &&
+        healthspan != null &&
+        healthspan.healthspanScore != null &&
+        healthspan.metrics.length > 0 && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Healthspan Score</Text>
+            <View style={styles.healthspanRow}>
+              <Text
+                style={[styles.healthspanScore, { color: scoreColor(healthspan.healthspanScore) }]}
+              >
+                {healthspan.healthspanScore}
+              </Text>
+              <View style={styles.healthspanMeta}>
+                <Text
+                  style={[
+                    styles.healthspanStatus,
                     { color: scoreColor(healthspan.healthspanScore) },
                   ]}
                 >
-                  {healthspan.healthspanScore}
+                  {scoreLabel(healthspan.healthspanScore)}
                 </Text>
-                <View style={styles.healthspanMeta}>
+                {healthspan.trend != null && (
                   <Text
                     style={[
-                      styles.healthspanStatus,
-                      { color: scoreColor(healthspan.healthspanScore) },
+                      styles.healthspanTrend,
+                      {
+                        color: trendColor(healthspan.trend),
+                      },
                     ]}
                   >
-                    {scoreLabel(healthspan.healthspanScore)}
+                    {trendArrow(healthspan.trend)} {healthspan.trend}
                   </Text>
-                  {healthspan.trend != null && (
-                    <Text
-                      style={[
-                        styles.healthspanTrend,
-                        {
-                          color: trendColor(healthspan.trend),
-                        },
-                      ]}
-                    >
-                      {trendArrow(healthspan.trend)} {healthspan.trend}
-                    </Text>
-                  )}
-                </View>
-              </View>
-            </View>
-          )}
-
-          {/* Daily Steps */}
-          {showDetailedSections && latestSteps != null && (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Daily Steps</Text>
-              <Text style={styles.stepsValue}>
-                {Number(latestSteps.steps) > 0
-                  ? Number(latestSteps.steps).toLocaleString()
-                  : "--"}
-              </Text>
-              {stepsAvg7d != null && stepsAvg7d > 0 && (
-                <Text style={styles.stepsAvg}>
-                  7-day avg: {stepsAvg7d.toLocaleString()}
-                </Text>
-              )}
-            </View>
-          )}
-
-          {/* Nutrition Summary */}
-          {showDetailedSections && latestNutrition != null && (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Nutrition Today</Text>
-              <Text style={styles.caloriesValue}>
-                {Number(latestNutrition.calories) > 0
-                  ? Math.round(Number(latestNutrition.calories)).toLocaleString()
-                  : "--"}
-              </Text>
-              <Text style={styles.caloriesUnit}>kcal</Text>
-              <View style={styles.macrosRow}>
-                <MacroBar
-                  label="Protein"
-                  grams={Number(latestNutrition.protein_g ?? latestNutrition.proteinG ?? 0)}
-                  color={statusColors.info}
-                  totalCalories={Number(latestNutrition.calories) || 1}
-                />
-                <MacroBar
-                  label="Carbs"
-                  grams={Number(latestNutrition.carbs_g ?? latestNutrition.carbsG ?? 0)}
-                  color={statusColors.positive}
-                  totalCalories={Number(latestNutrition.calories) || 1}
-                />
-                <MacroBar
-                  label="Fat"
-                  grams={Number(latestNutrition.fat_g ?? latestNutrition.fatG ?? 0)}
-                  color={statusColors.warning}
-                  totalCalories={Number(latestNutrition.calories) || 1}
-                />
-              </View>
-            </View>
-          )}
-
-          {/* Body Weight */}
-          {showDetailedSections && latestWeight != null && (
-            <View style={styles.card}>
-              <ChartTitleWithTooltip
-                title="Body Weight"
-                description="This card shows your latest smoothed body weight and a short trend sparkline."
-                textStyle={styles.cardTitle}
-              />
-              <View style={styles.weightRow}>
-                <View>
-                  <Text style={styles.weightValue}>
-                    {formatNumber(units.convertWeight(latestWeight.smoothedWeight))}
-                  </Text>
-                  <Text style={styles.weightUnit}>{units.weightLabel}</Text>
-                </View>
-                {weightData.length >= 2 && (
-                  <WeightSparkline
-                    data={weightData.map((d) => d.smoothedWeight)}
-                    width={160}
-                    height={50}
-                  />
                 )}
               </View>
             </View>
+          </View>
+        )}
+
+      {/* Daily Steps */}
+      {showDetailedSections && latestSteps != null && (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Daily Steps</Text>
+          <Text style={styles.stepsValue}>
+            {Number(latestSteps.steps) > 0 ? Number(latestSteps.steps).toLocaleString() : "--"}
+          </Text>
+          {stepsAvg7d != null && stepsAvg7d > 0 && (
+            <Text style={styles.stepsAvg}>7-day avg: {stepsAvg7d.toLocaleString()}</Text>
           )}
+        </View>
+      )}
+
+      {/* Nutrition Summary */}
+      {showDetailedSections && latestNutrition != null && (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Nutrition Today</Text>
+          <Text style={styles.caloriesValue}>
+            {Number(latestNutrition.calories) > 0
+              ? Math.round(Number(latestNutrition.calories)).toLocaleString()
+              : "--"}
+          </Text>
+          <Text style={styles.caloriesUnit}>kcal</Text>
+          <View style={styles.macrosRow}>
+            <MacroBar
+              label="Protein"
+              grams={Number(latestNutrition.protein_g ?? latestNutrition.proteinG ?? 0)}
+              color={statusColors.info}
+              totalCalories={Number(latestNutrition.calories) || 1}
+            />
+            <MacroBar
+              label="Carbs"
+              grams={Number(latestNutrition.carbs_g ?? latestNutrition.carbsG ?? 0)}
+              color={statusColors.positive}
+              totalCalories={Number(latestNutrition.calories) || 1}
+            />
+            <MacroBar
+              label="Fat"
+              grams={Number(latestNutrition.fat_g ?? latestNutrition.fatG ?? 0)}
+              color={statusColors.warning}
+              totalCalories={Number(latestNutrition.calories) || 1}
+            />
+          </View>
+        </View>
+      )}
+
+      {/* Body Weight */}
+      {showDetailedSections && latestWeight != null && (
+        <View style={styles.card}>
+          <ChartTitleWithTooltip
+            title="Body Weight"
+            description="This card shows your latest smoothed body weight and a short trend sparkline."
+            textStyle={styles.cardTitle}
+          />
+          <View style={styles.weightRow}>
+            <View>
+              <Text style={styles.weightValue}>
+                {formatNumber(units.convertWeight(latestWeight.smoothedWeight))}
+              </Text>
+              <Text style={styles.weightUnit}>{units.weightLabel}</Text>
+            </View>
+            {weightData.length >= 2 && (
+              <WeightSparkline
+                data={weightData.map((d) => d.smoothedWeight)}
+                width={160}
+                height={50}
+              />
+            )}
+          </View>
+        </View>
+      )}
     </ScrollView>
   );
 }
@@ -810,33 +805,19 @@ export default function OverviewScreen() {
 // ── Helper Components ─────────────────────────────────────────────────
 
 function ComponentRow({ label, score }: { label: string; score: number }) {
-  const color =
-    score >= 67 ? colors.positive : score >= 34 ? colors.warning : colors.danger;
+  const color = score >= 67 ? colors.positive : score >= 34 ? colors.warning : colors.danger;
   return (
     <View style={componentStyles.row}>
       <Text style={componentStyles.label}>{label}</Text>
       <View style={componentStyles.barTrack}>
-        <View
-          style={[
-            componentStyles.barFill,
-            { width: `${score}%`, backgroundColor: color },
-          ]}
-        />
+        <View style={[componentStyles.barFill, { width: `${score}%`, backgroundColor: color }]} />
       </View>
       <Text style={[componentStyles.score, { color }]}>{score}</Text>
     </View>
   );
 }
 
-function MiniMetricCard({
-  label,
-  value,
-  unit,
-}: {
-  label: string;
-  value: string;
-  unit?: string;
-}) {
+function MiniMetricCard({ label, value, unit }: { label: string; value: string; unit?: string }) {
   return (
     <View style={miniMetricStyles.card}>
       <Text style={miniMetricStyles.label}>{label}</Text>
@@ -862,7 +843,8 @@ function MacroBar({
   // Approximate calorie contribution: protein=4, carbs=4, fat=9
   const calMultiplier = label === "Fat" ? 9 : 4;
   const macroCalories = grams * calMultiplier;
-  const percentage = totalCalories > 0 ? Math.min(100, Math.round((macroCalories / totalCalories) * 100)) : 0;
+  const percentage =
+    totalCalories > 0 ? Math.min(100, Math.round((macroCalories / totalCalories) * 100)) : 0;
 
   return (
     <View style={macroStyles.container}>
@@ -871,12 +853,7 @@ function MacroBar({
         <Text style={macroStyles.grams}>{Math.round(grams)}g</Text>
       </View>
       <View style={macroStyles.barTrack}>
-        <View
-          style={[
-            macroStyles.barFill,
-            { width: `${percentage}%`, backgroundColor: color },
-          ]}
-        />
+        <View style={[macroStyles.barFill, { width: `${percentage}%`, backgroundColor: color }]} />
       </View>
     </View>
   );
@@ -903,9 +880,9 @@ function WeightSparkline({
 
   const points = data
     .map((value, index) => {
-      const x = padding + (index / (data.length - 1)) * chartWidth;
-      const y = padding + chartHeight - ((value - min) / range) * chartHeight;
-      return `${x},${y}`;
+      const pointX = padding + (index / (data.length - 1)) * chartWidth;
+      const pointY = padding + chartHeight - ((value - min) / range) * chartHeight;
+      return `${pointX},${pointY}`;
     })
     .join(" ");
 

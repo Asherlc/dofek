@@ -1,6 +1,7 @@
 import { createBullBoard } from "@bull-board/api";
 import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
 import { ExpressAdapter } from "@bull-board/express";
+import * as Sentry from "@sentry/node";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import compression from "compression";
 import cookieParser from "cookie-parser";
@@ -36,6 +37,11 @@ export function createApp(db: import("dofek/db").Database): express.Express {
 }
 
 function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
+  // ── Health check (before all middleware — no logging, no auth) ──
+  app.get("/healthz", (_req, res) => {
+    res.json({ status: "ok" });
+  });
+
   // ── Compression + Cookies ──
   app.use(compression());
   app.use(cookieParser());
@@ -145,6 +151,25 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
   );
 }
 
+/**
+ * Fire-and-forget startup tasks. Exported for testability.
+ * Errors are logged and reported to Sentry but don't crash the server.
+ */
+export function runStartupTasks(
+  db: ReturnType<typeof createDatabaseFromEnv>,
+  app: express.Express,
+) {
+  warmCache(db).catch((err) => {
+    logger.error(`[cache] Warm failed: ${err}`);
+    Sentry.captureException(err);
+  });
+
+  startSlackBot(db, app).catch((err) => {
+    logger.error(`[slack] Slack bot error: ${err}`);
+    Sentry.captureException(err);
+  });
+}
+
 async function main() {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
@@ -156,12 +181,7 @@ async function main() {
   app.listen(PORT, () => {
     logger.info(`[server] API running at http://localhost:${PORT}`);
     logger.info(`[server] tRPC at http://localhost:${PORT}/api/trpc`);
-
-    // Warm cache with common dashboard queries (fire-and-forget)
-    warmCache(db).catch((err) => logger.error(`[cache] Warm failed: ${err}`));
-
-    // Start Slack bot if configured (fire-and-forget)
-    startSlackBot(db, app).catch((err) => logger.error(`[slack] Slack bot error: ${err}`));
+    runStartupTasks(db, app);
   });
 }
 

@@ -38,6 +38,10 @@ export class TrainerRoadProvider implements SyncProvider {
     return null;
   }
 
+  activityUrl(externalId: string): string {
+    return `https://www.trainerroad.com/app/cycling/rides/${externalId}`;
+  }
+
   authSetup(): ProviderAuthSetup {
     const fetchFn = this.#fetchFn;
     return {

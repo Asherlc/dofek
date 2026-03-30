@@ -1,5 +1,5 @@
-import { StyleSheet, Text, View } from "react-native";
 import { formatDurationMinutes } from "@dofek/format/format";
+import { StyleSheet, Text, View } from "react-native";
 import { colors } from "../../theme";
 
 interface SleepBarProps {
@@ -62,10 +62,34 @@ export function SleepBar({
   const displayPercentages = normalizePercentages(rawPercentages);
 
   const stages = [
-    { key: "deep", label: "Deep", percentage: deepPercentage, displayPct: displayPercentages[0] ?? 0, color: STAGE_COLORS.deep },
-    { key: "rem", label: "REM Sleep", percentage: remPercentage, displayPct: displayPercentages[1] ?? 0, color: STAGE_COLORS.rem },
-    { key: "light", label: "Light", percentage: lightPercentage, displayPct: displayPercentages[2] ?? 0, color: STAGE_COLORS.light },
-    { key: "awake", label: "Awake", percentage: awakePercentage, displayPct: displayPercentages[3] ?? 0, color: STAGE_COLORS.awake },
+    {
+      key: "deep",
+      label: "Deep",
+      percentage: deepPercentage,
+      displayPct: displayPercentages[0] ?? 0,
+      color: STAGE_COLORS.deep,
+    },
+    {
+      key: "rem",
+      label: "REM Sleep",
+      percentage: remPercentage,
+      displayPct: displayPercentages[1] ?? 0,
+      color: STAGE_COLORS.rem,
+    },
+    {
+      key: "light",
+      label: "Light",
+      percentage: lightPercentage,
+      displayPct: displayPercentages[2] ?? 0,
+      color: STAGE_COLORS.light,
+    },
+    {
+      key: "awake",
+      label: "Awake",
+      percentage: awakePercentage,
+      displayPct: displayPercentages[3] ?? 0,
+      color: STAGE_COLORS.awake,
+    },
   ];
 
   return (

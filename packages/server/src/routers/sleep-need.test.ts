@@ -8,7 +8,6 @@ vi.mock("../trpc.ts", async () => {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
     cachedProtectedQuery: () => trpc.procedure,
-    cachedProtectedQueryLight: () => trpc.procedure,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -499,7 +498,7 @@ describe("sleepNeedRouter", () => {
       expect(result?.efficiency).toBe(92);
       expect(result?.score).toBeGreaterThanOrEqual(0);
       expect(result?.score).toBeLessThanOrEqual(100);
-      expect(["Peak", "Perform", "Get By", "Low"]).toContain(result?.tier);
+      expect(["Excellent", "Good", "Fair", "Poor"]).toContain(result?.tier);
       expect(result?.recommendedBedtime).toMatch(/^\d{2}:\d{2}$/);
     });
 

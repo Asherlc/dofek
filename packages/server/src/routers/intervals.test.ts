@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { average, maxVal, summarizeSegment } from "./intervals.ts";
 
 describe("average", () => {
@@ -156,5 +156,99 @@ describe("summarizeSegment", () => {
     );
     expect(result.startedAt).toBe("2026-03-01T10:00:00+00:00");
     expect(result.endedAt).toBe("2026-03-01T10:05:00+00:00");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Router procedure tests (kill delegation mutations in intervals.ts)
+// ---------------------------------------------------------------------------
+
+vi.mock("../trpc.ts", async () => {
+  const { initTRPC } = await import("@trpc/server");
+  const trpc = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  return {
+    router: trpc.router,
+    protectedProcedure: trpc.procedure,
+    cachedProtectedQuery: () => trpc.procedure,
+    CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
+  };
+});
+
+vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../lib/typed-sql.ts")>();
+  return {
+    ...original,
+    executeWithSchema: vi.fn(
+      async (
+        db: { execute: (q: unknown) => Promise<unknown[]> },
+        _schema: unknown,
+        query: unknown,
+      ) => db.execute(query),
+    ),
+  };
+});
+
+const { intervalsRouter } = await import("./intervals.ts");
+const { createTestCallerFactory } = await import("./test-helpers.ts");
+
+const createCaller = createTestCallerFactory(intervalsRouter);
+
+describe("intervalsRouter", () => {
+  describe("byActivity", () => {
+    it("returns intervals for an activity", async () => {
+      const rows = [
+        { interval_number: 1, avg_power: 200, avg_hr: 140 },
+        { interval_number: 2, avg_power: 250, avg_hr: 155 },
+      ];
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue(rows) },
+        userId: "user-1",
+      });
+      const result = await caller.byActivity({
+        activityId: "00000000-0000-0000-0000-000000000001",
+      });
+      expect(result).toHaveLength(2);
+    });
+
+    it("returns empty array when no intervals", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+      const result = await caller.byActivity({
+        activityId: "00000000-0000-0000-0000-000000000001",
+      });
+      expect(result).toEqual([]);
+    });
+
+    it("rejects invalid UUID", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+      await expect(caller.byActivity({ activityId: "not-a-uuid" })).rejects.toThrow();
+    });
+  });
+
+  describe("detect", () => {
+    it("returns detected intervals", async () => {
+      const rows = [{ minute_start: "2026-03-01T10:00:00", avg_power: 200, avg_hr: 140 }];
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue(rows) },
+        userId: "user-1",
+      });
+      const result = await caller.detect({
+        activityId: "00000000-0000-0000-0000-000000000001",
+      });
+      expect(result).toBeDefined();
+    });
+
+    it("rejects invalid UUID", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+      await expect(caller.detect({ activityId: "not-a-uuid" })).rejects.toThrow();
+    });
   });
 });

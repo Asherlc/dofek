@@ -1,5 +1,3 @@
-import { accelerometerRouter } from "./routers/accelerometer.ts";
-import { accelerometerSyncRouter } from "./routers/accelerometer-sync.ts";
 import { activityRouter } from "./routers/activity.ts";
 import { activityRecordingRouter } from "./routers/activity-recording.ts";
 import { adminRouter } from "./routers/admin.ts";
@@ -23,6 +21,8 @@ import { healthKitSyncRouter } from "./routers/health-kit-sync.ts";
 import { healthReportRouter } from "./routers/health-report.ts";
 import { healthspanRouter } from "./routers/healthspan.ts";
 import { hikingRouter } from "./routers/hiking.ts";
+import { inertialMeasurementUnitRouter } from "./routers/inertial-measurement-unit.ts";
+import { inertialMeasurementUnitSyncRouter } from "./routers/inertial-measurement-unit-sync.ts";
 import { insightsRouter } from "./routers/insights.ts";
 import { intervalsRouter } from "./routers/intervals.ts";
 import { journalRouter } from "./routers/journal.ts";
@@ -54,8 +54,8 @@ import { router } from "./trpc.ts";
 
 export const appRouter = router({
   admin: adminRouter,
-  accelerometer: accelerometerRouter,
-  accelerometerSync: accelerometerSyncRouter,
+  inertialMeasurementUnit: inertialMeasurementUnitRouter,
+  inertialMeasurementUnitSync: inertialMeasurementUnitSyncRouter,
   activity: activityRouter,
   activityRecording: activityRecordingRouter,
   aiCoach: aiCoachRouter,

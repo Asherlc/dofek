@@ -10,6 +10,12 @@ vi.mock("./trpc", () => ({
   },
 }));
 
+const mockCaptureException = vi.fn();
+
+vi.mock("./telemetry", () => ({
+  captureException: (...args: unknown[]) => mockCaptureException(...args),
+}));
+
 // Import after mock setup
 const { useRefresh } = await import("./useRefresh");
 
@@ -67,5 +73,17 @@ describe("useRefresh", () => {
     });
 
     expect(result.current.refreshing).toBe(false);
+  });
+
+  it("calls captureException when extra callback rejects", async () => {
+    const extraError = new Error("extra failed");
+    const extra = vi.fn(() => Promise.reject(extraError));
+    const { result } = renderHook(() => useRefresh(extra));
+
+    await act(async () => {
+      await result.current.onRefresh();
+    });
+
+    expect(mockCaptureException).toHaveBeenCalledWith(extraError, { source: "useRefresh" });
   });
 });

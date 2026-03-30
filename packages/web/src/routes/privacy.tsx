@@ -97,9 +97,9 @@ function PrivacyPage() {
             <p>
               Dofek connects to third-party fitness platforms (including but not limited to Garmin,
               Wahoo, WHOOP, Polar, Peloton, Withings, RideWithGPS, and FatSecret) through their
-              official APIs. When you authorize a connection, we access only the data permitted by
-              the scopes you approve. We comply with each provider's API terms of service and data
-              usage policies.
+              APIs. Some integrations use official OAuth APIs, while others use unofficial or
+              reverse-engineered APIs to access your data on your behalf. When you authorize a
+              connection, we access only the data you consent to sharing.
             </p>
             <div className="mt-4 p-4 card">
               <h3 className="text-sm font-semibold text-foreground mb-2">Garmin Connect</h3>
