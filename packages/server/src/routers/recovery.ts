@@ -490,7 +490,7 @@ export const recoveryRouter = router({
       for (const metrics of combinedRows) {
         if (metrics.date <= cutoffStr) continue;
 
-        // HRV score: higher HRV = better (positive z = good)
+        // HRV score: higher HRV = better recovery (positive z = good)
         let hrvScore = 62;
         if (
           metrics.hrv != null &&

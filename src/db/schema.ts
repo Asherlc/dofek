@@ -597,6 +597,7 @@ export const metricStream = fitness.table(
     bloodGlucose: real("blood_glucose"), // mmol/L
     audioExposure: real("audio_exposure"), // dBASPL
     skinTemperature: real("skin_temperature"), // celsius
+    electrodermalActivity: real("electrodermal_activity"), // microsiemens
     // Source device/app name (e.g., "Apple Watch", "Wahoo TICKR")
     sourceName: text("source_name"),
     // Complete raw record — every field, no data loss
@@ -674,6 +675,9 @@ export const dailyMetrics = fitness.table(
     stressHighMinutes: integer("stress_high_minutes"), // minutes of high stress (Oura)
     recoveryHighMinutes: integer("recovery_high_minutes"), // minutes of high recovery (Oura)
     resilienceLevel: text("resilience_level"), // e.g. "limited", "adequate", "solid", "strong", "exceptional"
+    pushCount: integer("push_count"),
+    wheelchairDistanceKm: real("wheelchair_distance_km"),
+    uvExposure: real("uv_exposure"),
     sourceName: text("source_name"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -873,11 +877,7 @@ export const nutritionDaily = fitness.table(
       .notNull()
       .default(DEFAULT_USER_ID)
       .references(() => userProfile.id),
-    calories: integer("calories"),
-    proteinG: real("protein_g"),
-    carbsG: real("carbs_g"),
-    fatG: real("fat_g"),
-    fiberG: real("fiber_g"),
+    ...buildNutrientColumns(),
     waterMl: integer("water_ml"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -992,6 +992,145 @@ export const labResult = fitness.table(
     index("lab_result_test_name_idx").on(table.testName),
     index("lab_result_panel_idx").on(table.panelId),
     index("lab_result_user_provider_idx").on(table.userId, table.providerId),
+  ],
+);
+
+// ============================================================
+// Medications (FHIR MedicationRequest)
+// ============================================================
+
+export const medication = fitness.table(
+  "medication",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id),
+    userId: uuid("user_id")
+      .notNull()
+      .default(DEFAULT_USER_ID)
+      .references(() => userProfile.id),
+    externalId: text("external_id"),
+    name: text("name").notNull(),
+    status: text("status"),
+    authoredOn: date("authored_on"),
+    startDate: date("start_date"),
+    endDate: date("end_date"),
+    dosageText: text("dosage_text"),
+    route: text("route"),
+    form: text("form"),
+    rxnormCode: text("rxnorm_code"),
+    prescriberName: text("prescriber_name"),
+    reasonText: text("reason_text"),
+    reasonSnomedCode: text("reason_snomed_code"),
+    sourceName: text("source_name"),
+    raw: jsonb("raw"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("medication_provider_external_idx").on(table.providerId, table.externalId),
+    index("medication_user_provider_idx").on(table.userId, table.providerId),
+  ],
+);
+
+// ============================================================
+// Conditions / Diagnoses (FHIR Condition)
+// ============================================================
+
+export const condition = fitness.table(
+  "condition",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id),
+    userId: uuid("user_id")
+      .notNull()
+      .default(DEFAULT_USER_ID)
+      .references(() => userProfile.id),
+    externalId: text("external_id"),
+    name: text("name").notNull(),
+    clinicalStatus: text("clinical_status"),
+    verificationStatus: text("verification_status"),
+    icd10Code: text("icd10_code"),
+    snomedCode: text("snomed_code"),
+    onsetDate: date("onset_date"),
+    abatementDate: date("abatement_date"),
+    recordedDate: date("recorded_date"),
+    sourceName: text("source_name"),
+    raw: jsonb("raw"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("condition_provider_external_idx").on(table.providerId, table.externalId),
+    index("condition_user_provider_idx").on(table.userId, table.providerId),
+  ],
+);
+
+// ============================================================
+// Allergies / Intolerances (FHIR AllergyIntolerance)
+// ============================================================
+
+export const allergyIntolerance = fitness.table(
+  "allergy_intolerance",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id),
+    userId: uuid("user_id")
+      .notNull()
+      .default(DEFAULT_USER_ID)
+      .references(() => userProfile.id),
+    externalId: text("external_id"),
+    name: text("name").notNull(),
+    type: text("type"),
+    clinicalStatus: text("clinical_status"),
+    verificationStatus: text("verification_status"),
+    rxnormCode: text("rxnorm_code"),
+    onsetDate: date("onset_date"),
+    reactions: jsonb("reactions"),
+    sourceName: text("source_name"),
+    raw: jsonb("raw"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("allergy_intolerance_provider_external_idx").on(table.providerId, table.externalId),
+    index("allergy_intolerance_user_provider_idx").on(table.userId, table.providerId),
+  ],
+);
+
+// ============================================================
+// Medication Dose Events (iOS 26 HKMedicationDoseEvent)
+// ============================================================
+
+export const medicationDoseEvent = fitness.table(
+  "medication_dose_event",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id),
+    userId: uuid("user_id")
+      .notNull()
+      .default(DEFAULT_USER_ID)
+      .references(() => userProfile.id),
+    externalId: text("external_id"),
+    medicationName: text("medication_name").notNull(),
+    medicationConceptId: text("medication_concept_id"),
+    doseStatus: text("dose_status").notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+    sourceName: text("source_name"),
+    raw: jsonb("raw"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("medication_dose_event_provider_external_idx").on(
+      table.providerId,
+      table.externalId,
+    ),
+    index("medication_dose_event_user_provider_idx").on(table.userId, table.providerId),
+    index("medication_dose_event_recorded_idx").on(table.recordedAt),
   ],
 );
 

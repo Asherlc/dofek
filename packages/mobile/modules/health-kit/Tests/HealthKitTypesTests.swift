@@ -41,6 +41,25 @@ final class HealthKitTypesTests: XCTestCase {
             .bloodGlucose,
             .environmentalAudioExposure,
             .headphoneAudioExposure,
+            .bloodPressureSystolic,
+            .bloodPressureDiastolic,
+            .dietaryFiber,
+            .dietarySodium,
+            .dietarySugar,
+            .dietaryCholesterol,
+            .dietaryFatSaturated,
+            .dietaryPotassium,
+            .dietaryVitaminA,
+            .dietaryVitaminC,
+            .dietaryVitaminD,
+            .dietaryCalcium,
+            .dietaryIron,
+            .dietaryMagnesium,
+            .dietaryZinc,
+            .pushCount,
+            .distanceWheelchair,
+            .uvExposure,
+            .electrodermalActivity,
         ]
 
         for identifier in quantityTypeIdentifiers {
@@ -59,8 +78,8 @@ final class HealthKitTypesTests: XCTestCase {
     }
 
     func testReadTypesTotalCount() {
-        // 32 quantity types + 1 category type (sleep) + 1 workout type = 34
-        XCTAssertEqual(readTypes.count, 34)
+        // 51 quantity types + 5 category types + 1 workout type = 57
+        XCTAssertEqual(readTypes.count, 57)
     }
 
     // MARK: - writeTypes

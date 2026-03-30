@@ -6,10 +6,13 @@ import sax from "sax";
 import yauzl from "yauzl";
 import type { SyncDatabase } from "../../db/index.ts";
 import {
+  allergyIntolerance,
+  condition,
   dailyMetrics,
   healthEvent,
   labPanel,
   labResult,
+  medication,
   metricStream,
   nutritionDaily,
 } from "../../db/schema.ts";
@@ -35,10 +38,16 @@ import {
   upsertWorkoutBatch,
 } from "./db-insertion.ts";
 import {
+  type FhirAllergyIntolerance,
+  type FhirCondition,
   type FhirDiagnosticReport,
+  type FhirMedicationRequest,
   type FhirObservation,
   fhirResourceSchema,
+  parseFhirAllergyIntolerance,
+  parseFhirCondition,
   parseFhirDiagnosticReport,
+  parseFhirMedicationRequest,
   parseFhirObservation,
 } from "./fhir.ts";
 import type { HealthRecord } from "./records.ts";
@@ -259,7 +268,7 @@ export async function importAppleHealthFile(
       result.errors.push(...labCounts.errors);
     }
     logger.info(
-      `[apple_health] ${labCounts.inserted} lab results, ` +
+      `[apple_health] ${labCounts.inserted} clinical records imported, ` +
         `${labCounts.skipped} skipped, ${labCounts.errors.length} errors`,
     );
   }
@@ -359,6 +368,9 @@ export async function importClinicalRecords(
   // so lab_result must be deleted first).
   await db.delete(labResult).where(eq(labResult.providerId, providerId));
   await db.delete(labPanel).where(eq(labPanel.providerId, providerId));
+  await db.delete(medication).where(eq(medication.providerId, providerId));
+  await db.delete(condition).where(eq(condition.providerId, providerId));
+  await db.delete(allergyIntolerance).where(eq(allergyIntolerance.providerId, providerId));
 
   // Read all FHIR JSON files from the zip
   const clinicalFiles = await readZipEntries(
@@ -370,9 +382,12 @@ export async function importClinicalRecords(
     return { inserted: 0, skipped: 0, errors };
   }
 
-  // Parse files, separating Observations from DiagnosticReports
+  // Parse files, separating by resource type
   const observations: { obs: FhirObservation; fileName: string }[] = [];
   const diagnosticReports: FhirDiagnosticReport[] = [];
+  const medicationRequests: { resource: FhirMedicationRequest; fileName: string }[] = [];
+  const conditions: { resource: FhirCondition; fileName: string }[] = [];
+  const allergies: { resource: FhirAllergyIntolerance; fileName: string }[] = [];
   let skipped = 0;
 
   for (const file of clinicalFiles) {
@@ -383,10 +398,22 @@ export async function importClinicalRecords(
         skipped++;
         continue;
       }
-      if (result.data.resourceType === "Observation") {
-        observations.push({ obs: result.data, fileName: file.name });
-      } else {
-        diagnosticReports.push(result.data);
+      switch (result.data.resourceType) {
+        case "Observation":
+          observations.push({ obs: result.data, fileName: file.name });
+          break;
+        case "DiagnosticReport":
+          diagnosticReports.push(result.data);
+          break;
+        case "MedicationRequest":
+          medicationRequests.push({ resource: result.data, fileName: file.name });
+          break;
+        case "Condition":
+          conditions.push({ resource: result.data, fileName: file.name });
+          break;
+        case "AllergyIntolerance":
+          allergies.push({ resource: result.data, fileName: file.name });
+          break;
       }
     } catch (err) {
       errors.push({
@@ -514,6 +541,117 @@ export async function importClinicalRecords(
     await db.insert(labResult).values(batch).onConflictDoNothing();
     inserted += batch.length;
   }
+
+  // Insert medications from MedicationRequests
+  const medicationBatch: (typeof medication.$inferInsert)[] = [];
+  for (const { resource, fileName } of medicationRequests) {
+    try {
+      const normalizedPath = fileName.replace(/^apple_health_export\//, "");
+      const sourceName = sourceNameMap.get(normalizedPath) ?? "Unknown";
+      const parsed = parseFhirMedicationRequest(resource, sourceName);
+      medicationBatch.push({
+        providerId,
+        externalId: parsed.externalId,
+        name: parsed.name,
+        status: parsed.status,
+        authoredOn: parsed.authoredOn,
+        startDate: parsed.startDate,
+        endDate: parsed.endDate,
+        dosageText: parsed.dosageText,
+        route: parsed.route,
+        form: parsed.form,
+        rxnormCode: parsed.rxnormCode,
+        prescriberName: parsed.prescriberName,
+        reasonText: parsed.reasonText,
+        reasonSnomedCode: parsed.reasonSnomedCode,
+        sourceName: parsed.sourceName,
+        raw: parsed.raw,
+      });
+    } catch (err) {
+      errors.push({
+        message: `MedicationRequest ${resource.id}: ${err instanceof Error ? err.message : String(err)}`,
+        externalId: resource.id,
+      });
+    }
+  }
+  for (let i = 0; i < medicationBatch.length; i += 500) {
+    await db
+      .insert(medication)
+      .values(medicationBatch.slice(i, i + 500))
+      .onConflictDoNothing();
+  }
+  inserted += medicationBatch.length;
+
+  // Insert conditions
+  const conditionBatch: (typeof condition.$inferInsert)[] = [];
+  for (const { resource, fileName } of conditions) {
+    try {
+      const normalizedPath = fileName.replace(/^apple_health_export\//, "");
+      const sourceName = sourceNameMap.get(normalizedPath) ?? "Unknown";
+      const parsed = parseFhirCondition(resource, sourceName);
+      conditionBatch.push({
+        providerId,
+        externalId: parsed.externalId,
+        name: parsed.name,
+        clinicalStatus: parsed.clinicalStatus,
+        verificationStatus: parsed.verificationStatus,
+        icd10Code: parsed.icd10Code,
+        snomedCode: parsed.snomedCode,
+        onsetDate: parsed.onsetDate,
+        abatementDate: parsed.abatementDate,
+        recordedDate: parsed.recordedDate,
+        sourceName: parsed.sourceName,
+        raw: parsed.raw,
+      });
+    } catch (err) {
+      errors.push({
+        message: `Condition ${resource.id}: ${err instanceof Error ? err.message : String(err)}`,
+        externalId: resource.id,
+      });
+    }
+  }
+  for (let i = 0; i < conditionBatch.length; i += 500) {
+    await db
+      .insert(condition)
+      .values(conditionBatch.slice(i, i + 500))
+      .onConflictDoNothing();
+  }
+  inserted += conditionBatch.length;
+
+  // Insert allergies/intolerances
+  const allergyBatch: (typeof allergyIntolerance.$inferInsert)[] = [];
+  for (const { resource, fileName } of allergies) {
+    try {
+      const normalizedPath = fileName.replace(/^apple_health_export\//, "");
+      const sourceName = sourceNameMap.get(normalizedPath) ?? "Unknown";
+      const parsed = parseFhirAllergyIntolerance(resource, sourceName);
+      allergyBatch.push({
+        providerId,
+        externalId: parsed.externalId,
+        name: parsed.name,
+        type: parsed.type,
+        clinicalStatus: parsed.clinicalStatus,
+        verificationStatus: parsed.verificationStatus,
+        rxnormCode: parsed.rxnormCode,
+        onsetDate: parsed.onsetDate,
+        reactions: parsed.reactions,
+        sourceName: parsed.sourceName,
+        raw: parsed.raw,
+      });
+    } catch (err) {
+      errors.push({
+        message: `AllergyIntolerance ${resource.id}: ${err instanceof Error ? err.message : String(err)}`,
+        externalId: resource.id,
+      });
+    }
+  }
+  for (let i = 0; i < allergyBatch.length; i += 500) {
+    await db
+      .insert(allergyIntolerance)
+      .values(allergyBatch.slice(i, i + 500))
+      .onConflictDoNothing();
+  }
+  inserted += allergyBatch.length;
 
   return { inserted, skipped, errors };
 }
