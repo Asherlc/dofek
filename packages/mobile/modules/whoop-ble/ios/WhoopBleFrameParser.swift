@@ -1,15 +1,22 @@
 import Foundation
 
 /// A single realtime data sample from a 0x28 REALTIME_DATA packet.
-/// Contains heart rate and orientation quaternion from the strap's sensor fusion.
+/// Contains heart rate, orientation quaternion, and raw optical/PPG bytes
+/// from the strap's sensor fusion.
 struct WhoopRealtimeDataSample {
     let timestampSeconds: UInt32
     let subSeconds: UInt16
     let heartRate: UInt8
+    /// R-R interval in milliseconds (beat-to-beat timing from PPG).
+    /// 0 when not available (e.g., no valid reading flag in compact packet).
+    let rrIntervalMs: UInt16
     let quaternionW: Float
     let quaternionX: Float
     let quaternionY: Float
     let quaternionZ: Float
+    /// Raw optical/PPG bytes from payload offsets 23-40 (18 bytes).
+    /// Format is partially understood — preserved for analysis.
+    let opticalBytes: Data
 }
 
 /// A single IMU sample extracted from a WHOOP BLE packet.
@@ -139,13 +146,19 @@ final class WhoopBleFrameParser {
         var dataTimestamp: UInt32 = 0
         var subSeconds: UInt16 = 0
 
-        // Data packets with Maverick header:
-        // [0] packetType, [1] recordType, [2-6] other fields,
-        // [7-10] Unix timestamp (u32 LE), [11-12] sub-seconds (u16 LE)
-        // Note: timestamp is at offset 7, NOT 3. Confirmed via live capture
-        // analysis — offset 3 produced 1970 dates, offset 7 gives correct 2026 dates.
-        if payload.count >= 13 {
+        if payload.count >= 6 {
             recordType = payload[payload.startIndex + 1]
+        }
+
+        // Timestamp location depends on packet type:
+        // - 0x28 compact (24 bytes): timestamp at payload offset 2 (u32 LE)
+        //   Confirmed: bytes 2-5 = 0x1D45C969 LE = 1774798109 = 2026-03-29T15:28:29Z
+        // - Other packets (0x2B, 0x2F, etc.): timestamp at payload offset 7 (u32 LE)
+        //   Sub-seconds at offset 11 (u16 LE)
+        if packetType == WhoopBleConstants.packetTypeRealtimeData && payload.count >= 6 {
+            dataTimestamp = payload.readUInt32LE(at: payload.startIndex + 2)
+            // No sub-seconds field in compact format
+        } else if payload.count >= 13 {
             dataTimestamp = payload.readUInt32LE(at: payload.startIndex + 7)
             subSeconds = payload.readUInt16LE(at: payload.startIndex + 11)
         }
@@ -236,32 +249,122 @@ final class WhoopBleFrameParser {
 
     /// Extract a realtime data sample (HR + orientation quaternion) from a 0x28 packet.
     ///
-    /// The REALTIME_DATA packet (~116 bytes payload) is sent at ~1 Hz during sync:
-    /// - Byte 22: heart rate (bpm)
-    /// - Bytes 41-44: quaternion W (float32 LE)
-    /// - Bytes 45-48: quaternion X (float32 LE)
-    /// - Bytes 49-52: quaternion Y (float32 LE)
-    /// - Bytes 53-56: quaternion Z (float32 LE)
+    /// Two payload sizes observed:
+    /// - **Full (≥57 bytes)**: HR at offset 22, quaternion at 41-56, optical at 23-40
+    /// - **Compact (~24 bytes)**: Minimal format; raw payload preserved for analysis
+    ///
+    /// Both formats are captured. For compact packets, HR and quaternion fields
+    /// are zero but the raw payload is preserved in opticalBytes for decoding.
     static func extractRealtimeData(from frame: WhoopFrame) -> WhoopRealtimeDataSample? {
+        // Handle 0x2F HISTORICAL_DATA record type 18 (116-byte payload)
+        // HR at byte 14, R-R at bytes 16-17, quaternion at bytes 33-48
+        if frame.packetType == WhoopBleConstants.packetTypeHistoricalData
+            && frame.recordType == 18
+            && frame.payload.count >= 50 {
+            let payload = frame.payload
+            let heartRate = payload[payload.startIndex + 14]
+            let validFlag = payload[payload.startIndex + 15]
+            let rrIntervalMs = validFlag != 0 ? payload.readUInt16LE(at: payload.startIndex + 16) : 0
+
+            let quaternionW = payload.readFloat32LE(at: payload.startIndex + 33)
+            let quaternionX = payload.readFloat32LE(at: payload.startIndex + 37)
+            let quaternionY = payload.readFloat32LE(at: payload.startIndex + 41)
+            let quaternionZ = payload.readFloat32LE(at: payload.startIndex + 45)
+
+            var opticalBytes = Data(count: WhoopBleConstants.realtimeDataOpticalByteCount)
+            // Preserve bytes 14-31 (HR + R-R + surrounding data) for analysis
+            let dataStart = payload.startIndex + 14
+            let copyLen = min(payload.endIndex - dataStart, opticalBytes.count)
+            if copyLen > 0 {
+                opticalBytes.replaceSubrange(0..<copyLen, with: payload[dataStart..<(dataStart + copyLen)])
+            }
+
+            return WhoopRealtimeDataSample(
+                timestampSeconds: frame.dataTimestamp,
+                subSeconds: frame.subSeconds,
+                heartRate: heartRate,
+                rrIntervalMs: rrIntervalMs,
+                quaternionW: quaternionW,
+                quaternionX: quaternionX,
+                quaternionY: quaternionY,
+                quaternionZ: quaternionZ,
+                opticalBytes: opticalBytes
+            )
+        }
+
         guard frame.packetType == WhoopBleConstants.packetTypeRealtimeData else { return nil }
 
         let payload = frame.payload
-        guard payload.count >= WhoopBleConstants.realtimeDataMinPayloadSize else { return nil }
+        // Need at least the 13-byte common header (type + record + timestamp + subseconds)
+        guard payload.count >= 13 else { return nil }
 
-        let heartRate = payload[payload.startIndex + WhoopBleConstants.realtimeDataHeartRateOffset]
-        let quaternionW = payload.readFloat32LE(at: payload.startIndex + WhoopBleConstants.realtimeDataQuaternionWOffset)
-        let quaternionX = payload.readFloat32LE(at: payload.startIndex + WhoopBleConstants.realtimeDataQuaternionXOffset)
-        let quaternionY = payload.readFloat32LE(at: payload.startIndex + WhoopBleConstants.realtimeDataQuaternionYOffset)
-        let quaternionZ = payload.readFloat32LE(at: payload.startIndex + WhoopBleConstants.realtimeDataQuaternionZOffset)
+        // Full-size payload (≥57 bytes): extract HR, quaternion, and optical bytes
+        if payload.count >= WhoopBleConstants.realtimeDataMinPayloadSize {
+            let heartRate = payload[payload.startIndex + WhoopBleConstants.realtimeDataHeartRateOffset]
+
+            let opticalStart = payload.startIndex + WhoopBleConstants.realtimeDataOpticalStartOffset
+            let opticalEnd = opticalStart + WhoopBleConstants.realtimeDataOpticalByteCount
+            let opticalBytes: Data
+            if opticalEnd <= payload.endIndex {
+                opticalBytes = Data(payload[opticalStart..<opticalEnd])
+            } else {
+                opticalBytes = Data(count: WhoopBleConstants.realtimeDataOpticalByteCount)
+            }
+
+            let quaternionW = payload.readFloat32LE(at: payload.startIndex + WhoopBleConstants.realtimeDataQuaternionWOffset)
+            let quaternionX = payload.readFloat32LE(at: payload.startIndex + WhoopBleConstants.realtimeDataQuaternionXOffset)
+            let quaternionY = payload.readFloat32LE(at: payload.startIndex + WhoopBleConstants.realtimeDataQuaternionYOffset)
+            let quaternionZ = payload.readFloat32LE(at: payload.startIndex + WhoopBleConstants.realtimeDataQuaternionZOffset)
+
+            return WhoopRealtimeDataSample(
+                timestampSeconds: frame.dataTimestamp,
+                subSeconds: frame.subSeconds,
+                heartRate: heartRate,
+                rrIntervalMs: 0, // not yet mapped in full-size format
+                quaternionW: quaternionW,
+                quaternionX: quaternionX,
+                quaternionY: quaternionY,
+                quaternionZ: quaternionZ,
+                opticalBytes: opticalBytes
+            )
+        }
+
+        // Compact payload (24 bytes, record type 0x02):
+        //   [0] 0x28 packet type
+        //   [1] 0x02 record type
+        //   [2] sequence counter (u8, increments per packet)
+        //   [3-7] device/session identifiers (constant per session)
+        //   [8] heart rate (bpm) — confirmed from PacketLogger capture (60-62 bpm range)
+        //   [9] flag (0x01 = valid reading, 0x00 = no reading)
+        //   [10-11] u16 LE — likely PPG ADC value or R-R interval in ms (~900-1010)
+        //   [12-17] zeros (reserved)
+        //   [18] constant 0x01
+        //   [19] constant 0x00
+        //   [20-23] CRC32 or checksum (changes every packet)
+        guard payload.count >= 12 else { return nil }
+
+        let heartRate = payload[payload.startIndex + 8]
+        let validFlag = payload[payload.startIndex + 9]
+        let rrIntervalMs = validFlag != 0 ? payload.readUInt16LE(at: payload.startIndex + 10) : 0
+
+        // Preserve the full payload after header for analysis
+        var opticalBytes = Data(count: WhoopBleConstants.realtimeDataOpticalByteCount)
+        let dataStart = payload.startIndex + 8
+        let copyLen = min(payload.endIndex - dataStart, opticalBytes.count)
+        if copyLen > 0 {
+            opticalBytes.replaceSubrange(0..<copyLen, with: payload[dataStart..<(dataStart + copyLen)])
+        }
 
         return WhoopRealtimeDataSample(
             timestampSeconds: frame.dataTimestamp,
             subSeconds: frame.subSeconds,
             heartRate: heartRate,
-            quaternionW: quaternionW,
-            quaternionX: quaternionX,
-            quaternionY: quaternionY,
-            quaternionZ: quaternionZ
+            rrIntervalMs: rrIntervalMs,
+            quaternionW: 0,
+            quaternionX: 0,
+            quaternionY: 0,
+            quaternionZ: 0,
+            opticalBytes: opticalBytes
         )
     }
 

@@ -268,6 +268,7 @@ public class WhoopBleModule: Module {
                     "hasCmdCharacteristic": self.cmdCharacteristic != nil,
                     "hasCmdResponseCharacteristic": self.cmdResponseCharacteristic != nil,
                     "lastWriteError": self.lastWriteError ?? "none",
+                    "realtimeBufferCount": self.realtimeDataBuffer.count,
                 ]
             }
         }
@@ -340,10 +341,12 @@ public class WhoopBleModule: Module {
                 return [
                     "timestamp": formatter.string(from: date),
                     "heartRate": Int(sample.heartRate),
+                    "rrIntervalMs": Int(sample.rrIntervalMs),
                     "quaternionW": Double(sample.quaternionW),
                     "quaternionX": Double(sample.quaternionX),
                     "quaternionY": Double(sample.quaternionY),
                     "quaternionZ": Double(sample.quaternionZ),
+                    "opticalRawHex": sample.opticalBytes.map { String(format: "%02x", $0) }.joined(),
                 ]
             }
 
@@ -694,6 +697,14 @@ public class WhoopBleModule: Module {
         NSLog("[WhoopBLE] sending TOGGLE_OPTICAL_MODE on connect")
         peripheral.writeValue(opticalCommand, for: cmdChar, type: .withResponse)
 
+        // Send SEND_R10_R11_REALTIME to request full realtime data (116-byte 0x28 packets
+        // with HR, quaternion, and optical data instead of the 24-byte compact status beacon).
+        let r10r11Command = WhoopBleFrameParser.buildCommandData(
+            command: WhoopBleConstants.commandSendR10R11Realtime
+        )
+        NSLog("[WhoopBLE] sending SEND_R10_R11_REALTIME on connect")
+        peripheral.writeValue(r10r11Command, for: cmdChar, type: .withResponse)
+
         // Auto-resume IMU streaming after reconnect (e.g., strap came back in range)
         if wasStreaming {
             wasStreaming = false
@@ -782,7 +793,7 @@ public class WhoopBleModule: Module {
             let samples = WhoopBleFrameParser.extractImuSamples(from: frame)
             newSamples.append(contentsOf: samples)
 
-            // Extract realtime data (HR + quaternion) from 0x28 packets
+            // Extract realtime data (HR + R-R + quaternion) from 0x28 and 0x2F packets
             if let realtimeData = WhoopBleFrameParser.extractRealtimeData(from: frame) {
                 newRealtimeData.append(realtimeData)
             }

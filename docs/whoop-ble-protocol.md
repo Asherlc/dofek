@@ -189,20 +189,94 @@ R21 raw data (type 0x2B) flows passively during the WHOOP app's normal sync sess
 
 No `TOGGLE_IMU_MODE` command is needed for this approach. The IMU is already active during sync.
 
-## Data Extraction from 0x28 REALTIME_DATA Packets
+## Compact REALTIME_DATA (0x28, 24-byte payload, record type 2)
 
-The REALTIME_DATA (0x28) packet streams at ~1 Hz during sync and contains:
+The strap continuously streams compact 0x28 packets at ~1 Hz, even outside sync sessions. Decoded from live device capture (March 2026):
 
 | Payload Offset | Size | Field | Notes |
 |---|---|---|---|
-| 22 | 1 | Heart Rate (bpm) | Validated 66-89 range in resting capture |
+| 0 | 1 | Packet type (`0x28`) | |
+| 1 | 1 | Record type (`0x02`) | |
+| 2-5 | 4 | Timestamp (u32 LE) | Unix epoch seconds. **Different offset from other packet types** (which use offset 7). |
+| 6-7 | 2 | Sub-sequence / flags | Varies per session |
+| **8** | **1** | **Heart Rate (bpm)** | Confirmed 60-62 bpm in resting capture. 0 when strap has no reading. |
+| **9** | **1** | **Valid flag** | `0x01` = valid HR + R-R reading, `0x00` = no valid reading |
+| **10-11** | **2** | **R-R interval (u16 LE, ms)** | Beat-to-beat timing. ~900-1050 ms at resting HR. 0 when flag=0. |
+| 12-17 | 6 | Reserved (zeros) | |
+| 18 | 1 | Constant `0x01` | |
+| 19 | 1 | Constant `0x00` | |
+| 20-23 | 4 | CRC32 / checksum | Changes every packet |
+
+**Key finding**: These packets stream continuously — they are the live HR feed that the WHOOP app displays on its home screen. Our iOS app receives them by piggybacking on the WHOOP app's BLE connection.
+
+## Full REALTIME_DATA (0x28, 116-byte payload)
+
+During active sync sessions, the strap sends a larger 116-byte variant:
+
+| Payload Offset | Size | Field | Notes |
+|---|---|---|---|
+| 22 | 1 | Heart Rate (bpm) | Validated 66-89 range in PacketLogger capture |
 | 23-40 | 18 | Optical/PPG data | Partially understood, raw preserved |
 | 41-44 | 4 | Quaternion W (float32 LE) | Strap's own sensor fusion |
 | 45-48 | 4 | Quaternion X (float32 LE) | |
 | 49-52 | 4 | Quaternion Y (float32 LE) | |
 | 53-56 | 4 | Quaternion Z (float32 LE) | |
 
-HR and quaternion are extracted by `WhoopBleFrameParser.extractRealtimeData()` and buffered separately from IMU data. The full raw payload is preserved for future optical/PPG analysis.
+The full format only appears during active sync (when the WHOOP app sends `SEND_HISTORICAL_DATA`). Outside sync, only the compact 24-byte format streams.
+
+## HISTORICAL_DATA (0x2F, 116-byte payload, record type 18)
+
+Historical data replayed during sync. Contains the same sensor data as the compact 0x28 but with a longer header and additional fields:
+
+| Payload Offset | Size | Field | Notes |
+|---|---|---|---|
+| 0 | 1 | Packet type (`0x2F`) | |
+| 1 | 1 | Record type (`0x12` = 18) | |
+| 2-3 | 2 | Sequence (u16 LE) | |
+| 4-5 | 2 | Constant (`0x1850`) | |
+| 6-7 | 2 | Sub-sequence (u16 LE) | |
+| 8-13 | 6 | Session/device ID (constant per session) | |
+| **14** | **1** | **Heart Rate (bpm)** | Confirmed from capture (values 60-73) |
+| **15** | **1** | **Flag** | 1=valid HR+RR, 2=valid HR+RR+extra, 0=no reading |
+| **16-17** | **2** | **R-R interval (u16 LE, ms)** | ~900-1060 ms at resting HR |
+| 18-19 | 2 | Extra data | Non-zero when flag=2 |
+| 20-23 | 4 | Reserved | |
+| 24-25 | 2 | Metadata flags | |
+| 26-27 | 2 | Changing data | |
+| 28 | 1 | Session marker | |
+| **29** | **1** | **Smoothed HR (bpm)** | Tracks ~2-3 bpm below byte 14 |
+| 30-32 | 3 | Padding | |
+| **33-36** | **4** | **Quaternion W (float32 LE)** | Confirmed unit quaternion (magnitude ~1.00) |
+| **37-40** | **4** | **Quaternion X (float32 LE)** | |
+| **41-44** | **4** | **Quaternion Y (float32 LE)** | |
+| **45-48** | **4** | **Quaternion Z (float32 LE)** | |
+| 49-115 | 67 | Config/metadata | Partially decoded |
+
+## Persistent Config Keys (from firmware console logs)
+
+The WHOOP app pushes 17 persistent config keys to the strap during sync via `SEND_NEXT_DEVICE_CONFIG (0x74)`:
+
+| Index | Key | Value | Purpose |
+|---|---|---|---|
+| 0 | `general_ab_test` | 2 | A/B test group |
+| 1 | `enable_r22_packets` | 2 | R22 optical data format v1 |
+| 2 | `enable_r22_v2_packets` | 2 | R22 optical data format v2 |
+| 3 | `enable_r22_v3_packets` | 2 | R22 optical data format v3 |
+| 4 | `enable_r22_v4_packets` | **1** | R22 optical data format v4 (only one set to 1) |
+| 5 | `enable_r22_v5_packets` | 2 | R22 optical data format v5 |
+| 6 | `enable_r22_v6_packets` | 2 | R22 optical data format v6 |
+| 7 | `enable_r22_v8_packets` | 2 | R22 optical data format v8 (no v7) |
+| 8 | `make_hrfm_visible` | 2 | HR frequency measurement visibility |
+| 9 | `disable_pip_r26_packets` | ? | Pulse information packets |
+| 10 | `wear_detect_bias` | ? | Wear detection sensitivity |
+| 11 | `enable_pdaf_walk_det` | ? | Walk detection |
+| 12 | `enable_maverick_model` | 1 | Maverick hardware model |
+| 13 | `hr_ch_switching` | 2 | HR channel switching |
+| 14 | `ir_hw_switching` | ? | IR hardware switching |
+| 15 | `enable_passive_strap_fit_gen5` | ? | Passive strap fit detection |
+| 16 | `enable_sig11_during_sleep` | 2 | Signal 11 during sleep |
+
+**R22 = optical sensor data packets.** The firmware logs show "No active optical data collection sources" during daytime captures. Optical collection activates during sleep/recovery for SpO2 and skin temp measurement.
 
 ## Commands for Enhanced Data Capture
 
@@ -211,8 +285,30 @@ HR and quaternion are extracted by `WhoopBleFrameParser.extractRealtimeData()` a
 | TOGGLE_REALTIME_HR (0x03) | Sent on connect | Continuous 1 Hz HR streaming beyond sync |
 | TOGGLE_OPTICAL_MODE (0x6C) | Sent on connect | Enable raw PPG data in 0x28 packets |
 | TOGGLE_IMU_MODE (0x6A) | Sent on streaming start | Raw IMU streaming |
+| SEND_R10_R11_REALTIME (0x3F) | Sent on connect | Request full realtime data (did not upgrade to 116-byte format in testing) |
 
-All three commands are sent automatically when the iOS app connects to the strap.
+All commands are sent automatically when the iOS app connects to the strap and are ACK'd (0x24 response).
+
+## What We Currently Capture
+
+| Data | Packet | Rate | Status |
+|---|---|---|---|
+| Heart Rate (bpm) | 0x28 compact, byte 8 | 1 Hz | **Stored** in `metric_stream.heart_rate` |
+| R-R Interval (ms) | 0x28 compact, bytes 10-11 | 1 Hz | **Stored** in `metric_stream.rr_interval_ms` |
+| Accelerometer (3-axis) | 0x2B R21 | ~100 Hz | **Stored** in `inertial_measurement_unit_sample` |
+| Gyroscope (3-axis) | 0x2B R21 | ~100 Hz | **Stored** in `inertial_measurement_unit_sample` |
+| Orientation quaternion | 0x2F R18, bytes 33-48 | During sync | **Not yet parsed** |
+| Historical HR + R-R | 0x2F R18, bytes 14-17 | During sync | **Not yet parsed** |
+
+## Next Steps: SpO2 and Skin Temperature
+
+SpO2 and skin temperature are **not available in any packet type we've observed**. They are derived from raw optical sensor data (R22 packets) which the strap only collects during sleep/recovery periods. The firmware logs confirm: "No active optical data collection sources" during daytime.
+
+To get R22 optical data:
+1. **Overnight BLE capture** — run PacketLogger or our iOS app during sleep when optical sensors are active
+2. **Parse R22 packets** — the `enable_r22_v4_packets` config key is set to 1 (enabled) while others are set to 2 (different format?), suggesting v4 is the active optical format
+3. **Decode the optical payload** — R22 likely contains raw multi-wavelength PPG data (green, red, IR) from which SpO2 and skin temp can be derived
+4. **Alternative**: Continue using the WHOOP API for daily SpO2 (`spo2_percentage`) and skin temp (`skin_temp_celsius`) from recovery scores — these are already synced
 
 ## Tools
 

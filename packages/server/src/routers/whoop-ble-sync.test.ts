@@ -146,6 +146,154 @@ describe("whoopBleSyncRouter", () => {
       expect(result).toEqual({ inserted: 2 });
     });
 
+    it("skips orientation insert when quaternion is all zeros (compact 0x28)", async () => {
+      const trpcCaller = caller(ctx);
+      await trpcCaller.pushRealtimeData({
+        deviceId: "WHOOP Strap",
+        samples: [
+          {
+            timestamp: "2026-03-30T12:00:00.000Z",
+            heartRate: 62,
+            quaternionW: 0.0,
+            quaternionX: 0.0,
+            quaternionY: 0.0,
+            quaternionZ: 0.0,
+          },
+        ],
+      });
+
+      // Should have 2 execute calls: ensure provider + metric_stream (no orientation)
+      expect(mockDb.execute).toHaveBeenCalledTimes(2);
+    });
+
+    it("inserts orientation when only quaternionX is non-zero", async () => {
+      const trpcCaller = caller(ctx);
+      await trpcCaller.pushRealtimeData({
+        deviceId: "WHOOP Strap",
+        samples: [
+          {
+            timestamp: "2026-03-30T12:00:00.000Z",
+            heartRate: 72,
+            quaternionW: 0,
+            quaternionX: 0.5,
+            quaternionY: 0,
+            quaternionZ: 0,
+          },
+        ],
+      });
+
+      // 3 calls: ensure provider + metric_stream + orientation_sample
+      expect(mockDb.execute).toHaveBeenCalledTimes(3);
+    });
+
+    it("inserts orientation when only quaternionY is non-zero", async () => {
+      const trpcCaller = caller(ctx);
+      await trpcCaller.pushRealtimeData({
+        deviceId: "WHOOP Strap",
+        samples: [
+          {
+            timestamp: "2026-03-30T12:00:00.000Z",
+            heartRate: 72,
+            quaternionW: 0,
+            quaternionX: 0,
+            quaternionY: 0.5,
+            quaternionZ: 0,
+          },
+        ],
+      });
+
+      expect(mockDb.execute).toHaveBeenCalledTimes(3);
+    });
+
+    it("inserts orientation when only quaternionZ is non-zero", async () => {
+      const trpcCaller = caller(ctx);
+      await trpcCaller.pushRealtimeData({
+        deviceId: "WHOOP Strap",
+        samples: [
+          {
+            timestamp: "2026-03-30T12:00:00.000Z",
+            heartRate: 72,
+            quaternionW: 0,
+            quaternionX: 0,
+            quaternionY: 0,
+            quaternionZ: 0.5,
+          },
+        ],
+      });
+
+      expect(mockDb.execute).toHaveBeenCalledTimes(3);
+    });
+
+    it("logs timestamps and sample count on successful push", async () => {
+      const { logger } = await import("../logger.ts");
+      const trpcCaller = caller(ctx);
+      await trpcCaller.pushRealtimeData({
+        deviceId: "WHOOP Strap",
+        samples: [
+          {
+            timestamp: "2026-03-30T12:00:00.000Z",
+            heartRate: 72,
+            quaternionW: 0,
+            quaternionX: 0,
+            quaternionY: 0,
+            quaternionZ: 0,
+          },
+          {
+            timestamp: "2026-03-30T12:00:01.000Z",
+            heartRate: 74,
+            quaternionW: 0,
+            quaternionX: 0,
+            quaternionY: 0,
+            quaternionZ: 0,
+          },
+        ],
+      });
+
+      expect(logger.info).toHaveBeenCalledWith(
+        "WHOOP BLE realtime data pushed",
+        expect.objectContaining({
+          userId: "test-user-id",
+          deviceId: "WHOOP Strap",
+          sampleCount: 2,
+          firstTimestamp: "2026-03-30T12:00:00.000Z",
+          lastTimestamp: "2026-03-30T12:00:01.000Z",
+        }),
+      );
+    });
+
+    it("logs with correct message for empty samples", async () => {
+      const { logger } = await import("../logger.ts");
+      const trpcCaller = caller(ctx);
+      await trpcCaller.pushRealtimeData({
+        deviceId: "WHOOP Strap",
+        samples: [],
+      });
+
+      expect(logger.info).toHaveBeenCalledWith(
+        "WHOOP BLE realtime push with 0 samples",
+        expect.objectContaining({ userId: "test-user-id" }),
+      );
+    });
+
+    it("includes correct inserted count in return value", async () => {
+      const trpcCaller = caller(ctx);
+      const result = await trpcCaller.pushRealtimeData({
+        deviceId: "WHOOP Strap",
+        samples: [
+          {
+            timestamp: "2026-03-30T12:00:00.000Z",
+            heartRate: 72,
+            quaternionW: 0,
+            quaternionX: 0,
+            quaternionY: 0,
+            quaternionZ: 0,
+          },
+        ],
+      });
+
+      expect(result).toEqual({ inserted: 1 });
+    });
+
     it("rejects invalid heartRate values", async () => {
       const trpcCaller = caller(ctx);
 

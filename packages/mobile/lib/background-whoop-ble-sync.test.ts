@@ -500,6 +500,8 @@ describe("realtime data (HR + quaternion) sync", () => {
         quaternionX: 0.68,
         quaternionY: -0.71,
         quaternionZ: 0.2,
+        rrIntervalMs: 0,
+        opticalRawHex: "000000000000000000000000000000000000",
       },
     ];
     vi.mocked(whoopDeps.getBufferedRealtimeData).mockResolvedValueOnce(realtimeSamples);
@@ -521,6 +523,8 @@ describe("realtime data (HR + quaternion) sync", () => {
         quaternionX: 0.0,
         quaternionY: 0.0,
         quaternionZ: 0.0,
+        rrIntervalMs: 0,
+        opticalRawHex: "000000000000000000000000000000000000",
       },
     ];
     vi.mocked(whoopDeps.getBufferedRealtimeData).mockResolvedValueOnce(realtimeSamples);
@@ -552,6 +556,8 @@ describe("realtime data (HR + quaternion) sync", () => {
         quaternionX: 0.5,
         quaternionY: 0.5,
         quaternionZ: 0.5,
+        rrIntervalMs: 0,
+        opticalRawHex: "000000000000000000000000000000000000",
       },
     ];
 
@@ -601,6 +607,8 @@ describe("realtime data (HR + quaternion) sync", () => {
         quaternionX: 0.0,
         quaternionY: 0.0,
         quaternionZ: 0.0,
+        rrIntervalMs: 0,
+        opticalRawHex: "000000000000000000000000000000000000",
       },
     ];
     vi.mocked(whoopDeps.getBufferedRealtimeData).mockResolvedValueOnce(realtimeSamples);
