@@ -1,5 +1,7 @@
 import * as Sentry from "@sentry/react";
 
+declare const __COMMIT_HASH__: string;
+
 const SENTRY_DSN: string | undefined = import.meta.env.VITE_SENTRY_DSN;
 const TRACE_PROPAGATION_TARGETS = [/^\/api/, /^\/auth/, /^\/callback/];
 
@@ -17,6 +19,7 @@ export function initTelemetry() {
 
   Sentry.init({
     dsn: SENTRY_DSN,
+    release: __COMMIT_HASH__,
     integrations: [Sentry.browserTracingIntegration()],
     tracePropagationTargets: TRACE_PROPAGATION_TARGETS,
   });

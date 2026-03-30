@@ -86,6 +86,39 @@ describe("InertialMeasurementUnitRepository", () => {
     });
   });
 
+  describe("getCoverageTimeline", () => {
+    it("returns empty array when no data", async () => {
+      const { repo } = makeRepository([]);
+      expect(await repo.getCoverageTimeline("2025-01-15")).toEqual([]);
+    });
+
+    it("maps DB rows to CoverageBucket objects", async () => {
+      const { repo } = makeRepository([
+        { bucket: "2025-01-15 10:00:00+00", sample_count: "15000" },
+        { bucket: "2025-01-15 10:05:00+00", sample_count: "14800" },
+      ]);
+      const result = await repo.getCoverageTimeline("2025-01-15");
+      expect(result).toEqual([
+        { bucket: "2025-01-15 10:00:00+00", sampleCount: 15000 },
+        { bucket: "2025-01-15 10:05:00+00", sampleCount: 14800 },
+      ]);
+    });
+
+    it("coerces string numbers from postgres", async () => {
+      const { repo } = makeRepository([
+        { bucket: "2025-01-15 10:00:00+00", sample_count: "12345" },
+      ]);
+      const result = await repo.getCoverageTimeline("2025-01-15");
+      expect(result[0]?.sampleCount).toBe(12345);
+    });
+
+    it("calls execute once", async () => {
+      const { repo, execute } = makeRepository([]);
+      await repo.getCoverageTimeline("2025-01-15");
+      expect(execute).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe("getTimeSeries", () => {
     it("returns empty array when no samples in range", async () => {
       const { repo } = makeRepository([]);

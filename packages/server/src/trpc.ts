@@ -38,6 +38,22 @@ const isAuthenticated = trpc.middleware(({ ctx, next }) => {
 export const publicProcedure = trpc.procedure;
 export const protectedProcedure = trpc.procedure.use(isAuthenticated);
 
+// Admin middleware — requires authenticated user with is_admin flag
+const isAdminUser = trpc.middleware(async ({ ctx, next }) => {
+  if (!ctx.userId) {
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "Not authenticated" });
+  }
+  const { isAdmin } = await import("./auth/admin.ts");
+  const admin = await isAdmin(ctx.db, ctx.userId);
+  if (!admin) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Admin access required" });
+  }
+  const authenticatedCtx: AuthenticatedContext = { ...ctx, userId: ctx.userId };
+  return next({ ctx: authenticatedCtx });
+});
+
+export const adminProcedure = trpc.procedure.use(isAdminUser);
+
 export const CacheTTL = {
   SHORT: 2 * 60 * 1000, // 2 min
   MEDIUM: 10 * 60 * 1000, // 10 min

@@ -21,6 +21,11 @@ const syncStatusRowSchema = z.object({
   earliest_sample: z.string().nullable(),
 });
 
+const coverageBucketRowSchema = z.object({
+  bucket: z.string(),
+  sample_count: z.coerce.number(),
+});
+
 const timeSeriesRowSchema = z.object({
   recorded_at: z.string(),
   x: z.coerce.number(),
@@ -47,6 +52,11 @@ export interface DeviceSyncStatus {
   sampleCount: number;
   latestSample: string | null;
   earliestSample: string | null;
+}
+
+export interface CoverageBucket {
+  bucket: string;
+  sampleCount: number;
 }
 
 export interface InertialMeasurementUnitSample {
@@ -125,6 +135,28 @@ export class InertialMeasurementUnitRepository {
       sampleCount: row.sample_count,
       latestSample: row.latest_sample,
       earliestSample: row.earliest_sample,
+    }));
+  }
+
+  /** 5-minute bucket coverage for a single day — shows connection gaps. */
+  async getCoverageTimeline(date: string): Promise<CoverageBucket[]> {
+    const rows = await executeWithSchema(
+      this.#db,
+      coverageBucketRowSchema,
+      sql`SELECT
+          time_bucket('5 minutes', recorded_at)::text AS bucket,
+          count(*)::int AS sample_count
+        FROM fitness.inertial_measurement_unit_sample
+        WHERE user_id = ${this.#userId}::uuid
+          AND recorded_at >= ${date}::date
+          AND recorded_at < ${date}::date + interval '1 day'
+        GROUP BY 1
+        ORDER BY 1 ASC`,
+    );
+
+    return rows.map((row) => ({
+      bucket: row.bucket,
+      sampleCount: row.sample_count,
     }));
   }
 

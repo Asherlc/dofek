@@ -3,6 +3,7 @@ import { defineConfig } from "vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { sentryVitePlugin } from "@sentry/vite-plugin";
 
 function getCommitHash(): string {
   if (process.env.COMMIT_HASH) return process.env.COMMIT_HASH;
@@ -24,6 +25,13 @@ export default defineConfig({
     }),
     react(),
     tailwindcss(),
+    sentryVitePlugin({
+      org: "east-bay-software",
+      project: "dofek-web",
+      release: { name: getCommitHash() },
+      sourcemaps: { filesToDeleteAfterUpload: ["../dist/**/*.map"] },
+      disable: !process.env.SENTRY_AUTH_TOKEN,
+    }),
   ],
   root: "src",
   build: {

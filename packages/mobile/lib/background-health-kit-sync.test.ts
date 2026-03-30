@@ -161,6 +161,28 @@ describe("initBackgroundHealthKitSync", () => {
     vi.useRealTimers();
   });
 
+  it("does not report locked-device errors to Sentry", async () => {
+    vi.useFakeTimers();
+    vi.mocked(queryWorkouts).mockRejectedValueOnce(
+      new Error("Protected health data is inaccessible"),
+    );
+    const client = createMockClient();
+    await initBackgroundHealthKitSync(client);
+
+    const listener = mockAddSampleUpdateListener.mock.calls[0][0];
+    listener();
+
+    await vi.advanceTimersByTimeAsync(5000);
+    await vi.runAllTimersAsync();
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      "bg-healthkit-sync",
+      "Device locked, skipping sync",
+    );
+    vi.useRealTimers();
+  });
+
   it("skips init when HealthKit is not available", async () => {
     mockIsAvailable.mockReturnValueOnce(false);
     const client = createMockClient();
