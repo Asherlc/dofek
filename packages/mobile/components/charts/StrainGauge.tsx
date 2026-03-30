@@ -3,8 +3,8 @@ import { StrainScore } from "@dofek/scoring/scoring";
 import { useEffect } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import {
-  Easing,
   createAnimatedComponent,
+  Easing,
   useAnimatedProps,
   useSharedValue,
   withTiming,
@@ -39,7 +39,7 @@ export function StrainGauge({ strain, maxStrain = 21, size = 120 }: StrainGaugeP
       duration: duration.chart,
       easing: Easing.bezier(0.16, 1, 0.3, 1),
     });
-  }, [targetOffset, animatedOffset, circumference]);
+  }, [targetOffset, animatedOffset]);
 
   const animatedProps = useAnimatedProps(() => ({
     strokeDashoffset: animatedOffset.value,

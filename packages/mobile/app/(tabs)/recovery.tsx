@@ -1,16 +1,12 @@
-import {
-  formatDateYmd,
-  formatNumber,
-} from "@dofek/format/format";
+import { formatDateYmd, formatNumber } from "@dofek/format/format";
 import { scoreColor, scoreLabel } from "@dofek/scoring/scoring";
+import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { useRouter } from "expo-router";
 import { Card } from "../../components/Card";
-import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
+import { SparkLine } from "../../components/charts/SparkLine";
 import { DaySelector } from "../../components/DaySelector";
 import { MetricCard } from "../../components/MetricCard";
-import { SparkLine } from "../../components/charts/SparkLine";
 import { trendDirection as computeTrend, trendColor } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
@@ -82,7 +78,8 @@ export default function RecoveryScreen() {
   const healthspan = healthspanQuery.data;
 
   // Steps
-  const latestSteps = dailyMetricsData.length > 0 ? dailyMetricsData[dailyMetricsData.length - 1] : null;
+  const latestSteps =
+    dailyMetricsData.length > 0 ? dailyMetricsData[dailyMetricsData.length - 1] : null;
   const stepsAvg7d =
     dailyMetricsData.length > 0
       ? Math.round(
@@ -101,7 +98,11 @@ export default function RecoveryScreen() {
       style={styles.container}
       contentContainerStyle={styles.content}
       refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={colors.textSecondary}
+        />
       }
     >
       <DaySelector days={days} onChange={setDays} />
@@ -258,7 +259,10 @@ export default function RecoveryScreen() {
               <Card title="Healthspan Score">
                 <View style={styles.healthspanRow}>
                   <Text
-                    style={[styles.healthspanScore, { color: scoreColor(healthspan.healthspanScore) }]}
+                    style={[
+                      styles.healthspanScore,
+                      { color: scoreColor(healthspan.healthspanScore) },
+                    ]}
                   >
                     {healthspan.healthspanScore}
                   </Text>
@@ -310,8 +314,8 @@ export default function RecoveryScreen() {
           {latestSteps != null && (
             <Card title="Daily Steps">
               <Text style={styles.stepsValue}>
-                {Number((latestSteps as Record<string, unknown>).steps) > 0
-                  ? Number((latestSteps as Record<string, unknown>).steps).toLocaleString()
+                {Number(latestSteps.steps) > 0
+                  ? Number(latestSteps.steps).toLocaleString()
                   : "--"}
               </Text>
               {stepsAvg7d != null && stepsAvg7d > 0 && (
@@ -321,11 +325,19 @@ export default function RecoveryScreen() {
           )}
 
           {/* Navigation links */}
-          <TouchableOpacity style={styles.navLink} onPress={() => router.push("/sleep")} activeOpacity={0.7}>
+          <TouchableOpacity
+            style={styles.navLink}
+            onPress={() => router.push("/sleep")}
+            activeOpacity={0.7}
+          >
             <Text style={styles.navLinkText}>Sleep Detail</Text>
             <Text style={styles.navChevron}>{"\u203A"}</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.navLink} onPress={() => router.push("/correlation")} activeOpacity={0.7}>
+          <TouchableOpacity
+            style={styles.navLink}
+            onPress={() => router.push("/correlation")}
+            activeOpacity={0.7}
+          >
             <Text style={styles.navLinkText}>Correlation Explorer</Text>
             <Text style={styles.navChevron}>{"\u203A"}</Text>
           </TouchableOpacity>

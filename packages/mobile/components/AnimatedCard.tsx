@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import Animated, { FadeInUp, Easing } from "react-native-reanimated";
-import { Card } from "./Card";
+import Animated, { Easing, FadeInUp } from "react-native-reanimated";
 import { duration } from "../theme";
+import { Card } from "./Card";
 
 const STAGGER_DELAY = 80;
 

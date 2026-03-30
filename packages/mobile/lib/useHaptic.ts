@@ -1,11 +1,11 @@
-import { useCallback, useRef } from "react";
 import {
   ImpactFeedbackStyle,
-  NotificationFeedbackType,
   impactAsync,
+  NotificationFeedbackType,
   notificationAsync,
   selectionAsync,
 } from "expo-haptics";
+import { useCallback, useRef } from "react";
 
 const THROTTLE_MS = 150;
 
@@ -22,8 +22,9 @@ export function useHaptic() {
     const now = Date.now();
     if (now - lastFired.current < THROTTLE_MS) return;
     lastFired.current = now;
-    fn().catch(() => {
-      // Haptics unavailable — silently ignore (simulator, low power mode)
+    fn().catch((_error: unknown) => {
+      // Haptics unavailable — intentionally ignored (simulator, low power mode).
+      // This is non-critical UI feedback; logging would just create noise.
     });
   }, []);
 

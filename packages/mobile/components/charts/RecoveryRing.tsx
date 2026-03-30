@@ -1,8 +1,8 @@
 import { useEffect } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import {
-  Easing,
   createAnimatedComponent,
+  Easing,
   useAnimatedProps,
   useSharedValue,
   withTiming,
@@ -39,7 +39,7 @@ export function RecoveryRing({ score, size = 200, strokeWidth = 14, label }: Rec
       duration: duration.chart,
       easing: Easing.bezier(0.16, 1, 0.3, 1),
     });
-  }, [targetOffset, animatedOffset, circumference]);
+  }, [targetOffset, animatedOffset]);
 
   const animatedProps = useAnimatedProps(() => ({
     strokeDashoffset: animatedOffset.value,
