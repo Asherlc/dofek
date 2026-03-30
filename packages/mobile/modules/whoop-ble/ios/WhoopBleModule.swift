@@ -684,6 +684,7 @@ public class WhoopBleModule: Module {
         cmdResponseCharacteristic?.uuid
     }
 
+
     private func cleanup() {
         state = .idle
         connectedPeripheral = nil

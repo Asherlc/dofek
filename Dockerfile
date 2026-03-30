@@ -65,7 +65,10 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
 COPY . .
 ARG COMMIT_HASH
 ENV COMMIT_HASH=${COMMIT_HASH}
-RUN cd packages/web && pnpm run build
+RUN --mount=type=secret,id=SENTRY_AUTH_TOKEN,required=false \
+    SENTRY_AUTH_TOKEN="$(cat /run/secrets/SENTRY_AUTH_TOKEN 2>/dev/null || true)" \
+    && export SENTRY_AUTH_TOKEN \
+    && cd packages/web && pnpm run build
 
 # ── Server image (Express API + sync runner) ────────────────────────────
 FROM base AS server
