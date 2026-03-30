@@ -67,6 +67,23 @@ async function insertBatch(
           VALUES ${sql.join(valuesClauses, sql`, `)}`,
     );
 
+    // Dual-write to sensor_sample: accel-only as 'accel' channel, 6-axis as 'imu' channel
+    const hasGyro = batch.some(
+      (sample) => sample.gyroscopeX != null || sample.gyroscopeY != null || sample.gyroscopeZ != null,
+    );
+    const channel = hasGyro ? "imu" : "accel";
+    const sensorValuesClauses = batch.map((sample) => {
+      const vector = hasGyro
+        ? sql`ARRAY[${sample.x}, ${sample.y}, ${sample.z}, ${sample.gyroscopeX ?? 0}, ${sample.gyroscopeY ?? 0}, ${sample.gyroscopeZ ?? 0}]::real[]`
+        : sql`ARRAY[${sample.x}, ${sample.y}, ${sample.z}]::real[]`;
+      return sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${deviceId}, ${"ble"}, ${channel}, ${vector})`;
+    });
+    await db.execute(
+      sql`INSERT INTO fitness.sensor_sample
+          (recorded_at, user_id, provider_id, device_id, source_type, channel, vector)
+          VALUES ${sql.join(sensorValuesClauses, sql`, `)}`,
+    );
+
     totalInserted += batch.length;
   }
 

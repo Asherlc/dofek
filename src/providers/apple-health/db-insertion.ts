@@ -13,6 +13,8 @@ import {
   sleepSession,
   sleepStage,
 } from "../../db/schema.ts";
+import { dualWriteToSensorSample } from "../../db/sensor-sample-writer.ts";
+import { SOURCE_TYPE_FILE } from "../../db/sensor-channels.ts";
 import { logger } from "../../logger.ts";
 import type { HealthRecord } from "./records.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
@@ -197,6 +199,7 @@ export async function upsertMetricStreamBatch(
   for (let i = 0; i < rows.length; i += 1000) {
     await db.insert(metricStream).values(rows.slice(i, i + 1000));
   }
+  await dualWriteToSensorSample(db, rows, SOURCE_TYPE_FILE);
   return rows.length;
 }
 
@@ -816,6 +819,7 @@ export async function upsertWorkoutBatch(
   for (let i = 0; i < allGpsRows.length; i += 5000) {
     await db.insert(metricStream).values(allGpsRows.slice(i, i + 5000));
   }
+  await dualWriteToSensorSample(db, allGpsRows, SOURCE_TYPE_FILE);
 
   // Link HR rows for this batch's time window. A global reconciliation pass also
   // runs at end-of-import to catch async ordering/race edge cases.

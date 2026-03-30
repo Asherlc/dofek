@@ -625,6 +625,19 @@ export class HealthKitSyncRepository {
                 ${JSON.stringify({ uuid: sample.uuid, type: sample.type, sourceName: sample.sourceName })}::jsonb
               )`,
         );
+        // Dual-write to sensor_sample
+        await this.#db.execute(
+          sql`INSERT INTO fitness.sensor_sample (recorded_at, user_id, provider_id, device_id, source_type, channel, scalar)
+              VALUES (
+                ${sample.startDate}::timestamptz,
+                ${this.#userId},
+                ${PROVIDER_ID},
+                ${sample.sourceName ?? null},
+                ${"api"},
+                ${mapping.column},
+                ${metricValue}::real
+              )`,
+        );
         inserted++;
       }
     }

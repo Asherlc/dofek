@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SensorSampleInsert } from "./sensor-sample-writer.ts";
-import { metricStreamRowToSensorSamples, writeSensorSamples } from "./sensor-sample-writer.ts";
+import {
+  drizzleRowToSensorSamples,
+  metricStreamRowToSensorSamples,
+  writeSensorSamples,
+} from "./sensor-sample-writer.ts";
 
 // ── metricStreamRowToSensorSamples ──────────────────────────
 
@@ -124,6 +128,79 @@ describe("metricStreamRowToSensorSamples", () => {
 
     const rows = metricStreamRowToSensorSamples(base, allColumns);
     expect(rows).toHaveLength(36);
+  });
+});
+
+// ── drizzleRowToSensorSamples ────────────────────────────────
+
+describe("drizzleRowToSensorSamples", () => {
+  it("converts camelCase Drizzle fields to sensor_sample rows", () => {
+    const rows = drizzleRowToSensorSamples(
+      {
+        recordedAt: new Date("2026-03-30T12:00:00Z"),
+        providerId: "wahoo",
+        activityId: "act-1",
+        heartRate: 142,
+        power: 250,
+        cadence: 90,
+      },
+      "file",
+    );
+
+    expect(rows).toHaveLength(3);
+    expect(rows.map((row) => row.channel).sort()).toEqual(["cadence", "heart_rate", "power"]);
+    expect(rows.find((row) => row.channel === "heart_rate")?.scalar).toBe(142);
+  });
+
+  it("skips non-metric fields (recordedAt, providerId, activityId, etc.)", () => {
+    const rows = drizzleRowToSensorSamples(
+      {
+        recordedAt: new Date("2026-03-30T12:00:00Z"),
+        providerId: "oura",
+        heartRate: 60,
+      },
+      "api",
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.channel).toBe("heart_rate");
+  });
+
+  it("uses sourceName as deviceId", () => {
+    const rows = drizzleRowToSensorSamples(
+      {
+        recordedAt: new Date("2026-03-30T12:00:00Z"),
+        providerId: "wahoo",
+        sourceName: "Wahoo TICKR",
+        heartRate: 142,
+      },
+      "file",
+    );
+
+    expect(rows[0]?.deviceId).toBe("Wahoo TICKR");
+  });
+
+  it("preserves all base fields", () => {
+    const rows = drizzleRowToSensorSamples(
+      {
+        recordedAt: new Date("2026-03-30T12:00:00Z"),
+        userId: "user-1",
+        providerId: "strava",
+        activityId: "act-2",
+        heartRate: 150,
+      },
+      "api",
+    );
+
+    expect(rows[0]).toMatchObject({
+      recordedAt: new Date("2026-03-30T12:00:00Z"),
+      userId: "user-1",
+      providerId: "strava",
+      activityId: "act-2",
+      sourceType: "api",
+      channel: "heart_rate",
+      scalar: 150,
+    });
   });
 });
 

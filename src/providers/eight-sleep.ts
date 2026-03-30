@@ -9,6 +9,8 @@ import {
 } from "eight-sleep-client";
 import type { SyncDatabase } from "../db/index.ts";
 import { bodyMeasurement, dailyMetrics, metricStream, sleepSession } from "../db/schema.ts";
+import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
+import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import type {
@@ -296,19 +298,18 @@ export class EightSleepProvider implements SyncProvider {
             const samples = parseEightSleepHeartRateSamples(day.sessions);
             if (samples.length === 0) continue;
 
-            for (let i = 0; i < samples.length; i += BATCH_SIZE) {
-              const batch = samples.slice(i, i + BATCH_SIZE);
+            const metricRows = samples.map((s) => ({
+              providerId: this.id,
+              recordedAt: s.recordedAt,
+              heartRate: s.heartRate,
+            }));
+            for (let i = 0; i < metricRows.length; i += BATCH_SIZE) {
               await db
                 .insert(metricStream)
-                .values(
-                  batch.map((s) => ({
-                    providerId: this.id,
-                    recordedAt: s.recordedAt,
-                    heartRate: s.heartRate,
-                  })),
-                )
+                .values(metricRows.slice(i, i + BATCH_SIZE))
                 .onConflictDoNothing();
             }
+            await dualWriteToSensorSample(db, metricRows, SOURCE_TYPE_API);
             totalRecords += samples.length;
           }
 

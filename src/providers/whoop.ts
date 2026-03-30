@@ -29,6 +29,8 @@ import {
   strengthSet,
   strengthWorkout,
 } from "../db/schema.ts";
+import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
+import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
@@ -1183,19 +1185,18 @@ export class WhoopProvider implements SyncProvider {
               const values = await client.getHeartRate(startStr, endStr, 6);
               const parsed = parseHeartRateValues(values);
 
-              for (let i = 0; i < parsed.length; i += BATCH_SIZE) {
-                const batch = parsed.slice(i, i + BATCH_SIZE);
+              const metricRows = parsed.map((r) => ({
+                providerId: this.id,
+                recordedAt: r.recordedAt,
+                heartRate: r.heartRate,
+              }));
+              for (let i = 0; i < metricRows.length; i += BATCH_SIZE) {
                 await db
                   .insert(metricStream)
-                  .values(
-                    batch.map((r) => ({
-                      providerId: this.id,
-                      recordedAt: r.recordedAt,
-                      heartRate: r.heartRate,
-                    })),
-                  )
+                  .values(metricRows.slice(i, i + BATCH_SIZE))
                   .onConflictDoNothing();
               }
+              await dualWriteToSensorSample(db, metricRows, SOURCE_TYPE_API);
 
               totalRecords += parsed.length;
               windowStart = windowEnd;

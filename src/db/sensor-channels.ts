@@ -144,3 +144,46 @@ export const SCALAR_CHANNELS = Object.values(METRIC_STREAM_COLUMN_TO_CHANNEL);
 
 /** All vector channel names */
 export const VECTOR_CHANNELS = [ACCEL, IMU, ORIENTATION] as const;
+
+/**
+ * Mapping from Drizzle camelCase field names to sensor_sample channel names.
+ * Used when converting Drizzle insert objects (e.g., from fitRecordsToMetricStream).
+ */
+export const DRIZZLE_FIELD_TO_CHANNEL: Record<string, string> = {
+  heartRate: HEART_RATE,
+  power: POWER,
+  cadence: CADENCE,
+  speed: SPEED,
+  lat: LAT,
+  lng: LNG,
+  altitude: ALTITUDE,
+  temperature: TEMPERATURE,
+  grade: GRADE,
+  verticalSpeed: VERTICAL_SPEED,
+  spo2: SPO2,
+  respiratoryRate: RESPIRATORY_RATE,
+  gpsAccuracy: GPS_ACCURACY,
+  accumulatedPower: ACCUMULATED_POWER,
+  stress: STRESS,
+  leftRightBalance: LEFT_RIGHT_BALANCE,
+  verticalOscillation: VERTICAL_OSCILLATION,
+  stanceTime: STANCE_TIME,
+  stanceTimePercent: STANCE_TIME_PERCENT,
+  stepLength: STEP_LENGTH,
+  verticalRatio: VERTICAL_RATIO,
+  stanceTimeBalance: STANCE_TIME_BALANCE,
+  groundContactTime: GROUND_CONTACT_TIME,
+  strideLength: STRIDE_LENGTH,
+  formPower: FORM_POWER,
+  legSpringStiff: LEG_SPRING_STIFF,
+  airPower: AIR_POWER,
+  leftTorqueEffectiveness: LEFT_TORQUE_EFFECTIVENESS,
+  rightTorqueEffectiveness: RIGHT_TORQUE_EFFECTIVENESS,
+  leftPedalSmoothness: LEFT_PEDAL_SMOOTHNESS,
+  rightPedalSmoothness: RIGHT_PEDAL_SMOOTHNESS,
+  combinedPedalSmoothness: COMBINED_PEDAL_SMOOTHNESS,
+  bloodGlucose: BLOOD_GLUCOSE,
+  audioExposure: AUDIO_EXPOSURE,
+  skinTemperature: SKIN_TEMPERATURE,
+  electrodermalActivity: ELECTRODERMAL_ACTIVITY,
+};

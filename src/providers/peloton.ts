@@ -11,6 +11,8 @@ import {
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity, metricStream } from "../db/schema.ts";
+import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
+import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
@@ -707,6 +709,7 @@ export class PelotonProvider implements SyncProvider {
                   const chunk = rows.slice(j, j + 500);
                   await db.insert(metricStream).values(chunk);
                 }
+                await dualWriteToSensorSample(db, rows, SOURCE_TYPE_API);
 
                 streamCount += rows.length;
               }

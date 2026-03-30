@@ -11,6 +11,8 @@ import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity, metricStream } from "../db/schema.ts";
+import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
+import { SOURCE_TYPE_FILE } from "../db/sensor-channels.ts";
 import { type ParsedFitRecord, parseFitFile } from "../fit/parser.ts";
 import { logger } from "../logger.ts";
 import { ProviderHttpClient } from "./http-client.ts";
@@ -424,6 +426,7 @@ export class WahooProvider implements WebhookProvider {
             for (let i = 0; i < metricRows.length; i += 500) {
               await db.insert(metricStream).values(metricRows.slice(i, i + 500));
             }
+            await dualWriteToSensorSample(db, metricRows, SOURCE_TYPE_FILE);
             logger.info(
               `[wahoo] Webhook: inserted ${metricRows.length} metric_stream records for workout ${parsed.externalId}`,
             );
@@ -584,6 +587,7 @@ export class WahooProvider implements WebhookProvider {
                 for (let i = 0; i < metricRows.length; i += 500) {
                   await db.insert(metricStream).values(metricRows.slice(i, i + 500));
                 }
+                await dualWriteToSensorSample(db, metricRows, SOURCE_TYPE_FILE);
                 logger.info(
                   `[wahoo] Inserted ${metricRows.length} metric_stream records for workout ${workout.externalId}`,
                 );

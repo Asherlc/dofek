@@ -1,7 +1,9 @@
 import type { InferInsertModel } from "drizzle-orm";
 import type { SyncDatabase } from "./index.ts";
-import type { sensorSample } from "./schema.ts";
-import { METRIC_STREAM_COLUMN_TO_CHANNEL } from "./sensor-channels.ts";
+import type { metricStream, sensorSample } from "./schema.ts";
+import { DRIZZLE_FIELD_TO_CHANNEL, METRIC_STREAM_COLUMN_TO_CHANNEL } from "./sensor-channels.ts";
+
+type MetricStreamInsert = InferInsertModel<typeof metricStream>;
 
 export type SensorSampleInsert = InferInsertModel<typeof sensorSample>;
 
@@ -86,4 +88,54 @@ export function metricStreamRowToSensorSamples(
   }
 
   return rows;
+}
+
+/**
+ * Convert a Drizzle metricStream insert object (camelCase keys) into
+ * sensor_sample rows. This is the main entry point for dual-write —
+ * providers pass the same row objects they already build for metricStream.
+ */
+export function drizzleRowToSensorSamples(
+  row: MetricStreamInsert,
+  sourceType: string,
+): SensorSampleInsert[] {
+  const samples: SensorSampleInsert[] = [];
+
+  for (const [field, value] of Object.entries(row)) {
+    if (value == null) continue;
+    if (typeof value !== "number") continue;
+    const channel = DRIZZLE_FIELD_TO_CHANNEL[field];
+    if (!channel) continue;
+
+    samples.push({
+      recordedAt: row.recordedAt,
+      userId: row.userId,
+      providerId: row.providerId,
+      activityId: row.activityId,
+      deviceId: row.sourceName ?? null,
+      sourceType,
+      channel,
+      scalar: value,
+    });
+  }
+
+  return samples;
+}
+
+/**
+ * Dual-write helper: converts an array of Drizzle metricStream insert objects
+ * into sensor_sample rows and batch-inserts them. Call this alongside the
+ * existing `db.insert(metricStream).values(rows)` during the migration period.
+ */
+export async function dualWriteToSensorSample(
+  db: Pick<SyncDatabase, "insert">,
+  metricRows: MetricStreamInsert[],
+  sourceType: string,
+  batchSize = DEFAULT_BATCH_SIZE,
+): Promise<number> {
+  const sensorRows = metricRows.flatMap((row) => drizzleRowToSensorSamples(row, sourceType));
+  if (sensorRows.length === 0) return 0;
+
+  const insertBatch = createBatchInsert(db);
+  return writeSensorSamples(insertBatch, sensorRows, batchSize);
 }
