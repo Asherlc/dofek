@@ -21,6 +21,12 @@ const syncStatusRowSchema = z.object({
   earliest_sample: z.string().nullable(),
 });
 
+const dailyHeatmapRowSchema = z.object({
+  date: z.string(),
+  hour: z.coerce.number(),
+  sample_count: z.coerce.number(),
+});
+
 const coverageBucketRowSchema = z.object({
   bucket: z.string(),
   sample_count: z.coerce.number(),
@@ -52,6 +58,12 @@ export interface DeviceSyncStatus {
   sampleCount: number;
   latestSample: string | null;
   earliestSample: string | null;
+}
+
+export interface DailyHeatmapCell {
+  date: string;
+  hour: number;
+  sampleCount: number;
 }
 
 export interface CoverageBucket {
@@ -110,6 +122,29 @@ export class InertialMeasurementUnitRepository {
       date: row.date,
       sampleCount: row.sample_count,
       hoursCovered: row.hours_covered,
+    }));
+  }
+
+  /** Hourly coverage heatmap for the last N days — one row per (date, hour). */
+  async getDailyHeatmap(days: number): Promise<DailyHeatmapCell[]> {
+    const rows = await executeWithSchema(
+      this.#db,
+      dailyHeatmapRowSchema,
+      sql`SELECT
+          date_trunc('day', recorded_at)::date::text AS date,
+          extract(hour FROM recorded_at)::int AS hour,
+          count(*)::int AS sample_count
+        FROM fitness.inertial_measurement_unit_sample
+        WHERE user_id = ${this.#userId}::uuid
+          AND recorded_at > now() - make_interval(days => ${days})
+        GROUP BY 1, 2
+        ORDER BY 1 DESC, 2 ASC`,
+    );
+
+    return rows.map((row) => ({
+      date: row.date,
+      hour: row.hour,
+      sampleCount: row.sample_count,
     }));
   }
 
