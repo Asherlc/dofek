@@ -1,5 +1,7 @@
 /** WHOOP wear locations — the 5 body sites WHOOP optimizes for. */
 
+export const WHOOP_WEAR_LOCATION_SETTING_KEY = "whoop.wearLocation";
+
 export type WhoopWearLocation = "wrist" | "bicep" | "chest" | "waist" | "calf";
 
 export interface WhoopWearLocationInfo {

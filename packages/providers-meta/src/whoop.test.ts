@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   parseWhoopWearLocation,
+  WHOOP_WEAR_LOCATION_SETTING_KEY,
   WHOOP_WEAR_LOCATIONS,
   whoopWearLocationDescription,
   whoopWearLocationLabel,
 } from "./whoop.ts";
 
 describe("WHOOP wear locations", () => {
+  it("exports the settings key", () => {
+    expect(WHOOP_WEAR_LOCATION_SETTING_KEY).toBe("whoop.wearLocation");
+  });
+
   it("has all five body locations", () => {
     expect(WHOOP_WEAR_LOCATIONS).toHaveLength(5);
     const ids = WHOOP_WEAR_LOCATIONS.map((location) => location.id);

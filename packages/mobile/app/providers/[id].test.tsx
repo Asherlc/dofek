@@ -168,6 +168,10 @@ const mockInvalidateProviders = vi.fn();
 const mockInvalidateProviderStats = vi.fn();
 const mockInvalidateLogs = vi.fn();
 const mockSyncStatusFetch = vi.fn();
+const mockSettingsGetQuery = vi.fn().mockReturnValue({ data: null, isLoading: false });
+const mockSettingsSetMutate = vi.fn();
+const mockSettingsGetSetData = vi.fn();
+const mockSettingsGetInvalidate = vi.fn();
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
@@ -185,6 +189,10 @@ vi.mock("../../lib/trpc", () => ({
         useMutation: () => ({ mutateAsync: mockDisconnectMutateAsync, isPending: false }),
       },
     },
+    settings: {
+      get: { useQuery: (...args: unknown[]) => mockSettingsGetQuery(...args) },
+      set: { useMutation: () => ({ mutate: mockSettingsSetMutate, isPending: false }) },
+    },
     useUtils: () => ({
       invalidate: vi.fn(),
       sync: {
@@ -192,6 +200,9 @@ vi.mock("../../lib/trpc", () => ({
         providerStats: { invalidate: mockInvalidateProviderStats },
         logs: { invalidate: mockInvalidateLogs },
         syncStatus: { fetch: mockSyncStatusFetch },
+      },
+      settings: {
+        get: { setData: mockSettingsGetSetData, invalidate: mockSettingsGetInvalidate },
       },
     }),
   },
@@ -484,6 +495,87 @@ describe("ProviderDetailScreen", () => {
         expect(mockInvalidateProviders).toHaveBeenCalled();
         expect(mockInvalidateProviderStats).toHaveBeenCalled();
       });
+    });
+  });
+
+  describe("WhoopWearLocationPicker", () => {
+    const whoopProvider = {
+      id: "whoop",
+      name: "WHOOP",
+      authType: "oauth",
+      authorized: true,
+      importOnly: false,
+      lastSyncedAt: "2026-03-19T12:00:00Z",
+      needsOAuth: false,
+    };
+
+    beforeEach(() => {
+      mockUseLocalSearchParams.mockReturnValue({ id: "whoop" });
+      mockProvidersQuery.mockReturnValue({ data: [whoopProvider], isLoading: false });
+      mockProviderStatsQuery.mockReturnValue({ data: [], isLoading: false });
+      mockRecordsQuery.mockReturnValue({ data: { rows: [] }, isLoading: false });
+      mockLogsQuery.mockReturnValue({ data: [], isLoading: false });
+      mockSettingsGetQuery.mockReturnValue({ data: null, isLoading: false });
+      mockSettingsSetMutate.mockReset();
+      mockSettingsGetSetData.mockReset();
+      mockSettingsGetInvalidate.mockReset();
+    });
+
+    it("renders wear location picker when providerId is whoop", async () => {
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      expect(screen.getByText("Wear Location")).toBeTruthy();
+      expect(
+        screen.getByText(
+          "Where do you wear your WHOOP? This helps us interpret your sensor data.",
+        ),
+      ).toBeTruthy();
+    });
+
+    it("renders all five wear location options", async () => {
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      expect(screen.getByText("Wrist")).toBeTruthy();
+      expect(screen.getByText("Bicep / Upper Arm")).toBeTruthy();
+      expect(screen.getByText("Chest / Torso")).toBeTruthy();
+      expect(screen.getByText("Waist / Waistband")).toBeTruthy();
+      expect(screen.getByText("Lower Leg / Calf")).toBeTruthy();
+    });
+
+    it("does not render wear location picker for non-whoop providers", async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: "wahoo" });
+      mockProvidersQuery.mockReturnValue({ data: [authorizedProvider], isLoading: false });
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      expect(screen.queryByText("Wear Location")).toBeNull();
+    });
+
+    it("calls the settings mutation when a location is clicked", async () => {
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      fireEvent.click(screen.getByText("Bicep / Upper Arm"));
+
+      expect(mockSettingsSetMutate).toHaveBeenCalledWith(
+        { key: "whoop.wearLocation", value: "bicep" },
+        expect.objectContaining({ onSettled: expect.any(Function) }),
+      );
+    });
+
+    it("optimistically updates the cache when a location is clicked", async () => {
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      fireEvent.click(screen.getByText("Chest / Torso"));
+
+      expect(mockSettingsGetSetData).toHaveBeenCalledWith(
+        { key: "whoop.wearLocation" },
+        { key: "whoop.wearLocation", value: "chest" },
+      );
     });
   });
 });

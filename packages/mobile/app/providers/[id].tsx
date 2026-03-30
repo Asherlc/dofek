@@ -3,6 +3,7 @@ import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { DATA_TYPE_LABELS } from "@dofek/providers/provider-stats";
 import {
   parseWhoopWearLocation,
+  WHOOP_WEAR_LOCATION_SETTING_KEY,
   WHOOP_WEAR_LOCATIONS,
   type WhoopWearLocation,
 } from "@dofek/providers/whoop";
@@ -931,10 +932,8 @@ export default function ProviderDetailScreen() {
 
 // ── WHOOP Wear Location Picker ──
 
-const WEAR_LOCATION_SETTING_KEY = "whoop.wearLocation";
-
 function WhoopWearLocationPicker() {
-  const setting = trpc.settings.get.useQuery({ key: WEAR_LOCATION_SETTING_KEY });
+  const setting = trpc.settings.get.useQuery({ key: WHOOP_WEAR_LOCATION_SETTING_KEY });
   const setSettingMutation = trpc.settings.set.useMutation();
   const trpcUtils = trpc.useUtils();
 
@@ -942,14 +941,14 @@ function WhoopWearLocationPicker() {
 
   const handleChange = (location: WhoopWearLocation) => {
     trpcUtils.settings.get.setData(
-      { key: WEAR_LOCATION_SETTING_KEY },
-      { key: WEAR_LOCATION_SETTING_KEY, value: location },
+      { key: WHOOP_WEAR_LOCATION_SETTING_KEY },
+      { key: WHOOP_WEAR_LOCATION_SETTING_KEY, value: location },
     );
     setSettingMutation.mutate(
-      { key: WEAR_LOCATION_SETTING_KEY, value: location },
+      { key: WHOOP_WEAR_LOCATION_SETTING_KEY, value: location },
       {
         onSettled: () => {
-          trpcUtils.settings.get.invalidate({ key: WEAR_LOCATION_SETTING_KEY });
+          trpcUtils.settings.get.invalidate({ key: WHOOP_WEAR_LOCATION_SETTING_KEY });
         },
       },
     );
