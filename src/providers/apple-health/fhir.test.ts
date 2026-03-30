@@ -204,6 +204,37 @@ describe("FHIR Lab Result Parsing", () => {
       expect(result.valueText).toBe("NEGATIVE");
     });
 
+    it("does not set referenceRangeText when only low is present", () => {
+      const obs: FhirObservation = {
+        ...numericObservation,
+        id: "obs-range-low-only",
+        referenceRange: [{ low: { value: 7.0 }, text: ">=7" }],
+      };
+      const result = parseFhirObservation(obs, "Test");
+      expect(result.referenceRangeLow).toBe(7.0);
+      expect(result.referenceRangeText).toBeUndefined();
+    });
+
+    it("does not set referenceRangeText when only high is present", () => {
+      const obs: FhirObservation = {
+        ...numericObservation,
+        id: "obs-range-high-only",
+        referenceRange: [{ high: { value: 25.0 }, text: "<=25" }],
+      };
+      const result = parseFhirObservation(obs, "Test");
+      expect(result.referenceRangeHigh).toBe(25.0);
+      expect(result.referenceRangeText).toBeUndefined();
+    });
+
+    it("preserves raw FHIR resource in result", () => {
+      const result = parseFhirObservation(numericObservation, "Test");
+      expect(result.raw).toMatchObject({
+        resourceType: "Observation",
+        id: "obs-bun-001",
+        valueQuantity: { value: 11.0 },
+      });
+    });
+
     it("does not set referenceRangeText when structured range exists", () => {
       const obs: FhirObservation = {
         ...numericObservation,
@@ -237,6 +268,21 @@ describe("FHIR Lab Result Parsing", () => {
       expect(result.issuedAt).toBeUndefined();
       expect(result.observationIds).toEqual(["obs-chol-001", "obs-ldl-001"]);
       expect(result.raw).toMatchObject({ resourceType: "DiagnosticReport", id: "dr-lipid-001" });
+    });
+
+    it("strips Observation/ prefix from result references", () => {
+      const report: FhirDiagnosticReport = {
+        resourceType: "DiagnosticReport",
+        id: "dr-strip-test",
+        code: { text: "Panel" },
+        effectiveDateTime: "2023-01-01T00:00:00Z",
+        result: [
+          { reference: "Observation/abc-123" },
+          { reference: "def-456" }, // no prefix
+        ],
+      };
+      const result = parseFhirDiagnosticReport(report, "Test");
+      expect(result.observationIds).toEqual(["abc-123", "def-456"]);
     });
 
     it("handles report with no result array", () => {
