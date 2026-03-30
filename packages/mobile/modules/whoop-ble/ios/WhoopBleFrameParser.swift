@@ -240,43 +240,70 @@ final class WhoopBleFrameParser {
 
     /// Extract a realtime data sample (HR + orientation quaternion) from a 0x28 packet.
     ///
-    /// The REALTIME_DATA packet (~116 bytes payload) is sent at ~1 Hz during sync:
-    /// - Byte 22: heart rate (bpm)
-    /// - Bytes 41-44: quaternion W (float32 LE)
-    /// - Bytes 45-48: quaternion X (float32 LE)
-    /// - Bytes 49-52: quaternion Y (float32 LE)
-    /// - Bytes 53-56: quaternion Z (float32 LE)
+    /// Two payload sizes observed:
+    /// - **Full (≥57 bytes)**: HR at offset 22, quaternion at 41-56, optical at 23-40
+    /// - **Compact (~24 bytes)**: Minimal format; raw payload preserved for analysis
+    ///
+    /// Both formats are captured. For compact packets, HR and quaternion fields
+    /// are zero but the raw payload is preserved in opticalBytes for decoding.
     static func extractRealtimeData(from frame: WhoopFrame) -> WhoopRealtimeDataSample? {
         guard frame.packetType == WhoopBleConstants.packetTypeRealtimeData else { return nil }
 
         let payload = frame.payload
-        guard payload.count >= WhoopBleConstants.realtimeDataMinPayloadSize else { return nil }
+        // Need at least the 13-byte common header (type + record + timestamp + subseconds)
+        guard payload.count >= 13 else { return nil }
 
-        let heartRate = payload[payload.startIndex + WhoopBleConstants.realtimeDataHeartRateOffset]
+        // Full-size payload (≥57 bytes): extract HR, quaternion, and optical bytes
+        if payload.count >= WhoopBleConstants.realtimeDataMinPayloadSize {
+            let heartRate = payload[payload.startIndex + WhoopBleConstants.realtimeDataHeartRateOffset]
 
-        // Extract raw optical/PPG bytes (offsets 23-40, 18 bytes)
-        let opticalStart = payload.startIndex + WhoopBleConstants.realtimeDataOpticalStartOffset
-        let opticalEnd = opticalStart + WhoopBleConstants.realtimeDataOpticalByteCount
-        let opticalBytes: Data
-        if opticalEnd <= payload.endIndex {
-            opticalBytes = Data(payload[opticalStart..<opticalEnd])
-        } else {
-            opticalBytes = Data(count: WhoopBleConstants.realtimeDataOpticalByteCount)
+            let opticalStart = payload.startIndex + WhoopBleConstants.realtimeDataOpticalStartOffset
+            let opticalEnd = opticalStart + WhoopBleConstants.realtimeDataOpticalByteCount
+            let opticalBytes: Data
+            if opticalEnd <= payload.endIndex {
+                opticalBytes = Data(payload[opticalStart..<opticalEnd])
+            } else {
+                opticalBytes = Data(count: WhoopBleConstants.realtimeDataOpticalByteCount)
+            }
+
+            let quaternionW = payload.readFloat32LE(at: payload.startIndex + WhoopBleConstants.realtimeDataQuaternionWOffset)
+            let quaternionX = payload.readFloat32LE(at: payload.startIndex + WhoopBleConstants.realtimeDataQuaternionXOffset)
+            let quaternionY = payload.readFloat32LE(at: payload.startIndex + WhoopBleConstants.realtimeDataQuaternionYOffset)
+            let quaternionZ = payload.readFloat32LE(at: payload.startIndex + WhoopBleConstants.realtimeDataQuaternionZOffset)
+
+            return WhoopRealtimeDataSample(
+                timestampSeconds: frame.dataTimestamp,
+                subSeconds: frame.subSeconds,
+                heartRate: heartRate,
+                quaternionW: quaternionW,
+                quaternionX: quaternionX,
+                quaternionY: quaternionY,
+                quaternionZ: quaternionZ,
+                opticalBytes: opticalBytes
+            )
         }
 
-        let quaternionW = payload.readFloat32LE(at: payload.startIndex + WhoopBleConstants.realtimeDataQuaternionWOffset)
-        let quaternionX = payload.readFloat32LE(at: payload.startIndex + WhoopBleConstants.realtimeDataQuaternionXOffset)
-        let quaternionY = payload.readFloat32LE(at: payload.startIndex + WhoopBleConstants.realtimeDataQuaternionYOffset)
-        let quaternionZ = payload.readFloat32LE(at: payload.startIndex + WhoopBleConstants.realtimeDataQuaternionZOffset)
+        // Compact payload (<57 bytes): preserve raw content after the 13-byte header
+        // for analysis. The field layout differs from the full format.
+        let dataStart = payload.startIndex + 13
+        let rawBytes = dataStart < payload.endIndex
+            ? Data(payload[dataStart..<payload.endIndex])
+            : Data()
+        // Pad or truncate to 18 bytes for consistent opticalBytes size
+        var opticalBytes = Data(count: WhoopBleConstants.realtimeDataOpticalByteCount)
+        let copyLen = min(rawBytes.count, opticalBytes.count)
+        if copyLen > 0 {
+            opticalBytes.replaceSubrange(0..<copyLen, with: rawBytes.prefix(copyLen))
+        }
 
         return WhoopRealtimeDataSample(
             timestampSeconds: frame.dataTimestamp,
             subSeconds: frame.subSeconds,
-            heartRate: heartRate,
-            quaternionW: quaternionW,
-            quaternionX: quaternionX,
-            quaternionY: quaternionY,
-            quaternionZ: quaternionZ,
+            heartRate: 0, // not at known offset in compact format
+            quaternionW: 0,
+            quaternionX: 0,
+            quaternionY: 0,
+            quaternionZ: 0,
             opticalBytes: opticalBytes
         )
     }
