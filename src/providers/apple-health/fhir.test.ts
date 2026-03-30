@@ -226,6 +226,19 @@ describe("FHIR Lab Result Parsing", () => {
       expect(result.referenceRangeText).toBeUndefined();
     });
 
+    it("prefers valueQuantity over valueString when both present", () => {
+      const obs: FhirObservation = {
+        ...numericObservation,
+        id: "obs-both-values",
+        valueQuantity: { value: 95, unit: "mg/dL" },
+        valueString: "95 mg/dL",
+      };
+      const result = parseFhirObservation(obs, "Test");
+      expect(result.value).toBe(95);
+      expect(result.unit).toBe("mg/dL");
+      expect(result.valueText).toBeUndefined(); // valueString ignored when valueQuantity present
+    });
+
     it("preserves raw FHIR resource in result", () => {
       const result = parseFhirObservation(numericObservation, "Test");
       expect(result.raw).toMatchObject({
@@ -391,6 +404,17 @@ describe("FHIR Lab Result Parsing", () => {
       };
       const panelMap = buildPanelMap([report]);
       expect(panelMap.get("obs-123")).toBe("Lipid Profile");
+    });
+
+    it("only strips Observation/ prefix, not mid-string occurrences", () => {
+      const report: FhirDiagnosticReport = {
+        ...diagnosticReport,
+        result: [{ reference: "Observation/obs-1" }, { reference: "SomeObservation/obs-2" }],
+      };
+      const panelMap = buildPanelMap([report]);
+      // "Observation/" prefix stripped, but "SomeObservation/" kept intact
+      expect(panelMap.get("obs-1")).toBe("Lipid Panel");
+      expect(panelMap.get("SomeObservation/obs-2")).toBe("Lipid Panel");
     });
 
     it("handles multiple reports", () => {
@@ -779,6 +803,34 @@ describe("FHIR AllergyIntolerance Parsing", () => {
         { manifestation: "Other (See Comments)", description: "Other (See Comments)" },
       ]);
       expect(result.sourceName).toBe("UCSF Health");
+    });
+
+    it("uses first manifestation text from multiple manifestations", () => {
+      const resource: FhirAllergyIntolerance = {
+        resourceType: "AllergyIntolerance",
+        id: "allergy-multi-manifest",
+        code: { text: "Peanut" },
+        reaction: [
+          {
+            manifestation: [{ text: "Hives" }, { text: "Swelling" }],
+            description: "Allergic reaction",
+          },
+        ],
+      };
+      const result = parseFhirAllergyIntolerance(resource, "Test");
+      // Should pick first manifestation only
+      expect(result.reactions[0]?.manifestation).toBe("Hives");
+    });
+
+    it("handles allergy with empty manifestation array", () => {
+      const resource: FhirAllergyIntolerance = {
+        resourceType: "AllergyIntolerance",
+        id: "allergy-empty-manifest",
+        code: { text: "Dust" },
+        reaction: [{ manifestation: [] }],
+      };
+      const result = parseFhirAllergyIntolerance(resource, "Test");
+      expect(result.reactions[0]?.manifestation).toBeUndefined();
     });
 
     it("handles allergy with reaction that has no manifestation text", () => {
