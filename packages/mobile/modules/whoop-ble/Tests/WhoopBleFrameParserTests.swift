@@ -98,13 +98,17 @@ final class WhoopBleFrameParserTests: XCTestCase {
         )
         let samples = WhoopBleFrameParser.extractImuSamples(from: frame)
 
+        // Values are normalized: accel in g (raw / 4096), gyro in rad/s (raw / 16.4 * π/180)
+        let accelScale: Float = 1.0 / 4096.0
+        let gyroScale: Float = (1.0 / 16.4) * (.pi / 180.0)
+
         XCTAssertEqual(samples.count, 2)
-        XCTAssertEqual(samples[0].accelerometerX, 100)
-        XCTAssertEqual(samples[0].accelerometerY, -200)
-        XCTAssertEqual(samples[0].accelerometerZ, 300)
-        XCTAssertEqual(samples[0].gyroscopeX, 10)
-        XCTAssertEqual(samples[1].accelerometerX, 400)
-        XCTAssertEqual(samples[1].gyroscopeZ, 60)
+        XCTAssertEqual(samples[0].accelerometerX, 100 * accelScale, accuracy: 0.0001)
+        XCTAssertEqual(samples[0].accelerometerY, -200 * accelScale, accuracy: 0.0001)
+        XCTAssertEqual(samples[0].accelerometerZ, 300 * accelScale, accuracy: 0.0001)
+        XCTAssertEqual(samples[0].gyroscopeX, 10 * gyroScale, accuracy: 0.0001)
+        XCTAssertEqual(samples[1].accelerometerX, 400 * accelScale, accuracy: 0.0001)
+        XCTAssertEqual(samples[1].gyroscopeZ, 60 * gyroScale, accuracy: 0.0001)
     }
 
     func testExtractImuSamplesFromHistoricalIMU() {
@@ -125,7 +129,32 @@ final class WhoopBleFrameParserTests: XCTestCase {
         )
         let samples = WhoopBleFrameParser.extractImuSamples(from: frame)
         XCTAssertEqual(samples.count, 1)
-        XCTAssertEqual(samples[0].accelerometerX, 42)
+        XCTAssertEqual(samples[0].accelerometerX, 42.0 / 4096.0, accuracy: 0.0001)
+    }
+
+    func testExtractImuSamplesNormalizesGravityToOneG() {
+        // Raw value of 4096 on Z axis = 1g (device at rest, Z pointing up)
+        var payload = Data(count: 28 + 12)
+        payload[0] = WhoopBleConstants.packetTypeRealtimeIMU
+        payload[24] = 0x01; payload[25] = 0x00 // 1 sample
+        payload[26] = 0x01; payload[27] = 0x00
+        writeInt16LE(&payload, offset: 28, value: 0)    // ax = 0
+        writeInt16LE(&payload, offset: 30, value: 0)    // ay = 0
+        writeInt16LE(&payload, offset: 32, value: 4096) // az = 1g
+        writeInt16LE(&payload, offset: 34, value: 0)    // gx = 0
+        writeInt16LE(&payload, offset: 36, value: 0)    // gy = 0
+        writeInt16LE(&payload, offset: 38, value: 0)    // gz = 0
+
+        let frame = WhoopFrame(
+            packetType: WhoopBleConstants.packetTypeRealtimeIMU,
+            recordType: 0, dataTimestamp: 0, subSeconds: 0, payload: payload
+        )
+        let samples = WhoopBleFrameParser.extractImuSamples(from: frame)
+        XCTAssertEqual(samples.count, 1)
+        XCTAssertEqual(samples[0].accelerometerX, 0.0, accuracy: 0.001)
+        XCTAssertEqual(samples[0].accelerometerY, 0.0, accuracy: 0.001)
+        XCTAssertEqual(samples[0].accelerometerZ, 1.0, accuracy: 0.001) // 1g
+        XCTAssertEqual(samples[0].gyroscopeX, 0.0, accuracy: 0.001)
     }
 
     func testExtractImuSamplesReturnsEmptyForNonIMUPacket() {
@@ -258,8 +287,8 @@ final class WhoopBleFrameParserTests: XCTestCase {
         XCTAssertEqual(allFrames.count, 1)
         let samples = WhoopBleFrameParser.extractImuSamples(from: allFrames[0])
         XCTAssertEqual(samples.count, 2)
-        XCTAssertEqual(samples[0].accelerometerX, 100)
-        XCTAssertEqual(samples[1].accelerometerX, 400)
+        XCTAssertEqual(samples[0].accelerometerX, 100.0 / 4096.0, accuracy: 0.0001)
+        XCTAssertEqual(samples[1].accelerometerX, 400.0 / 4096.0, accuracy: 0.0001)
     }
 
     // MARK: - Realtime data extraction (0x28 packets)
@@ -356,7 +385,7 @@ final class WhoopBleFrameParserTests: XCTestCase {
         XCTAssertEqual(sample!.quaternionZ, 0.20, accuracy: 0.001)
     }
 
-    func testExtractRealtimeDataPreservesRawPayload() {
+    func testExtractRealtimeDataExtractsAllFields() {
         let payload = buildRealtimeDataPayload(heartRate: 80, qW: 1.0, qX: 0.0, qY: 0.0, qZ: 0.0)
         let frame = WhoopFrame(
             packetType: WhoopBleConstants.packetTypeRealtimeData,
@@ -366,9 +395,9 @@ final class WhoopBleFrameParserTests: XCTestCase {
 
         let sample = WhoopBleFrameParser.extractRealtimeData(from: frame)
         XCTAssertNotNil(sample)
-        XCTAssertEqual(sample?.rawPayload.count, 116)
-        // First byte should be packet type
-        XCTAssertEqual(sample?.rawPayload[0], WhoopBleConstants.packetTypeRealtimeData)
+        XCTAssertEqual(sample?.heartRate, 80)
+        XCTAssertEqual(sample!.quaternionW, 1.0, accuracy: 0.001)
+        XCTAssertEqual(sample!.quaternionX, 0.0, accuracy: 0.001)
     }
 
     func testExtractRealtimeDataWorksWithMinimumPayloadSize() {

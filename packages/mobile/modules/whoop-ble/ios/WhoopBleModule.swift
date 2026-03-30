@@ -377,12 +377,12 @@ public class WhoopBleModule: Module {
 
                 return [
                     "timestamp": formatter.string(from: date),
-                    "accelerometerX": Int(sample.accelerometerX),
-                    "accelerometerY": Int(sample.accelerometerY),
-                    "accelerometerZ": Int(sample.accelerometerZ),
-                    "gyroscopeX": Int(sample.gyroscopeX),
-                    "gyroscopeY": Int(sample.gyroscopeY),
-                    "gyroscopeZ": Int(sample.gyroscopeZ),
+                    "accelerometerX": Double(sample.accelerometerX),
+                    "accelerometerY": Double(sample.accelerometerY),
+                    "accelerometerZ": Double(sample.accelerometerZ),
+                    "gyroscopeX": Double(sample.gyroscopeX),
+                    "gyroscopeY": Double(sample.gyroscopeY),
+                    "gyroscopeZ": Double(sample.gyroscopeZ),
                 ]
             }
 

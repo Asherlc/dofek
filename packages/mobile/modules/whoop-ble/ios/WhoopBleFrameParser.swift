@@ -1,8 +1,7 @@
 import Foundation
 
 /// A single realtime data sample from a 0x28 REALTIME_DATA packet.
-/// Contains heart rate, orientation quaternion from the strap's sensor fusion,
-/// and the full raw payload for future analysis of optical/PPG fields.
+/// Contains heart rate and orientation quaternion from the strap's sensor fusion.
 struct WhoopRealtimeDataSample {
     let timestampSeconds: UInt32
     let subSeconds: UInt16
@@ -11,23 +10,31 @@ struct WhoopRealtimeDataSample {
     let quaternionX: Float
     let quaternionY: Float
     let quaternionZ: Float
-    let rawPayload: Data
 }
 
 /// A single IMU sample extracted from a WHOOP BLE packet.
-/// Contains 6-axis data: accelerometer XYZ + gyroscope XYZ.
-/// Values are raw signed 16-bit integers from the strap's sensor.
+/// Contains 6-axis data: accelerometer XYZ (g) + gyroscope XYZ (rad/s).
+/// Values are normalized from raw int16 sensor readings to standard physical units.
 struct WhoopImuSample {
     let timestampSeconds: UInt32    // Unix epoch seconds from frame header
     let subSeconds: UInt16          // Millisecond offset within second
     let sampleIndex: Int            // Position within the frame (for per-sample timing)
-    let accelerometerX: Int16
-    let accelerometerY: Int16
-    let accelerometerZ: Int16
-    let gyroscopeX: Int16
-    let gyroscopeY: Int16
-    let gyroscopeZ: Int16
+    let accelerometerX: Float       // acceleration in g
+    let accelerometerY: Float       // acceleration in g
+    let accelerometerZ: Float       // acceleration in g
+    let gyroscopeX: Float           // rotation rate in rad/s
+    let gyroscopeY: Float           // rotation rate in rad/s
+    let gyroscopeZ: Float           // rotation rate in rad/s
 }
+
+// MARK: - WHOOP sensor scale factors
+
+/// WHOOP accelerometer: ±8g range, 4096 LSB/g (confirmed from live capture — gravity vector ≈ 4096)
+private let whoopAccelerometerScale: Float = 1.0 / 4096.0 // raw int16 → g
+
+/// WHOOP gyroscope: assumed ±2000 dps (16.4 LSB/dps), common for wearable MEMS IMUs.
+/// Converted to rad/s: raw / 16.4 * (π / 180)
+private let whoopGyroscopeScale: Float = (1.0 / 16.4) * (.pi / 180.0) // raw int16 → rad/s
 
 /// A parsed WHOOP BLE frame.
 struct WhoopFrame {
@@ -153,6 +160,9 @@ final class WhoopBleFrameParser {
     }
 
     /// Extract IMU samples from a parsed WHOOP frame.
+    /// Raw int16 sensor values are normalized to standard physical units:
+    /// - Accelerometer: g (1g = Earth gravity)
+    /// - Gyroscope: rad/s
     ///
     /// Handles two formats:
     /// 1. IMU stream (types 0x33/0x34): interleaved 12-byte samples at offset 28
@@ -180,12 +190,12 @@ final class WhoopBleFrameParser {
                     timestampSeconds: frame.dataTimestamp,
                     subSeconds: frame.subSeconds,
                     sampleIndex: sampleIndex,
-                    accelerometerX: payload.readInt16LE(at: offset),
-                    accelerometerY: payload.readInt16LE(at: offset + 2),
-                    accelerometerZ: payload.readInt16LE(at: offset + 4),
-                    gyroscopeX: payload.readInt16LE(at: offset + 6),
-                    gyroscopeY: payload.readInt16LE(at: offset + 8),
-                    gyroscopeZ: payload.readInt16LE(at: offset + 10)
+                    accelerometerX: Float(payload.readInt16LE(at: offset)) * whoopAccelerometerScale,
+                    accelerometerY: Float(payload.readInt16LE(at: offset + 2)) * whoopAccelerometerScale,
+                    accelerometerZ: Float(payload.readInt16LE(at: offset + 4)) * whoopAccelerometerScale,
+                    gyroscopeX: Float(payload.readInt16LE(at: offset + 6)) * whoopGyroscopeScale,
+                    gyroscopeY: Float(payload.readInt16LE(at: offset + 8)) * whoopGyroscopeScale,
+                    gyroscopeZ: Float(payload.readInt16LE(at: offset + 10)) * whoopGyroscopeScale
                 ))
                 offset += 12
             }
@@ -210,12 +220,12 @@ final class WhoopBleFrameParser {
                     timestampSeconds: frame.dataTimestamp,
                     subSeconds: frame.subSeconds,
                     sampleIndex: sampleIndex,
-                    accelerometerX: payload.readInt16LE(at: 20 + sampleIndex * 2),
-                    accelerometerY: payload.readInt16LE(at: 220 + sampleIndex * 2),
-                    accelerometerZ: payload.readInt16LE(at: 420 + sampleIndex * 2),
-                    gyroscopeX: sampleIndex < countB ? payload.readInt16LE(at: 632 + sampleIndex * 2) : 0,
-                    gyroscopeY: sampleIndex < countB ? payload.readInt16LE(at: 832 + sampleIndex * 2) : 0,
-                    gyroscopeZ: sampleIndex < countB ? payload.readInt16LE(at: 1032 + sampleIndex * 2) : 0
+                    accelerometerX: Float(payload.readInt16LE(at: 20 + sampleIndex * 2)) * whoopAccelerometerScale,
+                    accelerometerY: Float(payload.readInt16LE(at: 220 + sampleIndex * 2)) * whoopAccelerometerScale,
+                    accelerometerZ: Float(payload.readInt16LE(at: 420 + sampleIndex * 2)) * whoopAccelerometerScale,
+                    gyroscopeX: sampleIndex < countB ? Float(payload.readInt16LE(at: 632 + sampleIndex * 2)) * whoopGyroscopeScale : 0,
+                    gyroscopeY: sampleIndex < countB ? Float(payload.readInt16LE(at: 832 + sampleIndex * 2)) * whoopGyroscopeScale : 0,
+                    gyroscopeZ: sampleIndex < countB ? Float(payload.readInt16LE(at: 1032 + sampleIndex * 2)) * whoopGyroscopeScale : 0
                 ))
             }
             return samples
@@ -251,8 +261,7 @@ final class WhoopBleFrameParser {
             quaternionW: quaternionW,
             quaternionX: quaternionX,
             quaternionY: quaternionY,
-            quaternionZ: quaternionZ,
-            rawPayload: Data(payload)
+            quaternionZ: quaternionZ
         )
     }
 
