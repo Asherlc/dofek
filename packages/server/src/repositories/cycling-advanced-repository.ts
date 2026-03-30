@@ -472,17 +472,17 @@ export class CyclingAdvancedRepository {
               ROW_NUMBER() OVER (
                 PARTITION BY ms.activity_id ORDER BY ms.recorded_at
               ) AS rn,
-              SUM(COALESCE(ms.power, 0)) OVER (
+              SUM(COALESCE(ms.scalar, 0)) OVER (
                 PARTITION BY ms.activity_id ORDER BY ms.recorded_at
                 ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
               ) AS cumsum
-            FROM fitness.metric_stream ms
+            FROM fitness.sensor_sample ms
             JOIN fitness.v_activity a ON a.id = ms.activity_id
             WHERE a.user_id = ${this.#userId}
               AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
               AND ms.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
               AND ${enduranceTypeFilter("a")}
-              AND ms.power IS NOT NULL
+              AND ms.channel = 'power'
           ),
           sample_rate AS (
             SELECT activity_id,
@@ -520,18 +520,19 @@ export class CyclingAdvancedRepository {
       sql`WITH rolling AS (
             SELECT
               ms.activity_id,
-              AVG(ms.power) OVER (
+              AVG(ms.scalar) OVER (
                 PARTITION BY ms.activity_id
                 ORDER BY ms.recorded_at
                 RANGE BETWEEN INTERVAL '29 seconds' PRECEDING AND CURRENT ROW
               ) AS rolling_30s_power
-            FROM fitness.metric_stream ms
+            FROM fitness.sensor_sample ms
             JOIN fitness.v_activity a ON a.id = ms.activity_id
             WHERE a.user_id = ${this.#userId}
               AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
               AND ms.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
               AND ${enduranceTypeFilter("a")}
-              AND ms.power > 0
+              AND ms.channel = 'power'
+              AND ms.scalar > 0
           ),
           grouped AS (
             SELECT
@@ -579,25 +580,28 @@ export class CyclingAdvancedRepository {
       vamRowSchema,
       sql`WITH climbing_segments AS (
             SELECT
-              ms.activity_id,
-              ms.altitude,
-              ms.grade,
-              ms.recorded_at,
-              LAG(ms.altitude) OVER (
-                PARTITION BY ms.activity_id ORDER BY ms.recorded_at
+              alt.activity_id,
+              alt.scalar AS altitude,
+              grd.scalar AS grade,
+              alt.recorded_at,
+              LAG(alt.scalar) OVER (
+                PARTITION BY alt.activity_id ORDER BY alt.recorded_at
               ) AS prev_altitude,
-              LAG(ms.recorded_at) OVER (
-                PARTITION BY ms.activity_id ORDER BY ms.recorded_at
+              LAG(alt.recorded_at) OVER (
+                PARTITION BY alt.activity_id ORDER BY alt.recorded_at
               ) AS prev_recorded_at
-            FROM fitness.metric_stream ms
-            JOIN fitness.v_activity a ON a.id = ms.activity_id
+            FROM fitness.sensor_sample alt
+            JOIN fitness.sensor_sample grd
+              ON grd.activity_id = alt.activity_id
+              AND grd.recorded_at = alt.recorded_at
+              AND grd.channel = 'grade'
+            JOIN fitness.v_activity a ON a.id = alt.activity_id
             WHERE a.user_id = ${this.#userId}
               AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-              AND ms.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
+              AND alt.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
               AND ${enduranceTypeFilter("a")}
-              AND ms.altitude IS NOT NULL
-              AND ms.grade IS NOT NULL
-              AND ms.grade > 3
+              AND alt.channel = 'altitude'
+              AND grd.scalar > 3
           )
           SELECT
             (a.started_at AT TIME ZONE ${this.#timezone})::date AS date,

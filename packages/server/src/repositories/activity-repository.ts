@@ -258,11 +258,11 @@ export class ActivityRepository {
               AND up.max_hr IS NOT NULL
           ),
           hr_samples AS (
-            SELECT ms.heart_rate
-            FROM fitness.metric_stream ms
+            SELECT ms.scalar AS heart_rate
+            FROM fitness.sensor_sample ms
             JOIN fitness.v_activity a ON a.id = ms.activity_id AND a.user_id = ${this.#userId}
             WHERE ms.activity_id = ${activityId}
-              AND ms.heart_rate IS NOT NULL
+              AND ms.channel = 'heart_rate'
           )
           SELECT
             z.zone,
