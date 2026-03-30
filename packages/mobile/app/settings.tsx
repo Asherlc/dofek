@@ -1,6 +1,7 @@
 import { providerLabel } from "@dofek/providers/providers";
 import { File as ExpoFile, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
+import * as Updates from "expo-updates";
 import { useState } from "react";
 import {
   ActivityIndicator,
@@ -8,7 +9,6 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TouchableOpacity,
   useWindowDimensions,
@@ -82,24 +82,6 @@ export default function SettingsScreen() {
       {
         onSuccess: () => unitSetting.refetch(),
         onError: () => unitSetting.refetch(),
-      },
-    );
-  }
-
-  // ── WHOOP Motion Sensors ──
-  const whoopImuSetting = trpc.settings.get.useQuery({ key: "whoopAlwaysOnImu" });
-  const whoopImuEnabled = whoopImuSetting.data?.value === true;
-
-  function handleWhoopImuToggle(enabled: boolean) {
-    trpcUtils.settings.get.setData(
-      { key: "whoopAlwaysOnImu" },
-      { key: "whoopAlwaysOnImu", value: enabled },
-    );
-    setSettingMutation.mutate(
-      { key: "whoopAlwaysOnImu", value: enabled },
-      {
-        onSuccess: () => whoopImuSetting.refetch(),
-        onError: () => whoopImuSetting.refetch(),
       },
     );
   }
@@ -297,31 +279,6 @@ export default function SettingsScreen() {
         </View>
       </View>
 
-      {/* ── WHOOP Motion Sensors ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>WHOOP Motion Sensors</Text>
-        <Text style={styles.sectionDescription}>
-          Record accelerometer and gyroscope data from your WHOOP strap continuously via Bluetooth.
-          Reduces strap battery life from ~5 days to ~3-4 days.
-        </Text>
-        <View style={styles.card}>
-          <View style={styles.toggleRow}>
-            <View style={styles.toggleInfo}>
-              <Text style={styles.toggleLabel}>Always-on recording</Text>
-              <Text style={styles.toggleDescription}>
-                Streams accelerometer and gyroscope data whenever the app is open
-              </Text>
-            </View>
-            <Switch
-              value={whoopImuEnabled}
-              onValueChange={handleWhoopImuToggle}
-              disabled={setSettingMutation.isPending}
-              trackColor={{ false: colors.surfaceSecondary, true: colors.accent }}
-            />
-          </View>
-        </View>
-      </View>
-
       {/* ── Algorithm Personalization ── */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Algorithm Personalization</Text>
@@ -372,6 +329,61 @@ export default function SettingsScreen() {
               {exportState === "processing" ? "Exporting..." : "Download My Data"}
             </Text>
           </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* ── Developer Tools ── */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Developer Tools</Text>
+        <Text style={styles.sectionDescription}>Debugging and diagnostics</Text>
+        <View style={styles.card}>
+          <TouchableOpacity
+            style={styles.devToolRow}
+            onPress={() => {
+              const { router } = require("expo-router");
+              router.push("/ble-probe");
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.devToolLabel}>BLE Probe</Text>
+            <Text style={styles.devToolChevron}>›</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.devToolRow}
+            onPress={() => {
+              const { router } = require("expo-router");
+              router.push("/accelerometer");
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.devToolLabel}>Accelerometer Status</Text>
+            <Text style={styles.devToolChevron}>›</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.devToolRow}
+            onPress={() => {
+              const { router } = require("expo-router");
+              router.push("/imu-visualization");
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.devToolLabel}>IMU Visualization</Text>
+            <Text style={styles.devToolChevron}>›</Text>
+          </TouchableOpacity>
+          <View style={[styles.devToolRow, styles.devToolRowLast]}>
+            <View>
+              <Text style={styles.devToolLabel}>OTA Update</Text>
+              <Text style={styles.devToolDetail}>
+                {Updates.updateId ?? "embedded bundle"}
+                {"\n"}
+                Channel: {Updates.channel ?? "none"}
+                {"\n"}
+                Runtime: {Updates.runtimeVersion ?? "unknown"}
+                {"\n"}
+                Created: {Updates.createdAt?.toISOString() ?? "n/a"}
+              </Text>
+            </View>
+          </View>
         </View>
       </View>
 
@@ -581,6 +593,34 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: colors.text,
+  },
+
+  // ── Developer Tools ──
+  devToolRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.surfaceSecondary,
+  },
+  devToolRowLast: {
+    borderBottomWidth: 0,
+  },
+  devToolLabel: {
+    fontSize: 15,
+    fontWeight: "500",
+    color: colors.text,
+  },
+  devToolChevron: {
+    fontSize: 18,
+    color: colors.textTertiary,
+  },
+  devToolDetail: {
+    fontSize: 11,
+    color: colors.textTertiary,
+    marginTop: 2,
+    fontVariant: ["tabular-nums"],
   },
 
   // ── Danger Zone ──

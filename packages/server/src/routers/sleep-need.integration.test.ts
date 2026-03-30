@@ -307,22 +307,27 @@ describe("sleep data consistency: multiple sessions per date", () => {
 
   it("weekly report sleep avg must use longest session per date, not average duplicates", async () => {
     await queryCache.invalidateAll();
-    // Use tomorrow to ensure all CURRENT_DATE-based sleep data falls within the window,
-    // regardless of timezone differences between JS Date and Postgres CURRENT_DATE.
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const endDate = tomorrow.toISOString().slice(0, 10);
+    // Use yesterday as endDate so the "current" ISO week always contains data.
+    // Using today fails on Mondays when the new ISO week has no sleep data yet.
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const endDate = yesterday.toISOString().slice(0, 10);
     const result = await query<WeeklyReportResult>("weeklyReport.report", {
-      weeks: 3,
+      weeks: 4,
       endDate,
     });
 
     // All nights have WHOOP (480 min) and AH (330 min). The weekly avg should
     // be 480 (the longest per date), not (480 + 330) / 2 = 405.
-    // BUG: sleep_daily returns both rows per date, and the LEFT JOIN to daily
-    // fans out, so AVG(sl.duration_minutes) averages both = 405.
-    const current = result.current;
-    expect(current).not.toBeNull();
-    expect(current?.avgSleepMinutes).toBe(480);
+    // Check all weeks — the current partial week may have 0 depending on
+    // which day-of-week CI runs (ISO week boundary).
+    const allWeeks = [...(result.current ? [result.current] : []), ...result.history];
+    const weeksWithSleep = allWeeks.filter((week) => week.avgSleepMinutes > 0);
+
+    expect(weeksWithSleep.length, "Expected at least one week with sleep data").toBeGreaterThan(0);
+
+    for (const week of weeksWithSleep) {
+      expect(week.avgSleepMinutes).toBe(480);
+    }
   });
 });

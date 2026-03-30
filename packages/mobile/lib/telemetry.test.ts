@@ -99,7 +99,6 @@ describe("ios telemetry", () => {
     expect(mocks.mockInit).toHaveBeenCalledTimes(1);
     expect(mocks.mockInit).toHaveBeenCalledWith({
       dsn: "https://key@sentry.example/789",
-      enableNativeSdk: false,
     });
   });
 

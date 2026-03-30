@@ -56,11 +56,11 @@ enum WhoopBleConstants {
     /// Start-of-frame marker byte
     static let startOfFrame: UInt8 = 0xAA
 
-    /// Minimum frame size: SOF(1) + len(2) + crc8(1) + type(1) + crc32(4) = 9
+    /// Minimum frame size: Maverick header(8) + at least 1 byte payload = 9
     static let minimumFrameSize = 9
 
-    /// Header size before payload: SOF(1) + len(2) + crc8(1)
-    static let headerSize = 4
+    /// Maverick/Puffin header size: SOF(1) + version(1) + payloadLen(2) + role1(1) + role2(1) + CRC16(2) = 8
+    static let maverickHeaderSize = 8
 
     // MARK: - Packet types (first byte of payload)
 
@@ -71,8 +71,14 @@ enum WhoopBleConstants {
 
     // MARK: - Command bytes (written to CMD_TO_STRAP)
 
+    static let commandGetHello: UInt8 = 0x91
     static let commandStartRawData: UInt8 = 0x51
     static let commandStopRawData: UInt8 = 0x52
     static let commandToggleImuModeHistorical: UInt8 = 0x69
     static let commandToggleImuMode: UInt8 = 0x6A
+
+    /// CMD_FROM_STRAP characteristic (notify): suffix 0003
+    static func cmdFromStrapUUID(forService serviceUUID: CBUUID) -> CBUUID {
+        characteristicUUID(forService: serviceUUID, suffix: "0003")
+    }
 }

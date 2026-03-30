@@ -159,11 +159,12 @@ describe("sleep data consistency across endpoints", () => {
     return first?.result?.data;
   }
 
-  // Use tomorrow to ensure all CURRENT_DATE-based sleep data falls within the window,
-  // regardless of timezone differences between JS Date and Postgres CURRENT_DATE.
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const endDate = tomorrow.toISOString().slice(0, 10);
+  // Use yesterday as endDate so the "current" ISO week always contains data.
+  // Using today fails on Mondays when the new ISO week has no sleep data yet
+  // (test data starts at daysAgo=1, so today has no sessions).
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const endDate = yesterday.toISOString().slice(0, 10);
 
   it("sleep.list returns at most one row per calendar date", async () => {
     await queryCache.invalidateAll();
@@ -223,30 +224,31 @@ describe("sleep data consistency across endpoints", () => {
   it("weeklyReport sleep average matches sleep.list durations (no JOIN fan-out)", async () => {
     await queryCache.invalidateAll();
 
-    // Get the raw sleep.list data
-    const sleepRows = await query<{ started_at: string; duration_minutes: number | null }[]>(
-      "sleep.list",
-      { days: 14, endDate },
-    );
-
-    // Get the weekly report
+    // Get the weekly report — use enough weeks to include all test data
     const weeklyReport = await query<{
       current: { avgSleepMinutes: number } | null;
       history: { weekStart: string; avgSleepMinutes: number }[];
-    }>("weeklyReport.report", { weeks: 3, endDate });
+    }>("weeklyReport.report", { weeks: 4, endDate });
 
-    if (!weeklyReport.current) {
-      // If no weekly data, skip — but the test data should provide it
-      expect(weeklyReport.current).not.toBeNull();
-      return;
-    }
+    // Find any week with sleep data — the current partial week may have 0
+    // if no test dates fall in it (depends on day-of-week when CI runs).
+    // Check all weeks (current + history) for at least one with valid sleep.
+    const allWeeks = [
+      ...(weeklyReport.current ? [weeklyReport.current] : []),
+      ...weeklyReport.history,
+    ];
+    const weeksWithSleep = allWeeks.filter((week) => week.avgSleepMinutes > 0);
 
-    // The weekly report's avgSleepMinutes should be close to the WHOOP duration (480)
+    expect(weeksWithSleep.length, "Expected at least one week with sleep data").toBeGreaterThan(0);
+
+    // Every week that HAS sleep data should reflect the WHOOP duration (~480),
     // not an average of WHOOP+Apple Health (480+330)/2=405 from JOIN fan-out
-    expect(
-      weeklyReport.current.avgSleepMinutes,
-      `Weekly report avg sleep is ${weeklyReport.current.avgSleepMinutes}min — if <450, JOIN fan-out is averaging duplicates`,
-    ).toBeGreaterThanOrEqual(450);
+    for (const week of weeksWithSleep) {
+      expect(
+        week.avgSleepMinutes,
+        `Weekly report avg sleep is ${week.avgSleepMinutes}min — if <450, JOIN fan-out is averaging duplicates`,
+      ).toBeGreaterThanOrEqual(450);
+    }
   });
 
   it("all sleep endpoints agree on duration for each date", async () => {

@@ -5,28 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WhoopBleSyncDeps } from "./background-whoop-ble-sync";
 import type { InertialMeasurementUnitUploadClient } from "./inertial-measurement-unit-service";
 
-// --- Hoisted mocks (vi.mock factories are hoisted, so refs must be too) ---
-
-const { mockInit, mockTeardown, mockSettingState } = vi.hoisted(() => {
-  const state: { value: boolean | null } = { value: null };
-  return {
-    mockInit: vi.fn().mockResolvedValue(undefined),
-    mockTeardown: vi.fn(),
-    mockSettingState: state,
-  };
-});
-
-vi.mock("./trpc", () => ({
-  trpc: {
-    settings: {
-      get: {
-        useQuery: () => ({
-          data: mockSettingState.value !== null ? { value: mockSettingState.value } : undefined,
-          isLoading: mockSettingState.value === null,
-        }),
-      },
-    },
-  },
+const { mockInit, mockTeardown } = vi.hoisted(() => ({
+  mockInit: vi.fn().mockResolvedValue(undefined),
+  mockTeardown: vi.fn(),
 }));
 
 vi.mock("./background-whoop-ble-sync", () => ({
@@ -61,72 +42,22 @@ describe("useWhoopBleSync", () => {
   let whoopDeps: WhoopBleSyncDeps;
 
   beforeEach(() => {
-    mockSettingState.value = null;
     mockInit.mockClear().mockResolvedValue(undefined);
     mockTeardown.mockClear();
     uploadClient = makeMockUploadClient();
     whoopDeps = makeMockDeps();
   });
 
-  it("does not start sync while setting is loading", async () => {
+  it("starts sync immediately on mount", async () => {
     const { useWhoopBleSync } = await import("./useWhoopBleSync");
-    mockSettingState.value = null; // loading state
-
-    renderHook(() => useWhoopBleSync(uploadClient, whoopDeps));
-
-    expect(mockInit).not.toHaveBeenCalled();
-  });
-
-  it("starts sync when setting is enabled", async () => {
-    const { useWhoopBleSync } = await import("./useWhoopBleSync");
-    mockSettingState.value = true;
 
     renderHook(() => useWhoopBleSync(uploadClient, whoopDeps));
 
     expect(mockInit).toHaveBeenCalledWith(uploadClient, whoopDeps);
   });
 
-  it("tears down sync when setting is disabled", async () => {
+  it("tears down on unmount", async () => {
     const { useWhoopBleSync } = await import("./useWhoopBleSync");
-    mockSettingState.value = false;
-
-    renderHook(() => useWhoopBleSync(uploadClient, whoopDeps));
-
-    expect(mockTeardown).toHaveBeenCalled();
-    expect(mockInit).not.toHaveBeenCalled();
-  });
-
-  it("starts sync when setting changes from disabled to enabled", async () => {
-    const { useWhoopBleSync } = await import("./useWhoopBleSync");
-    mockSettingState.value = false;
-
-    const { rerender } = renderHook(() => useWhoopBleSync(uploadClient, whoopDeps));
-
-    expect(mockInit).not.toHaveBeenCalled();
-
-    // Simulate setting change
-    mockSettingState.value = true;
-    rerender();
-
-    expect(mockInit).toHaveBeenCalledWith(uploadClient, whoopDeps);
-  });
-
-  it("tears down sync when setting changes from enabled to disabled", async () => {
-    const { useWhoopBleSync } = await import("./useWhoopBleSync");
-    mockSettingState.value = true;
-
-    const { rerender } = renderHook(() => useWhoopBleSync(uploadClient, whoopDeps));
-
-    mockTeardown.mockClear();
-    mockSettingState.value = false;
-    rerender();
-
-    expect(mockTeardown).toHaveBeenCalled();
-  });
-
-  it("tears down on unmount when enabled", async () => {
-    const { useWhoopBleSync } = await import("./useWhoopBleSync");
-    mockSettingState.value = true;
 
     const { unmount } = renderHook(() => useWhoopBleSync(uploadClient, whoopDeps));
 

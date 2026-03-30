@@ -59,13 +59,8 @@ final class WhoopBleFrameParser {
         // Try to parse the current accumulator
         if let frame = WhoopBleFrameParser.parseFrame(accumulator) {
             frames.append(frame)
-            // Advance past the consumed frame, preserving any trailing bytes
-            // that belong to the next frame (header + payload + CRC32)
-            let payloadLen = Int(accumulator[1]) | (Int(accumulator[2]) << 8)
-            let consumed = min(
-                WhoopBleConstants.headerSize + payloadLen + 4,
-                accumulator.count
-            )
+            let payloadLen = Int(accumulator[2]) | (Int(accumulator[3]) << 8)
+            let consumed = min(8 + payloadLen, accumulator.count)
             if consumed < accumulator.count {
                 accumulator = Data(accumulator[consumed...])
             } else {
@@ -80,29 +75,40 @@ final class WhoopBleFrameParser {
 
     /// Parse a single WHOOP frame from raw bytes.
     ///
-    /// Frame format:
+    /// Supports two header formats observed across WHOOP hardware generations:
+    ///
+    /// **Gen 4 (Harvard)** — u16 LE payload length:
     /// ```
-    /// [0xAA]              1 byte   Start-of-frame
-    /// [payloadLen]        2 bytes  Little-endian u16
-    /// [crc8]              1 byte   Header checksum
-    /// [payload...]        N bytes  Payload (packetType at offset 0)
-    /// [crc32]             4 bytes  Little-endian u32 (over all preceding bytes)
+    /// [0xAA] [payloadLen: u16 LE] [crc8] [payload...] [crc32]
     /// ```
+    ///
+    /// **Newer straps (Maverick/Puffin)** — u8 payload length with frame type:
+    /// ```
+    /// [0xAA] [frameType: u8] [payloadLen: u8] [crc8] [payload...] [crc32]
+    /// ```
+    ///
+    /// We try u16 LE first. If the resulting length exceeds the buffer but
+    /// interpreting byte[2] as a u8 length produces a valid frame, use that.
     static func parseFrame(_ data: Data) -> WhoopFrame? {
         guard data.count >= WhoopBleConstants.minimumFrameSize else { return nil }
         guard data[0] == WhoopBleConstants.startOfFrame else { return nil }
 
-        let payloadLen = Int(data[1]) | (Int(data[2]) << 8) // u16 LE
-        let headerSize = WhoopBleConstants.headerSize
+        // Maverick/Puffin frame format (8-byte header):
+        // [SOF: 0xAA] [ver: 0x01] [payloadLen: u16 LE] [role1] [role2] [CRC16: u16 LE]
+        // [payload: payloadLen bytes (includes trailing CRC32)]
+        //
+        // payloadLen at bytes 2-3 is the number of bytes AFTER the 8-byte header.
+        let maverickHeaderSize = WhoopBleConstants.maverickHeaderSize
+        let payloadLen = Int(data[2]) | (Int(data[3]) << 8)
+
+        // Need at least the full header
+        guard data.count >= maverickHeaderSize else { return nil }
 
         // Require the full payload before accepting the frame.
-        // This prevents premature parsing when BLE notifications fragment
-        // a large frame across multiple packets. We tolerate a missing CRC32
-        // trailer (4 bytes) since we don't validate it.
-        guard data.count >= headerSize + payloadLen else { return nil }
+        guard data.count >= maverickHeaderSize + payloadLen else { return nil }
 
-        let payloadEnd = min(headerSize + payloadLen, data.count)
-        let payload = data[headerSize..<payloadEnd]
+        let payloadEnd = min(maverickHeaderSize + payloadLen, data.count)
+        let payload = data[maverickHeaderSize..<payloadEnd]
 
         guard !payload.isEmpty else { return nil }
 
@@ -112,10 +118,14 @@ final class WhoopBleFrameParser {
         var dataTimestamp: UInt32 = 0
         var subSeconds: UInt16 = 0
 
-        // Data packets with standard header (13+ bytes in payload)
+        // Data packets with Maverick header:
+        // [0] packetType, [1] recordType, [2-6] other fields,
+        // [7-10] Unix timestamp (u32 LE), [11-12] sub-seconds (u16 LE)
+        // Note: timestamp is at offset 7, NOT 3. Confirmed via live capture
+        // analysis — offset 3 produced 1970 dates, offset 7 gives correct 2026 dates.
         if payload.count >= 13 {
             recordType = payload[payload.startIndex + 1]
-            dataTimestamp = payload.readUInt32LE(at: payload.startIndex + 3)
+            dataTimestamp = payload.readUInt32LE(at: payload.startIndex + 7)
             subSeconds = payload.readUInt16LE(at: payload.startIndex + 11)
         }
 
@@ -168,10 +178,12 @@ final class WhoopBleFrameParser {
             return samples
         }
 
-        // R21 Maverick raw packet (type 0x2B, record type 21, ~1244 bytes)
+        // R21 Maverick raw packet (type 0x2B, record type 21)
+        // Payload is ~1232-1236 bytes (depending on whether CRC32 is included).
+        // Need at least 1032 + 200 = 1232 bytes for the gyroscope Z array.
         if frame.packetType == WhoopBleConstants.packetTypeRealtimeRawData &&
            frame.recordType == 21 &&
-           payload.count >= 1244 {
+           payload.count >= 1232 {
 
             let countA = min(Int(payload.readUInt16LE(at: 16)), 100)
             let countB = min(Int(payload.readUInt16LE(at: 622)), 100)
@@ -198,23 +210,40 @@ final class WhoopBleFrameParser {
         return []
     }
 
+    /// Sequence counter for command frames (increments per command sent).
+    private static var commandSequence: UInt8 = 0x01
+
     /// Build a command frame to write to CMD_TO_STRAP.
     ///
-    /// Constructs a minimal WHOOP command frame:
+    /// Format observed in PacketLogger capture of the WHOOP app:
     /// ```
-    /// [0xAA] [0x02 0x00] [0x00] [0x23 commandByte]
+    /// [0xAA] [0x01] [payloadLen:u16 LE = 12]
+    /// [preamble: 00 01 E7 41] [0x23] [seq] [cmd] [01 01 00 00 00]
     /// ```
-    /// Note: CRC is omitted for simplicity — the strap accepts commands without
-    /// strict CRC validation based on observed behavior in captures.
+    ///
+    /// The 4-byte preamble (`00 01 E7 41`) and trailing params (`01 01 00 00 00`)
+    /// are constant for TOGGLE_IMU_MODE, observed across multiple captures.
+    /// CRC32 uses a non-standard algorithm that we haven't reverse-engineered,
+    /// so we omit it — testing whether the strap accepts commands without it.
     static func buildCommandData(command: UInt8) -> Data {
-        var data = Data()
-        data.append(WhoopBleConstants.startOfFrame)  // SOF
-        data.append(0x02)                              // payload length low byte
-        data.append(0x00)                              // payload length high byte
-        data.append(0x00)                              // header CRC8 (placeholder)
-        data.append(WhoopBleConstants.packetTypeCommand)  // 0x23 = COMMAND
-        data.append(command)                           // the actual command byte
-        return data
+        let seq = commandSequence
+        commandSequence &+= 1
+
+        var frame = Data()
+        // Header
+        frame.append(WhoopBleConstants.startOfFrame)  // SOF = 0xAA
+        frame.append(0x01)                              // version
+        frame.append(0x0C)                              // payload length low = 12
+        frame.append(0x00)                              // payload length high = 0
+
+        // Payload (12 bytes) — format from PacketLogger capture analysis
+        frame.append(contentsOf: [0x00, 0x01, 0xE7, 0x41])  // preamble
+        frame.append(WhoopBleConstants.packetTypeCommand)     // 0x23
+        frame.append(seq)                                      // sequence number
+        frame.append(command)                                  // actual command byte
+        frame.append(contentsOf: [0x01, 0x01, 0x00, 0x00, 0x00])  // parameters
+
+        return frame
     }
 }
 

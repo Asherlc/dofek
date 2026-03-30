@@ -1,3 +1,4 @@
+import type { EventSubscription } from "expo-modules-core";
 import WhoopBleModule from "./src/WhoopBleModule";
 
 /** A discovered WHOOP strap */
@@ -94,7 +95,68 @@ export function getBufferedSampleCount(): number {
   return WhoopBleModule.getBufferedSampleCount();
 }
 
+/** Get BLE data path statistics for debugging. */
+export function getDataPathStats(): {
+  dataReceivedCount: number;
+  totalFramesParsed: number;
+  totalSamplesExtracted: number;
+  droppedForNonStreaming: number;
+  emptyExtractions: number;
+  bufferOverflows: number;
+  connectionState: string;
+  hasDataCharacteristic: boolean;
+  isNotifying: boolean;
+} {
+  return WhoopBleModule.getDataPathStats();
+}
+
+/**
+ * Try to reconnect to the WHOOP strap in the background.
+ *
+ * Checks retrieveConnectedPeripherals first (finds straps connected by the
+ * WHOOP app), then falls back to a 10-second BLE scan. Call from background
+ * refresh handlers to maintain the connection.
+ *
+ * @returns true if a strap was found and connection initiated.
+ */
+export async function retryConnection(): Promise<boolean> {
+  return WhoopBleModule.retryConnection();
+}
+
 /** Disconnect from the WHOOP strap. */
 export function disconnect(): void {
   WhoopBleModule.disconnect();
+}
+
+/** Real-time orientation from the Madgwick AHRS filter (quaternion + Euler angles) */
+export interface OrientationEvent {
+  /** Quaternion w component */
+  w: number;
+  /** Quaternion x component */
+  x: number;
+  /** Quaternion y component */
+  y: number;
+  /** Quaternion z component */
+  z: number;
+  /** Roll in degrees (-180..180) */
+  roll: number;
+  /** Pitch in degrees (-90..90) */
+  pitch: number;
+  /** Yaw in degrees (-180..180) */
+  yaw: number;
+}
+
+/**
+ * Subscribe to real-time orientation updates (~30 Hz).
+ *
+ * The Madgwick AHRS filter fuses accelerometer + gyroscope data into a
+ * quaternion representing the strap's 3D orientation. Events are throttled
+ * to ~30 Hz to avoid flooding the JS bridge.
+ *
+ * @returns A subscription that can be removed with `.remove()`.
+ */
+export function addOrientationListener(
+  callback: (event: OrientationEvent) => void,
+): EventSubscription {
+  return WhoopBleModule.addListener("onOrientation", callback);
 }

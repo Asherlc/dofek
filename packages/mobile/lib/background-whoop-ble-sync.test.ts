@@ -2,6 +2,7 @@ import { AppState } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   initBackgroundWhoopBleSync,
+  syncWhoopBle,
   teardownBackgroundWhoopBleSync,
   type WhoopBleSyncDeps,
 } from "./background-whoop-ble-sync.ts";
@@ -160,13 +161,15 @@ describe("background-whoop-ble-sync", () => {
     });
   });
 
-  it("skips when Bluetooth is unavailable", async () => {
-    vi.mocked(whoopDeps.isBluetoothAvailable).mockReturnValue(false);
+  it("skips when findWhoop returns null (Bluetooth unavailable or no strap)", async () => {
+    vi.mocked(whoopDeps.findWhoop).mockResolvedValue(null);
 
     await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
-    await appStateCallback?.("active");
 
-    expect(whoopDeps.findWhoop).not.toHaveBeenCalled();
+    // findWhoop was called (we no longer pre-check isBluetoothAvailable)
+    expect(whoopDeps.findWhoop).toHaveBeenCalled();
+    // But connect was never called since findWhoop returned null
+    expect(whoopDeps.connect).not.toHaveBeenCalled();
   });
 
   it("skips when WHOOP not found", async () => {
@@ -284,5 +287,74 @@ describe("background-whoop-ble-sync", () => {
     expect(sentryCaptureException).toHaveBeenCalledWith(initError, {
       tags: { source: "whoop-ble-init-sync" },
     });
+  });
+});
+
+describe("syncWhoopBle", () => {
+  let whoopDeps: WhoopBleSyncDeps;
+  let trpcClient: InertialMeasurementUnitUploadClient;
+
+  beforeEach(() => {
+    teardownBackgroundWhoopBleSync();
+    whoopDeps = makeMockDeps();
+    trpcClient = makeMockTrpcClient();
+  });
+
+  afterEach(() => {
+    teardownBackgroundWhoopBleSync();
+  });
+
+  it("connects and uploads buffered samples", async () => {
+    const samples = [
+      {
+        timestamp: "2026-03-25T08:00:00.000Z",
+        accelerometerX: 100,
+        accelerometerY: -200,
+        accelerometerZ: 300,
+        gyroscopeX: 10,
+        gyroscopeY: -20,
+        gyroscopeZ: 30,
+      },
+    ];
+    vi.mocked(whoopDeps.getBufferedSamples).mockResolvedValue(samples);
+
+    await syncWhoopBle(trpcClient, whoopDeps);
+
+    expect(whoopDeps.findWhoop).toHaveBeenCalled();
+    expect(whoopDeps.connect).toHaveBeenCalledWith("whoop-123");
+    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith({
+      deviceId: "WHOOP Strap",
+      deviceType: "whoop",
+      samples: expect.arrayContaining([
+        expect.objectContaining({ timestamp: "2026-03-25T08:00:00.000Z" }),
+      ]),
+    });
+  });
+
+  it("skips when WHOOP not found", async () => {
+    vi.mocked(whoopDeps.findWhoop).mockResolvedValue(null);
+
+    await syncWhoopBle(trpcClient, whoopDeps);
+
+    expect(whoopDeps.connect).not.toHaveBeenCalled();
+  });
+
+  it("reports errors to Sentry", async () => {
+    const { captureException: sentryCaptureException } = await import("@sentry/react-native");
+    const bleError = new Error("BLE error");
+    vi.mocked(whoopDeps.connect).mockRejectedValue(bleError);
+
+    await syncWhoopBle(trpcClient, whoopDeps);
+
+    expect(sentryCaptureException).toHaveBeenCalledWith(bleError, {
+      tags: { source: "whoop-ble-background-refresh" },
+    });
+  });
+
+  it("does not throw on errors", async () => {
+    vi.mocked(whoopDeps.connect).mockRejectedValue(new Error("BLE error"));
+
+    // Should not throw
+    await syncWhoopBle(trpcClient, whoopDeps);
   });
 });

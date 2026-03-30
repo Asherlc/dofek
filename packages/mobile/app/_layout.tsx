@@ -8,7 +8,7 @@ import { AuthProvider, useAuth } from "../lib/auth-context";
 import { initBackgroundAccelerometerSync } from "../lib/background-accelerometer-sync";
 import { initBackgroundHealthKitSync } from "../lib/background-health-kit-sync";
 import { initBackgroundWatchInertialMeasurementUnitSync } from "../lib/background-watch-inertial-measurement-unit-sync";
-import { teardownBackgroundWhoopBleSync } from "../lib/background-whoop-ble-sync";
+import { syncWhoopBle, teardownBackgroundWhoopBleSync } from "../lib/background-whoop-ble-sync";
 import type { SyncTrpcClient } from "../lib/health-kit-sync";
 import { getTrpcUrl } from "../lib/server";
 import { captureException, initTelemetry, logger } from "../lib/telemetry";
@@ -153,8 +153,9 @@ function AuthGate() {
     // inside the tRPC provider tree (see WhoopBleSyncManager below).
 
     // Listen for background refresh wakeups (~every 15-30 min, system-decided).
-    // On each wake, restart Watch recording and sync IMU data so
-    // coverage continues even if the user never opens the app.
+    // On each wake, restart Watch recording, sync IMU data, and
+    // retry WHOOP BLE connection so coverage continues even if the user
+    // never opens the app.
     const refreshSubscription = addBackgroundRefreshListener(() => {
       // Restart Watch IMU recording
       initBackgroundWatchInertialMeasurementUnitSync(imuSyncClient).catch((error: unknown) => {
@@ -164,6 +165,30 @@ function AuthGate() {
       // Restart phone accelerometer recording
       initBackgroundAccelerometerSync(imuSyncClient).catch((error: unknown) => {
         captureException(error, { source: "bg-refresh-accel-sync" });
+      });
+
+      // Retry WHOOP BLE connection and flush buffered IMU samples
+      import("../modules/whoop-ble")
+        .then(({ retryConnection }) => {
+          retryConnection().catch((error: unknown) => {
+            captureException(error, { source: "bg-refresh-whoop-retry" });
+          });
+        })
+        .catch((error: unknown) => {
+          captureException(error, { source: "bg-refresh-whoop-import" });
+        });
+
+      // Upload any WHOOP BLE samples buffered since last sync
+      syncWhoopBle(imuSyncClient, {
+        isBluetoothAvailable,
+        findWhoop,
+        connect: whoopConnect,
+        startImuStreaming,
+        stopImuStreaming,
+        getBufferedSamples: getWhoopSamples,
+        disconnect: whoopDisconnect,
+      }).catch((error: unknown) => {
+        captureException(error, { source: "bg-refresh-whoop-flush" });
       });
 
       // Re-schedule for next wakeup
@@ -288,6 +313,12 @@ function AuthGate() {
             name="correlation"
             options={{
               title: "Correlation Explorer",
+            }}
+          />
+          <Stack.Screen
+            name="ble-probe"
+            options={{
+              title: "BLE Probe",
             }}
           />
         </Stack>

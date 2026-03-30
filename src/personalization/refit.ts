@@ -1,4 +1,5 @@
 import { zScoreToRecoveryScore } from "@dofek/scoring/scoring";
+import * as Sentry from "@sentry/node";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../db/typed-sql.ts";
@@ -45,6 +46,7 @@ export async function refitAllParams(db: Database, userId: string): Promise<Pers
     await savePersonalizedParams(db, userId, params);
   } catch (err) {
     logger.error(`[personalization] Failed to save params: ${err}`);
+    Sentry.captureException(err, { tags: { context: "personalization-save" } });
   }
 
   return params;
