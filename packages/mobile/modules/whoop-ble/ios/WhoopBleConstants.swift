@@ -67,6 +67,7 @@ enum WhoopBleConstants {
     static let packetTypeCommand: UInt8 = 0x23
     static let packetTypeRealtimeData: UInt8 = 0x28
     static let packetTypeRealtimeRawData: UInt8 = 0x2B
+    static let packetTypeHistoricalData: UInt8 = 0x2F
     static let packetTypeRealtimeIMU: UInt8 = 0x33
     static let packetTypeHistoricalIMU: UInt8 = 0x34
 

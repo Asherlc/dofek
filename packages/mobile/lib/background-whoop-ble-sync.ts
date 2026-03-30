@@ -253,11 +253,8 @@ async function drainBuffer(
       if (stats.dataNotificationCount > 0) {
         logger.info(
           LOG_CATEGORY,
-          `drain stats: rtBuf=${stats.realtimeBufferCount ?? "?"} 0x28=${stats.realtimeDebug ?? "?"}`,
+          `stats: packets=${stats.packetTypes} rtBuf=${stats.realtimeBufferCount ?? 0}`,
         );
-        if (stats.compactSamples) {
-          logger.info(LOG_CATEGORY, `compact 0x28 samples: ${stats.compactSamples}`);
-        }
       }
     }
   } catch {

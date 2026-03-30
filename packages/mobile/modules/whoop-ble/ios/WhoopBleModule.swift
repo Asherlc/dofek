@@ -269,8 +269,6 @@ public class WhoopBleModule: Module {
                     "hasCmdResponseCharacteristic": self.cmdResponseCharacteristic != nil,
                     "lastWriteError": self.lastWriteError ?? "none",
                     "realtimeBufferCount": self.realtimeDataBuffer.count,
-                    "realtimeDebug": self.lastRealtimeDebug,
-                    "compactSamples": self.recentCompactHexSamples.joined(separator: "|"),
                 ]
             }
         }
@@ -738,11 +736,6 @@ public class WhoopBleModule: Module {
     /// Last command response received (for diagnosing TOGGLE_IMU_MODE success)
     private var lastCommandResponse: String = "none"
 
-    /// Diagnostic: first 0x28 payload hex + extraction result
-    private var lastRealtimeDebug: String = "none"
-    /// Last 5 unique compact 0x28 data byte hex values (after 13-byte header)
-    private var recentCompactHexSamples: [String] = []
-
     func handleCommandResponse(_ data: Data) {
         cmdNotificationCount += 1
 
@@ -800,33 +793,9 @@ public class WhoopBleModule: Module {
             let samples = WhoopBleFrameParser.extractImuSamples(from: frame)
             newSamples.append(contentsOf: samples)
 
-            // Extract realtime data (HR + quaternion + optical) from 0x28 packets
-            if frame.packetType == WhoopBleConstants.packetTypeRealtimeData {
-                let totalRealtime = packetTypeCounts[WhoopBleConstants.packetTypeRealtimeData] ?? 0
-                if totalRealtime <= 3 {
-                    let hexPrefix = frame.payload.prefix(30).map { String(format: "%02x", $0) }.joined()
-                    lastRealtimeDebug = "sz=\(frame.payload.count) min=\(WhoopBleConstants.realtimeDataMinPayloadSize) hex=\(hexPrefix)"
-                    NSLog("[WhoopBLE] 0x28 frame: payload=%d bytes, minRequired=%d, hex=%@",
-                          frame.payload.count, WhoopBleConstants.realtimeDataMinPayloadSize, hexPrefix)
-                }
-            }
+            // Extract realtime data (HR + R-R + quaternion) from 0x28 and 0x2F packets
             if let realtimeData = WhoopBleFrameParser.extractRealtimeData(from: frame) {
                 newRealtimeData.append(realtimeData)
-
-                // Capture recent unique compact hex samples for analysis
-                let dataHex = realtimeData.opticalBytes.map { String(format: "%02x", $0) }.joined()
-                if recentCompactHexSamples.last != dataHex {
-                    recentCompactHexSamples.append(dataHex)
-                    if recentCompactHexSamples.count > 10 {
-                        recentCompactHexSamples.removeFirst()
-                    }
-                }
-            } else if frame.packetType == WhoopBleConstants.packetTypeRealtimeData {
-                let totalRealtime = packetTypeCounts[WhoopBleConstants.packetTypeRealtimeData] ?? 0
-                if totalRealtime <= 3 {
-                    lastRealtimeDebug += " FAIL"
-                    NSLog("[WhoopBLE] extractRealtimeData FAILED for 0x28 frame (payload=%d bytes)", frame.payload.count)
-                }
             }
         }
 

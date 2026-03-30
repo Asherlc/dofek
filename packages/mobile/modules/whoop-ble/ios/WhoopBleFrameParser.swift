@@ -256,6 +256,42 @@ final class WhoopBleFrameParser {
     /// Both formats are captured. For compact packets, HR and quaternion fields
     /// are zero but the raw payload is preserved in opticalBytes for decoding.
     static func extractRealtimeData(from frame: WhoopFrame) -> WhoopRealtimeDataSample? {
+        // Handle 0x2F HISTORICAL_DATA record type 18 (116-byte payload)
+        // HR at byte 14, R-R at bytes 16-17, quaternion at bytes 33-48
+        if frame.packetType == WhoopBleConstants.packetTypeHistoricalData
+            && frame.recordType == 18
+            && frame.payload.count >= 50 {
+            let payload = frame.payload
+            let heartRate = payload[payload.startIndex + 14]
+            let validFlag = payload[payload.startIndex + 15]
+            let rrIntervalMs = validFlag != 0 ? payload.readUInt16LE(at: payload.startIndex + 16) : 0
+
+            let quaternionW = payload.readFloat32LE(at: payload.startIndex + 33)
+            let quaternionX = payload.readFloat32LE(at: payload.startIndex + 37)
+            let quaternionY = payload.readFloat32LE(at: payload.startIndex + 41)
+            let quaternionZ = payload.readFloat32LE(at: payload.startIndex + 45)
+
+            var opticalBytes = Data(count: WhoopBleConstants.realtimeDataOpticalByteCount)
+            // Preserve bytes 14-31 (HR + R-R + surrounding data) for analysis
+            let dataStart = payload.startIndex + 14
+            let copyLen = min(payload.endIndex - dataStart, opticalBytes.count)
+            if copyLen > 0 {
+                opticalBytes.replaceSubrange(0..<copyLen, with: payload[dataStart..<(dataStart + copyLen)])
+            }
+
+            return WhoopRealtimeDataSample(
+                timestampSeconds: frame.dataTimestamp,
+                subSeconds: frame.subSeconds,
+                heartRate: heartRate,
+                rrIntervalMs: rrIntervalMs,
+                quaternionW: quaternionW,
+                quaternionX: quaternionX,
+                quaternionY: quaternionY,
+                quaternionZ: quaternionZ,
+                opticalBytes: opticalBytes
+            )
+        }
+
         guard frame.packetType == WhoopBleConstants.packetTypeRealtimeData else { return nil }
 
         let payload = frame.payload
