@@ -1,3 +1,5 @@
+import type { ConnectionOptions } from "bullmq";
+
 /**
  * Static configuration for per-provider sync queues.
  *
@@ -90,6 +92,40 @@ const PROVIDER_QUEUE_CONFIGS: ReadonlyMap<string, ProviderQueueConfig> = new Map
   // ── On-demand tier ──
   ["bodyspec", { concurrency: 1, syncTier: "on-demand" }],
 ]);
+
+// ── BullMQ worker options ──
+
+/**
+ * Lock duration for provider sync workers (5 minutes).
+ *
+ * Sync jobs can take several minutes due to API pagination and large database
+ * inserts. The default BullMQ lockDuration (30s) is too short — if the event
+ * loop blocks during a large operation, the lock expires and the job is
+ * incorrectly marked as stalled.
+ */
+export const SYNC_WORKER_LOCK_DURATION_MS = 300_000;
+
+/** BullMQ WorkerOptions for a provider sync worker. */
+export interface SyncWorkerOptions {
+  connection: ConnectionOptions;
+  concurrency: number;
+  lockDuration: number;
+  limiter?: RateLimiterConfig;
+}
+
+/** Build BullMQ WorkerOptions for a given provider's sync worker. */
+export function buildSyncWorkerOptions(
+  providerId: string,
+  connection: ConnectionOptions,
+): SyncWorkerOptions {
+  const config = getProviderQueueConfig(providerId);
+  return {
+    connection,
+    concurrency: config.concurrency,
+    lockDuration: SYNC_WORKER_LOCK_DURATION_MS,
+    ...(config.limiter ? { limiter: config.limiter } : {}),
+  };
+}
 
 // ── Public API ──
 

@@ -7,7 +7,7 @@ import { processImportJob } from "./process-import-job.ts";
 import { processPostSyncJob } from "./process-post-sync-job.ts";
 import { processScheduledSyncJob } from "./process-scheduled-sync-job.ts";
 import { processSyncJob } from "./process-sync-job.ts";
-import { getConfiguredProviderIds, getProviderQueueConfig } from "./provider-queue-config.ts";
+import { buildSyncWorkerOptions, getConfiguredProviderIds } from "./provider-queue-config.ts";
 import {
   EXPORT_QUEUE,
   type ExportJobData,
@@ -39,16 +39,10 @@ const connection = getRedisConnection();
 const providerWorkers = new Map<string, Worker<SyncJobData>>();
 
 for (const providerId of getConfiguredProviderIds()) {
-  const config = getProviderQueueConfig(providerId);
   const worker = new Worker<SyncJobData>(
     providerSyncQueueName(providerId),
     (job) => jobContext.run(job, () => processSyncJob(job, db)),
-    {
-      connection,
-      concurrency: config.concurrency,
-      lockDuration: 300_000, // 5 minutes — sync jobs can take several minutes (API pagination, large inserts)
-      ...(config.limiter ? { limiter: config.limiter } : {}),
-    },
+    buildSyncWorkerOptions(providerId, connection),
   );
   providerWorkers.set(providerId, worker);
 }
