@@ -7,6 +7,17 @@ export interface WhoopDevice {
   name: string | null;
 }
 
+/** A single realtime data sample from a 0x28 REALTIME_DATA packet */
+export interface WhoopRealtimeDataSample {
+  timestamp: string; // ISO 8601
+  heartRate: number; // bpm (0-255)
+  quaternionW: number; // float32
+  quaternionX: number;
+  quaternionY: number;
+  quaternionZ: number;
+  rawPayloadHex: string; // full packet payload as hex for future analysis
+}
+
 /** A single IMU sample from the WHOOP strap's accelerometer + gyroscope */
 export interface WhoopImuSample {
   timestamp: string; // ISO 8601
@@ -68,6 +79,37 @@ export async function startImuStreaming(): Promise<boolean> {
  */
 export async function stopImuStreaming(): Promise<boolean> {
   return WhoopBleModule.stopImuStreaming();
+}
+
+/**
+ * Send TOGGLE_REALTIME_HR (0x03) to enable continuous 1 Hz HR streaming.
+ *
+ * HR + quaternion data arrives in REALTIME_DATA (0x28) packets at ~1 Hz.
+ * This command extends HR streaming beyond the WHOOP app's sync window.
+ * Best-effort — may be rejected by the strap if the bond doesn't support it.
+ */
+export async function startRealtimeHr(): Promise<boolean> {
+  return WhoopBleModule.startRealtimeHr();
+}
+
+/**
+ * Send TOGGLE_OPTICAL_MODE (0x6C) to enable raw optical/PPG data.
+ *
+ * Optical data appears in bytes 23-40 of 0x28 packets. The format is
+ * partially understood — raw payloads are preserved for future analysis.
+ */
+export async function startOpticalMode(): Promise<boolean> {
+  return WhoopBleModule.startOpticalMode();
+}
+
+/**
+ * Retrieve and clear the internal realtime data buffer (HR + quaternion).
+ *
+ * Returns all REALTIME_DATA (0x28) samples accumulated since the last call.
+ * The buffer is cleared after retrieval.
+ */
+export async function getBufferedRealtimeData(): Promise<WhoopRealtimeDataSample[]> {
+  return WhoopBleModule.getBufferedRealtimeData();
 }
 
 /**

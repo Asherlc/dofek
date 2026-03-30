@@ -638,6 +638,31 @@ export const inertialMeasurementUnitSample = fitness.table(
 );
 
 // ============================================================
+// WHOOP BLE realtime data (0x28 packets: HR + quaternion)
+// ============================================================
+
+export const whoopBleRealtimeData = fitness.table(
+  "whoop_ble_realtime_data",
+  {
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .default(DEFAULT_USER_ID)
+      .references(() => userProfile.id),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id),
+    heartRate: smallint("heart_rate"),
+    quaternionW: real("quaternion_w"),
+    quaternionX: real("quaternion_x"),
+    quaternionY: real("quaternion_y"),
+    quaternionZ: real("quaternion_z"),
+    rawPayload: text("raw_payload"),
+  },
+  (table) => [index("whoop_ble_realtime_user_time_idx").on(table.userId, table.recordedAt)],
+);
+
+// ============================================================
 // Daily fitness metrics
 // ============================================================
 

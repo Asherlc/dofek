@@ -45,8 +45,10 @@ public class WhoopBleModule: Module {
     /// accumulator with command responses corrupts R21 frame reassembly.
     private let cmdFrameParser = WhoopBleFrameParser()
     private var sampleBuffer: [WhoopImuSample] = []
+    private var realtimeDataBuffer: [WhoopRealtimeDataSample] = []
     private let bufferLock = NSLock()
     private static let maxBufferSize = 500_000 // ~100 minutes at 80 Hz
+    private static let maxRealtimeDataBufferSize = 86_400 // 24 hours at 1 Hz
 
     /// Madgwick AHRS filter for real-time orientation estimation
     private let orientationFilter = MadgwickFilter(sampleRate: 100, beta: 0.1)
@@ -183,6 +185,7 @@ public class WhoopBleModule: Module {
 
                 self.bufferLock.lock()
                 self.sampleBuffer.removeAll()
+                self.realtimeDataBuffer.removeAll()
                 self.bufferLock.unlock()
 
                 NSLog("[WhoopBLE] startImuStreaming: now streaming, buffer cleared")
@@ -269,7 +272,84 @@ public class WhoopBleModule: Module {
             }
         }
 
+        // MARK: - Realtime HR command
+
+        /// Send TOGGLE_REALTIME_HR (0x03) to enable continuous 1 Hz HR streaming
+        /// beyond the normal sync window. Best-effort — may be rejected if the
+        /// strap doesn't accept commands from our connection.
+        AsyncFunction("startRealtimeHr") { (promise: Promise) in
+            self.bleQueue.async {
+                guard let peripheral = self.connectedPeripheral,
+                      let cmdChar = self.cmdCharacteristic else {
+                    promise.resolve(false)
+                    return
+                }
+
+                let commandData = WhoopBleFrameParser.buildCommandData(
+                    command: WhoopBleConstants.commandToggleRealtimeHr
+                )
+                NSLog("[WhoopBLE] sending TOGGLE_REALTIME_HR (0x03)")
+                peripheral.writeValue(commandData, for: cmdChar, type: .withResponse)
+                promise.resolve(true)
+            }
+        }
+
+        /// Send TOGGLE_OPTICAL_MODE (0x6C) to enable raw optical/PPG data streaming.
+        /// Best-effort — format of optical data in 0x28 packets is partially understood.
+        AsyncFunction("startOpticalMode") { (promise: Promise) in
+            self.bleQueue.async {
+                guard let peripheral = self.connectedPeripheral,
+                      let cmdChar = self.cmdCharacteristic else {
+                    promise.resolve(false)
+                    return
+                }
+
+                let commandData = WhoopBleFrameParser.buildCommandData(
+                    command: WhoopBleConstants.commandToggleOpticalMode
+                )
+                NSLog("[WhoopBLE] sending TOGGLE_OPTICAL_MODE (0x6C)")
+                peripheral.writeValue(commandData, for: cmdChar, type: .withResponse)
+                promise.resolve(true)
+            }
+        }
+
         // MARK: - Buffer access
+
+        /// Drain up to `maxCount` realtime data samples from the buffer (default 1000).
+        /// Returns HR, quaternion, and raw payload hex for each sample.
+        AsyncFunction("getBufferedRealtimeData") { (maxCount: Int?, promise: Promise) in
+            let limit = maxCount ?? 1000
+
+            self.bufferLock.lock()
+            let drainCount = min(limit, self.realtimeDataBuffer.count)
+            let samples = Array(self.realtimeDataBuffer.prefix(drainCount))
+            self.realtimeDataBuffer.removeFirst(drainCount)
+            let remaining = self.realtimeDataBuffer.count
+            self.bufferLock.unlock()
+
+            NSLog("[WhoopBLE] getBufferedRealtimeData: draining %d samples (%d remaining)", drainCount, remaining)
+
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+            let result = samples.map { sample -> [String: Any] in
+                let baseTime = TimeInterval(sample.timestampSeconds)
+                    + TimeInterval(sample.subSeconds) / 1000.0
+                let date = Date(timeIntervalSince1970: baseTime)
+
+                return [
+                    "timestamp": formatter.string(from: date),
+                    "heartRate": Int(sample.heartRate),
+                    "quaternionW": Double(sample.quaternionW),
+                    "quaternionX": Double(sample.quaternionX),
+                    "quaternionY": Double(sample.quaternionY),
+                    "quaternionZ": Double(sample.quaternionZ),
+                    "rawPayloadHex": sample.rawPayload.map { String(format: "%02x", $0) }.joined(),
+                ]
+            }
+
+            promise.resolve(result)
+        }
 
         /// Drain up to `maxCount` samples from the buffer (default 1000).
         /// Smaller batches avoid memory spikes when serializing across the bridge.
@@ -600,6 +680,21 @@ public class WhoopBleModule: Module {
             "peripheralId": peripheral.identifier.uuidString,
         ])
 
+        // Send TOGGLE_REALTIME_HR to enable continuous 1 Hz HR + quaternion streaming
+        // beyond the normal sync window. Best-effort — command may be silently ignored.
+        let realtimeHrCommand = WhoopBleFrameParser.buildCommandData(
+            command: WhoopBleConstants.commandToggleRealtimeHr
+        )
+        NSLog("[WhoopBLE] sending TOGGLE_REALTIME_HR on connect")
+        peripheral.writeValue(realtimeHrCommand, for: cmdChar, type: .withResponse)
+
+        // Send TOGGLE_OPTICAL_MODE to enable raw PPG data in 0x28 packets.
+        let opticalCommand = WhoopBleFrameParser.buildCommandData(
+            command: WhoopBleConstants.commandToggleOpticalMode
+        )
+        NSLog("[WhoopBLE] sending TOGGLE_OPTICAL_MODE on connect")
+        peripheral.writeValue(opticalCommand, for: cmdChar, type: .withResponse)
+
         // Auto-resume IMU streaming after reconnect (e.g., strap came back in range)
         if wasStreaming {
             wasStreaming = false
@@ -671,6 +766,8 @@ public class WhoopBleModule: Module {
         totalFramesParsed += UInt64(frames.count)
 
         var newSamples: [WhoopImuSample] = []
+        var newRealtimeData: [WhoopRealtimeDataSample] = []
+
         for frame in frames {
             // Track packet types for diagnostics
             packetTypeCounts[frame.packetType, default: 0] += 1
@@ -682,11 +779,28 @@ public class WhoopBleModule: Module {
                       frame.packetType, frame.recordType, frame.payload.count)
             }
 
+            // Extract IMU samples from 0x2B/0x33/0x34 packets
             let samples = WhoopBleFrameParser.extractImuSamples(from: frame)
             newSamples.append(contentsOf: samples)
+
+            // Extract realtime data (HR + quaternion) from 0x28 packets
+            if let realtimeData = WhoopBleFrameParser.extractRealtimeData(from: frame) {
+                newRealtimeData.append(realtimeData)
+            }
         }
 
-        if newSamples.isEmpty {
+        // Buffer realtime data samples (HR + quaternion from 0x28 packets)
+        if !newRealtimeData.isEmpty {
+            bufferLock.lock()
+            realtimeDataBuffer.append(contentsOf: newRealtimeData)
+            if realtimeDataBuffer.count > WhoopBleModule.maxRealtimeDataBufferSize {
+                let overflow = realtimeDataBuffer.count - WhoopBleModule.maxRealtimeDataBufferSize
+                realtimeDataBuffer.removeFirst(overflow)
+            }
+            bufferLock.unlock()
+        }
+
+        if newSamples.isEmpty && newRealtimeData.isEmpty {
             emptyExtractions += 1
             return
         }

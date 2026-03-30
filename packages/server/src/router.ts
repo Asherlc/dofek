@@ -50,6 +50,7 @@ import { trainingRouter } from "./routers/training.ts";
 import { trendsRouter } from "./routers/trends.ts";
 import { weeklyReportRouter } from "./routers/weekly-report.ts";
 import { whoopAuthRouter } from "./routers/whoop-auth.ts";
+import { whoopBleSyncRouter } from "./routers/whoop-ble-sync.ts";
 import { router } from "./trpc.ts";
 
 export const appRouter = router({
@@ -90,6 +91,7 @@ export const appRouter = router({
   garminAuth: garminAuthRouter,
   healthKitSync: healthKitSyncRouter,
   whoopAuth: whoopAuthRouter,
+  whoopBleSync: whoopBleSyncRouter,
   strength: strengthRouter,
   cyclingAdvanced: cyclingAdvancedRouter,
   hiking: hikingRouter,

@@ -1,5 +1,19 @@
 import Foundation
 
+/// A single realtime data sample from a 0x28 REALTIME_DATA packet.
+/// Contains heart rate, orientation quaternion from the strap's sensor fusion,
+/// and the full raw payload for future analysis of optical/PPG fields.
+struct WhoopRealtimeDataSample {
+    let timestampSeconds: UInt32
+    let subSeconds: UInt16
+    let heartRate: UInt8
+    let quaternionW: Float
+    let quaternionX: Float
+    let quaternionY: Float
+    let quaternionZ: Float
+    let rawPayload: Data
+}
+
 /// A single IMU sample extracted from a WHOOP BLE packet.
 /// Contains 6-axis data: accelerometer XYZ + gyroscope XYZ.
 /// Values are raw signed 16-bit integers from the strap's sensor.
@@ -210,6 +224,38 @@ final class WhoopBleFrameParser {
         return []
     }
 
+    /// Extract a realtime data sample (HR + orientation quaternion) from a 0x28 packet.
+    ///
+    /// The REALTIME_DATA packet (~116 bytes payload) is sent at ~1 Hz during sync:
+    /// - Byte 22: heart rate (bpm)
+    /// - Bytes 41-44: quaternion W (float32 LE)
+    /// - Bytes 45-48: quaternion X (float32 LE)
+    /// - Bytes 49-52: quaternion Y (float32 LE)
+    /// - Bytes 53-56: quaternion Z (float32 LE)
+    static func extractRealtimeData(from frame: WhoopFrame) -> WhoopRealtimeDataSample? {
+        guard frame.packetType == WhoopBleConstants.packetTypeRealtimeData else { return nil }
+
+        let payload = frame.payload
+        guard payload.count >= WhoopBleConstants.realtimeDataMinPayloadSize else { return nil }
+
+        let heartRate = payload[payload.startIndex + WhoopBleConstants.realtimeDataHeartRateOffset]
+        let quaternionW = payload.readFloat32LE(at: payload.startIndex + WhoopBleConstants.realtimeDataQuaternionWOffset)
+        let quaternionX = payload.readFloat32LE(at: payload.startIndex + WhoopBleConstants.realtimeDataQuaternionXOffset)
+        let quaternionY = payload.readFloat32LE(at: payload.startIndex + WhoopBleConstants.realtimeDataQuaternionYOffset)
+        let quaternionZ = payload.readFloat32LE(at: payload.startIndex + WhoopBleConstants.realtimeDataQuaternionZOffset)
+
+        return WhoopRealtimeDataSample(
+            timestampSeconds: frame.dataTimestamp,
+            subSeconds: frame.subSeconds,
+            heartRate: heartRate,
+            quaternionW: quaternionW,
+            quaternionX: quaternionX,
+            quaternionY: quaternionY,
+            quaternionZ: quaternionZ,
+            rawPayload: Data(payload)
+        )
+    }
+
     /// Sequence counter for command frames (increments per command sent).
     private static var commandSequence: UInt8 = 0x01
 
@@ -320,5 +366,10 @@ extension Data {
             | (UInt32(self[offset + 1]) << 8)
             | (UInt32(self[offset + 2]) << 16)
             | (UInt32(self[offset + 3]) << 24)
+    }
+
+    func readFloat32LE(at offset: Int) -> Float {
+        let bits = readUInt32LE(at: offset)
+        return Float(bitPattern: bits)
     }
 }

@@ -17,6 +17,7 @@ import { useWhoopBleSync } from "../lib/useWhoopBleSync";
 import { addBackgroundRefreshListener, scheduleRefresh } from "../modules/background-refresh";
 import {
   findWhoop,
+  getBufferedRealtimeData as getWhoopRealtimeData,
   getBufferedSamples as getWhoopSamples,
   isBluetoothAvailable,
   startImuStreaming,
@@ -61,6 +62,18 @@ function WhoopBleSyncManager({ trpcClient }: { trpcClient: ReturnType<typeof trp
     [trpcClient],
   );
 
+  const whoopRealtimeClient = useMemo(
+    () => ({
+      whoopBleSync: {
+        pushRealtimeData: {
+          mutate: (input: Parameters<typeof trpcClient.whoopBleSync.pushRealtimeData.mutate>[0]) =>
+            trpcClient.whoopBleSync.pushRealtimeData.mutate(input),
+        },
+      },
+    }),
+    [trpcClient],
+  );
+
   const whoopDeps = useMemo(
     () => ({
       isBluetoothAvailable,
@@ -69,12 +82,13 @@ function WhoopBleSyncManager({ trpcClient }: { trpcClient: ReturnType<typeof trp
       startImuStreaming,
       stopImuStreaming,
       getBufferedSamples: getWhoopSamples,
+      getBufferedRealtimeData: getWhoopRealtimeData,
       disconnect: whoopDisconnect,
     }),
     [],
   );
 
-  useWhoopBleSync(whoopSyncClient, whoopDeps);
+  useWhoopBleSync(whoopSyncClient, whoopDeps, whoopRealtimeClient);
 
   return null;
 }
@@ -179,15 +193,29 @@ function AuthGate() {
         });
 
       // Upload any WHOOP BLE samples buffered since last sync
-      syncWhoopBle(imuSyncClient, {
-        isBluetoothAvailable,
-        findWhoop,
-        connect: whoopConnect,
-        startImuStreaming,
-        stopImuStreaming,
-        getBufferedSamples: getWhoopSamples,
-        disconnect: whoopDisconnect,
-      }).catch((error: unknown) => {
+      const whoopRealtimeSyncClient = {
+        whoopBleSync: {
+          pushRealtimeData: {
+            mutate: (
+              input: Parameters<typeof trpcClient.whoopBleSync.pushRealtimeData.mutate>[0],
+            ) => trpcClient.whoopBleSync.pushRealtimeData.mutate(input),
+          },
+        },
+      };
+      syncWhoopBle(
+        imuSyncClient,
+        {
+          isBluetoothAvailable,
+          findWhoop,
+          connect: whoopConnect,
+          startImuStreaming,
+          stopImuStreaming,
+          getBufferedSamples: getWhoopSamples,
+          getBufferedRealtimeData: getWhoopRealtimeData,
+          disconnect: whoopDisconnect,
+        },
+        whoopRealtimeSyncClient,
+      ).catch((error: unknown) => {
         captureException(error, { source: "bg-refresh-whoop-flush" });
       });
 

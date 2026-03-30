@@ -262,6 +262,166 @@ final class WhoopBleFrameParserTests: XCTestCase {
         XCTAssertEqual(samples[1].accelerometerX, 400)
     }
 
+    // MARK: - Realtime data extraction (0x28 packets)
+
+    /// Build a realistic 0x28 REALTIME_DATA payload with HR and quaternion.
+    /// Minimum 57 bytes, typically 116 bytes from the strap.
+    private func buildRealtimeDataPayload(heartRate: UInt8, qW: Float, qX: Float, qY: Float, qZ: Float) -> Data {
+        var payload = Data(count: 116) // typical real-world size
+        payload[0] = WhoopBleConstants.packetTypeRealtimeData // 0x28
+
+        // Record type and timestamp fields (payload offsets 1-12)
+        payload[1] = 0x00 // record type
+        // Timestamp at offset 7 (u32 LE) = 1711814400 (2024-03-30T16:00:00Z)
+        let timestamp: UInt32 = 1711814400
+        payload[7] = UInt8(timestamp & 0xFF)
+        payload[8] = UInt8((timestamp >> 8) & 0xFF)
+        payload[9] = UInt8((timestamp >> 16) & 0xFF)
+        payload[10] = UInt8((timestamp >> 24) & 0xFF)
+        // Sub-seconds at offset 11 = 500
+        payload[11] = 0xF4; payload[12] = 0x01
+
+        // HR at offset 22
+        payload[WhoopBleConstants.realtimeDataHeartRateOffset] = heartRate
+
+        // Quaternion W at offset 41 (float32 LE)
+        writeFloat32LE(&payload, offset: WhoopBleConstants.realtimeDataQuaternionWOffset, value: qW)
+        // Quaternion X at offset 45
+        writeFloat32LE(&payload, offset: WhoopBleConstants.realtimeDataQuaternionXOffset, value: qX)
+        // Quaternion Y at offset 49
+        writeFloat32LE(&payload, offset: WhoopBleConstants.realtimeDataQuaternionYOffset, value: qY)
+        // Quaternion Z at offset 53
+        writeFloat32LE(&payload, offset: WhoopBleConstants.realtimeDataQuaternionZOffset, value: qZ)
+
+        return payload
+    }
+
+    private func writeFloat32LE(_ data: inout Data, offset: Int, value: Float) {
+        let bits = value.bitPattern
+        data[offset] = UInt8(bits & 0xFF)
+        data[offset + 1] = UInt8((bits >> 8) & 0xFF)
+        data[offset + 2] = UInt8((bits >> 16) & 0xFF)
+        data[offset + 3] = UInt8((bits >> 24) & 0xFF)
+    }
+
+    func testExtractRealtimeDataReturnsNilForNonRealtimePacket() {
+        let frame = WhoopFrame(
+            packetType: WhoopBleConstants.packetTypeRealtimeIMU, // 0x33, not 0x28
+            recordType: 0, dataTimestamp: 1000, subSeconds: 0,
+            payload: Data(count: 116)
+        )
+        XCTAssertNil(WhoopBleFrameParser.extractRealtimeData(from: frame))
+    }
+
+    func testExtractRealtimeDataReturnsNilForTooShortPayload() {
+        // Payload of 56 bytes — one byte short of the minimum (57)
+        let shortPayload = Data(count: 56)
+        let frame = WhoopFrame(
+            packetType: WhoopBleConstants.packetTypeRealtimeData,
+            recordType: 0, dataTimestamp: 1000, subSeconds: 0,
+            payload: shortPayload
+        )
+        XCTAssertNil(WhoopBleFrameParser.extractRealtimeData(from: frame))
+    }
+
+    func testExtractRealtimeDataExtractsHeartRate() {
+        let payload = buildRealtimeDataPayload(heartRate: 72, qW: 0.0, qX: 0.0, qY: 0.0, qZ: 0.0)
+        let frame = WhoopFrame(
+            packetType: WhoopBleConstants.packetTypeRealtimeData,
+            recordType: 0, dataTimestamp: 1711814400, subSeconds: 500,
+            payload: payload
+        )
+
+        let sample = WhoopBleFrameParser.extractRealtimeData(from: frame)
+        XCTAssertNotNil(sample)
+        XCTAssertEqual(sample?.heartRate, 72)
+        XCTAssertEqual(sample?.timestampSeconds, 1711814400)
+        XCTAssertEqual(sample?.subSeconds, 500)
+    }
+
+    func testExtractRealtimeDataExtractsQuaternion() {
+        // Realistic quaternion from resting capture
+        let payload = buildRealtimeDataPayload(heartRate: 66, qW: 0.02, qX: 0.68, qY: -0.71, qZ: 0.20)
+        let frame = WhoopFrame(
+            packetType: WhoopBleConstants.packetTypeRealtimeData,
+            recordType: 0, dataTimestamp: 1000, subSeconds: 0,
+            payload: payload
+        )
+
+        let sample = WhoopBleFrameParser.extractRealtimeData(from: frame)
+        XCTAssertNotNil(sample)
+        XCTAssertEqual(sample!.quaternionW, 0.02, accuracy: 0.001)
+        XCTAssertEqual(sample!.quaternionX, 0.68, accuracy: 0.001)
+        XCTAssertEqual(sample!.quaternionY, -0.71, accuracy: 0.001)
+        XCTAssertEqual(sample!.quaternionZ, 0.20, accuracy: 0.001)
+    }
+
+    func testExtractRealtimeDataPreservesRawPayload() {
+        let payload = buildRealtimeDataPayload(heartRate: 80, qW: 1.0, qX: 0.0, qY: 0.0, qZ: 0.0)
+        let frame = WhoopFrame(
+            packetType: WhoopBleConstants.packetTypeRealtimeData,
+            recordType: 0, dataTimestamp: 1000, subSeconds: 0,
+            payload: payload
+        )
+
+        let sample = WhoopBleFrameParser.extractRealtimeData(from: frame)
+        XCTAssertNotNil(sample)
+        XCTAssertEqual(sample?.rawPayload.count, 116)
+        // First byte should be packet type
+        XCTAssertEqual(sample?.rawPayload[0], WhoopBleConstants.packetTypeRealtimeData)
+    }
+
+    func testExtractRealtimeDataWorksWithMinimumPayloadSize() {
+        // Exactly 57 bytes — minimum to contain quaternion Z
+        var payload = Data(count: WhoopBleConstants.realtimeDataMinPayloadSize)
+        payload[0] = WhoopBleConstants.packetTypeRealtimeData
+        payload[WhoopBleConstants.realtimeDataHeartRateOffset] = 90
+
+        let frame = WhoopFrame(
+            packetType: WhoopBleConstants.packetTypeRealtimeData,
+            recordType: 0, dataTimestamp: 2000, subSeconds: 100,
+            payload: payload
+        )
+
+        let sample = WhoopBleFrameParser.extractRealtimeData(from: frame)
+        XCTAssertNotNil(sample)
+        XCTAssertEqual(sample?.heartRate, 90)
+    }
+
+    func testExtractRealtimeDataFromFullFrame() {
+        // Build a full Maverick frame around a 0x28 payload
+        let payload = buildRealtimeDataPayload(heartRate: 75, qW: 0.5, qX: 0.5, qY: 0.5, qZ: 0.5)
+        let frame = buildMaverickFrame(payload: payload)
+        let parsed = WhoopBleFrameParser.parseFrame(frame)
+
+        XCTAssertNotNil(parsed)
+        XCTAssertEqual(parsed?.packetType, WhoopBleConstants.packetTypeRealtimeData)
+
+        let sample = WhoopBleFrameParser.extractRealtimeData(from: parsed!)
+        XCTAssertNotNil(sample)
+        XCTAssertEqual(sample?.heartRate, 75)
+        XCTAssertEqual(sample!.quaternionW, 0.5, accuracy: 0.001)
+    }
+
+    // MARK: - readFloat32LE
+
+    func testReadFloat32LEReadsCorrectValue() {
+        var data = Data(count: 4)
+        let value: Float = 3.14
+        let bits = value.bitPattern
+        data[0] = UInt8(bits & 0xFF)
+        data[1] = UInt8((bits >> 8) & 0xFF)
+        data[2] = UInt8((bits >> 16) & 0xFF)
+        data[3] = UInt8((bits >> 24) & 0xFF)
+
+        XCTAssertEqual(data.readFloat32LE(at: 0), value, accuracy: 0.001)
+    }
+
+    func testReadFloat32LEReturnsZeroForOutOfBounds() {
+        let data = Data(count: 2) // too short for float32
+        XCTAssertEqual(data.readFloat32LE(at: 0), 0.0)
+    }
+
     func testFrameParserResetClearsAccumulator() {
         let parser = WhoopBleFrameParser()
         _ = parser.feed(Data([0xAA, 0x01, 0x05, 0x00, 0x00, 0x01, 0x00, 0x00]))

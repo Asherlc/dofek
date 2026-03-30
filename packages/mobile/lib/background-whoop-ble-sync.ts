@@ -24,7 +24,37 @@ export interface WhoopBleSyncDeps {
       gyroscopeZ: number;
     }>
   >;
+  getBufferedRealtimeData(): Promise<
+    Array<{
+      timestamp: string;
+      heartRate: number;
+      quaternionW: number;
+      quaternionX: number;
+      quaternionY: number;
+      quaternionZ: number;
+      rawPayloadHex: string;
+    }>
+  >;
   disconnect(): void;
+}
+
+/** tRPC client interface for WHOOP BLE realtime data upload */
+export interface WhoopBleRealtimeUploadClient {
+  whoopBleSync: {
+    pushRealtimeData: {
+      mutate(input: {
+        samples: Array<{
+          timestamp: string;
+          heartRate: number;
+          quaternionW: number;
+          quaternionX: number;
+          quaternionY: number;
+          quaternionZ: number;
+          rawPayloadHex: string;
+        }>;
+      }): Promise<{ inserted: number }>;
+    };
+  };
 }
 
 let appStateSubscription: ReturnType<typeof AppState.addEventListener> | null = null;
@@ -32,6 +62,7 @@ let periodicDrainTimer: ReturnType<typeof setInterval> | null = null;
 let syncing = false;
 let connected = false;
 let currentDeps: WhoopBleSyncDeps | null = null;
+let currentRealtimeClient: WhoopBleRealtimeUploadClient | null = null;
 
 /**
  * Initialize always-on WHOOP BLE accelerometer sync.
@@ -43,8 +74,10 @@ let currentDeps: WhoopBleSyncDeps | null = null;
 export async function initBackgroundWhoopBleSync(
   trpcClient: InertialMeasurementUnitUploadClient,
   whoopDeps: WhoopBleSyncDeps,
+  realtimeClient?: WhoopBleRealtimeUploadClient,
 ): Promise<void> {
   currentDeps = whoopDeps;
+  currentRealtimeClient = realtimeClient ?? null;
 
   // Clean up existing listener
   if (appStateSubscription) {
@@ -62,7 +95,7 @@ export async function initBackgroundWhoopBleSync(
 
     logger.info(LOG_CATEGORY, "app foregrounded — starting sync");
     syncing = true;
-    syncOnForeground(trpcClient, whoopDeps)
+    syncOnForeground(trpcClient, whoopDeps, realtimeClient)
       .catch((error: unknown) => {
         logger.error(LOG_CATEGORY, `foreground sync error: ${error}`);
         Sentry.captureException(error, { tags: { source: "whoop-ble-foreground-sync" } });
@@ -78,7 +111,7 @@ export async function initBackgroundWhoopBleSync(
   // re-opens the app. Best-effort: don't let init failures propagate.
   logger.info(LOG_CATEGORY, "initializing background sync");
   try {
-    await syncOnForeground(trpcClient, whoopDeps);
+    await syncOnForeground(trpcClient, whoopDeps, realtimeClient);
     logger.info(LOG_CATEGORY, "initial sync complete");
   } catch (error: unknown) {
     logger.error(LOG_CATEGORY, `initial sync error: ${error}`);
@@ -93,7 +126,7 @@ export async function initBackgroundWhoopBleSync(
   periodicDrainTimer = setInterval(() => {
     if (syncing || !connected) return;
     syncing = true;
-    drainBuffer(trpcClient, whoopDeps)
+    drainBuffer(trpcClient, whoopDeps, realtimeClient)
       .catch((error: unknown) => {
         logger.error(LOG_CATEGORY, `periodic drain error: ${error}`);
         Sentry.captureException(error, { tags: { source: "whoop-ble-periodic-drain" } });
@@ -114,10 +147,11 @@ export async function initBackgroundWhoopBleSync(
 export async function syncWhoopBle(
   trpcClient: InertialMeasurementUnitUploadClient,
   whoopDeps: WhoopBleSyncDeps,
+  realtimeClient?: WhoopBleRealtimeUploadClient,
 ): Promise<void> {
   try {
     logger.info(LOG_CATEGORY, "background refresh — starting sync");
-    await syncOnForeground(trpcClient, whoopDeps);
+    await syncOnForeground(trpcClient, whoopDeps, realtimeClient);
     logger.info(LOG_CATEGORY, "background refresh — sync complete");
   } catch (error: unknown) {
     logger.error(LOG_CATEGORY, `background refresh sync error: ${error}`);
@@ -128,6 +162,7 @@ export async function syncWhoopBle(
 async function syncOnForeground(
   trpcClient: InertialMeasurementUnitUploadClient,
   whoopDeps: WhoopBleSyncDeps,
+  realtimeClient?: WhoopBleRealtimeUploadClient,
 ): Promise<void> {
   // Connect if not already connected.
   //
@@ -194,22 +229,21 @@ async function syncOnForeground(
     // Diagnostic-only, ignore errors
   }
 
-  await drainBuffer(trpcClient, whoopDeps);
+  await drainBuffer(trpcClient, whoopDeps, realtimeClient);
 }
 
 /**
- * Drain the native sample buffer and upload to the server.
+ * Drain the native sample buffers and upload to the server.
  * Pulls samples in small batches (1000) to avoid memory spikes
  * from serializing the entire buffer across the native bridge at once.
  */
 async function drainBuffer(
   trpcClient: InertialMeasurementUnitUploadClient,
   whoopDeps: WhoopBleSyncDeps,
+  realtimeClient?: WhoopBleRealtimeUploadClient,
 ): Promise<void> {
-  let totalUploaded = 0;
-
-  // Pull 1000 samples at a time from the native buffer
-  // to keep bridge serialization memory low
+  // Drain IMU buffer
+  let totalImuUploaded = 0;
   while (true) {
     const samples = await whoopDeps.getBufferedSamples();
     if (samples.length === 0) break;
@@ -229,15 +263,38 @@ async function drainBuffer(
       deviceType: "whoop",
       samples: uploadSamples,
     });
-    totalUploaded += uploadSamples.length;
+    totalImuUploaded += uploadSamples.length;
     logger.info(
       LOG_CATEGORY,
-      `uploaded ${uploadSamples.length} samples (server inserted: ${result.inserted})`,
+      `uploaded ${uploadSamples.length} IMU samples (server inserted: ${result.inserted})`,
     );
   }
 
-  if (totalUploaded > 0) {
-    logger.info(LOG_CATEGORY, `drain complete: ${totalUploaded} samples`);
+  if (totalImuUploaded > 0) {
+    logger.info(LOG_CATEGORY, `IMU drain complete: ${totalImuUploaded} samples`);
+  }
+
+  // Drain realtime data buffer (HR + quaternion from 0x28 packets)
+  const effectiveRealtimeClient = realtimeClient ?? currentRealtimeClient;
+  if (effectiveRealtimeClient) {
+    let totalRealtimeUploaded = 0;
+    while (true) {
+      const realtimeSamples = await whoopDeps.getBufferedRealtimeData();
+      if (realtimeSamples.length === 0) break;
+
+      const result = await effectiveRealtimeClient.whoopBleSync.pushRealtimeData.mutate({
+        samples: realtimeSamples,
+      });
+      totalRealtimeUploaded += realtimeSamples.length;
+      logger.info(
+        LOG_CATEGORY,
+        `uploaded ${realtimeSamples.length} realtime samples (server inserted: ${result.inserted})`,
+      );
+    }
+
+    if (totalRealtimeUploaded > 0) {
+      logger.info(LOG_CATEGORY, `realtime drain complete: ${totalRealtimeUploaded} samples`);
+    }
   }
 }
 
@@ -266,5 +323,6 @@ export function teardownBackgroundWhoopBleSync(): void {
 
   connected = false;
   currentDeps = null;
+  currentRealtimeClient = null;
   syncing = false;
 }
