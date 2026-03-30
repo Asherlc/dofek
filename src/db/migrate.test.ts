@@ -294,77 +294,22 @@ describe("runMigrations", () => {
     expect(mockLoggerWarn).toHaveBeenCalledWith(expect.stringContaining("0049_add_timezone.sql"));
   });
 
-  it("recreates materialized views from canonical definitions", async () => {
+  it("does not recreate materialized views (handled by syncMaterializedViews)", async () => {
     const { runMigrations } = await import("./migrate.ts");
 
-    // Main dir has no pending migrations
-    mockReaddirSync
-      .mockReturnValueOnce([]) // migrations dir
-      .mockReturnValueOnce(["01_v_activity.sql", "02_activity_summary.sql"]); // views dir
-
+    mockReaddirSync.mockReturnValue([]);
     mockExistsSync.mockReturnValue(true);
     mockSql.mockResolvedValue([]);
-    // Each view file contains a CREATE MATERIALIZED VIEW statement
-    mockReadFileSync
-      .mockReturnValueOnce("CREATE MATERIALIZED VIEW fitness.v_activity AS SELECT 1")
-      .mockReturnValueOnce("CREATE MATERIALIZED VIEW fitness.activity_summary AS SELECT 1");
 
     await runMigrations("postgres://localhost/test", "/tmp/migrations");
 
     const unsafeCalls = mockSqlUnsafe.mock.calls.map((call) => String(call[0]));
-    const dropCalls = unsafeCalls.filter((call) => call.includes("DROP"));
+    const dropCalls = unsafeCalls.filter((call) => call.includes("DROP MATERIALIZED"));
     const createCalls = unsafeCalls.filter((call) => call.includes("CREATE MATERIALIZED"));
 
-    // Drops only managed views in reverse order (dependents first)
-    expect(dropCalls).toHaveLength(2);
-    expect(dropCalls[0]).toContain("activity_summary");
-    expect(dropCalls[1]).toContain("v_activity");
-
-    // Creates in filename order (01_ before 02_)
-    expect(createCalls).toHaveLength(2);
-
-    // Verify view recreation logging
-    expect(mockLoggerInfo).toHaveBeenCalledWith(
-      expect.stringContaining("Recreating 2 materialized view(s)"),
-    );
-    expect(mockLoggerInfo).toHaveBeenCalledWith(
-      expect.stringContaining("Dropping fitness.activity_summary"),
-    );
-    expect(mockLoggerInfo).toHaveBeenCalledWith(
-      expect.stringContaining("Dropping fitness.v_activity"),
-    );
-    expect(mockLoggerInfo).toHaveBeenCalledWith(
-      expect.stringContaining("Creating from 01_v_activity.sql"),
-    );
-    expect(mockLoggerInfo).toHaveBeenCalledWith(
-      expect.stringContaining("Creating from 02_activity_summary.sql"),
-    );
-    expect(mockLoggerInfo).toHaveBeenCalledWith(
-      expect.stringContaining("Materialized views recreated"),
-    );
-  });
-
-  it("skips drop for view files without a CREATE MATERIALIZED VIEW statement", async () => {
-    const { runMigrations } = await import("./migrate.ts");
-
-    mockReaddirSync
-      .mockReturnValueOnce([]) // migrations dir
-      .mockReturnValueOnce(["01_v_activity.sql", "99_comment_only.sql"]); // views dir
-
-    mockExistsSync.mockReturnValue(true);
-    mockSql.mockResolvedValue([]);
-    mockReadFileSync
-      .mockReturnValueOnce("CREATE MATERIALIZED VIEW fitness.v_activity AS SELECT 1")
-      .mockReturnValueOnce("-- This file has no CREATE MATERIALIZED VIEW");
-
-    await runMigrations("postgres://localhost/test", "/tmp/migrations");
-
-    const unsafeCalls = mockSqlUnsafe.mock.calls.map((call) => String(call[0]));
-    const dropCalls = unsafeCalls.filter((call) => call.includes("DROP"));
-
-    // Only drops v_activity, not the comment-only file
-    expect(dropCalls).toHaveLength(1);
-    expect(dropCalls[0]).toContain("v_activity");
+    // runMigrations should NOT touch materialized views
+    expect(dropCalls).toHaveLength(0);
+    expect(createCalls).toHaveLength(0);
   });
 });
 
