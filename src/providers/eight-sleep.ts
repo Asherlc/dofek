@@ -9,8 +9,8 @@ import {
 } from "eight-sleep-client";
 import type { SyncDatabase } from "../db/index.ts";
 import { bodyMeasurement, dailyMetrics, metricStream, sleepSession } from "../db/schema.ts";
-import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
+import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import type {

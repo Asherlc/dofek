@@ -127,8 +127,9 @@ export class ActivityRecordingRepository {
       for (const { channel, key } of channelMapping) {
         const channelValues = input.samples
           .filter((sample) => sample[key] != null)
-          .map((sample) =>
-            sql`(${sample.recordedAt}::timestamptz, ${this.#userId}::uuid, ${activityId}::uuid, ${PROVIDER_ID}, ${input.sourceName}, ${"api"}, ${channel}, ${sample[key]}::real)`,
+          .map(
+            (sample) =>
+              sql`(${sample.recordedAt}::timestamptz, ${this.#userId}::uuid, ${activityId}::uuid, ${PROVIDER_ID}, ${input.sourceName}, ${"api"}, ${channel}, ${sample[key]}::real)`,
           );
         if (channelValues.length > 0) {
           await this.#db.execute(

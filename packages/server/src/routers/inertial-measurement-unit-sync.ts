@@ -69,7 +69,8 @@ async function insertBatch(
 
     // Dual-write to sensor_sample: accel-only as 'accel' channel, 6-axis as 'imu' channel
     const hasGyro = batch.some(
-      (sample) => sample.gyroscopeX != null || sample.gyroscopeY != null || sample.gyroscopeZ != null,
+      (sample) =>
+        sample.gyroscopeX != null || sample.gyroscopeY != null || sample.gyroscopeZ != null,
     );
     const channel = hasGyro ? "imu" : "accel";
     const sensorValuesClauses = batch.map((sample) => {

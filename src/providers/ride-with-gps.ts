@@ -11,8 +11,8 @@ import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity, DEFAULT_USER_ID, metricStream, userSettings } from "../db/schema.ts";
-import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
+import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import type {
   ProviderAuthSetup,

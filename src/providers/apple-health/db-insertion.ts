@@ -13,8 +13,8 @@ import {
   sleepSession,
   sleepStage,
 } from "../../db/schema.ts";
-import { dualWriteToSensorSample } from "../../db/sensor-sample-writer.ts";
 import { SOURCE_TYPE_FILE } from "../../db/sensor-channels.ts";
+import { dualWriteToSensorSample } from "../../db/sensor-sample-writer.ts";
 import { logger } from "../../logger.ts";
 import type { HealthRecord } from "./records.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
