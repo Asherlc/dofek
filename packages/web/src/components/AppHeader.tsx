@@ -83,7 +83,7 @@ export function AppHeader({ children }: { children?: React.ReactNode }) {
         </div>
       </div>
       {menuOpen && (
-        <nav className="lg:hidden px-3 pb-3 flex flex-wrap gap-1">
+        <nav className="lg:hidden px-3 pb-3 flex flex-wrap gap-1 nav-slide-enter">
           {items.map(({ to, label }) => (
             <Link
               key={to}

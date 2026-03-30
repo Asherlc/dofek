@@ -1,5 +1,6 @@
 import { scoreColor } from "@dofek/scoring/scoring";
 import type { ReadinessRow } from "dofek-server/types";
+import { useEffect, useState } from "react";
 import { useCountUp } from "../hooks/useCountUp.ts";
 import { dofekAxis, dofekGrid, dofekSeries, dofekTooltip } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
@@ -9,15 +10,30 @@ interface ReadinessScoreCardProps {
   loading?: boolean;
 }
 
-function ComponentBar({ label, value }: { label: string; value: number }) {
+function ComponentBar({
+  label,
+  value,
+  delay = 0,
+}: {
+  label: string;
+  value: number;
+  delay?: number;
+}) {
   const color = scoreColor(value);
+  const [animated, setAnimated] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setAnimated(true), 100 + delay);
+    return () => clearTimeout(timer);
+  }, [delay]);
+
   return (
     <div className="flex items-center gap-3">
       <span className="text-muted text-xs w-24 shrink-0">{label}</span>
       <div className="flex-1 bg-accent/10 rounded-full h-2.5 overflow-hidden">
         <div
-          className="h-full rounded-full transition-all duration-300"
-          style={{ width: `${value}%`, backgroundColor: color }}
+          className="h-full rounded-full progress-bar-animated"
+          style={{ width: animated ? `${value}%` : "0%", backgroundColor: color }}
         />
       </div>
       <span className="text-foreground text-xs w-8 text-right font-medium">{value}</span>
@@ -100,10 +116,18 @@ export function ReadinessScoreCard({ data, loading }: ReadinessScoreCardProps) {
       </div>
 
       <div className="space-y-2.5 mt-4">
-        <ComponentBar label="Heart Rate Variability" value={latest.components.hrvScore} />
-        <ComponentBar label="Resting Heart Rate" value={latest.components.restingHrScore} />
-        <ComponentBar label="Sleep" value={latest.components.sleepScore} />
-        <ComponentBar label="Respiratory Rate" value={latest.components.respiratoryRateScore} />
+        <ComponentBar label="Heart Rate Variability" value={latest.components.hrvScore} delay={0} />
+        <ComponentBar
+          label="Resting Heart Rate"
+          value={latest.components.restingHrScore}
+          delay={100}
+        />
+        <ComponentBar label="Sleep" value={latest.components.sleepScore} delay={200} />
+        <ComponentBar
+          label="Respiratory Rate"
+          value={latest.components.respiratoryRateScore}
+          delay={300}
+        />
       </div>
     </div>
   );
