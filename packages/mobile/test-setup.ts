@@ -209,6 +209,41 @@ vi.mock("react-native-svg", () => {
   };
 });
 
+// ── React Native Reanimated mock ─────────────────────────────────────
+vi.mock("react-native-reanimated", () => {
+  const React = require("react");
+  return {
+    __esModule: true,
+    default: {
+      createAnimatedComponent: (component: unknown) => component,
+      View: ({ children, ...props }: Record<string, unknown>) =>
+        React.createElement("div", props, children),
+    },
+    useSharedValue: (initial: unknown) => ({ value: initial }),
+    useAnimatedProps: (updater: () => Record<string, unknown>) => updater(),
+    useAnimatedStyle: (updater: () => Record<string, unknown>) => updater(),
+    withTiming: (toValue: unknown) => toValue,
+    withDelay: (_delay: number, animation: unknown) => animation,
+    withSpring: (toValue: unknown) => toValue,
+    withCallback: (_callback: unknown, animation: unknown) => animation,
+    Easing: {
+      bezier: () => ({}),
+      linear: {},
+      ease: {},
+      out: () => ({}),
+      in: () => ({}),
+      inOut: () => ({}),
+    },
+    FadeIn: { delay: () => ({ duration: () => ({ easing: () => ({}) }) }) },
+    FadeInUp: { delay: () => ({ duration: () => ({ easing: () => ({}) }) }) },
+    FadeOut: {},
+    SlideInRight: {},
+    Layout: { duration: () => ({}) },
+    createAnimatedComponent: (component: unknown) => component,
+    runOnJS: (fn: (...args: unknown[]) => void) => fn,
+  };
+});
+
 // ── React Native Safe Area mock ──────────────────────────────────────
 vi.mock("react-native-safe-area-context", () => {
   const React = require("react");

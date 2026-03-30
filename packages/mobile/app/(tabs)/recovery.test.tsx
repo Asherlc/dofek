@@ -60,6 +60,7 @@ vi.mock("../../theme", () => ({
   },
   radius: { xl: 16, lg: 12, md: 8, sm: 4, full: 9999 },
   spacing: { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 },
+  duration: { fast: 150, normal: 300, slow: 500, countUp: 800, chart: 1200, heartbeat: 3000 },
 }));
 
 describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
