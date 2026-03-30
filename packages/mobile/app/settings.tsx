@@ -1,6 +1,7 @@
 import { providerLabel } from "@dofek/providers/providers";
 import { File as ExpoFile, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
+import * as Updates from "expo-updates";
 import { useState } from "react";
 import {
   ActivityIndicator,
@@ -359,7 +360,7 @@ export default function SettingsScreen() {
             <Text style={styles.devToolChevron}>›</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.devToolRow, styles.devToolRowLast]}
+            style={styles.devToolRow}
             onPress={() => {
               const { router } = require("expo-router");
               router.push("/imu-visualization");
@@ -369,6 +370,20 @@ export default function SettingsScreen() {
             <Text style={styles.devToolLabel}>IMU Visualization</Text>
             <Text style={styles.devToolChevron}>›</Text>
           </TouchableOpacity>
+          <View style={[styles.devToolRow, styles.devToolRowLast]}>
+            <View>
+              <Text style={styles.devToolLabel}>OTA Update</Text>
+              <Text style={styles.devToolDetail}>
+                {Updates.updateId ?? "embedded bundle"}
+                {"\n"}
+                Channel: {Updates.channel ?? "none"}
+                {"\n"}
+                Runtime: {Updates.runtimeVersion ?? "unknown"}
+                {"\n"}
+                Created: {Updates.createdAt?.toISOString() ?? "n/a"}
+              </Text>
+            </View>
+          </View>
         </View>
       </View>
 
@@ -600,6 +615,12 @@ const styles = StyleSheet.create({
   devToolChevron: {
     fontSize: 18,
     color: colors.textTertiary,
+  },
+  devToolDetail: {
+    fontSize: 11,
+    color: colors.textTertiary,
+    marginTop: 2,
+    fontVariant: ["tabular-nums"],
   },
 
   // ── Danger Zone ──
