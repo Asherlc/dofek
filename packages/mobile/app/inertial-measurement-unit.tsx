@@ -26,6 +26,7 @@ import {
   getBluetoothState,
   getBufferedSampleCount,
   getConnectionState,
+  getDataPathStats,
 } from "../modules/whoop-ble";
 import { colors } from "../theme";
 import { rootStackScreenOptions } from "./_layout";
@@ -241,6 +242,7 @@ export default function InertialMeasurementUnitScreen() {
   const [whoopBleState, setWhoopBleState] = useState(getConnectionState);
   const [bleState, setBleState] = useState(getBluetoothState);
   const [whoopBuffered, setWhoopBuffered] = useState(0);
+  const [dataPathStats, setDataPathStats] = useState(getDataPathStats);
 
   useEffect(() => {
     const refresh = () => {
@@ -248,6 +250,7 @@ export default function InertialMeasurementUnitScreen() {
       setWhoopBleState(getConnectionState());
       setBleState(getBluetoothState());
       setWhoopBuffered(getBufferedSampleCount());
+      setDataPathStats(getDataPathStats());
     };
     refresh();
     const interval = setInterval(refresh, 3000);
@@ -422,6 +425,29 @@ export default function InertialMeasurementUnitScreen() {
             const warning = whoopImuEnabled ? getWhoopWarning(bleState, whoopBleState) : null;
             return warning ? <StatusWarning message={warning} /> : null;
           })()}
+          {whoopImuEnabled && whoopBleState !== "idle" && (
+            <View style={styles.diagnosticBlock}>
+              <Text style={styles.diagnosticTitle}>Data Path</Text>
+              <Text style={styles.diagnosticLine}>
+                Notifications received: {dataPathStats.dataReceivedCount}
+              </Text>
+              <Text style={styles.diagnosticLine}>
+                Frames parsed: {dataPathStats.totalFramesParsed}
+              </Text>
+              <Text style={styles.diagnosticLine}>
+                Samples extracted: {dataPathStats.totalSamplesExtracted}
+              </Text>
+              <Text style={styles.diagnosticLine}>
+                Empty extractions: {dataPathStats.emptyExtractions}
+              </Text>
+              <Text style={styles.diagnosticLine}>
+                Data characteristic: {dataPathStats.hasDataCharacteristic ? "found" : "missing"}
+                {dataPathStats.hasDataCharacteristic
+                  ? `, notifying: ${dataPathStats.isNotifying ? "yes" : "no"}`
+                  : ""}
+              </Text>
+            </View>
+          )}
         </View>
 
         <View style={styles.section}>
@@ -570,5 +596,23 @@ const styles = StyleSheet.create({
     color: colors.text,
     minWidth: 120,
     textAlign: "center",
+  },
+  diagnosticBlock: {
+    marginTop: 12,
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    padding: 12,
+  },
+  diagnosticTitle: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.textSecondary,
+    marginBottom: 6,
+  },
+  diagnosticLine: {
+    fontSize: 12,
+    color: colors.textTertiary,
+    fontFamily: "Menlo",
+    lineHeight: 18,
   },
 });
