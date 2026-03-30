@@ -51,8 +51,8 @@ vi.mock("react-native", () => {
   }
 
   function createMockComponent(name: string) {
-    const component = ({ children, style, ...props }: Record<string, unknown>) =>
-      el(name, { ...props, style: flattenStyle(style) }, children);
+    const component = ({ children, style, testID, ...props }: Record<string, unknown>) =>
+      el(name, { ...props, style: flattenStyle(style), "data-testid": testID }, children);
     component.displayName = name;
     return component;
   }
@@ -216,8 +216,15 @@ vi.mock("react-native-reanimated", () => {
     __esModule: true,
     default: {
       createAnimatedComponent: (component: unknown) => component,
-      View: ({ children, ...props }: Record<string, unknown>) =>
-        React.createElement("div", props, children),
+      View: ({ children, entering, exiting, layout, style, ...props }: Record<string, unknown>) => {
+        // Strip reanimated-specific props and animated style objects
+        const plainStyle = Array.isArray(style)
+          ? Object.assign({}, ...style.map((s: unknown) => (typeof s === "object" && s ? s : {})))
+          : typeof style === "object" && style
+            ? style
+            : undefined;
+        return React.createElement("div", { ...props, style: plainStyle }, children);
+      },
     },
     useSharedValue: (initial: unknown) => ({ value: initial }),
     useAnimatedProps: (updater: () => Record<string, unknown>) => updater(),

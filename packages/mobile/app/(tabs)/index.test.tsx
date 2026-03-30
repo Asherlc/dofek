@@ -100,26 +100,26 @@ describe("TodayScreen independent loading states", () => {
     vi.useRealTimers();
   });
 
-  it("shows loading placeholder for recovery ring while readiness is loading", async () => {
+  it("shows skeleton placeholder for recovery ring while readiness is loading", async () => {
     mockReadinessLoading = true;
 
     const { default: TodayScreen } = await import("./index");
     render(<TodayScreen />);
 
-    // Recovery ring should show "..." loading placeholder
-    expect(screen.getAllByText("...").length).toBeGreaterThanOrEqual(1);
+    // Recovery ring should show skeleton circle loading placeholder
+    expect(screen.getAllByTestId("skeleton-circle").length).toBeGreaterThanOrEqual(1);
     // Strain section should still render (not loading)
     expect(screen.getAllByText("Strain").length).toBeGreaterThanOrEqual(1);
   });
 
-  it("shows loading placeholder for strain gauge while workload is loading", async () => {
+  it("shows skeleton placeholder for strain gauge while workload is loading", async () => {
     mockWorkloadLoading = true;
 
     const { default: TodayScreen } = await import("./index");
     render(<TodayScreen />);
 
-    // Strain gauge should show "..." loading placeholder
-    expect(screen.getAllByText("...").length).toBeGreaterThanOrEqual(1);
+    // Strain gauge should show skeleton circle loading placeholder
+    expect(screen.getAllByTestId("skeleton-circle").length).toBeGreaterThanOrEqual(1);
     // Recovery section should still render (not loading)
     expect(screen.getAllByText("Recovery").length).toBeGreaterThanOrEqual(1);
   });
@@ -146,7 +146,7 @@ describe("TodayScreen independent loading states", () => {
     // All section titles should render
     expect(screen.getAllByText("Recovery").length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText("Strain").length).toBeGreaterThanOrEqual(1);
-    // No loading placeholders
-    expect(screen.queryByText("...")).toBeNull();
+    // No skeleton loading placeholders
+    expect(screen.queryByTestId("skeleton-circle")).toBeNull();
   });
 });

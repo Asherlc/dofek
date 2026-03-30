@@ -10,6 +10,7 @@ import { useRouter } from "expo-router";
 import { useMemo } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Card } from "../../components/Card";
+import { SkeletonCircle } from "../../components/Skeleton";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { RecoveryRing } from "../../components/charts/RecoveryRing";
 import { SleepBar } from "../../components/charts/SleepBar";
@@ -158,9 +159,7 @@ export default function TodayScreen() {
             textStyle={styles.sectionLabel}
           />
           {readinessLoading ? (
-            <View style={[styles.emptyRing, { width: 180, height: 180, opacity: 0.4 }]}>
-              <Text style={styles.emptyRingText}>...</Text>
-            </View>
+            <SkeletonCircle size={180} />
           ) : recoveryScore != null ? (
             <RecoveryRing score={recoveryScore} size={180} />
           ) : (
@@ -181,9 +180,7 @@ export default function TodayScreen() {
             textStyle={styles.sectionLabel}
           />
           {workloadLoading ? (
-            <View style={[styles.emptyRing, { width: 120, height: 120, opacity: 0.4 }]}>
-              <Text style={styles.emptyRingText}>...</Text>
-            </View>
+            <SkeletonCircle size={120} />
           ) : (
             <StrainGauge strain={dailyStrain} size={120} />
           )}
