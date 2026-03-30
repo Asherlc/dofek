@@ -1,4 +1,9 @@
 import { DATA_TYPE_LABELS, type ProviderStats } from "@dofek/providers/provider-stats";
+import {
+  parseWhoopWearLocation,
+  WHOOP_WEAR_LOCATIONS,
+  type WhoopWearLocation,
+} from "@dofek/providers/whoop";
 import { Link, useParams } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
@@ -271,6 +276,9 @@ export function ProviderDetailPage() {
           )}
         </section>
       )}
+
+      {/* WHOOP wear location */}
+      {providerId === "whoop" && <WhoopWearLocationPicker />}
 
       {/* Stats overview */}
       {providerStats && <ProviderStatsBreakdown stats={providerStats} variant="full" />}
@@ -672,6 +680,61 @@ export function RecordDetailModal({
         )}
       </div>
     </div>
+  );
+}
+
+// ── WHOOP Wear Location Picker ──
+
+const WEAR_LOCATION_SETTING_KEY = "whoop.wearLocation";
+
+function WhoopWearLocationPicker() {
+  const setting = trpc.settings.get.useQuery({ key: WEAR_LOCATION_SETTING_KEY });
+  const setSettingMutation = trpc.settings.set.useMutation();
+  const trpcUtils = trpc.useUtils();
+
+  const currentLocation = parseWhoopWearLocation(setting.data?.value);
+
+  const handleChange = (location: WhoopWearLocation) => {
+    trpcUtils.settings.get.setData(
+      { key: WEAR_LOCATION_SETTING_KEY },
+      { key: WEAR_LOCATION_SETTING_KEY, value: location },
+    );
+    setSettingMutation.mutate(
+      { key: WEAR_LOCATION_SETTING_KEY, value: location },
+      {
+        onSettled: () => {
+          trpcUtils.settings.get.invalidate({ key: WEAR_LOCATION_SETTING_KEY });
+        },
+      },
+    );
+  };
+
+  return (
+    <section className="card p-4 space-y-3">
+      <div>
+        <h2 className="text-sm font-medium text-foreground">Wear Location</h2>
+        <p className="text-xs text-subtle mt-0.5">
+          Where do you wear your WHOOP? This helps us interpret your sensor data.
+        </p>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {WHOOP_WEAR_LOCATIONS.map((location) => (
+          <button
+            key={location.id}
+            type="button"
+            onClick={() => handleChange(location.id)}
+            className={`text-left px-3 py-2.5 rounded-lg border transition-colors ${
+              currentLocation === location.id
+                ? "border-emerald-500 bg-emerald-500/10"
+                : "border-border-strong bg-accent/5 hover:bg-surface-hover"
+            }`}
+          >
+            <div className="text-xs font-medium text-foreground">{location.label}</div>
+            <div className="text-xs text-subtle mt-0.5">{location.description}</div>
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 

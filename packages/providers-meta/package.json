@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     "./providers": "./src/providers.ts",
-    "./provider-stats": "./src/provider-stats.ts"
+    "./provider-stats": "./src/provider-stats.ts",
+    "./whoop": "./src/whoop.ts"
   }
 }
