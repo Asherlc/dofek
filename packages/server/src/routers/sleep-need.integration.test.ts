@@ -307,9 +307,13 @@ describe("sleep data consistency: multiple sessions per date", () => {
 
   it("weekly report sleep avg must use longest session per date, not average duplicates", async () => {
     await queryCache.invalidateAll();
-    const endDate = new Date().toISOString().slice(0, 10);
+    // Use tomorrow to ensure all CURRENT_DATE-based sleep data falls within the window,
+    // regardless of timezone differences between JS Date and Postgres CURRENT_DATE.
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const endDate = tomorrow.toISOString().slice(0, 10);
     const result = await query<WeeklyReportResult>("weeklyReport.report", {
-      weeks: 2,
+      weeks: 3,
       endDate,
     });
 

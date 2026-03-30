@@ -159,7 +159,11 @@ describe("sleep data consistency across endpoints", () => {
     return first?.result?.data;
   }
 
-  const endDate = new Date().toISOString().slice(0, 10);
+  // Use tomorrow to ensure all CURRENT_DATE-based sleep data falls within the window,
+  // regardless of timezone differences between JS Date and Postgres CURRENT_DATE.
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const endDate = tomorrow.toISOString().slice(0, 10);
 
   it("sleep.list returns at most one row per calendar date", async () => {
     await queryCache.invalidateAll();
@@ -229,7 +233,7 @@ describe("sleep data consistency across endpoints", () => {
     const weeklyReport = await query<{
       current: { avgSleepMinutes: number } | null;
       history: { weekStart: string; avgSleepMinutes: number }[];
-    }>("weeklyReport.report", { weeks: 2, endDate });
+    }>("weeklyReport.report", { weeks: 3, endDate });
 
     if (!weeklyReport.current) {
       // If no weekly data, skip — but the test data should provide it
