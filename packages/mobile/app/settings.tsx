@@ -352,7 +352,7 @@ export default function SettingsScreen() {
             style={styles.devToolRow}
             onPress={() => {
               const { router } = require("expo-router");
-              router.push("/accelerometer");
+              router.push("/inertial-measurement-unit");
             }}
             activeOpacity={0.7}
           >
