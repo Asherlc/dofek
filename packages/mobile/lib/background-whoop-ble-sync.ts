@@ -32,17 +32,17 @@ export interface WhoopBleSyncDeps {
       quaternionX: number;
       quaternionY: number;
       quaternionZ: number;
-      rawPayloadHex: string;
     }>
   >;
   disconnect(): void;
 }
 
-/** tRPC client interface for WHOOP BLE realtime data upload */
+/** tRPC client interface for BLE realtime data upload (HR + orientation) */
 export interface WhoopBleRealtimeUploadClient {
   whoopBleSync: {
     pushRealtimeData: {
       mutate(input: {
+        deviceId: string;
         samples: Array<{
           timestamp: string;
           heartRate: number;
@@ -50,7 +50,6 @@ export interface WhoopBleRealtimeUploadClient {
           quaternionX: number;
           quaternionY: number;
           quaternionZ: number;
-          rawPayloadHex: string;
         }>;
       }): Promise<{ inserted: number }>;
     };
@@ -283,6 +282,7 @@ async function drainBuffer(
       if (realtimeSamples.length === 0) break;
 
       const result = await effectiveRealtimeClient.whoopBleSync.pushRealtimeData.mutate({
+        deviceId: "WHOOP Strap",
         samples: realtimeSamples,
       });
       totalRealtimeUploaded += realtimeSamples.length;

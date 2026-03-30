@@ -316,7 +316,7 @@ public class WhoopBleModule: Module {
         // MARK: - Buffer access
 
         /// Drain up to `maxCount` realtime data samples from the buffer (default 1000).
-        /// Returns HR, quaternion, and raw payload hex for each sample.
+        /// Returns HR and quaternion for each sample.
         AsyncFunction("getBufferedRealtimeData") { (maxCount: Int?, promise: Promise) in
             let limit = maxCount ?? 1000
 
@@ -344,7 +344,6 @@ public class WhoopBleModule: Module {
                     "quaternionX": Double(sample.quaternionX),
                     "quaternionY": Double(sample.quaternionY),
                     "quaternionZ": Double(sample.quaternionZ),
-                    "rawPayloadHex": sample.rawPayload.map { String(format: "%02x", $0) }.joined(),
                 ]
             }
 

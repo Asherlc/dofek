@@ -500,7 +500,6 @@ describe("realtime data (HR + quaternion) sync", () => {
         quaternionX: 0.68,
         quaternionY: -0.71,
         quaternionZ: 0.2,
-        rawPayloadHex: `28${"00".repeat(115)}`,
       },
     ];
     vi.mocked(whoopDeps.getBufferedRealtimeData).mockResolvedValueOnce(realtimeSamples);
@@ -508,6 +507,7 @@ describe("realtime data (HR + quaternion) sync", () => {
     await initBackgroundWhoopBleSync(trpcClient, whoopDeps, realtimeClient);
 
     expect(realtimeClient.whoopBleSync.pushRealtimeData.mutate).toHaveBeenCalledWith({
+      deviceId: "WHOOP Strap",
       samples: realtimeSamples,
     });
   });
@@ -521,7 +521,6 @@ describe("realtime data (HR + quaternion) sync", () => {
         quaternionX: 0.0,
         quaternionY: 0.0,
         quaternionZ: 0.0,
-        rawPayloadHex: "28",
       },
     ];
     vi.mocked(whoopDeps.getBufferedRealtimeData).mockResolvedValueOnce(realtimeSamples);
@@ -553,7 +552,6 @@ describe("realtime data (HR + quaternion) sync", () => {
         quaternionX: 0.5,
         quaternionY: 0.5,
         quaternionZ: 0.5,
-        rawPayloadHex: `28${"ff".repeat(50)}`,
       },
     ];
 
@@ -565,6 +563,7 @@ describe("realtime data (HR + quaternion) sync", () => {
     // Both should be uploaded
     expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalled();
     expect(realtimeClient.whoopBleSync.pushRealtimeData.mutate).toHaveBeenCalledWith({
+      deviceId: "WHOOP Strap",
       samples: realtimeSamples,
     });
   });
@@ -602,7 +601,6 @@ describe("realtime data (HR + quaternion) sync", () => {
         quaternionX: 0.0,
         quaternionY: 0.0,
         quaternionZ: 0.0,
-        rawPayloadHex: "28",
       },
     ];
     vi.mocked(whoopDeps.getBufferedRealtimeData).mockResolvedValueOnce(realtimeSamples);
@@ -610,6 +608,7 @@ describe("realtime data (HR + quaternion) sync", () => {
     await syncWhoopBle(trpcClient, whoopDeps, realtimeClient);
 
     expect(realtimeClient.whoopBleSync.pushRealtimeData.mutate).toHaveBeenCalledWith({
+      deviceId: "WHOOP Strap",
       samples: realtimeSamples,
     });
   });

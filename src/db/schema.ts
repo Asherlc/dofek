@@ -638,11 +638,11 @@ export const inertialMeasurementUnitSample = fitness.table(
 );
 
 // ============================================================
-// WHOOP BLE realtime data (0x28 packets: HR + quaternion)
+// Orientation samples (quaternion from any provider)
 // ============================================================
 
-export const whoopBleRealtimeData = fitness.table(
-  "whoop_ble_realtime_data",
+export const orientationSample = fitness.table(
+  "orientation_sample",
   {
     recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
     userId: uuid("user_id")
@@ -652,14 +652,13 @@ export const whoopBleRealtimeData = fitness.table(
     providerId: text("provider_id")
       .notNull()
       .references(() => provider.id),
-    heartRate: smallint("heart_rate"),
-    quaternionW: real("quaternion_w"),
-    quaternionX: real("quaternion_x"),
-    quaternionY: real("quaternion_y"),
-    quaternionZ: real("quaternion_z"),
-    rawPayload: text("raw_payload"),
+    deviceId: text("device_id").notNull(),
+    quaternionW: real("quaternion_w").notNull(),
+    quaternionX: real("quaternion_x").notNull(),
+    quaternionY: real("quaternion_y").notNull(),
+    quaternionZ: real("quaternion_z").notNull(),
   },
-  (table) => [index("whoop_ble_realtime_user_time_idx").on(table.userId, table.recordedAt)],
+  (table) => [index("orientation_sample_user_time_idx").on(table.userId, table.recordedAt)],
 );
 
 // ============================================================

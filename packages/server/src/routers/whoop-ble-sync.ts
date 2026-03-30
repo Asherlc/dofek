@@ -15,10 +15,10 @@ const realtimeDataSampleSchema = z.object({
   quaternionX: z.number(),
   quaternionY: z.number(),
   quaternionZ: z.number(),
-  rawPayloadHex: z.string(),
 });
 
 const pushRealtimeDataInput = z.object({
+  deviceId: z.string().min(1),
   samples: z.array(realtimeDataSampleSchema),
 });
 
@@ -36,12 +36,13 @@ async function ensureProvider(database: Database) {
 }
 
 /**
- * Bulk-insert realtime data samples into whoop_ble_realtime_data.
- * Also writes HR values to metric_stream for unified HR queries.
+ * Insert HR into metric_stream and quaternion into orientation_sample.
+ * No duplicate data — each value lives in exactly one table.
  */
 async function insertRealtimeDataBatch(
   database: Database,
   userId: string,
+  deviceId: string,
   samples: WhoopBleRealtimeDataSample[],
 ): Promise<number> {
   if (samples.length === 0) return 0;
@@ -51,20 +52,7 @@ async function insertRealtimeDataBatch(
   for (let offset = 0; offset < samples.length; offset += INSERT_BATCH_SIZE) {
     const batch = samples.slice(offset, offset + INSERT_BATCH_SIZE);
 
-    // Insert into whoop_ble_realtime_data (full raw record)
-    const realtimeValues = batch.map(
-      (sample) =>
-        sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${sample.heartRate}, ${sample.quaternionW}, ${sample.quaternionX}, ${sample.quaternionY}, ${sample.quaternionZ}, ${sample.rawPayloadHex})`,
-    );
-
-    await database.execute(
-      sql`INSERT INTO fitness.whoop_ble_realtime_data
-          (recorded_at, user_id, provider_id, heart_rate, quaternion_w, quaternion_x, quaternion_y, quaternion_z, raw_payload)
-          VALUES ${sql.join(realtimeValues, sql`, `)}`,
-    );
-
-    // Also insert HR into metric_stream for unified HR queries across providers.
-    // Only insert samples where HR > 0 (0 means no reading).
+    // Insert HR into metric_stream (only for samples with a valid reading)
     const heartRateSamples = batch.filter((sample) => sample.heartRate > 0);
     if (heartRateSamples.length > 0) {
       const metricValues = heartRateSamples.map(
@@ -78,6 +66,18 @@ async function insertRealtimeDataBatch(
             VALUES ${sql.join(metricValues, sql`, `)}`,
       );
     }
+
+    // Insert quaternion into orientation_sample
+    const orientationValues = batch.map(
+      (sample) =>
+        sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${deviceId}, ${sample.quaternionW}, ${sample.quaternionX}, ${sample.quaternionY}, ${sample.quaternionZ})`,
+    );
+
+    await database.execute(
+      sql`INSERT INTO fitness.orientation_sample
+          (recorded_at, user_id, provider_id, device_id, quaternion_w, quaternion_x, quaternion_y, quaternion_z)
+          VALUES ${sql.join(orientationValues, sql`, `)}`,
+    );
 
     totalInserted += batch.length;
   }
@@ -101,10 +101,16 @@ export const whoopBleSyncRouter = router({
       const firstTimestamp = input.samples[0]?.timestamp;
       const lastTimestamp = input.samples[input.samples.length - 1]?.timestamp;
 
-      const inserted = await insertRealtimeDataBatch(ctx.db, ctx.userId, input.samples);
+      const inserted = await insertRealtimeDataBatch(
+        ctx.db,
+        ctx.userId,
+        input.deviceId,
+        input.samples,
+      );
 
       logger.info("WHOOP BLE realtime data pushed", {
         userId: ctx.userId,
+        deviceId: input.deviceId,
         sampleCount: inserted,
         firstTimestamp,
         lastTimestamp,

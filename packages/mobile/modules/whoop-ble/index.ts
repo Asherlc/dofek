@@ -15,7 +15,6 @@ export interface WhoopRealtimeDataSample {
   quaternionX: number;
   quaternionY: number;
   quaternionZ: number;
-  rawPayloadHex: string; // full packet payload as hex for future analysis
 }
 
 /** A single IMU sample from the WHOOP strap's accelerometer + gyroscope */

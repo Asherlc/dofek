@@ -1,24 +1,22 @@
--- Store raw WHOOP BLE realtime data (0x28 packets): heart rate, orientation quaternion, raw payload.
--- HR is also written to metric_stream for unified HR queries across providers.
--- This table preserves the full raw record including quaternion and raw payload hex.
+-- Provider-agnostic orientation sample table for quaternion data from any source
+-- (WHOOP BLE strap, Apple Watch, Garmin, etc.)
 
-CREATE TABLE IF NOT EXISTS fitness.whoop_ble_realtime_data (
+CREATE TABLE IF NOT EXISTS fitness.orientation_sample (
   recorded_at TIMESTAMPTZ NOT NULL,
   user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001' REFERENCES fitness.user_profile(id),
   provider_id TEXT NOT NULL REFERENCES fitness.provider(id),
-  heart_rate SMALLINT,
-  quaternion_w REAL,
-  quaternion_x REAL,
-  quaternion_y REAL,
-  quaternion_z REAL,
-  raw_payload TEXT
+  device_id TEXT NOT NULL,
+  quaternion_w REAL NOT NULL,
+  quaternion_x REAL NOT NULL,
+  quaternion_y REAL NOT NULL,
+  quaternion_z REAL NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS whoop_ble_realtime_user_time_idx
-  ON fitness.whoop_ble_realtime_data (user_id, recorded_at);
+CREATE INDEX IF NOT EXISTS orientation_sample_user_time_idx
+  ON fitness.orientation_sample (user_id, recorded_at);
 
 SELECT create_hypertable(
-  'fitness.whoop_ble_realtime_data',
+  'fitness.orientation_sample',
   'recorded_at',
   if_not_exists => TRUE
 );
