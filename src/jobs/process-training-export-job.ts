@@ -88,12 +88,12 @@ const imuRowSchema = z.object({
 
 const countRowSchema = z.object({ count: z.string() });
 
-type MetricStreamRow = z.infer<typeof metricStreamRowSchema>;
-type ImuRow = z.infer<typeof imuRowSchema>;
+export type MetricStreamRow = z.infer<typeof metricStreamRowSchema>;
+export type ImuRow = z.infer<typeof imuRowSchema>;
 
 // ── CSV helpers ──
 
-function metricStreamCsvHeader(): string {
+export function metricStreamCsvHeader(): string {
   return [
     "recorded_at",
     "user_id",
@@ -140,7 +140,7 @@ function metricStreamCsvHeader(): string {
   ].join(",");
 }
 
-function metricStreamRowToCsv(row: MetricStreamRow): string {
+export function metricStreamRowToCsv(row: MetricStreamRow): string {
   return [
     row.recorded_at,
     row.user_id,
@@ -187,7 +187,7 @@ function metricStreamRowToCsv(row: MetricStreamRow): string {
   ].join(",");
 }
 
-function imuCsvHeader(): string {
+export function imuCsvHeader(): string {
   return [
     "recorded_at",
     "user_id",
@@ -203,7 +203,7 @@ function imuCsvHeader(): string {
   ].join(",");
 }
 
-function imuRowToCsv(row: ImuRow): string {
+export function imuRowToCsv(row: ImuRow): string {
   return [
     row.recorded_at,
     row.user_id,
