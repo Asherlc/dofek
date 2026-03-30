@@ -97,15 +97,21 @@ export function getBufferedSampleCount(): number {
 
 /** Get BLE data path statistics for debugging. */
 export function getDataPathStats(): {
-  dataReceivedCount: number;
+  dataNotificationCount: number;
+  cmdNotificationCount: number;
   totalFramesParsed: number;
   totalSamplesExtracted: number;
   droppedForNonStreaming: number;
   emptyExtractions: number;
   bufferOverflows: number;
+  packetTypes: string;
+  lastCommandResponse: string;
   connectionState: string;
   hasDataCharacteristic: boolean;
   isNotifying: boolean;
+  hasCmdCharacteristic: boolean;
+  hasCmdResponseCharacteristic: boolean;
+  lastWriteError: string;
 } {
   return WhoopBleModule.getDataPathStats();
 }

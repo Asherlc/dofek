@@ -241,30 +241,32 @@ public class WhoopBleModule: Module {
         }
 
         Function("getDataPathStats") { () -> [String: Any] in
-            // Flatten packet type counts to a single string to avoid
-            // nested dictionary serialization issues with Expo modules
-            let packetTypeSummary = self.packetTypeCounts
-                .sorted(by: { $0.key < $1.key })
-                .map { String(format: "0x%02X:%llu", $0.key, $0.value) }
-                .joined(separator: ", ")
+            // Read diagnostic counters on bleQueue to avoid data races —
+            // counters are written from BLE delegate callbacks on bleQueue.
+            return self.bleQueue.sync {
+                let packetTypeSummary = self.packetTypeCounts
+                    .sorted(by: { $0.key < $1.key })
+                    .map { String(format: "0x%02X:%llu", $0.key, $0.value) }
+                    .joined(separator: ", ")
 
-            return [
-                "dataNotificationCount": Int(self.dataNotificationCount),
-                "cmdNotificationCount": Int(self.cmdNotificationCount),
-                "totalFramesParsed": Int(self.totalFramesParsed),
-                "totalSamplesExtracted": Int(self.totalSamplesExtracted),
-                "droppedForNonStreaming": Int(self.droppedForNonStreaming),
-                "emptyExtractions": Int(self.emptyExtractions),
-                "bufferOverflows": Int(self.bufferOverflows),
-                "packetTypes": packetTypeSummary,
-                "lastCommandResponse": self.lastCommandResponse,
-                "connectionState": self.state.rawValue,
-                "hasDataCharacteristic": self.dataCharacteristic != nil,
-                "isNotifying": self.dataCharacteristic?.isNotifying ?? false,
-                "hasCmdCharacteristic": self.cmdCharacteristic != nil,
-                "hasCmdResponseCharacteristic": self.cmdResponseCharacteristic != nil,
-                "lastWriteError": self.lastWriteError ?? "none",
-            ]
+                return [
+                    "dataNotificationCount": Int(self.dataNotificationCount),
+                    "cmdNotificationCount": Int(self.cmdNotificationCount),
+                    "totalFramesParsed": Int(self.totalFramesParsed),
+                    "totalSamplesExtracted": Int(self.totalSamplesExtracted),
+                    "droppedForNonStreaming": Int(self.droppedForNonStreaming),
+                    "emptyExtractions": Int(self.emptyExtractions),
+                    "bufferOverflows": Int(self.bufferOverflows),
+                    "packetTypes": packetTypeSummary,
+                    "lastCommandResponse": self.lastCommandResponse,
+                    "connectionState": self.state.rawValue,
+                    "hasDataCharacteristic": self.dataCharacteristic != nil,
+                    "isNotifying": self.dataCharacteristic?.isNotifying ?? false,
+                    "hasCmdCharacteristic": self.cmdCharacteristic != nil,
+                    "hasCmdResponseCharacteristic": self.cmdResponseCharacteristic != nil,
+                    "lastWriteError": self.lastWriteError ?? "none",
+                ]
+            }
         }
 
         // MARK: - Buffer access

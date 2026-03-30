@@ -101,7 +101,7 @@ describe("background-whoop-ble-sync", () => {
         gyroscopeZ: 30,
       },
     ];
-    vi.mocked(whoopDeps.getBufferedSamples).mockResolvedValue(samples);
+    vi.mocked(whoopDeps.getBufferedSamples).mockResolvedValueOnce(samples);
 
     await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
 
@@ -145,7 +145,7 @@ describe("background-whoop-ble-sync", () => {
         gyroscopeZ: 30,
       },
     ];
-    vi.mocked(whoopDeps.getBufferedSamples).mockResolvedValue(samples);
+    vi.mocked(whoopDeps.getBufferedSamples).mockResolvedValueOnce(samples);
 
     await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
     appStateCallback?.("active");
@@ -247,6 +247,110 @@ describe("background-whoop-ble-sync", () => {
     expect(whoopDeps.disconnect).toHaveBeenCalled();
   });
 
+  it("teardown clears the periodic drain timer", async () => {
+    vi.useFakeTimers();
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+
+    // Clear call counts from initial sync
+    vi.mocked(whoopDeps.getBufferedSamples).mockClear();
+
+    teardownBackgroundWhoopBleSync();
+
+    // Advance past the drain interval — should NOT trigger a drain
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(whoopDeps.getBufferedSamples).not.toHaveBeenCalled();
+
+    vi.useRealTimers();
+  });
+
+  it("periodic drain uploads buffered samples every 30s", async () => {
+    vi.useFakeTimers();
+    const samples = [
+      {
+        timestamp: "2026-03-27T10:00:00.000Z",
+        accelerometerX: 1,
+        accelerometerY: 2,
+        accelerometerZ: 3,
+        gyroscopeX: 10,
+        gyroscopeY: -20,
+        gyroscopeZ: 30,
+      },
+    ];
+
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+
+    // Clear call counts from initial sync
+    vi.mocked(whoopDeps.getBufferedSamples).mockClear();
+    vi.mocked(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).mockClear();
+
+    // Set up a one-shot mock for the periodic drain
+    vi.mocked(whoopDeps.getBufferedSamples).mockResolvedValueOnce(samples);
+
+    // Advance 30s to trigger the periodic drain
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(whoopDeps.getBufferedSamples).toHaveBeenCalled();
+    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith({
+      deviceId: "WHOOP Strap",
+      deviceType: "whoop",
+      samples: expect.arrayContaining([
+        expect.objectContaining({ timestamp: "2026-03-27T10:00:00.000Z" }),
+      ]),
+    });
+
+    vi.useRealTimers();
+  });
+
+  it("drains buffer in multiple batches until empty", async () => {
+    const batch1 = [
+      {
+        timestamp: "2026-03-27T10:00:00.000Z",
+        accelerometerX: 1,
+        accelerometerY: 2,
+        accelerometerZ: 3,
+        gyroscopeX: 10,
+        gyroscopeY: -20,
+        gyroscopeZ: 30,
+      },
+    ];
+    const batch2 = [
+      {
+        timestamp: "2026-03-27T10:00:01.000Z",
+        accelerometerX: 4,
+        accelerometerY: 5,
+        accelerometerZ: 6,
+        gyroscopeX: 40,
+        gyroscopeY: -50,
+        gyroscopeZ: 60,
+      },
+    ];
+
+    // Return batch1 on first call, batch2 on second, then empty
+    vi.mocked(whoopDeps.getBufferedSamples)
+      .mockResolvedValueOnce(batch1)
+      .mockResolvedValueOnce(batch2)
+      .mockResolvedValueOnce([]);
+
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+
+    // Should have uploaded twice — once per batch
+    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledTimes(2);
+    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        samples: expect.arrayContaining([
+          expect.objectContaining({ timestamp: "2026-03-27T10:00:00.000Z" }),
+        ]),
+      }),
+    );
+    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        samples: expect.arrayContaining([
+          expect.objectContaining({ timestamp: "2026-03-27T10:00:01.000Z" }),
+        ]),
+      }),
+    );
+  });
+
   it("does not throw when connection fails", async () => {
     vi.mocked(whoopDeps.connect).mockRejectedValue(new Error("BLE error"));
 
@@ -316,7 +420,7 @@ describe("syncWhoopBle", () => {
         gyroscopeZ: 30,
       },
     ];
-    vi.mocked(whoopDeps.getBufferedSamples).mockResolvedValue(samples);
+    vi.mocked(whoopDeps.getBufferedSamples).mockResolvedValueOnce(samples);
 
     await syncWhoopBle(trpcClient, whoopDeps);
 

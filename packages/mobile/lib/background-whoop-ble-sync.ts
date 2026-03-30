@@ -3,7 +3,6 @@ import { AppState, type AppStateStatus } from "react-native";
 import type { InertialMeasurementUnitUploadClient } from "./inertial-measurement-unit-service";
 import { captureException, logger } from "./telemetry";
 
-const UPLOAD_BATCH_SIZE = 5000;
 const PERIODIC_DRAIN_INTERVAL_MS = 30_000; // Upload buffered samples every 30s
 const LOG_CATEGORY = "whoop-ble";
 

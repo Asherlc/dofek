@@ -96,7 +96,7 @@ export default function BleProbeScreen() {
               if (stats.connectionState !== "idle" && stats.hasDataCharacteristic) {
                 addLog(`whoop-ble already connected (state: ${stats.connectionState})`);
                 addLog(`  samples extracted: ${stats.totalSamplesExtracted}`);
-                addLog(`  notifications: ${stats.dataReceivedCount}`);
+                addLog(`  notifications: ${stats.dataNotificationCount}`);
                 addLog(`  isNotifying: ${stats.isNotifying}`);
                 setConnectedDevice("whoop-ble-managed");
                 addLog("Using whoop-ble module's connection.");
@@ -244,7 +244,7 @@ export default function BleProbeScreen() {
               const stats = whoopBle.getDataPathStats();
               addLog(`whoop-ble state: ${stats.connectionState}`);
               addLog(`whoop-ble samples: ${stats.totalSamplesExtracted}`);
-              addLog(`whoop-ble notifications: ${stats.dataReceivedCount}`);
+              addLog(`whoop-ble notifications: ${stats.dataNotificationCount}`);
               addLog(`whoop-ble frames: ${stats.totalFramesParsed}`);
               addLog(`whoop-ble isNotifying: ${stats.isNotifying}`);
               addLog(`whoop-ble buffered: ${whoopBle.getBufferedSampleCount()}`);

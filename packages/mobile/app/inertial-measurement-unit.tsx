@@ -430,7 +430,7 @@ export default function InertialMeasurementUnitScreen() {
             <View style={styles.diagnosticBlock}>
               <Text style={styles.diagnosticTitle}>Data Path</Text>
               <Text style={styles.diagnosticLine}>
-                Data notifications: {dataPathStats.dataNotificationCount ?? dataPathStats.dataReceivedCount ?? 0}
+                Data notifications: {dataPathStats.dataNotificationCount ?? 0}
               </Text>
               <Text style={styles.diagnosticLine}>
                 Command notifications: {dataPathStats.cmdNotificationCount ?? 0}
@@ -448,9 +448,7 @@ export default function InertialMeasurementUnitScreen() {
                 Command response: {dataPathStats.lastCommandResponse ?? "none"}
               </Text>
               {dataPathStats.packetTypes ? (
-                <Text style={styles.diagnosticLine}>
-                  Packet types: {dataPathStats.packetTypes}
-                </Text>
+                <Text style={styles.diagnosticLine}>Packet types: {dataPathStats.packetTypes}</Text>
               ) : null}
               <Text style={styles.diagnosticLine}>
                 Data characteristic: {dataPathStats.hasDataCharacteristic ? "found" : "missing"}
