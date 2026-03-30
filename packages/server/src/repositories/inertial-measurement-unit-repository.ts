@@ -122,8 +122,8 @@ export class InertialMeasurementUnitRepository {
           device_id,
           device_type,
           count(*)::int AS sample_count,
-          max(recorded_at)::text AS latest_sample,
-          min(recorded_at)::text AS earliest_sample
+          to_char(max(recorded_at), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS latest_sample,
+          to_char(min(recorded_at), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS earliest_sample
         FROM fitness.inertial_measurement_unit_sample
         WHERE user_id = ${this.#userId}::uuid
         GROUP BY device_id, device_type`,
@@ -144,7 +144,7 @@ export class InertialMeasurementUnitRepository {
       this.#db,
       coverageBucketRowSchema,
       sql`SELECT
-          time_bucket('5 minutes', recorded_at)::text AS bucket,
+          to_char(time_bucket('5 minutes', recorded_at), 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS bucket,
           count(*)::int AS sample_count
         FROM fitness.inertial_measurement_unit_sample
         WHERE user_id = ${this.#userId}::uuid
