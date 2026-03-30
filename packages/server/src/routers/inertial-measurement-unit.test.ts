@@ -19,6 +19,31 @@ function makeExecute(rows: Record<string, unknown>[] = []) {
 }
 
 describe("inertialMeasurementUnitRouter", () => {
+  describe("getDailyHeatmap", () => {
+    it("returns hourly heatmap data for a date range", async () => {
+      const execute = makeExecute([
+        { date: "2026-03-25", hour: "10", sample_count: "180000", coverage_percent: "100.0" },
+        { date: "2026-03-25", hour: "11", sample_count: "90000", coverage_percent: "50.0" },
+      ]);
+      const caller = createCaller({ db: { execute }, userId: "user-1" });
+
+      const result = await caller.getDailyHeatmap({ days: 30 });
+
+      expect(result).toEqual([
+        { date: "2026-03-25", hour: 10, sampleCount: 180000, coveragePercent: 100 },
+        { date: "2026-03-25", hour: 11, sampleCount: 90000, coveragePercent: 50 },
+      ]);
+    });
+
+    it("returns empty array when no data", async () => {
+      const execute = makeExecute([]);
+      const caller = createCaller({ db: { execute }, userId: "user-1" });
+
+      const result = await caller.getDailyHeatmap({ days: 30 });
+      expect(result).toEqual([]);
+    });
+  });
+
   describe("getCoverageTimeline", () => {
     it("returns coverage buckets for a given date", async () => {
       const execute = makeExecute([

@@ -119,6 +119,43 @@ describe("InertialMeasurementUnitRepository", () => {
     });
   });
 
+  describe("getDailyHeatmap", () => {
+    it("returns empty array when no data", async () => {
+      const { repo } = makeRepository([]);
+      expect(await repo.getDailyHeatmap(30)).toEqual([]);
+    });
+
+    it("maps snake_case DB rows to camelCase domain objects", async () => {
+      const { repo } = makeRepository([
+        { date: "2025-01-15", hour: "10", sample_count: "180000", coverage_percent: "100.0" },
+        { date: "2025-01-15", hour: "11", sample_count: "90000", coverage_percent: "50.0" },
+        { date: "2025-01-14", hour: "8", sample_count: "180000", coverage_percent: "100.0" },
+      ]);
+      const result = await repo.getDailyHeatmap(30);
+      expect(result).toEqual([
+        { date: "2025-01-15", hour: 10, sampleCount: 180000, coveragePercent: 100 },
+        { date: "2025-01-15", hour: 11, sampleCount: 90000, coveragePercent: 50 },
+        { date: "2025-01-14", hour: 8, sampleCount: 180000, coveragePercent: 100 },
+      ]);
+    });
+
+    it("coerces string numbers from postgres", async () => {
+      const { repo } = makeRepository([
+        { date: "2025-01-15", hour: "14", sample_count: "42", coverage_percent: "0.0" },
+      ]);
+      const result = await repo.getDailyHeatmap(30);
+      expect(result[0]?.hour).toBe(14);
+      expect(result[0]?.sampleCount).toBe(42);
+      expect(result[0]?.coveragePercent).toBe(0);
+    });
+
+    it("calls execute once", async () => {
+      const { repo, execute } = makeRepository([]);
+      await repo.getDailyHeatmap(30);
+      expect(execute).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe("getTimeSeries", () => {
     it("returns empty array when no samples in range", async () => {
       const { repo } = makeRepository([]);
