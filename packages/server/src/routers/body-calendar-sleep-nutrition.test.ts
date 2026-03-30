@@ -10,7 +10,6 @@ vi.mock("../trpc.ts", async () => {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
     cachedProtectedQuery: () => trpc.procedure,
-    cachedProtectedQueryLight: () => trpc.procedure,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -48,10 +47,33 @@ function makeCaller<T extends ReturnType<typeof import("../trpc.ts").router>>(
 describe("bodyRouter", () => {
   describe("list", () => {
     it("returns body measurement rows", async () => {
-      const rows = [{ id: "1", weight_kg: 80, recorded_at: "2024-01-01" }];
+      const rows = [
+        {
+          id: "1",
+          weight_kg: 80,
+          recorded_at: "2024-01-01",
+          provider_id: "p1",
+          user_id: "user-1",
+          external_id: null,
+          body_fat_pct: null,
+          muscle_mass_kg: null,
+          bone_mass_kg: null,
+          water_pct: null,
+          bmi: null,
+          height_cm: null,
+          waist_circumference_cm: null,
+          systolic_bp: null,
+          diastolic_bp: null,
+          heart_pulse: null,
+          temperature_c: null,
+          source_name: null,
+          created_at: "2024-01-01",
+        },
+      ];
       const caller = makeCaller(bodyRouter, rows);
       const result = await caller.list({ days: 90 });
-      expect(result).toEqual(rows);
+      expect(result[0]?.weightKg).toBe(80);
+      expect(result[0]?.recordedAt).toBe("2024-01-01");
     });
 
     it("returns empty array when no data", async () => {
@@ -131,10 +153,36 @@ describe("sleepRouter", () => {
 describe("nutritionRouter", () => {
   describe("daily", () => {
     it("returns nutrition rows", async () => {
-      const rows = [{ date: "2024-01-15", calories: 2000, protein_g: 150 }];
+      const rows = [
+        {
+          date: "2024-01-15",
+          provider_id: "p1",
+          user_id: "user-1",
+          calories: 2000,
+          protein_g: 150,
+          carbs_g: null,
+          fat_g: null,
+          fiber_g: null,
+          sugar_g: null,
+          sodium_mg: null,
+          cholesterol_mg: null,
+          saturated_fat_g: null,
+          trans_fat_g: null,
+          potassium_mg: null,
+          calcium_mg: null,
+          iron_mg: null,
+          vitamin_a_mcg: null,
+          vitamin_c_mg: null,
+          vitamin_d_mcg: null,
+          alcohol_g: null,
+          water_ml: null,
+          caffeine_mg: null,
+        },
+      ];
       const caller = makeCaller(nutritionRouter, rows);
       const result = await caller.daily({ days: 30 });
-      expect(result).toEqual(rows);
+      expect(result[0]?.calories).toBe(2000);
+      expect(result[0]?.proteinGrams).toBe(150);
     });
   });
 });

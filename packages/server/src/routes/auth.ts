@@ -3,7 +3,8 @@ import { IDENTITY_PROVIDER_NAMES } from "@dofek/auth/auth";
 import { getOAuthRedirectUri } from "dofek/auth/oauth";
 import { DEFAULT_USER_ID } from "dofek/db/schema";
 import { sql } from "drizzle-orm";
-import { Router } from "express";
+import express, { Router } from "express";
+import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import { resolveOrCreateUser } from "../auth/account-linking.ts";
 import {
@@ -66,6 +67,25 @@ const oauth1Secrets = new Map<
   string,
   { providerId: string; tokenSecret: string; userId: string }
 >();
+
+/**
+ * Server-side state store for identity provider OAuth flows.
+ * Cookies (SameSite=Lax) aren't sent on cross-site POST requests, which
+ * breaks Apple Sign In (response_mode=form_post). This map provides a
+ * fallback when cookies are unavailable.
+ */
+interface IdentityFlowEntry {
+  codeVerifier: string;
+  linkUserId?: string;
+  mobileScheme?: string;
+  returnTo?: string;
+}
+const identityFlowMap = new Map<string, IdentityFlowEntry>();
+
+function storeIdentityFlow(state: string, entry: IdentityFlowEntry): void {
+  identityFlowMap.set(state, entry);
+  setTimeout(() => identityFlowMap.delete(state), 10 * 60 * 1000);
+}
 
 function isIdentityProviderName(value: string): value is IdentityProviderName {
   return IDENTITY_PROVIDER_NAMES.some((p) => p === value);
@@ -156,6 +176,15 @@ async function startDataProviderOAuth(
 // Module-level db reference, set during router creation
 let db: import("dofek/db").Database;
 
+// Rate limiter for auth endpoints (login, callback, native sign-in)
+const authRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: 30, // 30 attempts per window per IP
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: "Too many authentication attempts — please try again later",
+});
+
 export function createAuthRouter(database: import("dofek/db").Database): Router {
   db = database;
   const router = Router();
@@ -190,7 +219,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
     try {
       const providerNameRaw = req.params.provider;
       if (!isIdentityProviderName(providerNameRaw)) {
-        res.status(404).send(`Unknown identity provider: ${providerNameRaw}`);
+        res.status(404).type("text/plain").send("Unknown identity provider");
         return;
       }
       const providerName = providerNameRaw;
@@ -216,10 +245,17 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         setMobileSchemeCookie(res, redirectScheme);
       }
 
-      setPostLoginRedirectCookie(
-        res,
-        typeof req.query.return_to === "string" ? req.query.return_to : undefined,
-      );
+      const returnTo = typeof req.query.return_to === "string" ? req.query.return_to : undefined;
+      setPostLoginRedirectCookie(res, returnTo);
+
+      // Server-side fallback for providers that use form_post (Apple):
+      // SameSite=Lax cookies aren't sent on cross-site POST requests.
+      storeIdentityFlow(statePayload, {
+        codeVerifier,
+        mobileScheme:
+          redirectScheme && isValidMobileScheme(redirectScheme) ? redirectScheme : undefined,
+        returnTo,
+      });
 
       res.redirect(url.toString());
     } catch (err: unknown) {
@@ -234,7 +270,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
     try {
       const providerNameRaw = req.params.provider;
       if (!isIdentityProviderName(providerNameRaw)) {
-        res.status(404).send(`Unknown identity provider: ${providerNameRaw}`);
+        res.status(404).type("text/plain").send("Unknown identity provider");
         return;
       }
       const providerName = providerNameRaw;
@@ -264,6 +300,13 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
 
       setOAuthFlowCookies(res, statePayload, codeVerifier);
       setLinkUserCookie(res, session.userId);
+
+      // Server-side fallback (same reason as login handler above)
+      storeIdentityFlow(statePayload, {
+        codeVerifier,
+        linkUserId: session.userId,
+      });
+
       res.redirect(url.toString());
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -272,36 +315,64 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
     }
   });
 
-  router.get("/auth/callback/:provider", async (req, res) => {
+  /**
+   * Shared handler for identity provider OAuth callbacks.
+   * Accepts code/state/error from either query params (GET) or form body (POST).
+   * Apple Sign In uses response_mode=form_post, so the callback comes as a POST
+   * where SameSite=Lax cookies are not sent. Falls back to server-side state map.
+   */
+  async function handleIdentityCallback(
+    req: import("express").Request<{ provider: string }>,
+    res: import("express").Response,
+  ) {
     try {
       const providerNameRaw = req.params.provider;
       if (!isIdentityProviderName(providerNameRaw)) {
-        res.status(404).send(`Unknown identity provider: ${providerNameRaw}`);
+        res.status(404).type("text/plain").send("Unknown identity provider");
         return;
       }
       const providerName = providerNameRaw;
 
-      const code = typeof req.query.code === "string" ? req.query.code : undefined;
-      const stateParam = typeof req.query.state === "string" ? req.query.state : undefined;
-      const error = typeof req.query.error === "string" ? req.query.error : undefined;
+      // Read code/state/error from query params (GET) or body (POST form_post)
+      const rawParams = req.method === "POST" ? req.body : req.query;
+      const code = typeof rawParams.code === "string" ? rawParams.code : undefined;
+      const stateParam = typeof rawParams.state === "string" ? rawParams.state : undefined;
+      const error = typeof rawParams.error === "string" ? rawParams.error : undefined;
 
       if (error) {
-        res.status(400).send(`Authorization denied: ${error}`);
+        res.status(400).type("text/plain").send("Authorization denied");
         return;
       }
       if (!code || !stateParam) {
-        res.status(400).send("Missing code or state parameter");
+        res.status(400).type("text/plain").send("Missing code or state parameter");
         return;
       }
 
-      const { state: storedState, codeVerifier } = getOAuthFlowCookies(req);
-      const linkUserId = getLinkUserCookie(req);
-      const mobileScheme = getMobileSchemeCookie(req);
-      const returnTo = getPostLoginRedirectCookie(req);
+      // Try cookies first (works for GET redirects from Google/Authentik)
+      const cookieFlow = getOAuthFlowCookies(req);
+      let storedState = cookieFlow.state;
+      let codeVerifier = cookieFlow.codeVerifier;
+      let linkUserId = getLinkUserCookie(req);
+      let mobileScheme = getMobileSchemeCookie(req);
+      let returnTo = getPostLoginRedirectCookie(req);
       clearOAuthFlowCookies(res);
 
+      // Fall back to server-side map when cookies are unavailable
+      // (Apple form_post: SameSite=Lax cookies aren't sent on cross-site POST)
+      if (!storedState || !codeVerifier) {
+        const flowEntry = identityFlowMap.get(stateParam);
+        if (flowEntry) {
+          storedState = stateParam;
+          codeVerifier = flowEntry.codeVerifier;
+          linkUserId = linkUserId ?? flowEntry.linkUserId;
+          mobileScheme = mobileScheme ?? flowEntry.mobileScheme;
+          returnTo = returnTo ?? flowEntry.returnTo;
+          identityFlowMap.delete(stateParam);
+        }
+      }
+
       if (!storedState || !codeVerifier || stateParam !== storedState) {
-        res.status(400).send("Invalid state — please try logging in again");
+        res.status(400).type("text/plain").send("Invalid state — please try logging in again");
         return;
       }
 
@@ -345,7 +416,69 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       logger.error(`[auth] Identity callback failed: ${message}`);
       res.status(500).send("Login failed — please try again");
     }
-  });
+  }
+
+  router.get("/auth/callback/:provider", authRateLimiter, handleIdentityCallback);
+  // Apple Sign In uses response_mode=form_post, sending code/state as POST body
+  router.post(
+    "/auth/callback/:provider",
+    authRateLimiter,
+    express.urlencoded({ extended: false }),
+    handleIdentityCallback,
+  );
+
+  // ── Native Apple Sign In (iOS) ──
+  // iOS uses ASAuthorizationController which returns an authorization code + identity token directly.
+  // This endpoint exchanges the code for tokens and creates a session.
+  router.post(
+    "/auth/apple/native",
+    authRateLimiter,
+    express.urlencoded({ extended: false }),
+    express.json(),
+    async (req, res) => {
+      try {
+        if (!isProviderConfigured("apple")) {
+          res.status(400).send("Apple Sign In is not configured");
+          return;
+        }
+
+        const authorizationCode =
+          typeof req.body.authorizationCode === "string" ? req.body.authorizationCode : undefined;
+        if (!authorizationCode) {
+          res.status(400).send("Missing authorizationCode");
+          return;
+        }
+
+        // Apple only provides name on first sign-in; the native SDK returns it separately
+        const givenName = typeof req.body.givenName === "string" ? req.body.givenName : undefined;
+        const familyName =
+          typeof req.body.familyName === "string" ? req.body.familyName : undefined;
+        const fullName = [givenName, familyName].filter(Boolean).join(" ") || null;
+
+        const provider = getIdentityProvider("apple");
+        // Apple doesn't use PKCE, so pass empty string as codeVerifier
+        const { user: identityUser } = await provider.validateCallback(authorizationCode, "");
+
+        // Use the name from the native SDK if the identity token didn't include it
+        const userName = identityUser.name ?? fullName;
+
+        const { userId } = await resolveOrCreateUser(db, "apple", {
+          providerAccountId: identityUser.sub,
+          email: identityUser.email,
+          name: userName,
+          groups: identityUser.groups,
+        });
+
+        const sessionInfo = await createSession(db, userId);
+        logger.info(`[auth] User ${userId} logged in via native Apple Sign In`);
+        res.json({ session: sessionInfo.sessionId });
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.error(`[auth] Native Apple Sign In failed: ${message}`);
+        res.status(500).send("Apple Sign In failed — please try again");
+      }
+    },
+  );
 
   router.post("/auth/logout", async (req, res) => {
     const sessionId = getSessionIdFromRequest(req);
@@ -370,8 +503,13 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
     }
     const rows = await executeWithSchema(
       db,
-      z.object({ id: z.string(), name: z.string(), email: z.string().nullable() }),
-      sql`SELECT id, name, email FROM fitness.user_profile WHERE id = ${session.userId}`,
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        email: z.string().nullable(),
+        is_admin: z.boolean(),
+      }),
+      sql`SELECT id, name, email, is_admin FROM fitness.user_profile WHERE id = ${session.userId}`,
     );
     if (rows.length === 0) {
       res.status(401).json({ error: "User not found" });
@@ -382,7 +520,12 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
     if (isMobile) {
       logger.info(`[auth] /me resolved userId=${session.userId} (mobile)`);
     }
-    res.json(rows[0]);
+    const row = rows[0];
+    if (!row) {
+      res.status(401).json({ error: "User not found" });
+      return;
+    }
+    res.json({ id: row.id, name: row.name, email: row.email, isAdmin: row.is_admin });
   });
 
   // ── Slack OAuth (Add to Slack) ──
@@ -495,7 +638,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       }
 
       if (error) {
-        res.status(400).send(`Authorization denied: ${error}`);
+        res.status(400).type("text/plain").send("Authorization denied");
         return;
       }
 

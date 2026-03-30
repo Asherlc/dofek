@@ -5,7 +5,8 @@
     "./plugins/no-as-type-assertion.grit",
     "./plugins/no-single-letter-variables.grit",
     "./plugins/no-private-keyword.grit",
-    "./plugins/no-underscore-private.grit"
+    "./plugins/no-underscore-private.grit",
+    "./plugins/no-silent-catch.grit"
   ],
   "vcs": {
     "enabled": true,
@@ -14,7 +15,14 @@
   },
   "files": {
     "ignoreUnknown": true,
-    "includes": ["src/**", "packages/*/src/**", "scripts/**", "cypress/**", "*.ts"]
+    "includes": [
+      "src/**",
+      "packages/*/src/**",
+      "packages/mobile/**",
+      "scripts/**",
+      "cypress/**",
+      "*.ts"
+    ]
   },
   "formatter": {
     "indentStyle": "space",
@@ -27,7 +35,8 @@
       "recommended": true,
       "suspicious": {
         "noExplicitAny": "error",
-        "noTsIgnore": "error"
+        "noTsIgnore": "error",
+        "noConsole": "error"
       },
       "style": {
         "noNonNullAssertion": "error"
@@ -40,6 +49,25 @@
       "linter": { "enabled": false },
       "formatter": { "enabled": false },
       "assist": { "enabled": false }
+    },
+    {
+      "includes": [
+        "scripts/**",
+        "packages/mobile/lib/telemetry.ts",
+        "packages/mobile/test-setup.ts",
+        "packages/server/src/lib/start-worker.ts",
+        "src/instrumentation.ts",
+        "src/logger.ts",
+        "src/providers/whoop-api-contract.test.ts",
+        "src/providers/provider-api-contracts.test.ts"
+      ],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "off"
+          }
+        }
+      }
     }
   ],
   "css": {

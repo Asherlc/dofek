@@ -27,6 +27,14 @@ const sampleWorkout: PelotonWorkout = {
   total_work: 360000, // joules
   is_total_work_personal_record: false,
   metrics_type: "cycling",
+  device_type: "home_bike_v1",
+  platform: "home_bike",
+  peloton_id: "7a77557fbaf6454e8445fcff4a415a6c",
+  workout_type: "class",
+  has_pedaling_metrics: true,
+  has_leaderboard_metrics: true,
+  timezone: "America/New_York",
+  strava_id: "3456789012",
   ride: {
     id: "ride-001",
     title: "30 min Power Zone Ride",
@@ -242,6 +250,20 @@ describe("Peloton Provider", () => {
       expect(result.raw?.classTitle).toBeUndefined();
     });
 
+    it("handles ride with no instructor", () => {
+      const noInstructor: PelotonWorkout = {
+        ...sampleWorkout,
+        ride: {
+          id: "ride-001",
+          title: "Just Ride",
+          duration: 1800,
+        },
+      };
+      const result = parseWorkout(noInstructor);
+      expect(result.raw.instructor).toBeUndefined();
+      expect(result.raw.classTitle).toBe("Just Ride");
+    });
+
     it("parses a strength workout", () => {
       const result = parseWorkout(sampleStrengthWorkout);
 
@@ -272,6 +294,67 @@ describe("Peloton Provider", () => {
     it("computes duration from start/end when both present", () => {
       const result = parseWorkout(sampleWorkout);
       expect(result.name).toBe("30 min Power Zone Ride");
+    });
+
+    it("stores device and source metadata in raw", () => {
+      const result = parseWorkout(sampleCyclingWorkout);
+      expect(result.raw.deviceType).toBe("home_bike_v1");
+      expect(result.raw.platform).toBe("home_bike");
+      expect(result.raw.pelotonClassId).toBe("7a77557fbaf6454e8445fcff4a415a6c");
+      expect(result.raw.workoutType).toBe("class");
+      expect(result.raw.hasPedalingMetrics).toBe(true);
+      expect(result.raw.timezone).toBe("America/New_York");
+    });
+
+    it("extracts timezone and stravaId as top-level fields", () => {
+      const result = parseWorkout(sampleCyclingWorkout);
+      expect(result.timezone).toBe("America/New_York");
+      expect(result.stravaId).toBe("3456789012");
+    });
+
+    it("ignores strava_id when it is -1 (not linked)", () => {
+      const notLinked: PelotonWorkout = { ...sampleWorkout, strava_id: "-1" };
+      const result = parseWorkout(notLinked);
+      expect(result.stravaId).toBeUndefined();
+    });
+
+    it("ignores strava_id when it is empty string", () => {
+      const empty: PelotonWorkout = { ...sampleWorkout, strava_id: "" };
+      const result = parseWorkout(empty);
+      expect(result.stravaId).toBeUndefined();
+    });
+
+    it("preserves valid strava_id", () => {
+      const result = parseWorkout(sampleWorkout);
+      expect(result.stravaId).toBe("3456789012");
+    });
+
+    it("stores hasPedalingMetrics false in raw", () => {
+      const noPedaling: PelotonWorkout = { ...sampleWorkout, has_pedaling_metrics: false };
+      const result = parseWorkout(noPedaling);
+      expect(result.raw.hasPedalingMetrics).toBe(false);
+    });
+
+    it("handles missing optional source fields", () => {
+      const minimal: PelotonWorkout = {
+        ...sampleWorkout,
+        device_type: undefined,
+        platform: undefined,
+        peloton_id: undefined,
+        workout_type: undefined,
+        has_pedaling_metrics: undefined,
+        timezone: undefined,
+        strava_id: undefined,
+      };
+      const result = parseWorkout(minimal);
+      expect(result.raw.deviceType).toBeUndefined();
+      expect(result.raw.platform).toBeUndefined();
+      expect(result.raw.pelotonClassId).toBeUndefined();
+      expect(result.raw.workoutType).toBeUndefined();
+      expect(result.raw.hasPedalingMetrics).toBeUndefined();
+      expect(result.raw.timezone).toBeUndefined();
+      expect(result.timezone).toBeUndefined();
+      expect(result.stravaId).toBeUndefined();
     });
 
     it("stores personal record flag in raw", () => {

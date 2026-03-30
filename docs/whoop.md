@@ -145,7 +145,29 @@ SELECT refresh_token FROM fitness.oauth_token WHERE provider_id = 'whoop';
 
 ### Raw IMU/accelerometer data
 
-There are **three paths** to getting raw accelerometer data from a Whoop strap. All are on the roadmap for future implementation (iPhone accelerometer via `CMSensorRecorder` is being implemented first as a quicker win).
+### Status: WORKING (March 29, 2026)
+
+**Raw 6-axis accelerometer+gyroscope data is being captured from the WHOOP strap via BLE.** The full pipeline is confirmed:
+
+1. Our iOS app connects to the strap via `retrieveConnectedPeripherals` (piggybacking on the WHOOP app's bonded BLE connection)
+2. R21 raw data frames (type 0x2B, 1236 bytes) flow passively during the WHOOP app's normal sync — **no command injection needed**
+3. Each frame contains 100 samples of 6-axis data (accel XYZ + gyro XYZ, int16 LE)
+4. Samples are buffered and uploaded to the server via tRPC
+
+**Key finding: no additional battery drain.** The strap's IMU is already active during normal WHOOP app operation. We're reading data that's already being transmitted as part of the standard BLE protocol, not turning on a sensor that was off. The original concern about reducing strap battery life from 5 days to 3-4 days by enabling the IMU is not applicable — the IMU data already flows during sync.
+
+**Caveat:** Data flows during active WHOOP app sync sessions. When the WHOOP app finishes syncing and goes to background, R21 packets may stop. Continuous 24/7 capture may still require TOGGLE_IMU_MODE (which we confirmed is accepted on the bonded iOS connection — got 0x24 ACK).
+
+**Completed:**
+- ✅ Fixed timestamp offset (payload byte 7, not 3 — confirmed via live capture)
+- ✅ Fixed migration (0049 adds RENAME + gyroscope columns)
+- ✅ Updated Swift tests for Maverick 8-byte header format (22 tests passing)
+- ✅ Cleaned up diagnostic logging (removed hex dumps, verbose NSLog)
+- ✅ Removed settings toggle — always connects to WHOOP strap automatically
+- ✅ TOGGLE_IMU_MODE re-enabled for continuous streaming beyond WHOOP app sync
+- ⚠️ Verify data continues flowing after WHOOP app sync completes (needs long-term testing)
+
+There are **three paths** to getting raw accelerometer data from a Whoop strap. Path D (passive BLE capture) is now the primary working approach.
 
 #### Path A: Protobuf files from Strength Trainer workouts (API)
 
@@ -246,23 +268,34 @@ When the Whoop app starts a Strength Trainer workout, it sends `TOGGLE_IMU_MODE 
 
 #### Path C: Direct BLE command injection (active, 24/7)
 
-Build a macOS or iOS CoreBluetooth client that connects to the Whoop strap and sends:
-- `START_RAW_DATA (0x51)` + `TOGGLE_IMU_MODE_HISTORICAL (0x69)` — dump all stored IMU history
-- `TOGGLE_IMU_MODE (0x6a)` — enable continuous raw IMU streaming
+Send `TOGGLE_IMU_MODE (0x6a)` to enable continuous raw IMU streaming beyond sync sessions.
 
-**Challenges:**
-- On iOS, multiple apps can connect to the same BLE peripheral simultaneously (bonding is at the OS level). Use `retrieveConnectedPeripherals(withServices:)` to find the already-connected strap. ~~The Whoop only bonds to one BLE central at a time~~ — **confirmed working alongside the WHOOP app.**
-- Battery drain on strap: The WHOOP 4.0 has a 192 mAh battery ([TechInsights teardown](https://www.techinsights.com/blog/teardown/fitness-wearable-whoop-40-leverages-next-generation-battery-anode-technology)). During normal wear, the IMU is off (`SENSORS: No active IMU data collection sources` in console log) to save power. Enabling the gyroscope + accelerometer at full rate adds ~0.55-0.65 mA ([STMicro LSM6DSO datasheet](https://www.st.com/en/mems-and-sensors/lsm6dso.html), typical 6-axis IMU in this class), which on a 192 mAh battery would reduce life from ~5 days to ~3-4 days. Actual impact depends on the specific WHOOP IMU chip and firmware duty cycling.
-- Protocol may change with firmware updates
+**Status (March 29, 2026): Command accepted on iOS bonded connection.**
+- Our TOGGLE_IMU_MODE command received a 0x24 ACK (COMMAND_RESPONSE) on the bonded iOS connection
+- Commands are silently ignored on unbonded connections (macOS got 0x26 NACK with error 0x049c)
+- The strap requires BLE bonding (established by the WHOOP app) before accepting commands
+- On iOS, our app shares the WHOOP app's bonded connection via `retrieveConnectedPeripherals`
+- Full command frame format cracked: 8-byte Maverick header with CRC16-MODBUS + CRC32 payload
 
-**This is the most complete path** (24/7 raw wrist accel from the Whoop itself) but also the most fragile. Worth pursuing after the iPhone accelerometer pipeline is proven.
+**Battery drain: NOT A CONCERN.** The strap's IMU is already active during normal WHOOP app sync. R21 raw data (type 0x2B, 100 samples/frame) flows passively without any command. ~~During normal wear, the IMU is off~~ — this was incorrect. The IMU runs during sync sessions, which happen frequently throughout the day.
+
+#### Path D: Passive BLE capture during WHOOP app sync (WORKING)
+
+**This is the current working approach.** Our app piggybacks on the WHOOP app's BLE connection and passively reads R21 raw data frames that flow during normal sync operations. No command injection needed.
+
+- ✅ 2,100+ samples captured in initial testing
+- ✅ 6-axis data (accel XYZ + gyro XYZ), 100 samples per frame
+- ✅ Data confirmed real: gravity vector = 0.98g, low variance when wrist at rest
+- ✅ Sensor range confirmed: ±8g (1g ≈ 4096 LSB)
+- ⚠️ Data only flows during active WHOOP app sync sessions
 
 #### Roadmap priority
 
-1. ✅ **iPhone CMSensorRecorder** (in progress) — 50 Hz, background, official API, no hacking
-2. 🔜 **Path B: BLE capture during Strength Trainer** — validate IMU packet parsing, low effort
-3. 🔮 **Apple Watch CMSensorRecorder** — 50 Hz wrist accel via watchOS companion app
-4. 🔮 **Path C: Direct Whoop BLE** — 24/7 wrist accel, requires custom BLE client + bonding workaround
+1. ✅ **iPhone CMSensorRecorder** — 50 Hz, background, official API
+2. ✅ **Path D: Passive WHOOP BLE** — WORKING, 100 Hz wrist accel during WHOOP sync
+3. ✅ **Apple Watch CMSensorRecorder** — 50 Hz wrist accel via watchOS companion app
+4. 🔜 **Path C: Active WHOOP BLE** — 24/7 wrist accel via TOGGLE_IMU_MODE (command accepted, needs testing for continuous streaming)
+5. 🔮 **Path A: Protobuf download** — requires finding the download mechanism
 
 ### BLE protocol (reverse-engineered from APK + packet capture)
 
@@ -294,15 +327,39 @@ In the iOS capture, these mapped to ATT handles: `0x099b` (CMD_TO_STRAP), `0x099
 
 #### Frame format
 
-All BLE payloads use this frame structure:
+There are two frame formats depending on hardware generation:
 
+**Gen4 (Harvard) — 5-byte header with CRC8:**
 ```
-[0xAA] [version:u8] [payloadLen:u16 LE] [headerFields...] [payload...] [crc32:u32 LE]
+[SOF: 0xAA] [version: u8] [payloadLen: u16 LE] [headerCRC8: u8]
+[payload: payloadLen bytes]
 ```
+- CRC8 uses the table in `C28184c.f111541c`
+- Class: `dm0/C15397c` (Gen4PacketFrame)
 
-- `0xAA` = start-of-frame marker
-- Version is typically `0x01`
-- CRC32 is over the entire frame excluding the CRC itself
+**Maverick/Puffin — 8-byte header with CRC16 + CRC32 payload (CONFIRMED):**
+```
+[SOF: 0xAA] [ver: 0x01] [payloadLen: u16 LE] [role1: 0x00] [role2: 0x01] [headerCRC16: u16 LE]
+[command: payloadLen - 4 bytes]
+[payloadCRC32: u32 LE]
+```
+- **Header CRC16**: CRC16-MODBUS of the first 6 header bytes, stored as u16 LE at bytes 6-7
+- **Payload CRC32**: Standard Java `CRC32` (`java.util.zip.CRC32` = IEEE 802.3) of the command bytes only (not including the CRC32 itself), stored as u32 LE at the end of the payload
+- `role1 = 0x00` = `AbstractC15395a.c` (role "c")
+- `role2 = 0x01` = `AbstractC15395a.b` (role "b")
+- Class: `dm0/C15399e` (MaverickPacketFrame)
+- **payloadLen includes the 4-byte CRC32** — so command bytes = payloadLen - 4
+
+**Verified (March 29, 2026):** Built frames match PacketLogger capture byte-for-byte:
+- Frame 7: `aa010c000001e74123f16a010100000058e961fc` — header CRC16 `e741` = CRC16-MODBUS(`aa010c000001`), payload CRC32 `58e961fc` = CRC32(`23f16a0101000000`)
+- Frame 13: `aa010c000001e74123f36a010100000071f8fe6b` — same header CRC (same header bytes), payload CRC `71f8fe6b` = CRC32(`23f36a0101000000`)
+
+**Command payload structure:**
+```
+[packetType: 0x23 or 0x25] [seqNum: u8] [commandByte: u8] [params...]
+```
+- 0x23 = COMMAND (Gen4/Maverick)
+- 0x25 = PUFFIN_COMMAND (Puffin-specific)
 
 #### Packet types
 
@@ -407,6 +464,91 @@ Each sample is 12 bytes (6 × int16 LE). Channels a = accelerometer XYZ, channel
 **Current limitation (March 2026):** Our capture only shows the standard sync (HR + quaternion). To capture raw IMU packets, we need to either:
 - Start a Strength Trainer workout (the app sends `TOGGLE_IMU_MODE` automatically)
 - Build a custom BLE client that sends the `0x69` command directly (requires stealing the BLE connection from the Whoop app)
+
+### Live BLE investigation (March 28-29, 2026)
+
+#### Phase 1: iOS debug build (March 28)
+
+Deployed a debug build to a physical iPhone connected to a WHOOP 4.0 strap ("WHOOP MGB0542854") via BLE. Findings:
+
+1. **BLE connection works on iOS**: `retrieveConnectedPeripherals` finds the strap already connected by the WHOOP app. Our app successfully connects, discovers services/characteristics, and subscribes to DATA_FROM_STRAP notifications. iOS allows multiple apps to share a BLE peripheral.
+
+2. **Data flows but contains no IMU packets on iOS**: 697-944 BLE notifications arrive on DATA_FROM_STRAP. All are console log packets (packet type 0x01 at payload offset 0) containing ASCII firmware debug output. No IMU packets (type 0x33/0x34) were observed. Commands sent got no response (CMD_FROM_STRAP was silent).
+
+#### Phase 2: PacketLogger capture (March 29)
+
+Captured a live Strength Trainer workout via PacketLogger. Key findings:
+
+- **Command format has additional structure**: The WHOOP app sends 12-byte payloads (not 2): `[preamble: 00 01 E7 41] [0x23] [seq] [cmd] [params: 01 01 00 00 00]`, plus a 4-byte CRC32 trailer.
+- **Commands get ACK'd (type 0x24)** in the capture — strap echoes back the command byte and sequence number.
+- **After TOGGLE_IMU_MODE, DATA_FROM_STRAP sends 1236-byte REALTIME_RAW_DATA (type 0x2B)** packets — the Maverick R21 format with separate accel/gyro channel arrays. This is the IMU data we want.
+
+#### Phase 3: Direct BLE probe from macOS (March 29)
+
+Built `packages/ble-probe` — a macOS CLI tool for interactive BLE probing. Connected directly to a Puffin-generation WHOOP strap ("WBB5BP0969399", service UUID `11500001-...`) after force-closing the WHOOP app on the phone.
+
+**Critical finding: the strap requires BLE bonding/authentication before accepting commands.**
+
+All commands — regardless of format, CRC, or sequence — receive a **0x26 NACK response with error code 0x049c (1180)**:
+
+| Command | Format | Response |
+|---------|--------|----------|
+| TOGGLE_IMU_MODE (0x6A) | Full 12-byte payload + CRC32 from capture | 0x26 NACK, error 0x049c |
+| TOGGLE_IMU_MODE (0x6A) | Full 12-byte payload, no CRC32 | 0x26 NACK, error 0x049c |
+| GET_HELLO (0x91) | Full 12-byte payload | 0x26 NACK, error 0x049c |
+| START_RAW_DATA (0x51) | Full 12-byte payload | 0x26 NACK, error 0x049c |
+| Minimal `[0x23 0x6A]` | 2-byte payload | 0x26 NACK, error 0x049c |
+
+The 0x26 response echoes the preamble and our sequence number, confirming the strap **parses** the frame correctly but **rejects** it at the application layer. No data flows on DATA_FROM_STRAP (0005) at all.
+
+**Root cause**: The strap requires BLE bonding (established during the WHOOP app's initial setup flow on the phone). Without bonding, all commands are rejected. On iOS, piggybacking on the WHOOP app's bonded connection allows receiving passive data (console logs during sync), but our commands are still rejected because the bonding key belongs to the WHOOP app, not our app.
+
+#### Revised path forward
+
+The only viable paths to getting raw IMU data:
+
+1. **Passive capture during Strength Trainer workouts (iOS)**: The WHOOP app sends TOGGLE_IMU_MODE from its bonded connection. The strap enters IMU mode and streams 0x2B packets on DATA_FROM_STRAP. Our iOS app, piggybacking via `retrieveConnectedPeripherals`, should be able to read these notifications passively. **This requires the user to start a Strength Trainer workout in the WHOOP app.**
+
+2. **Reverse-engineer the WHOOP bonding/authentication flow**: Decompile the APK to find how the app establishes the bond and what error code 0x049c (1180) means. This would let us authenticate independently and send commands without the WHOOP app.
+
+3. **MITM the protobuf upload**: Intercept the raw IMU data the WHOOP app uploads to `POST /weightlifting-service/v1/raw-data/protobuf` during Strength Trainer workouts.
+
+#### BLE command enum (from APK decompilation)
+
+Full command byte values from `EnumC6478e` in the decompiled APK (v5.439.0):
+
+| Byte | Name | Notes |
+|------|------|-------|
+| 0x01 | LINK_VALID | First handshake command |
+| 0x02 | GET_MAX_PROTOCOL_VERSION | |
+| 0x03 | TOGGLE_REALTIME_HR | |
+| 0x07 | REPORT_VERSION_INFO | |
+| 0x0A | SET_CLOCK | |
+| 0x16 | SEND_HISTORICAL_DATA | |
+| 0x17 | HISTORICAL_DATA_RESULT | ACK for historical chunks |
+| 0x22 | GET_DATA_RANGE | |
+| 0x23 | GET_HELLO_HARVARD | Gen4 only, NOT generic "command type" |
+| 0x33 | SET_DP_TYPE | (note: collides with REALTIME_IMU packet type) |
+| 0x3F | SEND_R10_R11_REALTIME | |
+| 0x51 | START_RAW_DATA | |
+| 0x52 | STOP_RAW_DATA | |
+| 0x69 | TOGGLE_IMU_MODE_HISTORICAL | = 105 decimal |
+| 0x6A | TOGGLE_IMU_MODE | = 106 decimal |
+| 0x73 | START_DEVICE_CONFIG_KEY_EXCHANGE | |
+| 0x75 | START_FF_KEY_EXCHANGE | Feature flag key exchange |
+| 0x91 | GET_HELLO | Newer straps (Maverick/Puffin) = 145 decimal |
+
+**Important correction**: 0x23 is `GET_HELLO_HARVARD` (Gen4-specific handshake), NOT a generic "command packet type" as previously documented. The byte we were treating as "packet type 0x23 = COMMAND" in the frame format is actually the GET_HELLO_HARVARD command byte itself. The frame format documentation needs further investigation.
+
+#### BLE bonding requirement (confirmed March 29, 2026)
+
+**The strap requires BLE bonding before accepting ANY commands.** Tested with `packages/ble-probe` against a Puffin strap:
+
+- Every command (LINK_VALID, GET_HELLO, TOGGLE_IMU_MODE, START_RAW_DATA) returns response type **0x26** with error code **0x049c (1180)**, regardless of frame format or CRC presence.
+- The exact bytes from a successful PacketLogger capture (including valid CRC32) also get 0x049c when sent from an unbonded connection.
+- The strap parses frames correctly (echoes sequence numbers, uses proper response structure) but rejects at the application layer.
+
+This means direct command injection from an unbonded device is not possible. The strap's bonding is established during the WHOOP app's initial setup flow and tied to that app's BLE session.
 
 ### Investigation history
 

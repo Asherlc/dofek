@@ -9,7 +9,7 @@ import {
   trpcDbQueryDuration,
   trpcProcedureDuration,
 } from "./lib/metrics.ts";
-import { dbQuerySemaphore } from "./lib/semaphore.ts";
+import { logger } from "./logger.ts";
 
 export interface Context {
   db: Database;
@@ -38,13 +38,29 @@ const isAuthenticated = trpc.middleware(({ ctx, next }) => {
 export const publicProcedure = trpc.procedure;
 export const protectedProcedure = trpc.procedure.use(isAuthenticated);
 
+// Admin middleware — requires authenticated user with is_admin flag
+const isAdminUser = trpc.middleware(async ({ ctx, next }) => {
+  if (!ctx.userId) {
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "Not authenticated" });
+  }
+  const { isAdmin } = await import("./auth/admin.ts");
+  const admin = await isAdmin(ctx.db, ctx.userId);
+  if (!admin) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Admin access required" });
+  }
+  const authenticatedCtx: AuthenticatedContext = { ...ctx, userId: ctx.userId };
+  return next({ ctx: authenticatedCtx });
+});
+
+export const adminProcedure = trpc.procedure.use(isAdminUser);
+
 export const CacheTTL = {
   SHORT: 2 * 60 * 1000, // 2 min
   MEDIUM: 10 * 60 * 1000, // 10 min
   LONG: 60 * 60 * 1000, // 1 hour
 } as const;
 
-function cached(ttlMs: number, { lightweight = false } = {}) {
+function cached(ttlMs: number) {
   return trpc.middleware(async ({ ctx, path, type, getRawInput, next }) => {
     const start = performance.now();
     const rawInput = await getRawInput();
@@ -70,13 +86,14 @@ function cached(ttlMs: number, { lightweight = false } = {}) {
 
     cacheMissesTotal.inc({ procedure: path });
 
-    // DB query (everything in next()), limited by semaphore to prevent
-    // overwhelming postgres when a batch request triggers many cache misses.
-    // Lightweight queries (simple PK lookups like settings) skip the semaphore
-    // so they aren't blocked behind heavy analytics queries.
     const dbStart = performance.now();
-    const result = lightweight ? await next() : await dbQuerySemaphore.run(() => next());
-    trpcDbQueryDuration.observe({ procedure: path }, (performance.now() - dbStart) / 1000);
+    const result = await next();
+    const dbDurationMs = performance.now() - dbStart;
+    trpcDbQueryDuration.observe({ procedure: path }, dbDurationMs / 1000);
+
+    if (dbDurationMs > 500) {
+      logger.warn(`Slow query: ${path} took ${Math.round(dbDurationMs)}ms`);
+    }
 
     trpcProcedureDuration.observe(
       { procedure: path, type, cache_hit: "false" },
@@ -91,9 +108,3 @@ function cached(ttlMs: number, { lightweight = false } = {}) {
 
 /** Cached protected query (requires auth, cache scoped by userId). */
 export const cachedProtectedQuery = (ttl: number) => protectedProcedure.use(cached(ttl));
-
-/** Lightweight cached protected query — bypasses the DB semaphore.
- *  Use for simple, fast queries (PK lookups, settings) that shouldn't
- *  be queued behind heavy analytics queries. */
-export const cachedProtectedQueryLight = (ttl: number) =>
-  protectedProcedure.use(cached(ttl, { lightweight: true }));

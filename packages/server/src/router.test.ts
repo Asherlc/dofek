@@ -5,8 +5,12 @@ const { mockRouter } = vi.hoisted(() => ({
   mockRouter: { _def: { procedures: {} } },
 }));
 
-vi.mock("./routers/accelerometer.ts", () => ({ accelerometerRouter: mockRouter }));
-vi.mock("./routers/accelerometer-sync.ts", () => ({ accelerometerSyncRouter: mockRouter }));
+vi.mock("./routers/inertial-measurement-unit.ts", () => ({
+  inertialMeasurementUnitRouter: mockRouter,
+}));
+vi.mock("./routers/inertial-measurement-unit-sync.ts", () => ({
+  inertialMeasurementUnitSyncRouter: mockRouter,
+}));
 vi.mock("./routers/activity.ts", () => ({ activityRouter: mockRouter }));
 vi.mock("./routers/activity-recording.ts", () => ({ activityRecordingRouter: mockRouter }));
 vi.mock("./routers/ai-coach.ts", () => ({ aiCoachRouter: mockRouter }));
@@ -56,6 +60,7 @@ vi.mock("./routers/training.ts", () => ({ trainingRouter: mockRouter }));
 vi.mock("./routers/trends.ts", () => ({ trendsRouter: mockRouter }));
 vi.mock("./routers/weekly-report.ts", () => ({ weeklyReportRouter: mockRouter }));
 vi.mock("./routers/whoop-auth.ts", () => ({ whoopAuthRouter: mockRouter }));
+vi.mock("./routers/admin.ts", () => ({ adminRouter: mockRouter }));
 
 // Mock trpc
 vi.mock("./trpc.ts", async () => {
@@ -66,8 +71,8 @@ vi.mock("./trpc.ts", async () => {
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
+    adminProcedure: trpc.procedure,
     cachedProtectedQuery: () => trpc.procedure,
-    cachedProtectedQueryLight: () => trpc.procedure,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -95,8 +100,9 @@ describe("appRouter", () => {
 
   it("includes all sub-routers in the definition", () => {
     const expectedRouters = [
-      "accelerometer",
-      "accelerometerSync",
+      "admin",
+      "inertialMeasurementUnit",
+      "inertialMeasurementUnitSync",
       "activity",
       "activityRecording",
       "aiCoach",

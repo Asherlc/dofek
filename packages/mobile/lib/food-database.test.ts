@@ -14,20 +14,18 @@ afterEach(() => {
 
 describe("searchFoods", () => {
   it("adds locale and country filters for US English searches", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(
-        createFetchResponse({
-          products: [
-            {
-              code: "2",
-              product_name: "Hamburger Buns",
-              lang: "en",
-              nutriments: { "energy-kcal_100g": 270 },
-            },
-          ],
-        }),
-      );
+    const fetchMock = vi.fn().mockResolvedValue(
+      createFetchResponse({
+        products: [
+          {
+            code: "2",
+            product_name: "Hamburger Buns",
+            lang: "en",
+            nutriments: { "energy-kcal_100g": 270 },
+          },
+        ],
+      }),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     const client = new OpenFoodFactsClient("en-US");
