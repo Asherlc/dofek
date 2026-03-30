@@ -649,6 +649,31 @@ describe("FHIR MedicationRequest Parsing", () => {
       expect(result.rxnormCode).toBeUndefined();
     });
 
+    it("handles contained medication with no code property", () => {
+      const resource: FhirMedicationRequest = {
+        resourceType: "MedicationRequest",
+        id: "med-no-code",
+        medicationReference: {},
+        contained: [{ resourceType: "Medication" }],
+      };
+      const result = parseFhirMedicationRequest(resource, "Test");
+      expect(result.name).toBe("Unknown Medication");
+      expect(result.rxnormCode).toBeUndefined();
+    });
+
+    it("handles dosage with timing but no boundsPeriod", () => {
+      const resource: FhirMedicationRequest = {
+        resourceType: "MedicationRequest",
+        id: "med-no-bounds",
+        medicationReference: { display: "Med" },
+        dosageInstruction: [{ text: "Take daily", timing: { repeat: {} } }],
+      };
+      const result = parseFhirMedicationRequest(resource, "Test");
+      expect(result.dosageText).toBe("Take daily");
+      expect(result.startDate).toBeUndefined();
+      expect(result.endDate).toBeUndefined();
+    });
+
     it("extracts bounds period start and end dates", () => {
       const result = parseFhirMedicationRequest(medicationRequestFull, "Test");
       expect(result.startDate).toBe("2011-07-19");
@@ -691,6 +716,17 @@ describe("FHIR Condition Parsing", () => {
       expect(result.abatementDate).toBe("2024-06-27");
       expect(result.recordedDate).toBe("2023-06-02");
       expect(result.sourceName).toBe("UCSF Health");
+    });
+
+    it("returns undefined status when coding array is empty and no text", () => {
+      const resource: FhirCondition = {
+        resourceType: "Condition",
+        id: "cond-empty-coding",
+        code: { text: "Test" },
+        clinicalStatus: { coding: [] },
+      };
+      const result = parseFhirCondition(resource, "Test");
+      expect(result.clinicalStatus).toBeUndefined();
     });
 
     it("falls back to text for clinical status when coding is missing", () => {
