@@ -194,11 +194,9 @@ export const weeklyReportRouter = router({
       const isPartialWeek = lastWeek && lastWeek.weekStart === getMondayOfWeek(input.endDate);
       const current =
         isPartialWeek && cutoffWeeks.length >= 2
-          ? cutoffWeeks[cutoffWeeks.length - 2] ?? null
-          : lastWeek ?? null;
-      const history = isPartialWeek
-        ? cutoffWeeks.slice(0, -2)
-        : cutoffWeeks.slice(0, -1);
+          ? (cutoffWeeks[cutoffWeeks.length - 2] ?? null)
+          : (lastWeek ?? null);
+      const history = isPartialWeek ? cutoffWeeks.slice(0, -2) : cutoffWeeks.slice(0, -1);
 
       return { current, history };
     }),

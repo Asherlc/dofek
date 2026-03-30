@@ -73,7 +73,7 @@ function DailyCoveragePanel() {
 
   // Build unique sorted dates (most recent first) and hour labels
   const dates = [...new Set(data.map((cell) => cell.date))].sort().reverse();
-  const hours = Array.from({ length: 24 }, (_, index) => index.toString().padStart(2, "0") + ":00");
+  const hours = Array.from({ length: 24 }, (_, index) => `${index.toString().padStart(2, "0")}:00`);
 
   // Build heatmap data: [hourIndex, dateIndex, sampleCount, coveragePercent]
   const heatmapData: [number, number, number, number][] = [];

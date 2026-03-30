@@ -191,7 +191,7 @@ async function seedData() {
 				duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes,
 				efficiency_pct, sleep_type
 			) VALUES (
-				'whoop', ${USER_ID}, ${"w-" + daysAgo},
+				'whoop', ${USER_ID}, ${`w-${daysAgo}`},
 				${whoopStart}, ${whoopEnd},
 				${durationMin}, ${deepMin}, ${remMin}, ${lightMin}, ${awakeMin},
 				${randFloat(82, 96, 1)}, 'sleep'
@@ -218,7 +218,7 @@ async function seedData() {
 				duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes,
 				efficiency_pct, sleep_type
 			) VALUES (
-				'apple_health', ${USER_ID}, ${"ah-" + daysAgo},
+				'apple_health', ${USER_ID}, ${`ah-${daysAgo}`},
 				${ahStart}, ${ahEnd},
 				${ahDuration}, ${randInt(30, 60)}, ${randInt(50, 80)}, ${randInt(120, 180)}, ${randInt(20, 45)},
 				NULL, 'sleep'
@@ -246,13 +246,17 @@ async function seedData() {
     );
 
     const activityName =
-      activityType === "cycling" ? "Morning Ride" : activityType === "running" ? "Easy Run" : "Gym Session";
+      activityType === "cycling"
+        ? "Morning Ride"
+        : activityType === "running"
+          ? "Easy Run"
+          : "Gym Session";
     const [{ id: activityId }] = await sql<{ id: string }[]>`
 			INSERT INTO fitness.activity (
 				provider_id, user_id, external_id,
 				activity_type, started_at, ended_at, name
 			) VALUES (
-				'whoop', ${USER_ID}, ${"act-" + daysAgo},
+				'whoop', ${USER_ID}, ${`act-${daysAgo}`},
 				${activityType}, ${startedAt}, ${endedAt},
 				${activityName}
 			) RETURNING id
@@ -260,7 +264,7 @@ async function seedData() {
     // cardio_activity FK required by metric_stream
     await sql`
 			INSERT INTO fitness.cardio_activity (id, provider_id, external_id, activity_type, started_at, ended_at, name)
-			VALUES (${activityId}, 'whoop', ${"act-" + daysAgo}, ${activityType}, ${startedAt}, ${endedAt}, ${activityName})
+			VALUES (${activityId}, 'whoop', ${`act-${daysAgo}`}, ${activityType}, ${startedAt}, ${endedAt}, ${activityName})
 			ON CONFLICT DO NOTHING
 		`;
 
@@ -310,7 +314,7 @@ async function seedData() {
 				provider_id, user_id, external_id,
 				recorded_at, weight_kg, body_fat_pct
 			) VALUES (
-				'apple_health', ${USER_ID}, ${"bw-" + daysAgo},
+				'apple_health', ${USER_ID}, ${`bw-${daysAgo}`},
 				${localTimestamp(date, "07:30:00")}, ${weightKg}, ${randFloat(14, 18, 1)}
 			) ON CONFLICT DO NOTHING
 		`;
