@@ -33,8 +33,7 @@
       }
     },
     "packages/mobile": {
-      "ignore": ["**/*"],
-      "ignoreDependencies": ["react-native-reanimated", "expo-haptics"]
+      "ignore": ["**/*"]
     },
     "packages/whoop-whoop": {
       "vitest": {
