@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   type ImuRow,
-  type MetricStreamRow,
   imuCsvHeader,
   imuRowToCsv,
+  type MetricStreamRow,
   metricStreamCsvHeader,
   metricStreamRowToCsv,
 } from "./process-training-export-job.ts";

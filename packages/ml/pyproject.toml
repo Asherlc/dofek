@@ -2,7 +2,7 @@
 name = "dofek-ml"
 version = "0.1.0"
 description = "ML activity classifier — fused CNN for wearable sensor data"
-readme = "README.md"
+readme = false
 authors = [{ name = "Asher Cohen", email = "asherlc@asherlc.com" }]
 requires-python = ">=3.12"
 dependencies = [
