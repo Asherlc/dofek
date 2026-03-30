@@ -231,13 +231,10 @@ function getWhoopWarning(bleState: string, connectionState: string): string | nu
   return null;
 }
 
-const FULL_HOUR_SAMPLES = 180_000; // 50 Hz * 3600 seconds
-
-function heatmapCellColor(sampleCount: number): string {
-  const ratio = Math.min(sampleCount / FULL_HOUR_SAMPLES, 1);
-  if (ratio === 0) return colors.surface;
-  if (ratio < 0.25) return "#99d1b7";
-  if (ratio < 0.75) return "#059669";
+function heatmapCellColor(coveragePercent: number): string {
+  if (coveragePercent === 0) return colors.surface;
+  if (coveragePercent < 25) return "#99d1b7";
+  if (coveragePercent < 75) return "#059669";
   return "#047857";
 }
 
@@ -245,7 +242,7 @@ function DailyCoverageHeatmap({
   data,
   isError,
 }: {
-  data: { date: string; hour: number; sampleCount: number }[] | undefined;
+  data: { date: string; hour: number; sampleCount: number; coveragePercent: number }[] | undefined;
   isError: boolean;
 }) {
   const { width: screenWidth } = useWindowDimensions();
@@ -274,7 +271,7 @@ function DailyCoverageHeatmap({
     );
   }
 
-  // Build a lookup: date -> hour -> sampleCount
+  // Build a lookup: date -> hour -> coveragePercent
   const cellMap = new Map<string, Map<number, number>>();
   for (const cell of data) {
     let hourMap = cellMap.get(cell.date);
@@ -282,7 +279,7 @@ function DailyCoverageHeatmap({
       hourMap = new Map();
       cellMap.set(cell.date, hourMap);
     }
-    hourMap.set(cell.hour, cell.sampleCount);
+    hourMap.set(cell.hour, cell.coveragePercent);
   }
 
   const dates = [...cellMap.keys()].sort().reverse();
@@ -291,9 +288,7 @@ function DailyCoverageHeatmap({
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Daily Coverage</Text>
-      <Text style={styles.sectionDescription}>
-        When during each day the sensor was recording
-      </Text>
+      <Text style={styles.sectionDescription}>When during each day the sensor was recording</Text>
       <View style={{ flexDirection: "row" }}>
         <View style={{ width: labelWidth, paddingTop: 20 }}>
           {dates.map((date) => (
@@ -326,8 +321,9 @@ function DailyCoverageHeatmap({
           ))}
           {dates.map((date, dateIndex) => {
             const hourMap = cellMap.get(date);
-            return Array.from({ length: 24 }, (_, hour) => {
-              const count = hourMap?.get(hour) ?? 0;
+            const hourRange = Array.from({ length: 24 }, (_, index) => index);
+            return hourRange.map((hour) => {
+              const coveragePercent = hourMap?.get(hour) ?? 0;
               return (
                 <Rect
                   key={`${date}-${hour}`}
@@ -336,7 +332,7 @@ function DailyCoverageHeatmap({
                   width={Math.max(cellWidth - cellGap, 1)}
                   height={cellHeight}
                   rx={2}
-                  fill={heatmapCellColor(count)}
+                  fill={heatmapCellColor(coveragePercent)}
                 />
               );
             });

@@ -73,19 +73,15 @@ function DailyCoveragePanel() {
 
   // Build unique sorted dates (most recent first) and hour labels
   const dates = [...new Set(data.map((cell) => cell.date))].sort().reverse();
-  const hours = Array.from({ length: 24 }, (_, index) =>
-    index.toString().padStart(2, "0") + ":00",
-  );
+  const hours = Array.from({ length: 24 }, (_, index) => index.toString().padStart(2, "0") + ":00");
 
-  // Build heatmap data: [hourIndex, dateIndex, sampleCount]
-  // At 50 Hz, a full hour = 180,000 samples
-  const fullHourSamples = 180_000;
-  const heatmapData: [number, number, number][] = [];
+  // Build heatmap data: [hourIndex, dateIndex, sampleCount, coveragePercent]
+  const heatmapData: [number, number, number, number][] = [];
   for (const cell of data) {
     const dateIndex = dates.indexOf(cell.date);
     const hourIndex = cell.hour;
     if (dateIndex >= 0) {
-      heatmapData.push([hourIndex, dateIndex, cell.sampleCount]);
+      heatmapData.push([hourIndex, dateIndex, cell.sampleCount, cell.coveragePercent]);
     }
   }
 
@@ -94,12 +90,11 @@ function DailyCoveragePanel() {
   const option = {
     tooltip: dofekTooltip({
       trigger: "item",
-      formatter: (params: { value: [number, number, number] }) => {
-        const [hourIndex, dateIndex, count] = params.value;
+      formatter: (params: { value: [number, number, number, number] }) => {
+        const [hourIndex, dateIndex, count, coveragePercent] = params.value;
         const date = dates[dateIndex] ?? "";
         const hour = hours[hourIndex] ?? "";
-        const coverage = Math.min((count / fullHourSamples) * 100, 100).toFixed(0);
-        return `<b>${date} ${hour}</b><br/>${count.toLocaleString()} samples (${coverage}% coverage)`;
+        return `<b>${date} ${hour}</b><br/>${count.toLocaleString()} samples (${Math.round(coveragePercent)}% coverage)`;
       },
     }),
     grid: { top: 10, right: 16, bottom: 40, left: 80 },
@@ -123,7 +118,8 @@ function DailyCoveragePanel() {
     },
     visualMap: {
       min: 0,
-      max: fullHourSamples,
+      max: 100,
+      dimension: 3,
       calculable: false,
       orient: "horizontal" as const,
       left: "center",

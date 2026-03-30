@@ -25,6 +25,7 @@ const dailyHeatmapRowSchema = z.object({
   date: z.string(),
   hour: z.coerce.number(),
   sample_count: z.coerce.number(),
+  coverage_percent: z.coerce.number(),
 });
 
 const coverageBucketRowSchema = z.object({
@@ -64,6 +65,7 @@ export interface DailyHeatmapCell {
   date: string;
   hour: number;
   sampleCount: number;
+  coveragePercent: number;
 }
 
 export interface CoverageBucket {
@@ -133,7 +135,8 @@ export class InertialMeasurementUnitRepository {
       sql`SELECT
           date_trunc('day', recorded_at)::date::text AS date,
           extract(hour FROM recorded_at)::int AS hour,
-          count(*)::int AS sample_count
+          count(*)::int AS sample_count,
+          least(count(*)::float / 180000.0 * 100, 100)::numeric(5,1)::float AS coverage_percent
         FROM fitness.inertial_measurement_unit_sample
         WHERE user_id = ${this.#userId}::uuid
           AND recorded_at > now() - make_interval(days => ${days})
@@ -145,6 +148,7 @@ export class InertialMeasurementUnitRepository {
       date: row.date,
       hour: row.hour,
       sampleCount: row.sample_count,
+      coveragePercent: row.coverage_percent,
     }));
   }
 
