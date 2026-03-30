@@ -184,15 +184,18 @@ export class SleepNeedRepository {
       this.#db,
       baselineRowSchema,
       sql`
-        WITH nightly AS (
-          SELECT DISTINCT ON ((started_at AT TIME ZONE ${this.#timezone})::date)
-            duration_minutes
+        WITH raw_sleep AS (
+          SELECT (started_at AT TIME ZONE ${this.#timezone})::date AS date, duration_minutes
           FROM fitness.v_sleep
           WHERE user_id = ${this.#userId}
             AND is_nap = false
             AND started_at > ${timestampWindowStart(endDate, 90)}
             AND duration_minutes IS NOT NULL
-          ORDER BY (started_at AT TIME ZONE ${this.#timezone})::date, duration_minutes DESC NULLS LAST
+        ),
+        nightly AS (
+          SELECT DISTINCT ON (date) duration_minutes
+          FROM raw_sleep
+          ORDER BY date, duration_minutes DESC NULLS LAST
         )
         SELECT AVG(duration_minutes) AS avg_duration FROM nightly
       `,
