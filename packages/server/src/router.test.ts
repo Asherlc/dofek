@@ -100,6 +100,7 @@ describe("appRouter", () => {
 
   it("includes all sub-routers in the definition", () => {
     const expectedRouters = [
+      "admin",
       "inertialMeasurementUnit",
       "inertialMeasurementUnitSync",
       "activity",
