@@ -1,9 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Tabs } from "expo-router";
-import { StyleSheet } from "react-native";
+import { Tabs, useRouter } from "expo-router";
+import { Pressable, StyleSheet } from "react-native";
 import { colors } from "../../theme";
 
 export default function TabsLayout() {
+  const router = useRouter();
+
   return (
     <Tabs
       screenOptions={{
@@ -18,9 +20,23 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Dashboard",
+          title: "Today",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="heart" size={size} color={color} />
+            <Ionicons name="today-outline" size={size} color={color} />
+          ),
+          headerRight: () => (
+            <Pressable onPress={() => router.push("/settings")} style={styles.headerButton}>
+              <Ionicons name="settings-outline" size={22} color={colors.textSecondary} />
+            </Pressable>
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="recovery"
+        options={{
+          title: "Recovery",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="pulse-outline" size={size} color={color} />
           ),
         }}
       />
@@ -29,7 +45,7 @@ export default function TabsLayout() {
         options={{
           title: "Training",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="barbell" size={size} color={color} />
+            <Ionicons name="barbell-outline" size={size} color={color} />
           ),
         }}
       />
@@ -38,26 +54,15 @@ export default function TabsLayout() {
         options={{
           title: "Nutrition",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="nutrition" size={size} color={color} />
+            <Ionicons name="nutrition-outline" size={size} color={color} />
           ),
         }}
       />
-      <Tabs.Screen
-        name="metrics"
-        options={{
-          title: "Body",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="body" size={size} color={color} />
-          ),
-        }}
-      />
+      {/* Hide the old health tab — its content moved to Settings stack screen */}
       <Tabs.Screen
         name="health"
         options={{
-          title: "More",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="ellipsis-horizontal" size={size} color={color} />
-          ),
+          href: null,
         }}
       />
     </Tabs>
@@ -79,5 +84,9 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontWeight: "700",
     fontSize: 17,
+  },
+  headerButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
   },
 });

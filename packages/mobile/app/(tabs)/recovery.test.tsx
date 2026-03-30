@@ -22,8 +22,14 @@ vi.mock("../../lib/trpc", () => ({
       trends: { useQuery: () => ({ data: mockTrendsData, isLoading: false }) },
       list: { useQuery: () => ({ data: mockDailyMetricsData, isLoading: false }) },
     },
+    bodyAnalytics: { smoothedWeight: q(() => []) },
+    healthspan: { score: q() },
     useUtils: () => ({ invalidate: vi.fn() }),
   },
+}));
+
+vi.mock("expo-router", () => ({
+  useRouter: () => ({ push: vi.fn() }),
 }));
 
 vi.mock("../../lib/units", async () => {
@@ -52,9 +58,11 @@ vi.mock("../../theme", () => ({
     green: "#0f0",
     orange: "#f80",
   },
+  radius: { xl: 16, lg: 12, md: 8, sm: 4, full: 9999 },
+  spacing: { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 },
 }));
 
-describe("MetricsScreen SpO2 and Skin Temperature cards", () => {
+describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
   beforeEach(() => {
     mockTrendsData = undefined;
     mockDailyMetricsData = [];
@@ -64,8 +72,8 @@ describe("MetricsScreen SpO2 and Skin Temperature cards", () => {
     mockTrendsData = { latest_spo2: 97 };
     mockDailyMetricsData = [{ spo2_avg: 96 }, { spo2_avg: 97 }];
 
-    const { default: MetricsScreen } = await import("./metrics");
-    render(<MetricsScreen />);
+    const { default: RecoveryScreen } = await import("./recovery");
+    render(<RecoveryScreen />);
 
     expect(screen.getByText("Blood Oxygen")).toBeTruthy();
     expect(screen.getByText("97")).toBeTruthy();
@@ -76,8 +84,8 @@ describe("MetricsScreen SpO2 and Skin Temperature cards", () => {
     mockTrendsData = { latest_skin_temp: 36.8 };
     mockDailyMetricsData = [{ skin_temp_c: 36.6 }, { skin_temp_c: 36.8 }];
 
-    const { default: MetricsScreen } = await import("./metrics");
-    render(<MetricsScreen />);
+    const { default: RecoveryScreen } = await import("./recovery");
+    render(<RecoveryScreen />);
 
     expect(screen.getByText("Skin Temperature")).toBeTruthy();
   });
@@ -86,8 +94,8 @@ describe("MetricsScreen SpO2 and Skin Temperature cards", () => {
     mockTrendsData = { latest_spo2: null };
     mockDailyMetricsData = [];
 
-    const { default: MetricsScreen } = await import("./metrics");
-    render(<MetricsScreen />);
+    const { default: RecoveryScreen } = await import("./recovery");
+    render(<RecoveryScreen />);
 
     expect(screen.queryByText("Blood Oxygen")).toBeNull();
   });
@@ -96,8 +104,8 @@ describe("MetricsScreen SpO2 and Skin Temperature cards", () => {
     mockTrendsData = { latest_skin_temp: null };
     mockDailyMetricsData = [];
 
-    const { default: MetricsScreen } = await import("./metrics");
-    render(<MetricsScreen />);
+    const { default: RecoveryScreen } = await import("./recovery");
+    render(<RecoveryScreen />);
 
     expect(screen.queryByText("Skin Temperature")).toBeNull();
   });

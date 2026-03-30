@@ -1,20 +1,34 @@
-import { formatNumber } from "@dofek/format/format";
-import { useState } from "react";
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  formatDateYmd,
+  formatNumber,
+} from "@dofek/format/format";
+import { scoreColor, scoreLabel } from "@dofek/scoring/scoring";
+import { useMemo, useState } from "react";
+import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useRouter } from "expo-router";
+import { Card } from "../../components/Card";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
-import { SparkLine } from "../../components/charts/SparkLine";
 import { DaySelector } from "../../components/DaySelector";
 import { MetricCard } from "../../components/MetricCard";
-import { trendDirection as computeTrend } from "../../lib/scoring";
+import { SparkLine } from "../../components/charts/SparkLine";
+import { trendDirection as computeTrend, trendColor } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useRefresh } from "../../lib/useRefresh";
 import { colors } from "../../theme";
 
-export default function MetricsScreen() {
+function trendArrow(trend: string | null): string {
+  if (trend === "improving") return "\u2191";
+  if (trend === "declining") return "\u2193";
+  if (trend === "stable") return "\u2192";
+  return "";
+}
+
+export default function RecoveryScreen() {
+  const router = useRouter();
   const units = useUnitConverter();
   const [days, setDays] = useState(30);
-  const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in client tz
+  const endDate = useMemo(() => formatDateYmd(), []);
 
   // HRV trend
   const hrvQuery = trpc.recovery.hrvVariability.useQuery({ days });
@@ -30,7 +44,7 @@ export default function MetricsScreen() {
   const latestReadiness = readinessData[readinessData.length - 1];
 
   // Stress trend
-  const stressQuery = trpc.stress.scores.useQuery({ days });
+  const stressQuery = trpc.stress.scores.useQuery({ days, endDate });
   const stressResult = stressQuery.data;
   const stressDaily = stressResult?.daily ?? [];
   const stressValues = stressDaily.map((d) => d.stressScore);
@@ -38,6 +52,7 @@ export default function MetricsScreen() {
   const stressTrend = stressResult?.trend;
 
   // Daily metrics for SpO2 and skin temp
+  const today = new Date().toLocaleDateString("en-CA");
   const trendsQuery = trpc.dailyMetrics.trends.useQuery({ days, today });
   const trendsData = trendsQuery.data;
   const dailyMetricsQuery = trpc.dailyMetrics.list.useQuery({ days, today });
@@ -51,6 +66,33 @@ export default function MetricsScreen() {
     .filter((d: Record<string, unknown>) => d.skin_temp_c != null)
     .map((d: Record<string, unknown>) => units.convertTemperature(Number(d.skin_temp_c)));
 
+  // Body weight
+  const weightQuery = trpc.bodyAnalytics.smoothedWeight.useQuery({
+    days: Math.max(days, 90),
+    endDate,
+  });
+  const weightData = weightQuery.data ?? [];
+  const latestWeight = weightData.length > 0 ? weightData[weightData.length - 1] : null;
+
+  // Healthspan
+  const healthspanQuery = trpc.healthspan.score.useQuery({
+    weeks: Math.max(Math.ceil(days / 7), 4),
+    endDate,
+  });
+  const healthspan = healthspanQuery.data;
+
+  // Steps
+  const latestSteps = dailyMetricsData.length > 0 ? dailyMetricsData[dailyMetricsData.length - 1] : null;
+  const stepsAvg7d =
+    dailyMetricsData.length > 0
+      ? Math.round(
+          dailyMetricsData.reduce(
+            (sum: number, d: Record<string, unknown>) => sum + (Number(d.steps) || 0),
+            0,
+          ) / 7,
+        )
+      : null;
+
   const isLoading = hrvQuery.isLoading || readinessQuery.isLoading || stressQuery.isLoading;
   const { refreshing, onRefresh } = useRefresh();
 
@@ -59,15 +101,9 @@ export default function MetricsScreen() {
       style={styles.container}
       contentContainerStyle={styles.content}
       refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          tintColor={colors.textSecondary}
-        />
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />
       }
     >
-      <Text style={styles.header}>Body</Text>
-
       <DaySelector days={days} onChange={setDays} />
 
       {isLoading ? (
@@ -78,27 +114,23 @@ export default function MetricsScreen() {
         <>
           {/* Recovery trend chart */}
           {readinessValues.length >= 2 && (
-            <View style={styles.card}>
-              <ChartTitleWithTooltip
-                title="Recovery Score"
-                description="This chart shows your recovery score trend over the selected period."
-                textStyle={styles.cardTitle}
-              />
+            <Card title="Recovery Score">
               <View style={styles.chartRow}>
                 <Text style={styles.bigValue}>{latestReadiness?.readinessScore ?? "--"}</Text>
-                <SparkLine
-                  data={readinessValues}
-                  width={240}
-                  height={60}
-                  color={colors.positive}
-                  showBaseline
-                />
+                <View style={styles.sparkContainer}>
+                  <SparkLine
+                    data={readinessValues}
+                    height={60}
+                    color={colors.positive}
+                    showBaseline
+                  />
+                </View>
               </View>
               <Text style={styles.chartSubtitle}>
                 {days}-day avg:{" "}
                 {Math.round(readinessValues.reduce((s, v) => s + v, 0) / readinessValues.length)}
               </Text>
-            </View>
+            </Card>
           )}
 
           {/* HRV detail */}
@@ -123,25 +155,23 @@ export default function MetricsScreen() {
 
           {/* HRV variability (coefficient of variation) */}
           {hrvData.length >= 2 && (
-            <View style={styles.card}>
-              <ChartTitleWithTooltip
-                title="Heart Rate Variability Stability"
-                description="This chart tracks heart rate variability consistency using the rolling coefficient of variation."
-                textStyle={styles.cardTitle}
-              />
-              <SparkLine
-                data={hrvData.flatMap((d) =>
-                  d.rollingCoefficientOfVariation != null ? [d.rollingCoefficientOfVariation] : [],
-                )}
-                width={320}
-                height={50}
-                color={colors.teal}
-                showBaseline
-              />
+            <Card title="Heart Rate Variability Stability">
+              <View style={styles.sparkContainer}>
+                <SparkLine
+                  data={hrvData.flatMap((d) =>
+                    d.rollingCoefficientOfVariation != null
+                      ? [d.rollingCoefficientOfVariation]
+                      : [],
+                  )}
+                  height={50}
+                  color={colors.teal}
+                  showBaseline
+                />
+              </View>
               <Text style={styles.chartSubtitle}>
                 Lower variability = more stable autonomic nervous system
               </Text>
-            </View>
+            </Card>
           )}
 
           {/* Stress */}
@@ -165,12 +195,7 @@ export default function MetricsScreen() {
 
           {/* Weekly stress breakdown */}
           {(stressResult?.weekly ?? []).length > 0 && (
-            <View style={styles.card}>
-              <ChartTitleWithTooltip
-                title="Weekly Stress"
-                description="This chart summarizes average daily stress and number of high-stress days by week."
-                textStyle={styles.cardTitle}
-              />
+            <Card title="Weekly Stress">
               <View style={styles.weeklyGrid}>
                 {(stressResult?.weekly ?? []).slice(-4).map((week) => (
                   <View key={week.weekStart} style={styles.weeklyItem}>
@@ -185,7 +210,7 @@ export default function MetricsScreen() {
                   </View>
                 ))}
               </View>
-            </View>
+            </Card>
           )}
 
           {/* SpO2 */}
@@ -225,6 +250,85 @@ export default function MetricsScreen() {
               }
             />
           )}
+
+          {/* Healthspan Score */}
+          {healthspan != null &&
+            healthspan.healthspanScore != null &&
+            healthspan.metrics.length > 0 && (
+              <Card title="Healthspan Score">
+                <View style={styles.healthspanRow}>
+                  <Text
+                    style={[styles.healthspanScore, { color: scoreColor(healthspan.healthspanScore) }]}
+                  >
+                    {healthspan.healthspanScore}
+                  </Text>
+                  <View style={styles.healthspanMeta}>
+                    <Text
+                      style={[
+                        styles.healthspanStatus,
+                        { color: scoreColor(healthspan.healthspanScore) },
+                      ]}
+                    >
+                      {scoreLabel(healthspan.healthspanScore)}
+                    </Text>
+                    {healthspan.trend != null && (
+                      <Text
+                        style={[styles.healthspanTrend, { color: trendColor(healthspan.trend) }]}
+                      >
+                        {trendArrow(healthspan.trend)} {healthspan.trend}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+              </Card>
+            )}
+
+          {/* Body Weight */}
+          {latestWeight != null && (
+            <Card title="Body Weight">
+              <View style={styles.weightRow}>
+                <View>
+                  <Text style={styles.weightValue}>
+                    {formatNumber(units.convertWeight(latestWeight.smoothedWeight))}
+                  </Text>
+                  <Text style={styles.weightUnit}>{units.weightLabel}</Text>
+                </View>
+                {weightData.length >= 2 && (
+                  <View style={styles.sparkContainer}>
+                    <SparkLine
+                      data={weightData.map((d) => d.smoothedWeight)}
+                      height={50}
+                      color={colors.blue}
+                    />
+                  </View>
+                )}
+              </View>
+            </Card>
+          )}
+
+          {/* Daily Steps */}
+          {latestSteps != null && (
+            <Card title="Daily Steps">
+              <Text style={styles.stepsValue}>
+                {Number((latestSteps as Record<string, unknown>).steps) > 0
+                  ? Number((latestSteps as Record<string, unknown>).steps).toLocaleString()
+                  : "--"}
+              </Text>
+              {stepsAvg7d != null && stepsAvg7d > 0 && (
+                <Text style={styles.chartSubtitle}>7-day avg: {stepsAvg7d.toLocaleString()}</Text>
+              )}
+            </Card>
+          )}
+
+          {/* Navigation links */}
+          <TouchableOpacity style={styles.navLink} onPress={() => router.push("/sleep")} activeOpacity={0.7}>
+            <Text style={styles.navLinkText}>Sleep Detail</Text>
+            <Text style={styles.navChevron}>{"\u203A"}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.navLink} onPress={() => router.push("/correlation")} activeOpacity={0.7}>
+            <Text style={styles.navLinkText}>Correlation Explorer</Text>
+            <Text style={styles.navChevron}>{"\u203A"}</Text>
+          </TouchableOpacity>
         </>
       )}
     </ScrollView>
@@ -241,11 +345,6 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
     gap: 16,
   },
-  header: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: colors.text,
-  },
   loadingContainer: {
     flex: 1,
     alignItems: "center",
@@ -256,23 +355,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.textTertiary,
   },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: 16,
-    gap: 10,
-  },
-  cardTitle: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: colors.textSecondary,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
   chartRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+  },
+  sparkContainer: {
+    flex: 1,
+    marginLeft: 16,
   },
   bigValue: {
     fontSize: 36,
@@ -304,6 +394,66 @@ const styles = StyleSheet.create({
   },
   weeklyLabel: {
     fontSize: 10,
+    color: colors.textTertiary,
+  },
+  healthspanRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16,
+  },
+  healthspanScore: {
+    fontSize: 48,
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
+  },
+  healthspanMeta: {
+    gap: 4,
+  },
+  healthspanStatus: {
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  healthspanTrend: {
+    fontSize: 13,
+    fontWeight: "500",
+    textTransform: "capitalize",
+  },
+  weightRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  weightValue: {
+    fontSize: 32,
+    fontWeight: "700",
+    color: colors.text,
+    fontVariant: ["tabular-nums"],
+  },
+  weightUnit: {
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  stepsValue: {
+    fontSize: 32,
+    fontWeight: "700",
+    color: colors.text,
+    fontVariant: ["tabular-nums"],
+  },
+  navLink: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  navLinkText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.text,
+  },
+  navChevron: {
+    fontSize: 24,
     color: colors.textTertiary,
   },
 });
