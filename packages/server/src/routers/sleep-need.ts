@@ -229,13 +229,18 @@ export const sleepNeedRouter = router({
           sleep_date: z.string(),
         }),
         sql`
-          SELECT duration_minutes, efficiency_pct,
-            (COALESCE(ended_at, started_at + interval '8 hours') AT TIME ZONE ${tz})::date::text AS sleep_date
-          FROM fitness.v_sleep
-          WHERE user_id = ${ctx.userId}
-            AND is_nap = false
-          ORDER BY started_at DESC
-          LIMIT 1
+          WITH nightly AS (
+            SELECT DISTINCT ON ((started_at AT TIME ZONE ${tz})::date)
+              duration_minutes, efficiency_pct,
+              (COALESCE(ended_at, started_at + interval '8 hours') AT TIME ZONE ${tz})::date::text AS sleep_date,
+              started_at
+            FROM fitness.v_sleep
+            WHERE user_id = ${ctx.userId}
+              AND is_nap = false
+            ORDER BY (started_at AT TIME ZONE ${tz})::date DESC, duration_minutes DESC NULLS LAST
+          )
+          SELECT duration_minutes, efficiency_pct, sleep_date
+          FROM nightly ORDER BY started_at DESC LIMIT 1
         `,
       );
 
@@ -248,16 +253,22 @@ export const sleepNeedRouter = router({
       const efficiency = lastSleep.efficiency_pct ?? 85;
 
       // Get sleep need (reuse the baseline calculation logic)
+      // Deduplicate per calendar date to avoid counting multi-provider sessions twice
       const baselineRows = await executeWithSchema(
         ctx.db,
         z.object({ avg_duration: z.coerce.number().nullable() }),
         sql`
-          SELECT AVG(duration_minutes) AS avg_duration
-          FROM fitness.v_sleep
-          WHERE user_id = ${ctx.userId}
-            AND is_nap = false
-            AND started_at > ${timestampWindowStart(input.endDate, 90)}
-            AND duration_minutes IS NOT NULL
+          WITH nightly AS (
+            SELECT DISTINCT ON ((started_at AT TIME ZONE ${tz})::date)
+              duration_minutes
+            FROM fitness.v_sleep
+            WHERE user_id = ${ctx.userId}
+              AND is_nap = false
+              AND started_at > ${timestampWindowStart(input.endDate, 90)}
+              AND duration_minutes IS NOT NULL
+            ORDER BY (started_at AT TIME ZONE ${tz})::date, duration_minutes DESC NULLS LAST
+          )
+          SELECT AVG(duration_minutes) AS avg_duration FROM nightly
         `,
       );
 

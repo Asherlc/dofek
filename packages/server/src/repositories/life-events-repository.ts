@@ -225,15 +225,24 @@ export class LifeEventsRepository {
         this.#db,
         sleepComparisonRowSchema,
         sql`
-				WITH before_sleep AS (
-					SELECT 'before' as period, *
+				WITH before_raw AS (
+					SELECT 'before' as period,
+						(started_at AT TIME ZONE ${this.#timezone})::date AS sleep_date,
+						duration_minutes, deep_minutes, rem_minutes, efficiency_pct
 					FROM fitness.v_sleep
 					WHERE user_id = ${this.#userId}
 						AND (started_at AT TIME ZONE ${this.#timezone})::date BETWEEN (${startDate}::date - ${windowDays}::int) AND (${startDate}::date - 1)
 						AND NOT is_nap
 				),
-				after_sleep AS (
-					SELECT 'after' as period, *
+				before_sleep AS (
+					SELECT DISTINCT ON (sleep_date) period, duration_minutes, deep_minutes, rem_minutes, efficiency_pct
+					FROM before_raw
+					ORDER BY sleep_date, duration_minutes DESC NULLS LAST
+				),
+				after_raw AS (
+					SELECT 'after' as period,
+						(started_at AT TIME ZONE ${this.#timezone})::date AS sleep_date,
+						duration_minutes, deep_minutes, rem_minutes, efficiency_pct
 					FROM fitness.v_sleep
 					WHERE user_id = ${this.#userId}
 						AND ${
@@ -244,6 +253,11 @@ export class LifeEventsRepository {
                 : sql`(started_at AT TIME ZONE ${this.#timezone})::date BETWEEN ${startDate}::date AND (${startDate}::date + ${windowDays}::int)`
             }
 						AND NOT is_nap
+				),
+				after_sleep AS (
+					SELECT DISTINCT ON (sleep_date) period, duration_minutes, deep_minutes, rem_minutes, efficiency_pct
+					FROM after_raw
+					ORDER BY sleep_date, duration_minutes DESC NULLS LAST
 				),
 				combined AS (
 					SELECT * FROM before_sleep

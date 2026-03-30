@@ -149,12 +149,16 @@ export class AnomalyDetectionRepository {
           sleep_raw AS (
             SELECT
               (started_at AT TIME ZONE ${this.#timezone})::date AS date,
-              duration_minutes,
-              started_at
+              duration_minutes
             FROM fitness.v_sleep
             WHERE user_id = ${this.#userId}
               AND is_nap = false
               AND started_at > ${timestampWindowStart(endDate, BASELINE_LOOKBACK_DAYS)}
+          ),
+          sleep_nightly AS (
+            SELECT DISTINCT ON (date) date, duration_minutes
+            FROM sleep_raw
+            ORDER BY date, duration_minutes DESC NULLS LAST
           ),
           sleep AS (
             SELECT
@@ -163,8 +167,8 @@ export class AnomalyDetectionRepository {
               AVG(duration_minutes) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS sleep_mean,
               STDDEV_POP(duration_minutes) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS sleep_sd,
               COUNT(*) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS sleep_count
-            FROM sleep_raw
-            ORDER BY started_at ASC
+            FROM sleep_nightly
+            ORDER BY date ASC
           )
           SELECT
             b.date::text,
