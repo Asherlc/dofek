@@ -41,11 +41,7 @@ vi.mock("./scheduled-sync.ts", () => ({
 
 vi.mock("./provider-queue-config.ts", () => ({
   getConfiguredProviderIds: vi.fn(() => ["strava", "garmin"]),
-  buildSyncWorkerOptions: vi.fn((id: string, conn: unknown) => ({
-    connection: conn,
-    concurrency: 3,
-    lockDuration: 300_000,
-  })),
+  getProviderQueueConfig: vi.fn(() => ({ concurrency: 3, syncTier: "frequent" })),
 }));
 
 vi.mock("./queues.ts", () => ({

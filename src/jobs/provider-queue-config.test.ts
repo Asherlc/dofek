@@ -1,11 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildSyncWorkerOptions,
   DEFAULT_QUEUE_CONFIG,
   getConfiguredProviderIds,
   getProviderQueueConfig,
   type ProviderSyncTier,
-  SYNC_WORKER_LOCK_DURATION_MS,
 } from "./provider-queue-config.ts";
 
 describe("getProviderQueueConfig", () => {
@@ -90,46 +88,6 @@ describe("config values are reasonable", () => {
       const config = getProviderQueueConfig(id);
       expect(validTiers, `${id} tier`).toContain(config.syncTier);
     }
-  });
-});
-
-describe("buildSyncWorkerOptions", () => {
-  const fakeConnection = { host: "localhost" };
-
-  it("includes lockDuration for all providers", () => {
-    const options = buildSyncWorkerOptions("strava", fakeConnection);
-    expect(options.lockDuration).toBe(SYNC_WORKER_LOCK_DURATION_MS);
-    expect(options.lockDuration).toBe(300_000);
-  });
-
-  it("passes connection through", () => {
-    const options = buildSyncWorkerOptions("garmin", fakeConnection);
-    expect(options.connection).toBe(fakeConnection);
-  });
-
-  it("uses provider-specific concurrency", () => {
-    const stravaOptions = buildSyncWorkerOptions("strava", fakeConnection);
-    expect(stravaOptions.concurrency).toBe(2);
-
-    const garminOptions = buildSyncWorkerOptions("garmin", fakeConnection);
-    expect(garminOptions.concurrency).toBe(3);
-  });
-
-  it("includes rate limiter when provider has one", () => {
-    const options = buildSyncWorkerOptions("strava", fakeConnection);
-    expect(options.limiter).toBeDefined();
-    expect(options.limiter?.max).toBe(90);
-  });
-
-  it("omits rate limiter when provider has none", () => {
-    const options = buildSyncWorkerOptions("garmin", fakeConnection);
-    expect(options.limiter).toBeUndefined();
-  });
-
-  it("falls back to default config for unknown provider", () => {
-    const options = buildSyncWorkerOptions("unknown-xyz", fakeConnection);
-    expect(options.concurrency).toBe(DEFAULT_QUEUE_CONFIG.concurrency);
-    expect(options.lockDuration).toBe(300_000);
   });
 });
 
