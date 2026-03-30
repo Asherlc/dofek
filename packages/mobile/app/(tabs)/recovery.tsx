@@ -314,9 +314,7 @@ export default function RecoveryScreen() {
           {latestSteps != null && (
             <Card title="Daily Steps">
               <Text style={styles.stepsValue}>
-                {Number(latestSteps.steps) > 0
-                  ? Number(latestSteps.steps).toLocaleString()
-                  : "--"}
+                {Number(latestSteps.steps) > 0 ? Number(latestSteps.steps).toLocaleString() : "--"}
               </Text>
               {stepsAvg7d != null && stepsAvg7d > 0 && (
                 <Text style={styles.chartSubtitle}>7-day avg: {stepsAvg7d.toLocaleString()}</Text>
