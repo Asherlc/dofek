@@ -73,9 +73,17 @@ describe("worker module", () => {
   it("creates per-provider workers plus standard workers", async () => {
     const { Worker } = await import("bullmq");
     expect(Worker).toHaveBeenCalledTimes(EXPECTED_WORKER_COUNT);
-    // Per-provider workers
-    expect(Worker).toHaveBeenCalledWith("sync-strava", expect.any(Function), expect.any(Object));
-    expect(Worker).toHaveBeenCalledWith("sync-garmin", expect.any(Function), expect.any(Object));
+    // Per-provider workers get lockDuration for long-running sync jobs
+    expect(Worker).toHaveBeenCalledWith(
+      "sync-strava",
+      expect.any(Function),
+      expect.objectContaining({ concurrency: 3, lockDuration: 300_000 }),
+    );
+    expect(Worker).toHaveBeenCalledWith(
+      "sync-garmin",
+      expect.any(Function),
+      expect.objectContaining({ concurrency: 3, lockDuration: 300_000 }),
+    );
     // Legacy sync worker
     expect(Worker).toHaveBeenCalledWith("sync-queue", expect.any(Function), expect.any(Object));
     // Standard workers
