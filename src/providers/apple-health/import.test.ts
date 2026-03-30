@@ -9,6 +9,7 @@ import {
   defaultConsoleProgress,
   extractExportXml,
   findLatestExport,
+  importAppleHealthFile,
   importClinicalRecords,
   readZipEntries,
   runImport,
@@ -239,6 +240,61 @@ ${records}
   writeFileSync(xmlPath, xml, "utf8");
   return xmlPath;
 }
+
+// ============================================================
+// importAppleHealthFile (XML path, non-zip)
+// ============================================================
+
+describe("importAppleHealthFile", () => {
+  let tmpDir: string;
+
+  beforeAll(() => {
+    tmpDir = join(tmpdir(), `import-file-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterAll(() => {
+    try {
+      rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      /* best effort */
+    }
+  });
+
+  it("imports from a raw XML path (non-zip)", async () => {
+    const xmlPath = join(tmpDir, "direct.xml");
+    writeFileSync(
+      xmlPath,
+      `<?xml version="1.0" encoding="UTF-8"?>
+<HealthData locale="en_US">
+  <Record type="HKQuantityTypeIdentifierHeartRate"
+    sourceName="Watch" unit="count/min" value="72"
+    startDate="2024-06-15 10:00:00 -0700"
+    endDate="2024-06-15 10:00:05 -0700" />
+</HealthData>`,
+      "utf8",
+    );
+    const { db } = createRunImportMockDb();
+
+    const result = await importAppleHealthFile(db, xmlPath, new Date("2024-01-01"));
+
+    expect(result.provider).toBe("apple_health");
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it("does not import clinical records when path is not a zip", async () => {
+    const xmlPath = join(tmpDir, "no-clinical.xml");
+    writeFileSync(xmlPath, '<?xml version="1.0"?><HealthData locale="en_US"/>', "utf8");
+    const { db } = createRunImportMockDb();
+
+    const result = await importAppleHealthFile(db, xmlPath, new Date("2020-01-01"));
+
+    // Should succeed with 0 records (no clinical import for non-zip)
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(0);
+  });
+});
 
 // ============================================================
 // runImport
@@ -1258,6 +1314,23 @@ describe("readZipEntries", () => {
     const entries = await readZipEntries(zipPath, (name) => name.endsWith(".json"));
 
     expect(entries).toHaveLength(0);
+  });
+
+  it("rejects when ZIP file does not exist", async () => {
+    await expect(readZipEntries(join(tmpDir, "nonexistent.zip"), () => true)).rejects.toThrow();
+  });
+
+  it("includes entry file names in results", async () => {
+    const zipPath = createClinicalZip(tmpDir, "names-test", [
+      { name: "obs-named.json", content: '{"x": 1}' },
+    ]);
+    const entries = await readZipEntries(
+      zipPath,
+      (name) => name.includes("clinical-records/") && name.endsWith(".json"),
+    );
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.name).toContain("obs-named.json");
+    expect(entries[0]?.data).toBeInstanceOf(Buffer);
   });
 
   it("skips non-matching entries", async () => {
