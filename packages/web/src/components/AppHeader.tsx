@@ -14,9 +14,13 @@ const navItems = [
   { to: "/settings", label: "Settings" },
 ] as const;
 
+const adminNavItems = [...navItems, { to: "/admin", label: "Admin" }] as const;
+
 export function AppHeader({ children }: { children?: React.ReactNode }) {
   const { user, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+
+  const items = user?.isAdmin ? adminNavItems : navItems;
 
   return (
     <header className="border-b border-border">
@@ -46,7 +50,7 @@ export function AppHeader({ children }: { children?: React.ReactNode }) {
           <DofekLogo />
           <h1 className="text-lg sm:text-xl font-semibold tracking-tight shrink-0">Dofek</h1>
           <nav className="hidden lg:flex gap-1 ml-4 overflow-x-auto scrollbar-hide">
-            {navItems.map(({ to, label }) => (
+            {items.map(({ to, label }) => (
               <Link
                 key={to}
                 to={to}
@@ -80,7 +84,7 @@ export function AppHeader({ children }: { children?: React.ReactNode }) {
       </div>
       {menuOpen && (
         <nav className="lg:hidden px-3 pb-3 flex flex-wrap gap-1">
-          {navItems.map(({ to, label }) => (
+          {items.map(({ to, label }) => (
             <Link
               key={to}
               to={to}

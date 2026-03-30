@@ -370,8 +370,13 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
     }
     const rows = await executeWithSchema(
       db,
-      z.object({ id: z.string(), name: z.string(), email: z.string().nullable() }),
-      sql`SELECT id, name, email FROM fitness.user_profile WHERE id = ${session.userId}`,
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        email: z.string().nullable(),
+        is_admin: z.boolean(),
+      }),
+      sql`SELECT id, name, email, is_admin FROM fitness.user_profile WHERE id = ${session.userId}`,
     );
     if (rows.length === 0) {
       res.status(401).json({ error: "User not found" });
@@ -382,7 +387,12 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
     if (isMobile) {
       logger.info(`[auth] /me resolved userId=${session.userId} (mobile)`);
     }
-    res.json(rows[0]);
+    const row = rows[0];
+    if (!row) {
+      res.status(401).json({ error: "User not found" });
+      return;
+    }
+    res.json({ id: row.id, name: row.name, email: row.email, isAdmin: row.is_admin });
   });
 
   // ── Slack OAuth (Add to Slack) ──

@@ -6,28 +6,23 @@ function createMockDb(rows: Array<Record<string, unknown>>) {
 }
 
 describe("isAdmin", () => {
-  it("returns true when user has the admins group", async () => {
-    const db = createMockDb([{ groups: ["admins", "users"] }]);
+  it("returns true when user has is_admin set to true", async () => {
+    const db = createMockDb([{ is_admin: true }]);
     expect(await isAdmin(db, "user-1")).toBe(true);
   });
 
-  it("returns false when user has no admins group", async () => {
-    const db = createMockDb([{ groups: ["users"] }]);
+  it("returns false when user has is_admin set to false", async () => {
+    const db = createMockDb([{ is_admin: false }]);
     expect(await isAdmin(db, "user-1")).toBe(false);
   });
 
-  it("returns false when user has no Authentik account", async () => {
+  it("returns false when user is not found", async () => {
     const db = createMockDb([]);
-    expect(await isAdmin(db, "user-1")).toBe(false);
+    expect(await isAdmin(db, "nonexistent")).toBe(false);
   });
 
-  it("returns false when groups is null", async () => {
-    const db = createMockDb([{ groups: null }]);
-    expect(await isAdmin(db, "user-1")).toBe(false);
-  });
-
-  it("queries the correct user and provider", async () => {
-    const db = createMockDb([{ groups: ["admins"] }]);
+  it("queries the correct user", async () => {
+    const db = createMockDb([{ is_admin: true }]);
     await isAdmin(db, "user-123");
     expect(db.execute).toHaveBeenCalledOnce();
   });
