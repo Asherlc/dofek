@@ -213,37 +213,92 @@ final class WhoopBleFrameParser {
     /// Sequence counter for command frames (increments per command sent).
     private static var commandSequence: UInt8 = 0x01
 
-    /// Build a command frame to write to CMD_TO_STRAP.
+    /// Build a complete Maverick command frame to write to CMD_TO_STRAP.
     ///
-    /// Format observed in PacketLogger capture of the WHOOP app:
+    /// Frame format (verified against PacketLogger capture byte-for-byte):
     /// ```
-    /// [0xAA] [0x01] [payloadLen:u16 LE = 12]
-    /// [preamble: 00 01 E7 41] [0x23] [seq] [cmd] [01 01 00 00 00]
+    /// Header (8 bytes):
+    ///   [SOF: 0xAA] [ver: 0x01] [payloadLen: u16 LE] [role1: 0x00] [role2: 0x01] [CRC16: u16 LE]
+    /// Payload (payloadLen bytes):
+    ///   [0x23] [seq] [cmd] [params: 01 01 00 00 00] [CRC32: u32 LE]
     /// ```
     ///
-    /// The 4-byte preamble (`00 01 E7 41`) and trailing params (`01 01 00 00 00`)
-    /// are constant for TOGGLE_IMU_MODE, observed across multiple captures.
-    /// CRC32 uses a non-standard algorithm that we haven't reverse-engineered,
-    /// so we omit it — testing whether the strap accepts commands without it.
+    /// - Header CRC16: CRC16-MODBUS of the first 6 header bytes
+    /// - Payload CRC32: IEEE 802.3 CRC32 of the command bytes (excluding the CRC32 itself)
     static func buildCommandData(command: UInt8) -> Data {
         let seq = commandSequence
         commandSequence &+= 1
 
-        var frame = Data()
-        // Header
-        frame.append(WhoopBleConstants.startOfFrame)  // SOF = 0xAA
-        frame.append(0x01)                              // version
-        frame.append(0x0C)                              // payload length low = 12
-        frame.append(0x00)                              // payload length high = 0
+        // Command bytes (before CRC32)
+        let commandBytes = Data([
+            WhoopBleConstants.packetTypeCommand,  // 0x23
+            seq,
+            command,
+            0x01, 0x01, 0x00, 0x00, 0x00,        // parameters
+        ])
 
-        // Payload (12 bytes) — format from PacketLogger capture analysis
-        frame.append(contentsOf: [0x00, 0x01, 0xE7, 0x41])  // preamble
-        frame.append(WhoopBleConstants.packetTypeCommand)     // 0x23
-        frame.append(seq)                                      // sequence number
-        frame.append(command)                                  // actual command byte
-        frame.append(contentsOf: [0x01, 0x01, 0x00, 0x00, 0x00])  // parameters
+        // Payload = command bytes + CRC32 trailer
+        let payloadCrc = crc32ieee(commandBytes)
+        var payload = commandBytes
+        payload.append(UInt8(payloadCrc & 0xFF))
+        payload.append(UInt8((payloadCrc >> 8) & 0xFF))
+        payload.append(UInt8((payloadCrc >> 16) & 0xFF))
+        payload.append(UInt8((payloadCrc >> 24) & 0xFF))
+
+        let payloadLen = UInt16(payload.count)
+
+        // Header (first 6 bytes, before CRC16)
+        let headerPrefix = Data([
+            WhoopBleConstants.startOfFrame,           // 0xAA
+            0x01,                                      // version
+            UInt8(payloadLen & 0xFF),                  // payloadLen low
+            UInt8(payloadLen >> 8),                    // payloadLen high
+            0x00,                                      // role1
+            0x01,                                      // role2
+        ])
+
+        let headerCrc = crc16modbus(headerPrefix)
+
+        var frame = headerPrefix
+        frame.append(UInt8(headerCrc & 0xFF))
+        frame.append(UInt8(headerCrc >> 8))
+        frame.append(payload)
 
         return frame
+    }
+
+    // MARK: - CRC algorithms
+
+    /// CRC16-MODBUS: polynomial 0xA001 (reflected 0x8005), init 0xFFFF.
+    static func crc16modbus(_ data: Data) -> UInt16 {
+        var crc: UInt16 = 0xFFFF
+        for byte in data {
+            crc ^= UInt16(byte)
+            for _ in 0..<8 {
+                if crc & 1 != 0 {
+                    crc = (crc >> 1) ^ 0xA001
+                } else {
+                    crc >>= 1
+                }
+            }
+        }
+        return crc
+    }
+
+    /// IEEE 802.3 CRC32 (same as java.util.zip.CRC32).
+    static func crc32ieee(_ data: Data) -> UInt32 {
+        var crc: UInt32 = 0xFFFFFFFF
+        for byte in data {
+            crc ^= UInt32(byte)
+            for _ in 0..<8 {
+                if crc & 1 != 0 {
+                    crc = (crc >> 1) ^ 0xEDB88320
+                } else {
+                    crc >>= 1
+                }
+            }
+        }
+        return crc ^ 0xFFFFFFFF
     }
 }
 
