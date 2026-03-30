@@ -91,22 +91,18 @@ export class OpenFoodFactsClient {
   }
 
   async lookupBarcode(barcode: string, signal?: AbortSignal): Promise<FoodDatabaseResult | null> {
-    try {
-      const response = await fetch(
-        `${BASE_URL}/api/v2/product/${barcode}.json?fields=code,product_name,brands,serving_size,nutriments,image_front_small_url,lang,product_name_${this.#localePreferences.languageCode}`,
-        { signal },
-      );
-      if (!response.ok) return null;
+    const response = await fetch(
+      `${BASE_URL}/api/v2/product/${barcode}.json?fields=code,product_name,brands,serving_size,nutriments,image_front_small_url,lang,product_name_${this.#localePreferences.languageCode}`,
+      { signal },
+    );
+    if (!response.ok) return null;
 
-      const data: unknown = await response.json();
-      const parsedResponse = barcodeResponseSchema.safeParse(data);
-      if (!parsedResponse.success) return null;
-      if (parsedResponse.data.status !== 1 || !parsedResponse.data.product) return null;
+    const data: unknown = await response.json();
+    const parsedResponse = barcodeResponseSchema.safeParse(data);
+    if (!parsedResponse.success) return null;
+    if (parsedResponse.data.status !== 1 || !parsedResponse.data.product) return null;
 
-      return this.#parseProduct(parsedResponse.data.product, false);
-    } catch {
-      return null;
-    }
+    return this.#parseProduct(parsedResponse.data.product, false);
   }
 
   async searchFoods(
@@ -114,22 +110,18 @@ export class OpenFoodFactsClient {
     limit = 20,
     signal?: AbortSignal,
   ): Promise<FoodDatabaseResult[]> {
-    try {
-      if (!this.#localePreferences.countryTag) {
-        return await this.#runSearch(query, limit, undefined, signal);
-      }
-
-      // Run localized and global searches in parallel to avoid sequential latency.
-      const [localizedResults, globalResults] = await Promise.all([
-        this.#runSearch(query, limit, undefined, signal),
-        this.#runSearch(query, limit, { ...this.#localePreferences, countryTag: null }, signal),
-      ]);
-
-      // Prefer localized results; fall back to global if empty.
-      return localizedResults.length > 0 ? localizedResults : globalResults;
-    } catch {
-      return [];
+    if (!this.#localePreferences.countryTag) {
+      return this.#runSearch(query, limit, undefined, signal);
     }
+
+    // Run localized and global searches in parallel to avoid sequential latency.
+    const [localizedResults, globalResults] = await Promise.all([
+      this.#runSearch(query, limit, undefined, signal),
+      this.#runSearch(query, limit, { ...this.#localePreferences, countryTag: null }, signal),
+    ]);
+
+    // Prefer localized results; fall back to global if empty.
+    return localizedResults.length > 0 ? localizedResults : globalResults;
   }
 
   #getLocalizedName(product: OpenFoodFactsProduct, preferredLanguageCode: string): string | null {
