@@ -52,6 +52,7 @@ vi.mock("./queues.ts", () => ({
   EXPORT_QUEUE: "export-queue",
   SCHEDULED_SYNC_QUEUE: "scheduled-sync-queue",
   POST_SYNC_QUEUE: "post-sync-queue",
+  TRAINING_EXPORT_QUEUE: "training-export-queue",
 }));
 
 // Prevent process.exit from actually exiting — must return `never` to match the real signature.
@@ -67,8 +68,8 @@ describe("worker module", () => {
     await import("./worker.ts");
   });
 
-  // 2 per-provider workers (strava, garmin) + 1 legacy sync + 1 import + 1 export + 1 scheduled-sync + 1 post-sync = 7
-  const EXPECTED_WORKER_COUNT = 7;
+  // 2 per-provider workers (strava, garmin) + 1 legacy sync + 1 import + 1 export + 1 scheduled-sync + 1 post-sync + 1 training-export = 8
+  const EXPECTED_WORKER_COUNT = 8;
 
   it("creates per-provider workers plus standard workers", async () => {
     const { Worker } = await import("bullmq");

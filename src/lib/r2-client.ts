@@ -79,8 +79,3 @@ export function createR2Client(s3Client: S3Client, bucket: string): R2Client {
   };
 }
 
-export function createR2ClientFromEnv(): R2Client {
-  const config = parseR2Config(process.env);
-  const s3Client = createS3Client(config);
-  return createR2Client(s3Client, config.R2_BUCKET);
-}
