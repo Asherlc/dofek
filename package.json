@@ -60,6 +60,7 @@
     "sync": "./scripts/with-env.sh tsx src/index.ts sync",
     "auth": "./scripts/with-env.sh tsx src/index.ts auth",
     "migrate": "./scripts/with-env.sh drizzle-kit migrate && tsx scripts/generate-schema-diagram.ts",
+    "seed": "tsx scripts/seed-dev-db.ts",
     "generate": "drizzle-kit generate && tsx scripts/generate-schema-diagram.ts",
     "schema:diagram": "tsx scripts/generate-schema-diagram.ts",
     "schema:view": "tsx scripts/generate-schema-diagram.ts --open",
