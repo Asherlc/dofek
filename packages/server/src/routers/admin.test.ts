@@ -118,7 +118,7 @@ describe("adminRouter", () => {
       });
       const result = await caller.syncLogs({ limit: 50, offset: 0 });
       expect(result.rows).toHaveLength(1);
-      expect(result.total).toBe(100);
+      expect(result.total).toBe("100");
     });
   });
 
