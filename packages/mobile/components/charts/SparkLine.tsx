@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { type LayoutChangeEvent, View } from "react-native";
 import Svg, { Line, Polyline } from "react-native-svg";
+import { colors } from "../../theme";
 
 interface SparkLineProps {
   /** Data points to plot (null values create visible gaps) */
@@ -103,7 +104,7 @@ export function SparkLine({
             y1={avgY}
             x2={currentWidth - padding}
             y2={avgY}
-            stroke="#3a3a3e"
+            stroke={colors.surfaceSecondary}
             strokeWidth={1}
             strokeDasharray="4,4"
           />

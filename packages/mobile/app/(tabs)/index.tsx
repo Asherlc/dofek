@@ -247,12 +247,6 @@ export default function OverviewScreen() {
 
       <Text style={styles.date}>{todayString()}</Text>
 
-      <View style={styles.detailsHintCard}>
-        <Text style={styles.detailsHintText}>
-          Detailed analytics are available in Sleep, Strain, Food, Trends, Training, and Insights.
-        </Text>
-      </View>
-
       {/* Log food — navigates to full search/scan/quick-add screen */}
       <TouchableOpacity
         style={styles.quickAddButton}
@@ -1014,17 +1008,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.textSecondary,
     fontWeight: "500",
-  },
-  detailsHintCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  detailsHintText: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    lineHeight: 16,
   },
   quickAddButton: {
     flexDirection: "row",
