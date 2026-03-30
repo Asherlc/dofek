@@ -5,6 +5,7 @@ import { resolveOAuthTokens } from "./resolve-tokens.ts";
 vi.mock("../db/tokens.ts", () => ({
   loadTokens: vi.fn(),
   saveTokens: vi.fn(),
+  deleteTokens: vi.fn(),
 }));
 
 vi.mock("./oauth.ts", async (importOriginal) => {
@@ -15,11 +16,12 @@ vi.mock("./oauth.ts", async (importOriginal) => {
   };
 });
 
-const { loadTokens, saveTokens } = await import("../db/tokens.ts");
+const { deleteTokens, loadTokens, saveTokens } = await import("../db/tokens.ts");
 const { refreshAccessToken } = await import("./oauth.ts");
 
 const mockLoadTokens = vi.mocked(loadTokens);
 const mockSaveTokens = vi.mocked(saveTokens);
+const mockDeleteTokens = vi.mocked(deleteTokens);
 const mockRefreshAccessToken = vi.mocked(refreshAccessToken);
 
 import type { SyncDatabase } from "../db/index.ts";
@@ -154,6 +156,55 @@ describe("resolveOAuthTokens", () => {
         getOAuthConfig: () => fakeConfig,
       }),
     ).rejects.toThrow("No refresh token for Polar");
+  });
+
+  it("deletes tokens and throws on invalid_grant", async () => {
+    mockLoadTokens.mockResolvedValue({
+      accessToken: "old",
+      refreshToken: "dead-refresh",
+      expiresAt: pastDate(),
+      scopes: null,
+    });
+    mockRefreshAccessToken.mockRejectedValue(
+      new Error(
+        'Token refresh failed (403): {"error":"invalid_grant","error_description":"Unknown or invalid refresh token."}',
+      ),
+    );
+    mockDeleteTokens.mockResolvedValue(undefined);
+
+    await expect(
+      resolveOAuthTokens({
+        db: fakeDb,
+        providerId: "polar",
+        providerName: "Polar",
+        getOAuthConfig: () => fakeConfig,
+      }),
+    ).rejects.toThrow("Polar authorization revoked");
+
+    expect(mockDeleteTokens).toHaveBeenCalledWith(fakeDb, "polar");
+    expect(mockSaveTokens).not.toHaveBeenCalled();
+  });
+
+  it("re-throws non-invalid_grant refresh errors", async () => {
+    mockLoadTokens.mockResolvedValue({
+      accessToken: "old",
+      refreshToken: "refresh",
+      expiresAt: pastDate(),
+      scopes: null,
+    });
+    const networkError = new Error("fetch failed");
+    mockRefreshAccessToken.mockRejectedValue(networkError);
+
+    await expect(
+      resolveOAuthTokens({
+        db: fakeDb,
+        providerId: "strava",
+        providerName: "Strava",
+        getOAuthConfig: () => fakeConfig,
+      }),
+    ).rejects.toThrow("fetch failed");
+
+    expect(mockDeleteTokens).not.toHaveBeenCalled();
   });
 
   it("passes custom fetchFn to refreshAccessToken", async () => {
