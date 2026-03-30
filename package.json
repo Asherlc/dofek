@@ -86,7 +86,8 @@
     "mobile:device": "pnpm --filter dofek-mobile ios:device",
     "size": "size-limit",
     "depcruise": "depcruise --config .dependency-cruiser.cjs src/ packages/",
-    "spellcheck": "cspell --no-progress"
+    "spellcheck": "cspell --no-progress",
+    "check:mobile-update": "./scripts/check-mobile-update.sh"
   },
   "dependencies": {
     "@bull-board/api": "6.20.5",
