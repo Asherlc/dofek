@@ -85,7 +85,7 @@ function CoverageTimeline() {
       {!isLoading && data && data.length > 0 && (
         <View style={{ alignItems: "center", marginTop: 8 }}>
           <Svg width={chartWidth} height={chartHeight}>
-            {data.map((row, index) => {
+            {data.map((row) => {
               const bucketDate = new Date(row.bucket);
               const dayStart = new Date(bucketDate);
               dayStart.setHours(0, 0, 0, 0);

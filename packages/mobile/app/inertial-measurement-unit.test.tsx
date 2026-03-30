@@ -22,6 +22,12 @@ vi.mock("react-native", () => ({
     React.createElement("span", stripStyle(props), ...(children != null ? [children] : [])),
   ScrollView: ({ children, ...props }: Record<string, unknown>) =>
     React.createElement("div", stripStyle(props), ...(children != null ? [children] : [])),
+  TouchableOpacity: ({ children, ...props }: Record<string, unknown>) =>
+    React.createElement(
+      "button",
+      { ...stripStyle(props), type: "button" },
+      ...(children != null ? [children] : []),
+    ),
   StyleSheet: {
     create: <T extends Record<string, unknown>>(styles: T): T => {
       for (const key of Object.keys(styles)) {
@@ -55,6 +61,14 @@ vi.mock("react-native", () => ({
         return { remove: vi.fn() };
       }),
   },
+  useWindowDimensions: () => ({ width: 390, height: 844 }),
+}));
+
+vi.mock("react-native-svg", () => ({
+  __esModule: true,
+  default: ({ children, ...props }: Record<string, unknown>) =>
+    React.createElement("svg", props, ...(children != null ? [children] : [])),
+  Rect: (props: Record<string, unknown>) => React.createElement("rect", props),
 }));
 
 vi.mock("expo-router", () => ({
@@ -117,6 +131,9 @@ vi.mock("../lib/trpc", () => ({
         useQuery: () => ({ data: null, isLoading: false }),
       },
       getDailyCounts: {
+        useQuery: () => ({ data: null, isLoading: false }),
+      },
+      getCoverageTimeline: {
         useQuery: () => ({ data: null, isLoading: false }),
       },
     },
