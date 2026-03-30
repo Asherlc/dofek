@@ -162,7 +162,7 @@ jobs:
         working-directory: packages/ml
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: astral-sh/setup-uv@6b9c6063abd6010835c3c7f69661e7be3bce44f5 # v5
+      - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8
       - name: Install dependencies
         run: uv sync
       - name: Lint
