@@ -28,7 +28,7 @@ export const ONBOARDING_CATEGORIES: OnboardingCategory[] = [
       "komoot",
       "mapmyfitness",
       "ride-with-gps",
-      "cycling_analytics",
+      "cycling-analytics",
       "xert",
       "velohero",
       "decathlon",
