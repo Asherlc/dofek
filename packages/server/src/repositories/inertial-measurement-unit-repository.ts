@@ -15,7 +15,6 @@ const dailyCountRowSchema = z.object({
 
 const syncStatusRowSchema = z.object({
   device_id: z.string(),
-  device_type: z.string(),
   sample_count: z.coerce.number(),
   latest_sample: z.string().nullable(),
   earliest_sample: z.string().nullable(),
@@ -55,7 +54,6 @@ export interface DailyCount {
 
 export interface DeviceSyncStatus {
   deviceId: string;
-  deviceType: string;
   sampleCount: number;
   latestSample: string | null;
   earliestSample: string | null;
@@ -90,6 +88,9 @@ export interface InertialMeasurementUnitSample {
 /** Maximum time series window in milliseconds (10 minutes). */
 const MAX_WINDOW_MS = 10 * 60 * 1000;
 
+/** Channels that contain IMU data in sensor_sample. */
+const IMU_CHANNELS = sql`('imu', 'accel')`;
+
 // ---------------------------------------------------------------------------
 // Repository
 // ---------------------------------------------------------------------------
@@ -113,8 +114,9 @@ export class InertialMeasurementUnitRepository {
           date_trunc('day', recorded_at)::date::text AS date,
           count(*)::int AS sample_count,
           (count(*)::float / (50.0 * 3600))::numeric(6,2)::float AS hours_covered
-        FROM fitness.inertial_measurement_unit_sample
+        FROM fitness.sensor_sample
         WHERE user_id = ${this.#userId}::uuid
+          AND channel IN ${IMU_CHANNELS}
           AND recorded_at > now() - make_interval(days => ${days})
         GROUP BY 1
         ORDER BY 1 DESC`,
@@ -137,8 +139,9 @@ export class InertialMeasurementUnitRepository {
           extract(hour FROM recorded_at)::int AS hour,
           count(*)::int AS sample_count,
           least(count(*)::float / 180000.0 * 100, 100)::numeric(5,1)::float AS coverage_percent
-        FROM fitness.inertial_measurement_unit_sample
+        FROM fitness.sensor_sample
         WHERE user_id = ${this.#userId}::uuid
+          AND channel IN ${IMU_CHANNELS}
           AND recorded_at > now() - make_interval(days => ${days})
         GROUP BY 1, 2
         ORDER BY 1 DESC, 2 ASC`,
@@ -159,18 +162,17 @@ export class InertialMeasurementUnitRepository {
       syncStatusRowSchema,
       sql`SELECT
           device_id,
-          device_type,
           count(*)::int AS sample_count,
           to_char(max(recorded_at), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS latest_sample,
           to_char(min(recorded_at), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS earliest_sample
-        FROM fitness.inertial_measurement_unit_sample
+        FROM fitness.sensor_sample
         WHERE user_id = ${this.#userId}::uuid
-        GROUP BY device_id, device_type`,
+          AND channel IN ${IMU_CHANNELS}
+        GROUP BY device_id`,
     );
 
     return rows.map((row) => ({
       deviceId: row.device_id,
-      deviceType: row.device_type,
       sampleCount: row.sample_count,
       latestSample: row.latest_sample,
       earliestSample: row.earliest_sample,
@@ -185,8 +187,9 @@ export class InertialMeasurementUnitRepository {
       sql`SELECT
           to_char(time_bucket('5 minutes', recorded_at), 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS bucket,
           count(*)::int AS sample_count
-        FROM fitness.inertial_measurement_unit_sample
+        FROM fitness.sensor_sample
         WHERE user_id = ${this.#userId}::uuid
+          AND channel IN ${IMU_CHANNELS}
           AND recorded_at >= ${date}::date
           AND recorded_at < ${date}::date + interval '1 day'
         GROUP BY 1
@@ -201,6 +204,7 @@ export class InertialMeasurementUnitRepository {
 
   /**
    * Raw time series for a short window — for waveform visualization.
+   * Extracts x/y/z and gyroscope from the vector column.
    * Clamps the window to a maximum of 10 minutes (30,000 samples at 50 Hz).
    */
   async getTimeSeries(
@@ -217,10 +221,15 @@ export class InertialMeasurementUnitRepository {
       timeSeriesRowSchema,
       sql`SELECT
           recorded_at::text,
-          x, y, z,
-          gyroscope_x, gyroscope_y, gyroscope_z
-        FROM fitness.inertial_measurement_unit_sample
+          vector[1] AS x,
+          vector[2] AS y,
+          vector[3] AS z,
+          CASE WHEN channel = 'imu' THEN vector[4] ELSE NULL END AS gyroscope_x,
+          CASE WHEN channel = 'imu' THEN vector[5] ELSE NULL END AS gyroscope_y,
+          CASE WHEN channel = 'imu' THEN vector[6] ELSE NULL END AS gyroscope_z
+        FROM fitness.sensor_sample
         WHERE user_id = ${this.#userId}::uuid
+          AND channel IN ${IMU_CHANNELS}
           AND recorded_at >= ${start.toISOString()}::timestamptz
           AND recorded_at < ${clampedEnd.toISOString()}::timestamptz
         ORDER BY recorded_at ASC`,

@@ -928,15 +928,15 @@ async function aggregateSpO2ToDailyMetrics(
           (recorded_at AT TIME ZONE ${timezone})::date AS date,
           provider_id,
           user_id,
-          source_name,
-          AVG(spo2) * 100 AS spo2_avg
-        FROM fitness.metric_stream
+          device_id AS source_name,
+          AVG(scalar) * 100 AS spo2_avg
+        FROM fitness.sensor_sample
         WHERE provider_id = ${PROVIDER_ID}
           AND user_id = ${userId}
-          AND spo2 IS NOT NULL
+          AND channel = 'spo2'
           AND recorded_at >= ${bounds.startAt}::timestamptz
           AND recorded_at <= ${bounds.endAt}::timestamptz
-        GROUP BY 1, provider_id, user_id, source_name
+        GROUP BY 1, provider_id, user_id, device_id
         ON CONFLICT (date, provider_id, source_name) DO UPDATE SET
           spo2_avg = EXCLUDED.spo2_avg`,
   );
@@ -959,15 +959,15 @@ async function aggregateSkinTempToDailyMetrics(
           (recorded_at AT TIME ZONE ${timezone})::date AS date,
           provider_id,
           user_id,
-          source_name,
-          AVG(skin_temperature) AS skin_temp_c
-        FROM fitness.metric_stream
+          device_id AS source_name,
+          AVG(scalar) AS skin_temp_c
+        FROM fitness.sensor_sample
         WHERE provider_id = ${PROVIDER_ID}
           AND user_id = ${userId}
-          AND skin_temperature IS NOT NULL
+          AND channel = 'skin_temperature'
           AND recorded_at >= ${bounds.startAt}::timestamptz
           AND recorded_at <= ${bounds.endAt}::timestamptz
-        GROUP BY 1, provider_id, user_id, source_name
+        GROUP BY 1, provider_id, user_id, device_id
         ON CONFLICT (date, provider_id, source_name) DO UPDATE SET
           skin_temp_c = EXCLUDED.skin_temp_c`,
   );

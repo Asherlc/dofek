@@ -186,7 +186,7 @@ export class SyncRepository {
       LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.body_measurement WHERE user_id = ${this.#userId} GROUP BY provider_id) bm ON bm.provider_id = p.id
       LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.food_entry WHERE user_id = ${this.#userId} AND confirmed = true GROUP BY provider_id) fe ON fe.provider_id = p.id
       LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.health_event WHERE user_id = ${this.#userId} GROUP BY provider_id) he ON he.provider_id = p.id
-      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.metric_stream WHERE user_id = ${this.#userId} GROUP BY provider_id) ms ON ms.provider_id = p.id
+      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.sensor_sample WHERE user_id = ${this.#userId} GROUP BY provider_id) ms ON ms.provider_id = p.id
       LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.nutrition_daily WHERE user_id = ${this.#userId} GROUP BY provider_id) nd ON nd.provider_id = p.id
       LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.lab_panel WHERE user_id = ${this.#userId} GROUP BY provider_id) lp ON lp.provider_id = p.id
       LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.lab_result WHERE user_id = ${this.#userId} GROUP BY provider_id) lr ON lr.provider_id = p.id
