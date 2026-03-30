@@ -352,7 +352,10 @@ export default function InertialMeasurementUnitScreen() {
               <Text style={styles.statValue}>{device.sampleCount.toLocaleString()} samples</Text>
             </View>
           ))}
-          {(!syncStatus.data || syncStatus.data.length === 0) && (
+          {syncStatus.isError && (
+            <Text style={styles.errorText}>Failed to load motion data.</Text>
+          )}
+          {!syncStatus.isError && (!syncStatus.data || syncStatus.data.length === 0) && (
             <Text style={styles.emptyText}>No motion data recorded yet</Text>
           )}
         </View>
@@ -376,7 +379,10 @@ export default function InertialMeasurementUnitScreen() {
               <Text style={styles.coverageHours}>{day.hoursCovered.toFixed(1)}h</Text>
             </View>
           ))}
-          {(!dailyCounts.data || dailyCounts.data.length === 0) && (
+          {dailyCounts.isError && (
+            <Text style={styles.errorText}>Failed to load daily coverage data.</Text>
+          )}
+          {!dailyCounts.isError && (!dailyCounts.data || dailyCounts.data.length === 0) && (
             <Text style={styles.emptyText}>No data yet</Text>
           )}
         </View>
@@ -438,6 +444,7 @@ const styles = StyleSheet.create({
   coverageBar: { height: "100%", backgroundColor: colors.accent, borderRadius: 6 },
   coverageHours: { width: 40, fontSize: 12, color: colors.textSecondary, textAlign: "right" },
   emptyText: { color: colors.textTertiary, textAlign: "center", paddingVertical: 16 },
+  errorText: { color: colors.negative, textAlign: "center", paddingVertical: 16 },
   warningRow: {
     marginTop: 10,
     backgroundColor: `${colors.negative}15`,
