@@ -66,7 +66,8 @@ COPY . .
 ARG COMMIT_HASH
 ENV COMMIT_HASH=${COMMIT_HASH}
 RUN --mount=type=secret,id=SENTRY_AUTH_TOKEN \
-    export SENTRY_AUTH_TOKEN="$(cat /run/secrets/SENTRY_AUTH_TOKEN 2>/dev/null)" && \
+    SENTRY_AUTH_TOKEN="$(cat /run/secrets/SENTRY_AUTH_TOKEN 2>/dev/null)" && \
+    export SENTRY_AUTH_TOKEN && \
     cd packages/web && pnpm run build
 
 # ── Server image (Express API + sync runner) ────────────────────────────
