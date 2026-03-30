@@ -41,7 +41,18 @@ export class NutritionDay {
   }
 
   toDetail() {
-    return { ...this.#row };
+    return {
+      date: this.#row.date,
+      provider_id: this.#row.providerId,
+      user_id: this.#row.userId,
+      calories: this.#row.calories,
+      protein_g: this.#row.proteinGrams,
+      carbs_g: this.#row.carbsGrams,
+      fat_g: this.#row.fatGrams,
+      fiber_g: this.#row.fiberGrams,
+      water_ml: this.#row.waterMl,
+      created_at: this.#row.createdAt,
+    };
   }
 }
 

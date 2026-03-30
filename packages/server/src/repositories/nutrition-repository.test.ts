@@ -29,18 +29,29 @@ describe("NutritionDay", () => {
     expect(new NutritionDay(makeRow({ calories: null })).calories).toBeNull();
   });
 
-  it("serializes all fields via toDetail()", () => {
-    const row = makeRow();
-    expect(new NutritionDay(row).toDetail()).toEqual(row);
+  it("serializes to snake_case API shape via toDetail()", () => {
+    const detail = new NutritionDay(makeRow()).toDetail();
+    expect(detail).toEqual({
+      date: "2024-03-15",
+      provider_id: "cronometer",
+      user_id: "user-1",
+      calories: 2100,
+      protein_g: 150,
+      carbs_g: 220,
+      fat_g: 70,
+      fiber_g: 30,
+      water_ml: 2500,
+      created_at: "2024-03-15T12:00:00Z",
+    });
   });
 
-  it("preserves null macro fields", () => {
+  it("preserves null macro fields in snake_case", () => {
     const detail = new NutritionDay(
       makeRow({ proteinGrams: null, carbsGrams: null, fatGrams: null }),
     ).toDetail();
-    expect(detail.proteinGrams).toBeNull();
-    expect(detail.carbsGrams).toBeNull();
-    expect(detail.fatGrams).toBeNull();
+    expect(detail.protein_g).toBeNull();
+    expect(detail.carbs_g).toBeNull();
+    expect(detail.fat_g).toBeNull();
   });
 });
 
