@@ -47,7 +47,6 @@ export class SleepRepository {
       sleepListRowSchema,
       sql`WITH raw_sleep AS (
 						SELECT
-							to_char(started_at AT TIME ZONE ${this.#timezone}, 'YYYY-MM-DD"T"HH24:MI:SS') AS started_at,
 							(started_at AT TIME ZONE ${this.#timezone})::date AS sleep_date,
 							duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, efficiency_pct
 						FROM fitness.v_sleep
@@ -57,13 +56,15 @@ export class SleepRepository {
 					),
 					deduped AS (
 						SELECT DISTINCT ON (sleep_date)
-							started_at, duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, efficiency_pct
+							sleep_date, duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, efficiency_pct
 						FROM raw_sleep
 						ORDER BY sleep_date, duration_minutes DESC NULLS LAST
 					)
-					SELECT started_at, duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, efficiency_pct
+					SELECT
+						to_char(sleep_date, 'YYYY-MM-DD"T"12:00:00') AS started_at,
+						duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, efficiency_pct
 					FROM deduped
-					ORDER BY started_at ASC`,
+					ORDER BY sleep_date ASC`,
     );
   }
 

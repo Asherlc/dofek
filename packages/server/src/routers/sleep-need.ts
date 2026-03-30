@@ -165,12 +165,13 @@ export const sleepNeedRouter = router({
 
       const totalNeedMinutes = baselineMinutes + strainDebtMinutes + debtRecoveryMinutes;
 
-      // Build calendar of last 7 dates (endDate-6 through endDate)
+      // Build calendar of last 7 completed nights (endDate-7 through endDate-1).
+      // Today is excluded because tonight's sleep hasn't happened yet.
       // Use UTC noon to avoid any timezone-related date shifts with toISOString()
       const nightsByDate = new Map(nights.map((n) => [n.date, n]));
       const calendarDates: string[] = [];
       const anchorDate = new Date(`${input.endDate}T12:00:00Z`);
-      for (let i = 6; i >= 0; i--) {
+      for (let i = 7; i >= 1; i--) {
         const calendarDay = new Date(anchorDate);
         calendarDay.setUTCDate(calendarDay.getUTCDate() - i);
         calendarDates.push(calendarDay.toISOString().slice(0, 10));
@@ -229,13 +230,23 @@ export const sleepNeedRouter = router({
           sleep_date: z.string(),
         }),
         sql`
-          SELECT duration_minutes, efficiency_pct,
-            (COALESCE(ended_at, started_at + interval '8 hours') AT TIME ZONE ${tz})::date::text AS sleep_date
-          FROM fitness.v_sleep
-          WHERE user_id = ${ctx.userId}
-            AND is_nap = false
-          ORDER BY started_at DESC
-          LIMIT 1
+          WITH raw_sleep AS (
+            SELECT
+              (started_at AT TIME ZONE ${tz})::date AS sleep_date_val,
+              duration_minutes, efficiency_pct, started_at,
+              (COALESCE(ended_at, started_at + interval '8 hours') AT TIME ZONE ${tz})::date::text AS sleep_date
+            FROM fitness.v_sleep
+            WHERE user_id = ${ctx.userId}
+              AND is_nap = false
+          ),
+          nightly AS (
+            SELECT DISTINCT ON (sleep_date_val)
+              duration_minutes, efficiency_pct, sleep_date, started_at
+            FROM raw_sleep
+            ORDER BY sleep_date_val DESC, duration_minutes DESC NULLS LAST
+          )
+          SELECT duration_minutes, efficiency_pct, sleep_date
+          FROM nightly ORDER BY started_at DESC LIMIT 1
         `,
       );
 
@@ -248,16 +259,25 @@ export const sleepNeedRouter = router({
       const efficiency = lastSleep.efficiency_pct ?? 85;
 
       // Get sleep need (reuse the baseline calculation logic)
+      // Deduplicate per calendar date to avoid counting multi-provider sessions twice
       const baselineRows = await executeWithSchema(
         ctx.db,
         z.object({ avg_duration: z.coerce.number().nullable() }),
         sql`
-          SELECT AVG(duration_minutes) AS avg_duration
-          FROM fitness.v_sleep
-          WHERE user_id = ${ctx.userId}
-            AND is_nap = false
-            AND started_at > ${timestampWindowStart(input.endDate, 90)}
-            AND duration_minutes IS NOT NULL
+          WITH raw_sleep AS (
+            SELECT (started_at AT TIME ZONE ${tz})::date AS date, duration_minutes
+            FROM fitness.v_sleep
+            WHERE user_id = ${ctx.userId}
+              AND is_nap = false
+              AND started_at > ${timestampWindowStart(input.endDate, 90)}
+              AND duration_minutes IS NOT NULL
+          ),
+          nightly AS (
+            SELECT DISTINCT ON (date) duration_minutes
+            FROM raw_sleep
+            ORDER BY date, duration_minutes DESC NULLS LAST
+          )
+          SELECT AVG(duration_minutes) AS avg_duration FROM nightly
         `,
       );
 

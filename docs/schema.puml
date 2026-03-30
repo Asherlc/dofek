@@ -8,7 +8,7 @@ entity "activity" {
   provider_id : text <<FK>>
   user_id : uuid <<FK>>
   external_id : text
-  activity_type : text
+  activity_type : activity_type
   started_at : timestamp
   ended_at : timestamp
   name : text
@@ -16,6 +16,8 @@ entity "activity" {
   perceived_exertion : real
   percent_recorded : real
   source_name : text
+  timezone : text
+  strava_id : text
   raw : jsonb
   created_at : timestamp
 }
@@ -29,6 +31,24 @@ entity "activity_interval" {
   interval_type : text
   started_at : timestamp
   ended_at : timestamp
+  created_at : timestamp
+}
+
+entity "allergy_intolerance" {
+  * id : uuid <<PK>>
+  --
+  provider_id : text <<FK>>
+  user_id : uuid <<FK>>
+  external_id : text
+  name : text
+  type : text
+  clinical_status : text
+  verification_status : text
+  rxnorm_code : text
+  onset_date : date
+  reactions : jsonb
+  source_name : text
+  raw : jsonb
   created_at : timestamp
 }
 
@@ -67,6 +87,60 @@ entity "body_measurement" {
   created_at : timestamp
 }
 
+entity "body_measurement_value" {
+  body_measurement_id : uuid <<FK>>
+  measurement_type_id : text <<FK>>
+  value : real
+}
+
+entity "breathwork_session" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  technique_id : text
+  rounds : integer
+  duration_seconds : integer
+  started_at : timestamp
+  notes : text
+  created_at : timestamp
+}
+
+entity "condition" {
+  * id : uuid <<PK>>
+  --
+  provider_id : text <<FK>>
+  user_id : uuid <<FK>>
+  external_id : text
+  name : text
+  clinical_status : text
+  verification_status : text
+  icd10_code : text
+  snomed_code : text
+  onset_date : date
+  abatement_date : date
+  recorded_date : date
+  source_name : text
+  raw : jsonb
+  created_at : timestamp
+}
+
+entity "daily_metric_type" {
+  * id : text <<PK>>
+  --
+  display_name : text
+  unit : text
+  category : text
+  priority_category : text
+  sort_order : integer
+  is_integer : boolean
+}
+
+entity "daily_metric_value" {
+  daily_metrics_id : uuid <<FK>>
+  metric_type_id : text <<FK>>
+  value : real
+}
+
 entity "daily_metrics" {
   * id : uuid <<PK>>
   --
@@ -95,6 +169,9 @@ entity "daily_metrics" {
   stress_high_minutes : integer
   recovery_high_minutes : integer
   resilience_level : text
+  push_count : integer
+  wheelchair_distance_km : real
+  uv_exposure : real
   source_name : text
   created_at : timestamp
 }
@@ -183,46 +260,16 @@ entity "food_entry" {
   barcode : text
   serving_unit : text
   serving_weight_grams : real
-  calories : integer
-  protein_g : real
-  carbs_g : real
-  fat_g : real
-  saturated_fat_g : real
-  polyunsaturated_fat_g : real
-  monounsaturated_fat_g : real
-  trans_fat_g : real
-  cholesterol_mg : real
-  sodium_mg : real
-  potassium_mg : real
-  fiber_g : real
-  sugar_g : real
-  vitamin_a_mcg : real
-  vitamin_c_mg : real
-  vitamin_d_mcg : real
-  vitamin_e_mg : real
-  vitamin_k_mcg : real
-  vitamin_b1_mg : real
-  vitamin_b2_mg : real
-  vitamin_b3_mg : real
-  vitamin_b5_mg : real
-  vitamin_b6_mg : real
-  vitamin_b7_mcg : real
-  vitamin_b9_mcg : real
-  vitamin_b12_mcg : real
-  calcium_mg : real
-  iron_mg : real
-  magnesium_mg : real
-  zinc_mg : real
-  selenium_mcg : real
-  copper_mg : real
-  manganese_mg : real
-  chromium_mcg : real
-  iodine_mcg : real
-  omega3_mg : real
-  omega6_mg : real
+  nutrition_data_id : uuid <<FK>>
   raw : jsonb
   confirmed : boolean
   created_at : timestamp
+}
+
+entity "food_entry_nutrient" {
+  food_entry_id : uuid <<FK>>
+  nutrient_id : text <<FK>>
+  amount : real
 }
 
 entity "health_event" {
@@ -241,16 +288,57 @@ entity "health_event" {
   created_at : timestamp
 }
 
+entity "inertial_measurement_unit_sample" {
+  recorded_at : timestamp
+  user_id : uuid <<FK>>
+  device_id : text
+  device_type : text
+  provider_id : text <<FK>>
+  x : real
+  y : real
+  z : real
+  gyroscope_x : real
+  gyroscope_y : real
+  gyroscope_z : real
+}
+
 entity "journal_entry" {
   * id : uuid <<PK>>
   --
   date : date
   provider_id : text <<FK>>
   user_id : uuid <<FK>>
-  question : text
+  question_slug : text <<FK>>
   answer_text : text
   answer_numeric : real
   impact_score : real
+  created_at : timestamp
+}
+
+entity "journal_question" {
+  * slug : text <<PK>>
+  --
+  display_name : text
+  category : text
+  data_type : text
+  unit : text
+  sort_order : integer
+  created_at : timestamp
+}
+
+entity "lab_panel" {
+  * id : uuid <<PK>>
+  --
+  provider_id : text <<FK>>
+  user_id : uuid <<FK>>
+  external_id : text
+  name : text
+  loinc_code : text
+  status : lab_result_status
+  source_name : text
+  recorded_at : timestamp
+  issued_at : timestamp
+  raw : jsonb
   created_at : timestamp
 }
 
@@ -259,6 +347,7 @@ entity "lab_result" {
   --
   provider_id : text <<FK>>
   user_id : uuid <<FK>>
+  panel_id : uuid <<FK>>
   external_id : text
   test_name : text
   loinc_code : text
@@ -268,7 +357,6 @@ entity "lab_result" {
   reference_range_low : real
   reference_range_high : real
   reference_range_text : text
-  panel_name : text
   status : lab_result_status
   source_name : text
   recorded_at : timestamp
@@ -286,6 +374,64 @@ entity "life_events" {
   ended_at : date
   category : text
   ongoing : boolean
+  notes : text
+  created_at : timestamp
+}
+
+entity "measurement_type" {
+  * id : text <<PK>>
+  --
+  display_name : text
+  unit : text
+  category : text
+  sort_order : integer
+  is_integer : boolean
+}
+
+entity "medication" {
+  * id : uuid <<PK>>
+  --
+  provider_id : text <<FK>>
+  user_id : uuid <<FK>>
+  external_id : text
+  name : text
+  status : text
+  authored_on : date
+  start_date : date
+  end_date : date
+  dosage_text : text
+  route : text
+  form : text
+  rxnorm_code : text
+  prescriber_name : text
+  reason_text : text
+  reason_snomed_code : text
+  source_name : text
+  raw : jsonb
+  created_at : timestamp
+}
+
+entity "medication_dose_event" {
+  * id : uuid <<PK>>
+  --
+  provider_id : text <<FK>>
+  user_id : uuid <<FK>>
+  external_id : text
+  medication_name : text
+  medication_concept_id : text
+  dose_status : text
+  recorded_at : timestamp
+  source_name : text
+  raw : jsonb
+  created_at : timestamp
+}
+
+entity "menstrual_period" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  start_date : date
+  end_date : date
   notes : text
   created_at : timestamp
 }
@@ -330,8 +476,21 @@ entity "metric_stream" {
   blood_glucose : real
   audio_exposure : real
   skin_temperature : real
+  electrodermal_activity : real
   source_name : text
   raw : jsonb
+}
+
+entity "nutrient" {
+  * id : text <<PK>>
+  --
+  display_name : text
+  unit : text
+  category : text
+  rda : real
+  sort_order : integer
+  open_food_facts_key : text
+  conversion_factor : real
 }
 
 entity "nutrition_daily" {
@@ -342,9 +501,85 @@ entity "nutrition_daily" {
   protein_g : real
   carbs_g : real
   fat_g : real
+  saturated_fat_g : real
+  polyunsaturated_fat_g : real
+  monounsaturated_fat_g : real
+  trans_fat_g : real
+  cholesterol_mg : real
+  sodium_mg : real
+  potassium_mg : real
   fiber_g : real
+  sugar_g : real
+  vitamin_a_mcg : real
+  vitamin_c_mg : real
+  vitamin_d_mcg : real
+  vitamin_e_mg : real
+  vitamin_k_mcg : real
+  vitamin_b1_mg : real
+  vitamin_b2_mg : real
+  vitamin_b3_mg : real
+  vitamin_b5_mg : real
+  vitamin_b6_mg : real
+  vitamin_b7_mcg : real
+  vitamin_b9_mcg : real
+  vitamin_b12_mcg : real
+  calcium_mg : real
+  iron_mg : real
+  magnesium_mg : real
+  zinc_mg : real
+  selenium_mcg : real
+  copper_mg : real
+  manganese_mg : real
+  chromium_mcg : real
+  iodine_mcg : real
+  omega3_mg : real
+  omega6_mg : real
   water_ml : integer
   created_at : timestamp
+}
+
+entity "nutrition_data" {
+  * id : uuid <<PK>>
+  --
+  calories : integer
+  protein_g : real
+  carbs_g : real
+  fat_g : real
+  saturated_fat_g : real
+  polyunsaturated_fat_g : real
+  monounsaturated_fat_g : real
+  trans_fat_g : real
+  cholesterol_mg : real
+  sodium_mg : real
+  potassium_mg : real
+  fiber_g : real
+  sugar_g : real
+  vitamin_a_mcg : real
+  vitamin_c_mg : real
+  vitamin_d_mcg : real
+  vitamin_e_mg : real
+  vitamin_k_mcg : real
+  vitamin_b1_mg : real
+  vitamin_b2_mg : real
+  vitamin_b3_mg : real
+  vitamin_b5_mg : real
+  vitamin_b6_mg : real
+  vitamin_b7_mcg : real
+  vitamin_b9_mcg : real
+  vitamin_b12_mcg : real
+  calcium_mg : real
+  iron_mg : real
+  magnesium_mg : real
+  zinc_mg : real
+  selenium_mcg : real
+  copper_mg : real
+  manganese_mg : real
+  chromium_mcg : real
+  iodine_mcg : real
+  omega3_mg : real
+  omega6_mg : real
+  created_at : timestamp
+  updated_at : timestamp
 }
 
 entity "oauth_token" {
@@ -371,6 +606,17 @@ entity "session" {
   * id : text <<PK>>
   --
   user_id : uuid <<FK>>
+  expires_at : timestamp
+  created_at : timestamp
+}
+
+entity "shared_report" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  share_token : text
+  report_type : text
+  report_data : jsonb
   expires_at : timestamp
   created_at : timestamp
 }
@@ -409,6 +655,17 @@ entity "sleep_session" {
   sleep_need_from_debt_minutes : integer
   sleep_need_from_strain_minutes : integer
   sleep_need_from_nap_minutes : integer
+  source_name : text
+  created_at : timestamp
+}
+
+entity "sleep_stage" {
+  * id : uuid <<PK>>
+  --
+  session_id : uuid <<FK>>
+  stage : text
+  started_at : timestamp
+  ended_at : timestamp
   source_name : text
   created_at : timestamp
 }
@@ -478,45 +735,15 @@ entity "supplement" {
   description : text
   meal : meal
   sort_order : integer
-  calories : integer
-  protein_g : real
-  carbs_g : real
-  fat_g : real
-  saturated_fat_g : real
-  polyunsaturated_fat_g : real
-  monounsaturated_fat_g : real
-  trans_fat_g : real
-  cholesterol_mg : real
-  sodium_mg : real
-  potassium_mg : real
-  fiber_g : real
-  sugar_g : real
-  vitamin_a_mcg : real
-  vitamin_c_mg : real
-  vitamin_d_mcg : real
-  vitamin_e_mg : real
-  vitamin_k_mcg : real
-  vitamin_b1_mg : real
-  vitamin_b2_mg : real
-  vitamin_b3_mg : real
-  vitamin_b5_mg : real
-  vitamin_b6_mg : real
-  vitamin_b7_mcg : real
-  vitamin_b9_mcg : real
-  vitamin_b12_mcg : real
-  calcium_mg : real
-  iron_mg : real
-  magnesium_mg : real
-  zinc_mg : real
-  selenium_mcg : real
-  copper_mg : real
-  manganese_mg : real
-  chromium_mcg : real
-  iodine_mcg : real
-  omega3_mg : real
-  omega6_mg : real
+  nutrition_data_id : uuid <<FK>>
   created_at : timestamp
   updated_at : timestamp
+}
+
+entity "supplement_nutrient" {
+  supplement_id : uuid <<FK>>
+  nutrient_id : text <<FK>>
+  amount : real
 }
 
 entity "sync_log" {
@@ -541,6 +768,7 @@ entity "user_profile" {
   max_hr : smallint
   resting_hr : smallint
   ftp : smallint
+  is_admin : boolean
   created_at : timestamp
   updated_at : timestamp
 }
@@ -552,12 +780,36 @@ entity "user_settings" {
   updated_at : timestamp
 }
 
+entity "webhook_subscription" {
+  * id : uuid <<PK>>
+  --
+  provider_id : text <<FK>>
+  provider_name : text
+  subscription_external_id : text
+  verify_token : text
+  signing_secret : text
+  status : text
+  expires_at : timestamp
+  metadata : jsonb
+  created_at : timestamp
+  updated_at : timestamp
+}
+
 provider ||--o{ activity
 user_profile ||--o{ activity
 activity ||--o{ activity_interval
+provider ||--o{ allergy_intolerance
+user_profile ||--o{ allergy_intolerance
 user_profile ||--o{ auth_account
 provider ||--o{ body_measurement
 user_profile ||--o{ body_measurement
+body_measurement ||--o{ body_measurement_value
+measurement_type ||--o{ body_measurement_value
+user_profile ||--o{ breathwork_session
+provider ||--o{ condition
+user_profile ||--o{ condition
+daily_metrics ||--o{ daily_metric_value
+daily_metric_type ||--o{ daily_metric_value
 provider ||--o{ daily_metrics
 user_profile ||--o{ daily_metrics
 provider ||--o{ dexa_scan
@@ -567,13 +819,27 @@ exercise ||--o{ exercise_alias
 provider ||--o{ exercise_alias
 provider ||--o{ food_entry
 user_profile ||--o{ food_entry
+nutrition_data ||--o{ food_entry
+food_entry ||--o{ food_entry_nutrient
+nutrient ||--o{ food_entry_nutrient
 provider ||--o{ health_event
 user_profile ||--o{ health_event
+user_profile ||--o{ inertial_measurement_unit_sample
+provider ||--o{ inertial_measurement_unit_sample
 provider ||--o{ journal_entry
 user_profile ||--o{ journal_entry
+journal_question ||--o{ journal_entry
+provider ||--o{ lab_panel
+user_profile ||--o{ lab_panel
 provider ||--o{ lab_result
 user_profile ||--o{ lab_result
+lab_panel ||--o{ lab_result
 user_profile ||--o{ life_events
+provider ||--o{ medication
+user_profile ||--o{ medication
+provider ||--o{ medication_dose_event
+user_profile ||--o{ medication_dose_event
+user_profile ||--o{ menstrual_period
 user_profile ||--o{ metric_stream
 activity ||--o{ metric_stream
 provider ||--o{ metric_stream
@@ -582,16 +848,22 @@ user_profile ||--o{ nutrition_daily
 provider ||--o{ oauth_token
 user_profile ||--o{ provider
 user_profile ||--o{ session
+user_profile ||--o{ shared_report
 provider ||--o{ sleep_session
 user_profile ||--o{ sleep_session
+sleep_session ||--o{ sleep_stage
 user_profile ||--o{ sport_settings
 strength_workout ||--o{ strength_set
 exercise ||--o{ strength_set
 provider ||--o{ strength_workout
 user_profile ||--o{ strength_workout
 user_profile ||--o{ supplement
+nutrition_data ||--o{ supplement
+supplement ||--o{ supplement_nutrient
+nutrient ||--o{ supplement_nutrient
 provider ||--o{ sync_log
 user_profile ||--o{ sync_log
 user_profile ||--o{ user_settings
+provider ||--o{ webhook_subscription
 
 @enduml

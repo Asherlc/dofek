@@ -37,6 +37,7 @@ vi.mock("./auth/admin.ts", () => ({
 }));
 vi.mock("./auth/cookies.ts", () => ({
   getSessionIdFromRequest: vi.fn(),
+  setSessionCookie: vi.fn(),
 }));
 vi.mock("./auth/session.ts", () => ({
   validateSession: vi.fn(),
@@ -77,7 +78,9 @@ vi.mock("./slack/bot.ts", () => ({
 }));
 
 vi.mock("dofek/db", () => ({
-  createDatabaseFromEnv: vi.fn(() => ({})),
+  createDatabaseFromEnv: vi.fn(() => ({
+    execute: vi.fn().mockResolvedValue([]),
+  })),
 }));
 
 import * as Sentry from "@sentry/node";
@@ -280,6 +283,39 @@ describe("createApp HTTP routes", () => {
 
       // createBullBoard should only be called once (lazy init)
       expect(vi.mocked(mockCreateBullBoard)).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("GET /auth/dev-login", () => {
+    it("returns 404 when no dev-session exists", async () => {
+      const res = await fetch(`${baseUrl}/auth/dev-login`, { redirect: "manual" });
+      expect(res.status).toBe(404);
+      const body = await res.text();
+      expect(body).toContain("No dev-session found");
+    });
+
+    it("sets session cookie and redirects when dev-session exists", async () => {
+      const fakeDb = createDatabaseFromEnv();
+      const expiresAt = new Date("2027-01-01");
+      vi.mocked(fakeDb.execute).mockResolvedValueOnce([
+        { id: "dev-session", expires_at: expiresAt },
+      ]);
+
+      const app = createApp(fakeDb);
+      const { baseUrl: devUrl, close: devClose } = await startApp(app);
+      try {
+        const res = await fetch(`${devUrl}/auth/dev-login`, { redirect: "manual" });
+        expect(res.status).toBe(302);
+        expect(res.headers.get("location")).toBe("/dashboard");
+        const { setSessionCookie } = await import("./auth/cookies.ts");
+        expect(vi.mocked(setSessionCookie)).toHaveBeenCalledWith(
+          expect.anything(),
+          "dev-session",
+          expiresAt,
+        );
+      } finally {
+        await devClose();
+      }
     });
   });
 

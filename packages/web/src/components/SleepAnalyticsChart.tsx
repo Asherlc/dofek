@@ -36,7 +36,7 @@ export function buildSleepAnalyticsOption(nightly: SleepNightlyRow[], sleepDebt:
         if (!night) return "";
         const totalHr = Math.floor(night.durationMinutes / 60);
         const totalMin = Math.round(night.durationMinutes % 60);
-        const dateLabel = new Date(night.date).toLocaleDateString("en-US", {
+        const dateLabel = new Date(`${night.date}T12:00:00`).toLocaleDateString("en-US", {
           month: "short",
           day: "numeric",
           year: "numeric",

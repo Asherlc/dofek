@@ -177,7 +177,7 @@ export const healthspanRouter = router({
       const rows = await executeWithSchema(
         ctx.db,
         rawRowSchema,
-        sql`WITH sleep_data AS (
+        sql`WITH sleep_raw AS (
               SELECT
                 (started_at AT TIME ZONE ${ctx.timezone})::date AS date,
                 duration_minutes,
@@ -186,6 +186,11 @@ export const healthspanRouter = router({
               WHERE user_id = ${ctx.userId}
                 AND is_nap = false
                 AND started_at > ${timestampWindowStart(input.endDate, totalDays)}
+            ),
+            sleep_data AS (
+              SELECT DISTINCT ON (date) date, duration_minutes, bedtime_minutes
+              FROM sleep_raw
+              ORDER BY date, duration_minutes DESC NULLS LAST
             ),
             sleep_agg AS (
               SELECT

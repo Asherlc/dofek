@@ -128,13 +128,13 @@ export class StressRepository {
               efficiency_pct
             FROM (
               SELECT (started_at AT TIME ZONE ${this.#timezone})::date AS local_date,
-                     efficiency_pct, started_at
+                     efficiency_pct, duration_minutes
               FROM fitness.v_sleep
               WHERE user_id = ${this.#userId}
                 AND is_nap = false
                 AND started_at > ${timestampWindowStart(endDate, queryDays)}
             ) sleep_sub
-            ORDER BY local_date, started_at DESC
+            ORDER BY local_date, duration_minutes DESC NULLS LAST
           )
           SELECT
             m.date::text,

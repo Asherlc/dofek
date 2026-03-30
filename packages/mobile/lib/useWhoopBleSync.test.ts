@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { renderHook } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { WhoopBleSyncDeps } from "./background-whoop-ble-sync";
 import type { InertialMeasurementUnitUploadClient } from "./inertial-measurement-unit-service";
 

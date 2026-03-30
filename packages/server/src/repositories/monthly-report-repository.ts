@@ -142,7 +142,7 @@ export class MonthlyReportRepository {
             FROM per_activity
             GROUP BY date
           ),
-          sleep_daily AS (
+          sleep_raw AS (
             SELECT
               started_at::date AS date,
               duration_minutes
@@ -150,6 +150,11 @@ export class MonthlyReportRepository {
             WHERE user_id = ${this.#userId}
               AND is_nap = false
               AND started_at >= date_trunc('month', CURRENT_DATE) - (${months}::int || ' months')::interval
+          ),
+          sleep_daily AS (
+            SELECT DISTINCT ON (date) date, duration_minutes
+            FROM sleep_raw
+            ORDER BY date, duration_minutes DESC NULLS LAST
           ),
           metrics_daily AS (
             SELECT date, resting_hr, hrv

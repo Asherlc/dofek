@@ -186,11 +186,27 @@ export const weeklyReportRouter = router({
         } satisfies WeekSummary;
       });
 
-      // Only return the requested number of weeks
+      // Only return the requested number of weeks.
+      // If the most recent week just started (today is its first day), it has
+      // no meaningful data yet — treat the previous full week as "current".
       const cutoffWeeks = parsed.slice(-input.weeks);
-      const current = cutoffWeeks[cutoffWeeks.length - 1] ?? null;
-      const history = cutoffWeeks.slice(0, -1);
+      const lastWeek = cutoffWeeks[cutoffWeeks.length - 1];
+      const isPartialWeek = lastWeek && lastWeek.weekStart === getMondayOfWeek(input.endDate);
+      const current =
+        isPartialWeek && cutoffWeeks.length >= 2
+          ? (cutoffWeeks[cutoffWeeks.length - 2] ?? null)
+          : (lastWeek ?? null);
+      const history = isPartialWeek ? cutoffWeeks.slice(0, -2) : cutoffWeeks.slice(0, -1);
 
       return { current, history };
     }),
 });
+
+/** Return the ISO Monday (YYYY-MM-DD) for the week containing `dateStr`. */
+function getMondayOfWeek(dateStr: string): string {
+  const date = new Date(`${dateStr}T12:00:00Z`);
+  const day = date.getUTCDay(); // 0=Sun, 1=Mon, ...
+  const diff = day === 0 ? 6 : day - 1; // days since Monday
+  date.setUTCDate(date.getUTCDate() - diff);
+  return date.toISOString().slice(0, 10);
+}
