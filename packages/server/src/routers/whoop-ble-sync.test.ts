@@ -146,6 +146,26 @@ describe("whoopBleSyncRouter", () => {
       expect(result).toEqual({ inserted: 2 });
     });
 
+    it("skips orientation insert when quaternion is all zeros (compact 0x28)", async () => {
+      const trpcCaller = caller(ctx);
+      await trpcCaller.pushRealtimeData({
+        deviceId: "WHOOP Strap",
+        samples: [
+          {
+            timestamp: "2026-03-30T12:00:00.000Z",
+            heartRate: 62,
+            quaternionW: 0.0,
+            quaternionX: 0.0,
+            quaternionY: 0.0,
+            quaternionZ: 0.0,
+          },
+        ],
+      });
+
+      // Should have 2 execute calls: ensure provider + metric_stream (no orientation)
+      expect(mockDb.execute).toHaveBeenCalledTimes(2);
+    });
+
     it("rejects invalid heartRate values", async () => {
       const trpcCaller = caller(ctx);
 

@@ -124,27 +124,6 @@ export const whoopBleSyncRouter = router({
         input.samples,
       );
 
-      // Log optical/PPG data for analysis — sample every 30th to avoid log spam
-      const samplesWithOptical = input.samples.filter(
-        (sample) => sample.opticalRawHex !== "0".repeat(36),
-      );
-      if (samplesWithOptical.length > 0) {
-        const sampled = samplesWithOptical.filter((_, index) => index % 30 === 0);
-        for (const sample of sampled) {
-          logger.info("WHOOP BLE optical/PPG data", {
-            userId: ctx.userId,
-            timestamp: sample.timestamp,
-            heartRate: sample.heartRate,
-            opticalRawHex: sample.opticalRawHex,
-          });
-        }
-        logger.info("WHOOP BLE optical summary", {
-          userId: ctx.userId,
-          totalSamples: input.samples.length,
-          samplesWithOptical: samplesWithOptical.length,
-        });
-      }
-
       logger.info("WHOOP BLE realtime data pushed", {
         userId: ctx.userId,
         deviceId: input.deviceId,
