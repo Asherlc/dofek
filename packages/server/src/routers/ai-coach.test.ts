@@ -8,7 +8,6 @@ vi.mock("../trpc.ts", async () => {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
     cachedProtectedQuery: () => trpc.procedure,
-    cachedProtectedQueryLight: () => trpc.procedure,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -42,9 +41,11 @@ vi.mock("../lib/ai-coach.ts", () => ({
   }),
 }));
 
+import { chatWithCoach } from "../lib/ai-coach.ts";
 import { aiCoachRouter } from "./ai-coach.ts";
 
 const createCaller = createTestCallerFactory(aiCoachRouter);
+const mockChatWithCoach = vi.mocked(chatWithCoach);
 
 describe("aiCoachRouter", () => {
   describe("dailyOutlook", () => {
@@ -100,6 +101,39 @@ describe("aiCoachRouter", () => {
 
       expect(result.response).toBeTruthy();
       expect(typeof result.response).toBe("string");
+    });
+
+    it("maps input messages to CoachMessage objects with role and content", async () => {
+      const executeMock = vi.fn();
+      executeMock
+        .mockResolvedValueOnce([
+          { sleep_hours: null, resting_hr: null, hrv: null, readiness: null },
+        ])
+        .mockResolvedValueOnce([]);
+
+      mockChatWithCoach.mockClear();
+
+      const caller = createCaller({
+        db: { execute: executeMock },
+        userId: "user-1",
+      });
+      await caller.chat({
+        messages: [
+          { role: "user", content: "Hello coach" },
+          { role: "assistant", content: "Hi there!" },
+          { role: "user", content: "What should I do today?" },
+        ],
+      });
+
+      expect(mockChatWithCoach).toHaveBeenCalledOnce();
+      expect(mockChatWithCoach).toHaveBeenCalledWith(
+        [
+          { role: "user", content: "Hello coach" },
+          { role: "assistant", content: "Hi there!" },
+          { role: "user", content: "What should I do today?" },
+        ],
+        expect.anything(),
+      );
     });
   });
 });

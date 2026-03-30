@@ -73,13 +73,13 @@ export const stressRouter = router({
                 efficiency_pct
               FROM (
                 SELECT (started_at AT TIME ZONE ${ctx.timezone})::date AS local_date,
-                       efficiency_pct, started_at
+                       efficiency_pct, duration_minutes
                 FROM fitness.v_sleep
                 WHERE user_id = ${ctx.userId}
                   AND is_nap = false
                   AND started_at > ${timestampWindowStart(input.endDate, queryDays)}
               ) sleep_sub
-              ORDER BY local_date, started_at DESC
+              ORDER BY local_date, duration_minutes DESC NULLS LAST
             )
             SELECT
               m.date::text,

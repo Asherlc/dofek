@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock expo-location before importing
 vi.mock("expo-location", () => ({
@@ -30,7 +30,10 @@ describe("createLocationAdapter", () => {
   it("returns false when foreground permissions denied", async () => {
     vi.mocked(Location.requestForegroundPermissionsAsync).mockResolvedValue({
       status: "denied",
-    } as never);
+      granted: false,
+      canAskAgain: true,
+      expires: "never",
+    });
 
     const adapter = createLocationAdapter();
     const granted = await adapter.requestPermissions();
@@ -110,9 +113,7 @@ describe("createLocationAdapter", () => {
       },
     });
 
-    expect(callback).toHaveBeenCalledWith(
-      expect.objectContaining({ speed: null }),
-    );
+    expect(callback).toHaveBeenCalledWith(expect.objectContaining({ speed: null }));
   });
 
   it("stops watching position", async () => {

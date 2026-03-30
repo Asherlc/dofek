@@ -9,7 +9,8 @@
     "./training-load": "./src/training-load.ts",
     "./endurance-types": "./src/endurance-types.ts",
     "./power-analysis": "./src/power-analysis.ts",
-    "./pmc": "./src/pmc.ts"
+    "./pmc": "./src/pmc.ts",
+    "./grade-adjusted-pace": "./src/grade-adjusted-pace.ts"
   },
   "dependencies": {
     "@dofek/zones": "workspace:*"

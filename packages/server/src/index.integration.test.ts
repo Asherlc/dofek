@@ -236,7 +236,7 @@ describe("tRPC API", () => {
       const res = await fetch(`${baseUrl}/auth/callback/google?error=access_denied`);
       expect(res.status).toBe(400);
       const body = await res.text();
-      expect(body).toContain("access_denied");
+      expect(body).toContain("Authorization denied");
     });
 
     it("GET /auth/callback/:provider returns 400 when code/state missing", async () => {
@@ -291,7 +291,7 @@ describe("tRPC API", () => {
       const res = await fetch(`${baseUrl}/callback?error=access_denied`);
       expect(res.status).toBe(400);
       const body = await res.text();
-      expect(body).toContain("access_denied");
+      expect(body).toContain("Authorization denied");
     });
 
     it("GET /callback with unknown state returns 400", async () => {

@@ -1,4 +1,5 @@
-FROM node:22-slim AS base
+FROM node:22-alpine AS base
+RUN apk upgrade --no-cache
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable && corepack prepare pnpm@latest --activate
@@ -77,14 +78,14 @@ WORKDIR /app
 # Skip in test/e2e builds with INSTALL_EXTRAS=false to speed up image builds
 ARG INSTALL_EXTRAS=true
 RUN if [ "$INSTALL_EXTRAS" = "true" ]; then \
-      apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && \
-      ARCH=$(dpkg --print-architecture) && \
-      curl -fsSL "https://github.com/getsops/sops/releases/download/v3.9.4/sops-v3.9.4.linux.${ARCH}" \
+      apk add --no-cache curl ca-certificates && \
+      ARCH=$(uname -m) && \
+      case "$ARCH" in x86_64) SOPS_ARCH=amd64;; aarch64) SOPS_ARCH=arm64;; *) SOPS_ARCH=$ARCH;; esac && \
+      curl -fsSL "https://github.com/getsops/sops/releases/download/v3.9.4/sops-v3.9.4.linux.${SOPS_ARCH}" \
         -o /usr/local/bin/sops && chmod +x /usr/local/bin/sops && \
-      DOCKER_ARCH=$(uname -m) && \
-      curl -fsSL "https://download.docker.com/linux/static/stable/${DOCKER_ARCH}/docker-27.5.1.tgz" | \
+      curl -fsSL "https://download.docker.com/linux/static/stable/${ARCH}/docker-27.5.1.tgz" | \
         tar xz --strip-components=1 -C /usr/local/bin docker/docker && \
-      apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/* ; \
+      apk del curl ; \
     fi
 
 COPY --from=source --chown=node:node /app/src ./src
@@ -152,7 +153,7 @@ RUN mkdir -p /app/job-files && chown node:node /app/job-files
 # Create updates directory for OTA bundles (bind mount point)
 RUN mkdir -p /app/updates && chown node:node /app/updates
 
-# Run as non-root user (node user is built into node:22-slim, uid 1000)
+# Run as non-root user (node user is built into node:22-alpine, uid 1000)
 USER node
 
 ENTRYPOINT ["./entrypoint.sh"]

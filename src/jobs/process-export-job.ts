@@ -19,7 +19,11 @@ export async function processExportJob(job: ExportJob, db: SyncDatabase): Promis
     userId,
     outputPath,
     (info: { percentage: number; message: string }) => {
-      job.updateProgress({ percentage: info.percentage, message: info.message }).catch(() => {});
+      job
+        .updateProgress({ percentage: info.percentage, message: info.message })
+        .catch((error: unknown) => {
+          logger.warn("Failed to update export progress: %s", error);
+        });
     },
   );
 

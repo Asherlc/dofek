@@ -8,15 +8,31 @@ import {
 } from "dofek/jobs/queues";
 import { ProviderModel } from "dofek/providers/provider-model";
 import { getAllProviders, registerProvider } from "dofek/providers/registry";
-import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { queryCache } from "../lib/cache.ts";
 import { startWorker } from "../lib/start-worker.ts";
-import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
+import { SyncRepository } from "../repositories/sync-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
-const tokenRowSchema = z.object({ provider_id: z.string() });
+const AUTH_ERROR_PATTERNS = [
+  "authorization failed",
+  "unauthorized",
+  "re-authenticate",
+  "token expired",
+  "session expired",
+  "authentication failed",
+] as const;
+
+/**
+ * Check if a sync error message indicates an authentication/authorization failure
+ * that requires the user to re-connect the provider.
+ */
+export function isAuthError(errorMessage: string | null): boolean {
+  if (!errorMessage) return false;
+  const lower = errorMessage.toLowerCase();
+  return AUTH_ERROR_PATTERNS.some((pattern) => lower.includes(pattern));
+}
 
 // ── Input schemas ──
 export const triggerSyncInput = z.object({
@@ -36,12 +52,13 @@ const syncJobDataSchema = z.object({
 
 export const REDACTED_ERROR_MESSAGE = "Details hidden";
 
-function redactLogErrorMessage(errorMessage: string | null): string | null {
+// Exported for unit testing — these are pure helpers with no side effects.
+export function redactLogErrorMessage(errorMessage: string | null): string | null {
   if (!errorMessage) return null;
   return REDACTED_ERROR_MESSAGE;
 }
 
-function toJobId(id: string | number | undefined, providerId: string): string {
+export function toJobId(id: string | number | undefined, providerId: string): string {
   return id === undefined ? `job-${providerId}-${Date.now()}` : String(id);
 }
 
@@ -148,7 +165,7 @@ function getLegacySyncQueue() {
 }
 
 /** Map BullMQ job state to the frontend SyncJobStatus shape */
-function mapBullMqStateToSyncStatus(state: string): "running" | "done" | "error" {
+export function mapBullMqStateToSyncStatus(state: string): "running" | "done" | "error" {
   switch (state) {
     case "completed":
       return "done";
@@ -164,33 +181,20 @@ export const syncRouter = router({
   providers: cachedProtectedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
     await ensureProvidersRegistered();
     const all = getAllProviders();
+    const repo = new SyncRepository(ctx.db, ctx.userId);
 
-    // Batch: load all tokens + last sync times in 2 queries instead of 2N
-    const lastSyncRowSchema = z.object({
-      provider_id: z.string(),
-      last_synced: z.string(),
-    });
-    const [allTokens, lastSyncs] = await Promise.all([
-      executeWithSchema(
-        ctx.db,
-        tokenRowSchema,
-        sql`SELECT DISTINCT ot.provider_id
-            FROM fitness.oauth_token ot
-            JOIN fitness.provider p ON p.id = ot.provider_id
-            WHERE p.user_id = ${ctx.userId}`,
-      ),
-      executeWithSchema(
-        ctx.db,
-        lastSyncRowSchema,
-        sql`SELECT provider_id, MAX(synced_at) AS last_synced
-            FROM fitness.sync_log
-            WHERE user_id = ${ctx.userId}
-            GROUP BY provider_id`,
-      ),
+    // Batch: load all tokens, last sync times, and recent auth errors in 3 queries instead of 3N
+    const [allTokens, lastSyncs, latestErrors] = await Promise.all([
+      repo.getConnectedProviderIds(),
+      repo.getLastSyncTimes(),
+      repo.getLatestErrors(),
     ]);
 
-    const tokenSet = new Set(allTokens.map((r) => r.provider_id));
-    const lastSyncMap = new Map(lastSyncs.map((r) => [r.provider_id, r.last_synced]));
+    const tokenSet = new Set(allTokens.map((r) => r.providerId));
+    const lastSyncMap = new Map(lastSyncs.map((r) => [r.providerId, r.lastSynced]));
+    const authErrorProviders = new Set(
+      latestErrors.filter((r) => isAuthError(r.errorMessage)).map((r) => r.providerId),
+    );
 
     return all
       .filter((p) => p.validate() === null)
@@ -209,6 +213,7 @@ export const syncRouter = router({
           authorized: model.isConnected,
           lastSyncedAt: model.lastSyncedAt,
           importOnly: model.importOnly,
+          needsReauth: model.isConnected && authErrorProviders.has(model.id),
         };
       });
   }),
@@ -216,6 +221,7 @@ export const syncRouter = router({
   /** Trigger sync — enqueues a BullMQ job, returns immediately with jobId */
   triggerSync: protectedProcedure.input(triggerSyncInput).mutation(async ({ ctx, input }) => {
     await ensureProvidersRegistered();
+    const repo = new SyncRepository(ctx.db, ctx.userId);
 
     const providerIds: string[] = [];
 
@@ -229,15 +235,8 @@ export const syncRouter = router({
       providerIds.push(provider.id);
     } else {
       // Check which providers have tokens to determine connectivity
-      const allTokens = await executeWithSchema(
-        ctx.db,
-        tokenRowSchema,
-        sql`SELECT DISTINCT ot.provider_id
-            FROM fitness.oauth_token ot
-            JOIN fitness.provider p ON p.id = ot.provider_id
-            WHERE p.user_id = ${ctx.userId}`,
-      );
-      const tokenSet = new Set(allTokens.map((r) => r.provider_id));
+      const allTokens = await repo.getConnectedProviderIds();
+      const tokenSet = new Set(allTokens.map((r) => r.providerId));
 
       for (const provider of getAllProviders()) {
         if (provider.validate() !== null) continue;
@@ -389,15 +388,8 @@ export const syncRouter = router({
   logs: cachedProtectedQuery(CacheTTL.SHORT)
     .input(logsInput)
     .query(async ({ ctx, input }) => {
-      const { syncLog } = await import("dofek/db/schema");
-      const { desc, eq } = await import("drizzle-orm");
-
-      const rows = await ctx.db
-        .select()
-        .from(syncLog)
-        .where(eq(syncLog.userId, ctx.userId))
-        .orderBy(desc(syncLog.syncedAt))
-        .limit(input.limit);
+      const repo = new SyncRepository(ctx.db, ctx.userId);
+      const rows = await repo.getLogs(input.limit);
 
       return rows.map((row) => ({
         ...row,
@@ -407,84 +399,7 @@ export const syncRouter = router({
 
   /** Per-provider record counts broken down by table */
   providerStats: cachedProtectedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
-    const providerStatsRowSchema = z.object({
-      provider_id: z.string(),
-      activities: z.string(),
-      daily_metrics: z.string(),
-      sleep_sessions: z.string(),
-      body_measurements: z.string(),
-      food_entries: z.string(),
-      health_events: z.string(),
-      metric_stream: z.string(),
-      nutrition_daily: z.string(),
-      lab_panels: z.string(),
-      lab_results: z.string(),
-      journal_entries: z.string(),
-    });
-    const rows = await executeWithSchema(
-      ctx.db,
-      providerStatsRowSchema,
-      sql`
-      SELECT
-        p.id AS provider_id,
-        COALESCE(a.cnt, 0)::text AS activities,
-        COALESCE(dm.cnt, 0)::text AS daily_metrics,
-        COALESCE(ss.cnt, 0)::text AS sleep_sessions,
-        COALESCE(bm.cnt, 0)::text AS body_measurements,
-        COALESCE(fe.cnt, 0)::text AS food_entries,
-        COALESCE(he.cnt, 0)::text AS health_events,
-        COALESCE(ms.cnt, 0)::text AS metric_stream,
-        COALESCE(nd.cnt, 0)::text AS nutrition_daily,
-        COALESCE(lp.cnt, 0)::text AS lab_panels,
-        COALESCE(lr.cnt, 0)::text AS lab_results,
-        COALESCE(je.cnt, 0)::text AS journal_entries
-      FROM fitness.provider p
-      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.activity WHERE user_id = ${ctx.userId} GROUP BY provider_id) a ON a.provider_id = p.id
-      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.daily_metrics WHERE user_id = ${ctx.userId} GROUP BY provider_id) dm ON dm.provider_id = p.id
-      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.sleep_session WHERE user_id = ${ctx.userId} GROUP BY provider_id) ss ON ss.provider_id = p.id
-      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.body_measurement WHERE user_id = ${ctx.userId} GROUP BY provider_id) bm ON bm.provider_id = p.id
-      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.food_entry WHERE user_id = ${ctx.userId} AND confirmed = true GROUP BY provider_id) fe ON fe.provider_id = p.id
-      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.health_event WHERE user_id = ${ctx.userId} GROUP BY provider_id) he ON he.provider_id = p.id
-      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.metric_stream WHERE user_id = ${ctx.userId} GROUP BY provider_id) ms ON ms.provider_id = p.id
-      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.nutrition_daily WHERE user_id = ${ctx.userId} GROUP BY provider_id) nd ON nd.provider_id = p.id
-      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.lab_panel WHERE user_id = ${ctx.userId} GROUP BY provider_id) lp ON lp.provider_id = p.id
-      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.lab_result WHERE user_id = ${ctx.userId} GROUP BY provider_id) lr ON lr.provider_id = p.id
-      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.journal_entry WHERE user_id = ${ctx.userId} GROUP BY provider_id) je ON je.provider_id = p.id
-      ORDER BY p.id
-    `,
-    );
-    return mapProviderStats(rows);
+    const repo = new SyncRepository(ctx.db, ctx.userId);
+    return repo.getProviderStats();
   }),
 });
-
-function mapProviderStats(
-  rows: Array<{
-    provider_id: string;
-    activities: string;
-    daily_metrics: string;
-    sleep_sessions: string;
-    body_measurements: string;
-    food_entries: string;
-    health_events: string;
-    metric_stream: string;
-    nutrition_daily: string;
-    lab_panels: string;
-    lab_results: string;
-    journal_entries: string;
-  }>,
-) {
-  return rows.map((r) => ({
-    providerId: r.provider_id,
-    activities: Number(r.activities),
-    dailyMetrics: Number(r.daily_metrics),
-    sleepSessions: Number(r.sleep_sessions),
-    bodyMeasurements: Number(r.body_measurements),
-    foodEntries: Number(r.food_entries),
-    healthEvents: Number(r.health_events),
-    metricStream: Number(r.metric_stream),
-    nutritionDaily: Number(r.nutrition_daily),
-    labPanels: Number(r.lab_panels),
-    labResults: Number(r.lab_results),
-    journalEntries: Number(r.journal_entries),
-  }));
-}
