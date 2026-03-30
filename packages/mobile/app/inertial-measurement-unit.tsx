@@ -88,6 +88,7 @@ function CoverageTimeline() {
           <Svg width={chartWidth} height={chartHeight}>
             {data.map((row) => {
               const bucketDate = new Date(row.bucket);
+              if (Number.isNaN(bucketDate.getTime())) return null;
               const dayStart = new Date(bucketDate);
               dayStart.setHours(0, 0, 0, 0);
               const minuteOfDay = (bucketDate.getTime() - dayStart.getTime()) / 60000;
@@ -429,7 +430,10 @@ export default function InertialMeasurementUnitScreen() {
             <View style={styles.diagnosticBlock}>
               <Text style={styles.diagnosticTitle}>Data Path</Text>
               <Text style={styles.diagnosticLine}>
-                Notifications received: {dataPathStats.dataReceivedCount}
+                Data notifications: {dataPathStats.dataNotificationCount ?? dataPathStats.dataReceivedCount ?? 0}
+              </Text>
+              <Text style={styles.diagnosticLine}>
+                Command notifications: {dataPathStats.cmdNotificationCount ?? 0}
               </Text>
               <Text style={styles.diagnosticLine}>
                 Frames parsed: {dataPathStats.totalFramesParsed}
@@ -441,11 +445,24 @@ export default function InertialMeasurementUnitScreen() {
                 Empty extractions: {dataPathStats.emptyExtractions}
               </Text>
               <Text style={styles.diagnosticLine}>
+                Command response: {dataPathStats.lastCommandResponse ?? "none"}
+              </Text>
+              {dataPathStats.packetTypes ? (
+                <Text style={styles.diagnosticLine}>
+                  Packet types: {dataPathStats.packetTypes}
+                </Text>
+              ) : null}
+              <Text style={styles.diagnosticLine}>
                 Data characteristic: {dataPathStats.hasDataCharacteristic ? "found" : "missing"}
                 {dataPathStats.hasDataCharacteristic
                   ? `, notifying: ${dataPathStats.isNotifying ? "yes" : "no"}`
                   : ""}
               </Text>
+              {dataPathStats.lastWriteError && dataPathStats.lastWriteError !== "none" && (
+                <Text style={[styles.diagnosticLine, { color: colors.negative }]}>
+                  Write error: {dataPathStats.lastWriteError}
+                </Text>
+              )}
             </View>
           )}
         </View>

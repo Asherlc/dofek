@@ -41,6 +41,9 @@ public class WhoopBleModule: Module {
     private var wasStreaming = false
 
     private let frameParser = WhoopBleFrameParser()
+    /// Separate parser for CMD_FROM_STRAP — sharing the data parser's
+    /// accumulator with command responses corrupts R21 frame reassembly.
+    private let cmdFrameParser = WhoopBleFrameParser()
     private var sampleBuffer: [WhoopImuSample] = []
     private let bufferLock = NSLock()
     private static let maxBufferSize = 500_000 // ~100 minutes at 80 Hz
@@ -174,6 +177,7 @@ public class WhoopBleModule: Module {
 
                 self.state = .streaming
                 self.frameParser.reset()
+                self.cmdFrameParser.reset()
                 self.orientationFilter.reset()
                 self.orientationSampleCounter = 0
 
@@ -237,13 +241,23 @@ public class WhoopBleModule: Module {
         }
 
         Function("getDataPathStats") { () -> [String: Any] in
+            // Flatten packet type counts to a single string to avoid
+            // nested dictionary serialization issues with Expo modules
+            let packetTypeSummary = self.packetTypeCounts
+                .sorted(by: { $0.key < $1.key })
+                .map { String(format: "0x%02X:%llu", $0.key, $0.value) }
+                .joined(separator: ", ")
+
             return [
-                "dataReceivedCount": Int(self.dataReceivedCount),
+                "dataNotificationCount": Int(self.dataNotificationCount),
+                "cmdNotificationCount": Int(self.cmdNotificationCount),
                 "totalFramesParsed": Int(self.totalFramesParsed),
                 "totalSamplesExtracted": Int(self.totalSamplesExtracted),
                 "droppedForNonStreaming": Int(self.droppedForNonStreaming),
                 "emptyExtractions": Int(self.emptyExtractions),
                 "bufferOverflows": Int(self.bufferOverflows),
+                "packetTypes": packetTypeSummary,
+                "lastCommandResponse": self.lastCommandResponse,
                 "connectionState": self.state.rawValue,
                 "hasDataCharacteristic": self.dataCharacteristic != nil,
                 "isNotifying": self.dataCharacteristic?.isNotifying ?? false,
@@ -255,13 +269,19 @@ public class WhoopBleModule: Module {
 
         // MARK: - Buffer access
 
-        AsyncFunction("getBufferedSamples") { (promise: Promise) in
+        /// Drain up to `maxCount` samples from the buffer (default 1000).
+        /// Smaller batches avoid memory spikes when serializing across the bridge.
+        AsyncFunction("getBufferedSamples") { (maxCount: Int?, promise: Promise) in
+            let limit = maxCount ?? 1000
+
             self.bufferLock.lock()
-            let samples = self.sampleBuffer
-            self.sampleBuffer.removeAll()
+            let drainCount = min(limit, self.sampleBuffer.count)
+            let samples = Array(self.sampleBuffer.prefix(drainCount))
+            self.sampleBuffer.removeFirst(drainCount)
+            let remaining = self.sampleBuffer.count
             self.bufferLock.unlock()
 
-            NSLog("[WhoopBLE] getBufferedSamples: draining %d samples from buffer", samples.count)
+            NSLog("[WhoopBLE] getBufferedSamples: draining %d samples (%d remaining)", drainCount, remaining)
 
             let formatter = ISO8601DateFormatter()
             formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -587,28 +607,79 @@ public class WhoopBleModule: Module {
             peripheral.writeValue(commandData, for: cmdChar, type: .withResponse)
             state = .streaming
             frameParser.reset()
+            cmdFrameParser.reset()
         }
     }
 
     /// Last write error for debugging (internal for delegate access)
     var lastWriteError: String?
 
-    /// Counter to throttle data-path logs (avoid flooding at 80 Hz)
-    private var dataReceivedCount: UInt64 = 0
+    /// Data-path diagnostic counters (split by characteristic)
+    private var dataNotificationCount: UInt64 = 0
+    private var cmdNotificationCount: UInt64 = 0
     private var totalFramesParsed: UInt64 = 0
     private var totalSamplesExtracted: UInt64 = 0
     private var droppedForNonStreaming: UInt64 = 0
     private var emptyExtractions: UInt64 = 0
     private var bufferOverflows: UInt64 = 0
 
+    /// Tracks which packet types we've received and how many of each
+    private var packetTypeCounts: [UInt8: UInt64] = [:]
+
+    /// Last command response received (for diagnosing TOGGLE_IMU_MODE success)
+    private var lastCommandResponse: String = "none"
+
+    func handleCommandResponse(_ data: Data) {
+        cmdNotificationCount += 1
+
+        let frames = cmdFrameParser.feed(data)
+        for frame in frames {
+            // Command response packet type is 0x24 (Maverick) or 0x26 (Puffin)
+            let responseType = frame.packetType
+            let responseHex = String(format: "0x%02X", responseType)
+
+            if frame.payload.count >= 3 {
+                let commandByte = frame.payload[frame.payload.startIndex + 2]
+                let commandHex = String(format: "0x%02X", commandByte)
+
+                // Check for error codes in response
+                if frame.payload.count >= 5 {
+                    let statusByte = frame.payload[frame.payload.startIndex + 3]
+                    let statusHex = String(format: "0x%02X", statusByte)
+                    lastCommandResponse = "\(responseHex) cmd=\(commandHex) status=\(statusHex)"
+                    NSLog("[WhoopBLE] command response: type=%@ cmd=%@ status=%@ payload=%d bytes",
+                          responseHex, commandHex, statusHex, frame.payload.count)
+                } else {
+                    lastCommandResponse = "\(responseHex) cmd=\(commandHex)"
+                    NSLog("[WhoopBLE] command response: type=%@ cmd=%@ payload=%d bytes",
+                          responseHex, commandHex, frame.payload.count)
+                }
+            } else {
+                lastCommandResponse = "\(responseHex) (\(frame.payload.count) bytes)"
+                NSLog("[WhoopBLE] command response: type=%@ payload=%d bytes",
+                      responseHex, frame.payload.count)
+            }
+        }
+    }
+
     func handleDataReceived(_ data: Data) {
-        dataReceivedCount += 1
+        dataNotificationCount += 1
 
         let frames = frameParser.feed(data)
         totalFramesParsed += UInt64(frames.count)
 
         var newSamples: [WhoopImuSample] = []
         for frame in frames {
+            // Track packet types for diagnostics
+            packetTypeCounts[frame.packetType, default: 0] += 1
+
+            // Log first occurrence of each packet type
+            let count = packetTypeCounts[frame.packetType] ?? 0
+            if count == 1 {
+                NSLog("[WhoopBLE] first packet of type 0x%02X (record=%d, payload=%d bytes)",
+                      frame.packetType, frame.recordType, frame.payload.count)
+            }
+
             let samples = WhoopBleFrameParser.extractImuSamples(from: frame)
             newSamples.append(contentsOf: samples)
         }
@@ -692,6 +763,7 @@ public class WhoopBleModule: Module {
         cmdResponseCharacteristic = nil
         dataCharacteristic = nil
         frameParser.reset()
+        cmdFrameParser.reset()
     }
 }
 
@@ -794,14 +866,21 @@ private class BleDelegate: NSObject, CBCentralManagerDelegate, CBPeripheralDeleg
         error: Error?
     ) {
         if let error = error {
-            NSLog("[WhoopBLE] data notification error on %@: %@", characteristic.uuid.uuidString, error.localizedDescription)
+            NSLog("[WhoopBLE] notification error on %@: %@", characteristic.uuid.uuidString, error.localizedDescription)
             return
         }
         guard let data = characteristic.value else {
-            NSLog("[WhoopBLE] data notification with nil value on %@", characteristic.uuid.uuidString)
+            NSLog("[WhoopBLE] notification with nil value on %@", characteristic.uuid.uuidString)
             return
         }
 
-        module?.handleDataReceived(data)
+        // Route CMD_FROM_STRAP separately so we can parse command responses
+        // and track data vs command notifications independently
+        if let cmdRespUUID = module?.cmdResponseCharacteristicUUID,
+           characteristic.uuid == cmdRespUUID {
+            module?.handleCommandResponse(data)
+        } else {
+            module?.handleDataReceived(data)
+        }
     }
 }
