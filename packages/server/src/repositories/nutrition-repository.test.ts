@@ -29,9 +29,9 @@ describe("NutritionDay", () => {
     expect(new NutritionDay(makeRow({ calories: null })).calories).toBeNull();
   });
 
-  it("serializes all fields via toDetail() with snake_case keys", () => {
-    const row = makeRow();
-    expect(new NutritionDay(row).toDetail()).toEqual({
+  it("serializes to snake_case API shape via toDetail()", () => {
+    const detail = new NutritionDay(makeRow()).toDetail();
+    expect(detail).toEqual({
       date: "2024-03-15",
       provider_id: "cronometer",
       user_id: "user-1",
@@ -45,7 +45,7 @@ describe("NutritionDay", () => {
     });
   });
 
-  it("preserves null macro fields", () => {
+  it("preserves null macro fields in snake_case", () => {
     const detail = new NutritionDay(
       makeRow({ proteinGrams: null, carbsGrams: null, fatGrams: null }),
     ).toDetail();
