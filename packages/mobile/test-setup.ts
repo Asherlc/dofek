@@ -216,14 +216,26 @@ vi.mock("react-native-reanimated", () => {
     __esModule: true,
     default: {
       createAnimatedComponent: (component: unknown) => component,
-      View: ({ children, entering, exiting, layout, style, testID, ...props }: Record<string, unknown>) => {
+      View: ({
+        children,
+        entering,
+        exiting,
+        layout,
+        style,
+        testID,
+        ...props
+      }: Record<string, unknown>) => {
         // Strip reanimated-specific props and animated style objects
         const plainStyle = Array.isArray(style)
           ? Object.assign({}, ...style.map((s: unknown) => (typeof s === "object" && s ? s : {})))
           : typeof style === "object" && style
             ? style
             : undefined;
-        return React.createElement("div", { ...props, style: plainStyle, "data-testid": testID }, children);
+        return React.createElement(
+          "div",
+          { ...props, style: plainStyle, "data-testid": testID },
+          children,
+        );
       },
     },
     useSharedValue: (initial: unknown) => ({ value: initial }),
