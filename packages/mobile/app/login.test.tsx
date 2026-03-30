@@ -1,10 +1,12 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock auth module before importing LoginScreen
 const mockOnLoginSuccess = vi.fn();
 const mockFetchConfiguredProviders = vi.fn();
 const mockStartOAuthLogin = vi.fn();
+const mockStartNativeAppleSignIn = vi.fn();
+const mockIsNativeAppleSignInAvailable = vi.fn(() => false);
 
 vi.mock("../lib/auth-context", () => ({
   useAuth: () => ({
@@ -16,6 +18,19 @@ vi.mock("../lib/auth-context", () => ({
 vi.mock("../lib/auth", () => ({
   fetchConfiguredProviders: (...args: unknown[]) => mockFetchConfiguredProviders(...args),
   startOAuthLogin: (...args: unknown[]) => mockStartOAuthLogin(...args),
+  startNativeAppleSignIn: (...args: unknown[]) => mockStartNativeAppleSignIn(...args),
+  isNativeAppleSignInAvailable: () => mockIsNativeAppleSignInAvailable(),
+}));
+
+vi.mock("expo-apple-authentication", () => ({
+  AppleAuthenticationButton: "AppleAuthenticationButton",
+  AppleAuthenticationButtonType: { SIGN_IN: 0 },
+  AppleAuthenticationButtonStyle: { WHITE: 0 },
+  AppleAuthenticationScope: { FULL_NAME: 0, EMAIL: 1 },
+}));
+
+vi.mock("../components/ProviderLogo", () => ({
+  ProviderLogo: () => null,
 }));
 
 const { default: LoginScreen } = await import("./login");
@@ -75,9 +90,7 @@ describe("LoginScreen", () => {
     render(<LoginScreen />);
 
     await waitFor(() => {
-      expect(
-        screen.getByText("No login providers configured on this server."),
-      ).toBeTruthy();
+      expect(screen.getByText("No login providers configured on this server.")).toBeTruthy();
     });
   });
 
@@ -97,11 +110,7 @@ describe("LoginScreen", () => {
     fireEvent.click(screen.getByText("Sign in with Google"));
 
     await waitFor(() => {
-      expect(mockStartOAuthLogin).toHaveBeenCalledWith(
-        "https://test.example.com",
-        "google",
-        false,
-      );
+      expect(mockStartOAuthLogin).toHaveBeenCalledWith("https://test.example.com", "google", false);
     });
     expect(mockOnLoginSuccess).toHaveBeenCalledWith("test-token-123");
   });

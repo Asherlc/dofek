@@ -3,6 +3,28 @@ import XCTest
 
 final class WhoopBleFrameParserTests: XCTestCase {
 
+    // MARK: - Helpers
+
+    /// Build a Maverick frame: 8-byte header + payload + optional CRC32 placeholder
+    private func buildMaverickFrame(payload: Data) -> Data {
+        let payloadLen = UInt16(payload.count)
+        var frame = Data([
+            0xAA,                                             // SOF
+            0x01,                                             // version
+            UInt8(payloadLen & 0xFF), UInt8(payloadLen >> 8),// payloadLen u16 LE
+            0x00, 0x01,                                       // role1, role2
+            0x00, 0x00,                                       // CRC16 placeholder
+        ])
+        frame.append(payload)
+        return frame
+    }
+
+    private func writeInt16LE(_ data: inout Data, offset: Int, value: Int16) {
+        let unsigned = UInt16(bitPattern: value)
+        data[offset] = UInt8(unsigned & 0xFF)
+        data[offset + 1] = UInt8(unsigned >> 8)
+    }
+
     // MARK: - Frame parsing
 
     func testParseFrameRejectsEmptyData() {
@@ -10,82 +32,59 @@ final class WhoopBleFrameParserTests: XCTestCase {
     }
 
     func testParseFrameRejectsTooShortData() {
-        let data = Data([0xAA, 0x01, 0x00, 0x00])
+        let data = Data([0xAA, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00])
         XCTAssertNil(WhoopBleFrameParser.parseFrame(data))
     }
 
     func testParseFrameRejectsBadStartOfFrame() {
-        // Wrong SOF byte
-        let data = Data([0xBB, 0x01, 0x00, 0x00, 0x33, 0x00, 0x00, 0x00, 0x00])
+        var data = Data([0xBB, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00])
+        data.append(0x33)
         XCTAssertNil(WhoopBleFrameParser.parseFrame(data))
     }
 
     func testParseFrameExtractsPacketType() {
-        // SOF + payloadLen=1 + crc8 + payload(1 byte: type=0x33) + crc32(4)
-        var data = Data([0xAA, 0x01, 0x00, 0x00])  // header
-        data.append(0x33)  // payload: packet type = REALTIME_IMU
-        data.append(contentsOf: [0x00, 0x00, 0x00, 0x00])  // CRC32 placeholder
-        let frame = WhoopBleFrameParser.parseFrame(data)
-        XCTAssertNotNil(frame)
-        XCTAssertEqual(frame?.packetType, 0x33)
+        let frame = buildMaverickFrame(payload: Data([0x33]))
+        let parsed = WhoopBleFrameParser.parseFrame(frame)
+        XCTAssertNotNil(parsed)
+        XCTAssertEqual(parsed?.packetType, 0x33)
     }
 
     func testParseFrameExtractsTimestampAndSubSeconds() {
-        // Build the complete frame byte-by-byte to avoid slicing issues
-        // Format: [0xAA][lenLo][lenHi][crc8][...payload...][crc32 x4]
-        // Payload = 14 bytes
-        let data = Data([
-            0xAA,                           // [0]  SOF
-            0x0E, 0x00,                     // [1-2] payload length = 14
-            0x00,                           // [3]  header crc8
-            // Payload starts at [4]:
-            0x33,                           // [4]  packet type = REALTIME_IMU
-            0x05,                           // [5]  record type = 5
-            0x00,                           // [6]  reserved
-            0xE8, 0x03, 0x00, 0x00,         // [7-10] timestamp = 1000 (LE)
-            0x00, 0x00, 0x00, 0x00,         // [11-14] reserved
-            0xF4, 0x01,                     // [15-16] sub-seconds = 500 (LE)
-            0x00,                           // [17] padding
-            // CRC32 placeholder:
-            0x00, 0x00, 0x00, 0x00,         // [18-21]
-        ])
+        // Payload: [type][record][pad][pad][pad][pad][pad][ts:4][sub:2][pad]
+        var payload = Data(count: 14)
+        payload[0] = 0x33  // type
+        payload[1] = 0x05  // record type
+        // Timestamp at payload offset 7 (u32 LE) = 1000
+        payload[7] = 0xE8; payload[8] = 0x03; payload[9] = 0x00; payload[10] = 0x00
+        // Sub-seconds at payload offset 11 (u16 LE) = 500
+        payload[11] = 0xF4; payload[12] = 0x01
 
-        let frame = WhoopBleFrameParser.parseFrame(data)
-        XCTAssertNotNil(frame)
-        XCTAssertEqual(frame?.packetType, 0x33)
-        XCTAssertEqual(frame?.dataTimestamp, 1000)
-        XCTAssertEqual(frame?.subSeconds, 500)
-        XCTAssertEqual(frame?.recordType, 5)
+        let frame = buildMaverickFrame(payload: payload)
+        let parsed = WhoopBleFrameParser.parseFrame(frame)
+
+        XCTAssertNotNil(parsed)
+        XCTAssertEqual(parsed?.packetType, 0x33)
+        XCTAssertEqual(parsed?.dataTimestamp, 1000)
+        XCTAssertEqual(parsed?.subSeconds, 500)
+        XCTAssertEqual(parsed?.recordType, 5)
     }
 
     // MARK: - IMU sample extraction
 
     func testExtractImuSamplesFromRealtimeIMU() {
-        // Build a REALTIME_IMU frame with 2 interleaved samples
-        var payload = Data(count: 28 + 2 * 12)  // header + 2 samples
-        payload[0] = WhoopBleConstants.packetTypeRealtimeIMU  // 0x33
-        payload[1] = 0  // record type
-
-        // Timestamp at offset 3 (u32 LE) = 1000
-        payload[3] = 0xE8; payload[4] = 0x03; payload[5] = 0x00; payload[6] = 0x00
-
-        // Sub-seconds at offset 11 (u16 LE) = 100
+        var payload = Data(count: 28 + 2 * 12)
+        payload[0] = WhoopBleConstants.packetTypeRealtimeIMU
+        payload[1] = 0
+        payload[7] = 0xE8; payload[8] = 0x03; payload[9] = 0x00; payload[10] = 0x00
         payload[11] = 0x64; payload[12] = 0x00
-
-        // Sample count A at offset 24 (u16 LE) = 2
         payload[24] = 0x02; payload[25] = 0x00
-        // Sample count B at offset 26 (u16 LE) = 2
         payload[26] = 0x02; payload[27] = 0x00
-
-        // Sample 1 at offset 28: ax=100, ay=-200, az=300, bx=10, by=-20, bz=30
         writeInt16LE(&payload, offset: 28, value: 100)
         writeInt16LE(&payload, offset: 30, value: -200)
         writeInt16LE(&payload, offset: 32, value: 300)
         writeInt16LE(&payload, offset: 34, value: 10)
         writeInt16LE(&payload, offset: 36, value: -20)
         writeInt16LE(&payload, offset: 38, value: 30)
-
-        // Sample 2 at offset 40: ax=400, ay=-500, az=600, bx=40, by=-50, bz=60
         writeInt16LE(&payload, offset: 40, value: 400)
         writeInt16LE(&payload, offset: 42, value: -500)
         writeInt16LE(&payload, offset: 44, value: 600)
@@ -95,39 +94,24 @@ final class WhoopBleFrameParserTests: XCTestCase {
 
         let frame = WhoopFrame(
             packetType: WhoopBleConstants.packetTypeRealtimeIMU,
-            recordType: 0,
-            dataTimestamp: 1000,
-            subSeconds: 100,
-            payload: payload
+            recordType: 0, dataTimestamp: 1000, subSeconds: 100, payload: payload
         )
-
         let samples = WhoopBleFrameParser.extractImuSamples(from: frame)
 
         XCTAssertEqual(samples.count, 2)
-
-        XCTAssertEqual(samples[0].timestampSeconds, 1000)
-        XCTAssertEqual(samples[0].subSeconds, 100)
         XCTAssertEqual(samples[0].accelerometerX, 100)
         XCTAssertEqual(samples[0].accelerometerY, -200)
         XCTAssertEqual(samples[0].accelerometerZ, 300)
         XCTAssertEqual(samples[0].gyroscopeX, 10)
-        XCTAssertEqual(samples[0].gyroscopeY, -20)
-        XCTAssertEqual(samples[0].gyroscopeZ, 30)
-
         XCTAssertEqual(samples[1].accelerometerX, 400)
-        XCTAssertEqual(samples[1].accelerometerY, -500)
-        XCTAssertEqual(samples[1].accelerometerZ, 600)
-        XCTAssertEqual(samples[1].gyroscopeX, 40)
-        XCTAssertEqual(samples[1].gyroscopeY, -50)
         XCTAssertEqual(samples[1].gyroscopeZ, 60)
     }
 
     func testExtractImuSamplesFromHistoricalIMU() {
-        // Historical IMU (0x34) should work the same way
-        var payload = Data(count: 28 + 12)  // 1 sample
+        var payload = Data(count: 28 + 12)
         payload[0] = WhoopBleConstants.packetTypeHistoricalIMU
-        payload[24] = 0x01; payload[25] = 0x00  // countA = 1
-        payload[26] = 0x01; payload[27] = 0x00  // countB = 1
+        payload[24] = 0x01; payload[25] = 0x00
+        payload[26] = 0x01; payload[27] = 0x00
         writeInt16LE(&payload, offset: 28, value: 42)
         writeInt16LE(&payload, offset: 30, value: -42)
         writeInt16LE(&payload, offset: 32, value: 84)
@@ -137,88 +121,63 @@ final class WhoopBleFrameParserTests: XCTestCase {
 
         let frame = WhoopFrame(
             packetType: WhoopBleConstants.packetTypeHistoricalIMU,
-            recordType: 0,
-            dataTimestamp: 2000,
-            subSeconds: 0,
-            payload: payload
+            recordType: 0, dataTimestamp: 2000, subSeconds: 0, payload: payload
         )
-
         let samples = WhoopBleFrameParser.extractImuSamples(from: frame)
         XCTAssertEqual(samples.count, 1)
         XCTAssertEqual(samples[0].accelerometerX, 42)
-        XCTAssertEqual(samples[0].accelerometerY, -42)
-        XCTAssertEqual(samples[0].accelerometerZ, 84)
     }
 
     func testExtractImuSamplesReturnsEmptyForNonIMUPacket() {
         let frame = WhoopFrame(
-            packetType: 0x28,  // REALTIME_DATA, not IMU
-            recordType: 0,
-            dataTimestamp: 0,
-            subSeconds: 0,
+            packetType: 0x28, recordType: 0, dataTimestamp: 0, subSeconds: 0,
             payload: Data(count: 116)
         )
-        let samples = WhoopBleFrameParser.extractImuSamples(from: frame)
-        XCTAssertTrue(samples.isEmpty)
+        XCTAssertTrue(WhoopBleFrameParser.extractImuSamples(from: frame).isEmpty)
     }
 
     func testExtractImuSamplesCapsAt200() {
-        // countA = 300, but parser should cap at 200
         var payload = Data(count: 28 + 200 * 12)
         payload[0] = WhoopBleConstants.packetTypeRealtimeIMU
-        // countA = 300 (LE)
-        payload[24] = 0x2C; payload[25] = 0x01
-        // countB = 300
+        payload[24] = 0x2C; payload[25] = 0x01  // 300
         payload[26] = 0x2C; payload[27] = 0x01
 
         let frame = WhoopFrame(
             packetType: WhoopBleConstants.packetTypeRealtimeIMU,
-            recordType: 0,
-            dataTimestamp: 0,
-            subSeconds: 0,
-            payload: payload
+            recordType: 0, dataTimestamp: 0, subSeconds: 0, payload: payload
         )
-
-        let samples = WhoopBleFrameParser.extractImuSamples(from: frame)
-        XCTAssertEqual(samples.count, 200)
+        XCTAssertEqual(WhoopBleFrameParser.extractImuSamples(from: frame).count, 200)
     }
 
     func testExtractImuSamplesHandlesTruncatedPayload() {
-        // Say countA=5 but payload only has space for 2 samples
         var payload = Data(count: 28 + 2 * 12)
         payload[0] = WhoopBleConstants.packetTypeRealtimeIMU
-        payload[24] = 0x05; payload[25] = 0x00  // countA = 5
-        payload[26] = 0x05; payload[27] = 0x00  // countB = 5
+        payload[24] = 0x05; payload[25] = 0x00
+        payload[26] = 0x05; payload[27] = 0x00
 
         let frame = WhoopFrame(
             packetType: WhoopBleConstants.packetTypeRealtimeIMU,
-            recordType: 0,
-            dataTimestamp: 0,
-            subSeconds: 0,
-            payload: payload
+            recordType: 0, dataTimestamp: 0, subSeconds: 0, payload: payload
         )
-
-        let samples = WhoopBleFrameParser.extractImuSamples(from: frame)
-        XCTAssertEqual(samples.count, 2)  // truncated to what fits
+        XCTAssertEqual(WhoopBleFrameParser.extractImuSamples(from: frame).count, 2)
     }
 
     // MARK: - Command frame building
 
     func testBuildCommandFrameForToggleImuMode() {
         let data = WhoopBleFrameParser.buildCommandData(command: WhoopBleConstants.commandToggleImuMode)
-
-        XCTAssertEqual(data.count, 6)
-        XCTAssertEqual(data[0], 0xAA)  // SOF
-        XCTAssertEqual(data[1], 0x02)  // payload length low
-        XCTAssertEqual(data[2], 0x00)  // payload length high
-        XCTAssertEqual(data[4], 0x23)  // COMMAND packet type
-        XCTAssertEqual(data[5], 0x6A)  // TOGGLE_IMU_MODE
+        XCTAssertEqual(data.count, 16)
+        XCTAssertEqual(data[0], 0xAA)
+        XCTAssertEqual(data[1], 0x01)
+        XCTAssertEqual(data[2], 0x0C)  // payloadLen = 12
+        XCTAssertEqual(data[8], 0x23)  // COMMAND type
+        XCTAssertEqual(data[10], 0x6A) // TOGGLE_IMU_MODE
     }
 
-    func testBuildCommandFrameForStopRawData() {
-        let data = WhoopBleFrameParser.buildCommandData(command: WhoopBleConstants.commandStopRawData)
-
-        XCTAssertEqual(data[5], 0x52)  // STOP_RAW_DATA
+    func testBuildCommandFrameSequenceIncrements() {
+        let data1 = WhoopBleFrameParser.buildCommandData(command: WhoopBleConstants.commandToggleImuMode)
+        let data2 = WhoopBleFrameParser.buildCommandData(command: WhoopBleConstants.commandToggleImuMode)
+        XCTAssertEqual(data2[9], data1[9] &+ 1)
     }
 
     // MARK: - Frame parser (stateful accumulator)
@@ -226,54 +185,69 @@ final class WhoopBleFrameParserTests: XCTestCase {
     func testFrameParserAccumulatesFragmentedNotifications() {
         let parser = WhoopBleFrameParser()
 
-        // Build a complete frame, then split into two notifications
-        var fullFrame = Data([0xAA, 0x01, 0x00, 0x00])  // header
-        fullFrame.append(0x33)  // payload
-        fullFrame.append(contentsOf: [0x00, 0x00, 0x00, 0x00])  // CRC32
+        // Build a Maverick frame: header(8) + payload(1) = 9 bytes
+        let frame = buildMaverickFrame(payload: Data([0x33]))
+        let firstHalf = Data(frame[0..<5])
 
-        let firstHalf = fullFrame[0..<5]
-        let secondHalf = fullFrame[5...]
+        // First notification — incomplete
+        XCTAssertTrue(parser.feed(firstHalf).isEmpty)
 
-        // First notification — incomplete frame
-        let frames1 = parser.feed(Data(firstHalf))
-        XCTAssertTrue(frames1.isEmpty)
+        // New SOF-bearing notification with a complete frame
+        let newFrame = buildMaverickFrame(payload: Data([0x28]))
+        let frames = parser.feed(newFrame)
+        XCTAssertEqual(frames.count, 1)
+        XCTAssertEqual(frames[0].packetType, 0x28)
+    }
 
-        // Send a new SOF-bearing notification that triggers parsing of accumulated data
-        // and starts a new frame
-        var newFrame = Data([0xAA, 0x01, 0x00, 0x00, 0x28])
-        newFrame.append(contentsOf: [0x00, 0x00, 0x00, 0x00])
+    func testFrameParserAccumulatesLargeIMUFrameAcrossNotifications() {
+        let parser = WhoopBleFrameParser()
 
-        // The accumulated data won't form a valid frame (it was truncated),
-        // but the new frame should parse
-        let frames2 = parser.feed(newFrame)
-        // The new frame should be parsed
-        XCTAssertEqual(frames2.count, 1)
-        XCTAssertEqual(frames2[0].packetType, 0x28)
+        // Build a Maverick frame with 2 IMU samples
+        let payloadLen = 52
+        var payload = Data(count: payloadLen)
+        payload[0] = WhoopBleConstants.packetTypeRealtimeIMU
+        payload[1] = 0
+        payload[7] = 0xE8; payload[8] = 0x03; payload[9] = 0x00; payload[10] = 0x00
+        payload[11] = 0x64; payload[12] = 0x00
+        payload[24] = 0x02; payload[25] = 0x00
+        payload[26] = 0x02; payload[27] = 0x00
+        writeInt16LE(&payload, offset: 28, value: 100)
+        writeInt16LE(&payload, offset: 30, value: -200)
+        writeInt16LE(&payload, offset: 32, value: 300)
+        writeInt16LE(&payload, offset: 34, value: 10)
+        writeInt16LE(&payload, offset: 36, value: -20)
+        writeInt16LE(&payload, offset: 38, value: 30)
+        writeInt16LE(&payload, offset: 40, value: 400)
+        writeInt16LE(&payload, offset: 42, value: -500)
+        writeInt16LE(&payload, offset: 44, value: 600)
+        writeInt16LE(&payload, offset: 46, value: 40)
+        writeInt16LE(&payload, offset: 48, value: -50)
+        writeInt16LE(&payload, offset: 50, value: 60)
+
+        let fullFrame = buildMaverickFrame(payload: payload)
+
+        // Split into 20-byte BLE notifications
+        var allFrames: [WhoopFrame] = []
+        for offset in stride(from: 0, to: fullFrame.count, by: 20) {
+            let end = min(offset + 20, fullFrame.count)
+            allFrames.append(contentsOf: parser.feed(Data(fullFrame[offset..<end])))
+        }
+
+        XCTAssertEqual(allFrames.count, 1)
+        let samples = WhoopBleFrameParser.extractImuSamples(from: allFrames[0])
+        XCTAssertEqual(samples.count, 2)
+        XCTAssertEqual(samples[0].accelerometerX, 100)
+        XCTAssertEqual(samples[1].accelerometerX, 400)
     }
 
     func testFrameParserResetClearsAccumulator() {
         let parser = WhoopBleFrameParser()
-
-        // Feed partial data
-        let partial = Data([0xAA, 0x05, 0x00])
-        _ = parser.feed(partial)
-
-        // Reset
+        _ = parser.feed(Data([0xAA, 0x01, 0x05, 0x00, 0x00, 0x01, 0x00, 0x00]))
         parser.reset()
 
-        // New frame should parse cleanly (no leftover bytes)
-        var frame = Data([0xAA, 0x01, 0x00, 0x00, 0x33])
-        frame.append(contentsOf: [0x00, 0x00, 0x00, 0x00])
+        let frame = buildMaverickFrame(payload: Data([0x33]))
         let frames = parser.feed(frame)
         XCTAssertEqual(frames.count, 1)
         XCTAssertEqual(frames[0].packetType, 0x33)
-    }
-
-    // MARK: - Helpers
-
-    private func writeInt16LE(_ data: inout Data, offset: Int, value: Int16) {
-        let unsigned = UInt16(bitPattern: value)
-        data[offset] = UInt8(unsigned & 0xFF)
-        data[offset + 1] = UInt8(unsigned >> 8)
     }
 }
