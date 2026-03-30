@@ -268,6 +268,8 @@ public class WhoopBleModule: Module {
                     "hasCmdCharacteristic": self.cmdCharacteristic != nil,
                     "hasCmdResponseCharacteristic": self.cmdResponseCharacteristic != nil,
                     "lastWriteError": self.lastWriteError ?? "none",
+                    "realtimeBufferCount": self.realtimeDataBuffer.count,
+                    "realtimeDebug": self.lastRealtimeDebug,
                 ]
             }
         }
@@ -726,6 +728,9 @@ public class WhoopBleModule: Module {
     /// Last command response received (for diagnosing TOGGLE_IMU_MODE success)
     private var lastCommandResponse: String = "none"
 
+    /// Diagnostic: first 0x28 payload hex + extraction result
+    private var lastRealtimeDebug: String = "none"
+
     func handleCommandResponse(_ data: Data) {
         cmdNotificationCount += 1
 
@@ -784,6 +789,15 @@ public class WhoopBleModule: Module {
             newSamples.append(contentsOf: samples)
 
             // Extract realtime data (HR + quaternion + optical) from 0x28 packets
+            if frame.packetType == WhoopBleConstants.packetTypeRealtimeData {
+                let totalRealtime = packetTypeCounts[WhoopBleConstants.packetTypeRealtimeData] ?? 0
+                if totalRealtime <= 3 {
+                    let hexPrefix = frame.payload.prefix(30).map { String(format: "%02x", $0) }.joined()
+                    lastRealtimeDebug = "sz=\(frame.payload.count) min=\(WhoopBleConstants.realtimeDataMinPayloadSize) hex=\(hexPrefix)"
+                    NSLog("[WhoopBLE] 0x28 frame: payload=%d bytes, minRequired=%d, hex=%@",
+                          frame.payload.count, WhoopBleConstants.realtimeDataMinPayloadSize, hexPrefix)
+                }
+            }
             if let realtimeData = WhoopBleFrameParser.extractRealtimeData(from: frame) {
                 newRealtimeData.append(realtimeData)
 
@@ -794,6 +808,12 @@ public class WhoopBleModule: Module {
                     let hasNonZero = realtimeData.opticalBytes.contains { $0 != 0 }
                     NSLog("[WhoopBLE] optical/PPG bytes (hr=%d): %@ nonzero=%@",
                           realtimeData.heartRate, hex, hasNonZero ? "YES" : "NO")
+                }
+            } else if frame.packetType == WhoopBleConstants.packetTypeRealtimeData {
+                let totalRealtime = packetTypeCounts[WhoopBleConstants.packetTypeRealtimeData] ?? 0
+                if totalRealtime <= 3 {
+                    lastRealtimeDebug += " FAIL"
+                    NSLog("[WhoopBLE] extractRealtimeData FAILED for 0x28 frame (payload=%d bytes)", frame.payload.count)
                 }
             }
         }

@@ -243,6 +243,21 @@ async function drainBuffer(
   whoopDeps: WhoopBleSyncDeps,
   realtimeClient?: WhoopBleRealtimeUploadClient,
 ): Promise<void> {
+  // Log data path stats on every drain for diagnostics
+  try {
+    const bleModule = require("../modules/whoop-ble");
+    if (typeof bleModule.getDataPathStats === "function") {
+      const stats = bleModule.getDataPathStats();
+      if (stats.dataNotificationCount > 0) {
+        logger.info(
+          LOG_CATEGORY,
+          `drain stats: packets=${stats.packetTypes} cmdResp=${stats.lastCommandResponse} notify=${stats.isNotifying} frames=${stats.totalFramesParsed} rtBuf=${stats.realtimeBufferCount ?? "?"} rt0x28=${stats.realtimeDebug ?? "?"}`,
+        );
+      }
+    }
+  } catch {
+    // Diagnostic-only
+  }
   // Drain IMU buffer
   let totalImuUploaded = 0;
   while (true) {
@@ -275,12 +290,13 @@ async function drainBuffer(
     logger.info(LOG_CATEGORY, `IMU drain complete: ${totalImuUploaded} samples`);
   }
 
-  // Drain realtime data buffer (HR + quaternion from 0x28 packets)
+  // Drain realtime data buffer (HR + quaternion + optical from 0x28 packets)
   const effectiveRealtimeClient = realtimeClient ?? currentRealtimeClient;
   if (effectiveRealtimeClient) {
     let totalRealtimeUploaded = 0;
     while (true) {
       const realtimeSamples = await whoopDeps.getBufferedRealtimeData();
+      logger.info(LOG_CATEGORY, `realtime buffer: ${realtimeSamples.length} samples`);
       if (realtimeSamples.length === 0) break;
 
       const result = await effectiveRealtimeClient.whoopBleSync.pushRealtimeData.mutate({
