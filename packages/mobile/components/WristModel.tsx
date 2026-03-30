@@ -3,7 +3,7 @@ import { StyleSheet, View } from "react-native";
 import Svg, { Circle, Polygon } from "react-native-svg";
 import type { OrientationEvent } from "../modules/whoop-ble";
 
-type Vec3 = [number, number, number];
+export type Vec3 = [number, number, number];
 
 interface Face {
   indices: number[];
@@ -111,7 +111,7 @@ const LIGHT_DIRECTION: Vec3 = (() => {
 const LED_POSITION: Vec3 = [RING_RADIUS + BAND_THICKNESS / 2 + POD_HEIGHT * 0.75, 0, 0];
 
 /* ── math helpers ────────────────────────────────────────── */
-function rotateByQuaternion(vertex: Vec3, quaternion: OrientationEvent): Vec3 {
+export function rotateByQuaternion(vertex: Vec3, quaternion: OrientationEvent): Vec3 {
   const [vx, vy, vz] = vertex;
   const { w, x, y, z } = quaternion;
   const ix = w * vx + y * vz - z * vy;
@@ -125,7 +125,7 @@ function rotateByQuaternion(vertex: Vec3, quaternion: OrientationEvent): Vec3 {
   ];
 }
 
-function crossProduct(edgeA: Vec3, edgeB: Vec3): Vec3 {
+export function crossProduct(edgeA: Vec3, edgeB: Vec3): Vec3 {
   return [
     edgeA[1] * edgeB[2] - edgeA[2] * edgeB[1],
     edgeA[2] * edgeB[0] - edgeA[0] * edgeB[2],
@@ -133,16 +133,16 @@ function crossProduct(edgeA: Vec3, edgeB: Vec3): Vec3 {
   ];
 }
 
-function normalizeVec(vector: Vec3): Vec3 {
+export function normalizeVec(vector: Vec3): Vec3 {
   const length = Math.hypot(...vector);
   return length > 0 ? [vector[0] / length, vector[1] / length, vector[2] / length] : [0, 0, 0];
 }
 
-function dotProduct(vectorA: Vec3, vectorB: Vec3): number {
+export function dotProduct(vectorA: Vec3, vectorB: Vec3): number {
   return vectorA[0] * vectorB[0] + vectorA[1] * vectorB[1] + vectorA[2] * vectorB[2];
 }
 
-function computeFaceNormal(vertices: Vec3[]): Vec3 {
+export function computeFaceNormal(vertices: Vec3[]): Vec3 {
   const origin = vertices[0];
   const second = vertices[1];
   const third = vertices[2];
