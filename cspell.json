@@ -391,7 +391,9 @@
     "matviewname",
     "schemaname",
     "maxhr",
-    "jdoe"
+    "jdoe",
+    "AQID",
+    "BAUG"
   ],
   "flagWords": [],
   "useGitignore": false,
