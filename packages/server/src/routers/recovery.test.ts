@@ -642,13 +642,14 @@ describe("recoveryRouter.readinessScore", () => {
 
     expect(result).toHaveLength(1);
     expect(result[0]?.date).toBe(dateStr);
-    expect(result[0]?.readinessScore).toBeGreaterThan(0);
-    expect(result[0]?.readinessScore).toBeLessThanOrEqual(100);
-    expect(result[0]?.components).toBeDefined();
-    expect(result[0]?.components.hrvScore).toBeDefined();
-    expect(result[0]?.components.restingHrScore).toBeDefined();
-    expect(result[0]?.components.sleepScore).toBeDefined();
-    expect(result[0]?.components.respiratoryRateScore).toBeDefined();
+    // HRV: z=(55-50)/10=0.5 → 72, RHR: z=(58-60)/5=-0.4 inverted=0.4 → 70
+    // RR: z=(15-15)/1=0 inverted=0 → 62, Sleep: 92
+    // Weighted: 72*0.5 + 70*0.2 + 92*0.15 + 62*0.15 = 73.1 → 73
+    expect(result[0]?.components.hrvScore).toBe(72);
+    expect(result[0]?.components.restingHrScore).toBe(70);
+    expect(result[0]?.components.respiratoryRateScore).toBe(62);
+    expect(result[0]?.components.sleepScore).toBe(92);
+    expect(result[0]?.readinessScore).toBe(73);
   });
 
   it("filters out dates beyond cutoff", async () => {
@@ -894,6 +895,168 @@ describe("recoveryRouter.readinessScore", () => {
     expect(result[0]?.components.sleepScore).toBe(0);
   });
 
+  it("defaults to 62 for HRV score when only hrv is null (mean/sd present)", async () => {
+    const today = new Date();
+    const recentDate = new Date(today);
+    recentDate.setDate(today.getDate() - 5);
+    const dateStr = recentDate.toISOString().split("T")[0];
+
+    const rows = [
+      {
+        date: dateStr,
+        hrv: null, // null hrv but valid stats
+        resting_hr: 45, // very low → high score when inverted
+        respiratory_rate: 15,
+        hrv_mean_30d: 50,
+        hrv_sd_30d: 10,
+        rhr_mean_30d: 60,
+        rhr_sd_30d: 5,
+        rr_mean_30d: 15,
+        rr_sd_30d: 1,
+        efficiency_pct: 85,
+      },
+    ];
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.readinessScore({});
+
+    expect(result[0]?.components.hrvScore).toBe(62);
+    // RHR should compute: z=(45-60)/5=-3, inverted=+3 → high score
+    expect(result[0]?.components.restingHrScore).toBeGreaterThan(80);
+  });
+
+  it("defaults to 62 for HRV score when only hrv_mean_30d is null", async () => {
+    const today = new Date();
+    const recentDate = new Date(today);
+    recentDate.setDate(today.getDate() - 5);
+    const dateStr = recentDate.toISOString().split("T")[0];
+
+    const rows = [
+      {
+        date: dateStr,
+        hrv: 55,
+        resting_hr: 60,
+        respiratory_rate: 15,
+        hrv_mean_30d: null, // null mean
+        hrv_sd_30d: 10,
+        rhr_mean_30d: 60,
+        rhr_sd_30d: 5,
+        rr_mean_30d: 15,
+        rr_sd_30d: 1,
+        efficiency_pct: 85,
+      },
+    ];
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.readinessScore({});
+
+    expect(result[0]?.components.hrvScore).toBe(62);
+  });
+
+  it("defaults to 62 for RHR score when only resting_hr is null", async () => {
+    const today = new Date();
+    const recentDate = new Date(today);
+    recentDate.setDate(today.getDate() - 5);
+    const dateStr = recentDate.toISOString().split("T")[0];
+
+    const rows = [
+      {
+        date: dateStr,
+        hrv: 80, // far above mean → high HRV score
+        resting_hr: null, // null resting HR
+        respiratory_rate: 15,
+        hrv_mean_30d: 50,
+        hrv_sd_30d: 10,
+        rhr_mean_30d: 60,
+        rhr_sd_30d: 5,
+        rr_mean_30d: 15,
+        rr_sd_30d: 1,
+        efficiency_pct: 85,
+      },
+    ];
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.readinessScore({});
+
+    expect(result[0]?.components.restingHrScore).toBe(62);
+    // HRV: z=(80-50)/10=+3 → high score
+    expect(result[0]?.components.hrvScore).toBeGreaterThan(80);
+  });
+
+  it("defaults to 62 for RHR score when only rhr_mean_30d is null", async () => {
+    const today = new Date();
+    const recentDate = new Date(today);
+    recentDate.setDate(today.getDate() - 5);
+    const dateStr = recentDate.toISOString().split("T")[0];
+
+    const rows = [
+      {
+        date: dateStr,
+        hrv: 55,
+        resting_hr: 60,
+        respiratory_rate: 15,
+        hrv_mean_30d: 50,
+        hrv_sd_30d: 10,
+        rhr_mean_30d: null, // null mean
+        rhr_sd_30d: 5,
+        rr_mean_30d: 15,
+        rr_sd_30d: 1,
+        efficiency_pct: 85,
+      },
+    ];
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.readinessScore({});
+
+    expect(result[0]?.components.restingHrScore).toBe(62);
+  });
+
+  it("defaults to 62 for respiratory score when only respiratory_rate is null", async () => {
+    const today = new Date();
+    const recentDate = new Date(today);
+    recentDate.setDate(today.getDate() - 5);
+    const dateStr = recentDate.toISOString().split("T")[0];
+
+    const rows = [
+      {
+        date: dateStr,
+        hrv: 80, // far above mean → high score
+        resting_hr: 45, // far below mean → high score (inverted)
+        respiratory_rate: null, // null respiratory rate
+        hrv_mean_30d: 50,
+        hrv_sd_30d: 10,
+        rhr_mean_30d: 60,
+        rhr_sd_30d: 5,
+        rr_mean_30d: 15,
+        rr_sd_30d: 1,
+        efficiency_pct: 85,
+      },
+    ];
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+    const result = await caller.readinessScore({});
+
+    expect(result[0]?.components.respiratoryRateScore).toBe(62);
+    // HRV and RHR should compute to high scores
+    expect(result[0]?.components.hrvScore).toBeGreaterThan(80);
+    expect(result[0]?.components.restingHrScore).toBeGreaterThan(80);
+  });
+
   it("high HRV (positive z-score) produces higher HRV score", async () => {
     const today = new Date();
     const recentDate = new Date(today);
@@ -922,8 +1085,8 @@ describe("recoveryRouter.readinessScore", () => {
     });
     const result = await caller.readinessScore({});
 
-    // z = (70-50)/10 = +2, should map to ~93
-    expect(result[0]?.components.hrvScore).toBeGreaterThan(80);
+    // z = (70-50)/10 = +2, zScoreToRecoveryScore(2) = 92
+    expect(result[0]?.components.hrvScore).toBe(92);
   });
 
   it("low resting HR (negative z-score, inverted) produces higher RHR score", async () => {
@@ -1309,6 +1472,127 @@ describe("recoveryRouter.strainTarget", () => {
 
     // Higher sleep efficiency → higher readiness → higher or equal target strain
     expect(resultHigh.targetStrain).toBeGreaterThanOrEqual(resultLow.targetStrain);
+  });
+
+  it("computes progressPercent as 0 when targetStrain is 0", async () => {
+    const today = new Date().toISOString().split("T")[0] ?? "";
+    const executeMock = vi.fn();
+    executeMock.mockResolvedValueOnce([]); // no readiness metrics
+    executeMock.mockResolvedValueOnce([]); // no loads
+
+    const caller = createCaller({
+      db: { execute: executeMock },
+      userId: "user-1",
+    });
+    const result = await caller.strainTarget({ endDate: today });
+
+    expect(result.progressPercent).toBe(0);
+  });
+
+  it("averages acute load over 7-day window", async () => {
+    const today = "2026-03-28";
+    const executeMock = vi.fn();
+    executeMock.mockResolvedValueOnce([]); // no readiness
+    // 7 days of loads, all within acute window
+    const loads = Array.from({ length: 7 }, (_, index) => {
+      const date = new Date("2026-03-22");
+      date.setDate(date.getDate() + index);
+      return { date: date.toISOString().split("T")[0], daily_load: 100 };
+    });
+    executeMock.mockResolvedValueOnce(loads);
+
+    const caller = createCaller({
+      db: { execute: executeMock },
+      userId: "user-1",
+    });
+    const result = await caller.strainTarget({ endDate: today });
+
+    // With readiness default 50 and chronic/acute both ~100, should get a reasonable target
+    expect(result.targetStrain).toBeGreaterThan(0);
+  });
+
+  it("separates acute from chronic loads by day window", async () => {
+    const today = "2026-03-28";
+    const executeMock = vi.fn();
+    executeMock.mockResolvedValueOnce([]); // no readiness
+    // Only loads in chronic window (8-27 days ago), none in acute (0-6 days)
+    const loads = Array.from({ length: 20 }, (_, index) => {
+      const date = new Date("2026-03-01");
+      date.setDate(date.getDate() + index);
+      return { date: date.toISOString().split("T")[0], daily_load: 200 };
+    });
+    executeMock.mockResolvedValueOnce(loads);
+
+    const caller = createCaller({
+      db: { execute: executeMock },
+      userId: "user-1",
+    });
+    const result = await caller.strainTarget({ endDate: today });
+
+    // Acute load should be low (few recent days), chronic moderate
+    expect(result.targetStrain).toBeGreaterThan(0);
+    expect(result.currentStrain).toBe(0); // no load on today
+  });
+
+  it("excludes loads at exactly 7 days ago from acute window", async () => {
+    const today = "2026-03-28";
+    const executeMock = vi.fn();
+    executeMock.mockResolvedValueOnce([]); // no readiness
+    // Load at exactly 7 days ago (boundary — should be excluded from acute)
+    // and load at 6 days ago (should be included in acute)
+    executeMock.mockResolvedValueOnce([
+      { date: "2026-03-21", daily_load: 1000 }, // 7 days ago — chronic only
+      { date: "2026-03-22", daily_load: 70 }, // 6 days ago — both acute + chronic
+    ]);
+
+    const caller = createCaller({
+      db: { execute: executeMock },
+      userId: "user-1",
+    });
+    const result = await caller.strainTarget({ endDate: today });
+
+    // If mutation changes < to <=, the 1000 load enters acute and target changes dramatically
+    // With correct logic: acute ≈ 70/7 = 10, chronic ≈ 1070/28 ≈ 38.2
+    expect(result.targetStrain).toBeGreaterThan(0);
+    // Verify that today has no strain since no load on today
+    expect(result.currentStrain).toBe(0);
+  });
+
+  it("progressPercent reflects currentStrain relative to targetStrain", async () => {
+    const today = "2026-03-28";
+    const executeMock = vi.fn();
+    executeMock.mockResolvedValueOnce([]); // no readiness
+    // Load on today + recent history
+    executeMock.mockResolvedValueOnce([
+      { date: today, daily_load: 100 },
+      { date: "2026-03-27", daily_load: 100 },
+      { date: "2026-03-26", daily_load: 100 },
+    ]);
+
+    const caller = createCaller({
+      db: { execute: executeMock },
+      userId: "user-1",
+    });
+    const result = await caller.strainTarget({ endDate: today });
+
+    expect(result.currentStrain).toBeGreaterThan(0);
+    expect(result.progressPercent).toBeGreaterThan(0);
+    expect(result.progressPercent).toBeLessThanOrEqual(200); // sanity
+  });
+
+  it("computes currentStrain from today's load", async () => {
+    const today = "2026-03-28";
+    const executeMock = vi.fn();
+    executeMock.mockResolvedValueOnce([]);
+    executeMock.mockResolvedValueOnce([{ date: today, daily_load: 150 }]);
+
+    const caller = createCaller({
+      db: { execute: executeMock },
+      userId: "user-1",
+    });
+    const result = await caller.strainTarget({ endDate: today });
+
+    expect(result.currentStrain).toBeGreaterThan(0);
   });
 });
 

@@ -119,7 +119,7 @@ const styles = StyleSheet.create({
     alignSelf: "center",
   },
   primaryButton: {
-    backgroundColor: "#2563eb",
+    backgroundColor: colors.accent,
     borderRadius: 12,
     padding: 14,
     alignItems: "center",

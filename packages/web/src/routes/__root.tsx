@@ -24,7 +24,10 @@ function AuthGate() {
     if (!isLoading && !user && !isPublic) {
       navigate({ to: "/login", search: (prev) => prev });
     }
-  }, [isLoading, user, isPublic, navigate]);
+    if (!isLoading && user && location.pathname === "/login") {
+      navigate({ to: "/dashboard" });
+    }
+  }, [isLoading, user, isPublic, location.pathname, navigate]);
 
   if (isLoading) {
     return (

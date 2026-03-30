@@ -2,7 +2,7 @@ import { useState } from "react";
 import { DofekChart } from "../components/DofekChart.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { PageSection } from "../components/PageSection.tsx";
-import { chartColors, dofekAxis, dofekTooltip } from "../lib/chartTheme.ts";
+import { chartColors, chartThemeColors, dofekAxis, dofekTooltip } from "../lib/chartTheme.ts";
 import { trpc } from "../lib/trpc.ts";
 
 function formatNumber(n: number): string {
@@ -61,7 +61,7 @@ function SyncStatusPanel() {
 }
 
 function DailyCoveragePanel() {
-  const { data, isLoading, isError } = trpc.inertialMeasurementUnit.getDailyCounts.useQuery({
+  const { data, isLoading, isError } = trpc.inertialMeasurementUnit.getDailyHeatmap.useQuery({
     days: 30,
   });
 
@@ -71,25 +71,83 @@ function DailyCoveragePanel() {
     return <p className="text-sm text-muted-foreground">No daily data available.</p>;
   }
 
-  const maxHours = Math.max(...data.map((day) => day.hoursCovered), 1);
+  // Build unique sorted dates (most recent first) and hour labels
+  const dates = [...new Set(data.map((cell) => cell.date))].sort().reverse();
+  const hours = Array.from({ length: 24 }, (_, index) => index.toString().padStart(2, "0") + ":00");
+
+  // Build heatmap data: [hourIndex, dateIndex, sampleCount, coveragePercent]
+  const heatmapData: [number, number, number, number][] = [];
+  for (const cell of data) {
+    const dateIndex = dates.indexOf(cell.date);
+    const hourIndex = cell.hour;
+    if (dateIndex >= 0) {
+      heatmapData.push([hourIndex, dateIndex, cell.sampleCount, cell.coveragePercent]);
+    }
+  }
+
+  const chartHeight = Math.max(200, dates.length * 20 + 80);
+
+  const option = {
+    tooltip: dofekTooltip({
+      trigger: "item",
+      formatter: (params: { value: [number, number, number, number] }) => {
+        const [hourIndex, dateIndex, count, coveragePercent] = params.value;
+        const date = dates[dateIndex] ?? "";
+        const hour = hours[hourIndex] ?? "";
+        return `<b>${date} ${hour}</b><br/>${count.toLocaleString()} samples (${Math.round(coveragePercent)}% coverage)`;
+      },
+    }),
+    grid: { top: 10, right: 16, bottom: 40, left: 80 },
+    xAxis: {
+      type: "category" as const,
+      data: hours,
+      splitArea: { show: true },
+      axisLabel: {
+        color: chartThemeColors.axisLabel,
+        fontSize: 10,
+        interval: 2,
+      },
+      axisLine: { show: false },
+    },
+    yAxis: {
+      type: "category" as const,
+      data: dates,
+      splitArea: { show: true },
+      axisLabel: { color: chartThemeColors.axisLabel, fontSize: 10 },
+      axisLine: { show: false },
+    },
+    visualMap: {
+      min: 0,
+      max: 100,
+      dimension: 3,
+      calculable: false,
+      orient: "horizontal" as const,
+      left: "center",
+      bottom: 0,
+      show: false,
+      inRange: {
+        color: ["#e8ede7", "#99d1b7", "#059669", "#047857"],
+      },
+    },
+    series: [
+      {
+        type: "heatmap",
+        data: heatmapData,
+        emphasis: {
+          itemStyle: { shadowBlur: 6, shadowColor: "rgba(0, 0, 0, 0.3)" },
+        },
+      },
+    ],
+  };
 
   return (
-    <div className="space-y-1">
-      {data.map((day) => (
-        <div key={day.date} className="flex items-center gap-3 text-sm">
-          <span className="w-24 text-muted-foreground">{day.date}</span>
-          <div className="flex-1">
-            <div
-              className="h-4 rounded bg-blue-500/80"
-              style={{ width: `${(day.hoursCovered / maxHours) * 100}%` }}
-            />
-          </div>
-          <span className="w-16 text-right text-muted-foreground">
-            {day.hoursCovered.toFixed(1)}h
-          </span>
-        </div>
-      ))}
-    </div>
+    <DofekChart
+      option={option}
+      loading={isLoading}
+      empty={data.length === 0}
+      emptyMessage="No daily data available"
+      height={chartHeight}
+    />
   );
 }
 
@@ -225,7 +283,7 @@ export function InertialMeasurementUnitPage() {
       >
         <CoverageTimelinePanel />
       </PageSection>
-      <PageSection title="Daily Coverage" subtitle="Hours of motion data recorded per day">
+      <PageSection title="Daily Coverage" subtitle="When during each day the sensor was recording">
         <DailyCoveragePanel />
       </PageSection>
     </PageLayout>

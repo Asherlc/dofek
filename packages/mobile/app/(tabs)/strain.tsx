@@ -133,13 +133,7 @@ export default function StrainScreen() {
             />
             {strainTrend.length >= 2 && (
               <View style={styles.sparkContainer}>
-                <SparkLine
-                  data={strainTrend}
-                  width={320}
-                  height={60}
-                  color={colors.accent}
-                  showBaseline
-                />
+                <SparkLine data={strainTrend} height={60} color={colors.accent} showBaseline />
               </View>
             )}
           </View>

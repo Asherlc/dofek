@@ -1,16 +1,15 @@
-import { Tabs } from "expo-router";
-import { StyleSheet, Text } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { Tabs, useRouter } from "expo-router";
+import { Pressable, StyleSheet } from "react-native";
 import { colors } from "../../theme";
 
-function TabIcon({ label, focused }: { label: string; focused: boolean }) {
-  return <Text style={[styles.icon, { opacity: focused ? 1 : 0.4 }]}>{label}</Text>;
-}
-
 export default function TabsLayout() {
+  const router = useRouter();
+
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: colors.text,
+        tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.textTertiary,
         tabBarStyle: styles.tabBar,
         headerStyle: styles.header,
@@ -21,36 +20,49 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Dashboard",
-          tabBarIcon: ({ focused }) => <TabIcon label={"\u2764\uFE0F"} focused={focused} />,
+          title: "Today",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="today-outline" size={size} color={color} />
+          ),
+          headerRight: () => (
+            <Pressable onPress={() => router.push("/settings")} style={styles.headerButton}>
+              <Ionicons name="settings-outline" size={22} color={colors.textSecondary} />
+            </Pressable>
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="recovery"
+        options={{
+          title: "Recovery",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="pulse-outline" size={size} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
         name="strain"
         options={{
           title: "Training",
-          tabBarIcon: ({ focused }) => <TabIcon label={"\u26A1"} focused={focused} />,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="barbell-outline" size={size} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
         name="food"
         options={{
           title: "Nutrition",
-          tabBarIcon: ({ focused }) => <TabIcon label={"\uD83C\uDF4E"} focused={focused} />,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="nutrition-outline" size={size} color={color} />
+          ),
         }}
       />
-      <Tabs.Screen
-        name="metrics"
-        options={{
-          title: "Body",
-          tabBarIcon: ({ focused }) => <TabIcon label={"\uD83E\uDDA0"} focused={focused} />,
-        }}
-      />
+      {/* Hide the old health tab — its content moved to Settings stack screen */}
       <Tabs.Screen
         name="health"
         options={{
-          title: "More",
-          tabBarIcon: ({ focused }) => <TabIcon label={"\u2630"} focused={focused} />,
+          href: null,
         }}
       />
     </Tabs>
@@ -73,7 +85,8 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 17,
   },
-  icon: {
-    fontSize: 20,
+  headerButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
   },
 });

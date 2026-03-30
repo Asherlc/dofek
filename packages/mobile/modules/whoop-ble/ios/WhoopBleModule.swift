@@ -757,6 +757,11 @@ public class WhoopBleModule: Module {
         cmdResponseCharacteristic?.uuid
     }
 
+    /// Exposed for the BLE delegate to identify DATA_FROM_STRAP notifications.
+    var dataCharacteristicUUID: CBUUID? {
+        dataCharacteristic?.uuid
+    }
+
 
     private func cleanup() {
         state = .idle
@@ -877,7 +882,9 @@ private class BleDelegate: NSObject, CBCentralManagerDelegate, CBPeripheralDeleg
         }
 
         // Route CMD_FROM_STRAP separately so we can parse command responses
-        // and track data vs command notifications independently
+        // and track data vs command notifications independently.
+        // CMD_FROM_STRAP uses different framing and would corrupt the data
+        // parser's accumulator if mixed with DATA_FROM_STRAP notifications.
         if let cmdRespUUID = module?.cmdResponseCharacteristicUUID,
            characteristic.uuid == cmdRespUUID {
             module?.handleCommandResponse(data)

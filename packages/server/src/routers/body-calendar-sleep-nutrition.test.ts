@@ -182,7 +182,7 @@ describe("nutritionRouter", () => {
       const caller = makeCaller(nutritionRouter, rows);
       const result = await caller.daily({ days: 30 });
       expect(result[0]?.calories).toBe(2000);
-      expect(result[0]?.proteinGrams).toBe(150);
+      expect(result[0]?.protein_g).toBe(150);
     });
   });
 });

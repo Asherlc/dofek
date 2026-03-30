@@ -1,7 +1,17 @@
+import { useEffect } from "react";
 import { StyleSheet, Text, View } from "react-native";
+import {
+  createAnimatedComponent,
+  Easing,
+  useAnimatedProps,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 import Svg, { Circle } from "react-native-svg";
 import { scoreColor, scoreLabel } from "../../lib/scoring";
-import { colors } from "../../theme";
+import { colors, duration } from "../../theme";
+
+const AnimatedCircle = createAnimatedComponent(Circle);
 
 interface RecoveryRingProps {
   /** 0-100 readiness/recovery score */
@@ -18,9 +28,22 @@ export function RecoveryRing({ score, size = 200, strokeWidth = 14, label }: Rec
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const progress = Math.min(Math.max(score / 100, 0), 1);
-  const strokeDashoffset = circumference * (1 - progress);
+  const targetOffset = circumference * (1 - progress);
   const color = scoreColor(score);
   const center = size / 2;
+
+  const animatedOffset = useSharedValue(circumference);
+
+  useEffect(() => {
+    animatedOffset.value = withTiming(targetOffset, {
+      duration: duration.chart,
+      easing: Easing.bezier(0.16, 1, 0.3, 1),
+    });
+  }, [targetOffset, animatedOffset]);
+
+  const animatedProps = useAnimatedProps(() => ({
+    strokeDashoffset: animatedOffset.value,
+  }));
 
   return (
     <View style={[styles.container, { width: size, height: size }]}>
@@ -34,8 +57,8 @@ export function RecoveryRing({ score, size = 200, strokeWidth = 14, label }: Rec
           strokeWidth={strokeWidth}
           fill="none"
         />
-        {/* Progress arc */}
-        <Circle
+        {/* Animated progress arc */}
+        <AnimatedCircle
           cx={center}
           cy={center}
           r={radius}
@@ -43,10 +66,10 @@ export function RecoveryRing({ score, size = 200, strokeWidth = 14, label }: Rec
           strokeWidth={strokeWidth}
           fill="none"
           strokeDasharray={circumference}
-          strokeDashoffset={strokeDashoffset}
           strokeLinecap="round"
           rotation={-90}
           origin={`${center}, ${center}`}
+          animatedProps={animatedProps}
         />
       </Svg>
       <View style={styles.labelContainer}>

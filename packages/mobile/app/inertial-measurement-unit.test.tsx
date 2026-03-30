@@ -69,6 +69,8 @@ vi.mock("react-native-svg", () => ({
   default: ({ children, ...props }: Record<string, unknown>) =>
     React.createElement("svg", props, ...(children != null ? [children] : [])),
   Rect: (props: Record<string, unknown>) => React.createElement("rect", props),
+  Text: ({ children, ...props }: Record<string, unknown>) =>
+    React.createElement("text", props, ...(children != null ? [children] : [])),
 }));
 
 vi.mock("expo-router", () => ({
@@ -147,7 +149,7 @@ vi.mock("../lib/trpc", () => ({
       getSyncStatus: {
         useQuery: () => ({ data: null, isLoading: false }),
       },
-      getDailyCounts: {
+      getDailyHeatmap: {
         useQuery: () => ({ data: null, isLoading: false }),
       },
       getCoverageTimeline: {

@@ -3,8 +3,6 @@
 import { render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-let mockTrendsData: Record<string, unknown> | undefined;
-let mockDailyMetricsData: Record<string, unknown>[];
 let mockReadinessLoading = false;
 let mockWorkloadLoading = false;
 let mockSleepLoading = false;
@@ -34,50 +32,21 @@ vi.mock("../../lib/trpc", () => ({
         () => [],
         () => mockWorkloadLoading,
       ),
-      hrvVariability: q(() => []),
     },
-    stress: { scores: q() },
-    activity: { list: q(() => ({ items: [], totalCount: 0 })) },
     dailyMetrics: {
-      trends: { useQuery: () => ({ data: mockTrendsData, isLoading: false }) },
-      list: { useQuery: () => ({ data: mockDailyMetricsData, isLoading: false }) },
+      trends: { useQuery: () => ({ data: undefined, isLoading: false }) },
     },
-    weeklyReport: { report: q() },
     training: { nextWorkout: q() },
     sleepNeed: { calculate: q() },
-    healthspan: { score: q() },
-    nutrition: { daily: q(() => []) },
-    bodyAnalytics: { smoothedWeight: q(() => []) },
     anomalyDetection: { check: q() },
     sync: {
       triggerSync: {
-        useMutation: () => ({ mutateAsync: vi.fn().mockResolvedValue({ jobId: "auto-sync-job" }) }),
+        useMutation: () => ({ mutate: vi.fn() }),
       },
       activeSyncs: { useQuery: () => ({ data: [], isLoading: false }) },
     },
-    useUtils: () => ({
-      invalidate: vi.fn(),
-      client: {
-        healthKitSync: {
-          pushQuantitySamples: { mutate: vi.fn().mockResolvedValue({ inserted: 0, errors: [] }) },
-          pushWorkouts: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
-          pushSleepSamples: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
-        },
-      },
-      sync: {
-        syncStatus: { fetch: vi.fn().mockResolvedValue({ status: "done", providers: {} }) },
-      },
-    }),
+    useUtils: () => ({ invalidate: vi.fn() }),
   },
-}));
-
-vi.mock("../../modules/health-kit", () => ({
-  isAvailable: () => false,
-  getRequestStatus: vi.fn().mockResolvedValue("unavailable"),
-  queryDailyStatistics: vi.fn().mockResolvedValue([]),
-  queryQuantitySamples: vi.fn().mockResolvedValue([]),
-  queryWorkouts: vi.fn().mockResolvedValue([]),
-  querySleepSamples: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("../../lib/useOnboarding", () => ({
@@ -97,10 +66,6 @@ vi.mock("../../lib/units", async () => {
   };
 });
 
-vi.mock("../../types/api", () => ({
-  ActivityRowSchema: { array: () => ({ catch: () => ({ parse: () => [] }) }) },
-}));
-
 vi.mock("../../theme", () => ({
   colors: {
     background: "#000",
@@ -119,96 +84,13 @@ vi.mock("../../theme", () => ({
     green: "#0f0",
     orange: "#f80",
   },
-  statusColors: {
-    positive: "#0f0",
-    warning: "#ff0",
-    danger: "#f00",
-    info: "#0af",
-  },
+  radius: { xl: 16, lg: 12, md: 8, sm: 4, full: 9999 },
+  spacing: { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 },
+  duration: { fast: 150, normal: 300, slow: 500, countUp: 800, chart: 1200, heartbeat: 3000 },
 }));
 
-describe("Health Status title", () => {
+describe("TodayScreen independent loading states", () => {
   beforeEach(() => {
-    mockTrendsData = undefined;
-    mockDailyMetricsData = [];
-    mockReadinessLoading = false;
-    mockWorkloadLoading = false;
-    mockSleepLoading = false;
-  });
-
-  it("always shows 'Health Status' regardless of data date", async () => {
-    mockTrendsData = { latest_date: "2026-03-20", latest_steps: 2895 };
-
-    const { default: OverviewScreen } = await import("./index");
-    render(<OverviewScreen />);
-
-    expect(screen.getByText("Health Status")).toBeDefined();
-  });
-});
-
-describe("OverviewScreen SpO2 and Skin Temperature cards", () => {
-  beforeEach(() => {
-    mockTrendsData = undefined;
-    mockDailyMetricsData = [];
-    mockReadinessLoading = false;
-    mockWorkloadLoading = false;
-    mockSleepLoading = false;
-  });
-
-  it("renders Blood Oxygen card when latest_spo2 is present", async () => {
-    mockTrendsData = { latest_spo2: 98 };
-    mockDailyMetricsData = [{ spo2_avg: 97 }, { spo2_avg: 98 }];
-
-    const { default: OverviewScreen } = await import("./index");
-    render(<OverviewScreen />);
-
-    // May appear in both key metrics and Health Status Bar
-    expect(screen.getAllByText("Blood Oxygen").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText("98").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText("%").length).toBeGreaterThanOrEqual(1);
-  });
-
-  it("renders Skin Temperature card when latest_skin_temp is present", async () => {
-    mockTrendsData = { latest_skin_temp: 36.5 };
-    mockDailyMetricsData = [{ skin_temp_c: 36.3 }, { skin_temp_c: 36.5 }];
-
-    const { default: OverviewScreen } = await import("./index");
-    render(<OverviewScreen />);
-
-    expect(screen.getAllByText("Skin Temperature").length).toBeGreaterThanOrEqual(1);
-  });
-
-  it("does not render Blood Oxygen key metrics card when latest_spo2 is null", async () => {
-    mockTrendsData = { latest_spo2: null };
-    mockDailyMetricsData = [];
-
-    const { default: OverviewScreen } = await import("./index");
-    render(<OverviewScreen />);
-
-    // The key metrics card (with the large value) should not render when null,
-    // but the Health Status Bar mini-metric still shows the label with "--" fallback
-    const elements = screen.queryAllByText("Blood Oxygen");
-    // Should only appear in the Health Status Bar, not as a key metrics card
-    expect(elements.length).toBeLessThanOrEqual(1);
-  });
-
-  it("does not render Skin Temperature key metrics card when latest_skin_temp is null", async () => {
-    mockTrendsData = { latest_skin_temp: null };
-    mockDailyMetricsData = [];
-
-    const { default: OverviewScreen } = await import("./index");
-    render(<OverviewScreen />);
-
-    // Same as above — only the Health Status Bar mini-metric should appear
-    const elements = screen.queryAllByText("Skin Temperature");
-    expect(elements.length).toBeLessThanOrEqual(1);
-  });
-});
-
-describe("OverviewScreen independent loading states", () => {
-  beforeEach(() => {
-    mockTrendsData = undefined;
-    mockDailyMetricsData = [];
     mockReadinessLoading = false;
     mockWorkloadLoading = false;
     mockSleepLoading = false;
@@ -218,26 +100,26 @@ describe("OverviewScreen independent loading states", () => {
     vi.useRealTimers();
   });
 
-  it("shows loading placeholder for recovery ring while readiness is loading", async () => {
+  it("shows skeleton placeholder for recovery ring while readiness is loading", async () => {
     mockReadinessLoading = true;
 
-    const { default: OverviewScreen } = await import("./index");
-    render(<OverviewScreen />);
+    const { default: TodayScreen } = await import("./index");
+    render(<TodayScreen />);
 
-    // Recovery ring should show "..." loading placeholder
-    expect(screen.getAllByText("...").length).toBeGreaterThanOrEqual(1);
+    // Recovery ring should show skeleton circle loading placeholder
+    expect(screen.getAllByTestId("skeleton-circle").length).toBeGreaterThanOrEqual(1);
     // Strain section should still render (not loading)
     expect(screen.getAllByText("Strain").length).toBeGreaterThanOrEqual(1);
   });
 
-  it("shows loading placeholder for strain gauge while workload is loading", async () => {
+  it("shows skeleton placeholder for strain gauge while workload is loading", async () => {
     mockWorkloadLoading = true;
 
-    const { default: OverviewScreen } = await import("./index");
-    render(<OverviewScreen />);
+    const { default: TodayScreen } = await import("./index");
+    render(<TodayScreen />);
 
-    // Strain gauge should show "..." loading placeholder
-    expect(screen.getAllByText("...").length).toBeGreaterThanOrEqual(1);
+    // Strain gauge should show skeleton circle loading placeholder
+    expect(screen.getAllByTestId("skeleton-circle").length).toBeGreaterThanOrEqual(1);
     // Recovery section should still render (not loading)
     expect(screen.getAllByText("Recovery").length).toBeGreaterThanOrEqual(1);
   });
@@ -247,24 +129,24 @@ describe("OverviewScreen independent loading states", () => {
     vi.setSystemTime(new Date("2026-03-21T10:00:00"));
     mockSleepLoading = true;
 
-    const { default: OverviewScreen } = await import("./index");
-    render(<OverviewScreen />);
+    const { default: TodayScreen } = await import("./index");
+    render(<TodayScreen />);
 
     // Sleep summary card ("Last Night") should not render while loading
-    expect(screen.queryByText("Last Night")).toBeNull();
+    expect(screen.queryByText("LAST NIGHT")).toBeNull();
     // Recovery and Strain should still render (not loading)
     expect(screen.getAllByText("Recovery").length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText("Strain").length).toBeGreaterThanOrEqual(1);
   });
 
   it("renders all rings when no queries are loading", async () => {
-    const { default: OverviewScreen } = await import("./index");
-    render(<OverviewScreen />);
+    const { default: TodayScreen } = await import("./index");
+    render(<TodayScreen />);
 
     // All section titles should render
     expect(screen.getAllByText("Recovery").length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText("Strain").length).toBeGreaterThanOrEqual(1);
-    // No loading placeholders
-    expect(screen.queryByText("...")).toBeNull();
+    // No skeleton loading placeholders
+    expect(screen.queryByTestId("skeleton-circle")).toBeNull();
   });
 });
