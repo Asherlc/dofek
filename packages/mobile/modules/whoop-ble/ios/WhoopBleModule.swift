@@ -684,6 +684,11 @@ public class WhoopBleModule: Module {
         cmdResponseCharacteristic?.uuid
     }
 
+    /// Exposed for the BLE delegate to identify DATA_FROM_STRAP notifications.
+    var dataCharacteristicUUID: CBUUID? {
+        dataCharacteristic?.uuid
+    }
+
 
     private func cleanup() {
         state = .idle
@@ -799,6 +804,15 @@ private class BleDelegate: NSObject, CBCentralManagerDelegate, CBPeripheralDeleg
         }
         guard let data = characteristic.value else {
             NSLog("[WhoopBLE] data notification with nil value on %@", characteristic.uuid.uuidString)
+            return
+        }
+
+        // Only process DATA_FROM_STRAP notifications through the IMU frame parser.
+        // CMD_FROM_STRAP responses use a different framing and would corrupt the
+        // frame parser's accumulator, causing multi-notification R21 frames to be
+        // dropped when command responses interleave with data notifications.
+        guard characteristic.uuid == module?.dataCharacteristicUUID else {
+            NSLog("[WhoopBLE] CMD_FROM_STRAP response: %d bytes", data.count)
             return
         }
 
