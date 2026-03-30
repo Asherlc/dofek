@@ -82,6 +82,14 @@ export async function initBackgroundHealthKitSync(
         })
         .catch((error: unknown) => {
           const message = error instanceof Error ? error.message : String(error);
+          // "Protected health data is inaccessible" fires when the device is
+          // locked — HealthKit encrypts data at rest. This is a known transient
+          // condition (the next foreground event will succeed), not an actionable
+          // error, so log it but don't send to Sentry.
+          if (message.includes("Protected health data is inaccessible")) {
+            logger.info(TAG, "Device locked, skipping sync");
+            return;
+          }
           logger.warn(TAG, `Sync failed: ${message}`);
           captureException(error, { source: TAG });
         })

@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_QUEUE_CONFIG,
-  SYNC_WORKER_LOCK_DURATION_MS,
   buildSyncWorkerOptions,
+  DEFAULT_QUEUE_CONFIG,
   getConfiguredProviderIds,
   getProviderQueueConfig,
   type ProviderSyncTier,
+  SYNC_WORKER_LOCK_DURATION_MS,
 } from "./provider-queue-config.ts";
 
 describe("getProviderQueueConfig", () => {
