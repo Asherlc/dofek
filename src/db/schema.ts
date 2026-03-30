@@ -638,6 +638,30 @@ export const inertialMeasurementUnitSample = fitness.table(
 );
 
 // ============================================================
+// Orientation samples (quaternion from any provider)
+// ============================================================
+
+export const orientationSample = fitness.table(
+  "orientation_sample",
+  {
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .default(DEFAULT_USER_ID)
+      .references(() => userProfile.id),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id),
+    deviceId: text("device_id").notNull(),
+    quaternionW: real("quaternion_w").notNull(),
+    quaternionX: real("quaternion_x").notNull(),
+    quaternionY: real("quaternion_y").notNull(),
+    quaternionZ: real("quaternion_z").notNull(),
+  },
+  (table) => [index("orientation_sample_user_time_idx").on(table.userId, table.recordedAt)],
+);
+
+// ============================================================
 // Daily fitness metrics
 // ============================================================
 

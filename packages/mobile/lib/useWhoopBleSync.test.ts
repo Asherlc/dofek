@@ -23,6 +23,7 @@ function makeMockDeps(): WhoopBleSyncDeps {
     startImuStreaming: vi.fn().mockResolvedValue(true),
     stopImuStreaming: vi.fn().mockResolvedValue(true),
     getBufferedSamples: vi.fn().mockResolvedValue([]),
+    getBufferedRealtimeData: vi.fn().mockResolvedValue([]),
     disconnect: vi.fn(),
   };
 }
@@ -53,7 +54,7 @@ describe("useWhoopBleSync", () => {
 
     renderHook(() => useWhoopBleSync(uploadClient, whoopDeps));
 
-    expect(mockInit).toHaveBeenCalledWith(uploadClient, whoopDeps);
+    expect(mockInit).toHaveBeenCalledWith(uploadClient, whoopDeps, undefined);
   });
 
   it("tears down on unmount", async () => {

@@ -36,7 +36,7 @@ final class MadgwickFilterTests: XCTestCase {
         // Feed 200 samples (2 seconds) of stationary data
         for _ in 0..<200 {
             filter.update(
-                accelerometerX: 0, accelerometerY: 0, accelerometerZ: 4096,
+                accelerometerX: 0, accelerometerY: 0, accelerometerZ: 1.0,
                 gyroscopeX: 0, gyroscopeY: 0, gyroscopeZ: 0
             )
         }
@@ -64,7 +64,7 @@ final class MadgwickFilterTests: XCTestCase {
 
         for _ in 0..<1000 {
             filter.update(
-                accelerometerX: 0, accelerometerY: -4096, accelerometerZ: 0,
+                accelerometerX: 0, accelerometerY: -1.0, accelerometerZ: 0,
                 gyroscopeX: 0, gyroscopeY: 0, gyroscopeZ: 0
             )
         }
@@ -82,11 +82,11 @@ final class MadgwickFilterTests: XCTestCase {
         let initialQuaternion = filter.quaternion
 
         // Rotate around Z axis at 100 deg/s for 0.5 seconds
-        // Gyro raw value for 100 dps at ±2000dps/16.4 LSB: 100 * 16.4 = 1640 LSB
-        let gyroZ: Int16 = 1640
+        // 100 dps in rad/s = 100 * π/180 ≈ 1.7453
+        let gyroZ: Float = 100.0 * .pi / 180.0
         for _ in 0..<50 {
             filter.update(
-                accelerometerX: 0, accelerometerY: 0, accelerometerZ: 4096,
+                accelerometerX: 0, accelerometerY: 0, accelerometerZ: 1.0,
                 gyroscopeX: 0, gyroscopeY: 0, gyroscopeZ: gyroZ
             )
         }
@@ -111,16 +111,16 @@ final class MadgwickFilterTests: XCTestCase {
     func testQuaternionStaysNormalizedUnderRotation() {
         let filter = MadgwickFilter(sampleRate: 100, beta: 0.05)
 
-        // Simulate tumbling motion — all axes active
+        // Simulate tumbling motion — all axes active (values in g and rad/s)
         for index in 0..<1000 {
             let phase = Double(index) * 0.1
             filter.update(
-                accelerometerX: Int16(2000 * sin(phase)),
-                accelerometerY: Int16(2000 * cos(phase)),
-                accelerometerZ: Int16(3000 + 1000 * sin(phase * 0.7)),
-                gyroscopeX: Int16(500 * sin(phase * 1.3)),
-                gyroscopeY: Int16(500 * cos(phase * 0.9)),
-                gyroscopeZ: Int16(300 * sin(phase * 1.1))
+                accelerometerX: Float(0.5 * sin(phase)),
+                accelerometerY: Float(0.5 * cos(phase)),
+                accelerometerZ: Float(0.75 + 0.25 * sin(phase * 0.7)),
+                gyroscopeX: Float(0.5 * sin(phase * 1.3)),
+                gyroscopeY: Float(0.5 * cos(phase * 0.9)),
+                gyroscopeZ: Float(0.3 * sin(phase * 1.1))
             )
 
             let quaternion = filter.quaternion
@@ -134,35 +134,16 @@ final class MadgwickFilterTests: XCTestCase {
         }
     }
 
-    // MARK: - Raw-to-SI conversion
-
-    func testAccelerometerConversion() {
-        // ±8g range: 4096 LSB/g
-        // 4096 raw → 1.0g → 9.81 m/s²
-        let gravityMetersPerSecondSquared = MadgwickFilter.convertAccelerometer(raw: 4096)
-        XCTAssertEqual(gravityMetersPerSecondSquared, 9.81, accuracy: 0.01)
-
-        let zeroG = MadgwickFilter.convertAccelerometer(raw: 0)
-        XCTAssertEqual(zeroG, 0.0, accuracy: 0.001)
-    }
-
-    func testGyroscopeConversion() {
-        // ±2000 dps: 16.4 LSB/dps
-        // 16.4 raw → 1.0 dps → π/180 rad/s
-        let oneDegrePerSecond = MadgwickFilter.convertGyroscope(raw: 16)
-        XCTAssertEqual(oneDegrePerSecond, Double.pi / 180, accuracy: 0.01)
-    }
-
     // MARK: - Euler angle ranges
 
     func testEulerAnglesInExpectedRanges() {
         let filter = MadgwickFilter(sampleRate: 100, beta: 0.1)
 
-        // Feed some arbitrary orientation data
+        // Feed some arbitrary orientation data (values in g and rad/s)
         for _ in 0..<100 {
             filter.update(
-                accelerometerX: 2000, accelerometerY: -1000, accelerometerZ: 3500,
-                gyroscopeX: 100, gyroscopeY: -200, gyroscopeZ: 50
+                accelerometerX: 0.49, accelerometerY: -0.24, accelerometerZ: 0.85,
+                gyroscopeX: 0.106, gyroscopeY: -0.213, gyroscopeZ: 0.053
             )
         }
 
@@ -180,11 +161,11 @@ final class MadgwickFilterTests: XCTestCase {
     func testResetRestoresIdentity() {
         let filter = MadgwickFilter(sampleRate: 100, beta: 0.1)
 
-        // Move away from identity
+        // Move away from identity (values in g and rad/s)
         for _ in 0..<100 {
             filter.update(
-                accelerometerX: 2000, accelerometerY: -3000, accelerometerZ: 1000,
-                gyroscopeX: 500, gyroscopeY: -300, gyroscopeZ: 800
+                accelerometerX: 0.49, accelerometerY: -0.73, accelerometerZ: 0.24,
+                gyroscopeX: 0.53, gyroscopeY: -0.32, gyroscopeZ: 0.85
             )
         }
 

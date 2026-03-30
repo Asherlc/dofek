@@ -4,6 +4,7 @@ import {
   initBackgroundWhoopBleSync,
   syncWhoopBle,
   teardownBackgroundWhoopBleSync,
+  type WhoopBleRealtimeUploadClient,
   type WhoopBleSyncDeps,
 } from "./background-whoop-ble-sync.ts";
 import type { InertialMeasurementUnitUploadClient } from "./inertial-measurement-unit-service.ts";
@@ -16,6 +17,7 @@ function makeMockDeps(): WhoopBleSyncDeps {
     startImuStreaming: vi.fn().mockResolvedValue(true),
     stopImuStreaming: vi.fn().mockResolvedValue(true),
     getBufferedSamples: vi.fn().mockResolvedValue([]),
+    getBufferedRealtimeData: vi.fn().mockResolvedValue([]),
     disconnect: vi.fn(),
   };
 }
@@ -24,6 +26,16 @@ function makeMockTrpcClient(): InertialMeasurementUnitUploadClient {
   return {
     inertialMeasurementUnitSync: {
       pushSamples: {
+        mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
+      },
+    },
+  };
+}
+
+function makeMockRealtimeClient(): WhoopBleRealtimeUploadClient {
+  return {
+    whoopBleSync: {
+      pushRealtimeData: {
         mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
       },
     },
@@ -460,5 +472,144 @@ describe("syncWhoopBle", () => {
 
     // Should not throw
     await syncWhoopBle(trpcClient, whoopDeps);
+  });
+});
+
+describe("realtime data (HR + quaternion) sync", () => {
+  let whoopDeps: WhoopBleSyncDeps;
+  let trpcClient: InertialMeasurementUnitUploadClient;
+  let realtimeClient: WhoopBleRealtimeUploadClient;
+
+  beforeEach(() => {
+    teardownBackgroundWhoopBleSync();
+    whoopDeps = makeMockDeps();
+    trpcClient = makeMockTrpcClient();
+    realtimeClient = makeMockRealtimeClient();
+  });
+
+  afterEach(() => {
+    teardownBackgroundWhoopBleSync();
+  });
+
+  it("drains realtime data buffer on init", async () => {
+    const realtimeSamples = [
+      {
+        timestamp: "2026-03-30T12:00:00.000Z",
+        heartRate: 72,
+        quaternionW: 0.02,
+        quaternionX: 0.68,
+        quaternionY: -0.71,
+        quaternionZ: 0.2,
+      },
+    ];
+    vi.mocked(whoopDeps.getBufferedRealtimeData).mockResolvedValueOnce(realtimeSamples);
+
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps, realtimeClient);
+
+    expect(realtimeClient.whoopBleSync.pushRealtimeData.mutate).toHaveBeenCalledWith({
+      deviceId: "WHOOP Strap",
+      samples: realtimeSamples,
+    });
+  });
+
+  it("does not call realtime upload when no realtime client is provided", async () => {
+    const realtimeSamples = [
+      {
+        timestamp: "2026-03-30T12:00:00.000Z",
+        heartRate: 72,
+        quaternionW: 0.0,
+        quaternionX: 0.0,
+        quaternionY: 0.0,
+        quaternionZ: 0.0,
+      },
+    ];
+    vi.mocked(whoopDeps.getBufferedRealtimeData).mockResolvedValueOnce(realtimeSamples);
+
+    // No realtime client provided
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+
+    // getBufferedRealtimeData should not be called since there's no client to upload to
+    expect(whoopDeps.getBufferedRealtimeData).not.toHaveBeenCalled();
+  });
+
+  it("drains both IMU and realtime buffers independently", async () => {
+    const imuSamples = [
+      {
+        timestamp: "2026-03-30T12:00:00.000Z",
+        accelerometerX: 100,
+        accelerometerY: -200,
+        accelerometerZ: 4096,
+        gyroscopeX: 10,
+        gyroscopeY: -20,
+        gyroscopeZ: 30,
+      },
+    ];
+    const realtimeSamples = [
+      {
+        timestamp: "2026-03-30T12:00:00.500Z",
+        heartRate: 75,
+        quaternionW: 0.5,
+        quaternionX: 0.5,
+        quaternionY: 0.5,
+        quaternionZ: 0.5,
+      },
+    ];
+
+    vi.mocked(whoopDeps.getBufferedSamples).mockResolvedValueOnce(imuSamples);
+    vi.mocked(whoopDeps.getBufferedRealtimeData).mockResolvedValueOnce(realtimeSamples);
+
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps, realtimeClient);
+
+    // Both should be uploaded
+    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalled();
+    expect(realtimeClient.whoopBleSync.pushRealtimeData.mutate).toHaveBeenCalledWith({
+      deviceId: "WHOOP Strap",
+      samples: realtimeSamples,
+    });
+  });
+
+  it("realtime error does not prevent IMU upload", async () => {
+    const imuSamples = [
+      {
+        timestamp: "2026-03-30T12:00:00.000Z",
+        accelerometerX: 1,
+        accelerometerY: 2,
+        accelerometerZ: 3,
+        gyroscopeX: 0,
+        gyroscopeY: 0,
+        gyroscopeZ: 0,
+      },
+    ];
+    vi.mocked(whoopDeps.getBufferedSamples).mockResolvedValueOnce(imuSamples);
+    vi.mocked(whoopDeps.getBufferedRealtimeData).mockRejectedValue(
+      new Error("realtime buffer error"),
+    );
+
+    // Should not throw — errors are caught at the outer level
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps, realtimeClient);
+
+    // IMU should still have been uploaded before the realtime error
+    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalled();
+  });
+
+  it("syncWhoopBle passes realtime client through", async () => {
+    const realtimeSamples = [
+      {
+        timestamp: "2026-03-30T12:00:00.000Z",
+        heartRate: 80,
+        quaternionW: 1.0,
+        quaternionX: 0.0,
+        quaternionY: 0.0,
+        quaternionZ: 0.0,
+      },
+    ];
+    vi.mocked(whoopDeps.getBufferedRealtimeData).mockResolvedValueOnce(realtimeSamples);
+
+    await syncWhoopBle(trpcClient, whoopDeps, realtimeClient);
+
+    expect(realtimeClient.whoopBleSync.pushRealtimeData.mutate).toHaveBeenCalledWith({
+      deviceId: "WHOOP Strap",
+      samples: realtimeSamples,
+    });
   });
 });

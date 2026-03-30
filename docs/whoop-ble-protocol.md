@@ -189,6 +189,31 @@ R21 raw data (type 0x2B) flows passively during the WHOOP app's normal sync sess
 
 No `TOGGLE_IMU_MODE` command is needed for this approach. The IMU is already active during sync.
 
+## Data Extraction from 0x28 REALTIME_DATA Packets
+
+The REALTIME_DATA (0x28) packet streams at ~1 Hz during sync and contains:
+
+| Payload Offset | Size | Field | Notes |
+|---|---|---|---|
+| 22 | 1 | Heart Rate (bpm) | Validated 66-89 range in resting capture |
+| 23-40 | 18 | Optical/PPG data | Partially understood, raw preserved |
+| 41-44 | 4 | Quaternion W (float32 LE) | Strap's own sensor fusion |
+| 45-48 | 4 | Quaternion X (float32 LE) | |
+| 49-52 | 4 | Quaternion Y (float32 LE) | |
+| 53-56 | 4 | Quaternion Z (float32 LE) | |
+
+HR and quaternion are extracted by `WhoopBleFrameParser.extractRealtimeData()` and buffered separately from IMU data. The full raw payload is preserved for future optical/PPG analysis.
+
+## Commands for Enhanced Data Capture
+
+| Command | Byte | Purpose |
+|---|---|---|
+| TOGGLE_REALTIME_HR (0x03) | Sent on connect | Continuous 1 Hz HR streaming beyond sync |
+| TOGGLE_OPTICAL_MODE (0x6C) | Sent on connect | Enable raw PPG data in 0x28 packets |
+| TOGGLE_IMU_MODE (0x6A) | Sent on streaming start | Raw IMU streaming |
+
+All three commands are sent automatically when the iOS app connects to the strap.
+
 ## Tools
 
 - `packages/ble-probe/` — macOS CLI for interactive BLE probing (Swift, CoreBluetooth)

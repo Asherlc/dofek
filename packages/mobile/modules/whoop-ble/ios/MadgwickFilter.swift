@@ -26,18 +26,12 @@ struct EulerAngles {
 /// Reference: Sebastian Madgwick, "An efficient orientation filter for
 /// inertial and inertial/magnetic sensor arrays" (2010).
 ///
-/// This implementation accepts raw Int16 sensor values from the WHOOP strap's
-/// BMI270 IMU and converts them internally:
-/// - Accelerometer: ±8g range → 4096 LSB/g
-/// - Gyroscope: ±2000 dps range → 16.4 LSB/dps
+/// This implementation accepts pre-normalized sensor values:
+/// - Accelerometer: in g (1g = Earth gravity)
+/// - Gyroscope: in rad/s
 final class MadgwickFilter {
 
-    /// IMU scale factors (BMI270 at ±8g accel, ±2000dps gyro)
-    private static let accelerometerScale: Double = 4096.0  // LSB per g
-    private static let gyroscopeScale: Double = 16.4        // LSB per dps
-    private static let degreesToRadians: Double = .pi / 180.0
     private static let radiansToDegrees: Double = 180.0 / .pi
-    private static let gravity: Double = 9.81               // m/s²
 
     /// Current orientation estimate
     private(set) var quaternion: Quaternion = .identity
@@ -60,31 +54,20 @@ final class MadgwickFilter {
         quaternion = .identity
     }
 
-    /// Convert raw accelerometer value to m/s².
-    static func convertAccelerometer(raw: Int16) -> Double {
-        return (Double(raw) / accelerometerScale) * gravity
-    }
-
-    /// Convert raw gyroscope value to rad/s.
-    static func convertGyroscope(raw: Int16) -> Double {
-        return (Double(raw) / gyroscopeScale) * degreesToRadians
-    }
-
-    /// Feed a new IMU sample (raw Int16 values from the WHOOP strap).
+    /// Feed a new IMU sample with pre-normalized values.
+    /// - accelerometerX/Y/Z: acceleration in g (1g = Earth gravity)
+    /// - gyroscopeX/Y/Z: rotation rate in rad/s
     func update(
-        accelerometerX: Int16, accelerometerY: Int16, accelerometerZ: Int16,
-        gyroscopeX: Int16, gyroscopeY: Int16, gyroscopeZ: Int16
+        accelerometerX: Float, accelerometerY: Float, accelerometerZ: Float,
+        gyroscopeX: Float, gyroscopeY: Float, gyroscopeZ: Float
     ) {
-        // Convert raw values to SI units
-        // Accel: raw → g (we normalize anyway, so just divide by scale)
-        var ax = Double(accelerometerX) / MadgwickFilter.accelerometerScale
-        var ay = Double(accelerometerY) / MadgwickFilter.accelerometerScale
-        var az = Double(accelerometerZ) / MadgwickFilter.accelerometerScale
+        var ax = Double(accelerometerX)
+        var ay = Double(accelerometerY)
+        var az = Double(accelerometerZ)
 
-        // Gyro: raw → rad/s
-        let gx = Double(gyroscopeX) / MadgwickFilter.gyroscopeScale * MadgwickFilter.degreesToRadians
-        let gy = Double(gyroscopeY) / MadgwickFilter.gyroscopeScale * MadgwickFilter.degreesToRadians
-        let gz = Double(gyroscopeZ) / MadgwickFilter.gyroscopeScale * MadgwickFilter.degreesToRadians
+        let gx = Double(gyroscopeX)
+        let gy = Double(gyroscopeY)
+        let gz = Double(gyroscopeZ)
 
         var q0 = quaternion.w
         var q1 = quaternion.x
