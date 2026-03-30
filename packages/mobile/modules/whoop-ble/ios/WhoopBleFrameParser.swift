@@ -1,7 +1,8 @@
 import Foundation
 
 /// A single realtime data sample from a 0x28 REALTIME_DATA packet.
-/// Contains heart rate and orientation quaternion from the strap's sensor fusion.
+/// Contains heart rate, orientation quaternion, and raw optical/PPG bytes
+/// from the strap's sensor fusion.
 struct WhoopRealtimeDataSample {
     let timestampSeconds: UInt32
     let subSeconds: UInt16
@@ -10,6 +11,9 @@ struct WhoopRealtimeDataSample {
     let quaternionX: Float
     let quaternionY: Float
     let quaternionZ: Float
+    /// Raw optical/PPG bytes from payload offsets 23-40 (18 bytes).
+    /// Format is partially understood — preserved for analysis.
+    let opticalBytes: Data
 }
 
 /// A single IMU sample extracted from a WHOOP BLE packet.
@@ -249,6 +253,17 @@ final class WhoopBleFrameParser {
         guard payload.count >= WhoopBleConstants.realtimeDataMinPayloadSize else { return nil }
 
         let heartRate = payload[payload.startIndex + WhoopBleConstants.realtimeDataHeartRateOffset]
+
+        // Extract raw optical/PPG bytes (offsets 23-40, 18 bytes)
+        let opticalStart = payload.startIndex + WhoopBleConstants.realtimeDataOpticalStartOffset
+        let opticalEnd = opticalStart + WhoopBleConstants.realtimeDataOpticalByteCount
+        let opticalBytes: Data
+        if opticalEnd <= payload.endIndex {
+            opticalBytes = Data(payload[opticalStart..<opticalEnd])
+        } else {
+            opticalBytes = Data(count: WhoopBleConstants.realtimeDataOpticalByteCount)
+        }
+
         let quaternionW = payload.readFloat32LE(at: payload.startIndex + WhoopBleConstants.realtimeDataQuaternionWOffset)
         let quaternionX = payload.readFloat32LE(at: payload.startIndex + WhoopBleConstants.realtimeDataQuaternionXOffset)
         let quaternionY = payload.readFloat32LE(at: payload.startIndex + WhoopBleConstants.realtimeDataQuaternionYOffset)
@@ -261,7 +276,8 @@ final class WhoopBleFrameParser {
             quaternionW: quaternionW,
             quaternionX: quaternionX,
             quaternionY: quaternionY,
-            quaternionZ: quaternionZ
+            quaternionZ: quaternionZ,
+            opticalBytes: opticalBytes
         )
     }
 

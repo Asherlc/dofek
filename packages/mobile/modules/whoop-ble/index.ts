@@ -15,6 +15,8 @@ export interface WhoopRealtimeDataSample {
   quaternionX: number;
   quaternionY: number;
   quaternionZ: number;
+  /** Raw optical/PPG bytes (offsets 23-40) as hex string, 36 chars = 18 bytes */
+  opticalRawHex: string;
 }
 
 /** A single IMU sample from the WHOOP strap's accelerometer + gyroscope */

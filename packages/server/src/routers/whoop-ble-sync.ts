@@ -15,6 +15,11 @@ const realtimeDataSampleSchema = z.object({
   quaternionX: z.number(),
   quaternionY: z.number(),
   quaternionZ: z.number(),
+  /** Raw optical/PPG bytes from payload offsets 23-40, hex-encoded (36 chars = 18 bytes) */
+  opticalRawHex: z
+    .string()
+    .regex(/^[0-9a-f]{36}$/)
+    .default("0".repeat(36)),
 });
 
 const pushRealtimeDataInput = z.object({
@@ -107,6 +112,27 @@ export const whoopBleSyncRouter = router({
         input.deviceId,
         input.samples,
       );
+
+      // Log optical/PPG data for analysis — sample every 30th to avoid log spam
+      const samplesWithOptical = input.samples.filter(
+        (sample) => sample.opticalRawHex !== "0".repeat(36),
+      );
+      if (samplesWithOptical.length > 0) {
+        const sampled = samplesWithOptical.filter((_, index) => index % 30 === 0);
+        for (const sample of sampled) {
+          logger.info("WHOOP BLE optical/PPG data", {
+            userId: ctx.userId,
+            timestamp: sample.timestamp,
+            heartRate: sample.heartRate,
+            opticalRawHex: sample.opticalRawHex,
+          });
+        }
+        logger.info("WHOOP BLE optical summary", {
+          userId: ctx.userId,
+          totalSamples: input.samples.length,
+          samplesWithOptical: samplesWithOptical.length,
+        });
+      }
 
       logger.info("WHOOP BLE realtime data pushed", {
         userId: ctx.userId,

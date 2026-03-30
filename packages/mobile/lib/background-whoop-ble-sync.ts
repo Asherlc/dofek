@@ -32,12 +32,13 @@ export interface WhoopBleSyncDeps {
       quaternionX: number;
       quaternionY: number;
       quaternionZ: number;
+      opticalRawHex: string;
     }>
   >;
   disconnect(): void;
 }
 
-/** tRPC client interface for BLE realtime data upload (HR + orientation) */
+/** tRPC client interface for BLE realtime data upload (HR + orientation + optical) */
 export interface WhoopBleRealtimeUploadClient {
   whoopBleSync: {
     pushRealtimeData: {
@@ -50,6 +51,7 @@ export interface WhoopBleRealtimeUploadClient {
           quaternionX: number;
           quaternionY: number;
           quaternionZ: number;
+          opticalRawHex: string;
         }>;
       }): Promise<{ inserted: number }>;
     };

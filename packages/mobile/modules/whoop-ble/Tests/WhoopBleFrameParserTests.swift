@@ -417,6 +417,45 @@ final class WhoopBleFrameParserTests: XCTestCase {
         XCTAssertEqual(sample?.heartRate, 90)
     }
 
+    // MARK: - Optical/PPG byte extraction from 0x28 packets
+
+    func testExtractRealtimeDataIncludesOpticalBytes() {
+        var payload = buildRealtimeDataPayload(heartRate: 72, qW: 1.0, qX: 0.0, qY: 0.0, qZ: 0.0)
+
+        // Write known pattern into optical bytes (offsets 23-40)
+        let opticalStart = WhoopBleConstants.realtimeDataOpticalStartOffset
+        for i in 0..<WhoopBleConstants.realtimeDataOpticalByteCount {
+            payload[opticalStart + i] = UInt8(0xA0 + i)
+        }
+
+        let frame = WhoopFrame(
+            packetType: WhoopBleConstants.packetTypeRealtimeData,
+            recordType: 0, dataTimestamp: 1000, subSeconds: 0,
+            payload: payload
+        )
+
+        let sample = WhoopBleFrameParser.extractRealtimeData(from: frame)
+        XCTAssertNotNil(sample)
+        XCTAssertEqual(sample!.opticalBytes.count, WhoopBleConstants.realtimeDataOpticalByteCount)
+        XCTAssertEqual(sample!.opticalBytes[0], 0xA0)
+        XCTAssertEqual(sample!.opticalBytes[17], 0xB1)
+    }
+
+    func testExtractRealtimeDataOpticalBytesAllZeroWhenEmpty() {
+        // Default payload has zeros in the optical region
+        let payload = buildRealtimeDataPayload(heartRate: 65, qW: 1.0, qX: 0.0, qY: 0.0, qZ: 0.0)
+        let frame = WhoopFrame(
+            packetType: WhoopBleConstants.packetTypeRealtimeData,
+            recordType: 0, dataTimestamp: 1000, subSeconds: 0,
+            payload: payload
+        )
+
+        let sample = WhoopBleFrameParser.extractRealtimeData(from: frame)
+        XCTAssertNotNil(sample)
+        XCTAssertEqual(sample!.opticalBytes.count, WhoopBleConstants.realtimeDataOpticalByteCount)
+        XCTAssertTrue(sample!.opticalBytes.allSatisfy { $0 == 0 })
+    }
+
     func testExtractRealtimeDataFromFullFrame() {
         // Build a full Maverick frame around a 0x28 payload
         let payload = buildRealtimeDataPayload(heartRate: 75, qW: 0.5, qX: 0.5, qY: 0.5, qZ: 0.5)

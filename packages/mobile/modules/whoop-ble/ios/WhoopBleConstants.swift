@@ -75,6 +75,9 @@ enum WhoopBleConstants {
     // Contains HR, orientation quaternion, and optical/PPG data
 
     static let realtimeDataHeartRateOffset = 22
+    /// Optical/PPG data region: bytes 23-40 (18 bytes, partially understood)
+    static let realtimeDataOpticalStartOffset = 23
+    static let realtimeDataOpticalByteCount = 18
     static let realtimeDataQuaternionWOffset = 41
     static let realtimeDataQuaternionXOffset = 45
     static let realtimeDataQuaternionYOffset = 49

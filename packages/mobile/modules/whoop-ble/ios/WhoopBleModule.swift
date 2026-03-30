@@ -344,6 +344,7 @@ public class WhoopBleModule: Module {
                     "quaternionX": Double(sample.quaternionX),
                     "quaternionY": Double(sample.quaternionY),
                     "quaternionZ": Double(sample.quaternionZ),
+                    "opticalRawHex": sample.opticalBytes.map { String(format: "%02x", $0) }.joined(),
                 ]
             }
 
@@ -782,9 +783,18 @@ public class WhoopBleModule: Module {
             let samples = WhoopBleFrameParser.extractImuSamples(from: frame)
             newSamples.append(contentsOf: samples)
 
-            // Extract realtime data (HR + quaternion) from 0x28 packets
+            // Extract realtime data (HR + quaternion + optical) from 0x28 packets
             if let realtimeData = WhoopBleFrameParser.extractRealtimeData(from: frame) {
                 newRealtimeData.append(realtimeData)
+
+                // Log optical bytes periodically (every 30th sample ≈ every 30s at 1 Hz)
+                let totalRealtime = packetTypeCounts[WhoopBleConstants.packetTypeRealtimeData] ?? 0
+                if totalRealtime % 30 == 1 {
+                    let hex = realtimeData.opticalBytes.map { String(format: "%02x", $0) }.joined()
+                    let hasNonZero = realtimeData.opticalBytes.contains { $0 != 0 }
+                    NSLog("[WhoopBLE] optical/PPG bytes (hr=%d): %@ nonzero=%@",
+                          realtimeData.heartRate, hex, hasNonZero ? "YES" : "NO")
+                }
             }
         }
 
