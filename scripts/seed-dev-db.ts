@@ -159,13 +159,29 @@ async function seedData() {
   for (let daysAgo = 1; daysAgo <= 30; daysAgo++) {
     const nightDate = daysBefore(today, daysAgo);
 
-    // WHOOP session
-    const whoopStart = `${nightDate}T22:00:00`;
-    const whoopEnd = `${daysBefore(today, daysAgo - 1)}T06:00:00`;
-    const deepMin = randInt(55, 90);
-    const remMin = randInt(85, 125);
-    const lightMin = randInt(190, 240);
-    const awakeMin = randInt(25, 50);
+    // WHOOP session — vary bedtime and wake time for realistic durations
+    const wakeDate = daysBefore(today, daysAgo - 1);
+    const bedHour = randInt(21, 23);
+    const bedMin = randInt(0, 59);
+    const wakeHour = randInt(5, 7);
+    const wakeMin = randInt(0, 59);
+    const whoopStart = localTimestamp(
+      nightDate,
+      `${String(bedHour).padStart(2, "0")}:${String(bedMin).padStart(2, "0")}:00`,
+    );
+    const whoopEnd = localTimestamp(
+      wakeDate,
+      `${String(wakeHour).padStart(2, "0")}:${String(wakeMin).padStart(2, "0")}:00`,
+    );
+    // Compute duration from times (bed→midnight + midnight→wake)
+    const durationMin = (24 - bedHour) * 60 - bedMin + wakeHour * 60 + wakeMin;
+    const deepMin = randInt(50, 90);
+    const remMin = randInt(80, 120);
+    const lightMin = randInt(
+      Math.max(60, durationMin - deepMin - remMin - 50),
+      Math.max(80, durationMin - deepMin - remMin - 20),
+    );
+    const awakeMin = Math.max(10, durationMin - deepMin - remMin - lightMin);
     await sql`
 			INSERT INTO fitness.sleep_session (
 				provider_id, user_id, external_id,
@@ -175,14 +191,24 @@ async function seedData() {
 			) VALUES (
 				'whoop', ${USER_ID}, ${"w-" + daysAgo},
 				${whoopStart}, ${whoopEnd},
-				480, ${deepMin}, ${remMin}, ${lightMin}, ${awakeMin},
-				${randFloat(85, 94, 1)}, 'sleep'
+				${durationMin}, ${deepMin}, ${remMin}, ${lightMin}, ${awakeMin},
+				${randFloat(82, 96, 1)}, 'sleep'
 			)
 		`;
 
     // Apple Health session (shifted — doesn't overlap >80%)
-    const ahStart = `${nightDate}T23:30:00`;
-    const ahEnd = `${daysBefore(today, daysAgo - 1)}T05:00:00`;
+    const ahBedMin = bedMin + randInt(60, 120);
+    const ahBedHour = bedHour + Math.floor(ahBedMin / 60);
+    const ahStart = localTimestamp(
+      nightDate,
+      `${String(ahBedHour % 24).padStart(2, "0")}:${String(ahBedMin % 60).padStart(2, "0")}:00`,
+    );
+    const ahWakeHour = wakeHour - 1;
+    const ahEnd = localTimestamp(
+      wakeDate,
+      `${String(Math.max(4, ahWakeHour)).padStart(2, "0")}:${String(wakeMin).padStart(2, "0")}:00`,
+    );
+    const ahDuration = randInt(280, 380);
     await sql`
 			INSERT INTO fitness.sleep_session (
 				provider_id, user_id, external_id,
@@ -192,7 +218,7 @@ async function seedData() {
 			) VALUES (
 				'apple_health', ${USER_ID}, ${"ah-" + daysAgo},
 				${ahStart}, ${ahEnd},
-				330, ${randInt(35, 55)}, ${randInt(55, 75)}, ${randInt(140, 175)}, ${randInt(25, 40)},
+				${ahDuration}, ${randInt(30, 60)}, ${randInt(50, 80)}, ${randInt(120, 180)}, ${randInt(20, 45)},
 				NULL, 'sleep'
 			)
 		`;
@@ -208,8 +234,14 @@ async function seedData() {
     const activityType = activityTypes[daysAgo % activityTypes.length];
     const durationMin = activityType === "strength_training" ? randInt(40, 70) : randInt(30, 90);
     const startHour = randInt(6, 18);
-    const startedAt = `${date}T${String(startHour).padStart(2, "0")}:00:00`;
-    const endedAt = new Date(new Date(startedAt).getTime() + durationMin * 60_000).toISOString();
+    const startedAt = localTimestamp(date, `${String(startHour).padStart(2, "0")}:00:00`);
+    const endedAtDate = new Date();
+    endedAtDate.setDate(endedAtDate.getDate() - daysAgo);
+    endedAtDate.setHours(startHour, durationMin, 0, 0);
+    const endedAt = localTimestamp(
+      date,
+      `${String(endedAtDate.getHours()).padStart(2, "0")}:${String(endedAtDate.getMinutes()).padStart(2, "0")}:00`,
+    );
 
     await sql`
 			INSERT INTO fitness.activity (
@@ -255,7 +287,7 @@ async function seedData() {
 				recorded_at, weight_kg, body_fat_pct
 			) VALUES (
 				'apple_health', ${USER_ID}, ${"bw-" + daysAgo},
-				${date + "T07:30:00"}, ${weightKg}, ${randFloat(14, 18, 1)}
+				${localTimestamp(date, "07:30:00")}, ${weightKg}, ${randFloat(14, 18, 1)}
 			) ON CONFLICT DO NOTHING
 		`;
   }
@@ -282,10 +314,29 @@ async function refreshViews() {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** Returns YYYY-MM-DD for the local calendar date N days before `from`. */
 function daysBefore(from: Date, daysAgo: number): string {
   const date = new Date(from);
   date.setDate(date.getDate() - daysAgo);
-  return date.toISOString().slice(0, 10);
+  // Use local date parts (not UTC) so the date matches the user's timezone
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Build an ISO 8601 timestamp with the local timezone offset.
+ * e.g. "2026-03-29T22:00:00-07:00" so PostgreSQL stores the correct absolute time
+ * and `AT TIME ZONE 'America/Los_Angeles'` yields the intended local date.
+ */
+function localTimestamp(dateStr: string, time: string): string {
+  const offsetMin = new Date().getTimezoneOffset(); // e.g. 420 for PDT (UTC-7)
+  const sign = offsetMin <= 0 ? "+" : "-";
+  const absMin = Math.abs(offsetMin);
+  const hours = String(Math.floor(absMin / 60)).padStart(2, "0");
+  const mins = String(absMin % 60).padStart(2, "0");
+  return `${dateStr}T${time}${sign}${hours}:${mins}`;
 }
 
 function randInt(min: number, max: number): number {

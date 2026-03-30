@@ -352,9 +352,9 @@ describe("sleepNeedRouter", () => {
       });
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
-      // Calendar: endDate-6 through endDate = 2026-03-09 through 2026-03-15
-      expect(result.recentNights[0]?.date).toBe("2026-03-09");
-      expect(result.recentNights[6]?.date).toBe("2026-03-15");
+      // Calendar: endDate-7 through endDate-1 (last 7 completed nights, excluding today)
+      expect(result.recentNights[0]?.date).toBe("2026-03-08");
+      expect(result.recentNights[6]?.date).toBe("2026-03-14");
     });
 
     it("recentNights computes positive debt when actual < baseline", async () => {

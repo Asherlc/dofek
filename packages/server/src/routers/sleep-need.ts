@@ -165,12 +165,13 @@ export const sleepNeedRouter = router({
 
       const totalNeedMinutes = baselineMinutes + strainDebtMinutes + debtRecoveryMinutes;
 
-      // Build calendar of last 7 dates (endDate-6 through endDate)
+      // Build calendar of last 7 completed nights (endDate-7 through endDate-1).
+      // Today is excluded because tonight's sleep hasn't happened yet.
       // Use UTC noon to avoid any timezone-related date shifts with toISOString()
       const nightsByDate = new Map(nights.map((n) => [n.date, n]));
       const calendarDates: string[] = [];
       const anchorDate = new Date(`${input.endDate}T12:00:00Z`);
-      for (let i = 6; i >= 0; i--) {
+      for (let i = 7; i >= 1; i--) {
         const calendarDay = new Date(anchorDate);
         calendarDay.setUTCDate(calendarDay.getUTCDate() - i);
         calendarDates.push(calendarDay.toISOString().slice(0, 10));
