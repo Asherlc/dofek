@@ -1,19 +1,36 @@
+import { useEffect } from "react";
 import { StyleSheet, View } from "react-native";
-import { colors, radius } from "../theme";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from "react-native-reanimated";
+import { colors, duration, radius } from "../theme";
 
 /**
- * Skeleton loading primitives.
+ * Skeleton loading primitives with shimmer animation.
  *
- * Uses simple static styles instead of animated shimmer — the pulse
- * animation will be added in a later phase when reanimated's test
- * compatibility is more robust. Static skeletons still provide a
- * significantly better UX than "Loading..." text.
+ * Uses react-native-reanimated opacity pulse to create a shimmer effect
+ * matching the web UI's animated skeleton loading pattern.
  */
+
+function useShimmer() {
+  const opacity = useSharedValue(0.3);
+
+  useEffect(() => {
+    opacity.value = withRepeat(withTiming(0.7, { duration: duration.chart }), -1, true);
+  }, [opacity]);
+
+  return useAnimatedStyle(() => ({ opacity: opacity.value }));
+}
 
 /** Circular skeleton placeholder (for ring/gauge loading states) */
 export function SkeletonCircle({ size }: { size: number }) {
+  const shimmerStyle = useShimmer();
+
   return (
-    <View
+    <Animated.View
       testID="skeleton-circle"
       style={[
         styles.base,
@@ -22,6 +39,7 @@ export function SkeletonCircle({ size }: { size: number }) {
           height: size,
           borderRadius: size / 2,
         },
+        shimmerStyle,
       ]}
     />
   );
@@ -37,8 +55,10 @@ export function SkeletonRect({
   height: number;
   borderRadiusOverride?: number;
 }) {
+  const shimmerStyle = useShimmer();
+
   return (
-    <View
+    <Animated.View
       testID="skeleton-rect"
       style={[
         styles.base,
@@ -47,6 +67,7 @@ export function SkeletonRect({
           height,
           borderRadius: borderRadiusOverride ?? radius.sm,
         },
+        shimmerStyle,
       ]}
     />
   );
@@ -54,11 +75,13 @@ export function SkeletonRect({
 
 /** Full card skeleton matching the Card component dimensions */
 export function SkeletonCard() {
+  const shimmerStyle = useShimmer();
+
   return (
     <View testID="skeleton-card" style={styles.card}>
-      <View style={styles.cardLine1} />
-      <View style={styles.cardLine2} />
-      <View style={styles.cardLine3} />
+      <Animated.View style={[styles.cardLine1, shimmerStyle]} />
+      <Animated.View style={[styles.cardLine2, shimmerStyle]} />
+      <Animated.View style={[styles.cardLine3, shimmerStyle]} />
     </View>
   );
 }
@@ -66,7 +89,6 @@ export function SkeletonCard() {
 const styles = StyleSheet.create({
   base: {
     backgroundColor: colors.surfaceSecondary,
-    opacity: 0.5,
   },
   card: {
     backgroundColor: colors.surface,
@@ -80,20 +102,17 @@ const styles = StyleSheet.create({
     height: 12,
     borderRadius: radius.sm,
     backgroundColor: colors.surfaceSecondary,
-    opacity: 0.5,
   },
   cardLine2: {
     width: "70%",
     height: 24,
     borderRadius: radius.sm,
     backgroundColor: colors.surfaceSecondary,
-    opacity: 0.5,
   },
   cardLine3: {
     width: "50%",
     height: 12,
     borderRadius: radius.sm,
     backgroundColor: colors.surfaceSecondary,
-    opacity: 0.5,
   },
 });
