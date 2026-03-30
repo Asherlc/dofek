@@ -527,9 +527,7 @@ describe("ProviderDetailScreen", () => {
 
       expect(screen.getByText("Wear Location")).toBeTruthy();
       expect(
-        screen.getByText(
-          "Where do you wear your WHOOP? This helps us interpret your sensor data.",
-        ),
+        screen.getByText("Where do you wear your WHOOP? This helps us interpret your sensor data."),
       ).toBeTruthy();
     });
 
