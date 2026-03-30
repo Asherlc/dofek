@@ -74,17 +74,26 @@ async function insertRealtimeDataBatch(
       );
     }
 
-    // Insert quaternion into orientation_sample
-    const orientationValues = batch.map(
+    // Insert quaternion into orientation_sample (only when non-zero — compact 0x28 packets have no quaternion)
+    const orientationSamples = batch.filter(
       (sample) =>
-        sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${deviceId}, ${sample.quaternionW}, ${sample.quaternionX}, ${sample.quaternionY}, ${sample.quaternionZ})`,
+        sample.quaternionW !== 0 ||
+        sample.quaternionX !== 0 ||
+        sample.quaternionY !== 0 ||
+        sample.quaternionZ !== 0,
     );
+    if (orientationSamples.length > 0) {
+      const orientationValues = orientationSamples.map(
+        (sample) =>
+          sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${deviceId}, ${sample.quaternionW}, ${sample.quaternionX}, ${sample.quaternionY}, ${sample.quaternionZ})`,
+      );
 
-    await database.execute(
-      sql`INSERT INTO fitness.orientation_sample
-          (recorded_at, user_id, provider_id, device_id, quaternion_w, quaternion_x, quaternion_y, quaternion_z)
-          VALUES ${sql.join(orientationValues, sql`, `)}`,
-    );
+      await database.execute(
+        sql`INSERT INTO fitness.orientation_sample
+            (recorded_at, user_id, provider_id, device_id, quaternion_w, quaternion_x, quaternion_y, quaternion_z)
+            VALUES ${sql.join(orientationValues, sql`, `)}`,
+      );
+    }
 
     totalInserted += batch.length;
   }
