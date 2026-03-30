@@ -84,14 +84,23 @@ function initGoogle(): IdentityProvider {
   };
 }
 
+/** Strip PEM headers/footers and base64-decode to raw PKCS#8 DER bytes. */
+export function decodePemToDer(pem: string): Uint8Array {
+  const base64 = pem
+    .replace(/-----BEGIN PRIVATE KEY-----/g, "")
+    .replace(/-----END PRIVATE KEY-----/g, "")
+    .replace(/\s/g, "");
+  return new Uint8Array(Buffer.from(base64, "base64"));
+}
+
 function initApple(): IdentityProvider {
   const privateKeyPem = getEnvRequired("APPLE_PRIVATE_KEY");
-  const pkcs8Key = new TextEncoder().encode(privateKeyPem);
+  const derBytes = decodePemToDer(privateKeyPem);
   const client = new Apple(
     getEnvRequired("APPLE_CLIENT_ID"),
     getEnvRequired("APPLE_TEAM_ID"),
     getEnvRequired("APPLE_KEY_ID"),
-    pkcs8Key,
+    derBytes,
     getEnvRequired("APPLE_REDIRECT_URI"),
   );
   return {

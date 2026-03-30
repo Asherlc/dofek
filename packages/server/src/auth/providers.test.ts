@@ -28,7 +28,12 @@ vi.mock("arctic", () => {
   };
 });
 
-import { getConfiguredProviders, getIdentityProvider, isProviderConfigured } from "./providers.ts";
+import {
+  decodePemToDer,
+  getConfiguredProviders,
+  getIdentityProvider,
+  isProviderConfigured,
+} from "./providers.ts";
 
 describe("auth/providers", () => {
   const originalEnv = process.env;
@@ -166,16 +171,25 @@ describe("auth/providers", () => {
       expect(url).toBeInstanceOf(URL);
     });
 
-    it("creates Apple provider when env vars are set", () => {
+    it("creates Apple provider with DER-decoded private key", async () => {
       process.env.APPLE_CLIENT_ID = "id";
       process.env.APPLE_TEAM_ID = "team";
       process.env.APPLE_KEY_ID = "key";
       process.env.APPLE_PRIVATE_KEY =
-        "-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----";
+        "-----BEGIN PRIVATE KEY-----\nAQID\n-----END PRIVATE KEY-----";
       process.env.APPLE_REDIRECT_URI = "http://localhost/callback";
 
       const provider = getIdentityProvider("apple");
       expect(provider).toBeDefined();
+
+      // Verify Apple constructor received DER bytes, not raw PEM text
+      const { Apple: AppleMock } = await import("arctic");
+      const appleMock: ReturnType<typeof vi.fn> = vi.mocked(AppleMock);
+      const constructorCall = appleMock.mock.calls[0];
+      const keyArg = constructorCall[3];
+      // Should be the base64-decoded DER bytes [1, 2, 3], not the UTF-8 encoded PEM string
+      expect(keyArg).toBeInstanceOf(Uint8Array);
+      expect(Array.from(keyArg)).toEqual([1, 2, 3]);
     });
 
     it("creates Authentik provider when env vars are set", () => {
@@ -255,6 +269,28 @@ describe("auth/providers", () => {
       expect(result.user.sub).toBe("user-123");
       expect(result.user.email).toBe("test@example.com");
       expect(result.user.name).toBe("Test User");
+    });
+  });
+
+  describe("decodePemToDer", () => {
+    it("strips PEM headers and decodes base64 to raw bytes", () => {
+      // 4 bytes of data (AQID) = [1, 2, 3]
+      const pem = "-----BEGIN PRIVATE KEY-----\nAQID\n-----END PRIVATE KEY-----";
+      const result = decodePemToDer(pem);
+      expect(result).toBeInstanceOf(Uint8Array);
+      expect(Array.from(result)).toEqual([1, 2, 3]);
+    });
+
+    it("handles PEM without newlines", () => {
+      const pem = "-----BEGIN PRIVATE KEY-----AQID-----END PRIVATE KEY-----";
+      const result = decodePemToDer(pem);
+      expect(Array.from(result)).toEqual([1, 2, 3]);
+    });
+
+    it("handles multi-line base64 content", () => {
+      const pem = "-----BEGIN PRIVATE KEY-----\nAQID\nBAUG\n-----END PRIVATE KEY-----";
+      const result = decodePemToDer(pem);
+      expect(Array.from(result)).toEqual([1, 2, 3, 4, 5, 6]);
     });
   });
 
