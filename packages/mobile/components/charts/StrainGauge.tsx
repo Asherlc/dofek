@@ -1,8 +1,18 @@
 import { formatNumber } from "@dofek/format/format";
 import { StrainScore } from "@dofek/scoring/scoring";
+import { useEffect } from "react";
 import { StyleSheet, Text, View } from "react-native";
+import {
+  createAnimatedComponent,
+  Easing,
+  useAnimatedProps,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 import Svg, { Circle } from "react-native-svg";
-import { colors } from "../../theme";
+import { colors, duration } from "../../theme";
+
+const AnimatedCircle = createAnimatedComponent(Circle);
 
 interface StrainGaugeProps {
   /** Strain score on 0-21 scale */
@@ -18,9 +28,22 @@ export function StrainGauge({ strain, maxStrain = 21, size = 120 }: StrainGaugeP
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const fraction = Math.min(strain / maxStrain, 1);
-  const strokeDashoffset = circumference * (1 - fraction);
+  const targetOffset = circumference * (1 - fraction);
   const color = new StrainScore(strain).color;
   const center = size / 2;
+
+  const animatedOffset = useSharedValue(circumference);
+
+  useEffect(() => {
+    animatedOffset.value = withTiming(targetOffset, {
+      duration: duration.chart,
+      easing: Easing.bezier(0.16, 1, 0.3, 1),
+    });
+  }, [targetOffset, animatedOffset]);
+
+  const animatedProps = useAnimatedProps(() => ({
+    strokeDashoffset: animatedOffset.value,
+  }));
 
   return (
     <View style={[styles.container, { width: size, height: size }]}>
@@ -33,7 +56,7 @@ export function StrainGauge({ strain, maxStrain = 21, size = 120 }: StrainGaugeP
           strokeWidth={strokeWidth}
           fill="none"
         />
-        <Circle
+        <AnimatedCircle
           cx={center}
           cy={center}
           r={radius}
@@ -41,10 +64,10 @@ export function StrainGauge({ strain, maxStrain = 21, size = 120 }: StrainGaugeP
           strokeWidth={strokeWidth}
           fill="none"
           strokeDasharray={circumference}
-          strokeDashoffset={strokeDashoffset}
           strokeLinecap="round"
           rotation={-90}
           origin={`${center}, ${center}`}
+          animatedProps={animatedProps}
         />
       </Svg>
       <View style={styles.labelContainer}>

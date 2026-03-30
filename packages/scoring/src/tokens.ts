@@ -82,7 +82,9 @@ export const spacing = {
 export const radius = {
   /** Pill shapes, status dots */
   full: 9999,
-  /** Cards, containers */
+  /** Cards, major containers */
+  xl: 16,
+  /** Secondary containers, modals */
   lg: 12,
   /** Buttons, inputs */
   md: 8,

@@ -28,7 +28,12 @@ vi.mock("arctic", () => {
   };
 });
 
-import { getConfiguredProviders, getIdentityProvider, isProviderConfigured } from "./providers.ts";
+import {
+  decodePemToDer,
+  getConfiguredProviders,
+  getIdentityProvider,
+  isProviderConfigured,
+} from "./providers.ts";
 
 describe("auth/providers", () => {
   const originalEnv = process.env;
@@ -81,17 +86,30 @@ describe("auth/providers", () => {
       expect(isProviderConfigured("apple")).toBe(false);
     });
 
+    it("returns false when only some Apple env vars are set", () => {
+      process.env.APPLE_CLIENT_ID = "id";
+      process.env.APPLE_TEAM_ID = "team";
+      // Missing APPLE_KEY_ID, APPLE_PRIVATE_KEY, APPLE_REDIRECT_URI
+      expect(isProviderConfigured("apple")).toBe(false);
+    });
+
     it("returns true when all Apple env vars are set", () => {
       process.env.APPLE_CLIENT_ID = "id";
       process.env.APPLE_TEAM_ID = "team";
       process.env.APPLE_KEY_ID = "key";
       process.env.APPLE_PRIVATE_KEY =
-        "-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----";
+        "-----BEGIN PRIVATE KEY-----\nAQID\n-----END PRIVATE KEY-----";
       process.env.APPLE_REDIRECT_URI = "http://localhost/callback";
       expect(isProviderConfigured("apple")).toBe(true);
     });
 
     it("returns false when no Authentik env vars are set", () => {
+      expect(isProviderConfigured("authentik")).toBe(false);
+    });
+
+    it("returns false when only some Authentik env vars are set", () => {
+      process.env.AUTHENTIK_BASE_URL = "https://auth.example.com";
+      // Missing AUTHENTIK_CLIENT_ID, AUTHENTIK_CLIENT_SECRET, AUTHENTIK_REDIRECT_URI
       expect(isProviderConfigured("authentik")).toBe(false);
     });
 
@@ -156,7 +174,7 @@ describe("auth/providers", () => {
       expect(provider2).toBe(provider);
     });
 
-    it("creates Google authorization URL", () => {
+    it("creates Google authorization URL with correct scopes", async () => {
       process.env.GOOGLE_CLIENT_ID = "id";
       process.env.GOOGLE_CLIENT_SECRET = "secret";
       process.env.GOOGLE_REDIRECT_URI = "http://localhost/callback";
@@ -164,18 +182,33 @@ describe("auth/providers", () => {
       const provider = getIdentityProvider("google");
       const url = provider.createAuthorizationUrl("state-123", "verifier-456");
       expect(url).toBeInstanceOf(URL);
+
+      // Verify scopes passed to Google mock
+      const { Google: GoogleMock } = await import("arctic");
+      const googleInstance = vi.mocked(GoogleMock).mock.results[0].value;
+      const callArgs = googleInstance.createAuthorizationURL.mock.calls[0];
+      expect(callArgs[2]).toEqual(["openid", "email", "profile"]);
     });
 
-    it("creates Apple provider when env vars are set", () => {
+    it("creates Apple provider with DER-decoded private key", async () => {
       process.env.APPLE_CLIENT_ID = "id";
       process.env.APPLE_TEAM_ID = "team";
       process.env.APPLE_KEY_ID = "key";
       process.env.APPLE_PRIVATE_KEY =
-        "-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----";
+        "-----BEGIN PRIVATE KEY-----\nAQID\n-----END PRIVATE KEY-----";
       process.env.APPLE_REDIRECT_URI = "http://localhost/callback";
 
       const provider = getIdentityProvider("apple");
       expect(provider).toBeDefined();
+
+      // Verify Apple constructor received DER bytes, not raw PEM text
+      const { Apple: AppleMock } = await import("arctic");
+      const appleMock: ReturnType<typeof vi.fn> = vi.mocked(AppleMock);
+      const constructorCall = appleMock.mock.calls[0];
+      const keyArg = constructorCall[3];
+      // Should be the base64-decoded DER bytes [1, 2, 3], not the UTF-8 encoded PEM string
+      expect(keyArg).toBeInstanceOf(Uint8Array);
+      expect(Array.from(keyArg)).toEqual([1, 2, 3]);
     });
 
     it("creates Authentik provider when env vars are set", () => {
@@ -188,21 +221,27 @@ describe("auth/providers", () => {
       expect(provider).toBeDefined();
     });
 
-    it("creates Apple authorization URL with response_mode=form_post (no PKCE)", () => {
+    it("creates Apple authorization URL with correct scopes (no PKCE)", async () => {
       process.env.APPLE_CLIENT_ID = "id";
       process.env.APPLE_TEAM_ID = "team";
       process.env.APPLE_KEY_ID = "key";
       process.env.APPLE_PRIVATE_KEY =
-        "-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----";
+        "-----BEGIN PRIVATE KEY-----\nAQID\n-----END PRIVATE KEY-----";
       process.env.APPLE_REDIRECT_URI = "http://localhost/callback";
 
       const provider = getIdentityProvider("apple");
       const url = provider.createAuthorizationUrl("state-abc", "verifier-unused");
       expect(url).toBeInstanceOf(URL);
       expect(url.searchParams.get("response_mode")).toBe("form_post");
+
+      // Verify scopes passed to Apple mock
+      const { Apple: AppleMock } = await import("arctic");
+      const appleInstance = vi.mocked(AppleMock).mock.results[0].value;
+      const callArgs = appleInstance.createAuthorizationURL.mock.calls[0];
+      expect(callArgs[1]).toEqual(["name", "email"]);
     });
 
-    it("creates Authentik authorization URL with PKCE", () => {
+    it("creates Authentik authorization URL with correct scopes", async () => {
       process.env.AUTHENTIK_BASE_URL = "https://auth.example.com";
       process.env.AUTHENTIK_CLIENT_ID = "id";
       process.env.AUTHENTIK_CLIENT_SECRET = "secret";
@@ -211,9 +250,15 @@ describe("auth/providers", () => {
       const provider = getIdentityProvider("authentik");
       const url = provider.createAuthorizationUrl("state-xyz", "verifier-xyz");
       expect(url).toBeInstanceOf(URL);
+
+      // Verify scopes passed to Authentik mock
+      const { Authentik: AuthentikMock } = await import("arctic");
+      const authentikInstance = vi.mocked(AuthentikMock).mock.results[0].value;
+      const callArgs = authentikInstance.createAuthorizationURL.mock.calls[0];
+      expect(callArgs[2]).toEqual(["openid", "email", "profile", "groups"]);
     });
 
-    it("validates Google callback and returns user info", async () => {
+    it("validates Google callback and returns user from claims schema", async () => {
       process.env.GOOGLE_CLIENT_ID = "id";
       process.env.GOOGLE_CLIENT_SECRET = "secret";
       process.env.GOOGLE_REDIRECT_URI = "http://localhost/callback";
@@ -221,29 +266,35 @@ describe("auth/providers", () => {
       const provider = getIdentityProvider("google");
       const result = await provider.validateCallback("auth-code", "verifier");
 
-      // The mock decodeIdToken returns sub/email/name
+      // Claims schema must parse sub, email, name from the decoded ID token
       expect(result.user.sub).toBe("user-123");
       expect(result.user.email).toBe("test@example.com");
       expect(result.user.name).toBe("Test User");
+      expect(result.user.groups).toBeNull();
+      expect(result.tokens).toBeDefined();
     });
 
-    it("validates Apple callback (no PKCE verifier)", async () => {
+    it("validates Apple callback and parses claims schema", async () => {
       process.env.APPLE_CLIENT_ID = "id";
       process.env.APPLE_TEAM_ID = "team";
       process.env.APPLE_KEY_ID = "key";
       process.env.APPLE_PRIVATE_KEY =
-        "-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----";
+        "-----BEGIN PRIVATE KEY-----\nAQID\n-----END PRIVATE KEY-----";
       process.env.APPLE_REDIRECT_URI = "http://localhost/callback";
 
       const provider = getIdentityProvider("apple");
       const result = await provider.validateCallback("apple-code", "unused-verifier");
 
-      // Apple returns name as null (only sent on first auth, not in ID token)
+      // Apple claims schema must parse sub from decoded ID token
       expect(result.user.sub).toBe("user-123");
+      expect(result.user.email).toBe("test@example.com");
+      // Apple returns name as null (only sent on first auth, not in ID token)
       expect(result.user.name).toBeNull();
+      expect(result.user.groups).toBeNull();
+      expect(result.tokens).toBeDefined();
     });
 
-    it("validates Authentik callback and returns user info", async () => {
+    it("validates Authentik callback and parses claims schema", async () => {
       process.env.AUTHENTIK_BASE_URL = "https://auth.example.com";
       process.env.AUTHENTIK_CLIENT_ID = "id";
       process.env.AUTHENTIK_CLIENT_SECRET = "secret";
@@ -252,10 +303,57 @@ describe("auth/providers", () => {
       const provider = getIdentityProvider("authentik");
       const result = await provider.validateCallback("authentik-code", "authentik-verifier");
 
-      // The mock decodeIdToken returns name directly
+      // Authentik claims schema must parse sub, email, name from decoded ID token
       expect(result.user.sub).toBe("user-123");
       expect(result.user.email).toBe("test@example.com");
       expect(result.user.name).toBe("Test User");
+      expect(result.tokens).toBeDefined();
+    });
+
+    it("initializers map covers all identity providers", () => {
+      // Set env vars for all providers to ensure all initializers work
+      process.env.GOOGLE_CLIENT_ID = "id";
+      process.env.GOOGLE_CLIENT_SECRET = "secret";
+      process.env.GOOGLE_REDIRECT_URI = "http://localhost/callback";
+      process.env.APPLE_CLIENT_ID = "id";
+      process.env.APPLE_TEAM_ID = "team";
+      process.env.APPLE_KEY_ID = "key";
+      process.env.APPLE_PRIVATE_KEY =
+        "-----BEGIN PRIVATE KEY-----\nAQID\n-----END PRIVATE KEY-----";
+      process.env.APPLE_REDIRECT_URI = "http://localhost/callback";
+      process.env.AUTHENTIK_BASE_URL = "https://auth.example.com";
+      process.env.AUTHENTIK_CLIENT_ID = "id";
+      process.env.AUTHENTIK_CLIENT_SECRET = "secret";
+      process.env.AUTHENTIK_REDIRECT_URI = "http://localhost/callback";
+
+      // Every provider name must produce a valid provider (initializers map is not empty)
+      for (const name of ["google", "apple", "authentik"] as const) {
+        const provider = getIdentityProvider(name);
+        expect(provider.createAuthorizationUrl).toBeTypeOf("function");
+        expect(provider.validateCallback).toBeTypeOf("function");
+      }
+    });
+  });
+
+  describe("decodePemToDer", () => {
+    it("strips PEM headers and decodes base64 to raw bytes", () => {
+      // 4 bytes of data (AQID) = [1, 2, 3]
+      const pem = "-----BEGIN PRIVATE KEY-----\nAQID\n-----END PRIVATE KEY-----";
+      const result = decodePemToDer(pem);
+      expect(result).toBeInstanceOf(Uint8Array);
+      expect(Array.from(result)).toEqual([1, 2, 3]);
+    });
+
+    it("handles PEM without newlines", () => {
+      const pem = "-----BEGIN PRIVATE KEY-----AQID-----END PRIVATE KEY-----";
+      const result = decodePemToDer(pem);
+      expect(Array.from(result)).toEqual([1, 2, 3]);
+    });
+
+    it("handles multi-line base64 content", () => {
+      const pem = "-----BEGIN PRIVATE KEY-----\nAQID\nBAUG\n-----END PRIVATE KEY-----";
+      const result = decodePemToDer(pem);
+      expect(Array.from(result)).toEqual([1, 2, 3, 4, 5, 6]);
     });
   });
 

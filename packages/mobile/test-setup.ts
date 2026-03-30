@@ -51,8 +51,8 @@ vi.mock("react-native", () => {
   }
 
   function createMockComponent(name: string) {
-    const component = ({ children, style, ...props }: Record<string, unknown>) =>
-      el(name, { ...props, style: flattenStyle(style) }, children);
+    const component = ({ children, style, testID, ...props }: Record<string, unknown>) =>
+      el(name, { ...props, style: flattenStyle(style), "data-testid": testID }, children);
     component.displayName = name;
     return component;
   }
@@ -209,6 +209,48 @@ vi.mock("react-native-svg", () => {
   };
 });
 
+// ── React Native Reanimated mock ─────────────────────────────────────
+vi.mock("react-native-reanimated", () => {
+  const React = require("react");
+  return {
+    __esModule: true,
+    default: {
+      createAnimatedComponent: (component: unknown) => component,
+      View: ({ children, entering, exiting, layout, style, ...props }: Record<string, unknown>) => {
+        // Strip reanimated-specific props and animated style objects
+        const plainStyle = Array.isArray(style)
+          ? Object.assign({}, ...style.map((s: unknown) => (typeof s === "object" && s ? s : {})))
+          : typeof style === "object" && style
+            ? style
+            : undefined;
+        return React.createElement("div", { ...props, style: plainStyle }, children);
+      },
+    },
+    useSharedValue: (initial: unknown) => ({ value: initial }),
+    useAnimatedProps: (updater: () => Record<string, unknown>) => updater(),
+    useAnimatedStyle: (updater: () => Record<string, unknown>) => updater(),
+    withTiming: (toValue: unknown) => toValue,
+    withDelay: (_delay: number, animation: unknown) => animation,
+    withSpring: (toValue: unknown) => toValue,
+    withCallback: (_callback: unknown, animation: unknown) => animation,
+    Easing: {
+      bezier: () => ({}),
+      linear: {},
+      ease: {},
+      out: () => ({}),
+      in: () => ({}),
+      inOut: () => ({}),
+    },
+    FadeIn: { delay: () => ({ duration: () => ({ easing: () => ({}) }) }) },
+    FadeInUp: { delay: () => ({ duration: () => ({ easing: () => ({}) }) }) },
+    FadeOut: {},
+    SlideInRight: {},
+    Layout: { duration: () => ({}) },
+    createAnimatedComponent: (component: unknown) => component,
+    runOnJS: (fn: (...args: unknown[]) => void) => fn,
+  };
+});
+
 // ── React Native Safe Area mock ──────────────────────────────────────
 vi.mock("react-native-safe-area-context", () => {
   const React = require("react");
@@ -267,6 +309,14 @@ vi.mock("expo-camera", () => ({
 
 vi.mock("expo-status-bar", () => ({
   StatusBar: () => null,
+}));
+
+vi.mock("expo-haptics", () => ({
+  selectionAsync: vi.fn(() => Promise.resolve()),
+  impactAsync: vi.fn(() => Promise.resolve()),
+  notificationAsync: vi.fn(() => Promise.resolve()),
+  ImpactFeedbackStyle: { Light: "light", Medium: "medium", Heavy: "heavy" },
+  NotificationFeedbackType: { Success: "success", Warning: "warning", Error: "error" },
 }));
 
 // ── HealthKit native module mock ─────────────────────────────────────
