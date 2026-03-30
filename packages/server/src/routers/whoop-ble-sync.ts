@@ -11,6 +11,8 @@ const INSERT_BATCH_SIZE = 2000;
 const realtimeDataSampleSchema = z.object({
   timestamp: z.string(), // ISO 8601 with millisecond precision
   heartRate: z.number().int().min(0).max(255),
+  /** R-R interval in milliseconds (beat-to-beat timing from PPG). 0 when unavailable. */
+  rrIntervalMs: z.number().int().min(0).max(65535).default(0),
   quaternionW: z.number(),
   quaternionX: z.number(),
   quaternionY: z.number(),
@@ -57,17 +59,17 @@ async function insertRealtimeDataBatch(
   for (let offset = 0; offset < samples.length; offset += INSERT_BATCH_SIZE) {
     const batch = samples.slice(offset, offset + INSERT_BATCH_SIZE);
 
-    // Insert HR into metric_stream (only for samples with a valid reading)
+    // Insert HR + R-R interval into metric_stream (only for samples with a valid reading)
     const heartRateSamples = batch.filter((sample) => sample.heartRate > 0);
     if (heartRateSamples.length > 0) {
       const metricValues = heartRateSamples.map(
         (sample) =>
-          sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${sample.heartRate}, ${"WHOOP BLE"})`,
+          sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${sample.heartRate}, ${sample.rrIntervalMs > 0 ? sample.rrIntervalMs : null}, ${"WHOOP BLE"})`,
       );
 
       await database.execute(
         sql`INSERT INTO fitness.metric_stream
-            (recorded_at, user_id, provider_id, heart_rate, source_name)
+            (recorded_at, user_id, provider_id, heart_rate, rr_interval_ms, source_name)
             VALUES ${sql.join(metricValues, sql`, `)}`,
       );
     }

@@ -343,6 +343,7 @@ public class WhoopBleModule: Module {
                 return [
                     "timestamp": formatter.string(from: date),
                     "heartRate": Int(sample.heartRate),
+                    "rrIntervalMs": Int(sample.rrIntervalMs),
                     "quaternionW": Double(sample.quaternionW),
                     "quaternionX": Double(sample.quaternionX),
                     "quaternionY": Double(sample.quaternionY),

@@ -11,6 +11,8 @@ export interface WhoopDevice {
 export interface WhoopRealtimeDataSample {
   timestamp: string; // ISO 8601
   heartRate: number; // bpm (0-255)
+  /** R-R interval in milliseconds (beat-to-beat timing). 0 when unavailable. */
+  rrIntervalMs: number;
   quaternionW: number; // float32
   quaternionX: number;
   quaternionY: number;

@@ -7,6 +7,9 @@ struct WhoopRealtimeDataSample {
     let timestampSeconds: UInt32
     let subSeconds: UInt16
     let heartRate: UInt8
+    /// R-R interval in milliseconds (beat-to-beat timing from PPG).
+    /// 0 when not available (e.g., no valid reading flag in compact packet).
+    let rrIntervalMs: UInt16
     let quaternionW: Float
     let quaternionX: Float
     let quaternionY: Float
@@ -281,6 +284,7 @@ final class WhoopBleFrameParser {
                 timestampSeconds: frame.dataTimestamp,
                 subSeconds: frame.subSeconds,
                 heartRate: heartRate,
+                rrIntervalMs: 0, // not yet mapped in full-size format
                 quaternionW: quaternionW,
                 quaternionX: quaternionX,
                 quaternionY: quaternionY,
@@ -304,6 +308,8 @@ final class WhoopBleFrameParser {
         guard payload.count >= 12 else { return nil }
 
         let heartRate = payload[payload.startIndex + 8]
+        let validFlag = payload[payload.startIndex + 9]
+        let rrIntervalMs = validFlag != 0 ? payload.readUInt16LE(at: payload.startIndex + 10) : 0
 
         // Preserve the full payload after header for analysis
         var opticalBytes = Data(count: WhoopBleConstants.realtimeDataOpticalByteCount)
@@ -317,6 +323,7 @@ final class WhoopBleFrameParser {
             timestampSeconds: frame.dataTimestamp,
             subSeconds: frame.subSeconds,
             heartRate: heartRate,
+            rrIntervalMs: rrIntervalMs,
             quaternionW: 0,
             quaternionX: 0,
             quaternionY: 0,

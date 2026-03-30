@@ -28,6 +28,7 @@ export interface WhoopBleSyncDeps {
     Array<{
       timestamp: string;
       heartRate: number;
+      rrIntervalMs: number;
       quaternionW: number;
       quaternionX: number;
       quaternionY: number;
@@ -47,6 +48,7 @@ export interface WhoopBleRealtimeUploadClient {
         samples: Array<{
           timestamp: string;
           heartRate: number;
+          rrIntervalMs: number;
           quaternionW: number;
           quaternionX: number;
           quaternionY: number;
