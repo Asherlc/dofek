@@ -92,6 +92,23 @@ vi.mock("../modules/whoop-ble", () => ({
   getConnectionState: () => "idle",
   getBluetoothState: () => "poweredOff",
   getBufferedSampleCount: () => 0,
+  getDataPathStats: () => ({
+    dataNotificationCount: 0,
+    cmdNotificationCount: 0,
+    totalFramesParsed: 0,
+    totalSamplesExtracted: 0,
+    droppedForNonStreaming: 0,
+    emptyExtractions: 0,
+    bufferOverflows: 0,
+    packetTypes: "",
+    lastCommandResponse: "none",
+    connectionState: "idle",
+    hasDataCharacteristic: false,
+    isNotifying: false,
+    hasCmdCharacteristic: false,
+    hasCmdResponseCharacteristic: false,
+    lastWriteError: "none",
+  }),
 }));
 
 const mockGetWatchSyncStatus = vi.fn(() => ({

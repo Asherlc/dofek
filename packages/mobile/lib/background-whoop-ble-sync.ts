@@ -3,7 +3,7 @@ import { AppState, type AppStateStatus } from "react-native";
 import type { InertialMeasurementUnitUploadClient } from "./inertial-measurement-unit-service";
 import { captureException, logger } from "./telemetry";
 
-const UPLOAD_BATCH_SIZE = 5000;
+const PERIODIC_DRAIN_INTERVAL_MS = 30_000; // Upload buffered samples every 30s
 const LOG_CATEGORY = "whoop-ble";
 
 /** Dependencies injected for testability (wraps the whoop-ble native module) */
@@ -28,6 +28,7 @@ export interface WhoopBleSyncDeps {
 }
 
 let appStateSubscription: ReturnType<typeof AppState.addEventListener> | null = null;
+let periodicDrainTimer: ReturnType<typeof setInterval> | null = null;
 let syncing = false;
 let connected = false;
 let currentDeps: WhoopBleSyncDeps | null = null;
@@ -83,6 +84,24 @@ export async function initBackgroundWhoopBleSync(
     logger.error(LOG_CATEGORY, `initial sync error: ${error}`);
     Sentry.captureException(error, { tags: { source: "whoop-ble-init-sync" } });
   }
+
+  // Periodically drain the buffer while the app is active so samples
+  // don't pile up waiting for a foreground transition.
+  if (periodicDrainTimer) {
+    clearInterval(periodicDrainTimer);
+  }
+  periodicDrainTimer = setInterval(() => {
+    if (syncing || !connected) return;
+    syncing = true;
+    drainBuffer(trpcClient, whoopDeps)
+      .catch((error: unknown) => {
+        logger.error(LOG_CATEGORY, `periodic drain error: ${error}`);
+        Sentry.captureException(error, { tags: { source: "whoop-ble-periodic-drain" } });
+      })
+      .finally(() => {
+        syncing = false;
+      });
+  }, PERIODIC_DRAIN_INTERVAL_MS);
 }
 
 /**
@@ -175,53 +194,51 @@ async function syncOnForeground(
     // Diagnostic-only, ignore errors
   }
 
-  // Upload any buffered samples
-  const samples = await whoopDeps.getBufferedSamples();
-  logger.info(LOG_CATEGORY, `getBufferedSamples returned ${samples.length} samples`);
+  await drainBuffer(trpcClient, whoopDeps);
+}
 
-  if (samples.length === 0) {
-    Sentry.addBreadcrumb({
-      category: "whoop-ble",
-      message: "Buffer empty — no samples to upload",
-      level: "info",
-    });
-    return;
-  }
-
-  // Convert to the IMU sample format (accel + gyro) for the upload endpoint
-  const uploadSamples = samples.map((sample) => ({
-    timestamp: sample.timestamp,
-    x: sample.accelerometerX,
-    y: sample.accelerometerY,
-    z: sample.accelerometerZ,
-    gyroscopeX: sample.gyroscopeX,
-    gyroscopeY: sample.gyroscopeY,
-    gyroscopeZ: sample.gyroscopeZ,
-  }));
-
-  // Log timestamp range for debugging stale/future data
-  const firstTimestamp = uploadSamples[0]?.timestamp;
-  const lastTimestamp = uploadSamples[uploadSamples.length - 1]?.timestamp;
-  logger.info(
-    LOG_CATEGORY,
-    `uploading ${uploadSamples.length} samples (${firstTimestamp} → ${lastTimestamp})`,
-  );
-
+/**
+ * Drain the native sample buffer and upload to the server.
+ * Pulls samples in small batches (1000) to avoid memory spikes
+ * from serializing the entire buffer across the native bridge at once.
+ */
+async function drainBuffer(
+  trpcClient: InertialMeasurementUnitUploadClient,
+  whoopDeps: WhoopBleSyncDeps,
+): Promise<void> {
   let totalUploaded = 0;
-  for (let offset = 0; offset < uploadSamples.length; offset += UPLOAD_BATCH_SIZE) {
-    const batch = uploadSamples.slice(offset, offset + UPLOAD_BATCH_SIZE);
+
+  // Pull 1000 samples at a time from the native buffer
+  // to keep bridge serialization memory low
+  while (true) {
+    const samples = await whoopDeps.getBufferedSamples();
+    if (samples.length === 0) break;
+
+    const uploadSamples = samples.map((sample) => ({
+      timestamp: sample.timestamp,
+      x: sample.accelerometerX,
+      y: sample.accelerometerY,
+      z: sample.accelerometerZ,
+      gyroscopeX: sample.gyroscopeX,
+      gyroscopeY: sample.gyroscopeY,
+      gyroscopeZ: sample.gyroscopeZ,
+    }));
+
     const result = await trpcClient.inertialMeasurementUnitSync.pushSamples.mutate({
       deviceId: "WHOOP Strap",
       deviceType: "whoop",
-      samples: batch,
+      samples: uploadSamples,
     });
-    totalUploaded += batch.length;
+    totalUploaded += uploadSamples.length;
     logger.info(
       LOG_CATEGORY,
-      `uploaded batch ${Math.floor(offset / UPLOAD_BATCH_SIZE) + 1}: ${batch.length} samples (server inserted: ${result.inserted})`,
+      `uploaded ${uploadSamples.length} samples (server inserted: ${result.inserted})`,
     );
   }
-  logger.info(LOG_CATEGORY, `upload complete: ${totalUploaded} samples`);
+
+  if (totalUploaded > 0) {
+    logger.info(LOG_CATEGORY, `drain complete: ${totalUploaded} samples`);
+  }
 }
 
 /** Clean up background WHOOP BLE sync listeners and disconnect */
@@ -229,6 +246,11 @@ export function teardownBackgroundWhoopBleSync(): void {
   if (appStateSubscription) {
     appStateSubscription.remove();
     appStateSubscription = null;
+  }
+
+  if (periodicDrainTimer) {
+    clearInterval(periodicDrainTimer);
+    periodicDrainTimer = null;
   }
 
   if (connected && currentDeps) {

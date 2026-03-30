@@ -11,7 +11,6 @@
 		0E71572520ADBE1261538DDD /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A1A492679286EF012FC76622 /* PrivacyInfo.xcprivacy */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		2418C76C79A0C559691C782F /* AccelerometerRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C92AEAB286628CA9E52EB5E /* AccelerometerRecorder.swift */; };
-		A1B2C3D4E5F60718293A4B5C /* GyroscopeRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6E7F8091A2B3C4D5E6F7081 /* GyroscopeRecorder.swift */; };
 		3975E861DBE42480522A3639 /* DofekWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = DFBC1DA1B47BBA2D3F9377E1 /* DofekWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
 		576DA8F27E1C4362E4BC931D /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A1A492679286EF012FC76622 /* PrivacyInfo.xcprivacy */; };
@@ -21,6 +20,7 @@
 		94BE7B6F9A65ECBD41B1A5BA /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 976C17D87B5171C7F2524746 /* ContentView.swift */; };
 		97B81BABD681EFB33E061069 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B880A67F09CF49EF5FEB368F /* Assets.xcassets */; };
 		9AA1CAC071524E06105116C8 /* libPods-Dofek.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A8D177F9E40885CD8E6188D7 /* libPods-Dofek.a */; };
+		A1B2C3D4E5F60718293A4B5C /* GyroscopeRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6E7F8091A2B3C4D5E6F7081 /* GyroscopeRecorder.swift */; };
 		AEB771F42FD690EB22EE5112 /* WatchSessionDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF249E2188C8E06EDDC93489 /* WatchSessionDelegate.swift */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
 		E2E77FADCB9C42DBEF2988B9 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B38362DBE0FF7C6EA059464 /* ExpoModulesProvider.swift */; };
@@ -60,7 +60,6 @@
 		6B1038038CE5FC1D124B7D7F /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		73EFA986BF4209CF6DF4EE84 /* libPods-DofekWatch.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-DofekWatch.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		7C92AEAB286628CA9E52EB5E /* AccelerometerRecorder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AccelerometerRecorder.swift; sourceTree = "<group>"; };
-		D6E7F8091A2B3C4D5E6F7081 /* GyroscopeRecorder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GyroscopeRecorder.swift; sourceTree = "<group>"; };
 		83E64E4B62167088DA0A700B /* Pods-Dofek.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Dofek.debug.xcconfig"; path = "Target Support Files/Pods-Dofek/Pods-Dofek.debug.xcconfig"; sourceTree = "<group>"; };
 		86C1556DAA785CB4E82E376D /* Pods-Dofek.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Dofek.release.xcconfig"; path = "Target Support Files/Pods-Dofek/Pods-Dofek.release.xcconfig"; sourceTree = "<group>"; };
 		8E0C343DC2F7F766EBC4FCB2 /* DofekWatch.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = DofekWatch.entitlements; sourceTree = "<group>"; };
@@ -74,6 +73,7 @@
 		B880A67F09CF49EF5FEB368F /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
 		D016F77232B6C290626E38B7 /* TransferManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TransferManager.swift; sourceTree = "<group>"; };
+		D6E7F8091A2B3C4D5E6F7081 /* GyroscopeRecorder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GyroscopeRecorder.swift; sourceTree = "<group>"; };
 		D9C100D96677A26580668720 /* Pods-DofekWatch.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-DofekWatch.release.xcconfig"; path = "Target Support Files/Pods-DofekWatch/Pods-DofekWatch.release.xcconfig"; sourceTree = "<group>"; };
 		DFBC1DA1B47BBA2D3F9377E1 /* DofekWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DofekWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
@@ -426,7 +426,6 @@
 				"${PODS_CONFIGURATION_BUILD_DIR}/ReachabilitySwift/ReachabilitySwift.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/React-Core/React-Core_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/React-cxxreact/React-cxxreact_privacy.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/Sentry/Sentry.bundle",
 			);
 			name = "[CP] Copy Pods Resources";
 			outputPaths = (
@@ -438,7 +437,6 @@
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ReachabilitySwift.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/React-Core_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/React-cxxreact_privacy.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/Sentry.bundle",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;

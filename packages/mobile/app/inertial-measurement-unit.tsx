@@ -26,6 +26,7 @@ import {
   getBluetoothState,
   getBufferedSampleCount,
   getConnectionState,
+  getDataPathStats,
 } from "../modules/whoop-ble";
 import { colors } from "../theme";
 import { rootStackScreenOptions } from "./_layout";
@@ -87,6 +88,7 @@ function CoverageTimeline() {
           <Svg width={chartWidth} height={chartHeight}>
             {data.map((row) => {
               const bucketDate = new Date(row.bucket);
+              if (Number.isNaN(bucketDate.getTime())) return null;
               const dayStart = new Date(bucketDate);
               dayStart.setHours(0, 0, 0, 0);
               const minuteOfDay = (bucketDate.getTime() - dayStart.getTime()) / 60000;
@@ -353,6 +355,7 @@ export default function InertialMeasurementUnitScreen() {
   const [whoopBleState, setWhoopBleState] = useState(getConnectionState);
   const [bleState, setBleState] = useState(getBluetoothState);
   const [whoopBuffered, setWhoopBuffered] = useState(0);
+  const [dataPathStats, setDataPathStats] = useState(getDataPathStats);
 
   useEffect(() => {
     const refresh = () => {
@@ -360,6 +363,7 @@ export default function InertialMeasurementUnitScreen() {
       setWhoopBleState(getConnectionState());
       setBleState(getBluetoothState());
       setWhoopBuffered(getBufferedSampleCount());
+      setDataPathStats(getDataPathStats());
     };
     refresh();
     const interval = setInterval(refresh, 3000);
@@ -534,6 +538,43 @@ export default function InertialMeasurementUnitScreen() {
             const warning = whoopImuEnabled ? getWhoopWarning(bleState, whoopBleState) : null;
             return warning ? <StatusWarning message={warning} /> : null;
           })()}
+          {whoopImuEnabled && whoopBleState !== "idle" && (
+            <View style={styles.diagnosticBlock}>
+              <Text style={styles.diagnosticTitle}>Data Path</Text>
+              <Text style={styles.diagnosticLine}>
+                Data notifications: {dataPathStats.dataNotificationCount ?? 0}
+              </Text>
+              <Text style={styles.diagnosticLine}>
+                Command notifications: {dataPathStats.cmdNotificationCount ?? 0}
+              </Text>
+              <Text style={styles.diagnosticLine}>
+                Frames parsed: {dataPathStats.totalFramesParsed}
+              </Text>
+              <Text style={styles.diagnosticLine}>
+                Samples extracted: {dataPathStats.totalSamplesExtracted}
+              </Text>
+              <Text style={styles.diagnosticLine}>
+                Empty extractions: {dataPathStats.emptyExtractions}
+              </Text>
+              <Text style={styles.diagnosticLine}>
+                Command response: {dataPathStats.lastCommandResponse ?? "none"}
+              </Text>
+              {dataPathStats.packetTypes ? (
+                <Text style={styles.diagnosticLine}>Packet types: {dataPathStats.packetTypes}</Text>
+              ) : null}
+              <Text style={styles.diagnosticLine}>
+                Data characteristic: {dataPathStats.hasDataCharacteristic ? "found" : "missing"}
+                {dataPathStats.hasDataCharacteristic
+                  ? `, notifying: ${dataPathStats.isNotifying ? "yes" : "no"}`
+                  : ""}
+              </Text>
+              {dataPathStats.lastWriteError && dataPathStats.lastWriteError !== "none" && (
+                <Text style={[styles.diagnosticLine, { color: colors.negative }]}>
+                  Write error: {dataPathStats.lastWriteError}
+                </Text>
+              )}
+            </View>
+          )}
         </View>
 
         <View style={styles.section}>
@@ -646,5 +687,23 @@ const styles = StyleSheet.create({
     color: colors.text,
     minWidth: 120,
     textAlign: "center",
+  },
+  diagnosticBlock: {
+    marginTop: 12,
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    padding: 12,
+  },
+  diagnosticTitle: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.textSecondary,
+    marginBottom: 6,
+  },
+  diagnosticLine: {
+    fontSize: 12,
+    color: colors.textTertiary,
+    fontFamily: "Menlo",
+    lineHeight: 18,
   },
 });

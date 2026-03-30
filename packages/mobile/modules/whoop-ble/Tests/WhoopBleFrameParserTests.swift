@@ -166,18 +166,40 @@ final class WhoopBleFrameParserTests: XCTestCase {
 
     func testBuildCommandFrameForToggleImuMode() {
         let data = WhoopBleFrameParser.buildCommandData(command: WhoopBleConstants.commandToggleImuMode)
-        XCTAssertEqual(data.count, 16)
-        XCTAssertEqual(data[0], 0xAA)
-        XCTAssertEqual(data[1], 0x01)
-        XCTAssertEqual(data[2], 0x0C)  // payloadLen = 12
-        XCTAssertEqual(data[8], 0x23)  // COMMAND type
-        XCTAssertEqual(data[10], 0x6A) // TOGGLE_IMU_MODE
+        // 8-byte header + 8 command bytes + 4 CRC32 = 20 bytes
+        XCTAssertEqual(data.count, 20)
+        XCTAssertEqual(data[0], 0xAA)           // SOF
+        XCTAssertEqual(data[1], 0x01)           // version
+        XCTAssertEqual(data[2], 0x0C)           // payloadLen = 12
+        XCTAssertEqual(data[3], 0x00)
+        XCTAssertEqual(data[4], 0x00)           // role1
+        XCTAssertEqual(data[5], 0x01)           // role2
+        // Header CRC16 at bytes 6-7
+        XCTAssertEqual(data[8], 0x23)           // COMMAND type
+        XCTAssertEqual(data[10], 0x6A)          // TOGGLE_IMU_MODE
+        // Parameters
+        XCTAssertEqual(data[11], 0x01)
+        XCTAssertEqual(data[12], 0x01)
     }
 
     func testBuildCommandFrameSequenceIncrements() {
         let data1 = WhoopBleFrameParser.buildCommandData(command: WhoopBleConstants.commandToggleImuMode)
         let data2 = WhoopBleFrameParser.buildCommandData(command: WhoopBleConstants.commandToggleImuMode)
         XCTAssertEqual(data2[9], data1[9] &+ 1)
+    }
+
+    func testBuildCommandFrameHeaderCRC16MatchesCapture() {
+        // Verified from PacketLogger: header CRC16 of aa010c000001 = 0x41E7
+        let crc = WhoopBleFrameParser.crc16modbus(Data([0xAA, 0x01, 0x0C, 0x00, 0x00, 0x01]))
+        XCTAssertEqual(crc, 0x41E7)
+    }
+
+    func testBuildCommandFramePayloadCRC32MatchesCapture() {
+        // Verified from PacketLogger capture:
+        // Payload bytes: 23 f1 6a 01 01 00 00 00 → CRC32 = 0xFC61E958
+        let payload = Data([0x23, 0xF1, 0x6A, 0x01, 0x01, 0x00, 0x00, 0x00])
+        let crc = WhoopBleFrameParser.crc32ieee(payload)
+        XCTAssertEqual(crc, 0xFC61E958)
     }
 
     // MARK: - Frame parser (stateful accumulator)
