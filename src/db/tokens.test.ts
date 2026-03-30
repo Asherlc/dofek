@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockDatabase } from "../providers/test-helpers.ts";
-import { ensureProvider, loadTokens, saveTokens } from "./tokens.ts";
+import { deleteTokens, ensureProvider, loadTokens, saveTokens } from "./tokens.ts";
 
 // Mock drizzle's eq function
 vi.mock("drizzle-orm", () => ({
@@ -99,6 +99,21 @@ describe("saveTokens", () => {
         scopes: null,
       }),
     );
+  });
+});
+
+describe("deleteTokens", () => {
+  let mock: ReturnType<typeof createMockDatabase>;
+
+  beforeEach(() => {
+    mock = createMockDatabase();
+  });
+
+  it("deletes tokens for the given provider", async () => {
+    await deleteTokens(mock.db, "polar");
+
+    expect(mock.spies.deleteFn).toHaveBeenCalled();
+    expect(mock.spies.deleteWhere).toHaveBeenCalled();
   });
 });
 

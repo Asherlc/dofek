@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   analyze:
-    name: Analyze
+    name: CodeQL Analysis
     runs-on: ubuntu-latest
     permissions:
       security-events: write

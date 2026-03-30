@@ -17,20 +17,13 @@ vi.mock("../lib/metrics.ts", () => ({
   trpcProcedureDuration: { observe: vi.fn() },
 }));
 
-vi.mock("../lib/semaphore.ts", () => ({
-  dbQuerySemaphore: {
-    run: vi.fn(<T>(fn: () => Promise<T>) => fn()),
-  },
-}));
-
 import { queryCache } from "../lib/cache.ts";
 import { cacheHitsTotal, cacheMissesTotal } from "../lib/metrics.ts";
-import { dbQuerySemaphore } from "../lib/semaphore.ts";
 import {
+  adminProcedure,
   CacheTTL,
   type Context,
   cachedProtectedQuery,
-  cachedProtectedQueryLight,
   protectedProcedure,
   router,
 } from "../trpc.ts";
@@ -65,10 +58,6 @@ describe("trpc", () => {
 
     it("exports cachedProtectedQuery function", () => {
       expect(typeof cachedProtectedQuery).toBe("function");
-    });
-
-    it("exports cachedProtectedQueryLight function", () => {
-      expect(typeof cachedProtectedQueryLight).toBe("function");
     });
   });
 
@@ -110,11 +99,77 @@ describe("trpc", () => {
     });
   });
 
+  describe("admin middleware", () => {
+    it("rejects unauthenticated requests", async () => {
+      const testRouter = router({
+        test: adminProcedure.query(() => "ok"),
+      });
+
+      const trpc = initTRPC.context<Context>().create();
+      const createCaller = trpc.createCallerFactory(testRouter);
+      const caller = createCaller({
+        db: { execute: vi.fn() },
+        userId: null,
+        timezone: "UTC",
+      });
+
+      await expect(caller.test()).rejects.toThrow(TRPCError);
+      await expect(caller.test()).rejects.toMatchObject({
+        code: "UNAUTHORIZED",
+      });
+    });
+
+    it("rejects non-admin users", async () => {
+      // Mock isAdmin to return false
+      vi.doMock("../auth/admin.ts", () => ({
+        isAdmin: vi.fn().mockResolvedValue(false),
+      }));
+
+      const testRouter = router({
+        test: adminProcedure.query(() => "ok"),
+      });
+
+      const trpc = initTRPC.context<Context>().create();
+      const createCaller = trpc.createCallerFactory(testRouter);
+      const caller = createCaller({
+        db: { execute: vi.fn() },
+        userId: "user-123",
+        timezone: "UTC",
+      });
+
+      await expect(caller.test()).rejects.toThrow(TRPCError);
+      await expect(caller.test()).rejects.toMatchObject({
+        code: "FORBIDDEN",
+      });
+    });
+
+    it("allows admin users through", async () => {
+      // Mock isAdmin to return true
+      vi.doMock("../auth/admin.ts", () => ({
+        isAdmin: vi.fn().mockResolvedValue(true),
+      }));
+
+      const testRouter = router({
+        test: adminProcedure.query(({ ctx }) => ctx.userId),
+      });
+
+      const trpc = initTRPC.context<Context>().create();
+      const createCaller = trpc.createCallerFactory(testRouter);
+      const caller = createCaller({
+        db: { execute: vi.fn() },
+        userId: "admin-123",
+        timezone: "UTC",
+      });
+
+      const result = await caller.test();
+      expect(result).toBe("admin-123");
+    });
+  });
+
   describe("cached middleware", () => {
     function createCachedRouter() {
       const testRouter = router({
         cachedQuery: cachedProtectedQuery(CacheTTL.SHORT).query(() => "db-result"),
-        lightQuery: cachedProtectedQueryLight(CacheTTL.MEDIUM).query(() => "light-result"),
       });
       const trpc = initTRPC.context<Context>().create();
       const createCaller = trpc.createCallerFactory(testRouter);
@@ -145,25 +200,6 @@ describe("trpc", () => {
         "db-result",
         CacheTTL.SHORT,
       );
-    });
-
-    it("uses semaphore for normal cached queries", async () => {
-      vi.mocked(queryCache.get).mockResolvedValue(undefined);
-      const createCaller = createCachedRouter();
-      const caller = createCaller({ db: {}, userId: "user-1", timezone: "UTC" });
-
-      await caller.cachedQuery();
-      expect(dbQuerySemaphore.run).toHaveBeenCalled();
-    });
-
-    it("bypasses semaphore for lightweight cached queries", async () => {
-      vi.mocked(queryCache.get).mockResolvedValue(undefined);
-      const createCaller = createCachedRouter();
-      const caller = createCaller({ db: {}, userId: "user-1", timezone: "UTC" });
-
-      await caller.lightQuery();
-      // Lightweight queries should NOT go through the semaphore
-      expect(dbQuerySemaphore.run).not.toHaveBeenCalled();
     });
 
     it("includes userId in cache key for anonymous users", async () => {

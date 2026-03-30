@@ -1,0 +1,12 @@
+# Squawk migration linter config
+# https://squawkhq.com/docs/configuration
+
+# Exclude rules that are intentionally violated:
+# - renaming-table: We intentionally rename accelerometer_sample → inertial_measurement_unit_sample
+# - prefer-robust-stmts: TimescaleDB compression policies can't run inside transactions
+excluded_rules = [
+  "renaming-table",
+  "prefer-robust-stmts",
+  "require-timeout-settings",
+  "require-concurrent-index-creation",
+]

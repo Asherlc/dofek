@@ -49,6 +49,12 @@ services:
     command: ["web"]
     # The nginx upstream expects hostname "dofek-web"
     hostname: dofek-web
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/healthz').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))\""]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
 
   client:
     image: e2e-client

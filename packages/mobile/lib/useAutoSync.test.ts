@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
+
+import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { renderHook, act } from "@testing-library/react";
 
 // --- Mutable mock state ---
 const mockMutateAsync = vi.fn();
@@ -40,11 +41,21 @@ vi.mock("../modules/health-kit", () => ({
   querySleepSamples: vi.fn(),
 }));
 
+const mockCaptureException = vi.fn();
+
+vi.mock("./telemetry", () => ({
+  captureException: (...args: unknown[]) => mockCaptureException(...args),
+  logger: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
 const mockSyncHealthKitToServer = vi.fn();
 
 vi.mock("./health-kit-sync", () => ({
-  syncHealthKitToServer: (...args: unknown[]) =>
-    mockSyncHealthKitToServer(...args),
+  syncHealthKitToServer: (...args: unknown[]) => mockSyncHealthKitToServer(...args),
 }));
 
 const { useAutoSync, isDataStale } = await import("./useAutoSync");
@@ -131,10 +142,7 @@ describe("useAutoSync", () => {
     await act(() => vi.runAllTimersAsync());
 
     expect(mockMutateAsync).toHaveBeenCalledWith({ sinceDays: 1 });
-    expect(mockSyncStatusFetch).toHaveBeenCalledWith(
-      { jobId: "test-job" },
-      { staleTime: 0 },
-    );
+    expect(mockSyncStatusFetch).toHaveBeenCalledWith({ jobId: "test-job" }, { staleTime: 0 });
     expect(mockInvalidate).toHaveBeenCalled();
   });
 
@@ -169,21 +177,24 @@ describe("useAutoSync", () => {
     expect(mockInvalidate).toHaveBeenCalled();
   });
 
-  it("catches sync failure silently", async () => {
-    mockMutateAsync.mockRejectedValue(new Error("network error"));
+  it("catches sync failure and calls captureException", async () => {
+    const syncError = new Error("network error");
+    mockMutateAsync.mockRejectedValue(syncError);
 
     renderHook(() => useAutoSync("2026-03-21"));
     await act(() => vi.runAllTimersAsync());
 
     expect(mockMutateAsync).toHaveBeenCalled();
     expect(mockInvalidate).not.toHaveBeenCalled();
+    expect(mockCaptureException).toHaveBeenCalledWith(syncError, {
+      source: "auto-sync-providers",
+    });
   });
 
   it("only triggers once across re-renders", async () => {
-    const { rerender } = renderHook(
-      ({ date }) => useAutoSync(date),
-      { initialProps: { date: "2026-03-21" } },
-    );
+    const { rerender } = renderHook(({ date }) => useAutoSync(date), {
+      initialProps: { date: "2026-03-21" },
+    });
     await act(() => vi.runAllTimersAsync());
 
     rerender({ date: "2026-03-21" });
@@ -231,14 +242,17 @@ describe("useAutoSync", () => {
       expect(mockSyncHealthKitToServer).not.toHaveBeenCalled();
     });
 
-    it("catches HealthKit sync failure silently", async () => {
-      mockSyncHealthKitToServer.mockRejectedValue(new Error("hk error"));
+    it("catches HealthKit sync failure and calls captureException", async () => {
+      const hkError = new Error("hk error");
+      mockSyncHealthKitToServer.mockRejectedValue(hkError);
 
       renderHook(() => useAutoSync("2026-03-21"));
       await act(() => vi.runAllTimersAsync());
 
-      // Should not throw — failure is silently caught
       expect(mockSyncHealthKitToServer).toHaveBeenCalled();
+      expect(mockCaptureException).toHaveBeenCalledWith(hkError, {
+        source: "auto-sync-healthkit",
+      });
     });
   });
 });

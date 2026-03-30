@@ -31,6 +31,7 @@ public class WhoopBleModule: Module {
 
     private var connectedPeripheral: CBPeripheral?
     private var cmdCharacteristic: CBCharacteristic?
+    private var cmdResponseCharacteristic: CBCharacteristic?
     private var dataCharacteristic: CBCharacteristic?
     private var state: ConnectionState = .idle
 
@@ -44,6 +45,16 @@ public class WhoopBleModule: Module {
     private let bufferLock = NSLock()
     private static let maxBufferSize = 500_000 // ~100 minutes at 80 Hz
 
+    /// Madgwick AHRS filter for real-time orientation estimation
+    private let orientationFilter = MadgwickFilter(sampleRate: 100, beta: 0.1)
+    /// Throttle orientation events to ~30 Hz (emit every 3rd sample at 100 Hz input)
+    private var orientationSampleCounter: Int = 0
+    private static let orientationEmitInterval = 3
+
+    /// Pending promise waiting for CBCentralManager to reach .poweredOn state.
+    /// Only one findWhoop call can be pending at a time.
+    private var pendingFindPromise: Promise?
+
     // Pending promises for async operations
     private var findPromise: Promise?
     private var connectPromise: Promise?
@@ -52,7 +63,7 @@ public class WhoopBleModule: Module {
     public func definition() -> ModuleDefinition {
         Name("WhoopBle")
 
-        Events("onConnectionStateChanged")
+        Events("onConnectionStateChanged", "onOrientation")
 
         OnCreate {
             self.delegate.module = self
@@ -65,49 +76,34 @@ public class WhoopBleModule: Module {
         // MARK: - Availability
 
         Function("isBluetoothAvailable") { () -> Bool in
-            return self.ensureCentralManager().state == .poweredOn
+            let manager = self.ensureCentralManager()
+            return manager.state == .poweredOn
         }
 
         // MARK: - Discovery
 
         AsyncFunction("findWhoop") { (promise: Promise) in
             let manager = self.ensureCentralManager()
-            guard manager.state == .poweredOn else {
-                promise.resolve(nil)
-                return
-            }
 
+            // If the manager is already powered on, search immediately.
+            // Otherwise, wait up to 3 seconds for it to reach .poweredOn.
+            // This handles the first-call race: CBCentralManager starts in
+            // .unknown state and transitions to .poweredOn asynchronously
+            // via the delegate callback. The original guard returned nil
+            // immediately, which always aborted the first findWhoop() call.
             self.bleQueue.async {
-                // First, check for already-connected peripherals (fast path)
-                for serviceUUID in WhoopBleConstants.allServiceUUIDs {
-                    let connected = manager.retrieveConnectedPeripherals(
-                        withServices: [serviceUUID]
-                    )
-                    if let peripheral = connected.first {
-                        let result: [String: Any?] = [
-                            "id": peripheral.identifier.uuidString,
-                            "name": peripheral.name,
-                        ]
-                        promise.resolve(result)
-                        return
-                    }
-                }
-
-                // Fallback: scan for 5 seconds
-                self.findPromise = promise
-                self.state = .scanning
-                manager.scanForPeripherals(
-                    withServices: WhoopBleConstants.allServiceUUIDs,
-                    options: nil
-                )
-
-                // Timeout after 5 seconds
-                self.bleQueue.asyncAfter(deadline: .now() + 5) {
-                    if self.state == .scanning {
-                        manager.stopScan()
-                        self.state = .idle
-                        self.findPromise?.resolve(nil)
-                        self.findPromise = nil
+                if manager.state == .poweredOn {
+                    NSLog("[WhoopBLE] findWhoop: Bluetooth poweredOn, searching immediately")
+                    self.performFindWhoop(manager: manager, promise: promise)
+                } else {
+                    NSLog("[WhoopBLE] findWhoop: Bluetooth not ready (state=%ld), waiting for poweredOn", manager.state.rawValue)
+                    self.pendingFindPromise = promise
+                    // Timeout — don't wait forever for Bluetooth
+                    self.bleQueue.asyncAfter(deadline: .now() + 3) {
+                        guard let pending = self.pendingFindPromise else { return }
+                        NSLog("[WhoopBLE] findWhoop: timed out waiting for poweredOn (state=%ld)", manager.state.rawValue)
+                        self.pendingFindPromise = nil
+                        pending.resolve(nil)
                     }
                 }
             }
@@ -152,26 +148,40 @@ public class WhoopBleModule: Module {
 
         AsyncFunction("startImuStreaming") { (promise: Promise) in
             self.bleQueue.async {
-                guard self.state == .ready,
-                      let peripheral = self.connectedPeripheral,
-                      let cmdChar = self.cmdCharacteristic else {
-                    promise.reject("NOT_READY", "Not connected or service not discovered")
+                // Already streaming (e.g., auto-resumed after state restoration) — success
+                if self.state == .streaming {
+                    NSLog("[WhoopBLE] startImuStreaming: already streaming, returning success")
+                    promise.resolve(true)
                     return
                 }
 
-                // Send TOGGLE_IMU_MODE command
+                guard self.state == .ready,
+                      let peripheral = self.connectedPeripheral,
+                      let cmdChar = self.cmdCharacteristic else {
+                    let detail = "state=\(self.state.rawValue) peripheral=\(self.connectedPeripheral == nil ? "nil" : "set") cmdChar=\(self.cmdCharacteristic == nil ? "nil" : "set") dataChar=\(self.dataCharacteristic == nil ? "nil" : "set")"
+                    NSLog("[WhoopBLE] startImuStreaming: NOT_READY (%@)", detail)
+                    promise.reject("NOT_READY", "Not ready: \(detail)")
+                    return
+                }
+
+                // Send TOGGLE_IMU_MODE — capture analysis shows the WHOOP app
+                // sends this directly without a GET_HELLO handshake first.
                 let commandData = WhoopBleFrameParser.buildCommandData(
                     command: WhoopBleConstants.commandToggleImuMode
                 )
+                NSLog("[WhoopBLE] startImuStreaming: sending TOGGLE_IMU_MODE (0x6A)")
                 peripheral.writeValue(commandData, for: cmdChar, type: .withResponse)
 
                 self.state = .streaming
                 self.frameParser.reset()
+                self.orientationFilter.reset()
+                self.orientationSampleCounter = 0
 
                 self.bufferLock.lock()
                 self.sampleBuffer.removeAll()
                 self.bufferLock.unlock()
 
+                NSLog("[WhoopBLE] startImuStreaming: now streaming, buffer cleared")
                 promise.resolve(true)
             }
         }
@@ -198,6 +208,51 @@ public class WhoopBleModule: Module {
             }
         }
 
+        // MARK: - Diagnostics
+
+        Function("getConnectionState") { () -> String in
+            return self.state.rawValue
+        }
+
+        Function("getBluetoothState") { () -> String in
+            guard let manager = self.centralManager else {
+                return "uninitialized"
+            }
+            switch manager.state {
+            case .unknown: return "unknown"
+            case .resetting: return "resetting"
+            case .unsupported: return "unsupported"
+            case .unauthorized: return "unauthorized"
+            case .poweredOff: return "poweredOff"
+            case .poweredOn: return "poweredOn"
+            @unknown default: return "unknown"
+            }
+        }
+
+        Function("getBufferedSampleCount") { () -> Int in
+            self.bufferLock.lock()
+            let count = self.sampleBuffer.count
+            self.bufferLock.unlock()
+            return count
+        }
+
+        Function("getDataPathStats") { () -> [String: Any] in
+            return [
+                "dataReceivedCount": Int(self.dataReceivedCount),
+                "totalFramesParsed": Int(self.totalFramesParsed),
+                "totalSamplesExtracted": Int(self.totalSamplesExtracted),
+                "droppedForNonStreaming": Int(self.droppedForNonStreaming),
+                "emptyExtractions": Int(self.emptyExtractions),
+                "bufferOverflows": Int(self.bufferOverflows),
+                "connectionState": self.state.rawValue,
+                "hasDataCharacteristic": self.dataCharacteristic != nil,
+                "isNotifying": self.dataCharacteristic?.isNotifying ?? false,
+                "hasCmdCharacteristic": self.cmdCharacteristic != nil,
+                "hasCmdResponseCharacteristic": self.cmdResponseCharacteristic != nil,
+                "lastWriteError": self.lastWriteError ?? "none",
+            ]
+        }
+
         // MARK: - Buffer access
 
         AsyncFunction("getBufferedSamples") { (promise: Promise) in
@@ -206,11 +261,18 @@ public class WhoopBleModule: Module {
             self.sampleBuffer.removeAll()
             self.bufferLock.unlock()
 
+            NSLog("[WhoopBLE] getBufferedSamples: draining %d samples from buffer", samples.count)
+
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let samplingInterval = 1.0 / 50.0 // 50 Hz = 20ms per sample
+
             let result = samples.map { sample -> [String: Any] in
-                // Convert strap timestamp to ISO 8601
-                let date = Date(timeIntervalSince1970: TimeInterval(sample.timestampSeconds))
-                let formatter = ISO8601DateFormatter()
-                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                // Compute per-sample timestamp: base epoch + sub-second offset + sample position
+                let baseTime = TimeInterval(sample.timestampSeconds)
+                    + TimeInterval(sample.subSeconds) / 1000.0
+                let sampleTime = baseTime + Double(sample.sampleIndex) * samplingInterval
+                let date = Date(timeIntervalSince1970: sampleTime)
 
                 return [
                     "timestamp": formatter.string(from: date),
@@ -224,6 +286,63 @@ public class WhoopBleModule: Module {
             }
 
             promise.resolve(result)
+        }
+
+        // MARK: - Background reconnection
+
+        /// Try to reconnect to the WHOOP strap. Checks retrieveConnectedPeripherals
+        /// first (instant, finds straps connected by the WHOOP app), then falls back
+        /// to a 10-second background scan. Call from background refresh handlers.
+        AsyncFunction("retryConnection") { (promise: Promise) in
+            let manager = self.ensureCentralManager()
+
+            self.bleQueue.async {
+                // Already connected — nothing to do
+                if self.connectedPeripheral?.state == .connected {
+                    NSLog("[WhoopBLE] retryConnection: already connected")
+                    promise.resolve(true)
+                    return
+                }
+
+                guard manager.state == .poweredOn else {
+                    NSLog("[WhoopBLE] retryConnection: Bluetooth not ready")
+                    promise.resolve(false)
+                    return
+                }
+
+                // Check retrieveConnectedPeripherals (instant — finds WHOOP app's connection)
+                for serviceUUID in WhoopBleConstants.allServiceUUIDs {
+                    let connected = manager.retrieveConnectedPeripherals(withServices: [serviceUUID])
+                    if let peripheral = connected.first {
+                        NSLog("[WhoopBLE] retryConnection: found connected strap %@, connecting", peripheral.identifier.uuidString)
+                        self.connectedPeripheral = peripheral
+                        peripheral.delegate = self.delegate
+                        self.state = .connecting
+                        self.autoReconnect = true
+                        manager.connect(peripheral, options: nil)
+                        promise.resolve(true)
+                        return
+                    }
+                }
+
+                // Fall back to scan (catches straps advertising nearby)
+                NSLog("[WhoopBLE] retryConnection: no connected strap found, scanning 10s")
+                self.autoReconnect = true  // enable auto-connect on discovery
+                manager.scanForPeripherals(
+                    withServices: WhoopBleConstants.allServiceUUIDs,
+                    options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
+                )
+
+                // Stop scan after 10 seconds
+                self.bleQueue.asyncAfter(deadline: .now() + 10) {
+                    if self.connectedPeripheral == nil {
+                        manager.stopScan()
+                        NSLog("[WhoopBLE] retryConnection: scan timeout, no strap found")
+                    }
+                }
+
+                promise.resolve(false)
+            }
         }
 
         // MARK: - Disconnect
@@ -242,10 +361,80 @@ public class WhoopBleModule: Module {
     // MARK: - Internal handlers (called by delegate)
 
     func handleCentralManagerPoweredOn() {
-        // If we have a restored peripheral waiting to reconnect, start service discovery
+        NSLog("[WhoopBLE] centralManager poweredOn")
+
+        // Resolve any pending findWhoop call that was waiting for .poweredOn
+        if let pending = pendingFindPromise, let manager = centralManager {
+            NSLog("[WhoopBLE] resolving pending findWhoop after poweredOn")
+            pendingFindPromise = nil
+            performFindWhoop(manager: manager, promise: pending)
+        }
+
+        // If no strap connected and no pending find, start background scanning.
+        // This catches the case where the WHOOP app connects to the strap while
+        // our app is in the background — we'll detect the strap via scan and
+        // auto-connect.
+        if connectedPeripheral == nil && pendingFindPromise == nil && autoReconnect {
+            NSLog("[WhoopBLE] no strap connected, starting background scan for WHOOP")
+            centralManager?.scanForPeripherals(
+                withServices: WhoopBleConstants.allServiceUUIDs,
+                options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
+            )
+        }
+
+        // If we have a restored peripheral waiting to reconnect
         if let peripheral = connectedPeripheral, state == .idle {
-            state = .discoveringServices
-            peripheral.discoverServices(WhoopBleConstants.allServiceUUIDs)
+            if peripheral.state == .connected {
+                // Already connected — proceed to service discovery
+                state = .discoveringServices
+                peripheral.discoverServices(WhoopBleConstants.allServiceUUIDs)
+            } else {
+                // Peripheral was disconnected while the app was suspended/killed —
+                // initiate a new connection instead of trying to discover services
+                // on a disconnected peripheral (which silently fails).
+                state = .connecting
+                centralManager?.connect(peripheral, options: nil)
+            }
+        }
+    }
+
+    /// Perform the actual WHOOP strap search (called after manager is .poweredOn).
+    private func performFindWhoop(manager: CBCentralManager, promise: Promise) {
+        NSLog("[WhoopBLE] performFindWhoop: checking already-connected peripherals")
+        // First, check for already-connected peripherals (fast path)
+        for serviceUUID in WhoopBleConstants.allServiceUUIDs {
+            let connected = manager.retrieveConnectedPeripherals(
+                withServices: [serviceUUID]
+            )
+            if let peripheral = connected.first {
+                NSLog("[WhoopBLE] performFindWhoop: found connected peripheral %@ (%@)", peripheral.identifier.uuidString, peripheral.name ?? "unnamed")
+                let result: [String: Any?] = [
+                    "id": peripheral.identifier.uuidString,
+                    "name": peripheral.name,
+                ]
+                promise.resolve(result)
+                return
+            }
+        }
+
+        // Fallback: scan for 5 seconds
+        NSLog("[WhoopBLE] performFindWhoop: no connected peripheral found, scanning for 5s")
+        self.findPromise = promise
+        self.state = .scanning
+        manager.scanForPeripherals(
+            withServices: WhoopBleConstants.allServiceUUIDs,
+            options: nil
+        )
+
+        // Timeout after 5 seconds
+        self.bleQueue.asyncAfter(deadline: .now() + 5) {
+            if self.state == .scanning {
+                NSLog("[WhoopBLE] performFindWhoop: scan timed out, no WHOOP found")
+                manager.stopScan()
+                self.state = .idle
+                self.findPromise?.resolve(nil)
+                self.findPromise = nil
+            }
         }
     }
 
@@ -267,20 +456,34 @@ public class WhoopBleModule: Module {
     }
 
     func handlePeripheralDiscovered(_ peripheral: CBPeripheral) {
-        guard state == .scanning else { return }
+        // If we're scanning for findWhoop(), resolve the promise
+        if state == .scanning {
+            centralManager?.stopScan()
+            state = .idle
 
-        centralManager?.stopScan()
-        state = .idle
+            let result: [String: Any?] = [
+                "id": peripheral.identifier.uuidString,
+                "name": peripheral.name,
+            ]
+            findPromise?.resolve(result)
+            findPromise = nil
+            return
+        }
 
-        let result: [String: Any?] = [
-            "id": peripheral.identifier.uuidString,
-            "name": peripheral.name,
-        ]
-        findPromise?.resolve(result)
-        findPromise = nil
+        // Background auto-connect: if we're not in a findWhoop scan but
+        // found a WHOOP strap via background scanning, auto-connect to it.
+        if connectedPeripheral == nil && autoReconnect {
+            NSLog("[WhoopBLE] background scan found WHOOP strap %@ (%@), auto-connecting", peripheral.identifier.uuidString, peripheral.name ?? "unnamed")
+            centralManager?.stopScan()
+            connectedPeripheral = peripheral
+            peripheral.delegate = delegate
+            state = .connecting
+            centralManager?.connect(peripheral, options: nil)
+        }
     }
 
     func handlePeripheralConnected(_ peripheral: CBPeripheral) {
+        NSLog("[WhoopBLE] peripheral connected: %@ (state=%@)", peripheral.identifier.uuidString, state.rawValue)
         guard state == .connecting else { return }
 
         state = .discoveringServices
@@ -288,6 +491,7 @@ public class WhoopBleModule: Module {
     }
 
     func handlePeripheralDisconnected(_ peripheral: CBPeripheral, error: Error?) {
+        NSLog("[WhoopBLE] peripheral disconnected: %@ (wasState=%@, error=%@, autoReconnect=%@)", peripheral.identifier.uuidString, state.rawValue, error?.localizedDescription ?? "none", autoReconnect ? "true" : "false")
         wasStreaming = state == .streaming
         let shouldReconnect = autoReconnect
 
@@ -315,42 +519,55 @@ public class WhoopBleModule: Module {
     }
 
     func handleServicesDiscovered(_ peripheral: CBPeripheral) {
+        let serviceUUIDs = peripheral.services?.map { $0.uuid.uuidString } ?? []
+        NSLog("[WhoopBLE] services discovered: %@", serviceUUIDs.joined(separator: ", "))
         guard state == .discoveringServices else { return }
 
         // Find the WHOOP service
         guard let service = peripheral.services?.first(where: { service in
             WhoopBleConstants.allServiceUUIDs.contains(service.uuid)
         }) else {
+            NSLog("[WhoopBLE] NO WHOOP service found among discovered services")
             connectPromise?.reject("NO_SERVICE", "WHOOP service not found")
             connectPromise = nil
             state = .idle
             return
         }
 
-        // Discover characteristics
+        // Discover characteristics (CMD_TO_STRAP, CMD_FROM_STRAP, DATA_FROM_STRAP)
         let cmdUUID = WhoopBleConstants.cmdToStrapUUID(forService: service.uuid)
+        let cmdRespUUID = WhoopBleConstants.cmdFromStrapUUID(forService: service.uuid)
         let dataUUID = WhoopBleConstants.dataFromStrapUUID(forService: service.uuid)
-        peripheral.discoverCharacteristics([cmdUUID, dataUUID], for: service)
+        peripheral.discoverCharacteristics([cmdUUID, cmdRespUUID, dataUUID], for: service)
     }
 
     func handleCharacteristicsDiscovered(_ peripheral: CBPeripheral, service: CBService) {
+        let charUUIDs = service.characteristics?.map { $0.uuid.uuidString } ?? []
+        NSLog("[WhoopBLE] characteristics discovered for service %@: %@", service.uuid.uuidString, charUUIDs.joined(separator: ", "))
         guard state == .discoveringServices else { return }
 
         let cmdUUID = WhoopBleConstants.cmdToStrapUUID(forService: service.uuid)
+        let cmdRespUUID = WhoopBleConstants.cmdFromStrapUUID(forService: service.uuid)
         let dataUUID = WhoopBleConstants.dataFromStrapUUID(forService: service.uuid)
 
         cmdCharacteristic = service.characteristics?.first { $0.uuid == cmdUUID }
+        cmdResponseCharacteristic = service.characteristics?.first { $0.uuid == cmdRespUUID }
         dataCharacteristic = service.characteristics?.first { $0.uuid == dataUUID }
 
         guard let cmdChar = cmdCharacteristic, let dataChar = dataCharacteristic else {
+            NSLog("[WhoopBLE] missing characteristics: cmd=%@, data=%@", cmdCharacteristic == nil ? "MISSING" : "found", dataCharacteristic == nil ? "MISSING" : "found")
             connectPromise?.reject("NO_CHARACTERISTICS", "Required characteristics not found")
             connectPromise = nil
             state = .idle
             return
         }
 
-        // Subscribe to DATA_FROM_STRAP notifications
+        // Subscribe to DATA_FROM_STRAP and CMD_FROM_STRAP notifications
+        NSLog("[WhoopBLE] subscribing to DATA_FROM_STRAP + CMD_FROM_STRAP notifications")
         peripheral.setNotifyValue(true, for: dataChar)
+        if let cmdRespChar = cmdResponseCharacteristic {
+            peripheral.setNotifyValue(true, for: cmdRespChar)
+        }
 
         state = .ready
         connectPromise?.resolve(true)
@@ -373,10 +590,22 @@ public class WhoopBleModule: Module {
         }
     }
 
+    /// Last write error for debugging (internal for delegate access)
+    var lastWriteError: String?
+
+    /// Counter to throttle data-path logs (avoid flooding at 80 Hz)
+    private var dataReceivedCount: UInt64 = 0
+    private var totalFramesParsed: UInt64 = 0
+    private var totalSamplesExtracted: UInt64 = 0
+    private var droppedForNonStreaming: UInt64 = 0
+    private var emptyExtractions: UInt64 = 0
+    private var bufferOverflows: UInt64 = 0
+
     func handleDataReceived(_ data: Data) {
-        guard state == .streaming else { return }
+        dataReceivedCount += 1
 
         let frames = frameParser.feed(data)
+        totalFramesParsed += UInt64(frames.count)
 
         var newSamples: [WhoopImuSample] = []
         for frame in frames {
@@ -384,13 +613,49 @@ public class WhoopBleModule: Module {
             newSamples.append(contentsOf: samples)
         }
 
-        guard !newSamples.isEmpty else { return }
+        if newSamples.isEmpty {
+            emptyExtractions += 1
+            return
+        }
+
+        totalSamplesExtracted += UInt64(newSamples.count)
+
+        // Feed samples into orientation filter and emit throttled events
+        for sample in newSamples {
+            orientationFilter.update(
+                accelerometerX: sample.accelerometerX,
+                accelerometerY: sample.accelerometerY,
+                accelerometerZ: sample.accelerometerZ,
+                gyroscopeX: sample.gyroscopeX,
+                gyroscopeY: sample.gyroscopeY,
+                gyroscopeZ: sample.gyroscopeZ
+            )
+
+            orientationSampleCounter += 1
+            if orientationSampleCounter >= WhoopBleModule.orientationEmitInterval {
+                orientationSampleCounter = 0
+                let quaternion = orientationFilter.quaternion
+                let euler = orientationFilter.eulerAngles
+                sendEvent("onOrientation", [
+                    "w": quaternion.w,
+                    "x": quaternion.x,
+                    "y": quaternion.y,
+                    "z": quaternion.z,
+                    "roll": euler.roll,
+                    "pitch": euler.pitch,
+                    "yaw": euler.yaw,
+                ])
+            }
+        }
 
         bufferLock.lock()
         sampleBuffer.append(contentsOf: newSamples)
         // Cap buffer size to prevent memory issues
         if sampleBuffer.count > WhoopBleModule.maxBufferSize {
-            sampleBuffer.removeFirst(sampleBuffer.count - WhoopBleModule.maxBufferSize)
+            let overflow = sampleBuffer.count - WhoopBleModule.maxBufferSize
+            sampleBuffer.removeFirst(overflow)
+            bufferOverflows += 1
+            NSLog("[WhoopBLE] buffer overflow: dropped %d oldest samples (overflow #%llu)", overflow, bufferOverflows)
         }
         bufferLock.unlock()
     }
@@ -414,10 +679,17 @@ public class WhoopBleModule: Module {
         return manager
     }
 
+    /// Exposed for the BLE delegate to identify CMD_FROM_STRAP notifications.
+    var cmdResponseCharacteristicUUID: CBUUID? {
+        cmdResponseCharacteristic?.uuid
+    }
+
+
     private func cleanup() {
         state = .idle
         connectedPeripheral = nil
         cmdCharacteristic = nil
+        cmdResponseCharacteristic = nil
         dataCharacteristic = nil
         frameParser.reset()
     }
@@ -483,7 +755,10 @@ private class BleDelegate: NSObject, CBCentralManagerDelegate, CBPeripheralDeleg
     // MARK: CBPeripheralDelegate
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
-        guard error == nil else { return }
+        if let error = error {
+            NSLog("[WhoopBLE] service discovery error: %@", error.localizedDescription)
+            return
+        }
         module?.handleServicesDiscovered(peripheral)
     }
 
@@ -492,8 +767,25 @@ private class BleDelegate: NSObject, CBCentralManagerDelegate, CBPeripheralDeleg
         didDiscoverCharacteristicsFor service: CBService,
         error: Error?
     ) {
-        guard error == nil else { return }
+        if let error = error {
+            NSLog("[WhoopBLE] characteristic discovery error: %@", error.localizedDescription)
+            return
+        }
         module?.handleCharacteristicsDiscovered(peripheral, service: service)
+    }
+
+    func peripheral(
+        _ peripheral: CBPeripheral,
+        didWriteValueFor characteristic: CBCharacteristic,
+        error: Error?
+    ) {
+        if let error = error {
+            NSLog("[WhoopBLE] write error on %@: %@", characteristic.uuid.uuidString, error.localizedDescription)
+            module?.lastWriteError = error.localizedDescription
+        } else {
+            NSLog("[WhoopBLE] write succeeded on %@", characteristic.uuid.uuidString)
+            module?.lastWriteError = nil
+        }
     }
 
     func peripheral(
@@ -501,7 +793,15 @@ private class BleDelegate: NSObject, CBCentralManagerDelegate, CBPeripheralDeleg
         didUpdateValueFor characteristic: CBCharacteristic,
         error: Error?
     ) {
-        guard error == nil, let data = characteristic.value else { return }
+        if let error = error {
+            NSLog("[WhoopBLE] data notification error on %@: %@", characteristic.uuid.uuidString, error.localizedDescription)
+            return
+        }
+        guard let data = characteristic.value else {
+            NSLog("[WhoopBLE] data notification with nil value on %@", characteristic.uuid.uuidString)
+            return
+        }
+
         module?.handleDataReceived(data)
     }
 }

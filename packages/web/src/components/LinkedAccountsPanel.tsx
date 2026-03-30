@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ConfiguredProviders } from "../lib/auth.ts";
 import { fetchConfiguredProviders } from "../lib/auth.ts";
+import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 import { ProviderLogo, providerLabel } from "./ProviderLogo.tsx";
 
@@ -14,7 +15,9 @@ export function LinkedAccountsPanel() {
   useEffect(() => {
     fetchConfiguredProviders()
       .then(setAvailableProviders)
-      .catch(() => {});
+      .catch((error: unknown) =>
+        captureException(error, { context: "fetch-configured-providers" }),
+      );
   }, []);
 
   if (linkedAccounts.isLoading) {

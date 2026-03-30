@@ -8,7 +8,7 @@ import {
 import { useEffect } from "react";
 import { AuthProvider, useAuth } from "../lib/auth-context.tsx";
 
-const PUBLIC_PATHS = new Set(["/login", "/privacy"]);
+const PUBLIC_PATHS = new Set(["/", "/login", "/privacy"]);
 
 const LEGACY_REDIRECTS: Record<string, string> = {
   "/nutrition-analytics": "/nutrition/analytics",
