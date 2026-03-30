@@ -216,6 +216,7 @@ export const userProfile = fitness.table("user_profile", {
   maxHr: smallint("max_hr"),
   restingHr: smallint("resting_hr"),
   ftp: smallint("ftp"),
+  isAdmin: boolean("is_admin").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

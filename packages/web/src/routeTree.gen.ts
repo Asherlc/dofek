@@ -21,6 +21,7 @@ import { Route as NutritionRouteImport } from './routes/nutrition'
 import { Route as MonthlyReportRouteImport } from './routes/monthly-report'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as InsightsRouteImport } from './routes/insights'
+import { Route as InertialMeasurementUnitRouteImport } from './routes/inertial-measurement-unit'
 import { Route as HealthReportRouteImport } from './routes/health-report'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as CycleRouteImport } from './routes/cycle'
@@ -29,7 +30,7 @@ import { Route as CoachRouteImport } from './routes/coach'
 import { Route as BreathworkRouteImport } from './routes/breathwork'
 import { Route as BodyRouteImport } from './routes/body'
 import { Route as BehaviorImpactRouteImport } from './routes/behavior-impact'
-import { Route as InertialMeasurementUnitRouteImport } from './routes/inertial-measurement-unit'
+import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TrainingIndexRouteImport } from './routes/training/index'
 import { Route as ProvidersIndexRouteImport } from './routes/providers/index'
@@ -105,6 +106,11 @@ const InsightsRoute = InsightsRouteImport.update({
   path: '/insights',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InertialMeasurementUnitRoute = InertialMeasurementUnitRouteImport.update({
+  id: '/inertial-measurement-unit',
+  path: '/inertial-measurement-unit',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HealthReportRoute = HealthReportRouteImport.update({
   id: '/health-report',
   path: '/health-report',
@@ -145,9 +151,9 @@ const BehaviorImpactRoute = BehaviorImpactRouteImport.update({
   path: '/behavior-impact',
   getParentRoute: () => rootRouteImport,
 } as any)
-const InertialMeasurementUnitRoute = InertialMeasurementUnitRouteImport.update({
-  id: '/inertial-measurement-unit',
-  path: '/inertial-measurement-unit',
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -223,7 +229,7 @@ const ActivityIdRoute = ActivityIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/inertial-measurement-unit': typeof InertialMeasurementUnitRoute
+  '/admin': typeof AdminRoute
   '/behavior-impact': typeof BehaviorImpactRoute
   '/body': typeof BodyRoute
   '/breathwork': typeof BreathworkRoute
@@ -232,6 +238,7 @@ export interface FileRoutesByFullPath {
   '/cycle': typeof CycleRoute
   '/dashboard': typeof DashboardRoute
   '/health-report': typeof HealthReportRoute
+  '/inertial-measurement-unit': typeof InertialMeasurementUnitRoute
   '/insights': typeof InsightsRoute
   '/login': typeof LoginRoute
   '/monthly-report': typeof MonthlyReportRoute
@@ -260,7 +267,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/inertial-measurement-unit': typeof InertialMeasurementUnitRoute
+  '/admin': typeof AdminRoute
   '/behavior-impact': typeof BehaviorImpactRoute
   '/body': typeof BodyRoute
   '/breathwork': typeof BreathworkRoute
@@ -269,6 +276,7 @@ export interface FileRoutesByTo {
   '/cycle': typeof CycleRoute
   '/dashboard': typeof DashboardRoute
   '/health-report': typeof HealthReportRoute
+  '/inertial-measurement-unit': typeof InertialMeasurementUnitRoute
   '/insights': typeof InsightsRoute
   '/login': typeof LoginRoute
   '/monthly-report': typeof MonthlyReportRoute
@@ -295,7 +303,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/inertial-measurement-unit': typeof InertialMeasurementUnitRoute
+  '/admin': typeof AdminRoute
   '/behavior-impact': typeof BehaviorImpactRoute
   '/body': typeof BodyRoute
   '/breathwork': typeof BreathworkRoute
@@ -304,6 +312,7 @@ export interface FileRoutesById {
   '/cycle': typeof CycleRoute
   '/dashboard': typeof DashboardRoute
   '/health-report': typeof HealthReportRoute
+  '/inertial-measurement-unit': typeof InertialMeasurementUnitRoute
   '/insights': typeof InsightsRoute
   '/login': typeof LoginRoute
   '/monthly-report': typeof MonthlyReportRoute
@@ -334,7 +343,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/inertial-measurement-unit'
+    | '/admin'
     | '/behavior-impact'
     | '/body'
     | '/breathwork'
@@ -343,6 +352,7 @@ export interface FileRouteTypes {
     | '/cycle'
     | '/dashboard'
     | '/health-report'
+    | '/inertial-measurement-unit'
     | '/insights'
     | '/login'
     | '/monthly-report'
@@ -371,7 +381,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/inertial-measurement-unit'
+    | '/admin'
     | '/behavior-impact'
     | '/body'
     | '/breathwork'
@@ -380,6 +390,7 @@ export interface FileRouteTypes {
     | '/cycle'
     | '/dashboard'
     | '/health-report'
+    | '/inertial-measurement-unit'
     | '/insights'
     | '/login'
     | '/monthly-report'
@@ -405,7 +416,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
-    | '/inertial-measurement-unit'
+    | '/admin'
     | '/behavior-impact'
     | '/body'
     | '/breathwork'
@@ -414,6 +425,7 @@ export interface FileRouteTypes {
     | '/cycle'
     | '/dashboard'
     | '/health-report'
+    | '/inertial-measurement-unit'
     | '/insights'
     | '/login'
     | '/monthly-report'
@@ -443,7 +455,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  InertialMeasurementUnitRoute: typeof InertialMeasurementUnitRoute
+  AdminRoute: typeof AdminRoute
   BehaviorImpactRoute: typeof BehaviorImpactRoute
   BodyRoute: typeof BodyRoute
   BreathworkRoute: typeof BreathworkRoute
@@ -452,6 +464,7 @@ export interface RootRouteChildren {
   CycleRoute: typeof CycleRoute
   DashboardRoute: typeof DashboardRoute
   HealthReportRoute: typeof HealthReportRoute
+  InertialMeasurementUnitRoute: typeof InertialMeasurementUnitRoute
   InsightsRoute: typeof InsightsRoute
   LoginRoute: typeof LoginRoute
   MonthlyReportRoute: typeof MonthlyReportRoute
@@ -553,6 +566,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InsightsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/inertial-measurement-unit': {
+      id: '/inertial-measurement-unit'
+      path: '/inertial-measurement-unit'
+      fullPath: '/inertial-measurement-unit'
+      preLoaderRoute: typeof InertialMeasurementUnitRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/health-report': {
       id: '/health-report'
       path: '/health-report'
@@ -609,11 +629,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BehaviorImpactRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/inertial-measurement-unit': {
-      id: '/inertial-measurement-unit'
-      path: '/inertial-measurement-unit'
-      fullPath: '/inertial-measurement-unit'
-      preLoaderRoute: typeof InertialMeasurementUnitRouteImport
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -773,7 +793,7 @@ const TrainingRouteWithChildren = TrainingRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  InertialMeasurementUnitRoute: InertialMeasurementUnitRoute,
+  AdminRoute: AdminRoute,
   BehaviorImpactRoute: BehaviorImpactRoute,
   BodyRoute: BodyRoute,
   BreathworkRoute: BreathworkRoute,
@@ -782,6 +802,7 @@ const rootRouteChildren: RootRouteChildren = {
   CycleRoute: CycleRoute,
   DashboardRoute: DashboardRoute,
   HealthReportRoute: HealthReportRoute,
+  InertialMeasurementUnitRoute: InertialMeasurementUnitRoute,
   InsightsRoute: InsightsRoute,
   LoginRoute: LoginRoute,
   MonthlyReportRoute: MonthlyReportRoute,

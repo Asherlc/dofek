@@ -290,7 +290,7 @@ describe("createAuthRouter", () => {
       });
       const { app, fakeDb } = createTestApp();
       vi.mocked(fakeDb.execute).mockResolvedValue([
-        { id: "user-1", name: "Alice", email: "alice@test.com" },
+        { id: "user-1", name: "Alice", email: "alice@test.com", is_admin: false },
       ]);
       const res = await request(app, "get", "/api/auth/me");
       expect(res.status).toBe(200);
@@ -1372,7 +1372,7 @@ describe("createAuthRouter", () => {
         expiresAt: new Date("2027-01-01"),
       });
       vi.mocked(fakeDb.execute).mockResolvedValue([
-        { id: "user-1", name: "Alice", email: "alice@test.com" },
+        { id: "user-1", name: "Alice", email: "alice@test.com", is_admin: false },
       ]);
     }
 
@@ -1395,7 +1395,12 @@ describe("createAuthRouter", () => {
       const res = await request(app, "get", "/api/auth/me");
       expect(res.status).toBe(200);
       const data = JSON.parse(res.body);
-      expect(data).toEqual({ id: "user-1", name: "Alice", email: "alice@test.com" });
+      expect(data).toEqual({
+        id: "user-1",
+        name: "Alice",
+        email: "alice@test.com",
+        isAdmin: false,
+      });
     });
 
     it("falls back to 'unknown' user-agent gracefully", async () => {
@@ -2443,7 +2448,7 @@ describe("createAuthRouter", () => {
         expiresAt: new Date("2027-01-01"),
       });
       vi.mocked(fakeDb.execute).mockResolvedValue([
-        { id: "user-1", name: "Alice", email: "alice@test.com" },
+        { id: "user-1", name: "Alice", email: "alice@test.com", is_admin: false },
       ]);
     }
 
