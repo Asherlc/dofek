@@ -50,7 +50,7 @@ export const Route = createRootRoute({
     if (dest) throw redirect({ to: dest });
   },
   validateSearch: (search: Record<string, unknown>): { onboarding?: boolean } => ({
-    onboarding: search.onboarding === "true" || undefined,
+    onboarding: search.onboarding === true || search.onboarding === "true" || undefined,
   }),
   component: () => (
     <AuthProvider>

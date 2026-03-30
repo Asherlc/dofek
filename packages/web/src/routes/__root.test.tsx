@@ -6,16 +6,23 @@ const mockNavigate = vi.hoisted(() => vi.fn());
 const mockUseAuth = vi.hoisted(() => vi.fn());
 const mockUseLocation = vi.hoisted(() => vi.fn());
 
-// Capture the component passed to createRootRoute so we can render it directly,
-// avoiding type assertions on the mocked Route object.
+// Capture the component and validateSearch passed to createRootRoute so we can
+// test them directly, avoiding type assertions on the mocked Route object.
 const captured = vi.hoisted(() => {
-  const ref: { component: (() => React.ReactElement) | null } = { component: null };
+  const ref: {
+    component: (() => React.ReactElement) | null;
+    validateSearch: ((search: Record<string, unknown>) => { onboarding?: boolean }) | null;
+  } = { component: null, validateSearch: null };
   return ref;
 });
 
 vi.mock("@tanstack/react-router", () => ({
-  createRootRoute: (options: { component: () => React.ReactElement }) => {
+  createRootRoute: (options: {
+    component: () => React.ReactElement;
+    validateSearch?: (search: Record<string, unknown>) => { onboarding?: boolean };
+  }) => {
     captured.component = options.component;
+    captured.validateSearch = options.validateSearch ?? null;
     return {};
   },
   Outlet: () => <div data-testid="outlet" />,
@@ -43,6 +50,33 @@ const authenticatedUser = { id: "u1", name: "Alice", email: null };
 afterEach(() => {
   cleanup();
   mockNavigate.mockClear();
+});
+
+describe("validateSearch", () => {
+  function validate(search: Record<string, unknown>) {
+    if (!captured.validateSearch) throw new Error("validateSearch not captured");
+    return captured.validateSearch(search);
+  }
+
+  it("parses boolean true (TanStack Router default JSON parser)", () => {
+    expect(validate({ onboarding: true })).toEqual({ onboarding: true });
+  });
+
+  it("parses string 'true' (plain query string fallback)", () => {
+    expect(validate({ onboarding: "true" })).toEqual({ onboarding: true });
+  });
+
+  it("returns undefined for missing param", () => {
+    expect(validate({})).toEqual({ onboarding: undefined });
+  });
+
+  it("returns undefined for false", () => {
+    expect(validate({ onboarding: false })).toEqual({ onboarding: undefined });
+  });
+
+  it("returns undefined for string 'false'", () => {
+    expect(validate({ onboarding: "false" })).toEqual({ onboarding: undefined });
+  });
 });
 
 describe("AuthGate", () => {
