@@ -251,8 +251,11 @@ async function drainBuffer(
       if (stats.dataNotificationCount > 0) {
         logger.info(
           LOG_CATEGORY,
-          `drain stats: packets=${stats.packetTypes} cmdResp=${stats.lastCommandResponse} notify=${stats.isNotifying} frames=${stats.totalFramesParsed} rtBuf=${stats.realtimeBufferCount ?? "?"} rt0x28=${stats.realtimeDebug ?? "?"}`,
+          `drain stats: rtBuf=${stats.realtimeBufferCount ?? "?"} 0x28=${stats.realtimeDebug ?? "?"}`,
         );
+        if (stats.compactSamples) {
+          logger.info(LOG_CATEGORY, `compact 0x28 samples: ${stats.compactSamples}`);
+        }
       }
     }
   } catch {

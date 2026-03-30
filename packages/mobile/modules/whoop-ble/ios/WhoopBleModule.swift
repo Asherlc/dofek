@@ -270,6 +270,7 @@ public class WhoopBleModule: Module {
                     "lastWriteError": self.lastWriteError ?? "none",
                     "realtimeBufferCount": self.realtimeDataBuffer.count,
                     "realtimeDebug": self.lastRealtimeDebug,
+                    "compactSamples": self.recentCompactHexSamples.joined(separator: "|"),
                 ]
             }
         }
@@ -697,6 +698,14 @@ public class WhoopBleModule: Module {
         NSLog("[WhoopBLE] sending TOGGLE_OPTICAL_MODE on connect")
         peripheral.writeValue(opticalCommand, for: cmdChar, type: .withResponse)
 
+        // Send SEND_R10_R11_REALTIME to request full realtime data (116-byte 0x28 packets
+        // with HR, quaternion, and optical data instead of the 24-byte compact status beacon).
+        let r10r11Command = WhoopBleFrameParser.buildCommandData(
+            command: WhoopBleConstants.commandSendR10R11Realtime
+        )
+        NSLog("[WhoopBLE] sending SEND_R10_R11_REALTIME on connect")
+        peripheral.writeValue(r10r11Command, for: cmdChar, type: .withResponse)
+
         // Auto-resume IMU streaming after reconnect (e.g., strap came back in range)
         if wasStreaming {
             wasStreaming = false
@@ -730,6 +739,8 @@ public class WhoopBleModule: Module {
 
     /// Diagnostic: first 0x28 payload hex + extraction result
     private var lastRealtimeDebug: String = "none"
+    /// Last 5 unique compact 0x28 data byte hex values (after 13-byte header)
+    private var recentCompactHexSamples: [String] = []
 
     func handleCommandResponse(_ data: Data) {
         cmdNotificationCount += 1
@@ -801,13 +812,13 @@ public class WhoopBleModule: Module {
             if let realtimeData = WhoopBleFrameParser.extractRealtimeData(from: frame) {
                 newRealtimeData.append(realtimeData)
 
-                // Log optical bytes periodically (every 30th sample ≈ every 30s at 1 Hz)
-                let totalRealtime = packetTypeCounts[WhoopBleConstants.packetTypeRealtimeData] ?? 0
-                if totalRealtime % 30 == 1 {
-                    let hex = realtimeData.opticalBytes.map { String(format: "%02x", $0) }.joined()
-                    let hasNonZero = realtimeData.opticalBytes.contains { $0 != 0 }
-                    NSLog("[WhoopBLE] optical/PPG bytes (hr=%d): %@ nonzero=%@",
-                          realtimeData.heartRate, hex, hasNonZero ? "YES" : "NO")
+                // Capture recent unique compact hex samples for analysis
+                let dataHex = realtimeData.opticalBytes.map { String(format: "%02x", $0) }.joined()
+                if recentCompactHexSamples.last != dataHex {
+                    recentCompactHexSamples.append(dataHex)
+                    if recentCompactHexSamples.count > 10 {
+                        recentCompactHexSamples.removeFirst()
+                    }
                 }
             } else if frame.packetType == WhoopBleConstants.packetTypeRealtimeData {
                 let totalRealtime = packetTypeCounts[WhoopBleConstants.packetTypeRealtimeData] ?? 0

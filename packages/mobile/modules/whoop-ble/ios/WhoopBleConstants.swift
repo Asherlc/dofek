@@ -94,6 +94,7 @@ enum WhoopBleConstants {
     static let commandToggleImuModeHistorical: UInt8 = 0x69
     static let commandToggleImuMode: UInt8 = 0x6A
     static let commandToggleOpticalMode: UInt8 = 0x6C
+    static let commandSendR10R11Realtime: UInt8 = 0x3F
 
     /// CMD_FROM_STRAP characteristic (notify): suffix 0003
     static func cmdFromStrapUUID(forService serviceUUID: CBUUID) -> CBUUID {
