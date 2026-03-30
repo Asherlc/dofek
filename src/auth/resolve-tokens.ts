@@ -1,5 +1,5 @@
 import type { SyncDatabase } from "../db/index.ts";
-import { loadTokens, saveTokens } from "../db/tokens.ts";
+import { deleteTokens, loadTokens, saveTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
 import type { OAuthConfig, TokenSet } from "./oauth.ts";
 import { refreshAccessToken } from "./oauth.ts";
@@ -46,7 +46,25 @@ export async function resolveOAuthTokens(options: {
     throw new Error(`No refresh token for ${providerName}`);
   }
 
-  const refreshed = await refreshAccessToken(config, tokens.refreshToken, fetchFn);
-  await saveTokens(db, providerId, refreshed);
-  return refreshed;
+  try {
+    const refreshed = await refreshAccessToken(config, tokens.refreshToken, fetchFn);
+    await saveTokens(db, providerId, refreshed);
+    return refreshed;
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    // When the authorization server returns invalid_grant, the refresh token
+    // has been revoked or expired. Delete the stored tokens so the sync
+    // scheduler stops retrying every cycle — the user must re-authorize.
+    if (message.includes("invalid_grant")) {
+      logger.warn(
+        `[${providerId}] Refresh token revoked, deleting stored tokens. ` +
+          `User must re-authorize ${providerName}.`,
+      );
+      await deleteTokens(db, providerId);
+      throw new Error(
+        `${providerName} authorization revoked — re-connect the provider to resume syncing.`,
+      );
+    }
+    throw error;
+  }
 }

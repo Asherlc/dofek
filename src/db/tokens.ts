@@ -55,6 +55,15 @@ export async function saveTokens(
 }
 
 /**
+ * Delete stored tokens for a provider (e.g., after a revoked refresh token).
+ * After deletion, `loadTokens` returns null and the provider won't be synced
+ * until the user re-authorizes.
+ */
+export async function deleteTokens(db: SyncDatabase, providerId: string): Promise<void> {
+  await db.delete(oauthToken).where(eq(oauthToken.providerId, providerId));
+}
+
+/**
  * Load stored tokens for a provider. Returns null if none exist.
  */
 export async function loadTokens(db: SyncDatabase, providerId: string): Promise<TokenSet | null> {
