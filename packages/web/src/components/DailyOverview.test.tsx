@@ -58,7 +58,7 @@ describe("DailyOverview", () => {
         sleepLoading={true}
       />,
     );
-    const skeletons = document.querySelectorAll(".animate-pulse");
+    const skeletons = document.querySelectorAll(".shimmer");
     expect(skeletons.length).toBeGreaterThan(0);
   });
 
@@ -151,7 +151,7 @@ describe("DailyOverview", () => {
     // Sleep ring should render
     expect(screen.getByText("Sleep")).toBeTruthy();
     // Strain ring should show a skeleton pulse
-    const skeletons = document.querySelectorAll(".animate-pulse");
+    const skeletons = document.querySelectorAll(".shimmer");
     expect(skeletons.length).toBe(2); // circle + label skeleton
   });
 

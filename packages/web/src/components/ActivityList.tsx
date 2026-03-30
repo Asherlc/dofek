@@ -100,7 +100,7 @@ export function ActivityList({
               <tr
                 key={a.id}
                 onClick={() => navigate({ to: "/activity/$id", params: { id: a.id } })}
-                className="border-b border-border/50 hover:bg-surface-hover cursor-pointer"
+                className="border-b border-border/50 hover:bg-surface-hover cursor-pointer activity-row"
               >
                 <td className="py-2 pr-4 text-foreground whitespace-nowrap">
                   {formatActivityDate(a.started_at)}

@@ -5,7 +5,7 @@ import {
   useLocation,
   useNavigate,
 } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AuthProvider, useAuth } from "../lib/auth-context.tsx";
 
 const PUBLIC_PATHS = new Set(["/", "/login", "/privacy"]);
@@ -13,6 +13,30 @@ const PUBLIC_PATHS = new Set(["/", "/login", "/privacy"]);
 const LEGACY_REDIRECTS: Record<string, string> = {
   "/nutrition-analytics": "/nutrition/analytics",
 };
+
+function PageTransition({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
+  const [transitionKey, setTransitionKey] = useState(location.pathname);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setTransitionKey(location.pathname);
+    // Re-trigger the animation by removing and re-adding the class
+    const el = containerRef.current;
+    if (el) {
+      el.classList.remove("page-enter");
+      // Force reflow to restart animation
+      void el.offsetHeight;
+      el.classList.add("page-enter");
+    }
+  }, [location.pathname]);
+
+  return (
+    <div key={transitionKey} ref={containerRef} className="page-enter">
+      {children}
+    </div>
+  );
+}
 
 function AuthGate() {
   const { user, isLoading } = useAuth();
@@ -41,7 +65,11 @@ function AuthGate() {
     return null;
   }
 
-  return <Outlet />;
+  return (
+    <PageTransition>
+      <Outlet />
+    </PageTransition>
+  );
 }
 
 export const Route = createRootRoute({

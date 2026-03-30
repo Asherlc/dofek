@@ -84,6 +84,108 @@ body {
   animation: heartbeat 3s ease-in-out infinite;
 }
 
+/* ── Page transition ── */
+.page-enter {
+  animation: pageIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes pageIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Collapsible section expand/collapse ── */
+.collapsible-content {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition:
+    grid-template-rows 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.25s ease;
+  opacity: 1;
+}
+
+.collapsible-content[data-collapsed="true"] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+.collapsible-inner {
+  overflow: hidden;
+}
+
+/* ── Shimmer loading effect ── */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(74, 158, 122, 0.06) 25%,
+    rgba(74, 158, 122, 0.15) 50%,
+    rgba(74, 158, 122, 0.06) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.8s ease-in-out infinite;
+}
+
+/* ── Staggered card entrance ── */
+.stagger-fade-in {
+  opacity: 0;
+  transform: translateY(8px);
+  animation: staggerIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes staggerIn {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Mobile nav slide ── */
+.nav-slide-enter {
+  animation: navSlideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes navSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Activity row hover slide ── */
+.activity-row {
+  transition:
+    background-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.activity-row:hover {
+  transform: translateX(2px);
+}
+
+/* ── Progress bar grow animation ── */
+.progress-bar-animated {
+  transition: width 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 /* ── Hide scrollbar but keep scroll functionality ── */
 @utility scrollbar-hide {
   -ms-overflow-style: none;

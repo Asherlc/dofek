@@ -1,3 +1,4 @@
+import { useCountUp } from "../hooks/useCountUp.ts";
 import { formatNumber } from "../lib/format.ts";
 
 interface HealthMetric {
@@ -50,12 +51,23 @@ const statusText = {
   unknown: "—",
 };
 
+function MetricValue({ value }: { value: number | null | undefined }) {
+  const decimals = value != null && !Number.isInteger(value) ? 1 : 0;
+  const display = useCountUp(value ?? null, 600, decimals);
+
+  if (value == null) {
+    return <span className="text-dim">—</span>;
+  }
+
+  return <>{display}</>;
+}
+
 export function HealthStatusBar({ metrics, loading }: HealthStatusBarProps) {
   if (loading) {
     return (
       <div className="flex gap-3">
         {["skeleton-1", "skeleton-2", "skeleton-3", "skeleton-4", "skeleton-5"].map((id) => (
-          <div key={id} className="flex-1 h-16 rounded-lg bg-skeleton animate-pulse" />
+          <div key={id} className="flex-1 h-16 rounded-lg shimmer" />
         ))}
       </div>
     );
@@ -63,29 +75,27 @@ export function HealthStatusBar({ metrics, loading }: HealthStatusBarProps) {
 
   return (
     <div className="flex gap-3 overflow-x-auto">
-      {metrics.map((m) => {
-        const status = getStatus(m.value, m.avg, m.stddev, m.lowerBetter);
+      {metrics.map((metric, index) => {
+        const status = getStatus(metric.value, metric.avg, metric.stddev, metric.lowerBetter);
         return (
-          <div key={m.label} className="flex-1 min-w-[120px] card card-hover p-3">
+          <div
+            key={metric.label}
+            className="flex-1 min-w-[120px] card card-hover p-3 stagger-fade-in"
+            style={{ animationDelay: `${index * 80}ms` }}
+          >
             <div className="flex items-center gap-2 mb-1">
               <div className={`w-2 h-2 rounded-full ${statusColors[status]}`} />
-              <span className="text-xs text-muted uppercase tracking-wider">{m.label}</span>
+              <span className="text-xs text-muted uppercase tracking-wider">{metric.label}</span>
             </div>
             <div className="text-lg font-semibold font-mono tabular-nums">
-              {m.value != null ? (
-                <>
-                  {typeof m.value === "number" && !Number.isInteger(m.value)
-                    ? formatNumber(m.value)
-                    : m.value}
-                  <span className="ml-1 text-xs font-normal text-subtle">{m.unit}</span>
-                </>
-              ) : (
-                <span className="text-dim">—</span>
+              <MetricValue value={metric.value} />
+              {metric.value != null && (
+                <span className="ml-1 text-xs font-normal text-subtle">{metric.unit}</span>
               )}
             </div>
             <div className="text-[10px] text-subtle">
-              {status !== "unknown" && m.avg != null
-                ? `avg ${formatNumber(Number(m.avg))} · ${statusText[status]}`
+              {status !== "unknown" && metric.avg != null
+                ? `avg ${formatNumber(Number(metric.avg))} · ${statusText[status]}`
                 : ""}
             </div>
           </div>

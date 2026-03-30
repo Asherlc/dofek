@@ -5,3 +5,7 @@ export function ChartLoadingSkeleton({ height = 200 }: { height?: number }) {
     </div>
   );
 }
+
+export function CardSkeleton({ height = 200 }: { height?: number }) {
+  return <div className="rounded-xl shimmer" style={{ height }} />;
+}
