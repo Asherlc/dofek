@@ -20,6 +20,7 @@ vi.mock("../lib/metrics.ts", () => ({
 import { queryCache } from "../lib/cache.ts";
 import { cacheHitsTotal, cacheMissesTotal } from "../lib/metrics.ts";
 import {
+  adminProcedure,
   CacheTTL,
   type Context,
   cachedProtectedQuery,
@@ -95,6 +96,73 @@ describe("trpc", () => {
 
       const result = await caller.test();
       expect(result).toBe("user-123");
+    });
+  });
+
+  describe("admin middleware", () => {
+    it("rejects unauthenticated requests", async () => {
+      const testRouter = router({
+        test: adminProcedure.query(() => "ok"),
+      });
+
+      const trpc = initTRPC.context<Context>().create();
+      const createCaller = trpc.createCallerFactory(testRouter);
+      const caller = createCaller({
+        db: { execute: vi.fn() },
+        userId: null,
+        timezone: "UTC",
+      });
+
+      await expect(caller.test()).rejects.toThrow(TRPCError);
+      await expect(caller.test()).rejects.toMatchObject({
+        code: "UNAUTHORIZED",
+      });
+    });
+
+    it("rejects non-admin users", async () => {
+      // Mock isAdmin to return false
+      vi.doMock("../auth/admin.ts", () => ({
+        isAdmin: vi.fn().mockResolvedValue(false),
+      }));
+
+      const testRouter = router({
+        test: adminProcedure.query(() => "ok"),
+      });
+
+      const trpc = initTRPC.context<Context>().create();
+      const createCaller = trpc.createCallerFactory(testRouter);
+      const caller = createCaller({
+        db: { execute: vi.fn() },
+        userId: "user-123",
+        timezone: "UTC",
+      });
+
+      await expect(caller.test()).rejects.toThrow(TRPCError);
+      await expect(caller.test()).rejects.toMatchObject({
+        code: "FORBIDDEN",
+      });
+    });
+
+    it("allows admin users through", async () => {
+      // Mock isAdmin to return true
+      vi.doMock("../auth/admin.ts", () => ({
+        isAdmin: vi.fn().mockResolvedValue(true),
+      }));
+
+      const testRouter = router({
+        test: adminProcedure.query(({ ctx }) => ctx.userId),
+      });
+
+      const trpc = initTRPC.context<Context>().create();
+      const createCaller = trpc.createCallerFactory(testRouter);
+      const caller = createCaller({
+        db: { execute: vi.fn() },
+        userId: "admin-123",
+        timezone: "UTC",
+      });
+
+      const result = await caller.test();
+      expect(result).toBe("admin-123");
     });
   });
 
