@@ -307,7 +307,11 @@ describe("sleep data consistency: multiple sessions per date", () => {
 
   it("weekly report sleep avg must use longest session per date, not average duplicates", async () => {
     await queryCache.invalidateAll();
-    const endDate = new Date().toISOString().slice(0, 10);
+    // Use yesterday as endDate so the "current" ISO week always contains data.
+    // Using today fails on Mondays when the new ISO week has no sleep data yet.
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const endDate = yesterday.toISOString().slice(0, 10);
     const result = await query<WeeklyReportResult>("weeklyReport.report", {
       weeks: 2,
       endDate,
