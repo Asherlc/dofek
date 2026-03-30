@@ -198,6 +198,7 @@ vi.mock("react-native-svg", () => {
     SvgXml: svgComponent("SvgXml"),
     Circle: svgComponent("Circle"),
     Line: svgComponent("Line"),
+    Polygon: svgComponent("Polygon"),
     Polyline: svgComponent("Polyline"),
     Rect: svgComponent("Rect"),
     Path: svgComponent("Path"),
