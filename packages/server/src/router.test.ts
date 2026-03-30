@@ -60,6 +60,7 @@ vi.mock("./routers/training.ts", () => ({ trainingRouter: mockRouter }));
 vi.mock("./routers/trends.ts", () => ({ trendsRouter: mockRouter }));
 vi.mock("./routers/weekly-report.ts", () => ({ weeklyReportRouter: mockRouter }));
 vi.mock("./routers/whoop-auth.ts", () => ({ whoopAuthRouter: mockRouter }));
+vi.mock("./routers/admin.ts", () => ({ adminRouter: mockRouter }));
 
 // Mock trpc
 vi.mock("./trpc.ts", async () => {
@@ -70,6 +71,7 @@ vi.mock("./trpc.ts", async () => {
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
+    adminProcedure: trpc.procedure,
     cachedProtectedQuery: () => trpc.procedure,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
