@@ -80,13 +80,6 @@ export class MuscleGroupVolume {
   }
 }
 
-interface ProgressiveOverloadEntry {
-  exerciseName: string;
-  weeklyVolumes: number[];
-  slopeKgPerWeek: number;
-  isProgressing: boolean;
-}
-
 /** Progressive overload trend for a single exercise. */
 export class ProgressiveOverload {
   readonly #exerciseName: string;

@@ -11,7 +11,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import Svg, { Rect } from "react-native-svg";
+import Svg, { Rect, Text as SvgText } from "react-native-svg";
 import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import {
@@ -231,6 +231,118 @@ function getWhoopWarning(bleState: string, connectionState: string): string | nu
   return null;
 }
 
+function heatmapCellColor(coveragePercent: number): string {
+  if (coveragePercent === 0) return colors.surface;
+  if (coveragePercent < 25) return "#99d1b7";
+  if (coveragePercent < 75) return "#059669";
+  return "#047857";
+}
+
+function DailyCoverageHeatmap({
+  data,
+  isError,
+}: {
+  data: { date: string; hour: number; sampleCount: number; coveragePercent: number }[] | undefined;
+  isError: boolean;
+}) {
+  const { width: screenWidth } = useWindowDimensions();
+  const labelWidth = 80;
+  const padding = 32;
+  const gridWidth = screenWidth - padding - labelWidth;
+  const cellWidth = gridWidth / 24;
+  const cellHeight = 16;
+  const cellGap = 1;
+
+  if (isError) {
+    return (
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Daily Coverage</Text>
+        <Text style={styles.errorText}>Failed to load daily coverage data.</Text>
+      </View>
+    );
+  }
+
+  if (!data || data.length === 0) {
+    return (
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Daily Coverage</Text>
+        <Text style={styles.emptyText}>No data yet</Text>
+      </View>
+    );
+  }
+
+  // Build a lookup: date -> hour -> coveragePercent
+  const cellMap = new Map<string, Map<number, number>>();
+  for (const cell of data) {
+    let hourMap = cellMap.get(cell.date);
+    if (!hourMap) {
+      hourMap = new Map();
+      cellMap.set(cell.date, hourMap);
+    }
+    hourMap.set(cell.hour, cell.coveragePercent);
+  }
+
+  const dates = [...cellMap.keys()].sort().reverse();
+  const svgHeight = dates.length * (cellHeight + cellGap) + 20; // 20 for hour labels
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>Daily Coverage</Text>
+      <Text style={styles.sectionDescription}>When during each day the sensor was recording</Text>
+      <View style={{ flexDirection: "row" }}>
+        <View style={{ width: labelWidth, paddingTop: 20 }}>
+          {dates.map((date) => (
+            <Text
+              key={date}
+              style={{
+                fontSize: 10,
+                color: colors.textSecondary,
+                height: cellHeight + cellGap,
+                lineHeight: cellHeight + cellGap,
+              }}
+            >
+              {date.slice(5)}
+            </Text>
+          ))}
+        </View>
+        <Svg width={gridWidth} height={svgHeight}>
+          {/* Hour labels at top */}
+          {[0, 6, 12, 18, 23].map((hour) => (
+            <SvgText
+              key={`hour-${hour}`}
+              x={hour * cellWidth + cellWidth / 2}
+              y={14}
+              fontSize={9}
+              fill={colors.textSecondary}
+              textAnchor="middle"
+            >
+              {hour}
+            </SvgText>
+          ))}
+          {dates.map((date, dateIndex) => {
+            const hourMap = cellMap.get(date);
+            const hourRange = Array.from({ length: 24 }, (_, index) => index);
+            return hourRange.map((hour) => {
+              const coveragePercent = hourMap?.get(hour) ?? 0;
+              return (
+                <Rect
+                  key={`${date}-${hour}`}
+                  x={hour * cellWidth}
+                  y={20 + dateIndex * (cellHeight + cellGap)}
+                  width={Math.max(cellWidth - cellGap, 1)}
+                  height={cellHeight}
+                  rx={2}
+                  fill={heatmapCellColor(coveragePercent)}
+                />
+              );
+            });
+          })}
+        </Svg>
+      </View>
+    </View>
+  );
+}
+
 export default function InertialMeasurementUnitScreen() {
   const available = isAccelerometerRecordingAvailable();
   const recording = available && isRecordingActive();
@@ -255,7 +367,7 @@ export default function InertialMeasurementUnitScreen() {
   }, []);
 
   const syncStatus = trpc.inertialMeasurementUnit.getSyncStatus.useQuery();
-  const dailyCounts = trpc.inertialMeasurementUnit.getDailyCounts.useQuery({ days: 30 });
+  const dailyHeatmap = trpc.inertialMeasurementUnit.getDailyHeatmap.useQuery({ days: 30 });
 
   const trpcUtils = trpc.useUtils();
   const whoopImuSetting = trpc.settings.get.useQuery({ key: "whoopAlwaysOnImu" });
@@ -446,32 +558,7 @@ export default function InertialMeasurementUnitScreen() {
 
         <CoverageTimeline />
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Daily Coverage</Text>
-          <Text style={styles.sectionDescription}>
-            Hours of motion data recorded per day over the last 30 days.
-          </Text>
-          {dailyCounts.data?.map((day) => (
-            <View key={day.date} style={styles.coverageRow}>
-              <Text style={styles.coverageDate}>{day.date}</Text>
-              <View style={styles.coverageBarContainer}>
-                <View
-                  style={[
-                    styles.coverageBar,
-                    { width: `${Math.min(day.hoursCovered / 24, 1) * 100}%` },
-                  ]}
-                />
-              </View>
-              <Text style={styles.coverageHours}>{day.hoursCovered.toFixed(1)}h</Text>
-            </View>
-          ))}
-          {dailyCounts.isError && (
-            <Text style={styles.errorText}>Failed to load daily coverage data.</Text>
-          )}
-          {!dailyCounts.isError && (!dailyCounts.data || dailyCounts.data.length === 0) && (
-            <Text style={styles.emptyText}>No data yet</Text>
-          )}
-        </View>
+        <DailyCoverageHeatmap data={dailyHeatmap.data} isError={dailyHeatmap.isError} />
       </ScrollView>
     </>
   );
@@ -518,17 +605,6 @@ const styles = StyleSheet.create({
   },
   statLabel: { fontSize: 14, color: colors.textSecondary },
   statValue: { fontSize: 14, fontWeight: "600", color: colors.text },
-  coverageRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 4 },
-  coverageDate: { width: 90, fontSize: 12, color: colors.textSecondary },
-  coverageBarContainer: {
-    flex: 1,
-    height: 12,
-    backgroundColor: colors.surface,
-    borderRadius: 6,
-    overflow: "hidden",
-  },
-  coverageBar: { height: "100%", backgroundColor: colors.accent, borderRadius: 6 },
-  coverageHours: { width: 40, fontSize: 12, color: colors.textSecondary, textAlign: "right" },
   emptyText: { color: colors.textTertiary, textAlign: "center", paddingVertical: 16 },
   errorText: { color: colors.negative, textAlign: "center", paddingVertical: 16 },
   warningRow: {

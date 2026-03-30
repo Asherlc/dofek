@@ -11,6 +11,14 @@ export const inertialMeasurementUnitRouter = router({
       return repo.getDailyCounts(input.days);
     }),
 
+  /** Hourly heatmap for the last N days — powers the daily activity timeline */
+  getDailyHeatmap: protectedProcedure
+    .input(z.object({ days: z.number().int().min(1).max(365).default(30) }))
+    .query(async ({ ctx, input }) => {
+      const repo = new InertialMeasurementUnitRepository(ctx.db, ctx.userId);
+      return repo.getDailyHeatmap(input.days);
+    }),
+
   /** Sync status: latest sync time, total samples, device breakdown */
   getSyncStatus: protectedProcedure.query(async ({ ctx }) => {
     const repo = new InertialMeasurementUnitRepository(ctx.db, ctx.userId);
