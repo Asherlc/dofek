@@ -102,7 +102,9 @@ async function applyMigrations() {
 
 async function seedData() {
   // Clear existing seed data (idempotent re-runs)
+  await sql`DELETE FROM fitness.metric_stream WHERE provider_id IN ('whoop', 'apple_health')`;
   await sql`DELETE FROM fitness.sleep_session WHERE provider_id IN ('whoop', 'apple_health')`;
+  await sql`DELETE FROM fitness.cardio_activity WHERE provider_id IN ('whoop', 'apple_health')`;
   await sql`DELETE FROM fitness.activity WHERE provider_id IN ('whoop', 'apple_health')`;
   await sql`DELETE FROM fitness.daily_metrics WHERE provider_id IN ('whoop', 'apple_health')`;
   await sql`DELETE FROM fitness.nutrition_daily WHERE provider_id IN ('whoop', 'apple_health')`;
@@ -243,18 +245,40 @@ async function seedData() {
       `${String(endedAtDate.getHours()).padStart(2, "0")}:${String(endedAtDate.getMinutes()).padStart(2, "0")}:00`,
     );
 
-    await sql`
+    const activityName =
+      activityType === "cycling" ? "Morning Ride" : activityType === "running" ? "Easy Run" : "Gym Session";
+    const [{ id: activityId }] = await sql<{ id: string }[]>`
 			INSERT INTO fitness.activity (
 				provider_id, user_id, external_id,
 				activity_type, started_at, ended_at, name
 			) VALUES (
 				'whoop', ${USER_ID}, ${"act-" + daysAgo},
 				${activityType}, ${startedAt}, ${endedAt},
-				${activityType === "cycling" ? "Morning Ride" : activityType === "running" ? "Easy Run" : "Gym Session"}
-			)
+				${activityName}
+			) RETURNING id
 		`;
+    // cardio_activity FK required by metric_stream
+    await sql`
+			INSERT INTO fitness.cardio_activity (id, provider_id, external_id, activity_type, started_at, ended_at, name)
+			VALUES (${activityId}, 'whoop', ${"act-" + daysAgo}, ${activityType}, ${startedAt}, ${endedAt}, ${activityName})
+			ON CONFLICT DO NOTHING
+		`;
+
+    // Seed metric_stream samples so activity_summary computes avg_hr / max_hr
+    const baseHr = activityType === "strength_training" ? randInt(100, 120) : randInt(130, 155);
+    const sampleCount = Math.floor(durationMin / 5); // one sample every 5 min
+    for (let sample = 0; sample < sampleCount; sample++) {
+      const sampleTime = localTimestamp(
+        date,
+        `${String(startHour + Math.floor((sample * 5) / 60)).padStart(2, "0")}:${String((sample * 5) % 60).padStart(2, "0")}:00`,
+      );
+      await sql`
+				INSERT INTO fitness.metric_stream (recorded_at, user_id, activity_id, provider_id, heart_rate)
+				VALUES (${sampleTime}, ${USER_ID}, ${activityId}, 'whoop', ${randInt(baseHr - 15, baseHr + 25)})
+			`;
+    }
   }
-  console.log("Seeded: 30 activities");
+  console.log("Seeded: 30 activities with HR samples");
 
   // -----------------------------------------------------------------------
   // Nutrition (30 days)
@@ -306,6 +330,11 @@ async function refreshViews() {
     await sql`REFRESH MATERIALIZED VIEW fitness.v_activity`;
   } catch {
     // v_activity may fail if activity_summary depends on it
+  }
+  try {
+    await sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`;
+  } catch {
+    // activity_summary depends on v_activity + metric_stream
   }
   console.log("Views refreshed");
 }
