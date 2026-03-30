@@ -17,49 +17,54 @@ Usage as a CLI:
     python fetch_training_data.py  # reads from R2 using env vars
 """
 
+from __future__ import annotations
+
 import argparse
 import io
 import json
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Any
 
 import pandas as pd
-
 
 # ---------------------------------------------------------------------------
 # Manifest handling
 # ---------------------------------------------------------------------------
 
-def load_manifest_local(base_path: Path) -> dict:
+
+def load_manifest_local(base_path: Path) -> dict[str, Any]:
     """Load manifest.json from a local directory.
 
     The manifest describes which CSV files are available, their types
     (metric_stream or device_stream), and any metadata the export job attached.
     """
-    manifest_path = base_path / "manifest.json"
+    manifest_path: Path = base_path / "manifest.json"
     if not manifest_path.exists():
         raise FileNotFoundError(
             f"manifest.json not found at {manifest_path}. "
             "Make sure the training data export has been run."
         )
-    with open(manifest_path, "r") as f:
-        return json.load(f)
+    with manifest_path.open() as f:
+        manifest: dict[str, Any] = json.load(f)
+    return manifest
 
 
-def load_manifest_r2(s3_client, bucket: str) -> dict:
+def load_manifest_r2(s3_client: Any, bucket: str) -> dict[str, Any]:
     """Load manifest.json from Cloudflare R2 (S3-compatible).
 
     R2 uses the same S3 API, so we read the object into memory and parse it.
     """
-    response = s3_client.get_object(Bucket=bucket, Key="manifest.json")
-    body = response["Body"].read().decode("utf-8")
-    return json.loads(body)
+    response: dict[str, Any] = s3_client.get_object(Bucket=bucket, Key="manifest.json")
+    body: str = response["Body"].read().decode("utf-8")
+    manifest: dict[str, Any] = json.loads(body)
+    return manifest
 
 
 # ---------------------------------------------------------------------------
 # CSV loading helpers
 # ---------------------------------------------------------------------------
+
 
 def read_csv_local(base_path: Path, filename: str) -> pd.DataFrame:
     """Read a single CSV file from the local filesystem.
@@ -67,22 +72,22 @@ def read_csv_local(base_path: Path, filename: str) -> pd.DataFrame:
     We let pandas infer most dtypes, but ensure timestamp columns are parsed
     as proper datetime objects for downstream time-alignment.
     """
-    filepath = base_path / filename
+    filepath: Path = base_path / filename
     if not filepath.exists():
         raise FileNotFoundError(f"CSV file not found: {filepath}")
-    df = pd.read_csv(filepath, parse_dates=["timestamp"])
+    df: pd.DataFrame = pd.read_csv(filepath, parse_dates=["timestamp"])
     return df
 
 
-def read_csv_r2(s3_client, bucket: str, key: str) -> pd.DataFrame:
+def read_csv_r2(s3_client: Any, bucket: str, key: str) -> pd.DataFrame:
     """Read a single CSV file from R2 into a pandas DataFrame.
 
     Downloads the object body into an in-memory buffer so pandas can parse it
     without writing a temp file to disk.
     """
-    response = s3_client.get_object(Bucket=bucket, Key=key)
-    body = response["Body"].read()
-    df = pd.read_csv(io.BytesIO(body), parse_dates=["timestamp"])
+    response: dict[str, Any] = s3_client.get_object(Bucket=bucket, Key=key)
+    body: bytes = response["Body"].read()
+    df: pd.DataFrame = pd.read_csv(io.BytesIO(body), parse_dates=["timestamp"])
     return df
 
 
@@ -90,7 +95,8 @@ def read_csv_r2(s3_client, bucket: str, key: str) -> pd.DataFrame:
 # R2 client setup
 # ---------------------------------------------------------------------------
 
-def create_r2_client():
+
+def create_r2_client() -> Any:
     """Create a boto3 S3 client configured for Cloudflare R2.
 
     R2 is S3-compatible, so we use boto3 with a custom endpoint URL.
@@ -101,12 +107,12 @@ def create_r2_client():
     """
     import boto3
 
-    endpoint = os.environ.get("R2_ENDPOINT")
-    access_key = os.environ.get("R2_ACCESS_KEY_ID")
-    secret_key = os.environ.get("R2_SECRET_ACCESS_KEY")
+    endpoint: str | None = os.environ.get("R2_ENDPOINT")
+    access_key: str | None = os.environ.get("R2_ACCESS_KEY_ID")
+    secret_key: str | None = os.environ.get("R2_SECRET_ACCESS_KEY")
 
-    if not all([endpoint, access_key, secret_key]):
-        raise EnvironmentError(
+    if not all((endpoint, access_key, secret_key)):
+        raise OSError(
             "R2 credentials not fully configured. Required env vars: "
             "R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY"
         )
@@ -125,6 +131,7 @@ def create_r2_client():
 # Main data loading functions
 # ---------------------------------------------------------------------------
 
+
 def load_from_local(base_path: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Load metric_stream and device_stream CSVs from a local directory.
 
@@ -136,15 +143,13 @@ def load_from_local(base_path: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
     Returns:
         (metric_df, device_df) -- two DataFrames ready for training.
     """
-    manifest = load_manifest_local(base_path)
+    manifest: dict[str, Any] = load_manifest_local(base_path)
 
-    metric_files = [
-        f["filename"] for f in manifest["files"]
-        if f["type"] == "metric_stream"
+    metric_files: list[str] = [
+        f["filename"] for f in manifest["files"] if f["type"] == "metric_stream"
     ]
-    device_files = [
-        f["filename"] for f in manifest["files"]
-        if f["type"] == "device_stream"
+    device_files: list[str] = [
+        f["filename"] for f in manifest["files"] if f["type"] == "device_stream"
     ]
 
     if not metric_files:
@@ -153,12 +158,12 @@ def load_from_local(base_path: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
         raise ValueError("No device_stream files listed in manifest")
 
     print(f"Loading {len(metric_files)} metric_stream file(s) from {base_path}")
-    metric_dfs = [read_csv_local(base_path, f) for f in metric_files]
-    metric_df = pd.concat(metric_dfs, ignore_index=True)
+    metric_dfs: list[pd.DataFrame] = [read_csv_local(base_path, f) for f in metric_files]
+    metric_df: pd.DataFrame = pd.concat(metric_dfs, ignore_index=True)
 
     print(f"Loading {len(device_files)} device_stream file(s) from {base_path}")
-    device_dfs = [read_csv_local(base_path, f) for f in device_files]
-    device_df = pd.concat(device_dfs, ignore_index=True)
+    device_dfs: list[pd.DataFrame] = [read_csv_local(base_path, f) for f in device_files]
+    device_df: pd.DataFrame = pd.concat(device_dfs, ignore_index=True)
 
     print(f"Metric stream: {len(metric_df)} rows, columns: {list(metric_df.columns)}")
     print(f"Device stream: {len(device_df)} rows, columns: {list(device_df.columns)}")
@@ -175,20 +180,18 @@ def load_from_r2() -> tuple[pd.DataFrame, pd.DataFrame]:
     Returns:
         (metric_df, device_df) -- two DataFrames ready for training.
     """
-    bucket = os.environ.get("R2_BUCKET")
+    bucket: str | None = os.environ.get("R2_BUCKET")
     if not bucket:
-        raise EnvironmentError("R2_BUCKET env var is required for R2 mode")
+        raise OSError("R2_BUCKET env var is required for R2 mode")
 
-    s3_client = create_r2_client()
-    manifest = load_manifest_r2(s3_client, bucket)
+    s3_client: Any = create_r2_client()
+    manifest: dict[str, Any] = load_manifest_r2(s3_client, bucket)
 
-    metric_files = [
-        f["filename"] for f in manifest["files"]
-        if f["type"] == "metric_stream"
+    metric_files: list[str] = [
+        f["filename"] for f in manifest["files"] if f["type"] == "metric_stream"
     ]
-    device_files = [
-        f["filename"] for f in manifest["files"]
-        if f["type"] == "device_stream"
+    device_files: list[str] = [
+        f["filename"] for f in manifest["files"] if f["type"] == "device_stream"
     ]
 
     if not metric_files:
@@ -197,12 +200,12 @@ def load_from_r2() -> tuple[pd.DataFrame, pd.DataFrame]:
         raise ValueError("No device_stream files listed in manifest")
 
     print(f"Downloading {len(metric_files)} metric_stream file(s) from R2 bucket '{bucket}'")
-    metric_dfs = [read_csv_r2(s3_client, bucket, f) for f in metric_files]
-    metric_df = pd.concat(metric_dfs, ignore_index=True)
+    metric_dfs: list[pd.DataFrame] = [read_csv_r2(s3_client, bucket, f) for f in metric_files]
+    metric_df: pd.DataFrame = pd.concat(metric_dfs, ignore_index=True)
 
     print(f"Downloading {len(device_files)} device_stream file(s) from R2 bucket '{bucket}'")
-    device_dfs = [read_csv_r2(s3_client, bucket, f) for f in device_files]
-    device_df = pd.concat(device_dfs, ignore_index=True)
+    device_dfs: list[pd.DataFrame] = [read_csv_r2(s3_client, bucket, f) for f in device_files]
+    device_df: pd.DataFrame = pd.concat(device_dfs, ignore_index=True)
 
     print(f"Metric stream: {len(metric_df)} rows, columns: {list(metric_df.columns)}")
     print(f"Device stream: {len(device_df)} rows, columns: {list(device_df.columns)}")
@@ -211,7 +214,7 @@ def load_from_r2() -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 def load_training_data(
-    local_path: Optional[str] = None,
+    local_path: str | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """High-level entry point: load training data from local path or R2.
 
@@ -230,15 +233,15 @@ def load_training_data(
     """
     if local_path is not None:
         return load_from_local(Path(local_path))
-    else:
-        return load_from_r2()
+    return load_from_r2()
 
 
 # ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
 
-def main():
+
+def main() -> None:
     """CLI interface for testing data loading independently.
 
     Examples:
@@ -252,7 +255,7 @@ def main():
         R2_BUCKET=training-data \
         python fetch_training_data.py
     """
-    parser = argparse.ArgumentParser(
+    parser: argparse.ArgumentParser = argparse.ArgumentParser(
         description="Load training data from local CSV files or Cloudflare R2"
     )
     parser.add_argument(
@@ -260,9 +263,9 @@ def main():
         type=str,
         default=None,
         help="Path to local directory containing manifest.json and CSV files. "
-             "If not provided, reads from R2 using environment variables.",
+        "If not provided, reads from R2 using environment variables.",
     )
-    args = parser.parse_args()
+    args: argparse.Namespace = parser.parse_args()
 
     metric_df, device_df = load_training_data(local_path=args.local_path)
 

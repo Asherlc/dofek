@@ -28,6 +28,8 @@ Usage:
     python train_activity_classifier.py --local-path ./data/ --epochs 20 --batch-size 64
 """
 
+from __future__ import annotations
+
 import argparse
 from collections import Counter
 from pathlib import Path
@@ -42,20 +44,19 @@ from sklearn.model_selection import train_test_split
 
 from fetch_training_data import load_training_data
 
-
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
 # Window parameters -- these define how we slice continuous streams into
 # fixed-size chunks that the CNN can process.
-WINDOW_DURATION_SECONDS = 60     # Each training sample covers 60 seconds
-METRIC_SAMPLE_RATE_HZ = 1       # Metric stream is recorded at 1 Hz
-DEVICE_SAMPLE_RATE_HZ = 50      # Device stream is recorded at 50 Hz
+WINDOW_DURATION_SECONDS = 60  # Each training sample covers 60 seconds
+METRIC_SAMPLE_RATE_HZ = 1  # Metric stream is recorded at 1 Hz
+DEVICE_SAMPLE_RATE_HZ = 50  # Device stream is recorded at 50 Hz
 
 # Derived grid sizes (number of time slots per window)
-METRIC_GRID_SIZE = WINDOW_DURATION_SECONDS * METRIC_SAMPLE_RATE_HZ    # 60 slots
-DEVICE_GRID_SIZE = WINDOW_DURATION_SECONDS * DEVICE_SAMPLE_RATE_HZ    # 3000 slots
+METRIC_GRID_SIZE = WINDOW_DURATION_SECONDS * METRIC_SAMPLE_RATE_HZ  # 60 slots
+DEVICE_GRID_SIZE = WINDOW_DURATION_SECONDS * DEVICE_SAMPLE_RATE_HZ  # 3000 slots
 
 
 # ---------------------------------------------------------------------------
@@ -86,7 +87,7 @@ DEFAULT_LABEL = "activity"
 REST_LABEL = "rest"
 
 
-def simplify_label(raw_label) -> str:
+def simplify_label(raw_label: str | float | None) -> str:
     """Map a raw activity_type string to a simplified class label.
 
     Examples:
@@ -105,6 +106,7 @@ def simplify_label(raw_label) -> str:
 # Data preprocessing: building time-aligned grids
 # ---------------------------------------------------------------------------
 
+
 def discover_metric_channels(metric_df: pd.DataFrame) -> list[str]:
     """Identify which numeric columns in the metric stream are sensor channels.
 
@@ -113,9 +115,9 @@ def discover_metric_channels(metric_df: pd.DataFrame) -> list[str]:
     the channel ordering in the input tensor.
     """
     # Columns that are metadata, not sensor readings
-    exclude_columns = {"timestamp", "activity_type", "activity_id", "user_id", "source"}
-    numeric_cols = metric_df.select_dtypes(include=[np.number]).columns.tolist()
-    channels = [c for c in numeric_cols if c not in exclude_columns]
+    exclude_columns: set[str] = {"timestamp", "activity_type", "activity_id", "user_id", "source"}
+    numeric_cols: list[str] = metric_df.select_dtypes(include=[np.number]).columns.tolist()
+    channels: list[str] = [c for c in numeric_cols if c not in exclude_columns]
     channels.sort()  # Deterministic ordering
     return channels
 
@@ -132,13 +134,18 @@ def discover_device_channels(device_df: pd.DataFrame) -> dict[str, list[str]]:
         Dict mapping device_type -> list of channel column names.
         Example: {"watch": ["accel_x", "accel_y", "accel_z", "gyro_x", ...]}
     """
-    exclude_columns = {
-        "timestamp", "device_type", "device_id", "activity_id", "user_id", "source",
+    exclude_columns: set[str] = {
+        "timestamp",
+        "device_type",
+        "device_id",
+        "activity_id",
+        "user_id",
+        "source",
     }
-    device_channels = {}
+    device_channels: dict[str, list[str]] = {}
     for device_type, group in device_df.groupby("device_type"):
-        numeric_cols = group.select_dtypes(include=[np.number]).columns.tolist()
-        channels = [c for c in numeric_cols if c not in exclude_columns]
+        numeric_cols: list[str] = group.select_dtypes(include=[np.number]).columns.tolist()
+        channels: list[str] = [c for c in numeric_cols if c not in exclude_columns]
         channels.sort()
         # Only include channels that actually have data for this device
         # (some columns may be all-NaN for certain device types)
@@ -169,53 +176,57 @@ def build_metric_windows(
     metric_df[metric_channels] = metric_df[metric_channels].fillna(0)
 
     # Determine the time range of the data
-    t_min = metric_df["timestamp"].min()
-    t_max = metric_df["timestamp"].max()
-    total_seconds = (t_max - t_min).total_seconds()
+    t_min: pd.Timestamp = metric_df["timestamp"].min()
+    t_max: pd.Timestamp = metric_df["timestamp"].max()
+    total_seconds: float = (t_max - t_min).total_seconds()
 
     # Number of non-overlapping windows we can extract
-    num_windows = int(total_seconds // WINDOW_DURATION_SECONDS)
+    num_windows: int = int(total_seconds // WINDOW_DURATION_SECONDS)
     if num_windows == 0:
         raise ValueError(
             f"Data spans only {total_seconds:.0f}s, need at least "
             f"{WINDOW_DURATION_SECONDS}s for one window"
         )
 
-    num_channels = len(metric_channels)
-    windows = np.zeros((num_windows, num_channels, METRIC_GRID_SIZE), dtype=np.float32)
-    labels = []
-    start_times = []
+    num_channels: int = len(metric_channels)
+    windows: np.ndarray = np.zeros(
+        (num_windows, num_channels, METRIC_GRID_SIZE),
+        dtype=np.float32,
+    )
+    labels: list[str] = []
+    start_times: list[pd.Timestamp] = []
 
     for i in range(num_windows):
         # Define the time boundaries of this window
-        window_start = t_min + pd.Timedelta(seconds=i * WINDOW_DURATION_SECONDS)
-        window_end = window_start + pd.Timedelta(seconds=WINDOW_DURATION_SECONDS)
+        window_start: pd.Timestamp = t_min + pd.Timedelta(seconds=i * WINDOW_DURATION_SECONDS)
+        window_end: pd.Timestamp = window_start + pd.Timedelta(seconds=WINDOW_DURATION_SECONDS)
 
         # Select rows that fall within this window
-        mask = (metric_df["timestamp"] >= window_start) & (
+        mask: pd.Series = (metric_df["timestamp"] >= window_start) & (  # type: ignore[type-arg]
             metric_df["timestamp"] < window_end
         )
-        window_data = metric_df.loc[mask]
+        window_data: pd.DataFrame = metric_df.loc[mask]
 
         if len(window_data) > 0:
             # Place each sample at its correct time slot within the window.
             # At 1 Hz, the slot index is just the number of seconds since
             # the window start. This preserves temporal gaps as zeros.
-            offsets = (
-                (window_data["timestamp"] - window_start).dt.total_seconds()
+            offsets: pd.Series = (  # type: ignore[type-arg]
+                (window_data["timestamp"] - window_start)
+                .dt.total_seconds()
                 .astype(int)
                 .clip(0, METRIC_GRID_SIZE - 1)
             )
             for ch_idx, ch_name in enumerate(metric_channels):
-                values = window_data[ch_name].values
-                for slot, val in zip(offsets.values, values):
+                values = np.asarray(window_data[ch_name].values)
+                for slot, val in zip(offsets.values, values, strict=False):
                     windows[i, ch_idx, slot] = val
 
             # The window's label is the most common label among its samples
             # (majority vote). This handles windows that straddle activity
             # boundaries gracefully.
-            label_counts = Counter(window_data["label"].values)
-            majority_label = label_counts.most_common(1)[0][0]
+            label_counts: Counter[str] = Counter(window_data["label"].values)
+            majority_label: str = label_counts.most_common(1)[0][0]
             labels.append(majority_label)
         else:
             # No data in this window -- treat as rest
@@ -250,38 +261,39 @@ def build_device_windows(
     """
     device_df = device_df.sort_values("timestamp").copy()
 
-    num_windows = len(window_start_times)
-    device_windows = {}
+    num_windows: int = len(window_start_times)
+    device_windows: dict[str, np.ndarray] = {}
 
     for device_type, channels in device_channels.items():
-        num_channels = len(channels)
-        grids = np.zeros(
-            (num_windows, num_channels, DEVICE_GRID_SIZE), dtype=np.float32
+        num_channels: int = len(channels)
+        grids: np.ndarray = np.zeros(
+            (num_windows, num_channels, DEVICE_GRID_SIZE),
+            dtype=np.float32,
         )
 
         # Filter to just this device type's data
-        dev_data = device_df[device_df["device_type"] == device_type].copy()
+        dev_data: pd.DataFrame = device_df[device_df["device_type"] == device_type].copy()
         dev_data[channels] = dev_data[channels].fillna(0)
 
         for i, window_start in enumerate(window_start_times):
-            window_end = window_start + pd.Timedelta(seconds=WINDOW_DURATION_SECONDS)
-            mask = (dev_data["timestamp"] >= window_start) & (
+            window_end: pd.Timestamp = window_start + pd.Timedelta(seconds=WINDOW_DURATION_SECONDS)
+            mask: pd.Series = (dev_data["timestamp"] >= window_start) & (  # type: ignore[type-arg]
                 dev_data["timestamp"] < window_end
             )
-            window_data = dev_data.loc[mask]
+            window_data: pd.DataFrame = dev_data.loc[mask]
 
             if len(window_data) > 0:
                 # Compute each sample's position in the 3000-slot grid.
                 # At 50 Hz, offset_seconds * 50 gives the slot index.
-                offsets_seconds = (
+                offsets_seconds: pd.Series = (  # type: ignore[type-arg]
                     (window_data["timestamp"] - window_start).dt.total_seconds()
                 )
-                slot_indices = (offsets_seconds * DEVICE_SAMPLE_RATE_HZ).astype(int)
+                slot_indices: pd.Series = (offsets_seconds * DEVICE_SAMPLE_RATE_HZ).astype(int)  # type: ignore[type-arg]
                 slot_indices = slot_indices.clip(0, DEVICE_GRID_SIZE - 1)
 
                 for ch_idx, ch_name in enumerate(channels):
-                    values = window_data[ch_name].values
-                    for slot, val in zip(slot_indices.values, values):
+                    values = np.asarray(window_data[ch_name].values)
+                    for slot, val in zip(slot_indices.values, values, strict=False):
                         grids[i, ch_idx, slot] = val
 
         device_windows[device_type] = grids
@@ -293,6 +305,7 @@ def build_device_windows(
 # ---------------------------------------------------------------------------
 # Model definition: FusedActivityModel
 # ---------------------------------------------------------------------------
+
 
 class MetricBranch(nn.Module):
     """CNN branch for 1 Hz metric data (heart_rate, power, speed, etc.).
@@ -416,19 +429,19 @@ class FusedActivityModel(nn.Module):
         super().__init__()
 
         # Branch for 1 Hz metric data
-        self.metric_branch = MetricBranch(metric_channels)
-        metric_out_features = 64  # Matches MetricBranch output dim
+        self.metric_branch: MetricBranch = MetricBranch(metric_channels)
+        metric_out_features: int = 64  # Matches MetricBranch output dim
 
         # One branch per device type, each sized for that device's channel count
-        self.device_branches = nn.ModuleDict()
-        device_out_features = 0
-        for device_type, num_channels in sorted(device_channel_counts.items()):
-            self.device_branches[device_type] = DeviceBranch(num_channels)
+        self.device_branches: nn.ModuleDict = nn.ModuleDict()
+        device_out_features: int = 0
+        for device_type, num_ch in sorted(device_channel_counts.items()):
+            self.device_branches[device_type] = DeviceBranch(num_ch)
             device_out_features += 128  # Each DeviceBranch outputs 128-dim
 
         # Classifier head that fuses all branch outputs
-        total_features = metric_out_features + device_out_features
-        self.classifier = nn.Sequential(
+        total_features: int = metric_out_features + device_out_features
+        self.classifier: nn.Sequential = nn.Sequential(
             nn.Linear(total_features, 128),
             nn.ReLU(),
             nn.Dropout(0.3),
@@ -436,7 +449,7 @@ class FusedActivityModel(nn.Module):
         )
 
         # Store device type ordering for consistent forward pass
-        self.device_type_order = sorted(device_channel_counts.keys())
+        self.device_type_order: list[str] = sorted(device_channel_counts.keys())
 
         print(f"  Metric branch: {metric_channels} channels -> {metric_out_features} features")
         for dt in self.device_type_order:
@@ -457,23 +470,25 @@ class FusedActivityModel(nn.Module):
             (batch, num_classes) -- raw logits (no softmax)
         """
         # Run each branch independently
-        features = [self.metric_branch(metric_input)]
+        features: list[torch.Tensor] = [self.metric_branch(metric_input)]
 
         for device_type in self.device_type_order:
-            branch = self.device_branches[device_type]
-            device_input = device_inputs[device_type]
+            branch: nn.Module = self.device_branches[device_type]
+            device_input: torch.Tensor = device_inputs[device_type]
             features.append(branch(device_input))
 
         # Concatenate all branch outputs along the feature dimension
-        fused = torch.cat(features, dim=1)
+        fused: torch.Tensor = torch.cat(features, dim=1)
 
         # Classify based on fused features
-        return self.classifier(fused)
+        result: torch.Tensor = self.classifier(fused)
+        return result
 
 
 # ---------------------------------------------------------------------------
 # Training loop
 # ---------------------------------------------------------------------------
+
 
 def encode_labels(labels: np.ndarray) -> tuple[torch.Tensor, list[str]]:
     """Convert string labels to integer class indices.
@@ -482,9 +497,12 @@ def encode_labels(labels: np.ndarray) -> tuple[torch.Tensor, list[str]]:
         encoded: LongTensor of class indices
         class_names: list of class names where index = class ID
     """
-    unique_labels = sorted(set(labels))
-    label_to_idx = {label: idx for idx, label in enumerate(unique_labels)}
-    encoded = torch.tensor([label_to_idx[l] for l in labels], dtype=torch.long)
+    unique_labels: list[str] = sorted(set(labels))
+    label_to_idx: dict[str, int] = {label: idx for idx, label in enumerate(unique_labels)}
+    encoded: torch.Tensor = torch.tensor(
+        [label_to_idx[label] for label in labels],
+        dtype=torch.long,
+    )
     return encoded, unique_labels
 
 
@@ -522,57 +540,55 @@ def train_model(
     Returns:
         The trained model.
     """
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-    criterion = nn.CrossEntropyLoss()
+    optimizer: optim.Adam = optim.Adam(model.parameters(), lr=learning_rate)
+    criterion: nn.CrossEntropyLoss = nn.CrossEntropyLoss()
 
     # We need a custom batching approach since we have multiple inputs
-    num_train = len(labels_train)
-    num_val = len(labels_val)
+    num_train: int = len(labels_train)
 
     for epoch in range(num_epochs):
         model.train()
-        epoch_loss = 0.0
-        num_batches = 0
+        epoch_loss: float = 0.0
+        num_batches: int = 0
 
         # Shuffle training data each epoch
-        perm = torch.randperm(num_train)
-        metric_train_shuffled = metric_train[perm]
-        labels_train_shuffled = labels_train[perm]
-        device_trains_shuffled = {
+        perm: torch.Tensor = torch.randperm(num_train)
+        metric_train_shuffled: torch.Tensor = metric_train[perm]
+        labels_train_shuffled: torch.Tensor = labels_train[perm]
+        device_trains_shuffled: dict[str, torch.Tensor] = {
             dt: tensor[perm] for dt, tensor in device_trains.items()
         }
 
         for start in range(0, num_train, batch_size):
-            end = min(start + batch_size, num_train)
+            end: int = min(start + batch_size, num_train)
 
             # Slice this batch from each input
-            batch_metric = metric_train_shuffled[start:end]
-            batch_labels = labels_train_shuffled[start:end]
-            batch_devices = {
-                dt: tensor[start:end]
-                for dt, tensor in device_trains_shuffled.items()
+            batch_metric: torch.Tensor = metric_train_shuffled[start:end]
+            batch_labels: torch.Tensor = labels_train_shuffled[start:end]
+            batch_devices: dict[str, torch.Tensor] = {
+                dt: tensor[start:end] for dt, tensor in device_trains_shuffled.items()
             }
 
             # Forward pass
-            logits = model(batch_metric, batch_devices)
-            loss = criterion(logits, batch_labels)
+            logits: torch.Tensor = model(batch_metric, batch_devices)
+            loss: torch.Tensor = criterion(logits, batch_labels)
 
             # Backward pass
             optimizer.zero_grad()
-            loss.backward()
+            loss.backward()  # type: ignore[no-untyped-call]
             optimizer.step()
 
             epoch_loss += loss.item()
             num_batches += 1
 
-        avg_loss = epoch_loss / max(num_batches, 1)
+        avg_loss: float = epoch_loss / max(num_batches, 1)
 
         # Validation accuracy
         model.eval()
         with torch.no_grad():
-            val_logits = model(metric_val, device_vals)
-            val_preds = val_logits.argmax(dim=1)
-            val_accuracy = (val_preds == labels_val).float().mean().item()
+            val_logits: torch.Tensor = model(metric_val, device_vals)
+            val_preds: torch.Tensor = val_logits.argmax(dim=1)
+            val_accuracy: float = (val_preds == labels_val).float().mean().item()
 
         print(
             f"  Epoch {epoch + 1}/{num_epochs} -- "
@@ -585,6 +601,7 @@ def train_model(
 # ---------------------------------------------------------------------------
 # Evaluation
 # ---------------------------------------------------------------------------
+
 
 def evaluate_model(
     model: FusedActivityModel,
@@ -601,21 +618,21 @@ def evaluate_model(
     """
     model.eval()
     with torch.no_grad():
-        logits = model(metric_test, device_tests)
-        preds = logits.argmax(dim=1).numpy()
+        logits: torch.Tensor = model(metric_test, device_tests)
+        preds: np.ndarray = logits.argmax(dim=1).numpy()
 
-    labels_np = labels_test.numpy()
+    labels_np: np.ndarray = labels_test.numpy()
 
     print("\n=== Classification Report ===")
     print(classification_report(labels_np, preds, target_names=class_names))
 
     print("=== Confusion Matrix ===")
-    cm = confusion_matrix(labels_np, preds)
+    cm: np.ndarray = confusion_matrix(labels_np, preds)
     # Pretty-print with class labels
-    header = "          " + "  ".join(f"{name:>10}" for name in class_names)
+    header: str = "          " + "  ".join(f"{name:>10}" for name in class_names)
     print(header)
     for i, row in enumerate(cm):
-        row_str = "  ".join(f"{val:>10}" for val in row)
+        row_str: str = "  ".join(f"{val:>10}" for val in row)
         print(f"{class_names[i]:>10}  {row_str}")
 
 
@@ -624,7 +641,7 @@ def run_ablation(
     metric_test: torch.Tensor,
     device_tests: dict[str, torch.Tensor],
     labels_test: torch.Tensor,
-    class_names: list[str],
+    _class_names: list[str],
 ) -> None:
     """Ablation study: test model with each branch zeroed out.
 
@@ -637,29 +654,29 @@ def run_ablation(
       2. Each device branch zeroed individually (metric + other devices active)
     """
     model.eval()
-    labels_np = labels_test.numpy()
+    labels_np: np.ndarray = labels_test.numpy()
 
     print("\n=== Ablation Study ===")
     print("Testing model accuracy when each branch's input is zeroed out.\n")
 
     # Baseline accuracy (all branches active)
     with torch.no_grad():
-        baseline_logits = model(metric_test, device_tests)
-        baseline_preds = baseline_logits.argmax(dim=1).numpy()
-        baseline_acc = (baseline_preds == labels_np).mean()
+        baseline_logits: torch.Tensor = model(metric_test, device_tests)
+        baseline_preds: np.ndarray = baseline_logits.argmax(dim=1).numpy()
+        baseline_acc: np.floating = (baseline_preds == labels_np).mean()
     print(f"  Baseline (all branches): {baseline_acc:.4f}")
 
     # Ablate metric branch: replace metric input with zeros
     with torch.no_grad():
-        zeroed_metric = torch.zeros_like(metric_test)
-        logits = model(zeroed_metric, device_tests)
-        preds = logits.argmax(dim=1).numpy()
-        acc = (preds == labels_np).mean()
+        zeroed_metric: torch.Tensor = torch.zeros_like(metric_test)
+        logits: torch.Tensor = model(zeroed_metric, device_tests)
+        preds: np.ndarray = logits.argmax(dim=1).numpy()
+        acc: np.floating = (preds == labels_np).mean()
     print(f"  Without metric branch:   {acc:.4f} (delta: {acc - baseline_acc:+.4f})")
 
     # Ablate each device branch individually
     for device_type in model.device_type_order:
-        ablated_devices = {}
+        ablated_devices: dict[str, torch.Tensor] = {}
         for dt, tensor in device_tests.items():
             if dt == device_type:
                 ablated_devices[dt] = torch.zeros_like(tensor)
@@ -677,8 +694,9 @@ def run_ablation(
 # Main pipeline
 # ---------------------------------------------------------------------------
 
-def main():
-    parser = argparse.ArgumentParser(
+
+def main() -> None:
+    parser: argparse.ArgumentParser = argparse.ArgumentParser(
         description="Train a fused CNN activity classifier on metric + device data"
     )
     parser.add_argument(
@@ -686,7 +704,7 @@ def main():
         type=str,
         default=None,
         help="Path to local directory with training CSVs. "
-             "If omitted, reads from R2 via env vars.",
+        "If omitted, reads from R2 via env vars.",
     )
     parser.add_argument(
         "--epochs",
@@ -718,12 +736,14 @@ def main():
         default=0.2,
         help="Fraction of data to use for testing (default: 0.2)",
     )
-    args = parser.parse_args()
+    args: argparse.Namespace = parser.parse_args()
 
     # -----------------------------------------------------------------------
     # Step 1: Load raw data
     # -----------------------------------------------------------------------
     print("\n[1/6] Loading training data...")
+    metric_df: pd.DataFrame
+    device_df: pd.DataFrame
     metric_df, device_df = load_training_data(local_path=args.local_path)
 
     # -----------------------------------------------------------------------
@@ -731,15 +751,15 @@ def main():
     # -----------------------------------------------------------------------
     print("\n[2/6] Discovering channels and preparing labels...")
 
-    metric_channels = discover_metric_channels(metric_df)
+    metric_channels: list[str] = discover_metric_channels(metric_df)
     print(f"  Metric channels ({len(metric_channels)}): {metric_channels}")
 
-    device_channels = discover_device_channels(device_df)
+    device_channels: dict[str, list[str]] = discover_device_channels(device_df)
     for dt, channels in device_channels.items():
         print(f"  Device '{dt}' channels ({len(channels)}): {channels}")
 
     # Show label distribution before simplification
-    raw_labels = metric_df["activity_type"].value_counts(dropna=False)
+    raw_labels: pd.Series = metric_df["activity_type"].value_counts(dropna=False)  # type: ignore[type-arg]
     print(f"\n  Raw label distribution:\n{raw_labels.to_string()}")
 
     # -----------------------------------------------------------------------
@@ -749,20 +769,26 @@ def main():
 
     # Build metric windows first (they define the window start times)
     print("  Building metric windows (1 Hz, 60-second windows)...")
+    metric_windows: np.ndarray
+    labels: np.ndarray
+    window_start_times: list[pd.Timestamp]
     metric_windows, labels, window_start_times = build_metric_windows(
-        metric_df, metric_channels
+        metric_df,
+        metric_channels,
     )
     print(f"  Metric windows shape: {metric_windows.shape}")
 
     # Build device windows aligned to the same start times
     print("  Building device windows (50 Hz, 60-second windows)...")
-    device_windows = build_device_windows(
-        device_df, device_channels, window_start_times
+    device_windows: dict[str, np.ndarray] = build_device_windows(
+        device_df,
+        device_channels,
+        window_start_times,
     )
 
     # Show simplified label distribution
-    label_counts = Counter(labels)
-    print(f"\n  Simplified label distribution:")
+    label_counts: Counter[str] = Counter(labels)
+    print("\n  Simplified label distribution:")
     for label, count in sorted(label_counts.items()):
         print(f"    {label}: {count} windows")
 
@@ -772,12 +798,16 @@ def main():
     print("\n[4/6] Splitting data and converting to tensors...")
 
     # Encode string labels as integer class indices
+    encoded_labels: torch.Tensor
+    class_names: list[str]
     encoded_labels, class_names = encode_labels(labels)
-    num_classes = len(class_names)
+    num_classes: int = len(class_names)
     print(f"  Classes ({num_classes}): {class_names}")
 
     # Create train/test indices (stratified to maintain class balance)
-    indices = np.arange(len(labels))
+    indices: np.ndarray = np.arange(len(labels))
+    train_idx: np.ndarray
+    test_idx: np.ndarray
     train_idx, test_idx = train_test_split(
         indices,
         test_size=args.test_size,
@@ -787,14 +817,14 @@ def main():
     print(f"  Train: {len(train_idx)} windows, Test: {len(test_idx)} windows")
 
     # Split metric windows
-    metric_train = torch.tensor(metric_windows[train_idx])
-    metric_test = torch.tensor(metric_windows[test_idx])
-    labels_train = encoded_labels[train_idx]
-    labels_test = encoded_labels[test_idx]
+    metric_train: torch.Tensor = torch.tensor(metric_windows[train_idx])
+    metric_test: torch.Tensor = torch.tensor(metric_windows[test_idx])
+    labels_train: torch.Tensor = encoded_labels[train_idx]
+    labels_test: torch.Tensor = encoded_labels[test_idx]
 
     # Split device windows (one tensor per device type)
-    device_trains = {}
-    device_tests = {}
+    device_trains: dict[str, torch.Tensor] = {}
+    device_tests: dict[str, torch.Tensor] = {}
     for dt, windows in device_windows.items():
         device_trains[dt] = torch.tensor(windows[train_idx])
         device_tests[dt] = torch.tensor(windows[test_idx])
@@ -804,18 +834,16 @@ def main():
     # -----------------------------------------------------------------------
     print("\n[5/6] Building and training model...")
 
-    device_channel_counts = {
-        dt: len(channels) for dt, channels in device_channels.items()
-    }
+    device_channel_counts: dict[str, int] = {dt: len(chs) for dt, chs in device_channels.items()}
 
-    model = FusedActivityModel(
+    model: FusedActivityModel = FusedActivityModel(
         metric_channels=len(metric_channels),
         device_channel_counts=device_channel_counts,
         num_classes=num_classes,
     )
 
-    total_params = sum(p.numel() for p in model.parameters())
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    total_params: int = sum(p.numel() for p in model.parameters())
+    trainable_params: int = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"\n  Total parameters: {total_params:,}")
     print(f"  Trainable parameters: {trainable_params:,}")
 
@@ -844,8 +872,8 @@ def main():
     run_ablation(model, metric_test, device_tests, labels_test, class_names)
 
     # Save the trained model along with metadata needed for inference
-    output_path = Path(args.output)
-    save_payload = {
+    output_path: Path = Path(args.output)
+    save_payload: dict[str, object] = {
         "model_state_dict": model.state_dict(),
         "class_names": class_names,
         "metric_channels": metric_channels,
@@ -857,7 +885,7 @@ def main():
     }
     torch.save(save_payload, output_path)
     print(f"\n  Model saved to {output_path}")
-    print(f"  Saved metadata: class_names, channel info, grid parameters")
+    print("  Saved metadata: class_names, channel info, grid parameters")
     print("\nDone!")
 
 
