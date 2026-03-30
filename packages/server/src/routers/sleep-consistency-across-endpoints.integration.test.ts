@@ -159,7 +159,12 @@ describe("sleep data consistency across endpoints", () => {
     return first?.result?.data;
   }
 
-  const endDate = new Date().toISOString().slice(0, 10);
+  // Use yesterday as endDate so the "current" ISO week always contains data.
+  // Using today fails on Mondays when the new ISO week has no sleep data yet
+  // (test data starts at daysAgo=1, so today has no sessions).
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const endDate = yesterday.toISOString().slice(0, 10);
 
   it("sleep.list returns at most one row per calendar date", async () => {
     await queryCache.invalidateAll();
