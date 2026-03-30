@@ -117,5 +117,9 @@
 		<string>bluetooth-central</string>
 		<string>fetch</string>
 	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.dofek.accelerometer-refresh</string>
+	</array>
 </dict>
 </plist>

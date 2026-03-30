@@ -46,6 +46,7 @@ for (const providerId of getConfiguredProviderIds()) {
     {
       connection,
       concurrency: config.concurrency,
+      lockDuration: 300_000, // 5 minutes — sync jobs can take several minutes (API pagination, large inserts)
       ...(config.limiter ? { limiter: config.limiter } : {}),
     },
   );
