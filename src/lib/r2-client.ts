@@ -78,4 +78,3 @@ export function createR2Client(s3Client: S3Client, bucket: string): R2Client {
     },
   };
 }
-
