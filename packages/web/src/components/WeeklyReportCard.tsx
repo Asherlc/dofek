@@ -38,7 +38,7 @@ export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
           <h3 className="text-muted text-sm font-medium mb-1">Weekly Performance</h3>
           <p className="text-dim text-xs">
             Week of{" "}
-            {new Date(current.weekStart).toLocaleDateString("en-US", {
+            {new Date(`${current.weekStart}T12:00:00`).toLocaleDateString("en-US", {
               month: "short",
               day: "numeric",
             })}
