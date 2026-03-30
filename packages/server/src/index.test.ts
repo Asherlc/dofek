@@ -295,9 +295,11 @@ describe("createApp HTTP routes", () => {
     });
 
     it("sets session cookie and redirects when dev-session exists", async () => {
-      const fakeDb = createDatabaseFromEnv() as { execute: ReturnType<typeof vi.fn> };
+      const fakeDb = createDatabaseFromEnv();
       const expiresAt = new Date("2027-01-01");
-      fakeDb.execute.mockResolvedValueOnce([{ id: "dev-session", expires_at: expiresAt }]);
+      vi.mocked(fakeDb.execute).mockResolvedValueOnce([
+        { id: "dev-session", expires_at: expiresAt },
+      ]);
 
       const app = createApp(fakeDb);
       const { baseUrl: devUrl, close: devClose } = await startApp(app);
