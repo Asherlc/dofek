@@ -201,6 +201,81 @@ describe("runMigrations", () => {
     expect(mockLoggerWarn).toHaveBeenCalledWith("Advisory unlock failed: %s", expect.any(Error));
   });
 
+  it("stores content hash when applying a migration", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+
+    mockReaddirSync.mockReturnValue(["0001_init.sql"]);
+    mockSql.mockResolvedValue([]);
+    mockReadFileSync.mockReturnValue("CREATE TABLE foo (id INT)");
+
+    await runMigrations("postgres://localhost/test", "/tmp/migrations");
+
+    // The INSERT should include a content_hash parameter
+    const insertCalls = mockSql.mock.calls.filter(
+      (call) => Array.isArray(call[0]) && call[0].join("").includes("INSERT"),
+    );
+    expect(insertCalls.length).toBeGreaterThan(0);
+    // Tagged template: sql`...VALUES (${file}, ${dateNow}, ${contentHash})`
+    // call[0] = template strings, call[1] = file, call[2] = Date.now(), call[3] = contentHash
+    const hashArg = insertCalls[0]?.[3];
+    expect(hashArg).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("warns when an applied migration file has been modified", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+
+    mockReaddirSync.mockReturnValue(["0001_init.sql"]);
+    mockReadFileSync.mockReturnValue("CREATE TABLE foo (id INT) -- modified");
+    mockExistsSync.mockReturnValue(true);
+
+    // Return applied migration with a DIFFERENT content hash
+    mockSql.mockResolvedValue([
+      {
+        hash: "0001_init.sql",
+        content_hash: "0000000000000000000000000000000000000000000000000000000000000000",
+      },
+    ]);
+
+    await runMigrations("postgres://localhost/test", "/tmp/migrations");
+
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      expect.stringContaining("0001_init.sql has been modified"),
+    );
+  });
+
+  it("skips content hash check for migrations without stored hash", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+
+    mockReaddirSync.mockReturnValue(["0001_init.sql"]);
+    mockReadFileSync.mockReturnValue("CREATE TABLE foo (id INT)");
+
+    // Applied migration without content_hash (legacy row)
+    mockSql.mockResolvedValue([{ hash: "0001_init.sql", content_hash: null }]);
+
+    await runMigrations("postgres://localhost/test", "/tmp/migrations");
+
+    // Should NOT warn about modification
+    const warnMessages = mockLoggerWarn.mock.calls.map((call) => String(call[0]));
+    expect(warnMessages.every((message) => !message.includes("modified"))).toBe(true);
+  });
+
+  it("does not warn when content hash matches", async () => {
+    const { runMigrations, computeContentHash } = await import("./migrate.ts");
+
+    const content = "CREATE TABLE foo (id INT)";
+    mockReaddirSync.mockReturnValue(["0001_init.sql"]);
+    mockReadFileSync.mockReturnValue(content);
+    mockExistsSync.mockReturnValue(true);
+
+    const expectedHash = computeContentHash(content);
+    mockSql.mockResolvedValue([{ hash: "0001_init.sql", content_hash: expectedHash }]);
+
+    await runMigrations("postgres://localhost/test", "/tmp/migrations");
+
+    const warnMessages = mockLoggerWarn.mock.calls.map((call) => String(call[0]));
+    expect(warnMessages.every((message) => !message.includes("modified"))).toBe(true);
+  });
+
   it("warns on duplicate migration prefixes instead of throwing", async () => {
     const { runMigrations } = await import("./migrate.ts");
 
