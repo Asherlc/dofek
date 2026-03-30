@@ -221,7 +221,7 @@ export function imuRowToCsv(row: ImuRow): string {
 
 // ── Time filter builder ──
 
-function buildTimeFilter(
+export function buildTimeFilter(
   since?: string,
   until?: string,
 ): {

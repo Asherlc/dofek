@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildTimeFilter,
   type ImuRow,
   imuCsvHeader,
   imuRowToCsv,
@@ -170,5 +171,48 @@ describe("imuRowToCsv", () => {
     const headerCount = imuCsvHeader().split(",").length;
     const valueCount = csv.split(",").length;
     expect(valueCount).toBe(headerCount);
+  });
+});
+
+describe("buildTimeFilter", () => {
+  it("returns SQL objects for all four argument combinations", () => {
+    const none = buildTimeFilter();
+    const sinceOnly = buildTimeFilter("2026-03-01T00:00:00Z");
+    const untilOnly = buildTimeFilter(undefined, "2026-03-31T00:00:00Z");
+    const both = buildTimeFilter("2026-03-01T00:00:00Z", "2026-03-31T00:00:00Z");
+
+    // All return objects with metricStreamFilter and imuFilter
+    for (const result of [none, sinceOnly, untilOnly, both]) {
+      expect(result).toHaveProperty("metricStreamFilter");
+      expect(result).toHaveProperty("imuFilter");
+    }
+  });
+
+  it("returns empty fragments when neither since nor until is provided", () => {
+    const { metricStreamFilter, imuFilter } = buildTimeFilter();
+    // Empty sql`` templates have no query chunks with content
+    expect(metricStreamFilter.queryChunks.length).toBeLessThanOrEqual(1);
+    expect(imuFilter.queryChunks.length).toBeLessThanOrEqual(1);
+  });
+
+  it("returns non-empty fragments when since is provided", () => {
+    const { metricStreamFilter, imuFilter } = buildTimeFilter("2026-03-01T00:00:00Z");
+    expect(metricStreamFilter.queryChunks.length).toBeGreaterThan(1);
+    expect(imuFilter.queryChunks.length).toBeGreaterThan(1);
+  });
+
+  it("returns non-empty fragments when until is provided", () => {
+    const { metricStreamFilter, imuFilter } = buildTimeFilter(undefined, "2026-03-31T00:00:00Z");
+    expect(metricStreamFilter.queryChunks.length).toBeGreaterThan(1);
+    expect(imuFilter.queryChunks.length).toBeGreaterThan(1);
+  });
+
+  it("returns non-empty fragments when both since and until are provided", () => {
+    const { metricStreamFilter, imuFilter } = buildTimeFilter(
+      "2026-03-01T00:00:00Z",
+      "2026-03-31T00:00:00Z",
+    );
+    expect(metricStreamFilter.queryChunks.length).toBeGreaterThan(1);
+    expect(imuFilter.queryChunks.length).toBeGreaterThan(1);
   });
 });
