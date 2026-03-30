@@ -21,9 +21,10 @@ function deviceLabel(deviceType: string, deviceId: string): string {
 }
 
 function SyncStatusPanel() {
-  const { data, isLoading } = trpc.inertialMeasurementUnit.getSyncStatus.useQuery();
+  const { data, isLoading, isError } = trpc.inertialMeasurementUnit.getSyncStatus.useQuery();
 
   if (isLoading) return <p className="text-sm text-muted-foreground">Loading...</p>;
+  if (isError) return <p className="text-sm text-red-400">Failed to load motion data.</p>;
   if (!data || data.length === 0) {
     return (
       <div className="rounded-lg border border-border bg-card p-6 text-center">
@@ -57,9 +58,12 @@ function SyncStatusPanel() {
 }
 
 function DailyCoveragePanel() {
-  const { data, isLoading } = trpc.inertialMeasurementUnit.getDailyCounts.useQuery({ days: 30 });
+  const { data, isLoading, isError } = trpc.inertialMeasurementUnit.getDailyCounts.useQuery({
+    days: 30,
+  });
 
   if (isLoading) return <p className="text-sm text-muted-foreground">Loading...</p>;
+  if (isError) return <p className="text-sm text-red-400">Failed to load daily coverage data.</p>;
   if (!data || data.length === 0) {
     return <p className="text-sm text-muted-foreground">No daily data available.</p>;
   }

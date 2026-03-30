@@ -17,6 +17,14 @@ vi.mock("expo-sharing", () => ({
   shareAsync: vi.fn(),
 }));
 
+vi.mock("expo-updates", () => ({
+  updateId: null,
+  channel: null,
+  runtimeVersion: null,
+  createdAt: null,
+  isEmbeddedLaunch: true,
+}));
+
 vi.mock("../components/PersonalizationPanel", () => ({
   PersonalizationPanel: () => React.createElement("div", null, "PersonalizationPanel"),
 }));
