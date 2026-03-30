@@ -190,10 +190,10 @@ export default function InertialMeasurementUnitScreen() {
     );
   }
 
-  const whoopDevice = syncStatus.data?.find((device) => device.device_type === "whoop");
+  const whoopDevice = syncStatus.data?.find((device) => device.deviceType === "whoop");
 
-  const latestSync = syncStatus.data?.[0]?.latest_sample
-    ? new Date(syncStatus.data[0].latest_sample).toLocaleString()
+  const latestSync = syncStatus.data?.[0]?.latestSample
+    ? new Date(syncStatus.data[0].latestSample).toLocaleString()
     : "Never";
 
   // Collect all active problems for the top-level banner
@@ -306,7 +306,7 @@ export default function InertialMeasurementUnitScreen() {
                 whoopBuffered > 0
                   ? String(whoopBuffered)
                   : whoopDevice
-                    ? `${whoopDevice.sample_count.toLocaleString()}`
+                    ? `${whoopDevice.sampleCount.toLocaleString()}`
                     : "0"
               }
               color={
@@ -345,11 +345,11 @@ export default function InertialMeasurementUnitScreen() {
             <Text style={styles.statValue}>{latestSync}</Text>
           </View>
           {syncStatus.data?.map((device) => (
-            <View key={`${device.device_id}-${device.device_type}`} style={styles.statRow}>
+            <View key={`${device.deviceId}-${device.deviceType}`} style={styles.statRow}>
               <Text style={styles.statLabel}>
-                {deviceLabel(device.device_type, device.device_id)}
+                {deviceLabel(device.deviceType, device.deviceId)}
               </Text>
-              <Text style={styles.statValue}>{device.sample_count.toLocaleString()} samples</Text>
+              <Text style={styles.statValue}>{device.sampleCount.toLocaleString()} samples</Text>
             </View>
           ))}
           {(!syncStatus.data || syncStatus.data.length === 0) && (
@@ -369,11 +369,11 @@ export default function InertialMeasurementUnitScreen() {
                 <View
                   style={[
                     styles.coverageBar,
-                    { width: `${Math.min(day.hours_covered / 24, 1) * 100}%` },
+                    { width: `${Math.min(day.hoursCovered / 24, 1) * 100}%` },
                   ]}
                 />
               </View>
-              <Text style={styles.coverageHours}>{day.hours_covered.toFixed(1)}h</Text>
+              <Text style={styles.coverageHours}>{day.hoursCovered.toFixed(1)}h</Text>
             </View>
           ))}
           {(!dailyCounts.data || dailyCounts.data.length === 0) && (
