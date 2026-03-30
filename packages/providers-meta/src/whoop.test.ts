@@ -3,7 +3,6 @@ import {
   parseWhoopWearLocation,
   WHOOP_WEAR_LOCATION_SETTING_KEY,
   WHOOP_WEAR_LOCATIONS,
-  type WhoopWearLocation,
   whoopWearLocationDescription,
   whoopWearLocationLabel,
 } from "./whoop.ts";
@@ -28,13 +27,12 @@ describe("WHOOP wear locations", () => {
   });
 
   it("falls back to raw id for unknown location label", () => {
-    const unknownId = "ankle" as WhoopWearLocation;
-    expect(whoopWearLocationLabel(unknownId)).toBe("ankle");
+    expect(whoopWearLocationLabel("ankle")).toBe("ankle");
   });
 
   it("returns a description for each location", () => {
     const lower = (id: "wrist" | "bicep" | "chest" | "waist" | "calf") =>
-      whoopWearLocationDescription(id).toLowerCase();
+      whoopWearLocationDescription(id)?.toLowerCase();
     expect(lower("wrist")).toContain("band");
     expect(lower("bicep")).toContain("bicep");
     expect(lower("chest")).toContain("sports bra");
@@ -42,9 +40,8 @@ describe("WHOOP wear locations", () => {
     expect(lower("calf")).toContain("leggings");
   });
 
-  it("returns empty string for unknown location description", () => {
-    const unknownId = "ankle" as WhoopWearLocation;
-    expect(whoopWearLocationDescription(unknownId)).toBe("");
+  it("returns undefined for unknown location description", () => {
+    expect(whoopWearLocationDescription("ankle")).toBeUndefined();
   });
 
   it("parses valid wear locations", () => {
