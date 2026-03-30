@@ -11,7 +11,16 @@ function formatNumber(n: number): string {
 
 /** Map device_id to a user-friendly label */
 function deviceLabel(deviceId: string): string {
-  return deviceId;
+  switch (deviceId) {
+    case "iphone":
+      return "iPhone";
+    case "apple_watch":
+      return "Apple Watch";
+    case "whoop":
+      return "WHOOP Strap";
+    default:
+      return deviceId;
+  }
 }
 
 function SyncStatusPanel() {

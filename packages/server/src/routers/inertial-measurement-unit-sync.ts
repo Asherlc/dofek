@@ -68,13 +68,11 @@ async function insertBatch(
     );
 
     // Dual-write to sensor_sample: accel-only as 'accel' channel, 6-axis as 'imu' channel
-    const hasGyro = batch.some(
-      (sample) =>
-        sample.gyroscopeX != null || sample.gyroscopeY != null || sample.gyroscopeZ != null,
-    );
-    const channel = hasGyro ? "imu" : "accel";
     const sensorValuesClauses = batch.map((sample) => {
-      const vector = hasGyro
+      const sampleHasGyro =
+        sample.gyroscopeX != null || sample.gyroscopeY != null || sample.gyroscopeZ != null;
+      const channel = sampleHasGyro ? "imu" : "accel";
+      const vector = sampleHasGyro
         ? sql`ARRAY[${sample.x}, ${sample.y}, ${sample.z}, ${sample.gyroscopeX ?? 0}, ${sample.gyroscopeY ?? 0}, ${sample.gyroscopeZ ?? 0}]::real[]`
         : sql`ARRAY[${sample.x}, ${sample.y}, ${sample.z}]::real[]`;
       return sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${deviceId}, ${"ble"}, ${channel}, ${vector})`;

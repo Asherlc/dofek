@@ -119,7 +119,8 @@ channel_aggs AS (
     AVG(scalar) FILTER (WHERE channel = 'vertical_oscillation')::REAL AS avg_vertical_osc,
     AVG(scalar) FILTER (WHERE channel = 'ground_contact_time')::REAL  AS avg_ground_contact_time,
     AVG(scalar) FILTER (WHERE channel = 'stride_length')::REAL        AS avg_stride_length,
-    -- Counts (total rows regardless of channel for sample_count)
+    -- Counts
+    COUNT(*)::INT                                                      AS sample_count,
     COUNT(*) FILTER (WHERE channel = 'heart_rate')::INT               AS hr_sample_count,
     COUNT(*) FILTER (WHERE channel = 'power' AND scalar > 0)::INT     AS power_sample_count,
     -- Duration
@@ -168,7 +169,7 @@ SELECT
   ca.avg_ground_contact_time,
   ca.avg_stride_length,
   -- Counts
-  (ca.hr_sample_count + ca.power_sample_count)::INT AS sample_count,
+  ca.sample_count,
   ca.hr_sample_count,
   ca.power_sample_count,
   -- Duration
