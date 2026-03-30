@@ -143,13 +143,19 @@ final class WhoopBleFrameParser {
         var dataTimestamp: UInt32 = 0
         var subSeconds: UInt16 = 0
 
-        // Data packets with Maverick header:
-        // [0] packetType, [1] recordType, [2-6] other fields,
-        // [7-10] Unix timestamp (u32 LE), [11-12] sub-seconds (u16 LE)
-        // Note: timestamp is at offset 7, NOT 3. Confirmed via live capture
-        // analysis — offset 3 produced 1970 dates, offset 7 gives correct 2026 dates.
-        if payload.count >= 13 {
+        if payload.count >= 6 {
             recordType = payload[payload.startIndex + 1]
+        }
+
+        // Timestamp location depends on packet type:
+        // - 0x28 compact (24 bytes): timestamp at payload offset 2 (u32 LE)
+        //   Confirmed: bytes 2-5 = 0x1D45C969 LE = 1774798109 = 2026-03-29T15:28:29Z
+        // - Other packets (0x2B, 0x2F, etc.): timestamp at payload offset 7 (u32 LE)
+        //   Sub-seconds at offset 11 (u16 LE)
+        if packetType == WhoopBleConstants.packetTypeRealtimeData && payload.count >= 6 {
+            dataTimestamp = payload.readUInt32LE(at: payload.startIndex + 2)
+            // No sub-seconds field in compact format
+        } else if payload.count >= 13 {
             dataTimestamp = payload.readUInt32LE(at: payload.startIndex + 7)
             subSeconds = payload.readUInt16LE(at: payload.startIndex + 11)
         }
@@ -283,23 +289,34 @@ final class WhoopBleFrameParser {
             )
         }
 
-        // Compact payload (<57 bytes): preserve raw content after the 13-byte header
-        // for analysis. The field layout differs from the full format.
-        let dataStart = payload.startIndex + 13
-        let rawBytes = dataStart < payload.endIndex
-            ? Data(payload[dataStart..<payload.endIndex])
-            : Data()
-        // Pad or truncate to 18 bytes for consistent opticalBytes size
+        // Compact payload (24 bytes, record type 0x02):
+        //   [0] 0x28 packet type
+        //   [1] 0x02 record type
+        //   [2] sequence counter (u8, increments per packet)
+        //   [3-7] device/session identifiers (constant per session)
+        //   [8] heart rate (bpm) — confirmed from PacketLogger capture (60-62 bpm range)
+        //   [9] flag (0x01 = valid reading, 0x00 = no reading)
+        //   [10-11] u16 LE — likely PPG ADC value or R-R interval in ms (~900-1010)
+        //   [12-17] zeros (reserved)
+        //   [18] constant 0x01
+        //   [19] constant 0x00
+        //   [20-23] CRC32 or checksum (changes every packet)
+        guard payload.count >= 12 else { return nil }
+
+        let heartRate = payload[payload.startIndex + 8]
+
+        // Preserve the full payload after header for analysis
         var opticalBytes = Data(count: WhoopBleConstants.realtimeDataOpticalByteCount)
-        let copyLen = min(rawBytes.count, opticalBytes.count)
+        let dataStart = payload.startIndex + 8
+        let copyLen = min(payload.endIndex - dataStart, opticalBytes.count)
         if copyLen > 0 {
-            opticalBytes.replaceSubrange(0..<copyLen, with: rawBytes.prefix(copyLen))
+            opticalBytes.replaceSubrange(0..<copyLen, with: payload[dataStart..<(dataStart + copyLen)])
         }
 
         return WhoopRealtimeDataSample(
             timestampSeconds: frame.dataTimestamp,
             subSeconds: frame.subSeconds,
-            heartRate: 0, // not at known offset in compact format
+            heartRate: heartRate,
             quaternionW: 0,
             quaternionX: 0,
             quaternionY: 0,
