@@ -1494,13 +1494,15 @@ describe("OuraProvider.sync()", () => {
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBeGreaterThanOrEqual(2);
 
-    // Verify HR values are batched
-    const hrRows = findBatchValuesCall(db, (arr) => arr.length === 2 && arr[0]?.heartRate === 72);
-    expect(hrRows[0]?.heartRate).toBe(72);
-    expect(hrRows[0]?.providerId).toBe("oura");
-    expect(hrRows[0]?.recordedAt).toEqual(new Date("2026-03-01T10:00:00+00:00"));
-    expect(hrRows[1]?.heartRate).toBe(85);
-    expect(hrRows[1]?.recordedAt).toEqual(new Date("2026-03-01T10:05:00+00:00"));
+    // Verify HR values are batched (length varies with 30-day windowing vs current date)
+    const hrRows = findBatchValuesCall(db, (arr) => arr.some((r) => r.heartRate === 72));
+    const first = hrRows.find((r) => r.heartRate === 72);
+    const second = hrRows.find((r) => r.heartRate === 85);
+    expect(first?.heartRate).toBe(72);
+    expect(first?.providerId).toBe("oura");
+    expect(first?.recordedAt).toEqual(new Date("2026-03-01T10:00:00+00:00"));
+    expect(second?.heartRate).toBe(85);
+    expect(second?.recordedAt).toEqual(new Date("2026-03-01T10:05:00+00:00"));
 
     // HR uses onConflictDoNothing, not onConflictDoUpdate
     expect(db.onConflictDoNothing).toHaveBeenCalled();
