@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import express from "express";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { createUpdatesRouter } from "./updates.ts";
 
@@ -76,6 +76,16 @@ function writeMetadata(metadata: Record<string, unknown>) {
   writeFileSync(join(currentDir, "metadata.json"), JSON.stringify(metadata));
 }
 
+function writeReleaseFiles(metadata: ReturnType<typeof validMetadata>) {
+  const currentDir = join(updatesDir, "current");
+  const bundlesDir = join(currentDir, "bundles");
+  const assetsDir = join(currentDir, "assets");
+  mkdirSync(bundlesDir, { recursive: true });
+  mkdirSync(assetsDir, { recursive: true });
+  writeFileSync(join(bundlesDir, metadata.launchAsset.key), "bundle-bytes");
+  writeFileSync(join(assetsDir, metadata.assets[0].key), "asset-bytes");
+}
+
 function createTestApp(dir: string = updatesDir) {
   const app = express();
   app.use(
@@ -83,6 +93,62 @@ function createTestApp(dir: string = updatesDir) {
     createUpdatesRouter({ updatesDir: dir, publicUrl: PUBLIC_URL, logger: silentLogger }),
   );
   return app;
+}
+
+function createObjectStorageApp(
+  downloadBuffer: (key: string) => Promise<Buffer>,
+  logger: { info: (message: string) => void; error: (message: string) => void } = silentLogger,
+) {
+  const app = express();
+  app.use(
+    "/updates",
+    createUpdatesRouter({
+      updatesStorage: { downloadBuffer },
+      publicUrl: PUBLIC_URL,
+      logger,
+    }),
+  );
+  return app;
+}
+
+type ObjectStorageFileMap = Record<string, string | Buffer>;
+
+class ObjectStorageNotFoundError extends Error {
+  code = "NoSuchKey";
+
+  constructor(message: string) {
+    super(message);
+    this.name = "NoSuchKey";
+  }
+}
+
+function createMockStorage(
+  files: ObjectStorageFileMap,
+  errors: Record<string, Error> = {},
+): (key: string) => Promise<Buffer> {
+  return async (key: string): Promise<Buffer> => {
+    const forcedError = errors[key];
+    if (forcedError) {
+      throw forcedError;
+    }
+    if (key in files) {
+      const value = files[key];
+      return typeof value === "string" ? Buffer.from(value, "utf-8") : value;
+    }
+    throw new ObjectStorageNotFoundError(`Missing key ${key}`);
+  };
+}
+
+function createReleaseStorageFiles(
+  releaseId: string,
+  metadata: ReturnType<typeof validMetadata>,
+): ObjectStorageFileMap {
+  return {
+    "mobile-ota/current-release.json": JSON.stringify({ releaseId }),
+    [`mobile-ota/releases/${releaseId}/metadata.json`]: JSON.stringify(metadata),
+    [`mobile-ota/releases/${releaseId}/bundles/${metadata.launchAsset.key}`]: "bundle-bytes",
+    [`mobile-ota/releases/${releaseId}/assets/${metadata.assets[0].key}`]: "asset-bytes",
+  };
 }
 
 function getPort(server: ReturnType<express.Express["listen"]>): number {
@@ -231,7 +297,7 @@ describe("createUpdatesRouter", () => {
 
     expect(manifest.launchAsset).toEqual(
       expect.objectContaining({
-        url: "https://dofek.asherlc.com/updates/bundles/ios-abc123def456.hbc",
+        url: "https://dofek.asherlc.com/api/updates/releases/current/bundles/ios-abc123def456.hbc",
         hash: "abc123base64url",
         key: "ios-abc123def456.hbc",
         contentType: "application/javascript",
@@ -239,7 +305,9 @@ describe("createUpdatesRouter", () => {
     );
 
     expect(manifest.assets).toHaveLength(1);
-    expect(manifest.assets[0].url).toBe("https://dofek.asherlc.com/updates/assets/asset_abc.png");
+    expect(manifest.assets[0].url).toBe(
+      "https://dofek.asherlc.com/api/updates/releases/current/assets/asset_abc.png",
+    );
     expect(manifest.assets[0].hash).toBe("def456base64url");
     expect(manifest.assets[0].key).toBe("asset_abc.png");
     expect(manifest.assets[0].contentType).toBe("image/png");
@@ -361,8 +429,260 @@ describe("createUpdatesRouter", () => {
     const manifest = parseManifestFromMultipart(res.body);
     expect(manifest.launchAsset).toEqual(
       expect.objectContaining({
-        url: "https://dofek.asherlc.com/updates/bundles/ios-abc123def456.hbc",
+        url: "https://dofek.asherlc.com/api/updates/releases/current/bundles/ios-abc123def456.hbc",
       }),
     );
+  });
+
+  it("serves bundle bytes from /releases/:releaseId/bundles/:key", async () => {
+    const metadata = validMetadata();
+    writeMetadata(metadata);
+    writeReleaseFiles(metadata);
+    const app = createTestApp();
+    const res = await request(app, `/updates/releases/current/bundles/${metadata.launchAsset.key}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toBe("bundle-bytes");
+    expect(res.headers.get("content-type")).toContain("application/javascript");
+  });
+
+  it("serves asset bytes from /releases/:releaseId/assets/:key", async () => {
+    const metadata = validMetadata();
+    writeMetadata(metadata);
+    writeReleaseFiles(metadata);
+    const app = createTestApp();
+    const assetKey = metadata.assets[0].key;
+    const res = await request(app, `/updates/releases/current/assets/${assetKey}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toBe("asset-bytes");
+    expect(res.headers.get("content-type")).toContain("image/png");
+  });
+
+  it("returns 404 when bundle file is missing from the requested release", async () => {
+    const noBundleDir = join(
+      tmpdir(),
+      `dofek-updates-no-bundle-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    );
+    const currentDir = join(noBundleDir, "current");
+    mkdirSync(currentDir, { recursive: true });
+    writeFileSync(join(currentDir, "metadata.json"), JSON.stringify(validMetadata()));
+    const app = createTestApp(noBundleDir);
+    const res = await request(app, "/updates/releases/current/bundles/ios-abc123def456.hbc");
+    expect(res.status).toBe(404);
+  });
+
+  it("keeps legacy /bundles/:key path working via current release", async () => {
+    const metadata = validMetadata();
+    writeMetadata(metadata);
+    writeReleaseFiles(metadata);
+    const app = createTestApp();
+    const res = await request(app, `/updates/bundles/${metadata.launchAsset.key}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toBe("bundle-bytes");
+  });
+
+  it("serves manifest from object storage using current release pointer", async () => {
+    const metadata = validMetadata();
+    const releaseId = "release-2026-03-31";
+    const app = createObjectStorageApp(
+      createMockStorage(createReleaseStorageFiles(releaseId, metadata)),
+    );
+
+    const res = await request(app, "/updates/manifest", {
+      "expo-protocol-version": "1",
+      "expo-platform": "ios",
+      "expo-runtime-version": "1.0",
+    });
+
+    expect(res.status).toBe(200);
+    const manifest = parseManifestFromMultipart(res.body);
+    expect(manifest.launchAsset.url).toBe(
+      `https://dofek.asherlc.com/api/updates/releases/${releaseId}/bundles/${metadata.launchAsset.key}`,
+    );
+    expect(manifest.assets[0].url).toBe(
+      `https://dofek.asherlc.com/api/updates/releases/${releaseId}/assets/${metadata.assets[0].key}`,
+    );
+  });
+
+  it("returns 204 when object storage current-release pointer is missing", async () => {
+    const app = createObjectStorageApp(
+      createMockStorage(
+        {},
+        { "mobile-ota/current-release.json": new ObjectStorageNotFoundError("missing pointer") },
+      ),
+    );
+
+    const res = await request(app, "/updates/manifest", {
+      "expo-protocol-version": "1",
+      "expo-platform": "ios",
+      "expo-runtime-version": "1.0",
+    });
+
+    expect(res.status).toBe(204);
+    expect(res.headers.get("expo-protocol-version")).toBe("1");
+  });
+
+  it("returns 204 when current-release.json is malformed JSON", async () => {
+    const logger = {
+      info: vi.fn<(message: string) => void>(),
+      error: vi.fn<(message: string) => void>(),
+    };
+    const app = createObjectStorageApp(
+      createMockStorage({ "mobile-ota/current-release.json": "{bad-json" }),
+      logger,
+    );
+
+    const res = await request(app, "/updates/manifest", {
+      "expo-protocol-version": "1",
+      "expo-platform": "ios",
+      "expo-runtime-version": "1.0",
+    });
+
+    expect(res.status).toBe(204);
+    expect(logger.error).toHaveBeenCalledWith("[updates] Malformed JSON in current-release.json");
+  });
+
+  it("returns 204 when current-release.json has invalid shape", async () => {
+    const logger = {
+      info: vi.fn<(message: string) => void>(),
+      error: vi.fn<(message: string) => void>(),
+    };
+    const app = createObjectStorageApp(
+      createMockStorage({ "mobile-ota/current-release.json": JSON.stringify({ releaseId: "" }) }),
+      logger,
+    );
+
+    const res = await request(app, "/updates/manifest", {
+      "expo-protocol-version": "1",
+      "expo-platform": "ios",
+      "expo-runtime-version": "1.0",
+    });
+
+    expect(res.status).toBe(204);
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("Invalid current-release.json"),
+    );
+  });
+
+  it("returns 204 when metadata.json is missing for the current release", async () => {
+    const releaseId = "release-metadata-missing";
+    const app = createObjectStorageApp(
+      createMockStorage(
+        { "mobile-ota/current-release.json": JSON.stringify({ releaseId }) },
+        {
+          [`mobile-ota/releases/${releaseId}/metadata.json`]: new ObjectStorageNotFoundError(
+            "missing metadata",
+          ),
+        },
+      ),
+    );
+
+    const res = await request(app, "/updates/manifest", {
+      "expo-protocol-version": "1",
+      "expo-platform": "ios",
+      "expo-runtime-version": "1.0",
+    });
+
+    expect(res.status).toBe(204);
+  });
+
+  it("returns 404 for release assets when key does not exist in metadata", async () => {
+    const releaseId = "release-asset-metadata-mismatch";
+    const metadata = validMetadata();
+    const app = createObjectStorageApp(
+      createMockStorage(createReleaseStorageFiles(releaseId, metadata)),
+    );
+    const res = await request(
+      app,
+      "/updates/releases/release-asset-metadata-mismatch/assets/unknown.png",
+    );
+
+    expect(res.status).toBe(404);
+    expect(JSON.parse(res.body)).toEqual({ error: "Asset not found in metadata" });
+  });
+
+  it("returns 404 for release bundles when key does not match metadata launch asset", async () => {
+    const releaseId = "release-bundle-metadata-mismatch";
+    const metadata = validMetadata();
+    const app = createObjectStorageApp(
+      createMockStorage(createReleaseStorageFiles(releaseId, metadata)),
+    );
+    const res = await request(
+      app,
+      "/updates/releases/release-bundle-metadata-mismatch/bundles/wrong.hbc",
+    );
+
+    expect(res.status).toBe(404);
+    expect(JSON.parse(res.body)).toEqual({ error: "Bundle not found in metadata" });
+  });
+
+  it("returns 404 for release asset when file is missing from object storage", async () => {
+    const releaseId = "release-asset-file-missing";
+    const metadata = validMetadata();
+    const files = createReleaseStorageFiles(releaseId, metadata);
+    delete files[`mobile-ota/releases/${releaseId}/assets/${metadata.assets[0].key}`];
+    const app = createObjectStorageApp(createMockStorage(files));
+
+    const res = await request(
+      app,
+      `/updates/releases/${releaseId}/assets/${metadata.assets[0].key}`,
+    );
+
+    expect(res.status).toBe(404);
+    expect(JSON.parse(res.body)).toEqual({ error: "Asset file not found" });
+  });
+
+  it("returns 404 for release bundle when file is missing from object storage", async () => {
+    const releaseId = "release-bundle-file-missing";
+    const metadata = validMetadata();
+    const files = createReleaseStorageFiles(releaseId, metadata);
+    delete files[`mobile-ota/releases/${releaseId}/bundles/${metadata.launchAsset.key}`];
+    const app = createObjectStorageApp(createMockStorage(files));
+
+    const res = await request(
+      app,
+      `/updates/releases/${releaseId}/bundles/${metadata.launchAsset.key}`,
+    );
+
+    expect(res.status).toBe(404);
+    expect(JSON.parse(res.body)).toEqual({ error: "Bundle file not found" });
+  });
+
+  it("keeps legacy /assets/:key working via current release pointer in object storage mode", async () => {
+    const releaseId = "release-legacy-assets";
+    const metadata = validMetadata();
+    const app = createObjectStorageApp(
+      createMockStorage(createReleaseStorageFiles(releaseId, metadata)),
+    );
+
+    const res = await request(app, `/updates/assets/${metadata.assets[0].key}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toBe("asset-bytes");
+    expect(res.headers.get("cache-control")).toContain("immutable");
+  });
+
+  it("returns 404 on legacy /assets/:key when no current release is configured", async () => {
+    const app = createObjectStorageApp(
+      createMockStorage(
+        {},
+        { "mobile-ota/current-release.json": new ObjectStorageNotFoundError("missing pointer") },
+      ),
+    );
+
+    const res = await request(app, "/updates/assets/asset_abc.png");
+    expect(res.status).toBe(404);
+    expect(JSON.parse(res.body)).toEqual({ error: "No current OTA release configured" });
+  });
+
+  it("returns 404 on legacy /bundles/:key when no current release is configured", async () => {
+    const app = createObjectStorageApp(
+      createMockStorage(
+        {},
+        { "mobile-ota/current-release.json": new ObjectStorageNotFoundError("missing pointer") },
+      ),
+    );
+
+    const res = await request(app, "/updates/bundles/ios-abc123def456.hbc");
+    expect(res.status).toBe(404);
+    expect(JSON.parse(res.body)).toEqual({ error: "No current OTA release configured" });
   });
 });

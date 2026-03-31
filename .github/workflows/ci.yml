@@ -1064,8 +1064,8 @@ jobs:
 
       - name: Generate metadata and stage release
         run: |
-          RELEASE_DIR="$(date +%Y-%m-%d)-${GITHUB_SHA::8}"
-          STAGING_DIR="$RUNNER_TEMP/ota/$RELEASE_DIR"
+          RELEASE_ID="$(date +%Y-%m-%d)-${GITHUB_SHA::8}"
+          STAGING_DIR="$RUNNER_TEMP/ota/$RELEASE_ID"
           mkdir -p "$STAGING_DIR/bundles" "$STAGING_DIR/assets"
 
           # Generate metadata.json
@@ -1084,52 +1084,80 @@ jobs:
             cp packages/mobile/dist/assets/* "$STAGING_DIR/assets/" 2>/dev/null || true
           fi
 
-          echo "RELEASE_DIR=$RELEASE_DIR" >> "$GITHUB_ENV"
+          echo "RELEASE_ID=$RELEASE_ID" >> "$GITHUB_ENV"
           echo "STAGING_DIR=$STAGING_DIR" >> "$GITHUB_ENV"
 
-      - name: Deploy to server
+      - name: Validate OTA R2 secrets
         env:
-          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-          SSH_ARGS=(-i ~/.ssh/id_ed25519 -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10)
+          set -euo pipefail
+          missing=()
+          [ -n "${R2_ENDPOINT:-}" ] || missing+=("R2_ENDPOINT")
+          [ -n "${R2_ACCESS_KEY_ID:-}" ] || missing+=("R2_ACCESS_KEY_ID")
+          [ -n "${R2_SECRET_ACCESS_KEY:-}" ] || missing+=("R2_SECRET_ACCESS_KEY")
+          [ -n "${R2_BUCKET:-}" ] || missing+=("R2_BUCKET")
 
-          retry() {
-            local description="$1"
-            shift
-            local attempt=1
-            while [ "$attempt" -le 3 ]; do
-              if "$@"; then
-                return 0
-              fi
-              if [ "$attempt" -eq 3 ]; then
-                echo "::error::$description failed after $attempt attempts"
-                return 1
-              fi
-              sleep $((attempt * 2))
-              attempt=$((attempt + 1))
-            done
-          }
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::OTA deploy missing required GitHub secrets: ${missing[*]}"
+            exit 1
+          fi
 
-          # Upload release directory
-          retry "Create OTA release directory" \
-            ssh "${SSH_ARGS[@]}" root@"$SERVER_HOST" "mkdir -p /opt/dofek/updates/$RELEASE_DIR"
-          retry "Upload OTA release artifacts" \
-            scp "${SSH_ARGS[@]}" -r "$STAGING_DIR"/* root@"$SERVER_HOST":/opt/dofek/updates/"$RELEASE_DIR"/
+      - name: Deploy OTA assets to R2
+        env:
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          set -euo pipefail
+          : "${R2_ENDPOINT:?Missing R2_ENDPOINT}"
+          : "${R2_ACCESS_KEY_ID:?Missing R2_ACCESS_KEY_ID}"
+          : "${R2_SECRET_ACCESS_KEY:?Missing R2_SECRET_ACCESS_KEY}"
+          : "${R2_BUCKET:?Missing R2_BUCKET}"
 
-          # Atomic symlink switch (relative so it resolves inside Docker containers)
-          retry "Switch OTA current symlink" \
-            ssh "${SSH_ARGS[@]}" root@"$SERVER_HOST" "ln -sfn $RELEASE_DIR /opt/dofek/updates/current"
+          R2_RELEASE_PREFIX="mobile-ota/releases/$RELEASE_ID"
+          R2_RELEASE_URL="s3://$R2_BUCKET/$R2_RELEASE_PREFIX"
+          R2_POINTER_KEY="mobile-ota/current-release.json"
+          R2_POINTER_URL="s3://$R2_BUCKET/$R2_POINTER_KEY"
 
-          # Clean up old releases (keep last 10)
-          retry "Clean old OTA releases" \
-            ssh "${SSH_ARGS[@]}" root@"$SERVER_HOST" 'cd /opt/dofek/updates && ls -dt 20*/ | tail -n +11 | xargs rm -rf'
+          # Upload release artifacts under a versioned prefix.
+          # Pointer flip happens last for an atomic switch.
 
-          echo "OTA update deployed: $RELEASE_DIR"
+          if [ -d "$STAGING_DIR/bundles" ]; then
+            aws s3 cp "$STAGING_DIR/bundles/" "$R2_RELEASE_URL/bundles/" \
+              --recursive \
+              --endpoint-url "$R2_ENDPOINT" \
+              --cache-control "public, immutable, max-age=31536000"
+          fi
+
+          if [ -d "$STAGING_DIR/assets" ]; then
+            aws s3 cp "$STAGING_DIR/assets/" "$R2_RELEASE_URL/assets/" \
+              --recursive \
+              --endpoint-url "$R2_ENDPOINT" \
+              --cache-control "public, immutable, max-age=31536000"
+          fi
+
+          aws s3 cp "$STAGING_DIR/metadata.json" "$R2_RELEASE_URL/metadata.json" \
+            --endpoint-url "$R2_ENDPOINT" \
+            --content-type "application/json" \
+            --cache-control "no-cache"
+
+          POINTER_FILE="$RUNNER_TEMP/current-release.json"
+          printf '{"releaseId":"%s"}\n' "$RELEASE_ID" > "$POINTER_FILE"
+          aws s3 cp "$POINTER_FILE" "$R2_POINTER_URL" \
+            --endpoint-url "$R2_ENDPOINT" \
+            --content-type "application/json" \
+            --cache-control "no-cache"
+
+          echo "OTA update deployed: r2://$R2_BUCKET/$R2_RELEASE_PREFIX"
+          echo "Current release pointer: r2://$R2_BUCKET/$R2_POINTER_KEY -> $RELEASE_ID"
 
   deploy-config:
     name: Deploy Config

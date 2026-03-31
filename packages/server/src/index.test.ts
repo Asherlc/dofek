@@ -32,6 +32,11 @@ vi.mock("dofek/jobs/queues", () => ({
   createImportQueue: vi.fn(),
   createSyncQueue: vi.fn(),
 }));
+vi.mock("dofek/lib/r2-client", () => ({
+  createR2Client: vi.fn(),
+  createS3Client: vi.fn(),
+  parseR2Config: vi.fn(),
+}));
 vi.mock("./auth/admin.ts", () => ({
   isAdmin: vi.fn().mockResolvedValue(false),
 }));
@@ -86,6 +91,7 @@ vi.mock("dofek/db", () => ({
 import * as Sentry from "@sentry/node";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { createDatabaseFromEnv } from "dofek/db";
+import { createR2Client, createS3Client, parseR2Config, type R2Config } from "dofek/lib/r2-client";
 import express from "express";
 import { isAdmin } from "./auth/admin.ts";
 import { getSessionIdFromRequest } from "./auth/cookies.ts";
@@ -352,6 +358,107 @@ describe("createApp HTTP routes", () => {
   describe("createAuthRouter mounting", () => {
     it("calls createAuthRouter during app setup", () => {
       expect(vi.mocked(createAuthRouter)).toHaveBeenCalled();
+    });
+  });
+
+  describe("R2 OTA configuration", () => {
+    const r2EnvKeys = [
+      "R2_ENDPOINT",
+      "R2_ACCESS_KEY_ID",
+      "R2_SECRET_ACCESS_KEY",
+      "R2_BUCKET",
+    ] as const;
+    const originalR2Env: Record<(typeof r2EnvKeys)[number], string | undefined> = {
+      R2_ENDPOINT: process.env.R2_ENDPOINT,
+      R2_ACCESS_KEY_ID: process.env.R2_ACCESS_KEY_ID,
+      R2_SECRET_ACCESS_KEY: process.env.R2_SECRET_ACCESS_KEY,
+      R2_BUCKET: process.env.R2_BUCKET,
+    };
+
+    function setR2Env(values: Partial<Record<(typeof r2EnvKeys)[number], string>>) {
+      for (const key of r2EnvKeys) {
+        const value = values[key];
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      }
+    }
+
+    afterEach(() => {
+      for (const key of r2EnvKeys) {
+        const originalValue = originalR2Env[key];
+        if (originalValue === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = originalValue;
+        }
+      }
+    });
+
+    it("logs fallback when R2 config is incomplete", () => {
+      setR2Env({
+        R2_ENDPOINT: "https://example.r2.cloudflarestorage.com",
+      });
+
+      const fakeDb = createDatabaseFromEnv();
+      createApp(fakeDb);
+
+      expect(vi.mocked(logger.error)).toHaveBeenCalledWith(
+        "[updates] Incomplete R2 config; falling back to filesystem OTA storage",
+      );
+      expect(vi.mocked(parseR2Config)).not.toHaveBeenCalled();
+    });
+
+    it("logs and reports invalid complete R2 config", () => {
+      setR2Env({
+        R2_ENDPOINT: "https://example.r2.cloudflarestorage.com",
+        R2_ACCESS_KEY_ID: "key-id",
+        R2_SECRET_ACCESS_KEY: "secret",
+        R2_BUCKET: "ota-assets",
+      });
+      const parseError = new Error("bad r2 config");
+      vi.mocked(parseR2Config).mockImplementationOnce(() => {
+        throw parseError;
+      });
+
+      const fakeDb = createDatabaseFromEnv();
+      createApp(fakeDb);
+
+      expect(vi.mocked(parseR2Config)).toHaveBeenCalled();
+      expect(vi.mocked(logger.error)).toHaveBeenCalledWith(
+        expect.stringContaining("Invalid R2 config; falling back to filesystem OTA storage"),
+      );
+      expect(vi.mocked(Sentry.captureException)).toHaveBeenCalledWith(parseError);
+      expect(vi.mocked(createS3Client)).not.toHaveBeenCalled();
+      expect(vi.mocked(createR2Client)).not.toHaveBeenCalled();
+    });
+
+    it("builds an R2 client when complete config is valid", () => {
+      setR2Env({
+        R2_ENDPOINT: "https://example.r2.cloudflarestorage.com",
+        R2_ACCESS_KEY_ID: "key-id",
+        R2_SECRET_ACCESS_KEY: "secret",
+        R2_BUCKET: "ota-assets",
+      });
+      const parsedConfig: R2Config = {
+        R2_ENDPOINT: "https://example.r2.cloudflarestorage.com",
+        R2_ACCESS_KEY_ID: "key-id",
+        R2_SECRET_ACCESS_KEY: "secret",
+        R2_BUCKET: "ota-assets",
+      };
+      vi.mocked(parseR2Config).mockReturnValueOnce(parsedConfig);
+
+      const fakeDb = createDatabaseFromEnv();
+      createApp(fakeDb);
+
+      expect(vi.mocked(parseR2Config)).toHaveBeenCalledWith(parsedConfig);
+      expect(vi.mocked(createS3Client)).toHaveBeenCalledWith(parsedConfig);
+      expect(vi.mocked(createR2Client)).toHaveBeenCalledWith(undefined, "ota-assets");
+      expect(vi.mocked(logger.info)).toHaveBeenCalledWith(
+        "[updates] Using R2 object storage for OTA assets",
+      );
     });
   });
 });
