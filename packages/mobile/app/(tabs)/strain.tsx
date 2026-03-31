@@ -3,8 +3,9 @@ import {
   collapseWeeklyVolumeActivityTypes,
   formatActivityTypeLabel,
 } from "@dofek/training/training";
+import { useRouter } from "expo-router";
 import { useState } from "react";
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ActivityCard } from "../../components/ActivityCard";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { SparkLine } from "../../components/charts/SparkLine";
@@ -18,6 +19,7 @@ import { colors } from "../../theme";
 import { ActivityRowSchema, WeeklyVolumeRowSchema } from "../../types/api";
 
 export default function StrainScreen() {
+  const router = useRouter();
   const [days, setDays] = useState(30);
   const units = useUnitConverter();
   const workloadQuery = trpc.recovery.workloadRatio.useQuery({ days });
@@ -180,19 +182,24 @@ export default function StrainScreen() {
               <Text style={styles.sectionTitle}>Recent Activities</Text>
               <View style={styles.activitiesStack}>
                 {activities.slice(0, 5).map((activity) => (
-                  <ActivityCard
+                  <TouchableOpacity
                     key={String(activity.id)}
-                    name={activity.name ?? ""}
-                    activityType={activity.activity_type ?? ""}
-                    startedAt={activity.started_at}
-                    endedAt={activity.ended_at ?? null}
-                    avgHr={activity.avg_hr ?? null}
-                    maxHr={activity.max_hr ?? null}
-                    avgPower={activity.avg_power ?? null}
-                    distanceKm={activity.distance_meters ? activity.distance_meters / 1000 : null}
-                    calories={activity.calories ?? null}
-                    units={units}
-                  />
+                    activeOpacity={0.7}
+                    onPress={() => router.push(`/activity/${activity.id}`)}
+                  >
+                    <ActivityCard
+                      name={activity.name ?? ""}
+                      activityType={activity.activity_type ?? ""}
+                      startedAt={activity.started_at}
+                      endedAt={activity.ended_at ?? null}
+                      avgHr={activity.avg_hr ?? null}
+                      maxHr={activity.max_hr ?? null}
+                      avgPower={activity.avg_power ?? null}
+                      distanceKm={activity.distance_meters ? activity.distance_meters / 1000 : null}
+                      calories={activity.calories ?? null}
+                      units={units}
+                    />
+                  </TouchableOpacity>
                 ))}
               </View>
             </View>
