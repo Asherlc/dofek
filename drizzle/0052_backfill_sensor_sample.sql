@@ -11,6 +11,10 @@
 -- - commits after each chunk
 -- - resumes from the last committed cursor on retry
 
+CREATE SCHEMA IF NOT EXISTS drizzle;
+
+--> statement-breakpoint
+
 CREATE TABLE IF NOT EXISTS drizzle.sensor_sample_backfill_progress (
   source_name text PRIMARY KEY,
   next_cursor timestamptz,
