@@ -3,13 +3,14 @@ import { computeSleepConsistencyScore } from "@dofek/recovery/sleep-consistency"
 import { StrainScore, zScoreToRecoveryScore } from "@dofek/scoring/scoring";
 import { computeStrainTarget } from "@dofek/scoring/strain-target";
 import { selectRecentDailyLoad } from "@dofek/training/training";
-import type { Database } from "dofek/db";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { dateWindowEnd, dateWindowStart, timestampWindowStart } from "../lib/date-window.ts";
-import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import { BaseRepository } from "../lib/base-repository.ts";
+import { dateWindowStart, timestampWindowStart } from "../lib/date-window.ts";
+import { acwrCte, sleepDedupCte, vitalsBaselineCte } from "../lib/sql-fragments.ts";
+import { dateStringSchema } from "../lib/typed-sql.ts";
 
 // ---------------------------------------------------------------------------
 // Domain models
@@ -369,49 +370,23 @@ const strainSleepRowSchema = z.object({
 // ---------------------------------------------------------------------------
 
 /** Data access for recovery, sleep, and readiness analytics. */
-export class RecoveryRepository {
-  readonly #db: Pick<Database, "execute">;
-  readonly #userId: string;
-  readonly #timezone: string;
-
-  constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
-    this.#db = db;
-    this.#userId = userId;
-    this.#timezone = timezone;
-  }
-
+export class RecoveryRepository extends BaseRepository {
   /** Sleep schedule consistency with rolling 14-day stddev windows. */
   async getSleepConsistency(days: number): Promise<SleepConsistencyDay[]> {
     const queryDays = days + 14;
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.query(
       consistencyRowSchema,
-      sql`WITH sleep_raw AS (
-            SELECT
-              (started_at AT TIME ZONE ${this.#timezone})::date AS date,
-              EXTRACT(HOUR FROM started_at AT TIME ZONE ${this.#timezone}) + EXTRACT(MINUTE FROM started_at AT TIME ZONE ${this.#timezone}) / 60.0 AS bedtime_hour,
-              EXTRACT(HOUR FROM ended_at AT TIME ZONE ${this.#timezone}) + EXTRACT(MINUTE FROM ended_at AT TIME ZONE ${this.#timezone}) / 60.0 AS waketime_hour,
-              duration_minutes
-            FROM fitness.v_sleep
-            WHERE user_id = ${this.#userId}
-              AND is_nap = false
-              AND started_at > NOW() - ${queryDays}::int * INTERVAL '1 day'
-          ),
-          nightly AS (
-            SELECT DISTINCT ON (date) date, bedtime_hour, waketime_hour
-            FROM sleep_raw
-            ORDER BY date, duration_minutes DESC NULLS LAST
-          )
+      sql`WITH ${sleepDedupCte(this.userId, this.timezone, "now", queryDays)}
           SELECT
-            date::text,
-            bedtime_hour,
-            waketime_hour,
-            STDDEV_POP(bedtime_hour) OVER (ORDER BY date ROWS BETWEEN 13 PRECEDING AND CURRENT ROW) AS rolling_bedtime_stddev,
-            STDDEV_POP(waketime_hour) OVER (ORDER BY date ROWS BETWEEN 13 PRECEDING AND CURRENT ROW) AS rolling_waketime_stddev,
-            COUNT(*) OVER (ORDER BY date ROWS BETWEEN 13 PRECEDING AND CURRENT ROW) AS window_count
-          FROM nightly
-          WHERE date > CURRENT_DATE - ${days}::int
-          ORDER BY date ASC`,
+            sleep_date::text AS date,
+            EXTRACT(HOUR FROM started_at AT TIME ZONE ${this.timezone}) + EXTRACT(MINUTE FROM started_at AT TIME ZONE ${this.timezone}) / 60.0 AS bedtime_hour,
+            EXTRACT(HOUR FROM ended_at AT TIME ZONE ${this.timezone}) + EXTRACT(MINUTE FROM ended_at AT TIME ZONE ${this.timezone}) / 60.0 AS waketime_hour,
+            STDDEV_POP(EXTRACT(HOUR FROM started_at AT TIME ZONE ${this.timezone}) + EXTRACT(MINUTE FROM started_at AT TIME ZONE ${this.timezone}) / 60.0) OVER (ORDER BY sleep_date ROWS BETWEEN 13 PRECEDING AND CURRENT ROW) AS rolling_bedtime_stddev,
+            STDDEV_POP(EXTRACT(HOUR FROM ended_at AT TIME ZONE ${this.timezone}) + EXTRACT(MINUTE FROM ended_at AT TIME ZONE ${this.timezone}) / 60.0) OVER (ORDER BY sleep_date ROWS BETWEEN 13 PRECEDING AND CURRENT ROW) AS rolling_waketime_stddev,
+            COUNT(*) OVER (ORDER BY sleep_date ROWS BETWEEN 13 PRECEDING AND CURRENT ROW) AS window_count
+          FROM sleep_deduped
+          WHERE sleep_date > CURRENT_DATE - ${days}::int
+          ORDER BY sleep_date ASC`,
     );
 
     return rows.map(
@@ -432,15 +407,14 @@ export class RecoveryRepository {
   /** Rolling 7-day coefficient of variation of HRV. */
   async getHrvVariability(days: number): Promise<HrvVariabilityDay[]> {
     const queryDays = days + 7;
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.query(
       hrvRowSchema,
       sql`WITH daily AS (
             SELECT
               date,
               hrv
             FROM fitness.v_daily_metrics
-            WHERE user_id = ${this.#userId}
+            WHERE user_id = ${this.userId}
               AND date > CURRENT_DATE - ${queryDays}::int
               AND hrv IS NOT NULL
             ORDER BY date ASC
@@ -474,50 +448,9 @@ export class RecoveryRepository {
 
   /** Acute:Chronic Workload Ratio time series. */
   async getWorkloadRatio(days: number, endDate: string): Promise<WorkloadDay[]> {
-    const queryDays = days + 28;
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.query(
       workloadRowSchema,
-      sql`WITH date_series AS (
-            SELECT generate_series(
-              ${dateWindowStart(endDate, queryDays)},
-              ${dateWindowEnd(endDate)},
-              '1 day'::interval
-            )::date AS date
-          ),
-          per_activity AS (
-            SELECT
-              (asum.started_at AT TIME ZONE ${this.#timezone})::date AS date,
-              EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
-                * asum.avg_hr
-                / NULLIF(asum.max_hr, 0) AS load
-            FROM fitness.activity_summary asum
-            WHERE asum.user_id = ${this.#userId}
-              AND (asum.started_at AT TIME ZONE ${this.#timezone})::date >= ${dateWindowStart(endDate, queryDays)}
-              AND asum.ended_at IS NOT NULL
-              AND asum.avg_hr IS NOT NULL
-          ),
-          activity_load AS (
-            SELECT date, SUM(load) AS daily_load
-            FROM per_activity
-            GROUP BY date
-          ),
-          daily AS (
-            SELECT
-              ds.date,
-              COALESCE(al.daily_load, 0) AS daily_load
-            FROM date_series ds
-            LEFT JOIN activity_load al ON al.date = ds.date
-          ),
-          with_windows AS (
-            SELECT
-              date,
-              daily_load,
-              SUM(daily_load) OVER (ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS acute_load,
-              AVG(daily_load) OVER (ORDER BY date ROWS BETWEEN 27 PRECEDING AND CURRENT ROW) AS chronic_load_avg,
-              COUNT(*) OVER (ORDER BY date ROWS BETWEEN 27 PRECEDING AND CURRENT ROW) AS chronic_count
-            FROM daily
-          )
+      sql`WITH ${acwrCte(this.userId, this.timezone, endDate, days)}
           SELECT
             date::text AS date,
             daily_load,
@@ -528,7 +461,7 @@ export class RecoveryRepository {
               THEN acute_load / (chronic_load_avg * 7)
               ELSE NULL
             END AS workload_ratio
-          FROM with_windows
+          FROM acwr_with_windows
           WHERE date > ${dateWindowStart(endDate, days)}
           ORDER BY date ASC`,
     );
@@ -547,12 +480,12 @@ export class RecoveryRepository {
 
   /** Sleep analytics: stage percentages, rolling avg duration. */
   async getSleepNights(days: number): Promise<SleepNight[]> {
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.query(
       sleepRowSchema,
-      sql`WITH sleep_raw AS (
+      sql`WITH ${sleepDedupCte(this.userId, this.timezone, "now", days)},
+          nightly AS (
             SELECT
-              (started_at AT TIME ZONE ${this.#timezone})::date AS date,
+              sleep_date AS date,
               duration_minutes,
               CASE
                 WHEN provider_id = 'apple_health'
@@ -560,26 +493,12 @@ export class RecoveryRepository {
                   THEN COALESCE(deep_minutes, 0) + COALESCE(rem_minutes, 0) + COALESCE(light_minutes, 0)
                 ELSE duration_minutes
               END AS sleep_minutes,
-              deep_minutes,
-              rem_minutes,
-              light_minutes,
-              awake_minutes,
-              efficiency_pct,
               CASE WHEN duration_minutes > 0 THEN deep_minutes::real / duration_minutes * 100 ELSE 0 END AS deep_pct,
               CASE WHEN duration_minutes > 0 THEN rem_minutes::real / duration_minutes * 100 ELSE 0 END AS rem_pct,
               CASE WHEN duration_minutes > 0 THEN light_minutes::real / duration_minutes * 100 ELSE 0 END AS light_pct,
-              CASE WHEN duration_minutes > 0 THEN awake_minutes::real / duration_minutes * 100 ELSE 0 END AS awake_pct
-            FROM fitness.v_sleep
-            WHERE user_id = ${this.#userId}
-              AND is_nap = false
-              AND started_at > NOW() - ${days}::int * INTERVAL '1 day'
-          ),
-          nightly AS (
-            SELECT DISTINCT ON (date)
-              date, duration_minutes, sleep_minutes, deep_minutes, rem_minutes,
-              light_minutes, awake_minutes, efficiency_pct, deep_pct, rem_pct, light_pct, awake_pct
-            FROM sleep_raw
-            ORDER BY date, duration_minutes DESC NULLS LAST
+              CASE WHEN duration_minutes > 0 THEN awake_minutes::real / duration_minutes * 100 ELSE 0 END AS awake_pct,
+              efficiency_pct
+            FROM sleep_deduped
           )
           SELECT
             date::text AS date,
@@ -617,7 +536,7 @@ export class RecoveryRepository {
     const nights = await this.getSleepNights(days);
     const nightly = nights.map((night) => night.toDetail());
 
-    const storedParams = await loadPersonalizedParams(this.#db, this.#userId);
+    const storedParams = await loadPersonalizedParams(this.db, this.userId);
     const effective = getEffectiveParams(storedParams);
     const targetMinutes = effective.sleepTarget.minutes;
     const sleepDebt = computeSleepDebt(nights, targetMinutes);
@@ -628,53 +547,37 @@ export class RecoveryRepository {
   /** Readiness metrics with baselines and sleep efficiency. */
   async getReadinessMetrics(days: number, endDate: string): Promise<ReadinessDayRow[]> {
     const queryDays = days + 30;
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.query(
       readinessRowSchema,
-      sql`WITH metrics_with_baselines AS (
-            SELECT
-              date::text AS date,
-              hrv,
-              resting_hr,
-              respiratory_rate_avg AS respiratory_rate,
-              AVG(hrv) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS hrv_mean_30d,
-              STDDEV_POP(hrv) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS hrv_sd_30d,
-              AVG(resting_hr) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rhr_mean_30d,
-              STDDEV_POP(resting_hr) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rhr_sd_30d,
-              AVG(respiratory_rate_avg) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_mean_30d,
-              STDDEV_POP(respiratory_rate_avg) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_sd_30d
-            FROM fitness.v_daily_metrics
-            WHERE user_id = ${this.#userId}
-              AND date > ${dateWindowStart(endDate, queryDays)}
-          ),
+      sql`WITH ${vitalsBaselineCte(this.userId, endDate, days, 30)},
           sleep_eff AS (
             SELECT DISTINCT ON (local_date)
               local_date::text AS date,
               efficiency_pct
             FROM (
-              SELECT (COALESCE(ended_at, started_at + interval '8 hours') AT TIME ZONE ${this.#timezone})::date AS local_date,
+              SELECT (COALESCE(ended_at, started_at + interval '8 hours') AT TIME ZONE ${this.timezone})::date AS local_date,
                      efficiency_pct, duration_minutes
               FROM fitness.v_sleep
-              WHERE user_id = ${this.#userId}
+              WHERE user_id = ${this.userId}
                 AND is_nap = false
                 AND started_at > ${timestampWindowStart(endDate, queryDays)}
             ) sleep_sub
             ORDER BY local_date, duration_minutes DESC NULLS LAST
           )
           SELECT
-            m.date,
+            m.date::text,
             m.hrv,
             m.resting_hr,
-            m.respiratory_rate,
+            m.respiratory_rate_avg AS respiratory_rate,
             m.hrv_mean_30d,
-            m.hrv_sd_30d,
-            m.rhr_mean_30d,
-            m.rhr_sd_30d,
-            m.rr_mean_30d,
-            m.rr_sd_30d,
+            m.hrv_stddev_30d AS hrv_sd_30d,
+            m.resting_hr_mean_30d AS rhr_mean_30d,
+            m.resting_hr_stddev_30d AS rhr_sd_30d,
+            m.respiratory_rate_mean_30d AS rr_mean_30d,
+            m.respiratory_rate_stddev_30d AS rr_sd_30d,
             s.efficiency_pct
-          FROM metrics_with_baselines m
-          LEFT JOIN sleep_eff s ON s.date = m.date
+          FROM vitals_baseline m
+          LEFT JOIN sleep_eff s ON s.date = m.date::text
           ORDER BY m.date ASC`,
     );
 
@@ -695,7 +598,7 @@ export class RecoveryRepository {
 
   /** Composite readiness scores over time. */
   async getReadinessScores(days: number, endDate: string) {
-    const storedParams = await loadPersonalizedParams(this.#db, this.#userId);
+    const storedParams = await loadPersonalizedParams(this.db, this.userId);
     const effective = getEffectiveParams(storedParams);
     const weights = effective.readinessWeights;
 
@@ -729,13 +632,12 @@ export class RecoveryRepository {
 
   /** Fetch latest daily metrics for strain target computation. */
   async getLatestDailyMetrics() {
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.query(
       strainMetricsRowSchema,
       sql`
         SELECT date, resting_hr, hrv, spo2_avg, respiratory_rate_avg
         FROM fitness.daily_metrics
-        WHERE user_id = ${this.#userId}
+        WHERE user_id = ${this.userId}
         ORDER BY date DESC
         LIMIT 1
       `,
@@ -745,8 +647,7 @@ export class RecoveryRepository {
 
   /** Fetch daily loads for ACWR. */
   async getDailyLoads(days: number, endDate: string) {
-    return executeWithSchema(
-      this.#db,
+    return this.query(
       strainDailyLoadRowSchema,
       sql`
         SELECT
@@ -755,7 +656,7 @@ export class RecoveryRepository {
             asum.avg_hr * EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0 / 100.0
           ) AS daily_load
         FROM fitness.activity_summary asum
-        WHERE asum.user_id = ${this.#userId}
+        WHERE asum.user_id = ${this.userId}
           AND asum.started_at::date >= ${dateWindowStart(endDate, days)}
           AND asum.ended_at IS NOT NULL
           AND asum.avg_hr IS NOT NULL
@@ -767,13 +668,12 @@ export class RecoveryRepository {
 
   /** Fetch latest sleep efficiency for strain target. */
   async getLatestSleepEfficiency() {
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.query(
       strainSleepRowSchema,
       sql`
         SELECT efficiency_pct
         FROM fitness.sleep_session
-        WHERE user_id = ${this.#userId}
+        WHERE user_id = ${this.userId}
           AND sleep_type = 'sleep'
         ORDER BY started_at DESC
         LIMIT 1
@@ -788,7 +688,7 @@ export class RecoveryRepository {
 
     let readinessScore = 50;
     if (readinessMetrics) {
-      const params = getEffectiveParams(await loadPersonalizedParams(this.#db, this.#userId));
+      const params = getEffectiveParams(await loadPersonalizedParams(this.db, this.userId));
       const sleepEff = await this.getLatestSleepEfficiency();
       const sleepScore = sleepEff != null ? Math.max(0, Math.min(100, Math.round(sleepEff))) : 62;
       const components: ReadinessComponents = {

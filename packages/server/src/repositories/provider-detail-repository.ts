@@ -44,7 +44,7 @@ export function tableInfo(dataType: DataType): {
       return { table: "fitness.health_event", orderColumn: "start_date", idColumn: "id" };
     case "metricStream":
       return {
-        table: "fitness.metric_stream",
+        table: "fitness.sensor_sample",
         orderColumn: "recorded_at",
         idColumn: "recorded_at",
       };
@@ -65,6 +65,7 @@ export function tableInfo(dataType: DataType): {
 
 /** Tables to cascade-delete when disconnecting a provider, in deletion order. */
 export const DISCONNECT_CHILD_TABLES = [
+  "fitness.sensor_sample",
   "fitness.metric_stream",
   "fitness.exercise_alias",
   "fitness.strength_workout",

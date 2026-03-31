@@ -124,9 +124,9 @@ function StatusBadge({ label, value, color }: { label: string; value: string; co
   );
 }
 
-/** Map raw device_type from the server to a user-friendly label */
-function deviceLabel(deviceType: string, deviceId: string): string {
-  switch (deviceType) {
+/** Map device_id to a user-friendly label */
+function deviceLabel(deviceId: string): string {
+  switch (deviceId) {
     case "iphone":
       return "iPhone";
     case "apple_watch":
@@ -392,7 +392,9 @@ export default function InertialMeasurementUnitScreen() {
     );
   }
 
-  const whoopDevice = syncStatus.data?.find((device) => device.deviceType === "whoop");
+  const whoopDevice = syncStatus.data?.find((device) =>
+    device.deviceId.toLowerCase().includes("whoop"),
+  );
 
   const latestSync = syncStatus.data?.[0]?.latestSample
     ? new Date(syncStatus.data[0].latestSample).toLocaleString()
@@ -584,10 +586,8 @@ export default function InertialMeasurementUnitScreen() {
             <Text style={styles.statValue}>{latestSync}</Text>
           </View>
           {syncStatus.data?.map((device) => (
-            <View key={`${device.deviceId}-${device.deviceType}`} style={styles.statRow}>
-              <Text style={styles.statLabel}>
-                {deviceLabel(device.deviceType, device.deviceId)}
-              </Text>
+            <View key={device.deviceId} style={styles.statRow}>
+              <Text style={styles.statLabel}>{deviceLabel(device.deviceId)}</Text>
               <Text style={styles.statValue}>{device.sampleCount.toLocaleString()} samples</Text>
             </View>
           ))}

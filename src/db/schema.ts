@@ -543,10 +543,54 @@ export const activityInterval = fitness.table(
 );
 
 // ============================================================
-// Metric stream (TimescaleDB hypertable — DDL managed by SQL migration, not Drizzle)
+// Sensor sample (TimescaleDB hypertable — DDL managed by SQL migration, not Drizzle)
+// Unified time-series table for ALL sensor data using a "medium" layout.
+// Replaces metric_stream, inertial_measurement_unit_sample, and orientation_sample.
 // This Drizzle definition exists for type-safe queries/inserts only.
+//
+// Design:
+//   - `channel` identifies what's measured (e.g., "heart_rate", "power", "imu")
+//   - `scalar` stores single numeric values (HR, power, cadence, speed, etc.)
+//   - `vector` stores multi-axis data as real[] (accel [x,y,z], quaternion [w,x,y,z])
+//   - Dedup: per (activity, channel), pick the provider with the most samples
+//   - `source_type` is informational only (debugging/auditing), not used for priority
 // ============================================================
 
+export const sensorSample = fitness.table(
+  "sensor_sample",
+  {
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .default(DEFAULT_USER_ID)
+      .references(() => userProfile.id),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id),
+    deviceId: text("device_id"),
+    sourceType: text("source_type").notNull(), // 'ble', 'file', 'api' (informational only)
+    channel: text("channel").notNull(), // 'heart_rate', 'power', 'imu', 'orientation', etc.
+    activityId: uuid("activity_id").references(() => activity.id, { onDelete: "cascade" }),
+    scalar: real("scalar"), // single numeric value
+    vector: real("vector").array(), // multi-axis data (e.g., [x, y, z] for accel)
+  },
+  (table) => [
+    index("sensor_sample_activity_channel_time_idx").on(
+      table.activityId,
+      table.channel,
+      table.recordedAt,
+    ),
+    index("sensor_sample_user_channel_time_idx").on(table.userId, table.channel, table.recordedAt),
+    index("sensor_sample_provider_time_idx").on(table.providerId, table.recordedAt),
+  ],
+);
+
+// ============================================================
+// Legacy tables — retained during migration, will be dropped in a future migration.
+// All new code should use sensorSample instead.
+// ============================================================
+
+/** @deprecated Use sensorSample instead */
 export const metricStream = fitness.table(
   "metric_stream",
   {
@@ -612,10 +656,7 @@ export const metricStream = fitness.table(
   ],
 );
 
-// ============================================================
-// Inertial Measurement Unit (high-frequency 6-axis IMU data, 50 Hz)
-// ============================================================
-
+/** @deprecated Use sensorSample instead */
 export const inertialMeasurementUnitSample = fitness.table(
   "inertial_measurement_unit_sample",
   {
@@ -624,25 +665,22 @@ export const inertialMeasurementUnitSample = fitness.table(
       .notNull()
       .default(DEFAULT_USER_ID)
       .references(() => userProfile.id),
-    deviceId: text("device_id").notNull(), // e.g., "iPhone 15 Pro", "Apple Watch Series 9"
-    deviceType: text("device_type").notNull(), // "iphone" | "apple_watch" | "whoop"
+    deviceId: text("device_id").notNull(),
+    deviceType: text("device_type").notNull(),
     providerId: text("provider_id")
       .notNull()
       .references(() => provider.id),
-    x: real("x").notNull(), // acceleration in g
-    y: real("y").notNull(), // acceleration in g
-    z: real("z").notNull(), // acceleration in g
-    gyroscopeX: real("gyroscope_x"), // rotation rate in rad/s (nullable — accel-only sources)
-    gyroscopeY: real("gyroscope_y"), // rotation rate in rad/s
-    gyroscopeZ: real("gyroscope_z"), // rotation rate in rad/s
+    x: real("x").notNull(),
+    y: real("y").notNull(),
+    z: real("z").notNull(),
+    gyroscopeX: real("gyroscope_x"),
+    gyroscopeY: real("gyroscope_y"),
+    gyroscopeZ: real("gyroscope_z"),
   },
   (table) => [index("inertial_measurement_unit_user_time_idx").on(table.userId, table.recordedAt)],
 );
 
-// ============================================================
-// Orientation samples (quaternion from any provider)
-// ============================================================
-
+/** @deprecated Use sensorSample instead */
 export const orientationSample = fitness.table(
   "orientation_sample",
   {

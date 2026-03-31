@@ -52,7 +52,6 @@ describe("InertialMeasurementUnitRepository", () => {
       const { repo } = makeRepository([
         {
           device_id: "iphone-14",
-          device_type: "phone",
           sample_count: "500000",
           latest_sample: "2025-01-15T12:00:00Z",
           earliest_sample: "2025-01-01T08:00:00Z",
@@ -62,7 +61,6 @@ describe("InertialMeasurementUnitRepository", () => {
       expect(result).toEqual([
         {
           deviceId: "iphone-14",
-          deviceType: "phone",
           sampleCount: 500000,
           latestSample: "2025-01-15T12:00:00Z",
           earliestSample: "2025-01-01T08:00:00Z",
@@ -74,7 +72,6 @@ describe("InertialMeasurementUnitRepository", () => {
       const { repo } = makeRepository([
         {
           device_id: "watch-1",
-          device_type: "watch",
           sample_count: "0",
           latest_sample: null,
           earliest_sample: null,

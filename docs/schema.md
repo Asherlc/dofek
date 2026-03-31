@@ -16,20 +16,20 @@ A column is raw if the data originates from a sensor or external system and **ca
 |---|---|
 | `metric_stream.distance` | **Outdoor**: computable from GPS lat/lng via haversine. **Indoor** (trainer/treadmill): synthetic — computed from virtual speed models, not a real measurement. |
 | `metric_stream.calories` | Device-computed from HR, power, body weight, and proprietary algorithms. Not a direct sensor reading. |
-| `activity_interval.avg_heart_rate` | Computable from `metric_stream.heart_rate` within the interval's time range. |
-| `activity_interval.max_heart_rate` | Same — `MAX(heart_rate)` over the interval window. |
-| `activity_interval.avg_power` | Same — `AVG(power)` over the interval window. |
-| `activity_interval.max_power` | Same — `MAX(power)` over the interval window. |
-| `activity_interval.avg_speed` | Same — `AVG(speed)` over the interval window. |
-| `activity_interval.max_speed` | Same — `MAX(speed)` over the interval window. |
-| `activity_interval.avg_cadence` | Same — `AVG(cadence)` over the interval window. |
+| `activity_interval.avg_heart_rate` | Computable from sensor_sample where channel='heart_rate' within the interval's time range. |
+| `activity_interval.max_heart_rate` | Same — `MAX(scalar)` over the interval window. |
+| `activity_interval.avg_power` | Same — `AVG(scalar)` where channel='power' over the interval window. |
+| `activity_interval.max_power` | Same — `MAX(scalar)` where channel='power' over the interval window. |
+| `activity_interval.avg_speed` | Same — `AVG(scalar)` where channel='speed' over the interval window. |
+| `activity_interval.max_speed` | Same — `MAX(scalar)` where channel='speed' over the interval window. |
+| `activity_interval.avg_cadence` | Same — `AVG(scalar)` where channel='cadence' over the interval window. |
 | `activity_interval.distance_meters` | Same — computed from GPS within the interval. |
 | `activity_interval.elevation_gain` | Same — computed from altitude deltas within the interval. |
 | `daily_metrics.mindful_minutes` | Never populated by any provider. Dead column removed in migration 0042. |
-| `daily_metrics.environmental_audio_exposure` | Apple Health stores raw audio exposure readings in `metric_stream.audio_exposure` — daily averages can be derived from there. No provider ever populated this column. Removed in migration 0042. |
-| `daily_metrics.headphone_audio_exposure` | Same as environmental — raw readings in `metric_stream.audio_exposure`, never aggregated to daily. Removed in migration 0042. |
+| `daily_metrics.environmental_audio_exposure` | Apple Health stores raw audio exposure readings in sensor_sample (channel='audio_exposure') — daily averages can be derived from there. No provider ever populated this column. Removed in migration 0042. |
+| `daily_metrics.headphone_audio_exposure` | Same as environmental — raw readings in sensor_sample, never aggregated to daily. Removed in migration 0042. |
 
-The `activity_summary` materialized view computes all of these at refresh time from `metric_stream` data, including total distance (haversine over GPS points) and elevation gain/loss (altitude deltas).
+The `activity_summary` materialized view computes all of these at refresh time from `sensor_sample` data, including total distance (haversine over GPS points) and elevation gain/loss (altitude deltas).
 
 ### Columns we DO store and why they're not derivable
 
@@ -54,25 +54,22 @@ The `activity_summary` materialized view computes all of these at refresh time f
 | `stress_high_minutes`, `recovery_high_minutes` | Oura's proprietary stress/recovery classification from HRV + motion. |
 | `resilience_level` | Oura's resilience score, proprietary algorithm. |
 
-#### `metric_stream` (what remains)
+#### `sensor_sample` — unified time-series table
 
-| Column | Why it's raw |
-|---|---|
-| `heart_rate` | Direct sensor reading (optical PPG or chest strap ECG). |
-| `power` | Direct measurement from power meter strain gauges. |
-| `cadence` | Direct measurement from accelerometer/magnet sensor. |
-| `speed` | From GPS Doppler or wheel speed sensor. |
-| `lat`, `lng` | GPS coordinates from GNSS receiver. |
-| `altitude` | Barometric altimeter or GPS altitude. |
-| `temperature` | Ambient temperature sensor. |
-| `grade` | Road grade from GPS + altimeter. Kept because it's provider-reported and not trivially derivable from noisy GPS altitude. |
-| `vertical_speed` | Barometric rate of climb. Provider-specific smoothing makes it non-trivial to recompute. |
-| `spo2` | Pulse oximeter reading during activity. |
-| `respiratory_rate` | Breath rate sensor. |
-| `gps_accuracy` | GNSS receiver's estimated position error. |
-| `accumulated_power` | Running sum from power meter firmware. Kept for TSS/kJ calculations that need firmware-level precision. |
-| Running dynamics (`stance_time`, `vertical_oscillation`, etc.) | Direct IMU/accelerometer measurements from running pods or watches. |
-| Pedal dynamics (`left_torque_effectiveness`, etc.) | Direct measurements from dual-sided power meters. |
+The `sensor_sample` table uses a "medium layout" — one row per (timestamp, channel) with a `scalar` column for single values and a `vector` (real[]) column for multi-axis data.
+
+| Channel type | Example channels | Column used |
+|---|---|---|
+| Scalar | `heart_rate`, `power`, `cadence`, `speed`, `lat`, `lng`, `altitude`, `spo2`, etc. | `scalar` (real) |
+| Vector | `imu` [x,y,z,gx,gy,gz], `accel` [x,y,z], `orientation` [w,x,y,z] | `vector` (real[]) |
+
+**Why this layout?** Different sensors sample at different rates (GPS at 1Hz, IMU at 50Hz, HR from BLE at variable rates). The medium layout handles any sample rate without schema changes. New sensor types just add a new channel name — no migrations needed.
+
+**Dedup strategy:** When the same metric (e.g., heart_rate) comes from multiple sources (WHOOP API at 1Hz, WHOOP BLE at 50Hz), per (activity_id, channel), the provider with the most samples wins. The most granular source is automatically preferred without any knowledge of source types.
+
+**Source type:** The `source_type` column ('ble', 'file', 'api') is informational — for debugging and auditing. It is NOT used for dedup priority.
+
+See `src/db/sensor-channels.ts` for the full list of channel constants.
 
 ## Tables
 
@@ -89,8 +86,8 @@ The `activity_summary` materialized view computes all of these at refresh time f
 | Table | Purpose |
 |-------|---------|
 | `fitness.activity` | Any timed activity (type, times, raw JSONB summary from provider) |
-| `fitness.activity_interval` | Laps/intervals with time ranges (metrics computed at query time from metric_stream) |
-| `fitness.metric_stream` | Second-by-second sensor data (hypertable) — HR, power, cadence, speed, GPS, altitude |
+| `fitness.activity_interval` | Laps/intervals with time ranges (metrics computed at query time from sensor_sample) |
+| `fitness.sensor_sample` | Time-series sensor data (TimescaleDB hypertable) — all channels at any frequency |
 
 ### Daily Metrics
 
@@ -102,7 +99,15 @@ The `activity_summary` materialized view computes all of these at refresh time f
 
 | View | Purpose |
 |------|---------|
-| `fitness.activity_summary` | Pre-computed per-activity aggregates (avg/max HR, power, GPS distance, elevation) from metric_stream |
+| `fitness.activity_summary` | Pre-computed per-activity aggregates (avg/max HR, power, GPS distance, elevation) from sensor_sample with dedup |
+| `fitness.v_metric_stream` | Pivot view — presents sensor_sample in wide-row format for legacy queries |
+
+### Continuous Aggregates
+
+| View | Purpose |
+|------|---------|
+| `fitness.cagg_sensor_daily` | Daily stats per (user, channel) from sensor_sample |
+| `fitness.cagg_sensor_weekly` | Weekly rollup from daily cagg |
 
 ### Other Tables
 
@@ -136,3 +141,5 @@ Routers that need daily macro totals query `nutrition_daily` directly. Routers t
 All provider-sourced tables have a `(provider_id, external_id)` unique index. Syncs use upsert to avoid duplicates.
 
 Daily metrics use per-category dedup priority (see `src/db/dedup.ts`) to prefer the most accurate source for each metric when multiple providers report the same data.
+
+Sensor sample dedup: per (activity_id, channel), the provider with the most samples wins. This ensures the most granular source (e.g., BLE at 50Hz vs API at 1Hz) is automatically preferred.

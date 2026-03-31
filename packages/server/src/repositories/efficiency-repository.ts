@@ -4,10 +4,11 @@ import {
   ZONE_BOUNDARIES_HRR,
 } from "@dofek/zones/zones";
 import * as Sentry from "@sentry/node";
-import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { BaseRepository } from "../lib/base-repository.ts";
 import { enduranceTypeFilter } from "../lib/endurance-types.ts";
+import { restingHeartRateLateral } from "../lib/sql-fragments.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 // ---------------------------------------------------------------------------
@@ -90,55 +91,38 @@ const polarizationRowSchema = z.object({
 // ---------------------------------------------------------------------------
 
 /** Data access for aerobic efficiency, decoupling, and polarization metrics. */
-export class EfficiencyRepository {
-  readonly #db: Pick<Database, "execute">;
-  readonly #userId: string;
-  readonly #timezone: string;
-
-  constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
-    this.#db = db;
-    this.#userId = userId;
-    this.#timezone = timezone;
-  }
-
+export class EfficiencyRepository extends BaseRepository {
   /**
    * Aerobic Efficiency (Efficiency Factor) per activity.
    * EF = avg power in Z2 / avg HR in Z2, where Z2 = 60-70% HRR (Karvonen).
    * Only includes activities with at least 5 minutes (300 samples) of Z2 data.
    */
   async getAerobicEfficiency(days: number): Promise<AerobicEfficiencyResult> {
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.query(
       efficiencyRowSchema,
       sql`SELECT
             up.max_hr,
-            (a.started_at AT TIME ZONE ${this.#timezone})::date AS date,
+            (a.started_at AT TIME ZONE ${this.timezone})::date AS date,
             a.activity_type,
             a.name,
-            ROUND(AVG(ms.power)::numeric, 1) AS avg_power_z2,
-            ROUND(AVG(ms.heart_rate)::numeric, 1) AS avg_hr_z2,
-            ROUND((AVG(ms.power)::numeric / NULLIF(AVG(ms.heart_rate), 0))::numeric, 3) AS efficiency_factor,
+            ROUND(AVG(pwr.scalar)::numeric, 1) AS avg_power_z2,
+            ROUND(AVG(hr.scalar)::numeric, 1) AS avg_hr_z2,
+            ROUND((AVG(pwr.scalar)::numeric / NULLIF(AVG(hr.scalar), 0))::numeric, 3) AS efficiency_factor,
             COUNT(*)::int AS z2_samples
           FROM fitness.user_profile up
           JOIN fitness.v_activity a ON a.user_id = up.id
-          JOIN fitness.metric_stream ms ON ms.activity_id = a.id
-          JOIN LATERAL (
-            SELECT dm.resting_hr
-            FROM fitness.v_daily_metrics dm
-            WHERE dm.user_id = up.id
-              AND dm.date <= (a.started_at AT TIME ZONE ${this.#timezone})::date
-              AND dm.resting_hr IS NOT NULL
-            ORDER BY dm.date DESC
-            LIMIT 1
-          ) rhr ON true
-          WHERE up.id = ${this.#userId}
+          JOIN fitness.sensor_sample hr ON hr.activity_id = a.id AND hr.channel = 'heart_rate'
+          JOIN fitness.sensor_sample pwr ON pwr.activity_id = a.id AND pwr.channel = 'power'
+            AND pwr.recorded_at = hr.recorded_at
+          JOIN ${restingHeartRateLateral(sql`up.id`, sql`(a.started_at AT TIME ZONE ${this.timezone})::date`)}
+          WHERE up.id = ${this.userId}
             AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-            AND ms.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
+            AND hr.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
             AND ${enduranceTypeFilter("a")}
             AND up.max_hr IS NOT NULL
-            AND ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[0]}::numeric
-            AND ms.heart_rate <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[1]}::numeric
-            AND ms.power > 0
+            AND hr.scalar >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[0]}::numeric
+            AND hr.scalar <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[1]}::numeric
+            AND pwr.scalar > 0
           GROUP BY a.id, a.started_at, a.activity_type, a.name, up.max_hr
           HAVING COUNT(*) >= 300
           ORDER BY a.started_at`,
@@ -179,7 +163,7 @@ export class EfficiencyRepository {
     });
 
     const diagnosticRows = await executeWithSchema(
-      this.#db,
+      this.db,
       diagnosticSchema,
       sql`SELECT
             up.max_hr,
@@ -228,7 +212,7 @@ export class EfficiencyRepository {
                   SELECT dm.resting_hr
                   FROM fitness.v_daily_metrics dm
                   WHERE dm.user_id = up.id
-                    AND dm.date <= (a.started_at AT TIME ZONE ${this.#timezone})::date
+                    AND dm.date <= (a.started_at AT TIME ZONE ${this.timezone})::date
                     AND dm.resting_hr IS NOT NULL
                   ORDER BY dm.date DESC
                   LIMIT 1
@@ -245,13 +229,13 @@ export class EfficiencyRepository {
               ) sub
             ), 0)::int AS max_z2_samples
           FROM fitness.user_profile up
-          WHERE up.id = ${this.#userId}`,
+          WHERE up.id = ${this.userId}`,
     );
 
     const diag = diagnosticRows[0];
     if (diag) {
       logger.warn(
-        `[aerobicEfficiency] Empty result for user=${this.#userId} days=${days}: ` +
+        `[aerobicEfficiency] Empty result for user=${this.userId} days=${days}: ` +
           `max_hr=${diag.max_hr}, has_resting_hr=${diag.has_resting_hr}, ` +
           `endurance_activities=${diag.endurance_activities}, ` +
           `with_power=${diag.activities_with_power}, with_hr=${diag.activities_with_hr}, ` +
@@ -266,23 +250,27 @@ export class EfficiencyRepository {
    * Decoupling < 5% indicates a strong aerobic base.
    */
   async getAerobicDecoupling(days: number): Promise<AerobicDecouplingActivity[]> {
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.query(
       decouplingRowSchema,
       sql`WITH activity_halves AS (
             SELECT
-              ms.activity_id,
-              ms.power,
-              ms.heart_rate,
-              NTILE(2) OVER (PARTITION BY ms.activity_id ORDER BY ms.recorded_at) AS half
-            FROM fitness.metric_stream ms
-            JOIN fitness.v_activity a ON a.id = ms.activity_id
-            WHERE a.user_id = ${this.#userId}
+              pwr.activity_id,
+              pwr.scalar AS power,
+              hr.scalar AS heart_rate,
+              NTILE(2) OVER (PARTITION BY pwr.activity_id ORDER BY pwr.recorded_at) AS half
+            FROM fitness.sensor_sample pwr
+            JOIN fitness.sensor_sample hr
+              ON hr.activity_id = pwr.activity_id
+              AND hr.recorded_at = pwr.recorded_at
+              AND hr.channel = 'heart_rate'
+            JOIN fitness.v_activity a ON a.id = pwr.activity_id
+            WHERE a.user_id = ${this.userId}
               AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-              AND ms.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
+              AND pwr.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
               AND ${enduranceTypeFilter("a")}
-              AND ms.power > 0
-              AND ms.heart_rate > 0
+              AND pwr.channel = 'power'
+              AND pwr.scalar > 0
+              AND hr.scalar > 0
           ),
           half_ratios AS (
             SELECT
@@ -301,7 +289,7 @@ export class EfficiencyRepository {
             HAVING COUNT(*) >= 600
           )
           SELECT
-            (a.started_at AT TIME ZONE ${this.#timezone})::date AS date,
+            (a.started_at AT TIME ZONE ${this.timezone})::date AS date,
             a.activity_type,
             a.name,
             hr.first_half_ratio,
@@ -333,25 +321,23 @@ export class EfficiencyRepository {
    * PI > 2.0 indicates a well-polarized training distribution.
    */
   async getPolarizationTrend(days: number): Promise<PolarizationTrendResult> {
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.query(
       polarizationRowSchema,
       sql`SELECT
             up.max_hr,
-            date_trunc('week', (a.started_at AT TIME ZONE ${this.#timezone})::date)::date AS week,
-            COUNT(*) FILTER (WHERE ms.heart_rate < up.max_hr * ${POLARIZATION_ZONES[1]?.minPctHrmax}::numeric)::int AS z1_seconds,
-            COUNT(*) FILTER (WHERE ms.heart_rate >= up.max_hr * ${POLARIZATION_ZONES[1]?.minPctHrmax}::numeric
-                              AND ms.heart_rate <  up.max_hr * ${POLARIZATION_ZONES[2]?.minPctHrmax}::numeric)::int AS z2_seconds,
-            COUNT(*) FILTER (WHERE ms.heart_rate >= up.max_hr * ${POLARIZATION_ZONES[2]?.minPctHrmax}::numeric)::int AS z3_seconds
+            date_trunc('week', (a.started_at AT TIME ZONE ${this.timezone})::date)::date AS week,
+            COUNT(*) FILTER (WHERE ms.scalar < up.max_hr * ${POLARIZATION_ZONES[1]?.minPctHrmax}::numeric)::int AS z1_seconds,
+            COUNT(*) FILTER (WHERE ms.scalar >= up.max_hr * ${POLARIZATION_ZONES[1]?.minPctHrmax}::numeric
+                              AND ms.scalar <  up.max_hr * ${POLARIZATION_ZONES[2]?.minPctHrmax}::numeric)::int AS z2_seconds,
+            COUNT(*) FILTER (WHERE ms.scalar >= up.max_hr * ${POLARIZATION_ZONES[2]?.minPctHrmax}::numeric)::int AS z3_seconds
           FROM fitness.user_profile up
           JOIN fitness.v_activity a ON a.user_id = up.id
-          JOIN fitness.metric_stream ms ON ms.activity_id = a.id
-          WHERE up.id = ${this.#userId}
+          JOIN fitness.sensor_sample ms ON ms.activity_id = a.id AND ms.channel = 'heart_rate'
+          WHERE up.id = ${this.userId}
             AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
             AND ms.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
             AND ${enduranceTypeFilter("a")}
             AND up.max_hr IS NOT NULL
-            AND ms.heart_rate IS NOT NULL
           GROUP BY up.max_hr, 2
           ORDER BY week`,
     );

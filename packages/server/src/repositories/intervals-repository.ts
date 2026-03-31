@@ -168,16 +168,29 @@ export class IntervalsRepository {
               THEN d.altitude - d.prev_alt ELSE 0 END)::REAL AS elevation_gain
           FROM (
             SELECT
-              ms.heart_rate, ms.power, ms.speed, ms.cadence,
-              ms.lat, ms.lng, ms.altitude,
-              LAG(ms.lat) OVER w AS prev_lat,
-              LAG(ms.lng) OVER w AS prev_lng,
-              LAG(ms.altitude) OVER w AS prev_alt
-            FROM fitness.metric_stream ms
-            WHERE ms.activity_id = ai.activity_id
-              AND ms.recorded_at >= ai.started_at
-              AND (ai.ended_at IS NULL OR ms.recorded_at <= ai.ended_at)
-            WINDOW w AS (ORDER BY ms.recorded_at)
+              p.heart_rate, p.power, p.speed, p.cadence,
+              p.lat, p.lng, p.altitude,
+              LAG(p.lat) OVER w AS prev_lat,
+              LAG(p.lng) OVER w AS prev_lng,
+              LAG(p.altitude) OVER w AS prev_alt
+            FROM (
+              SELECT
+                ss.recorded_at,
+                MAX(ss.scalar) FILTER (WHERE ss.channel = 'heart_rate') AS heart_rate,
+                MAX(ss.scalar) FILTER (WHERE ss.channel = 'power') AS power,
+                MAX(ss.scalar) FILTER (WHERE ss.channel = 'speed') AS speed,
+                MAX(ss.scalar) FILTER (WHERE ss.channel = 'cadence') AS cadence,
+                MAX(ss.scalar) FILTER (WHERE ss.channel = 'lat') AS lat,
+                MAX(ss.scalar) FILTER (WHERE ss.channel = 'lng') AS lng,
+                MAX(ss.scalar) FILTER (WHERE ss.channel = 'altitude') AS altitude
+              FROM fitness.sensor_sample ss
+              WHERE ss.activity_id = ai.activity_id
+                AND ss.recorded_at >= ai.started_at
+                AND (ai.ended_at IS NULL OR ss.recorded_at <= ai.ended_at)
+                AND ss.channel IN ('heart_rate', 'power', 'speed', 'cadence', 'lat', 'lng', 'altitude')
+              GROUP BY ss.recorded_at
+            ) p
+            WINDOW w AS (ORDER BY p.recorded_at)
           ) d
         ) im ON true
         WHERE ai.activity_id = ${activityId}::uuid
@@ -200,20 +213,31 @@ export class IntervalsRepository {
       this.#db,
       minuteAggRowSchema,
       sql`
+        WITH pivoted AS (
+          SELECT
+            ss.recorded_at,
+            MAX(ss.scalar) FILTER (WHERE ss.channel = 'power') AS power,
+            MAX(ss.scalar) FILTER (WHERE ss.channel = 'heart_rate') AS heart_rate,
+            MAX(ss.scalar) FILTER (WHERE ss.channel = 'speed') AS speed,
+            MAX(ss.scalar) FILTER (WHERE ss.channel = 'cadence') AS cadence
+          FROM fitness.sensor_sample ss
+          JOIN fitness.activity a ON a.id = ss.activity_id
+          WHERE ss.activity_id = ${activityId}::uuid
+            AND a.user_id = ${this.#userId}
+            AND ss.channel IN ('power', 'heart_rate', 'speed', 'cadence')
+          GROUP BY ss.recorded_at
+        )
         SELECT
-          date_trunc('minute', ms.recorded_at) AS minute_start,
-          ROUND(AVG(ms.power) FILTER (WHERE ms.power > 0)::numeric, 1) AS avg_power,
-          ROUND(AVG(ms.heart_rate)::numeric, 1) AS avg_hr,
-          ROUND(AVG(ms.speed)::numeric, 3) AS avg_speed,
-          ROUND(AVG(ms.cadence) FILTER (WHERE ms.cadence > 0)::numeric, 1) AS avg_cadence,
-          MAX(ms.power) AS max_power,
-          MAX(ms.heart_rate) AS max_hr,
-          MAX(ms.speed) AS max_speed
-        FROM fitness.metric_stream ms
-        JOIN fitness.activity a ON a.id = ms.activity_id
-        WHERE ms.activity_id = ${activityId}::uuid
-          AND a.user_id = ${this.#userId}
-        GROUP BY date_trunc('minute', ms.recorded_at)
+          date_trunc('minute', p.recorded_at) AS minute_start,
+          ROUND(AVG(p.power) FILTER (WHERE p.power > 0)::numeric, 1) AS avg_power,
+          ROUND(AVG(p.heart_rate)::numeric, 1) AS avg_hr,
+          ROUND(AVG(p.speed)::numeric, 3) AS avg_speed,
+          ROUND(AVG(p.cadence) FILTER (WHERE p.cadence > 0)::numeric, 1) AS avg_cadence,
+          MAX(p.power) AS max_power,
+          MAX(p.heart_rate) AS max_hr,
+          MAX(p.speed) AS max_speed
+        FROM pivoted p
+        GROUP BY date_trunc('minute', p.recorded_at)
         ORDER BY minute_start
       `,
     );
