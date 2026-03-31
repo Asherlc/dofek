@@ -3,11 +3,13 @@ import {
   POLARIZATION_ZONES,
   ZONE_BOUNDARIES_HRR,
 } from "@dofek/zones/zones";
+import * as Sentry from "@sentry/node";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { enduranceTypeFilter } from "../lib/endurance-types.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import { logger } from "../logger.ts";
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -142,6 +144,12 @@ export class EfficiencyRepository {
           ORDER BY a.started_at`,
     );
 
+    if (rows.length === 0) {
+      this.#logEmptyAerobicEfficiency(days).catch((error) => {
+        Sentry.captureException(error);
+      });
+    }
+
     const maxHr = rows.length > 0 ? Number(rows[0]?.max_hr) : null;
 
     return {
@@ -156,6 +164,100 @@ export class EfficiencyRepository {
         z2Samples: Number(row.z2_samples),
       })),
     };
+  }
+
+  /** Log diagnostic info when aerobic efficiency returns no results. */
+  async #logEmptyAerobicEfficiency(days: number): Promise<void> {
+    const diagnosticSchema = z.object({
+      max_hr: z.coerce.number().nullable(),
+      has_resting_hr: z.coerce.boolean(),
+      endurance_activities: z.coerce.number(),
+      activities_with_power: z.coerce.number(),
+      activities_with_hr: z.coerce.number(),
+      activities_with_both: z.coerce.number(),
+      max_z2_samples: z.coerce.number(),
+    });
+
+    const diagnosticRows = await executeWithSchema(
+      this.#db,
+      diagnosticSchema,
+      sql`SELECT
+            up.max_hr,
+            EXISTS (
+              SELECT 1 FROM fitness.v_daily_metrics dm
+              WHERE dm.user_id = up.id AND dm.resting_hr IS NOT NULL
+            ) AS has_resting_hr,
+            (SELECT COUNT(DISTINCT a.id)
+             FROM fitness.v_activity a
+             WHERE a.user_id = up.id
+               AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+               AND ${enduranceTypeFilter("a")}
+            )::int AS endurance_activities,
+            (SELECT COUNT(DISTINCT ms.activity_id)
+             FROM fitness.metric_stream ms
+             JOIN fitness.v_activity a ON a.id = ms.activity_id
+             WHERE a.user_id = up.id
+               AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+               AND ${enduranceTypeFilter("a")}
+               AND ms.power > 0
+            )::int AS activities_with_power,
+            (SELECT COUNT(DISTINCT ms.activity_id)
+             FROM fitness.metric_stream ms
+             JOIN fitness.v_activity a ON a.id = ms.activity_id
+             WHERE a.user_id = up.id
+               AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+               AND ${enduranceTypeFilter("a")}
+               AND ms.heart_rate IS NOT NULL
+            )::int AS activities_with_hr,
+            (SELECT COUNT(DISTINCT ms.activity_id)
+             FROM fitness.metric_stream ms
+             JOIN fitness.v_activity a ON a.id = ms.activity_id
+             WHERE a.user_id = up.id
+               AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+               AND ${enduranceTypeFilter("a")}
+               AND ms.power > 0
+               AND ms.heart_rate IS NOT NULL
+            )::int AS activities_with_both,
+            COALESCE((
+              SELECT MAX(z2_count)
+              FROM (
+                SELECT COUNT(*)::int AS z2_count
+                FROM fitness.metric_stream ms
+                JOIN fitness.v_activity a ON a.id = ms.activity_id
+                JOIN LATERAL (
+                  SELECT dm.resting_hr
+                  FROM fitness.v_daily_metrics dm
+                  WHERE dm.user_id = up.id
+                    AND dm.date <= (a.started_at AT TIME ZONE ${this.#timezone})::date
+                    AND dm.resting_hr IS NOT NULL
+                  ORDER BY dm.date DESC
+                  LIMIT 1
+                ) rhr ON true
+                WHERE a.user_id = up.id
+                  AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+                  AND ms.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
+                  AND ${enduranceTypeFilter("a")}
+                  AND up.max_hr IS NOT NULL
+                  AND ms.power > 0
+                  AND ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[0]}::numeric
+                  AND ms.heart_rate <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[1]}::numeric
+                GROUP BY a.id
+              ) sub
+            ), 0)::int AS max_z2_samples
+          FROM fitness.user_profile up
+          WHERE up.id = ${this.#userId}`,
+    );
+
+    const diag = diagnosticRows[0];
+    if (diag) {
+      logger.warn(
+        `[aerobicEfficiency] Empty result for user=${this.#userId} days=${days}: ` +
+          `max_hr=${diag.max_hr}, has_resting_hr=${diag.has_resting_hr}, ` +
+          `endurance_activities=${diag.endurance_activities}, ` +
+          `with_power=${diag.activities_with_power}, with_hr=${diag.activities_with_hr}, ` +
+          `with_both=${diag.activities_with_both}, max_z2_samples=${diag.max_z2_samples}`,
+      );
+    }
   }
 
   /**

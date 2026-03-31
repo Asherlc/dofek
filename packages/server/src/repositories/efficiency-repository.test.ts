@@ -19,10 +19,11 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
     expect(result).toEqual({ maxHr: null, activities: [] });
   });
 
-  it("calls execute once", async () => {
+  it("calls execute for the main query (and diagnostic when empty)", async () => {
     const { repo, execute } = makeRepository([]);
     await repo.getAerobicEfficiency(90);
-    expect(execute).toHaveBeenCalledTimes(1);
+    // Main query + diagnostic query when result is empty
+    expect(execute).toHaveBeenCalledTimes(2);
   });
 
   it("maps rows to AerobicEfficiencyActivity objects", async () => {
