@@ -16,7 +16,7 @@ terraform {
 }
 
 variable "cloudflare_api_token" {
-  description = "Cloudflare API token with Zone:Edit and DNS:Edit permissions"
+  description = "Cloudflare API token with Zone:Edit, DNS:Edit, and Workers R2 Storage:Edit permissions"
   type        = string
   sensitive   = true
 }
@@ -89,6 +89,20 @@ resource "cloudflare_dns_record" "dofek_live_www" {
   ttl     = 1
 }
 
+# --- R2 Storage ---
+
+resource "cloudflare_r2_bucket" "training_data" {
+  account_id = var.cloudflare_account_id
+  name       = "dofek-training-data"
+  location   = "WEUR"
+}
+
+# NOTE: S3-compatible API credentials (access key ID + secret access key) for R2
+# cannot be created via Terraform — they must be created manually in the
+# Cloudflare dashboard: R2 → Manage R2 API Tokens → Create API Token.
+# Scope the token to "Object Read & Write" for the dofek-training-data bucket.
+# Then add R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY to the SOPS-encrypted .env.
+
 # --- Outputs ---
 
 output "dofek_fit_nameservers" {
@@ -99,4 +113,14 @@ output "dofek_fit_nameservers" {
 output "dofek_live_nameservers" {
   description = "Set these as custom nameservers on Namecheap for dofek.live"
   value       = cloudflare_zone.dofek_live.name_servers
+}
+
+output "r2_bucket_name" {
+  description = "R2 bucket name for training data"
+  value       = cloudflare_r2_bucket.training_data.name
+}
+
+output "r2_endpoint" {
+  description = "R2 S3-compatible endpoint URL"
+  value       = "https://${var.cloudflare_account_id}.r2.cloudflarestorage.com"
 }

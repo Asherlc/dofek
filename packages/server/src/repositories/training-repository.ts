@@ -2,7 +2,7 @@ import { ZONE_BOUNDARIES_HRR } from "@dofek/zones/zones";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
-import { dateWindowEnd, dateWindowStart, timestampWindowStart } from "../lib/date-window.ts";
+import { dateWindowStart, timestampWindowStart } from "../lib/date-window.ts";
 import { enduranceTypeFilter } from "../lib/endurance-types.ts";
 import {
   acwrCte,
@@ -155,7 +155,7 @@ export class TrainingRepository extends BaseRepository {
   /** HR zone distribution per week using 5-zone Karvonen model. */
   async getHrZones(days: number): Promise<{ maxHr: number | null; weeks: HrZoneRow[] }> {
     const zones = heartRateZoneColumns(
-      sql`ms.heart_rate`,
+      sql`ms.scalar`,
       sql`up.max_hr`,
       sql`rhr.resting_hr`,
       ZONE_BOUNDARIES_HRR,
@@ -173,14 +173,14 @@ export class TrainingRepository extends BaseRepository {
             ${zones.zone5} AS zone5
           FROM fitness.user_profile up
           JOIN fitness.v_activity a ON a.user_id = up.id
-          JOIN fitness.metric_stream ms ON ms.activity_id = a.id
+          JOIN fitness.sensor_sample ms ON ms.activity_id = a.id AND ms.channel = 'heart_rate'
           JOIN ${restingHeartRateLateral(sql`up.id`, sql`(a.started_at AT TIME ZONE ${this.timezone})::date`)}
           WHERE up.id = ${this.userId}
             AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
             AND ms.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
             AND ${enduranceTypeFilter("a")}
             AND up.max_hr IS NOT NULL
-            AND ms.heart_rate IS NOT NULL
+            AND ms.scalar IS NOT NULL
           GROUP BY up.max_hr, 2
           ORDER BY week`,
     );
@@ -347,7 +347,7 @@ export class TrainingRepository extends BaseRepository {
 
   async #fetchZoneTotals(endDate: string): Promise<ZoneTotalsRow[]> {
     const zones = heartRateZoneColumns(
-      sql`ms.heart_rate`,
+      sql`ms.scalar`,
       sql`up.max_hr`,
       sql`rhr.resting_hr`,
       ZONE_BOUNDARIES_HRR,
@@ -363,14 +363,14 @@ export class TrainingRepository extends BaseRepository {
           ${zones.zone5} AS zone5
         FROM fitness.user_profile up
         JOIN fitness.v_activity a ON a.user_id = up.id
-        JOIN fitness.metric_stream ms ON ms.activity_id = a.id
+        JOIN fitness.sensor_sample ms ON ms.activity_id = a.id AND ms.channel = 'heart_rate'
         JOIN ${restingHeartRateLateral(sql`up.id`, sql`(a.started_at AT TIME ZONE ${this.timezone})::date`)}
         WHERE up.id = ${this.userId}
           AND a.started_at > ${timestampWindowStart(endDate, 14)}
           AND ms.recorded_at > ${timestampWindowStart(endDate, 15)}
           AND ${enduranceTypeFilter("a")}
           AND up.max_hr IS NOT NULL
-          AND ms.heart_rate IS NOT NULL`,
+          AND ms.scalar IS NOT NULL`,
     );
   }
 
@@ -381,16 +381,16 @@ export class TrainingRepository extends BaseRepository {
           SELECT
             a.id,
             (a.started_at AT TIME ZONE ${this.timezone})::date AS activity_date,
-            BOOL_OR(ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[2]}::numeric) AS had_high_intensity
+            BOOL_OR(ms.scalar >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[2]}::numeric) AS had_high_intensity
           FROM fitness.user_profile up
           JOIN fitness.v_activity a ON a.user_id = up.id
-          JOIN fitness.metric_stream ms ON ms.activity_id = a.id
+          JOIN fitness.sensor_sample ms ON ms.activity_id = a.id AND ms.channel = 'heart_rate'
           JOIN ${restingHeartRateLateral(sql`up.id`, sql`(a.started_at AT TIME ZONE ${this.timezone})::date`)}
           WHERE up.id = ${this.userId}
             AND a.started_at > ${timestampWindowStart(endDate, 21)}
             AND ${enduranceTypeFilter("a")}
             AND up.max_hr IS NOT NULL
-            AND ms.heart_rate IS NOT NULL
+            AND ms.scalar IS NOT NULL
           GROUP BY a.id, 2
         )
         SELECT

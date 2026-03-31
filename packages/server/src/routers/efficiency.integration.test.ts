@@ -100,18 +100,28 @@ describe("efficiency.polarizationTrend integration", () => {
     for (const zone of zones) {
       for (let batchStart = 0; batchStart < zone.samples; batchStart += 100) {
         const batchEnd = Math.min(batchStart + 100, zone.samples);
-        const values: string[] = [];
+        const metricValues: string[] = [];
+        const sensorValues: string[] = [];
         for (let s = batchStart; s < batchEnd; s++) {
           const offset = sampleIndex + s;
-          values.push(
-            `(CURRENT_TIMESTAMP - ${daysAgo} * INTERVAL '1 day' + ${offset} * INTERVAL '1 second',
-              '${DEFAULT_USER_ID}', '${actId}', 'test_provider', ${zone.hr}, 200)`,
+          const ts = `CURRENT_TIMESTAMP - ${daysAgo} * INTERVAL '1 day' + ${offset} * INTERVAL '1 second'`;
+          metricValues.push(
+            `(${ts}, '${DEFAULT_USER_ID}', '${actId}', 'test_provider', ${zone.hr}, 200)`,
+          );
+          sensorValues.push(
+            `(${ts}, '${DEFAULT_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${actId}', ${zone.hr}, NULL)`,
+            `(${ts}, '${DEFAULT_USER_ID}', 'test_provider', NULL, 'api', 'power', '${actId}', 200, NULL)`,
           );
         }
         await testCtx.db.execute(
           sql.raw(`INSERT INTO fitness.metric_stream (
             recorded_at, user_id, activity_id, provider_id, heart_rate, power
-          ) VALUES ${values.join(",\n")}`),
+          ) VALUES ${metricValues.join(",\n")}`),
+        );
+        await testCtx.db.execute(
+          sql.raw(`INSERT INTO fitness.sensor_sample (
+            recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
+          ) VALUES ${sensorValues.join(",\n")}`),
         );
       }
       sampleIndex += zone.samples;

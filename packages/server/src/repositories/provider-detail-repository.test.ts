@@ -18,7 +18,7 @@ describe("tableInfo", () => {
     ["bodyMeasurements", "fitness.body_measurement", "recorded_at", "id"],
     ["foodEntries", "fitness.food_entry", "date", "id"],
     ["healthEvents", "fitness.health_event", "start_date", "id"],
-    ["metricStream", "fitness.metric_stream", "recorded_at", "recorded_at"],
+    ["metricStream", "fitness.sensor_sample", "recorded_at", "recorded_at"],
     ["nutritionDaily", "fitness.nutrition_daily", "date", "date"],
     ["labPanels", "fitness.lab_panel", "recorded_at", "id"],
     ["labResults", "fitness.lab_result", "recorded_at", "id"],
@@ -72,8 +72,8 @@ describe("dataTypeEnum", () => {
 // ---------------------------------------------------------------------------
 
 describe("DISCONNECT_CHILD_TABLES", () => {
-  it("contains 16 child tables", () => {
-    expect(DISCONNECT_CHILD_TABLES).toHaveLength(16);
+  it("contains 17 child tables", () => {
+    expect(DISCONNECT_CHILD_TABLES).toHaveLength(17);
   });
 
   it("includes all required child tables", () => {
@@ -95,8 +95,8 @@ describe("DISCONNECT_CHILD_TABLES", () => {
     expect(DISCONNECT_CHILD_TABLES).toContain("fitness.oauth_token");
   });
 
-  it("starts with fitness.metric_stream (first to delete)", () => {
-    expect(DISCONNECT_CHILD_TABLES[0]).toBe("fitness.metric_stream");
+  it("starts with fitness.sensor_sample (first to delete)", () => {
+    expect(DISCONNECT_CHILD_TABLES[0]).toBe("fitness.sensor_sample");
   });
 
   it("ends with activity then oauth_token (FK order)", () => {
@@ -232,8 +232,8 @@ describe("ProviderDetailRepository", () => {
       await repo.deleteProviderData("strava");
 
       expect(mockTransaction).toHaveBeenCalledTimes(1);
-      // 16 child tables + 1 provider delete = 17 deletes inside the transaction
-      expect(txExecute).toHaveBeenCalledTimes(17);
+      // 17 child tables + 1 provider delete = 18 deletes inside the transaction
+      expect(txExecute).toHaveBeenCalledTimes(18);
     });
 
     it("deletes from each child table in order", async () => {
@@ -326,7 +326,7 @@ describe("ProviderDetailRepository", () => {
         idColumn: "id",
       });
       expect(tableInfo("metricStream")).toStrictEqual({
-        table: "fitness.metric_stream",
+        table: "fitness.sensor_sample",
         orderColumn: "recorded_at",
         idColumn: "recorded_at",
       });
@@ -410,16 +410,16 @@ describe("ProviderDetailRepository", () => {
       const { repo } = makeRepository([], mockTransaction);
 
       await repo.deleteProviderData("test-provider");
-      // 16 child tables + 1 provider row = 17
+      // 17 child tables + 1 provider row = 18
       expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length + 1);
-      // Verify it's exactly 17, not 16 (BlockStatement removing the final delete)
-      expect(txExecute).toHaveBeenCalledTimes(17);
+      // Verify it's exactly 18, not 17 (BlockStatement removing the final delete)
+      expect(txExecute).toHaveBeenCalledTimes(18);
     });
 
     it("DISCONNECT_CHILD_TABLES is an array (not empty array from ArrayDeclaration mutation)", () => {
-      expect(DISCONNECT_CHILD_TABLES.length).toBe(16);
-      expect(DISCONNECT_CHILD_TABLES[0]).toBe("fitness.metric_stream");
-      expect(DISCONNECT_CHILD_TABLES[15]).toBe("fitness.oauth_token");
+      expect(DISCONNECT_CHILD_TABLES.length).toBe(17);
+      expect(DISCONNECT_CHILD_TABLES[0]).toBe("fitness.sensor_sample");
+      expect(DISCONNECT_CHILD_TABLES[16]).toBe("fitness.oauth_token");
     });
 
     it("tableInfo returns three-key objects (not empty objects from ObjectLiteral mutation)", () => {
@@ -475,8 +475,8 @@ describe("ProviderDetailRepository", () => {
       const activityIndex = DISCONNECT_CHILD_TABLES.indexOf("fitness.activity");
       const oauthIndex = DISCONNECT_CHILD_TABLES.indexOf("fitness.oauth_token");
       expect(activityIndex).toBeLessThan(oauthIndex);
-      expect(activityIndex).toBe(14);
-      expect(oauthIndex).toBe(15);
+      expect(activityIndex).toBe(15);
+      expect(oauthIndex).toBe(16);
     });
   });
 });

@@ -84,6 +84,13 @@ describe("Data Export", () => {
         sql`INSERT INTO fitness.metric_stream (recorded_at, user_id, activity_id, provider_id, heart_rate, power)
             VALUES ('2024-01-15T10:00:00Z', ${DEFAULT_USER_ID}, '11111111-1111-1111-1111-111111111111', 'test-provider', 145, 200)`,
       ),
+      // Sensor sample (dual-write)
+      testCtx.db.execute(
+        sql`INSERT INTO fitness.sensor_sample (recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector)
+            VALUES
+              ('2024-01-15T10:00:00Z', ${DEFAULT_USER_ID}, 'test-provider', NULL, 'api', 'heart_rate', '11111111-1111-1111-1111-111111111111', 145, NULL),
+              ('2024-01-15T10:00:00Z', ${DEFAULT_USER_ID}, 'test-provider', NULL, 'api', 'power', '11111111-1111-1111-1111-111111111111', 200, NULL)`,
+      ),
     ]);
 
     // Activity interval (depends on activity existing)
@@ -206,11 +213,12 @@ describe("Data Export", () => {
     expect(activities).toHaveLength(1);
     expect(activities[0]).toMatchObject({ name: "Morning Ride", raw: { source: "test" } });
 
-    // Verify metric streams contain data
+    // Verify metric streams contain data (sensor_sample has per-channel rows)
     const metricStreamsJson = await readZipFile(zip, "metric-streams.json");
     const metricStreams: Array<Record<string, unknown>> = JSON.parse(metricStreamsJson);
-    expect(metricStreams).toHaveLength(1);
-    expect(metricStreams[0]).toMatchObject({ heart_rate: 145 });
+    expect(metricStreams.length).toBeGreaterThanOrEqual(1);
+    const hrRow = metricStreams.find((r) => r.channel === "heart_rate");
+    expect(hrRow).toMatchObject({ channel: "heart_rate", scalar: 145 });
 
     // Verify metadata
     const metadataJson = await readZipFile(zip, "export-metadata.json");

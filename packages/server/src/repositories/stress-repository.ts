@@ -9,7 +9,7 @@ import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
-import { dateWindowStart, timestampWindowStart } from "../lib/date-window.ts";
+import { dateWindowStart } from "../lib/date-window.ts";
 import { sleepDedupCte, vitalsBaselineCte } from "../lib/sql-fragments.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 
