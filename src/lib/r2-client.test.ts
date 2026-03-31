@@ -54,7 +54,7 @@ describe("parseR2Config", () => {
 });
 
 describe("createS3Client", () => {
-  it("creates an S3Client with the correct configuration", () => {
+  it("creates an S3Client with the correct configuration", async () => {
     const config = {
       R2_ENDPOINT: "https://account-id.r2.cloudflarestorage.com",
       R2_ACCESS_KEY_ID: "my-access-key",
@@ -64,6 +64,14 @@ describe("createS3Client", () => {
 
     const client = createS3Client(config);
     expect(client).toBeInstanceOf(S3Client);
+
+    // Verify the client was configured with the correct endpoint and credentials
+    const resolvedConfig = await client.config.endpoint?.();
+    expect(resolvedConfig?.hostname).toBe("account-id.r2.cloudflarestorage.com");
+
+    const resolvedCredentials = await client.config.credentials();
+    expect(resolvedCredentials.accessKeyId).toBe("my-access-key");
+    expect(resolvedCredentials.secretAccessKey).toBe("my-secret-key");
   });
 });
 
