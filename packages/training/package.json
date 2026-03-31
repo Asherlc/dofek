@@ -10,9 +10,11 @@
     "./endurance-types": "./src/endurance-types.ts",
     "./power-analysis": "./src/power-analysis.ts",
     "./pmc": "./src/pmc.ts",
-    "./grade-adjusted-pace": "./src/grade-adjusted-pace.ts"
+    "./grade-adjusted-pace": "./src/grade-adjusted-pace.ts",
+    "./muscle-groups": "./src/muscle-groups.ts"
   },
   "dependencies": {
+    "@dofek/scoring": "workspace:*",
     "@dofek/zones": "workspace:*"
   }
 }

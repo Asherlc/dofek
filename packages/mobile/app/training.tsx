@@ -20,6 +20,7 @@ import {
 } from "react-native";
 import Svg, { Path, Rect, Text as SvgText } from "react-native-svg";
 import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
+import { MuscleGroupBodyDiagram } from "../components/MuscleGroupBodyDiagram";
 import { trpc } from "../lib/trpc";
 import { useUnitConverter } from "../lib/units";
 import { useRefresh } from "../lib/useRefresh";
@@ -1130,66 +1131,16 @@ function StrengthTab({ days }: { days: number }) {
       )}
 
       {/* Muscle Group Volume */}
-      {(() => {
-        const muscleGroups = muscleGroup.data ?? [];
-        if (muscleGroups.length === 0) return null;
-
-        // Aggregate total sets per muscle group across all weeks
-        const totals = muscleGroups
-          .map((mg) => ({
-            name: mg.muscleGroup,
-            totalSets: mg.weeklyData.reduce((sum, w) => sum + w.sets, 0),
-          }))
-          .sort((a, b) => b.totalSets - a.totalSets);
-
-        const maxSets = totals[0]?.totalSets ?? 1;
-
-        return (
-          <View style={styles.card}>
-            <ChartTitleWithTooltip
-              title="Muscle Group Volume"
-              description="Total sets per muscle group over the selected period. Helps identify imbalances in training."
-              textStyle={styles.cardTitle}
-            />
-            <View style={{ gap: 8, marginTop: 4 }}>
-              {totals.map((mg) => (
-                <View key={mg.name} style={{ gap: 2 }}>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                    <Text style={{ fontSize: 12, color: colors.textSecondary }}>{mg.name}</Text>
-                    <Text
-                      style={{
-                        fontSize: 12,
-                        color: colors.text,
-                        fontWeight: "600",
-                        fontVariant: ["tabular-nums"],
-                      }}
-                    >
-                      {mg.totalSets} sets
-                    </Text>
-                  </View>
-                  <View
-                    style={{
-                      height: 6,
-                      borderRadius: 3,
-                      backgroundColor: colors.surfaceSecondary,
-                      overflow: "hidden",
-                    }}
-                  >
-                    <View
-                      style={{
-                        height: "100%",
-                        borderRadius: 3,
-                        backgroundColor: colors.purple,
-                        width: `${(mg.totalSets / maxSets) * 100}%`,
-                      }}
-                    />
-                  </View>
-                </View>
-              ))}
-            </View>
-          </View>
-        );
-      })()}
+      {(muscleGroup.data ?? []).length > 0 && (
+        <View style={styles.card}>
+          <ChartTitleWithTooltip
+            title="Muscle Group Volume"
+            description="Total sets per muscle group over the selected period. Helps identify imbalances in training."
+            textStyle={styles.cardTitle}
+          />
+          <MuscleGroupBodyDiagram data={muscleGroup.data ?? []} />
+        </View>
+      )}
 
       {volumeData.length === 0 &&
         oneRepMaxData.length === 0 &&

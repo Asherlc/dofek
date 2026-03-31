@@ -339,10 +339,11 @@ describe("TrainingScreen — StrengthTab", () => {
     clickTab("Strength");
 
     expect(screen.getByText("Muscle Group Volume")).toBeTruthy();
+    // Chest stays as-is (27 total sets); "Back" expands to Traps/Lats/Upper Back/Lower Back
     expect(screen.getByText("Chest")).toBeTruthy();
-    expect(screen.getByText("27 sets")).toBeTruthy();
-    expect(screen.getByText("Back")).toBeTruthy();
-    expect(screen.getByText("38 sets")).toBeTruthy();
+    expect(screen.getByText("27")).toBeTruthy();
+    expect(screen.getByText("Traps")).toBeTruthy();
+    expect(screen.getByText("Lats")).toBeTruthy();
   });
 
   it("does NOT show empty state when muscleGroup data exists but volume/oneRepMax/overload are empty", async () => {
