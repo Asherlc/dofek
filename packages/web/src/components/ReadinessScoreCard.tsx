@@ -1,4 +1,5 @@
-import { scoreColor } from "@dofek/scoring/scoring";
+import { statusColors, textColors } from "@dofek/scoring/colors";
+import { SCORE_ZONES, scoreColor } from "@dofek/scoring/scoring";
 import type { ReadinessRow } from "dofek-server/types";
 import { useEffect, useState } from "react";
 import { useCountUp } from "../hooks/useCountUp.ts";
@@ -8,6 +9,16 @@ import { DofekChart } from "./DofekChart.tsx";
 interface ReadinessScoreCardProps {
   data: ReadinessRow[];
   loading?: boolean;
+}
+
+function withOpacity(hexColor: string, opacityHex: string): string {
+  return `${hexColor}${opacityHex}`;
+}
+
+function scoreZoneFill(status: "danger" | "warning" | "positive"): string {
+  if (status === "danger") return withOpacity(statusColors.danger, "20");
+  if (status === "warning") return withOpacity(statusColors.warning, "20");
+  return withOpacity(statusColors.positive, "20");
 }
 
 function ComponentBar({
@@ -70,21 +81,25 @@ export function ReadinessScoreCard({ data, loading }: ReadinessScoreCardProps) {
           "Readiness",
           data.map((d) => d.readinessScore),
           {
-            color,
+            color: textColors.secondary,
           },
         ),
-        areaStyle: {
-          color: {
-            type: "linear" as const,
-            x: 0,
-            y: 0,
-            x2: 0,
-            y2: 1,
-            colorStops: [
-              { offset: 0, color: `${color}40` },
-              { offset: 1, color: `${color}05` },
-            ],
+        markArea: {
+          silent: true,
+          data: SCORE_ZONES.map((scoreZone) => [
+            { yAxis: scoreZone.min, itemStyle: { color: scoreZoneFill(scoreZone.status) } },
+            { yAxis: scoreZone.max },
+          ]),
+        },
+        markLine: {
+          silent: true,
+          symbol: "none",
+          lineStyle: {
+            color: textColors.tertiary,
+            width: 1,
+            type: "dashed" as const,
           },
+          data: [{ yAxis: 50 }, { yAxis: 70 }],
         },
       },
     ],
