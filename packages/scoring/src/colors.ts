@@ -51,6 +51,23 @@ export const textColors = {
   neutral: "#8aaa8a",
 } as const;
 
+/** Sleep stage colors — consistent across web (ECharts) and mobile (SVG).
+ *  Uses the Material-inspired palette for maximum stage distinction. */
+export const sleepStageColors = {
+  deep: "#5E35B1",
+  rem: "#42A5F5",
+  light: "#78909C",
+  awake: "#FF8A65",
+} as const;
+
+/** Activity metric chart series colors — universal associations. */
+export const activityMetricColors = {
+  heartRate: "#dc2626",
+  power: "#d97706",
+  speed: "#2563eb",
+  cadence: "#5E35B1",
+} as const;
+
 /** Chart chrome colors for ECharts tooltips, axes, and grid lines */
 export const chartThemeColors = {
   gridLine: "rgba(74, 158, 122, 0.12)",

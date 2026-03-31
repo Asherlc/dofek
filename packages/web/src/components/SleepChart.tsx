@@ -1,3 +1,4 @@
+import { sleepStageColors } from "@dofek/scoring/colors";
 import { dofekAxis, dofekGrid, dofekLegend, dofekSeries, dofekTooltip } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
@@ -48,7 +49,7 @@ export function SleepChart({ data, loading }: SleepChartProps) {
         data.map((d) => [d.started_at, d.deep_minutes]),
         {
           stack: "sleep",
-          color: "#6366f1",
+          color: sleepStageColors.deep,
         },
       ),
       dofekSeries.bar(
@@ -56,7 +57,7 @@ export function SleepChart({ data, loading }: SleepChartProps) {
         data.map((d) => [d.started_at, d.rem_minutes]),
         {
           stack: "sleep",
-          color: "#8b5cf6",
+          color: sleepStageColors.rem,
         },
       ),
       dofekSeries.bar(
@@ -64,7 +65,7 @@ export function SleepChart({ data, loading }: SleepChartProps) {
         data.map((d) => [d.started_at, d.light_minutes]),
         {
           stack: "sleep",
-          color: "#a78bfa",
+          color: sleepStageColors.light,
         },
       ),
       dofekSeries.bar(
@@ -72,7 +73,7 @@ export function SleepChart({ data, loading }: SleepChartProps) {
         data.map((d) => [d.started_at, d.awake_minutes]),
         {
           stack: "sleep",
-          color: "#f87171",
+          color: sleepStageColors.awake,
         },
       ),
     ],

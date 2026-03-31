@@ -6,6 +6,8 @@
  * 2. **Treff 3-zone** (%HRmax) — simplified model for polarization index
  */
 
+import { statusColors } from "@dofek/scoring/colors";
+
 // ── Types ────────────────────────────────────────────────────────────
 
 export interface HeartRateZoneDefinition {
@@ -54,11 +56,11 @@ export interface PolarizationZoneDefinition {
  * Zone boundary = restingHr + HRR * fraction
  */
 export const HEART_RATE_ZONES: HeartRateZoneDefinition[] = [
-  { zone: 1, label: "Recovery", minPctHrr: 0.5, maxPctHrr: 0.6, color: "#3b82f6" },
-  { zone: 2, label: "Aerobic", minPctHrr: 0.6, maxPctHrr: 0.7, color: "#22c55e" },
-  { zone: 3, label: "Tempo", minPctHrr: 0.7, maxPctHrr: 0.8, color: "#eab308" },
-  { zone: 4, label: "Threshold", minPctHrr: 0.8, maxPctHrr: 0.9, color: "#f97316" },
-  { zone: 5, label: "VO2max", minPctHrr: 0.9, maxPctHrr: 1.0, color: "#ef4444" },
+  { zone: 1, label: "Recovery", minPctHrr: 0.5, maxPctHrr: 0.6, color: statusColors.info },
+  { zone: 2, label: "Aerobic", minPctHrr: 0.6, maxPctHrr: 0.7, color: statusColors.positive },
+  { zone: 3, label: "Tempo", minPctHrr: 0.7, maxPctHrr: 0.8, color: statusColors.warning },
+  { zone: 4, label: "Threshold", minPctHrr: 0.8, maxPctHrr: 0.9, color: statusColors.elevated },
+  { zone: 5, label: "VO2max", minPctHrr: 0.9, maxPctHrr: 1.0, color: statusColors.danger },
 ];
 
 /** Ordered array of zone colors for chart series (indexed 0-4 for zones 1-5). */

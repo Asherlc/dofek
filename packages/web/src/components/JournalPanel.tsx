@@ -1,3 +1,4 @@
+import { chartColors, statusColors } from "@dofek/scoring/colors";
 import { useMemo, useState } from "react";
 import { z } from "zod";
 import { trpc } from "../lib/trpc.ts";
@@ -251,12 +252,12 @@ function AnswerDisplay({ entry }: { entry: JournalEntry }) {
 // ---- Trends Tab ----
 
 const TREND_COLORS = [
-  "#6366f1", // indigo
-  "#22c55e", // green
-  "#f59e0b", // amber
-  "#ef4444", // red
-  "#06b6d4", // cyan
-  "#a855f7", // purple
+  chartColors.blue,
+  statusColors.positive,
+  chartColors.amber,
+  statusColors.danger,
+  chartColors.teal,
+  chartColors.purple,
 ];
 
 function JournalTrends({ days }: { days: number }) {

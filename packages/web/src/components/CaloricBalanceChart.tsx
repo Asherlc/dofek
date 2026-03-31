@@ -1,3 +1,4 @@
+import { statusColors } from "@dofek/scoring/colors";
 import type { CaloricBalanceRow } from "../../../server/src/routers/nutrition-analytics.ts";
 import {
   chartColors,
@@ -29,7 +30,7 @@ export function CaloricBalanceChart({ data, loading }: CaloricBalanceChartProps)
         ),
         itemStyle: {
           color: (params: { value: [string, number] }) =>
-            params.value[1] >= 0 ? chartColors.green : "#ef4444",
+            params.value[1] >= 0 ? chartColors.green : statusColors.danger,
         },
       },
       dofekSeries.line(

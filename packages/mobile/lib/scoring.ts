@@ -12,6 +12,7 @@ export {
   scoreLabel,
   sleepDebtColor,
   sleepPerformanceColor,
+  sleepTierColor,
   trendColor,
   trendDirection,
   WorkloadRatio,

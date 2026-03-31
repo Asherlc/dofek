@@ -1,3 +1,4 @@
+import { statusColors } from "@dofek/scoring/colors";
 import type { HrvVariabilityRow } from "dofek-server/types";
 import {
   chartColors,
@@ -15,9 +16,9 @@ interface HrvVariabilityChartProps {
 }
 
 const COLOR_HRV = chartColors.green;
-const COLOR_ZONE_GREEN = "#22c55e";
-const COLOR_ZONE_YELLOW = "#eab308";
-const COLOR_ZONE_RED = "#ef4444";
+const COLOR_ZONE_GREEN = statusColors.positive;
+const COLOR_ZONE_YELLOW = statusColors.warning;
+const COLOR_ZONE_RED = statusColors.danger;
 
 export function HrvVariabilityChart({ data, loading }: HrvVariabilityChartProps) {
   const dates = data.map((d) => d.date);

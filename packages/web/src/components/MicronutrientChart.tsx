@@ -1,3 +1,4 @@
+import { statusColors } from "@dofek/scoring/colors";
 import type { MicronutrientAdequacyRow } from "../../../server/src/routers/nutrition-analytics.ts";
 import { chartThemeColors, dofekAxis, dofekTooltip } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
@@ -43,12 +44,12 @@ export function MicronutrientChart({ data, loading }: MicronutrientChartProps) {
           itemStyle: {
             color:
               d.percentRda >= 100
-                ? "#22c55e"
+                ? statusColors.positive
                 : d.percentRda >= 75
-                  ? "#eab308"
+                  ? statusColors.warning
                   : d.percentRda >= 50
-                    ? "#f97316"
-                    : "#ef4444",
+                    ? statusColors.elevated
+                    : statusColors.danger,
           },
         })),
         barWidth: "60%",
