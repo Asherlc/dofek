@@ -130,6 +130,15 @@ function findOptionByYAxisArrayName(name: string): Record<string, unknown> | und
   });
 }
 
+function getQueryEnabledFlag(value: unknown): boolean | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const enabled = Reflect.get(value, "enabled");
+  return typeof enabled === "boolean" ? enabled : undefined;
+}
+
 function getSeriesData(opt: Record<string, unknown>): Array<unknown> {
   const series = opt.series;
   if (Array.isArray(series) && series[0] && typeof series[0] === "object" && "data" in series[0]) {
@@ -277,10 +286,8 @@ describe("ActivityDetailPage", () => {
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />);
 
-      const options = mockStrengthExercisesUseQuery.mock.calls[0]?.[1] as
-        | { enabled?: boolean }
-        | undefined;
-      expect(options?.enabled).toBe(false);
+      const enabled = getQueryEnabledFlag(mockStrengthExercisesUseQuery.mock.calls[0]?.[1]);
+      expect(enabled).toBe(false);
 
       Object.assign(mockActivity, originalData);
     });
@@ -292,10 +299,8 @@ describe("ActivityDetailPage", () => {
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />);
 
-      const options = mockStrengthExercisesUseQuery.mock.calls[0]?.[1] as
-        | { enabled?: boolean }
-        | undefined;
-      expect(options?.enabled).toBe(true);
+      const enabled = getQueryEnabledFlag(mockStrengthExercisesUseQuery.mock.calls[0]?.[1]);
+      expect(enabled).toBe(true);
 
       Object.assign(mockActivity, originalData);
     });
