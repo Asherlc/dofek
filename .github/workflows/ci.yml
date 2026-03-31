@@ -1101,8 +1101,8 @@ jobs:
           ssh root@"$SERVER_HOST" "mkdir -p /opt/dofek/updates/$RELEASE_DIR"
           scp -r "$STAGING_DIR"/* root@"$SERVER_HOST":/opt/dofek/updates/"$RELEASE_DIR"/
 
-          # Atomic symlink switch
-          ssh root@"$SERVER_HOST" "ln -sfn /opt/dofek/updates/$RELEASE_DIR /opt/dofek/updates/current"
+          # Atomic symlink switch (relative so it resolves inside Docker containers)
+          ssh root@"$SERVER_HOST" "ln -sfn $RELEASE_DIR /opt/dofek/updates/current"
 
           # Clean up old releases (keep last 10)
           ssh root@"$SERVER_HOST" 'cd /opt/dofek/updates && ls -dt 20*/ | tail -n +11 | xargs rm -rf'

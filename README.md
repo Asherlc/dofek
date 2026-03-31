@@ -226,6 +226,20 @@ Internet → Caddy (auto-HTTPS :443, serves dofek.asherlc.com + dofek.fit + dofe
 | `portainer` | portainer/portainer-ce:lts | Container management UI (portainer.dofek.asherlc.com) |
 | `watchtower` | containrrr/watchtower | Auto-pulls new images from GHCR every 5min |
 
+### Checking mobile OTA update status
+
+The server hosts a self-hosted Expo Updates endpoint at `/api/updates/manifest`. To check what OTA update is currently deployed on prod:
+
+```bash
+curl -s -H "expo-protocol-version: 1" -H "expo-platform: ios" -H "expo-runtime-version: 1.0" \
+  https://dofek.asherlc.com/api/updates/manifest
+```
+
+- **Multipart response** with JSON manifest → an update is published (includes `id`, `createdAt`, `runtimeVersion`, and asset hashes)
+- **204 No Content** → no update is published (the app uses its embedded bundle)
+
+The runtime version must match what's in `packages/mobile/app.json` (`runtimeVersion`).
+
 ### CI/CD pipeline
 
 ```
