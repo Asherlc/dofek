@@ -94,7 +94,7 @@ export class SleepNeedRepository {
     const nights = await executeWithSchema(
       this.#db,
       sleepNeedRowSchema,
-      sql`WITH sleep_nights AS (
+      sql`WITH sleep_raw AS (
             SELECT
               (started_at AT TIME ZONE ${this.#timezone})::date AS date,
               COALESCE(duration_minutes, EXTRACT(EPOCH FROM (ended_at - started_at)) / 60)::int AS duration_minutes
@@ -102,7 +102,11 @@ export class SleepNeedRepository {
             WHERE user_id = ${this.#userId}
               AND is_nap = false
               AND started_at > ${timestampWindowStart(endDate, 90)}
-            ORDER BY started_at ASC
+          ),
+          sleep_nights AS (
+            SELECT DISTINCT ON (date) date, duration_minutes
+            FROM sleep_raw
+            ORDER BY date, duration_minutes DESC NULLS LAST
           ),
           daily_hrv AS (
             SELECT
@@ -180,12 +184,20 @@ export class SleepNeedRepository {
       this.#db,
       baselineRowSchema,
       sql`
-        SELECT AVG(duration_minutes) AS avg_duration
-        FROM fitness.v_sleep
-        WHERE user_id = ${this.#userId}
-          AND is_nap = false
-          AND started_at > ${timestampWindowStart(endDate, 90)}
-          AND duration_minutes IS NOT NULL
+        WITH raw_sleep AS (
+          SELECT (started_at AT TIME ZONE ${this.#timezone})::date AS date, duration_minutes
+          FROM fitness.v_sleep
+          WHERE user_id = ${this.#userId}
+            AND is_nap = false
+            AND started_at > ${timestampWindowStart(endDate, 90)}
+            AND duration_minutes IS NOT NULL
+        ),
+        nightly AS (
+          SELECT DISTINCT ON (date) duration_minutes
+          FROM raw_sleep
+          ORDER BY date, duration_minutes DESC NULLS LAST
+        )
+        SELECT AVG(duration_minutes) AS avg_duration FROM nightly
       `,
     );
 

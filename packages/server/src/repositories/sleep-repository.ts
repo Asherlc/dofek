@@ -47,7 +47,6 @@ export class SleepRepository {
       sleepListRowSchema,
       sql`WITH raw_sleep AS (
 						SELECT
-							to_char(started_at AT TIME ZONE ${this.#timezone}, 'YYYY-MM-DD"T"HH24:MI:SS') AS started_at,
 							(started_at AT TIME ZONE ${this.#timezone})::date AS sleep_date,
 							duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, efficiency_pct
 						FROM fitness.v_sleep
@@ -57,13 +56,15 @@ export class SleepRepository {
 					),
 					deduped AS (
 						SELECT DISTINCT ON (sleep_date)
-							started_at, duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, efficiency_pct
+							sleep_date, duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, efficiency_pct
 						FROM raw_sleep
 						ORDER BY sleep_date, duration_minutes DESC NULLS LAST
 					)
-					SELECT started_at, duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, efficiency_pct
+					SELECT
+						to_char(sleep_date, 'YYYY-MM-DD"T"12:00:00') AS started_at,
+						duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, efficiency_pct
 					FROM deduped
-					ORDER BY started_at ASC`,
+					ORDER BY sleep_date ASC`,
     );
   }
 
@@ -84,23 +85,41 @@ export class SleepRepository {
     );
   }
 
-  /** Sleep stages for the most recent non-nap session. */
+  /**
+   * Sleep stages for the most recent non-nap session.
+   *
+   * The winning session in v_sleep may come from a provider that doesn't store
+   * individual stage transitions (e.g. WHOOP only stores aggregate minutes).
+   * When that happens, we fall back to any overlapping raw session that does
+   * have stages — e.g. from Apple Health or Garmin.
+   */
   async getLatestStages() {
     return executeWithSchema(
       this.#db,
       sleepStageRowSchema,
-      sql`SELECT
+      sql`WITH latest_sleep AS (
+						SELECT started_at, ended_at
+						FROM fitness.v_sleep
+						WHERE user_id = ${this.#userId} AND is_nap = false
+						ORDER BY started_at DESC
+						LIMIT 1
+					),
+					best_stage_session AS (
+						SELECT ss.id
+						FROM fitness.sleep_session ss, latest_sleep ls
+						WHERE ss.user_id = ${this.#userId}
+							AND ss.started_at BETWEEN ls.started_at - interval '2 hours'
+								AND COALESCE(ls.ended_at, ls.started_at + interval '12 hours')
+							AND EXISTS (SELECT 1 FROM fitness.sleep_stage s2 WHERE s2.session_id = ss.id)
+						ORDER BY (SELECT count(*) FROM fitness.sleep_stage s3 WHERE s3.session_id = ss.id) DESC
+						LIMIT 1
+					)
+					SELECT
 						st.stage,
 						to_char(st.started_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS started_at,
 						to_char(st.ended_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS ended_at
 					FROM fitness.sleep_stage st
-					WHERE st.session_id = (
-						SELECT vs.id FROM fitness.v_sleep vs
-						WHERE vs.user_id = ${this.#userId}
-							AND vs.is_nap = false
-						ORDER BY vs.started_at DESC
-						LIMIT 1
-					)
+					WHERE st.session_id = (SELECT id FROM best_stage_session)
 					ORDER BY st.started_at ASC`,
     );
   }

@@ -70,6 +70,9 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 - **No manual server changes**: Never SSH into the server to edit config files directly. All server config changes (`docker-compose.yml`, `Caddyfile`) must go through Terraform (`cd deploy/deploy-config && terraform apply -var="server_ip=<IP>"`). See the README for details.
 - **Drizzle generate is interactive**: `pnpm generate` (`drizzle-kit generate`) prompts interactively when it detects potential table/column renames. Since CLI tools can't handle interactive prompts, write migration SQL files manually when `generate` would prompt. Name them sequentially (e.g., `drizzle/0012_description.sql`). Use `ALTER TABLE ... ADD COLUMN` for new columns, etc. Always run `pnpm migrate` after creating manual migrations.
 
+## Code Review
+- **Flag linter-catchable issues**: During code reviews, still flag violations even if they would be caught by a linter. Do not skip issues just because a linter or Biome plugin enforces them — the review should catch everything, not defer to CI.
+
 ## Commands
 - `pnpm test` — run tests
 - `pnpm test:watch` — run tests in watch mode

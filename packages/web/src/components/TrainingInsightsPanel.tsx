@@ -1,3 +1,4 @@
+import { statusColors } from "@dofek/scoring/colors";
 import {
   collapseWeeklyVolumeActivityTypes,
   formatActivityTypeLabel,
@@ -29,14 +30,14 @@ const ZONE_LABELS: Record<string, string> = Object.fromEntries(
 // Activity type colors
 const ACTIVITY_COLORS: Record<string, string> = {
   cycling: chartColors.orange,
-  running: "#22c55e",
-  walking: "#8b5cf6",
+  running: statusColors.positive,
+  walking: chartColors.purple,
   swimming: chartColors.blue,
   hiking: "#a3e635",
   yoga: "#c084fc",
-  functional_strength: "#dc2626",
-  strength_training: "#ef4444",
-  strength: "#ef4444",
+  functional_strength: statusColors.danger,
+  strength_training: statusColors.danger,
+  strength: statusColors.danger,
   [OTHER_ACTIVITY_TYPE]: chartThemeColors.axisLabel,
 };
 
@@ -316,9 +317,9 @@ function IntensityDonut({ weeks }: { weeks: HrZoneWeek[] }) {
           },
         },
         data: [
-          { name: `Low (Z1-Z2)`, value: totals.low, itemStyle: { color: "#22c55e" } },
-          { name: `Medium (Z3)`, value: totals.medium, itemStyle: { color: "#eab308" } },
-          { name: `High (Z4-Z5)`, value: totals.high, itemStyle: { color: "#ef4444" } },
+          { name: `Low (Z1-Z2)`, value: totals.low, itemStyle: { color: statusColors.positive } },
+          { name: `Medium (Z3)`, value: totals.medium, itemStyle: { color: statusColors.warning } },
+          { name: `High (Z4-Z5)`, value: totals.high, itemStyle: { color: statusColors.danger } },
         ],
       },
     ],

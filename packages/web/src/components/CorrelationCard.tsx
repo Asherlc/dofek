@@ -268,7 +268,7 @@ function ScatterPlot({ insight }: { insight: Insight }) {
 }
 
 export function CorrelationCardSkeleton() {
-  return <div className="h-48 rounded-lg bg-skeleton animate-pulse" />;
+  return <div className="h-48 rounded-lg shimmer" />;
 }
 
 function formatValue(v: number): string {

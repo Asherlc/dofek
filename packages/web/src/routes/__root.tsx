@@ -14,6 +14,16 @@ const LEGACY_REDIRECTS: Record<string, string> = {
   "/nutrition-analytics": "/nutrition/analytics",
 };
 
+function PageTransition({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
+
+  return (
+    <div key={location.pathname} className="page-enter">
+      {children}
+    </div>
+  );
+}
+
 function AuthGate() {
   const { user, isLoading } = useAuth();
   const location = useLocation();
@@ -41,7 +51,11 @@ function AuthGate() {
     return null;
   }
 
-  return <Outlet />;
+  return (
+    <PageTransition>
+      <Outlet />
+    </PageTransition>
+  );
 }
 
 export const Route = createRootRoute({

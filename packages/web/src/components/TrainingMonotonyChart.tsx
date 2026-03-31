@@ -1,3 +1,4 @@
+import { statusColors } from "@dofek/scoring/colors";
 import type { TrainingMonotonyWeek } from "dofek-server/types";
 import {
   chartColors,
@@ -38,7 +39,7 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
           day: "numeric",
           year: "numeric",
         });
-        const monotonyColor = dataPoint.monotony > 2.0 ? "#ef4444" : chartColors.blue;
+        const monotonyColor = dataPoint.monotony > 2.0 ? statusColors.danger : chartColors.blue;
         return [
           `<strong>${dateLabel}</strong>`,
           `Monotony: <span style="color:${monotonyColor}">${formatNumber(dataPoint.monotony, 2)}</span>${dataPoint.monotony > 2.0 ? " (high!)" : ""}`,
@@ -59,7 +60,7 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
           data.map((d) => ({
             value: [d.week, d.monotony],
             itemStyle: {
-              color: d.monotony > 2.0 ? "#ef4444" : chartColors.blue,
+              color: d.monotony > 2.0 ? statusColors.danger : chartColors.blue,
             },
           })),
           {},

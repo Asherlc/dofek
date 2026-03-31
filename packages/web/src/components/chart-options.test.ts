@@ -164,11 +164,17 @@ describe("PolarizationTrendChart option builder", () => {
     const polarizationIndexSeries = allSeries.find((s) => s.name === "Polarization Index");
     if (!polarizationIndexSeries) throw new Error("Expected polarization index series");
     // 2.5 (above threshold) → green
-    expect(polarizationIndexSeries.data[0]).toHaveProperty("itemStyle", { color: "#22c55e" });
+    expect(polarizationIndexSeries.data[0]).toHaveProperty("itemStyle", {
+      color: statusColors.positive,
+    });
     // 1.8 (below threshold) → red
-    expect(polarizationIndexSeries.data[1]).toHaveProperty("itemStyle", { color: "#ef4444" });
+    expect(polarizationIndexSeries.data[1]).toHaveProperty("itemStyle", {
+      color: statusColors.danger,
+    });
     // 2.0 (exactly at threshold) → green
-    expect(polarizationIndexSeries.data[2]).toHaveProperty("itemStyle", { color: "#22c55e" });
+    expect(polarizationIndexSeries.data[2]).toHaveProperty("itemStyle", {
+      color: statusColors.positive,
+    });
   });
 
   it("shows incomplete weeks as distinct markers at yMin", () => {

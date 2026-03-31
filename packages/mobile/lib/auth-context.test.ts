@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 // expo-secure-store, expo-web-browser, expo-apple-authentication, and react-native
 // are mocked globally in test-setup.ts

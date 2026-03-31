@@ -7,8 +7,16 @@ import {
 } from "@dofek/format/format";
 import type { NextWorkoutRecommendation } from "dofek-server/types";
 import { useRouter } from "expo-router";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import Animated, {
+  Easing,
+  FadeInUp,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withTiming,
+} from "react-native-reanimated";
 import { Card } from "../../components/Card";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { RecoveryRing } from "../../components/charts/RecoveryRing";
@@ -21,7 +29,7 @@ import { trpc } from "../../lib/trpc";
 import { useAutoSync } from "../../lib/useAutoSync";
 import { useOnboarding } from "../../lib/useOnboarding";
 import { useRefresh } from "../../lib/useRefresh";
-import { colors } from "../../theme";
+import { colors, duration } from "../../theme";
 
 function todayString(): string {
   const now = new Date();
@@ -189,141 +197,174 @@ export default function TodayScreen() {
 
       {/* Recovery components breakdown */}
       {todayReadiness?.components && (
-        <Card title="Recovery Breakdown">
-          <View style={styles.componentGrid}>
-            <ComponentRow
-              label="Heart Rate Variability"
-              score={todayReadiness.components.hrvScore}
-            />
-            <ComponentRow
-              label="Resting Heart Rate"
-              score={todayReadiness.components.restingHrScore}
-            />
-            <ComponentRow label="Sleep Quality" score={todayReadiness.components.sleepScore} />
-            <ComponentRow
-              label="Respiratory Rate"
-              score={todayReadiness.components.respiratoryRateScore}
-            />
-          </View>
-        </Card>
+        <Animated.View
+          entering={FadeInUp.delay(80)
+            .duration(duration.slow)
+            .easing(Easing.bezier(0.16, 1, 0.3, 1))}
+        >
+          <Card title="Recovery Breakdown">
+            <View style={styles.componentGrid}>
+              <ComponentRow
+                label="Heart Rate Variability"
+                score={todayReadiness.components.hrvScore}
+                delay={0}
+              />
+              <ComponentRow
+                label="Resting Heart Rate"
+                score={todayReadiness.components.restingHrScore}
+                delay={100}
+              />
+              <ComponentRow
+                label="Sleep Quality"
+                score={todayReadiness.components.sleepScore}
+                delay={200}
+              />
+              <ComponentRow
+                label="Respiratory Rate"
+                score={todayReadiness.components.respiratoryRateScore}
+                delay={300}
+              />
+            </View>
+          </Card>
+        </Animated.View>
       )}
 
       {/* Sleep summary */}
       {!sleepAnalyticsLoading && lastNight && (
-        <TouchableOpacity activeOpacity={0.7} onPress={() => router.push("/sleep")}>
-          <Card title="Last Night">
-            <SleepBar
-              durationMinutes={lastNight.durationMinutes}
-              deepPercentage={lastNight.deepPct}
-              remPercentage={lastNight.remPct}
-              lightPercentage={lastNight.lightPct}
-              awakePercentage={lastNight.awakePct}
-            />
-            {sleepDebt > 0 && (
-              <Text style={styles.sleepDebt}>{formatSleepDebtInline(sleepDebt)}</Text>
-            )}
-          </Card>
-        </TouchableOpacity>
+        <Animated.View
+          entering={FadeInUp.delay(160)
+            .duration(duration.slow)
+            .easing(Easing.bezier(0.16, 1, 0.3, 1))}
+        >
+          <TouchableOpacity activeOpacity={0.7} onPress={() => router.push("/sleep")}>
+            <Card title="Last Night">
+              <SleepBar
+                durationMinutes={lastNight.durationMinutes}
+                deepPercentage={lastNight.deepPct}
+                remPercentage={lastNight.remPct}
+                lightPercentage={lastNight.lightPct}
+                awakePercentage={lastNight.awakePct}
+              />
+              {sleepDebt > 0 && (
+                <Text style={styles.sleepDebt}>{formatSleepDebtInline(sleepDebt)}</Text>
+              )}
+            </Card>
+          </TouchableOpacity>
+        </Animated.View>
       )}
 
       {/* Next Workout */}
       {nextWorkout != null && isToday(new Date(nextWorkout.generatedAt)) && (
-        <Card title="Next Workout">
-          <View style={styles.nextWorkoutHeader}>
-            <View style={styles.nextWorkoutTitleWrap}>
-              <Text style={styles.nextWorkoutTitle}>{nextWorkout.title}</Text>
-            </View>
-            <View
-              style={[
-                styles.nextWorkoutTypeBadge,
-                {
-                  borderColor: recommendationTypeColor(nextWorkout.recommendationType),
-                  backgroundColor: `${recommendationTypeColor(nextWorkout.recommendationType)}20`,
-                },
-              ]}
-            >
-              <Text
+        <Animated.View
+          entering={FadeInUp.delay(240)
+            .duration(duration.slow)
+            .easing(Easing.bezier(0.16, 1, 0.3, 1))}
+        >
+          <Card title="Next Workout">
+            <View style={styles.nextWorkoutHeader}>
+              <View style={styles.nextWorkoutTitleWrap}>
+                <Text style={styles.nextWorkoutTitle}>{nextWorkout.title}</Text>
+              </View>
+              <View
                 style={[
-                  styles.nextWorkoutTypeLabel,
-                  { color: recommendationTypeColor(nextWorkout.recommendationType) },
+                  styles.nextWorkoutTypeBadge,
+                  {
+                    borderColor: recommendationTypeColor(nextWorkout.recommendationType),
+                    backgroundColor: `${recommendationTypeColor(nextWorkout.recommendationType)}20`,
+                  },
                 ]}
               >
-                {capitalize(nextWorkout.recommendationType)}
-              </Text>
-            </View>
-          </View>
-
-          <Text style={styles.nextWorkoutSummary}>{nextWorkout.shortBlurb}</Text>
-          <Text
-            style={[
-              styles.nextWorkoutReadiness,
-              { color: readinessLevelColor(nextWorkout.readiness.level) },
-            ]}
-          >
-            Readiness:{" "}
-            {nextWorkout.readiness.score != null
-              ? `${nextWorkout.readiness.score}/100 (${nextWorkout.readiness.level})`
-              : "Unavailable"}
-          </Text>
-
-          {nextWorkout.cardio != null && (
-            <Text style={styles.nextWorkoutMeta}>
-              Cardio: {nextWorkout.cardio.durationMinutes} minutes ({nextWorkout.cardio.focus})
-            </Text>
-          )}
-          {nextWorkout.strength != null && nextWorkout.strength.focusMuscles.length > 0 && (
-            <Text style={styles.nextWorkoutMeta}>
-              Strength focus: {nextWorkout.strength.focusMuscles.join(", ")}
-            </Text>
-          )}
-
-          {nextWorkout.details.length > 0 && (
-            <View style={styles.nextWorkoutList}>
-              <Text style={styles.nextWorkoutListTitle}>Plan</Text>
-              {nextWorkout.details.slice(0, 3).map((detail) => (
-                <Text key={detail} style={styles.nextWorkoutListItem}>
-                  {"\u2022"} {detail}
+                <Text
+                  style={[
+                    styles.nextWorkoutTypeLabel,
+                    { color: recommendationTypeColor(nextWorkout.recommendationType) },
+                  ]}
+                >
+                  {capitalize(nextWorkout.recommendationType)}
                 </Text>
-              ))}
+              </View>
             </View>
-          )}
-        </Card>
+
+            <Text style={styles.nextWorkoutSummary}>{nextWorkout.shortBlurb}</Text>
+            <Text
+              style={[
+                styles.nextWorkoutReadiness,
+                { color: readinessLevelColor(nextWorkout.readiness.level) },
+              ]}
+            >
+              Readiness:{" "}
+              {nextWorkout.readiness.score != null
+                ? `${nextWorkout.readiness.score}/100 (${nextWorkout.readiness.level})`
+                : "Unavailable"}
+            </Text>
+
+            {nextWorkout.cardio != null && (
+              <Text style={styles.nextWorkoutMeta}>
+                Cardio: {nextWorkout.cardio.durationMinutes} minutes ({nextWorkout.cardio.focus})
+              </Text>
+            )}
+            {nextWorkout.strength != null && nextWorkout.strength.focusMuscles.length > 0 && (
+              <Text style={styles.nextWorkoutMeta}>
+                Strength focus: {nextWorkout.strength.focusMuscles.join(", ")}
+              </Text>
+            )}
+
+            {nextWorkout.details.length > 0 && (
+              <View style={styles.nextWorkoutList}>
+                <Text style={styles.nextWorkoutListTitle}>Plan</Text>
+                {nextWorkout.details.slice(0, 3).map((detail) => (
+                  <Text key={detail} style={styles.nextWorkoutListItem}>
+                    {"\u2022"} {detail}
+                  </Text>
+                ))}
+              </View>
+            )}
+          </Card>
+        </Animated.View>
       )}
 
       {/* Sleep Coach */}
       {sleepNeed != null && (
-        <Card title="Sleep Coach">
-          {sleepNeed.canRecommend ? (
-            <>
-              <Text style={styles.sleepNeedTotal}>
-                {formatDurationMinutes(sleepNeed.totalNeedMinutes)}
+        <Animated.View
+          entering={FadeInUp.delay(320)
+            .duration(duration.slow)
+            .easing(Easing.bezier(0.16, 1, 0.3, 1))}
+        >
+          <Card title="Sleep Coach">
+            {sleepNeed.canRecommend ? (
+              <>
+                <Text style={styles.sleepNeedTotal}>
+                  {formatDurationMinutes(sleepNeed.totalNeedMinutes)}
+                </Text>
+                <Text style={styles.sleepNeedSubtitle}>recommended tonight</Text>
+              </>
+            ) : (
+              <Text style={styles.sleepNeedMissing}>
+                Need last night's sleep for recommendation
               </Text>
-              <Text style={styles.sleepNeedSubtitle}>recommended tonight</Text>
-            </>
-          ) : (
-            <Text style={styles.sleepNeedMissing}>Need last night's sleep for recommendation</Text>
-          )}
-          <View style={styles.sleepNeedBreakdown}>
-            <View style={styles.sleepNeedRow}>
-              <Text style={styles.sleepNeedLabel}>Baseline need</Text>
-              <Text style={styles.sleepNeedValue}>
-                {formatDurationMinutes(sleepNeed.baselineMinutes)}
-              </Text>
+            )}
+            <View style={styles.sleepNeedBreakdown}>
+              <View style={styles.sleepNeedRow}>
+                <Text style={styles.sleepNeedLabel}>Baseline need</Text>
+                <Text style={styles.sleepNeedValue}>
+                  {formatDurationMinutes(sleepNeed.baselineMinutes)}
+                </Text>
+              </View>
+              <View style={styles.sleepNeedRow}>
+                <Text style={styles.sleepNeedLabel}>Strain debt</Text>
+                <Text style={styles.sleepNeedValue}>
+                  +{formatDurationMinutes(sleepNeed.strainDebtMinutes)}
+                </Text>
+              </View>
+              <View style={styles.sleepNeedRow}>
+                <Text style={styles.sleepNeedLabel}>Accumulated debt</Text>
+                <Text style={styles.sleepNeedValue}>
+                  +{formatDurationMinutes(Math.round(sleepNeed.accumulatedDebtMinutes * 0.25))}
+                </Text>
+              </View>
             </View>
-            <View style={styles.sleepNeedRow}>
-              <Text style={styles.sleepNeedLabel}>Strain debt</Text>
-              <Text style={styles.sleepNeedValue}>
-                +{formatDurationMinutes(sleepNeed.strainDebtMinutes)}
-              </Text>
-            </View>
-            <View style={styles.sleepNeedRow}>
-              <Text style={styles.sleepNeedLabel}>Accumulated debt</Text>
-              <Text style={styles.sleepNeedValue}>
-                +{formatDurationMinutes(Math.round(sleepNeed.accumulatedDebtMinutes * 0.25))}
-              </Text>
-            </View>
-          </View>
-        </Card>
+          </Card>
+        </Animated.View>
       )}
     </ScrollView>
   );
@@ -331,13 +372,35 @@ export default function TodayScreen() {
 
 // ── Helper Components ─────────────────────────────────────────────────
 
-function ComponentRow({ label, score }: { label: string; score: number }) {
+function ComponentRow({
+  label,
+  score,
+  delay = 0,
+}: {
+  label: string;
+  score: number;
+  delay?: number;
+}) {
   const color = score >= 67 ? colors.positive : score >= 34 ? colors.warning : colors.danger;
+  const barWidth = useSharedValue(0);
+
+  useEffect(() => {
+    barWidth.value = withDelay(
+      100 + delay,
+      withTiming(score, { duration: duration.countUp, easing: Easing.bezier(0.16, 1, 0.3, 1) }),
+    );
+  }, [barWidth, score, delay]);
+
+  const barStyle = useAnimatedStyle(() => ({
+    width: `${barWidth.value}%`,
+    backgroundColor: color,
+  }));
+
   return (
     <View style={componentStyles.row}>
       <Text style={componentStyles.label}>{label}</Text>
       <View style={componentStyles.barTrack}>
-        <View style={[componentStyles.barFill, { width: `${score}%`, backgroundColor: color }]} />
+        <Animated.View style={[componentStyles.barFill, barStyle]} />
       </View>
       <Text style={[componentStyles.score, { color }]}>{score}</Text>
     </View>

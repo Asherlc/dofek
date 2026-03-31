@@ -1,4 +1,5 @@
 import { formatDurationMinutes } from "@dofek/format/format";
+import { sleepStageColors } from "@dofek/scoring/colors";
 import { StyleSheet, Text, View } from "react-native";
 import { colors } from "../../theme";
 
@@ -13,13 +14,6 @@ interface SleepBarProps {
   /** Show stage legend */
   showLegend?: boolean;
 }
-
-const STAGE_COLORS = {
-  deep: "#5E35B1", // deep purple
-  rem: "#42A5F5", // blue
-  light: "#78909C", // grey-blue
-  awake: "#FF8A65", // orange
-};
 
 /**
  * Round percentages so they sum to exactly 100.
@@ -67,28 +61,28 @@ export function SleepBar({
       label: "Deep",
       percentage: deepPercentage,
       displayPct: displayPercentages[0] ?? 0,
-      color: STAGE_COLORS.deep,
+      color: sleepStageColors.deep,
     },
     {
       key: "rem",
       label: "REM Sleep",
       percentage: remPercentage,
       displayPct: displayPercentages[1] ?? 0,
-      color: STAGE_COLORS.rem,
+      color: sleepStageColors.rem,
     },
     {
       key: "light",
       label: "Light",
       percentage: lightPercentage,
       displayPct: displayPercentages[2] ?? 0,
-      color: STAGE_COLORS.light,
+      color: sleepStageColors.light,
     },
     {
       key: "awake",
       label: "Awake",
       percentage: awakePercentage,
       displayPct: displayPercentages[3] ?? 0,
-      color: STAGE_COLORS.awake,
+      color: sleepStageColors.awake,
     },
   ];
 

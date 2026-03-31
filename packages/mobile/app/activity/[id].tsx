@@ -1,5 +1,6 @@
 import { formatDurationRange, formatNumber } from "@dofek/format/format";
 import { providerLabel } from "@dofek/providers/providers";
+import { activityMetricColors, statusColors } from "@dofek/scoring/colors";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { HEART_RATE_ZONE_COLORS } from "@dofek/zones/zones";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -34,8 +35,8 @@ const CHART_HEIGHT = 180;
 const CHART_PADDING = { top: 20, right: 16, bottom: 28, left: 44 };
 
 const CHART_COLORS = {
-  heartRate: "#ef4444",
-  power: "#f59e0b",
+  heartRate: activityMetricColors.heartRate,
+  power: activityMetricColors.power,
   altitude: "#6b7280",
 };
 
@@ -758,6 +759,6 @@ const styles = StyleSheet.create({
   deleteButtonText: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#ef4444",
+    color: statusColors.danger,
   },
 });

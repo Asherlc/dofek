@@ -1,3 +1,4 @@
+import { statusColors } from "@dofek/scoring/colors";
 import { formatYearsDelta } from "@dofek/scoring/healthspan-years";
 import { healthStatusColor, scoreColor, trendColor } from "@dofek/scoring/scoring";
 import type { HealthspanResult } from "dofek-server/types";
@@ -80,7 +81,9 @@ export function HealthspanScoreCard({ data, loading }: HealthspanScoreCardProps)
             <div className="mt-1">
               <span
                 className="text-xs font-medium"
-                style={{ color: data.yearsDelta <= 0 ? "#22c55e" : "#ef4444" }}
+                style={{
+                  color: data.yearsDelta <= 0 ? statusColors.positive : statusColors.danger,
+                }}
               >
                 {formatYearsDelta(data.yearsDelta)}
               </span>
@@ -111,7 +114,7 @@ export function HealthspanScoreCard({ data, loading }: HealthspanScoreCardProps)
             </span>
             <span
               className="text-xs w-14 text-right tabular-nums"
-              style={{ color: m.yearsDelta <= 0 ? "#22c55e" : "#ef4444" }}
+              style={{ color: m.yearsDelta <= 0 ? statusColors.positive : statusColors.danger }}
             >
               {formatYearsDelta(m.yearsDelta)}
             </span>

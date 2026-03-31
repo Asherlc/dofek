@@ -613,12 +613,19 @@ export const recoveryRouter = router({
           ctx.db,
           z.object({ efficiency_pct: z.number().nullable() }),
           sql`
-            SELECT efficiency_pct
-            FROM fitness.v_sleep
-            WHERE user_id = ${ctx.userId}
-              AND is_nap = false
-            ORDER BY started_at DESC
-            LIMIT 1
+            WITH raw_sleep AS (
+              SELECT (started_at AT TIME ZONE ${ctx.timezone})::date AS date,
+                efficiency_pct, started_at, duration_minutes
+              FROM fitness.v_sleep
+              WHERE user_id = ${ctx.userId}
+                AND is_nap = false
+            ),
+            nightly AS (
+              SELECT DISTINCT ON (date) efficiency_pct, started_at
+              FROM raw_sleep
+              ORDER BY date DESC, duration_minutes DESC NULLS LAST
+            )
+            SELECT efficiency_pct FROM nightly ORDER BY started_at DESC LIMIT 1
           `,
         );
 

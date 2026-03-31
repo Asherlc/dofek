@@ -11,10 +11,14 @@ export interface WhoopDevice {
 export interface WhoopRealtimeDataSample {
   timestamp: string; // ISO 8601
   heartRate: number; // bpm (0-255)
+  /** R-R interval in milliseconds (beat-to-beat timing). 0 when unavailable. */
+  rrIntervalMs: number;
   quaternionW: number; // float32
   quaternionX: number;
   quaternionY: number;
   quaternionZ: number;
+  /** Raw optical/PPG bytes (offsets 23-40) as hex string, 36 chars = 18 bytes */
+  opticalRawHex: string;
 }
 
 /** A single IMU sample from the WHOOP strap's accelerometer + gyroscope */

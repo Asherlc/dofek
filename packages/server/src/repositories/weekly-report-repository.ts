@@ -189,7 +189,7 @@ export class WeeklyReportRepository {
             FROM date_series ds
             LEFT JOIN daily_training dt ON dt.date = ds.date
           ),
-          sleep_daily AS (
+          sleep_raw AS (
             SELECT
               (started_at AT TIME ZONE ${this.#timezone})::date AS date,
               duration_minutes
@@ -197,6 +197,11 @@ export class WeeklyReportRepository {
             WHERE user_id = ${this.#userId}
               AND is_nap = false
               AND started_at > ${timestampWindowStart(endDate, totalDays)}
+          ),
+          sleep_daily AS (
+            SELECT DISTINCT ON (date) date, duration_minutes
+            FROM sleep_raw
+            ORDER BY date, duration_minutes DESC NULLS LAST
           ),
           metrics_daily AS (
             SELECT

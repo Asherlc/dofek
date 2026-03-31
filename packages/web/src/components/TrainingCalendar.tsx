@@ -1,4 +1,4 @@
-import { surfaceColors } from "@dofek/scoring/colors";
+import { statusColors, surfaceColors } from "@dofek/scoring/colors";
 import type { CalendarDay } from "dofek-server/types";
 import { chartThemeColors, dofekTooltip } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
@@ -59,7 +59,7 @@ export function TrainingCalendar({ data, height = 180 }: TrainingCalendarProps) 
         { min: 0, max: 0, color: "#ffffff" },
         { min: 1, max: 30, color: "#064e3b" },
         { min: 31, max: 60, color: "#059669" },
-        { min: 61, max: 120, color: "#22c55e" },
+        { min: 61, max: 120, color: statusColors.positive },
         { min: 121, color: "#86efac" },
       ],
       orient: "horizontal" as const,

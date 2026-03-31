@@ -26,6 +26,8 @@ cypress/screenshots/
 cypress/downloads/
 # Code coverage
 coverage/
+# Playwright test results
+test-results/
 # Swift Package Manager
 .build/
 .swiftpm/
