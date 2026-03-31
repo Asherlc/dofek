@@ -1,9 +1,10 @@
 import { mapHrZones } from "@dofek/zones/zones";
-import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { BaseRepository } from "../lib/base-repository.ts";
 import { timestampWindowStart } from "../lib/date-window.ts";
-import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
+import { restingHeartRateLateral } from "../lib/sql-fragments.ts";
+import { timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivityRow } from "../models/activity.ts";
 
 // ---------------------------------------------------------------------------
@@ -123,23 +124,12 @@ export interface ListInput {
 }
 
 /** Data access for activity queries. */
-export class ActivityRepository {
-  readonly #db: Pick<Database, "execute">;
-  readonly #userId: string;
-  readonly #timezone: string;
-
-  constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
-    this.#db = db;
-    this.#userId = userId;
-    this.#timezone = timezone;
-  }
-
+export class ActivityRepository extends BaseRepository {
   /** Paginated activity list with summary metrics. */
   async list(
     input: ListInput,
   ): Promise<{ items: Array<Record<string, unknown>>; totalCount: number }> {
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.query(
       activityListRowSchema,
       sql`SELECT
             a.id,
@@ -161,7 +151,7 @@ export class ActivityRepository {
             COUNT(*) OVER()::int AS total_count
           FROM fitness.v_activity a
           LEFT JOIN fitness.activity_summary s ON s.activity_id = a.id
-          WHERE a.user_id = ${this.#userId}
+          WHERE a.user_id = ${this.userId}
             AND a.started_at > ${timestampWindowStart(input.endDate, input.days)}
           ORDER BY a.started_at DESC
           LIMIT ${input.limit} OFFSET ${input.offset}`,
@@ -173,8 +163,7 @@ export class ActivityRepository {
 
   /** Single activity with full detail row. Returns null when not found. */
   async findById(activityId: string): Promise<ActivityRow | null> {
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.query(
       activityDetailRowSchema,
       sql`SELECT
             a.id,
@@ -205,15 +194,14 @@ export class ActivityRepository {
           FROM fitness.v_activity a
           LEFT JOIN fitness.activity_summary s ON s.activity_id = a.id
           WHERE a.id = ${activityId}
-            AND a.user_id = ${this.#userId}`,
+            AND a.user_id = ${this.userId}`,
     );
     return rows[0] ?? null;
   }
 
   /** Downsampled metric stream for a single activity. */
   async getStream(activityId: string, maxPoints: number): Promise<StreamPoint[]> {
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.query(
       streamPointRowSchema,
       sql`WITH pivoted AS (
             SELECT
@@ -226,7 +214,7 @@ export class ActivityRepository {
               MAX(ss.scalar) FILTER (WHERE ss.channel = 'lat') AS lat,
               MAX(ss.scalar) FILTER (WHERE ss.channel = 'lng') AS lng
             FROM fitness.sensor_sample ss
-            JOIN fitness.v_activity a ON a.id = ss.activity_id AND a.user_id = ${this.#userId}
+            JOIN fitness.v_activity a ON a.id = ss.activity_id AND a.user_id = ${this.userId}
             WHERE ss.activity_id = ${activityId}
               AND ss.channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude', 'lat', 'lng')
             GROUP BY ss.recorded_at
@@ -248,33 +236,24 @@ export class ActivityRepository {
 
   /** HR zone distribution for a single activity using Karvonen zones. */
   async getHrZones(activityId: string): Promise<import("@dofek/zones/zones").ActivityHrZone[]> {
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.query(
       hrZoneRowSchema,
       sql`WITH params AS (
             SELECT
               up.max_hr,
               COALESCE(rhr.resting_hr, 60) AS resting_hr
             FROM fitness.user_profile up
-            LEFT JOIN LATERAL (
-              SELECT dm.resting_hr
-              FROM fitness.v_daily_metrics dm
-              WHERE dm.user_id = up.id
-                AND dm.date <= (
-                  SELECT (a.started_at AT TIME ZONE ${this.#timezone})::date FROM fitness.v_activity a
-                  WHERE a.id = ${activityId} AND a.user_id = ${this.#userId}
-                )
-                AND dm.resting_hr IS NOT NULL
-              ORDER BY dm.date DESC
-              LIMIT 1
-            ) rhr ON true
-            WHERE up.id = ${this.#userId}
+            LEFT JOIN ${restingHeartRateLateral(
+              sql`up.id`,
+              sql`(SELECT (a.started_at AT TIME ZONE ${this.timezone})::date FROM fitness.v_activity a WHERE a.id = ${activityId} AND a.user_id = ${this.userId})`,
+            )}
+            WHERE up.id = ${this.userId}
               AND up.max_hr IS NOT NULL
           ),
           hr_samples AS (
             SELECT ms.scalar AS heart_rate
             FROM fitness.sensor_sample ms
-            JOIN fitness.v_activity a ON a.id = ms.activity_id AND a.user_id = ${this.#userId}
+            JOIN fitness.v_activity a ON a.id = ms.activity_id AND a.user_id = ${this.userId}
             WHERE ms.activity_id = ${activityId}
               AND ms.channel = 'heart_rate'
           )
@@ -304,9 +283,9 @@ export class ActivityRepository {
 
   /** Delete an activity by ID. */
   async delete(activityId: string): Promise<void> {
-    await this.#db.execute(sql`
+    await this.db.execute(sql`
       DELETE FROM fitness.activity
-      WHERE id = ${activityId}::uuid AND user_id = ${this.#userId}
+      WHERE id = ${activityId}::uuid AND user_id = ${this.userId}
     `);
   }
 }

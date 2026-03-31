@@ -1,8 +1,8 @@
-import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { timestampWindowStart } from "../lib/date-window.ts";
-import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import { BaseRepository } from "../lib/base-repository.ts";
+import { bodyWeightDedupCte } from "../lib/sql-fragments.ts";
+import { dateStringSchema } from "../lib/typed-sql.ts";
 // ── Types ───────────────────────────────────────────────────────────
 
 export interface SmoothedWeightRow {
@@ -64,40 +64,19 @@ export function ewmaSmooth(values: number[], alpha: number): number[] {
 // ── Repository ──────────────────────────────────────────────────────
 
 /** Data access and analytics for body weight/composition trends. */
-export class BodyAnalyticsRepository {
-  readonly #db: Pick<Database, "execute">;
-  readonly #userId: string;
-  readonly #timezone: string;
-
-  constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
-    this.#db = db;
-    this.#userId = userId;
-    this.#timezone = timezone;
-  }
-
+export class BodyAnalyticsRepository extends BaseRepository {
   /**
    * Smoothed weight trend using exponentially-weighted moving average.
    * Filters out daily fluctuations (water, food timing) to show the
    * real trend. Similar to MacroFactor / Happy Scale approach.
    */
   async getSmoothedWeight(days: number, endDate: string): Promise<SmoothedWeightRow[]> {
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.query(
       weightRowSchema,
-      sql`SELECT DISTINCT ON (local_date)
-            local_date::text AS date,
-            weight_kg
-          FROM (
-            SELECT
-              (recorded_at AT TIME ZONE ${this.#timezone})::date AS local_date,
-              weight_kg,
-              recorded_at
-            FROM fitness.v_body_measurement
-            WHERE user_id = ${this.#userId}
-              AND weight_kg IS NOT NULL
-              AND recorded_at > ${timestampWindowStart(endDate, days)}
-          ) sub
-          ORDER BY local_date, recorded_at DESC`,
+      sql`WITH ${bodyWeightDedupCte(this.userId, this.timezone, endDate, days)}
+          SELECT date, weight_kg
+          FROM weight_deduped
+          ORDER BY date ASC`,
     );
 
     const data = rows.map((row) => ({
@@ -114,23 +93,12 @@ export class BodyAnalyticsRepository {
    * from measurements that have both weight and body fat data.
    */
   async getRecomposition(days: number, endDate: string): Promise<BodyRecompositionRow[]> {
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.query(
       recompositionRowSchema,
-      sql`SELECT DISTINCT ON (local_date)
-            local_date::text AS date,
-            weight_kg,
-            body_fat_pct
-          FROM (
-            SELECT (recorded_at AT TIME ZONE ${this.#timezone})::date AS local_date,
-                   weight_kg, body_fat_pct, recorded_at
-            FROM fitness.v_body_measurement
-            WHERE user_id = ${this.#userId}
-              AND weight_kg IS NOT NULL
-              AND body_fat_pct IS NOT NULL
-              AND recorded_at > ${timestampWindowStart(endDate, days)}
-          ) sub
-          ORDER BY local_date, recorded_at DESC`,
+      sql`WITH ${bodyWeightDedupCte(this.userId, this.timezone, endDate, days, sql`AND body_fat_pct IS NOT NULL`)}
+          SELECT date, weight_kg, body_fat_pct
+          FROM weight_deduped
+          ORDER BY date ASC`,
     );
 
     const data = rows.map((row) => ({
@@ -147,21 +115,12 @@ export class BodyAnalyticsRepository {
    * Current weekly and 4-week rates, plus overall trend direction.
    */
   async getWeightTrend(): Promise<WeightRateOfChange> {
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.query(
       weightRowSchema,
-      sql`SELECT DISTINCT ON (local_date)
-            local_date::text AS date,
-            weight_kg
-          FROM (
-            SELECT (recorded_at AT TIME ZONE ${this.#timezone})::date AS local_date,
-                   weight_kg, recorded_at
-            FROM fitness.v_body_measurement
-            WHERE user_id = ${this.#userId}
-              AND weight_kg IS NOT NULL
-              AND recorded_at > NOW() - INTERVAL '35 days'
-          ) sub
-          ORDER BY local_date, recorded_at DESC`,
+      sql`WITH ${bodyWeightDedupCte(this.userId, this.timezone, "now", 35)}
+          SELECT date, weight_kg
+          FROM weight_deduped
+          ORDER BY date ASC`,
     );
 
     const weights = rows.map((row) => Number(row.weight_kg));

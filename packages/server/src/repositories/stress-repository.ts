@@ -4,13 +4,14 @@ import {
   computeStressTrend,
   type WeeklyStressRow,
 } from "@dofek/recovery/stress";
-import type { Database } from "dofek/db";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { dateWindowStart, timestampWindowStart } from "../lib/date-window.ts";
-import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import { BaseRepository } from "../lib/base-repository.ts";
+import { dateWindowStart } from "../lib/date-window.ts";
+import { sleepDedupCte, vitalsBaselineCte } from "../lib/sql-fragments.ts";
+import { dateStringSchema } from "../lib/typed-sql.ts";
 
 export type { WeeklyStressRow };
 
@@ -91,69 +92,30 @@ function computeRestingHrDeviation(row: RawRow): number | null {
 // ---------------------------------------------------------------------------
 
 /** Data access and stress computation for daily/weekly physiological stress. */
-export class StressRepository {
-  readonly #db: Pick<Database, "execute">;
-  readonly #userId: string;
-  readonly #timezone: string;
-
-  constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
-    this.#db = db;
-    this.#userId = userId;
-    this.#timezone = timezone;
-  }
-
+export class StressRepository extends BaseRepository {
   async getStressScores(days: number, endDate: string): Promise<StressResult> {
     const queryDays = days + BASELINE_LOOKBACK_DAYS;
 
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.query(
       rawRowSchema,
-      sql`WITH metrics AS (
-            SELECT
-              date,
-              hrv,
-              resting_hr,
-              AVG(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS hrv_mean_60d,
-              STDDEV_POP(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS hrv_sd_60d,
-              AVG(resting_hr) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS rhr_mean_60d,
-              STDDEV_POP(resting_hr) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS rhr_sd_60d
-            FROM fitness.v_daily_metrics
-            WHERE user_id = ${this.#userId}
-              AND date > ${dateWindowStart(endDate, queryDays)}
-            ORDER BY date ASC
-          ),
-          sleep_eff AS (
-            SELECT DISTINCT ON (local_date)
-              local_date AS date,
-              efficiency_pct
-            FROM (
-              SELECT (started_at AT TIME ZONE ${this.#timezone})::date AS local_date,
-                     efficiency_pct, duration_minutes
-              FROM fitness.v_sleep
-              WHERE user_id = ${this.#userId}
-                AND is_nap = false
-                AND started_at > ${timestampWindowStart(endDate, queryDays)}
-            ) sleep_sub
-            ORDER BY local_date, duration_minutes DESC NULLS LAST
-          )
+      sql`WITH ${vitalsBaselineCte(this.userId, endDate, days, 60)},
+          ${sleepDedupCte(this.userId, this.timezone, endDate, queryDays)}
           SELECT
             m.date::text,
             m.hrv,
             m.resting_hr,
             m.hrv_mean_60d,
-            m.hrv_sd_60d,
-            m.rhr_mean_60d,
-            m.rhr_sd_60d,
-            s.efficiency_pct
-          FROM metrics m
-          LEFT JOIN sleep_eff s ON s.date = m.date
+            m.hrv_stddev_60d AS hrv_sd_60d,
+            m.resting_hr_mean_60d AS rhr_mean_60d,
+            m.resting_hr_stddev_60d AS rhr_sd_60d,
+            sd.efficiency_pct
+          FROM vitals_baseline m
+          LEFT JOIN sleep_deduped sd ON sd.sleep_date = m.date
           WHERE m.date > ${dateWindowStart(endDate, days)}
           ORDER BY m.date ASC`,
     );
 
-    // loadPersonalizedParams requires the minimal Database interface from src/db/typed-sql.ts.
-    // The Drizzle Database's execute method is structurally compatible, so this cast is safe.
-    const storedParams = await loadPersonalizedParams(this.#db, this.#userId);
+    const storedParams = await loadPersonalizedParams(this.db, this.userId);
     const effective = getEffectiveParams(storedParams);
 
     const daily: DailyStressRow[] = rows.map((row) => {

@@ -1,6 +1,7 @@
-import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { BaseRepository } from "../lib/base-repository.ts";
+import { bodyWeightDedupCte } from "../lib/sql-fragments.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 
 // ---------------------------------------------------------------------------
@@ -337,17 +338,7 @@ export function estimateTdee(smoothedData: AdaptiveTdeeDailyRowData[]): Adaptive
 // ---------------------------------------------------------------------------
 
 /** Data access for nutrition analytics (micronutrients, caloric balance, TDEE, macros). */
-export class NutritionAnalyticsRepository {
-  readonly #db: Pick<Database, "execute">;
-  readonly #userId: string;
-  readonly #timezone: string;
-
-  constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
-    this.#db = db;
-    this.#userId = userId;
-    this.#timezone = timezone;
-  }
-
+export class NutritionAnalyticsRepository extends BaseRepository {
   /** Micronutrient adequacy: average daily intake as % of RDA. */
   async getMicronutrientAdequacy(days: number): Promise<MicronutrientAdequacy[]> {
     const VALID_COLUMNS = new Set(RECOMMENDED_DAILY_ALLOWANCES.map((rda) => rda.column));
@@ -368,7 +359,7 @@ export class NutritionAnalyticsRepository {
     ).join(",\n");
 
     const rows = await executeWithSchema(
-      this.#db,
+      this.db,
       z.record(z.string(), z.coerce.number().nullable()),
       sql`WITH daily_totals AS (
             SELECT
@@ -376,7 +367,7 @@ export class NutritionAnalyticsRepository {
               ${sql.raw(dailyAggregates)}
             FROM fitness.food_entry fe
             JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id
-            WHERE fe.user_id = ${this.#userId}
+            WHERE fe.user_id = ${this.userId}
               AND fe.confirmed = true
               AND fe.date > CURRENT_DATE - ${days}::int
             GROUP BY fe.date
@@ -406,13 +397,12 @@ export class NutritionAnalyticsRepository {
   async getCaloricBalance(days: number): Promise<CaloricBalanceDay[]> {
     const queryDays = days + 7; // extra for rolling average warmup
 
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.query(
       caloricBalanceRowSchema,
       sql`WITH nutrition AS (
             SELECT date, SUM(calories) AS calories_in
             FROM fitness.nutrition_daily
-            WHERE user_id = ${this.#userId}
+            WHERE user_id = ${this.userId}
               AND date > CURRENT_DATE - ${queryDays}::int
             GROUP BY date
           ),
@@ -422,7 +412,7 @@ export class NutritionAnalyticsRepository {
               active_energy_kcal,
               basal_energy_kcal
             FROM fitness.v_daily_metrics
-            WHERE user_id = ${this.#userId}
+            WHERE user_id = ${this.userId}
               AND date > CURRENT_DATE - ${queryDays}::int
           ),
           combined AS (
@@ -467,36 +457,22 @@ export class NutritionAnalyticsRepository {
 
   /** Raw daily calorie + weight data for adaptive TDEE estimation. */
   async getAdaptiveTdeeData(days: number): Promise<AdaptiveTdeeDataPoint[]> {
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.query(
       adaptiveTdeeRowSchema,
       sql`WITH nutrition AS (
             SELECT date, SUM(calories) AS calories_in
             FROM fitness.nutrition_daily
-            WHERE user_id = ${this.#userId}
+            WHERE user_id = ${this.userId}
               AND date > CURRENT_DATE - ${days}::int
             GROUP BY date
           ),
-          weight AS (
-            SELECT DISTINCT ON (local_date)
-              local_date AS date,
-              weight_kg
-            FROM (
-              SELECT (recorded_at AT TIME ZONE ${this.#timezone})::date AS local_date,
-                     weight_kg, recorded_at
-              FROM fitness.v_body_measurement
-              WHERE user_id = ${this.#userId}
-                AND weight_kg IS NOT NULL
-                AND recorded_at > NOW() - ${days}::int * INTERVAL '1 day'
-            ) weight_sub
-            ORDER BY local_date, recorded_at DESC
-          )
+          ${bodyWeightDedupCte(this.userId, this.timezone, "now", days)}
           SELECT
             n.date::text,
             n.calories_in,
             w.weight_kg
           FROM nutrition n
-          LEFT JOIN weight w ON w.date = n.date
+          LEFT JOIN weight_deduped w ON w.date = n.date::text
           ORDER BY n.date ASC`,
     );
 
@@ -517,8 +493,7 @@ export class NutritionAnalyticsRepository {
 
   /** Macro ratio trends: daily protein/carbs/fat split as percentages. */
   async getMacroRatios(days: number): Promise<MacroRatioDay[]> {
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.query(
       macroRatioRowSchema,
       sql`WITH daily AS (
             SELECT
@@ -528,14 +503,14 @@ export class NutritionAnalyticsRepository {
               nd.carbs_g,
               nd.fat_g
             FROM fitness.nutrition_daily nd
-            WHERE nd.user_id = ${this.#userId}
+            WHERE nd.user_id = ${this.userId}
               AND nd.date > CURRENT_DATE - ${days}::int
               AND nd.calories > 0
           ),
           latest_weight AS (
             SELECT weight_kg
             FROM fitness.v_body_measurement
-            WHERE user_id = ${this.#userId}
+            WHERE user_id = ${this.userId}
               AND weight_kg IS NOT NULL
             ORDER BY recorded_at DESC
             LIMIT 1
