@@ -280,18 +280,6 @@ function AuthGate() {
             }}
           />
           <Stack.Screen
-            name="tracking"
-            options={{
-              title: "Tracking",
-            }}
-          />
-          <Stack.Screen
-            name="training"
-            options={{
-              title: "Training",
-            }}
-          />
-          <Stack.Screen
             name="nutrition-analytics"
             options={{
               title: "Nutrition Analytics",
@@ -307,12 +295,6 @@ function AuthGate() {
             name="sleep"
             options={{
               title: "Sleep",
-            }}
-          />
-          <Stack.Screen
-            name="insights"
-            options={{
-              title: "Insights",
             }}
           />
           <Stack.Screen
@@ -333,12 +315,6 @@ function AuthGate() {
               title: "Activities",
               headerStyle: { backgroundColor: colors.background },
               headerTintColor: colors.text,
-            }}
-          />
-          <Stack.Screen
-            name="predictions"
-            options={{
-              title: "Predictions",
             }}
           />
           <Stack.Screen

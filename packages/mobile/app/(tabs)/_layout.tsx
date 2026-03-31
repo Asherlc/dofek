@@ -50,13 +50,6 @@ export default function TabsLayout() {
           ),
         }}
       />
-      {/* Hide the old health tab — its content moved to Settings stack screen */}
-      <Tabs.Screen
-        name="health"
-        options={{
-          href: null,
-        }}
-      />
     </Tabs>
   );
 }

@@ -179,7 +179,16 @@ export default function StrainScreen() {
           {/* Recent activities */}
           {activities.length > 0 && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Recent Activities</Text>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Recent Activities</Text>
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={() => router.push("/activities")}
+                  style={styles.sectionLinkButton}
+                >
+                  <Text style={styles.sectionLinkButtonText}>View all</Text>
+                </TouchableOpacity>
+              </View>
               <View style={styles.activitiesStack}>
                 {activities.slice(0, 5).map((activity) => (
                   <TouchableOpacity
@@ -326,12 +335,29 @@ const styles = StyleSheet.create({
   section: {
     gap: 12,
   },
+  sectionHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
   sectionTitle: {
     fontSize: 13,
     fontWeight: "600",
     color: colors.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 0.5,
+  },
+  sectionLinkButton: {
+    borderColor: colors.surfaceSecondary,
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  sectionLinkButtonText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "600",
   },
   activitiesStack: {
     gap: 8,

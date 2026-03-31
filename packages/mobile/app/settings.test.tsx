@@ -122,6 +122,25 @@ describe("SettingsScreen export UI rendering", () => {
   });
 });
 
+describe("SettingsScreen OTA debug details", () => {
+  it("renders OTA created time in the local timezone format", async () => {
+    const updatesModule = await import("expo-updates");
+    const otaCreatedAt = new Date("2026-03-31T18:22:00.000Z");
+    updatesModule.createdAt = otaCreatedAt;
+
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    const expectedLocalTimestamp = otaCreatedAt.toLocaleString();
+    expect(
+      screen.getByText((content) => content.includes(`Created: ${expectedLocalTimestamp}`)),
+    ).toBeTruthy();
+
+    updatesModule.createdAt = null;
+  });
+});
+
 describe("SettingsScreen export flow", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
