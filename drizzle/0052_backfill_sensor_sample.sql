@@ -64,6 +64,9 @@ BEGIN
   IF next_cursor IS NULL OR next_cursor < min_time THEN
     next_cursor := min_time;
   END IF;
+  IF total_rows IS NULL THEN
+    total_rows := 0;
+  END IF;
 
   LOOP
     SELECT metric.recorded_at
@@ -263,6 +266,9 @@ BEGIN
   IF next_cursor IS NULL OR next_cursor < min_time THEN
     next_cursor := min_time;
   END IF;
+  IF total_rows IS NULL THEN
+    total_rows := 0;
+  END IF;
 
   LOOP
     SELECT sample.recorded_at
@@ -388,6 +394,9 @@ BEGIN
 
   IF next_cursor IS NULL OR next_cursor < min_time THEN
     next_cursor := min_time;
+  END IF;
+  IF total_rows IS NULL THEN
+    total_rows := 0;
   END IF;
 
   LOOP
