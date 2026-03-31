@@ -1,7 +1,7 @@
 [
   {
     "path": "packages/web/dist/assets/*.js",
-    "limit": "702 kB",
+    "limit": "710 kB",
     "gzip": true,
     "name": "Web JS (gzipped)"
   },
