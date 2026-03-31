@@ -2,6 +2,7 @@ import { formatDurationRange, formatNumber } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { providerLabel } from "@dofek/providers/providers";
 import { activityMetricColors, statusColors } from "@dofek/scoring/colors";
+import type { MuscleGroupInput } from "@dofek/training/muscle-groups";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { HEART_RATE_ZONE_COLORS } from "@dofek/zones/zones";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -27,6 +28,7 @@ import Svg, {
   Text as SvgText,
 } from "react-native-svg";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
+import { MuscleGroupBodyDiagram } from "../../components/MuscleGroupBodyDiagram";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { colors } from "../../theme";
@@ -439,6 +441,20 @@ interface StrengthExercise {
   }>;
 }
 
+function exercisesToMuscleGroupInput(exercises: StrengthExercise[]): MuscleGroupInput[] {
+  const groupSets = new Map<string, number>();
+  for (const exercise of exercises) {
+    if (!exercise.muscleGroups) continue;
+    for (const group of exercise.muscleGroups) {
+      groupSets.set(group, (groupSets.get(group) ?? 0) + exercise.sets.length);
+    }
+  }
+  return [...groupSets.entries()].map(([muscleGroup, sets]) => ({
+    muscleGroup,
+    weeklyData: [{ week: "current", sets }],
+  }));
+}
+
 function ExerciseBreakdown({
   exercises,
   units,
@@ -446,6 +462,8 @@ function ExerciseBreakdown({
   exercises: StrengthExercise[];
   units: UnitConverter;
 }) {
+  const muscleGroupData = exercisesToMuscleGroupInput(exercises);
+
   return (
     <View style={exerciseStyles.container}>
       <ChartTitleWithTooltip
@@ -453,15 +471,13 @@ function ExerciseBreakdown({
         description="Exercises performed during this strength workout, with details for each set."
         textStyle={chartStyles.title}
       />
+      {muscleGroupData.length > 0 && <MuscleGroupBodyDiagram data={muscleGroupData} />}
       {exercises.map((exercise) => {
         const hasWeight = exercise.sets.some((set) => set.weightKg != null);
         const hasDuration = exercise.sets.some((set) => set.durationSeconds != null);
 
         return (
-          <View
-            key={exercise.exerciseIndex}
-            style={exerciseStyles.exerciseCard}
-          >
+          <View key={exercise.exerciseIndex} style={exerciseStyles.exerciseCard}>
             <View style={exerciseStyles.exerciseHeader}>
               <Text style={exerciseStyles.exerciseName}>{exercise.exerciseName}</Text>
               {exercise.equipment && (
@@ -495,7 +511,9 @@ function ExerciseBreakdown({
                 {hasDuration && set.durationSeconds != null && (
                   <Text style={exerciseStyles.setValue}>{set.durationSeconds}s</Text>
                 )}
-                {set.rpe != null && <Text style={exerciseStyles.setRpe}>Perceived Exertion {set.rpe}</Text>}
+                {set.rpe != null && (
+                  <Text style={exerciseStyles.setRpe}>Perceived Exertion {set.rpe}</Text>
+                )}
               </View>
             ))}
           </View>
