@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock fs before importing the module under test
 vi.mock("node:fs", () => ({
@@ -33,12 +33,16 @@ vi.mock("@duckdb/node-bindings", () => ({
 }));
 
 import { mkdirSync, writeFileSync } from "node:fs";
+import * as duckdb from "@duckdb/node-bindings";
 import { executeWithSchema } from "../lib/typed-sql.ts";
+import { logger } from "../logger.ts";
 import { processTrainingExportJob } from "./process-training-export-job.ts";
 
 const mockExecuteWithSchema = vi.mocked(executeWithSchema);
 const mockWriteFileSync = vi.mocked(writeFileSync);
 const mockMkdirSync = vi.mocked(mkdirSync);
+const mockLoggerInfo = vi.mocked(logger.info);
+const mockDuckDb = vi.mocked(duckdb);
 
 function createMockJob(data: { since?: string; until?: string } = {}) {
   return {
@@ -57,8 +61,14 @@ describe("processTrainingExportJob", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
 
   it("exports sensor_sample data when rows exist", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-30T15:00:00.123Z"));
+
     const job = createMockJob();
     const db = createMockDb();
 
@@ -94,14 +104,44 @@ describe("processTrainingExportJob", () => {
 
     await processTrainingExportJob(job, db);
 
-    // Should create directories
-    expect(mockMkdirSync).toHaveBeenCalled();
+    // Creates both the top-level training export directory and the sensor_sample folder
+    expect(mockMkdirSync).toHaveBeenNthCalledWith(1, expect.stringContaining("/training-export"), {
+      recursive: true,
+    });
+    expect(mockMkdirSync).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining("/training-export/sensor_sample"),
+      { recursive: true },
+    );
 
     // Should write manifest (Parquet is written by DuckDB, not writeFileSync)
     expect(mockWriteFileSync).toHaveBeenCalledTimes(1); // manifest only
+    expect(mockExecuteWithSchema).toHaveBeenCalledTimes(2);
+
+    // DuckDB appender receives scalar and vector payloads, then closes connection in finally
+    expect(mockDuckDb.append_varchar).toHaveBeenCalledWith(expect.anything(), "cycling");
+    expect(mockDuckDb.create_varchar).toHaveBeenCalledWith("[0.012,0.138,-0.987]");
+    expect(mockDuckDb.append_value).toHaveBeenCalledTimes(1);
+    expect(mockDuckDb.disconnect_sync).toHaveBeenCalledTimes(1);
+    expect(mockDuckDb.close_sync).toHaveBeenCalledTimes(1);
 
     // Should update progress
-    expect(job.updateProgress).toHaveBeenCalled();
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 0,
+      message: "Starting training data export...",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 90,
+      message: "Exporting sensor_sample: 2/2 rows",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 95,
+      message: "Writing manifest...",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 100,
+      message: "Training export complete",
+    });
 
     // Manifest should be valid JSON with one file
     const manifestCall = mockWriteFileSync.mock.calls.find((call) =>
@@ -111,8 +151,16 @@ describe("processTrainingExportJob", () => {
     const manifest = JSON.parse(String(manifestCall?.[1]));
     expect(manifest.files).toHaveLength(1);
     expect(manifest.files[0].table).toBe("sensor_sample");
-    expect(manifest.files[0].path).toContain(".parquet");
+    expect(manifest.files[0].path).toBe("sensor_sample/2026-03-30T15:00:00Z.parquet");
     expect(manifest.totalRows).toBe(2);
+
+    // Start and completion logs include user-facing context
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      "[training-export] Starting training data export (since=all, until=now)",
+    );
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      "[training-export] Export complete: 2 total rows, 1 files",
+    );
   });
 
   it("handles zero rows gracefully", async () => {
@@ -122,6 +170,12 @@ describe("processTrainingExportJob", () => {
     mockExecuteWithSchema.mockResolvedValueOnce([{ count: "0" }]);
 
     await processTrainingExportJob(job, db);
+
+    expect(mockExecuteWithSchema).toHaveBeenCalledTimes(1);
+    expect(mockDuckDb.query).not.toHaveBeenCalled();
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      "[training-export] No sensor_sample rows to export",
+    );
 
     const manifestCall = mockWriteFileSync.mock.calls.find((call) =>
       String(call[0]).includes("manifest.json"),
@@ -145,6 +199,9 @@ describe("processTrainingExportJob", () => {
     const manifest = JSON.parse(String(manifestCall?.[1]));
     expect(manifest.since).toBe("2026-03-01T00:00:00Z");
     expect(manifest.until).toBe("2026-03-31T00:00:00Z");
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      "[training-export] Starting training data export (since=2026-03-01T00:00:00Z, until=2026-03-31T00:00:00Z)",
+    );
   });
 
   it("reports progress through the job", async () => {
@@ -158,5 +215,22 @@ describe("processTrainingExportJob", () => {
     // Should report start and completion
     expect(job.updateProgress).toHaveBeenCalledWith(expect.objectContaining({ percentage: 0 }));
     expect(job.updateProgress).toHaveBeenCalledWith(expect.objectContaining({ percentage: 100 }));
+  });
+
+  it("defaults count to zero when count query returns no rows", async () => {
+    const job = createMockJob();
+    const db = createMockDb();
+
+    mockExecuteWithSchema.mockResolvedValueOnce([]);
+
+    await processTrainingExportJob(job, db);
+
+    expect(mockExecuteWithSchema).toHaveBeenCalledTimes(1);
+    const manifestCall = mockWriteFileSync.mock.calls.find((call) =>
+      String(call[0]).includes("manifest.json"),
+    );
+    const manifest = JSON.parse(String(manifestCall?.[1]));
+    expect(manifest.totalRows).toBe(0);
+    expect(manifest.files).toHaveLength(0);
   });
 });

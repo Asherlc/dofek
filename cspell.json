@@ -21,6 +21,7 @@
     "timescale",
     "timescaledb",
     "drizzle",
+    "duckdb",
     "bullmq",
     "cloudflarestorage",
     "trpc",

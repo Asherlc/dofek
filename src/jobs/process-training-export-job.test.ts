@@ -28,6 +28,27 @@ function makeSensorSampleRow(overrides: Partial<SensorSampleRow> = {}): SensorSa
   };
 }
 
+function hasStringArrayValue(chunk: unknown): chunk is { value: string[] } {
+  if (typeof chunk !== "object" || chunk === null || !("value" in chunk)) {
+    return false;
+  }
+
+  const value = Reflect.get(chunk, "value");
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function toFilterText(filter: ReturnType<typeof buildTimeFilter>): string {
+  return filter.queryChunks
+    .map((chunk) => {
+      if (typeof chunk === "string") return chunk;
+      if (hasStringArrayValue(chunk)) {
+        return chunk.value[0] ?? "";
+      }
+      return "";
+    })
+    .join("");
+}
+
 // ── Parquet writer tests ──
 
 describe("writeParquet", () => {
@@ -157,21 +178,27 @@ describe("buildTimeFilter", () => {
   it("returns empty fragment when neither since nor until is provided", () => {
     const filter = buildTimeFilter();
     expect(filter.queryChunks.length).toBeLessThanOrEqual(1);
+    expect(toFilterText(filter)).toBe("");
   });
 
   it("returns non-empty fragment when since is provided", () => {
     const filter = buildTimeFilter("2026-03-01T00:00:00Z");
     expect(filter.queryChunks.length).toBeGreaterThan(1);
+    expect(toFilterText(filter)).toBe("WHERE ss.recorded_at >= 2026-03-01T00:00:00Z::timestamptz");
   });
 
   it("returns non-empty fragment when until is provided", () => {
     const filter = buildTimeFilter(undefined, "2026-03-31T00:00:00Z");
     expect(filter.queryChunks.length).toBeGreaterThan(1);
+    expect(toFilterText(filter)).toBe("WHERE ss.recorded_at < 2026-03-31T00:00:00Z::timestamptz");
   });
 
   it("returns non-empty fragment when both since and until are provided", () => {
     const filter = buildTimeFilter("2026-03-01T00:00:00Z", "2026-03-31T00:00:00Z");
     expect(filter.queryChunks.length).toBeGreaterThan(1);
+    expect(toFilterText(filter)).toBe(
+      "WHERE ss.recorded_at >= 2026-03-01T00:00:00Z::timestamptz AND ss.recorded_at < 2026-03-31T00:00:00Z::timestamptz",
+    );
   });
 });
 
