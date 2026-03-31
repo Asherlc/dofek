@@ -4,37 +4,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("node:fs", () => ({
   mkdirSync: vi.fn(),
   writeFileSync: vi.fn(),
-  readFileSync: vi.fn().mockReturnValue(
-    JSON.stringify({
-      $schema: "http://json-schema.org/draft-07/schema#",
-      type: "object",
-      properties: {
-        recorded_at: { type: "string" },
-        user_id: { type: "string" },
-        provider_id: { type: "string" },
-        device_id: { type: ["string", "null"] },
-        source_type: { type: "string", enum: ["ble", "file", "api"] },
-        channel: { type: "string" },
-        activity_id: { type: ["string", "null"] },
-        activity_type: { type: ["string", "null"] },
-        scalar: { type: ["number", "null"] },
-        vector: { type: ["string", "null"] },
-      },
-      required: [
-        "recorded_at",
-        "user_id",
-        "provider_id",
-        "device_id",
-        "source_type",
-        "channel",
-        "activity_id",
-        "activity_type",
-        "scalar",
-        "vector",
-      ],
-      additionalProperties: false,
-    }),
-  ),
 }));
 
 vi.mock("../lib/typed-sql.ts", () => ({
@@ -43,6 +12,24 @@ vi.mock("../lib/typed-sql.ts", () => ({
 
 vi.mock("../logger.ts", () => ({
   logger: { info: vi.fn(), warn: vi.fn() },
+}));
+
+// Mock the DuckDB writeParquet function
+vi.mock("@duckdb/node-bindings", () => ({
+  open: vi.fn().mockResolvedValue({ __duckdb_type: "duckdb_database" }),
+  connect: vi.fn().mockResolvedValue({ __duckdb_type: "duckdb_connection" }),
+  query: vi.fn().mockResolvedValue({ __duckdb_type: "duckdb_result" }),
+  appender_create: vi.fn().mockReturnValue({ __duckdb_type: "duckdb_appender" }),
+  append_varchar: vi.fn(),
+  append_double: vi.fn(),
+  append_null: vi.fn(),
+  append_value: vi.fn(),
+  appender_end_row: vi.fn(),
+  appender_flush_sync: vi.fn(),
+  appender_close_sync: vi.fn(),
+  disconnect_sync: vi.fn(),
+  close_sync: vi.fn(),
+  create_varchar: vi.fn().mockReturnValue({ __duckdb_type: "duckdb_value" }),
 }));
 
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -101,7 +88,7 @@ describe("processTrainingExportJob", () => {
         activity_id: null,
         activity_type: null,
         scalar: null,
-        vector: "{0.012,0.138,-0.987}",
+        vector: [0.012, 0.138, -0.987],
       },
     ]);
 
@@ -110,8 +97,8 @@ describe("processTrainingExportJob", () => {
     // Should create directories
     expect(mockMkdirSync).toHaveBeenCalled();
 
-    // Should write CSV file and manifest (2 total)
-    expect(mockWriteFileSync).toHaveBeenCalledTimes(2); // sensor CSV + manifest
+    // Should write manifest (Parquet is written by DuckDB, not writeFileSync)
+    expect(mockWriteFileSync).toHaveBeenCalledTimes(1); // manifest only
 
     // Should update progress
     expect(job.updateProgress).toHaveBeenCalled();
@@ -124,6 +111,7 @@ describe("processTrainingExportJob", () => {
     const manifest = JSON.parse(String(manifestCall?.[1]));
     expect(manifest.files).toHaveLength(1);
     expect(manifest.files[0].table).toBe("sensor_sample");
+    expect(manifest.files[0].path).toContain(".parquet");
     expect(manifest.totalRows).toBe(2);
   });
 

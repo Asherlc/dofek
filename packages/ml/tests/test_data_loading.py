@@ -10,9 +10,12 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
 from dofek_ml.data_loading import (
+    REQUIRED_PARQUET_COLUMNS,
     create_r2_client,
     expand_vector_channels,
     load_from_local,
@@ -21,26 +24,15 @@ from dofek_ml.data_loading import (
     load_manifest_r2,
     load_training_data,
     main,
-    parse_pg_array,
     pivot_scalar_channels,
-    read_csv_local,
-    read_csv_r2,
+    read_parquet_local,
+    read_parquet_r2,
+    validate_parquet_schema,
 )
 
 # ---------------------------------------------------------------------------
-# Shared test data for the new sensor_sample format
+# Shared test data for the new sensor_sample format (Parquet)
 # ---------------------------------------------------------------------------
-
-SAMPLE_SENSOR_CSV: str = (
-    "recorded_at,user_id,provider_id,device_id,source_type,channel,"
-    "activity_id,activity_type,scalar,vector\n"
-    "2024-01-01T00:00:00,user-1,wahoo,,ble,heart_rate,act-1,cycling,140,\n"
-    "2024-01-01T00:00:00,user-1,wahoo,,ble,power,act-1,cycling,200,\n"
-    "2024-01-01T00:00:01,user-1,wahoo,,ble,heart_rate,act-1,cycling,142,\n"
-    "2024-01-01T00:00:01,user-1,wahoo,,ble,power,act-1,cycling,205,\n"
-    '2024-01-01T00:00:00.00,user-1,apple_health,Apple Watch,ble,imu,,,,"{0.1,0.2,9.8}"\n'
-    '2024-01-01T00:00:00.02,user-1,apple_health,Apple Watch,ble,imu,,,,"{0.15,0.22,9.81}"\n'
-)
 
 SAMPLE_MANIFEST: dict[str, Any] = {
     "exportedAt": "2024-01-01T00:00:00Z",
@@ -48,7 +40,7 @@ SAMPLE_MANIFEST: dict[str, Any] = {
     "until": None,
     "files": [
         {
-            "path": "sensor_sample/2024-01-01T00:00:00Z.csv",
+            "path": "sensor_sample/2024-01-01T00:00:00Z.parquet",
             "table": "sensor_sample",
             "rowCount": 6,
         },
@@ -57,46 +49,126 @@ SAMPLE_MANIFEST: dict[str, Any] = {
 }
 
 
+def _build_sample_parquet_table() -> pa.Table:
+    """Build a sample PyArrow table matching the sensor_sample export schema."""
+    return pa.table(
+        {
+            "recorded_at": [
+                "2024-01-01T00:00:00",
+                "2024-01-01T00:00:00",
+                "2024-01-01T00:00:01",
+                "2024-01-01T00:00:01",
+                "2024-01-01T00:00:00.00",
+                "2024-01-01T00:00:00.02",
+            ],
+            "user_id": ["user-1"] * 6,
+            "provider_id": [
+                "wahoo",
+                "wahoo",
+                "wahoo",
+                "wahoo",
+                "apple_health",
+                "apple_health",
+            ],
+            "device_id": [None, None, None, None, "Apple Watch", "Apple Watch"],
+            "source_type": ["ble"] * 6,
+            "channel": [
+                "heart_rate",
+                "power",
+                "heart_rate",
+                "power",
+                "imu",
+                "imu",
+            ],
+            "activity_id": ["act-1", "act-1", "act-1", "act-1", None, None],
+            "activity_type": [
+                "cycling",
+                "cycling",
+                "cycling",
+                "cycling",
+                None,
+                None,
+            ],
+            "scalar": [140.0, 200.0, 142.0, 205.0, None, None],
+            "vector": pa.array(
+                [
+                    None,
+                    None,
+                    None,
+                    None,
+                    [0.1, 0.2, 9.8],
+                    [0.15, 0.22, 9.81],
+                ],
+                type=pa.list_(pa.float64()),
+            ),
+        }
+    )
+
+
+def _write_sample_parquet(path: Path) -> None:
+    """Write the sample sensor data as a Parquet file."""
+    table: pa.Table = _build_sample_parquet_table()
+    pq.write_table(table, path)
+
+
+def _parquet_bytes() -> bytes:
+    """Return the sample Parquet file as bytes (for R2 mocking)."""
+    import io
+
+    table: pa.Table = _build_sample_parquet_table()
+    buffer: io.BytesIO = io.BytesIO()
+    pq.write_table(table, buffer)
+    return buffer.getvalue()
+
+
 @pytest.fixture
 def training_export_dir(tmp_path: Path) -> Path:
-    """Create a minimal training data export directory with manifest and CSV."""
+    """Create a minimal training data export directory with manifest and Parquet."""
     (tmp_path / "manifest.json").write_text(json.dumps(SAMPLE_MANIFEST))
 
-    # Create the sensor_sample subdirectory and CSV
+    # Create the sensor_sample subdirectory and Parquet file
     sensor_dir: Path = tmp_path / "sensor_sample"
     sensor_dir.mkdir()
-    (sensor_dir / "2024-01-01T00:00:00Z.csv").write_text(SAMPLE_SENSOR_CSV)
+    _write_sample_parquet(sensor_dir / "2024-01-01T00:00:00Z.parquet")
 
     return tmp_path
 
 
 # ---------------------------------------------------------------------------
-# Tests for parse_pg_array()
+# Tests for validate_parquet_schema()
 # ---------------------------------------------------------------------------
 
 
-class TestParsePgArray:
-    """Tests for parse_pg_array()."""
+class TestValidateParquetSchema:
+    """Tests for validate_parquet_schema()."""
 
-    def test_parses_three_element_array(self) -> None:
-        result: list[float] = parse_pg_array("{0.1,0.2,9.8}")
-        assert result == pytest.approx([0.1, 0.2, 9.8])
+    def test_valid_schema_passes(self, training_export_dir: Path) -> None:
+        filepath: Path = (
+            training_export_dir / "sensor_sample" / "2024-01-01T00:00:00Z.parquet"
+        )
+        schema: pq.ParquetSchema = pq.read_schema(filepath)
+        validate_parquet_schema(schema)  # should not raise
 
-    def test_parses_four_element_array(self) -> None:
-        result: list[float] = parse_pg_array("{1.0,0.0,0.0,0.0}")
-        assert result == pytest.approx([1.0, 0.0, 0.0, 0.0])
+    def test_missing_column_raises(self, tmp_path: Path) -> None:
+        # Write a Parquet file missing the 'channel' column
+        table: pa.Table = pa.table(
+            {
+                "recorded_at": ["2024-01-01T00:00:00"],
+                "user_id": ["user-1"],
+            }
+        )
+        filepath: Path = tmp_path / "incomplete.parquet"
+        pq.write_table(table, filepath)
+        schema: pq.ParquetSchema = pq.read_schema(filepath)
+        with pytest.raises(ValueError, match="missing required columns"):
+            validate_parquet_schema(schema)
 
-    def test_parses_negative_values(self) -> None:
-        result: list[float] = parse_pg_array("{-0.5,0.3,-9.81}")
-        assert result == pytest.approx([-0.5, 0.3, -9.81])
-
-    def test_handles_empty_braces(self) -> None:
-        result: list[float] = parse_pg_array("{}")
-        assert result == []
-
-    def test_handles_whitespace(self) -> None:
-        result: list[float] = parse_pg_array("  {0.1,0.2}  ")
-        assert result == pytest.approx([0.1, 0.2])
+    def test_all_required_columns_present(self) -> None:
+        """Verify the constant matches what we expect."""
+        assert "recorded_at" in REQUIRED_PARQUET_COLUMNS
+        assert "channel" in REQUIRED_PARQUET_COLUMNS
+        assert "vector" in REQUIRED_PARQUET_COLUMNS
+        assert "scalar" in REQUIRED_PARQUET_COLUMNS
 
 
 # ---------------------------------------------------------------------------
@@ -149,7 +221,7 @@ class TestPivotScalarChannels:
                 "activity_id": [None],
                 "activity_type": [None],
                 "scalar": [None],
-                "vector": ["{0.1,0.2,9.8}"],
+                "vector": [[0.1, 0.2, 9.8]],
             }
         )
 
@@ -173,7 +245,7 @@ class TestPivotScalarChannels:
                 "activity_id": ["a1", None],
                 "activity_type": ["cycling", None],
                 "scalar": [140.0, None],
-                "vector": [None, "{0.1,0.2,9.8}"],
+                "vector": [None, [0.1, 0.2, 9.8]],
             }
         )
 
@@ -207,7 +279,7 @@ class TestExpandVectorChannels:
                 "activity_id": [None, None],
                 "activity_type": [None, None],
                 "scalar": [None, None],
-                "vector": ["{0.1,0.2,9.8}", "{0.15,0.22,9.81}"],
+                "vector": [[0.1, 0.2, 9.8], [0.15, 0.22, 9.81]],
             }
         )
 
@@ -232,7 +304,7 @@ class TestExpandVectorChannels:
                 "activity_id": [None],
                 "activity_type": [None],
                 "scalar": [None],
-                "vector": ["{0.1,0.2,9.8,1.5,-0.3,0.8}"],
+                "vector": [[0.1, 0.2, 9.8, 1.5, -0.3, 0.8]],
             }
         )
 
@@ -254,7 +326,7 @@ class TestExpandVectorChannels:
                 "activity_id": [None],
                 "activity_type": [None],
                 "scalar": [None],
-                "vector": ["{1.0,0.0,0.0,0.0}"],
+                "vector": [[1.0, 0.0, 0.0, 0.0]],
             }
         )
 
@@ -311,20 +383,20 @@ class TestLoadManifestLocal:
     def test_parses_file_paths(self, training_export_dir: Path) -> None:
         manifest: dict[str, Any] = load_manifest_local(training_export_dir)
         paths: list[str] = [f["path"] for f in manifest["files"]]
-        assert "sensor_sample/2024-01-01T00:00:00Z.csv" in paths
+        assert "sensor_sample/2024-01-01T00:00:00Z.parquet" in paths
 
 
 # ---------------------------------------------------------------------------
-# Tests for read_csv_local()
+# Tests for read_parquet_local()
 # ---------------------------------------------------------------------------
 
 
-class TestReadCsvLocal:
-    """Tests for read_csv_local()."""
+class TestReadParquetLocal:
+    """Tests for read_parquet_local()."""
 
-    def test_reads_sensor_csv(self, training_export_dir: Path) -> None:
-        df: pd.DataFrame = read_csv_local(
-            training_export_dir, "sensor_sample/2024-01-01T00:00:00Z.csv"
+    def test_reads_sensor_parquet(self, training_export_dir: Path) -> None:
+        df: pd.DataFrame = read_parquet_local(
+            training_export_dir, "sensor_sample/2024-01-01T00:00:00Z.parquet"
         )
         assert len(df) == 6
         assert "recorded_at" in df.columns
@@ -332,14 +404,30 @@ class TestReadCsvLocal:
         assert "scalar" in df.columns
 
     def test_parses_timestamps(self, training_export_dir: Path) -> None:
-        df: pd.DataFrame = read_csv_local(
-            training_export_dir, "sensor_sample/2024-01-01T00:00:00Z.csv"
+        df: pd.DataFrame = read_parquet_local(
+            training_export_dir, "sensor_sample/2024-01-01T00:00:00Z.parquet"
         )
         assert pd.api.types.is_datetime64_any_dtype(df["recorded_at"])
 
     def test_raises_on_missing_file(self, tmp_path: Path) -> None:
-        with pytest.raises(FileNotFoundError, match="CSV file not found"):
-            read_csv_local(tmp_path, "nonexistent.csv")
+        with pytest.raises(FileNotFoundError, match="Parquet file not found"):
+            read_parquet_local(tmp_path, "nonexistent.parquet")
+
+    def test_vector_column_is_native_list(self, training_export_dir: Path) -> None:
+        """Verify that the vector column contains native arrays, not strings."""
+        df: pd.DataFrame = read_parquet_local(
+            training_export_dir, "sensor_sample/2024-01-01T00:00:00Z.parquet"
+        )
+        # Find an IMU row (has non-null vector)
+        imu_rows: pd.DataFrame = df[df["channel"] == "imu"]
+        assert len(imu_rows) > 0
+        first_vector = imu_rows.iloc[0]["vector"]
+        # Parquet list(float) columns are read as numpy arrays or Python lists
+        assert hasattr(first_vector, "__iter__"), "vector should be iterable"
+        assert not isinstance(first_vector, str), "vector should not be a string"
+        values: list[float] = list(first_vector)
+        assert len(values) == 3
+        assert values == pytest.approx([0.1, 0.2, 9.8])
 
 
 # ---------------------------------------------------------------------------
@@ -445,28 +533,31 @@ class TestLoadManifestR2:
 
 
 # ---------------------------------------------------------------------------
-# Tests for read_csv_r2()
+# Tests for read_parquet_r2()
 # ---------------------------------------------------------------------------
 
 
-class TestReadCsvR2:
-    """Tests for read_csv_r2()."""
+class TestReadParquetR2:
+    """Tests for read_parquet_r2()."""
 
-    def test_reads_csv_from_s3(self) -> None:
-        s3_client: MagicMock = _make_s3_client({"sensor_001.csv": SAMPLE_SENSOR_CSV.encode()})
-        df: pd.DataFrame = read_csv_r2(s3_client, "test-bucket", "sensor_001.csv")
+    def test_reads_parquet_from_s3(self) -> None:
+        parquet_data: bytes = _parquet_bytes()
+        s3_client: MagicMock = _make_s3_client({"sensor_001.parquet": parquet_data})
+        df: pd.DataFrame = read_parquet_r2(s3_client, "test-bucket", "sensor_001.parquet")
         assert len(df) == 6
         assert "channel" in df.columns
 
     def test_parses_timestamps(self) -> None:
-        s3_client: MagicMock = _make_s3_client({"sensor_001.csv": SAMPLE_SENSOR_CSV.encode()})
-        df: pd.DataFrame = read_csv_r2(s3_client, "test-bucket", "sensor_001.csv")
+        parquet_data: bytes = _parquet_bytes()
+        s3_client: MagicMock = _make_s3_client({"sensor_001.parquet": parquet_data})
+        df: pd.DataFrame = read_parquet_r2(s3_client, "test-bucket", "sensor_001.parquet")
         assert pd.api.types.is_datetime64_any_dtype(df["recorded_at"])
 
     def test_calls_get_object_with_correct_key(self) -> None:
-        s3_client: MagicMock = _make_s3_client({"my-file.csv": SAMPLE_SENSOR_CSV.encode()})
-        read_csv_r2(s3_client, "bucket-x", "my-file.csv")
-        s3_client.get_object.assert_called_once_with(Bucket="bucket-x", Key="my-file.csv")
+        parquet_data: bytes = _parquet_bytes()
+        s3_client: MagicMock = _make_s3_client({"my-file.parquet": parquet_data})
+        read_parquet_r2(s3_client, "bucket-x", "my-file.parquet")
+        s3_client.get_object.assert_called_once_with(Bucket="bucket-x", Key="my-file.parquet")
 
 
 # ---------------------------------------------------------------------------
@@ -538,11 +629,11 @@ class TestLoadFromR2:
     """Tests for load_from_r2()."""
 
     def _setup_r2_client(self) -> MagicMock:
-        """Build a mock S3 client with manifest + CSV files."""
+        """Build a mock S3 client with manifest + Parquet files."""
         return _make_s3_client(
             {
                 "manifest.json": json.dumps(SAMPLE_MANIFEST).encode(),
-                "sensor_sample/2024-01-01T00:00:00Z.csv": SAMPLE_SENSOR_CSV.encode(),
+                "sensor_sample/2024-01-01T00:00:00Z.parquet": _parquet_bytes(),
             }
         )
 

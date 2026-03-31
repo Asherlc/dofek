@@ -1,19 +1,22 @@
 """
 data_loading.py -- Data loading module for the fused CNN activity classifier.
 
-Reads training data from either local CSV files or Cloudflare R2 (S3-compatible).
-The training data export job now produces a single CSV from the unified
+Reads training data from either local Parquet files or Cloudflare R2 (S3-compatible).
+The training data export job produces a single Parquet file from the unified
 sensor_sample table. Each row has a `channel` column identifying the measurement
 type (heart_rate, power, imu, orientation, etc.) and either a `scalar` value
 (for single-value channels) or a `vector` value (for multi-axis channels).
 
+The `vector` column is stored as a native list(float) in Parquet, so no string
+parsing is needed (unlike the old CSV format which stored PostgreSQL array literals).
+
 This module:
-  - Loads the single CSV
+  - Loads the single Parquet file
   - Separates scalar channels from vector channels
   - Pivots scalar channels into a wide-format DataFrame (one column per channel)
   - Expands vector channels into separate axis columns
 
-A manifest.json file lists available CSV files and metadata.
+A manifest.json file lists available Parquet files and metadata.
 
 Usage as a module:
     from dofek_ml.data_loading import load_training_data
@@ -30,12 +33,12 @@ import argparse
 import io
 import json
 import os
-import re
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
+import pyarrow.parquet as pq
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -43,6 +46,43 @@ import pandas as pd
 
 # Channels that produce vector (multi-axis) data rather than scalar values.
 VECTOR_CHANNELS: frozenset[str] = frozenset({"imu", "orientation"})
+
+# Required columns in the Parquet schema. Used for validation at read time.
+REQUIRED_PARQUET_COLUMNS: frozenset[str] = frozenset(
+    {
+        "recorded_at",
+        "user_id",
+        "provider_id",
+        "device_id",
+        "source_type",
+        "channel",
+        "activity_id",
+        "activity_type",
+        "scalar",
+        "vector",
+    }
+)
+
+
+# ---------------------------------------------------------------------------
+# Parquet schema validation
+# ---------------------------------------------------------------------------
+
+
+def validate_parquet_schema(schema: pq.ParquetSchema) -> None:
+    """Validate that a Parquet file contains all required columns.
+
+    The Parquet file's embedded schema is the contract -- this function
+    checks that all expected columns are present. Raises ValueError if
+    any required column is missing.
+    """
+    column_names: frozenset[str] = frozenset(schema.names)
+    missing: frozenset[str] = REQUIRED_PARQUET_COLUMNS - column_names
+    if missing:
+        raise ValueError(
+            f"Parquet schema missing required columns: {sorted(missing)}. "
+            f"Found columns: {sorted(column_names)}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -53,7 +93,7 @@ VECTOR_CHANNELS: frozenset[str] = frozenset({"imu", "orientation"})
 def load_manifest_local(base_path: Path) -> dict[str, Any]:
     """Load manifest.json from a local directory.
 
-    The manifest describes which CSV files are available, their types
+    The manifest describes which Parquet files are available, their types
     (sensor_sample), and any metadata the export job attached.
     """
     manifest_path: Path = base_path / "manifest.json"
@@ -79,33 +119,43 @@ def load_manifest_r2(s3_client: Any, bucket: str) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# CSV loading helpers
+# Parquet loading helpers
 # ---------------------------------------------------------------------------
 
 
-def read_csv_local(base_path: Path, filename: str) -> pd.DataFrame:
-    """Read a single CSV file from the local filesystem.
+def read_parquet_local(base_path: Path, filename: str) -> pd.DataFrame:
+    """Read a single Parquet file from the local filesystem.
 
-    We let pandas infer most dtypes, then explicitly convert the recorded_at
-    column to datetime to handle mixed ISO formats (with/without fractional seconds).
+    Validates the Parquet schema against the expected contract columns,
+    then reads the file into a DataFrame.
     """
     filepath: Path = base_path / filename
     if not filepath.exists():
-        raise FileNotFoundError(f"CSV file not found: {filepath}")
-    df: pd.DataFrame = pd.read_csv(filepath)
+        raise FileNotFoundError(f"Parquet file not found: {filepath}")
+
+    schema: pq.ParquetSchema = pq.read_schema(filepath)
+    validate_parquet_schema(schema)
+
+    df: pd.DataFrame = pd.read_parquet(filepath)
     df["recorded_at"] = pd.to_datetime(df["recorded_at"], format="ISO8601")
     return df
 
 
-def read_csv_r2(s3_client: Any, bucket: str, key: str) -> pd.DataFrame:
-    """Read a single CSV file from R2 into a pandas DataFrame.
+def read_parquet_r2(s3_client: Any, bucket: str, key: str) -> pd.DataFrame:
+    """Read a single Parquet file from R2 into a pandas DataFrame.
 
     Downloads the object body into an in-memory buffer so pandas can parse it
-    without writing a temp file to disk.
+    without writing a temp file to disk. Validates the schema before loading.
     """
     response: dict[str, Any] = s3_client.get_object(Bucket=bucket, Key=key)
     body: bytes = response["Body"].read()
-    df: pd.DataFrame = pd.read_csv(io.BytesIO(body))
+    buffer: io.BytesIO = io.BytesIO(body)
+
+    schema: pq.ParquetSchema = pq.read_schema(buffer)
+    validate_parquet_schema(schema)
+    buffer.seek(0)
+
+    df: pd.DataFrame = pd.read_parquet(buffer)
     df["recorded_at"] = pd.to_datetime(df["recorded_at"], format="ISO8601")
     return df
 
@@ -147,20 +197,6 @@ def create_r2_client() -> Any:
 
 
 # ---------------------------------------------------------------------------
-# Vector parsing
-# ---------------------------------------------------------------------------
-
-
-def parse_pg_array(value: str) -> list[float]:
-    """Parse a PostgreSQL array literal like '{0.1,0.2,9.8}' into a list of floats."""
-    # Strip surrounding braces and split on commas
-    inner: str = re.sub(r"^\{|\}$", "", value.strip())
-    if not inner:
-        return []
-    return [float(x) for x in inner.split(",")]
-
-
-# ---------------------------------------------------------------------------
 # DataFrame transformation: channel-based rows -> wide format
 # ---------------------------------------------------------------------------
 
@@ -198,8 +234,9 @@ def pivot_scalar_channels(raw_df: pd.DataFrame) -> pd.DataFrame:
 def expand_vector_channels(raw_df: pd.DataFrame) -> pd.DataFrame:
     """Expand vector channel rows into a wide-format DataFrame.
 
-    Input: rows with a `vector` column containing PostgreSQL array literals
-    like '{0.1,0.2,9.8}' and a `channel` column (e.g., 'imu', 'orientation').
+    Input: rows with a `vector` column containing native lists of floats
+    (from Parquet's list(float) type) and a `channel` column (e.g., 'imu',
+    'orientation').
 
     For IMU data (3 axes): expands to accel_x, accel_y, accel_z columns.
     For orientation data (4 axes): expands to w, x, y, z columns.
@@ -215,9 +252,11 @@ def expand_vector_channels(raw_df: pd.DataFrame) -> pd.DataFrame:
     # Reset index so positional access aligns with iloc
     vector_df = vector_df.reset_index(drop=True)
 
-    # Parse the vector column into a dict keyed by the new positional index
+    # The vector column is already a native list of floats from Parquet --
+    # no string parsing needed.
     parsed_vectors: dict[int, list[float]] = {
-        i: parse_pg_array(str(v)) if pd.notna(v) else [] for i, v in enumerate(vector_df["vector"])
+        i: list(v) if v is not None and not (isinstance(v, float) and np.isnan(v)) else []
+        for i, v in enumerate(vector_df["vector"])
     }
 
     # Determine axis names based on channel and vector length
@@ -281,7 +320,7 @@ def expand_vector_channels(raw_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def load_from_local(base_path: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Load sensor_sample CSV from a local directory and split into metric + device.
+    """Load sensor_sample Parquet from a local directory and split into metric + device.
 
     Reads the manifest to discover which files exist, then loads and concatenates
     all sensor_sample files. Scalar channels are pivoted into a wide metric
@@ -300,7 +339,7 @@ def load_from_local(base_path: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
         raise ValueError("No sensor_sample files listed in manifest")
 
     print(f"Loading {len(sensor_files)} sensor_sample file(s) from {base_path}")
-    raw_dfs: list[pd.DataFrame] = [read_csv_local(base_path, f) for f in sensor_files]
+    raw_dfs: list[pd.DataFrame] = [read_parquet_local(base_path, f) for f in sensor_files]
     raw_df: pd.DataFrame = pd.concat(raw_dfs, ignore_index=True)
 
     print(f"Raw sensor_sample: {len(raw_df)} rows, channels: {raw_df['channel'].unique().tolist()}")
@@ -321,7 +360,7 @@ def load_from_local(base_path: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 def load_from_r2() -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Load sensor_sample CSV from Cloudflare R2 and split into metric + device.
+    """Load sensor_sample Parquet from Cloudflare R2 and split into metric + device.
 
     Same logic as load_from_local but fetches files over the network.
     The R2_BUCKET env var specifies which bucket to read from.
@@ -344,7 +383,7 @@ def load_from_r2() -> tuple[pd.DataFrame, pd.DataFrame]:
         raise ValueError("No sensor_sample files listed in manifest")
 
     print(f"Downloading {len(sensor_files)} sensor_sample file(s) from R2 bucket '{bucket}'")
-    raw_dfs: list[pd.DataFrame] = [read_csv_r2(s3_client, bucket, f) for f in sensor_files]
+    raw_dfs: list[pd.DataFrame] = [read_parquet_r2(s3_client, bucket, f) for f in sensor_files]
     raw_df: pd.DataFrame = pd.concat(raw_dfs, ignore_index=True)
 
     print(f"Raw sensor_sample: {len(raw_df)} rows, channels: {raw_df['channel'].unique().tolist()}")
@@ -406,13 +445,13 @@ def main() -> None:
         python -m dofek_ml.data_loading
     """
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
-        description="Load training data from local CSV files or Cloudflare R2"
+        description="Load training data from local Parquet files or Cloudflare R2"
     )
     parser.add_argument(
         "--local-path",
         type=str,
         default=None,
-        help="Path to local directory containing manifest.json and CSV files. "
+        help="Path to local directory containing manifest.json and Parquet files. "
         "If not provided, reads from R2 using environment variables.",
     )
     args: argparse.Namespace = parser.parse_args()

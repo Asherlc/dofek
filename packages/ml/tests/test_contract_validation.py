@@ -1,166 +1,210 @@
-"""Tests for contract validation between TypeScript export and Python loading.
+"""Tests for Parquet schema contract validation.
 
-Validates that sample sensor_sample export data conforms to the shared
-JSON Schema contract defined in contracts/sensor-export.schema.json.
+Validates that the Parquet file produced by the TypeScript export job contains
+all required columns. The Parquet schema IS the contract -- no separate JSON
+Schema is needed for runtime enforcement.
+
+The JSON Schema file (contracts/sensor-export.schema.json) is kept as
+documentation only.
 """
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import jsonschema
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
-# Path to the shared contract schema at the repo root
-CONTRACT_SCHEMA_PATH: Path = (
-    Path(__file__).resolve().parent.parent.parent.parent / "contracts" / "sensor-export.schema.json"
-)
+if TYPE_CHECKING:
+    from pathlib import Path
+
+from dofek_ml.data_loading import REQUIRED_PARQUET_COLUMNS, validate_parquet_schema
 
 
 @pytest.fixture
-def contract_schema() -> dict[str, Any]:
-    """Load the sensor export contract schema."""
-    if not CONTRACT_SCHEMA_PATH.exists():
-        pytest.skip(f"Contract schema not found at {CONTRACT_SCHEMA_PATH}")
-    with CONTRACT_SCHEMA_PATH.open() as f:
-        schema: dict[str, Any] = json.load(f)
-    return schema
-
-
-class TestContractValidation:
-    """Tests that sample data conforms to the sensor export contract."""
-
-    def test_valid_scalar_row_passes(self, contract_schema: dict[str, Any]) -> None:
-        row: dict[str, Any] = {
-            "recorded_at": "2026-03-30T15:00:00Z",
-            "user_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-            "provider_id": "wahoo",
-            "device_id": None,
-            "source_type": "ble",
-            "channel": "heart_rate",
-            "activity_id": None,
-            "activity_type": "cycling",
-            "scalar": 142,
-            "vector": None,
+def valid_parquet_file(tmp_path: Path) -> Path:
+    """Create a valid Parquet file with all required columns."""
+    table: pa.Table = pa.table(
+        {
+            "recorded_at": ["2026-03-30T15:00:00Z"],
+            "user_id": ["a1b2c3d4-e5f6-7890-abcd-ef1234567890"],
+            "provider_id": ["wahoo"],
+            "device_id": pa.array([None], type=pa.string()),
+            "source_type": ["ble"],
+            "channel": ["heart_rate"],
+            "activity_id": pa.array([None], type=pa.string()),
+            "activity_type": ["cycling"],
+            "scalar": [142.0],
+            "vector": pa.array([None], type=pa.list_(pa.float64())),
         }
-        jsonschema.validate(instance=row, schema=contract_schema)
+    )
+    filepath: Path = tmp_path / "valid.parquet"
+    pq.write_table(table, filepath)
+    return filepath
 
-    def test_valid_vector_row_passes(self, contract_schema: dict[str, Any]) -> None:
-        row: dict[str, Any] = {
-            "recorded_at": "2026-03-30T15:00:00.020Z",
-            "user_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-            "provider_id": "apple_health",
-            "device_id": "Apple Watch",
-            "source_type": "ble",
-            "channel": "imu",
-            "activity_id": None,
-            "activity_type": None,
-            "scalar": None,
-            "vector": "{0.012,0.138,-0.987}",
-        }
-        jsonschema.validate(instance=row, schema=contract_schema)
 
-    def test_api_source_type_passes(self, contract_schema: dict[str, Any]) -> None:
-        row: dict[str, Any] = {
-            "recorded_at": "2026-03-30T15:00:00Z",
-            "user_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-            "provider_id": "intervals",
-            "device_id": None,
-            "source_type": "api",
-            "channel": "power",
-            "activity_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
-            "activity_type": "cycling",
-            "scalar": 250,
-            "vector": None,
-        }
-        jsonschema.validate(instance=row, schema=contract_schema)
+class TestParquetSchemaContract:
+    """Tests that Parquet files conform to the sensor export contract."""
 
-    def test_file_source_type_passes(self, contract_schema: dict[str, Any]) -> None:
-        row: dict[str, Any] = {
-            "recorded_at": "2026-03-30T15:00:00Z",
-            "user_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-            "provider_id": "garmin",
-            "device_id": "Edge 540",
-            "source_type": "file",
-            "channel": "cadence",
-            "activity_id": None,
-            "activity_type": None,
-            "scalar": 90,
-            "vector": None,
-        }
-        jsonschema.validate(instance=row, schema=contract_schema)
+    def test_valid_schema_passes(self, valid_parquet_file: Path) -> None:
+        schema: pq.ParquetSchema = pq.read_schema(valid_parquet_file)
+        validate_parquet_schema(schema)  # should not raise
 
-    def test_invalid_source_type_fails(self, contract_schema: dict[str, Any]) -> None:
-        row: dict[str, Any] = {
-            "recorded_at": "2026-03-30T15:00:00Z",
-            "user_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-            "provider_id": "wahoo",
-            "device_id": None,
-            "source_type": "invalid_source",
-            "channel": "heart_rate",
-            "activity_id": None,
-            "activity_type": "cycling",
-            "scalar": 142,
-            "vector": None,
-        }
-        with pytest.raises(jsonschema.ValidationError):
-            jsonschema.validate(instance=row, schema=contract_schema)
+    def test_all_required_columns_are_present(self, valid_parquet_file: Path) -> None:
+        schema: pq.ParquetSchema = pq.read_schema(valid_parquet_file)
+        column_names: set[str] = set(schema.names)
+        for required_col in REQUIRED_PARQUET_COLUMNS:
+            assert required_col in column_names, f"Missing required column: {required_col}"
 
-    def test_missing_required_field_fails(self, contract_schema: dict[str, Any]) -> None:
-        row: dict[str, Any] = {
-            "recorded_at": "2026-03-30T15:00:00Z",
-            # missing user_id and other required fields
-        }
-        with pytest.raises(jsonschema.ValidationError):
-            jsonschema.validate(instance=row, schema=contract_schema)
+    def test_missing_recorded_at_fails(self, tmp_path: Path) -> None:
+        table: pa.Table = pa.table(
+            {
+                "user_id": ["user-1"],
+                "provider_id": ["wahoo"],
+                "device_id": pa.array([None], type=pa.string()),
+                "source_type": ["ble"],
+                "channel": ["heart_rate"],
+                "activity_id": pa.array([None], type=pa.string()),
+                "activity_type": ["cycling"],
+                "scalar": [142.0],
+                "vector": pa.array([None], type=pa.list_(pa.float64())),
+            }
+        )
+        filepath: Path = tmp_path / "missing_recorded_at.parquet"
+        pq.write_table(table, filepath)
+        schema: pq.ParquetSchema = pq.read_schema(filepath)
+        with pytest.raises(ValueError, match="missing required columns"):
+            validate_parquet_schema(schema)
 
-    def test_extra_property_fails(self, contract_schema: dict[str, Any]) -> None:
-        row: dict[str, Any] = {
-            "recorded_at": "2026-03-30T15:00:00Z",
-            "user_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-            "provider_id": "wahoo",
-            "device_id": None,
-            "source_type": "ble",
-            "channel": "heart_rate",
-            "activity_id": None,
-            "activity_type": "cycling",
-            "scalar": 142,
-            "vector": None,
-            "extra_field": "should not be here",
-        }
-        with pytest.raises(jsonschema.ValidationError):
-            jsonschema.validate(instance=row, schema=contract_schema)
+    def test_missing_channel_fails(self, tmp_path: Path) -> None:
+        table: pa.Table = pa.table(
+            {
+                "recorded_at": ["2026-03-30T15:00:00Z"],
+                "user_id": ["user-1"],
+                "provider_id": ["wahoo"],
+                "device_id": pa.array([None], type=pa.string()),
+                "source_type": ["ble"],
+                "activity_id": pa.array([None], type=pa.string()),
+                "activity_type": ["cycling"],
+                "scalar": [142.0],
+                "vector": pa.array([None], type=pa.list_(pa.float64())),
+            }
+        )
+        filepath: Path = tmp_path / "missing_channel.parquet"
+        pq.write_table(table, filepath)
+        schema: pq.ParquetSchema = pq.read_schema(filepath)
+        with pytest.raises(ValueError, match="missing required columns"):
+            validate_parquet_schema(schema)
 
-    def test_empty_provider_id_fails(self, contract_schema: dict[str, Any]) -> None:
-        row: dict[str, Any] = {
-            "recorded_at": "2026-03-30T15:00:00Z",
-            "user_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-            "provider_id": "",
-            "device_id": None,
-            "source_type": "ble",
-            "channel": "heart_rate",
-            "activity_id": None,
-            "activity_type": "cycling",
-            "scalar": 142,
-            "vector": None,
-        }
-        with pytest.raises(jsonschema.ValidationError):
-            jsonschema.validate(instance=row, schema=contract_schema)
+    def test_missing_vector_fails(self, tmp_path: Path) -> None:
+        table: pa.Table = pa.table(
+            {
+                "recorded_at": ["2026-03-30T15:00:00Z"],
+                "user_id": ["user-1"],
+                "provider_id": ["wahoo"],
+                "device_id": pa.array([None], type=pa.string()),
+                "source_type": ["ble"],
+                "channel": ["heart_rate"],
+                "activity_id": pa.array([None], type=pa.string()),
+                "activity_type": ["cycling"],
+                "scalar": [142.0],
+            }
+        )
+        filepath: Path = tmp_path / "missing_vector.parquet"
+        pq.write_table(table, filepath)
+        schema: pq.ParquetSchema = pq.read_schema(filepath)
+        with pytest.raises(ValueError, match="missing required columns"):
+            validate_parquet_schema(schema)
 
-    def test_empty_channel_fails(self, contract_schema: dict[str, Any]) -> None:
-        row: dict[str, Any] = {
-            "recorded_at": "2026-03-30T15:00:00Z",
-            "user_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-            "provider_id": "wahoo",
-            "device_id": None,
-            "source_type": "ble",
-            "channel": "",
-            "activity_id": None,
-            "activity_type": "cycling",
-            "scalar": 142,
-            "vector": None,
+    def test_missing_multiple_columns_reports_all(self, tmp_path: Path) -> None:
+        table: pa.Table = pa.table(
+            {
+                "recorded_at": ["2026-03-30T15:00:00Z"],
+                "user_id": ["user-1"],
+            }
+        )
+        filepath: Path = tmp_path / "minimal.parquet"
+        pq.write_table(table, filepath)
+        schema: pq.ParquetSchema = pq.read_schema(filepath)
+        with pytest.raises(ValueError, match="missing required columns") as exc_info:
+            validate_parquet_schema(schema)
+        error_msg: str = str(exc_info.value)
+        # Should mention at least some of the missing columns
+        assert "channel" in error_msg
+        assert "vector" in error_msg
+        assert "scalar" in error_msg
+
+    def test_extra_columns_are_allowed(self, tmp_path: Path) -> None:
+        """Parquet files may contain extra columns beyond the required ones."""
+        columns: dict[str, Any] = {
+            "recorded_at": ["2026-03-30T15:00:00Z"],
+            "user_id": ["user-1"],
+            "provider_id": ["wahoo"],
+            "device_id": pa.array([None], type=pa.string()),
+            "source_type": ["ble"],
+            "channel": ["heart_rate"],
+            "activity_id": pa.array([None], type=pa.string()),
+            "activity_type": ["cycling"],
+            "scalar": [142.0],
+            "vector": pa.array([None], type=pa.list_(pa.float64())),
+            "extra_column": ["bonus_data"],
         }
-        with pytest.raises(jsonschema.ValidationError):
-            jsonschema.validate(instance=row, schema=contract_schema)
+        table: pa.Table = pa.table(columns)
+        filepath: Path = tmp_path / "extra_cols.parquet"
+        pq.write_table(table, filepath)
+        schema: pq.ParquetSchema = pq.read_schema(filepath)
+        validate_parquet_schema(schema)  # should not raise
+
+    def test_vector_column_is_list_type(self, valid_parquet_file: Path) -> None:
+        """The vector column should be stored as a list(float) type in Parquet."""
+        arrow_schema: pa.Schema = pq.read_schema(valid_parquet_file)
+        vector_field: pa.Field = arrow_schema.field("vector")
+        assert pa.types.is_list(vector_field.type), (
+            f"Expected vector column to be list type, got {vector_field.type}"
+        )
+        assert pa.types.is_floating(vector_field.type.value_type), (
+            f"Expected vector list items to be float, got {vector_field.type.value_type}"
+        )
+
+    def test_scalar_row_parquet(self, tmp_path: Path) -> None:
+        """A complete scalar row should pass schema validation."""
+        table: pa.Table = pa.table(
+            {
+                "recorded_at": ["2026-03-30T15:00:00Z"],
+                "user_id": ["a1b2c3d4-e5f6-7890-abcd-ef1234567890"],
+                "provider_id": ["wahoo"],
+                "device_id": pa.array([None], type=pa.string()),
+                "source_type": ["ble"],
+                "channel": ["heart_rate"],
+                "activity_id": pa.array([None], type=pa.string()),
+                "activity_type": ["cycling"],
+                "scalar": [142.0],
+                "vector": pa.array([None], type=pa.list_(pa.float64())),
+            }
+        )
+        filepath: Path = tmp_path / "scalar_row.parquet"
+        pq.write_table(table, filepath)
+        schema: pq.ParquetSchema = pq.read_schema(filepath)
+        validate_parquet_schema(schema)
+
+    def test_vector_row_parquet(self, tmp_path: Path) -> None:
+        """A complete vector row should pass schema validation."""
+        table: pa.Table = pa.table(
+            {
+                "recorded_at": ["2026-03-30T15:00:00.020Z"],
+                "user_id": ["a1b2c3d4-e5f6-7890-abcd-ef1234567890"],
+                "provider_id": ["apple_health"],
+                "device_id": ["Apple Watch"],
+                "source_type": ["ble"],
+                "channel": ["imu"],
+                "activity_id": pa.array([None], type=pa.string()),
+                "activity_type": pa.array([None], type=pa.string()),
+                "scalar": pa.array([None], type=pa.float64()),
+                "vector": pa.array([[0.012, 0.138, -0.987]], type=pa.list_(pa.float64())),
+            }
+        )
+        filepath: Path = tmp_path / "vector_row.parquet"
+        pq.write_table(table, filepath)
+        schema: pq.ParquetSchema = pq.read_schema(filepath)
+        validate_parquet_schema(schema)

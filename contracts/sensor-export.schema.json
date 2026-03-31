@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://dofek.fit/contracts/sensor-export.schema.json",
   "title": "Sensor Export Row",
-  "description": "Schema for a single row in the sensor_sample training data export CSV. Each row represents one sensor measurement from the unified sensor_sample table.",
+  "description": "DOCUMENTATION ONLY -- The export now uses Parquet format. The Parquet file's embedded schema is the real contract; see validate_parquet_schema() in data_loading.py. This JSON Schema is kept for reference. Each row represents one sensor measurement from the unified sensor_sample table.",
   "type": "object",
   "properties": {
     "recorded_at": {
@@ -47,8 +47,9 @@
       "description": "Single numeric value for scalar channels (heart_rate, power, etc.), or null for vector channels."
     },
     "vector": {
-      "type": ["string", "null"],
-      "description": "String representation of a numeric array for vector channels (e.g., '{0.1,0.2,9.8}'), or null for scalar channels."
+      "type": ["array", "null"],
+      "items": { "type": "number" },
+      "description": "Array of floats for vector channels (e.g., [0.1, 0.2, 9.8]), stored as list(float) in Parquet. Null for scalar channels."
     }
   },
   "required": [

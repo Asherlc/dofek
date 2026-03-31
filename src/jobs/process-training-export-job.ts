@@ -1,8 +1,7 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import Ajv from "ajv";
-import addFormats from "ajv-formats";
+import { join } from "node:path";
+import * as duckdb from "@duckdb/node-bindings";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
@@ -39,74 +38,93 @@ const sensorSampleRowSchema = z.object({
   activity_id: z.string().nullable(),
   activity_type: z.string().nullable(),
   scalar: z.number().nullable(),
-  vector: z.string().nullable(),
+  vector: z.array(z.number()).nullable(),
 });
 
 const countRowSchema = z.object({ count: z.string() });
 
 export type SensorSampleRow = z.infer<typeof sensorSampleRowSchema>;
 
-// ── Contract validation ──
+// ── Parquet writer ──
 
 /**
- * Load and compile the sensor-export JSON Schema for contract validation.
- * The schema lives in `contracts/sensor-export.schema.json` at the repo root.
+ * Write sensor sample rows to a Parquet file using DuckDB as the writer engine.
+ *
+ * Creates an in-memory DuckDB instance, inserts all rows via the appender API,
+ * then uses COPY ... TO to write a Parquet file. The `vector` column is stored
+ * as a native DOUBLE[] (list of floats) in Parquet, not as a string.
  */
-function loadContractValidator(): ReturnType<Ajv["compile"]> {
-  const schemaPath = resolve(
-    import.meta.dirname ?? __dirname,
-    "../../contracts/sensor-export.schema.json",
-  );
-  const schemaText = readFileSync(schemaPath, "utf-8");
-  const schema: unknown = JSON.parse(schemaText);
+export async function writeParquet(rows: SensorSampleRow[], outputPath: string): Promise<void> {
+  const db = await duckdb.open();
+  const conn = await duckdb.connect(db);
 
-  const ajv = new Ajv({ allErrors: true });
-  addFormats(ajv);
-  return ajv.compile(schema);
-}
+  try {
+    await duckdb.query(
+      conn,
+      `CREATE TABLE sensor_sample (
+        recorded_at VARCHAR NOT NULL,
+        user_id VARCHAR NOT NULL,
+        provider_id VARCHAR NOT NULL,
+        device_id VARCHAR,
+        source_type VARCHAR NOT NULL,
+        channel VARCHAR NOT NULL,
+        activity_id VARCHAR,
+        activity_type VARCHAR,
+        scalar DOUBLE,
+        vector DOUBLE[]
+      )`,
+    );
 
-export { loadContractValidator };
+    const appender = duckdb.appender_create(conn, null, "sensor_sample");
 
-// ── CSV helpers ──
+    for (const row of rows) {
+      duckdb.append_varchar(appender, row.recorded_at);
+      duckdb.append_varchar(appender, row.user_id);
+      duckdb.append_varchar(appender, row.provider_id);
+      if (row.device_id !== null) {
+        duckdb.append_varchar(appender, row.device_id);
+      } else {
+        duckdb.append_null(appender);
+      }
+      duckdb.append_varchar(appender, row.source_type);
+      duckdb.append_varchar(appender, row.channel);
+      if (row.activity_id !== null) {
+        duckdb.append_varchar(appender, row.activity_id);
+      } else {
+        duckdb.append_null(appender);
+      }
+      if (row.activity_type !== null) {
+        duckdb.append_varchar(appender, row.activity_type);
+      } else {
+        duckdb.append_null(appender);
+      }
+      if (row.scalar !== null) {
+        duckdb.append_double(appender, row.scalar);
+      } else {
+        duckdb.append_null(appender);
+      }
+      if (row.vector !== null) {
+        // Encode the float array as a DuckDB list literal string via a Value
+        const listLiteral = `[${row.vector.join(",")}]`;
+        const listValue = duckdb.create_varchar(listLiteral);
+        duckdb.append_value(appender, listValue);
+      } else {
+        duckdb.append_null(appender);
+      }
+      duckdb.appender_end_row(appender);
+    }
 
-const CSV_COLUMNS = [
-  "recorded_at",
-  "user_id",
-  "provider_id",
-  "device_id",
-  "source_type",
-  "channel",
-  "activity_id",
-  "activity_type",
-  "scalar",
-  "vector",
-] as const;
+    duckdb.appender_flush_sync(appender);
+    duckdb.appender_close_sync(appender);
 
-export function sensorSampleCsvHeader(): string {
-  return CSV_COLUMNS.join(",");
-}
-
-export function sensorSampleRowToCsv(row: SensorSampleRow): string {
-  return [
-    row.recorded_at,
-    row.user_id,
-    row.provider_id,
-    row.device_id ?? "",
-    row.source_type,
-    row.channel,
-    row.activity_id ?? "",
-    row.activity_type ?? "",
-    row.scalar ?? "",
-    row.vector ?? "",
-  ].join(",");
-}
-
-export function sensorSampleRowsToCsvContent(rows: SensorSampleRow[]): string {
-  const lines = [sensorSampleCsvHeader()];
-  for (const row of rows) {
-    lines.push(sensorSampleRowToCsv(row));
+    await duckdb.query(
+      conn,
+      `COPY sensor_sample TO '${outputPath.replace(/'/g, "''")}' (FORMAT PARQUET)`,
+    );
+  } finally {
+    duckdb.disconnect_sync(conn);
+    duckdb.close_sync(db);
   }
-  return lines.join("\n");
 }
 
 // ── Time filter builder ──
@@ -154,7 +172,7 @@ export function buildManifest(
 
   if (rowCount > 0) {
     manifest.files.push({
-      path: `sensor_sample/${timestamp}.csv`,
+      path: `sensor_sample/${timestamp}.parquet`,
       table: "sensor_sample",
       rowCount,
     });
@@ -199,11 +217,11 @@ async function exportSensorSamples(
 
   logger.info(`[training-export] Exporting ${totalRows} sensor_sample rows in batches`);
 
-  const csvDir = join(outputDir, "sensor_sample");
-  mkdirSync(csvDir, { recursive: true });
+  const parquetDir = join(outputDir, "sensor_sample");
+  mkdirSync(parquetDir, { recursive: true });
 
-  const csvPath = join(csvDir, `${timestamp}.csv`);
-  const lines: string[] = [sensorSampleCsvHeader()];
+  const parquetPath = join(parquetDir, `${timestamp}.parquet`);
+  const allRows: SensorSampleRow[] = [];
   let offset = 0;
   let exported = 0;
 
@@ -221,7 +239,7 @@ async function exportSensorSamples(
             ss.activity_id::text AS activity_id,
             a.activity_type,
             ss.scalar,
-            ss.vector::text AS vector
+            ss.vector
           FROM fitness.sensor_sample ss
           LEFT JOIN fitness.activity a ON a.id = ss.activity_id
           ${timeFilter}
@@ -230,7 +248,7 @@ async function exportSensorSamples(
     );
 
     for (const row of rows) {
-      lines.push(sensorSampleRowToCsv(row));
+      allRows.push(row);
     }
 
     exported += rows.length;
@@ -242,39 +260,8 @@ async function exportSensorSamples(
     if (rows.length < BATCH_SIZE) break;
   }
 
-  // Validate a sample row against the contract schema
-  if (lines.length > 1) {
-    const validate = loadContractValidator();
-    const headerFields = lines[0].split(",");
-    const sampleValues = lines[1].split(",");
-    const sampleObj: Record<string, string | number | null> = {};
-    for (let i = 0; i < headerFields.length; i++) {
-      const key = headerFields[i];
-      const raw = sampleValues[i];
-      if (key === "scalar") {
-        sampleObj[key] = raw === "" ? null : Number(raw);
-      } else if (
-        key === "vector" ||
-        key === "device_id" ||
-        key === "activity_id" ||
-        key === "activity_type"
-      ) {
-        sampleObj[key] = raw === "" ? null : raw;
-      } else {
-        sampleObj[key] = raw;
-      }
-    }
-    const valid = validate(sampleObj);
-    if (!valid) {
-      logger.warn(
-        "[training-export] Contract validation failed on sample row: %s",
-        JSON.stringify(validate.errors),
-      );
-    }
-  }
-
-  writeFileSync(csvPath, lines.join("\n"), "utf-8");
-  logger.info(`[training-export] Wrote ${exported} sensor_sample rows to ${csvPath}`);
+  await writeParquet(allRows, parquetPath);
+  logger.info(`[training-export] Wrote ${exported} sensor_sample rows to ${parquetPath}`);
 
   return exported;
 }
