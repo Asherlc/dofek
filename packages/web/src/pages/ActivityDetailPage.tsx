@@ -705,27 +705,30 @@ function WorkoutMuscleMap({ exercises }: { exercises: StrengthExerciseDetail[] }
   const intensities = computeIntensities(slugTotals);
   if (intensities.size === 0 || !Model || !MuscleType) return null;
 
+  type IExerciseData = import("react-body-highlighter").IExerciseData;
   type Muscle = import("react-body-highlighter").Muscle;
   const VALID_MUSCLES = new Set<string>(Object.values(MuscleType));
-  const DELTOID_MUSCLES = [MuscleType.FRONT_DELTOIDS, MuscleType.BACK_DELTOIDS];
+  const DELTOID_MUSCLES: Muscle[] = [MuscleType.FRONT_DELTOIDS, MuscleType.BACK_DELTOIDS];
 
   function isMuscle(value: string): value is Muscle {
     return VALID_MUSCLES.has(value);
   }
 
-  const exerciseData = [...intensities.entries()].flatMap(([slug, intensity]) => {
-    const bucket = intensityToBucket(intensity);
-    if (bucket === 0) return [];
-    if (slug === "deltoids") {
-      return DELTOID_MUSCLES.map((muscle) => ({
-        name: slug,
-        muscles: [muscle],
-        frequency: bucket,
-      }));
-    }
-    if (!isMuscle(slug)) return [];
-    return [{ name: slug, muscles: [slug], frequency: bucket }];
-  });
+  const exerciseData: IExerciseData[] = [...intensities.entries()].flatMap(
+    ([slug, intensity]): IExerciseData[] => {
+      const bucket = intensityToBucket(intensity);
+      if (bucket === 0) return [];
+      if (slug === "deltoids") {
+        return DELTOID_MUSCLES.map((muscle) => ({
+          name: slug,
+          muscles: [muscle],
+          frequency: bucket,
+        }));
+      }
+      if (!isMuscle(slug)) return [];
+      return [{ name: slug, muscles: [slug], frequency: bucket }];
+    },
+  );
 
   // Build label list sorted by set count
   const labelList = [...slugTotals.entries()]
