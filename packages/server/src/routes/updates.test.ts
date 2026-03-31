@@ -76,6 +76,16 @@ function writeMetadata(metadata: Record<string, unknown>) {
   writeFileSync(join(currentDir, "metadata.json"), JSON.stringify(metadata));
 }
 
+function writeReleaseFiles(metadata: ReturnType<typeof validMetadata>) {
+  const currentDir = join(updatesDir, "current");
+  const bundlesDir = join(currentDir, "bundles");
+  const assetsDir = join(currentDir, "assets");
+  mkdirSync(bundlesDir, { recursive: true });
+  mkdirSync(assetsDir, { recursive: true });
+  writeFileSync(join(bundlesDir, metadata.launchAsset.key), "bundle-bytes");
+  writeFileSync(join(assetsDir, metadata.assets[0].key), "asset-bytes");
+}
+
 function createTestApp(dir: string = updatesDir) {
   const app = express();
   app.use(
@@ -231,7 +241,7 @@ describe("createUpdatesRouter", () => {
 
     expect(manifest.launchAsset).toEqual(
       expect.objectContaining({
-        url: "https://dofek.asherlc.com/updates/bundles/ios-abc123def456.hbc",
+        url: "https://dofek.asherlc.com/api/updates/releases/current/bundles/ios-abc123def456.hbc",
         hash: "abc123base64url",
         key: "ios-abc123def456.hbc",
         contentType: "application/javascript",
@@ -239,7 +249,9 @@ describe("createUpdatesRouter", () => {
     );
 
     expect(manifest.assets).toHaveLength(1);
-    expect(manifest.assets[0].url).toBe("https://dofek.asherlc.com/updates/assets/asset_abc.png");
+    expect(manifest.assets[0].url).toBe(
+      "https://dofek.asherlc.com/api/updates/releases/current/assets/asset_abc.png",
+    );
     expect(manifest.assets[0].hash).toBe("def456base64url");
     expect(manifest.assets[0].key).toBe("asset_abc.png");
     expect(manifest.assets[0].contentType).toBe("image/png");
@@ -361,8 +373,54 @@ describe("createUpdatesRouter", () => {
     const manifest = parseManifestFromMultipart(res.body);
     expect(manifest.launchAsset).toEqual(
       expect.objectContaining({
-        url: "https://dofek.asherlc.com/updates/bundles/ios-abc123def456.hbc",
+        url: "https://dofek.asherlc.com/api/updates/releases/current/bundles/ios-abc123def456.hbc",
       }),
     );
+  });
+
+  it("serves bundle bytes from /releases/:releaseId/bundles/:key", async () => {
+    const metadata = validMetadata();
+    writeMetadata(metadata);
+    writeReleaseFiles(metadata);
+    const app = createTestApp();
+    const res = await request(app, `/updates/releases/current/bundles/${metadata.launchAsset.key}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toBe("bundle-bytes");
+    expect(res.headers.get("content-type")).toContain("application/javascript");
+  });
+
+  it("serves asset bytes from /releases/:releaseId/assets/:key", async () => {
+    const metadata = validMetadata();
+    writeMetadata(metadata);
+    writeReleaseFiles(metadata);
+    const app = createTestApp();
+    const assetKey = metadata.assets[0].key;
+    const res = await request(app, `/updates/releases/current/assets/${assetKey}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toBe("asset-bytes");
+    expect(res.headers.get("content-type")).toContain("image/png");
+  });
+
+  it("returns 404 when bundle file is missing from the requested release", async () => {
+    const noBundleDir = join(
+      tmpdir(),
+      `dofek-updates-no-bundle-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    );
+    const currentDir = join(noBundleDir, "current");
+    mkdirSync(currentDir, { recursive: true });
+    writeFileSync(join(currentDir, "metadata.json"), JSON.stringify(validMetadata()));
+    const app = createTestApp(noBundleDir);
+    const res = await request(app, "/updates/releases/current/bundles/ios-abc123def456.hbc");
+    expect(res.status).toBe(404);
+  });
+
+  it("keeps legacy /bundles/:key path working via current release", async () => {
+    const metadata = validMetadata();
+    writeMetadata(metadata);
+    writeReleaseFiles(metadata);
+    const app = createTestApp();
+    const res = await request(app, `/updates/bundles/${metadata.launchAsset.key}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toBe("bundle-bytes");
   });
 });

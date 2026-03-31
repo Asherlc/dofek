@@ -238,6 +238,12 @@ curl -s -H "expo-protocol-version: 1" -H "expo-platform: ios" -H "expo-runtime-v
 - **Multipart response** with JSON manifest → an update is published (includes `id`, `createdAt`, `runtimeVersion`, and asset hashes)
 - **204 No Content** → no update is published (the app uses its embedded bundle)
 
+OTA artifacts (`metadata.json`, bundles, assets) are stored in Cloudflare R2 under versioned prefixes:
+- `mobile-ota/releases/<release-id>/...`
+- `mobile-ota/current-release.json` (pointer file with `{ "releaseId": "..." }`)
+
+The API serves `/api/updates/*` directly from R2 and reads `current-release.json` to pick the active release.
+
 The runtime version must match what's in `packages/mobile/app.json` (`runtimeVersion`).
 
 ### CI/CD pipeline
