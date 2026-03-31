@@ -74,13 +74,17 @@ const mockStreamPoints = [
   },
 ];
 
+const mockStrengthExercisesUseQuery = vi.fn(
+  (_input?: unknown, _options?: { enabled?: boolean }) => ({ data: [], isLoading: false }),
+);
+
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     activity: {
       byId: { useQuery: () => ({ data: mockActivity, isLoading: false, error: null }) },
       stream: { useQuery: () => ({ data: mockStreamPoints, isLoading: false }) },
       hrZones: { useQuery: () => ({ data: [], isLoading: false }) },
-      strengthExercises: { useQuery: () => ({ data: [], isLoading: false }) },
+      strengthExercises: { useQuery: mockStrengthExercisesUseQuery },
       delete: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
     },
     useUtils: () => ({ activity: { list: { invalidate: vi.fn() } } }),
@@ -98,6 +102,7 @@ vi.mock("leaflet", () => ({
 
 function renderWithUnits(ui: ReactNode, unitSystem: UnitSystem = "metric") {
   capturedOptions.length = 0;
+  mockStrengthExercisesUseQuery.mockClear();
   return render(
     <UnitContext.Provider value={{ unitSystem, setUnitSystem: () => {} }}>
       {ui}
@@ -261,6 +266,38 @@ describe("ActivityDetailPage", () => {
       );
       expect(speedAxis).toBeDefined();
       expect(String(speedAxis?.name)).toContain(new UnitConverter("imperial").speedLabel);
+    });
+  });
+
+  describe("strength exercise query gating", () => {
+    it("disables strength exercises query for non-strength activities", async () => {
+      const originalData = { ...mockActivity };
+      Object.assign(mockActivity, { activityType: "running" });
+
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      const options = mockStrengthExercisesUseQuery.mock.calls[0]?.[1] as
+        | { enabled?: boolean }
+        | undefined;
+      expect(options?.enabled).toBe(false);
+
+      Object.assign(mockActivity, originalData);
+    });
+
+    it("enables strength exercises query for strength activities", async () => {
+      const originalData = { ...mockActivity };
+      Object.assign(mockActivity, { activityType: "strength" });
+
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      const options = mockStrengthExercisesUseQuery.mock.calls[0]?.[1] as
+        | { enabled?: boolean }
+        | undefined;
+      expect(options?.enabled).toBe(true);
+
+      Object.assign(mockActivity, originalData);
     });
   });
 });

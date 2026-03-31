@@ -43,6 +43,12 @@ const CHART_COLORS = {
   altitude: "#6b7280",
 };
 
+const STRENGTH_ACTIVITY_TYPES = new Set(["strength", "strength_training", "functional_strength"]);
+
+function isStrengthActivityType(activityType: string): boolean {
+  return STRENGTH_ACTIVITY_TYPES.has(activityType);
+}
+
 // ── Helpers ──
 
 function formatDateTime(iso: string): string {
@@ -631,9 +637,11 @@ export default function ActivityDetailScreen() {
   const detail = trpc.activity.byId.useQuery({ id: id ?? "" }, { enabled: !!id });
   const stream = trpc.activity.stream.useQuery({ id: id ?? "", maxPoints: 200 }, { enabled: !!id });
   const hrZones = trpc.activity.hrZones.useQuery({ id: id ?? "" }, { enabled: !!id });
+  const isStrengthActivity =
+    detail.data != null && isStrengthActivityType(detail.data.activityType);
   const strengthExercises = trpc.activity.strengthExercises.useQuery(
     { id: id ?? "" },
-    { enabled: !!id },
+    { enabled: !!id && isStrengthActivity },
   );
 
   if (detail.isLoading) {
