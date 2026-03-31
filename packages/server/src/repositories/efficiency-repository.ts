@@ -3,11 +3,12 @@ import {
   POLARIZATION_ZONES,
   ZONE_BOUNDARIES_HRR,
 } from "@dofek/zones/zones";
-import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { BaseRepository } from "../lib/base-repository.ts";
 import { enduranceTypeFilter } from "../lib/endurance-types.ts";
-import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import { restingHeartRateLateral } from "../lib/sql-fragments.ts";
+import { dateStringSchema } from "../lib/typed-sql.ts";
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -88,29 +89,18 @@ const polarizationRowSchema = z.object({
 // ---------------------------------------------------------------------------
 
 /** Data access for aerobic efficiency, decoupling, and polarization metrics. */
-export class EfficiencyRepository {
-  readonly #db: Pick<Database, "execute">;
-  readonly #userId: string;
-  readonly #timezone: string;
-
-  constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
-    this.#db = db;
-    this.#userId = userId;
-    this.#timezone = timezone;
-  }
-
+export class EfficiencyRepository extends BaseRepository {
   /**
    * Aerobic Efficiency (Efficiency Factor) per activity.
    * EF = avg power in Z2 / avg HR in Z2, where Z2 = 60-70% HRR (Karvonen).
    * Only includes activities with at least 5 minutes (300 samples) of Z2 data.
    */
   async getAerobicEfficiency(days: number): Promise<AerobicEfficiencyResult> {
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.query(
       efficiencyRowSchema,
       sql`SELECT
             up.max_hr,
-            (a.started_at AT TIME ZONE ${this.#timezone})::date AS date,
+            (a.started_at AT TIME ZONE ${this.timezone})::date AS date,
             a.activity_type,
             a.name,
             ROUND(AVG(ms.power)::numeric, 1) AS avg_power_z2,
@@ -120,16 +110,8 @@ export class EfficiencyRepository {
           FROM fitness.user_profile up
           JOIN fitness.v_activity a ON a.user_id = up.id
           JOIN fitness.metric_stream ms ON ms.activity_id = a.id
-          JOIN LATERAL (
-            SELECT dm.resting_hr
-            FROM fitness.v_daily_metrics dm
-            WHERE dm.user_id = up.id
-              AND dm.date <= (a.started_at AT TIME ZONE ${this.#timezone})::date
-              AND dm.resting_hr IS NOT NULL
-            ORDER BY dm.date DESC
-            LIMIT 1
-          ) rhr ON true
-          WHERE up.id = ${this.#userId}
+          JOIN ${restingHeartRateLateral(sql`up.id`, sql`(a.started_at AT TIME ZONE ${this.timezone})::date`)}
+          WHERE up.id = ${this.userId}
             AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
             AND ms.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
             AND ${enduranceTypeFilter("a")}
@@ -164,8 +146,7 @@ export class EfficiencyRepository {
    * Decoupling < 5% indicates a strong aerobic base.
    */
   async getAerobicDecoupling(days: number): Promise<AerobicDecouplingActivity[]> {
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.query(
       decouplingRowSchema,
       sql`WITH activity_halves AS (
             SELECT
@@ -175,7 +156,7 @@ export class EfficiencyRepository {
               NTILE(2) OVER (PARTITION BY ms.activity_id ORDER BY ms.recorded_at) AS half
             FROM fitness.metric_stream ms
             JOIN fitness.v_activity a ON a.id = ms.activity_id
-            WHERE a.user_id = ${this.#userId}
+            WHERE a.user_id = ${this.userId}
               AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
               AND ms.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
               AND ${enduranceTypeFilter("a")}
@@ -199,7 +180,7 @@ export class EfficiencyRepository {
             HAVING COUNT(*) >= 600
           )
           SELECT
-            (a.started_at AT TIME ZONE ${this.#timezone})::date AS date,
+            (a.started_at AT TIME ZONE ${this.timezone})::date AS date,
             a.activity_type,
             a.name,
             hr.first_half_ratio,
@@ -231,12 +212,11 @@ export class EfficiencyRepository {
    * PI > 2.0 indicates a well-polarized training distribution.
    */
   async getPolarizationTrend(days: number): Promise<PolarizationTrendResult> {
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.query(
       polarizationRowSchema,
       sql`SELECT
             up.max_hr,
-            date_trunc('week', (a.started_at AT TIME ZONE ${this.#timezone})::date)::date AS week,
+            date_trunc('week', (a.started_at AT TIME ZONE ${this.timezone})::date)::date AS week,
             COUNT(*) FILTER (WHERE ms.heart_rate < up.max_hr * ${POLARIZATION_ZONES[1]?.minPctHrmax}::numeric)::int AS z1_seconds,
             COUNT(*) FILTER (WHERE ms.heart_rate >= up.max_hr * ${POLARIZATION_ZONES[1]?.minPctHrmax}::numeric
                               AND ms.heart_rate <  up.max_hr * ${POLARIZATION_ZONES[2]?.minPctHrmax}::numeric)::int AS z2_seconds,
@@ -244,7 +224,7 @@ export class EfficiencyRepository {
           FROM fitness.user_profile up
           JOIN fitness.v_activity a ON a.user_id = up.id
           JOIN fitness.metric_stream ms ON ms.activity_id = a.id
-          WHERE up.id = ${this.#userId}
+          WHERE up.id = ${this.userId}
             AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
             AND ms.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
             AND ${enduranceTypeFilter("a")}

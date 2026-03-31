@@ -1,12 +1,12 @@
 import type { PmcChartResult, PmcDataPoint, TssModelInfo } from "@dofek/training/pmc";
 import { TrainingStressCalculator } from "@dofek/training/training-load";
 
-import type { Database } from "dofek/db";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import { BaseRepository } from "../lib/base-repository.ts";
+import { dateStringSchema } from "../lib/typed-sql.ts";
 
 // ---------------------------------------------------------------------------
 // Zod schemas for raw DB rows
@@ -37,44 +37,30 @@ const normalizedPowerRowSchema = z.object({
 // ---------------------------------------------------------------------------
 
 /** Data access and computation for Performance Management Chart (PMC). */
-export class PmcRepository {
-  readonly #db: Pick<Database, "execute">;
-  readonly #userId: string;
-  readonly #timezone: string;
-
-  constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
-    this.#db = db;
-    this.#userId = userId;
-    this.#timezone = timezone;
-  }
-
+export class PmcRepository extends BaseRepository {
   async getChart(days: number): Promise<PmcChartResult> {
     // Load personalized algorithm parameters
-    const storedParams = await loadPersonalizedParams(this.#db, this.#userId);
+    const storedParams = await loadPersonalizedParams(this.db, this.userId);
     const effective = getEffectiveParams(storedParams);
     const { chronicTrainingLoadDays, acuteTrainingLoadDays } = effective.exponentialMovingAverage;
     const { genderFactor, exponent } = effective.trainingImpulseConstants;
     const calculator = new TrainingStressCalculator(genderFactor, exponent);
 
     // Fetch enough history for EWMA convergence, regardless of display range.
-    // A 42-day EWMA needs ~126 days to reach 95% convergence, so we always
-    // fetch at least 365 days of activity data, then trim the output to the
-    // requested display window.
     const minHistoryDays = 365;
     const queryDays = Math.max(days, minHistoryDays) + chronicTrainingLoadDays;
 
     // QUERY 1: activities with max HR, resting HR
-    const activityRows = await executeWithSchema(
-      this.#db,
+    const activityRows = await this.query(
       combinedActivityRowSchema,
       sql`SELECT
             up.max_hr AS global_max_hr,
             COALESCE(up.resting_hr, (
               SELECT resting_hr FROM fitness.v_daily_metrics
-              WHERE user_id = ${this.#userId} AND resting_hr IS NOT NULL ORDER BY date DESC LIMIT 1
+              WHERE user_id = ${this.userId} AND resting_hr IS NOT NULL ORDER BY date DESC LIMIT 1
             ), 60) AS resting_hr,
             asum.activity_id AS id,
-            (asum.started_at AT TIME ZONE ${this.#timezone})::date AS date,
+            (asum.started_at AT TIME ZONE ${this.timezone})::date AS date,
             EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60 AS duration_min,
             asum.avg_hr,
             asum.max_hr,
@@ -83,7 +69,7 @@ export class PmcRepository {
             asum.hr_sample_count AS hr_samples
           FROM fitness.activity_summary asum
           JOIN fitness.user_profile up ON up.id = asum.user_id
-          WHERE up.id = ${this.#userId}
+          WHERE up.id = ${this.userId}
             AND up.max_hr IS NOT NULL
             AND asum.started_at > NOW() - ${queryDays}::int * INTERVAL '1 day'
             AND asum.ended_at IS NOT NULL
@@ -101,8 +87,7 @@ export class PmcRepository {
     const restingHr = activityRows.length > 0 ? Number(activityRows[0]?.resting_hr) : 60;
 
     // QUERY 2: Normalized Power per activity from metric_stream
-    const npRows = await executeWithSchema(
-      this.#db,
+    const npRows = await this.query(
       normalizedPowerRowSchema,
       sql`WITH rolling AS (
             SELECT
@@ -114,7 +99,7 @@ export class PmcRepository {
               ) AS rolling_30s_power
             FROM fitness.metric_stream ms
             JOIN fitness.v_activity a ON a.id = ms.activity_id
-            WHERE a.user_id = ${this.#userId}
+            WHERE a.user_id = ${this.userId}
               AND a.started_at > NOW() - ${queryDays}::int * INTERVAL '1 day'
               AND ms.power > 0
           )
@@ -235,14 +220,11 @@ export class PmcRepository {
       let tss: number;
 
       if (ftp != null && normalizedPower != null && normalizedPower > 0) {
-        // Activity has NP from metric_stream — use standard power TSS
         tss = TrainingStressCalculator.computePowerTss(normalizedPower, ftp, durationMin);
       } else if (tssModel != null) {
-        // Activity has only HR — use learned model to predict TSS from TRIMP
         const trimp = calculator.computeTrimp(durationMin, avgHr, globalMaxHr, restingHr);
         tss = Math.max(0, tssModel.slope * trimp + tssModel.intercept);
       } else {
-        // Fallback: Bannister hrTSS with personalized constants
         tss = calculator.computeHrTss(durationMin, avgHr, globalMaxHr, restingHr);
       }
 
@@ -276,7 +258,6 @@ export class PmcRepository {
       const dateStr = current.toISOString().split("T")[0] ?? "";
       const load = dailyLoad.get(dateStr) ?? 0;
 
-      // EWMA update with personalized windows
       ctl = ctl + (load - ctl) / chronicTrainingLoadDays;
       atl = atl + (load - atl) / acuteTrainingLoadDays;
       const tsb = ctl - atl;
@@ -295,7 +276,6 @@ export class PmcRepository {
       current.setDate(current.getDate() + 1);
     }
 
-    // Trim leading days before any fitness has accumulated
     let firstMeaningfulIndex = result.findIndex((dataPoint) => dataPoint.ctl >= 0.1);
     if (firstMeaningfulIndex < 0) firstMeaningfulIndex = 0;
     return result.slice(firstMeaningfulIndex);

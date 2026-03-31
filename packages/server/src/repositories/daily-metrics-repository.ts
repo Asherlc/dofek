@@ -1,8 +1,8 @@
-import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { BaseRepository } from "../lib/base-repository.ts";
 import { dateWindowEnd, dateWindowStart } from "../lib/date-window.ts";
-import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema } from "../lib/typed-sql.ts";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -68,22 +68,13 @@ export type TrendsRow = z.infer<typeof trendsRowSchema>;
 // ---------------------------------------------------------------------------
 
 /** Data access for daily health metrics (vitals, activity, body). */
-export class DailyMetricsRepository {
-  readonly #db: Pick<Database, "execute">;
-  readonly #userId: string;
-
-  constructor(db: Pick<Database, "execute">, userId: string) {
-    this.#db = db;
-    this.#userId = userId;
-  }
-
+export class DailyMetricsRepository extends BaseRepository {
   /** Daily metrics within the given date window, ordered by date ascending. */
   async list(days: number, endDate: string): Promise<DailyMetricsViewRow[]> {
-    return executeWithSchema(
-      this.#db,
+    return this.query(
       dailyMetricsViewRowSchema,
       sql`SELECT * FROM fitness.v_daily_metrics
-          WHERE user_id = ${this.#userId}
+          WHERE user_id = ${this.userId}
             AND date > ${dateWindowStart(endDate, days)}
           ORDER BY date ASC`,
     );
@@ -91,11 +82,10 @@ export class DailyMetricsRepository {
 
   /** Most recent single daily metrics row, or null if none exist. */
   async getLatest(): Promise<DailyMetricsViewRow | null> {
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.query(
       dailyMetricsViewRowSchema,
       sql`SELECT * FROM fitness.v_daily_metrics
-          WHERE user_id = ${this.#userId}
+          WHERE user_id = ${this.userId}
           ORDER BY date DESC LIMIT 1`,
     );
     return rows[0] ?? null;
@@ -110,15 +100,14 @@ export class DailyMetricsRepository {
    */
   async getHrvBaseline(days: number, endDate: string): Promise<HrvBaselineRow[]> {
     const warmupDays = days + 60;
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.query(
       hrvBaselineRowSchema,
       sql`SELECT date, hrv, resting_hr,
             AVG(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS mean_60d,
             STDDEV(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS sd_60d,
             AVG(hrv) OVER (ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS mean_7d
           FROM fitness.v_daily_metrics
-          WHERE user_id = ${this.#userId}
+          WHERE user_id = ${this.userId}
             AND date > ${dateWindowStart(endDate, warmupDays)}
           ORDER BY date ASC`,
     );
@@ -132,12 +121,11 @@ export class DailyMetricsRepository {
 
   /** Aggregate trends (averages, standard deviations) and latest values for the date window. */
   async getTrends(days: number, endDate: string): Promise<TrendsRow | null> {
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.query(
       trendsRowSchema,
       sql`WITH current AS (
             SELECT * FROM fitness.v_daily_metrics
-            WHERE user_id = ${this.#userId}
+            WHERE user_id = ${this.userId}
               AND date > ${dateWindowStart(endDate, days)}
           ),
           stats AS (
@@ -157,7 +145,7 @@ export class DailyMetricsRepository {
           today AS (
             SELECT resting_hr, hrv, spo2_avg, steps, active_energy_kcal, skin_temp_c, date
             FROM fitness.v_daily_metrics
-            WHERE user_id = ${this.#userId}
+            WHERE user_id = ${this.userId}
               AND date = ${dateWindowEnd(endDate)}
           )
           SELECT
