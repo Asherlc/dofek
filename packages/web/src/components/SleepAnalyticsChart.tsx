@@ -1,3 +1,4 @@
+import { sleepStageColors, statusColors } from "@dofek/scoring/colors";
 import { sleepDebtColor } from "@dofek/scoring/scoring";
 import type { SleepNightlyRow } from "dofek-server/types";
 import { dofekAxis, dofekGrid, dofekLegend, dofekSeries, dofekTooltip } from "../lib/chartTheme.ts";
@@ -96,7 +97,7 @@ export function buildSleepAnalyticsOption(nightly: SleepNightlyRow[], sleepDebt:
         nightly.map((d) => [d.date, d.deepPct]),
         {
           stack: "sleep",
-          color: "#4f46e5",
+          color: sleepStageColors.deep,
         },
       ),
       dofekSeries.bar(
@@ -104,7 +105,7 @@ export function buildSleepAnalyticsOption(nightly: SleepNightlyRow[], sleepDebt:
         nightly.map((d) => [d.date, d.remPct]),
         {
           stack: "sleep",
-          color: "#7c3aed",
+          color: sleepStageColors.rem,
         },
       ),
       dofekSeries.bar(
@@ -112,7 +113,7 @@ export function buildSleepAnalyticsOption(nightly: SleepNightlyRow[], sleepDebt:
         nightly.map((d) => [d.date, d.lightPct]),
         {
           stack: "sleep",
-          color: "#3b82f6",
+          color: sleepStageColors.light,
         },
       ),
       dofekSeries.bar(
@@ -120,14 +121,14 @@ export function buildSleepAnalyticsOption(nightly: SleepNightlyRow[], sleepDebt:
         nightly.map((d) => [d.date, d.awakePct]),
         {
           stack: "sleep",
-          color: "#ef4444",
+          color: sleepStageColors.awake,
         },
       ),
       dofekSeries.line(
         "7d Avg",
         nightly.map((d) => [d.date, d.rollingAvgDuration]),
         {
-          color: "#22c55e",
+          color: statusColors.positive,
           width: 2.5,
           yAxisIndex: 1,
           z: 5,

@@ -1,3 +1,4 @@
+import { chartColors, statusColors } from "@dofek/scoring/colors";
 import type { WalkingBiomechanicsRow } from "dofek-server/types";
 import { dofekAxis, dofekGrid, dofekSeries, dofekTooltip } from "../lib/chartTheme.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
@@ -65,24 +66,24 @@ export function WalkingBiomechanicsChart({ data, loading }: WalkingBiomechanicsC
     {
       name: "Walking Speed",
       unit: units.speedLabel,
-      color: "#22c55e",
+      color: statusColors.positive,
       accessor: (d) => d.walkingSpeedKmh,
       convert: (v) => units.convertSpeed(v),
     },
     {
       name: "Step Length",
       unit: units.heightLabel,
-      color: "#3b82f6",
+      color: chartColors.blue,
       accessor: (d) => d.stepLengthCm,
       convert: (v) => units.convertHeight(v),
     },
     {
       name: "Double Support",
       unit: "%",
-      color: "#f59e0b",
+      color: chartColors.amber,
       accessor: (d) => d.doubleSupportPct,
     },
-    { name: "Asymmetry", unit: "%", color: "#ef4444", accessor: (d) => d.asymmetryPct },
+    { name: "Asymmetry", unit: "%", color: statusColors.danger, accessor: (d) => d.asymmetryPct },
   ];
 
   return (

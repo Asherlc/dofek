@@ -1,3 +1,4 @@
+import { activityMetricColors, statusColors } from "@dofek/scoring/colors";
 import { Link } from "@tanstack/react-router";
 
 /* ── Provider logos for the integration grid ── */
@@ -71,7 +72,7 @@ const FEATURES = [
     description:
       "HRV baseline tracking with trend analysis, recovery scoring that combines sleep quality with physiological signals, stress monitoring, and readiness scores that tell you if today is a push day or a rest day.",
     icon: RecoveryIcon,
-    color: "#dc2626",
+    color: statusColors.danger,
   },
   {
     title: "AI-Powered Insights",
@@ -231,7 +232,12 @@ function DashboardMockup() {
         {/* Top row: health status bar */}
         <div className="flex gap-3 overflow-hidden">
           {[
-            { label: "Resting HR", value: "52", unit: "bpm", color: "#dc2626" },
+            {
+              label: "Resting HR",
+              value: "52",
+              unit: "bpm",
+              color: activityMetricColors.heartRate,
+            },
             { label: "HRV", value: "68", unit: "ms", color: "#7c5cbf" },
             { label: "Sleep", value: "7h 42m", unit: "", color: "#4338ca" },
             { label: "Steps", value: "8,432", unit: "", color: "#059669" },

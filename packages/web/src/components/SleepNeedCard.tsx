@@ -65,7 +65,7 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
         html += `<div>Slept: <b>${formatHoursMinutes(night.actualMinutes)}</b></div>`;
         html += `<div>Needed: <b>${formatHoursMinutes(night.neededMinutes)}</b></div>`;
         if (night.debtMinutes != null && night.debtMinutes > 0) {
-          html += `<div style="color:#ef4444">Debt: ${night.debtMinutes}m</div>`;
+          html += `<div style="color:${statusColors.danger}">Debt: ${night.debtMinutes}m</div>`;
         }
         return html;
       },
