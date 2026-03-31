@@ -22,6 +22,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.dofek.app",
+      "usesAppleSignIn": true,
       "deploymentTarget": "16.0",
       "infoPlist": {
         "NSHealthShareUsageDescription": "Dofek reads your health data to sync workouts, heart rate, sleep, and body metrics to your personal dashboard.",
