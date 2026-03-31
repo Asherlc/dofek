@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   EstimatedOneRepMax,
+  ExerciseWithSets,
   linearRegressionSlope,
   MuscleGroupVolume,
   ProgressiveOverload,
@@ -110,6 +111,80 @@ describe("WorkoutSummary", () => {
       totalVolumeKg: 3500,
       durationMinutes: 65,
     });
+  });
+});
+
+describe("ExerciseWithSets", () => {
+  it("serializes to API shape with sets", () => {
+    const exercise = new ExerciseWithSets(
+      0,
+      "Bench Press",
+      "BARBELL",
+      ["CHEST", "TRICEPS"],
+      "STRENGTH",
+      [
+        {
+          setIndex: 0,
+          setType: "working",
+          weightKg: 80,
+          reps: 8,
+          durationSeconds: null,
+          rpe: null,
+          notes: null,
+        },
+        {
+          setIndex: 1,
+          setType: "working",
+          weightKg: 85,
+          reps: 6,
+          durationSeconds: null,
+          rpe: 9,
+          notes: null,
+        },
+      ],
+    );
+    const detail = exercise.toDetail();
+    expect(detail.exerciseName).toBe("Bench Press");
+    expect(detail.equipment).toBe("BARBELL");
+    expect(detail.muscleGroups).toEqual(["CHEST", "TRICEPS"]);
+    expect(detail.exerciseType).toBe("STRENGTH");
+    expect(detail.sets).toHaveLength(2);
+    expect(detail.sets[0]).toEqual({
+      setIndex: 0,
+      setType: "working",
+      weightKg: 80,
+      reps: 8,
+      durationSeconds: null,
+      rpe: null,
+      notes: null,
+    });
+  });
+
+  it("handles timed exercises with duration instead of weight/reps", () => {
+    const exercise = new ExerciseWithSets(0, "Front Plank", "BODY", ["CORE"], "STRENGTH", [
+      {
+        setIndex: 0,
+        setType: "working",
+        weightKg: null,
+        reps: null,
+        durationSeconds: 60,
+        rpe: null,
+        notes: null,
+      },
+    ]);
+    const detail = exercise.toDetail();
+    expect(detail.sets[0]?.weightKg).toBeNull();
+    expect(detail.sets[0]?.reps).toBeNull();
+    expect(detail.sets[0]?.durationSeconds).toBe(60);
+  });
+
+  it("handles null equipment and muscle groups", () => {
+    const exercise = new ExerciseWithSets(0, "Custom Exercise", null, null, null, []);
+    const detail = exercise.toDetail();
+    expect(detail.equipment).toBeNull();
+    expect(detail.muscleGroups).toBeNull();
+    expect(detail.exerciseType).toBeNull();
+    expect(detail.sets).toEqual([]);
   });
 });
 
@@ -259,6 +334,69 @@ describe("StrengthRepository", () => {
       expect(result).toHaveLength(1);
       expect(result[0]).toBeInstanceOf(ProgressiveOverload);
       expect(result[0]?.toDetail().isProgressing).toBe(true);
+    });
+  });
+
+  describe("getExercisesForActivity", () => {
+    it("returns empty array when no matching strength workout", async () => {
+      const { repo } = makeRepository([]);
+      const result = await repo.getExercisesForActivity("activity-1");
+      expect(result).toEqual([]);
+    });
+
+    it("groups flat rows into ExerciseWithSets by exercise_index", async () => {
+      const { repo } = makeRepository([
+        {
+          exercise_name: "Bench Press",
+          equipment: "BARBELL",
+          muscle_groups: ["CHEST", "TRICEPS"],
+          exercise_type: "STRENGTH",
+          exercise_index: 0,
+          set_index: 0,
+          set_type: "working",
+          weight_kg: 80,
+          reps: 8,
+          duration_seconds: null,
+          rpe: null,
+          notes: null,
+        },
+        {
+          exercise_name: "Bench Press",
+          equipment: "BARBELL",
+          muscle_groups: ["CHEST", "TRICEPS"],
+          exercise_type: "STRENGTH",
+          exercise_index: 0,
+          set_index: 1,
+          set_type: "working",
+          weight_kg: 85,
+          reps: 6,
+          duration_seconds: null,
+          rpe: 9,
+          notes: null,
+        },
+        {
+          exercise_name: "Front Plank",
+          equipment: "BODY",
+          muscle_groups: ["CORE"],
+          exercise_type: "STRENGTH",
+          exercise_index: 1,
+          set_index: 0,
+          set_type: "working",
+          weight_kg: null,
+          reps: null,
+          duration_seconds: 60,
+          rpe: null,
+          notes: null,
+        },
+      ]);
+      const result = await repo.getExercisesForActivity("activity-1");
+      expect(result).toHaveLength(2);
+      expect(result[0]).toBeInstanceOf(ExerciseWithSets);
+      expect(result[0]?.toDetail().exerciseName).toBe("Bench Press");
+      expect(result[0]?.toDetail().sets).toHaveLength(2);
+      expect(result[1]?.toDetail().exerciseName).toBe("Front Plank");
+      expect(result[1]?.toDetail().sets).toHaveLength(1);
+      expect(result[1]?.toDetail().sets[0]?.durationSeconds).toBe(60);
     });
   });
 
