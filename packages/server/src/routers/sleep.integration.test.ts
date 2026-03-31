@@ -1,10 +1,12 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { DEFAULT_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
 import { queryCache } from "../lib/cache.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 
 /**
  * Integration tests for sleep router endpoints.
@@ -156,7 +158,9 @@ describe("sleep router integration", () => {
     );
 
     // Insert stages for the existing test_provider session (simulating Apple Health)
-    const sessionRows = await testCtx.db.execute<{ id: string }>(
+    const sessionRows = await executeWithSchema(
+      testCtx.db,
+      z.object({ id: z.string() }),
       sql`SELECT id FROM fitness.sleep_session
           WHERE provider_id = 'test_provider' AND user_id = ${DEFAULT_USER_ID}
           ORDER BY started_at DESC LIMIT 1`,
@@ -178,6 +182,6 @@ describe("sleep router integration", () => {
       await query<{ stage: string; started_at: string; ended_at: string }[]>("sleep.latestStages");
 
     expect(stages.length).toBe(3);
-    expect(stages.map((s) => s.stage)).toEqual(["light", "deep", "rem"]);
+    expect(stages.map((stage) => stage.stage)).toEqual(["light", "deep", "rem"]);
   });
 });
