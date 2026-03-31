@@ -98,6 +98,7 @@
     "@dofek/scoring": "workspace:*",
     "@dofek/stats": "workspace:*",
     "@dofek/training": "workspace:*",
+    "@duckdb/node-bindings": "1.5.1-r.1",
     "@opentelemetry/api": "1.9.0",
     "@opentelemetry/exporter-logs-otlp-proto": "0.213.0",
     "@opentelemetry/exporter-metrics-otlp-proto": "0.213.0",
