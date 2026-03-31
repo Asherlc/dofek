@@ -1202,7 +1202,7 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processMetricStream(samples);
       expect(result).toBe(1);
-      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute).toHaveBeenCalledTimes(2);
     });
 
     it("skips samples with unmapped type", async () => {
@@ -1261,7 +1261,7 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processMetricStream(samples);
       expect(result).toBe(1);
-      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -1311,8 +1311,8 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processWorkouts(workouts);
       expect(result).toBe(1);
-      // One insert for the workout + one update for linking heart rate
-      expect(execute).toHaveBeenCalledTimes(2);
+      // One insert for the workout + one update for linking metric_stream heart rate + one update for linking sensor_sample heart rate
+      expect(execute).toHaveBeenCalledTimes(3);
     });
   });
 
@@ -1382,7 +1382,7 @@ describe("HealthKitSyncRepository", () => {
       await repository.linkUnassignedHeartRateToWorkouts({
         startAt: "2024-01-15T10:00:00Z",
       });
-      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute).toHaveBeenCalledTimes(2);
       const queryJson = JSON.stringify(execute.mock.calls[0]?.[0]);
       expect(queryJson).toContain("2024-01-15T10:00:00Z");
     });
@@ -1394,7 +1394,7 @@ describe("HealthKitSyncRepository", () => {
       await repository.linkUnassignedHeartRateToWorkouts({
         endAt: "2024-01-15T11:00:00Z",
       });
-      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute).toHaveBeenCalledTimes(2);
       const queryJson = JSON.stringify(execute.mock.calls[0]?.[0]);
       expect(queryJson).toContain("2024-01-15T11:00:00Z");
     });
@@ -1951,7 +1951,8 @@ describe("HealthKitSyncRepository.processMetricStream (mutation: inserted count)
     const result = await repo.processMetricStream(samples);
     // Only 2 have valid metricStream mapping (HR and SpO2), steps is skipped
     expect(result).toBe(2);
-    expect(execute).toHaveBeenCalledTimes(2);
+    // 2 metric_stream inserts + 2 sensor_sample dual-writes = 4
+    expect(execute).toHaveBeenCalledTimes(4);
   });
 });
 

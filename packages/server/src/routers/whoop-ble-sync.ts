@@ -72,6 +72,17 @@ async function insertRealtimeDataBatch(
             (recorded_at, user_id, provider_id, heart_rate, rr_interval_ms, source_name)
             VALUES ${sql.join(metricValues, sql`, `)}`,
       );
+
+      // Dual-write HR to sensor_sample (scalar channel)
+      const hrSensorValues = heartRateSamples.map(
+        (sample) =>
+          sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${deviceId}, ${"ble"}, ${"heart_rate"}, ${sample.heartRate}::real)`,
+      );
+      await database.execute(
+        sql`INSERT INTO fitness.sensor_sample
+            (recorded_at, user_id, provider_id, device_id, source_type, channel, scalar)
+            VALUES ${sql.join(hrSensorValues, sql`, `)}`,
+      );
     }
 
     // Insert quaternion into orientation_sample (only when non-zero — compact 0x28 packets have no quaternion)
@@ -94,6 +105,17 @@ async function insertRealtimeDataBatch(
             VALUES ${sql.join(orientationValues, sql`, `)}`,
       );
     }
+
+    // Dual-write orientation to sensor_sample (vector channel)
+    const orientationSensorValues = batch.map(
+      (sample) =>
+        sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${deviceId}, ${"ble"}, ${"orientation"}, ARRAY[${sample.quaternionW}, ${sample.quaternionX}, ${sample.quaternionY}, ${sample.quaternionZ}]::real[])`,
+    );
+    await database.execute(
+      sql`INSERT INTO fitness.sensor_sample
+          (recorded_at, user_id, provider_id, device_id, source_type, channel, vector)
+          VALUES ${sql.join(orientationSensorValues, sql`, `)}`,
+    );
 
     totalInserted += batch.length;
   }

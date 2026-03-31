@@ -97,20 +97,20 @@ export class DurationCurvesRepository {
       hrCurveRowSchema,
       sql`
 			WITH activity_hr AS (
-			  SELECT ms.activity_id, ms.recorded_at, ms.heart_rate,
+			  SELECT ms.activity_id, ms.recorded_at, ms.scalar AS heart_rate,
 			         (a.started_at AT TIME ZONE ${this.#timezone})::date AS activity_date,
 			         ROW_NUMBER() OVER (
 			           PARTITION BY ms.activity_id ORDER BY ms.recorded_at
 			         ) AS rn,
-			         SUM(ms.heart_rate) OVER (
+			         SUM(ms.scalar) OVER (
 			           PARTITION BY ms.activity_id ORDER BY ms.recorded_at
 			           ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
 			         ) AS cumsum
-			  FROM fitness.metric_stream ms
+			  FROM fitness.sensor_sample ms
 			  JOIN fitness.v_activity a ON a.id = ms.activity_id
 			  WHERE a.user_id = ${this.#userId}
-			    AND ms.heart_rate IS NOT NULL
-			    AND ms.heart_rate > 0
+			    AND ms.channel = 'heart_rate'
+			    AND ms.scalar > 0
 			    AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
 			    AND ms.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
 			    AND ${enduranceTypeFilter("a")}
@@ -178,20 +178,20 @@ export class DurationCurvesRepository {
       paceCurveRowSchema,
       sql`
 			WITH activity_speed AS (
-			  SELECT ms.activity_id, ms.recorded_at, ms.speed,
+			  SELECT ms.activity_id, ms.recorded_at, ms.scalar AS speed,
 			         (a.started_at AT TIME ZONE ${this.#timezone})::date AS activity_date,
 			         ROW_NUMBER() OVER (
 			           PARTITION BY ms.activity_id ORDER BY ms.recorded_at
 			         ) AS rn,
-			         SUM(ms.speed) OVER (
+			         SUM(ms.scalar) OVER (
 			           PARTITION BY ms.activity_id ORDER BY ms.recorded_at
 			           ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
 			         ) AS cumsum
-			  FROM fitness.metric_stream ms
+			  FROM fitness.sensor_sample ms
 			  JOIN fitness.v_activity a ON a.id = ms.activity_id
 			  WHERE a.user_id = ${this.#userId}
-			    AND ms.speed IS NOT NULL
-			    AND ms.speed > 0
+			    AND ms.channel = 'speed'
+			    AND ms.scalar > 0
 			    AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
 			    AND ms.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
 			    AND ${enduranceTypeFilter("a")}

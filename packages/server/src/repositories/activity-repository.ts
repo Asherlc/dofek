@@ -215,12 +215,26 @@ export class ActivityRepository {
     const rows = await executeWithSchema(
       this.#db,
       streamPointRowSchema,
-      sql`WITH numbered AS (
-            SELECT ms.*, ROW_NUMBER() OVER (ORDER BY ms.recorded_at) AS rn,
+      sql`WITH pivoted AS (
+            SELECT
+              ss.recorded_at,
+              MAX(ss.scalar) FILTER (WHERE ss.channel = 'heart_rate')::SMALLINT AS heart_rate,
+              MAX(ss.scalar) FILTER (WHERE ss.channel = 'power')::SMALLINT AS power,
+              MAX(ss.scalar) FILTER (WHERE ss.channel = 'speed') AS speed,
+              MAX(ss.scalar) FILTER (WHERE ss.channel = 'cadence')::SMALLINT AS cadence,
+              MAX(ss.scalar) FILTER (WHERE ss.channel = 'altitude') AS altitude,
+              MAX(ss.scalar) FILTER (WHERE ss.channel = 'lat') AS lat,
+              MAX(ss.scalar) FILTER (WHERE ss.channel = 'lng') AS lng
+            FROM fitness.sensor_sample ss
+            JOIN fitness.v_activity a ON a.id = ss.activity_id AND a.user_id = ${this.#userId}
+            WHERE ss.activity_id = ${activityId}
+              AND ss.channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude', 'lat', 'lng')
+            GROUP BY ss.recorded_at
+          ),
+          numbered AS (
+            SELECT p.*, ROW_NUMBER() OVER (ORDER BY p.recorded_at) AS rn,
                    COUNT(*) OVER () AS total
-            FROM fitness.metric_stream ms
-            JOIN fitness.v_activity a ON a.id = ms.activity_id AND a.user_id = ${this.#userId}
-            WHERE ms.activity_id = ${activityId}
+            FROM pivoted p
           )
           SELECT recorded_at::text AS recorded_at,
                  heart_rate, power, speed, cadence, altitude, lat, lng
@@ -258,11 +272,11 @@ export class ActivityRepository {
               AND up.max_hr IS NOT NULL
           ),
           hr_samples AS (
-            SELECT ms.heart_rate
-            FROM fitness.metric_stream ms
+            SELECT ms.scalar AS heart_rate
+            FROM fitness.sensor_sample ms
             JOIN fitness.v_activity a ON a.id = ms.activity_id AND a.user_id = ${this.#userId}
             WHERE ms.activity_id = ${activityId}
-              AND ms.heart_rate IS NOT NULL
+              AND ms.channel = 'heart_rate'
           )
           SELECT
             z.zone,

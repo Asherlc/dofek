@@ -115,6 +115,30 @@ export class ActivityRecordingRepository {
               )
               VALUES ${sql.join(values, sql`, `)}`,
       );
+
+      // Dual-write GPS samples to sensor_sample (one row per channel per sample)
+      const channelMapping: Array<{ channel: string; key: keyof GpsSample }> = [
+        { channel: "lat", key: "lat" },
+        { channel: "lng", key: "lng" },
+        { channel: "gps_accuracy", key: "gpsAccuracy" },
+        { channel: "altitude", key: "altitude" },
+        { channel: "speed", key: "speed" },
+      ];
+      for (const { channel, key } of channelMapping) {
+        const channelValues = input.samples
+          .filter((sample) => sample[key] != null)
+          .map(
+            (sample) =>
+              sql`(${sample.recordedAt}::timestamptz, ${this.#userId}::uuid, ${activityId}::uuid, ${PROVIDER_ID}, ${input.sourceName}, ${"api"}, ${channel}, ${sample[key]}::real)`,
+          );
+        if (channelValues.length > 0) {
+          await this.#db.execute(
+            sql`INSERT INTO fitness.sensor_sample
+                (recorded_at, user_id, activity_id, provider_id, device_id, source_type, channel, scalar)
+                VALUES ${sql.join(channelValues, sql`, `)}`,
+          );
+        }
+      }
     }
 
     return activityId;

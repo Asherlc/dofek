@@ -239,11 +239,11 @@ export const healthspanRouter = router({
               ) rhr2 ON true
               JOIN LATERAL (
                 SELECT
-                  COUNT(*) FILTER (WHERE ms2.heart_rate < rhr2.resting_hr + (up3.max_hr - rhr2.resting_hr) * 0.8) AS aerobic_count,
-                  COUNT(*) FILTER (WHERE ms2.heart_rate >= rhr2.resting_hr + (up3.max_hr - rhr2.resting_hr) * 0.8) AS hi_count
-                FROM fitness.metric_stream ms2
+                  COUNT(*) FILTER (WHERE ms2.scalar < rhr2.resting_hr + (up3.max_hr - rhr2.resting_hr) * 0.8) AS aerobic_count,
+                  COUNT(*) FILTER (WHERE ms2.scalar >= rhr2.resting_hr + (up3.max_hr - rhr2.resting_hr) * 0.8) AS hi_count
+                FROM fitness.sensor_sample ms2
                 WHERE ms2.activity_id = asum.activity_id
-                  AND ms2.heart_rate IS NOT NULL
+                  AND ms2.channel = 'heart_rate'
               ) cnt ON true
               WHERE asum.user_id = ${ctx.userId}
                 AND asum.started_at > ${timestampWindowStart(input.endDate, totalDays)}
