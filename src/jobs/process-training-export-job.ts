@@ -348,7 +348,7 @@ async function exportMetricStream(
     exported += rows.length;
     offset += rows.length;
 
-    const percentage = Math.round((exported / totalRows) * 40); // metric_stream is 0-40% of total
+    const percentage = computeProgress(exported, totalRows, 0, 40);
     onProgress?.({ percentage, message: `Exporting metric_stream: ${exported}/${totalRows} rows` });
 
     if (rows.length < BATCH_SIZE) break;
@@ -421,7 +421,7 @@ async function exportImuData(
     exported += rows.length;
     offset += rows.length;
 
-    const percentage = 40 + Math.round((exported / totalRows) * 50); // IMU is 40-90% of total
+    const percentage = computeProgress(exported, totalRows, 40, 50);
     onProgress?.({ percentage, message: `Exporting IMU data: ${exported}/${totalRows} rows` });
 
     if (rows.length < BATCH_SIZE) break;
@@ -433,9 +433,25 @@ async function exportImuData(
   return exported;
 }
 
-// ── Manifest ──
+// ── Pure helpers for CSV content and manifest building ──
 
-interface TrainingExportManifest {
+export function metricStreamRowsToCsvContent(rows: MetricStreamRow[]): string {
+  const lines = [metricStreamCsvHeader()];
+  for (const row of rows) {
+    lines.push(metricStreamRowToCsv(row));
+  }
+  return lines.join("\n");
+}
+
+export function imuRowsToCsvContent(rows: ImuRow[]): string {
+  const lines = [imuCsvHeader()];
+  for (const row of rows) {
+    lines.push(imuRowToCsv(row));
+  }
+  return lines.join("\n");
+}
+
+export interface TrainingExportManifest {
   exportedAt: string;
   since: string | null;
   until: string | null;
@@ -445,6 +461,49 @@ interface TrainingExportManifest {
     rowCount: number;
   }[];
   totalRows: number;
+}
+
+export function buildManifest(
+  timestamp: string,
+  since: string | undefined,
+  until: string | undefined,
+  metricStreamCount: number,
+  imuCount: number,
+): TrainingExportManifest {
+  const manifest: TrainingExportManifest = {
+    exportedAt: timestamp,
+    since: since ?? null,
+    until: until ?? null,
+    files: [],
+    totalRows: metricStreamCount + imuCount,
+  };
+
+  if (metricStreamCount > 0) {
+    manifest.files.push({
+      path: `metric_stream/${timestamp}.csv`,
+      table: "metric_stream",
+      rowCount: metricStreamCount,
+    });
+  }
+
+  if (imuCount > 0) {
+    manifest.files.push({
+      path: `device_stream/${timestamp}.csv`,
+      table: "inertial_measurement_unit_sample",
+      rowCount: imuCount,
+    });
+  }
+
+  return manifest;
+}
+
+export function computeProgress(
+  exported: number,
+  totalRows: number,
+  basePercent: number,
+  rangePercent: number,
+): number {
+  return basePercent + Math.round((exported / totalRows) * rangePercent);
 }
 
 export async function processTrainingExportJob(
@@ -487,30 +546,7 @@ export async function processTrainingExportJob(
   // Write manifest
   updateProgress({ percentage: 95, message: "Writing manifest..." });
 
-  const manifest: TrainingExportManifest = {
-    exportedAt: timestamp,
-    since: since ?? null,
-    until: until ?? null,
-    files: [],
-    totalRows: metricStreamCount + imuCount,
-  };
-
-  if (metricStreamCount > 0) {
-    manifest.files.push({
-      path: `metric_stream/${timestamp}.csv`,
-      table: "metric_stream",
-      rowCount: metricStreamCount,
-    });
-  }
-
-  if (imuCount > 0) {
-    manifest.files.push({
-      path: `device_stream/${timestamp}.csv`,
-      table: "inertial_measurement_unit_sample",
-      rowCount: imuCount,
-    });
-  }
-
+  const manifest = buildManifest(timestamp, since, until, metricStreamCount, imuCount);
   const manifestPath = join(outputDir, "manifest.json");
   writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), "utf-8");
 
