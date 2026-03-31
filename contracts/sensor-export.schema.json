@@ -1,0 +1,67 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://dofek.fit/contracts/sensor-export.schema.json",
+  "title": "Sensor Export Row",
+  "description": "Schema for a single row in the sensor_sample training data export CSV. Each row represents one sensor measurement from the unified sensor_sample table.",
+  "type": "object",
+  "properties": {
+    "recorded_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of when the measurement was recorded."
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "UUID of the user who owns this measurement."
+    },
+    "provider_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identifier of the data provider (e.g., wahoo, apple_health, intervals)."
+    },
+    "device_id": {
+      "type": ["string", "null"],
+      "description": "Identifier of the device that produced this measurement, or null if unknown."
+    },
+    "source_type": {
+      "type": "string",
+      "enum": ["ble", "file", "api"],
+      "description": "How the data was ingested: BLE sensor, file import, or API sync."
+    },
+    "channel": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The measurement channel name (e.g., heart_rate, power, imu, orientation)."
+    },
+    "activity_id": {
+      "type": ["string", "null"],
+      "description": "UUID of the associated activity, or null if not linked to an activity."
+    },
+    "activity_type": {
+      "type": ["string", "null"],
+      "description": "Activity type label from the joined activity table (e.g., cycling, hiking), or null."
+    },
+    "scalar": {
+      "type": ["number", "null"],
+      "description": "Single numeric value for scalar channels (heart_rate, power, etc.), or null for vector channels."
+    },
+    "vector": {
+      "type": ["string", "null"],
+      "description": "String representation of a numeric array for vector channels (e.g., '{0.1,0.2,9.8}'), or null for scalar channels."
+    }
+  },
+  "required": [
+    "recorded_at",
+    "user_id",
+    "provider_id",
+    "device_id",
+    "source_type",
+    "channel",
+    "activity_id",
+    "activity_type",
+    "scalar",
+    "vector"
+  ],
+  "additionalProperties": false
+}

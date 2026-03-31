@@ -1,4 +1,4 @@
-"""Tests for dofek_ml.data_loading -- manifest parsing and data loading helpers."""
+"""Tests for dofek_ml.data_loading -- manifest parsing, data loading, and transformation."""
 
 from __future__ import annotations
 
@@ -14,47 +14,281 @@ import pytest
 
 from dofek_ml.data_loading import (
     create_r2_client,
+    expand_vector_channels,
     load_from_local,
     load_from_r2,
     load_manifest_local,
     load_manifest_r2,
     load_training_data,
     main,
+    parse_pg_array,
+    pivot_scalar_channels,
     read_csv_local,
     read_csv_r2,
 )
 
+# ---------------------------------------------------------------------------
+# Shared test data for the new sensor_sample format
+# ---------------------------------------------------------------------------
+
+SAMPLE_SENSOR_CSV: str = (
+    "recorded_at,user_id,provider_id,device_id,source_type,channel,"
+    "activity_id,activity_type,scalar,vector\n"
+    "2024-01-01T00:00:00,user-1,wahoo,,ble,heart_rate,act-1,cycling,140,\n"
+    "2024-01-01T00:00:00,user-1,wahoo,,ble,power,act-1,cycling,200,\n"
+    "2024-01-01T00:00:01,user-1,wahoo,,ble,heart_rate,act-1,cycling,142,\n"
+    "2024-01-01T00:00:01,user-1,wahoo,,ble,power,act-1,cycling,205,\n"
+    '2024-01-01T00:00:00.00,user-1,apple_health,Apple Watch,ble,imu,,,,"{0.1,0.2,9.8}"\n'
+    '2024-01-01T00:00:00.02,user-1,apple_health,Apple Watch,ble,imu,,,,"{0.15,0.22,9.81}"\n'
+)
+
+SAMPLE_MANIFEST: dict[str, Any] = {
+    "exportedAt": "2024-01-01T00:00:00Z",
+    "since": None,
+    "until": None,
+    "files": [
+        {
+            "path": "sensor_sample/2024-01-01T00:00:00Z.csv",
+            "table": "sensor_sample",
+            "rowCount": 6,
+        },
+    ],
+    "totalRows": 6,
+}
+
 
 @pytest.fixture
 def training_export_dir(tmp_path: Path) -> Path:
-    """Create a minimal training data export directory with manifest and CSVs."""
-    manifest: dict[str, Any] = {
-        "files": [
-            {"filename": "metric_001.csv", "type": "metric_stream"},
-            {"filename": "device_001.csv", "type": "device_stream"},
-        ],
-    }
-    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+    """Create a minimal training data export directory with manifest and CSV."""
+    (tmp_path / "manifest.json").write_text(json.dumps(SAMPLE_MANIFEST))
 
-    # Create a minimal metric_stream CSV
-    metric_csv: str = (
-        "timestamp,activity_type,heart_rate,power\n"
-        "2024-01-01T00:00:00,cycling,140,200\n"
-        "2024-01-01T00:00:01,cycling,142,205\n"
-        "2024-01-01T00:00:02,hiking,120,0\n"
-    )
-    (tmp_path / "metric_001.csv").write_text(metric_csv)
-
-    # Create a minimal device_stream CSV
-    device_csv: str = (
-        "timestamp,device_type,accel_x,accel_y,accel_z\n"
-        "2024-01-01T00:00:00.00,watch,0.1,0.2,9.8\n"
-        "2024-01-01T00:00:00.02,watch,0.15,0.22,9.81\n"
-        "2024-01-01T00:00:00.04,watch,0.12,0.19,9.79\n"
-    )
-    (tmp_path / "device_001.csv").write_text(device_csv)
+    # Create the sensor_sample subdirectory and CSV
+    sensor_dir: Path = tmp_path / "sensor_sample"
+    sensor_dir.mkdir()
+    (sensor_dir / "2024-01-01T00:00:00Z.csv").write_text(SAMPLE_SENSOR_CSV)
 
     return tmp_path
+
+
+# ---------------------------------------------------------------------------
+# Tests for parse_pg_array()
+# ---------------------------------------------------------------------------
+
+
+class TestParsePgArray:
+    """Tests for parse_pg_array()."""
+
+    def test_parses_three_element_array(self) -> None:
+        result: list[float] = parse_pg_array("{0.1,0.2,9.8}")
+        assert result == pytest.approx([0.1, 0.2, 9.8])
+
+    def test_parses_four_element_array(self) -> None:
+        result: list[float] = parse_pg_array("{1.0,0.0,0.0,0.0}")
+        assert result == pytest.approx([1.0, 0.0, 0.0, 0.0])
+
+    def test_parses_negative_values(self) -> None:
+        result: list[float] = parse_pg_array("{-0.5,0.3,-9.81}")
+        assert result == pytest.approx([-0.5, 0.3, -9.81])
+
+    def test_handles_empty_braces(self) -> None:
+        result: list[float] = parse_pg_array("{}")
+        assert result == []
+
+    def test_handles_whitespace(self) -> None:
+        result: list[float] = parse_pg_array("  {0.1,0.2}  ")
+        assert result == pytest.approx([0.1, 0.2])
+
+
+# ---------------------------------------------------------------------------
+# Tests for pivot_scalar_channels()
+# ---------------------------------------------------------------------------
+
+
+class TestPivotScalarChannels:
+    """Tests for pivot_scalar_channels()."""
+
+    def test_pivots_scalar_channels_to_wide_format(self) -> None:
+        raw_df: pd.DataFrame = pd.DataFrame(
+            {
+                "recorded_at": pd.to_datetime(
+                    [
+                        "2024-01-01T00:00:00",
+                        "2024-01-01T00:00:00",
+                        "2024-01-01T00:00:01",
+                        "2024-01-01T00:00:01",
+                    ]
+                ),
+                "user_id": ["u1", "u1", "u1", "u1"],
+                "provider_id": ["wahoo", "wahoo", "wahoo", "wahoo"],
+                "device_id": [None, None, None, None],
+                "source_type": ["ble", "ble", "ble", "ble"],
+                "channel": ["heart_rate", "power", "heart_rate", "power"],
+                "activity_id": ["a1", "a1", "a1", "a1"],
+                "activity_type": ["cycling", "cycling", "cycling", "cycling"],
+                "scalar": [140.0, 200.0, 142.0, 205.0],
+                "vector": [None, None, None, None],
+            }
+        )
+
+        result: pd.DataFrame = pivot_scalar_channels(raw_df)
+
+        assert "heart_rate" in result.columns
+        assert "power" in result.columns
+        assert "timestamp" in result.columns
+        assert len(result) == 2
+
+    def test_returns_empty_for_only_vector_channels(self) -> None:
+        raw_df: pd.DataFrame = pd.DataFrame(
+            {
+                "recorded_at": pd.to_datetime(["2024-01-01T00:00:00"]),
+                "user_id": ["u1"],
+                "provider_id": ["apple_health"],
+                "device_id": ["Watch"],
+                "source_type": ["ble"],
+                "channel": ["imu"],
+                "activity_id": [None],
+                "activity_type": [None],
+                "scalar": [None],
+                "vector": ["{0.1,0.2,9.8}"],
+            }
+        )
+
+        result: pd.DataFrame = pivot_scalar_channels(raw_df)
+        assert result.empty
+
+    def test_excludes_vector_channels(self) -> None:
+        raw_df: pd.DataFrame = pd.DataFrame(
+            {
+                "recorded_at": pd.to_datetime(
+                    [
+                        "2024-01-01T00:00:00",
+                        "2024-01-01T00:00:00",
+                    ]
+                ),
+                "user_id": ["u1", "u1"],
+                "provider_id": ["wahoo", "apple_health"],
+                "device_id": [None, "Watch"],
+                "source_type": ["ble", "ble"],
+                "channel": ["heart_rate", "imu"],
+                "activity_id": ["a1", None],
+                "activity_type": ["cycling", None],
+                "scalar": [140.0, None],
+                "vector": [None, "{0.1,0.2,9.8}"],
+            }
+        )
+
+        result: pd.DataFrame = pivot_scalar_channels(raw_df)
+        assert "heart_rate" in result.columns
+        assert "imu" not in result.columns
+
+
+# ---------------------------------------------------------------------------
+# Tests for expand_vector_channels()
+# ---------------------------------------------------------------------------
+
+
+class TestExpandVectorChannels:
+    """Tests for expand_vector_channels()."""
+
+    def test_expands_imu_vectors_to_axes(self) -> None:
+        raw_df: pd.DataFrame = pd.DataFrame(
+            {
+                "recorded_at": pd.to_datetime(
+                    [
+                        "2024-01-01T00:00:00.00",
+                        "2024-01-01T00:00:00.02",
+                    ]
+                ),
+                "user_id": ["u1", "u1"],
+                "provider_id": ["apple_health", "apple_health"],
+                "device_id": ["Watch", "Watch"],
+                "source_type": ["ble", "ble"],
+                "channel": ["imu", "imu"],
+                "activity_id": [None, None],
+                "activity_type": [None, None],
+                "scalar": [None, None],
+                "vector": ["{0.1,0.2,9.8}", "{0.15,0.22,9.81}"],
+            }
+        )
+
+        result: pd.DataFrame = expand_vector_channels(raw_df)
+
+        assert "accel_x" in result.columns
+        assert "accel_y" in result.columns
+        assert "accel_z" in result.columns
+        assert "device_type" in result.columns
+        assert len(result) == 2
+        assert result["accel_x"].iloc[0] == pytest.approx(0.1)
+
+    def test_expands_imu_with_gyroscope(self) -> None:
+        raw_df: pd.DataFrame = pd.DataFrame(
+            {
+                "recorded_at": pd.to_datetime(["2024-01-01T00:00:00"]),
+                "user_id": ["u1"],
+                "provider_id": ["apple_health"],
+                "device_id": ["Watch"],
+                "source_type": ["ble"],
+                "channel": ["imu"],
+                "activity_id": [None],
+                "activity_type": [None],
+                "scalar": [None],
+                "vector": ["{0.1,0.2,9.8,1.5,-0.3,0.8}"],
+            }
+        )
+
+        result: pd.DataFrame = expand_vector_channels(raw_df)
+
+        assert "accel_x" in result.columns
+        assert "gyro_x" in result.columns
+        assert result["gyro_x"].iloc[0] == pytest.approx(1.5)
+
+    def test_expands_orientation_quaternion(self) -> None:
+        raw_df: pd.DataFrame = pd.DataFrame(
+            {
+                "recorded_at": pd.to_datetime(["2024-01-01T00:00:00"]),
+                "user_id": ["u1"],
+                "provider_id": ["apple_health"],
+                "device_id": ["Watch"],
+                "source_type": ["ble"],
+                "channel": ["orientation"],
+                "activity_id": [None],
+                "activity_type": [None],
+                "scalar": [None],
+                "vector": ["{1.0,0.0,0.0,0.0}"],
+            }
+        )
+
+        result: pd.DataFrame = expand_vector_channels(raw_df)
+
+        assert "w" in result.columns
+        assert "x" in result.columns
+        assert "y" in result.columns
+        assert "z" in result.columns
+        assert result["w"].iloc[0] == pytest.approx(1.0)
+
+    def test_returns_empty_for_no_vector_channels(self) -> None:
+        raw_df: pd.DataFrame = pd.DataFrame(
+            {
+                "recorded_at": pd.to_datetime(["2024-01-01T00:00:00"]),
+                "user_id": ["u1"],
+                "provider_id": ["wahoo"],
+                "device_id": [None],
+                "source_type": ["ble"],
+                "channel": ["heart_rate"],
+                "activity_id": [None],
+                "activity_type": [None],
+                "scalar": [140.0],
+                "vector": [None],
+            }
+        )
+
+        result: pd.DataFrame = expand_vector_channels(raw_df)
+        assert result.empty
+
+
+# ---------------------------------------------------------------------------
+# Tests for load_manifest_local()
+# ---------------------------------------------------------------------------
 
 
 class TestLoadManifestLocal:
@@ -63,48 +297,54 @@ class TestLoadManifestLocal:
     def test_loads_valid_manifest(self, training_export_dir: Path) -> None:
         manifest: dict[str, Any] = load_manifest_local(training_export_dir)
         assert "files" in manifest
-        assert len(manifest["files"]) == 2
+        assert len(manifest["files"]) == 1
 
     def test_raises_on_missing_manifest(self, tmp_path: Path) -> None:
         with pytest.raises(FileNotFoundError, match="manifest.json not found"):
             load_manifest_local(tmp_path)
 
-    def test_parses_file_types(self, training_export_dir: Path) -> None:
+    def test_parses_file_table_type(self, training_export_dir: Path) -> None:
         manifest: dict[str, Any] = load_manifest_local(training_export_dir)
-        file_types: list[str] = [f["type"] for f in manifest["files"]]
-        assert "metric_stream" in file_types
-        assert "device_stream" in file_types
+        tables: list[str] = [f["table"] for f in manifest["files"]]
+        assert "sensor_sample" in tables
 
-    def test_parses_filenames(self, training_export_dir: Path) -> None:
+    def test_parses_file_paths(self, training_export_dir: Path) -> None:
         manifest: dict[str, Any] = load_manifest_local(training_export_dir)
-        filenames: list[str] = [f["filename"] for f in manifest["files"]]
-        assert "metric_001.csv" in filenames
-        assert "device_001.csv" in filenames
+        paths: list[str] = [f["path"] for f in manifest["files"]]
+        assert "sensor_sample/2024-01-01T00:00:00Z.csv" in paths
+
+
+# ---------------------------------------------------------------------------
+# Tests for read_csv_local()
+# ---------------------------------------------------------------------------
 
 
 class TestReadCsvLocal:
     """Tests for read_csv_local()."""
 
-    def test_reads_metric_csv(self, training_export_dir: Path) -> None:
-        df: pd.DataFrame = read_csv_local(training_export_dir, "metric_001.csv")
-        assert len(df) == 3
-        assert "timestamp" in df.columns
-        assert "heart_rate" in df.columns
-        assert "power" in df.columns
+    def test_reads_sensor_csv(self, training_export_dir: Path) -> None:
+        df: pd.DataFrame = read_csv_local(
+            training_export_dir, "sensor_sample/2024-01-01T00:00:00Z.csv"
+        )
+        assert len(df) == 6
+        assert "recorded_at" in df.columns
+        assert "channel" in df.columns
+        assert "scalar" in df.columns
 
     def test_parses_timestamps(self, training_export_dir: Path) -> None:
-        df: pd.DataFrame = read_csv_local(training_export_dir, "metric_001.csv")
-        assert pd.api.types.is_datetime64_any_dtype(df["timestamp"])
-
-    def test_reads_device_csv(self, training_export_dir: Path) -> None:
-        df: pd.DataFrame = read_csv_local(training_export_dir, "device_001.csv")
-        assert len(df) == 3
-        assert "device_type" in df.columns
-        assert "accel_x" in df.columns
+        df: pd.DataFrame = read_csv_local(
+            training_export_dir, "sensor_sample/2024-01-01T00:00:00Z.csv"
+        )
+        assert pd.api.types.is_datetime64_any_dtype(df["recorded_at"])
 
     def test_raises_on_missing_file(self, tmp_path: Path) -> None:
         with pytest.raises(FileNotFoundError, match="CSV file not found"):
             read_csv_local(tmp_path, "nonexistent.csv")
+
+
+# ---------------------------------------------------------------------------
+# Tests for load_from_local()
+# ---------------------------------------------------------------------------
 
 
 class TestLoadFromLocal:
@@ -115,78 +355,41 @@ class TestLoadFromLocal:
         assert isinstance(metric_df, pd.DataFrame)
         assert isinstance(device_df, pd.DataFrame)
 
+    def test_metric_df_has_pivoted_columns(self, training_export_dir: Path) -> None:
+        metric_df, _ = load_from_local(training_export_dir)
+        assert "timestamp" in metric_df.columns
+        assert "heart_rate" in metric_df.columns
+        assert "power" in metric_df.columns
+
     def test_metric_df_has_expected_rows(self, training_export_dir: Path) -> None:
         metric_df, _ = load_from_local(training_export_dir)
-        assert len(metric_df) == 3
+        # 4 scalar rows at 2 timestamps -> 2 pivoted rows
+        assert len(metric_df) == 2
+
+    def test_device_df_has_expanded_columns(self, training_export_dir: Path) -> None:
+        _, device_df = load_from_local(training_export_dir)
+        assert "accel_x" in device_df.columns
+        assert "accel_y" in device_df.columns
+        assert "accel_z" in device_df.columns
+        assert "device_type" in device_df.columns
 
     def test_device_df_has_expected_rows(self, training_export_dir: Path) -> None:
         _, device_df = load_from_local(training_export_dir)
-        assert len(device_df) == 3
+        assert len(device_df) == 2
 
-    def test_raises_on_no_metric_files(self, tmp_path: Path) -> None:
+    def test_raises_on_no_sensor_files(self, tmp_path: Path) -> None:
         manifest: dict[str, Any] = {
-            "files": [
-                {"filename": "device_001.csv", "type": "device_stream"},
-            ],
+            "files": [],
+            "totalRows": 0,
         }
         (tmp_path / "manifest.json").write_text(json.dumps(manifest))
-        with pytest.raises(ValueError, match="No metric_stream files"):
+        with pytest.raises(ValueError, match="No sensor_sample files"):
             load_from_local(tmp_path)
-
-    def test_raises_on_no_device_files(self, tmp_path: Path) -> None:
-        manifest: dict[str, Any] = {
-            "files": [
-                {"filename": "metric_001.csv", "type": "metric_stream"},
-            ],
-        }
-        (tmp_path / "manifest.json").write_text(json.dumps(manifest))
-        with pytest.raises(ValueError, match="No device_stream files"):
-            load_from_local(tmp_path)
-
-    def test_concatenates_multiple_metric_files(self, tmp_path: Path) -> None:
-        """When the manifest lists multiple metric files, they get concatenated."""
-        manifest: dict[str, Any] = {
-            "files": [
-                {"filename": "metric_001.csv", "type": "metric_stream"},
-                {"filename": "metric_002.csv", "type": "metric_stream"},
-                {"filename": "device_001.csv", "type": "device_stream"},
-            ],
-        }
-        (tmp_path / "manifest.json").write_text(json.dumps(manifest))
-
-        csv_content: str = "timestamp,activity_type,heart_rate\n2024-01-01T00:00:00,cycling,140\n"
-        (tmp_path / "metric_001.csv").write_text(csv_content)
-        (tmp_path / "metric_002.csv").write_text(csv_content)
-
-        device_csv: str = "timestamp,device_type,accel_x\n2024-01-01T00:00:00,watch,0.1\n"
-        (tmp_path / "device_001.csv").write_text(device_csv)
-
-        metric_df, _ = load_from_local(tmp_path)
-        assert len(metric_df) == 2  # Two files, one row each
 
 
 # ---------------------------------------------------------------------------
 # R2 / S3 mock helpers
 # ---------------------------------------------------------------------------
-
-SAMPLE_MANIFEST: dict[str, list[dict[str, str]]] = {
-    "files": [
-        {"filename": "metric_001.csv", "type": "metric_stream"},
-        {"filename": "device_001.csv", "type": "device_stream"},
-    ],
-}
-
-SAMPLE_METRIC_CSV: str = (
-    "timestamp,activity_type,heart_rate,power\n"
-    "2024-01-01T00:00:00,cycling,140,200\n"
-    "2024-01-01T00:00:01,cycling,142,205\n"
-)
-
-SAMPLE_DEVICE_CSV: str = (
-    "timestamp,device_type,accel_x,accel_y,accel_z\n"
-    "2024-01-01T00:00:00.00,watch,0.1,0.2,9.8\n"
-    "2024-01-01T00:00:00.02,watch,0.15,0.22,9.81\n"
-)
 
 
 def _mock_body(content: bytes) -> MagicMock:
@@ -223,7 +426,7 @@ class TestLoadManifestR2:
         )
         manifest: dict[str, Any] = load_manifest_r2(s3_client, "test-bucket")
         assert "files" in manifest
-        assert len(manifest["files"]) == 2
+        assert len(manifest["files"]) == 1
 
     def test_calls_get_object_with_correct_params(self) -> None:
         s3_client: MagicMock = _make_s3_client(
@@ -237,9 +440,8 @@ class TestLoadManifestR2:
             {"manifest.json": json.dumps(SAMPLE_MANIFEST).encode()}
         )
         manifest: dict[str, Any] = load_manifest_r2(s3_client, "test-bucket")
-        filenames: list[str] = [f["filename"] for f in manifest["files"]]
-        assert "metric_001.csv" in filenames
-        assert "device_001.csv" in filenames
+        tables: list[str] = [f["table"] for f in manifest["files"]]
+        assert "sensor_sample" in tables
 
 
 # ---------------------------------------------------------------------------
@@ -251,25 +453,18 @@ class TestReadCsvR2:
     """Tests for read_csv_r2()."""
 
     def test_reads_csv_from_s3(self) -> None:
-        s3_client: MagicMock = _make_s3_client({"metric_001.csv": SAMPLE_METRIC_CSV.encode()})
-        df: pd.DataFrame = read_csv_r2(s3_client, "test-bucket", "metric_001.csv")
-        assert len(df) == 2
-        assert "heart_rate" in df.columns
+        s3_client: MagicMock = _make_s3_client({"sensor_001.csv": SAMPLE_SENSOR_CSV.encode()})
+        df: pd.DataFrame = read_csv_r2(s3_client, "test-bucket", "sensor_001.csv")
+        assert len(df) == 6
+        assert "channel" in df.columns
 
     def test_parses_timestamps(self) -> None:
-        s3_client: MagicMock = _make_s3_client({"metric_001.csv": SAMPLE_METRIC_CSV.encode()})
-        df: pd.DataFrame = read_csv_r2(s3_client, "test-bucket", "metric_001.csv")
-        assert pd.api.types.is_datetime64_any_dtype(df["timestamp"])
-
-    def test_reads_device_csv(self) -> None:
-        s3_client: MagicMock = _make_s3_client({"device_001.csv": SAMPLE_DEVICE_CSV.encode()})
-        df: pd.DataFrame = read_csv_r2(s3_client, "test-bucket", "device_001.csv")
-        assert len(df) == 2
-        assert "device_type" in df.columns
-        assert "accel_x" in df.columns
+        s3_client: MagicMock = _make_s3_client({"sensor_001.csv": SAMPLE_SENSOR_CSV.encode()})
+        df: pd.DataFrame = read_csv_r2(s3_client, "test-bucket", "sensor_001.csv")
+        assert pd.api.types.is_datetime64_any_dtype(df["recorded_at"])
 
     def test_calls_get_object_with_correct_key(self) -> None:
-        s3_client: MagicMock = _make_s3_client({"my-file.csv": SAMPLE_METRIC_CSV.encode()})
+        s3_client: MagicMock = _make_s3_client({"my-file.csv": SAMPLE_SENSOR_CSV.encode()})
         read_csv_r2(s3_client, "bucket-x", "my-file.csv")
         s3_client.get_object.assert_called_once_with(Bucket="bucket-x", Key="my-file.csv")
 
@@ -347,8 +542,7 @@ class TestLoadFromR2:
         return _make_s3_client(
             {
                 "manifest.json": json.dumps(SAMPLE_MANIFEST).encode(),
-                "metric_001.csv": SAMPLE_METRIC_CSV.encode(),
-                "device_001.csv": SAMPLE_DEVICE_CSV.encode(),
+                "sensor_sample/2024-01-01T00:00:00Z.csv": SAMPLE_SENSOR_CSV.encode(),
             }
         )
 
@@ -362,17 +556,18 @@ class TestLoadFromR2:
 
     @patch.dict("os.environ", {"R2_BUCKET": "test-bucket"})
     @patch("dofek_ml.data_loading.create_r2_client")
-    def test_metric_df_has_expected_rows(self, mock_create: MagicMock) -> None:
+    def test_metric_df_has_pivoted_columns(self, mock_create: MagicMock) -> None:
         mock_create.return_value = self._setup_r2_client()
         metric_df, _ = load_from_r2()
-        assert len(metric_df) == 2
+        assert "heart_rate" in metric_df.columns
+        assert "power" in metric_df.columns
 
     @patch.dict("os.environ", {"R2_BUCKET": "test-bucket"})
     @patch("dofek_ml.data_loading.create_r2_client")
-    def test_device_df_has_expected_rows(self, mock_create: MagicMock) -> None:
+    def test_device_df_has_expanded_columns(self, mock_create: MagicMock) -> None:
         mock_create.return_value = self._setup_r2_client()
         _, device_df = load_from_r2()
-        assert len(device_df) == 2
+        assert "accel_x" in device_df.columns
 
     @patch.dict("os.environ", {}, clear=True)
     def test_raises_when_no_bucket_env(self) -> None:
@@ -381,26 +576,15 @@ class TestLoadFromR2:
 
     @patch.dict("os.environ", {"R2_BUCKET": "test-bucket"})
     @patch("dofek_ml.data_loading.create_r2_client")
-    def test_raises_on_no_metric_files(self, mock_create: MagicMock) -> None:
-        manifest_no_metrics: dict[str, list[dict[str, str]]] = {
-            "files": [{"filename": "device_001.csv", "type": "device_stream"}],
+    def test_raises_on_no_sensor_files(self, mock_create: MagicMock) -> None:
+        manifest_empty: dict[str, Any] = {
+            "files": [],
+            "totalRows": 0,
         }
         mock_create.return_value = _make_s3_client(
-            {"manifest.json": json.dumps(manifest_no_metrics).encode()}
+            {"manifest.json": json.dumps(manifest_empty).encode()}
         )
-        with pytest.raises(ValueError, match="No metric_stream files"):
-            load_from_r2()
-
-    @patch.dict("os.environ", {"R2_BUCKET": "test-bucket"})
-    @patch("dofek_ml.data_loading.create_r2_client")
-    def test_raises_on_no_device_files(self, mock_create: MagicMock) -> None:
-        manifest_no_devices: dict[str, list[dict[str, str]]] = {
-            "files": [{"filename": "metric_001.csv", "type": "metric_stream"}],
-        }
-        mock_create.return_value = _make_s3_client(
-            {"manifest.json": json.dumps(manifest_no_devices).encode()}
-        )
-        with pytest.raises(ValueError, match="No device_stream files"):
+        with pytest.raises(ValueError, match="No sensor_sample files"):
             load_from_r2()
 
 
@@ -468,7 +652,6 @@ class TestMain:
         mock_load.assert_called_once_with(local_path="/fake/path")
         captured: str = capsys.readouterr().out
         assert "Metric Stream Summary" in captured
-        assert "Device Stream Summary" in captured
         assert "cycling" in captured
         assert "watch" in captured
 
@@ -482,13 +665,7 @@ class TestMain:
                     "heart_rate": [155],
                 }
             ),
-            pd.DataFrame(
-                {
-                    "timestamp": pd.to_datetime(["2024-01-01"]),
-                    "device_type": ["phone"],
-                    "accel_x": [0.5],
-                }
-            ),
+            pd.DataFrame(),  # empty device df
         ),
     )
     @patch("sys.argv", ["data_loading"])
@@ -499,7 +676,7 @@ class TestMain:
         mock_load.assert_called_once_with(local_path=None)
         captured: str = capsys.readouterr().out
         assert "running" in captured
-        assert "phone" in captured
+        assert "No device (vector channel) data" in captured
 
 
 # ---------------------------------------------------------------------------
@@ -508,7 +685,7 @@ class TestMain:
 
 
 class TestModuleGuard:
-    """Test the if __name__ == '__main__' block (line 283)."""
+    """Test the if __name__ == '__main__' block."""
 
     @patch("sys.argv", ["data_loading", "--help"])
     def test_name_main_invokes_main(self) -> None:
@@ -516,7 +693,7 @@ class TestModuleGuard:
 
         We pass ``--help`` so argparse prints usage and exits via SystemExit(0)
         *before* any data loading runs.  This is enough to prove the guard
-        fires and covers line 283.
+        fires and covers the if __name__ guard.
         """
         import runpy
 

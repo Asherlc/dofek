@@ -1,20 +1,27 @@
 """
-fetch_training_data.py -- Data loading module for the fused CNN activity classifier.
+data_loading.py -- Data loading module for the fused CNN activity classifier.
 
 Reads training data from either local CSV files or Cloudflare R2 (S3-compatible).
-The training data export job produces two CSV file types:
-  - metric_stream: 1 Hz physiological/performance metrics (heart_rate, power, speed, etc.)
-  - device_stream: 50 Hz raw sensor data per device (accelerometer, gyroscope axes)
+The training data export job now produces a single CSV from the unified
+sensor_sample table. Each row has a `channel` column identifying the measurement
+type (heart_rate, power, imu, orientation, etc.) and either a `scalar` value
+(for single-value channels) or a `vector` value (for multi-axis channels).
 
-A manifest.json file lists all available CSV files and their metadata.
+This module:
+  - Loads the single CSV
+  - Separates scalar channels from vector channels
+  - Pivots scalar channels into a wide-format DataFrame (one column per channel)
+  - Expands vector channels into separate axis columns
+
+A manifest.json file lists available CSV files and metadata.
 
 Usage as a module:
-    from fetch_training_data import load_training_data
+    from dofek_ml.data_loading import load_training_data
     metric_df, device_df = load_training_data(local_path="/path/to/export/")
 
 Usage as a CLI:
-    python fetch_training_data.py --local-path /path/to/export/
-    python fetch_training_data.py  # reads from R2 using env vars
+    python -m dofek_ml.data_loading --local-path /path/to/export/
+    python -m dofek_ml.data_loading  # reads from R2 using env vars
 """
 
 from __future__ import annotations
@@ -23,10 +30,20 @@ import argparse
 import io
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+# Channels that produce vector (multi-axis) data rather than scalar values.
+VECTOR_CHANNELS: frozenset[str] = frozenset({"imu", "orientation"})
+
 
 # ---------------------------------------------------------------------------
 # Manifest handling
@@ -37,7 +54,7 @@ def load_manifest_local(base_path: Path) -> dict[str, Any]:
     """Load manifest.json from a local directory.
 
     The manifest describes which CSV files are available, their types
-    (metric_stream or device_stream), and any metadata the export job attached.
+    (sensor_sample), and any metadata the export job attached.
     """
     manifest_path: Path = base_path / "manifest.json"
     if not manifest_path.exists():
@@ -69,13 +86,14 @@ def load_manifest_r2(s3_client: Any, bucket: str) -> dict[str, Any]:
 def read_csv_local(base_path: Path, filename: str) -> pd.DataFrame:
     """Read a single CSV file from the local filesystem.
 
-    We let pandas infer most dtypes, but ensure timestamp columns are parsed
-    as proper datetime objects for downstream time-alignment.
+    We let pandas infer most dtypes, then explicitly convert the recorded_at
+    column to datetime to handle mixed ISO formats (with/without fractional seconds).
     """
     filepath: Path = base_path / filename
     if not filepath.exists():
         raise FileNotFoundError(f"CSV file not found: {filepath}")
-    df: pd.DataFrame = pd.read_csv(filepath, parse_dates=["timestamp"])
+    df: pd.DataFrame = pd.read_csv(filepath)
+    df["recorded_at"] = pd.to_datetime(df["recorded_at"], format="ISO8601")
     return df
 
 
@@ -87,7 +105,8 @@ def read_csv_r2(s3_client: Any, bucket: str, key: str) -> pd.DataFrame:
     """
     response: dict[str, Any] = s3_client.get_object(Bucket=bucket, Key=key)
     body: bytes = response["Body"].read()
-    df: pd.DataFrame = pd.read_csv(io.BytesIO(body), parse_dates=["timestamp"])
+    df: pd.DataFrame = pd.read_csv(io.BytesIO(body))
+    df["recorded_at"] = pd.to_datetime(df["recorded_at"], format="ISO8601")
     return df
 
 
@@ -128,51 +147,181 @@ def create_r2_client() -> Any:
 
 
 # ---------------------------------------------------------------------------
+# Vector parsing
+# ---------------------------------------------------------------------------
+
+
+def parse_pg_array(value: str) -> list[float]:
+    """Parse a PostgreSQL array literal like '{0.1,0.2,9.8}' into a list of floats."""
+    # Strip surrounding braces and split on commas
+    inner: str = re.sub(r"^\{|\}$", "", value.strip())
+    if not inner:
+        return []
+    return [float(x) for x in inner.split(",")]
+
+
+# ---------------------------------------------------------------------------
+# DataFrame transformation: channel-based rows -> wide format
+# ---------------------------------------------------------------------------
+
+
+def pivot_scalar_channels(raw_df: pd.DataFrame) -> pd.DataFrame:
+    """Pivot scalar channel rows into a wide-format DataFrame.
+
+    Input: rows with columns [recorded_at, user_id, provider_id, channel, scalar, ...]
+    Output: one row per (recorded_at, user_id, activity_id) with columns for each
+    scalar channel (heart_rate, power, cadence, speed, etc.)
+
+    The resulting DataFrame is what the metric branch of the CNN expects:
+    a timestamp column plus one numeric column per sensor channel.
+    """
+    scalar_df: pd.DataFrame = raw_df[~raw_df["channel"].isin(VECTOR_CHANNELS)].copy()
+
+    if scalar_df.empty:
+        return pd.DataFrame()
+
+    # Pivot: each unique channel becomes its own column
+    pivoted: pd.DataFrame = scalar_df.pivot_table(
+        index=["recorded_at", "user_id", "activity_id", "activity_type", "provider_id"],
+        columns="channel",
+        values="scalar",
+        aggfunc="first",
+    ).reset_index()
+
+    # Flatten the MultiIndex columns from pivot_table
+    pivoted.columns = [col if not isinstance(col, tuple) else col for col in pivoted.columns]
+
+    # Rename 'recorded_at' to 'timestamp' for compatibility with the training code
+    return pivoted.rename(columns={"recorded_at": "timestamp"})
+
+
+def expand_vector_channels(raw_df: pd.DataFrame) -> pd.DataFrame:
+    """Expand vector channel rows into a wide-format DataFrame.
+
+    Input: rows with a `vector` column containing PostgreSQL array literals
+    like '{0.1,0.2,9.8}' and a `channel` column (e.g., 'imu', 'orientation').
+
+    For IMU data (3 axes): expands to accel_x, accel_y, accel_z columns.
+    For orientation data (4 axes): expands to w, x, y, z columns.
+
+    The resulting DataFrame includes device_id as device_type for compatibility
+    with the device branch of the CNN.
+    """
+    vector_df: pd.DataFrame = raw_df[raw_df["channel"].isin(VECTOR_CHANNELS)].copy()
+
+    if vector_df.empty:
+        return pd.DataFrame()
+
+    # Reset index so positional access aligns with iloc
+    vector_df = vector_df.reset_index(drop=True)
+
+    # Parse the vector column into a dict keyed by the new positional index
+    parsed_vectors: dict[int, list[float]] = {
+        i: parse_pg_array(str(v)) if pd.notna(v) else [] for i, v in enumerate(vector_df["vector"])
+    }
+
+    # Determine axis names based on channel and vector length
+    result_frames: list[pd.DataFrame] = []
+
+    for channel_name, channel_group in vector_df.groupby("channel"):
+        group_indices: list[int] = list(channel_group.index)
+        channel_vectors: list[list[float]] = [parsed_vectors[i] for i in group_indices]
+
+        if not channel_vectors:
+            continue
+
+        # Determine axis names based on the channel type and vector length
+        sample_length: int = len(channel_vectors[0]) if channel_vectors[0] else 0
+
+        if str(channel_name) == "imu" and sample_length >= 3:
+            axis_names: list[str] = ["accel_x", "accel_y", "accel_z"]
+            if sample_length >= 6:
+                axis_names.extend(["gyro_x", "gyro_y", "gyro_z"])
+            axis_names = axis_names[:sample_length]
+        elif str(channel_name) == "orientation" and sample_length >= 4:
+            axis_names = ["w", "x", "y", "z"][:sample_length]
+        else:
+            axis_names = [f"axis_{i}" for i in range(sample_length)]
+
+        # Build the expanded columns
+        vector_array: np.ndarray = np.array(
+            [
+                v[:sample_length]
+                if len(v) >= sample_length
+                else v + [0.0] * (sample_length - len(v))
+                for v in channel_vectors
+            ],
+            dtype=np.float64,
+        )
+
+        expanded: pd.DataFrame = pd.DataFrame(vector_array, columns=axis_names)
+        expanded["timestamp"] = channel_group["recorded_at"].values
+        expanded["device_type"] = channel_group["device_id"].values
+        expanded["device_id"] = channel_group["device_id"].values
+        expanded["user_id"] = channel_group["user_id"].values
+        expanded["provider_id"] = channel_group["provider_id"].values
+
+        result_frames.append(expanded)
+
+    if not result_frames:
+        return pd.DataFrame()
+
+    combined: pd.DataFrame = pd.concat(result_frames, ignore_index=True)
+
+    # Ensure timestamp is datetime
+    if not pd.api.types.is_datetime64_any_dtype(combined["timestamp"]):
+        combined["timestamp"] = pd.to_datetime(combined["timestamp"])
+
+    return combined
+
+
+# ---------------------------------------------------------------------------
 # Main data loading functions
 # ---------------------------------------------------------------------------
 
 
 def load_from_local(base_path: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Load metric_stream and device_stream CSVs from a local directory.
+    """Load sensor_sample CSV from a local directory and split into metric + device.
 
-    Reads the manifest to discover which files exist, then concatenates
-    all metric_stream files into one DataFrame and all device_stream files
-    into another. This supports exports that span multiple activities
-    (one CSV per activity per stream type).
+    Reads the manifest to discover which files exist, then loads and concatenates
+    all sensor_sample files. Scalar channels are pivoted into a wide metric
+    DataFrame; vector channels are expanded into a device DataFrame.
 
     Returns:
         (metric_df, device_df) -- two DataFrames ready for training.
     """
     manifest: dict[str, Any] = load_manifest_local(base_path)
 
-    metric_files: list[str] = [
-        f["filename"] for f in manifest["files"] if f["type"] == "metric_stream"
-    ]
-    device_files: list[str] = [
-        f["filename"] for f in manifest["files"] if f["type"] == "device_stream"
+    sensor_files: list[str] = [
+        f["path"] for f in manifest["files"] if f["table"] == "sensor_sample"
     ]
 
-    if not metric_files:
-        raise ValueError("No metric_stream files listed in manifest")
-    if not device_files:
-        raise ValueError("No device_stream files listed in manifest")
+    if not sensor_files:
+        raise ValueError("No sensor_sample files listed in manifest")
 
-    print(f"Loading {len(metric_files)} metric_stream file(s) from {base_path}")
-    metric_dfs: list[pd.DataFrame] = [read_csv_local(base_path, f) for f in metric_files]
-    metric_df: pd.DataFrame = pd.concat(metric_dfs, ignore_index=True)
+    print(f"Loading {len(sensor_files)} sensor_sample file(s) from {base_path}")
+    raw_dfs: list[pd.DataFrame] = [read_csv_local(base_path, f) for f in sensor_files]
+    raw_df: pd.DataFrame = pd.concat(raw_dfs, ignore_index=True)
 
-    print(f"Loading {len(device_files)} device_stream file(s) from {base_path}")
-    device_dfs: list[pd.DataFrame] = [read_csv_local(base_path, f) for f in device_files]
-    device_df: pd.DataFrame = pd.concat(device_dfs, ignore_index=True)
+    print(f"Raw sensor_sample: {len(raw_df)} rows, channels: {raw_df['channel'].unique().tolist()}")
+
+    metric_df: pd.DataFrame = pivot_scalar_channels(raw_df)
+    device_df: pd.DataFrame = expand_vector_channels(raw_df)
+
+    if metric_df.empty:
+        raise ValueError("No scalar channel data found in sensor_sample export")
 
     print(f"Metric stream: {len(metric_df)} rows, columns: {list(metric_df.columns)}")
-    print(f"Device stream: {len(device_df)} rows, columns: {list(device_df.columns)}")
+    if not device_df.empty:
+        print(f"Device stream: {len(device_df)} rows, columns: {list(device_df.columns)}")
+    else:
+        print("Device stream: 0 rows (no vector channel data)")
 
     return metric_df, device_df
 
 
 def load_from_r2() -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Load metric_stream and device_stream CSVs from Cloudflare R2.
+    """Load sensor_sample CSV from Cloudflare R2 and split into metric + device.
 
     Same logic as load_from_local but fetches files over the network.
     The R2_BUCKET env var specifies which bucket to read from.
@@ -187,28 +336,30 @@ def load_from_r2() -> tuple[pd.DataFrame, pd.DataFrame]:
     s3_client: Any = create_r2_client()
     manifest: dict[str, Any] = load_manifest_r2(s3_client, bucket)
 
-    metric_files: list[str] = [
-        f["filename"] for f in manifest["files"] if f["type"] == "metric_stream"
-    ]
-    device_files: list[str] = [
-        f["filename"] for f in manifest["files"] if f["type"] == "device_stream"
+    sensor_files: list[str] = [
+        f["path"] for f in manifest["files"] if f["table"] == "sensor_sample"
     ]
 
-    if not metric_files:
-        raise ValueError("No metric_stream files listed in manifest")
-    if not device_files:
-        raise ValueError("No device_stream files listed in manifest")
+    if not sensor_files:
+        raise ValueError("No sensor_sample files listed in manifest")
 
-    print(f"Downloading {len(metric_files)} metric_stream file(s) from R2 bucket '{bucket}'")
-    metric_dfs: list[pd.DataFrame] = [read_csv_r2(s3_client, bucket, f) for f in metric_files]
-    metric_df: pd.DataFrame = pd.concat(metric_dfs, ignore_index=True)
+    print(f"Downloading {len(sensor_files)} sensor_sample file(s) from R2 bucket '{bucket}'")
+    raw_dfs: list[pd.DataFrame] = [read_csv_r2(s3_client, bucket, f) for f in sensor_files]
+    raw_df: pd.DataFrame = pd.concat(raw_dfs, ignore_index=True)
 
-    print(f"Downloading {len(device_files)} device_stream file(s) from R2 bucket '{bucket}'")
-    device_dfs: list[pd.DataFrame] = [read_csv_r2(s3_client, bucket, f) for f in device_files]
-    device_df: pd.DataFrame = pd.concat(device_dfs, ignore_index=True)
+    print(f"Raw sensor_sample: {len(raw_df)} rows, channels: {raw_df['channel'].unique().tolist()}")
+
+    metric_df: pd.DataFrame = pivot_scalar_channels(raw_df)
+    device_df: pd.DataFrame = expand_vector_channels(raw_df)
+
+    if metric_df.empty:
+        raise ValueError("No scalar channel data found in sensor_sample export")
 
     print(f"Metric stream: {len(metric_df)} rows, columns: {list(metric_df.columns)}")
-    print(f"Device stream: {len(device_df)} rows, columns: {list(device_df.columns)}")
+    if not device_df.empty:
+        print(f"Device stream: {len(device_df)} rows, columns: {list(device_df.columns)}")
+    else:
+        print("Device stream: 0 rows (no vector channel data)")
 
     return metric_df, device_df
 
@@ -222,8 +373,7 @@ def load_training_data(
       - If local_path is provided, read from the filesystem.
       - Otherwise, attempt to read from R2 using environment variables.
 
-    This is the function other modules (like train_activity_classifier.py)
-    should call.
+    This is the function other modules (like training.py) should call.
 
     Args:
         local_path: Optional filesystem path to the export directory.
@@ -246,14 +396,14 @@ def main() -> None:
 
     Examples:
         # Load from local files:
-        python fetch_training_data.py --local-path ./training-export/
+        python -m dofek_ml.data_loading --local-path ./training-export/
 
         # Load from R2 (env vars must be set):
         R2_ENDPOINT=https://xxx.r2.cloudflarestorage.com \
         R2_ACCESS_KEY_ID=xxx \
         R2_SECRET_ACCESS_KEY=xxx \
         R2_BUCKET=training-data \
-        python fetch_training_data.py
+        python -m dofek_ml.data_loading
     """
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
         description="Load training data from local CSV files or Cloudflare R2"
@@ -272,11 +422,16 @@ def main() -> None:
     # Print summary statistics so the user can verify the data looks right
     print("\n--- Metric Stream Summary ---")
     print(metric_df.describe())
-    print(f"\nActivity labels: {metric_df['activity_type'].value_counts().to_dict()}")
+    if "activity_type" in metric_df.columns:
+        print(f"\nActivity labels: {metric_df['activity_type'].value_counts().to_dict()}")
 
     print("\n--- Device Stream Summary ---")
-    print(device_df.describe())
-    print(f"\nDevice types: {device_df['device_type'].unique().tolist()}")
+    if not device_df.empty:
+        print(device_df.describe())
+        if "device_type" in device_df.columns:
+            print(f"\nDevice types: {device_df['device_type'].unique().tolist()}")
+    else:
+        print("No device (vector channel) data available.")
 
 
 if __name__ == "__main__":
