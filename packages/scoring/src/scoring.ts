@@ -36,16 +36,34 @@ export class StrainScore {
 }
 
 /** Get the color for a recovery/readiness score (0-100) */
+export const SCORE_WARNING_THRESHOLD = 50;
+export const SCORE_RECOVERED_THRESHOLD = 70;
+
+export interface ScoreZone {
+  /** Lower bound (inclusive) */
+  min: number;
+  /** Upper bound (inclusive for charting) */
+  max: number;
+  status: "danger" | "warning" | "positive";
+}
+
+/** Visual score zones used by charts and cards to keep threshold bands consistent. */
+export const SCORE_ZONES: ScoreZone[] = [
+  { min: 0, max: SCORE_WARNING_THRESHOLD, status: "danger" },
+  { min: SCORE_WARNING_THRESHOLD, max: SCORE_RECOVERED_THRESHOLD, status: "warning" },
+  { min: SCORE_RECOVERED_THRESHOLD, max: 100, status: "positive" },
+];
+
 export function scoreColor(score: number): string {
-  if (score > 70) return statusColors.positive;
-  if (score >= 50) return statusColors.warning;
+  if (score > SCORE_RECOVERED_THRESHOLD) return statusColors.positive;
+  if (score >= SCORE_WARNING_THRESHOLD) return statusColors.warning;
   return statusColors.danger;
 }
 
 /** Get a human-readable label for a recovery score (0-100) */
 export function scoreLabel(score: number): string {
-  if (score > 70) return "Recovered";
-  if (score >= 50) return "Moderate";
+  if (score > SCORE_RECOVERED_THRESHOLD) return "Recovered";
+  if (score >= SCORE_WARNING_THRESHOLD) return "Moderate";
   return "Poor";
 }
 

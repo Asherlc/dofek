@@ -1,5 +1,5 @@
 import { formatDateYmd, formatNumber } from "@dofek/format/format";
-import { scoreColor, scoreLabel } from "@dofek/scoring/scoring";
+import { SCORE_ZONES, scoreColor, scoreLabel } from "@dofek/scoring/scoring";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -12,6 +12,20 @@ import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useRefresh } from "../../lib/useRefresh";
 import { colors } from "../../theme";
+
+function withOpacity(hexColor: string, opacityHex: string): string {
+  return `${hexColor}${opacityHex}`;
+}
+
+const RECOVERY_SCORE_BANDS = SCORE_ZONES.map((zone) => {
+  if (zone.status === "danger") {
+    return { min: zone.min, max: zone.max, color: withOpacity(colors.danger, "20") };
+  }
+  if (zone.status === "warning") {
+    return { min: zone.min, max: zone.max, color: withOpacity(colors.warning, "20") };
+  }
+  return { min: zone.min, max: zone.max, color: withOpacity(colors.positive, "20") };
+});
 
 function trendArrow(trend: string | null): string {
   if (trend === "improving") return "\u2191";
@@ -117,13 +131,27 @@ export default function RecoveryScreen() {
           {readinessValues.length >= 2 && (
             <Card title="Recovery Score">
               <View style={styles.chartRow}>
-                <Text style={styles.bigValue}>{latestReadiness?.readinessScore ?? "--"}</Text>
+                <Text
+                  style={[
+                    styles.bigValue,
+                    {
+                      color:
+                        latestReadiness?.readinessScore != null
+                          ? scoreColor(latestReadiness.readinessScore)
+                          : colors.text,
+                    },
+                  ]}
+                >
+                  {latestReadiness?.readinessScore ?? "--"}
+                </Text>
                 <View style={styles.sparkContainer}>
                   <SparkLine
                     data={readinessValues}
                     height={60}
-                    color={colors.positive}
+                    color={colors.textSecondary}
                     showBaseline
+                    domain={{ min: 0, max: 100 }}
+                    backgroundBands={RECOVERY_SCORE_BANDS}
                   />
                 </View>
               </View>
@@ -377,7 +405,6 @@ const styles = StyleSheet.create({
   bigValue: {
     fontSize: 36,
     fontWeight: "800",
-    color: colors.positive,
     fontVariant: ["tabular-nums"],
   },
   chartSubtitle: {

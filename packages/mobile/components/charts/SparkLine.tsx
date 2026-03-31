@@ -1,7 +1,18 @@
 import { useState } from "react";
 import { type LayoutChangeEvent, View } from "react-native";
-import Svg, { Line, Polyline } from "react-native-svg";
+import Svg, { Line, Polyline, Rect } from "react-native-svg";
 import { colors } from "../../theme";
+
+interface ChartDomain {
+  min: number;
+  max: number;
+}
+
+interface BackgroundBand {
+  min: number;
+  max: number;
+  color: string;
+}
 
 interface SparkLineProps {
   /** Data points to plot (null values create visible gaps) */
@@ -16,6 +27,10 @@ interface SparkLineProps {
   lineWidth?: number;
   /** Show baseline (average) */
   showBaseline?: boolean;
+  /** Fixed y-axis domain for threshold-based charts */
+  domain?: ChartDomain;
+  /** Background threshold layers aligned to the y-axis domain */
+  backgroundBands?: BackgroundBand[];
 }
 
 /** Split data into contiguous non-null segments for gap rendering */
@@ -25,6 +40,7 @@ function splitSegments(
   chartWidth: number,
   chartHeight: number,
   min: number,
+  max: number,
   range: number,
 ): string[] {
   const segments: string[] = [];
@@ -33,8 +49,9 @@ function splitSegments(
   for (let i = 0; i < data.length; i++) {
     const value = data[i];
     if (value != null) {
+      const clampedValue = Math.max(min, Math.min(max, value));
       const pointX = padding + (i / (data.length - 1)) * chartWidth;
-      const pointY = padding + chartHeight - ((value - min) / range) * chartHeight;
+      const pointY = padding + chartHeight - ((clampedValue - min) / range) * chartHeight;
       current.push(`${pointX},${pointY}`);
     } else {
       if (current.length >= 2) {
@@ -56,6 +73,8 @@ export function SparkLine({
   color = "#00E676",
   lineWidth = 2,
   showBaseline = false,
+  domain,
+  backgroundBands,
 }: SparkLineProps) {
   const [layout, setLayout] = useState({ width: fixedWidth ?? 0, height: fixedHeight ?? 0 });
 
@@ -83,14 +102,37 @@ export function SparkLine({
   const chartWidth = currentWidth - padding * 2;
   const chartHeight = currentHeight - padding * 2;
 
-  const min = Math.min(...nonNullValues);
-  const max = Math.max(...nonNullValues);
+  const min = domain?.min ?? Math.min(...nonNullValues);
+  const max = domain?.max ?? Math.max(...nonNullValues);
   const range = max - min || 1;
 
-  const segments = splitSegments(data, padding, chartWidth, chartHeight, min, range);
+  const segments = splitSegments(data, padding, chartWidth, chartHeight, min, max, range);
 
   const avg = nonNullValues.reduce((sum, v) => sum + v, 0) / nonNullValues.length;
   const avgY = padding + chartHeight - ((avg - min) / range) * chartHeight;
+
+  const chartBackgroundBands =
+    backgroundBands?.flatMap((backgroundBand) => {
+      const clampedStart = Math.max(min, Math.min(max, backgroundBand.min));
+      const clampedEnd = Math.max(min, Math.min(max, backgroundBand.max));
+
+      if (clampedEnd <= clampedStart) return [];
+
+      const startY = padding + chartHeight - ((clampedStart - min) / range) * chartHeight;
+      const endY = padding + chartHeight - ((clampedEnd - min) / range) * chartHeight;
+      const bandHeight = Math.max(0, startY - endY);
+
+      return (
+        <Rect
+          key={`${backgroundBand.min}-${backgroundBand.max}-${backgroundBand.color}`}
+          x={padding}
+          y={endY}
+          width={chartWidth}
+          height={bandHeight}
+          fill={backgroundBand.color}
+        />
+      );
+    }) ?? [];
 
   return (
     <View
@@ -98,6 +140,7 @@ export function SparkLine({
       onLayout={onLayout}
     >
       <Svg width={currentWidth} height={currentHeight}>
+        {chartBackgroundBands}
         {showBaseline && (
           <Line
             x1={padding}
