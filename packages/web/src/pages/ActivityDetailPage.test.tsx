@@ -74,13 +74,17 @@ const mockStreamPoints = [
   },
 ];
 
+const mockStrengthExercisesUseQuery = vi.fn(
+  (_input?: unknown, _options?: { enabled?: boolean }) => ({ data: [], isLoading: false }),
+);
+
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     activity: {
       byId: { useQuery: () => ({ data: mockActivity, isLoading: false, error: null }) },
       stream: { useQuery: () => ({ data: mockStreamPoints, isLoading: false }) },
       hrZones: { useQuery: () => ({ data: [], isLoading: false }) },
-      strengthExercises: { useQuery: () => ({ data: [], isLoading: false }) },
+      strengthExercises: { useQuery: mockStrengthExercisesUseQuery },
       delete: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
     },
     useUtils: () => ({ activity: { list: { invalidate: vi.fn() } } }),
@@ -98,6 +102,7 @@ vi.mock("leaflet", () => ({
 
 function renderWithUnits(ui: ReactNode, unitSystem: UnitSystem = "metric") {
   capturedOptions.length = 0;
+  mockStrengthExercisesUseQuery.mockClear();
   return render(
     <UnitContext.Provider value={{ unitSystem, setUnitSystem: () => {} }}>
       {ui}
@@ -123,6 +128,15 @@ function findOptionByYAxisArrayName(name: string): Record<string, unknown> | und
       (y: Record<string, unknown>) => typeof y.name === "string" && y.name.includes(name),
     );
   });
+}
+
+function getQueryEnabledFlag(value: unknown): boolean | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const enabled = Reflect.get(value, "enabled");
+  return typeof enabled === "boolean" ? enabled : undefined;
 }
 
 function getSeriesData(opt: Record<string, unknown>): Array<unknown> {
@@ -261,6 +275,34 @@ describe("ActivityDetailPage", () => {
       );
       expect(speedAxis).toBeDefined();
       expect(String(speedAxis?.name)).toContain(new UnitConverter("imperial").speedLabel);
+    });
+  });
+
+  describe("strength exercise query gating", () => {
+    it("disables strength exercises query for non-strength activities", async () => {
+      const originalData = { ...mockActivity };
+      Object.assign(mockActivity, { activityType: "running" });
+
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      const enabled = getQueryEnabledFlag(mockStrengthExercisesUseQuery.mock.calls[0]?.[1]);
+      expect(enabled).toBe(false);
+
+      Object.assign(mockActivity, originalData);
+    });
+
+    it("enables strength exercises query for strength activities", async () => {
+      const originalData = { ...mockActivity };
+      Object.assign(mockActivity, { activityType: "strength" });
+
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      const enabled = getQueryEnabledFlag(mockStrengthExercisesUseQuery.mock.calls[0]?.[1]);
+      expect(enabled).toBe(true);
+
+      Object.assign(mockActivity, originalData);
     });
   });
 });
