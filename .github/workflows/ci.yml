@@ -154,6 +154,26 @@ jobs:
       - uses: ./.github/actions/setup-node-pnpm
       - run: pnpm exec depcruise --config .dependency-cruiser.cjs src/ packages/
 
+  python-checks:
+    name: Python Checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/ml
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8
+      - name: Install dependencies
+        run: uv sync
+      - name: Lint
+        run: uv run ruff check src/ tests/
+      - name: Format check
+        run: uv run ruff format --check src/ tests/
+      - name: Type check
+        run: uv run mypy src/ tests/
+      - name: Tests
+        run: uv run pytest --cov --cov-report=xml
+
   hadolint:
     name: Dockerfile Lint
     runs-on: ubuntu-latest
@@ -173,7 +193,7 @@ jobs:
 
   quality-gate:
     name: Lint & Static Analysis
-    needs: [lint, typecheck, sherif, knip, spellcheck, import-boundaries, hadolint, terraform-validate]
+    needs: [lint, typecheck, sherif, knip, spellcheck, import-boundaries, python-checks, hadolint, terraform-validate]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -186,6 +206,7 @@ jobs:
             "${{ needs.knip.result }}" \
             "${{ needs.spellcheck.result }}" \
             "${{ needs.import-boundaries.result }}" \
+            "${{ needs.python-checks.result }}" \
             "${{ needs.hadolint.result }}" \
             "${{ needs.terraform-validate.result }}"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then

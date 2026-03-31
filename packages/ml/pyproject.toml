@@ -1,0 +1,77 @@
+[project]
+name = "dofek-ml"
+version = "0.1.0"
+description = "ML activity classifier — fused CNN for wearable sensor data"
+readme = "README.md"
+authors = [{ name = "Asher Cohen", email = "asherlc@asherlc.com" }]
+requires-python = ">=3.12"
+dependencies = [
+    "boto3>=1.35.0",
+    "numpy>=2.1.0",
+    "pandas>=2.2.3",
+    "scikit-learn>=1.5.2",
+    "torch>=2.5.0",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.13.0",
+    "mutmut>=3.2.0",
+    "pandas-stubs>=2.2.3",
+    "pytest>=8.3.3",
+    "pytest-cov>=6.0.0",
+    "ruff>=0.8.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.2,<0.12.0"]
+build-backend = "uv_build"
+
+# ── ruff (linter + formatter) ──
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "F",     # pyflakes
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "I",     # isort
+    "N",     # pep8-naming
+    "UP",    # pyupgrade
+    "B",     # bugbear
+    "C4",    # comprehensions
+    "PT",    # pytest-style
+    "PTH",   # pathlib
+    "RET",   # return statements
+    "SIM",   # simplify
+    "ARG",   # unused arguments
+    "TC",    # type-checking imports
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ARG"]
+
+# ── mypy (type checker) ──
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+
+# ── pytest ──
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+# ── coverage ──
+
+[tool.coverage.run]
+source = ["src/dofek_ml"]
+
+[tool.coverage.report]
+fail_under = 80

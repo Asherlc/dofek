@@ -1,3 +1,4 @@
+import { sleepStageColors } from "@dofek/scoring/colors";
 import { chartThemeColors, dofekAxis, dofekGrid, dofekTooltip } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
@@ -20,10 +21,10 @@ const STAGE_VALUE: Record<string, number> = {
 };
 
 const STAGE_COLOR: Record<string, string> = {
-  awake: "#f87171",
-  rem: "#8b5cf6",
-  light: "#a78bfa",
-  deep: "#6366f1",
+  awake: sleepStageColors.awake,
+  rem: sleepStageColors.rem,
+  light: sleepStageColors.light,
+  deep: sleepStageColors.deep,
 };
 
 const STAGE_LABELS = ["", "Deep", "Light", "REM", "Awake"];

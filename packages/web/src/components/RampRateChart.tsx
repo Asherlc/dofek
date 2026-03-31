@@ -1,3 +1,4 @@
+import { statusColors } from "@dofek/scoring/colors";
 import { rampRateColor } from "@dofek/scoring/scoring";
 import type { RampRateWeek } from "dofek-server/types";
 import { dofekAxis, dofekGrid, dofekTooltip } from "../lib/chartTheme.ts";
@@ -56,8 +57,13 @@ export function buildRampRateOption(data: RampRateWeekData[]) {
         markLine: {
           silent: true,
           symbol: "none",
-          lineStyle: { color: "#eab308", type: "dashed" as const, width: 1 },
-          data: [{ yAxis: 5, label: { formatter: "Safe Limit", color: "#eab308", fontSize: 10 } }],
+          lineStyle: { color: statusColors.warning, type: "dashed" as const, width: 1 },
+          data: [
+            {
+              yAxis: 5,
+              label: { formatter: "Safe Limit", color: statusColors.warning, fontSize: 10 },
+            },
+          ],
           tooltip: { show: false },
         },
         data: [],

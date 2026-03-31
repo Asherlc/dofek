@@ -1,3 +1,4 @@
+import { sleepStageColors } from "@dofek/scoring/colors";
 import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import Svg, { Line, Polyline, Rect } from "react-native-svg";
@@ -23,10 +24,10 @@ const STAGE_VALUE: Record<string, number> = {
 const STAGE_LABEL = ["Awake", "REM", "Light", "Deep"];
 
 const STAGE_COLOR: Record<string, string> = {
-  awake: "#FF8A65",
-  rem: "#42A5F5",
-  light: "#78909C",
-  deep: "#5E35B1",
+  awake: sleepStageColors.awake,
+  rem: sleepStageColors.rem,
+  light: sleepStageColors.light,
+  deep: sleepStageColors.deep,
 };
 
 const PADDING = { top: 8, right: 12, bottom: 24, left: 44 };

@@ -1,5 +1,7 @@
+import { createTrainingExportQueue } from "dofek/jobs/queues";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { startWorker } from "../lib/start-worker.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { adminProcedure, router } from "../trpc.ts";
 
@@ -412,5 +414,41 @@ export const adminRouter = router({
           GROUP BY provider_id
           ORDER BY failed DESC, total DESC`,
     );
+  }),
+
+  /** Trigger a global training data export */
+  triggerTrainingExport: adminProcedure
+    .input(
+      z.object({
+        since: z.string().optional(),
+        until: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const queue = createTrainingExportQueue();
+      const job = await queue.add("training-export", {
+        since: input.since,
+        until: input.until,
+      });
+      startWorker();
+      return { jobId: String(job.id) };
+    }),
+
+  /** Get training export watermark status */
+  trainingExportStatus: adminProcedure.query(async ({ ctx }) => {
+    const watermarkSchema = z.object({
+      table_name: z.string(),
+      last_exported_at: timestampStringSchema,
+      row_count: z.coerce.number(),
+      updated_at: timestampStringSchema,
+    });
+    const watermarks = await executeWithSchema(
+      ctx.db,
+      watermarkSchema,
+      sql`SELECT table_name, last_exported_at::text, row_count::text, updated_at::text
+          FROM fitness.training_export_watermark
+          ORDER BY table_name`,
+    );
+    return { watermarks };
   }),
 });

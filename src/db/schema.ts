@@ -1,4 +1,5 @@
 import {
+  bigint,
   boolean,
   date,
   index,
@@ -1553,3 +1554,16 @@ export const dexaScanRegion = fitness.table(
     index("dexa_scan_region_scan_idx").on(table.scanId),
   ],
 );
+
+// ============================================================
+// Training export watermark — tracks last export time per table
+// ============================================================
+
+export const trainingExportWatermark = fitness.table("training_export_watermark", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tableName: text("table_name").notNull().unique(),
+  lastExportedAt: timestamp("last_exported_at", { withTimezone: true }).notNull(),
+  rowCount: bigint("row_count", { mode: "number" }).notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});

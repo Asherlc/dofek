@@ -1034,6 +1034,9 @@ export class OuraProvider implements WebhookProvider {
             const windowEnd = Math.min(windowStart + windowMs, end);
             const startStr = formatDate(new Date(windowStart));
             const endStr = formatDate(new Date(windowEnd));
+            // Skip degenerate windows where start and end resolve to the same day
+            // (can happen when the 30-day boundary falls on "now")
+            if (startStr === endStr) break;
             const chunk = await fetchAllPages((nextToken) =>
               client.getHeartRate(startStr, endStr, nextToken),
             );
