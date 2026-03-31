@@ -1,3 +1,4 @@
+import { statusColors } from "@dofek/scoring/colors";
 import {
   chartColors,
   dofekAxis,
@@ -44,7 +45,7 @@ export function NutritionChart({ data, loading }: NutritionChartProps) {
         "Protein",
         data.map((d) => [d.date, d.protein_g]),
         {
-          color: "#ef4444",
+          color: statusColors.danger,
           yAxisIndex: 1,
         },
       ),

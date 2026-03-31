@@ -61,7 +61,7 @@ function CoverageTimeline() {
   const barColor = (ratio: number) => {
     if (ratio > 0.9) return colors.positive;
     if (ratio > 0.5) return colors.accent;
-    return "#f97316";
+    return colors.orange;
   };
 
   return (

@@ -189,6 +189,14 @@ export function zScoreToRecoveryScore(zScore: number): number {
   return Math.max(0, Math.min(100, Math.round(score)));
 }
 
+/** Get the color for a sleep performance tier */
+export function sleepTierColor(tier: "Excellent" | "Good" | "Fair" | "Poor"): string {
+  if (tier === "Excellent") return statusColors.positive;
+  if (tier === "Good") return statusColors.info;
+  if (tier === "Fair") return statusColors.warning;
+  return statusColors.danger;
+}
+
 /** Get the color for sleep debt in minutes */
 export function sleepDebtColor(minutes: number): string {
   if (minutes <= 0) return statusColors.positive;
@@ -212,10 +220,10 @@ export const FORM_ZONE_OPTIMAL = -30;
 /** Colors for form (training stress balance) zones */
 export const FORM_ZONE_COLORS = {
   transition: "#60a5fa",
-  fresh: "#22c55e",
+  fresh: statusColors.positive,
   grey: "#a1a1aa",
-  optimal: "#22c55e",
-  highRisk: "#ef4444",
+  optimal: statusColors.positive,
+  highRisk: statusColors.danger,
 } as const;
 
 /** Form zone (training stress balance) classification with display properties. */

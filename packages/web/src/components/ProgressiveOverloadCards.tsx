@@ -1,3 +1,4 @@
+import { statusColors } from "@dofek/scoring/colors";
 import type { ProgressiveOverloadRow } from "dofek-server/types";
 import { chartColors, dofekAxis, dofekGrid, dofekSeries } from "../lib/chartTheme.ts";
 import { formatNumber } from "../lib/format.ts";
@@ -9,7 +10,7 @@ interface ProgressiveOverloadCardsProps {
 }
 
 function SparklineChart({ values, isProgressing }: { values: number[]; isProgressing: boolean }) {
-  const color = isProgressing ? chartColors.emerald : "#ef4444";
+  const color = isProgressing ? chartColors.emerald : statusColors.danger;
 
   const option = {
     grid: dofekGrid("single", { top: 2, right: 2, bottom: 2, left: 2 }),

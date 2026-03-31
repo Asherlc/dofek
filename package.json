@@ -64,7 +64,7 @@
     "generate": "drizzle-kit generate && tsx scripts/generate-schema-diagram.ts",
     "schema:diagram": "tsx scripts/generate-schema-diagram.ts",
     "schema:view": "tsx scripts/generate-schema-diagram.ts --open",
-    "lint": "biome check . --max-diagnostics=500 && bash scripts/no-suppressions.sh && bash scripts/exact-versions.sh && sherif",
+    "lint": "biome check . --max-diagnostics=500 && bash scripts/no-suppressions.sh && bash scripts/no-hardcoded-colors.sh && bash scripts/exact-versions.sh && sherif",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "test": "vitest",
