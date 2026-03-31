@@ -685,4 +685,280 @@ describe("createUpdatesRouter", () => {
     expect(res.status).toBe(404);
     expect(JSON.parse(res.body)).toEqual({ error: "No current OTA release configured" });
   });
+
+  it("uses object storage pointer and metadata caches for repeated requests", async () => {
+    const releaseId = "release-cache-hit";
+    const metadata = validMetadata();
+    const downloadBuffer = vi.fn(createMockStorage(createReleaseStorageFiles(releaseId, metadata)));
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(123456);
+    const app = createObjectStorageApp(downloadBuffer);
+
+    const headers = {
+      "expo-protocol-version": "1",
+      "expo-platform": "ios",
+      "expo-runtime-version": "1.0",
+    };
+    const first = await request(app, "/updates/manifest", headers);
+    const second = await request(app, "/updates/manifest", headers);
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    const pointerCalls = downloadBuffer.mock.calls.filter(
+      ([key]) => key === "mobile-ota/current-release.json",
+    );
+    const metadataCalls = downloadBuffer.mock.calls.filter(
+      ([key]) => key === `mobile-ota/releases/${releaseId}/metadata.json`,
+    );
+    expect(pointerCalls).toHaveLength(1);
+    expect(metadataCalls).toHaveLength(1);
+    nowSpy.mockRestore();
+  });
+
+  it("handles unknown pointer read failures from object storage", async () => {
+    const logger = {
+      info: vi.fn<(message: string) => void>(),
+      error: vi.fn<(message: string) => void>(),
+    };
+    const app = createObjectStorageApp(
+      createMockStorage(
+        {},
+        { "mobile-ota/current-release.json": new Error("pointer read exploded") },
+      ),
+      logger,
+    );
+
+    const res = await request(app, "/updates/manifest", {
+      "expo-protocol-version": "1",
+      "expo-platform": "ios",
+      "expo-runtime-version": "1.0",
+    });
+
+    expect(res.status).toBe(204);
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to read release pointer from object storage"),
+    );
+  });
+
+  it("treats object storage pointer errors with HTTP 404 metadata as not found", async () => {
+    const notFoundWithMetadata = new Error("missing pointer via metadata status");
+    Object.defineProperty(notFoundWithMetadata, "$metadata", {
+      value: { httpStatusCode: 404 },
+      enumerable: true,
+    });
+
+    const app = createObjectStorageApp(
+      createMockStorage({}, { "mobile-ota/current-release.json": notFoundWithMetadata }),
+    );
+
+    const res = await request(app, "/updates/manifest", {
+      "expo-protocol-version": "1",
+      "expo-platform": "ios",
+      "expo-runtime-version": "1.0",
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get("expo-protocol-version")).toBe("1");
+  });
+
+  it("handles unknown metadata read failures from object storage", async () => {
+    const releaseId = "release-metadata-read-fail";
+    const logger = {
+      info: vi.fn<(message: string) => void>(),
+      error: vi.fn<(message: string) => void>(),
+    };
+    const app = createObjectStorageApp(
+      createMockStorage(
+        { "mobile-ota/current-release.json": JSON.stringify({ releaseId }) },
+        {
+          [`mobile-ota/releases/${releaseId}/metadata.json`]: new Error("metadata read exploded"),
+        },
+      ),
+      logger,
+    );
+
+    const res = await request(app, "/updates/manifest", {
+      "expo-protocol-version": "1",
+      "expo-platform": "ios",
+      "expo-runtime-version": "1.0",
+    });
+    expect(res.status).toBe(204);
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining(
+        `Failed to read metadata.json from object storage for release ${releaseId}`,
+      ),
+    );
+  });
+
+  it("returns 204 when object storage metadata.json is malformed JSON", async () => {
+    const releaseId = "release-metadata-malformed";
+    const logger = {
+      info: vi.fn<(message: string) => void>(),
+      error: vi.fn<(message: string) => void>(),
+    };
+    const app = createObjectStorageApp(
+      createMockStorage({
+        "mobile-ota/current-release.json": JSON.stringify({ releaseId }),
+        [`mobile-ota/releases/${releaseId}/metadata.json`]: "{not-json",
+      }),
+      logger,
+    );
+
+    const res = await request(app, "/updates/manifest", {
+      "expo-protocol-version": "1",
+      "expo-platform": "ios",
+      "expo-runtime-version": "1.0",
+    });
+    expect(res.status).toBe(204);
+    expect(logger.error).toHaveBeenCalledWith("[updates] Malformed JSON in metadata.json");
+  });
+
+  it("returns 204 when object storage metadata.json has invalid schema", async () => {
+    const releaseId = "release-metadata-invalid";
+    const logger = {
+      info: vi.fn<(message: string) => void>(),
+      error: vi.fn<(message: string) => void>(),
+    };
+    const app = createObjectStorageApp(
+      createMockStorage({
+        "mobile-ota/current-release.json": JSON.stringify({ releaseId }),
+        [`mobile-ota/releases/${releaseId}/metadata.json`]: JSON.stringify({ broken: true }),
+      }),
+      logger,
+    );
+
+    const res = await request(app, "/updates/manifest", {
+      "expo-protocol-version": "1",
+      "expo-platform": "ios",
+      "expo-runtime-version": "1.0",
+    });
+    expect(res.status).toBe(204);
+    expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("Invalid metadata.json"));
+  });
+
+  it("returns 204 when no updatesDir is configured in disk mode", async () => {
+    const app = express();
+    app.use("/updates", createUpdatesRouter({ publicUrl: PUBLIC_URL, logger: silentLogger }));
+
+    const res = await request(app, "/updates/manifest", {
+      "expo-protocol-version": "1",
+      "expo-platform": "ios",
+      "expo-runtime-version": "1.0",
+    });
+
+    expect(res.status).toBe(204);
+    expect(res.headers.get("expo-protocol-version")).toBe("1");
+  });
+
+  it("returns release-metadata 404 for non-current disk release asset and bundle requests", async () => {
+    const metadata = validMetadata();
+    writeMetadata(metadata);
+    writeReleaseFiles(metadata);
+    const app = createTestApp();
+
+    const assetRes = await request(
+      app,
+      `/updates/releases/not-current/assets/${metadata.assets[0].key}`,
+    );
+    const bundleRes = await request(
+      app,
+      `/updates/releases/not-current/bundles/${metadata.launchAsset.key}`,
+    );
+
+    expect(assetRes.status).toBe(404);
+    expect(JSON.parse(assetRes.body)).toEqual({ error: "No update metadata found for release" });
+    expect(bundleRes.status).toBe(404);
+    expect(JSON.parse(bundleRes.body)).toEqual({ error: "No update metadata found for release" });
+  });
+
+  it("handles disk metadata read failures that are not not-found errors", async () => {
+    const badDir = join(
+      tmpdir(),
+      `dofek-updates-metadata-read-fail-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    );
+    const logger = {
+      info: vi.fn<(message: string) => void>(),
+      error: vi.fn<(message: string) => void>(),
+    };
+    mkdirSync(join(badDir, "current", "metadata.json"), { recursive: true });
+    const app = express();
+    app.use(
+      "/updates",
+      createUpdatesRouter({
+        updatesDir: badDir,
+        publicUrl: PUBLIC_URL,
+        logger,
+      }),
+    );
+
+    const res = await request(app, "/updates/manifest", {
+      "expo-protocol-version": "1",
+      "expo-platform": "ios",
+      "expo-runtime-version": "1.0",
+    });
+
+    expect(res.status).toBe(204);
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to read metadata.json from disk"),
+    );
+  });
+
+  it("handles object storage asset read failures that are not not-found errors", async () => {
+    const releaseId = "release-asset-read-fail";
+    const metadata = validMetadata();
+    const logger = {
+      info: vi.fn<(message: string) => void>(),
+      error: vi.fn<(message: string) => void>(),
+    };
+    const app = createObjectStorageApp(
+      createMockStorage(createReleaseStorageFiles(releaseId, metadata), {
+        [`mobile-ota/releases/${releaseId}/assets/${metadata.assets[0].key}`]: new Error(
+          "asset read exploded",
+        ),
+      }),
+      logger,
+    );
+
+    const res = await request(
+      app,
+      `/updates/releases/${releaseId}/assets/${metadata.assets[0].key}`,
+    );
+    expect(res.status).toBe(404);
+    expect(JSON.parse(res.body)).toEqual({ error: "Asset file not found" });
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining(
+        `Failed to read assets/${metadata.assets[0].key} from object storage`,
+      ),
+    );
+  });
+
+  it("handles disk asset read failures that are not not-found errors", async () => {
+    const badDir = join(
+      tmpdir(),
+      `dofek-updates-asset-read-fail-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    );
+    const metadata = validMetadata();
+    const logger = {
+      info: vi.fn<(message: string) => void>(),
+      error: vi.fn<(message: string) => void>(),
+    };
+    const currentDir = join(badDir, "current");
+    mkdirSync(currentDir, { recursive: true });
+    writeFileSync(join(currentDir, "metadata.json"), JSON.stringify(metadata));
+    mkdirSync(join(currentDir, "assets", metadata.assets[0].key), { recursive: true });
+    const app = express();
+    app.use(
+      "/updates",
+      createUpdatesRouter({
+        updatesDir: badDir,
+        publicUrl: PUBLIC_URL,
+        logger,
+      }),
+    );
+
+    const res = await request(app, `/updates/releases/current/assets/${metadata.assets[0].key}`);
+    expect(res.status).toBe(404);
+    expect(JSON.parse(res.body)).toEqual({ error: "Asset file not found" });
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining(`Failed to read assets/${metadata.assets[0].key} from disk`),
+    );
+  });
 });
