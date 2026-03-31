@@ -16,8 +16,8 @@ DROP TABLE IF EXISTS drizzle.sensor_sample_backfill_progress;
 
 --> statement-breakpoint
 
--- squawk-ignore ban-drop-table
-DROP TABLE IF EXISTS fitness.metric_stream CASCADE;
+-- NOTE: metric_stream and its continuous aggregates are still referenced by
+-- existing query paths and tests. Keep it until full read/write cutover.
 -- squawk-ignore ban-drop-table
 DROP TABLE IF EXISTS fitness.inertial_measurement_unit_sample CASCADE;
 -- squawk-ignore ban-drop-table

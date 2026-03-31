@@ -760,20 +760,20 @@ describe("importAppleHealthFile — full DB integration", () => {
     expect(result.errors).toHaveLength(0);
   }, 60_000);
 
-  it("creates metric_stream rows for HR, SpO2, and blood glucose", async () => {
-    const rows = await ctx.db.select().from(schema.metricStream);
-    const hrRows = rows.filter((r) => r.heartRate !== null && r.activityId === null);
+  it("creates sensor_sample rows for HR, SpO2, and blood glucose", async () => {
+    const rows = await ctx.db.select().from(schema.sensorSample);
+    const hrRows = rows.filter((r) => r.channel === "heart_rate" && r.activityId === null);
     expect(hrRows.length).toBeGreaterThanOrEqual(2);
-    expect(hrRows.some((r) => r.heartRate === 72)).toBe(true);
-    expect(hrRows.some((r) => r.heartRate === 85)).toBe(true);
+    expect(hrRows.some((r) => r.scalar === 72)).toBe(true);
+    expect(hrRows.some((r) => r.scalar === 85)).toBe(true);
 
-    const spo2Rows = rows.filter((r) => r.spo2 !== null);
+    const spo2Rows = rows.filter((r) => r.channel === "spo2");
     expect(spo2Rows.length).toBeGreaterThanOrEqual(1);
-    expect(spo2Rows[0]?.spo2).toBeCloseTo(0.97);
+    expect(spo2Rows[0]?.scalar).toBeCloseTo(0.97);
 
-    const bgRows = rows.filter((r) => r.bloodGlucose !== null);
+    const bgRows = rows.filter((r) => r.channel === "blood_glucose");
     expect(bgRows.length).toBeGreaterThanOrEqual(1);
-    expect(bgRows[0]?.bloodGlucose).toBeCloseTo(5.4);
+    expect(bgRows[0]?.scalar).toBeCloseTo(5.4);
   });
 
   it("creates body_measurement rows with weight, body fat, and BP", async () => {
@@ -838,7 +838,7 @@ describe("importAppleHealthFile — full DB integration", () => {
     expect(session?.sleepType).toBeNull();
   });
 
-  it("creates activity rows for workouts with GPS in metric_stream", async () => {
+  it("creates activity rows for workouts with GPS in sensor_sample", async () => {
     const activities = await ctx.db.select().from(schema.activity);
     const run = activities.find((a) => a.activityType === "running");
     expect(run).toBeDefined();
@@ -851,12 +851,15 @@ describe("importAppleHealthFile — full DB integration", () => {
       maxHeartRate: 175,
     });
 
-    // Check GPS metric_stream rows linked to the activity
-    const allMetrics = await ctx.db.select().from(schema.metricStream);
-    const gpsRows = allMetrics.filter((r) => r.activityId === run?.id && r.lat !== null);
+    // Check GPS sensor_sample rows linked to the activity
+    const allMetrics = await ctx.db.select().from(schema.sensorSample);
+    const gpsRows = allMetrics.filter((r) => r.activityId === run?.id && r.channel === "lat");
     expect(gpsRows.length).toBe(2);
-    expect(gpsRows.some((r) => r.lat !== null && Math.abs(r.lat - 40.7128) < 0.001)).toBe(true);
-    expect(gpsRows.some((r) => r.speed !== null && Math.abs(r.speed - 3.5) < 0.1)).toBe(true);
+    expect(gpsRows.some((r) => r.scalar !== null && Math.abs(r.scalar - 40.7128) < 0.001)).toBe(
+      true,
+    );
+    const speedRows = allMetrics.filter((r) => r.activityId === run?.id && r.channel === "speed");
+    expect(speedRows.some((r) => r.scalar !== null && Math.abs(r.scalar - 3.5) < 0.1)).toBe(true);
   });
 
   it("creates health_event rows for category records (mindful session)", async () => {

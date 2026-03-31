@@ -242,26 +242,35 @@ describe("db-insertion deduplication (integration)", () => {
   });
 
   describe("aggregateSpO2ToDailyMetrics", () => {
-    it("aggregates SpO2 fractions from metric_stream into daily_metrics as percentage", async () => {
-      // Insert SpO2 readings as fractions (0-1) into metric_stream
-      await ctx.db.insert(schema.metricStream).values([
+    it("aggregates SpO2 fractions from sensor_sample into daily_metrics as percentage", async () => {
+      // Insert SpO2 readings as fractions (0-1) into sensor_sample
+      await ctx.db.insert(schema.sensorSample).values([
         {
           providerId: PROVIDER_ID,
+          userId: schema.DEFAULT_USER_ID,
           recordedAt: new Date("2025-08-01T08:00:00Z"),
-          spo2: 0.96,
-          sourceName: "Apple Watch",
+          channel: "spo2",
+          scalar: 0.96,
+          sourceType: "api",
+          deviceId: "Apple Watch",
         },
         {
           providerId: PROVIDER_ID,
+          userId: schema.DEFAULT_USER_ID,
           recordedAt: new Date("2025-08-01T14:00:00Z"),
-          spo2: 0.98,
-          sourceName: "Apple Watch",
+          channel: "spo2",
+          scalar: 0.98,
+          sourceType: "api",
+          deviceId: "Apple Watch",
         },
         {
           providerId: PROVIDER_ID,
+          userId: schema.DEFAULT_USER_ID,
           recordedAt: new Date("2025-08-01T20:00:00Z"),
-          spo2: 0.97,
-          sourceName: "Apple Watch",
+          channel: "spo2",
+          scalar: 0.97,
+          sourceType: "api",
+          deviceId: "Apple Watch",
         },
       ]);
 
@@ -279,20 +288,26 @@ describe("db-insertion deduplication (integration)", () => {
   });
 
   describe("aggregateSkinTempToDailyMetrics", () => {
-    it("aggregates wrist temperature from metric_stream into daily_metrics", async () => {
-      // Insert skin temperature readings into metric_stream
-      await ctx.db.insert(schema.metricStream).values([
+    it("aggregates wrist temperature from sensor_sample into daily_metrics", async () => {
+      // Insert skin temperature readings into sensor_sample
+      await ctx.db.insert(schema.sensorSample).values([
         {
           providerId: PROVIDER_ID,
+          userId: schema.DEFAULT_USER_ID,
           recordedAt: new Date("2025-08-02T02:00:00Z"),
-          skinTemperature: 33.2,
-          sourceName: "Apple Watch",
+          channel: "skin_temperature",
+          scalar: 33.2,
+          sourceType: "api",
+          deviceId: "Apple Watch",
         },
         {
           providerId: PROVIDER_ID,
+          userId: schema.DEFAULT_USER_ID,
           recordedAt: new Date("2025-08-02T04:00:00Z"),
-          skinTemperature: 33.6,
-          sourceName: "Apple Watch",
+          channel: "skin_temperature",
+          scalar: 33.6,
+          sourceType: "api",
+          deviceId: "Apple Watch",
         },
       ]);
 

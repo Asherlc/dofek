@@ -101,7 +101,7 @@ export class ActivityRecordingRepository {
         { channel: "speed", key: "speed" },
       ];
       for (const { channel, key } of channelMapping) {
-        const channelValues = input.samples
+        const channelValues = batch
           .filter((sample) => sample[key] != null)
           .map(
             (sample) =>

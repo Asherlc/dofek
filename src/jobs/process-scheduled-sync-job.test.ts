@@ -22,6 +22,7 @@ vi.mock("../providers/index.ts", () => ({
     if (providerId === "strong-csv") return { id: providerId, importOnly: true as const };
     return { id: providerId };
   },
+  isSyncEligibleProvider: (provider: { importOnly?: boolean }) => !provider.importOnly,
 }));
 
 vi.mock("./provider-registration.ts", () => ({
