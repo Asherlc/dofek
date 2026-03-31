@@ -6,7 +6,7 @@ const mockOnLoginSuccess = vi.fn();
 const mockFetchConfiguredProviders = vi.fn();
 const mockStartOAuthLogin = vi.fn();
 const mockStartNativeAppleSignIn = vi.fn();
-const mockIsNativeAppleSignInAvailable = vi.fn(() => false);
+const mockIsNativeAppleSignInAvailable = vi.fn(async () => false);
 
 vi.mock("../lib/auth-context", () => ({
   useAuth: () => ({
@@ -23,7 +23,11 @@ vi.mock("../lib/auth", () => ({
 }));
 
 vi.mock("expo-apple-authentication", () => ({
-  AppleAuthenticationButton: "AppleAuthenticationButton",
+  AppleAuthenticationButton: ({ onPress }: { onPress?: (() => void) | undefined }) => (
+    <button onClick={onPress} type="button">
+      AppleAuthenticationButton
+    </button>
+  ),
   AppleAuthenticationButtonType: { SIGN_IN: 0 },
   AppleAuthenticationButtonStyle: { WHITE: 0 },
   AppleAuthenticationScope: { FULL_NAME: 0, EMAIL: 1 },
@@ -38,6 +42,7 @@ const { default: LoginScreen } = await import("./login");
 describe("LoginScreen", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockIsNativeAppleSignInAvailable.mockResolvedValue(false);
   });
 
   it("shows title and subtitle", () => {
@@ -58,6 +63,20 @@ describe("LoginScreen", () => {
       expect(screen.getByText("Sign in with Google")).toBeTruthy();
     });
     expect(screen.getByText("Sign in with Apple")).toBeTruthy();
+  });
+
+  it("hides generic Apple OAuth button when native Apple Sign In is available", async () => {
+    mockIsNativeAppleSignInAvailable.mockResolvedValue(true);
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: ["google", "apple"],
+      data: [],
+    });
+    render(<LoginScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Sign in with Google")).toBeTruthy();
+    });
+    expect(screen.queryByText("Sign in with Apple")).toBeNull();
   });
 
   it("shows data provider buttons", async () => {
@@ -154,5 +173,26 @@ describe("LoginScreen", () => {
     await waitFor(() => {
       expect(screen.getByText("OAuth cancelled")).toBeTruthy();
     });
+  });
+
+  it("falls back to OAuth when native Apple Sign In fails", async () => {
+    mockIsNativeAppleSignInAvailable.mockResolvedValue(true);
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: ["apple"],
+      data: [],
+    });
+    mockStartNativeAppleSignIn.mockRejectedValue(new Error("native apple failed"));
+    mockStartOAuthLogin.mockResolvedValue("fallback-token");
+
+    render(<LoginScreen />);
+
+    const appleButton = await screen.findByText("AppleAuthenticationButton");
+    fireEvent.click(appleButton);
+
+    await waitFor(() => {
+      expect(mockStartNativeAppleSignIn).toHaveBeenCalledWith("https://test.example.com");
+    });
+    expect(mockStartOAuthLogin).toHaveBeenCalledWith("https://test.example.com", "apple", false);
+    expect(mockOnLoginSuccess).toHaveBeenCalledWith("fallback-token");
   });
 });

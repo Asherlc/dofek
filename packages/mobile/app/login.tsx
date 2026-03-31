@@ -11,14 +11,27 @@ import {
   startOAuthLogin,
 } from "../lib/auth";
 import { useAuth } from "../lib/auth-context";
+import { captureException } from "../lib/telemetry";
 import { colors } from "../theme";
 
 export default function LoginScreen() {
   const { serverUrl, onLoginSuccess } = useAuth();
   const [providers, setProviders] = useState<ConfiguredProviders | null>(null);
+  const [nativeAppleSignInAvailable, setNativeAppleSignInAvailable] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loggingIn, setLoggingIn] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    void isNativeAppleSignInAvailable().then((isAvailable) => {
+      if (!mounted) return;
+      setNativeAppleSignInAvailable(isAvailable);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!serverUrl) return;
@@ -41,8 +54,17 @@ export default function LoginScreen() {
       let token: string | null;
 
       // Use native Apple Sign In on iOS for the apple identity provider
-      if (providerId === "apple" && !isDataProvider && isNativeAppleSignInAvailable()) {
-        token = await startNativeAppleSignIn(serverUrl);
+      if (providerId === "apple" && !isDataProvider && nativeAppleSignInAvailable) {
+        try {
+          token = await startNativeAppleSignIn(serverUrl);
+        } catch (nativeError: unknown) {
+          if (nativeError instanceof Error && nativeError.message.includes("ERR_CANCELED")) {
+            return;
+          }
+          captureException(nativeError, { source: "apple-native-signin-fallback" });
+          // Fall back to browser OAuth so login still works when native flow fails.
+          token = await startOAuthLogin(serverUrl, providerId, isDataProvider);
+        }
       } else {
         token = await startOAuthLogin(serverUrl, providerId, isDataProvider);
       }
@@ -55,13 +77,15 @@ export default function LoginScreen() {
       if (err instanceof Error && err.message.includes("ERR_CANCELED")) {
         return;
       }
+      captureException(err, { source: "login-screen-handle-login" });
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
       setLoggingIn(false);
     }
   }
 
-  const useNativeApple = isNativeAppleSignInAvailable() && providers?.identity.includes("apple");
+  const useNativeApple =
+    nativeAppleSignInAvailable && (providers?.identity.includes("apple") ?? false);
   const allProviders = providers
     ? [
         // Exclude Apple from generic list when native sign-in is available
