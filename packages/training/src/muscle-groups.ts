@@ -1,189 +1,95 @@
 import { surfaceColors } from "@dofek/scoring/colors";
 
 // ---------------------------------------------------------------------------
-// SVG path helpers
+// Slug type — matches react-native-body-highlighter slugs
 // ---------------------------------------------------------------------------
 
-function ellipse(cx: number, cy: number, rx: number, ry: number): string {
-  return `M ${cx - rx} ${cy} A ${rx} ${ry} 0 1 1 ${cx + rx} ${cy} A ${rx} ${ry} 0 1 1 ${cx - rx} ${cy} Z`;
-}
-
-function roundedRect(x: number, y: number, width: number, height: number, radius: number): string {
-  const right = x + width;
-  const bottom = y + height;
-  return [
-    `M ${x + radius} ${y}`,
-    `L ${right - radius} ${y}`,
-    `Q ${right} ${y} ${right} ${y + radius}`,
-    `L ${right} ${bottom - radius}`,
-    `Q ${right} ${bottom} ${right - radius} ${bottom}`,
-    `L ${x + radius} ${bottom}`,
-    `Q ${x} ${bottom} ${x} ${bottom - radius}`,
-    `L ${x} ${y + radius}`,
-    `Q ${x} ${y} ${x + radius} ${y}`,
-    `Z`,
-  ].join(" ");
-}
+export type BodySlug =
+  | "abs"
+  | "biceps"
+  | "calves"
+  | "chest"
+  | "deltoids"
+  | "forearm"
+  | "gluteal"
+  | "hamstring"
+  | "lower-back"
+  | "obliques"
+  | "quadriceps"
+  | "trapezius"
+  | "triceps"
+  | "upper-back";
 
 // ---------------------------------------------------------------------------
-// ViewBox
+// Labels — human-readable display names for slugs
 // ---------------------------------------------------------------------------
 
-export const BODY_VIEWBOX = { width: 170, height: 360 };
-
-// ---------------------------------------------------------------------------
-// Path data — keyed by SVG region ID
-// ---------------------------------------------------------------------------
-
-/** Front-view muscle group SVG paths. Keys starting with `_` are structural (non-muscle). */
-export const FRONT_PATHS: Record<string, string[]> = {
-  // Structural (neutral fill)
-  _head: [ellipse(85, 22, 13, 16)],
-  _neck: [roundedRect(79, 39, 12, 14, 3)],
-  _leftHand: [ellipse(24, 198, 7, 10)],
-  _rightHand: [ellipse(146, 198, 7, 10)],
-  _leftFoot: [ellipse(63, 326, 11, 8)],
-  _rightFoot: [ellipse(107, 326, 11, 8)],
-
-  // Muscle groups
-  SHOULDERS: [
-    ellipse(38, 62, 14, 10), // left deltoid
-    ellipse(132, 62, 14, 10), // right deltoid
-  ],
-  CHEST: [
-    ellipse(72, 84, 16, 13), // left pec
-    ellipse(98, 84, 16, 13), // right pec
-  ],
-  BICEPS: [
-    roundedRect(22, 74, 16, 54, 6), // left
-    roundedRect(132, 74, 16, 54, 6), // right
-  ],
-  FOREARMS: [
-    roundedRect(16, 132, 14, 58, 5), // left
-    roundedRect(140, 132, 14, 58, 5), // right
-  ],
-  ABS: [roundedRect(68, 100, 34, 48, 5)],
-  OBLIQUES: [
-    roundedRect(54, 102, 12, 44, 4), // left
-    roundedRect(104, 102, 12, 44, 4), // right
-  ],
-  QUADS: [
-    roundedRect(48, 156, 28, 90, 8), // left
-    roundedRect(94, 156, 28, 90, 8), // right
-  ],
-  CALVES: [
-    roundedRect(52, 252, 22, 64, 6), // left
-    roundedRect(96, 252, 22, 64, 6), // right
-  ],
+const SLUG_LABELS: Record<string, string> = {
+  abs: "Abs",
+  biceps: "Biceps",
+  calves: "Calves",
+  chest: "Chest",
+  deltoids: "Shoulders",
+  forearm: "Forearms",
+  gluteal: "Glutes",
+  hamstring: "Hamstrings",
+  "lower-back": "Lower Back",
+  obliques: "Obliques",
+  quadriceps: "Quads",
+  trapezius: "Traps",
+  triceps: "Triceps",
+  "upper-back": "Upper Back",
 };
 
-/** Back-view muscle group SVG paths. Keys starting with `_` are structural (non-muscle). */
-export const BACK_PATHS: Record<string, string[]> = {
-  // Structural
-  _head: [ellipse(85, 22, 13, 16)],
-  _neck: [roundedRect(79, 39, 12, 14, 3)],
-  _leftHand: [ellipse(24, 198, 7, 10)],
-  _rightHand: [ellipse(146, 198, 7, 10)],
-  _leftFoot: [ellipse(63, 326, 11, 8)],
-  _rightFoot: [ellipse(107, 326, 11, 8)],
-
-  // Muscle groups
-  TRAPS: ["M 85 50 L 66 62 L 62 82 L 85 92 L 108 82 L 104 62 Z"],
-  SHOULDERS: [
-    ellipse(38, 62, 14, 10), // left rear delt
-    ellipse(132, 62, 14, 10), // right rear delt
-  ],
-  LATS: [
-    roundedRect(50, 82, 16, 50, 5), // left
-    roundedRect(104, 82, 16, 50, 5), // right
-  ],
-  UPPER_BACK: [roundedRect(68, 82, 34, 28, 4)],
-  TRICEPS: [
-    roundedRect(22, 74, 16, 54, 6), // left
-    roundedRect(132, 74, 16, 54, 6), // right
-  ],
-  FOREARMS: [
-    roundedRect(16, 132, 14, 58, 5), // left
-    roundedRect(140, 132, 14, 58, 5), // right
-  ],
-  LOWER_BACK: [roundedRect(62, 114, 46, 36, 5)],
-  GLUTES: [
-    ellipse(68, 162, 16, 12), // left
-    ellipse(102, 162, 16, 12), // right
-  ],
-  HAMSTRINGS: [
-    roundedRect(48, 178, 28, 64, 8), // left
-    roundedRect(94, 178, 28, 64, 8), // right
-  ],
-  CALVES: [
-    roundedRect(52, 252, 22, 64, 6), // left
-    roundedRect(96, 252, 22, 64, 6), // right
-  ],
-};
-
-// ---------------------------------------------------------------------------
-// Labels — human-readable display names
-// ---------------------------------------------------------------------------
-
-const MUSCLE_GROUP_LABELS: Record<string, string> = {
-  SHOULDERS: "Shoulders",
-  CHEST: "Chest",
-  BICEPS: "Biceps",
-  TRICEPS: "Triceps",
-  FOREARMS: "Forearms",
-  ABS: "Abs",
-  OBLIQUES: "Obliques",
-  QUADS: "Quads",
-  QUADRICEPS: "Quads",
-  HAMSTRINGS: "Hamstrings",
-  CALVES: "Calves",
-  GLUTES: "Glutes",
-  TRAPS: "Traps",
-  LATS: "Lats",
-  UPPER_BACK: "Upper Back",
-  LOWER_BACK: "Lower Back",
-  BACK: "Back",
-  CORE: "Core",
-  LEGS: "Legs",
-  ARMS: "Arms",
-};
-
-export function muscleGroupLabel(group: string): string {
-  return MUSCLE_GROUP_LABELS[group.toUpperCase()] ?? titleCase(group);
+export function muscleGroupLabel(slug: string): string {
+  return SLUG_LABELS[slug] ?? titleCase(slug);
 }
 
 function titleCase(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (char) => char.toUpperCase());
+  return value.replace(/-/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 // ---------------------------------------------------------------------------
-// Coarse-to-fine mapping: distribute data from broad groups to SVG regions
+// WHOOP group → library slug mapping
 // ---------------------------------------------------------------------------
 
 /**
- * Maps a coarse WHOOP muscle group name (e.g. "BACK") to the fine-grained
- * SVG region IDs it should color. Fine-grained names map to themselves.
+ * Maps a WHOOP muscle group name to body-highlighter library slugs.
+ * Coarse groups (BACK, LEGS, CORE) are distributed across multiple slugs.
  */
-const COARSE_TO_FINE: Record<string, string[]> = {
-  BACK: ["TRAPS", "LATS", "UPPER_BACK", "LOWER_BACK"],
-  CORE: ["ABS", "OBLIQUES"],
-  LEGS: ["QUADS", "HAMSTRINGS", "CALVES", "GLUTES"],
-  ARMS: ["BICEPS", "TRICEPS", "FOREARMS"],
-  QUADRICEPS: ["QUADS"],
-  TRAPEZIUS: ["TRAPS"],
-  LATISSIMUS: ["LATS"],
-  ABDOMINALS: ["ABS"],
-  DELTOIDS: ["SHOULDERS"],
-  DELTS: ["SHOULDERS"],
+const WHOOP_TO_SLUGS: Record<string, BodySlug[]> = {
+  CHEST: ["chest"],
+  BACK: ["trapezius", "upper-back", "lower-back"],
+  SHOULDERS: ["deltoids"],
+  BICEPS: ["biceps"],
+  TRICEPS: ["triceps"],
+  FOREARMS: ["forearm"],
+  CORE: ["abs", "obliques"],
+  ABS: ["abs"],
+  OBLIQUES: ["obliques"],
+  LEGS: ["quadriceps", "hamstring", "calves", "gluteal"],
+  QUADRICEPS: ["quadriceps"],
+  QUADS: ["quadriceps"],
+  HAMSTRINGS: ["hamstring"],
+  CALVES: ["calves"],
+  GLUTES: ["gluteal"],
+  GLUTEAL: ["gluteal"],
+  TRAPS: ["trapezius"],
+  TRAPEZIUS: ["trapezius"],
+  LATS: ["upper-back"],
+  UPPER_BACK: ["upper-back"],
+  LOWER_BACK: ["lower-back"],
+  DELTOIDS: ["deltoids"],
+  DELTS: ["deltoids"],
+  ARMS: ["biceps", "triceps", "forearm"],
+  ABDOMINALS: ["abs"],
+  LATISSIMUS: ["upper-back"],
 };
 
-/** Expand a muscle group name to SVG region IDs. */
+/** Expand a WHOOP muscle group name to library-compatible slugs. */
 export function expandMuscleGroup(group: string): string[] {
   const upper = group.toUpperCase();
-  return COARSE_TO_FINE[upper] ?? [upper];
+  return WHOOP_TO_SLUGS[upper] ?? [group.toLowerCase()];
 }
 
 // ---------------------------------------------------------------------------
@@ -196,20 +102,20 @@ export interface MuscleGroupInput {
 }
 
 /**
- * Compute total sets per SVG region from the API data.
+ * Compute total sets per slug from the API data.
  * Handles coarse-to-fine expansion (e.g., "BACK" distributes evenly
- * across TRAPS, LATS, UPPER_BACK, LOWER_BACK).
+ * across trapezius, upper-back, lower-back).
  */
-export function computeRegionTotals(data: MuscleGroupInput[]): Map<string, number> {
+export function computeSlugTotals(data: MuscleGroupInput[]): Map<string, number> {
   const totals = new Map<string, number>();
 
   for (const group of data) {
     const totalSets = group.weeklyData.reduce((sum, week) => sum + week.sets, 0);
-    const regions = expandMuscleGroup(group.muscleGroup);
-    const setsPerRegion = totalSets / regions.length;
+    const slugs = expandMuscleGroup(group.muscleGroup);
+    const setsPerSlug = totalSets / slugs.length;
 
-    for (const region of regions) {
-      totals.set(region, (totals.get(region) ?? 0) + setsPerRegion);
+    for (const slug of slugs) {
+      totals.set(slug, (totals.get(slug) ?? 0) + setsPerSlug);
     }
   }
 
@@ -217,15 +123,15 @@ export function computeRegionTotals(data: MuscleGroupInput[]): Map<string, numbe
 }
 
 /**
- * Normalize region totals to 0-1 intensity values (relative to max).
+ * Normalize slug totals to 0-1 intensity values (relative to max).
  */
-export function computeIntensities(regionTotals: Map<string, number>): Map<string, number> {
-  const maxSets = Math.max(0, ...regionTotals.values());
+export function computeIntensities(slugTotals: Map<string, number>): Map<string, number> {
+  const maxSets = Math.max(0, ...slugTotals.values());
   if (maxSets === 0) return new Map();
 
   const intensities = new Map<string, number>();
-  for (const [region, sets] of regionTotals) {
-    intensities.set(region, sets / maxSets);
+  for (const [slug, sets] of slugTotals) {
+    intensities.set(slug, sets / maxSets);
   }
   return intensities;
 }
@@ -234,8 +140,8 @@ export function computeIntensities(regionTotals: Map<string, number>): Map<strin
 // Color scale
 // ---------------------------------------------------------------------------
 
-const UNTRAINED_COLOR = surfaceColors.surfaceSecondary;
-const STRUCTURAL_COLOR = "#d5dbd4";
+/** Number of discrete color buckets for the gradient. */
+export const COLOR_BUCKET_COUNT = 5;
 
 // Green gradient endpoints
 const MIN_RGB = { red: 200, green: 228, blue: 212 };
@@ -251,7 +157,7 @@ function toHex(value: number): string {
 
 /** Color for a trained muscle group at the given intensity (0-1). */
 export function muscleGroupFillColor(intensity: number): string {
-  if (intensity <= 0) return UNTRAINED_COLOR;
+  if (intensity <= 0) return surfaceColors.surfaceSecondary;
   const clamped = Math.min(1, intensity);
   const red = lerp(MIN_RGB.red, MAX_RGB.red, clamped);
   const green = lerp(MIN_RGB.green, MAX_RGB.green, clamped);
@@ -259,5 +165,18 @@ export function muscleGroupFillColor(intensity: number): string {
   return `#${toHex(red)}${toHex(green)}${toHex(blue)}`;
 }
 
-/** Color for structural (non-muscle) elements like head, hands, feet. */
-export { STRUCTURAL_COLOR, UNTRAINED_COLOR };
+/**
+ * Pre-computed array of N colors from lightest to darkest green,
+ * suitable for the `highlightedColors` / `colors` props of body highlighter libs.
+ */
+export const INTENSITY_COLORS: string[] = Array.from({ length: COLOR_BUCKET_COUNT }, (_, index) =>
+  muscleGroupFillColor((index + 1) / COLOR_BUCKET_COUNT),
+);
+
+/**
+ * Convert a 0-1 intensity to a 1-based bucket index (for library `frequency`/`intensity` props).
+ */
+export function intensityToBucket(intensity: number): number {
+  if (intensity <= 0) return 0;
+  return Math.max(1, Math.min(COLOR_BUCKET_COUNT, Math.ceil(intensity * COLOR_BUCKET_COUNT)));
+}

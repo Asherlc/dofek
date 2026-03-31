@@ -1,7 +1,14 @@
 // @vitest-environment jsdom
 
 import { fireEvent, render, screen } from "@testing-library/react";
+import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("react-native-body-highlighter", () => ({
+  __esModule: true,
+  default: (props: Record<string, unknown>) =>
+    React.createElement("div", { "data-testid": `body-${props.side}` }),
+}));
 
 let mockMonotonyData: unknown[] = [];
 let mockPolarizationData: { weeks: unknown[] } | undefined;
@@ -339,11 +346,11 @@ describe("TrainingScreen — StrengthTab", () => {
     clickTab("Strength");
 
     expect(screen.getByText("Muscle Group Volume")).toBeTruthy();
-    // Chest stays as-is (27 total sets); "Back" expands to Traps/Lats/Upper Back/Lower Back
+    // Chest stays as-is (27 total sets); "Back" expands to Traps/Upper Back/Lower Back
     expect(screen.getByText("Chest")).toBeTruthy();
     expect(screen.getByText("27")).toBeTruthy();
     expect(screen.getByText("Traps")).toBeTruthy();
-    expect(screen.getByText("Lats")).toBeTruthy();
+    expect(screen.getByText("Upper Back")).toBeTruthy();
   });
 
   it("does NOT show empty state when muscleGroup data exists but volume/oneRepMax/overload are empty", async () => {

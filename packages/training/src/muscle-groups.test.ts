@@ -1,67 +1,64 @@
 import { describe, expect, it } from "vitest";
 import {
-  BACK_PATHS,
-  BODY_VIEWBOX,
+  COLOR_BUCKET_COUNT,
   computeIntensities,
-  computeRegionTotals,
+  computeSlugTotals,
   expandMuscleGroup,
-  FRONT_PATHS,
+  INTENSITY_COLORS,
+  intensityToBucket,
   type MuscleGroupInput,
   muscleGroupFillColor,
   muscleGroupLabel,
-  STRUCTURAL_COLOR,
-  UNTRAINED_COLOR,
 } from "./muscle-groups.ts";
 
 describe("muscleGroupLabel", () => {
-  it("returns human-readable label for known groups", () => {
-    expect(muscleGroupLabel("CHEST")).toBe("Chest");
-    expect(muscleGroupLabel("QUADS")).toBe("Quads");
-    expect(muscleGroupLabel("QUADRICEPS")).toBe("Quads");
-    expect(muscleGroupLabel("TRAPS")).toBe("Traps");
-  });
-
-  it("handles case-insensitive input", () => {
+  it("returns human-readable label for known slugs", () => {
     expect(muscleGroupLabel("chest")).toBe("Chest");
-    expect(muscleGroupLabel("Shoulders")).toBe("Shoulders");
+    expect(muscleGroupLabel("quadriceps")).toBe("Quads");
+    expect(muscleGroupLabel("trapezius")).toBe("Traps");
+    expect(muscleGroupLabel("deltoids")).toBe("Shoulders");
   });
 
-  it("falls back to title case for unknown groups", () => {
+  it("falls back to title case for unknown slugs", () => {
     expect(muscleGroupLabel("pectorals")).toBe("Pectorals");
-    expect(muscleGroupLabel("hip_flexors")).toBe("Hip Flexors");
+    expect(muscleGroupLabel("hip-flexors")).toBe("Hip Flexors");
   });
 });
 
 describe("expandMuscleGroup", () => {
-  it("expands coarse BACK to fine-grained regions", () => {
-    expect(expandMuscleGroup("BACK")).toEqual(["TRAPS", "LATS", "UPPER_BACK", "LOWER_BACK"]);
+  it("expands coarse BACK to library slugs", () => {
+    expect(expandMuscleGroup("BACK")).toEqual(["trapezius", "upper-back", "lower-back"]);
   });
 
-  it("expands CORE to ABS and OBLIQUES", () => {
-    expect(expandMuscleGroup("CORE")).toEqual(["ABS", "OBLIQUES"]);
+  it("expands CORE to abs and obliques", () => {
+    expect(expandMuscleGroup("CORE")).toEqual(["abs", "obliques"]);
   });
 
-  it("expands LEGS to lower-body regions", () => {
-    expect(expandMuscleGroup("LEGS")).toEqual(["QUADS", "HAMSTRINGS", "CALVES", "GLUTES"]);
+  it("expands LEGS to lower-body slugs", () => {
+    expect(expandMuscleGroup("LEGS")).toEqual(["quadriceps", "hamstring", "calves", "gluteal"]);
   });
 
-  it("maps QUADRICEPS alias to QUADS", () => {
-    expect(expandMuscleGroup("QUADRICEPS")).toEqual(["QUADS"]);
+  it("maps QUADRICEPS to quadriceps slug", () => {
+    expect(expandMuscleGroup("QUADRICEPS")).toEqual(["quadriceps"]);
   });
 
-  it("passes through fine-grained groups unchanged", () => {
-    expect(expandMuscleGroup("CHEST")).toEqual(["CHEST"]);
-    expect(expandMuscleGroup("BICEPS")).toEqual(["BICEPS"]);
+  it("maps SHOULDERS to deltoids", () => {
+    expect(expandMuscleGroup("SHOULDERS")).toEqual(["deltoids"]);
+  });
+
+  it("passes through fine-grained groups as lowercase slugs", () => {
+    expect(expandMuscleGroup("CHEST")).toEqual(["chest"]);
+    expect(expandMuscleGroup("BICEPS")).toEqual(["biceps"]);
   });
 
   it("is case-insensitive", () => {
-    expect(expandMuscleGroup("back")).toEqual(["TRAPS", "LATS", "UPPER_BACK", "LOWER_BACK"]);
+    expect(expandMuscleGroup("back")).toEqual(["trapezius", "upper-back", "lower-back"]);
   });
 });
 
-describe("computeRegionTotals", () => {
+describe("computeSlugTotals", () => {
   it("returns empty map for empty input", () => {
-    const result = computeRegionTotals([]);
+    const result = computeSlugTotals([]);
     expect(result.size).toBe(0);
   });
 
@@ -75,39 +72,38 @@ describe("computeRegionTotals", () => {
         ],
       },
     ];
-    const result = computeRegionTotals(data);
-    expect(result.get("CHEST")).toBe(27);
+    const result = computeSlugTotals(data);
+    expect(result.get("chest")).toBe(27);
   });
 
-  it("distributes coarse group evenly across fine-grained regions", () => {
+  it("distributes coarse group evenly across slugs", () => {
     const data: MuscleGroupInput[] = [
       {
         muscleGroup: "BACK",
-        weeklyData: [{ week: "2024-01-08", sets: 20 }],
+        weeklyData: [{ week: "2024-01-08", sets: 30 }],
       },
     ];
-    const result = computeRegionTotals(data);
-    // BACK expands to 4 regions, so 20 / 4 = 5 each
-    expect(result.get("TRAPS")).toBe(5);
-    expect(result.get("LATS")).toBe(5);
-    expect(result.get("UPPER_BACK")).toBe(5);
-    expect(result.get("LOWER_BACK")).toBe(5);
+    const result = computeSlugTotals(data);
+    // BACK expands to 3 slugs, so 30 / 3 = 10 each
+    expect(result.get("trapezius")).toBe(10);
+    expect(result.get("upper-back")).toBe(10);
+    expect(result.get("lower-back")).toBe(10);
   });
 
   it("accumulates when both coarse and fine-grained data exist", () => {
     const data: MuscleGroupInput[] = [
       {
         muscleGroup: "BACK",
-        weeklyData: [{ week: "2024-01-08", sets: 20 }],
+        weeklyData: [{ week: "2024-01-08", sets: 30 }],
       },
       {
-        muscleGroup: "LATS",
+        muscleGroup: "TRAPEZIUS",
         weeklyData: [{ week: "2024-01-08", sets: 10 }],
       },
     ];
-    const result = computeRegionTotals(data);
-    expect(result.get("LATS")).toBe(15); // 5 from BACK + 10 from LATS
-    expect(result.get("TRAPS")).toBe(5); // only from BACK
+    const result = computeSlugTotals(data);
+    expect(result.get("trapezius")).toBe(20); // 10 from BACK + 10 from TRAPEZIUS
+    expect(result.get("upper-back")).toBe(10); // only from BACK
   });
 });
 
@@ -120,8 +116,8 @@ describe("computeIntensities", () => {
   it("returns empty map when all zeros", () => {
     const result = computeIntensities(
       new Map([
-        ["CHEST", 0],
-        ["BACK", 0],
+        ["chest", 0],
+        ["biceps", 0],
       ]),
     );
     expect(result.size).toBe(0);
@@ -130,24 +126,20 @@ describe("computeIntensities", () => {
   it("normalizes to 0-1 relative to max", () => {
     const result = computeIntensities(
       new Map([
-        ["CHEST", 30],
-        ["BICEPS", 15],
-        ["CALVES", 10],
+        ["chest", 30],
+        ["biceps", 15],
+        ["calves", 10],
       ]),
     );
-    expect(result.get("CHEST")).toBe(1);
-    expect(result.get("BICEPS")).toBe(0.5);
-    expect(result.get("CALVES")).toBeCloseTo(0.333, 2);
+    expect(result.get("chest")).toBe(1);
+    expect(result.get("biceps")).toBe(0.5);
+    expect(result.get("calves")).toBeCloseTo(0.333, 2);
   });
 });
 
 describe("muscleGroupFillColor", () => {
-  it("returns untrained color for intensity 0", () => {
-    expect(muscleGroupFillColor(0)).toBe(UNTRAINED_COLOR);
-  });
-
-  it("returns untrained color for negative intensity", () => {
-    expect(muscleGroupFillColor(-1)).toBe(UNTRAINED_COLOR);
+  it("returns surface color for intensity 0", () => {
+    expect(muscleGroupFillColor(0)).toMatch(/^#[0-9a-f]{6}$/);
   });
 
   it("returns a hex color for positive intensity", () => {
@@ -170,52 +162,43 @@ describe("muscleGroupFillColor", () => {
   });
 });
 
-describe("SVG path data", () => {
-  it("front view has expected muscle groups", () => {
-    const muscleKeys = Object.keys(FRONT_PATHS).filter((key) => !key.startsWith("_"));
-    expect(muscleKeys).toContain("CHEST");
-    expect(muscleKeys).toContain("SHOULDERS");
-    expect(muscleKeys).toContain("BICEPS");
-    expect(muscleKeys).toContain("ABS");
-    expect(muscleKeys).toContain("QUADS");
+describe("intensityToBucket", () => {
+  it("returns 0 for zero intensity", () => {
+    expect(intensityToBucket(0)).toBe(0);
   });
 
-  it("back view has expected muscle groups", () => {
-    const muscleKeys = Object.keys(BACK_PATHS).filter((key) => !key.startsWith("_"));
-    expect(muscleKeys).toContain("TRAPS");
-    expect(muscleKeys).toContain("LATS");
-    expect(muscleKeys).toContain("TRICEPS");
-    expect(muscleKeys).toContain("HAMSTRINGS");
-    expect(muscleKeys).toContain("GLUTES");
+  it("returns 1 for very low intensity", () => {
+    expect(intensityToBucket(0.01)).toBe(1);
   });
 
-  it("all paths are non-empty strings", () => {
-    for (const paths of Object.values(FRONT_PATHS)) {
-      for (const path of paths) {
-        expect(path.length).toBeGreaterThan(0);
-        expect(path).toContain("M");
-      }
-    }
-    for (const paths of Object.values(BACK_PATHS)) {
-      for (const path of paths) {
-        expect(path.length).toBeGreaterThan(0);
-        expect(path).toContain("M");
-      }
-    }
+  it("returns max bucket for intensity 1", () => {
+    expect(intensityToBucket(1)).toBe(COLOR_BUCKET_COUNT);
   });
 
-  it("viewBox has reasonable dimensions", () => {
-    expect(BODY_VIEWBOX.width).toBeGreaterThan(0);
-    expect(BODY_VIEWBOX.height).toBeGreaterThan(0);
+  it("returns middle bucket for intensity 0.5", () => {
+    expect(intensityToBucket(0.5)).toBe(3);
   });
 });
 
-describe("color constants", () => {
-  it("structural color is a valid hex", () => {
-    expect(STRUCTURAL_COLOR).toMatch(/^#[0-9a-f]{6}$/);
+describe("INTENSITY_COLORS", () => {
+  it("has correct number of colors", () => {
+    expect(INTENSITY_COLORS).toHaveLength(COLOR_BUCKET_COUNT);
   });
 
-  it("untrained color is a valid hex", () => {
-    expect(UNTRAINED_COLOR).toMatch(/^#[0-9a-f]{6}$/);
+  it("all entries are valid hex colors", () => {
+    for (const color of INTENSITY_COLORS) {
+      expect(color).toMatch(/^#[0-9a-f]{6}$/);
+    }
+  });
+
+  it("goes from lighter to darker", () => {
+    // The red channel decreases (200 → 45) as intensity increases
+    const first = INTENSITY_COLORS[0];
+    const last = INTENSITY_COLORS[COLOR_BUCKET_COUNT - 1];
+    expect(first).toBeDefined();
+    expect(last).toBeDefined();
+    const firstRed = Number.parseInt(first?.slice(1, 3) ?? "0", 16);
+    const lastRed = Number.parseInt(last?.slice(1, 3) ?? "0", 16);
+    expect(firstRed).toBeGreaterThan(lastRed);
   });
 });
