@@ -81,15 +81,6 @@ export const SKIN_TEMPERATURE = "skin_temperature";
 /** Electrodermal activity in microsiemens */
 export const ELECTRODERMAL_ACTIVITY = "electrodermal_activity";
 
-// ── Vector channels (multi-axis data as real[]) ─────────────
-
-/** Accelerometer [x, y, z] in g — accel-only sources */
-export const ACCEL = "accel";
-/** 6-axis IMU [x, y, z, gyroscope_x, gyroscope_y, gyroscope_z] — accel in g, gyro in rad/s */
-export const IMU = "imu";
-/** Orientation quaternion [w, x, y, z] */
-export const ORIENTATION = "orientation";
-
 // ── Source types (informational, not used for dedup priority) ─
 
 export const SOURCE_TYPE_FILE = "file" as const;
