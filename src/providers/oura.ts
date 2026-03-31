@@ -9,6 +9,8 @@ import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity, dailyMetrics, healthEvent, metricStream, sleepSession } from "../db/schema.ts";
+import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
+import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
@@ -1032,6 +1034,9 @@ export class OuraProvider implements WebhookProvider {
             const windowEnd = Math.min(windowStart + windowMs, end);
             const startStr = formatDate(new Date(windowStart));
             const endStr = formatDate(new Date(windowEnd));
+            // Skip degenerate windows where start and end resolve to the same day
+            // (can happen when the 30-day boundary falls on "now")
+            if (startStr === endStr) break;
             const chunk = await fetchAllPages((nextToken) =>
               client.getHeartRate(startStr, endStr, nextToken),
             );
@@ -1051,6 +1056,7 @@ export class OuraProvider implements WebhookProvider {
               .values(rows.slice(i, i + METRIC_STREAM_BATCH_SIZE))
               .onConflictDoNothing();
           }
+          await dualWriteToSensorSample(db, rows, SOURCE_TYPE_API);
 
           return { recordCount: rows.length, result: rows.length };
         },

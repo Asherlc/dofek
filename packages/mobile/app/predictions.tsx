@@ -1,12 +1,20 @@
-import { useState, useMemo } from "react";
-import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
-import Svg, { Path, Line, Circle, Text as SvgText } from "react-native-svg";
-import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
 import { formatNumber } from "@dofek/format/format";
+import { statusColors } from "@dofek/scoring/colors";
+import { useMemo, useState } from "react";
+import {
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  useWindowDimensions,
+  View,
+} from "react-native";
+import Svg, { Line, Path } from "react-native-svg";
+import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
 import { trpc } from "../lib/trpc";
 import { useRefresh } from "../lib/useRefresh";
 import { colors } from "../theme";
-import { statusColors } from "@dofek/scoring/colors";
 
 // ── Types ──
 
@@ -17,27 +25,11 @@ interface Target {
   type: string;
 }
 
-interface FeatureImportance {
-  name: string;
-  linearImportance: number;
-  treeImportance: number;
-  linearCoefficient: number;
-}
-
 interface PredictionPoint {
   date: string;
   actual: number | null;
   linearPrediction: number;
   treePrediction: number;
-}
-
-interface Diagnostics {
-  linearRSquared: number;
-  treeRSquared: number;
-  crossValidatedRSquared: number;
-  sampleCount: number;
-  featureCount: number;
-  linearFallbackUsed?: boolean;
 }
 
 // ── Helpers ──
@@ -59,9 +51,7 @@ function classifyTarget(id: string): TargetGroup {
 }
 
 function humanizeFeatureName(name: string): string {
-  return name
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  return name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function sparklinePath(data: number[], width: number, height: number, padding: number): string {
@@ -74,9 +64,9 @@ function sparklinePath(data: number[], width: number, height: number, padding: n
   const stepX = usableWidth / (data.length - 1);
   return data
     .map((v, i) => {
-      const x = padding + i * stepX;
-      const y = padding + usableHeight - ((v - min) / range) * usableHeight;
-      return `${i === 0 ? "M" : "L"} ${x} ${y}`;
+      const xCoord = padding + i * stepX;
+      const yCoord = padding + usableHeight - ((v - min) / range) * usableHeight;
+      return `${i === 0 ? "M" : "L"} ${xCoord} ${yCoord}`;
     })
     .join(" ");
 }
@@ -110,7 +100,7 @@ export default function PredictionsScreen() {
   const activeTarget = selectedTarget ?? targets[0]?.id ?? null;
 
   const predictionQuery = trpc.predictions.predict.useQuery(
-    { target: activeTarget as string, days },
+    { target: String(activeTarget), days },
     { enabled: !!activeTarget },
   );
   const prediction = predictionQuery.data;
@@ -145,9 +135,7 @@ export default function PredictionsScreen() {
 
   const predictedValues = useMemo(() => {
     if (!prediction?.predictions) return [];
-    return prediction.predictions.map(
-      (p) => (p.linearPrediction + p.treePrediction) / 2,
-    );
+    return prediction.predictions.map((p) => (p.linearPrediction + p.treePrediction) / 2);
   }, [prediction?.predictions]);
 
   // Tomorrow's prediction
@@ -196,7 +184,17 @@ export default function PredictionsScreen() {
   const { refreshing, onRefresh } = useRefresh();
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={colors.textSecondary}
+        />
+      }
+    >
       {/* Section 1: Target selector */}
       <ScrollView
         horizontal
@@ -214,18 +212,12 @@ export default function PredictionsScreen() {
                 {groupTargets.map((target) => (
                   <TouchableOpacity
                     key={target.id}
-                    style={[
-                      styles.chip,
-                      activeTarget === target.id && styles.chipActive,
-                    ]}
+                    style={[styles.chip, activeTarget === target.id && styles.chipActive]}
                     onPress={() => setSelectedTarget(target.id)}
                     activeOpacity={0.7}
                   >
                     <Text
-                      style={[
-                        styles.chipText,
-                        activeTarget === target.id && styles.chipTextActive,
-                      ]}
+                      style={[styles.chipText, activeTarget === target.id && styles.chipTextActive]}
                     >
                       {target.label}
                     </Text>
@@ -260,18 +252,8 @@ export default function PredictionsScreen() {
                 {formatNumber(tomorrowAvg)} {prediction.targetUnit}
               </Text>
               <View style={styles.agreementRow}>
-                <View
-                  style={[
-                    styles.agreementDot,
-                    { backgroundColor: agreementColor },
-                  ]}
-                />
-                <Text
-                  style={[
-                    styles.agreementText,
-                    { color: agreementColor },
-                  ]}
-                >
+                <View style={[styles.agreementDot, { backgroundColor: agreementColor }]} />
+                <Text style={[styles.agreementText, { color: agreementColor }]}>
                   {agreementLabel}
                 </Text>
               </View>
@@ -304,9 +286,7 @@ export default function PredictionsScreen() {
                   return (
                     <View key={feature.name} style={styles.factorRow}>
                       <View style={styles.factorInfo}>
-                        <Text style={styles.factorName}>
-                          {humanizeFeatureName(feature.name)}
-                        </Text>
+                        <Text style={styles.factorName}>{humanizeFeatureName(feature.name)}</Text>
                       </View>
                       <View style={styles.factorBarTrack}>
                         <View
@@ -428,8 +408,22 @@ function TimelineChart({
   return (
     <Svg width={width} height={height}>
       {/* Grid lines */}
-      <Line x1={padding} y1={padding} x2={padding} y2={height - padding} stroke={colors.surfaceSecondary} strokeWidth={1} />
-      <Line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke={colors.surfaceSecondary} strokeWidth={1} />
+      <Line
+        x1={padding}
+        y1={padding}
+        x2={padding}
+        y2={height - padding}
+        stroke={colors.surfaceSecondary}
+        strokeWidth={1}
+      />
+      <Line
+        x1={padding}
+        y1={height - padding}
+        x2={width - padding}
+        y2={height - padding}
+        stroke={colors.surfaceSecondary}
+        strokeWidth={1}
+      />
 
       {/* Predicted line (below actual) */}
       {predictedPath ? (
@@ -437,9 +431,7 @@ function TimelineChart({
       ) : null}
 
       {/* Actual line */}
-      {actualPath ? (
-        <Path d={actualPath} stroke={colors.text} strokeWidth={2} fill="none" />
-      ) : null}
+      {actualPath ? <Path d={actualPath} stroke={colors.text} strokeWidth={2} fill="none" /> : null}
     </Svg>
   );
 }

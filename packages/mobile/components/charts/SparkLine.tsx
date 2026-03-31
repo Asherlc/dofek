@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { View, type LayoutChangeEvent } from "react-native";
+import { type LayoutChangeEvent, View } from "react-native";
 import Svg, { Line, Polyline } from "react-native-svg";
+import { colors } from "../../theme";
 
 interface SparkLineProps {
   /** Data points to plot (null values create visible gaps) */
@@ -32,9 +33,9 @@ function splitSegments(
   for (let i = 0; i < data.length; i++) {
     const value = data[i];
     if (value != null) {
-      const x = padding + (i / (data.length - 1)) * chartWidth;
-      const y = padding + chartHeight - ((value - min) / range) * chartHeight;
-      current.push(`${x},${y}`);
+      const pointX = padding + (i / (data.length - 1)) * chartWidth;
+      const pointY = padding + chartHeight - ((value - min) / range) * chartHeight;
+      current.push(`${pointX},${pointY}`);
     } else {
       if (current.length >= 2) {
         segments.push(current.join(" "));
@@ -70,7 +71,12 @@ export function SparkLine({
   const nonNullValues = data.filter((v): v is number => v != null);
 
   if (nonNullValues.length < 2 || currentWidth === 0 || currentHeight === 0) {
-    return <View style={{ width: fixedWidth, height: fixedHeight, flex: fixedWidth ? undefined : 1 }} onLayout={onLayout} />;
+    return (
+      <View
+        style={{ width: fixedWidth, height: fixedHeight, flex: fixedWidth ? undefined : 1 }}
+        onLayout={onLayout}
+      />
+    );
   }
 
   const padding = 2;
@@ -87,7 +93,10 @@ export function SparkLine({
   const avgY = padding + chartHeight - ((avg - min) / range) * chartHeight;
 
   return (
-    <View style={{ width: fixedWidth, height: fixedHeight, flex: fixedWidth ? undefined : 1 }} onLayout={onLayout}>
+    <View
+      style={{ width: fixedWidth, height: fixedHeight, flex: fixedWidth ? undefined : 1 }}
+      onLayout={onLayout}
+    >
       <Svg width={currentWidth} height={currentHeight}>
         {showBaseline && (
           <Line
@@ -95,14 +104,14 @@ export function SparkLine({
             y1={avgY}
             x2={currentWidth - padding}
             y2={avgY}
-            stroke="#3a3a3e"
+            stroke={colors.surfaceSecondary}
             strokeWidth={1}
             strokeDasharray="4,4"
           />
         )}
-        {segments.map((points, i) => (
+        {segments.map((points) => (
           <Polyline
-            key={`segment-${i}`}
+            key={points}
             points={points}
             fill="none"
             stroke={color}

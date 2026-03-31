@@ -1483,6 +1483,9 @@ describe("OuraProvider.sync()", () => {
 
   it("syncs heart rate data", async () => {
     setupEnv();
+    // Pin Date.now() within a single 30-day window of the since date
+    // to avoid the mock returning duplicate HR data across multiple windows.
+    vi.useFakeTimers({ now: new Date("2026-03-15T12:00:00Z") });
     const hr1 = fakeHeartRate({ bpm: 72, timestamp: "2026-03-01T10:00:00+00:00" });
     const hr2 = fakeHeartRate({ bpm: 85, timestamp: "2026-03-01T10:05:00+00:00" });
     const mockFetch = createMockApiFetch({ heartRate: [hr1, hr2] });
@@ -1490,17 +1493,20 @@ describe("OuraProvider.sync()", () => {
     const db = createMockDb();
 
     const result = await provider.sync(db, new Date("2026-03-01"));
+    vi.useRealTimers();
 
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBeGreaterThanOrEqual(2);
 
-    // Verify HR values are batched
-    const hrRows = findBatchValuesCall(db, (arr) => arr.length === 2 && arr[0]?.heartRate === 72);
-    expect(hrRows[0]?.heartRate).toBe(72);
-    expect(hrRows[0]?.providerId).toBe("oura");
-    expect(hrRows[0]?.recordedAt).toEqual(new Date("2026-03-01T10:00:00+00:00"));
-    expect(hrRows[1]?.heartRate).toBe(85);
-    expect(hrRows[1]?.recordedAt).toEqual(new Date("2026-03-01T10:05:00+00:00"));
+    // Verify HR values are batched (length varies with 30-day windowing vs current date)
+    const hrRows = findBatchValuesCall(db, (arr) => arr.some((r) => r.heartRate === 72));
+    const first = hrRows.find((r) => r.heartRate === 72);
+    const second = hrRows.find((r) => r.heartRate === 85);
+    expect(first?.heartRate).toBe(72);
+    expect(first?.providerId).toBe("oura");
+    expect(first?.recordedAt).toEqual(new Date("2026-03-01T10:00:00+00:00"));
+    expect(second?.heartRate).toBe(85);
+    expect(second?.recordedAt).toEqual(new Date("2026-03-01T10:05:00+00:00"));
 
     // HR uses onConflictDoNothing, not onConflictDoUpdate
     expect(db.onConflictDoNothing).toHaveBeenCalled();

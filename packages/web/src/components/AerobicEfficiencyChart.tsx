@@ -1,3 +1,4 @@
+import { statusColors } from "@dofek/scoring/colors";
 import type { AerobicEfficiencyActivity } from "dofek-server/types";
 import {
   chartColors,
@@ -18,7 +19,7 @@ const ACTIVITY_COLORS: Record<string, string> = {
   swimming: chartColors.blue,
   hiking: "#a3e635",
   yoga: "#c084fc",
-  strength_training: "#ef4444",
+  strength_training: statusColors.danger,
 };
 
 function getActivityColor(type: string): string {

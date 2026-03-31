@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { statusColors, textColors } from "./colors.ts";
+import { sleepStageColors, statusColors, textColors } from "./colors.ts";
 import {
   aggregateWeeklyVolume,
   FORM_ZONE_COLORS,
@@ -17,6 +17,8 @@ import {
   scoreColor,
   scoreLabel,
   sleepDebtColor,
+  sleepPerformanceColor,
+  sleepTierColor,
   trendColor,
   trendDirection,
   WorkloadRatio,
@@ -375,6 +377,50 @@ describe("sleepDebtColor", () => {
 
   it("returns danger for high debt", () => {
     expect(sleepDebtColor(300)).toBe(statusColors.danger);
+  });
+});
+
+describe("sleepTierColor", () => {
+  it("returns positive for Excellent", () => {
+    expect(sleepTierColor("Excellent")).toBe(statusColors.positive);
+  });
+
+  it("returns info for Good", () => {
+    expect(sleepTierColor("Good")).toBe(statusColors.info);
+  });
+
+  it("returns warning for Fair", () => {
+    expect(sleepTierColor("Fair")).toBe(statusColors.warning);
+  });
+
+  it("returns danger for Poor", () => {
+    expect(sleepTierColor("Poor")).toBe(statusColors.danger);
+  });
+});
+
+describe("sleepStageColors", () => {
+  it("has all four sleep stages", () => {
+    expect(sleepStageColors.deep).toBe("#5E35B1");
+    expect(sleepStageColors.rem).toBe("#42A5F5");
+    expect(sleepStageColors.light).toBe("#78909C");
+    expect(sleepStageColors.awake).toBe("#FF8A65");
+  });
+});
+
+describe("sleepPerformanceColor", () => {
+  it("returns positive for >= 95%", () => {
+    expect(sleepPerformanceColor(95)).toBe(statusColors.positive);
+    expect(sleepPerformanceColor(100)).toBe(statusColors.positive);
+  });
+
+  it("returns warning for >= 85% and < 95%", () => {
+    expect(sleepPerformanceColor(85)).toBe(statusColors.warning);
+    expect(sleepPerformanceColor(94)).toBe(statusColors.warning);
+  });
+
+  it("returns danger for < 85%", () => {
+    expect(sleepPerformanceColor(84)).toBe(statusColors.danger);
+    expect(sleepPerformanceColor(0)).toBe(statusColors.danger);
   });
 });
 

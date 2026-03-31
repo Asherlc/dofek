@@ -47,18 +47,29 @@ describe("Duration curves router — data tests", () => {
       // Speed is ~3.5 m/s (about 4:45/km pace)
       const batchSize = 300;
       for (let batch = 0; batch < 3600; batch += batchSize) {
-        const values: string[] = [];
+        const metricValues: string[] = [];
+        const sensorValues: string[] = [];
         for (let s = batch; s < Math.min(batch + batchSize, 3600); s++) {
           const hr = 130 + Math.round((s / 3600) * 50 + Math.sin(s * 0.02) * 5);
           const speed = 3.2 + Math.sin(s * 0.01) * 0.5; // ~3.2 m/s with variation
-          values.push(
-            `(CURRENT_TIMESTAMP - INTERVAL '2 days' + ${s} * INTERVAL '1 second', '${DEFAULT_USER_ID}', '${runId}', 'test_provider', ${hr}, null, ${speed.toFixed(3)})`,
+          const ts = `CURRENT_TIMESTAMP - INTERVAL '2 days' + ${s} * INTERVAL '1 second'`;
+          metricValues.push(
+            `(${ts}, '${DEFAULT_USER_ID}', '${runId}', 'test_provider', ${hr}, null, ${speed.toFixed(3)})`,
+          );
+          sensorValues.push(
+            `(${ts}, '${DEFAULT_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${runId}', ${hr}, NULL)`,
+            `(${ts}, '${DEFAULT_USER_ID}', 'test_provider', NULL, 'api', 'speed', '${runId}', ${speed.toFixed(3)}, NULL)`,
           );
         }
         await testCtx.db.execute(
           sql.raw(`INSERT INTO fitness.metric_stream (
                 recorded_at, user_id, activity_id, provider_id, heart_rate, power, speed
-              ) VALUES ${values.join(",")}`),
+              ) VALUES ${metricValues.join(",")}`),
+        );
+        await testCtx.db.execute(
+          sql.raw(`INSERT INTO fitness.sensor_sample (
+                recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
+              ) VALUES ${sensorValues.join(",")}`),
         );
       }
     }
@@ -79,17 +90,27 @@ describe("Duration curves router — data tests", () => {
     if (cycleId) {
       const batchSize = 300;
       for (let batch = 0; batch < 2700; batch += batchSize) {
-        const values: string[] = [];
+        const metricValues: string[] = [];
+        const sensorValues: string[] = [];
         for (let s = batch; s < Math.min(batch + batchSize, 2700); s++) {
           const hr = 140 + Math.round((s / 2700) * 40 + Math.sin(s * 0.015) * 8);
-          values.push(
-            `(CURRENT_TIMESTAMP - INTERVAL '5 days' + ${s} * INTERVAL '1 second', '${DEFAULT_USER_ID}', '${cycleId}', 'test_provider', ${hr}, null, null)`,
+          const ts = `CURRENT_TIMESTAMP - INTERVAL '5 days' + ${s} * INTERVAL '1 second'`;
+          metricValues.push(
+            `(${ts}, '${DEFAULT_USER_ID}', '${cycleId}', 'test_provider', ${hr}, null, null)`,
+          );
+          sensorValues.push(
+            `(${ts}, '${DEFAULT_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${cycleId}', ${hr}, NULL)`,
           );
         }
         await testCtx.db.execute(
           sql.raw(`INSERT INTO fitness.metric_stream (
                 recorded_at, user_id, activity_id, provider_id, heart_rate, power, speed
-              ) VALUES ${values.join(",")}`),
+              ) VALUES ${metricValues.join(",")}`),
+        );
+        await testCtx.db.execute(
+          sql.raw(`INSERT INTO fitness.sensor_sample (
+                recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
+              ) VALUES ${sensorValues.join(",")}`),
         );
       }
     }

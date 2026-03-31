@@ -56,23 +56,49 @@ enum WhoopBleConstants {
     /// Start-of-frame marker byte
     static let startOfFrame: UInt8 = 0xAA
 
-    /// Minimum frame size: SOF(1) + len(2) + crc8(1) + type(1) + crc32(4) = 9
+    /// Minimum frame size: Maverick header(8) + at least 1 byte payload = 9
     static let minimumFrameSize = 9
 
-    /// Header size before payload: SOF(1) + len(2) + crc8(1)
-    static let headerSize = 4
+    /// Maverick/Puffin header size: SOF(1) + version(1) + payloadLen(2) + role1(1) + role2(1) + CRC16(2) = 8
+    static let maverickHeaderSize = 8
 
     // MARK: - Packet types (first byte of payload)
 
     static let packetTypeCommand: UInt8 = 0x23
+    static let packetTypeRealtimeData: UInt8 = 0x28
+    static let packetTypeRealtimeRawData: UInt8 = 0x2B
+    static let packetTypeHistoricalData: UInt8 = 0x2F
     static let packetTypeRealtimeIMU: UInt8 = 0x33
     static let packetTypeHistoricalIMU: UInt8 = 0x34
-    static let packetTypeRealtimeRawData: UInt8 = 0x2B
+
+    // MARK: - Realtime data (0x28) field offsets within payload
+    // Verified from PacketLogger capture: 116-byte payload at ~1 Hz
+    // Contains HR, orientation quaternion, and optical/PPG data
+
+    static let realtimeDataHeartRateOffset = 22
+    /// Optical/PPG data region: bytes 23-40 (18 bytes, partially understood)
+    static let realtimeDataOpticalStartOffset = 23
+    static let realtimeDataOpticalByteCount = 18
+    static let realtimeDataQuaternionWOffset = 41
+    static let realtimeDataQuaternionXOffset = 45
+    static let realtimeDataQuaternionYOffset = 49
+    static let realtimeDataQuaternionZOffset = 53
+    /// Minimum payload size to contain HR + quaternion fields
+    static let realtimeDataMinPayloadSize = 57
 
     // MARK: - Command bytes (written to CMD_TO_STRAP)
 
+    static let commandGetHello: UInt8 = 0x91
+    static let commandToggleRealtimeHr: UInt8 = 0x03
     static let commandStartRawData: UInt8 = 0x51
     static let commandStopRawData: UInt8 = 0x52
     static let commandToggleImuModeHistorical: UInt8 = 0x69
     static let commandToggleImuMode: UInt8 = 0x6A
+    static let commandToggleOpticalMode: UInt8 = 0x6C
+    static let commandSendR10R11Realtime: UInt8 = 0x3F
+
+    /// CMD_FROM_STRAP characteristic (notify): suffix 0003
+    static func cmdFromStrapUUID(forService serviceUUID: CBUUID) -> CBUUID {
+        characteristicUUID(forService: serviceUUID, suffix: "0003")
+    }
 }

@@ -1,8 +1,8 @@
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import * as WebBrowser from "expo-web-browser";
-import { trpc } from "../lib/trpc";
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useAuth } from "../lib/auth-context";
 import { SERVER_URL } from "../lib/server";
+import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
 
 export function SlackIntegrationPanel() {
@@ -54,9 +54,7 @@ export function SlackIntegrationPanel() {
       <View style={styles.connectRow}>
         <View style={styles.connectInfo}>
           <Text style={styles.label}>Log food via Slack</Text>
-          <Text style={styles.dimText}>
-            Add the bot to your workspace, then DM it what you ate
-          </Text>
+          <Text style={styles.dimText}>Add the bot to your workspace, then DM it what you ate</Text>
         </View>
         <TouchableOpacity style={styles.connectButton} onPress={handleConnect} activeOpacity={0.7}>
           <Text style={styles.connectButtonText}>Add to Slack</Text>

@@ -1,3 +1,4 @@
+import { statusColors } from "@dofek/scoring/colors";
 import type { PolarizationWeek } from "dofek-server/types";
 import {
   chartColors,
@@ -102,10 +103,10 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
         const missingZones = missingZonesForWeek(weekData);
         const status =
           pi === null
-            ? '<span style="color:#f59e0b">Insufficient zone coverage</span>'
+            ? `<span style="color:${statusColors.warning}">Insufficient zone coverage</span>`
             : pi >= 2.0
-              ? '<span style="color:#22c55e">Polarized</span>'
-              : '<span style="color:#ef4444">Not polarized</span>';
+              ? `<span style="color:${statusColors.positive}">Polarized</span>`
+              : `<span style="color:${statusColors.danger}">Not polarized</span>`;
         const missingZonesText =
           pi === null && missingZones.length > 0
             ? `Missing zones this week: ${missingZones.join(", ")}`
@@ -135,7 +136,7 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
         ],
         symbol: "none",
         lineStyle: { width: 0 },
-        areaStyle: { color: "#22c55e", opacity: 0.05, origin: 2.0 },
+        areaStyle: { color: statusColors.positive, opacity: 0.05, origin: 2.0 },
         silent: true,
         tooltip: { show: false },
         z: 0,
@@ -150,7 +151,7 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
         ],
         symbol: "none",
         lineStyle: { width: 0 },
-        areaStyle: { color: "#ef4444", opacity: 0.05, origin: 2.0 },
+        areaStyle: { color: statusColors.danger, opacity: 0.05, origin: 2.0 },
         silent: true,
         tooltip: { show: false },
         z: 0,
@@ -177,7 +178,7 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
           value: [w.week, w.polarizationIndex],
           itemStyle:
             w.polarizationIndex !== null
-              ? { color: w.polarizationIndex >= 2.0 ? "#22c55e" : "#ef4444" }
+              ? { color: w.polarizationIndex >= 2.0 ? statusColors.positive : statusColors.danger }
               : undefined,
         })),
         connectNulls: false,

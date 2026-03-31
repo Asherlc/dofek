@@ -1,14 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
-// Mock expo dependencies so the module loads in Node
-vi.mock("expo-secure-store", () => ({
-  setItemAsync: vi.fn(),
-  getItemAsync: vi.fn(() => Promise.resolve(null)),
-  deleteItemAsync: vi.fn(),
-}));
-vi.mock("expo-web-browser", () => ({
-  openAuthSessionAsync: vi.fn(),
-}));
+// expo-secure-store, expo-web-browser, expo-apple-authentication, and react-native
+// are mocked globally in test-setup.ts
 
 describe("auth-context", () => {
   it("exports AuthProvider and useAuth", async () => {

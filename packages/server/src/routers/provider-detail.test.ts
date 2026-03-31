@@ -11,7 +11,6 @@ vi.mock("../trpc.ts", async () => {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
     cachedProtectedQuery: () => trpc.procedure,
-    cachedProtectedQueryLight: () => trpc.procedure,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -104,7 +103,7 @@ describe("providerDetailRouter", () => {
       ["bodyMeasurements", "fitness.body_measurement", "recorded_at", "id"],
       ["foodEntries", "fitness.food_entry", "date", "id"],
       ["healthEvents", "fitness.health_event", "start_date", "id"],
-      ["metricStream", "fitness.metric_stream", "recorded_at", "recorded_at"],
+      ["metricStream", "fitness.sensor_sample", "recorded_at", "recorded_at"],
       ["nutritionDaily", "fitness.nutrition_daily", "date", "date"],
       ["labPanels", "fitness.lab_panel", "recorded_at", "id"],
       ["labResults", "fitness.lab_result", "recorded_at", "id"],
@@ -154,11 +153,12 @@ describe("providerDetailRouter", () => {
   // ── DISCONNECT_CHILD_TABLES ──
 
   describe("DISCONNECT_CHILD_TABLES", () => {
-    it("contains 16 child tables", () => {
-      expect(DISCONNECT_CHILD_TABLES).toHaveLength(16);
+    it("contains 17 child tables", () => {
+      expect(DISCONNECT_CHILD_TABLES).toHaveLength(17);
     });
 
     it("includes all required child tables", () => {
+      expect(DISCONNECT_CHILD_TABLES).toContain("fitness.sensor_sample");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.metric_stream");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.exercise_alias");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.strength_workout");
@@ -568,8 +568,8 @@ describe("providerDetailRouter", () => {
       expect(result).toEqual({ success: true });
       expect(mockExecute).toHaveBeenCalledTimes(1);
       expect(mockTransaction).toHaveBeenCalledTimes(1);
-      // 16 child tables + 1 provider delete = 17 deletes inside the transaction
-      expect(txExecute).toHaveBeenCalledTimes(17);
+      // 17 child tables + 1 provider delete = 18 deletes inside the transaction
+      expect(txExecute).toHaveBeenCalledTimes(18);
     });
 
     it("verifies ownership before disconnecting", async () => {

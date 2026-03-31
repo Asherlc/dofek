@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -32,12 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup-node-pnpm
       - run: pnpm audit --prod --audit-level=critical
 
   license-check:
@@ -45,12 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup-node-pnpm
       - name: Check for forbidden licenses
         run: |
           npx license-checker --production --excludePrivatePackages \
@@ -71,7 +62,7 @@ jobs:
             in_run && /^[[:space:]]{2,}[^-]/ { next }
             in_run && /^[[:space:]]*-/ { in_run=0 }
             /^[[:space:]]+uses:/ { print FILENAME ":" NR ":" $0 }
-          ' .github/workflows/*.yml \
+          ' .github/workflows/*.yml .github/actions/**/*.yml \
             | grep -vE '@[0-9a-f]{40}' \
             | grep -vE 'uses: \./' \
             || true)
@@ -82,6 +73,25 @@ jobs:
           fi
           echo "All actions are SHA-pinned"
 
+  security-gate:
+    name: Security & Dependencies
+    needs: [secret-scan, audit, license-check, action-pinning]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check results
+        run: |
+          for result in \
+            "${{ needs.secret-scan.result }}" \
+            "${{ needs.audit.result }}" \
+            "${{ needs.license-check.result }}" \
+            "${{ needs.action-pinning.result }}"; do
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              echo "A required job failed or was cancelled"
+              exit 1
+            fi
+          done
+
   # ── Static analysis ────────────────────────────────────────────────────
 
   lint:
@@ -89,12 +99,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup-node-pnpm
       - run: pnpm lint
 
   typecheck:
@@ -102,12 +107,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup-node-pnpm
       - name: Typecheck all packages
         run: |
           pnpm tsc --noEmit &
@@ -127,12 +127,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup-node-pnpm
       - run: pnpm exec sherif
 
   knip:
@@ -140,12 +135,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup-node-pnpm
       - run: pnpm knip
 
   spellcheck:
@@ -153,12 +143,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup-node-pnpm
       - run: pnpm exec cspell --no-progress
 
   import-boundaries:
@@ -166,13 +151,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup-node-pnpm
       - run: pnpm exec depcruise --config .dependency-cruiser.cjs src/ packages/
+
+  python-checks:
+    name: Python Checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/ml
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8
+      - name: Install dependencies
+        run: uv sync
+      - name: Lint
+        run: uv run ruff check src/ tests/
+      - name: Format check
+        run: uv run ruff format --check src/ tests/
+      - name: Type check
+        run: uv run mypy src/ tests/
+      - name: Tests
+        run: uv run pytest --cov --cov-report=xml
 
   hadolint:
     name: Dockerfile Lint
@@ -183,30 +183,6 @@ jobs:
         with:
           dockerfile: Dockerfile
 
-  # ── Database ───────────────────────────────────────────────────────────
-
-  migration-lint:
-    name: Migration Lint
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-        with:
-          fetch-depth: 0
-      - name: Lint new migration SQL
-        run: |
-          NEW_MIGRATIONS=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- 'drizzle/*.sql' || true)
-          if [ -z "$NEW_MIGRATIONS" ]; then
-            echo "No new migrations to lint"
-            exit 0
-          fi
-          pip install squawk-cli
-          echo "Linting migrations:"
-          echo "$NEW_MIGRATIONS"
-          echo "$NEW_MIGRATIONS" | xargs squawk
-
-  # ── Infrastructure ─────────────────────────────────────────────────────
-
   terraform-validate:
     name: Terraform Validate
     runs-on: ubuntu-latest
@@ -215,47 +191,29 @@ jobs:
       - uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
       - run: cd deploy/deploy-config && terraform init -backend=false && terraform validate
 
-  # ── PR quality gates ───────────────────────────────────────────────────
-
-  pr-size:
-    name: PR Size
-    if: github.event_name == 'pull_request'
+  quality-gate:
+    name: Lint & Static Analysis
+    needs: [lint, typecheck, sherif, knip, spellcheck, import-boundaries, python-checks, hadolint, terraform-validate]
+    if: always()
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-        with:
-          fetch-depth: 0
-      - name: Check PR size
+      - name: Check results
         run: |
-          STATS=$(git diff --numstat origin/${{ github.base_ref }}...HEAD)
-          ADDITIONS=$(echo "$STATS" | awk '{ add += $1 } END { print add+0 }')
-          DELETIONS=$(echo "$STATS" | awk '{ del += $2 } END { print del+0 }')
-          FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | wc -l | tr -d ' ')
-          echo "## PR Size" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **$ADDITIONS** additions, **$DELETIONS** deletions across **$FILES** files" >> "$GITHUB_STEP_SUMMARY"
-          if [ "$ADDITIONS" -gt 2000 ]; then
-            echo "::warning::Large PR: $ADDITIONS additions across $FILES files. Consider splitting into smaller PRs."
-          fi
-          if [ "$ADDITIONS" -gt 5000 ]; then
-            echo "::error::PR exceeds 5000 additions ($ADDITIONS). Please split into smaller PRs."
-            exit 1
-          fi
-
-  bundle-size:
-    name: Bundle Size
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Build web bundle
-        run: cd packages/web && pnpm run build
-      - name: Check bundle size
-        run: pnpm exec size-limit
+          for result in \
+            "${{ needs.lint.result }}" \
+            "${{ needs.typecheck.result }}" \
+            "${{ needs.sherif.result }}" \
+            "${{ needs.knip.result }}" \
+            "${{ needs.spellcheck.result }}" \
+            "${{ needs.import-boundaries.result }}" \
+            "${{ needs.python-checks.result }}" \
+            "${{ needs.hadolint.result }}" \
+            "${{ needs.terraform-validate.result }}"; do
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              echo "A required job failed or was cancelled"
+              exit 1
+            fi
+          done
 
   # ── Tests ──────────────────────────────────────────────────────────────
 
@@ -264,12 +222,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup-node-pnpm
       - run: pnpm exec vitest run --project unit --coverage
         env:
           VITEST_COVERAGE_SKIP_THRESHOLDS: "true"
@@ -314,12 +267,7 @@ jobs:
       REDIS_URL: redis://localhost:6379
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup-node-pnpm
       - run: pnpm exec vitest run --project integration --coverage
         timeout-minutes: 10
         env:
@@ -342,12 +290,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup-node-pnpm
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: coverage-unit
@@ -382,6 +325,81 @@ jobs:
           fi
           exit ${DIFF_FAILED:-0}
 
+  bundle-size:
+    name: Bundle Size
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Build web bundle
+        run: cd packages/web && pnpm run build
+      - name: Check bundle size
+        run: pnpm exec size-limit
+
+  test-gate:
+    name: Unit & Integration Tests
+    needs: [test-unit, test-integration, coverage, bundle-size]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check results
+        run: |
+          for result in \
+            "${{ needs.test-unit.result }}" \
+            "${{ needs.test-integration.result }}" \
+            "${{ needs.coverage.result }}" \
+            "${{ needs.bundle-size.result }}"; do
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              echo "A required job failed or was cancelled"
+              exit 1
+            fi
+          done
+
+  # ── E2E ────────────────────────────────────────────────────────────────
+
+  test-e2e-web:
+    name: E2E Tests (Web)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: ./.github/actions/setup-node-pnpm
+      - run: pnpm exec cypress install
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+        with:
+          config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
+      - name: Build E2E images with cache
+        uses: docker/bake-action@4a9a8d494466d37134e2bfca2d3a8de8fb2681ad # v5
+        with:
+          files: docker-compose.e2e.yml
+          targets: |
+            server
+            client
+          load: true
+          set: |
+            *.cache-from=type=gha,scope=e2e
+            *.cache-to=type=gha,mode=max,scope=e2e
+      - name: Scan server image (Grype)
+        uses: anchore/scan-action@1638637db639e0ade3258b51db49a9a137574c3e # v6
+        with:
+          image: e2e-server:latest
+          fail-build: true
+          severity-cutoff: critical
+          only-fixed: true
+      - name: Start e2e stack
+        run: docker compose -f docker-compose.e2e.yml up -d --wait --no-build
+      - run: pnpm e2e:web:run
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: failure()
+        with:
+          name: cypress-screenshots
+          path: cypress/screenshots/
+          retention-days: 7
+      - name: Teardown
+        if: always()
+        run: docker compose -f docker-compose.e2e.yml down -v
+
   # ── Mobile ─────────────────────────────────────────────────────────────
 
   check-mobile-changes:
@@ -395,7 +413,7 @@ jobs:
           fetch-depth: 0
       - id: check
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
+          if [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- packages/mobile/)
@@ -416,12 +434,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup-node-pnpm
       - run: pnpm exec vitest run --project mobile
 
   build-mobile:
@@ -431,12 +444,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup-node-pnpm
       - name: Verify iOS Metro bundle
         run: cd packages/mobile && pnpm expo export --platform ios --clear
 
@@ -469,12 +477,9 @@ jobs:
     runs-on: macos-26
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-node-pnpm
       - name: Download Sentry XCFramework
         run: packages/mobile/scripts/download-sentry-xcframework.sh
       - name: Cache CocoaPods
@@ -489,7 +494,11 @@ jobs:
         if: github.ref == 'refs/heads/main'
         run: |
           cd packages/mobile/ios
-          agvtool new-version -all ${{ github.run_number }}
+          # Offset ensures continuity with builds uploaded before the workflow
+          # split (highest previously uploaded build was ~1816).
+          BUILD_NUMBER=$(( $(git rev-list --count HEAD) + 1200 ))
+          echo "Setting build number to $BUILD_NUMBER"
+          agvtool new-version -all "$BUILD_NUMBER"
       - name: Archive (Release, no signing)
         env:
           SENTRY_DISABLE_AUTO_UPLOAD: "true"
@@ -601,12 +610,12 @@ jobs:
           retention-days: 7
 
   ios-gate:
-    name: iOS Native Gate
-    needs: [check-mobile-changes, test-mobile, build-mobile, lint-ios-podspecs, build-ios-native, build-watchos, test-swift]
+    name: iOS & watchOS
+    needs: [check-mobile-changes, test-mobile, build-mobile, lint-ios-podspecs, build-ios-native, build-watchos, test-swift, mutation-swift]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Check iOS job results
+      - name: Check results
         run: |
           for result in \
             "${{ needs.check-mobile-changes.result }}" \
@@ -615,57 +624,13 @@ jobs:
             "${{ needs.lint-ios-podspecs.result }}" \
             "${{ needs.build-ios-native.result }}" \
             "${{ needs.build-watchos.result }}" \
-            "${{ needs.test-swift.result }}"; do
+            "${{ needs.test-swift.result }}" \
+            "${{ needs.mutation-swift.result }}"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
-              echo "An iOS job failed or was cancelled"
+              echo "A required job failed or was cancelled"
               exit 1
             fi
           done
-
-  # ── E2E & Docker ───────────────────────────────────────────────────────
-
-  test-e2e-web:
-    name: E2E Tests (Web)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm exec cypress install
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
-      - name: Build E2E images with cache
-        uses: docker/bake-action@4a9a8d494466d37134e2bfca2d3a8de8fb2681ad # v5
-        with:
-          files: docker-compose.e2e.yml
-          targets: |
-            server
-            client
-          load: true
-          set: |
-            *.cache-from=type=gha,scope=e2e
-            *.cache-to=type=gha,mode=max,scope=e2e
-      - name: Scan server image (Grype)
-        uses: anchore/scan-action@1638637db639e0ade3258b51db49a9a137574c3e # v6
-        with:
-          image: e2e-server:latest
-          fail-build: false
-          severity-cutoff: critical
-      - name: Start e2e stack
-        run: docker compose -f docker-compose.e2e.yml up -d --wait --no-build
-      - run: pnpm e2e:web:run
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        if: failure()
-        with:
-          name: cypress-screenshots
-          path: cypress/screenshots/
-          retention-days: 7
-      - name: Teardown
-        if: always()
-        run: docker compose -f docker-compose.e2e.yml down -v
 
   # ── Mutation testing ───────────────────────────────────────────────────
 
@@ -731,11 +696,37 @@ jobs:
           echo "Split $COUNT files into shards: $SHARDS"
 
   mutation:
-    name: Mutation (${{ matrix.files }})
+    name: Stryker (${{ strategy.job-index }})
     needs: mutation-prep
     if: needs.mutation-prep.outputs.shards != '[]'
     runs-on: ubuntu-latest
     timeout-minutes: 75
+    services:
+      postgres:
+        image: timescale/timescaledb:latest-pg16
+        env:
+          POSTGRES_DB: test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      TEST_DATABASE_URL: postgres://test:test@localhost:5432/test
+      REDIS_URL: redis://localhost:6379
     strategy:
       fail-fast: false
       matrix:
@@ -744,12 +735,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup-node-pnpm
       - name: Restore Stryker incremental cache
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
@@ -774,18 +760,140 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - run: |
+      - name: Check results
+        run: |
           if [ "${{ needs.mutation.result }}" = "failure" ] || [ "${{ needs.mutation.result }}" = "cancelled" ]; then
             echo "Mutation testing failed or was cancelled"
             exit 1
           fi
 
+  # ── PR quality gates ───────────────────────────────────────────────────
+
+  pr-size:
+    name: PR Size
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          fetch-depth: 0
+      - name: Check PR size
+        run: |
+          # Use -w to ignore whitespace-only changes (formatting) so auto-formatter
+          # runs don't inflate the count and block PRs.
+          STATS=$(git diff -w --numstat origin/${{ github.base_ref }}...HEAD)
+          ADDITIONS=$(echo "$STATS" | awk '{ add += $1 } END { print add+0 }')
+          DELETIONS=$(echo "$STATS" | awk '{ del += $2 } END { print del+0 }')
+          FILES=$(git diff -w --name-only origin/${{ github.base_ref }}...HEAD | wc -l | tr -d ' ')
+          echo "## PR Size" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **$ADDITIONS** additions, **$DELETIONS** deletions across **$FILES** files" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$ADDITIONS" -gt 2000 ]; then
+            echo "::warning::Large PR: $ADDITIONS additions across $FILES files. Consider splitting into smaller PRs."
+          fi
+          if [ "$ADDITIONS" -gt 8000 ]; then
+            echo "::error::PR exceeds 8000 additions ($ADDITIONS). Please split into smaller PRs."
+            exit 1
+          fi
+
+  migration-lint:
+    name: Migration Lint
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          fetch-depth: 0
+      - name: Lint new migration SQL
+        run: |
+          NEW_MIGRATIONS=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- 'drizzle/*.sql' || true)
+          if [ -z "$NEW_MIGRATIONS" ]; then
+            echo "No new migrations to lint"
+            exit 0
+          fi
+          pip install squawk-cli
+          echo "Linting migrations:"
+          echo "$NEW_MIGRATIONS"
+          echo "$NEW_MIGRATIONS" | xargs squawk
+
+  pr-gate:
+    name: PR Size & Migrations
+    needs: [pr-size, migration-lint]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check results
+        run: |
+          for result in \
+            "${{ needs.pr-size.result }}" \
+            "${{ needs.migration-lint.result }}"; do
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              echo "A required job failed or was cancelled"
+              exit 1
+            fi
+          done
+
+  # ── CI Gate ────────────────────────────────────────────────────────────
+
+  ci-gate:
+    name: CI Gate
+    needs: [security-gate, quality-gate, test-gate, test-e2e-web, ios-gate, mutation-gate]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check all CI results
+        run: |
+          for result in \
+            "${{ needs.security-gate.result }}" \
+            "${{ needs.quality-gate.result }}" \
+            "${{ needs.test-gate.result }}" \
+            "${{ needs.test-e2e-web.result }}" \
+            "${{ needs.ios-gate.result }}" \
+            "${{ needs.mutation-gate.result }}"; do
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              echo "CI gate failed — blocking deploy"
+              exit 1
+            fi
+          done
+
   # ── Deploy (main only) ────────────────────────────────────────────────
+
+  check-native-changes:
+    name: Check Native iOS Changes
+    needs: [ci-gate]
+    if: always() && needs.ci-gate.result == 'success' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.check.outputs.changed }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          fetch-depth: 2
+      - id: check
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Manual dispatch — forcing TestFlight upload"
+          else
+            CHANGED=$(git diff --name-only HEAD~1...HEAD -- \
+              'packages/mobile/ios/**' \
+              'packages/mobile/modules/*/ios/**' \
+              'packages/mobile/modules/*/Package.swift' \
+              'packages/mobile/app.json' \
+              'packages/mobile/modules/*/expo-module.config.json')
+            if [ -n "$CHANGED" ]; then
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              echo "Native iOS files changed:"
+              echo "$CHANGED"
+            else
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+              echo "No native iOS changes, skipping TestFlight upload"
+            fi
+          fi
 
   ios-release:
     name: iOS TestFlight
-    needs: [lint, typecheck, knip, coverage, test-mobile, build-mobile]
-    if: github.ref == 'refs/heads/main'
+    needs: check-native-changes
+    if: always() && needs.check-native-changes.result == 'success' && needs.check-native-changes.outputs.changed == 'true'
     runs-on: macos-26
     timeout-minutes: 60
     env:
@@ -794,13 +902,9 @@ jobs:
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+          fetch-depth: 0 # Full history needed for git rev-list build number
+      - uses: ./.github/actions/setup-node-pnpm
 
       - name: Download Sentry XCFramework
         run: packages/mobile/scripts/download-sentry-xcframework.sh
@@ -843,7 +947,11 @@ jobs:
       - name: Set build number
         run: |
           cd packages/mobile/ios
-          agvtool new-version -all ${{ github.run_number }}
+          # Offset ensures continuity with builds uploaded before the workflow
+          # split (highest previously uploaded build was ~1816).
+          BUILD_NUMBER=$(( $(git rev-list --count HEAD) + 1200 ))
+          echo "Setting build number to $BUILD_NUMBER"
+          agvtool new-version -all "$BUILD_NUMBER"
 
       - name: Build archive
         run: |
@@ -944,17 +1052,12 @@ jobs:
 
   ota-deploy:
     name: OTA Deploy
-    needs: [lint, typecheck, knip, coverage, build-mobile]
-    if: github.ref == 'refs/heads/main'
+    needs: [ci-gate]
+    if: always() && needs.ci-gate.result == 'success' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup-node-pnpm
 
       - name: Export iOS bundle
         run: cd packages/mobile && pnpm expo export --platform ios --clear
@@ -1008,8 +1111,8 @@ jobs:
 
   deploy-config:
     name: Deploy Config
-    needs: [lint, typecheck, knip, coverage]
-    if: github.ref == 'refs/heads/main'
+    needs: [ci-gate]
+    if: always() && needs.ci-gate.result == 'success' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
@@ -1059,8 +1162,8 @@ jobs:
 
   docker:
     name: Docker (${{ matrix.target }})
-    needs: [lint, typecheck, knip, coverage, test-e2e-web, ios-gate]
-    if: github.ref == 'refs/heads/main'
+    needs: [ci-gate]
+    if: always() && needs.ci-gate.result == 'success' && github.ref == 'refs/heads/main'
     concurrency:
       group: docker
       cancel-in-progress: false
@@ -1078,6 +1181,10 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+        with:
+          config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -1099,5 +1206,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: COMMIT_HASH=${{ github.sha }}
+          secrets: |
+            SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
           cache-from: type=gha,scope=${{ matrix.target }}
           cache-to: type=gha,mode=max,scope=${{ matrix.target }}

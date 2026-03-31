@@ -1,11 +1,13 @@
 import { createBullBoard } from "@bull-board/api";
 import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
 import { ExpressAdapter } from "@bull-board/express";
+import * as Sentry from "@sentry/node";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import compression from "compression";
 import cookieParser from "cookie-parser";
 import { createDatabaseFromEnv } from "dofek/db";
 import { createImportQueue, createSyncQueue } from "dofek/jobs/queues";
+import { sql } from "drizzle-orm";
 import express from "express";
 import { isAdmin } from "./auth/admin.ts";
 import { getSessionIdFromRequest } from "./auth/cookies.ts";
@@ -36,6 +38,11 @@ export function createApp(db: import("dofek/db").Database): express.Express {
 }
 
 function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
+  // ── Health check (before all middleware — no logging, no auth) ──
+  app.get("/healthz", (_req, res) => {
+    res.json({ status: "ok" });
+  });
+
   // ── Compression + Cookies ──
   app.use(compression());
   app.use(cookieParser());
@@ -123,6 +130,23 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       publicUrl: process.env.PUBLIC_URL ?? "https://dofek.asherlc.com",
     }),
   );
+  // ── Dev-only: auto-login for seed database testing ──
+  if (process.env.NODE_ENV !== "production") {
+    app.get("/auth/dev-login", async (_req, res) => {
+      const { setSessionCookie } = await import("./auth/cookies.ts");
+      const rows = await db.execute<{ id: string; expires_at: Date }>(
+        sql`SELECT id, expires_at FROM fitness.session WHERE id = 'dev-session' LIMIT 1`,
+      );
+      const row = rows[0];
+      if (!row) {
+        res.status(404).send("No dev-session found. Run pnpm seed first.");
+        return;
+      }
+      setSessionCookie(res, row.id, new Date(row.expires_at));
+      res.redirect("/dashboard");
+    });
+  }
+
   app.use(createAuthRouter(db));
 
   // tRPC API
@@ -145,6 +169,25 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
   );
 }
 
+/**
+ * Fire-and-forget startup tasks. Exported for testability.
+ * Errors are logged and reported to Sentry but don't crash the server.
+ */
+export function runStartupTasks(
+  db: ReturnType<typeof createDatabaseFromEnv>,
+  app: express.Express,
+) {
+  warmCache(db).catch((err) => {
+    logger.error(`[cache] Warm failed: ${err}`);
+    Sentry.captureException(err);
+  });
+
+  startSlackBot(db, app).catch((err) => {
+    logger.error(`[slack] Slack bot error: ${err}`);
+    Sentry.captureException(err);
+  });
+}
+
 async function main() {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
@@ -156,12 +199,7 @@ async function main() {
   app.listen(PORT, () => {
     logger.info(`[server] API running at http://localhost:${PORT}`);
     logger.info(`[server] tRPC at http://localhost:${PORT}/api/trpc`);
-
-    // Warm cache with common dashboard queries (fire-and-forget)
-    warmCache(db).catch((err) => logger.error(`[cache] Warm failed: ${err}`));
-
-    // Start Slack bot if configured (fire-and-forget)
-    startSlackBot(db, app).catch((err) => logger.error(`[slack] Slack bot error: ${err}`));
+    runStartupTasks(db, app);
   });
 }
 

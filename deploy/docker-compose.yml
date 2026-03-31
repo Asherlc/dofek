@@ -55,6 +55,10 @@ services:
       - PUBLIC_URL=https://dofek.asherlc.com
       - PORT=3000
       - NODE_ENV=production
+      - R2_ENDPOINT=${R2_ENDPOINT:?Set R2_ENDPOINT in .env}
+      - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID:?Set R2_ACCESS_KEY_ID in .env}
+      - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY:?Set R2_SECRET_ACCESS_KEY in .env}
+      - R2_BUCKET=dofek-training-data
       - OTEL_SERVICE_NAME=dofek-web
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318
       - OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://collector:4318/v1/logs
@@ -63,6 +67,12 @@ services:
       - job_files:/app/job-files
       - /opt/dofek/updates:/app/updates:ro
       - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/healthz').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))\""]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -81,6 +91,10 @@ services:
       - DATABASE_URL=postgres://health:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/health
       - REDIS_URL=redis://redis:6379
       - NODE_ENV=production
+      - R2_ENDPOINT=${R2_ENDPOINT:?Set R2_ENDPOINT in .env}
+      - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID:?Set R2_ACCESS_KEY_ID in .env}
+      - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY:?Set R2_SECRET_ACCESS_KEY in .env}
+      - R2_BUCKET=dofek-training-data
       - OTEL_SERVICE_NAME=dofek-worker
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318
       - OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://collector:4318/v1/logs
@@ -188,6 +202,7 @@ services:
       WATCHTOWER_CLEANUP: "true"
       WATCHTOWER_INCLUDE_STOPPED: "true"
       WATCHTOWER_REVIVE_STOPPED: "false"
+      WATCHTOWER_ROLLING_RESTART: "true"
       WATCHTOWER_STOP_TIMEOUT: "2100"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

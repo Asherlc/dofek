@@ -60,6 +60,7 @@
     "sync": "./scripts/with-env.sh tsx src/index.ts sync",
     "auth": "./scripts/with-env.sh tsx src/index.ts auth",
     "migrate": "./scripts/with-env.sh drizzle-kit migrate && tsx scripts/generate-schema-diagram.ts",
+    "seed": "tsx scripts/seed-dev-db.ts",
     "generate": "drizzle-kit generate && tsx scripts/generate-schema-diagram.ts",
     "schema:diagram": "tsx scripts/generate-schema-diagram.ts",
     "schema:view": "tsx scripts/generate-schema-diagram.ts --open",
@@ -86,9 +87,11 @@
     "mobile:device": "pnpm --filter dofek-mobile ios:device",
     "size": "size-limit",
     "depcruise": "depcruise --config .dependency-cruiser.cjs src/ packages/",
-    "spellcheck": "cspell --no-progress"
+    "spellcheck": "cspell --no-progress",
+    "check:mobile-update": "./scripts/check-mobile-update.sh"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "3.1020.0",
     "@bull-board/api": "6.20.5",
     "@bull-board/express": "6.20.5",
     "@dofek/heart-rate-variability": "workspace:*",
@@ -101,7 +104,7 @@
     "@opentelemetry/exporter-trace-otlp-proto": "0.213.0",
     "@opentelemetry/instrumentation-express": "0.61.0",
     "@opentelemetry/instrumentation-http": "0.213.0",
-    "@opentelemetry/sdk-logs": "0.213.0",
+    "@opentelemetry/sdk-logs": "0.214.0",
     "@opentelemetry/sdk-metrics": "2.6.0",
     "@opentelemetry/sdk-node": "0.213.0",
     "@opentelemetry/sdk-trace-node": "2.6.0",

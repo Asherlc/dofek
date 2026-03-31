@@ -1,14 +1,25 @@
-import { useState } from "react";
-import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
+import { providerLabel } from "@dofek/providers/providers";
 import { File as ExpoFile, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
+import * as Updates from "expo-updates";
+import { useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import { z } from "zod";
-import { providerLabel } from "@dofek/providers/providers";
 import { PersonalizationPanel } from "../components/PersonalizationPanel";
 import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel";
+import { useAuth } from "../lib/auth-context";
 import { trpc } from "../lib/trpc";
 import { useRefresh } from "../lib/useRefresh";
-import { useAuth } from "../lib/auth-context";
 import { colors } from "../theme";
 
 type UnitSystem = "metric" | "imperial";
@@ -52,9 +63,7 @@ export default function SettingsScreen() {
 
   // ── Unit System ──
   const unitSetting = trpc.settings.get.useQuery({ key: "unitSystem" });
-  const setSettingMutation = trpc.settings.set.useMutation({
-    onSuccess: () => unitSetting.refetch(),
-  });
+  const setSettingMutation = trpc.settings.set.useMutation();
   const deleteAllDataMutation = trpc.settings.deleteAllUserData.useMutation({
     onSuccess: async () => {
       await trpcUtils.invalidate();
@@ -67,17 +76,13 @@ export default function SettingsScreen() {
     unitSetting.data?.value === "imperial" ? "imperial" : "metric";
 
   function handleUnitChange(value: UnitSystem) {
-    setSettingMutation.mutate({ key: "unitSystem", value });
-  }
-
-  // ── WHOOP Accelerometer ──
-  const whoopImuSetting = trpc.settings.get.useQuery({ key: "whoopAlwaysOnImu" });
-  const whoopImuEnabled = whoopImuSetting.data?.value === true;
-
-  function handleWhoopImuToggle(enabled: boolean) {
+    trpcUtils.settings.get.setData({ key: "unitSystem" }, { key: "unitSystem", value });
     setSettingMutation.mutate(
-      { key: "whoopAlwaysOnImu", value: enabled },
-      { onSuccess: () => whoopImuSetting.refetch() },
+      { key: "unitSystem", value },
+      {
+        onSuccess: () => unitSetting.refetch(),
+        onError: () => unitSetting.refetch(),
+      },
     );
   }
 
@@ -202,7 +207,17 @@ export default function SettingsScreen() {
   const { refreshing, onRefresh } = useRefresh();
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={[styles.content, isWide && styles.contentWide]} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={[styles.content, isWide && styles.contentWide]}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={colors.textSecondary}
+        />
+      }
+    >
       {/* ── Linked Accounts ── */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Linked Accounts</Text>
@@ -216,12 +231,8 @@ export default function SettingsScreen() {
             accounts.map((account) => (
               <View key={account.id} style={styles.accountRow}>
                 <View style={styles.accountInfo}>
-                  <Text style={styles.accountProvider}>
-                    {providerLabel(account.authProvider)}
-                  </Text>
-                  {account.email ? (
-                    <Text style={styles.accountEmail}>{account.email}</Text>
-                  ) : null}
+                  <Text style={styles.accountProvider}>{providerLabel(account.authProvider)}</Text>
+                  {account.email ? <Text style={styles.accountEmail}>{account.email}</Text> : null}
                 </View>
                 <TouchableOpacity
                   onPress={() => handleUnlink(account.id)}
@@ -268,31 +279,6 @@ export default function SettingsScreen() {
         </View>
       </View>
 
-      {/* ── WHOOP Accelerometer ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>WHOOP Accelerometer</Text>
-        <Text style={styles.sectionDescription}>
-          Record accelerometer data from your WHOOP strap continuously via Bluetooth.
-          Reduces strap battery life from ~5 days to ~3-4 days.
-        </Text>
-        <View style={styles.card}>
-          <View style={styles.toggleRow}>
-            <View style={styles.toggleInfo}>
-              <Text style={styles.toggleLabel}>Always-on recording</Text>
-              <Text style={styles.toggleDescription}>
-                Streams accelerometer data whenever the app is open
-              </Text>
-            </View>
-            <Switch
-              value={whoopImuEnabled}
-              onValueChange={handleWhoopImuToggle}
-              disabled={setSettingMutation.isPending}
-              trackColor={{ false: colors.surfaceSecondary, true: colors.accent }}
-            />
-          </View>
-        </View>
-      </View>
-
       {/* ── Algorithm Personalization ── */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Algorithm Personalization</Text>
@@ -328,14 +314,13 @@ export default function SettingsScreen() {
               <Text style={styles.exportMessageText}>{exportMessage}</Text>
             </View>
           )}
-          {exportState === "done" && (
-            <Text style={styles.exportDoneText}>Export complete</Text>
-          )}
-          {exportState === "error" && (
-            <Text style={styles.exportErrorText}>{exportMessage}</Text>
-          )}
+          {exportState === "done" && <Text style={styles.exportDoneText}>Export complete</Text>}
+          {exportState === "error" && <Text style={styles.exportErrorText}>{exportMessage}</Text>}
           <TouchableOpacity
-            style={[styles.exportButton, exportState === "processing" && styles.exportButtonDisabled]}
+            style={[
+              styles.exportButton,
+              exportState === "processing" && styles.exportButtonDisabled,
+            ]}
             onPress={handleExport}
             activeOpacity={0.7}
             disabled={exportState === "processing"}
@@ -344,6 +329,61 @@ export default function SettingsScreen() {
               {exportState === "processing" ? "Exporting..." : "Download My Data"}
             </Text>
           </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* ── Developer Tools ── */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Developer Tools</Text>
+        <Text style={styles.sectionDescription}>Debugging and diagnostics</Text>
+        <View style={styles.card}>
+          <TouchableOpacity
+            style={styles.devToolRow}
+            onPress={() => {
+              const { router } = require("expo-router");
+              router.push("/ble-probe");
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.devToolLabel}>BLE Probe</Text>
+            <Text style={styles.devToolChevron}>›</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.devToolRow}
+            onPress={() => {
+              const { router } = require("expo-router");
+              router.push("/inertial-measurement-unit");
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.devToolLabel}>Accelerometer Status</Text>
+            <Text style={styles.devToolChevron}>›</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.devToolRow}
+            onPress={() => {
+              const { router } = require("expo-router");
+              router.push("/imu-visualization");
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.devToolLabel}>IMU Visualization</Text>
+            <Text style={styles.devToolChevron}>›</Text>
+          </TouchableOpacity>
+          <View style={[styles.devToolRow, styles.devToolRowLast]}>
+            <View>
+              <Text style={styles.devToolLabel}>OTA Update</Text>
+              <Text style={styles.devToolDetail}>
+                {Updates.updateId ?? "embedded bundle"}
+                {"\n"}
+                Channel: {Updates.channel ?? "none"}
+                {"\n"}
+                Runtime: {Updates.runtimeVersion ?? "unknown"}
+                {"\n"}
+                Created: {Updates.createdAt?.toISOString() ?? "n/a"}
+              </Text>
+            </View>
+          </View>
         </View>
       </View>
 
@@ -553,6 +593,34 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: colors.text,
+  },
+
+  // ── Developer Tools ──
+  devToolRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.surfaceSecondary,
+  },
+  devToolRowLast: {
+    borderBottomWidth: 0,
+  },
+  devToolLabel: {
+    fontSize: 15,
+    fontWeight: "500",
+    color: colors.text,
+  },
+  devToolChevron: {
+    fontSize: 18,
+    color: colors.textTertiary,
+  },
+  devToolDetail: {
+    fontSize: 11,
+    color: colors.textTertiary,
+    marginTop: 2,
+    fontVariant: ["tabular-nums"],
   },
 
   // ── Danger Zone ──

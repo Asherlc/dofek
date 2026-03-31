@@ -11,6 +11,8 @@ import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity, metricStream } from "../db/schema.ts";
+import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
+import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
 import { logger } from "../logger.ts";
 import type {
   ProviderAuthSetup,
@@ -419,6 +421,10 @@ export class StravaProvider implements WebhookProvider {
     return null;
   }
 
+  activityUrl(externalId: string): string {
+    return `https://www.strava.com/activities/${externalId}`;
+  }
+
   // ── Webhook implementation ──
 
   async registerWebhook(
@@ -571,7 +577,7 @@ export class StravaProvider implements WebhookProvider {
   async syncWebhookEvent(
     db: SyncDatabase,
     event: WebhookEvent,
-    options?: SyncOptions,
+    _options?: SyncOptions,
   ): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
@@ -662,6 +668,7 @@ export class StravaProvider implements WebhookProvider {
         for (let i = 0; i < metricRows.length; i += 500) {
           await db.insert(metricStream).values(metricRows.slice(i, i + 500));
         }
+        await dualWriteToSensorSample(db, metricRows, SOURCE_TYPE_API);
         logger.info(
           `[strava] Webhook: inserted ${metricRows.length} metric_stream records for activity ${event.objectId}`,
         );
@@ -837,6 +844,7 @@ export class StravaProvider implements WebhookProvider {
               for (let i = 0; i < metricRows.length; i += 500) {
                 await db.insert(metricStream).values(metricRows.slice(i, i + 500));
               }
+              await dualWriteToSensorSample(db, metricRows, SOURCE_TYPE_API);
               logger.info(
                 `[strava] Inserted ${metricRows.length} metric_stream records for activity ${act.externalId}`,
               );

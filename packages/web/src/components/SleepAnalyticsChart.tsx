@@ -1,3 +1,5 @@
+import { sleepStageColors, statusColors } from "@dofek/scoring/colors";
+import { sleepDebtColor } from "@dofek/scoring/scoring";
 import type { SleepNightlyRow } from "dofek-server/types";
 import { dofekAxis, dofekGrid, dofekLegend, dofekSeries, dofekTooltip } from "../lib/chartTheme.ts";
 import { formatNumber } from "../lib/format.ts";
@@ -12,7 +14,7 @@ interface SleepAnalyticsChartProps {
 export function buildSleepAnalyticsOption(nightly: SleepNightlyRow[], sleepDebt: number) {
   const debtHours = Math.round((sleepDebt / 60) * 10) / 10;
   const debtLabel = sleepDebt > 0 ? `${debtHours}h deficit` : `${Math.abs(debtHours)}h surplus`;
-  const debtColor = sleepDebt > 120 ? "#ef4444" : sleepDebt > 0 ? "#eab308" : "#22c55e";
+  const debtColor = sleepDebtColor(sleepDebt);
 
   return {
     // Reserve vertical space for both the legend row and sleep debt status row.
@@ -35,7 +37,7 @@ export function buildSleepAnalyticsOption(nightly: SleepNightlyRow[], sleepDebt:
         if (!night) return "";
         const totalHr = Math.floor(night.durationMinutes / 60);
         const totalMin = Math.round(night.durationMinutes % 60);
-        const dateLabel = new Date(night.date).toLocaleDateString("en-US", {
+        const dateLabel = new Date(`${night.date}T12:00:00`).toLocaleDateString("en-US", {
           month: "short",
           day: "numeric",
           year: "numeric",
@@ -95,7 +97,7 @@ export function buildSleepAnalyticsOption(nightly: SleepNightlyRow[], sleepDebt:
         nightly.map((d) => [d.date, d.deepPct]),
         {
           stack: "sleep",
-          color: "#4f46e5",
+          color: sleepStageColors.deep,
         },
       ),
       dofekSeries.bar(
@@ -103,7 +105,7 @@ export function buildSleepAnalyticsOption(nightly: SleepNightlyRow[], sleepDebt:
         nightly.map((d) => [d.date, d.remPct]),
         {
           stack: "sleep",
-          color: "#7c3aed",
+          color: sleepStageColors.rem,
         },
       ),
       dofekSeries.bar(
@@ -111,7 +113,7 @@ export function buildSleepAnalyticsOption(nightly: SleepNightlyRow[], sleepDebt:
         nightly.map((d) => [d.date, d.lightPct]),
         {
           stack: "sleep",
-          color: "#3b82f6",
+          color: sleepStageColors.light,
         },
       ),
       dofekSeries.bar(
@@ -119,14 +121,14 @@ export function buildSleepAnalyticsOption(nightly: SleepNightlyRow[], sleepDebt:
         nightly.map((d) => [d.date, d.awakePct]),
         {
           stack: "sleep",
-          color: "#ef4444",
+          color: sleepStageColors.awake,
         },
       ),
       dofekSeries.line(
         "7d Avg",
         nightly.map((d) => [d.date, d.rollingAvgDuration]),
         {
-          color: "#22c55e",
+          color: statusColors.positive,
           width: 2.5,
           yAxisIndex: 1,
           z: 5,

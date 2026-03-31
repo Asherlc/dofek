@@ -1,4 +1,5 @@
 import { zScoreToRecoveryScore } from "@dofek/scoring/scoring";
+import * as Sentry from "@sentry/node";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../db/typed-sql.ts";
@@ -45,6 +46,7 @@ export async function refitAllParams(db: Database, userId: string): Promise<Pers
     await savePersonalizedParams(db, userId, params);
   } catch (err) {
     logger.error(`[personalization] Failed to save params: ${err}`);
+    Sentry.captureException(err, { tags: { context: "personalization-save" } });
   }
 
   return params;
@@ -375,16 +377,17 @@ async function fitTrimpFromDb(db: Database, userId: string) {
     sql`WITH rolling_power AS (
           SELECT
             ms.activity_id,
-            AVG(ms.power) OVER (
+            AVG(ms.scalar) OVER (
               PARTITION BY ms.activity_id
               ORDER BY ms.recorded_at
               RANGE BETWEEN INTERVAL '29 seconds' PRECEDING AND CURRENT ROW
             ) AS rolling_30s_power
-          FROM fitness.metric_stream ms
+          FROM fitness.sensor_sample ms
           JOIN fitness.v_activity a ON a.id = ms.activity_id
           WHERE a.user_id = ${userId}
             AND a.started_at > NOW() - INTERVAL '365 days'
-            AND ms.power > 0
+            AND ms.channel = 'power'
+            AND ms.scalar > 0
         ),
         np_data AS (
           SELECT

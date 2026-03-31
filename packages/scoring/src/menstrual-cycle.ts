@@ -1,3 +1,5 @@
+import { chartColors, statusColors } from "./colors.ts";
+
 /**
  * Menstrual cycle phase computation.
  *
@@ -42,8 +44,8 @@ export function computePhase(dayOfCycle: number, cycleLength: number): CyclePhas
 
 /** Display name and color for each phase */
 export const PHASE_DISPLAY: Record<CyclePhase, { label: string; color: string }> = {
-  menstrual: { label: "Menstrual", color: "#ef4444" },
-  follicular: { label: "Follicular", color: "#3b82f6" },
-  ovulatory: { label: "Ovulatory", color: "#a855f7" },
-  luteal: { label: "Luteal", color: "#f59e0b" },
+  menstrual: { label: "Menstrual", color: statusColors.danger },
+  follicular: { label: "Follicular", color: statusColors.info },
+  ovulatory: { label: "Ovulatory", color: chartColors.purple },
+  luteal: { label: "Luteal", color: chartColors.amber },
 };

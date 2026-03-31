@@ -177,7 +177,7 @@ export const healthspanRouter = router({
       const rows = await executeWithSchema(
         ctx.db,
         rawRowSchema,
-        sql`WITH sleep_data AS (
+        sql`WITH sleep_raw AS (
               SELECT
                 (started_at AT TIME ZONE ${ctx.timezone})::date AS date,
                 duration_minutes,
@@ -186,6 +186,11 @@ export const healthspanRouter = router({
               WHERE user_id = ${ctx.userId}
                 AND is_nap = false
                 AND started_at > ${timestampWindowStart(input.endDate, totalDays)}
+            ),
+            sleep_data AS (
+              SELECT DISTINCT ON (date) date, duration_minutes, bedtime_minutes
+              FROM sleep_raw
+              ORDER BY date, duration_minutes DESC NULLS LAST
             ),
             sleep_agg AS (
               SELECT
@@ -206,53 +211,44 @@ export const healthspanRouter = router({
             ),
             hr_zone_time AS (
               SELECT
-                SUM(CASE
-                  WHEN heart_rate < resting_hr + (max_hr - resting_hr) * 0.8
-                  THEN sample_seconds ELSE 0
-                END) / 60.0 AS aerobic_minutes,
-                SUM(CASE
-                  WHEN heart_rate >= resting_hr + (max_hr - resting_hr) * 0.8
-                  THEN sample_seconds ELSE 0
-                END) / 60.0 AS high_intensity_minutes
-              FROM (
+                COALESCE(SUM(
+                  CASE WHEN up3.max_hr IS NOT NULL AND rhr2.resting_hr IS NOT NULL
+                       AND asum.hr_sample_count > 0 AND asum.ended_at IS NOT NULL
+                  THEN
+                    cnt.aerobic_count::real / asum.hr_sample_count::real
+                    * EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
+                  ELSE 0 END
+                ), 0) AS aerobic_minutes,
+                COALESCE(SUM(
+                  CASE WHEN up3.max_hr IS NOT NULL AND rhr2.resting_hr IS NOT NULL
+                       AND asum.hr_sample_count > 0 AND asum.ended_at IS NOT NULL
+                  THEN
+                    cnt.hi_count::real / asum.hr_sample_count::real
+                    * EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
+                  ELSE 0 END
+                ), 0) AS high_intensity_minutes
+              FROM fitness.activity_summary asum
+              JOIN fitness.user_profile up3 ON up3.id = asum.user_id
+              JOIN LATERAL (
+                SELECT dm2.resting_hr
+                FROM fitness.v_daily_metrics dm2
+                WHERE dm2.user_id = asum.user_id
+                  AND dm2.date <= (asum.started_at AT TIME ZONE ${ctx.timezone})::date
+                  AND dm2.resting_hr IS NOT NULL
+                ORDER BY dm2.date DESC LIMIT 1
+              ) rhr2 ON true
+              JOIN LATERAL (
                 SELECT
-                  ms.heart_rate,
-                  rhr.resting_hr,
-                  up2.max_hr,
-                  COALESCE(
-                    LEAST(
-                      EXTRACT(EPOCH FROM
-                        LEAD(ms.recorded_at) OVER (PARTITION BY ms.activity_id ORDER BY ms.recorded_at)
-                        - ms.recorded_at
-                      ),
-                      30
-                    ),
-                    LEAST(
-                      EXTRACT(EPOCH FROM
-                        ms.recorded_at
-                        - LAG(ms.recorded_at) OVER (PARTITION BY ms.activity_id ORDER BY ms.recorded_at)
-                      ),
-                      30
-                    ),
-                    1
-                  ) AS sample_seconds
-                FROM fitness.user_profile up2
-                JOIN fitness.v_activity a ON a.user_id = up2.id
-                JOIN fitness.metric_stream ms ON ms.activity_id = a.id
-                JOIN LATERAL (
-                  SELECT dm.resting_hr
-                  FROM fitness.v_daily_metrics dm
-                  WHERE dm.user_id = up2.id
-                    AND dm.date <= (a.started_at AT TIME ZONE ${ctx.timezone})::date
-                    AND dm.resting_hr IS NOT NULL
-                  ORDER BY dm.date DESC
-                  LIMIT 1
-                ) rhr ON true
-                WHERE up2.id = ${ctx.userId}
-                  AND a.started_at > ${timestampWindowStart(input.endDate, totalDays)}
-                  AND ms.heart_rate IS NOT NULL
-                  AND up2.max_hr IS NOT NULL
-              ) hr_samples
+                  COUNT(*) FILTER (WHERE ms2.scalar < rhr2.resting_hr + (up3.max_hr - rhr2.resting_hr) * 0.8) AS aerobic_count,
+                  COUNT(*) FILTER (WHERE ms2.scalar >= rhr2.resting_hr + (up3.max_hr - rhr2.resting_hr) * 0.8) AS hi_count
+                FROM fitness.sensor_sample ms2
+                WHERE ms2.activity_id = asum.activity_id
+                  AND ms2.channel = 'heart_rate'
+              ) cnt ON true
+              WHERE asum.user_id = ${ctx.userId}
+                AND asum.started_at > ${timestampWindowStart(input.endDate, totalDays)}
+                AND asum.hr_sample_count > 0
+                AND up3.max_hr IS NOT NULL
             ),
             strength_freq AS (
               SELECT NULLIF(COUNT(*), 0)::real / GREATEST(${totalDays}::real / 7, 1) AS sessions_per_week
@@ -262,7 +258,7 @@ export const healthspanRouter = router({
             ),
             body_latest AS (
               SELECT weight_kg, body_fat_pct
-              FROM fitness.body_measurement
+              FROM fitness.v_body_measurement
               WHERE user_id = ${ctx.userId}
                 AND weight_kg IS NOT NULL
               ORDER BY recorded_at DESC

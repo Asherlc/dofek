@@ -11,6 +11,8 @@ import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity, DEFAULT_USER_ID, metricStream, userSettings } from "../db/schema.ts";
+import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
+import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import type {
   ProviderAuthSetup,
@@ -320,6 +322,10 @@ export class RideWithGpsProvider implements SyncProvider {
     return null;
   }
 
+  activityUrl(externalId: string): string {
+    return `https://ridewithgps.com/trips/${externalId}`;
+  }
+
   authSetup(): ProviderAuthSetup {
     const config = rideWithGpsOAuthConfig();
     if (!config) throw new Error("RWGPS_CLIENT_ID is required");
@@ -474,24 +480,24 @@ export class RideWithGpsProvider implements SyncProvider {
 
         // Parse and batch-insert track points
         const trackPoints = parseTrackPoints(trip.track_points ?? []);
-        for (let i = 0; i < trackPoints.length; i += METRIC_STREAM_BATCH_SIZE) {
-          const batch = trackPoints.slice(i, i + METRIC_STREAM_BATCH_SIZE);
-          await db.insert(metricStream).values(
-            batch.map((point) => ({
-              recordedAt: point.recordedAt,
-              activityId,
-              providerId: this.id,
-              lat: point.lat,
-              lng: point.lng,
-              altitude: point.altitude,
-              speed: isIndoorCycling(parsed.activityType) ? undefined : point.speed,
-              temperature: point.temperature,
-              heartRate: point.heartRate,
-              cadence: point.cadence,
-              power: point.power,
-            })),
-          );
+        const indoor = isIndoorCycling(parsed.activityType);
+        const metricRows = trackPoints.map((point) => ({
+          recordedAt: point.recordedAt,
+          activityId,
+          providerId: this.id,
+          lat: point.lat,
+          lng: point.lng,
+          altitude: point.altitude,
+          speed: indoor ? undefined : point.speed,
+          temperature: point.temperature,
+          heartRate: point.heartRate,
+          cadence: point.cadence,
+          power: point.power,
+        }));
+        for (let i = 0; i < metricRows.length; i += METRIC_STREAM_BATCH_SIZE) {
+          await db.insert(metricStream).values(metricRows.slice(i, i + METRIC_STREAM_BATCH_SIZE));
         }
+        await dualWriteToSensorSample(db, metricRows, SOURCE_TYPE_API);
 
         recordsSynced++;
       } catch (err) {

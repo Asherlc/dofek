@@ -1,12 +1,6 @@
+import { sleepTierColor } from "@dofek/scoring/scoring";
 import type { SleepPerformanceInfo } from "dofek-server/types";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
-
-const tierColors: Record<string, string> = {
-  Peak: "#22c55e",
-  Perform: "#3b82f6",
-  "Get By": "#eab308",
-  Low: "#ef4444",
-};
 
 interface SleepPerformanceCardProps {
   data: SleepPerformanceInfo | null | undefined;
@@ -26,7 +20,7 @@ export function SleepPerformanceCard({ data, loading }: SleepPerformanceCardProp
     );
   }
 
-  const color = tierColors[data.tier] ?? "#6b7280";
+  const color = sleepTierColor(data.tier);
   const hours = Math.floor(data.actualMinutes / 60);
   const mins = Math.round(data.actualMinutes % 60);
 

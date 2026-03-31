@@ -1,7 +1,13 @@
+import { formatDurationRange, formatNumber } from "@dofek/format/format";
+import { providerLabel } from "@dofek/providers/providers";
+import { activityMetricColors, statusColors } from "@dofek/scoring/colors";
+import { formatActivityTypeLabel } from "@dofek/training/training";
+import { HEART_RATE_ZONE_COLORS } from "@dofek/zones/zones";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -20,9 +26,6 @@ import Svg, {
   Text as SvgText,
 } from "react-native-svg";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
-import { formatDurationRange, formatNumber } from "@dofek/format/format";
-import { formatActivityTypeLabel } from "@dofek/training/training";
-import { HEART_RATE_ZONE_COLORS } from "@dofek/zones/zones";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { colors } from "../../theme";
@@ -32,16 +35,16 @@ const CHART_HEIGHT = 180;
 const CHART_PADDING = { top: 20, right: 16, bottom: 28, left: 44 };
 
 const CHART_COLORS = {
-  heartRate: "#ef4444",
-  power: "#f59e0b",
+  heartRate: activityMetricColors.heartRate,
+  power: activityMetricColors.power,
   altitude: "#6b7280",
 };
 
 // ── Helpers ──
 
 function formatDateTime(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleDateString("en-US", {
+  const date = new Date(iso);
+  return date.toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
     day: "numeric",
@@ -50,8 +53,8 @@ function formatDateTime(iso: string): string {
 }
 
 function formatTimeOfDay(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleTimeString("en-US", {
+  const date = new Date(iso);
+  return date.toLocaleTimeString("en-US", {
     hour: "numeric",
     minute: "2-digit",
   });
@@ -310,24 +313,19 @@ function HrZonesChart({ zones }: { zones: HrZone[] }) {
         {zones.map((zone, i) => {
           const percentage = totalSeconds > 0 ? zone.seconds / totalSeconds : 0;
           const barWidth = Math.max(percentage * barAreaWidth, 2);
-          const y = i * (barHeight + gap);
+          const rowY = i * (barHeight + gap);
           const zoneColor = HEART_RATE_ZONE_COLORS[i] ?? "#71717a";
 
           return (
             <G key={zone.zone}>
               {/* Zone label */}
-              <SvgText
-                x={0}
-                y={y + barHeight / 2 + 4}
-                fill={colors.textSecondary}
-                fontSize={11}
-              >
+              <SvgText x={0} y={rowY + barHeight / 2 + 4} fill={colors.textSecondary} fontSize={11}>
                 {`Z${zone.zone} ${zone.label}`}
               </SvgText>
               {/* Bar background */}
               <Rect
                 x={labelWidth}
-                y={y}
+                y={rowY}
                 width={barAreaWidth}
                 height={barHeight}
                 rx={4}
@@ -336,7 +334,7 @@ function HrZonesChart({ zones }: { zones: HrZone[] }) {
               {/* Bar fill */}
               <Rect
                 x={labelWidth}
-                y={y}
+                y={rowY}
                 width={barWidth}
                 height={barHeight}
                 rx={4}
@@ -345,7 +343,7 @@ function HrZonesChart({ zones }: { zones: HrZone[] }) {
               {/* Percentage label */}
               <SvgText
                 x={labelWidth + barAreaWidth + 8}
-                y={y + barHeight / 2 + 4}
+                y={rowY + barHeight / 2 + 4}
                 fill={colors.text}
                 fontSize={12}
                 fontWeight="600"
@@ -455,18 +453,9 @@ export default function ActivityDetailScreen() {
     );
   };
 
-  const detail = trpc.activity.byId.useQuery(
-    { id: id ?? "" },
-    { enabled: !!id },
-  );
-  const stream = trpc.activity.stream.useQuery(
-    { id: id ?? "", maxPoints: 200 },
-    { enabled: !!id },
-  );
-  const hrZones = trpc.activity.hrZones.useQuery(
-    { id: id ?? "" },
-    { enabled: !!id },
-  );
+  const detail = trpc.activity.byId.useQuery({ id: id ?? "" }, { enabled: !!id });
+  const stream = trpc.activity.stream.useQuery({ id: id ?? "", maxPoints: 200 }, { enabled: !!id });
+  const hrZones = trpc.activity.hrZones.useQuery({ id: id ?? "" }, { enabled: !!id });
 
   if (detail.isLoading) {
     return (
@@ -552,10 +541,7 @@ export default function ActivityDetailScreen() {
   }
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-    >
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* Activity Header */}
       <View style={styles.header}>
         <View style={styles.headerRow}>
@@ -576,6 +562,36 @@ export default function ActivityDetailScreen() {
           {" at "}
           {formatTimeOfDay(activity.startedAt)}
         </Text>
+        {(activity.sourceLinks.length > 0 || activity.sourceProviders.length > 0) && (
+          <View style={styles.sourceRow}>
+            <Text style={styles.source}>Source: </Text>
+            {activity.sourceProviders.map((providerId: string, index: number) => {
+              const link = activity.sourceLinks.find(
+                (sourceLink) => sourceLink.providerId === providerId,
+              );
+              if (link) {
+                return (
+                  <View key={providerId} style={styles.sourceLinkRow}>
+                    {index > 0 && <Text style={styles.source}>, </Text>}
+                    <Pressable
+                      onPress={() => Linking.openURL(link.url)}
+                      hitSlop={4}
+                      style={styles.sourceLinkPressable}
+                    >
+                      <Text style={styles.sourceLink}>{link.label} ↗</Text>
+                    </Pressable>
+                  </View>
+                );
+              }
+              return (
+                <Text key={providerId} style={styles.source}>
+                  {index > 0 && ", "}
+                  {providerLabel(providerId)}
+                </Text>
+              );
+            })}
+          </View>
+        )}
       </View>
 
       {/* Stats Grid */}
@@ -604,7 +620,9 @@ export default function ActivityDetailScreen() {
       {/* Elevation Profile */}
       {hasAltitude && (
         <AreaChart
-          data={points.map((p) => ({ value: p.altitude != null ? units.convertElevation(p.altitude) : null }))}
+          data={points.map((p) => ({
+            value: p.altitude != null ? units.convertElevation(p.altitude) : null,
+          }))}
           color={CHART_COLORS.altitude}
           label="Elevation Profile"
           unit={units.elevationLabel}
@@ -701,6 +719,30 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 4,
   },
+  sourceRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    marginTop: 2,
+  },
+  source: {
+    fontSize: 12,
+    color: colors.textTertiary,
+  },
+  sourceLinkRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  sourceLinkPressable: {
+    paddingVertical: 2,
+    paddingHorizontal: 4,
+    borderRadius: 4,
+  },
+  sourceLink: {
+    fontSize: 12,
+    color: colors.accent,
+    textDecorationLine: "underline",
+  },
   deleteButton: {
     backgroundColor: colors.surface,
     borderRadius: 12,
@@ -717,6 +759,6 @@ const styles = StyleSheet.create({
   deleteButtonText: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#ef4444",
+    color: statusColors.danger,
   },
 });

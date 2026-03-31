@@ -8,11 +8,21 @@ import {
 import { useEffect } from "react";
 import { AuthProvider, useAuth } from "../lib/auth-context.tsx";
 
-const PUBLIC_PATHS = new Set(["/login", "/privacy"]);
+const PUBLIC_PATHS = new Set(["/", "/login", "/privacy"]);
 
 const LEGACY_REDIRECTS: Record<string, string> = {
   "/nutrition-analytics": "/nutrition/analytics",
 };
+
+function PageTransition({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
+
+  return (
+    <div key={location.pathname} className="page-enter">
+      {children}
+    </div>
+  );
+}
 
 function AuthGate() {
   const { user, isLoading } = useAuth();
@@ -24,7 +34,10 @@ function AuthGate() {
     if (!isLoading && !user && !isPublic) {
       navigate({ to: "/login", search: (prev) => prev });
     }
-  }, [isLoading, user, isPublic, navigate]);
+    if (!isLoading && user && location.pathname === "/login") {
+      navigate({ to: "/dashboard" });
+    }
+  }, [isLoading, user, isPublic, location.pathname, navigate]);
 
   if (isLoading) {
     return (
@@ -38,7 +51,11 @@ function AuthGate() {
     return null;
   }
 
-  return <Outlet />;
+  return (
+    <PageTransition>
+      <Outlet />
+    </PageTransition>
+  );
 }
 
 export const Route = createRootRoute({
@@ -47,7 +64,7 @@ export const Route = createRootRoute({
     if (dest) throw redirect({ to: dest });
   },
   validateSearch: (search: Record<string, unknown>): { onboarding?: boolean } => ({
-    onboarding: search.onboarding === "true" || undefined,
+    onboarding: search.onboarding === true || search.onboarding === "true" || undefined,
   }),
   component: () => (
     <AuthProvider>

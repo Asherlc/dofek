@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@sentry/node", () => ({
+  captureException: vi.fn(),
+  init: vi.fn(),
+}));
 vi.mock("@bull-board/api", () => ({
   createBullBoard: vi.fn(),
 }));
@@ -9,7 +13,12 @@ vi.mock("@bull-board/api/bullMQAdapter", () => ({
 vi.mock("@bull-board/express", () => ({
   ExpressAdapter: vi.fn(() => ({
     setBasePath: vi.fn(),
-    getRouter: vi.fn(() => vi.fn()),
+    getRouter: vi.fn(
+      () =>
+        (_req: unknown, res: { status: (code: number) => { send: (body: string) => void } }) => {
+          res.status(200).send("bull-board");
+        },
+    ),
   })),
 }));
 vi.mock("@trpc/server/adapters/express", () => ({
@@ -28,6 +37,7 @@ vi.mock("./auth/admin.ts", () => ({
 }));
 vi.mock("./auth/cookies.ts", () => ({
   getSessionIdFromRequest: vi.fn(),
+  setSessionCookie: vi.fn(),
 }));
 vi.mock("./auth/session.ts", () => ({
   validateSession: vi.fn(),
@@ -68,17 +78,23 @@ vi.mock("./slack/bot.ts", () => ({
 }));
 
 vi.mock("dofek/db", () => ({
-  createDatabaseFromEnv: vi.fn(() => ({})),
+  createDatabaseFromEnv: vi.fn(() => ({
+    execute: vi.fn().mockResolvedValue([]),
+  })),
 }));
 
+import * as Sentry from "@sentry/node";
 import { createDatabaseFromEnv } from "dofek/db";
+import express from "express";
 import { isAdmin } from "./auth/admin.ts";
 import { getSessionIdFromRequest } from "./auth/cookies.ts";
 import { validateSession } from "./auth/session.ts";
-import { createApp } from "./index.ts";
+import { createApp, runStartupTasks } from "./index.ts";
 import { httpRequestDuration, registry } from "./lib/metrics.ts";
+import { warmCache } from "./lib/warm-cache.ts";
 import { logger } from "./logger.ts";
 import { createAuthRouter } from "./routes/auth.ts";
+import { startSlackBot } from "./slack/bot.ts";
 
 function startApp(
   app: ReturnType<typeof createApp>,
@@ -129,6 +145,15 @@ describe("createApp HTTP routes", () => {
     await close();
   });
 
+  describe("GET /healthz", () => {
+    it("returns 200 with status ok", async () => {
+      const res = await fetch(`${baseUrl}/healthz`);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body).toEqual({ status: "ok" });
+    });
+  });
+
   describe("GET /metrics", () => {
     it("returns 200 with metrics content type", async () => {
       const res = await fetch(`${baseUrl}/metrics`);
@@ -156,16 +181,22 @@ describe("createApp HTTP routes", () => {
   });
 
   describe("request duration middleware", () => {
-    it("logger.info is configured as a mock (metrics middleware uses it)", () => {
-      // Verify the logger mock is in place — the request duration middleware
-      // calls logger.info on every request finish event
-      expect(vi.mocked(logger.info)).toBeDefined();
-      expect(typeof vi.mocked(logger.info)).toBe("function");
+    it("logs request method, path, and status code on response finish", async () => {
+      vi.mocked(logger.info).mockClear();
+      // Use /api/trpc which goes through the logging middleware
+      await fetch(`${baseUrl}/api/trpc/nonexistent`);
+      expect(vi.mocked(logger.info)).toHaveBeenCalledWith(
+        expect.stringMatching(/\[web\].*GET.*\/api\/trpc\/nonexistent.*\d+ms/),
+      );
     });
 
-    it("httpRequestDuration object is defined and observe is a function", () => {
-      expect(httpRequestDuration).toBeDefined();
-      expect(typeof httpRequestDuration.observe).toBe("function");
+    it("observes request duration in histogram", async () => {
+      vi.mocked(httpRequestDuration.observe).mockClear();
+      await fetch(`${baseUrl}/api/trpc/nonexistent`);
+      expect(httpRequestDuration.observe).toHaveBeenCalledWith(
+        expect.objectContaining({ method: "GET" }),
+        expect.any(Number),
+      );
     });
   });
 
@@ -223,6 +254,69 @@ describe("createApp HTTP routes", () => {
       await fetch(`${baseUrl}/admin/queues`);
       expect(vi.mocked(isAdmin)).not.toHaveBeenCalled();
     });
+
+    it("delegates to Bull Board router when admin is authenticated", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("admin-session");
+      vi.mocked(validateSession).mockResolvedValue({
+        userId: "admin-1",
+        expiresAt: new Date("2027-01-01"),
+      });
+      vi.mocked(isAdmin).mockResolvedValue(true);
+      const res = await fetch(`${baseUrl}/admin/queues`);
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toBe("bull-board");
+    });
+
+    it("initializes Bull Board only once across multiple admin requests", async () => {
+      const { createBullBoard: mockCreateBullBoard } = await import("@bull-board/api");
+      vi.mocked(mockCreateBullBoard).mockClear();
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("admin-session");
+      vi.mocked(validateSession).mockResolvedValue({
+        userId: "admin-1",
+        expiresAt: new Date("2027-01-01"),
+      });
+      vi.mocked(isAdmin).mockResolvedValue(true);
+
+      await fetch(`${baseUrl}/admin/queues`);
+      await fetch(`${baseUrl}/admin/queues`);
+
+      // createBullBoard should only be called once (lazy init)
+      expect(vi.mocked(mockCreateBullBoard)).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("GET /auth/dev-login", () => {
+    it("returns 404 when no dev-session exists", async () => {
+      const res = await fetch(`${baseUrl}/auth/dev-login`, { redirect: "manual" });
+      expect(res.status).toBe(404);
+      const body = await res.text();
+      expect(body).toContain("No dev-session found");
+    });
+
+    it("sets session cookie and redirects when dev-session exists", async () => {
+      const fakeDb = createDatabaseFromEnv();
+      const expiresAt = new Date("2027-01-01");
+      vi.mocked(fakeDb.execute).mockResolvedValueOnce([
+        { id: "dev-session", expires_at: expiresAt },
+      ]);
+
+      const app = createApp(fakeDb);
+      const { baseUrl: devUrl, close: devClose } = await startApp(app);
+      try {
+        const res = await fetch(`${devUrl}/auth/dev-login`, { redirect: "manual" });
+        expect(res.status).toBe(302);
+        expect(res.headers.get("location")).toBe("/dashboard");
+        const { setSessionCookie } = await import("./auth/cookies.ts");
+        expect(vi.mocked(setSessionCookie)).toHaveBeenCalledWith(
+          expect.anything(),
+          "dev-session",
+          expiresAt,
+        );
+      } finally {
+        await devClose();
+      }
+    });
   });
 
   describe("tRPC middleware mounting", () => {
@@ -236,5 +330,42 @@ describe("createApp HTTP routes", () => {
     it("calls createAuthRouter during app setup", () => {
       expect(vi.mocked(createAuthRouter)).toHaveBeenCalled();
     });
+  });
+});
+
+describe("runStartupTasks", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("reports warmCache errors to Sentry", async () => {
+    const error = new Error("cache boom");
+    vi.mocked(warmCache).mockRejectedValueOnce(error);
+    vi.mocked(startSlackBot).mockResolvedValueOnce(undefined);
+
+    const fakeDb = createDatabaseFromEnv();
+    const app = express();
+    runStartupTasks(fakeDb, app);
+
+    // Let the microtask queue flush so .catch() handlers run
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(vi.mocked(logger.error)).toHaveBeenCalledWith(expect.stringContaining("cache boom"));
+    expect(vi.mocked(Sentry.captureException)).toHaveBeenCalledWith(error);
+  });
+
+  it("reports startSlackBot errors to Sentry", async () => {
+    const error = new Error("slack boom");
+    vi.mocked(warmCache).mockResolvedValueOnce(undefined);
+    vi.mocked(startSlackBot).mockRejectedValueOnce(error);
+
+    const fakeDb = createDatabaseFromEnv();
+    const app = express();
+    runStartupTasks(fakeDb, app);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(vi.mocked(logger.error)).toHaveBeenCalledWith(expect.stringContaining("slack boom"));
+    expect(vi.mocked(Sentry.captureException)).toHaveBeenCalledWith(error);
   });
 });

@@ -192,7 +192,7 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       executeWithSchema(
         db,
         exportRowSchema,
-        sql`SELECT * FROM fitness.metric_stream WHERE user_id = ${userId} ORDER BY recorded_at`,
+        sql`SELECT * FROM fitness.sensor_sample WHERE user_id = ${userId} ORDER BY recorded_at`,
       ),
   },
 ];
@@ -217,7 +217,7 @@ function createBatchedJsonStream(db: SyncDatabase, userId: string): Readable {
         const rows = await executeWithSchema(
           db,
           exportRowSchema,
-          sql`SELECT * FROM fitness.metric_stream
+          sql`SELECT * FROM fitness.sensor_sample
               WHERE user_id = ${userId}
               ORDER BY recorded_at
               LIMIT ${BATCH_SIZE} OFFSET ${offset}`,
@@ -286,7 +286,7 @@ export async function generateExport(
       const countResult = await executeWithSchema(
         db,
         countRowSchema,
-        sql`SELECT COUNT(*)::text AS count FROM fitness.metric_stream WHERE user_id = ${userId}`,
+        sql`SELECT COUNT(*)::text AS count FROM fitness.sensor_sample WHERE user_id = ${userId}`,
       );
       const count = parseInt(countResult[0]?.count ?? "0", 10);
       totalRecords += count;

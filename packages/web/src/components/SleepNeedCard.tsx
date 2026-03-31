@@ -1,3 +1,4 @@
+import { statusColors } from "@dofek/scoring/colors";
 import { sleepDebtColor } from "@dofek/scoring/scoring";
 import type { SleepNeedResult } from "dofek-server/types";
 import {
@@ -52,7 +53,7 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
         if (!params?.[0]) return "";
         const night = data.recentNights[params[0].dataIndex];
         if (!night) return "";
-        const date = new Date(night.date).toLocaleDateString("en-US", {
+        const date = new Date(`${night.date}T12:00:00`).toLocaleDateString("en-US", {
           weekday: "short",
           month: "short",
           day: "numeric",
@@ -64,14 +65,14 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
         html += `<div>Slept: <b>${formatHoursMinutes(night.actualMinutes)}</b></div>`;
         html += `<div>Needed: <b>${formatHoursMinutes(night.neededMinutes)}</b></div>`;
         if (night.debtMinutes != null && night.debtMinutes > 0) {
-          html += `<div style="color:#ef4444">Debt: ${night.debtMinutes}m</div>`;
+          html += `<div style="color:${statusColors.danger}">Debt: ${night.debtMinutes}m</div>`;
         }
         return html;
       },
     }),
     xAxis: dofekAxis.category({
       data: data.recentNights.map((n) =>
-        new Date(n.date).toLocaleDateString("en-US", { weekday: "short" }),
+        new Date(`${n.date}T12:00:00`).toLocaleDateString("en-US", { weekday: "short" }),
       ),
     }),
     yAxis: dofekAxis.value({
@@ -89,8 +90,8 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
                 n.actualMinutes == null
                   ? "#3a3a3e"
                   : n.actualMinutes >= n.neededMinutes
-                    ? "#22c55e"
-                    : "#ef4444",
+                    ? statusColors.positive
+                    : statusColors.danger,
             },
           })),
         ),

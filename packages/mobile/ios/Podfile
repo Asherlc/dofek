@@ -78,10 +78,22 @@ target 'Dofek' do
     # Add the correct path so RNSentry can find SentrySwizzle.h et al.
     local_sentry_headers = '"${PODS_ROOT}/../LocalPods/Sentry/Sources/Sentry/include"'
     installer.pods_project.targets.each do |target|
-      next unless target.name == 'RNSentry'
-      target.build_configurations.each do |config|
-        paths = config.build_settings['HEADER_SEARCH_PATHS'] || '$(inherited)'
-        config.build_settings['HEADER_SEARCH_PATHS'] = paths + ' ' + local_sentry_headers
+      if target.name == 'RNSentry'
+        target.build_configurations.each do |config|
+          paths = config.build_settings['HEADER_SEARCH_PATHS'] || '$(inherited)'
+          config.build_settings['HEADER_SEARCH_PATHS'] = paths + ' ' + local_sentry_headers
+        end
+      end
+
+      # Workaround: ExpoModulesCore Worklets code triggers
+      # -Werror,-Wreturn-type on Xcode 26.2 when react-native-reanimated
+      # is installed. Downgrade the warning to non-fatal until upstream fix.
+      if target.name == 'ExpoModulesCore'
+        target.build_configurations.each do |config|
+          flags = config.build_settings['OTHER_CPLUSPLUSFLAGS'] || ['$(inherited)']
+          flags << '-Wno-error=return-type'
+          config.build_settings['OTHER_CPLUSPLUSFLAGS'] = flags
+        end
       end
     end
   end

@@ -45,6 +45,14 @@ describe("ONBOARDING_CATEGORIES", () => {
     }
   });
 
+  it("all provider IDs use hyphens, not underscores (match registry convention)", () => {
+    for (const category of ONBOARDING_CATEGORIES) {
+      for (const id of category.providerIds) {
+        expect(id).not.toMatch(/_/);
+      }
+    }
+  });
+
   it("has no duplicate category titles", () => {
     const titles = ONBOARDING_CATEGORIES.map((c) => c.title);
     expect(new Set(titles).size).toBe(titles.length);

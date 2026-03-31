@@ -11,6 +11,8 @@ import {
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity, metricStream } from "../db/schema.ts";
+import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
+import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
@@ -48,6 +50,14 @@ export interface PelotonWorkout {
   total_work: number; // joules
   is_total_work_personal_record: boolean;
   metrics_type?: string;
+  device_type?: string; // e.g. "home_bike_v1", "iOS", "android"
+  platform?: string; // e.g. "home_bike", "iOS_app", "android_app"
+  peloton_id?: string; // scheduled class instance ID
+  workout_type?: string; // e.g. "class", "freestyle"
+  has_pedaling_metrics?: boolean;
+  has_leaderboard_metrics?: boolean;
+  timezone?: string; // e.g. "America/New_York"
+  strava_id?: string; // Strava activity ID (e.g. "3456789012")
   ride?: PelotonRide;
   total_leaderboard_users?: number;
   leaderboard_rank?: number;
@@ -115,6 +125,8 @@ export interface ParsedPelotonWorkout {
   externalId: string;
   activityType: CanonicalActivityType;
   name?: string;
+  timezone?: string;
+  stravaId?: string;
   startedAt: Date;
   endedAt?: Date;
   raw: Record<string, unknown>;
@@ -136,12 +148,23 @@ export function parseWorkout(workout: PelotonWorkout): ParsedPelotonWorkout {
     isPersonalRecord: workout.is_total_work_personal_record || undefined,
     fitnessDiscipline: workout.fitness_discipline,
     pelotonRideId: workout.ride?.id,
+    deviceType: workout.device_type || undefined,
+    platform: workout.platform || undefined,
+    pelotonClassId: workout.peloton_id || undefined,
+    workoutType: workout.workout_type || undefined,
+    hasPedalingMetrics: workout.has_pedaling_metrics,
+    timezone: workout.timezone || undefined,
   };
+
+  // strava_id "-1" means "not linked to Strava"
+  const stravaId = workout.strava_id && workout.strava_id !== "-1" ? workout.strava_id : undefined;
 
   return {
     externalId: workout.id,
     activityType: mapFitnessDiscipline(workout.fitness_discipline),
     name: workout.ride?.title,
+    timezone: workout.timezone || undefined,
+    stravaId,
     startedAt,
     endedAt,
     raw,
@@ -511,6 +534,10 @@ export class PelotonProvider implements SyncProvider {
     return null;
   }
 
+  activityUrl(externalId: string): string {
+    return `https://members.onepeloton.com/classes/cycling?modal=classDetailsModal&classId=${externalId}`;
+  }
+
   authSetup(): ProviderAuthSetup {
     const config = pelotonOAuthConfig();
     const codeVerifier = generateCodeVerifier();
@@ -596,6 +623,8 @@ export class PelotonProvider implements SyncProvider {
                   startedAt: parsed.startedAt,
                   endedAt: parsed.endedAt,
                   name: parsed.name,
+                  timezone: parsed.timezone,
+                  stravaId: parsed.stravaId,
                   raw: parsed.raw,
                 })
                 .onConflictDoUpdate({
@@ -605,6 +634,8 @@ export class PelotonProvider implements SyncProvider {
                     startedAt: parsed.startedAt,
                     endedAt: parsed.endedAt,
                     name: parsed.name,
+                    timezone: parsed.timezone,
+                    stravaId: parsed.stravaId,
                     raw: parsed.raw,
                   },
                 })
@@ -636,8 +667,13 @@ export class PelotonProvider implements SyncProvider {
 
               // Insert time-series metric_stream rows linked to the activity
               const hrSeries = series.find((s) => s.slug === "heart_rate");
-              const powerSeries = series.find((s) => s.slug === "output");
-              const cadenceSeries = series.find((s) => s.slug === "cadence");
+              // Discard pedaling metrics (power, cadence) when has_pedaling_metrics is false —
+              // the user may still have HR data from a chest strap or watch
+              const hasPedaling = workout.has_pedaling_metrics !== false;
+              const powerSeries = hasPedaling ? series.find((s) => s.slug === "output") : undefined;
+              const cadenceSeries = hasPedaling
+                ? series.find((s) => s.slug === "cadence")
+                : undefined;
               const sampleCount =
                 hrSeries?.values.length ??
                 powerSeries?.values.length ??
@@ -673,6 +709,7 @@ export class PelotonProvider implements SyncProvider {
                   const chunk = rows.slice(j, j + 500);
                   await db.insert(metricStream).values(chunk);
                 }
+                await dualWriteToSensorSample(db, rows, SOURCE_TYPE_API);
 
                 streamCount += rows.length;
               }

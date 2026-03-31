@@ -1,7 +1,6 @@
-import { accelerometerRouter } from "./routers/accelerometer.ts";
-import { accelerometerSyncRouter } from "./routers/accelerometer-sync.ts";
 import { activityRouter } from "./routers/activity.ts";
 import { activityRecordingRouter } from "./routers/activity-recording.ts";
+import { adminRouter } from "./routers/admin.ts";
 import { aiCoachRouter } from "./routers/ai-coach.ts";
 import { anomalyDetectionRouter } from "./routers/anomaly-detection.ts";
 import { authRouter } from "./routers/auth.ts";
@@ -22,6 +21,8 @@ import { healthKitSyncRouter } from "./routers/health-kit-sync.ts";
 import { healthReportRouter } from "./routers/health-report.ts";
 import { healthspanRouter } from "./routers/healthspan.ts";
 import { hikingRouter } from "./routers/hiking.ts";
+import { inertialMeasurementUnitRouter } from "./routers/inertial-measurement-unit.ts";
+import { inertialMeasurementUnitSyncRouter } from "./routers/inertial-measurement-unit-sync.ts";
 import { insightsRouter } from "./routers/insights.ts";
 import { intervalsRouter } from "./routers/intervals.ts";
 import { journalRouter } from "./routers/journal.ts";
@@ -49,11 +50,13 @@ import { trainingRouter } from "./routers/training.ts";
 import { trendsRouter } from "./routers/trends.ts";
 import { weeklyReportRouter } from "./routers/weekly-report.ts";
 import { whoopAuthRouter } from "./routers/whoop-auth.ts";
+import { whoopBleSyncRouter } from "./routers/whoop-ble-sync.ts";
 import { router } from "./trpc.ts";
 
 export const appRouter = router({
-  accelerometer: accelerometerRouter,
-  accelerometerSync: accelerometerSyncRouter,
+  admin: adminRouter,
+  inertialMeasurementUnit: inertialMeasurementUnitRouter,
+  inertialMeasurementUnitSync: inertialMeasurementUnitSyncRouter,
   activity: activityRouter,
   activityRecording: activityRecordingRouter,
   aiCoach: aiCoachRouter,
@@ -88,6 +91,7 @@ export const appRouter = router({
   garminAuth: garminAuthRouter,
   healthKitSync: healthKitSyncRouter,
   whoopAuth: whoopAuthRouter,
+  whoopBleSync: whoopBleSyncRouter,
   strength: strengthRouter,
   cyclingAdvanced: cyclingAdvancedRouter,
   hiking: hikingRouter,

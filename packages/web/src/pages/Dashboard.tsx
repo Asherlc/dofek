@@ -330,8 +330,8 @@ export function Dashboard() {
       subtitle: "Strongest correlations in your data",
       content: insightsQuery.isLoading ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="h-48 rounded-lg bg-skeleton animate-pulse" />
-          <div className="h-48 rounded-lg bg-skeleton animate-pulse" />
+          <div className="h-48 rounded-lg shimmer" />
+          <div className="h-48 rounded-lg shimmer" />
         </div>
       ) : topInsights.length > 0 ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -740,7 +740,9 @@ function CollapsibleSection({
           )}
         </div>
       </div>
-      {!collapsed && children}
+      <div className="collapsible-content" data-collapsed={collapsed ? "true" : "false"}>
+        <div className="collapsible-inner">{children}</div>
+      </div>
     </section>
   );
 }

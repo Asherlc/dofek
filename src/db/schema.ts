@@ -1,4 +1,5 @@
 import {
+  bigint,
   boolean,
   date,
   index,
@@ -216,6 +217,7 @@ export const userProfile = fitness.table("user_profile", {
   maxHr: smallint("max_hr"),
   restingHr: smallint("resting_hr"),
   ftp: smallint("ftp"),
+  isAdmin: boolean("is_admin").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -475,6 +477,8 @@ export const activity = fitness.table(
     perceivedExertion: real("perceived_exertion"),
     percentRecorded: real("percent_recorded"),
     sourceName: text("source_name"),
+    timezone: text("timezone"), // IANA timezone (e.g. "America/New_York")
+    stravaId: text("strava_id"), // Strava activity ID for cross-provider linking
     raw: jsonb("raw"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -539,10 +543,54 @@ export const activityInterval = fitness.table(
 );
 
 // ============================================================
-// Metric stream (TimescaleDB hypertable — DDL managed by SQL migration, not Drizzle)
+// Sensor sample (TimescaleDB hypertable — DDL managed by SQL migration, not Drizzle)
+// Unified time-series table for ALL sensor data using a "medium" layout.
+// Replaces metric_stream, inertial_measurement_unit_sample, and orientation_sample.
 // This Drizzle definition exists for type-safe queries/inserts only.
+//
+// Design:
+//   - `channel` identifies what's measured (e.g., "heart_rate", "power", "imu")
+//   - `scalar` stores single numeric values (HR, power, cadence, speed, etc.)
+//   - `vector` stores multi-axis data as real[] (accel [x,y,z], quaternion [w,x,y,z])
+//   - Dedup: per (activity, channel), pick the provider with the most samples
+//   - `source_type` is informational only (debugging/auditing), not used for priority
 // ============================================================
 
+export const sensorSample = fitness.table(
+  "sensor_sample",
+  {
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .default(DEFAULT_USER_ID)
+      .references(() => userProfile.id),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id),
+    deviceId: text("device_id"),
+    sourceType: text("source_type").notNull(), // 'ble', 'file', 'api' (informational only)
+    channel: text("channel").notNull(), // 'heart_rate', 'power', 'imu', 'orientation', etc.
+    activityId: uuid("activity_id").references(() => activity.id, { onDelete: "cascade" }),
+    scalar: real("scalar"), // single numeric value
+    vector: real("vector").array(), // multi-axis data (e.g., [x, y, z] for accel)
+  },
+  (table) => [
+    index("sensor_sample_activity_channel_time_idx").on(
+      table.activityId,
+      table.channel,
+      table.recordedAt,
+    ),
+    index("sensor_sample_user_channel_time_idx").on(table.userId, table.channel, table.recordedAt),
+    index("sensor_sample_provider_time_idx").on(table.providerId, table.recordedAt),
+  ],
+);
+
+// ============================================================
+// Legacy tables — retained during migration, will be dropped in a future migration.
+// All new code should use sensorSample instead.
+// ============================================================
+
+/** @deprecated Use sensorSample instead */
 export const metricStream = fitness.table(
   "metric_stream",
   {
@@ -594,6 +642,8 @@ export const metricStream = fitness.table(
     bloodGlucose: real("blood_glucose"), // mmol/L
     audioExposure: real("audio_exposure"), // dBASPL
     skinTemperature: real("skin_temperature"), // celsius
+    electrodermalActivity: real("electrodermal_activity"), // microsiemens
+    rrIntervalMs: smallint("rr_interval_ms"), // milliseconds (beat-to-beat R-R interval from PPG)
     // Source device/app name (e.g., "Apple Watch", "Wahoo TICKR")
     sourceName: text("source_name"),
     // Complete raw record — every field, no data loss
@@ -606,28 +656,49 @@ export const metricStream = fitness.table(
   ],
 );
 
-// ============================================================
-// Accelerometer (high-frequency IMU data, 50 Hz)
-// ============================================================
-
-export const accelerometerSample = fitness.table(
-  "accelerometer_sample",
+/** @deprecated Use sensorSample instead */
+export const inertialMeasurementUnitSample = fitness.table(
+  "inertial_measurement_unit_sample",
   {
     recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
     userId: uuid("user_id")
       .notNull()
       .default(DEFAULT_USER_ID)
       .references(() => userProfile.id),
-    deviceId: text("device_id").notNull(), // e.g., "iPhone 15 Pro", "Apple Watch Series 9"
-    deviceType: text("device_type").notNull(), // "iphone" | "apple_watch" | "whoop"
+    deviceId: text("device_id").notNull(),
+    deviceType: text("device_type").notNull(),
     providerId: text("provider_id")
       .notNull()
       .references(() => provider.id),
-    x: real("x").notNull(), // acceleration in g
-    y: real("y").notNull(), // acceleration in g
-    z: real("z").notNull(), // acceleration in g
+    x: real("x").notNull(),
+    y: real("y").notNull(),
+    z: real("z").notNull(),
+    gyroscopeX: real("gyroscope_x"),
+    gyroscopeY: real("gyroscope_y"),
+    gyroscopeZ: real("gyroscope_z"),
   },
-  (table) => [index("accelerometer_user_time_idx").on(table.userId, table.recordedAt)],
+  (table) => [index("inertial_measurement_unit_user_time_idx").on(table.userId, table.recordedAt)],
+);
+
+/** @deprecated Use sensorSample instead */
+export const orientationSample = fitness.table(
+  "orientation_sample",
+  {
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .default(DEFAULT_USER_ID)
+      .references(() => userProfile.id),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id),
+    deviceId: text("device_id").notNull(),
+    quaternionW: real("quaternion_w").notNull(),
+    quaternionX: real("quaternion_x").notNull(),
+    quaternionY: real("quaternion_y").notNull(),
+    quaternionZ: real("quaternion_z").notNull(),
+  },
+  (table) => [index("orientation_sample_user_time_idx").on(table.userId, table.recordedAt)],
 );
 
 // ============================================================
@@ -668,6 +739,9 @@ export const dailyMetrics = fitness.table(
     stressHighMinutes: integer("stress_high_minutes"), // minutes of high stress (Oura)
     recoveryHighMinutes: integer("recovery_high_minutes"), // minutes of high recovery (Oura)
     resilienceLevel: text("resilience_level"), // e.g. "limited", "adequate", "solid", "strong", "exceptional"
+    pushCount: integer("push_count"),
+    wheelchairDistanceKm: real("wheelchair_distance_km"),
+    uvExposure: real("uv_exposure"),
     sourceName: text("source_name"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -867,11 +941,7 @@ export const nutritionDaily = fitness.table(
       .notNull()
       .default(DEFAULT_USER_ID)
       .references(() => userProfile.id),
-    calories: integer("calories"),
-    proteinG: real("protein_g"),
-    carbsG: real("carbs_g"),
-    fatG: real("fat_g"),
-    fiberG: real("fiber_g"),
+    ...buildNutrientColumns(),
     waterMl: integer("water_ml"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -986,6 +1056,145 @@ export const labResult = fitness.table(
     index("lab_result_test_name_idx").on(table.testName),
     index("lab_result_panel_idx").on(table.panelId),
     index("lab_result_user_provider_idx").on(table.userId, table.providerId),
+  ],
+);
+
+// ============================================================
+// Medications (FHIR MedicationRequest)
+// ============================================================
+
+export const medication = fitness.table(
+  "medication",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id),
+    userId: uuid("user_id")
+      .notNull()
+      .default(DEFAULT_USER_ID)
+      .references(() => userProfile.id),
+    externalId: text("external_id"),
+    name: text("name").notNull(),
+    status: text("status"),
+    authoredOn: date("authored_on"),
+    startDate: date("start_date"),
+    endDate: date("end_date"),
+    dosageText: text("dosage_text"),
+    route: text("route"),
+    form: text("form"),
+    rxnormCode: text("rxnorm_code"),
+    prescriberName: text("prescriber_name"),
+    reasonText: text("reason_text"),
+    reasonSnomedCode: text("reason_snomed_code"),
+    sourceName: text("source_name"),
+    raw: jsonb("raw"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("medication_provider_external_idx").on(table.providerId, table.externalId),
+    index("medication_user_provider_idx").on(table.userId, table.providerId),
+  ],
+);
+
+// ============================================================
+// Conditions / Diagnoses (FHIR Condition)
+// ============================================================
+
+export const condition = fitness.table(
+  "condition",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id),
+    userId: uuid("user_id")
+      .notNull()
+      .default(DEFAULT_USER_ID)
+      .references(() => userProfile.id),
+    externalId: text("external_id"),
+    name: text("name").notNull(),
+    clinicalStatus: text("clinical_status"),
+    verificationStatus: text("verification_status"),
+    icd10Code: text("icd10_code"),
+    snomedCode: text("snomed_code"),
+    onsetDate: date("onset_date"),
+    abatementDate: date("abatement_date"),
+    recordedDate: date("recorded_date"),
+    sourceName: text("source_name"),
+    raw: jsonb("raw"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("condition_provider_external_idx").on(table.providerId, table.externalId),
+    index("condition_user_provider_idx").on(table.userId, table.providerId),
+  ],
+);
+
+// ============================================================
+// Allergies / Intolerances (FHIR AllergyIntolerance)
+// ============================================================
+
+export const allergyIntolerance = fitness.table(
+  "allergy_intolerance",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id),
+    userId: uuid("user_id")
+      .notNull()
+      .default(DEFAULT_USER_ID)
+      .references(() => userProfile.id),
+    externalId: text("external_id"),
+    name: text("name").notNull(),
+    type: text("type"),
+    clinicalStatus: text("clinical_status"),
+    verificationStatus: text("verification_status"),
+    rxnormCode: text("rxnorm_code"),
+    onsetDate: date("onset_date"),
+    reactions: jsonb("reactions"),
+    sourceName: text("source_name"),
+    raw: jsonb("raw"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("allergy_intolerance_provider_external_idx").on(table.providerId, table.externalId),
+    index("allergy_intolerance_user_provider_idx").on(table.userId, table.providerId),
+  ],
+);
+
+// ============================================================
+// Medication Dose Events (iOS 26 HKMedicationDoseEvent)
+// ============================================================
+
+export const medicationDoseEvent = fitness.table(
+  "medication_dose_event",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id),
+    userId: uuid("user_id")
+      .notNull()
+      .default(DEFAULT_USER_ID)
+      .references(() => userProfile.id),
+    externalId: text("external_id"),
+    medicationName: text("medication_name").notNull(),
+    medicationConceptId: text("medication_concept_id"),
+    doseStatus: text("dose_status").notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+    sourceName: text("source_name"),
+    raw: jsonb("raw"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("medication_dose_event_provider_external_idx").on(
+      table.providerId,
+      table.externalId,
+    ),
+    index("medication_dose_event_user_provider_idx").on(table.userId, table.providerId),
+    index("medication_dose_event_recorded_idx").on(table.recordedAt),
   ],
 );
 
@@ -1345,3 +1554,16 @@ export const dexaScanRegion = fitness.table(
     index("dexa_scan_region_scan_idx").on(table.scanId),
   ],
 );
+
+// ============================================================
+// Training export watermark — tracks last export time per table
+// ============================================================
+
+export const trainingExportWatermark = fitness.table("training_export_watermark", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tableName: text("table_name").notNull().unique(),
+  lastExportedAt: timestamp("last_exported_at", { withTimezone: true }).notNull(),
+  rowCount: bigint("row_count", { mode: "number" }).notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});

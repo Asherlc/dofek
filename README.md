@@ -520,17 +520,28 @@ See [docs/provider-api-audit.md](docs/provider-api-audit.md) for detailed RE fea
 
 ### Setup (new machine)
 
+The age private key is stored in 1Password ("Homelab SOPS Age Key"). Either place it on disk or export it as an env var:
+
 ```bash
-# Place your age private key where SOPS can find it
+# Option A: Place your age private key where SOPS can find it
 mkdir -p ~/Library/Application\ Support/sops/age
 # Copy your age key into keys.txt (the private key starts with AGE-SECRET-KEY-)
 chmod 600 ~/Library/Application\ Support/sops/age/keys.txt
+
+# Option B: Export from 1Password (no file needed)
+export SOPS_AGE_KEY=$(op item get "Homelab SOPS Age Key" --fields notesPlain | grep "^AGE-SECRET-KEY-")
 ```
 
 ### Editing secrets
 
 ```bash
-sops .env   # opens decrypted file in $EDITOR; re-encrypts on save
+# Interactive: opens decrypted file in $EDITOR; re-encrypts on save
+sops .env
+
+# Non-interactive: decrypt → edit → re-encrypt in place
+sops decrypt --in-place .env    # now .env is plaintext
+# ... edit .env with any tool ...
+sops encrypt --in-place .env    # re-encrypts
 ```
 
 ## Stack

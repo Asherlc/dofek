@@ -79,8 +79,34 @@ enum HealthKitQueries {
             return .decibelAWeightedSoundPressureLevel()
         case HKQuantityTypeIdentifier.dietaryProtein.rawValue,
              HKQuantityTypeIdentifier.dietaryCarbohydrates.rawValue,
-             HKQuantityTypeIdentifier.dietaryFatTotal.rawValue:
+             HKQuantityTypeIdentifier.dietaryFatTotal.rawValue,
+             HKQuantityTypeIdentifier.dietaryFiber.rawValue,
+             HKQuantityTypeIdentifier.dietarySugar.rawValue,
+             HKQuantityTypeIdentifier.dietaryFatSaturated.rawValue:
             return .gram()
+        case HKQuantityTypeIdentifier.dietarySodium.rawValue,
+             HKQuantityTypeIdentifier.dietaryCholesterol.rawValue,
+             HKQuantityTypeIdentifier.dietaryPotassium.rawValue,
+             HKQuantityTypeIdentifier.dietaryCalcium.rawValue,
+             HKQuantityTypeIdentifier.dietaryIron.rawValue,
+             HKQuantityTypeIdentifier.dietaryMagnesium.rawValue,
+             HKQuantityTypeIdentifier.dietaryZinc.rawValue,
+             HKQuantityTypeIdentifier.dietaryVitaminC.rawValue:
+            return .gramUnit(with: .milli)
+        case HKQuantityTypeIdentifier.dietaryVitaminA.rawValue,
+             HKQuantityTypeIdentifier.dietaryVitaminD.rawValue:
+            return .gramUnit(with: .micro)
+        case HKQuantityTypeIdentifier.bloodPressureSystolic.rawValue,
+             HKQuantityTypeIdentifier.bloodPressureDiastolic.rawValue:
+            return .millimeterOfMercury()
+        case HKQuantityTypeIdentifier.electrodermalActivity.rawValue:
+            return .siemen()
+        case HKQuantityTypeIdentifier.pushCount.rawValue:
+            return .count()
+        case HKQuantityTypeIdentifier.distanceWheelchair.rawValue:
+            return .meter()
+        case HKQuantityTypeIdentifier.uvExposure.rawValue:
+            return .count()
         default:
             return .count()
         }

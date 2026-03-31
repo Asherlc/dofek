@@ -1,3 +1,5 @@
+import { providerLabel } from "@dofek/providers/providers";
+import { activityMetricColors, statusColors } from "@dofek/scoring/colors";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import type { ActivityHrZone } from "@dofek/zones/zones";
 import { HEART_RATE_ZONE_COLORS } from "@dofek/zones/zones";
@@ -21,10 +23,10 @@ import { useUnitConverter } from "../lib/unitContext.ts";
 import type { UnitConverter } from "../lib/units.ts";
 
 const CHART_COLORS = {
-  heartRate: "#ef4444",
-  power: "#f59e0b",
-  speed: "#3b82f6",
-  cadence: "#8b5cf6",
+  heartRate: activityMetricColors.heartRate,
+  power: activityMetricColors.power,
+  speed: activityMetricColors.speed,
+  cadence: activityMetricColors.cadence,
   altitude: "#6b7280",
 };
 
@@ -232,7 +234,7 @@ function ActivityHeader({ activity, units }: { activity: ActivityDetail; units: 
           {formatActivityTypeLabel(activity.activityType)}
         </span>
       </div>
-      <p className="text-sm text-subtle mb-4">
+      <p className="text-sm text-subtle">
         {new Date(activity.startedAt).toLocaleDateString(undefined, {
           weekday: "long",
           year: "numeric",
@@ -245,6 +247,11 @@ function ActivityHeader({ activity, units }: { activity: ActivityDetail; units: 
           minute: "2-digit",
         })}
       </p>
+      {(activity.sourceLinks.length > 0 || activity.sourceProviders.length > 0) && (
+        <p className="text-xs text-subtle mb-4">
+          Source: <SourceLinks activity={activity} />
+        </p>
+      )}
 
       {stats.length > 0 && (
         <div className="flex flex-wrap gap-4">
@@ -257,6 +264,35 @@ function ActivityHeader({ activity, units }: { activity: ActivityDetail; units: 
         </div>
       )}
     </div>
+  );
+}
+
+function SourceLinks({ activity }: { activity: ActivityDetail }) {
+  const linkMap = new Map(activity.sourceLinks.map((link) => [link.providerId, link]));
+
+  return (
+    <>
+      {activity.sourceProviders.map((providerId, index) => {
+        const link = linkMap.get(providerId);
+        return (
+          <span key={providerId}>
+            {index > 0 && ", "}
+            {link ? (
+              <a
+                href={link.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-accent hover:text-accent-secondary underline"
+              >
+                {link.label}
+              </a>
+            ) : (
+              providerLabel(providerId)
+            )}
+          </span>
+        );
+      })}
+    </>
   );
 }
 
@@ -294,7 +330,7 @@ function RouteMap({ points }: { points: StreamPoint[] }) {
       const latLngs = gpsPoints.map((p) => L.latLng(p.lat, p.lng));
 
       L.polyline(latLngs, {
-        color: "#22c55e",
+        color: statusColors.positive,
         weight: 3,
         opacity: 0.8,
       }).addTo(map);
@@ -305,16 +341,16 @@ function RouteMap({ points }: { points: StreamPoint[] }) {
       if (startLatLng) {
         L.circleMarker(startLatLng, {
           radius: 6,
-          color: "#22c55e",
-          fillColor: "#22c55e",
+          color: statusColors.positive,
+          fillColor: statusColors.positive,
           fillOpacity: 1,
         }).addTo(map);
       }
       if (endLatLng) {
         L.circleMarker(endLatLng, {
           radius: 6,
-          color: "#ef4444",
-          fillColor: "#ef4444",
+          color: statusColors.danger,
+          fillColor: statusColors.danger,
           fillOpacity: 1,
         }).addTo(map);
       }
@@ -364,6 +400,7 @@ function MetricsChart({
     yAxes.push(
       dofekAxis.value({
         name: "Heart Rate (bpm)",
+        min: "dataMin",
         position: "left",
         showSplitLine: axisIndex === 0,
         axisLabel: { color: CHART_COLORS.heartRate },
@@ -385,6 +422,7 @@ function MetricsChart({
     yAxes.push(
       dofekAxis.value({
         name: "Power (W)",
+        min: "dataMin",
         position: axisIndex === 0 ? "left" : "right",
         showSplitLine: axisIndex === 0,
         axisLabel: { color: CHART_COLORS.power },
@@ -406,6 +444,7 @@ function MetricsChart({
     yAxes.push({
       ...dofekAxis.value({
         name: `Speed (${units.speedLabel})`,
+        min: "dataMin",
         position: axisIndex === 0 ? "left" : "right",
         showSplitLine: axisIndex === 0,
         axisLabel: { color: CHART_COLORS.speed },
@@ -430,6 +469,7 @@ function MetricsChart({
     yAxes.push({
       ...dofekAxis.value({
         name: "Cadence (rpm)",
+        min: "dataMin",
         position: axisIndex === 0 ? "left" : "right",
         showSplitLine: axisIndex === 0,
         axisLabel: { color: CHART_COLORS.cadence },
@@ -465,8 +505,8 @@ function MetricsChart({
         bottom: 10,
         borderColor: chartThemeColors.tooltipBorder,
         backgroundColor: chartThemeColors.tooltipBackground,
-        fillerColor: "rgba(34,197,94,0.15)",
-        handleStyle: { color: "#22c55e" },
+        fillerColor: `${statusColors.positive}26`,
+        handleStyle: { color: statusColors.positive },
         textStyle: { color: chartThemeColors.axisLabel },
       },
     ],

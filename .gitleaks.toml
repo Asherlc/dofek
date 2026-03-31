@@ -1,0 +1,30 @@
+# Gitleaks configuration — allowlist false positives
+# https://github.com/gitleaks/gitleaks#configuration
+
+title = "dofek gitleaks config"
+
+[allowlist]
+  description = "Global allowlist for known false positives"
+  regexTarget = "match"
+
+  paths = [
+    # Documentation about reverse engineering — examples, not real secrets
+    '''docs/reverse-engineering-apis\.md''',
+    # Eight Sleep reverse-engineered client credentials (extracted from public APK, hardcoded by design)
+    '''packages/eight-sleep/''',
+    # Nutrient column config objects use `key:` for property names (not secrets)
+    '''src/db/nutrient-columns\.ts''',
+  ]
+
+  regexes = [
+    # Sentry DSNs/keys are public by design (client-side error reporting)
+    '''sentry_key=''',
+    '''SENTRY_DSN=''',
+    # PostHog public API keys (client-side analytics, designed to be in frontend code)
+    '''phc_\w+''',
+    # Object property names that happen to match generic-api-key patterns
+    '''joinedDayKey''',
+    '''workoutKey''',
+    # Expo update manifest asset keys in tests (e.g., key: "ios-abc123def456.hbc")
+    '''key:\s*"(ios-|asset_)\w+''',
+  ]

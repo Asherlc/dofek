@@ -84,20 +84,34 @@ function initGoogle(): IdentityProvider {
   };
 }
 
+/** Strip PEM headers/footers and base64-decode to raw PKCS#8 DER bytes. */
+export function decodePemToDer(pem: string): Uint8Array {
+  const base64 = pem
+    .replace(/-----BEGIN PRIVATE KEY-----/g, "")
+    .replace(/-----END PRIVATE KEY-----/g, "")
+    .replace(/\s/g, "");
+  return new Uint8Array(Buffer.from(base64, "base64"));
+}
+
 function initApple(): IdentityProvider {
   const privateKeyPem = getEnvRequired("APPLE_PRIVATE_KEY");
-  const pkcs8Key = new TextEncoder().encode(privateKeyPem);
+  const derBytes = decodePemToDer(privateKeyPem);
   const client = new Apple(
     getEnvRequired("APPLE_CLIENT_ID"),
     getEnvRequired("APPLE_TEAM_ID"),
     getEnvRequired("APPLE_KEY_ID"),
-    pkcs8Key,
+    derBytes,
     getEnvRequired("APPLE_REDIRECT_URI"),
   );
   return {
     createAuthorizationUrl(state, _codeVerifier) {
       // Apple doesn't use PKCE
-      return client.createAuthorizationURL(state, ["name", "email"]);
+      const url = client.createAuthorizationURL(state, ["name", "email"]);
+      // Apple requires response_mode=form_post when requesting name or email scopes.
+      // This means Apple POSTs the code/state to the callback URL instead of
+      // redirecting via GET. The callback handler must accept POST requests.
+      url.searchParams.set("response_mode", "form_post");
+      return url;
     },
     async validateCallback(code, _codeVerifier) {
       // Apple doesn't use PKCE

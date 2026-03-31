@@ -1,4 +1,5 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import postgres from "postgres";
 import { logger } from "../logger.ts";
@@ -7,9 +8,48 @@ import { logger } from "../logger.ts";
 export const MIGRATION_LOCK_KEY = 728370291;
 
 /**
+ * Detect migration files that share the same numeric prefix (e.g., two 0049_* files).
+ * This indicates concurrent PRs created conflicting migrations that must be reconciled.
+ */
+export function detectDuplicatePrefixes(files: Array<string>): Array<[string, Array<string>]> {
+  const byPrefix = new Map<string, Array<string>>();
+  for (const file of files) {
+    const match = file.match(/^(\d+)_/);
+    if (!match) continue;
+    const prefix = match[1] ?? "";
+    const group = byPrefix.get(prefix);
+    if (group) {
+      group.push(file);
+    } else {
+      byPrefix.set(prefix, [file]);
+    }
+  }
+  return [...byPrefix.entries()].filter(([, group]) => group.length > 1);
+}
+
+/** Compute a SHA-256 hex digest of migration file content. */
+export function computeContentHash(content: string): string {
+  return createHash("sha256").update(content).digest("hex");
+}
+
+/** Parse SQL file into individual statements, split on `--> statement-breakpoint`. */
+function parseStatements(content: string): Array<string> {
+  return content
+    .split("--> statement-breakpoint")
+    .map((statement) => statement.trim())
+    .filter(Boolean);
+}
+
+/**
  * Run pending migrations from the drizzle/ directory.
+ *
  * Safe to call on every startup — skips already-applied migrations.
  * Uses a Postgres advisory lock to prevent races when multiple containers start simultaneously.
+ *
+ * Materialized view synchronization is handled separately by `syncMaterializedViews()`
+ * in `sync-views.ts`, which only recreates views whose definitions have changed.
+ * This avoids the multi-minute downtime window that unconditional view recreation causes
+ * when the API server is already serving traffic during background migrations.
  */
 export async function runMigrations(databaseUrl: string, migrationsDir?: string): Promise<number> {
   const dir = migrationsDir ?? resolve(import.meta.dirname, "../../drizzle");
@@ -27,35 +67,69 @@ export async function runMigrations(databaseUrl: string, migrationsDir?: string)
       created_at BIGINT
     )`;
 
+    // Add content_hash column for tamper detection (idempotent for existing DBs)
+    await sql`ALTER TABLE drizzle.__drizzle_migrations
+      ADD COLUMN IF NOT EXISTS content_hash TEXT`;
+
     const files = readdirSync(dir)
       .filter((f) => f.endsWith(".sql"))
       .sort();
 
-    const applied = await sql`SELECT hash FROM drizzle.__drizzle_migrations`;
+    const applied = await sql`SELECT hash, content_hash FROM drizzle.__drizzle_migrations`;
     const appliedSet = new Set(applied.map((r) => r.hash));
 
+    // Detect in-place edits to already-applied migration files
+    for (const row of applied) {
+      if (!row.content_hash) continue;
+      const filePath = join(dir, row.hash);
+      if (!existsSync(filePath)) continue;
+      const currentContent = readFileSync(filePath, "utf-8");
+      const currentHash = computeContentHash(currentContent);
+      if (currentHash !== row.content_hash) {
+        logger.warn(
+          `[migrate] ${row.hash} has been modified since it was applied. ` +
+            "Editing applied migrations has no effect — write a new migration instead.",
+        );
+      }
+    }
+
+    const pendingFiles = files.filter((f) => !appliedSet.has(f));
+
+    // Detect duplicate prefixes among pending migrations — two migrations
+    // sharing a number means concurrent PRs created conflicting migrations.
+    // Log a warning rather than throwing, since historical duplicates exist
+    // (0018, 0022, 0023, 0024, 0041) and would block fresh-DB migrations.
+    const duplicates = detectDuplicatePrefixes(pendingFiles);
+    if (duplicates.length > 0) {
+      const details = duplicates
+        .map(([prefix, group]) => `  ${prefix}: ${group.join(", ")}`)
+        .join("\n");
+      logger.warn(
+        `[migrate] Duplicate migration prefixes detected — consider reconciling:\n${details}`,
+      );
+    }
+
     let count = 0;
-    for (const file of files) {
-      if (appliedSet.has(file)) continue;
+    for (const file of pendingFiles) {
       logger.info(`[migrate] Applying: ${file}`);
       const content = readFileSync(join(dir, file), "utf-8");
-      const statements = content
-        .split("--> statement-breakpoint")
-        .map((s) => s.trim())
-        .filter(Boolean);
-      for (const stmt of statements) {
+      const contentHash = computeContentHash(content);
+      for (const stmt of parseStatements(content)) {
         await sql.unsafe(stmt);
       }
-      await sql`INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES (${file}, ${Date.now()})`;
+      await sql`INSERT INTO drizzle.__drizzle_migrations (hash, created_at, content_hash) VALUES (${file}, ${Date.now()}, ${contentHash})`;
       count++;
     }
 
     if (count > 0) {
       logger.info(`[migrate] Applied ${count} migration(s)`);
     }
+
     return count;
   } finally {
-    await sql`SELECT pg_advisory_unlock(${MIGRATION_LOCK_KEY})`.catch(() => {});
+    await sql`SELECT pg_advisory_unlock(${MIGRATION_LOCK_KEY})`.catch((error: unknown) => {
+      logger.warn("Advisory unlock failed: %s", error);
+    });
     await sql.end();
   }
 }

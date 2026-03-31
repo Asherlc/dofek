@@ -357,8 +357,7 @@ describe("searchFoods", () => {
     const resultPromise = client.searchFoods("burger", 5, controller.signal);
     controller.abort();
 
-    const results = await resultPromise;
-    expect(results).toEqual([]);
+    await expect(resultPromise).rejects.toThrow("Aborted");
   });
 
   it("filters out products with a different primary language", async () => {
@@ -542,13 +541,11 @@ describe("searchFoods", () => {
     expect(results).toHaveLength(0);
   });
 
-  it("returns empty array on network error", async () => {
+  it("propagates network errors to the caller", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network down")));
 
     const client = new OpenFoodFactsClient("en-US");
-    const results = await client.searchFoods("hamburger", 5);
-
-    expect(results).toHaveLength(0);
+    await expect(client.searchFoods("hamburger", 5)).rejects.toThrow("network down");
   });
 
   it("returns empty array when fetch response is not ok", async () => {
@@ -665,11 +662,11 @@ describe("lookupBarcode", () => {
     expect(result).toBeNull();
   });
 
-  it("returns null on network error", async () => {
+  it("propagates network errors to the caller", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
 
     const client = new OpenFoodFactsClient("en-US");
-    expect(await client.lookupBarcode("1234567890123")).toBeNull();
+    await expect(client.lookupBarcode("1234567890123")).rejects.toThrow("offline");
   });
 
   it("returns null when product has no name", async () => {

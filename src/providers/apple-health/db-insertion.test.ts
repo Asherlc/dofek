@@ -263,7 +263,8 @@ describe("upsertMetricStreamBatch", () => {
 
     const count = await upsertMetricStreamBatch(db, "p1", records);
     expect(count).toBe(1500);
-    expect(capture.values).toHaveLength(2);
+    // 2 metric_stream batches (1000 + 500) + 1 sensor_sample dual-write batch (1500 rows)
+    expect(capture.values).toHaveLength(3);
     expect(capture.values[0]).toHaveLength(1000);
     expect(capture.values[1]).toHaveLength(500);
   });
@@ -273,6 +274,19 @@ describe("upsertMetricStreamBatch", () => {
     const count = await upsertMetricStreamBatch(db, "p1", []);
     expect(count).toBe(0);
     expect(capture.values).toHaveLength(0);
+  });
+
+  it("maps electrodermal activity to electrodermalActivity", async () => {
+    const { db, capture } = createMockDb();
+    const records = [
+      makeRecord({
+        type: "HKQuantityTypeIdentifierElectrodermalActivity",
+        value: 0.5,
+      }),
+    ];
+
+    await upsertMetricStreamBatch(db, "p1", records);
+    expect(capture.values[0]?.[0]).toMatchObject({ electrodermalActivity: 0.5 });
   });
 });
 
@@ -766,6 +780,35 @@ describe("upsertDailyMetricsBatch", () => {
     const count = await upsertDailyMetricsBatch(db, "p1", records);
     expect(count).toBe(0);
   });
+
+  it("maps push count as additive integer", async () => {
+    const { db, capture } = createMockDb();
+    const records = [
+      makeRecord({ type: "HKQuantityTypeIdentifierPushCount", value: 50 }),
+      makeRecord({ type: "HKQuantityTypeIdentifierPushCount", value: 30 }),
+    ];
+
+    await upsertDailyMetricsBatch(db, "p1", records);
+    expect(capture.values[0]?.[0]).toMatchObject({ pushCount: 80 });
+  });
+
+  it("maps wheelchair distance to km", async () => {
+    const { db, capture } = createMockDb();
+    const records = [
+      makeRecord({ type: "HKQuantityTypeIdentifierDistanceWheelchair", value: 5000 }),
+    ];
+
+    await upsertDailyMetricsBatch(db, "p1", records);
+    expect(capture.values[0]?.[0]).toMatchObject({ wheelchairDistanceKm: 5 });
+  });
+
+  it("maps UV exposure as point-in-time value", async () => {
+    const { db, capture } = createMockDb();
+    const records = [makeRecord({ type: "HKQuantityTypeIdentifierUVExposure", value: 6.5 })];
+
+    await upsertDailyMetricsBatch(db, "p1", records);
+    expect(capture.values[0]?.[0]).toMatchObject({ uvExposure: 6.5 });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -869,6 +912,74 @@ describe("upsertNutritionBatch", () => {
 
     const count = await upsertNutritionBatch(db, "p1", records);
     expect(count).toBe(0);
+  });
+
+  it("maps dietary sodium", async () => {
+    const { db, capture } = createMockDb();
+    const records = [makeRecord({ type: "HKQuantityTypeIdentifierDietarySodium", value: 1500 })];
+
+    await upsertNutritionBatch(db, "p1", records);
+    expect(capture.values[0]?.[0]).toMatchObject({ sodiumMg: 1500 });
+  });
+
+  it("maps dietary sugar", async () => {
+    const { db, capture } = createMockDb();
+    const records = [makeRecord({ type: "HKQuantityTypeIdentifierDietarySugar", value: 30 })];
+
+    await upsertNutritionBatch(db, "p1", records);
+    expect(capture.values[0]?.[0]).toMatchObject({ sugarG: 30 });
+  });
+
+  it("maps dietary cholesterol", async () => {
+    const { db, capture } = createMockDb();
+    const records = [
+      makeRecord({ type: "HKQuantityTypeIdentifierDietaryCholesterol", value: 200 }),
+    ];
+
+    await upsertNutritionBatch(db, "p1", records);
+    expect(capture.values[0]?.[0]).toMatchObject({ cholesterolMg: 200 });
+  });
+
+  it("maps dietary saturated fat", async () => {
+    const { db, capture } = createMockDb();
+    const records = [
+      makeRecord({ type: "HKQuantityTypeIdentifierDietaryFatSaturated", value: 15 }),
+    ];
+
+    await upsertNutritionBatch(db, "p1", records);
+    expect(capture.values[0]?.[0]).toMatchObject({ saturatedFatG: 15 });
+  });
+
+  it("maps dietary potassium", async () => {
+    const { db, capture } = createMockDb();
+    const records = [makeRecord({ type: "HKQuantityTypeIdentifierDietaryPotassium", value: 3500 })];
+
+    await upsertNutritionBatch(db, "p1", records);
+    expect(capture.values[0]?.[0]).toMatchObject({ potassiumMg: 3500 });
+  });
+
+  it("maps dietary vitamins and minerals", async () => {
+    const { db, capture } = createMockDb();
+    const records = [
+      makeRecord({ type: "HKQuantityTypeIdentifierDietaryVitaminA", value: 900 }),
+      makeRecord({ type: "HKQuantityTypeIdentifierDietaryVitaminC", value: 90 }),
+      makeRecord({ type: "HKQuantityTypeIdentifierDietaryVitaminD", value: 20 }),
+      makeRecord({ type: "HKQuantityTypeIdentifierDietaryCalcium", value: 1000 }),
+      makeRecord({ type: "HKQuantityTypeIdentifierDietaryIron", value: 18 }),
+      makeRecord({ type: "HKQuantityTypeIdentifierDietaryMagnesium", value: 400 }),
+      makeRecord({ type: "HKQuantityTypeIdentifierDietaryZinc", value: 11 }),
+    ];
+
+    await upsertNutritionBatch(db, "p1", records);
+    expect(capture.values[0]?.[0]).toMatchObject({
+      vitaminAMcg: 900,
+      vitaminCMg: 90,
+      vitaminDMcg: 20,
+      calciumMg: 1000,
+      ironMg: 18,
+      magnesiumMg: 400,
+      zincMg: 11,
+    });
   });
 });
 
@@ -1006,8 +1117,8 @@ describe("upsertWorkoutBatch", () => {
 
     await upsertWorkoutBatch(db, "p1", [makeWorkout({ routeLocations: [loc] })]);
 
-    // First insert is the activity, second is the GPS data
-    expect(capture.values).toHaveLength(2);
+    // First insert is the activity, second is the GPS metric_stream data, third is the sensor_sample dual-write
+    expect(capture.values).toHaveLength(3);
     expect(capture.values[1]?.[0]).toMatchObject({
       providerId: "p1",
       activityId: "act-1",

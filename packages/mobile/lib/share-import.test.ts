@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  inferImportProviderFromFile,
-  importSharedFile,
   type ImportProviderId,
+  importSharedFile,
+  inferImportProviderFromFile,
 } from "./share-import";
 
 describe("inferImportProviderFromFile", () => {
@@ -39,7 +39,7 @@ describe("inferImportProviderFromFile", () => {
 
 describe("importSharedFile", () => {
   it("uploads a Strong CSV and polls until done", async () => {
-    const fetchImpl = vi.fn() as ReturnType<typeof vi.fn> & typeof fetch;
+    const fetchImpl = vi.fn<typeof fetch>();
     const fileBody = "Date,Workout Name,Duration,Exercise Name\n2026-03-10,Leg Day,00:45:00,Squat";
 
     fetchImpl
@@ -91,16 +91,17 @@ describe("importSharedFile", () => {
     expect(seenStatuses).toContain("done");
 
     expect(fetchImpl).toHaveBeenCalledTimes(4);
-    const uploadCall = fetchImpl.mock.calls[1] as
-      | [RequestInfo | URL, RequestInit | undefined]
-      | undefined;
-    expect(uploadCall?.[0]).toBe("https://example.com/api/upload/strong-csv?units=kg");
-    const uploadHeaders = uploadCall?.[1]?.headers as Record<string, string>;
-    expect(uploadHeaders.Authorization).toBe("Bearer session-token");
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      2,
+      "https://example.com/api/upload/strong-csv?units=kg",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer session-token" }),
+      }),
+    );
   });
 
   it("uses custom readBlob dep when provided", async () => {
-    const fetchImpl = vi.fn() as ReturnType<typeof vi.fn> & typeof fetch;
+    const fetchImpl = vi.fn<typeof fetch>();
     const fileBody = "Date,Workout Name,Duration,Exercise Name\n2026-03-10,Leg Day,00:45:00,Squat";
     const customReadBlob = vi.fn().mockResolvedValue(new Blob([fileBody], { type: "text/csv" }));
 
@@ -138,7 +139,7 @@ describe("importSharedFile", () => {
   });
 
   it("throws for unsupported file extension", async () => {
-    const fetchImpl = vi.fn() as ReturnType<typeof vi.fn> & typeof fetch;
+    const fetchImpl = vi.fn<typeof fetch>();
     fetchImpl.mockResolvedValueOnce(new Response("test", { status: 200 }));
 
     await expect(

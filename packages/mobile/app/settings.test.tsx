@@ -1,16 +1,28 @@
 // @vitest-environment jsdom
+
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import React from "react";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mockFileWrite = vi.fn();
 vi.mock("expo-file-system", () => ({
   Paths: { cache: { uri: "file:///tmp/cache" } },
-  File: vi.fn().mockImplementation(() => ({ uri: "file:///tmp/cache/health-export.zip", write: mockFileWrite })),
+  File: vi.fn().mockImplementation(() => ({
+    uri: "file:///tmp/cache/health-export.zip",
+    write: mockFileWrite,
+  })),
 }));
 
 vi.mock("expo-sharing", () => ({
   shareAsync: vi.fn(),
+}));
+
+vi.mock("expo-updates", () => ({
+  updateId: null,
+  channel: null,
+  runtimeVersion: null,
+  createdAt: null,
+  isEmbeddedLaunch: true,
 }));
 
 vi.mock("../components/PersonalizationPanel", () => ({

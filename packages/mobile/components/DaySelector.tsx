@@ -1,4 +1,5 @@
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useHaptic } from "../lib/useHaptic";
 import { colors } from "../theme";
 
 export interface DayOption {
@@ -22,18 +23,21 @@ export function DaySelector({
   onChange: (days: number) => void;
   options?: DayOption[];
 }) {
+  const haptic = useHaptic();
+
   return (
     <View style={styles.row}>
       {options.map((opt) => (
         <TouchableOpacity
           key={opt.value}
           style={[styles.button, days === opt.value && styles.buttonActive]}
-          onPress={() => onChange(opt.value)}
+          onPress={() => {
+            haptic.selection();
+            onChange(opt.value);
+          }}
           activeOpacity={0.7}
         >
-          <Text style={[styles.text, days === opt.value && styles.textActive]}>
-            {opt.label}
-          </Text>
+          <Text style={[styles.text, days === opt.value && styles.textActive]}>{opt.label}</Text>
         </TouchableOpacity>
       ))}
     </View>

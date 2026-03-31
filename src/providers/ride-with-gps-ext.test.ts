@@ -327,7 +327,7 @@ describe("RideWithGpsProvider — constructor stores fetchFn", () => {
     const setup = provider.authSetup();
     const getUserIdentity = setup.getUserIdentity;
     expect(getUserIdentity).toBeDefined();
-    getUserIdentity?.("tok").catch(() => {});
+    getUserIdentity?.("tok").catch((_error: unknown) => {});
     expect(customFetch).toHaveBeenCalled();
   });
 });
@@ -926,7 +926,8 @@ describe("RideWithGpsProvider — sync", () => {
       .map((call: unknown[]) => call[0])
       .filter((value: unknown) => Array.isArray(value));
 
-    expect(metricInsertCalls).toHaveLength(2);
+    // 2 metric_stream batches (500 + 1) + 1 sensor_sample dual-write batch (501 rows)
+    expect(metricInsertCalls).toHaveLength(3);
     expect(metricInsertCalls[0]).toHaveLength(500);
     expect(metricInsertCalls[1]).toHaveLength(1);
   });
