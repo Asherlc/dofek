@@ -1,0 +1,14 @@
+or {
+  `"#22c55e"`,
+  `"#ef4444"`,
+  `"#eab308"`,
+  `"#f97316"`,
+  `"#f59e0b"`,
+  `"#8b5cf6"`
+} as $color where {
+  register_diagnostic(
+    span = $color,
+    message = "Hardcoded hex color. Import from @dofek/scoring/colors instead (statusColors, chartColors, sleepStageColors, activityMetricColors).",
+    severity = "error"
+  )
+}
