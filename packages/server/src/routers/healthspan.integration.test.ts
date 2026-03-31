@@ -68,19 +68,26 @@ describe("healthspan zone time with variable-interval HR data", () => {
     const actId = actResult[0]?.id;
     if (!actId) throw new Error("Failed to insert activity");
 
-    const values: string[] = [];
+    const metricValues: string[] = [];
+    const sensorValues: string[] = [];
     for (let sample = 0; sample < 120; sample++) {
       const offsetSeconds = sample * 5; // 5-second intervals
       const hr = sample < 60 ? 140 : 175; // first half aerobic, second half high intensity
-      values.push(
-        `(CURRENT_TIMESTAMP - INTERVAL '2 days' + ${offsetSeconds} * INTERVAL '1 second',
-          '${DEFAULT_USER_ID}', '${actId}', 'test_provider', ${hr})`,
+      const ts = `CURRENT_TIMESTAMP - INTERVAL '2 days' + ${offsetSeconds} * INTERVAL '1 second'`;
+      metricValues.push(`(${ts}, '${DEFAULT_USER_ID}', '${actId}', 'test_provider', ${hr})`);
+      sensorValues.push(
+        `(${ts}, '${DEFAULT_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${actId}', ${hr}, NULL)`,
       );
     }
     await testCtx.db.execute(
       sql.raw(`INSERT INTO fitness.metric_stream (
         recorded_at, user_id, activity_id, provider_id, heart_rate
-      ) VALUES ${values.join(",\n")}`),
+      ) VALUES ${metricValues.join(",\n")}`),
+    );
+    await testCtx.db.execute(
+      sql.raw(`INSERT INTO fitness.sensor_sample (
+        recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
+      ) VALUES ${sensorValues.join(",\n")}`),
     );
 
     // Sleep data (needed to avoid CROSS JOIN eliminating the row)

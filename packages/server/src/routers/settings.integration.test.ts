@@ -149,6 +149,20 @@ describe("Settings router", () => {
               )`,
         ),
         testCtx.db.execute(
+          sql`INSERT INTO fitness.sensor_sample (recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector)
+              VALUES (
+                '2024-01-15T10:00:00Z',
+                ${DEFAULT_USER_ID},
+                'settings-wipe-provider',
+                NULL,
+                'api',
+                'heart_rate',
+                '22222222-2222-2222-2222-222222222222',
+                150,
+                NULL
+              )`,
+        ),
+        testCtx.db.execute(
           sql`INSERT INTO fitness.sync_log (provider_id, user_id, data_type, status)
               VALUES ('settings-wipe-provider', ${DEFAULT_USER_ID}, 'activities', 'success')`,
         ),

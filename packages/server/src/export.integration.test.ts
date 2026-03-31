@@ -84,6 +84,13 @@ describe("Data Export", () => {
         sql`INSERT INTO fitness.metric_stream (recorded_at, user_id, activity_id, provider_id, heart_rate, power)
             VALUES ('2024-01-15T10:00:00Z', ${DEFAULT_USER_ID}, '11111111-1111-1111-1111-111111111111', 'test-provider', 145, 200)`,
       ),
+      // Sensor sample (dual-write)
+      testCtx.db.execute(
+        sql`INSERT INTO fitness.sensor_sample (recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector)
+            VALUES
+              ('2024-01-15T10:00:00Z', ${DEFAULT_USER_ID}, 'test-provider', NULL, 'api', 'heart_rate', '11111111-1111-1111-1111-111111111111', 145, NULL),
+              ('2024-01-15T10:00:00Z', ${DEFAULT_USER_ID}, 'test-provider', NULL, 'api', 'power', '11111111-1111-1111-1111-111111111111', 200, NULL)`,
+      ),
     ]);
 
     // Activity interval (depends on activity existing)

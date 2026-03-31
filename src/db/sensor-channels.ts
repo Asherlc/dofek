@@ -92,9 +92,8 @@ export const ORIENTATION = "orientation";
 
 // ── Source types (informational, not used for dedup priority) ─
 
-export const SOURCE_TYPE_BLE = "ble";
-export const SOURCE_TYPE_FILE = "file";
-export const SOURCE_TYPE_API = "api";
+export const SOURCE_TYPE_FILE = "file" as const;
+export const SOURCE_TYPE_API = "api" as const;
 
 /**
  * Mapping from legacy metric_stream column names to sensor_sample channel names.
@@ -138,12 +137,6 @@ export const METRIC_STREAM_COLUMN_TO_CHANNEL: Record<string, string> = {
   skin_temperature: SKIN_TEMPERATURE,
   electrodermal_activity: ELECTRODERMAL_ACTIVITY,
 };
-
-/** All scalar channel names (for validation / iteration) */
-export const SCALAR_CHANNELS = Object.values(METRIC_STREAM_COLUMN_TO_CHANNEL);
-
-/** All vector channel names */
-export const VECTOR_CHANNELS = [ACCEL, IMU, ORIENTATION] as const;
 
 /**
  * Mapping from Drizzle camelCase field names to sensor_sample channel names.

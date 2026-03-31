@@ -97,18 +97,30 @@ describe("Predictions router (integration)", () => {
 
       if (actId) {
         // Insert metric stream samples (1 per minute)
+        const metricValues: string[] = [];
+        const sensorValues: string[] = [];
         for (let s = 0; s < durationMin; s++) {
           const hr = avgHr + Math.round(Math.sin(s * 0.1) * 5);
           const power = avgPower + Math.round(Math.cos(s * 0.1) * 15);
-          await testCtx.db.execute(
-            sql`INSERT INTO fitness.metric_stream (
-                  recorded_at, user_id, activity_id, provider_id, heart_rate, power
-                ) VALUES (
-                  CURRENT_TIMESTAMP - ${i}::int * INTERVAL '1 day' + ${s}::int * INTERVAL '1 minute',
-                  ${DEFAULT_USER_ID}, ${actId}, 'test_provider', ${hr}, ${power}
-                )`,
+          const ts = `CURRENT_TIMESTAMP - ${i} * INTERVAL '1 day' + ${s} * INTERVAL '1 minute'`;
+          metricValues.push(
+            `(${ts}, '${DEFAULT_USER_ID}', '${actId}', 'test_provider', ${hr}, ${power})`,
+          );
+          sensorValues.push(
+            `(${ts}, '${DEFAULT_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${actId}', ${hr}, NULL)`,
+            `(${ts}, '${DEFAULT_USER_ID}', 'test_provider', NULL, 'api', 'power', '${actId}', ${power}, NULL)`,
           );
         }
+        await testCtx.db.execute(
+          sql.raw(`INSERT INTO fitness.metric_stream (
+                recorded_at, user_id, activity_id, provider_id, heart_rate, power
+              ) VALUES ${metricValues.join(",")}`),
+        );
+        await testCtx.db.execute(
+          sql.raw(`INSERT INTO fitness.sensor_sample (
+                recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
+              ) VALUES ${sensorValues.join(",")}`),
+        );
       }
     }
 
