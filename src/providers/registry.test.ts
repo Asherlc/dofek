@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { getEnabledProviders, getProvider, registerProvider } from "./index.ts";
+import {
+  getEnabledProviders,
+  getEnabledSyncProviders,
+  getProvider,
+  registerProvider,
+} from "./index.ts";
 import type { Provider } from "./types.ts";
 
 function createMockProvider(overrides: Partial<Provider> = {}): Provider {
@@ -57,5 +62,22 @@ describe("Provider Registry", () => {
     const enabled = getEnabledProviders();
     expect(enabled.some((p) => p.id === enabledId)).toBe(true);
     expect(enabled.some((p) => p.id === disabledId)).toBe(false);
+  });
+
+  it("returns only enabled sync providers (excludes import-only CSV providers)", () => {
+    const syncId = uniqueId();
+    const csvId = `${uniqueId()}-csv`;
+
+    registerProvider(createMockProvider({ id: syncId, validate: () => null }));
+    registerProvider({
+      id: csvId,
+      name: "CSV Import",
+      importOnly: true,
+      validate: () => null,
+    });
+
+    const enabledSyncProviders = getEnabledSyncProviders();
+    expect(enabledSyncProviders.some((provider) => provider.id === syncId)).toBe(true);
+    expect(enabledSyncProviders.some((provider) => provider.id === csvId)).toBe(false);
   });
 });

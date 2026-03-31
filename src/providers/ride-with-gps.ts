@@ -10,7 +10,7 @@ import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { activity, DEFAULT_USER_ID, metricStream, userSettings } from "../db/schema.ts";
+import { activity, DEFAULT_USER_ID, sensorSample, userSettings } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
 import { ensureProvider } from "../db/tokens.ts";
@@ -305,8 +305,6 @@ async function saveSyncCursor(db: SyncDatabase, cursor: string): Promise<void> {
 // Provider
 // ============================================================
 
-const METRIC_STREAM_BATCH_SIZE = 500;
-
 export class RideWithGpsProvider implements SyncProvider {
   readonly id = "ride-with-gps";
   readonly name = "RideWithGPS";
@@ -475,8 +473,8 @@ export class RideWithGpsProvider implements SyncProvider {
         const activityId = activityRow?.id;
         if (!activityId) continue;
 
-        // Delete old metric_stream rows for this activity, then re-insert
-        await db.delete(metricStream).where(eq(metricStream.activityId, activityId));
+        // Delete old sensor_sample rows for this activity, then re-insert
+        await db.delete(sensorSample).where(eq(sensorSample.activityId, activityId));
 
         // Parse and batch-insert track points
         const trackPoints = parseTrackPoints(trip.track_points ?? []);
@@ -494,9 +492,7 @@ export class RideWithGpsProvider implements SyncProvider {
           cadence: point.cadence,
           power: point.power,
         }));
-        for (let i = 0; i < metricRows.length; i += METRIC_STREAM_BATCH_SIZE) {
-          await db.insert(metricStream).values(metricRows.slice(i, i + METRIC_STREAM_BATCH_SIZE));
-        }
+        // metricRows still use the legacy shape; convert and insert into sensor_sample.
         await dualWriteToSensorSample(db, metricRows, SOURCE_TYPE_API);
 
         recordsSynced++;

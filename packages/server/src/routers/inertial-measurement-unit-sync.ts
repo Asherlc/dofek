@@ -56,18 +56,7 @@ async function insertBatch(
   for (let offset = 0; offset < samples.length; offset += INSERT_BATCH_SIZE) {
     const batch = samples.slice(offset, offset + INSERT_BATCH_SIZE);
 
-    const valuesClauses = batch.map(
-      (sample) =>
-        sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${deviceId}, ${deviceType}, ${PROVIDER_ID}, ${sample.x}, ${sample.y}, ${sample.z}, ${sample.gyroscopeX ?? null}, ${sample.gyroscopeY ?? null}, ${sample.gyroscopeZ ?? null})`,
-    );
-
-    await db.execute(
-      sql`INSERT INTO fitness.inertial_measurement_unit_sample
-          (recorded_at, user_id, device_id, device_type, provider_id, x, y, z, gyroscope_x, gyroscope_y, gyroscope_z)
-          VALUES ${sql.join(valuesClauses, sql`, `)}`,
-    );
-
-    // Dual-write to sensor_sample: accel-only as 'accel' channel, 6-axis as 'imu' channel
+    // Write IMU vectors directly to sensor_sample: accel-only as 'accel', 6-axis as 'imu'.
     const sensorValuesClauses = batch.map((sample) => {
       const sampleHasGyro =
         sample.gyroscopeX != null || sample.gyroscopeY != null || sample.gyroscopeZ != null;

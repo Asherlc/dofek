@@ -42,10 +42,7 @@ async function ensureProvider(database: Database) {
   );
 }
 
-/**
- * Insert HR into metric_stream and quaternion into orientation_sample.
- * No duplicate data — each value lives in exactly one table.
- */
+/** Insert WHOOP BLE realtime samples into sensor_sample. */
 async function insertRealtimeDataBatch(
   database: Database,
   userId: string,
@@ -59,33 +56,35 @@ async function insertRealtimeDataBatch(
   for (let offset = 0; offset < samples.length; offset += INSERT_BATCH_SIZE) {
     const batch = samples.slice(offset, offset + INSERT_BATCH_SIZE);
 
-    // Insert HR + R-R interval into metric_stream (only for samples with a valid reading)
+    // Insert HR samples (only for samples with a valid reading).
     const heartRateSamples = batch.filter((sample) => sample.heartRate > 0);
     if (heartRateSamples.length > 0) {
-      const metricValues = heartRateSamples.map(
-        (sample) =>
-          sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${sample.heartRate}, ${sample.rrIntervalMs > 0 ? sample.rrIntervalMs : null}, ${"WHOOP BLE"})`,
-      );
-
-      await database.execute(
-        sql`INSERT INTO fitness.metric_stream
-            (recorded_at, user_id, provider_id, heart_rate, rr_interval_ms, source_name)
-            VALUES ${sql.join(metricValues, sql`, `)}`,
-      );
-
-      // Dual-write HR to sensor_sample (scalar channel)
       const hrSensorValues = heartRateSamples.map(
         (sample) =>
           sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${deviceId}, ${"ble"}, ${"heart_rate"}, ${sample.heartRate}::real)`,
       );
+
       await database.execute(
         sql`INSERT INTO fitness.sensor_sample
             (recorded_at, user_id, provider_id, device_id, source_type, channel, scalar)
             VALUES ${sql.join(hrSensorValues, sql`, `)}`,
       );
+
+      const rrSamples = heartRateSamples.filter((sample) => sample.rrIntervalMs > 0);
+      if (rrSamples.length > 0) {
+        const rrValues = rrSamples.map(
+          (sample) =>
+            sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${deviceId}, ${"ble"}, ${"rr_interval_ms"}, ${sample.rrIntervalMs}::real)`,
+        );
+        await database.execute(
+          sql`INSERT INTO fitness.sensor_sample
+              (recorded_at, user_id, provider_id, device_id, source_type, channel, scalar)
+              VALUES ${sql.join(rrValues, sql`, `)}`,
+        );
+      }
     }
 
-    // Insert quaternion into orientation_sample (only when non-zero — compact 0x28 packets have no quaternion)
+    // Insert quaternion only when it is present (compact 0x28 packets omit it and report all zeros).
     const orientationSamples = batch.filter(
       (sample) =>
         sample.quaternionW !== 0 ||
@@ -94,28 +93,16 @@ async function insertRealtimeDataBatch(
         sample.quaternionZ !== 0,
     );
     if (orientationSamples.length > 0) {
-      const orientationValues = orientationSamples.map(
+      const orientationSensorValues = orientationSamples.map(
         (sample) =>
-          sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${deviceId}, ${sample.quaternionW}, ${sample.quaternionX}, ${sample.quaternionY}, ${sample.quaternionZ})`,
+          sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${deviceId}, ${"ble"}, ${"orientation"}, ARRAY[${sample.quaternionW}, ${sample.quaternionX}, ${sample.quaternionY}, ${sample.quaternionZ}]::real[])`,
       );
-
       await database.execute(
-        sql`INSERT INTO fitness.orientation_sample
-            (recorded_at, user_id, provider_id, device_id, quaternion_w, quaternion_x, quaternion_y, quaternion_z)
-            VALUES ${sql.join(orientationValues, sql`, `)}`,
+        sql`INSERT INTO fitness.sensor_sample
+            (recorded_at, user_id, provider_id, device_id, source_type, channel, vector)
+            VALUES ${sql.join(orientationSensorValues, sql`, `)}`,
       );
     }
-
-    // Dual-write orientation to sensor_sample (vector channel)
-    const orientationSensorValues = batch.map(
-      (sample) =>
-        sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${deviceId}, ${"ble"}, ${"orientation"}, ARRAY[${sample.quaternionW}, ${sample.quaternionX}, ${sample.quaternionY}, ${sample.quaternionZ}]::real[])`,
-    );
-    await database.execute(
-      sql`INSERT INTO fitness.sensor_sample
-          (recorded_at, user_id, provider_id, device_id, source_type, channel, vector)
-          VALUES ${sql.join(orientationSensorValues, sql`, `)}`,
-    );
 
     totalInserted += batch.length;
   }

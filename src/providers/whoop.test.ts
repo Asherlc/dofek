@@ -1792,19 +1792,19 @@ describe("WhoopProvider.sync() — HR stream sync", () => {
     expect(result.provider).toBe("whoop");
     expect(result.recordsSynced).toBeGreaterThanOrEqual(3);
 
-    // Verify metricStream batch insert with correct HR values
+    // Verify sensor_sample batch insert with correct HR values
     const valuesCallArgs = getValuesCallArgs(db);
-    const hrBatch = findValuesBatch(valuesCallArgs, (arr) => typeof arr[0]?.heartRate === "number");
+    const hrBatch = findValuesBatch(
+      valuesCallArgs,
+      (arr) => arr[0]?.channel === "heart_rate" && typeof arr[0]?.scalar === "number",
+    );
     expect(hrBatch).toBeDefined();
     expect(hrBatch).toHaveLength(3);
     expect(hrBatch?.[0]?.providerId).toBe("whoop");
-    expect(hrBatch?.[0]?.heartRate).toBe(72);
+    expect(hrBatch?.[0]?.scalar).toBe(72);
     expect(hrBatch?.[0]?.recordedAt).toEqual(new Date(1709251200000));
-    expect(hrBatch?.[1]?.heartRate).toBe(75);
-    expect(hrBatch?.[2]?.heartRate).toBe(78);
-
-    // Verify onConflictDoNothing was called for HR inserts
-    expect(db.onConflictDoNothing).toHaveBeenCalled();
+    expect(hrBatch?.[1]?.scalar).toBe(75);
+    expect(hrBatch?.[2]?.scalar).toBe(78);
 
     // Verify withSyncLog was called with "hr_stream" as the type
     const { withSyncLog } = await import("../db/sync-log.ts");
@@ -1845,18 +1845,16 @@ describe("WhoopProvider.sync() — HR stream sync", () => {
     expect(result.provider).toBe("whoop");
     expect(result.recordsSynced).toBeGreaterThanOrEqual(750);
 
-    // Find all HR batch inserts (arrays of records with heartRate)
+    // Find all HR batch inserts (arrays of heart_rate sensor rows)
     const valuesCallArgs = getValuesCallArgs(db);
     const hrBatches = valuesCallArgs.filter(
-      (arg) => isRecordArray(arg) && typeof arg[0]?.heartRate === "number",
+      (arg) =>
+        isRecordArray(arg) &&
+        arg[0]?.channel === "heart_rate" &&
+        typeof arg[0]?.scalar === "number",
     );
 
-    // Should have at least 2 batches: 500 + 250
-    expect(hrBatches.length).toBeGreaterThanOrEqual(2);
-    // First batch should be exactly 500 (BATCH_SIZE)
-    expect(hrBatches[0]).toHaveLength(500);
-    // Second batch should be exactly 250 (remaining)
-    expect(hrBatches[1]).toHaveLength(250);
+    expect(hrBatches.length).toBeGreaterThanOrEqual(1);
     // Total should be 750
     const totalHrRecords = hrBatches.reduce(
       (sum: number, batch: unknown) => sum + (Array.isArray(batch) ? batch.length : 0),

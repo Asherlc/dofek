@@ -66,7 +66,6 @@ export function tableInfo(dataType: DataType): {
 /** Tables to cascade-delete when disconnecting a provider, in deletion order. */
 export const DISCONNECT_CHILD_TABLES = [
   "fitness.sensor_sample",
-  "fitness.metric_stream",
   "fitness.exercise_alias",
   "fitness.strength_workout",
   "fitness.body_measurement",

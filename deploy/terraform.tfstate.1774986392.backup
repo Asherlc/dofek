@@ -1,0 +1,154 @@
+{
+  "version": 4,
+  "terraform_version": "1.5.7",
+  "serial": 5,
+  "lineage": "c9e413de-0623-bc02-9b71-a4bd992473a2",
+  "outputs": {
+    "server_ip": {
+      "value": "159.69.3.40",
+      "type": "string"
+    },
+    "server_ipv6": {
+      "value": "2a01:4f8:1c1c:114e::1",
+      "type": "string"
+    }
+  },
+  "resources": [
+    {
+      "mode": "managed",
+      "type": "hcloud_firewall",
+      "name": "dofek",
+      "provider": "provider[\"registry.terraform.io/hetznercloud/hcloud\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "apply_to": [
+              {
+                "label_selector": "",
+                "server": 123680458
+              }
+            ],
+            "id": "10697137",
+            "labels": {},
+            "name": "dofek",
+            "rule": [
+              {
+                "description": "",
+                "destination_ips": [],
+                "direction": "in",
+                "port": "22",
+                "protocol": "tcp",
+                "source_ips": [
+                  "0.0.0.0/0",
+                  "::/0"
+                ]
+              },
+              {
+                "description": "",
+                "destination_ips": [],
+                "direction": "in",
+                "port": "443",
+                "protocol": "tcp",
+                "source_ips": [
+                  "0.0.0.0/0",
+                  "::/0"
+                ]
+              },
+              {
+                "description": "",
+                "destination_ips": [],
+                "direction": "in",
+                "port": "80",
+                "protocol": "tcp",
+                "source_ips": [
+                  "0.0.0.0/0",
+                  "::/0"
+                ]
+              }
+            ]
+          },
+          "sensitive_attributes": [],
+          "private": "eyJzY2hlbWFfdmVyc2lvbiI6IjAifQ=="
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "hcloud_server",
+      "name": "dofek",
+      "provider": "provider[\"registry.terraform.io/hetznercloud/hcloud\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "allow_deprecated_images": null,
+            "backup_window": "",
+            "backups": false,
+            "datacenter": "nbg1-dc3",
+            "delete_protection": false,
+            "firewall_ids": [
+              10697137
+            ],
+            "id": "123680458",
+            "ignore_remote_firewall_ids": null,
+            "image": "ubuntu-24.04",
+            "ipv4_address": "159.69.3.40",
+            "ipv6_address": "2a01:4f8:1c1c:114e::1",
+            "ipv6_network": "2a01:4f8:1c1c:114e::/64",
+            "iso": null,
+            "keep_disk": null,
+            "labels": {},
+            "location": "nbg1",
+            "name": "dofek",
+            "network": [],
+            "placement_group_id": 0,
+            "primary_disk_size": 40,
+            "public_net": [],
+            "rebuild_protection": false,
+            "rescue": null,
+            "server_type": "cax11",
+            "shutdown_before_deletion": null,
+            "ssh_keys": null,
+            "status": "running",
+            "timeouts": null,
+            "user_data": null
+          },
+          "sensitive_attributes": [],
+          "private": "eyJlMmJmYjczMC1lY2FhLTExZTYtOGY4OC0zNDM2M2JjN2M0YzAiOnsiY3JlYXRlIjo1NDAwMDAwMDAwMDAwfSwic2NoZW1hX3ZlcnNpb24iOiIwIn0=",
+          "dependencies": [
+            "hcloud_firewall.dofek",
+            "hcloud_ssh_key.default"
+          ]
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "hcloud_ssh_key",
+      "name": "default",
+      "provider": "provider[\"registry.terraform.io/hetznercloud/hcloud\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "fingerprint": "7f:c1:8d:eb:4f:e5:53:56:b6:e3:d9:dd:e2:10:9f:04",
+            "id": "109069629",
+            "labels": {},
+            "name": "dofek-deploy",
+            "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICjXK9+8OnZZsfuGC01DvA5XlGLenuSILgnsMnOGXAm3"
+          },
+          "sensitive_attributes": []
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "hcloud_volume",
+      "name": "dofek_data",
+      "provider": "provider[\"registry.terraform.io/hetznercloud/hcloud\"]",
+      "instances": []
+    }
+  ],
+  "check_results": null
+}

@@ -2,6 +2,7 @@ import type { Job } from "bullmq";
 import { sql } from "drizzle-orm";
 import type { SyncDatabase } from "../db/index.ts";
 import { logger } from "../logger.ts";
+import { getProvider, isSyncEligibleProvider } from "../providers/index.ts";
 import { createSyncQueue, type ScheduledSyncJobData } from "./queues.ts";
 
 /**
@@ -9,6 +10,10 @@ import { createSyncQueue, type ScheduledSyncJobData } from "./queues.ts";
  * and enqueue per-user sync jobs.
  */
 export async function processScheduledSyncJob(_job: Job<ScheduledSyncJobData>, db: SyncDatabase) {
+  // Ensure provider registry is populated so provider metadata (type, auth) is available.
+  const { ensureProvidersRegistered } = await import("./provider-registration.ts");
+  await ensureProvidersRegistered();
+
   // Find all users who have at least one connected (non-import-only) provider
   const rows = await db.execute(
     sql`
@@ -34,6 +39,11 @@ export async function processScheduledSyncJob(_job: Job<ScheduledSyncJobData>, d
 
   for (const [userId, providerIds] of userProviders) {
     for (const providerId of providerIds) {
+      const provider = getProvider(providerId);
+      if (provider && !isSyncEligibleProvider(provider)) {
+        logger.info(`[scheduled-sync] Skipping CSV provider ${providerId}`);
+        continue;
+      }
       await syncQueue.add("sync", {
         userId,
         providerId,

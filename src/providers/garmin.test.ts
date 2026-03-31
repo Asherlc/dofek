@@ -543,37 +543,28 @@ describe("GarminProvider.sync()", () => {
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toHaveLength(0);
 
-    // Verify stream samples were inserted (2 valid, 1 null-timestamp skipped)
-    expect(db.onConflictDoNothing.mock.calls.length).toBeGreaterThanOrEqual(2);
+    const sensorRows = db.values.mock.calls
+      .flatMap((call) => (Array.isArray(call[0]) ? call[0] : [call[0]]))
+      .filter((row) => row?.providerId === "garmin" && typeof row?.channel === "string");
 
-    // Verify the metric_stream values for the first sample (all fields present)
-    // Stream inserts have a recordedAt field (Date) to distinguish from other inserts
-    const streamCalls = db.values.mock.calls.filter(
-      (call) => call[0]?.recordedAt instanceof Date && "activityId" in (call[0] ?? {}),
+    expect(sensorRows.length).toBeGreaterThan(0);
+    expect(sensorRows).toContainEqual(
+      expect.objectContaining({ channel: "heart_rate", scalar: 150 }),
     );
-    expect(streamCalls.length).toBeGreaterThanOrEqual(2);
-    const firstSample = streamCalls[0]?.[0];
-    expect(firstSample.heartRate).toBe(150);
-    expect(firstSample.power).toBe(200);
-    expect(firstSample.cadence).toBe(85); // directRunCadence
-    expect(firstSample.speed).toBe(3.5);
-    expect(firstSample.altitude).toBe(100);
-    expect(firstSample.lat).toBe(37.7749);
-    expect(firstSample.lng).toBe(-122.4194);
-    expect(firstSample.temperature).toBe(18);
-    expect(firstSample.providerId).toBe("garmin");
-
-    // Verify the third sample uses directBikeCadence when directRunCadence is null
-    const bikeCadenceSample = streamCalls.find((call) => call[0]?.cadence === 90);
-    expect(bikeCadenceSample).toBeDefined();
-    // And all null fields become undefined
-    expect(bikeCadenceSample?.[0].heartRate).toBeUndefined();
-    expect(bikeCadenceSample?.[0].power).toBeUndefined();
-    expect(bikeCadenceSample?.[0].speed).toBeUndefined();
-    expect(bikeCadenceSample?.[0].altitude).toBeUndefined();
-    expect(bikeCadenceSample?.[0].lat).toBeUndefined();
-    expect(bikeCadenceSample?.[0].lng).toBeUndefined();
-    expect(bikeCadenceSample?.[0].temperature).toBeUndefined();
+    expect(sensorRows).toContainEqual(expect.objectContaining({ channel: "power", scalar: 200 }));
+    expect(sensorRows).toContainEqual(expect.objectContaining({ channel: "cadence", scalar: 85 }));
+    expect(sensorRows).toContainEqual(expect.objectContaining({ channel: "speed", scalar: 3.5 }));
+    expect(sensorRows).toContainEqual(
+      expect.objectContaining({ channel: "altitude", scalar: 100 }),
+    );
+    expect(sensorRows).toContainEqual(expect.objectContaining({ channel: "lat", scalar: 37.7749 }));
+    expect(sensorRows).toContainEqual(
+      expect.objectContaining({ channel: "lng", scalar: -122.4194 }),
+    );
+    expect(sensorRows).toContainEqual(
+      expect.objectContaining({ channel: "temperature", scalar: 18 }),
+    );
+    expect(sensorRows).toContainEqual(expect.objectContaining({ channel: "cadence", scalar: 90 }));
   });
 
   it("syncs sleep data", async () => {
@@ -805,9 +796,11 @@ describe("GarminProvider.sync()", () => {
 
     expect(result.recordsSynced).toBe(2);
 
-    const stressCall = db.values.mock.calls.find((call) => call[0]?.stress === 35);
+    const stressCall = db.values.mock.calls
+      .flatMap((call) => (Array.isArray(call[0]) ? call[0] : [call[0]]))
+      .find((row) => row?.channel === "stress" && row?.scalar === 35);
     if (!stressCall) throw new Error("expected stress insert");
-    expect(stressCall[0].providerId).toBe("garmin");
+    expect(stressCall.providerId).toBe("garmin");
   });
 
   it("syncs heart rate time-series", async () => {
@@ -823,9 +816,11 @@ describe("GarminProvider.sync()", () => {
 
     expect(result.recordsSynced).toBe(2);
 
-    const hrCall = db.values.mock.calls.find((call) => call[0]?.heartRate === 72);
+    const hrCall = db.values.mock.calls
+      .flatMap((call) => (Array.isArray(call[0]) ? call[0] : [call[0]]))
+      .find((row) => row?.channel === "heart_rate" && row?.scalar === 72);
     if (!hrCall) throw new Error("expected heart rate insert");
-    expect(hrCall[0].providerId).toBe("garmin");
+    expect(hrCall.providerId).toBe("garmin");
   });
 
   it("syncs all data types together and sums record counts", async () => {

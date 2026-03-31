@@ -20,7 +20,7 @@ const mockAdd = vi.fn(() => Promise.resolve({ waitUntilFinished: mockWaitUntilFi
 const mockQueueClose = vi.fn(() => Promise.resolve());
 const mockWorkerClose = vi.fn(() => Promise.resolve());
 const mockQueueEventsClose = vi.fn(() => Promise.resolve());
-const mockGetEnabledProviders = vi.fn<() => Array<{ id: string }>>(() => []);
+const mockGetEnabledSyncProviders = vi.fn<() => Array<{ id: string }>>(() => []);
 const mockGetAllProviders = vi.fn<() => Array<Record<string, unknown>>>(() => []);
 const mockEnsureProvidersRegistered = vi.fn(() => Promise.resolve());
 const mockProcessSyncJob = vi.fn();
@@ -56,7 +56,7 @@ vi.mock("./jobs/process-sync-job.ts", () => ({
 }));
 
 vi.mock("./providers/index.ts", () => ({
-  getEnabledProviders: mockGetEnabledProviders,
+  getEnabledSyncProviders: mockGetEnabledSyncProviders,
   getAllProviders: mockGetAllProviders,
   registerProvider: vi.fn(),
 }));
@@ -122,28 +122,28 @@ describe("handleSyncCommand", () => {
   });
 
   it("returns 0 when no providers are enabled", async () => {
-    mockGetEnabledProviders.mockReturnValue([]);
+    mockGetEnabledSyncProviders.mockReturnValue([]);
     const code = await handleSyncCommand(["node", "index.ts", "sync"]);
     expect(code).toBe(0);
     expect(mockAdd).not.toHaveBeenCalled();
   });
 
   it("logs message when no providers enabled", async () => {
-    mockGetEnabledProviders.mockReturnValue([]);
+    mockGetEnabledSyncProviders.mockReturnValue([]);
     await handleSyncCommand(["node", "index.ts", "sync"]);
     expect(mockLoggerInfo).toHaveBeenCalledWith(
-      "[sync] No providers enabled. Set API keys in .env to enable providers.",
+      "[sync] No syncable providers enabled. Set API keys in .env to enable providers.",
     );
   });
 
   it("registers providers before checking enabled list", async () => {
-    mockGetEnabledProviders.mockReturnValue([]);
+    mockGetEnabledSyncProviders.mockReturnValue([]);
     await handleSyncCommand(["node", "index.ts", "sync"]);
     expect(mockEnsureProvidersRegistered).toHaveBeenCalledOnce();
   });
 
   it("enqueues sync job with providerId and default sinceDays", async () => {
-    mockGetEnabledProviders.mockReturnValue([{ id: "strava" }]);
+    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
     const code = await handleSyncCommand(["node", "index.ts", "sync"]);
     expect(code).toBe(0);
     expect(mockAdd).toHaveBeenCalledWith("sync", {
@@ -154,7 +154,7 @@ describe("handleSyncCommand", () => {
   });
 
   it("enqueues one sync job per enabled provider", async () => {
-    mockGetEnabledProviders.mockReturnValue([{ id: "strava" }, { id: "wahoo" }]);
+    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }, { id: "wahoo" }]);
     await handleSyncCommand(["node", "index.ts", "sync"]);
 
     expect(mockAdd).toHaveBeenCalledTimes(2);
@@ -171,7 +171,7 @@ describe("handleSyncCommand", () => {
   });
 
   it("logs enqueue message with provider count and day range", async () => {
-    mockGetEnabledProviders.mockReturnValue([{ id: "strava" }, { id: "wahoo" }]);
+    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }, { id: "wahoo" }]);
     await handleSyncCommand(["node", "index.ts", "sync"]);
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       expect.stringContaining("[sync] Enqueued 2 sync job(s), one per provider"),
@@ -180,13 +180,13 @@ describe("handleSyncCommand", () => {
   });
 
   it("logs 'all time' label for full sync", async () => {
-    mockGetEnabledProviders.mockReturnValue([{ id: "strava" }]);
+    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
     await handleSyncCommand(["node", "index.ts", "sync", "--full-sync"]);
     expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("all time"));
   });
 
   it("creates Worker with processSyncJob callback and connection", async () => {
-    mockGetEnabledProviders.mockReturnValue([{ id: "strava" }]);
+    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
     await handleSyncCommand(["node", "index.ts", "sync"]);
 
     expect(MockWorker).toHaveBeenCalledWith("sync", expect.any(Function), {
@@ -200,7 +200,7 @@ describe("handleSyncCommand", () => {
   });
 
   it("creates QueueEvents with connection", async () => {
-    mockGetEnabledProviders.mockReturnValue([{ id: "strava" }]);
+    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
     await handleSyncCommand(["node", "index.ts", "sync"]);
 
     expect(MockQueueEvents).toHaveBeenCalledWith("sync", {
@@ -209,27 +209,27 @@ describe("handleSyncCommand", () => {
   });
 
   it("logs done message on success", async () => {
-    mockGetEnabledProviders.mockReturnValue([{ id: "strava" }]);
+    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
     await handleSyncCommand(["node", "index.ts", "sync"]);
     expect(mockLoggerInfo).toHaveBeenCalledWith("[sync] Done.");
   });
 
   it("returns 1 when job fails", async () => {
-    mockGetEnabledProviders.mockReturnValue([{ id: "strava" }]);
+    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
     mockWaitUntilFinished.mockRejectedValue(new Error("sync failed"));
     const code = await handleSyncCommand(["node", "index.ts", "sync"]);
     expect(code).toBe(1);
   });
 
   it("logs error message on failure", async () => {
-    mockGetEnabledProviders.mockReturnValue([{ id: "strava" }]);
+    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
     mockWaitUntilFinished.mockRejectedValue(new Error("sync failed"));
     await handleSyncCommand(["node", "index.ts", "sync"]);
     expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining("[sync] Failed:"));
   });
 
   it("passes undefined sinceDays for --full-sync", async () => {
-    mockGetEnabledProviders.mockReturnValue([{ id: "strava" }]);
+    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
     await handleSyncCommand(["node", "index.ts", "sync", "--full-sync"]);
     expect(mockAdd).toHaveBeenCalledWith("sync", {
       providerId: "strava",
@@ -239,7 +239,7 @@ describe("handleSyncCommand", () => {
   });
 
   it("passes custom --since-days value", async () => {
-    mockGetEnabledProviders.mockReturnValue([{ id: "strava" }]);
+    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
     await handleSyncCommand(["node", "index.ts", "sync", "--since-days=30"]);
     expect(mockAdd).toHaveBeenCalledWith("sync", {
       providerId: "strava",
@@ -249,7 +249,7 @@ describe("handleSyncCommand", () => {
   });
 
   it("cleans up BullMQ resources on success", async () => {
-    mockGetEnabledProviders.mockReturnValue([{ id: "strava" }]);
+    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
     await handleSyncCommand(["node", "index.ts", "sync"]);
     expect(mockWorkerClose).toHaveBeenCalledOnce();
     expect(mockQueueEventsClose).toHaveBeenCalledOnce();
@@ -257,7 +257,7 @@ describe("handleSyncCommand", () => {
   });
 
   it("cleans up BullMQ resources on failure", async () => {
-    mockGetEnabledProviders.mockReturnValue([{ id: "strava" }]);
+    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
     mockWaitUntilFinished.mockRejectedValue(new Error("boom"));
     await handleSyncCommand(["node", "index.ts", "sync"]);
     expect(mockWorkerClose).toHaveBeenCalledOnce();

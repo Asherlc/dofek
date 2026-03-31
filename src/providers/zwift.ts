@@ -7,7 +7,7 @@ import {
   ZwiftClient,
 } from "zwift-client";
 import type { SyncDatabase } from "../db/index.ts";
-import { activity, dailyMetrics, metricStream } from "../db/schema.ts";
+import { activity, dailyMetrics } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
 import { withSyncLog } from "../db/sync-log.ts";
@@ -177,7 +177,6 @@ export class ZwiftProvider implements SyncProvider {
                   if (detail.fitnessData?.fullDataUrl) {
                     const fitnessData = await client.getFitnessData(detail.fitnessData.fullDataUrl);
                     const samples = parseZwiftFitnessData(fitnessData, parsed.startedAt);
-                    const BATCH_SIZE = 500;
                     const metricRows = samples.map((s) => ({
                       providerId: this.id,
                       recordedAt: s.recordedAt,
@@ -188,12 +187,6 @@ export class ZwiftProvider implements SyncProvider {
                       lat: s.lat,
                       lng: s.lng,
                     }));
-                    for (let i = 0; i < metricRows.length; i += BATCH_SIZE) {
-                      await db
-                        .insert(metricStream)
-                        .values(metricRows.slice(i, i + BATCH_SIZE))
-                        .onConflictDoNothing();
-                    }
                     await dualWriteToSensorSample(db, metricRows, SOURCE_TYPE_API);
                   }
                 } catch (streamErr) {

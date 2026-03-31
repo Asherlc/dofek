@@ -101,6 +101,11 @@ services:
       - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://o4511073249067008.ingest.us.sentry.io/api/4511073388593152/integration/otlp/v1/traces?sentry_key=b421c7fde44434a032c86e3357cae397
     volumes:
       - job_files:/app/job-files
+      - /opt/dofek/patches/index.ts:/app/src/index.ts:ro
+      - /opt/dofek/patches/providers-index.ts:/app/src/providers/index.ts:ro
+      - /opt/dofek/patches/process-sync-job.ts:/app/src/jobs/process-sync-job.ts:ro
+      - /opt/dofek/patches/process-scheduled-sync-job.ts:/app/src/jobs/process-scheduled-sync-job.ts:ro
+      - /opt/dofek/patches/process-training-export-job.ts:/app/src/jobs/process-training-export-job.ts:ro
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -117,11 +122,16 @@ services:
     env_file: .env
     environment:
       - DATABASE_URL=postgres://health:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/health
+      - REDIS_URL=redis://redis:6379
       - NODE_ENV=production
       - OTEL_SERVICE_NAME=dofek-sync
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318
       - OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://collector:4318/v1/logs
       - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://o4511073249067008.ingest.us.sentry.io/api/4511073388593152/integration/otlp/v1/traces?sentry_key=b421c7fde44434a032c86e3357cae397
+    volumes:
+      - /opt/dofek/patches/index.ts:/app/src/index.ts:ro
+      - /opt/dofek/patches/providers-index.ts:/app/src/providers/index.ts:ro
+      - /opt/dofek/patches/process-sync-job.ts:/app/src/jobs/process-sync-job.ts:ro
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -159,7 +169,7 @@ services:
       POSTGRES_USER: health
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
-      - db_data:/var/lib/postgresql/data
+      - /mnt/HC_Volume_dofek-data/postgres:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U health -d health"]
       interval: 5s
@@ -179,7 +189,7 @@ services:
       BACKUP_KEEP_WEEKS: 4
       BACKUP_KEEP_MONTHS: 6
     volumes:
-      - db_backups:/backups
+      - /mnt/HC_Volume_dofek-data/backups:/backups
     depends_on:
       db:
         condition: service_healthy

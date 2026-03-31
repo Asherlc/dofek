@@ -320,7 +320,7 @@ describe("healthKitSyncRouter", () => {
       expect(serialized).not.toContain("5552.349998360692");
     });
 
-    it("rounds float heart rate to smallint before inserting into metric_stream", async () => {
+    it("rounds float heart rate before inserting into sensor_sample", async () => {
       const execute = makeExecute();
       const caller = createCaller({
         db: { execute },
@@ -338,10 +338,10 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      // Find the metric_stream INSERT
+      // Find the sensor_sample INSERT
       const metricInsertCall = execute.mock.calls.find((call: unknown[]) => {
         const serialized = JSON.stringify(call[0]);
-        return serialized.includes("metric_stream") && serialized.includes("heart_rate");
+        return serialized.includes("fitness.sensor_sample") && serialized.includes("heart_rate");
       });
       expect(metricInsertCall).toBeDefined();
       const serialized = JSON.stringify(metricInsertCall?.[0]);
@@ -422,7 +422,7 @@ describe("healthKitSyncRouter", () => {
       const linkCall = execute.mock.calls.find((call: unknown[]) => {
         const serialized = JSON.stringify(call[0]);
         return (
-          serialized.includes("UPDATE fitness.metric_stream ms") &&
+          serialized.includes("UPDATE fitness.sensor_sample ss") &&
           serialized.includes("SET activity_id")
         );
       });
@@ -799,7 +799,7 @@ describe("healthKitSyncRouter", () => {
       const linkCall = execute.mock.calls.find((call: unknown[]) => {
         const serialized = JSON.stringify(call[0]);
         return (
-          serialized.includes("UPDATE fitness.metric_stream ms") &&
+          serialized.includes("UPDATE fitness.sensor_sample ss") &&
           serialized.includes("SET activity_id")
         );
       });
@@ -2386,7 +2386,7 @@ describe("healthKitSyncRouter", () => {
       const linkCall = execute.mock.calls.find((call: unknown[]) => {
         const serialized = JSON.stringify(call[0]);
         return (
-          serialized.includes("UPDATE fitness.metric_stream ms") &&
+          serialized.includes("UPDATE fitness.sensor_sample ss") &&
           serialized.includes("SET activity_id")
         );
       });
@@ -2406,7 +2406,7 @@ describe("healthKitSyncRouter", () => {
       const linkCall = execute.mock.calls.find((call: unknown[]) => {
         const serialized = JSON.stringify(call[0]);
         return (
-          serialized.includes("UPDATE fitness.metric_stream ms") &&
+          serialized.includes("UPDATE fitness.sensor_sample ss") &&
           serialized.includes("SET activity_id")
         );
       });
@@ -2820,7 +2820,7 @@ describe("healthKitSyncRouter", () => {
   });
 
   describe("pushQuantitySamples - metric stream JSON and batch mutations", () => {
-    it("stores raw metadata in metric_stream JSON (kills JSON.stringify({}) mutation)", async () => {
+    it("stores source metadata in sensor_sample columns", async () => {
       const execute = makeExecute();
       const caller = createCaller({
         db: { execute },
@@ -2842,13 +2842,11 @@ describe("healthKitSyncRouter", () => {
 
       const metricInsert = execute.mock.calls.find((call: unknown[]) => {
         const serialized = JSON.stringify(call[0]);
-        return serialized.includes("metric_stream") && serialized.includes("INSERT");
+        return serialized.includes("fitness.sensor_sample") && serialized.includes("INSERT");
       });
       expect(metricInsert).toBeDefined();
       const serialized = JSON.stringify(metricInsert?.[0]);
-      // Should contain the uuid, type, and sourceName in the raw JSON
-      expect(serialized).toContain("hr-json-test");
-      expect(serialized).toContain("HKQuantityTypeIdentifierHeartRate");
+      expect(serialized).toContain("heart_rate");
       expect(serialized).toContain("Apple Watch");
     });
   });

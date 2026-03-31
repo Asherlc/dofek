@@ -86,35 +86,11 @@ export class ActivityRecordingRepository {
     if (!row) throw new Error("Failed to insert activity");
     const activityId = row.id;
 
-    // Batch-insert GPS samples into metric_stream
+    // Batch-insert GPS samples into sensor_sample
     for (let index = 0; index < input.samples.length; index += BATCH_SIZE) {
       const batch = input.samples.slice(index, index + BATCH_SIZE);
 
       if (batch.length === 0) continue;
-
-      const values = batch.map(
-        (sample) =>
-          sql`(
-              ${sample.recordedAt}::timestamptz,
-              ${this.#userId},
-              ${activityId}::uuid,
-              ${PROVIDER_ID},
-              ${sample.lat},
-              ${sample.lng},
-              ${sample.gpsAccuracy},
-              ${sample.altitude},
-              ${sample.speed},
-              ${input.sourceName}
-            )`,
-      );
-
-      await this.#db.execute(
-        sql`INSERT INTO fitness.metric_stream (
-                recorded_at, user_id, activity_id, provider_id,
-                lat, lng, gps_accuracy, altitude, speed, source_name
-              )
-              VALUES ${sql.join(values, sql`, `)}`,
-      );
 
       // Dual-write GPS samples to sensor_sample (one row per channel per sample)
       const channelMapping: Array<{ channel: string; key: keyof GpsSample }> = [

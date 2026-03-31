@@ -23,7 +23,12 @@ const dummyOAuthConfig = {
 
 describe("getProviderAuthType", () => {
   it("returns 'file-import' for import-only providers", () => {
-    const provider = stubProvider({ importOnly: true });
+    const provider: Provider = {
+      id: "strong-csv",
+      name: "Strong CSV",
+      validate: () => null,
+      importOnly: true,
+    };
     expect(getProviderAuthType(provider)).toBe("file-import");
   });
 
@@ -145,7 +150,12 @@ describe("getProviderAuthType", () => {
   });
 
   it("returns exact string 'file-import' for import-only providers", () => {
-    const provider = stubProvider({ importOnly: true });
+    const provider: Provider = {
+      id: "strong-csv",
+      name: "Strong CSV",
+      validate: () => null,
+      importOnly: true,
+    };
     const result = getProviderAuthType(provider);
     expect(result).toBe("file-import");
     expect(result).not.toBe("");

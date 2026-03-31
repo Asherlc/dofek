@@ -51,8 +51,8 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       });
 
       expect(result.inserted).toBe(2);
-      // Should call execute 3 times: once for ensureProvider, once for the batch insert, once for the sensor_sample dual-write
-      expect(execute).toHaveBeenCalledTimes(3);
+      // 1 ensureProvider + 1 sensor_sample batch insert
+      expect(execute).toHaveBeenCalledTimes(2);
     });
 
     it("handles empty samples array by returning zero inserted", async () => {
@@ -114,8 +114,8 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       });
 
       expect(result.inserted).toBe(7500);
-      // 1 ensureProvider + 2 batch inserts × (imu_sample + sensor_sample) = 5
-      expect(execute).toHaveBeenCalledTimes(5);
+      // 1 ensureProvider + 2 sensor_sample batch inserts = 3
+      expect(execute).toHaveBeenCalledTimes(3);
     });
 
     it("accepts samples with optional gyroscope fields", async () => {
@@ -135,7 +135,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       });
 
       expect(result.inserted).toBe(1);
-      expect(execute).toHaveBeenCalledTimes(3);
+      expect(execute).toHaveBeenCalledTimes(2);
     });
 
     it("accepts a mix of samples with and without gyroscope", async () => {
@@ -157,7 +157,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       });
 
       expect(result.inserted).toBe(2);
-      expect(execute).toHaveBeenCalledTimes(3);
+      expect(execute).toHaveBeenCalledTimes(2);
     });
   });
 });
