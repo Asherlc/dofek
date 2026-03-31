@@ -15,7 +15,8 @@ type Tab =
   | "food"
   | "body"
   | "dailyMetrics"
-  | "tokens";
+  | "tokens"
+  | "trainingExport";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "overview", label: "Overview" },
@@ -29,6 +30,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "dailyMetrics", label: "Daily Metrics" },
   { id: "sessions", label: "Sessions" },
   { id: "tokens", label: "OAuth Tokens" },
+  { id: "trainingExport", label: "Training Export" },
 ];
 
 export function AdminPage() {
@@ -75,6 +77,7 @@ export function AdminPage() {
       {activeTab === "dailyMetrics" && <DailyMetricsTab />}
       {activeTab === "sessions" && <SessionsTab />}
       {activeTab === "tokens" && <TokensTab />}
+      {activeTab === "trainingExport" && <TrainingExportTab />}
     </PageLayout>
   );
 }
@@ -835,6 +838,70 @@ function TokensTab() {
   return (
     <AdminCard title="OAuth Tokens (No Secrets)">
       <DataTable columns={columns} data={data ?? []} />
+    </AdminCard>
+  );
+}
+
+function TrainingExportTab() {
+  const { data: status, isLoading, error } = trpc.admin.trainingExportStatus.useQuery();
+  const trpcUtils = trpc.useUtils();
+  const triggerExport = trpc.admin.triggerTrainingExport.useMutation({
+    onSuccess: () => {
+      trpcUtils.admin.trainingExportStatus.invalidate();
+    },
+  });
+
+  if (isLoading) return <LoadingState />;
+  if (error) return <ErrorState message={error.message} />;
+
+  return (
+    <AdminCard title="Training Data Export">
+      <div className="space-y-4">
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            disabled={triggerExport.isPending}
+            onClick={() => triggerExport.mutate({})}
+          >
+            {triggerExport.isPending ? "Triggering..." : "Trigger Export"}
+          </button>
+          {triggerExport.isSuccess && (
+            <span className="text-sm text-green-600">
+              Export job queued (ID: {triggerExport.data.jobId})
+            </span>
+          )}
+          {triggerExport.isError && (
+            <span className="text-sm text-red-600">{triggerExport.error.message}</span>
+          )}
+        </div>
+
+        <h3 className="text-sm font-medium text-gray-700">Watermarks</h3>
+        {status?.watermarks.length === 0 ? (
+          <p className="text-sm text-gray-500">No exports yet</p>
+        ) : (
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="border-b text-left text-gray-500">
+                <th className="pb-2 pr-4">Table</th>
+                <th className="pb-2 pr-4">Last Exported</th>
+                <th className="pb-2 pr-4">Rows</th>
+                <th className="pb-2">Updated</th>
+              </tr>
+            </thead>
+            <tbody>
+              {status?.watermarks.map((watermark) => (
+                <tr key={watermark.table_name} className="border-b">
+                  <td className="py-2 pr-4 font-mono">{watermark.table_name}</td>
+                  <td className="py-2 pr-4">{watermark.last_exported_at}</td>
+                  <td className="py-2 pr-4">{watermark.row_count.toLocaleString()}</td>
+                  <td className="py-2">{watermark.updated_at}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </AdminCard>
   );
 }
