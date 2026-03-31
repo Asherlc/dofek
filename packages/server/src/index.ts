@@ -27,6 +27,16 @@ import type { Context } from "./trpc.ts";
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
 
+function getSingleHeaderValue(value: string | string[] | undefined): string | undefined {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (Array.isArray(value) && typeof value[0] === "string") {
+    return value[0];
+  }
+  return undefined;
+}
+
 /** Create the Express app with all routes. Exported for testing. */
 export function createApp(db: import("dofek/db").Database): express.Express {
   initSentry();
@@ -157,9 +167,10 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       createContext: async ({ req }): Promise<Context> => {
         const sessionId = getSessionIdFromRequest(req);
         const session = sessionId ? await validateSession(db, sessionId) : null;
-        const rawTimezone = req.headers["x-timezone"];
-        const timezone = typeof rawTimezone === "string" ? rawTimezone : "UTC";
-        return { db, userId: session?.userId ?? null, timezone };
+        const timezone = getSingleHeaderValue(req.headers["x-timezone"]) ?? "UTC";
+        const appVersion = getSingleHeaderValue(req.headers["x-app-version"]);
+        const assetsVersion = getSingleHeaderValue(req.headers["x-assets-version"]);
+        return { db, userId: session?.userId ?? null, timezone, appVersion, assetsVersion };
       },
       onError: ({ path, error }) => {
         logger.error(`[trpc] ${path}: ${error.message}`);
