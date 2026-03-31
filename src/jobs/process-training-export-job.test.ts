@@ -5,12 +5,12 @@ import {
   computeProgress,
   type ImuRow,
   imuCsvHeader,
-  imuRowToCsv,
   imuRowsToCsvContent,
+  imuRowToCsv,
   type MetricStreamRow,
   metricStreamCsvHeader,
-  metricStreamRowToCsv,
   metricStreamRowsToCsvContent,
+  metricStreamRowToCsv,
 } from "./process-training-export-job.ts";
 
 describe("metricStreamCsvHeader", () => {
