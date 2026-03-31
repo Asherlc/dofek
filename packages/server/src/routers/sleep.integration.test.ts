@@ -1,10 +1,12 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { DEFAULT_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
 import { queryCache } from "../lib/cache.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 
 /**
  * Integration tests for sleep router endpoints.
@@ -123,5 +125,63 @@ describe("sleep router integration", () => {
         expect(typeof row.efficiency_pct).toBe("number");
       }
     }
+  });
+
+  it("sleep.latestStages falls back to overlapping session when winning provider has no stages", async () => {
+    await queryCache.invalidateAll();
+
+    // Insert a second provider (simulating WHOOP winning dedup but having no stages)
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES ('whoop', 'WHOOP', ${DEFAULT_USER_ID})
+          ON CONFLICT DO NOTHING`,
+    );
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.provider_priority (provider_id, priority, sleep_priority)
+          VALUES ('whoop', 1, 1)
+          ON CONFLICT (provider_id) DO UPDATE SET priority = 1, sleep_priority = 1`,
+    );
+
+    // WHOOP session: higher priority, no stages
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.sleep_session (
+            provider_id, user_id, started_at, ended_at,
+            duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes,
+            sleep_type
+          ) VALUES (
+            'whoop', ${DEFAULT_USER_ID},
+            NOW() - INTERVAL '7 hours',
+            NOW() - INTERVAL '30 minutes',
+            390, 60, 90, 200, 40,
+            'sleep'
+          )`,
+    );
+
+    // Insert stages for the existing test_provider session (simulating Apple Health)
+    const sessionRows = await executeWithSchema(
+      testCtx.db,
+      z.object({ id: z.string() }),
+      sql`SELECT id FROM fitness.sleep_session
+          WHERE provider_id = 'test_provider' AND user_id = ${DEFAULT_USER_ID}
+          ORDER BY started_at DESC LIMIT 1`,
+    );
+    const sessionId = sessionRows[0]?.id;
+    expect(sessionId).toBeDefined();
+
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.sleep_stage (session_id, stage, started_at, ended_at)
+          VALUES
+            (${sessionId}::uuid, 'light', NOW() - INTERVAL '6 hours', NOW() - INTERVAL '5 hours'),
+            (${sessionId}::uuid, 'deep', NOW() - INTERVAL '5 hours', NOW() - INTERVAL '4 hours'),
+            (${sessionId}::uuid, 'rem', NOW() - INTERVAL '4 hours', NOW() - INTERVAL '3 hours')`,
+    );
+
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_sleep`);
+
+    const stages =
+      await query<{ stage: string; started_at: string; ended_at: string }[]>("sleep.latestStages");
+
+    expect(stages.length).toBe(3);
+    expect(stages.map((stage) => stage.stage)).toEqual(["light", "deep", "rem"]);
   });
 });
