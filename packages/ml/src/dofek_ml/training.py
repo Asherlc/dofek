@@ -623,11 +623,21 @@ def evaluate_model(
 
     labels_np: np.ndarray = labels_test.numpy()
 
+    label_indices: np.ndarray = np.arange(len(class_names))
+
     print("\n=== Classification Report ===")
-    print(classification_report(labels_np, preds, target_names=class_names))
+    print(
+        classification_report(
+            labels_np,
+            preds,
+            labels=label_indices,
+            target_names=class_names,
+            zero_division=0,
+        )
+    )
 
     print("=== Confusion Matrix ===")
-    cm: np.ndarray = confusion_matrix(labels_np, preds)
+    cm: np.ndarray = confusion_matrix(labels_np, preds, labels=label_indices)
     # Pretty-print with class labels
     header: str = "          " + "  ".join(f"{name:>10}" for name in class_names)
     print(header)
