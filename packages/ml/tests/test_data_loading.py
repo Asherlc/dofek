@@ -143,9 +143,7 @@ class TestValidateParquetSchema:
     """Tests for validate_parquet_schema()."""
 
     def test_valid_schema_passes(self, training_export_dir: Path) -> None:
-        filepath: Path = (
-            training_export_dir / "sensor_sample" / "2024-01-01T00:00:00Z.parquet"
-        )
+        filepath: Path = training_export_dir / "sensor_sample" / "2024-01-01T00:00:00Z.parquet"
         schema: pq.ParquetSchema = pq.read_schema(filepath)
         validate_parquet_schema(schema)  # should not raise
 
