@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity, dailyMetrics, journalEntry, metricStream, sleepSession } from "../db/schema.ts";
+import { activity, dailyMetrics, journalEntry, sensorSample, sleepSession } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import {
@@ -367,7 +367,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     expect(ride.activityType).toBe("cycling");
   });
 
-  it("syncs HR stream into metric_stream", async () => {
+  it("syncs HR stream into sensor_sample", async () => {
     const hrValues = fakeHrValues(50, new Date("2026-03-01T10:00:00Z").getTime());
     server.use(...whoopHandlers([], { hrValues }));
     const provider = new WhoopProvider();
@@ -377,11 +377,10 @@ describe("WhoopProvider.sync() (integration)", () => {
 
     const rows = await ctx.db
       .select()
-      .from(metricStream)
-      .where(eq(metricStream.providerId, "whoop"));
+      .from(sensorSample)
+      .where(eq(sensorSample.providerId, "whoop"));
 
-    expect(rows.length).toBeGreaterThanOrEqual(50);
-    const withHr = rows.filter((r) => r.heartRate !== null);
+    const withHr = rows.filter((sample) => sample.channel === "heart_rate");
     expect(withHr.length).toBeGreaterThanOrEqual(50);
   });
 

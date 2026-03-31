@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity, dailyMetrics, healthEvent, metricStream, sleepSession } from "../db/schema.ts";
+import { activity, dailyMetrics, healthEvent, sensorSample, sleepSession } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import type {
@@ -389,13 +389,14 @@ describe("OuraProvider.sync() (integration)", () => {
     expect(session).toBeDefined();
     expect(session?.activityType).toBe("meditation");
 
-    // Verify heart rate → metricStream
+    // Verify heart rate → sensor_sample
     const hrRows = await ctx.db
       .select()
-      .from(metricStream)
-      .where(eq(metricStream.providerId, "oura"));
-    expect(hrRows.length).toBeGreaterThanOrEqual(1);
-    expect(hrRows[0]?.heartRate).toBe(62);
+      .from(sensorSample)
+      .where(eq(sensorSample.providerId, "oura"));
+    const heartRateSamples = hrRows.filter((sample) => sample.channel === "heart_rate");
+    expect(heartRateSamples.length).toBeGreaterThanOrEqual(1);
+    expect(heartRateSamples[0]?.scalar).toBe(62);
 
     // Verify healthEvent entries
     const eventRows = await ctx.db
