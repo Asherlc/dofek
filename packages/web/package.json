@@ -30,6 +30,7 @@
     "leaflet": "1.9.4",
     "posthog-js": "1.361.1",
     "react": "19.2.4",
+    "react-body-highlighter": "2.0.5",
     "react-dom": "19.2.4",
     "tailwindcss": "4.2.1",
     "zod": "3.25.76"
