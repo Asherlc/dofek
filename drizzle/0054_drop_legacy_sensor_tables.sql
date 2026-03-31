@@ -11,10 +11,14 @@ DROP PROCEDURE IF EXISTS drizzle.backfill_orientation_to_sensor_sample(interval)
 
 --> statement-breakpoint
 
+-- squawk-ignore ban-drop-table
 DROP TABLE IF EXISTS drizzle.sensor_sample_backfill_progress;
 
 --> statement-breakpoint
 
+-- squawk-ignore ban-drop-table
 DROP TABLE IF EXISTS fitness.metric_stream CASCADE;
+-- squawk-ignore ban-drop-table
 DROP TABLE IF EXISTS fitness.inertial_measurement_unit_sample CASCADE;
+-- squawk-ignore ban-drop-table
 DROP TABLE IF EXISTS fitness.orientation_sample CASCADE;
