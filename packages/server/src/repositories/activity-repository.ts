@@ -1,9 +1,9 @@
-import { mapHrZones, ZONE_BOUNDARIES_HRR } from "@dofek/zones/zones";
+import { mapHrZones } from "@dofek/zones/zones";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { timestampWindowStart } from "../lib/date-window.ts";
-import { heartRateZoneColumns, restingHeartRateLateral } from "../lib/sql-fragments.ts";
+import { restingHeartRateLateral } from "../lib/sql-fragments.ts";
 import { timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivityRow } from "../models/activity.ts";
 
@@ -250,15 +250,15 @@ export class ActivityRepository extends BaseRepository {
           CROSS JOIN (VALUES (1), (2), (3), (4), (5)) AS z(zone)
           LEFT JOIN hr_samples hs ON
             CASE z.zone
-              WHEN 1 THEN hs.heart_rate >= p.resting_hr + (p.max_hr - p.resting_hr) * ${ZONE_BOUNDARIES_HRR[0]}
-                         AND hs.heart_rate < p.resting_hr + (p.max_hr - p.resting_hr) * ${ZONE_BOUNDARIES_HRR[1]}
-              WHEN 2 THEN hs.heart_rate >= p.resting_hr + (p.max_hr - p.resting_hr) * ${ZONE_BOUNDARIES_HRR[1]}
-                         AND hs.heart_rate < p.resting_hr + (p.max_hr - p.resting_hr) * ${ZONE_BOUNDARIES_HRR[2]}
-              WHEN 3 THEN hs.heart_rate >= p.resting_hr + (p.max_hr - p.resting_hr) * ${ZONE_BOUNDARIES_HRR[2]}
-                         AND hs.heart_rate < p.resting_hr + (p.max_hr - p.resting_hr) * ${ZONE_BOUNDARIES_HRR[3]}
-              WHEN 4 THEN hs.heart_rate >= p.resting_hr + (p.max_hr - p.resting_hr) * ${ZONE_BOUNDARIES_HRR[3]}
-                         AND hs.heart_rate < p.resting_hr + (p.max_hr - p.resting_hr) * ${ZONE_BOUNDARIES_HRR[4]}
-              WHEN 5 THEN hs.heart_rate >= p.resting_hr + (p.max_hr - p.resting_hr) * ${ZONE_BOUNDARIES_HRR[4]}
+              WHEN 1 THEN hs.heart_rate >= p.resting_hr + (p.max_hr - p.resting_hr) * 0.5
+                         AND hs.heart_rate < p.resting_hr + (p.max_hr - p.resting_hr) * 0.6
+              WHEN 2 THEN hs.heart_rate >= p.resting_hr + (p.max_hr - p.resting_hr) * 0.6
+                         AND hs.heart_rate < p.resting_hr + (p.max_hr - p.resting_hr) * 0.7
+              WHEN 3 THEN hs.heart_rate >= p.resting_hr + (p.max_hr - p.resting_hr) * 0.7
+                         AND hs.heart_rate < p.resting_hr + (p.max_hr - p.resting_hr) * 0.8
+              WHEN 4 THEN hs.heart_rate >= p.resting_hr + (p.max_hr - p.resting_hr) * 0.8
+                         AND hs.heart_rate < p.resting_hr + (p.max_hr - p.resting_hr) * 0.9
+              WHEN 5 THEN hs.heart_rate >= p.resting_hr + (p.max_hr - p.resting_hr) * 0.9
             END
           GROUP BY z.zone
           ORDER BY z.zone`,
