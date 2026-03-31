@@ -213,11 +213,12 @@ describe("Data Export", () => {
     expect(activities).toHaveLength(1);
     expect(activities[0]).toMatchObject({ name: "Morning Ride", raw: { source: "test" } });
 
-    // Verify metric streams contain data
+    // Verify metric streams contain data (sensor_sample has per-channel rows)
     const metricStreamsJson = await readZipFile(zip, "metric-streams.json");
     const metricStreams: Array<Record<string, unknown>> = JSON.parse(metricStreamsJson);
-    expect(metricStreams).toHaveLength(1);
-    expect(metricStreams[0]).toMatchObject({ heart_rate: 145 });
+    expect(metricStreams.length).toBeGreaterThanOrEqual(1);
+    const hrRow = metricStreams.find((r) => r.channel === "heart_rate");
+    expect(hrRow).toMatchObject({ channel: "heart_rate", scalar: 145 });
 
     // Verify metadata
     const metadataJson = await readZipFile(zip, "export-metadata.json");

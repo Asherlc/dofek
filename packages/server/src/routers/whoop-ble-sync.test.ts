@@ -161,8 +161,8 @@ describe("whoopBleSyncRouter", () => {
         ],
       });
 
-      // Should have 2 execute calls: ensure provider + metric_stream (no orientation)
-      expect(mockDb.execute).toHaveBeenCalledTimes(2);
+      // 4 calls: ensure provider + metric_stream + HR sensor_sample + orientation sensor_sample
+      expect(mockDb.execute).toHaveBeenCalledTimes(4);
     });
 
     it("inserts orientation when only quaternionX is non-zero", async () => {
@@ -181,8 +181,8 @@ describe("whoopBleSyncRouter", () => {
         ],
       });
 
-      // 3 calls: ensure provider + metric_stream + orientation_sample
-      expect(mockDb.execute).toHaveBeenCalledTimes(3);
+      // 5 calls: ensure provider + metric_stream + HR sensor_sample + orientation_sample + orientation sensor_sample
+      expect(mockDb.execute).toHaveBeenCalledTimes(5);
     });
 
     it("inserts orientation when only quaternionY is non-zero", async () => {
@@ -201,7 +201,7 @@ describe("whoopBleSyncRouter", () => {
         ],
       });
 
-      expect(mockDb.execute).toHaveBeenCalledTimes(3);
+      expect(mockDb.execute).toHaveBeenCalledTimes(5);
     });
 
     it("inserts orientation when only quaternionZ is non-zero", async () => {
@@ -220,7 +220,7 @@ describe("whoopBleSyncRouter", () => {
         ],
       });
 
-      expect(mockDb.execute).toHaveBeenCalledTimes(3);
+      expect(mockDb.execute).toHaveBeenCalledTimes(5);
     });
 
     it("logs timestamps and sample count on successful push", async () => {

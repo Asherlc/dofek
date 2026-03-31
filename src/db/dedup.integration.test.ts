@@ -446,6 +446,15 @@ describe("Deduplication materialized views", () => {
       },
     ]);
 
+    // Dual-seed sensor_sample (activity_summary reads from here)
+    await ctx.db.execute(
+      sql`INSERT INTO fitness.sensor_sample (recorded_at, provider_id, source_type, channel, activity_id, scalar) VALUES
+        ('2026-03-05T10:00:00Z', 'wahoo', 'api', 'heart_rate', ${wahooActivity.id}, 140),
+        ('2026-03-05T10:00:00Z', 'wahoo', 'api', 'power', ${wahooActivity.id}, 200),
+        ('2026-03-05T10:00:06Z', 'wahoo', 'api', 'heart_rate', ${wahooActivity.id}, 145),
+        ('2026-03-05T10:00:06Z', 'wahoo', 'api', 'power', ${wahooActivity.id}, 210)`,
+    );
+
     await refreshDedupViews(ctx.db);
 
     const rows = await ctx.db.execute<ActivitySummaryRow>(
@@ -460,7 +469,7 @@ describe("Deduplication materialized views", () => {
     expect(summary?.max_hr).toBe(145);
     expect(Number(summary?.avg_power)).toBeCloseTo(205, 0);
     expect(summary?.max_power).toBe(210);
-    expect(summary?.sample_count).toBe(2);
+    expect(summary?.sample_count).toBe(4);
     expect(summary?.hr_sample_count).toBe(2);
     expect(summary?.power_sample_count).toBe(2);
   });
