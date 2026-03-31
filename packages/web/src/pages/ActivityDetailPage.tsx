@@ -5,7 +5,11 @@ import type { ActivityHrZone } from "@dofek/zones/zones";
 import { HEART_RATE_ZONE_COLORS } from "@dofek/zones/zones";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import type { ActivityDetail, StreamPoint } from "../../../server/src/routers/activity.ts";
+import type {
+  ActivityDetail,
+  StreamPoint,
+  StrengthExerciseDetail,
+} from "../../../server/src/routers/activity.ts";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { DofekChart } from "../components/DofekChart.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
@@ -37,6 +41,7 @@ export function ActivityDetailPage() {
   const detail = trpc.activity.byId.useQuery({ id });
   const stream = trpc.activity.stream.useQuery({ id, maxPoints: 500 });
   const hrZones = trpc.activity.hrZones.useQuery({ id });
+  const strengthExercises = trpc.activity.strengthExercises.useQuery({ id });
 
   if (detail.isLoading) {
     return (
@@ -107,6 +112,15 @@ export function ActivityDetailPage() {
             loading={stream.isLoading}
             units={units}
           />
+        </Section>
+      )}
+
+      {(strengthExercises.data?.length ?? 0) > 0 && (
+        <Section
+          title="Exercises"
+          description="Exercises performed during this strength workout, with details for each set."
+        >
+          <StrengthExerciseBreakdown exercises={strengthExercises.data ?? []} units={units} />
         </Section>
       )}
 
@@ -650,6 +664,86 @@ function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: bo
   };
 
   return <DofekChart option={option} height={200} />;
+}
+
+function StrengthExerciseBreakdown({
+  exercises,
+  units,
+}: {
+  exercises: StrengthExerciseDetail[];
+  units: UnitConverter;
+}) {
+  return (
+    <div className="space-y-4">
+      {exercises.map((exercise) => {
+        const hasWeight = exercise.sets.some((set) => set.weightKg != null);
+        const hasReps = exercise.sets.some((set) => set.reps != null);
+        const hasDuration = exercise.sets.some((set) => set.durationSeconds != null);
+        const hasRpe = exercise.sets.some((set) => set.rpe != null);
+
+        return (
+          <div key={exercise.exerciseIndex}>
+            <div className="flex items-baseline gap-2 mb-2">
+              <h3 className="text-sm font-medium text-foreground">{exercise.exerciseName}</h3>
+              {exercise.equipment && (
+                <span className="text-xs text-subtle bg-accent/10 px-1.5 py-0.5 rounded">
+                  {exercise.equipment.toLowerCase().replace(/_/g, " ")}
+                </span>
+              )}
+              {exercise.muscleGroups?.map((group) => (
+                <span
+                  key={group}
+                  className="text-xs text-subtle bg-surface-hover px-1.5 py-0.5 rounded"
+                >
+                  {group.toLowerCase()}
+                </span>
+              ))}
+            </div>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs text-subtle border-b border-surface-hover">
+                  <th className="text-left py-1 pr-4 font-medium">Set</th>
+                  {hasWeight && (
+                    <th className="text-right py-1 px-4 font-medium">
+                      Weight ({units.weightLabel})
+                    </th>
+                  )}
+                  {hasReps && <th className="text-right py-1 px-4 font-medium">Reps</th>}
+                  {hasDuration && <th className="text-right py-1 px-4 font-medium">Duration</th>}
+                  {hasRpe && <th className="text-right py-1 pl-4 font-medium">Perceived Exertion (RPE)</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {exercise.sets.map((set) => (
+                  <tr key={set.setIndex} className="border-b border-surface-hover/50">
+                    <td className="py-1.5 pr-4 tabular-nums text-muted">{set.setIndex + 1}</td>
+                    {hasWeight && (
+                      <td className="text-right py-1.5 px-4 tabular-nums">
+                        {set.weightKg != null
+                          ? formatNumber(units.convertWeight(set.weightKg))
+                          : "—"}
+                      </td>
+                    )}
+                    {hasReps && (
+                      <td className="text-right py-1.5 px-4 tabular-nums">{set.reps ?? "—"}</td>
+                    )}
+                    {hasDuration && (
+                      <td className="text-right py-1.5 px-4 tabular-nums">
+                        {set.durationSeconds != null ? `${set.durationSeconds}s` : "—"}
+                      </td>
+                    )}
+                    {hasRpe && (
+                      <td className="text-right py-1.5 pl-4 tabular-nums">{set.rpe ?? "—"}</td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function Section({

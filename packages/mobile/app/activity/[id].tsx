@@ -1,4 +1,5 @@
 import { formatDurationRange, formatNumber } from "@dofek/format/format";
+import type { UnitConverter } from "@dofek/format/units";
 import { providerLabel } from "@dofek/providers/providers";
 import { activityMetricColors, statusColors } from "@dofek/scoring/colors";
 import { formatActivityTypeLabel } from "@dofek/training/training";
@@ -422,6 +423,162 @@ const statsStyles = StyleSheet.create({
   },
 });
 
+// ── Strength Exercise Breakdown ──
+
+interface StrengthExercise {
+  exerciseIndex: number;
+  exerciseName: string;
+  equipment: string | null;
+  muscleGroups: string[] | null;
+  sets: Array<{
+    setIndex: number;
+    weightKg: number | null;
+    reps: number | null;
+    durationSeconds: number | null;
+    rpe: number | null;
+  }>;
+}
+
+function ExerciseBreakdown({
+  exercises,
+  units,
+}: {
+  exercises: StrengthExercise[];
+  units: UnitConverter;
+}) {
+  return (
+    <View style={exerciseStyles.container}>
+      <ChartTitleWithTooltip
+        title="Exercises"
+        description="Exercises performed during this strength workout, with details for each set."
+        textStyle={chartStyles.title}
+      />
+      {exercises.map((exercise) => {
+        const hasWeight = exercise.sets.some((set) => set.weightKg != null);
+        const hasDuration = exercise.sets.some((set) => set.durationSeconds != null);
+
+        return (
+          <View
+            key={exercise.exerciseIndex}
+            style={exerciseStyles.exerciseCard}
+          >
+            <View style={exerciseStyles.exerciseHeader}>
+              <Text style={exerciseStyles.exerciseName}>{exercise.exerciseName}</Text>
+              {exercise.equipment && (
+                <View style={exerciseStyles.badge}>
+                  <Text style={exerciseStyles.badgeText}>
+                    {exercise.equipment.toLowerCase().replace(/_/g, " ")}
+                  </Text>
+                </View>
+              )}
+            </View>
+            {exercise.muscleGroups && exercise.muscleGroups.length > 0 && (
+              <View style={exerciseStyles.muscleGroupRow}>
+                {exercise.muscleGroups.map((group) => (
+                  <View key={group} style={exerciseStyles.muscleGroupBadge}>
+                    <Text style={exerciseStyles.muscleGroupText}>{group.toLowerCase()}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+            {exercise.sets.map((set) => (
+              <View key={set.setIndex} style={exerciseStyles.setRow}>
+                <Text style={exerciseStyles.setNumber}>{set.setIndex + 1}</Text>
+                {hasWeight && (
+                  <Text style={exerciseStyles.setValue}>
+                    {set.weightKg != null
+                      ? `${formatNumber(units.convertWeight(set.weightKg))} ${units.weightLabel}`
+                      : "—"}
+                  </Text>
+                )}
+                {set.reps != null && <Text style={exerciseStyles.setValue}>{set.reps} reps</Text>}
+                {hasDuration && set.durationSeconds != null && (
+                  <Text style={exerciseStyles.setValue}>{set.durationSeconds}s</Text>
+                )}
+                {set.rpe != null && <Text style={exerciseStyles.setRpe}>Perceived Exertion {set.rpe}</Text>}
+              </View>
+            ))}
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+const exerciseStyles = StyleSheet.create({
+  container: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 16,
+    gap: 12,
+  },
+  exerciseCard: {
+    gap: 6,
+  },
+  exerciseHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  exerciseName: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.text,
+  },
+  badge: {
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  badgeText: {
+    fontSize: 10,
+    color: colors.textTertiary,
+    textTransform: "capitalize",
+  },
+  muscleGroupRow: {
+    flexDirection: "row",
+    gap: 4,
+    marginBottom: 2,
+  },
+  muscleGroupBadge: {
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  muscleGroupText: {
+    fontSize: 10,
+    color: colors.textTertiary,
+  },
+  setRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 3,
+    paddingLeft: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.surfaceSecondary,
+  },
+  setNumber: {
+    fontSize: 12,
+    color: colors.textTertiary,
+    width: 18,
+    fontVariant: ["tabular-nums"],
+  },
+  setValue: {
+    fontSize: 13,
+    color: colors.text,
+    fontWeight: "500",
+    fontVariant: ["tabular-nums"],
+  },
+  setRpe: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontVariant: ["tabular-nums"],
+  },
+});
+
 // ── Main Screen ──
 
 export default function ActivityDetailScreen() {
@@ -456,6 +613,10 @@ export default function ActivityDetailScreen() {
   const detail = trpc.activity.byId.useQuery({ id: id ?? "" }, { enabled: !!id });
   const stream = trpc.activity.stream.useQuery({ id: id ?? "", maxPoints: 200 }, { enabled: !!id });
   const hrZones = trpc.activity.hrZones.useQuery({ id: id ?? "" }, { enabled: !!id });
+  const strengthExercises = trpc.activity.strengthExercises.useQuery(
+    { id: id ?? "" },
+    { enabled: !!id },
+  );
 
   if (detail.isLoading) {
     return (
@@ -596,6 +757,11 @@ export default function ActivityDetailScreen() {
 
       {/* Stats Grid */}
       {stats.length > 0 && <StatsGrid stats={stats} />}
+
+      {/* Strength Exercises */}
+      {(strengthExercises.data?.length ?? 0) > 0 && (
+        <ExerciseBreakdown exercises={strengthExercises.data ?? []} units={units} />
+      )}
 
       {/* Heart Rate Chart */}
       {hasHr && (

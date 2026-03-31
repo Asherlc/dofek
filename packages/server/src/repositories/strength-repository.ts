@@ -108,6 +108,54 @@ export class ProgressiveOverload {
   }
 }
 
+/** A single set within a strength exercise. */
+export interface SetDetail {
+  setIndex: number;
+  setType: string | null;
+  weightKg: number | null;
+  reps: number | null;
+  durationSeconds: number | null;
+  rpe: number | null;
+  notes: string | null;
+}
+
+/** An exercise with all its sets, for the activity detail view. */
+export class ExerciseWithSets {
+  readonly #exerciseIndex: number;
+  readonly #exerciseName: string;
+  readonly #equipment: string | null;
+  readonly #muscleGroups: string[] | null;
+  readonly #exerciseType: string | null;
+  readonly #sets: SetDetail[];
+
+  constructor(
+    exerciseIndex: number,
+    exerciseName: string,
+    equipment: string | null,
+    muscleGroups: string[] | null,
+    exerciseType: string | null,
+    sets: SetDetail[],
+  ) {
+    this.#exerciseIndex = exerciseIndex;
+    this.#exerciseName = exerciseName;
+    this.#equipment = equipment;
+    this.#muscleGroups = muscleGroups;
+    this.#exerciseType = exerciseType;
+    this.#sets = sets;
+  }
+
+  toDetail() {
+    return {
+      exerciseIndex: this.#exerciseIndex,
+      exerciseName: this.#exerciseName,
+      equipment: this.#equipment,
+      muscleGroups: this.#muscleGroups,
+      exerciseType: this.#exerciseType,
+      sets: this.#sets,
+    };
+  }
+}
+
 export interface WorkoutSummaryItemRow {
   date: string;
   name: string;
@@ -166,6 +214,21 @@ const overloadRowSchema = z.object({
   exercise_name: z.string(),
   week: dateStringSchema,
   weekly_volume: z.coerce.number(),
+});
+
+const exerciseSetRowSchema = z.object({
+  exercise_name: z.string(),
+  equipment: z.string().nullable(),
+  muscle_groups: z.array(z.string()).nullable(),
+  exercise_type: z.string().nullable(),
+  exercise_index: z.coerce.number(),
+  set_index: z.coerce.number(),
+  set_type: z.string().nullable(),
+  weight_kg: z.coerce.number().nullable(),
+  reps: z.coerce.number().nullable(),
+  duration_seconds: z.coerce.number().nullable(),
+  rpe: z.coerce.number().nullable(),
+  notes: z.string().nullable(),
 });
 
 const summaryRowSchema = z.object({
@@ -343,6 +406,85 @@ export class StrengthRepository {
     return Array.from(exerciseMap.entries())
       .filter(([, volumes]) => volumes.length >= 2)
       .map(([exerciseName, weeklyVolumes]) => new ProgressiveOverload(exerciseName, weeklyVolumes));
+  }
+
+  /** Exercises and sets for a single activity (joins via source_external_ids). */
+  async getExercisesForActivity(activityId: string): Promise<ExerciseWithSets[]> {
+    const rows = await executeWithSchema(
+      this.#db,
+      exerciseSetRowSchema,
+      sql`SELECT
+            e.name AS exercise_name,
+            e.equipment,
+            e.muscle_groups,
+            e.exercise_type,
+            ss.exercise_index,
+            ss.set_index,
+            ss.set_type,
+            ss.weight_kg,
+            ss.reps,
+            ss.duration_seconds,
+            ss.rpe,
+            ss.notes
+          FROM fitness.v_activity a
+          CROSS JOIN LATERAL jsonb_array_elements(
+            COALESCE(a.source_external_ids, '[]'::jsonb)
+          ) AS src
+          JOIN fitness.strength_workout sw
+            ON sw.provider_id = src->>'providerId'
+            AND sw.external_id = src->>'externalId'
+            AND sw.user_id = a.user_id
+          JOIN fitness.strength_set ss ON ss.workout_id = sw.id
+          JOIN fitness.exercise e ON e.id = ss.exercise_id
+          WHERE a.id = ${activityId}
+            AND a.user_id = ${this.#userId}
+          ORDER BY ss.exercise_index, ss.set_index`,
+    );
+
+    const exerciseMap = new Map<
+      number,
+      {
+        name: string;
+        equipment: string | null;
+        muscleGroups: string[] | null;
+        exerciseType: string | null;
+        sets: SetDetail[];
+      }
+    >();
+    for (const row of rows) {
+      let exercise = exerciseMap.get(row.exercise_index);
+      if (!exercise) {
+        exercise = {
+          name: row.exercise_name,
+          equipment: row.equipment,
+          muscleGroups: row.muscle_groups,
+          exerciseType: row.exercise_type,
+          sets: [],
+        };
+        exerciseMap.set(row.exercise_index, exercise);
+      }
+      exercise.sets.push({
+        setIndex: row.set_index,
+        setType: row.set_type,
+        weightKg: row.weight_kg,
+        reps: row.reps,
+        durationSeconds: row.duration_seconds,
+        rpe: row.rpe,
+        notes: row.notes,
+      });
+    }
+
+    return Array.from(exerciseMap.entries()).map(
+      ([exerciseIndex, exercise]) =>
+        new ExerciseWithSets(
+          exerciseIndex,
+          exercise.name,
+          exercise.equipment,
+          exercise.muscleGroups,
+          exercise.exerciseType,
+          exercise.sets,
+        ),
+    );
   }
 
   /** Recent workout summaries. */

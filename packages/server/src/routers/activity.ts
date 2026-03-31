@@ -7,10 +7,21 @@ import {
   ActivityRepository,
   StreamPoint as StreamPointModel,
 } from "../repositories/activity-repository.ts";
+import { StrengthRepository } from "../repositories/strength-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 import { ensureProvidersRegistered } from "./sync.ts";
 
 export type { ActivityDetail, SourceLink } from "../models/activity.ts";
+export type { SetDetail as StrengthSetDetail } from "../repositories/strength-repository.ts";
+
+export interface StrengthExerciseDetail {
+  exerciseIndex: number;
+  exerciseName: string;
+  equipment: string | null;
+  muscleGroups: string[] | null;
+  exerciseType: string | null;
+  sets: import("../repositories/strength-repository.ts").SetDetail[];
+}
 
 export interface StreamPoint {
   recordedAt: string;
@@ -73,6 +84,14 @@ export const activityRouter = router({
     .query(async ({ ctx, input }): Promise<ActivityHrZones> => {
       const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone);
       return repo.getHrZones(input.id);
+    }),
+
+  strengthExercises: cachedProtectedQuery(CacheTTL.MEDIUM)
+    .input(z.object({ id: z.string().uuid() }))
+    .query(async ({ ctx, input }): Promise<StrengthExerciseDetail[]> => {
+      const repo = new StrengthRepository(ctx.db, ctx.userId, ctx.timezone);
+      const exercises = await repo.getExercisesForActivity(input.id);
+      return exercises.map((exercise) => exercise.toDetail());
     }),
 
   delete: protectedProcedure

@@ -80,6 +80,7 @@ vi.mock("../lib/trpc.ts", () => ({
       byId: { useQuery: () => ({ data: mockActivity, isLoading: false, error: null }) },
       stream: { useQuery: () => ({ data: mockStreamPoints, isLoading: false }) },
       hrZones: { useQuery: () => ({ data: [], isLoading: false }) },
+      strengthExercises: { useQuery: () => ({ data: [], isLoading: false }) },
       delete: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
     },
     useUtils: () => ({ activity: { list: { invalidate: vi.fn() } } }),
