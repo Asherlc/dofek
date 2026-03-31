@@ -642,6 +642,7 @@ export const metricStream = fitness.table(
     audioExposure: real("audio_exposure"), // dBASPL
     skinTemperature: real("skin_temperature"), // celsius
     electrodermalActivity: real("electrodermal_activity"), // microsiemens
+    rrIntervalMs: smallint("rr_interval_ms"), // milliseconds (beat-to-beat R-R interval from PPG)
     // Source device/app name (e.g., "Apple Watch", "Wahoo TICKR")
     sourceName: text("source_name"),
     // Complete raw record — every field, no data loss

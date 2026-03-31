@@ -9,11 +9,12 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import Animated, { Easing, FadeInUp } from "react-native-reanimated";
 import { ActivityCard } from "../components/ActivityCard";
 import { trpc } from "../lib/trpc";
 import { useUnitConverter } from "../lib/units";
 import { useRefresh } from "../lib/useRefresh";
-import { colors } from "../theme";
+import { colors, duration } from "../theme";
 import { ActivityRowSchema } from "../types/api";
 
 const PAGE_SIZE = 20;
@@ -56,21 +57,30 @@ export default function ActivitiesScreen() {
             tintColor={colors.textSecondary}
           />
         }
-        renderItem={({ item }) => (
-          <TouchableOpacity activeOpacity={0.7} onPress={() => router.push(`/activity/${item.id}`)}>
-            <ActivityCard
-              name={item.name ?? ""}
-              activityType={item.activity_type ?? ""}
-              startedAt={item.started_at}
-              endedAt={item.ended_at ?? null}
-              avgHr={item.avg_hr ?? null}
-              maxHr={item.max_hr ?? null}
-              avgPower={item.avg_power ?? null}
-              distanceKm={item.distance_meters ? item.distance_meters / 1000 : null}
-              calories={item.calories ?? null}
-              units={units}
-            />
-          </TouchableOpacity>
+        renderItem={({ item, index }) => (
+          <Animated.View
+            entering={FadeInUp.delay(index * 80)
+              .duration(duration.slow)
+              .easing(Easing.bezier(0.16, 1, 0.3, 1))}
+          >
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => router.push(`/activity/${item.id}`)}
+            >
+              <ActivityCard
+                name={item.name ?? ""}
+                activityType={item.activity_type ?? ""}
+                startedAt={item.started_at}
+                endedAt={item.ended_at ?? null}
+                avgHr={item.avg_hr ?? null}
+                maxHr={item.max_hr ?? null}
+                avgPower={item.avg_power ?? null}
+                distanceKm={item.distance_meters ? item.distance_meters / 1000 : null}
+                calories={item.calories ?? null}
+                units={units}
+              />
+            </TouchableOpacity>
+          </Animated.View>
         )}
         ListEmptyComponent={
           query.isLoading ? (

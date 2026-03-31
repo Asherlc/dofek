@@ -67,6 +67,7 @@ enum WhoopBleConstants {
     static let packetTypeCommand: UInt8 = 0x23
     static let packetTypeRealtimeData: UInt8 = 0x28
     static let packetTypeRealtimeRawData: UInt8 = 0x2B
+    static let packetTypeHistoricalData: UInt8 = 0x2F
     static let packetTypeRealtimeIMU: UInt8 = 0x33
     static let packetTypeHistoricalIMU: UInt8 = 0x34
 
@@ -75,6 +76,9 @@ enum WhoopBleConstants {
     // Contains HR, orientation quaternion, and optical/PPG data
 
     static let realtimeDataHeartRateOffset = 22
+    /// Optical/PPG data region: bytes 23-40 (18 bytes, partially understood)
+    static let realtimeDataOpticalStartOffset = 23
+    static let realtimeDataOpticalByteCount = 18
     static let realtimeDataQuaternionWOffset = 41
     static let realtimeDataQuaternionXOffset = 45
     static let realtimeDataQuaternionYOffset = 49
@@ -91,6 +95,7 @@ enum WhoopBleConstants {
     static let commandToggleImuModeHistorical: UInt8 = 0x69
     static let commandToggleImuMode: UInt8 = 0x6A
     static let commandToggleOpticalMode: UInt8 = 0x6C
+    static let commandSendR10R11Realtime: UInt8 = 0x3F
 
     /// CMD_FROM_STRAP characteristic (notify): suffix 0003
     static func cmdFromStrapUUID(forService serviceUUID: CBUUID) -> CBUUID {

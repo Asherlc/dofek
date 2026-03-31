@@ -198,6 +198,7 @@ vi.mock("react-native-svg", () => {
     SvgXml: svgComponent("SvgXml"),
     Circle: svgComponent("Circle"),
     Line: svgComponent("Line"),
+    Polygon: svgComponent("Polygon"),
     Polyline: svgComponent("Polyline"),
     Rect: svgComponent("Rect"),
     Path: svgComponent("Path"),
@@ -216,14 +217,26 @@ vi.mock("react-native-reanimated", () => {
     __esModule: true,
     default: {
       createAnimatedComponent: (component: unknown) => component,
-      View: ({ children, entering, exiting, layout, style, ...props }: Record<string, unknown>) => {
+      View: ({
+        children,
+        entering,
+        exiting,
+        layout,
+        style,
+        testID,
+        ...props
+      }: Record<string, unknown>) => {
         // Strip reanimated-specific props and animated style objects
         const plainStyle = Array.isArray(style)
           ? Object.assign({}, ...style.map((s: unknown) => (typeof s === "object" && s ? s : {})))
           : typeof style === "object" && style
             ? style
             : undefined;
-        return React.createElement("div", { ...props, style: plainStyle }, children);
+        return React.createElement(
+          "div",
+          { ...props, style: plainStyle, "data-testid": testID },
+          children,
+        );
       },
     },
     useSharedValue: (initial: unknown) => ({ value: initial }),
@@ -231,6 +244,7 @@ vi.mock("react-native-reanimated", () => {
     useAnimatedStyle: (updater: () => Record<string, unknown>) => updater(),
     withTiming: (toValue: unknown) => toValue,
     withDelay: (_delay: number, animation: unknown) => animation,
+    withRepeat: (animation: unknown) => animation,
     withSpring: (toValue: unknown) => toValue,
     withCallback: (_callback: unknown, animation: unknown) => animation,
     Easing: {

@@ -1,6 +1,21 @@
 import XCTest
 @testable import WhoopBleLib
 
+extension Data {
+    init?(hexString: String) {
+        let len = hexString.count / 2
+        var data = Data(capacity: len)
+        var index = hexString.startIndex
+        for _ in 0..<len {
+            let nextIndex = hexString.index(index, offsetBy: 2)
+            guard let byte = UInt8(hexString[index..<nextIndex], radix: 16) else { return nil }
+            data.append(byte)
+            index = nextIndex
+        }
+        self = data
+    }
+}
+
 final class WhoopBleFrameParserTests: XCTestCase {
 
     // MARK: - Helpers
@@ -415,6 +430,79 @@ final class WhoopBleFrameParserTests: XCTestCase {
         let sample = WhoopBleFrameParser.extractRealtimeData(from: frame)
         XCTAssertNotNil(sample)
         XCTAssertEqual(sample?.heartRate, 90)
+    }
+
+    // MARK: - Optical/PPG byte extraction from 0x28 packets
+
+    func testExtractRealtimeDataIncludesOpticalBytes() {
+        var payload = buildRealtimeDataPayload(heartRate: 72, qW: 1.0, qX: 0.0, qY: 0.0, qZ: 0.0)
+
+        // Write known pattern into optical bytes (offsets 23-40)
+        let opticalStart = WhoopBleConstants.realtimeDataOpticalStartOffset
+        for i in 0..<WhoopBleConstants.realtimeDataOpticalByteCount {
+            payload[opticalStart + i] = UInt8(0xA0 + i)
+        }
+
+        let frame = WhoopFrame(
+            packetType: WhoopBleConstants.packetTypeRealtimeData,
+            recordType: 0, dataTimestamp: 1000, subSeconds: 0,
+            payload: payload
+        )
+
+        let sample = WhoopBleFrameParser.extractRealtimeData(from: frame)
+        XCTAssertNotNil(sample)
+        XCTAssertEqual(sample!.opticalBytes.count, WhoopBleConstants.realtimeDataOpticalByteCount)
+        XCTAssertEqual(sample!.opticalBytes[0], 0xA0)
+        XCTAssertEqual(sample!.opticalBytes[17], 0xB1)
+    }
+
+    func testExtractRealtimeDataFromCompactPacket() {
+        // Real 0x28 compact packet from PacketLogger capture (24-byte payload)
+        // HR=60 bpm, PPG value=0x03b0=944
+        let frameHex = "aa011800010022e128021d45c9690a373c01b00300000000000001000655e2c5"
+        let frameData = Data(hexString: frameHex)!
+        let frame = WhoopBleFrameParser.parseFrame(frameData)
+        XCTAssertNotNil(frame)
+        XCTAssertEqual(frame?.packetType, 0x28)
+
+        let sample = WhoopBleFrameParser.extractRealtimeData(from: frame!)
+        XCTAssertNotNil(sample)
+        XCTAssertEqual(sample?.heartRate, 60) // byte 8 of payload = 0x3c = 60
+    }
+
+    func testExtractRealtimeDataFromCompactPacketWithDifferentHR() {
+        // Second packet from capture: HR=61 bpm (byte 8 = 0x3d)
+        let frameHex = "aa011800010022e128021f45c9690a373d01ae030000000000000100b1c3f462"
+        let frameData = Data(hexString: frameHex)!
+        let frame = WhoopBleFrameParser.parseFrame(frameData)!
+        let sample = WhoopBleFrameParser.extractRealtimeData(from: frame)
+        XCTAssertNotNil(sample)
+        XCTAssertEqual(sample?.heartRate, 61)
+    }
+
+    func testExtractRealtimeDataFromCompactPacketZeroHR() {
+        // Packet 6 from capture: HR=62, flag=0x00 (no valid reading for PPG)
+        let frameHex = "aa011800010022e128022245c9690a373e0000000000000000000100e5e3b6da"
+        let frameData = Data(hexString: frameHex)!
+        let frame = WhoopBleFrameParser.parseFrame(frameData)!
+        let sample = WhoopBleFrameParser.extractRealtimeData(from: frame)
+        XCTAssertNotNil(sample)
+        XCTAssertEqual(sample?.heartRate, 62) // byte 8 = 0x3e = 62
+    }
+
+    func testExtractRealtimeDataOpticalBytesAllZeroWhenEmpty() {
+        // Default payload has zeros in the optical region
+        let payload = buildRealtimeDataPayload(heartRate: 65, qW: 1.0, qX: 0.0, qY: 0.0, qZ: 0.0)
+        let frame = WhoopFrame(
+            packetType: WhoopBleConstants.packetTypeRealtimeData,
+            recordType: 0, dataTimestamp: 1000, subSeconds: 0,
+            payload: payload
+        )
+
+        let sample = WhoopBleFrameParser.extractRealtimeData(from: frame)
+        XCTAssertNotNil(sample)
+        XCTAssertEqual(sample!.opticalBytes.count, WhoopBleConstants.realtimeDataOpticalByteCount)
+        XCTAssertTrue(sample!.opticalBytes.allSatisfy { $0 == 0 })
     }
 
     func testExtractRealtimeDataFromFullFrame() {

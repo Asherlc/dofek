@@ -158,8 +158,8 @@ function SleepRing({ performance }: { performance: SleepPerformanceInfo }) {
 function RingSkeleton() {
   return (
     <div className="flex flex-col items-center gap-2">
-      <div className="w-[140px] h-[140px] rounded-full bg-skeleton animate-pulse" />
-      <div className="w-16 h-5 rounded-full bg-skeleton animate-pulse" />
+      <div className="w-[140px] h-[140px] rounded-full shimmer" />
+      <div className="w-16 h-5 rounded-full shimmer" />
     </div>
   );
 }

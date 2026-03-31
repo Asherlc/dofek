@@ -41,20 +41,18 @@ function parseStatements(content: string): Array<string> {
 }
 
 /**
- * Run pending migrations from the drizzle/ directory, then recreate materialized
- * views from their canonical definitions in drizzle/_views/.
+ * Run pending migrations from the drizzle/ directory.
  *
  * Safe to call on every startup — skips already-applied migrations.
  * Uses a Postgres advisory lock to prevent races when multiple containers start simultaneously.
  *
- * Materialized views (v_activity, activity_summary) are always recreated from
- * canonical SQL files in drizzle/_views/ rather than being managed by migrations.
- * This prevents conflicts when concurrent PRs both need to change a view —
- * they edit the same file, creating a Git merge conflict that must be resolved.
+ * Materialized view synchronization is handled separately by `syncMaterializedViews()`
+ * in `sync-views.ts`, which only recreates views whose definitions have changed.
+ * This avoids the multi-minute downtime window that unconditional view recreation causes
+ * when the API server is already serving traffic during background migrations.
  */
 export async function runMigrations(databaseUrl: string, migrationsDir?: string): Promise<number> {
   const dir = migrationsDir ?? resolve(import.meta.dirname, "../../drizzle");
-  const viewsDir = join(dir, "_views");
   const sql = postgres(databaseUrl);
 
   try {
@@ -127,13 +125,6 @@ export async function runMigrations(databaseUrl: string, migrationsDir?: string)
       logger.info(`[migrate] Applied ${count} migration(s)`);
     }
 
-    // Recreate materialized views from canonical definitions.
-    // Views are always dropped and recreated to ensure they match
-    // the canonical SQL — this is safe because views contain no unique data.
-    if (existsSync(viewsDir)) {
-      await recreateViews(sql, viewsDir);
-    }
-
     return count;
   } finally {
     await sql`SELECT pg_advisory_unlock(${MIGRATION_LOCK_KEY})`.catch((error: unknown) => {
@@ -141,46 +132,4 @@ export async function runMigrations(databaseUrl: string, migrationsDir?: string)
     });
     await sql.end();
   }
-}
-
-/**
- * Drop and recreate materialized views from canonical SQL files in drizzle/_views/.
- * Files are named with numeric prefixes for dependency ordering (e.g., 01_v_activity.sql
- * before 02_activity_summary.sql). All existing materialized views in the fitness schema
- * are dropped before recreation to avoid dependency issues.
- */
-async function recreateViews(sql: postgres.Sql, viewsDir: string): Promise<void> {
-  const viewFiles = readdirSync(viewsDir)
-    .filter((f) => f.endsWith(".sql"))
-    .sort();
-
-  if (viewFiles.length === 0) return;
-
-  logger.info(`[migrate] Recreating ${viewFiles.length} materialized view(s)`);
-
-  // Parse view files upfront so we know which views to drop.
-  // Only views with canonical definitions in _views/ are dropped and recreated —
-  // other materialized views (e.g. v_daily_metrics, v_sleep) are left untouched.
-  const parsedViews = viewFiles.map((file) => {
-    const content = readFileSync(join(viewsDir, file), "utf-8");
-    const match = content.match(/CREATE\s+MATERIALIZED\s+VIEW\s+fitness\.(\w+)/i);
-    return { file, content, viewName: match?.[1] };
-  });
-
-  // Drop managed views in reverse order (dependents first)
-  for (const { viewName } of [...parsedViews].reverse()) {
-    if (!viewName) continue;
-    logger.info(`[migrate] Dropping fitness.${viewName}`);
-    await sql.unsafe(`DROP MATERIALIZED VIEW IF EXISTS fitness.${viewName} CASCADE`);
-  }
-
-  // Create in filename order (01_v_activity before 02_activity_summary)
-  for (const { file, content } of parsedViews) {
-    logger.info(`[migrate] Creating from ${file}`);
-    for (const stmt of parseStatements(content)) {
-      await sql.unsafe(stmt);
-    }
-  }
-
-  logger.info("[migrate] Materialized views recreated");
 }

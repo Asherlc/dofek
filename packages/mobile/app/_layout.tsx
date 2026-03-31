@@ -37,6 +37,7 @@ export const rootStackScreenOptions = {
   headerBackTitle: "Back",
   headerBackTitleVisible: false,
   headerShadowVisible: false,
+  animation: "fade" as const,
 };
 
 /**
