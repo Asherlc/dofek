@@ -1,4 +1,4 @@
-import { surfaceColors } from "@dofek/scoring/colors";
+import { statusColors, surfaceColors } from "@dofek/scoring/colors";
 import type { WorkloadRatioRow } from "dofek-server/types";
 import {
   chartColors,
@@ -96,7 +96,7 @@ export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
         ],
         symbol: "none",
         lineStyle: { width: 0 },
-        areaStyle: { color: "#22c55e", opacity: 0.08, origin: "start" },
+        areaStyle: { color: statusColors.positive, opacity: 0.08, origin: "start" },
         z: 0,
         silent: true,
       },
@@ -127,7 +127,7 @@ export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
         ],
         symbol: "none",
         lineStyle: { width: 0 },
-        areaStyle: { color: "#eab308", opacity: 0.06, origin: "start" },
+        areaStyle: { color: statusColors.warning, opacity: 0.06, origin: "start" },
         z: 0,
         silent: true,
       },
@@ -142,7 +142,7 @@ export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
         ],
         symbol: "none",
         lineStyle: { width: 0 },
-        areaStyle: { color: "#eab308", opacity: 0.06, origin: "start" },
+        areaStyle: { color: statusColors.warning, opacity: 0.06, origin: "start" },
         z: 0,
         silent: true,
       },
@@ -158,7 +158,7 @@ export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
         ],
         symbol: "none",
         lineStyle: { width: 0 },
-        areaStyle: { color: "#ef4444", opacity: 0.06, origin: "start" },
+        areaStyle: { color: statusColors.danger, opacity: 0.06, origin: "start" },
         z: 0,
         silent: true,
       },

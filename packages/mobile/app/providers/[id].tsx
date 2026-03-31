@@ -7,6 +7,7 @@ import {
   WHOOP_WEAR_LOCATIONS,
   type WhoopWearLocation,
 } from "@dofek/providers/whoop";
+import { statusColors } from "@dofek/scoring/colors";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import {
@@ -1185,6 +1186,6 @@ const styles = StyleSheet.create({
   disconnectButtonText: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#ef4444",
+    color: statusColors.danger,
   },
 });

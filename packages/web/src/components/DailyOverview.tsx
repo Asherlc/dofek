@@ -1,4 +1,4 @@
-import { StrainScore, scoreColor, scoreLabel } from "@dofek/scoring/scoring";
+import { StrainScore, scoreColor, scoreLabel, sleepTierColor } from "@dofek/scoring/scoring";
 import type { ReadinessRow, SleepPerformanceInfo, WorkloadRatioResult } from "dofek-server/types";
 import { useEffect, useState } from "react";
 import { useCountUp } from "../hooks/useCountUp.ts";
@@ -127,8 +127,7 @@ function SleepRing({ performance }: { performance: SleepPerformanceInfo }) {
   const { score, tier, actualMinutes } = performance;
   const clampedScore = Math.min(score, 100);
 
-  // Map tier to color (rendering logic)
-  const color = tier === "Excellent" ? "#22c55e" : tier === "Good" ? "#eab308" : "#ef4444";
+  const color = sleepTierColor(tier);
 
   const actualHours = Math.floor(actualMinutes / 60);
   const actualMins = Math.round(actualMinutes % 60);

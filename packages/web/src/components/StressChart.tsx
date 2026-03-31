@@ -1,3 +1,4 @@
+import { statusColors } from "@dofek/scoring/colors";
 import { StressScore, trendColor } from "@dofek/scoring/scoring";
 import type { StressResult } from "dofek-server/types";
 import { dofekAxis, dofekGrid, dofekLegend, dofekSeries, dofekTooltip } from "../lib/chartTheme.ts";
@@ -85,10 +86,10 @@ export function StressChart({ data, loading }: StressChartProps) {
     visualMap: {
       show: false,
       pieces: [
-        { lte: 0.5, color: "#22c55e" },
-        { gt: 0.5, lte: 1.5, color: "#eab308" },
-        { gt: 1.5, lte: 2.5, color: "#f97316" },
-        { gt: 2.5, color: "#ef4444" },
+        { lte: 0.5, color: statusColors.positive },
+        { gt: 0.5, lte: 1.5, color: statusColors.warning },
+        { gt: 1.5, lte: 2.5, color: statusColors.elevated },
+        { gt: 2.5, color: statusColors.danger },
       ],
       seriesIndex: 0,
     },

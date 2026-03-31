@@ -1,3 +1,4 @@
+import { activityMetricColors } from "@dofek/scoring/colors";
 import { chartColors, dofekAxis, dofekLegend, dofekTooltip } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
@@ -16,7 +17,7 @@ interface HrvBaselineChartProps {
 }
 
 const COLOR_HRV = chartColors.green;
-const COLOR_RESTING_HR = "#ef4444";
+const COLOR_RESTING_HR = activityMetricColors.heartRate;
 
 export function HrvBaselineChart({ data, loading }: HrvBaselineChartProps) {
   // Upper band: mean + SD (capped, used as the visible top)

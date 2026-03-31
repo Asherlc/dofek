@@ -20,7 +20,7 @@ interface PmcChartProps {
 
 /** Colors matching intervals.icu */
 const COLOR_FITNESS = chartColors.blue; // blue
-const COLOR_FATIGUE = "#8b5cf6"; // purple (intervals.icu uses purple, not pink)
+const COLOR_FATIGUE = chartColors.purple; // purple (intervals.icu uses purple, not pink)
 
 function ModelBadge({ model }: { model: TssModelInfo }) {
   if (model.type === "learned") {

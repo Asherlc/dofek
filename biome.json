@@ -6,7 +6,8 @@
     "./plugins/no-single-letter-variables.grit",
     "./plugins/no-private-keyword.grit",
     "./plugins/no-underscore-private.grit",
-    "./plugins/no-silent-catch.grit"
+    "./plugins/no-silent-catch.grit",
+    "./plugins/no-hardcoded-colors.grit"
   ],
   "vcs": {
     "enabled": true,

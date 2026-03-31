@@ -1,3 +1,4 @@
+import { statusColors } from "@dofek/scoring/colors";
 import { describe, expect, it } from "vitest";
 import {
   classifyHeartRateZone,
@@ -22,14 +23,14 @@ describe("HEART_RATE_ZONES", () => {
       label: "Recovery",
       minPctHrr: 0.5,
       maxPctHrr: 0.6,
-      color: "#3b82f6",
+      color: statusColors.info,
     });
     expect(HEART_RATE_ZONES[4]).toEqual({
       zone: 5,
       label: "VO2max",
       minPctHrr: 0.9,
       maxPctHrr: 1.0,
-      color: "#ef4444",
+      color: statusColors.danger,
     });
   });
 
@@ -83,7 +84,7 @@ describe("heartRateZoneBoundaries", () => {
   it("includes labels and colors in output", () => {
     const boundaries = heartRateZoneBoundaries(180, 60);
     expect(boundaries[0]?.label).toBe("Recovery");
-    expect(boundaries[0]?.color).toBe("#3b82f6");
+    expect(boundaries[0]?.color).toBe(statusColors.info);
   });
 });
 
