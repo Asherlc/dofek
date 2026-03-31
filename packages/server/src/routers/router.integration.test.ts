@@ -133,15 +133,16 @@ describe("Router coverage", () => {
     // ── Strength workouts with exercises and sets ──
     // Create exercises
     const exerciseResults = [];
-    for (const [name, group] of [
-      ["Bench Press", "chest"],
-      ["Squat", "legs"],
-      ["Deadlift", "back"],
-    ]) {
+    for (const [name, groups] of [
+      ["Bench Press", ["chest", "triceps"]],
+      ["Squat", ["legs"]],
+      ["Deadlift", ["back"]],
+    ] as const) {
+      const groupsLiteral = `{${groups.join(",")}}`;
       const result = await testCtx.db.execute<{ id: string }>(
-        sql`INSERT INTO fitness.exercise (name, muscle_group, equipment)
-            VALUES (${name}, ${group}, 'barbell')
-            ON CONFLICT (name, equipment) DO UPDATE SET muscle_group = EXCLUDED.muscle_group
+        sql`INSERT INTO fitness.exercise (name, muscle_groups, equipment)
+            VALUES (${name}, ${groupsLiteral}::text[], 'barbell')
+            ON CONFLICT (name, equipment) DO UPDATE SET muscle_groups = EXCLUDED.muscle_groups
             RETURNING id`,
       );
       exerciseResults.push({
@@ -692,6 +693,7 @@ describe("Router coverage", () => {
 
       const groups = result.map((r) => r.muscleGroup);
       expect(groups).toContain("chest");
+      expect(groups).toContain("triceps");
       expect(groups).toContain("legs");
       expect(groups).toContain("back");
 

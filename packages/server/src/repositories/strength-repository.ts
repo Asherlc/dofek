@@ -289,17 +289,18 @@ export class StrengthRepository {
       this.#db,
       muscleGroupRowSchema,
       sql`SELECT
-            e.muscle_group,
+            mg AS muscle_group,
             date_trunc('week', (sw.started_at AT TIME ZONE ${this.#timezone})::date)::date::text AS week,
             COUNT(ss.id)::int AS sets
           FROM fitness.strength_set ss
           JOIN fitness.strength_workout sw ON sw.id = ss.workout_id
           JOIN fitness.exercise e ON e.id = ss.exercise_id
+          CROSS JOIN LATERAL unnest(e.muscle_groups) AS mg
           WHERE sw.user_id = ${this.#userId}
             AND sw.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-            AND e.muscle_group IS NOT NULL
-          GROUP BY e.muscle_group, 2
-          ORDER BY e.muscle_group, week`,
+            AND e.muscle_groups IS NOT NULL
+          GROUP BY mg, 2
+          ORDER BY mg, week`,
     );
 
     const groupMap = new Map<string, MuscleGroupWeekRow[]>();

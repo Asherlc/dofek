@@ -379,14 +379,15 @@ export class TrainingRepository {
       this.#db,
       muscleFreshnessSchema,
       sql`SELECT
-          e.muscle_group,
+          mg AS muscle_group,
           MAX((sw.started_at AT TIME ZONE ${this.#timezone})::date)::text AS last_trained_date
         FROM fitness.strength_set ss
         JOIN fitness.strength_workout sw ON sw.id = ss.workout_id
         JOIN fitness.exercise e ON e.id = ss.exercise_id
+        CROSS JOIN LATERAL unnest(e.muscle_groups) AS mg
         WHERE sw.user_id = ${this.#userId}
-          AND e.muscle_group IS NOT NULL
-        GROUP BY e.muscle_group`,
+          AND e.muscle_groups IS NOT NULL
+        GROUP BY mg`,
     );
   }
 
