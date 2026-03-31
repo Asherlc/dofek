@@ -25,6 +25,8 @@ import {
   sleepStage,
   userSettings,
 } from "../db/schema.ts";
+import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
+import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
@@ -444,32 +446,31 @@ export class GarminProvider implements SyncProvider {
 
           const activityUuid = activityRows[0]?.id;
 
-          await db
-            .insert(metricStream)
-            .values({
-              recordedAt: new Date(timestamp),
-              providerId: this.id,
-              activityId: activityUuid,
-              heartRate: sample.directHeartRate !== null ? sample.directHeartRate : undefined,
-              power: sample.directPower !== null ? sample.directPower : undefined,
-              cadence:
-                sample.directRunCadence !== null
-                  ? sample.directRunCadence
-                  : sample.directBikeCadence !== null
-                    ? sample.directBikeCadence
-                    : undefined,
-              speed: isIndoorCycling(parsed.activityType)
-                ? undefined
-                : sample.directSpeed !== null
-                  ? sample.directSpeed
+          const metricRow = {
+            recordedAt: new Date(timestamp),
+            providerId: this.id,
+            activityId: activityUuid,
+            heartRate: sample.directHeartRate !== null ? sample.directHeartRate : undefined,
+            power: sample.directPower !== null ? sample.directPower : undefined,
+            cadence:
+              sample.directRunCadence !== null
+                ? sample.directRunCadence
+                : sample.directBikeCadence !== null
+                  ? sample.directBikeCadence
                   : undefined,
-              altitude: sample.directElevation !== null ? sample.directElevation : undefined,
-              lat: sample.directLatitude !== null ? sample.directLatitude : undefined,
-              lng: sample.directLongitude !== null ? sample.directLongitude : undefined,
-              temperature:
-                sample.directAirTemperature !== null ? sample.directAirTemperature : undefined,
-            })
-            .onConflictDoNothing();
+            speed: isIndoorCycling(parsed.activityType)
+              ? undefined
+              : sample.directSpeed !== null
+                ? sample.directSpeed
+                : undefined,
+            altitude: sample.directElevation !== null ? sample.directElevation : undefined,
+            lat: sample.directLatitude !== null ? sample.directLatitude : undefined,
+            lng: sample.directLongitude !== null ? sample.directLongitude : undefined,
+            temperature:
+              sample.directAirTemperature !== null ? sample.directAirTemperature : undefined,
+          };
+          await db.insert(metricStream).values(metricRow).onConflictDoNothing();
+          await dualWriteToSensorSample(db, [metricRow], SOURCE_TYPE_API);
         }
       } catch {
         // Activity detail may not be available for all activities (manual entries, etc.)
@@ -633,18 +634,17 @@ export class GarminProvider implements SyncProvider {
         const raw = await client.getDailyStress(date);
         const parsed = parseStressTimeSeries(raw);
 
-        for (const sample of parsed.samples) {
-          await db
-            .insert(metricStream)
-            .values({
-              recordedAt: sample.timestamp,
-              providerId: this.id,
-              stress: sample.stressLevel,
-            })
-            .onConflictDoNothing();
-
-          count++;
+        const stressRows = parsed.samples.map((sample) => ({
+          recordedAt: sample.timestamp,
+          providerId: this.id,
+          stress: sample.stressLevel,
+        }));
+        for (const row of stressRows) {
+          await db.insert(metricStream).values(row).onConflictDoNothing();
         }
+        await dualWriteToSensorSample(db, stressRows, SOURCE_TYPE_API);
+
+        count += stressRows.length;
       } catch {
         // No stress data for this date
       }
@@ -665,18 +665,17 @@ export class GarminProvider implements SyncProvider {
         const raw = await client.getDailyHeartRate(date);
         const parsed = parseHeartRateTimeSeries(raw);
 
-        for (const sample of parsed.samples) {
-          await db
-            .insert(metricStream)
-            .values({
-              recordedAt: sample.timestamp,
-              providerId: this.id,
-              heartRate: sample.heartRate,
-            })
-            .onConflictDoNothing();
-
-          count++;
+        const hrRows = parsed.samples.map((sample) => ({
+          recordedAt: sample.timestamp,
+          providerId: this.id,
+          heartRate: sample.heartRate,
+        }));
+        for (const row of hrRows) {
+          await db.insert(metricStream).values(row).onConflictDoNothing();
         }
+        await dualWriteToSensorSample(db, hrRows, SOURCE_TYPE_API);
+
+        count += hrRows.length;
       } catch {
         // No heart rate data for this date
       }

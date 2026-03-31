@@ -625,6 +625,19 @@ export class HealthKitSyncRepository {
                 ${JSON.stringify({ uuid: sample.uuid, type: sample.type, sourceName: sample.sourceName })}::jsonb
               )`,
         );
+        // Dual-write to sensor_sample
+        await this.#db.execute(
+          sql`INSERT INTO fitness.sensor_sample (recorded_at, user_id, provider_id, device_id, source_type, channel, scalar)
+              VALUES (
+                ${sample.startDate}::timestamptz,
+                ${this.#userId},
+                ${PROVIDER_ID},
+                ${sample.sourceName ?? null},
+                ${"api"},
+                ${mapping.column},
+                ${metricValue}::real
+              )`,
+        );
         inserted++;
       }
     }
@@ -732,6 +745,39 @@ export class HealthKitSyncRepository {
                 AND ms.recorded_at <= a.ended_at
             )
           RETURNING ms.recorded_at`,
+    );
+
+    // Also link activity_id in sensor_sample
+    const sensorFilters = [
+      sql`ss.provider_id = ${PROVIDER_ID}`,
+      sql`ss.user_id = ${this.#userId}`,
+      sql`ss.activity_id IS NULL`,
+      sql`ss.channel = 'heart_rate'`,
+    ];
+    if (bounds?.startAt) sensorFilters.push(sql`ss.recorded_at >= ${bounds.startAt}::timestamptz`);
+    if (bounds?.endAt) sensorFilters.push(sql`ss.recorded_at <= ${bounds.endAt}::timestamptz`);
+
+    await this.#db.execute(
+      sql`UPDATE fitness.sensor_sample ss
+          SET activity_id = (
+            SELECT a.id
+            FROM fitness.activity a
+            WHERE a.user_id = ${this.#userId}
+              AND a.provider_id = ${PROVIDER_ID}
+              AND ss.recorded_at >= a.started_at
+              AND ss.recorded_at <= a.ended_at
+            ORDER BY a.started_at DESC
+            LIMIT 1
+          )
+          WHERE ${sql.join(sensorFilters, sql` AND `)}
+            AND EXISTS (
+              SELECT 1
+              FROM fitness.activity a
+              WHERE a.user_id = ${this.#userId}
+                AND a.provider_id = ${PROVIDER_ID}
+                AND ss.recorded_at >= a.started_at
+                AND ss.recorded_at <= a.ended_at
+            )`,
     );
 
     return Array.isArray(linked) ? linked.length : 0;
@@ -886,15 +932,15 @@ export class HealthKitSyncRepository {
             (recorded_at AT TIME ZONE ${timezone})::date AS date,
             provider_id,
             user_id,
-            source_name,
-            AVG(spo2) * 100 AS spo2_avg
-          FROM fitness.metric_stream
+            device_id AS source_name,
+            AVG(scalar) * 100 AS spo2_avg
+          FROM fitness.sensor_sample
           WHERE provider_id = ${PROVIDER_ID}
             AND user_id = ${this.#userId}
-            AND spo2 IS NOT NULL
+            AND channel = 'spo2'
             AND recorded_at >= ${bounds.startAt}::timestamptz
             AND recorded_at <= ${bounds.endAt}::timestamptz
-          GROUP BY 1, provider_id, user_id, source_name
+          GROUP BY 1, provider_id, user_id, device_id
           ON CONFLICT (date, provider_id, source_name) DO UPDATE SET
             spo2_avg = EXCLUDED.spo2_avg`,
     );
@@ -913,15 +959,15 @@ export class HealthKitSyncRepository {
             (recorded_at AT TIME ZONE ${timezone})::date AS date,
             provider_id,
             user_id,
-            source_name,
-            AVG(skin_temperature) AS skin_temp_c
-          FROM fitness.metric_stream
+            device_id AS source_name,
+            AVG(scalar) AS skin_temp_c
+          FROM fitness.sensor_sample
           WHERE provider_id = ${PROVIDER_ID}
             AND user_id = ${this.#userId}
-            AND skin_temperature IS NOT NULL
+            AND channel = 'skin_temperature'
             AND recorded_at >= ${bounds.startAt}::timestamptz
             AND recorded_at <= ${bounds.endAt}::timestamptz
-          GROUP BY 1, provider_id, user_id, source_name
+          GROUP BY 1, provider_id, user_id, device_id
           ON CONFLICT (date, provider_id, source_name) DO UPDATE SET
             skin_temp_c = EXCLUDED.skin_temp_c`,
     );

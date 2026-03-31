@@ -9,9 +9,9 @@ function formatNumber(n: number): string {
   return n.toLocaleString();
 }
 
-/** Map raw device_type from the server to a user-friendly label */
-function deviceLabel(deviceType: string, deviceId: string): string {
-  switch (deviceType) {
+/** Map device_id to a user-friendly label */
+function deviceLabel(deviceId: string): string {
+  switch (deviceId) {
     case "iphone":
       return "iPhone";
     case "apple_watch":
@@ -41,12 +41,9 @@ function SyncStatusPanel() {
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {data.map((device) => (
-        <div
-          key={`${device.deviceId}-${device.deviceType}`}
-          className="rounded-lg border border-border bg-card p-4"
-        >
+        <div key={device.deviceId} className="rounded-lg border border-border bg-card p-4">
           <div className="flex items-center gap-2">
-            <p className="text-sm font-medium">{deviceLabel(device.deviceType, device.deviceId)}</p>
+            <p className="text-sm font-medium">{deviceLabel(device.deviceId)}</p>
           </div>
           <p className="text-2xl font-bold">{formatNumber(device.sampleCount)} samples</p>
           <p className="text-xs text-muted-foreground">

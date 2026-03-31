@@ -39,9 +39,9 @@ export async function updateUserMaxHr(db: SyncDatabase): Promise<void> {
     SET max_hr = sub.observed_max_hr,
         updated_at = NOW()
     FROM (
-      SELECT user_id, MAX(heart_rate)::SMALLINT AS observed_max_hr
-      FROM fitness.metric_stream
-      WHERE heart_rate IS NOT NULL AND activity_id IS NOT NULL
+      SELECT user_id, MAX(scalar)::SMALLINT AS observed_max_hr
+      FROM fitness.sensor_sample
+      WHERE channel = 'heart_rate' AND activity_id IS NOT NULL
       GROUP BY user_id
     ) sub
     WHERE up.id = sub.user_id

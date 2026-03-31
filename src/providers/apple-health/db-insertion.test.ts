@@ -263,7 +263,8 @@ describe("upsertMetricStreamBatch", () => {
 
     const count = await upsertMetricStreamBatch(db, "p1", records);
     expect(count).toBe(1500);
-    expect(capture.values).toHaveLength(2);
+    // 2 metric_stream batches (1000 + 500) + 1 sensor_sample dual-write batch (1500 rows)
+    expect(capture.values).toHaveLength(3);
     expect(capture.values[0]).toHaveLength(1000);
     expect(capture.values[1]).toHaveLength(500);
   });
@@ -1116,8 +1117,8 @@ describe("upsertWorkoutBatch", () => {
 
     await upsertWorkoutBatch(db, "p1", [makeWorkout({ routeLocations: [loc] })]);
 
-    // First insert is the activity, second is the GPS data
-    expect(capture.values).toHaveLength(2);
+    // First insert is the activity, second is the GPS metric_stream data, third is the sensor_sample dual-write
+    expect(capture.values).toHaveLength(3);
     expect(capture.values[1]?.[0]).toMatchObject({
       providerId: "p1",
       activityId: "act-1",

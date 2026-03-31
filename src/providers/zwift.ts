@@ -8,6 +8,8 @@ import {
 } from "zwift-client";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity, dailyMetrics, metricStream } from "../db/schema.ts";
+import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
+import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
@@ -176,25 +178,23 @@ export class ZwiftProvider implements SyncProvider {
                     const fitnessData = await client.getFitnessData(detail.fitnessData.fullDataUrl);
                     const samples = parseZwiftFitnessData(fitnessData, parsed.startedAt);
                     const BATCH_SIZE = 500;
-                    for (let i = 0; i < samples.length; i += BATCH_SIZE) {
-                      const batch = samples.slice(i, i + BATCH_SIZE);
+                    const metricRows = samples.map((s) => ({
+                      providerId: this.id,
+                      recordedAt: s.recordedAt,
+                      heartRate: s.heartRate,
+                      power: s.power,
+                      cadence: s.cadence,
+                      altitude: s.altitude,
+                      lat: s.lat,
+                      lng: s.lng,
+                    }));
+                    for (let i = 0; i < metricRows.length; i += BATCH_SIZE) {
                       await db
                         .insert(metricStream)
-                        .values(
-                          batch.map((s) => ({
-                            providerId: this.id,
-                            recordedAt: s.recordedAt,
-                            heartRate: s.heartRate,
-                            power: s.power,
-                            cadence: s.cadence,
-                            // Virtual rides have no meaningful speed — omit it
-                            altitude: s.altitude,
-                            lat: s.lat,
-                            lng: s.lng,
-                          })),
-                        )
+                        .values(metricRows.slice(i, i + BATCH_SIZE))
                         .onConflictDoNothing();
                     }
+                    await dualWriteToSensorSample(db, metricRows, SOURCE_TYPE_API);
                   }
                 } catch (streamErr) {
                   // Non-fatal: log but continue

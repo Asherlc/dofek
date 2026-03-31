@@ -109,22 +109,33 @@ describe("Router coverage", () => {
       if (actId) {
         for (let batchStart = 0; batchStart < durationSec; batchStart += 100) {
           const batchEnd = Math.min(batchStart + 100, durationSec);
-          const values: string[] = [];
+          const metricValues: string[] = [];
+          const sensorValues: string[] = [];
           for (let s = batchStart; s < batchEnd; s++) {
             const hr = avgHr + Math.round(Math.sin(s * 0.01) * 8);
             const power = avgPower + Math.round(Math.cos(s * 0.01) * 20);
             const speed = 7.5 + Math.sin(s * 0.005) * 1.5;
-            values.push(
-              `(CURRENT_TIMESTAMP - ${daysAgo} * INTERVAL '1 day' + ${s} * INTERVAL '1 second',
-                '${DEFAULT_USER_ID}', '${actId}', 'test_provider',
+            const ts = `CURRENT_TIMESTAMP - ${daysAgo} * INTERVAL '1 day' + ${s} * INTERVAL '1 second'`;
+            metricValues.push(
+              `(${ts}, '${DEFAULT_USER_ID}', '${actId}', 'test_provider',
                 ${hr}, ${power}, ${speed})`,
+            );
+            sensorValues.push(
+              `(${ts}, '${DEFAULT_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${actId}', ${hr}, NULL)`,
+              `(${ts}, '${DEFAULT_USER_ID}', 'test_provider', NULL, 'api', 'power', '${actId}', ${power}, NULL)`,
+              `(${ts}, '${DEFAULT_USER_ID}', 'test_provider', NULL, 'api', 'speed', '${actId}', ${speed}, NULL)`,
             );
           }
           await testCtx.db.execute(
             sql.raw(`INSERT INTO fitness.metric_stream (
               recorded_at, user_id, activity_id, provider_id,
               heart_rate, power, speed
-            ) VALUES ${values.join(",\n")}`),
+            ) VALUES ${metricValues.join(",\n")}`),
+          );
+          await testCtx.db.execute(
+            sql.raw(`INSERT INTO fitness.sensor_sample (
+              recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
+            ) VALUES ${sensorValues.join(",\n")}`),
           );
         }
       }

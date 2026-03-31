@@ -165,17 +165,17 @@ export class TrainingRepository {
       sql`SELECT
             up.max_hr,
             date_trunc('week', (a.started_at AT TIME ZONE ${this.#timezone})::date)::date AS week,
-            COUNT(*) FILTER (WHERE ms.heart_rate < rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[0]}::numeric)::int AS zone1,
-            COUNT(*) FILTER (WHERE ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[0]}::numeric
-                              AND ms.heart_rate <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[1]}::numeric)::int AS zone2,
-            COUNT(*) FILTER (WHERE ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[1]}::numeric
-                              AND ms.heart_rate <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[2]}::numeric)::int AS zone3,
-            COUNT(*) FILTER (WHERE ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[2]}::numeric
-                              AND ms.heart_rate <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[3]}::numeric)::int AS zone4,
-            COUNT(*) FILTER (WHERE ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[3]}::numeric)::int AS zone5
+            COUNT(*) FILTER (WHERE ms.scalar < rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[0]}::numeric)::int AS zone1,
+            COUNT(*) FILTER (WHERE ms.scalar >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[0]}::numeric
+                              AND ms.scalar <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[1]}::numeric)::int AS zone2,
+            COUNT(*) FILTER (WHERE ms.scalar >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[1]}::numeric
+                              AND ms.scalar <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[2]}::numeric)::int AS zone3,
+            COUNT(*) FILTER (WHERE ms.scalar >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[2]}::numeric
+                              AND ms.scalar <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[3]}::numeric)::int AS zone4,
+            COUNT(*) FILTER (WHERE ms.scalar >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[3]}::numeric)::int AS zone5
           FROM fitness.user_profile up
           JOIN fitness.v_activity a ON a.user_id = up.id
-          JOIN fitness.metric_stream ms ON ms.activity_id = a.id
+          JOIN fitness.sensor_sample ms ON ms.activity_id = a.id AND ms.channel = 'heart_rate'
           JOIN LATERAL (
             SELECT dm.resting_hr
             FROM fitness.v_daily_metrics dm
@@ -190,7 +190,7 @@ export class TrainingRepository {
             AND ms.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
             AND ${enduranceTypeFilter("a")}
             AND up.max_hr IS NOT NULL
-            AND ms.heart_rate IS NOT NULL
+            AND ms.scalar IS NOT NULL
           GROUP BY up.max_hr, 2
           ORDER BY week`,
     );
@@ -424,17 +424,17 @@ export class TrainingRepository {
       this.#db,
       zoneTotalsSchema,
       sql`SELECT
-          COUNT(*) FILTER (WHERE ms.heart_rate < rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[0]}::numeric)::int AS zone1,
-          COUNT(*) FILTER (WHERE ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[0]}::numeric
-                            AND ms.heart_rate <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[1]}::numeric)::int AS zone2,
-          COUNT(*) FILTER (WHERE ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[1]}::numeric
-                            AND ms.heart_rate <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[2]}::numeric)::int AS zone3,
-          COUNT(*) FILTER (WHERE ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[2]}::numeric
-                            AND ms.heart_rate <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[3]}::numeric)::int AS zone4,
-          COUNT(*) FILTER (WHERE ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[3]}::numeric)::int AS zone5
+          COUNT(*) FILTER (WHERE ms.scalar < rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[0]}::numeric)::int AS zone1,
+          COUNT(*) FILTER (WHERE ms.scalar >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[0]}::numeric
+                            AND ms.scalar <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[1]}::numeric)::int AS zone2,
+          COUNT(*) FILTER (WHERE ms.scalar >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[1]}::numeric
+                            AND ms.scalar <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[2]}::numeric)::int AS zone3,
+          COUNT(*) FILTER (WHERE ms.scalar >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[2]}::numeric
+                            AND ms.scalar <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[3]}::numeric)::int AS zone4,
+          COUNT(*) FILTER (WHERE ms.scalar >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[3]}::numeric)::int AS zone5
         FROM fitness.user_profile up
         JOIN fitness.v_activity a ON a.user_id = up.id
-        JOIN fitness.metric_stream ms ON ms.activity_id = a.id
+        JOIN fitness.sensor_sample ms ON ms.activity_id = a.id AND ms.channel = 'heart_rate'
         JOIN LATERAL (
           SELECT dm.resting_hr
           FROM fitness.v_daily_metrics dm
@@ -449,7 +449,7 @@ export class TrainingRepository {
           AND ms.recorded_at > ${timestampWindowStart(endDate, 15)}
           AND ${enduranceTypeFilter("a")}
           AND up.max_hr IS NOT NULL
-          AND ms.heart_rate IS NOT NULL`,
+          AND ms.scalar IS NOT NULL`,
     );
   }
 
@@ -461,10 +461,10 @@ export class TrainingRepository {
           SELECT
             a.id,
             (a.started_at AT TIME ZONE ${this.#timezone})::date AS activity_date,
-            BOOL_OR(ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[2]}::numeric) AS had_high_intensity
+            BOOL_OR(ms.scalar >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[2]}::numeric) AS had_high_intensity
           FROM fitness.user_profile up
           JOIN fitness.v_activity a ON a.user_id = up.id
-          JOIN fitness.metric_stream ms ON ms.activity_id = a.id
+          JOIN fitness.sensor_sample ms ON ms.activity_id = a.id AND ms.channel = 'heart_rate'
           JOIN LATERAL (
             SELECT dm.resting_hr
             FROM fitness.v_daily_metrics dm
@@ -478,7 +478,7 @@ export class TrainingRepository {
             AND a.started_at > ${timestampWindowStart(endDate, 21)}
             AND ${enduranceTypeFilter("a")}
             AND up.max_hr IS NOT NULL
-            AND ms.heart_rate IS NOT NULL
+            AND ms.scalar IS NOT NULL
           GROUP BY a.id, 2
         )
         SELECT

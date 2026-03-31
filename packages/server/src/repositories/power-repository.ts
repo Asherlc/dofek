@@ -44,10 +44,10 @@ function powerCurveSamplesQuery(days: number, userId: string, timezone: string) 
                EXTRACT(EPOCH FROM MAX(ms.recorded_at) - MIN(ms.recorded_at))::numeric
                / NULLIF(COUNT(*) - 1, 0)
              )::int, 1) AS interval_s
-      FROM fitness.metric_stream ms
+      FROM fitness.sensor_sample ms
       JOIN fitness.v_activity a ON a.id = ms.activity_id
       WHERE a.user_id = ${userId}
-        AND ms.power IS NOT NULL
+        AND ms.channel = 'power'
         AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
         AND ms.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
         AND ${enduranceTypeFilter("a")}
@@ -56,11 +56,11 @@ function powerCurveSamplesQuery(days: number, userId: string, timezone: string) 
     )
     SELECT ms.activity_id,
            ai.activity_date,
-           COALESCE(ms.power, 0) AS power,
+           COALESCE(ms.scalar, 0) AS power,
            ai.interval_s
-    FROM fitness.metric_stream ms
+    FROM fitness.sensor_sample ms
     JOIN activity_info ai ON ai.activity_id = ms.activity_id
-    WHERE ms.power IS NOT NULL
+    WHERE ms.channel = 'power'
       AND ms.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
     ORDER BY ms.activity_id, ms.recorded_at
   `;
@@ -82,10 +82,11 @@ function normalizedPowerSamplesQuery(days: number, userId: string, timezone: str
                EXTRACT(EPOCH FROM MAX(ms.recorded_at) - MIN(ms.recorded_at))::numeric
                / NULLIF(COUNT(*) - 1, 0)
              )::int, 1) AS interval_s
-      FROM fitness.metric_stream ms
+      FROM fitness.sensor_sample ms
       JOIN fitness.v_activity a ON a.id = ms.activity_id
       WHERE a.user_id = ${userId}
-        AND ms.power > 0
+        AND ms.channel = 'power'
+        AND ms.scalar > 0
         AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
         AND ms.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
         AND ${enduranceTypeFilter("a")}
@@ -95,11 +96,12 @@ function normalizedPowerSamplesQuery(days: number, userId: string, timezone: str
     SELECT ms.activity_id,
            ai.activity_date,
            ai.activity_name,
-           ms.power,
+           ms.scalar AS power,
            ai.interval_s
-    FROM fitness.metric_stream ms
+    FROM fitness.sensor_sample ms
     JOIN activity_info ai ON ai.activity_id = ms.activity_id
-    WHERE ms.power > 0
+    WHERE ms.channel = 'power'
+      AND ms.scalar > 0
       AND ms.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
     ORDER BY ms.activity_id, ms.recorded_at
   `;
