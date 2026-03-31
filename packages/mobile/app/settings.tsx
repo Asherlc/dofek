@@ -40,6 +40,11 @@ const ExportStatusSchema = z.object({
   downloadUrl: z.string().optional(),
 });
 
+function formatLocalizedDateTime(date: Date | null | undefined): string {
+  if (!date) return "n/a";
+  return date.toLocaleString();
+}
+
 export default function SettingsScreen() {
   const auth = useAuth();
   const { width } = useWindowDimensions();
@@ -380,7 +385,7 @@ export default function SettingsScreen() {
                 {"\n"}
                 Runtime: {Updates.runtimeVersion ?? "unknown"}
                 {"\n"}
-                Created: {Updates.createdAt?.toISOString() ?? "n/a"}
+                Created: {formatLocalizedDateTime(Updates.createdAt)}
               </Text>
             </View>
           </View>
