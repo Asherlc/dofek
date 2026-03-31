@@ -84,6 +84,7 @@ vi.mock("dofek/db", () => ({
 }));
 
 import * as Sentry from "@sentry/node";
+import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { createDatabaseFromEnv } from "dofek/db";
 import express from "express";
 import { isAdmin } from "./auth/admin.ts";
@@ -323,6 +324,28 @@ describe("createApp HTTP routes", () => {
     it("handles requests to /api/trpc (middleware is mounted)", async () => {
       const res = await fetch(`${baseUrl}/api/trpc/nonexistent`);
       expect([200, 400, 404, 500]).toContain(res.status);
+    });
+
+    it("includes app and assets version headers in tRPC context", async () => {
+      const [middlewareOptions] = vi.mocked(createExpressMiddleware).mock.calls.at(-1) ?? [];
+      if (!middlewareOptions) {
+        throw new Error("Expected createExpressMiddleware to be called");
+      }
+
+      const context = await middlewareOptions.createContext({
+        req: {
+          headers: {
+            "x-timezone": "America/Los_Angeles",
+            "x-app-version": "2.3.4",
+            "x-assets-version": "update-abc123",
+          },
+        },
+        res: {},
+      });
+
+      expect(context.timezone).toBe("America/Los_Angeles");
+      expect(context.appVersion).toBe("2.3.4");
+      expect(context.assetsVersion).toBe("update-abc123");
     });
   });
 
