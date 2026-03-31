@@ -1483,6 +1483,10 @@ describe("OuraProvider.sync()", () => {
 
   it("syncs heart rate data", async () => {
     setupEnv();
+    // Pin Date.now() so the 30-day HR windowing creates exactly one window
+    const dateNowSpy = vi
+      .spyOn(Date, "now")
+      .mockReturnValue(new Date("2026-03-15T12:00:00Z").getTime());
     const hr1 = fakeHeartRate({ bpm: 72, timestamp: "2026-03-01T10:00:00+00:00" });
     const hr2 = fakeHeartRate({ bpm: 85, timestamp: "2026-03-01T10:05:00+00:00" });
     const mockFetch = createMockApiFetch({ heartRate: [hr1, hr2] });
@@ -1490,6 +1494,7 @@ describe("OuraProvider.sync()", () => {
     const db = createMockDb();
 
     const result = await provider.sync(db, new Date("2026-03-01"));
+    dateNowSpy.mockRestore();
 
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBeGreaterThanOrEqual(2);
