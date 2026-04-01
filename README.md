@@ -35,19 +35,18 @@ Provider-agnostic fitness and health data pipeline. Pulls data from various APIs
 └─────────────┘
 ```
 
-Each data source is a **provider plugin** that implements a simple interface. The sync runner orchestrates all enabled providers. Data lands in a `fitness` Postgres schema. The web dashboard provides sync controls, provider health monitoring, insights, and data exploration. A companion iOS app (Expo + React Native) provides native HealthKit integration and on-the-go access. Long-running sync jobs are processed by a BullMQ worker backed by Redis. Sync runs as a one-shot container triggered by a server cron job.
+Each data source is a **provider plugin** that implements a simple interface. The sync runner orchestrates all enabled providers. Data lands in a `fitness` Postgres schema. The web dashboard provides sync controls, provider health monitoring, insights, and data exploration. A companion iOS app (Expo + React Native) provides native HealthKit integration and on-the-go access. Long-running sync jobs are processed by BullMQ workers backed by Redis. In production, the `worker` container registers repeatable scheduled sync jobs in BullMQ; the `sync` mode remains available for manual one-shot runs.
 
 ## Quick Start
 
 ```bash
-# Start TimescaleDB
-docker compose up -d db
+# Start local infrastructure
+docker compose up -d db redis
 
 # Install dependencies
 pnpm install
 
-# Generate and run migrations
-pnpm generate
+# Run migrations
 pnpm migrate
 
 # Set up SOPS age key (see "Secrets" section below)
@@ -125,23 +124,24 @@ Tests use [Vitest](https://vitest.dev/). TDD is the standard workflow — write 
 
 ## Docker
 
-Two images built from a single multi-stage Dockerfile:
+Two images are built from a single multi-stage Dockerfile:
 
-| Image | Base | Contents | Size |
-|-------|------|----------|------|
-| `ghcr.io/asherlc/dofek:latest` | node:22-slim | Express API + sync runner + BullMQ worker | ~350MB |
-| `ghcr.io/asherlc/dofek-client:latest` | nginx:alpine | Vite static bundle | ~63MB |
+| Image | Base | Contents |
+|-------|------|----------|
+| `ghcr.io/asherlc/dofek:latest` | node:22-alpine | Express API + migrations + sync/worker entrypoints |
+| `ghcr.io/asherlc/dofek-client:latest` | nginx:alpine | Vite static bundle + nginx reverse proxy config |
 
 ### How it works
 
 ```
 Dockerfile (multi-stage)
-├── build stage    — pnpm install, vite build, pnpm deploy
-├── server target  — self-contained Node app (API + sync)
-└── client target  — Nginx serving static files + proxying API
+├── prod-deps      — production-only hoisted workspace install
+├── client-build   — full install + Vite build
+├── server target  — Node 22 runtime with TypeScript sources + entrypoint
+└── client target  — nginx serving static files + proxying API routes
 ```
 
-Uses `pnpm deploy --legacy` to create isolated, self-contained directories for each package with all dependencies (including workspace deps) resolved and flattened — no symlinks, no pnpm store. BuildKit cache mounts keep the pnpm store across builds.
+The server image copies the workspace source tree plus a production-only hoisted `node_modules`, then creates explicit symlinks for workspace packages so bare imports resolve at runtime. The client image is built from `packages/web/dist`. BuildKit cache mounts keep the pnpm store warm across builds. Production runs TypeScript directly on Node 22 with `--experimental-transform-types`; there is no separate server transpile step inside the container.
 
 ### Building locally
 
@@ -191,11 +191,12 @@ The `deploy/` directory contains everything needed to provision and run the prod
 ```
 deploy/
 ├── main.tf                       # Terraform — Hetzner server, firewall, SSH key
-├── cloud-init.yml                # Auto-installs Docker on first boot
+├── cloud-init.yml                # First-boot bootstrap: Docker, GHCR login, base compose files
 ├── docker-compose.yml            # Production stack (all services)
+├── docker-compose.hotfix.yml     # Runtime overlay for patch-mounted hotfix files
 ├── otel-collector-config.yaml    # OTel Collector — receives app logs/traces + tails Docker logs → Axiom
 ├── Caddyfile                     # Auto-HTTPS via Let's Encrypt (multiple domains)
-├── deploy-config/main.tf         # Terraform — pushes config updates to server via SSH
+├── deploy-config/main.tf         # Terraform — pushes compose/Caddy/collector/hotfix updates via SSH
 ├── dns/main.tf                   # Terraform — Cloudflare DNS for dofek.fit + dofek.live
 ├── terraform.tfvars.example      # Example config
 └── .gitignore                    # Excludes secrets and state
@@ -227,7 +228,7 @@ Internet → Caddy (auto-HTTPS :443, serves dofek.asherlc.com + dofek.fit + dofe
 | `sync` | ghcr.io/asherlc/dofek | Sync runner (provider data sync, one-shot) |
 | `redis` | redis:7-alpine | Job queue backend for BullMQ |
 | `db` | timescale/timescaledb:latest-pg16 | TimescaleDB (persistent volume) |
-| `db-backup` | postgres-backup-local | Daily pg_dump (7 daily, 4 weekly, 6 monthly) |
+| `db-backup` | prodrigestivill/postgres-backup-local | Daily pg_dump (7 daily, 4 weekly, 6 monthly) |
 | `collector` | otel/opentelemetry-collector-contrib | OTel Collector — receives app logs/traces + tails Docker container logs → Axiom |
 | `portainer` | portainer/portainer-ce:lts | Container management UI (portainer.dofek.asherlc.com) |
 | `watchtower` | containrrr/watchtower | Auto-pulls new images from GHCR every 5min with rolling restart |
@@ -263,24 +264,45 @@ Migrations run at two levels for reliability: a dedicated one-shot `migrate` con
 
 ### Deploying from scratch
 
-Cloud-init handles everything — Docker install, GHCR login, compose file setup, and starting the stack.
+`deploy/main.tf` provisions the Hetzner server and uses cloud-init to install Docker, log into GHCR, write `/opt/dofek/docker-compose.yml`, `/opt/dofek/Caddyfile`, and a minimal `/opt/dofek/.env`, then start the stack.
 
 ```bash
 cd deploy
 cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars with your Hetzner API token, SSH key, SOPS age key, and GHCR token
+# Edit terraform.tfvars with your Hetzner API token, SSH key, domain,
+# SOPS age key, and GHCR token
 terraform init
 terraform apply
 ```
 
-Then point DNS — create an A record for `dofek.asherlc.com` → the output `server_ip`. Caddy will auto-provision the TLS certificate.
+After the server exists:
+
+1. Add the required runtime vars to `/opt/dofek/.env`: `POSTGRES_PASSWORD`, `AXIOM_API_TOKEN`, `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and optionally `DOCKER_GID`.
+2. Run the deploy-config module once to push `otel-collector-config.yaml`, `docker-compose.hotfix.yml`, and the current patch-mounted files.
+3. Point DNS at the Hetzner IP (`terraform output -raw server_ip`). Caddy will provision TLS automatically.
+
+```bash
+cd deploy/deploy-config
+terraform init
+terraform apply -var="server_ip=$(cd .. && terraform output -raw server_ip)"
+```
 
 ### Updating server config files
 
-**Never SSH into the server to edit files directly.** All server config changes (`docker-compose.yml`, `Caddyfile`) go through Terraform via the `deploy/deploy-config` module:
+**Never SSH into the server to edit compose or proxy config directly.** All config-file changes go through the `deploy/deploy-config` module.
 
-1. Edit the file locally in `deploy/`
-2. Run `terraform apply` from `deploy/deploy-config/` — it detects file changes (via md5 hash), copies the updated files to the server via SSH, and runs `docker compose up -d --scale web=2 --scale client=2`
+`deploy-config` currently syncs:
+- `deploy/docker-compose.yml`
+- `deploy/docker-compose.hotfix.yml`
+- `deploy/Caddyfile`
+- `deploy/otel-collector-config.yaml`
+- the hotfix-mounted patch files under `src/`
+
+After copying those files, it runs:
+
+```bash
+cd /opt/dofek && docker compose -f docker-compose.yml -f docker-compose.hotfix.yml up -d --scale web=2 --scale client=2
+```
 
 ```bash
 cd deploy/deploy-config
@@ -325,7 +347,7 @@ ssh root@<SERVER_IP>
 
 ### Accessing logs
 
-**In-browser (easiest):** The Data Sources page has a "System Logs" panel that shows recent server logs from an in-memory ring buffer (last 500 entries). This is the fastest way to check OAuth errors, sync failures, etc.
+**In-browser (easiest):** The Data Sources page has a "System Logs" panel that shows the most recent server log entries from the in-memory ring buffer (currently queried at `limit=100`). This is the fastest way to check OAuth errors, sync failures, and recent provider activity.
 
 **Docker container logs (SSH):** The compose project is at `/opt/dofek`. Container names are prefixed with `dofek-`:
 
@@ -346,7 +368,7 @@ docker logs dofek-web-1 -f
 cd /opt/dofek && docker compose up -d web
 ```
 
-**Axiom (centralized):** All application logs and Docker container logs are shipped to [Axiom](https://axiom.co) via an OpenTelemetry Collector sidecar. The app uses Winston with an OTel SDK exporter; the collector also tails raw Docker JSON logs from the host filesystem. Two datasets: `dofek-app-logs` (Winston + Docker container logs) and `dofek-traces` (OTel HTTP spans). This is the most complete log source — it survives container restarts and includes structured metadata.
+**Axiom (centralized):** Application logs, traces, and Docker container logs are shipped to [Axiom](https://axiom.co) via the OpenTelemetry Collector sidecar. In the current collector config, logs and traces both land in `dofek-logs`, and metrics land in `dofek-metrics`. This is the most complete log source because it survives container restarts and preserves structured metadata.
 
 **Note:** The in-memory ring buffer and Docker container logs are still available for quick debugging, but Axiom is the primary log store.
 
@@ -374,7 +396,7 @@ There are two sources of environment variables for the production containers:
 
 1. **SOPS-encrypted `.env` (this repo)** — provider credentials (API keys, OAuth client IDs/secrets). Baked into the Docker image at build time. The entrypoint decrypts it at container startup using the age key.
 
-2. **`.env` on server (`/opt/dofek/.env`)** — deployment-specific vars: `SOPS_AGE_KEY`, plus any overrides. Loaded via `env_file` in the compose.
+2. **`.env` on server (`/opt/dofek/.env`)** — deployment/runtime vars used by Docker Compose interpolation and `env_file`: `SOPS_AGE_KEY`, `CADDY_DOMAIN`, `POSTGRES_PASSWORD`, `AXIOM_API_TOKEN`, `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, optional storage paths, and any host-specific overrides such as `DOCKER_GID`.
 
 The entrypoint merges both: compose `env_file` sets vars first, then `sops exec-env` adds decrypted provider credentials on top.
 
@@ -416,9 +438,9 @@ sops exec-file deploy/dns/terraform.tfvars '/opt/homebrew/bin/terraform -chdir=d
 
 ### Troubleshooting
 
-**Login page says "No identity providers configured"** — this usually means the API server (`web`) is down, not that providers are misconfigured. The login page silently shows this message when it can't reach `/api/auth/providers`. Check `docker ps` and `docker logs dofek-web-1`.
+**Login page says "No identity providers configured"** — this can mean either there are truly no configured login providers, or the API server (`web`) is unreachable and the frontend fell back to an empty `/api/auth/providers` result. Check `docker ps`, then inspect `docker logs dofek-web-1`.
 
-**If a provider appears grayed out** on the Data Sources page, it means its required env vars are missing. Check:
+**If a provider is missing from the Data Sources page** it usually means `validate()` is failing, so the provider is being filtered out entirely rather than shown disabled. Check:
 1. Are the vars in the repo's `.env`? → `sops .env` to verify/add them
 2. Is the age key set on the server? → check `/opt/dofek/.env`
 3. Is the container running the latest image? → `docker logs dofek-web-1` to check for SOPS errors
