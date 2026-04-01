@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../../db/index.ts";
+import { logger } from "../../logger.ts";
 import {
   buildSourceNameMap,
   defaultConsoleProgress,
@@ -324,7 +325,15 @@ function createRunImportMockDb() {
 
   return {
     db,
-    spies: { deleteFn, deleteWhere, insertFn, values, onConflictDoUpdate, onConflictDoNothing },
+    spies: {
+      deleteFn,
+      deleteWhere,
+      insertFn,
+      values,
+      onConflictDoUpdate,
+      onConflictDoNothing,
+      execute,
+    },
   };
 }
 
@@ -446,6 +455,24 @@ describe("runImport", () => {
     // Should have received at least one progress callback ending at 100
     expect(progressCalls.length).toBeGreaterThan(0);
     expect(progressCalls[progressCalls.length - 1]).toBe(100);
+  });
+
+  it("logs when it links imported heart-rate sensor rows to workouts", async () => {
+    const xmlPath = join(tmpDir, "linked-hr-import.xml");
+    writeFileSync(
+      xmlPath,
+      '<?xml version="1.0" encoding="UTF-8"?><HealthData locale="en_US"></HealthData>',
+      "utf8",
+    );
+    const { db, spies } = createRunImportMockDb();
+    spies.execute.mockResolvedValueOnce([{ recorded_at: "2024-06-15T10:00:00.000Z" }]);
+    const loggerInfoSpy = vi.spyOn(logger, "info").mockImplementation(() => logger);
+
+    await runImport(db, "apple_health", xmlPath, new Date("2024-01-01"));
+
+    expect(loggerInfoSpy).toHaveBeenCalledWith(
+      "[apple_health] Linked 1 heart-rate sensor rows to workouts after import",
+    );
   });
 });
 

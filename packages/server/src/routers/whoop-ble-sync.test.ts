@@ -165,6 +165,27 @@ describe("whoopBleSyncRouter", () => {
       expect(mockDb.execute).toHaveBeenCalledTimes(2);
     });
 
+    it("inserts rr interval samples when heart-rate samples include rrIntervalMs", async () => {
+      const trpcCaller = caller(ctx);
+      await trpcCaller.pushRealtimeData({
+        deviceId: "WHOOP Strap",
+        samples: [
+          {
+            timestamp: "2026-03-30T12:00:00.000Z",
+            heartRate: 72,
+            rrIntervalMs: 812,
+            quaternionW: 0.2,
+            quaternionX: 0.3,
+            quaternionY: 0.4,
+            quaternionZ: 0.5,
+          },
+        ],
+      });
+
+      // ensure provider + heart_rate + rr_interval_ms + orientation
+      expect(mockDb.execute).toHaveBeenCalledTimes(4);
+    });
+
     it("inserts orientation when only quaternionX is non-zero", async () => {
       const trpcCaller = caller(ctx);
       await trpcCaller.pushRealtimeData({

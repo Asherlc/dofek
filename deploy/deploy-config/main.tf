@@ -16,6 +16,7 @@ variable "server_ip" {
 resource "null_resource" "deploy_config" {
   triggers = {
     compose_hash                 = filemd5("${path.module}/../docker-compose.yml")
+    hotfix_compose_hash          = filemd5("${path.module}/../docker-compose.hotfix.yml")
     caddy_hash                   = filemd5("${path.module}/../Caddyfile")
     collector_hash               = filemd5("${path.module}/../otel-collector-config.yaml")
     root_index_patch_hash        = filemd5("${path.module}/../../src/index.ts")
@@ -41,6 +42,11 @@ resource "null_resource" "deploy_config" {
   provisioner "file" {
     source      = "${path.module}/../docker-compose.yml"
     destination = "/opt/dofek/docker-compose.yml"
+  }
+
+  provisioner "file" {
+    source      = "${path.module}/../docker-compose.hotfix.yml"
+    destination = "/opt/dofek/docker-compose.hotfix.yml"
   }
 
   provisioner "file" {
@@ -80,7 +86,7 @@ resource "null_resource" "deploy_config" {
 
   provisioner "remote-exec" {
     inline = [
-      "cd /opt/dofek && docker compose up -d"
+      "cd /opt/dofek && docker compose -f docker-compose.yml -f docker-compose.hotfix.yml up -d"
     ]
   }
 }

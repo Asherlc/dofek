@@ -196,25 +196,21 @@ export class EfficiencyRepository extends BaseRepository {
                AND ms.scalar IS NOT NULL
             )::int AS activities_with_hr,
             (SELECT COUNT(DISTINCT a.id)
-             FROM fitness.v_activity a
-             WHERE a.user_id = up.id
-               AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-               AND ${enduranceTypeFilter("a")}
-               AND EXISTS (
-                 SELECT 1
-                 FROM fitness.sensor_sample pwr
-                 WHERE pwr.activity_id = a.id
-                   AND pwr.channel = 'power'
-                   AND pwr.scalar > 0
-                   AND EXISTS (
-                     SELECT 1
-                     FROM fitness.sensor_sample hr
-                     WHERE hr.activity_id = pwr.activity_id
-                       AND hr.recorded_at = pwr.recorded_at
-                       AND hr.channel = 'heart_rate'
-                       AND hr.scalar IS NOT NULL
-                   )
-               )
+             FROM (
+               SELECT DISTINCT pwr.activity_id
+               FROM fitness.sensor_sample pwr
+               JOIN fitness.sensor_sample hr
+                 ON hr.activity_id = pwr.activity_id
+                AND hr.recorded_at = pwr.recorded_at
+                AND hr.channel = 'heart_rate'
+                AND hr.scalar IS NOT NULL
+               JOIN fitness.v_activity a ON a.id = pwr.activity_id
+               WHERE a.user_id = up.id
+                 AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+                 AND ${enduranceTypeFilter("a")}
+                 AND pwr.channel = 'power'
+                 AND pwr.scalar > 0
+             ) matched_samples
             )::int AS activities_with_both,
             COALESCE((
               SELECT MAX(z2_count)

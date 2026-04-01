@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { SOURCE_TYPE_API } from "../../../../src/db/sensor-channels.ts";
 import { logger } from "../logger.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 
@@ -64,7 +65,7 @@ async function insertBatch(
       const vector = sampleHasGyro
         ? sql`ARRAY[${sample.x}, ${sample.y}, ${sample.z}, ${sample.gyroscopeX ?? 0}, ${sample.gyroscopeY ?? 0}, ${sample.gyroscopeZ ?? 0}]::real[]`
         : sql`ARRAY[${sample.x}, ${sample.y}, ${sample.z}]::real[]`;
-      return sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${deviceId}, ${"ble"}, ${channel}, ${vector})`;
+      return sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${deviceId}, ${SOURCE_TYPE_API}, ${channel}, ${vector})`;
     });
     await db.execute(
       sql`INSERT INTO fitness.sensor_sample
