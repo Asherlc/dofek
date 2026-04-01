@@ -6,10 +6,15 @@ const meta = {
   component: HealthStatusBar,
   tags: ["autodocs"],
   args: {
-    label: "HRV",
-    value: "65 ms",
-    percent: 75,
-    color: "hsl(var(--success))",
+    metrics: [
+      {
+        label: "HRV",
+        value: 65,
+        avg: 60,
+        stddev: 8,
+        unit: "ms",
+      },
+    ],
   },
 } satisfies Meta<typeof HealthStatusBar>;
 
@@ -21,14 +26,42 @@ export const Success: Story = {};
 
 export const Warning: Story = {
   args: {
-    color: "hsl(var(--warning))",
-    percent: 45,
+    metrics: [
+      {
+        label: "HRV",
+        value: 48,
+        avg: 60,
+        stddev: 8,
+        unit: "ms",
+      },
+    ],
   },
 };
 
 export const Destructive: Story = {
   args: {
-    color: "hsl(var(--destructive))",
-    percent: 15,
+    metrics: [
+      {
+        label: "HRV",
+        value: 38,
+        avg: 60,
+        stddev: 8,
+        unit: "ms",
+      },
+    ],
+  },
+};
+
+export const Unknown: Story = {
+  args: {
+    metrics: [
+      {
+        label: "HRV",
+        value: null,
+        avg: 60,
+        stddev: 8,
+        unit: "ms",
+      },
+    ],
   },
 };

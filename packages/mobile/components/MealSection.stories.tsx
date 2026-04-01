@@ -29,8 +29,8 @@ const meta = {
         fat_g: 1,
       },
     ],
-    onAddFood: (mealKey: string) => console.log("Add food to", mealKey),
-    onDeleteFood: (id: string) => console.log("Delete food", id),
+    onAddFood: (mealKey: string) => void mealKey,
+    onDeleteFood: (id: string) => void id,
     deleting: false,
   },
 } satisfies Meta<typeof MealSection>;

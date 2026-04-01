@@ -6,7 +6,7 @@ const meta = {
   component: ProviderLogo,
   args: {
     provider: "strava",
-    serverUrl: "https://dofek.asherlc.com",
+    serverUrl: "https://example.com",
     size: 32,
   },
 } satisfies Meta<typeof ProviderLogo>;
