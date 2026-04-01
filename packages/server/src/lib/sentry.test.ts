@@ -32,8 +32,8 @@ describe("server sentry", () => {
   });
 
   it("does not initialize without SENTRY_DSN", async () => {
-    vi.stubEnv("SENTRY_DSN", undefined as unknown as string);
-    vi.stubEnv("SENTRY_DSN_unencrypted", undefined as unknown as string);
+    delete process.env.SENTRY_DSN;
+    delete process.env.SENTRY_DSN_unencrypted;
 
     const { initSentry } = await import("./sentry.ts");
     initSentry();
@@ -42,7 +42,7 @@ describe("server sentry", () => {
   });
 
   it("picks up SENTRY_DSN_unencrypted (SOPS convention)", async () => {
-    vi.stubEnv("SENTRY_DSN", undefined as unknown as string);
+    delete process.env.SENTRY_DSN;
     vi.stubEnv("SENTRY_DSN_unencrypted", "https://key@sentry.example/789");
 
     const { initSentry } = await import("./sentry.ts");

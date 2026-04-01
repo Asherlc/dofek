@@ -94,7 +94,7 @@ import type { AddressInfo } from "node:net";
 import cookieParser from "cookie-parser";
 import { createDatabaseFromEnv } from "dofek/db";
 import { getAllProviders } from "dofek/providers/registry";
-import { isWebhookProvider } from "dofek/providers/types";
+import { isWebhookProvider, type SyncProvider } from "dofek/providers/types";
 import express from "express";
 import { resolveOrCreateUser } from "../auth/account-linking.ts";
 import {
@@ -600,8 +600,20 @@ describe("createAuthRouter", () => {
     it("returns 401 when not logged in", async () => {
       vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
       vi.mocked(validateSession).mockResolvedValue(null);
+      const provider: SyncProvider = {
+        id: "wahoo",
+        name: "Wahoo",
+        validate: () => null,
+        sync: async () => ({
+          provider: "wahoo",
+          recordsSynced: 0,
+          errors: [],
+          duration: 0,
+        }),
+      };
+      vi.mocked(getAllProviders).mockReturnValue([provider]);
       const { app } = createTestApp();
-      const res = await request(app, "get", "/auth/provider/nonexistent");
+      const res = await request(app, "get", "/auth/provider/wahoo");
       expect(res.status).toBe(401);
       expect(res.body).toContain("logged in");
     });
