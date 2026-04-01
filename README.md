@@ -172,7 +172,7 @@ docker run dofek:latest worker
 docker run dofek:latest sync
 ```
 
-All modes use Node 22 `--experimental-transform-types` to run TypeScript source directly — no build step. All modes run migrations before starting.
+All modes use Node 22 `--experimental-transform-types` to run TypeScript source directly — no build step. All modes run migrations before starting. In production, the `web` mode now waits for migrations to finish before accepting traffic (no background migration while serving).
 
 ## Deployment
 
@@ -214,9 +214,9 @@ Internet → Caddy (auto-HTTPS :443, serves dofek.asherlc.com + dofek.fit + dofe
 | Container | Image | Purpose |
 |-----------|-------|---------|
 | `caddy` | caddy:2-alpine | TLS termination + reverse proxy to nginx |
-| `client` | ghcr.io/asherlc/dofek-client | Nginx serving Vite bundle + proxying API routes |
+| `client` | ghcr.io/asherlc/dofek-client | Nginx serving Vite bundle + proxying API routes (2 replicas) |
 | `migrate` | ghcr.io/asherlc/dofek | Runs pending DB migrations (one-shot, exits on completion) |
-| `web` | ghcr.io/asherlc/dofek | Express + tRPC API server (port 3000, internal only) |
+| `web` | ghcr.io/asherlc/dofek | Express + tRPC API server (port 3000, internal only, 2 replicas) |
 | `worker` | ghcr.io/asherlc/dofek | BullMQ job worker (processes sync jobs, file imports) |
 | `sync` | ghcr.io/asherlc/dofek | Sync runner (provider data sync, one-shot) |
 | `redis` | redis:7-alpine | Job queue backend for BullMQ |
@@ -224,7 +224,7 @@ Internet → Caddy (auto-HTTPS :443, serves dofek.asherlc.com + dofek.fit + dofe
 | `db-backup` | postgres-backup-local | Daily pg_dump (7 daily, 4 weekly, 6 monthly) |
 | `collector` | otel/opentelemetry-collector-contrib | OTel Collector — receives app logs/traces + tails Docker container logs → Axiom |
 | `portainer` | portainer/portainer-ce:lts | Container management UI (portainer.dofek.asherlc.com) |
-| `watchtower` | containrrr/watchtower | Auto-pulls new images from GHCR every 5min |
+| `watchtower` | containrrr/watchtower | Auto-pulls new images from GHCR every 5min with rolling restart |
 
 ### Checking mobile OTA update status
 
@@ -250,10 +250,10 @@ The runtime version must match what's in `packages/mobile/app.json` (`runtimeVer
 
 ```
 sops .env → commit → push → GHA builds ARM Docker images
-→ pushes to GHCR → Watchtower polls (5min) → pulls new image → restarts containers
+→ pushes to GHCR → Watchtower polls (5min) → rolling-restarts replicated `web`/`client` containers
 ```
 
-Migrations run at two levels for reliability: a dedicated one-shot `migrate` container runs first during `docker compose up` (via `depends_on: { condition: service_completed_successfully }`), and each service's entrypoint also runs migrations before starting. This belt-and-suspenders approach ensures migrations apply both on initial deploy (Compose ordering) and on Watchtower-triggered restarts (which bypass `depends_on`). A Postgres advisory lock serializes concurrent runs so only one container applies migrations at a time. In local dev, run `pnpm migrate` manually.
+Migrations run at two levels for reliability: a dedicated one-shot `migrate` container runs first during `docker compose up` (via `depends_on: { condition: service_completed_successfully }`), and each service's entrypoint also runs migrations before starting. A Postgres advisory lock serializes concurrent runs so only one container applies migrations at a time. With replicated `web` instances and rolling restarts, at least one healthy API instance remains available while another instance migrates and boots. In local dev, run `pnpm migrate` manually.
 
 ### Deploying from scratch
 
@@ -274,13 +274,15 @@ Then point DNS — create an A record for `dofek.asherlc.com` → the output `se
 **Never SSH into the server to edit files directly.** All server config changes (`docker-compose.yml`, `Caddyfile`) go through Terraform via the `deploy/deploy-config` module:
 
 1. Edit the file locally in `deploy/`
-2. Run `terraform apply` from `deploy/deploy-config/` — it detects file changes (via md5 hash), copies the updated files to the server via SSH, and runs `docker compose up -d`
+2. Run `terraform apply` from `deploy/deploy-config/` — it detects file changes (via md5 hash), copies the updated files to the server via SSH, and runs `docker compose up -d --scale web=2 --scale client=2`
 
 ```bash
 cd deploy/deploy-config
 terraform init                              # first time only
 terraform apply -var="server_ip=<SERVER_IP>" # copies changed files and restarts containers
 ```
+
+`deploy-config` uses Terraform's default local backend (`deploy/deploy-config/terraform.tfstate`), so no Terraform Cloud account or `terraform login` is required.
 
 The `deploy-config` module is intentionally separate from the main `deploy/main.tf` (which provisions the Hetzner server). This lets you push config updates without needing the Hetzner API token or other provisioning secrets. The main module uses `user_data` (cloud-init) to place files at provisioning time, but changing `user_data` forces a server rebuild — `deploy-config` avoids that by using SSH provisioners instead.
 

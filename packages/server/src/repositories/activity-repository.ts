@@ -203,7 +203,7 @@ export class ActivityRepository extends BaseRepository {
   async getStream(activityId: string, maxPoints: number): Promise<StreamPoint[]> {
     const rows = await this.query(
       streamPointRowSchema,
-      sql`WITH pivoted AS (
+      sql`WITH sensor_pivoted AS (
             SELECT
               ss.recorded_at,
               MAX(ss.scalar) FILTER (WHERE ss.channel = 'heart_rate')::SMALLINT AS heart_rate,
@@ -218,6 +218,26 @@ export class ActivityRepository extends BaseRepository {
             WHERE ss.activity_id = ${activityId}
               AND ss.channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude', 'lat', 'lng')
             GROUP BY ss.recorded_at
+          ),
+          legacy_pivoted AS (
+            SELECT
+              ms.recorded_at,
+              ms.heart_rate,
+              ms.power,
+              ms.speed,
+              ms.cadence,
+              ms.altitude,
+              ms.lat,
+              ms.lng
+            FROM fitness.metric_stream ms
+            JOIN fitness.v_activity a ON a.id = ms.activity_id AND a.user_id = ${this.userId}
+            WHERE ms.activity_id = ${activityId}
+          ),
+          pivoted AS (
+            SELECT * FROM sensor_pivoted
+            UNION ALL
+            SELECT * FROM legacy_pivoted
+            WHERE NOT EXISTS (SELECT 1 FROM sensor_pivoted)
           ),
           numbered AS (
             SELECT p.*, ROW_NUMBER() OVER (ORDER BY p.recorded_at) AS rn,
@@ -251,11 +271,26 @@ export class ActivityRepository extends BaseRepository {
               AND up.max_hr IS NOT NULL
           ),
           hr_samples AS (
-            SELECT ms.scalar AS heart_rate
-            FROM fitness.sensor_sample ms
-            JOIN fitness.v_activity a ON a.id = ms.activity_id AND a.user_id = ${this.userId}
-            WHERE ms.activity_id = ${activityId}
-              AND ms.channel = 'heart_rate'
+            WITH sensor_hr_samples AS (
+              SELECT ms.scalar AS heart_rate
+              FROM fitness.sensor_sample ms
+              JOIN fitness.v_activity a ON a.id = ms.activity_id AND a.user_id = ${this.userId}
+              WHERE ms.activity_id = ${activityId}
+                AND ms.channel = 'heart_rate'
+            ),
+            legacy_hr_samples AS (
+              SELECT ms.heart_rate::REAL AS heart_rate
+              FROM fitness.metric_stream ms
+              JOIN fitness.v_activity a ON a.id = ms.activity_id AND a.user_id = ${this.userId}
+              WHERE ms.activity_id = ${activityId}
+                AND ms.heart_rate IS NOT NULL
+            )
+            SELECT heart_rate
+            FROM sensor_hr_samples
+            UNION ALL
+            SELECT heart_rate
+            FROM legacy_hr_samples
+            WHERE NOT EXISTS (SELECT 1 FROM sensor_hr_samples)
           )
           SELECT
             z.zone,

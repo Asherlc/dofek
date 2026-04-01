@@ -21,7 +21,7 @@ WITH best_source AS (
 ),
 
 -- Step 2: Deduplicated scalar samples (only the winning provider per channel)
-deduped AS (
+sensor_deduped AS (
   SELECT ss.activity_id, ss.user_id, ss.recorded_at, ss.channel, ss.scalar
   FROM fitness.sensor_sample ss
   JOIN best_source bs
@@ -30,6 +30,50 @@ deduped AS (
     AND ss.provider_id = bs.provider_id
   WHERE ss.activity_id IS NOT NULL
     AND ss.scalar IS NOT NULL
+),
+
+-- Step 2b: During sensor backfill/cutover, keep activity_summary populated by
+-- falling back to legacy metric_stream rows for activities that have not yet
+-- produced any sensor_sample rows.
+legacy_fallback AS (
+  SELECT
+    ms.activity_id,
+    ms.user_id,
+    ms.recorded_at,
+    expanded.channel,
+    expanded.scalar
+  FROM fitness.metric_stream ms
+  CROSS JOIN LATERAL (
+    VALUES
+      ('heart_rate', ms.heart_rate::REAL),
+      ('power', ms.power::REAL),
+      ('speed', ms.speed),
+      ('cadence', ms.cadence::REAL),
+      ('altitude', ms.altitude),
+      ('lat', ms.lat),
+      ('lng', ms.lng),
+      ('left_right_balance', ms.left_right_balance),
+      ('left_torque_effectiveness', ms.left_torque_effectiveness),
+      ('right_torque_effectiveness', ms.right_torque_effectiveness),
+      ('left_pedal_smoothness', ms.left_pedal_smoothness),
+      ('right_pedal_smoothness', ms.right_pedal_smoothness),
+      ('stance_time', ms.stance_time),
+      ('vertical_oscillation', ms.vertical_oscillation),
+      ('ground_contact_time', ms.ground_contact_time),
+      ('stride_length', ms.stride_length)
+  ) AS expanded(channel, scalar)
+  WHERE ms.activity_id IS NOT NULL
+    AND expanded.scalar IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1
+      FROM fitness.sensor_sample ss
+      WHERE ss.activity_id = ms.activity_id
+    )
+),
+deduped AS (
+  SELECT * FROM sensor_deduped
+  UNION ALL
+  SELECT * FROM legacy_fallback
 ),
 
 -- Step 3: Elevation gain/loss from altitude channel (window function on ordered data)
