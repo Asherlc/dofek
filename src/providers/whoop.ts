@@ -885,7 +885,7 @@ export class WhoopProvider implements SyncProvider {
                     sleepNeedFromNapMinutes: parsed.sleepNeedFromNapMinutes,
                   })
                   .onConflictDoUpdate({
-                    target: [sleepSession.providerId, sleepSession.externalId],
+                    target: [sleepSession.userId, sleepSession.providerId, sleepSession.externalId],
                     set: {
                       startedAt: parsed.startedAt,
                       endedAt: parsed.endedAt,
@@ -966,7 +966,7 @@ export class WhoopProvider implements SyncProvider {
                   },
                 })
                 .onConflictDoUpdate({
-                  target: [activity.providerId, activity.externalId],
+                  target: [activity.userId, activity.providerId, activity.externalId],
                   set: {
                     activityType: parsed.activityType,
                     startedAt: parsed.startedAt,
@@ -1045,7 +1045,11 @@ export class WhoopProvider implements SyncProvider {
                   mskStrainContributionPercent: parsed.mskStrainContributionPercent,
                 })
                 .onConflictDoUpdate({
-                  target: [strengthWorkout.providerId, strengthWorkout.externalId],
+                  target: [
+                    strengthWorkout.userId,
+                    strengthWorkout.providerId,
+                    strengthWorkout.externalId,
+                  ],
                   set: {
                     startedAt,
                     endedAt,

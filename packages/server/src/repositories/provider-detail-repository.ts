@@ -66,7 +66,7 @@ export function tableInfo(dataType: DataType): {
 /** Tables to cascade-delete when disconnecting a provider, in deletion order. */
 export const DISCONNECT_CHILD_TABLES = [
   "fitness.sensor_sample",
-  "fitness.exercise_alias",
+  "fitness.metric_stream",
   "fitness.strength_workout",
   "fitness.body_measurement",
   "fitness.daily_metrics",
@@ -89,6 +89,22 @@ export const DISCONNECT_CHILD_TABLES = [
 
 const ownerCheckSchema = z.object({ id: z.string() });
 const genericRowSchema = z.record(z.string(), z.unknown());
+
+function isUndefinedTableError(error: unknown): boolean {
+  if (!(typeof error === "object" && error !== null)) {
+    if (error instanceof Error) {
+      return error.message.includes("does not exist");
+    }
+    return false;
+  }
+  if ("code" in error && error.code === "42P01") {
+    return true;
+  }
+  if ("message" in error && typeof error.message === "string") {
+    return error.message.includes("does not exist");
+  }
+  return false;
+}
 
 // ---------------------------------------------------------------------------
 // Repository
@@ -146,25 +162,30 @@ export class ProviderDetailRepository {
     const rows = await executeWithSchema(
       this.#db,
       ownerCheckSchema,
-      sql`SELECT id FROM fitness.provider
-          WHERE id = ${providerId} AND user_id = ${this.#userId}`,
+      sql`SELECT provider_id AS id FROM fitness.oauth_token
+          WHERE provider_id = ${providerId} AND user_id = ${this.#userId}`,
     );
     return rows.length > 0;
   }
 
   /**
-   * Disconnect a provider — removes all child data and the provider row.
+   * Disconnect a provider — removes all user-scoped child data and tokens.
    * Caller must verify ownership before calling this method.
    */
   async deleteProviderData(providerId: string): Promise<void> {
     await this.#db.transaction(async (tx) => {
       for (const table of DISCONNECT_CHILD_TABLES) {
-        await tx.execute(sql`DELETE FROM ${sql.raw(table)} WHERE provider_id = ${providerId}`);
+        try {
+          await tx.execute(
+            sql`DELETE FROM ${sql.raw(table)}
+                WHERE provider_id = ${providerId} AND user_id = ${this.#userId}`,
+          );
+        } catch (error: unknown) {
+          if (!isUndefinedTableError(error)) {
+            throw error;
+          }
+        }
       }
-      await tx.execute(
-        sql`DELETE FROM fitness.provider
-            WHERE id = ${providerId} AND user_id = ${this.#userId}`,
-      );
     });
   }
 }

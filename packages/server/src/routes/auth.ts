@@ -1,7 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { IDENTITY_PROVIDER_NAMES } from "@dofek/auth/auth";
 import { getOAuthRedirectUri } from "dofek/auth/oauth";
-import { DEFAULT_USER_ID } from "dofek/db/schema";
 import { sql } from "drizzle-orm";
 import express, { Router } from "express";
 import rateLimit from "express-rate-limit";
@@ -539,7 +538,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
     // Resolve the logged-in user so we can link the Slack identity to them
     const sessionId = getSessionIdFromRequest(req);
     const session = sessionId ? await validateSession(db, sessionId) : null;
-    const userId = session?.userId ?? DEFAULT_USER_ID;
+    const userId = session?.userId ?? `slack-anon:${randomBytes(8).toString("hex")}`;
 
     const redirectUri = getOAuthRedirectUri();
     const stateToken = `slack:${randomBytes(16).toString("hex")}`;
@@ -567,7 +566,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       await startDataProviderOAuth(res, req.params.provider, {
         providerId: req.params.provider,
         intent: "login",
-        userId: DEFAULT_USER_ID,
+        userId: `login:${randomBytes(8).toString("hex")}`,
         mobileScheme,
       });
     } catch (err: unknown) {
@@ -608,7 +607,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       // Resolve the logged-in user so the provider record is linked to them
       const sessionId = getSessionIdFromRequest(req);
       const session = sessionId ? await validateSession(db, sessionId) : null;
-      const userId = session?.userId ?? DEFAULT_USER_ID;
+      const userId = session?.userId ?? `data-anon:${randomBytes(8).toString("hex")}`;
 
       await startDataProviderOAuth(res, req.params.provider, {
         providerId: req.params.provider,
@@ -678,12 +677,17 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         await ensureProvider(db, provider.id, provider.name, undefined, stored.userId);
         // Store OAuth 1.0 tokens — token as accessToken, tokenSecret as refreshToken
         // OAuth 1.0 tokens don't expire
-        await saveTokens(db, provider.id, {
-          accessToken: token,
-          refreshToken: tokenSecret,
-          expiresAt: new Date("2099-12-31"),
-          scopes: "",
-        });
+        await saveTokens(
+          db,
+          provider.id,
+          {
+            accessToken: token,
+            refreshToken: tokenSecret,
+            expiresAt: new Date("2099-12-31"),
+            scopes: "",
+          },
+          stored.userId,
+        );
         await queryCache.invalidateByPrefix(`${stored.userId}:sync.providers`);
 
         logger.info(`[auth] ${stored.providerId} OAuth 1.0 tokens saved.`);
@@ -850,11 +854,25 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       logger.info(`[auth] Exchanging code for ${providerId} tokens...`);
       const tokens = await setup.exchangeCode(code, storedCodeVerifier);
 
+      // For data-provider login flows, resolve the real user first so tokens are saved
+      // under the correct account instead of the temporary/default state user.
+      let loginIdentity: import("../auth/account-linking.ts").ProviderIdentity | null = null;
+      let loginResolvedUserId: string | null = null;
+      let tokenOwnerUserId = stateUserId;
+      if (intent === "login" && setup.getUserIdentity) {
+        loginIdentity = await setup.getUserIdentity(tokens.accessToken);
+        const resolved = await resolveOrCreateUser(db, providerId, loginIdentity);
+        loginResolvedUserId = resolved.userId;
+        tokenOwnerUserId = resolved.userId;
+      } else if (intent === "link" && linkUserId) {
+        tokenOwnerUserId = linkUserId;
+      }
+
       const { ensureProvider } = await import("dofek/db/tokens");
       const { saveTokens } = await import("dofek/db/tokens");
-      await ensureProvider(db, provider.id, provider.name, setup.apiBaseUrl, stateUserId);
-      await saveTokens(db, provider.id, tokens);
-      await queryCache.invalidateByPrefix(`${stateUserId}:sync.providers`);
+      await ensureProvider(db, provider.id, provider.name, setup.apiBaseUrl, tokenOwnerUserId);
+      await saveTokens(db, provider.id, tokens, tokenOwnerUserId);
+      await queryCache.invalidateByPrefix(`${tokenOwnerUserId}:sync.providers`);
 
       logger.info(`[auth] ${providerId} tokens saved. Expires: ${tokens.expiresAt.toISOString()}`);
 
@@ -874,11 +892,12 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       // Auto-link identity when connecting data providers (if getUserIdentity is available)
       if (setup.getUserIdentity) {
         try {
-          const identity = await setup.getUserIdentity(tokens.accessToken);
+          const identity = loginIdentity ?? (await setup.getUserIdentity(tokens.accessToken));
 
           if (intent === "login") {
             // Data provider login: resolve/create user and create session
-            const { userId } = await resolveOrCreateUser(db, providerId, identity);
+            const userId =
+              loginResolvedUserId ?? (await resolveOrCreateUser(db, providerId, identity)).userId;
             const sessionInfo = await createSession(db, userId);
 
             // Mobile: redirect to app via deep link with session token

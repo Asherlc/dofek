@@ -66,7 +66,7 @@ vi.mock("./db/index.ts", () => ({
 }));
 
 vi.mock("./db/schema.ts", () => ({
-  DEFAULT_USER_ID: "test-user",
+  TEST_USER_ID: "test-user",
 }));
 
 // Mock modules used by auth/import paths

@@ -15,12 +15,21 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { buildNutrientColumns } from "./nutrient-columns.ts";
+import { getTokenUserId } from "./token-user-context.ts";
 
 // All tables live in the 'fitness' schema
 const fitness = pgSchema("fitness");
 
-// Default user UUID for single-user migration path
-export const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
+// Stable user ID used in integration tests and fixtures.
+export const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
+
+function resolveImplicitUserId(): string {
+  const userId = getTokenUserId();
+  if (!userId) {
+    throw new Error("Missing user context for implicit user_id default");
+  }
+  return userId;
+}
 
 // ============================================================
 // Enums
@@ -234,7 +243,7 @@ export const provider = fitness.table(
     apiBaseUrl: text("api_base_url"),
     userId: uuid("user_id")
       .notNull()
-      .default(DEFAULT_USER_ID)
+      .$defaultFn(resolveImplicitUserId)
       .references(() => userProfile.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -281,17 +290,29 @@ export const exerciseAlias = fitness.table(
 // OAuth tokens
 // ============================================================
 
-export const oauthToken = fitness.table("oauth_token", {
-  providerId: text("provider_id")
-    .primaryKey()
-    .references(() => provider.id),
-  accessToken: text("access_token").notNull(),
-  refreshToken: text("refresh_token"),
-  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-  scopes: text("scopes"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const oauthToken = fitness.table(
+  "oauth_token",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .$defaultFn(resolveImplicitUserId)
+      .references(() => userProfile.id),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id),
+    accessToken: text("access_token").notNull(),
+    refreshToken: text("refresh_token"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    scopes: text("scopes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.providerId] }),
+    index("oauth_token_provider_idx").on(table.providerId),
+    index("oauth_token_user_idx").on(table.userId),
+  ],
+);
 
 // ============================================================
 // Webhook subscriptions
@@ -340,7 +361,7 @@ export const bodyMeasurement = fitness.table(
       .references(() => provider.id),
     userId: uuid("user_id")
       .notNull()
-      .default(DEFAULT_USER_ID)
+      .$defaultFn(resolveImplicitUserId)
       .references(() => userProfile.id),
     externalId: text("external_id"),
     weightKg: real("weight_kg"),
@@ -359,7 +380,11 @@ export const bodyMeasurement = fitness.table(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex("body_measurement_provider_external_idx").on(table.providerId, table.externalId),
+    uniqueIndex("body_measurement_provider_external_idx").on(
+      table.userId,
+      table.providerId,
+      table.externalId,
+    ),
     index("body_measurement_user_provider_idx").on(table.userId, table.providerId),
   ],
 );
@@ -408,7 +433,7 @@ export const strengthWorkout = fitness.table(
       .references(() => provider.id),
     userId: uuid("user_id")
       .notNull()
-      .default(DEFAULT_USER_ID)
+      .$defaultFn(resolveImplicitUserId)
       .references(() => userProfile.id),
     externalId: text("external_id"),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
@@ -423,7 +448,11 @@ export const strengthWorkout = fitness.table(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex("strength_workout_provider_external_idx").on(table.providerId, table.externalId),
+    uniqueIndex("strength_workout_provider_external_idx").on(
+      table.userId,
+      table.providerId,
+      table.externalId,
+    ),
   ],
 );
 
@@ -466,7 +495,7 @@ export const activity = fitness.table(
       .references(() => provider.id),
     userId: uuid("user_id")
       .notNull()
-      .default(DEFAULT_USER_ID)
+      .$defaultFn(resolveImplicitUserId)
       .references(() => userProfile.id),
     externalId: text("external_id"),
     activityType: activityTypeEnum("activity_type").notNull(),
@@ -483,7 +512,11 @@ export const activity = fitness.table(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex("activity_provider_external_idx").on(table.providerId, table.externalId),
+    uniqueIndex("activity_provider_external_idx").on(
+      table.userId,
+      table.providerId,
+      table.externalId,
+    ),
     index("activity_user_provider_idx").on(table.userId, table.providerId),
   ],
 );
@@ -562,7 +595,7 @@ export const sensorSample = fitness.table(
     recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
     userId: uuid("user_id")
       .notNull()
-      .default(DEFAULT_USER_ID)
+      .$defaultFn(resolveImplicitUserId)
       .references(() => userProfile.id),
     providerId: text("provider_id")
       .notNull()
@@ -597,7 +630,7 @@ export const metricStream = fitness.table(
     recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
     userId: uuid("user_id")
       .notNull()
-      .default(DEFAULT_USER_ID)
+      .$defaultFn(resolveImplicitUserId)
       .references(() => userProfile.id),
     activityId: uuid("activity_id").references(() => activity.id, { onDelete: "cascade" }),
     providerId: text("provider_id")
@@ -663,7 +696,7 @@ export const inertialMeasurementUnitSample = fitness.table(
     recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
     userId: uuid("user_id")
       .notNull()
-      .default(DEFAULT_USER_ID)
+      .$defaultFn(resolveImplicitUserId)
       .references(() => userProfile.id),
     deviceId: text("device_id").notNull(),
     deviceType: text("device_type").notNull(),
@@ -687,7 +720,7 @@ export const orientationSample = fitness.table(
     recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
     userId: uuid("user_id")
       .notNull()
-      .default(DEFAULT_USER_ID)
+      .$defaultFn(resolveImplicitUserId)
       .references(() => userProfile.id),
     providerId: text("provider_id")
       .notNull()
@@ -715,7 +748,7 @@ export const dailyMetrics = fitness.table(
       .references(() => provider.id),
     userId: uuid("user_id")
       .notNull()
-      .default(DEFAULT_USER_ID)
+      .$defaultFn(resolveImplicitUserId)
       .references(() => userProfile.id),
     restingHr: integer("resting_hr"),
     hrv: real("hrv"),
@@ -797,7 +830,7 @@ export const sleepSession = fitness.table(
       .references(() => provider.id),
     userId: uuid("user_id")
       .notNull()
-      .default(DEFAULT_USER_ID)
+      .$defaultFn(resolveImplicitUserId)
       .references(() => userProfile.id),
     externalId: text("external_id"),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
@@ -817,7 +850,11 @@ export const sleepSession = fitness.table(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex("sleep_session_provider_external_idx").on(table.providerId, table.externalId),
+    uniqueIndex("sleep_session_provider_external_idx").on(
+      table.userId,
+      table.providerId,
+      table.externalId,
+    ),
     index("sleep_session_user_provider_idx").on(table.userId, table.providerId),
   ],
 );
@@ -939,14 +976,14 @@ export const nutritionDaily = fitness.table(
       .references(() => provider.id),
     userId: uuid("user_id")
       .notNull()
-      .default(DEFAULT_USER_ID)
+      .$defaultFn(resolveImplicitUserId)
       .references(() => userProfile.id),
     ...buildNutrientColumns(),
     waterMl: integer("water_ml"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    primaryKey({ columns: [table.date, table.providerId] }),
+    primaryKey({ columns: [table.userId, table.date, table.providerId] }),
     index("nutrition_daily_user_provider_idx").on(table.userId, table.providerId),
   ],
 );
@@ -960,7 +997,7 @@ export const foodEntry = fitness.table(
       .references(() => provider.id),
     userId: uuid("user_id")
       .notNull()
-      .default(DEFAULT_USER_ID)
+      .$defaultFn(resolveImplicitUserId)
       .references(() => userProfile.id),
     externalId: text("external_id"),
     date: date("date").notNull(),
@@ -982,7 +1019,11 @@ export const foodEntry = fitness.table(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex("food_entry_provider_external_idx").on(table.providerId, table.externalId),
+    uniqueIndex("food_entry_provider_external_idx").on(
+      table.userId,
+      table.providerId,
+      table.externalId,
+    ),
     index("food_entry_date_idx").on(table.date),
     index("food_entry_date_meal_idx").on(table.date, table.meal),
     index("food_entry_user_provider_idx").on(table.userId, table.providerId),
@@ -1002,7 +1043,7 @@ export const labPanel = fitness.table(
       .references(() => provider.id),
     userId: uuid("user_id")
       .notNull()
-      .default(DEFAULT_USER_ID)
+      .$defaultFn(resolveImplicitUserId)
       .references(() => userProfile.id),
     externalId: text("external_id"),
     name: text("name").notNull(),
@@ -1015,7 +1056,11 @@ export const labPanel = fitness.table(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex("lab_panel_provider_external_idx").on(table.providerId, table.externalId),
+    uniqueIndex("lab_panel_provider_external_idx").on(
+      table.userId,
+      table.providerId,
+      table.externalId,
+    ),
     index("lab_panel_recorded_idx").on(table.recordedAt),
     index("lab_panel_user_provider_idx").on(table.userId, table.providerId),
   ],
@@ -1030,7 +1075,7 @@ export const labResult = fitness.table(
       .references(() => provider.id),
     userId: uuid("user_id")
       .notNull()
-      .default(DEFAULT_USER_ID)
+      .$defaultFn(resolveImplicitUserId)
       .references(() => userProfile.id),
     panelId: uuid("panel_id").references(() => labPanel.id),
     externalId: text("external_id"),
@@ -1050,7 +1095,11 @@ export const labResult = fitness.table(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex("lab_result_provider_external_idx").on(table.providerId, table.externalId),
+    uniqueIndex("lab_result_provider_external_idx").on(
+      table.userId,
+      table.providerId,
+      table.externalId,
+    ),
     index("lab_result_recorded_idx").on(table.recordedAt),
     index("lab_result_loinc_idx").on(table.loincCode),
     index("lab_result_test_name_idx").on(table.testName),
@@ -1072,7 +1121,7 @@ export const medication = fitness.table(
       .references(() => provider.id),
     userId: uuid("user_id")
       .notNull()
-      .default(DEFAULT_USER_ID)
+      .$defaultFn(resolveImplicitUserId)
       .references(() => userProfile.id),
     externalId: text("external_id"),
     name: text("name").notNull(),
@@ -1092,7 +1141,11 @@ export const medication = fitness.table(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex("medication_provider_external_idx").on(table.providerId, table.externalId),
+    uniqueIndex("medication_provider_external_idx").on(
+      table.userId,
+      table.providerId,
+      table.externalId,
+    ),
     index("medication_user_provider_idx").on(table.userId, table.providerId),
   ],
 );
@@ -1110,7 +1163,7 @@ export const condition = fitness.table(
       .references(() => provider.id),
     userId: uuid("user_id")
       .notNull()
-      .default(DEFAULT_USER_ID)
+      .$defaultFn(resolveImplicitUserId)
       .references(() => userProfile.id),
     externalId: text("external_id"),
     name: text("name").notNull(),
@@ -1126,7 +1179,11 @@ export const condition = fitness.table(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex("condition_provider_external_idx").on(table.providerId, table.externalId),
+    uniqueIndex("condition_provider_external_idx").on(
+      table.userId,
+      table.providerId,
+      table.externalId,
+    ),
     index("condition_user_provider_idx").on(table.userId, table.providerId),
   ],
 );
@@ -1144,7 +1201,7 @@ export const allergyIntolerance = fitness.table(
       .references(() => provider.id),
     userId: uuid("user_id")
       .notNull()
-      .default(DEFAULT_USER_ID)
+      .$defaultFn(resolveImplicitUserId)
       .references(() => userProfile.id),
     externalId: text("external_id"),
     name: text("name").notNull(),
@@ -1159,7 +1216,11 @@ export const allergyIntolerance = fitness.table(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex("allergy_intolerance_provider_external_idx").on(table.providerId, table.externalId),
+    uniqueIndex("allergy_intolerance_provider_external_idx").on(
+      table.userId,
+      table.providerId,
+      table.externalId,
+    ),
     index("allergy_intolerance_user_provider_idx").on(table.userId, table.providerId),
   ],
 );
@@ -1177,7 +1238,7 @@ export const medicationDoseEvent = fitness.table(
       .references(() => provider.id),
     userId: uuid("user_id")
       .notNull()
-      .default(DEFAULT_USER_ID)
+      .$defaultFn(resolveImplicitUserId)
       .references(() => userProfile.id),
     externalId: text("external_id"),
     medicationName: text("medication_name").notNull(),
@@ -1190,6 +1251,7 @@ export const medicationDoseEvent = fitness.table(
   },
   (table) => [
     uniqueIndex("medication_dose_event_provider_external_idx").on(
+      table.userId,
       table.providerId,
       table.externalId,
     ),
@@ -1211,7 +1273,7 @@ export const healthEvent = fitness.table(
       .references(() => provider.id),
     userId: uuid("user_id")
       .notNull()
-      .default(DEFAULT_USER_ID)
+      .$defaultFn(resolveImplicitUserId)
       .references(() => userProfile.id),
     externalId: text("external_id"),
     type: text("type").notNull(), // HK type identifier
@@ -1224,7 +1286,11 @@ export const healthEvent = fitness.table(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex("health_event_provider_external_idx").on(table.providerId, table.externalId),
+    uniqueIndex("health_event_provider_external_idx").on(
+      table.userId,
+      table.providerId,
+      table.externalId,
+    ),
     index("health_event_type_time_idx").on(table.type, table.startDate),
     index("health_event_user_provider_idx").on(table.userId, table.providerId),
   ],
@@ -1305,7 +1371,7 @@ export const userSettings = fitness.table(
   {
     userId: uuid("user_id")
       .notNull()
-      .default(DEFAULT_USER_ID)
+      .$defaultFn(resolveImplicitUserId)
       .references(() => userProfile.id),
     key: text("key").notNull(),
     value: jsonb("value").notNull(),
@@ -1327,7 +1393,7 @@ export const syncLog = fitness.table(
       .references(() => provider.id),
     userId: uuid("user_id")
       .notNull()
-      .default(DEFAULT_USER_ID)
+      .$defaultFn(resolveImplicitUserId)
       .references(() => userProfile.id),
     dataType: text("data_type").notNull(),
     status: text("status").notNull(),
@@ -1366,7 +1432,7 @@ export const journalEntry = fitness.table(
       .references(() => provider.id),
     userId: uuid("user_id")
       .notNull()
-      .default(DEFAULT_USER_ID)
+      .$defaultFn(resolveImplicitUserId)
       .references(() => userProfile.id),
     questionSlug: text("question_slug")
       .notNull()
@@ -1400,7 +1466,7 @@ export const lifeEvents = fitness.table(
     label: text("label").notNull(),
     userId: uuid("user_id")
       .notNull()
-      .default(DEFAULT_USER_ID)
+      .$defaultFn(resolveImplicitUserId)
       .references(() => userProfile.id),
     startedAt: date("started_at").notNull(),
     endedAt: date("ended_at"),
@@ -1491,7 +1557,7 @@ export const dexaScan = fitness.table(
       .references(() => provider.id),
     userId: uuid("user_id")
       .notNull()
-      .default(DEFAULT_USER_ID)
+      .$defaultFn(resolveImplicitUserId)
       .references(() => userProfile.id),
     externalId: text("external_id").notNull(),
     recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
@@ -1521,7 +1587,11 @@ export const dexaScan = fitness.table(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex("dexa_scan_provider_external_idx").on(table.providerId, table.externalId),
+    uniqueIndex("dexa_scan_provider_external_idx").on(
+      table.userId,
+      table.providerId,
+      table.externalId,
+    ),
     index("dexa_scan_user_provider_idx").on(table.userId, table.providerId),
     index("dexa_scan_recorded_at_idx").on(table.recordedAt.desc()),
   ],

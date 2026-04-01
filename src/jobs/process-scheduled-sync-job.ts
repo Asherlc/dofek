@@ -17,10 +17,8 @@ export async function processScheduledSyncJob(_job: Job<ScheduledSyncJobData>, d
   // Find all users who have at least one connected (non-import-only) provider
   const rows = await db.execute(
     sql`
-      SELECT DISTINCT up.id AS user_id, ot.provider_id
-      FROM fitness.user_profile up
-      JOIN fitness.provider p ON p.user_id = up.id
-      JOIN fitness.oauth_token ot ON ot.provider_id = p.id
+      SELECT DISTINCT ot.user_id, ot.provider_id
+      FROM fitness.oauth_token ot
     `,
   );
 

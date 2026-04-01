@@ -16,12 +16,17 @@ export const garminAuthRouter = router({
       );
 
       await ensureProvider(ctx.db, "garmin", "Garmin Connect", undefined, ctx.userId);
-      await saveTokens(ctx.db, "garmin", {
-        accessToken: JSON.stringify(tokens),
-        refreshToken: null,
-        expiresAt: new Date(Date.now() + tokens.oauth2.expires_in * 1000),
-        scopes: "garmin-connect-internal",
-      });
+      await saveTokens(
+        ctx.db,
+        "garmin",
+        {
+          accessToken: JSON.stringify(tokens),
+          refreshToken: null,
+          expiresAt: new Date(Date.now() + tokens.oauth2.expires_in * 1000),
+          scopes: "garmin-connect-internal",
+        },
+        ctx.userId,
+      );
       await queryCache.invalidateByPrefix(`${ctx.userId}:sync.providers`);
 
       return { success: true };

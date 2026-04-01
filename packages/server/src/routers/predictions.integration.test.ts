@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DEFAULT_USER_ID } from "../../../../src/db/schema.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
@@ -19,13 +19,13 @@ describe("Predictions router (integration)", () => {
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
 
-    const session = await createSession(testCtx.db, DEFAULT_USER_ID);
+    const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
 
     // Insert a test provider
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES ('test_provider', 'Test Provider', ${DEFAULT_USER_ID})
+          VALUES ('test_provider', 'Test Provider', ${TEST_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
 
@@ -33,7 +33,7 @@ describe("Predictions router (integration)", () => {
     await testCtx.db.execute(
       sql`UPDATE fitness.user_profile
           SET max_hr = 190, resting_hr = 50, ftp = 250
-          WHERE id = ${DEFAULT_USER_ID}`,
+          WHERE id = ${TEST_USER_ID}`,
     );
 
     // Insert 120 days of daily metrics (HRV, resting HR)
@@ -45,7 +45,7 @@ describe("Predictions router (integration)", () => {
               date, provider_id, user_id, resting_hr, hrv
             ) VALUES (
               CURRENT_DATE - ${i}::int,
-              'test_provider', ${DEFAULT_USER_ID},
+              'test_provider', ${TEST_USER_ID},
               ${Math.round(rhr)}, ${Math.round(hrv * 10) / 10}
             )`,
       );
@@ -66,7 +66,7 @@ describe("Predictions router (integration)", () => {
               duration_minutes, deep_minutes, rem_minutes, light_minutes,
               awake_minutes, efficiency_pct, sleep_type
             ) VALUES (
-              'test_provider', ${DEFAULT_USER_ID},
+              'test_provider', ${TEST_USER_ID},
               (CURRENT_DATE - ${i}::int)::timestamp + INTERVAL '22 hours',
               (CURRENT_DATE - ${i}::int + 1)::timestamp + INTERVAL '6 hours',
               ${Math.round(duration)}, ${deep}, ${rem}, ${light},
@@ -87,7 +87,7 @@ describe("Predictions router (integration)", () => {
         sql`INSERT INTO fitness.activity (
               provider_id, user_id, activity_type, started_at, ended_at, name
             ) VALUES (
-              'test_provider', ${DEFAULT_USER_ID}, 'cycling',
+              'test_provider', ${TEST_USER_ID}, 'cycling',
               CURRENT_TIMESTAMP - ${i}::int * INTERVAL '1 day',
               CURRENT_TIMESTAMP - ${i}::int * INTERVAL '1 day' + ${durationMin}::int * INTERVAL '1 minute',
               'Training Ride'
@@ -104,11 +104,11 @@ describe("Predictions router (integration)", () => {
           const power = avgPower + Math.round(Math.cos(s * 0.1) * 15);
           const ts = `CURRENT_TIMESTAMP - ${i} * INTERVAL '1 day' + ${s} * INTERVAL '1 minute'`;
           metricValues.push(
-            `(${ts}, '${DEFAULT_USER_ID}', '${actId}', 'test_provider', ${hr}, ${power})`,
+            `(${ts}, '${TEST_USER_ID}', '${actId}', 'test_provider', ${hr}, ${power})`,
           );
           sensorValues.push(
-            `(${ts}, '${DEFAULT_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${actId}', ${hr}, NULL)`,
-            `(${ts}, '${DEFAULT_USER_ID}', 'test_provider', NULL, 'api', 'power', '${actId}', ${power}, NULL)`,
+            `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${actId}', ${hr}, NULL)`,
+            `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'power', '${actId}', ${power}, NULL)`,
           );
         }
         await testCtx.db.execute(
@@ -139,7 +139,7 @@ describe("Predictions router (integration)", () => {
         sql`INSERT INTO fitness.strength_workout (
               provider_id, user_id, started_at, ended_at, name
             ) VALUES (
-              'test_provider', ${DEFAULT_USER_ID},
+              'test_provider', ${TEST_USER_ID},
               CURRENT_TIMESTAMP - ${i}::int * INTERVAL '1 day',
               CURRENT_TIMESTAMP - ${i}::int * INTERVAL '1 day' + INTERVAL '45 minutes',
               'Upper Body'

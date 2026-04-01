@@ -1,7 +1,18 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { TokenSet } from "../auth/oauth.ts";
 import type { SyncDatabase } from "./index.ts";
 import { oauthToken, provider } from "./schema.ts";
+import { getTokenUserId } from "./token-user-context.ts";
+
+function resolveUserId(userId?: string): string {
+  const scopedUserId = userId ?? getTokenUserId();
+  if (!scopedUserId) {
+    throw new Error(
+      "Token operation requires userId (pass userId explicitly or run inside runWithTokenUser).",
+    );
+  }
+  return scopedUserId;
+}
 
 /**
  * Ensure a provider row exists. Idempotent — does nothing if already present.
@@ -13,28 +24,28 @@ export async function ensureProvider(
   apiBaseUrl?: string,
   userId?: string,
 ): Promise<string> {
-  const values = { id, name, apiBaseUrl, ...(userId ? { userId } : {}) };
-  await db
-    .insert(provider)
-    .values(values)
-    .onConflictDoUpdate({
-      target: provider.id,
-      set: { name, apiBaseUrl, ...(userId ? { userId } : {}) },
-    });
+  const values = { id, name, apiBaseUrl, userId: resolveUserId(userId) };
+  await db.insert(provider).values(values).onConflictDoUpdate({
+    target: provider.id,
+    set: { name, apiBaseUrl },
+  });
   return id;
 }
 
 /**
- * Save (upsert) OAuth tokens for a provider.
+ * Save (upsert) OAuth tokens for a provider scoped to a user.
  */
 export async function saveTokens(
   db: SyncDatabase,
   providerId: string,
   tokens: TokenSet,
+  userId?: string,
 ): Promise<void> {
+  const scopedUserId = resolveUserId(userId);
   await db
     .insert(oauthToken)
     .values({
+      userId: scopedUserId,
       providerId,
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
@@ -43,7 +54,7 @@ export async function saveTokens(
       updatedAt: new Date(),
     })
     .onConflictDoUpdate({
-      target: oauthToken.providerId,
+      target: [oauthToken.userId, oauthToken.providerId],
       set: {
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
@@ -55,22 +66,35 @@ export async function saveTokens(
 }
 
 /**
- * Delete stored tokens for a provider (e.g., after a revoked refresh token).
+ * Delete stored tokens for a provider scoped to a user
+ * (e.g., after a revoked refresh token).
  * After deletion, `loadTokens` returns null and the provider won't be synced
  * until the user re-authorizes.
  */
-export async function deleteTokens(db: SyncDatabase, providerId: string): Promise<void> {
-  await db.delete(oauthToken).where(eq(oauthToken.providerId, providerId));
+export async function deleteTokens(
+  db: SyncDatabase,
+  providerId: string,
+  userId?: string,
+): Promise<void> {
+  const scopedUserId = resolveUserId(userId);
+  await db
+    .delete(oauthToken)
+    .where(and(eq(oauthToken.providerId, providerId), eq(oauthToken.userId, scopedUserId)));
 }
 
 /**
- * Load stored tokens for a provider. Returns null if none exist.
+ * Load stored tokens for a provider scoped to a user. Returns null if none exist.
  */
-export async function loadTokens(db: SyncDatabase, providerId: string): Promise<TokenSet | null> {
+export async function loadTokens(
+  db: SyncDatabase,
+  providerId: string,
+  userId?: string,
+): Promise<TokenSet | null> {
+  const scopedUserId = resolveUserId(userId);
   const rows = await db
     .select()
     .from(oauthToken)
-    .where(eq(oauthToken.providerId, providerId))
+    .where(and(eq(oauthToken.providerId, providerId), eq(oauthToken.userId, scopedUserId)))
     .limit(1);
 
   if (rows.length === 0) return null;

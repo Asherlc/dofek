@@ -16,6 +16,11 @@ import {
   stravaStreamsToMetricStream,
 } from "./strava.ts";
 
+vi.mock("../db/token-user-context.ts", () => ({
+  getTokenUserId: () => "00000000-0000-0000-0000-000000000001",
+  runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
+}));
+
 const sampleActivity: StravaActivity = {
   id: 12345678,
   name: "Morning Ride",

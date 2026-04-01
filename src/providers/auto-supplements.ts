@@ -133,7 +133,11 @@ export class AutoSupplementsProvider implements SyncProvider {
       return { provider: PROVIDER_ID, recordsSynced: 0, errors, duration: Date.now() - start };
     }
 
-    await ensureProvider(db, PROVIDER_ID, PROVIDER_NAME);
+    const firstUserId = allSupplements[0]?.userId;
+    if (!firstUserId) {
+      return { provider: PROVIDER_ID, recordsSynced: 0, errors, duration: Date.now() - start };
+    }
+    await ensureProvider(db, PROVIDER_ID, PROVIDER_NAME, undefined, firstUserId);
     const entries = buildDailyEntries(allSupplements, dates);
 
     let synced = 0;
@@ -144,7 +148,7 @@ export class AutoSupplementsProvider implements SyncProvider {
           .select({ nutritionDataId: foodEntry.nutritionDataId })
           .from(foodEntry)
           .where(
-            sql`${foodEntry.providerId} = ${entry.providerId} AND ${foodEntry.externalId} = ${entry.externalId}`,
+            sql`${foodEntry.userId} = ${entry.userId} AND ${foodEntry.providerId} = ${entry.providerId} AND ${foodEntry.externalId} = ${entry.externalId}`,
           );
 
         if (existing.length > 0 && existing[0]?.nutritionDataId) {
@@ -160,7 +164,7 @@ export class AutoSupplementsProvider implements SyncProvider {
           await db.execute(
             sql`UPDATE fitness.food_entry
                 SET food_name = ${entry.foodName}, food_description = ${entry.foodDescription}
-                WHERE provider_id = ${entry.providerId} AND external_id = ${entry.externalId}`,
+                WHERE user_id = ${entry.userId} AND provider_id = ${entry.providerId} AND external_id = ${entry.externalId}`,
           );
         } else {
           // Insert new nutrition_data + food_entry

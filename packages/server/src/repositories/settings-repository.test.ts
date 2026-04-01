@@ -221,9 +221,9 @@ describe("SettingsRepository", () => {
       };
       const repo = new SettingsRepository(db, "user-1");
 
-      // Pass 0 child tables to isolate user-scoped count: 0 child + 1 provider + 4 user-scoped = 5
+      // Pass 0 child tables to isolate user-scoped count: 4 user-scoped deletes
       await repo.deleteAllUserData([]);
-      expect(transactionExecute).toHaveBeenCalledTimes(5);
+      expect(transactionExecute).toHaveBeenCalledTimes(4);
     });
 
     it("executes deletes for provider child tables, provider, and user-scoped tables", async () => {
@@ -245,8 +245,8 @@ describe("SettingsRepository", () => {
       const childTables = ["fitness.sync_log", "fitness.activity"];
       await repo.deleteAllUserData(childTables);
 
-      // 2 child tables + 1 provider delete + 4 user-scoped tables = 7 execute calls
-      expect(transactionExecute).toHaveBeenCalledTimes(7);
+      // 2 child tables + 4 user-scoped tables = 6 execute calls
+      expect(transactionExecute).toHaveBeenCalledTimes(6);
     });
   });
 });

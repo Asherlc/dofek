@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import type { SyncDatabase } from "../db/index.ts";
 import { NUTRIENT_FIELDS } from "../db/nutrient-columns.ts";
 import { foodEntry, nutritionDaily, nutritionData } from "../db/schema.ts";
+import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import type { ImportProvider, SyncError, SyncResult } from "./types.ts";
 
@@ -261,10 +262,12 @@ export async function importCronometerCsv(
   const errors: SyncError[] = [];
   let recordsSynced = 0;
 
-  const { DEFAULT_USER_ID } = await import("../db/schema.ts");
-  const effectiveUserId = userId ?? DEFAULT_USER_ID;
+  const effectiveUserId = userId ?? getTokenUserId();
+  if (!effectiveUserId) {
+    throw new Error("cronometer-csv import requires a userId");
+  }
 
-  await ensureProvider(db, CRONOMETER_PROVIDER_ID, "Cronometer");
+  await ensureProvider(db, CRONOMETER_PROVIDER_ID, "Cronometer", undefined, effectiveUserId);
 
   const entries = parseCronometerCsv(csvText);
 
@@ -328,7 +331,7 @@ export async function importCronometerCsv(
         .select({ nutritionDataId: foodEntry.nutritionDataId })
         .from(foodEntry)
         .where(
-          sql`${foodEntry.providerId} = ${CRONOMETER_PROVIDER_ID} AND ${foodEntry.externalId} = ${externalId}`,
+          sql`${foodEntry.userId} = ${effectiveUserId} AND ${foodEntry.providerId} = ${CRONOMETER_PROVIDER_ID} AND ${foodEntry.externalId} = ${externalId}`,
         );
 
       if (existingEntry.length > 0 && existingEntry[0]?.nutritionDataId) {
@@ -347,7 +350,7 @@ export async function importCronometerCsv(
           sql`UPDATE fitness.food_entry
               SET date = ${entry.date}, meal = ${entry.meal}, food_name = ${entry.foodName},
                   number_of_units = ${entry.amount}, serving_unit = ${entry.unit}
-              WHERE provider_id = ${CRONOMETER_PROVIDER_ID} AND external_id = ${externalId}`,
+              WHERE user_id = ${effectiveUserId} AND provider_id = ${CRONOMETER_PROVIDER_ID} AND external_id = ${externalId}`,
         );
       } else {
         // Insert new nutrition_data + food_entry
@@ -413,7 +416,7 @@ export async function importCronometerCsv(
           fiberG: totals.fiberG,
         })
         .onConflictDoUpdate({
-          target: [nutritionDaily.date, nutritionDaily.providerId],
+          target: [nutritionDaily.userId, nutritionDaily.date, nutritionDaily.providerId],
           set: {
             calories: Math.round(totals.calories),
             proteinG: totals.proteinG,

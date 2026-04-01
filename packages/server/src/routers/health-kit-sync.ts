@@ -219,10 +219,10 @@ const workoutActivityTypeMap: Record<string, string> = {
 };
 
 /** Ensure the apple_health provider row exists */
-async function ensureProvider(db: Database) {
+async function ensureProvider(db: Database, userId: string) {
   await db.execute(
-    sql`INSERT INTO fitness.provider (id, name)
-        VALUES (${PROVIDER_ID}, 'Apple Health')
+    sql`INSERT INTO fitness.provider (id, name, user_id)
+        VALUES (${PROVIDER_ID}, 'Apple Health', ${userId})
         ON CONFLICT (id) DO NOTHING`,
   );
 }
@@ -443,7 +443,7 @@ async function processBodyMeasurements(
       await db.execute(
         sql`INSERT INTO fitness.body_measurement (user_id, provider_id, external_id, recorded_at, ${sql.identifier(mapping.column)})
             VALUES (${userId}, ${PROVIDER_ID}, ${externalId}, ${sample.startDate}::timestamptz, ${value})
-            ON CONFLICT (provider_id, external_id) DO UPDATE
+            ON CONFLICT (user_id, provider_id, external_id) DO UPDATE
               SET ${sql.identifier(mapping.column)} = ${value}`,
       );
       inserted++;
@@ -702,7 +702,7 @@ async function processHealthEvents(
       await db.execute(
         sql`INSERT INTO fitness.health_event (user_id, provider_id, external_id, type, value, unit, source_name, start_date, end_date)
             VALUES (${userId}, ${PROVIDER_ID}, ${externalId}, ${sample.type}, ${sample.value}, ${sample.unit}, ${sample.sourceName}, ${sample.startDate}::timestamptz, ${sample.endDate}::timestamptz)
-            ON CONFLICT (provider_id, external_id) DO NOTHING`,
+            ON CONFLICT (user_id, provider_id, external_id) DO NOTHING`,
       );
       inserted++;
     }
@@ -742,7 +742,7 @@ async function processWorkouts(
               ${workout.endDate}::timestamptz,
               ${rawData}::jsonb
             )
-            ON CONFLICT (provider_id, external_id) DO UPDATE SET
+            ON CONFLICT (user_id, provider_id, external_id) DO UPDATE SET
               activity_type = ${activityType},
               started_at = ${workout.startDate}::timestamptz,
               ended_at = ${workout.endDate}::timestamptz`,
@@ -801,7 +801,7 @@ async function processSleepSamples(
     const legacyExternalId = `hk:sleep:${session.uuid}`;
     await db.execute(
       sql`DELETE FROM fitness.sleep_session
-          WHERE provider_id = ${PROVIDER_ID} AND external_id = ${legacyExternalId}`,
+          WHERE user_id = ${userId} AND provider_id = ${PROVIDER_ID} AND external_id = ${legacyExternalId}`,
     );
 
     // Determine sources to insert: one row per source, or one row with session source if no stages
@@ -857,7 +857,7 @@ async function processSleepSamples(
               ${null},
               ${sourceName}
             )
-            ON CONFLICT (provider_id, external_id) DO UPDATE SET
+            ON CONFLICT (user_id, provider_id, external_id) DO UPDATE SET
               started_at = ${session.startDate}::timestamptz,
               ended_at = ${session.endDate}::timestamptz,
               duration_minutes = ${durationMinutes},
@@ -969,7 +969,7 @@ export const healthKitSyncRouter = router({
   pushQuantitySamples: protectedProcedure
     .input(z.object({ samples: z.array(healthKitSampleSchema) }))
     .mutation(async ({ ctx, input }) => {
-      await ensureProvider(ctx.db);
+      await ensureProvider(ctx.db, ctx.userId);
 
       const bodyMeasurements: HealthKitSample[] = [];
       const dailyMetricSamples: HealthKitSample[] = [];
@@ -1107,7 +1107,7 @@ export const healthKitSyncRouter = router({
   pushWorkouts: protectedProcedure
     .input(z.object({ workouts: z.array(workoutSampleSchema) }))
     .mutation(async ({ ctx, input }) => {
-      await ensureProvider(ctx.db);
+      await ensureProvider(ctx.db, ctx.userId);
       const inserted = await processWorkouts(ctx.db, ctx.userId, input.workouts);
 
       // Refresh activity views so dashboard picks up new workouts immediately
@@ -1131,7 +1131,7 @@ export const healthKitSyncRouter = router({
   pushSleepSamples: protectedProcedure
     .input(z.object({ samples: z.array(sleepSampleSchema) }))
     .mutation(async ({ ctx, input }) => {
-      await ensureProvider(ctx.db);
+      await ensureProvider(ctx.db, ctx.userId);
       const inserted = await processSleepSamples(ctx.db, ctx.userId, input.samples);
 
       // Refresh v_sleep so sleep queries pick up new data immediately

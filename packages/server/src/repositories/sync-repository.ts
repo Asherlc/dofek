@@ -100,8 +100,7 @@ export class SyncRepository {
       tokenRowSchema,
       sql`SELECT DISTINCT ot.provider_id
           FROM fitness.oauth_token ot
-          JOIN fitness.provider p ON p.id = ot.provider_id
-          WHERE p.user_id = ${this.#userId}`,
+          WHERE ot.user_id = ${this.#userId}`,
     );
     return rows.map((row) => ({ providerId: row.provider_id }));
   }

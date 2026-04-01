@@ -134,7 +134,11 @@ describe("db-insertion deduplication (integration)", () => {
             .insert(schema.bodyMeasurement)
             .values(batch)
             .onConflictDoUpdate({
-              target: [schema.bodyMeasurement.providerId, schema.bodyMeasurement.externalId],
+              target: [
+                schema.bodyMeasurement.userId,
+                schema.bodyMeasurement.providerId,
+                schema.bodyMeasurement.externalId,
+              ],
               set: {
                 weightKg: sql`excluded.weight_kg`,
                 sourceName: sql`excluded.source_name`,
@@ -247,7 +251,7 @@ describe("db-insertion deduplication (integration)", () => {
       await ctx.db.insert(schema.sensorSample).values([
         {
           providerId: PROVIDER_ID,
-          userId: schema.DEFAULT_USER_ID,
+          userId: schema.TEST_USER_ID,
           recordedAt: new Date("2025-08-01T08:00:00Z"),
           channel: "spo2",
           scalar: 0.96,
@@ -256,7 +260,7 @@ describe("db-insertion deduplication (integration)", () => {
         },
         {
           providerId: PROVIDER_ID,
-          userId: schema.DEFAULT_USER_ID,
+          userId: schema.TEST_USER_ID,
           recordedAt: new Date("2025-08-01T14:00:00Z"),
           channel: "spo2",
           scalar: 0.98,
@@ -265,7 +269,7 @@ describe("db-insertion deduplication (integration)", () => {
         },
         {
           providerId: PROVIDER_ID,
-          userId: schema.DEFAULT_USER_ID,
+          userId: schema.TEST_USER_ID,
           recordedAt: new Date("2025-08-01T20:00:00Z"),
           channel: "spo2",
           scalar: 0.97,
@@ -293,7 +297,7 @@ describe("db-insertion deduplication (integration)", () => {
       await ctx.db.insert(schema.sensorSample).values([
         {
           providerId: PROVIDER_ID,
-          userId: schema.DEFAULT_USER_ID,
+          userId: schema.TEST_USER_ID,
           recordedAt: new Date("2025-08-02T02:00:00Z"),
           channel: "skin_temperature",
           scalar: 33.2,
@@ -302,7 +306,7 @@ describe("db-insertion deduplication (integration)", () => {
         },
         {
           providerId: PROVIDER_ID,
-          userId: schema.DEFAULT_USER_ID,
+          userId: schema.TEST_USER_ID,
           recordedAt: new Date("2025-08-02T04:00:00Z"),
           channel: "skin_temperature",
           scalar: 33.6,

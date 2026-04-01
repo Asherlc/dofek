@@ -46,7 +46,7 @@ CREATE INDEX IF NOT EXISTS session_expires_idx ON fitness.session (expires_at);
 -- 3. Scope user_settings by user_id
 -- ============================================================
 
--- Add user_id column (defaulting existing rows to the default user)
+-- Add user_id column (defaulting existing rows to the seeded baseline user)
 ALTER TABLE fitness.user_settings
   ADD COLUMN IF NOT EXISTS user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
   REFERENCES fitness.user_profile(id);

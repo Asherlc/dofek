@@ -10,6 +10,11 @@ import {
   serializeInternalTokens,
 } from "./garmin.ts";
 
+vi.mock("../db/token-user-context.ts", () => ({
+  getTokenUserId: () => "00000000-0000-0000-0000-000000000001",
+  runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
+}));
+
 // ============================================================
 // Hoisted mocks (must be before vi.mock calls)
 // ============================================================
@@ -931,6 +936,7 @@ describe("GarminProvider.sync()", () => {
         accessToken: JSON.stringify(refreshedTokens),
         scopes: INTERNAL_SCOPE_MARKER,
       }),
+      expect.any(String),
     );
   });
 

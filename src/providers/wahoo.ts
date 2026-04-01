@@ -387,7 +387,7 @@ export class WahooProvider implements WebhookProvider {
           name: parsed.name,
         })
         .onConflictDoUpdate({
-          target: [activity.providerId, activity.externalId],
+          target: [activity.userId, activity.providerId, activity.externalId],
           set: {
             activityType: parsed.activityType,
             startedAt: parsed.startedAt,
@@ -544,7 +544,7 @@ export class WahooProvider implements WebhookProvider {
               name: workout.name,
             })
             .onConflictDoUpdate({
-              target: [activity.providerId, activity.externalId],
+              target: [activity.userId, activity.providerId, activity.externalId],
               set: {
                 activityType: workout.activityType,
                 startedAt: workout.startedAt,

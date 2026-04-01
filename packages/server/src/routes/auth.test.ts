@@ -3066,7 +3066,7 @@ describe("createAuthRouter", () => {
       );
     });
 
-    it("falls back to DEFAULT_USER_ID when no session", async () => {
+    it("falls back to TEST_USER_ID when no session", async () => {
       vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
       vi.mocked(validateSession).mockResolvedValue(null);
 
@@ -3105,13 +3105,13 @@ describe("createAuthRouter", () => {
 
       const callbackRes = await request(app, "get", `/callback?code=default-code&state=${state}`);
       expect(callbackRes.status).toBe(200);
-      // Should use DEFAULT_USER_ID since there's no session
+      // Should use TEST_USER_ID since there's no session
       expect(ensureProvider).toHaveBeenCalledWith(
         expect.anything(),
         "wahoo",
         "Wahoo",
         undefined,
-        expect.any(String), // DEFAULT_USER_ID
+        expect.any(String), // TEST_USER_ID
       );
     });
   });

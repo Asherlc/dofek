@@ -37,7 +37,7 @@ export const credentialAuthRouter = router({
 
       const tokens = await setup.automatedLogin(input.username, input.password);
       await ensureProvider(ctx.db, provider.id, provider.name, setup.apiBaseUrl, ctx.userId);
-      await saveTokens(ctx.db, provider.id, tokens);
+      await saveTokens(ctx.db, provider.id, tokens, ctx.userId);
       await queryCache.invalidateByPrefix(`${ctx.userId}:sync.providers`);
 
       return { success: true };

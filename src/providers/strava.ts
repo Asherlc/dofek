@@ -13,6 +13,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity, sensorSample } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { dualWriteToSensorSample, type SensorSampleSourceRow } from "../db/sensor-sample-writer.ts";
+import { getTokenUserId } from "../db/token-user-context.ts";
 import { logger } from "../logger.ts";
 import type {
   ProviderAuthSetup,
@@ -577,7 +578,7 @@ export class StravaProvider implements WebhookProvider {
   async syncWebhookEvent(
     db: SyncDatabase,
     event: WebhookEvent,
-    _options?: SyncOptions,
+    options?: SyncOptions,
   ): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
@@ -588,13 +589,16 @@ export class StravaProvider implements WebhookProvider {
     }
 
     const activityExternalId = Number(event.objectId);
+    const scopedUserId = options?.userId ?? getTokenUserId();
 
     // Handle delete events — remove the activity and its streams
     if (event.eventType === "delete") {
       const deleted = await db
         .delete(activity)
         .where(
-          sql`${activity.providerId} = ${this.id} AND ${activity.externalId} = ${event.objectId}`,
+          scopedUserId
+            ? sql`${activity.userId} = ${scopedUserId} AND ${activity.providerId} = ${this.id} AND ${activity.externalId} = ${event.objectId}`
+            : sql`${activity.providerId} = ${this.id} AND ${activity.externalId} = ${event.objectId}`,
         )
         .returning({ id: activity.id });
       const deletedRow = deleted[0];
@@ -633,7 +637,7 @@ export class StravaProvider implements WebhookProvider {
         raw: detail,
       })
       .onConflictDoUpdate({
-        target: [activity.providerId, activity.externalId],
+        target: [activity.userId, activity.providerId, activity.externalId],
         set: {
           activityType: parsed.activityType,
           startedAt: parsed.startedAt,
@@ -803,7 +807,7 @@ export class StravaProvider implements WebhookProvider {
               raw: rawActivities.find((r) => String(r.id) === act.externalId),
             })
             .onConflictDoUpdate({
-              target: [activity.providerId, activity.externalId],
+              target: [activity.userId, activity.providerId, activity.externalId],
               set: {
                 activityType: act.activityType,
                 startedAt: act.startedAt,

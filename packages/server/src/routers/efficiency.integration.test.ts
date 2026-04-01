@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DEFAULT_USER_ID } from "../../../../src/db/schema.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
@@ -17,18 +17,18 @@ describe("efficiency.polarizationTrend integration", () => {
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
 
-    const session = await createSession(testCtx.db, DEFAULT_USER_ID);
+    const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
 
     await testCtx.db.execute(
       sql`UPDATE fitness.user_profile
           SET max_hr = ${MAX_HR}, ftp = 250, birth_date = '1990-01-01'
-          WHERE id = ${DEFAULT_USER_ID}`,
+          WHERE id = ${TEST_USER_ID}`,
     );
 
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES ('test_provider', 'Test Provider', ${DEFAULT_USER_ID})
+          VALUES ('test_provider', 'Test Provider', ${TEST_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
 
@@ -87,7 +87,7 @@ describe("efficiency.polarizationTrend integration", () => {
       sql`INSERT INTO fitness.activity (
             provider_id, user_id, activity_type, started_at, ended_at, name
           ) VALUES (
-            'test_provider', ${DEFAULT_USER_ID}, ${activityType},
+            'test_provider', ${TEST_USER_ID}, ${activityType},
             CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day',
             CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day' + ${totalSamples}::int * INTERVAL '1 second',
             ${name}
@@ -106,11 +106,11 @@ describe("efficiency.polarizationTrend integration", () => {
           const offset = sampleIndex + s;
           const ts = `CURRENT_TIMESTAMP - ${daysAgo} * INTERVAL '1 day' + ${offset} * INTERVAL '1 second'`;
           metricValues.push(
-            `(${ts}, '${DEFAULT_USER_ID}', '${actId}', 'test_provider', ${zone.hr}, 200)`,
+            `(${ts}, '${TEST_USER_ID}', '${actId}', 'test_provider', ${zone.hr}, 200)`,
           );
           sensorValues.push(
-            `(${ts}, '${DEFAULT_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${actId}', ${zone.hr}, NULL)`,
-            `(${ts}, '${DEFAULT_USER_ID}', 'test_provider', NULL, 'api', 'power', '${actId}', 200, NULL)`,
+            `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${actId}', ${zone.hr}, NULL)`,
+            `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'power', '${actId}', 200, NULL)`,
           );
         }
         await testCtx.db.execute(

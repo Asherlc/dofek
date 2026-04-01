@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 
-const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
+const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
 const DOFEK_PROVIDER_ID = "dofek";
 
 /** Replicate sqlIdList for testing */
@@ -69,8 +69,8 @@ describe("Slack Bot — DB helper functions (integration)", () => {
 
   describe("confirmFoodEntries (via SQL)", () => {
     it("confirms unconfirmed entries and returns count", async () => {
-      const id1 = await insertUnconfirmedEntry(DEFAULT_USER_ID, "2026-01-15", "Banana");
-      const id2 = await insertUnconfirmedEntry(DEFAULT_USER_ID, "2026-01-15", "Apple");
+      const id1 = await insertUnconfirmedEntry(TEST_USER_ID, "2026-01-15", "Banana");
+      const id2 = await insertUnconfirmedEntry(TEST_USER_ID, "2026-01-15", "Apple");
 
       const result = await ctx.db.execute<{ id: string }>(
         sql`UPDATE fitness.food_entry
@@ -83,7 +83,7 @@ describe("Slack Bot — DB helper functions (integration)", () => {
     });
 
     it("returns 0 when entries are already confirmed", async () => {
-      const id = await insertUnconfirmedEntry(DEFAULT_USER_ID, "2026-01-15", "Banana");
+      const id = await insertUnconfirmedEntry(TEST_USER_ID, "2026-01-15", "Banana");
 
       // Confirm once
       await ctx.db.execute(
@@ -113,8 +113,8 @@ describe("Slack Bot — DB helper functions (integration)", () => {
 
   describe("deleteUnconfirmedEntries (via SQL)", () => {
     it("deletes only unconfirmed entries", async () => {
-      const id1 = await insertUnconfirmedEntry(DEFAULT_USER_ID, "2026-01-15", "Banana");
-      const id2 = await insertUnconfirmedEntry(DEFAULT_USER_ID, "2026-01-15", "Apple");
+      const id1 = await insertUnconfirmedEntry(TEST_USER_ID, "2026-01-15", "Banana");
+      const id2 = await insertUnconfirmedEntry(TEST_USER_ID, "2026-01-15", "Apple");
 
       // Confirm one
       await ctx.db.execute(
@@ -253,7 +253,7 @@ describe("Slack Bot — DB helper functions (integration)", () => {
 
   describe("saveUnconfirmedFoodEntries (via SQL)", () => {
     it("inserts entries with confirmed = false", async () => {
-      const id = await insertUnconfirmedEntry(DEFAULT_USER_ID, "2026-03-10", "Rice Bowl");
+      const id = await insertUnconfirmedEntry(TEST_USER_ID, "2026-03-10", "Rice Bowl");
 
       const rows = await ctx.db.execute<{ confirmed: boolean; food_name: string }>(
         sql`SELECT confirmed, food_name FROM fitness.food_entry WHERE id = ${id}::uuid`,
@@ -263,9 +263,9 @@ describe("Slack Bot — DB helper functions (integration)", () => {
     });
 
     it("inserts multiple entries and returns all IDs", async () => {
-      const id1 = await insertUnconfirmedEntry(DEFAULT_USER_ID, "2026-03-10", "Item 1");
-      const id2 = await insertUnconfirmedEntry(DEFAULT_USER_ID, "2026-03-10", "Item 2");
-      const id3 = await insertUnconfirmedEntry(DEFAULT_USER_ID, "2026-03-10", "Item 3");
+      const id1 = await insertUnconfirmedEntry(TEST_USER_ID, "2026-03-10", "Item 1");
+      const id2 = await insertUnconfirmedEntry(TEST_USER_ID, "2026-03-10", "Item 2");
+      const id3 = await insertUnconfirmedEntry(TEST_USER_ID, "2026-03-10", "Item 3");
 
       expect(id1).toBeTruthy();
       expect(id2).toBeTruthy();

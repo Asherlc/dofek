@@ -1,5 +1,6 @@
 import type { SyncDatabase } from "./index.ts";
 import { syncLog } from "./schema.ts";
+import { getTokenUserId } from "./token-user-context.ts";
 
 export interface SyncLogEntry {
   providerId: string;
@@ -8,14 +9,23 @@ export interface SyncLogEntry {
   recordCount?: number;
   errorMessage?: string;
   durationMs?: number;
-  /** User ID for this sync log entry. When omitted, falls back to the DB default (DEFAULT_USER_ID). */
+  /** User ID for this sync log entry. */
   userId?: string;
+}
+
+function resolveUserId(userId?: string): string {
+  const scopedUserId = userId ?? getTokenUserId();
+  if (!scopedUserId) {
+    throw new Error("sync-log requires userId (explicit or token context)");
+  }
+  return scopedUserId;
 }
 
 /**
  * Record a sync attempt for a specific provider + data type.
  */
 export async function logSync(db: SyncDatabase, entry: SyncLogEntry): Promise<void> {
+  const scopedUserId = resolveUserId(entry.userId);
   await db.insert(syncLog).values({
     providerId: entry.providerId,
     dataType: entry.dataType,
@@ -23,7 +33,7 @@ export async function logSync(db: SyncDatabase, entry: SyncLogEntry): Promise<vo
     recordCount: entry.recordCount ?? 0,
     errorMessage: entry.errorMessage,
     durationMs: entry.durationMs,
-    userId: entry.userId,
+    userId: scopedUserId,
   });
 }
 

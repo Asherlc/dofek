@@ -14,6 +14,7 @@
  */
 
 import { randomBytes } from "node:crypto";
+import { runWithTokenUser } from "dofek/db/token-user-context";
 import type { WebhookEvent, WebhookProvider } from "dofek/providers/types";
 import { sql } from "drizzle-orm";
 import { Router, raw } from "express";
@@ -185,12 +186,12 @@ export function createWebhookRouter({ db, getSyncQueue }: WebhookRouterDeps): Ro
           const rows = await executeWithSchema(
             db,
             providerUserRow,
-            sql`SELECT p.id AS provider_id, p.user_id
-                FROM fitness.provider p
-                JOIN fitness.auth_account aa ON aa.user_id = p.user_id
+            sql`SELECT ot.provider_id, ot.user_id
+                FROM fitness.oauth_token ot
+                JOIN fitness.auth_account aa ON aa.user_id = ot.user_id
                 WHERE aa.auth_provider = ${providerName}
                   AND aa.provider_account_id = ${event.ownerExternalId}
-                  AND p.name = ${provider.name}
+                  AND ot.provider_id = ${provider.id}
                 LIMIT 1`,
           );
 
@@ -207,9 +208,12 @@ export function createWebhookRouter({ db, getSyncQueue }: WebhookRouterDeps): Ro
           // If the provider supports targeted webhook sync, use it directly
           // instead of enqueueing a full sync job. This is much more efficient
           // (e.g., 2 API calls for Strava instead of 41, or 0 for Wahoo).
-          if (provider.syncWebhookEvent) {
+          const syncWebhookEvent = provider.syncWebhookEvent;
+          if (syncWebhookEvent) {
             try {
-              const result = await provider.syncWebhookEvent(db, event, { userId: user_id });
+              const result = await runWithTokenUser(user_id, () =>
+                syncWebhookEvent(db, event, { userId: user_id }),
+              );
               logger.info(
                 `[webhook] ${providerName}: synced ${result.recordsSynced} records for ${event.eventType} ${event.objectType} (${result.duration}ms)`,
               );

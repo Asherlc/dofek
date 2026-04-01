@@ -159,7 +159,7 @@ describe("providerDetailRouter", () => {
 
     it("includes all required child tables", () => {
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.sensor_sample");
-      expect(DISCONNECT_CHILD_TABLES).toContain("fitness.exercise_alias");
+      expect(DISCONNECT_CHILD_TABLES).toContain("fitness.metric_stream");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.strength_workout");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.body_measurement");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.daily_metrics");
@@ -545,7 +545,7 @@ describe("providerDetailRouter", () => {
   // ── disconnect ──
 
   describe("disconnect", () => {
-    it("deletes all child table rows and provider row in a transaction", async () => {
+    it("deletes all user-scoped provider rows in a transaction", async () => {
       const txExecute = vi.fn().mockResolvedValue([]);
       const mockTransaction = vi
         .fn()
@@ -567,8 +567,7 @@ describe("providerDetailRouter", () => {
       expect(result).toEqual({ success: true });
       expect(mockExecute).toHaveBeenCalledTimes(1);
       expect(mockTransaction).toHaveBeenCalledTimes(1);
-      // 16 child tables + 1 provider delete = 17 deletes inside the transaction
-      expect(txExecute).toHaveBeenCalledTimes(17);
+      expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length);
     });
 
     it("verifies ownership before disconnecting", async () => {
@@ -591,7 +590,7 @@ describe("providerDetailRouter", () => {
       // Verify ownership check SQL contains correct table and conditions
       const ownerSql = mockExecute.mock.calls[0][0];
       const ownerText = extractSqlText(ownerSql);
-      expect(ownerText).toContain("fitness.provider");
+      expect(ownerText).toContain("fitness.oauth_token");
       expect(ownerText).toContain("SELECT");
     });
 
@@ -619,12 +618,6 @@ describe("providerDetailRouter", () => {
         expect(callText).toContain("DELETE FROM");
         expect(callText).toContain(DISCONNECT_CHILD_TABLES[i]);
       }
-
-      // Verify final provider delete
-      const providerDeleteSql = txExecute.mock.calls[DISCONNECT_CHILD_TABLES.length][0];
-      const providerDeleteText = extractSqlText(providerDeleteSql);
-      expect(providerDeleteText).toContain("DELETE FROM");
-      expect(providerDeleteText).toContain("fitness.provider");
     });
 
     it("passes provider ID as parameter to each delete", async () => {

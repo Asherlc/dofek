@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DEFAULT_USER_ID } from "../../../../src/db/schema.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
@@ -21,25 +21,25 @@ describe("Activity summary deduplication", () => {
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
 
-    const session = await createSession(testCtx.db, DEFAULT_USER_ID);
+    const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
 
     // Set up user profile with max_hr (required for TRIMP calculation)
     await testCtx.db.execute(
       sql`UPDATE fitness.user_profile
           SET max_hr = 190, resting_hr = 50
-          WHERE id = ${DEFAULT_USER_ID}`,
+          WHERE id = ${TEST_USER_ID}`,
     );
 
     // Insert two providers with different priorities
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES ('wahoo', 'Wahoo', ${DEFAULT_USER_ID})
+          VALUES ('wahoo', 'Wahoo', ${TEST_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES ('apple_health', 'Apple Health', ${DEFAULT_USER_ID})
+          VALUES ('apple_health', 'Apple Health', ${TEST_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
 
@@ -55,7 +55,7 @@ describe("Activity summary deduplication", () => {
         sql`INSERT INTO fitness.activity (
               provider_id, user_id, activity_type, started_at, ended_at, name
             ) VALUES (
-              'wahoo', ${DEFAULT_USER_ID}, 'cycling',
+              'wahoo', ${TEST_USER_ID}, 'cycling',
               CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day',
               CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day' + ${durationSec}::int * INTERVAL '1 second',
               'Morning Ride'
@@ -67,7 +67,7 @@ describe("Activity summary deduplication", () => {
         sql`INSERT INTO fitness.activity (
               provider_id, user_id, activity_type, started_at, ended_at, name
             ) VALUES (
-              'apple_health', ${DEFAULT_USER_ID}, 'cycling',
+              'apple_health', ${TEST_USER_ID}, 'cycling',
               CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day' + INTERVAL '10 seconds',
               CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day' + ${durationSec}::int * INTERVAL '1 second' - INTERVAL '10 seconds',
               'Morning Ride'
@@ -88,9 +88,9 @@ describe("Activity summary deduplication", () => {
           for (let s = batchStart; s < batchEnd; s++) {
             const hr = 155 + Math.round(Math.sin(s * 0.01) * 8);
             const ts = `CURRENT_TIMESTAMP - ${daysAgo} * INTERVAL '1 day' + ${s} * INTERVAL '1 second'`;
-            metricValues.push(`(${ts}, '${DEFAULT_USER_ID}', '${actId}', '${providerId}', ${hr})`);
+            metricValues.push(`(${ts}, '${TEST_USER_ID}', '${actId}', '${providerId}', ${hr})`);
             sensorValues.push(
-              `(${ts}, '${DEFAULT_USER_ID}', '${providerId}', NULL, 'api', 'heart_rate', '${actId}', ${hr}, NULL)`,
+              `(${ts}, '${TEST_USER_ID}', '${providerId}', NULL, 'api', 'heart_rate', '${actId}', ${hr}, NULL)`,
             );
           }
           await testCtx.db.execute(
@@ -145,7 +145,7 @@ describe("Activity summary deduplication", () => {
   it("activity_summary contains only one row for overlapping activities", async () => {
     const result = await testCtx.db.execute<{ count: string }>(
       sql`SELECT COUNT(*)::text AS count FROM fitness.activity_summary
-          WHERE user_id = ${DEFAULT_USER_ID}`,
+          WHERE user_id = ${TEST_USER_ID}`,
     );
     // With dedup: 2 canonical activities (one per time point). Without dedup: 4 (one per provider per time point).
     expect(Number(result[0]?.count)).toBe(2);

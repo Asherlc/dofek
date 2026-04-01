@@ -193,7 +193,7 @@ export async function importStrongCsv(
   const errors: SyncError[] = [];
   let recordsSynced = 0;
 
-  await ensureProvider(db, STRONG_PROVIDER_ID, "Strong");
+  await ensureProvider(db, STRONG_PROVIDER_ID, "Strong", undefined, userId);
 
   const groups = parseStrongCsv(csvText);
   const exerciseCache = new Map<string, string>();
@@ -220,7 +220,7 @@ export async function importStrongCsv(
           notes: group.workoutNotes,
         })
         .onConflictDoUpdate({
-          target: [strengthWorkout.providerId, strengthWorkout.externalId],
+          target: [strengthWorkout.userId, strengthWorkout.providerId, strengthWorkout.externalId],
           set: {
             startedAt,
             endedAt,

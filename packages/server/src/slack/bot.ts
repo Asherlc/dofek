@@ -132,7 +132,7 @@ async function resolveUserByEmail(db: Database, email: string | null): Promise<s
       return authRow.user_id;
     }
 
-    // Also check user_profile.email (web login updates this for DEFAULT_USER_ID)
+    // Also check user_profile.email (web login may populate profile email)
     const existingByProfileEmail = await executeWithSchema(
       db,
       z.object({ id: z.string() }),
@@ -245,10 +245,10 @@ async function lookupOrCreateUserId(
 }
 
 /** Ensure the 'dofek' provider row exists (for self-created entries) */
-async function ensureDofekProvider(db: Database) {
+async function ensureDofekProvider(db: Database, userId: string) {
   await db.execute(
-    sql`INSERT INTO fitness.provider (id, name)
-        VALUES (${DOFEK_PROVIDER_ID}, 'Dofek App')
+    sql`INSERT INTO fitness.provider (id, name, user_id)
+        VALUES (${DOFEK_PROVIDER_ID}, 'Dofek App', ${userId})
         ON CONFLICT (id) DO NOTHING`,
   );
 }
@@ -260,7 +260,7 @@ async function saveUnconfirmedFoodEntries(
   date: string,
   items: NutritionItemWithMeal[],
 ): Promise<string[]> {
-  await ensureDofekProvider(db);
+  await ensureDofekProvider(db, userId);
 
   const ids: string[] = [];
   for (const item of items) {

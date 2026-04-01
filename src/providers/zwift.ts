@@ -160,7 +160,7 @@ export class ZwiftProvider implements SyncProvider {
                     raw: parsed.raw,
                   })
                   .onConflictDoUpdate({
-                    target: [activity.providerId, activity.externalId],
+                    target: [activity.userId, activity.providerId, activity.externalId],
                     set: {
                       activityType: parsed.activityType,
                       name: parsed.name,

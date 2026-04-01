@@ -561,7 +561,7 @@ export class PolarProvider implements WebhookProvider {
                   },
                 })
                 .onConflictDoUpdate({
-                  target: [activity.providerId, activity.externalId],
+                  target: [activity.userId, activity.providerId, activity.externalId],
                   set: {
                     activityType: parsed.activityType,
                     name: parsed.name,
@@ -641,7 +641,7 @@ export class PolarProvider implements WebhookProvider {
                   awakeMinutes: parsed.awakeMinutes,
                 })
                 .onConflictDoUpdate({
-                  target: [sleepSession.providerId, sleepSession.externalId],
+                  target: [sleepSession.userId, sleepSession.providerId, sleepSession.externalId],
                   set: {
                     startedAt: parsed.startedAt,
                     endedAt: parsed.endedAt,

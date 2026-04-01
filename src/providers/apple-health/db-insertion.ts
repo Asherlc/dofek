@@ -283,7 +283,11 @@ export async function upsertBodyMeasurementBatch(
           .insert(bodyMeasurement)
           .values(b)
           .onConflictDoUpdate({
-            target: [bodyMeasurement.providerId, bodyMeasurement.externalId],
+            target: [
+              bodyMeasurement.userId,
+              bodyMeasurement.providerId,
+              bodyMeasurement.externalId,
+            ],
             set: {
               recordedAt: sql`excluded.recorded_at`,
               weightKg: sql`coalesce(excluded.weight_kg, ${bodyMeasurement.weightKg})`,
@@ -631,7 +635,7 @@ export async function upsertNutritionBatch(
           .insert(nutritionDaily)
           .values(b)
           .onConflictDoUpdate({
-            target: [nutritionDaily.date, nutritionDaily.providerId],
+            target: [nutritionDaily.userId, nutritionDaily.date, nutritionDaily.providerId],
             set: {
               // Nutrition is always additive (import.ts clears before import)
               calories: sql`coalesce(${nutritionDaily.calories}, 0) + coalesce(excluded.calories, 0)`,
@@ -779,7 +783,7 @@ export async function upsertWorkoutBatch(
       .insert(activity)
       .values(insertRows)
       .onConflictDoUpdate({
-        target: [activity.providerId, activity.externalId],
+        target: [activity.userId, activity.providerId, activity.externalId],
         set: {
           activityType: sql`excluded.activity_type`,
           endedAt: sql`excluded.ended_at`,
@@ -931,7 +935,7 @@ export async function upsertSleepBatch(
           .insert(sleepSession)
           .values(b)
           .onConflictDoUpdate({
-            target: [sleepSession.providerId, sleepSession.externalId],
+            target: [sleepSession.userId, sleepSession.providerId, sleepSession.externalId],
             set: {
               endedAt: sql`excluded.ended_at`,
               durationMinutes: sql`excluded.duration_minutes`,

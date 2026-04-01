@@ -35,6 +35,24 @@ const USER_SCOPED_DELETE_TABLES = [
   "fitness.supplement",
 ];
 
+const GLOBAL_PROVIDER_TABLES = new Set(["fitness.exercise_alias"]);
+
+function isUndefinedTableError(error: unknown): boolean {
+  if (!(typeof error === "object" && error !== null)) {
+    if (error instanceof Error) {
+      return error.message.includes("does not exist");
+    }
+    return false;
+  }
+  if ("code" in error && error.code === "42P01") {
+    return true;
+  }
+  if ("message" in error && typeof error.message === "string") {
+    return error.message.includes("does not exist");
+  }
+  return false;
+}
+
 // ---------------------------------------------------------------------------
 // Repository
 // ---------------------------------------------------------------------------
@@ -111,15 +129,19 @@ export class SettingsRepository {
   async deleteAllUserData(providerChildTables: string[]): Promise<void> {
     await this.#db.transaction(async (transaction) => {
       for (const table of providerChildTables) {
-        await transaction.execute(
-          sql`DELETE FROM ${sql.raw(table)}
-              WHERE provider_id IN (
-                SELECT id FROM fitness.provider WHERE user_id = ${this.#userId}
-              )`,
-        );
+        if (GLOBAL_PROVIDER_TABLES.has(table)) {
+          continue;
+        }
+        try {
+          await transaction.execute(
+            sql`DELETE FROM ${sql.raw(table)} WHERE user_id = ${this.#userId}`,
+          );
+        } catch (error: unknown) {
+          if (!isUndefinedTableError(error)) {
+            throw error;
+          }
+        }
       }
-
-      await transaction.execute(sql`DELETE FROM fitness.provider WHERE user_id = ${this.#userId}`);
 
       for (const table of USER_SCOPED_DELETE_TABLES) {
         await transaction.execute(

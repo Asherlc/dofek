@@ -17,8 +17,8 @@ describe("Upload & Auth - extended coverage", () => {
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
 
-    const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
-    const session = await createSession(testCtx.db, DEFAULT_USER_ID);
+    const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
+    const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
 
     const app = createApp(testCtx.db);

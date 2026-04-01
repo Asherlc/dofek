@@ -1,11 +1,20 @@
-import { DEFAULT_USER_ID } from "dofek/db/schema";
+import { sql } from "drizzle-orm";
+import { z } from "zod";
 import { logger } from "../logger.ts";
 import { appRouter } from "../router.ts";
 
-/** Fire common queries sequentially to populate cache without overwhelming the DB.
- *  Uses DEFAULT_USER_ID for backwards compatibility — only warms for the primary user. */
+/** Fire common queries sequentially to populate cache without overwhelming the DB. */
 export async function warmCache(db: import("dofek/db").Database): Promise<void> {
-  const caller = appRouter.createCaller({ db, userId: DEFAULT_USER_ID, timezone: "UTC" });
+  const rows = await db.execute(
+    sql`SELECT id::text AS id FROM fitness.user_profile ORDER BY created_at ASC LIMIT 1`,
+  );
+  const parsed = z.object({ id: z.string() }).safeParse(rows[0]);
+  if (!parsed.success) {
+    logger.warn("[cache] Skipping warmup: no user_profile rows found");
+    return;
+  }
+
+  const caller = appRouter.createCaller({ db, userId: parsed.data.id, timezone: "UTC" });
   const endDate = new Date().toISOString().slice(0, 10);
   const queries: Array<[string, () => Promise<unknown>]> = [
     // Dashboard

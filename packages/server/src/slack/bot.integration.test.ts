@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 
-const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
+const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
 const DOFEK_PROVIDER_ID = "dofek";
 
 /** Build a SQL `IN (...)` clause from an array of UUID strings */
@@ -32,9 +32,7 @@ describe("Slack food entry confirmed flag", () => {
   });
 
   beforeEach(async () => {
-    await testCtx.db.execute(
-      sql`DELETE FROM fitness.food_entry WHERE user_id = ${DEFAULT_USER_ID}`,
-    );
+    await testCtx.db.execute(sql`DELETE FROM fitness.food_entry WHERE user_id = ${TEST_USER_ID}`);
   });
 
   /** Insert a food entry with the given confirmed status, return its id */
@@ -48,7 +46,7 @@ describe("Slack food entry confirmed flag", () => {
           INSERT INTO fitness.food_entry (
             user_id, provider_id, date, meal, food_name, nutrition_data_id, confirmed
           ) VALUES (
-            ${DEFAULT_USER_ID}, ${DOFEK_PROVIDER_ID}, '2025-06-15'::date,
+            ${TEST_USER_ID}, ${DOFEK_PROVIDER_ID}, '2025-06-15'::date,
             'lunch', ${foodName}, (SELECT id FROM nd), ${confirmed}
           ) RETURNING id`,
     );
@@ -64,7 +62,7 @@ describe("Slack food entry confirmed flag", () => {
 
       const rows = await testCtx.db.execute<{ food_name: string }>(
         sql`SELECT food_name FROM fitness.food_entry
-            WHERE user_id = ${DEFAULT_USER_ID}
+            WHERE user_id = ${TEST_USER_ID}
               AND confirmed = true`,
       );
 
@@ -80,7 +78,7 @@ describe("Slack food entry confirmed flag", () => {
         sql`SELECT SUM(nd.calories)::text as total
             FROM fitness.food_entry fe
             JOIN fitness.nutrition_data nd ON nd.id = fe.nutrition_data_id
-            WHERE fe.user_id = ${DEFAULT_USER_ID}
+            WHERE fe.user_id = ${TEST_USER_ID}
               AND fe.confirmed = true`,
       );
 
@@ -93,7 +91,7 @@ describe("Slack food entry confirmed flag", () => {
 
       const rows = await testCtx.db.execute<{ food_name: string }>(
         sql`SELECT food_name FROM fitness.food_entry
-            WHERE user_id = ${DEFAULT_USER_ID}
+            WHERE user_id = ${TEST_USER_ID}
               AND confirmed = true
               AND food_name ILIKE '%Pizza%'`,
       );
@@ -119,7 +117,7 @@ describe("Slack food entry confirmed flag", () => {
       // Now visible in confirmed queries
       const rows = await testCtx.db.execute<{ id: string }>(
         sql`SELECT id FROM fitness.food_entry
-            WHERE user_id = ${DEFAULT_USER_ID} AND confirmed = true`,
+            WHERE user_id = ${TEST_USER_ID} AND confirmed = true`,
       );
       expect(rows).toHaveLength(1);
       expect(rows[0]?.id).toBe(id);
@@ -155,7 +153,7 @@ describe("Slack food entry confirmed flag", () => {
 
       const visible = await testCtx.db.execute(
         sql`SELECT id FROM fitness.food_entry
-            WHERE user_id = ${DEFAULT_USER_ID} AND confirmed = true`,
+            WHERE user_id = ${TEST_USER_ID} AND confirmed = true`,
       );
       expect(visible).toHaveLength(3);
     });
@@ -204,7 +202,7 @@ describe("Slack food entry confirmed flag", () => {
 
       const remaining = await testCtx.db.execute<{ food_name: string }>(
         sql`SELECT food_name FROM fitness.food_entry
-            WHERE user_id = ${DEFAULT_USER_ID}`,
+            WHERE user_id = ${TEST_USER_ID}`,
       );
       expect(remaining).toHaveLength(1);
       expect(remaining[0]?.food_name).toBe("Keep This");
@@ -253,7 +251,7 @@ describe("Slack food entry confirmed flag", () => {
             INSERT INTO fitness.food_entry (
               user_id, provider_id, date, meal, food_name, nutrition_data_id
             ) VALUES (
-              ${DEFAULT_USER_ID}, ${DOFEK_PROVIDER_ID}, '2025-06-15'::date,
+              ${TEST_USER_ID}, ${DOFEK_PROVIDER_ID}, '2025-06-15'::date,
               'dinner', 'Web UI Entry', (SELECT id FROM nd)
             ) RETURNING id, confirmed`,
       );
@@ -271,7 +269,7 @@ describe("Slack food entry confirmed flag", () => {
       const updated1 = await testCtx.db.execute<{ id: string }>(
         sql`UPDATE fitness.food_entry
             SET food_name = 'Updated'
-            WHERE user_id = ${DEFAULT_USER_ID}
+            WHERE user_id = ${TEST_USER_ID}
               AND confirmed = true
               AND id = ${unconfirmedId}
             RETURNING id`,
@@ -281,7 +279,7 @@ describe("Slack food entry confirmed flag", () => {
       const updated2 = await testCtx.db.execute<{ id: string }>(
         sql`UPDATE fitness.food_entry
             SET food_name = 'Updated'
-            WHERE user_id = ${DEFAULT_USER_ID}
+            WHERE user_id = ${TEST_USER_ID}
               AND confirmed = true
               AND id = ${confirmedId}
             RETURNING id`,
@@ -296,7 +294,7 @@ describe("Slack food entry confirmed flag", () => {
       // Delete with confirmed=true filter (web UI delete path)
       await testCtx.db.execute(
         sql`DELETE FROM fitness.food_entry
-            WHERE user_id = ${DEFAULT_USER_ID}
+            WHERE user_id = ${TEST_USER_ID}
               AND confirmed = true
               AND id = ${confirmedId}`,
       );

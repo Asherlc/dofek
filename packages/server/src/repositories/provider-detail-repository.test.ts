@@ -77,7 +77,7 @@ describe("DISCONNECT_CHILD_TABLES", () => {
   });
 
   it("includes all required child tables", () => {
-    expect(DISCONNECT_CHILD_TABLES).toContain("fitness.exercise_alias");
+    expect(DISCONNECT_CHILD_TABLES).toContain("fitness.metric_stream");
     expect(DISCONNECT_CHILD_TABLES).toContain("fitness.strength_workout");
     expect(DISCONNECT_CHILD_TABLES).toContain("fitness.body_measurement");
     expect(DISCONNECT_CHILD_TABLES).toContain("fitness.daily_metrics");
@@ -219,7 +219,7 @@ describe("ProviderDetailRepository", () => {
   // ── deleteProviderData ──
 
   describe("deleteProviderData", () => {
-    it("deletes all child table rows and provider row in a transaction", async () => {
+    it("deletes all user-scoped provider rows in a transaction", async () => {
       const txExecute = vi.fn().mockResolvedValue([]);
       const mockTransaction = vi
         .fn()
@@ -231,8 +231,7 @@ describe("ProviderDetailRepository", () => {
       await repo.deleteProviderData("strava");
 
       expect(mockTransaction).toHaveBeenCalledTimes(1);
-      // 16 child tables + 1 provider delete = 17 deletes inside the transaction
-      expect(txExecute).toHaveBeenCalledTimes(17);
+      expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length);
     });
 
     it("deletes from each child table in order", async () => {
@@ -250,8 +249,7 @@ describe("ProviderDetailRepository", () => {
       for (let index = 0; index < DISCONNECT_CHILD_TABLES.length; index++) {
         expect(txExecute.mock.calls[index]).toBeDefined();
       }
-      // Final call is the provider delete
-      expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length + 1);
+      expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length);
     });
   });
 
@@ -399,7 +397,7 @@ describe("ProviderDetailRepository", () => {
       expect(mockTransaction).toHaveBeenCalledTimes(1);
     });
 
-    it("deleteProviderData deletes from exactly DISCONNECT_CHILD_TABLES.length + 1 tables", async () => {
+    it("deleteProviderData deletes from exactly DISCONNECT_CHILD_TABLES.length tables", async () => {
       const txExecute = vi.fn().mockResolvedValue([]);
       const mockTransaction = vi
         .fn()
@@ -409,10 +407,8 @@ describe("ProviderDetailRepository", () => {
       const { repo } = makeRepository([], mockTransaction);
 
       await repo.deleteProviderData("test-provider");
-      // 16 child tables + 1 provider row = 17
-      expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length + 1);
-      // Verify it's exactly 17, not 16 (BlockStatement removing the final delete)
-      expect(txExecute).toHaveBeenCalledTimes(17);
+      expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length);
+      expect(txExecute).toHaveBeenCalledTimes(16);
     });
 
     it("DISCONNECT_CHILD_TABLES is an array (not empty array from ArrayDeclaration mutation)", () => {
@@ -473,9 +469,9 @@ describe("ProviderDetailRepository", () => {
     it("DISCONNECT_CHILD_TABLES ordering: activity comes before oauth_token", () => {
       const activityIndex = DISCONNECT_CHILD_TABLES.indexOf("fitness.activity");
       const oauthIndex = DISCONNECT_CHILD_TABLES.indexOf("fitness.oauth_token");
+      expect(activityIndex).toBeGreaterThanOrEqual(0);
+      expect(oauthIndex).toBeGreaterThanOrEqual(0);
       expect(activityIndex).toBeLessThan(oauthIndex);
-      expect(activityIndex).toBe(14);
-      expect(oauthIndex).toBe(15);
     });
   });
 });

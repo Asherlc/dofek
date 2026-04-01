@@ -350,7 +350,7 @@ export class CorosProvider implements WebhookProvider {
                   raw: parsed.raw,
                 })
                 .onConflictDoUpdate({
-                  target: [activity.providerId, activity.externalId],
+                  target: [activity.userId, activity.providerId, activity.externalId],
                   set: {
                     activityType: parsed.activityType,
                     name: parsed.name,
@@ -439,7 +439,7 @@ export class CorosProvider implements WebhookProvider {
                     awakeMinutes: raw.awakeDuration,
                   })
                   .onConflictDoUpdate({
-                    target: [sleepSession.providerId, sleepSession.externalId],
+                    target: [sleepSession.userId, sleepSession.providerId, sleepSession.externalId],
                     set: {
                       durationMinutes: raw.sleepDuration,
                       deepMinutes: raw.deepSleep,

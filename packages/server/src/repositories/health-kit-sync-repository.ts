@@ -496,8 +496,8 @@ export class HealthKitSyncRepository {
   /** Ensure the apple_health provider row exists */
   async ensureProvider(): Promise<void> {
     await this.#db.execute(
-      sql`INSERT INTO fitness.provider (id, name)
-          VALUES (${PROVIDER_ID}, 'Apple Health')
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES (${PROVIDER_ID}, 'Apple Health', ${this.#userId})
           ON CONFLICT (id) DO NOTHING`,
     );
   }
@@ -516,7 +516,7 @@ export class HealthKitSyncRepository {
         await this.#db.execute(
           sql`INSERT INTO fitness.body_measurement (user_id, provider_id, external_id, recorded_at, ${sql.identifier(mapping.column)})
               VALUES (${this.#userId}, ${PROVIDER_ID}, ${externalId}, ${sample.startDate}::timestamptz, ${value})
-              ON CONFLICT (provider_id, external_id) DO UPDATE
+              ON CONFLICT (user_id, provider_id, external_id) DO UPDATE
                 SET ${sql.identifier(mapping.column)} = ${value}`,
         );
         inserted++;
@@ -643,7 +643,7 @@ export class HealthKitSyncRepository {
         await this.#db.execute(
           sql`INSERT INTO fitness.health_event (user_id, provider_id, external_id, type, value, unit, source_name, start_date, end_date)
               VALUES (${this.#userId}, ${PROVIDER_ID}, ${externalId}, ${sample.type}, ${sample.value}, ${sample.unit}, ${sample.sourceName}, ${sample.startDate}::timestamptz, ${sample.endDate}::timestamptz)
-              ON CONFLICT (provider_id, external_id) DO NOTHING`,
+              ON CONFLICT (user_id, provider_id, external_id) DO NOTHING`,
         );
         inserted++;
       }
@@ -679,7 +679,7 @@ export class HealthKitSyncRepository {
                 ${workout.endDate}::timestamptz,
                 ${rawData}::jsonb
               )
-              ON CONFLICT (provider_id, external_id) DO UPDATE SET
+              ON CONFLICT (user_id, provider_id, external_id) DO UPDATE SET
                 activity_type = ${activityType},
                 started_at = ${workout.startDate}::timestamptz,
                 ended_at = ${workout.endDate}::timestamptz`,
@@ -777,7 +777,7 @@ export class HealthKitSyncRepository {
       const legacyExternalId = `hk:sleep:${session.uuid}`;
       await this.#db.execute(
         sql`DELETE FROM fitness.sleep_session
-            WHERE provider_id = ${PROVIDER_ID} AND external_id = ${legacyExternalId}`,
+            WHERE user_id = ${this.#userId} AND provider_id = ${PROVIDER_ID} AND external_id = ${legacyExternalId}`,
       );
 
       // Determine sources to insert: one row per source, or one row with session source if no stages
@@ -833,7 +833,7 @@ export class HealthKitSyncRepository {
                 ${null},
                 ${sourceName}
               )
-              ON CONFLICT (provider_id, external_id) DO UPDATE SET
+              ON CONFLICT (user_id, provider_id, external_id) DO UPDATE SET
                 started_at = ${session.startDate}::timestamptz,
                 ended_at = ${session.endDate}::timestamptz,
                 duration_minutes = ${durationMinutes},

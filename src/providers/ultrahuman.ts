@@ -251,7 +251,7 @@ export class UltrahumanProvider implements SyncProvider {
                     durationMinutes: sleep.durationMinutes,
                   })
                   .onConflictDoUpdate({
-                    target: [sleepSession.providerId, sleepSession.externalId],
+                    target: [sleepSession.userId, sleepSession.providerId, sleepSession.externalId],
                     set: {
                       durationMinutes: sleep.durationMinutes,
                     },

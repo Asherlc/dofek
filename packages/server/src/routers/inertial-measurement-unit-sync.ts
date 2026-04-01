@@ -30,10 +30,10 @@ export type InertialMeasurementUnitSample = z.infer<typeof inertialMeasurementUn
 type Database = Parameters<Parameters<typeof protectedProcedure.mutation>[0]>[0]["ctx"]["db"];
 
 /** Ensure the apple_motion provider row exists */
-async function ensureProvider(db: Database) {
+async function ensureProvider(db: Database, userId: string) {
   await db.execute(
-    sql`INSERT INTO fitness.provider (id, name)
-        VALUES (${PROVIDER_ID}, 'Apple Motion')
+    sql`INSERT INTO fitness.provider (id, name, user_id)
+        VALUES (${PROVIDER_ID}, 'Apple Motion', ${userId})
         ON CONFLICT (id) DO NOTHING`,
   );
 }
@@ -83,7 +83,7 @@ async function insertBatch(
 
 export const inertialMeasurementUnitSyncRouter = router({
   pushSamples: protectedProcedure.input(pushSamplesInput).mutation(async ({ ctx, input }) => {
-    await ensureProvider(ctx.db);
+    await ensureProvider(ctx.db, ctx.userId);
 
     if (input.samples.length === 0) {
       logger.info("IMU push with 0 samples", {

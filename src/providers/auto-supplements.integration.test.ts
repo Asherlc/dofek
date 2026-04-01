@@ -1,12 +1,6 @@
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import {
-  DEFAULT_USER_ID,
-  foodEntry,
-  nutritionData,
-  supplement,
-  userProfile,
-} from "../db/schema.ts";
+import { foodEntry, nutritionData, supplement, TEST_USER_ID, userProfile } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { AutoSupplementsProvider } from "./auto-supplements.ts";
 
@@ -48,10 +42,10 @@ describe("AutoSupplementsProvider — sync() with DB (integration)", () => {
 
   beforeAll(async () => {
     ctx = await setupTestDatabase();
-    // Ensure the default user exists
+    // Ensure the baseline fixture user exists
     await ctx.db
       .insert(userProfile)
-      .values({ id: DEFAULT_USER_ID, name: "Test User" })
+      .values({ id: TEST_USER_ID, name: "Test User" })
       .onConflictDoNothing();
   }, 60_000);
 
@@ -62,12 +56,12 @@ describe("AutoSupplementsProvider — sync() with DB (integration)", () => {
   it("inserts supplement entries into the database", async () => {
     await insertSupplementWithNutrition(
       ctx.db,
-      { userId: DEFAULT_USER_ID, name: "Vitamin D3", sortOrder: 0 },
+      { userId: TEST_USER_ID, name: "Vitamin D3", sortOrder: 0 },
       { vitaminDMcg: 50 },
     );
     await insertSupplementWithNutrition(
       ctx.db,
-      { userId: DEFAULT_USER_ID, name: "Fish Oil", sortOrder: 1, meal: "breakfast" },
+      { userId: TEST_USER_ID, name: "Fish Oil", sortOrder: 1, meal: "breakfast" },
       { calories: 10, omega3Mg: 1000 },
     );
 
@@ -92,7 +86,7 @@ describe("AutoSupplementsProvider — sync() with DB (integration)", () => {
     const vitD = rows.find((r) => r.foodName === "Vitamin D3");
     expect(vitD).toBeDefined();
     expect(vitD?.category).toBe("supplement");
-    expect(vitD?.userId).toBe(DEFAULT_USER_ID);
+    expect(vitD?.userId).toBe(TEST_USER_ID);
 
     const fishOil = rows.find((r) => r.foodName === "Fish Oil");
     expect(fishOil).toBeDefined();
@@ -102,7 +96,7 @@ describe("AutoSupplementsProvider — sync() with DB (integration)", () => {
   it("upserts on re-sync (updates existing entries)", async () => {
     await insertSupplementWithNutrition(
       ctx.db,
-      { userId: DEFAULT_USER_ID, name: "Magnesium", sortOrder: 0 },
+      { userId: TEST_USER_ID, name: "Magnesium", sortOrder: 0 },
       { magnesiumMg: 400 },
     );
 
@@ -138,7 +132,7 @@ describe("AutoSupplementsProvider — sync() with DB (integration)", () => {
   it("handles multiple days in range", async () => {
     await insertSupplementWithNutrition(
       ctx.db,
-      { userId: DEFAULT_USER_ID, name: "TestMultiDay", sortOrder: 0 },
+      { userId: TEST_USER_ID, name: "TestMultiDay", sortOrder: 0 },
       { calories: 5 },
     );
 

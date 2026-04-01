@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockDatabase } from "../providers/test-helpers.ts";
+import { TEST_USER_ID } from "./schema.ts";
 import { deleteTokens, ensureProvider, loadTokens, saveTokens } from "./tokens.ts";
 
-// Mock drizzle's eq function
+// Mock drizzle's query builder helpers
 vi.mock("drizzle-orm", () => ({
   eq: vi.fn((col, val) => ({ column: col, value: val })),
+  and: vi.fn((...conditions) => ({ conditions })),
 }));
 
 describe("ensureProvider", () => {
@@ -15,7 +17,13 @@ describe("ensureProvider", () => {
   });
 
   it("inserts a provider with id, name, and apiBaseUrl", async () => {
-    const result = await ensureProvider(mock.db, "wahoo", "Wahoo", "https://api.wahoo.com");
+    const result = await ensureProvider(
+      mock.db,
+      "wahoo",
+      "Wahoo",
+      "https://api.wahoo.com",
+      TEST_USER_ID,
+    );
 
     expect(result).toBe("wahoo");
     expect(mock.spies.insert).toHaveBeenCalled();
@@ -23,6 +31,7 @@ describe("ensureProvider", () => {
       id: "wahoo",
       name: "Wahoo",
       apiBaseUrl: "https://api.wahoo.com",
+      userId: TEST_USER_ID,
     });
     expect(mock.spies.onConflictDoUpdate).toHaveBeenCalled();
   });
@@ -38,17 +47,14 @@ describe("ensureProvider", () => {
     });
   });
 
-  it("omits userId when not provided", async () => {
-    await ensureProvider(mock.db, "wahoo", "Wahoo");
-
-    // Access mock call args via the values spy
-    const calls: unknown[][] = mock.spies.values.mock.calls;
-    const valuesArg: unknown = calls[0]?.[0];
-    expect(valuesArg).not.toHaveProperty("userId");
+  it("throws when userId is not provided and context is absent", async () => {
+    await expect(ensureProvider(mock.db, "wahoo", "Wahoo")).rejects.toThrow(
+      "Token operation requires userId",
+    );
   });
 
   it("returns the provider id", async () => {
-    const result = await ensureProvider(mock.db, "test-id", "Test");
+    const result = await ensureProvider(mock.db, "test-id", "Test", undefined, TEST_USER_ID);
     expect(result).toBe("test-id");
   });
 });
@@ -68,11 +74,12 @@ describe("saveTokens", () => {
       scopes: "read write",
     };
 
-    await saveTokens(mock.db, "wahoo", tokens);
+    await saveTokens(mock.db, "wahoo", tokens, TEST_USER_ID);
 
     expect(mock.spies.insert).toHaveBeenCalled();
     expect(mock.spies.values).toHaveBeenCalledWith(
       expect.objectContaining({
+        userId: TEST_USER_ID,
         providerId: "wahoo",
         accessToken: "access-123",
         refreshToken: "refresh-456",
@@ -91,10 +98,11 @@ describe("saveTokens", () => {
       scopes: null,
     };
 
-    await saveTokens(mock.db, "strava", tokens);
+    await saveTokens(mock.db, "strava", tokens, TEST_USER_ID);
 
     expect(mock.spies.values).toHaveBeenCalledWith(
       expect.objectContaining({
+        userId: TEST_USER_ID,
         refreshToken: null,
         scopes: null,
       }),
@@ -110,7 +118,7 @@ describe("deleteTokens", () => {
   });
 
   it("deletes tokens for the given provider", async () => {
-    await deleteTokens(mock.db, "polar");
+    await deleteTokens(mock.db, "polar", TEST_USER_ID);
 
     expect(mock.spies.deleteFn).toHaveBeenCalled();
     expect(mock.spies.deleteWhere).toHaveBeenCalled();
@@ -134,7 +142,7 @@ describe("loadTokens", () => {
       },
     ]);
 
-    const result = await loadTokens(mock.db, "wahoo");
+    const result = await loadTokens(mock.db, "wahoo", TEST_USER_ID);
 
     expect(result).toEqual({
       accessToken: "access-123",
@@ -147,7 +155,7 @@ describe("loadTokens", () => {
   it("returns null when no tokens exist", async () => {
     mock.spies.limit.mockResolvedValue([]);
 
-    const result = await loadTokens(mock.db, "nonexistent");
+    const result = await loadTokens(mock.db, "nonexistent", TEST_USER_ID);
 
     expect(result).toBeNull();
   });
@@ -155,7 +163,7 @@ describe("loadTokens", () => {
   it("returns null when row is undefined", async () => {
     mock.spies.limit.mockResolvedValue([undefined]);
 
-    const result = await loadTokens(mock.db, "wahoo");
+    const result = await loadTokens(mock.db, "wahoo", TEST_USER_ID);
 
     expect(result).toBeNull();
   });
@@ -170,7 +178,7 @@ describe("loadTokens", () => {
       },
     ]);
 
-    const result = await loadTokens(mock.db, "wahoo");
+    const result = await loadTokens(mock.db, "wahoo", TEST_USER_ID);
 
     expect(result).toEqual({
       accessToken: "access-123",

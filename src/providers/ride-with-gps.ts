@@ -10,14 +10,16 @@ import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { activity, DEFAULT_USER_ID, sensorSample, userSettings } from "../db/schema.ts";
+import { activity, sensorSample, userSettings } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
+import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import type {
   ProviderAuthSetup,
   ProviderIdentity,
   SyncError,
+  SyncOptions,
   SyncProvider,
   SyncResult,
 } from "./types.ts";
@@ -274,11 +276,20 @@ export class RideWithGpsClient {
 
 const SYNC_CURSOR_KEY = "rwgps_sync_cursor";
 
-async function loadSyncCursor(db: SyncDatabase): Promise<string | null> {
+function resolveScopedUserId(userId?: string): string {
+  const scopedUserId = userId ?? getTokenUserId();
+  if (!scopedUserId) {
+    throw new Error("ride-with-gps sync requires a userId");
+  }
+  return scopedUserId;
+}
+
+async function loadSyncCursor(db: SyncDatabase, userId?: string): Promise<string | null> {
+  const scopedUserId = resolveScopedUserId(userId);
   const rows = await db
     .select({ value: userSettings.value })
     .from(userSettings)
-    .where(and(eq(userSettings.userId, DEFAULT_USER_ID), eq(userSettings.key, SYNC_CURSOR_KEY)))
+    .where(and(eq(userSettings.userId, scopedUserId), eq(userSettings.key, SYNC_CURSOR_KEY)))
     .limit(1);
 
   if (rows.length === 0 || !rows[0]) return null;
@@ -287,11 +298,12 @@ async function loadSyncCursor(db: SyncDatabase): Promise<string | null> {
   return value.cursor ?? null;
 }
 
-async function saveSyncCursor(db: SyncDatabase, cursor: string): Promise<void> {
+async function saveSyncCursor(db: SyncDatabase, cursor: string, userId?: string): Promise<void> {
+  const scopedUserId = resolveScopedUserId(userId);
   await db
     .insert(userSettings)
     .values({
-      userId: DEFAULT_USER_ID,
+      userId: scopedUserId,
       key: SYNC_CURSOR_KEY,
       value: { cursor },
     })
@@ -371,7 +383,7 @@ export class RideWithGpsProvider implements SyncProvider {
     });
   }
 
-  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -395,9 +407,10 @@ export class RideWithGpsProvider implements SyncProvider {
     }
 
     const client = new RideWithGpsClient(tokens.accessToken, this.#fetchFn);
+    const scopedUserId = resolveScopedUserId(options?.userId);
 
     // Load sync cursor or fall back to since param
-    const cursor = (await loadSyncCursor(db)) ?? since.toISOString();
+    const cursor = (await loadSyncCursor(db, scopedUserId)) ?? since.toISOString();
 
     let syncResponse: RideWithGpsSyncResponse;
     try {
@@ -425,7 +438,11 @@ export class RideWithGpsProvider implements SyncProvider {
           await db
             .delete(activity)
             .where(
-              and(eq(activity.providerId, this.id), eq(activity.externalId, String(item.item_id))),
+              and(
+                eq(activity.userId, scopedUserId),
+                eq(activity.providerId, this.id),
+                eq(activity.externalId, String(item.item_id)),
+              ),
             );
         } catch (err) {
           errors.push({
@@ -457,7 +474,7 @@ export class RideWithGpsProvider implements SyncProvider {
             raw: parsed.raw,
           })
           .onConflictDoUpdate({
-            target: [activity.providerId, activity.externalId],
+            target: [activity.userId, activity.providerId, activity.externalId],
             set: {
               activityType: parsed.activityType,
               startedAt: parsed.startedAt,
@@ -507,7 +524,7 @@ export class RideWithGpsProvider implements SyncProvider {
 
     // Save sync cursor for next run
     if (syncResponse.meta?.rwgps_datetime) {
-      await saveSyncCursor(db, syncResponse.meta.rwgps_datetime);
+      await saveSyncCursor(db, syncResponse.meta.rwgps_datetime, scopedUserId);
     }
 
     return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };

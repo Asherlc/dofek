@@ -477,6 +477,7 @@ entity "metric_stream" {
   audio_exposure : real
   skin_temperature : real
   electrodermal_activity : real
+  rr_interval_ms : smallint
   source_name : text
   raw : jsonb
 }
@@ -583,14 +584,25 @@ entity "nutrition_data" {
 }
 
 entity "oauth_token" {
-  * provider_id : text <<PK>>
-  --
+  user_id : uuid <<FK>>
+  provider_id : text <<FK>>
   access_token : text
   refresh_token : text
   expires_at : timestamp
   scopes : text
   created_at : timestamp
   updated_at : timestamp
+}
+
+entity "orientation_sample" {
+  recorded_at : timestamp
+  user_id : uuid <<FK>>
+  provider_id : text <<FK>>
+  device_id : text
+  quaternion_w : real
+  quaternion_x : real
+  quaternion_y : real
+  quaternion_z : real
 }
 
 entity "provider" {
@@ -600,6 +612,18 @@ entity "provider" {
   api_base_url : text
   user_id : uuid <<FK>>
   created_at : timestamp
+}
+
+entity "sensor_sample" {
+  recorded_at : timestamp
+  user_id : uuid <<FK>>
+  provider_id : text <<FK>>
+  device_id : text
+  source_type : text
+  channel : text
+  activity_id : uuid <<FK>>
+  scalar : real
+  vector : real[]
 }
 
 entity "session" {
@@ -759,6 +783,16 @@ entity "sync_log" {
   synced_at : timestamp
 }
 
+entity "training_export_watermark" {
+  * id : uuid <<PK>>
+  --
+  table_name : text
+  last_exported_at : timestamp
+  row_count : bigint
+  created_at : timestamp
+  updated_at : timestamp
+}
+
 entity "user_profile" {
   * id : uuid <<PK>>
   --
@@ -845,8 +879,14 @@ activity ||--o{ metric_stream
 provider ||--o{ metric_stream
 provider ||--o{ nutrition_daily
 user_profile ||--o{ nutrition_daily
+user_profile ||--o{ oauth_token
 provider ||--o{ oauth_token
+user_profile ||--o{ orientation_sample
+provider ||--o{ orientation_sample
 user_profile ||--o{ provider
+user_profile ||--o{ sensor_sample
+provider ||--o{ sensor_sample
+activity ||--o{ sensor_sample
 user_profile ||--o{ session
 user_profile ||--o{ shared_report
 provider ||--o{ sleep_session
