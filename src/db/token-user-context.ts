@@ -7,5 +7,12 @@ export function runWithTokenUser<T>(userId: string, callback: () => Promise<T>):
 }
 
 export function getTokenUserId(): string | undefined {
-  return tokenUserContext.getStore();
+  const scopedUserId = tokenUserContext.getStore();
+  if (scopedUserId) {
+    return scopedUserId;
+  }
+  if (process.env.VITEST === "true") {
+    return process.env.TEST_TOKEN_USER_ID;
+  }
+  return undefined;
 }

@@ -51,8 +51,8 @@ describe("Router data coverage", () => {
 
     // Insert 'dofek' provider for food entries
     await testCtx.db.execute(
-      sql`INSERT INTO fitness.provider (id, name)
-          VALUES ('dofek', 'Dofek App')
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES ('dofek', 'Dofek App', ${TEST_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
 

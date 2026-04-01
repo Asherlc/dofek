@@ -21,8 +21,8 @@ describe("Slack food entry confirmed flag", () => {
 
     // Ensure the dofek provider exists
     await testCtx.db.execute(
-      sql`INSERT INTO fitness.provider (id, name)
-          VALUES (${DOFEK_PROVIDER_ID}, 'Dofek App')
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES (${DOFEK_PROVIDER_ID}, 'Dofek App', ${TEST_USER_ID})
           ON CONFLICT (id) DO NOTHING`,
     );
   }, 60_000);

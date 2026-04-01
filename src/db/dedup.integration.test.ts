@@ -2,7 +2,14 @@ import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { refreshDedupViews } from "./dedup.ts";
 import { loadProviderPriorityConfig, syncProviderPriorities } from "./provider-priority.ts";
-import { activity, bodyMeasurement, dailyMetrics, metricStream, sleepSession } from "./schema.ts";
+import {
+  activity,
+  bodyMeasurement,
+  dailyMetrics,
+  metricStream,
+  sleepSession,
+  TEST_USER_ID,
+} from "./schema.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
 import { ensureProvider } from "./tokens.ts";
 
@@ -431,6 +438,7 @@ describe("Deduplication materialized views", () => {
     // Wahoo stream — has power data
     await ctx.db.insert(metricStream).values([
       {
+        userId: TEST_USER_ID,
         providerId: "wahoo",
         activityId: wahooActivity.id,
         recordedAt: new Date("2026-03-05T10:00:00Z"),
@@ -438,6 +446,7 @@ describe("Deduplication materialized views", () => {
         power: 200,
       },
       {
+        userId: TEST_USER_ID,
         providerId: "wahoo",
         activityId: wahooActivity.id,
         recordedAt: new Date("2026-03-05T10:00:06Z"),
@@ -448,11 +457,13 @@ describe("Deduplication materialized views", () => {
 
     // Dual-seed sensor_sample (activity_summary reads from here)
     await ctx.db.execute(
-      sql`INSERT INTO fitness.sensor_sample (recorded_at, provider_id, source_type, channel, activity_id, scalar) VALUES
-        ('2026-03-05T10:00:00Z', 'wahoo', 'api', 'heart_rate', ${wahooActivity.id}, 140),
-        ('2026-03-05T10:00:00Z', 'wahoo', 'api', 'power', ${wahooActivity.id}, 200),
-        ('2026-03-05T10:00:06Z', 'wahoo', 'api', 'heart_rate', ${wahooActivity.id}, 145),
-        ('2026-03-05T10:00:06Z', 'wahoo', 'api', 'power', ${wahooActivity.id}, 210)`,
+      sql`INSERT INTO fitness.sensor_sample
+          (recorded_at, user_id, provider_id, source_type, channel, activity_id, scalar)
+          VALUES
+          ('2026-03-05T10:00:00Z', ${TEST_USER_ID}, 'wahoo', 'api', 'heart_rate', ${wahooActivity.id}, 140),
+          ('2026-03-05T10:00:00Z', ${TEST_USER_ID}, 'wahoo', 'api', 'power', ${wahooActivity.id}, 200),
+          ('2026-03-05T10:00:06Z', ${TEST_USER_ID}, 'wahoo', 'api', 'heart_rate', ${wahooActivity.id}, 145),
+          ('2026-03-05T10:00:06Z', ${TEST_USER_ID}, 'wahoo', 'api', 'power', ${wahooActivity.id}, 210)`,
     );
 
     await refreshDedupViews(ctx.db);

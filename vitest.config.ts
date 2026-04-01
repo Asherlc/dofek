@@ -35,6 +35,9 @@ export default defineConfig({
           ...sharedTestConfig,
           name: "integration",
           include: ["src/**/*.integration.test.ts", "packages/*/src/**/*.integration.test.ts"],
+          env: {
+            TEST_TOKEN_USER_ID: "00000000-0000-0000-0000-000000000001",
+          },
         },
       },
     ],

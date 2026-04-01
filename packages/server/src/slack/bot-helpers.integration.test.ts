@@ -27,8 +27,8 @@ describe("Slack Bot — DB helper functions (integration)", () => {
 
     // Ensure the dofek provider exists
     await ctx.db.execute(
-      sql`INSERT INTO fitness.provider (id, name)
-          VALUES (${DOFEK_PROVIDER_ID}, 'Dofek App')
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES (${DOFEK_PROVIDER_ID}, 'Dofek App', ${TEST_USER_ID})
           ON CONFLICT (id) DO NOTHING`,
     );
   }, 120_000);
