@@ -175,7 +175,7 @@ describe("LoginScreen", () => {
     });
   });
 
-  it("falls back to OAuth when native Apple Sign In fails", async () => {
+  it("does not fall back to OAuth when native Apple Sign In fails", async () => {
     mockIsNativeAppleSignInAvailable.mockResolvedValue(true);
     mockFetchConfiguredProviders.mockResolvedValue({
       identity: ["apple"],
@@ -192,7 +192,29 @@ describe("LoginScreen", () => {
     await waitFor(() => {
       expect(mockStartNativeAppleSignIn).toHaveBeenCalledWith("https://test.example.com");
     });
-    expect(mockStartOAuthLogin).toHaveBeenCalledWith("https://test.example.com", "apple", false);
-    expect(mockOnLoginSuccess).toHaveBeenCalledWith("fallback-token");
+    expect(mockStartOAuthLogin).not.toHaveBeenCalled();
+    expect(screen.getByText("native apple failed")).toBeTruthy();
+  });
+
+  it("handles native Apple Sign In cancellation silently", async () => {
+    mockIsNativeAppleSignInAvailable.mockResolvedValue(true);
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: ["apple"],
+      data: [],
+    });
+    const cancelError = new Error("User canceled");
+    Object.assign(cancelError, { code: "ERR_REQUEST_CANCELED" });
+    mockStartNativeAppleSignIn.mockRejectedValue(cancelError);
+
+    render(<LoginScreen />);
+
+    const appleButton = await screen.findByText("AppleAuthenticationButton");
+    fireEvent.click(appleButton);
+
+    await waitFor(() => {
+      expect(mockStartNativeAppleSignIn).toHaveBeenCalled();
+    });
+    expect(mockStartOAuthLogin).not.toHaveBeenCalled();
+    expect(screen.queryByText("User canceled")).toBeNull();
   });
 });

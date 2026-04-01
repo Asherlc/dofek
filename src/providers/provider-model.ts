@@ -16,7 +16,7 @@ export class ProviderModel {
       id: string;
       name: string;
       importOnly?: boolean;
-      authSetup?(): unknown;
+      authSetup?(options?: { host?: string }): unknown;
     },
     tokenSet: Set<string>,
     lastSyncMap?: Map<string, string>,
