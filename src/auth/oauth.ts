@@ -4,11 +4,26 @@ const DEFAULT_REDIRECT_URI = "https://dofek.asherlc.com/callback";
 
 /**
  * Returns the OAuth redirect URI from OAUTH_REDIRECT_URI_unencrypted env var,
- * falling back to the production default. All providers that use our callback
- * endpoint should call this instead of reading the env var themselves.
+ * falling back to the production default. If a host is provided and the env var
+ * is missing, it constructs a dynamic redirect URI based on that host.
  */
-export function getOAuthRedirectUri(): string {
-  return process.env.OAUTH_REDIRECT_URI_unencrypted ?? DEFAULT_REDIRECT_URI;
+export function getOAuthRedirectUri(host?: string): string {
+  const envValue = process.env.OAUTH_REDIRECT_URI_unencrypted ?? process.env.OAUTH_REDIRECT_URI;
+  if (envValue) {
+    return envValue;
+  }
+  if (host) {
+    // Use http for local/private IPs, otherwise assume https
+    const isLocal =
+      host.includes("localhost") ||
+      host.includes("127.0.0.1") ||
+      host.startsWith("192.168.") ||
+      host.startsWith("10.") ||
+      host.startsWith("172.");
+    const protocol = isLocal ? "http" : "https";
+    return `${protocol}://${host}/callback`;
+  }
+  return DEFAULT_REDIRECT_URI;
 }
 
 export interface OAuthConfig {

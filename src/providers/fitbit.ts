@@ -322,7 +322,7 @@ export class FitbitClient extends ProviderHttpClient {
 // OAuth configuration
 // ============================================================
 
-export function fitbitOAuthConfig(): OAuthConfig | null {
+export function fitbitOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.FITBIT_CLIENT_ID;
   const clientSecret = process.env.FITBIT_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
@@ -331,7 +331,7 @@ export function fitbitOAuthConfig(): OAuthConfig | null {
     clientSecret,
     authorizeUrl: "https://www.fitbit.com/oauth2/authorize",
     tokenUrl: `${FITBIT_API_BASE}/oauth2/token`,
-    redirectUri: getOAuthRedirectUri(),
+    redirectUri: getOAuthRedirectUri(host),
     scopes: [
       "activity",
       "heartrate",
@@ -445,8 +445,8 @@ export class FitbitProvider implements WebhookProvider {
     return "";
   }
 
-  authSetup(): ProviderAuthSetup {
-    const config = fitbitOAuthConfig();
+  authSetup(options?: { host?: string }): ProviderAuthSetup {
+    const config = fitbitOAuthConfig(options?.host);
     if (!config) throw new Error("FITBIT_CLIENT_ID and FITBIT_CLIENT_SECRET are required");
     const codeVerifier = generateCodeVerifier();
     const codeChallenge = generateCodeChallenge(codeVerifier);

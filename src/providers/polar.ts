@@ -490,7 +490,7 @@ export class PolarProvider implements WebhookProvider {
     ];
   }
 
-  authSetup(): ProviderAuthSetup {
+  authSetup(options?: { host?: string }): ProviderAuthSetup {
     const config = polarOAuthConfig();
     if (!config) throw new Error("POLAR_CLIENT_ID and POLAR_CLIENT_SECRET are required");
     return {

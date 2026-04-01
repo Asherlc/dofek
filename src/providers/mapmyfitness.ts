@@ -115,7 +115,7 @@ export function parseMapMyFitnessWorkout(workout: MapMyFitnessWorkout): ParsedMa
 // OAuth configuration
 // ============================================================
 
-export function mapMyFitnessOAuthConfig(): OAuthConfig | null {
+export function mapMyFitnessOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.MAPMYFITNESS_CLIENT_ID;
   const clientSecret = process.env.MAPMYFITNESS_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
@@ -206,8 +206,8 @@ export class MapMyFitnessProvider implements SyncProvider {
     return null;
   }
 
-  authSetup(): ProviderAuthSetup {
-    const config = mapMyFitnessOAuthConfig();
+  authSetup(options?: { host?: string }): ProviderAuthSetup {
+    const config = mapMyFitnessOAuthConfig(options?.host);
     if (!config) throw new Error("MAPMYFITNESS_CLIENT_ID and CLIENT_SECRET required");
     const fetchFn = this.#fetchFn;
 

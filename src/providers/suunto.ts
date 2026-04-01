@@ -138,7 +138,7 @@ export function parseSuuntoWorkout(workout: SuuntoWorkout): ParsedSuuntoWorkout 
 // OAuth configuration
 // ============================================================
 
-export function suuntoOAuthConfig(): OAuthConfig | null {
+export function suuntoOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.SUUNTO_CLIENT_ID;
   const clientSecret = process.env.SUUNTO_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
@@ -306,8 +306,8 @@ export class SuuntoProvider implements WebhookProvider {
     return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
   }
 
-  authSetup(): ProviderAuthSetup {
-    const config = suuntoOAuthConfig();
+  authSetup(options?: { host?: string }): ProviderAuthSetup {
+    const config = suuntoOAuthConfig(options?.host);
     if (!config) throw new Error("SUUNTO_CLIENT_ID and CLIENT_SECRET required");
     const fetchFn = this.#fetchFn;
     return {

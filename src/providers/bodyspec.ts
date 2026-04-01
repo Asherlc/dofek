@@ -323,7 +323,7 @@ export class BodySpecProvider implements SyncProvider {
     return null;
   }
 
-  authSetup(): ProviderAuthSetup | undefined {
+  authSetup(options?: { host?: string }): ProviderAuthSetup | undefined {
     const config = bodySpecOAuthConfig();
     if (!config) return undefined;
     return {

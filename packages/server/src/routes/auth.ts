@@ -101,6 +101,7 @@ const SLACK_SCOPES = [
 ];
 
 async function startDataProviderOAuth(
+  req: import("express").Request,
   res: import("express").Response,
   providerId: string,
   stateEntry: OAuthStateEntry,
@@ -115,7 +116,9 @@ async function startDataProviderOAuth(
     return;
   }
 
-  const setup = provider.authSetup?.();
+  // Pass current host to ensure the redirect URI matches the server that started the flow
+  const host = req.get("host");
+  const setup = provider.authSetup?.({ host });
   if (!setup?.oauthConfig) {
     res.status(400).send(`Provider ${providerId} does not use OAuth`);
     return;
@@ -139,7 +142,7 @@ async function startDataProviderOAuth(
 
   // OAuth 1.0 providers (e.g. FatSecret) — only for data intent
   if (setup.oauth1Flow && stateEntry.intent === "data") {
-    const callbackUrl = `${process.env.OAUTH_REDIRECT_URI ?? "https://dofek.asherlc.com/callback"}`;
+    const callbackUrl = setup.oauthConfig.redirectUri;
     const result = await setup.oauth1Flow.getRequestToken(callbackUrl);
     oauth1Secrets.set(result.oauthToken, {
       providerId,
@@ -189,7 +192,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
   db = database;
   const router = Router();
 
-  router.get("/api/auth/providers", async (_req, res) => {
+  router.get("/api/auth/providers", async (req, res) => {
     try {
       const identityProviders = getConfiguredProviders();
       const { getAllProviders } = await import("dofek/providers/registry");
@@ -199,7 +202,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       const dataLoginProviders = getAllProviders()
         .filter((p) => {
           try {
-            const setup = p.authSetup?.();
+            const setup = p.authSetup?.({ host: req.get("host") });
             return setup?.getUserIdentity && setup.oauthConfig;
           } catch (err: unknown) {
             logger.warn(`[auth] Skipping ${p.id} for login: authSetup() threw: ${err}`);
@@ -564,7 +567,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         typeof req.query.redirect_scheme === "string" ? req.query.redirect_scheme : undefined;
       const mobileScheme =
         redirectScheme && isValidMobileScheme(redirectScheme) ? redirectScheme : undefined;
-      await startDataProviderOAuth(res, req.params.provider, {
+      await startDataProviderOAuth(req, res, req.params.provider, {
         providerId: req.params.provider,
         intent: "login",
         userId: DEFAULT_USER_ID,
@@ -590,7 +593,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         return;
       }
 
-      await startDataProviderOAuth(res, req.params.provider, {
+      await startDataProviderOAuth(req, res, req.params.provider, {
         providerId: req.params.provider,
         intent: "link",
         linkUserId: session.userId,
@@ -610,7 +613,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       const session = sessionId ? await validateSession(db, sessionId) : null;
       const userId = session?.userId ?? DEFAULT_USER_ID;
 
-      await startDataProviderOAuth(res, req.params.provider, {
+      await startDataProviderOAuth(req, res, req.params.provider, {
         providerId: req.params.provider,
         intent: "data",
         userId,
@@ -661,7 +664,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
           return;
         }
 
-        const setup = provider.authSetup?.();
+        const setup = provider.authSetup?.({ host: req.get("host") });
         if (!setup?.oauth1Flow) {
           res.status(400).send(`Provider ${stored.providerId} does not support OAuth 1.0`);
           return;
@@ -818,7 +821,10 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       // Resolve provider from random state token
       const stateEntry = oauthStateMap.get(state);
       if (!stateEntry) {
-        res.status(400).send("Unknown or expired OAuth state");
+        const errorDetail = req.get("host")?.includes("localhost")
+          ? " (Are you using an IP or host that differs from what the provider redirected to? Try setting OAUTH_REDIRECT_URI_unencrypted in your .env if testing on mobile.)"
+          : "";
+        res.status(400).send(`Unknown or expired OAuth state${errorDetail}`);
         return;
       }
       oauthStateMap.delete(state);
@@ -841,7 +847,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         return;
       }
 
-      const setup = provider.authSetup?.();
+      const setup = provider.authSetup?.({ host: req.get("host") });
       if (!setup?.oauthConfig || !setup.exchangeCode) {
         res.status(400).send(`Provider ${providerId} does not support OAuth code exchange`);
         return;

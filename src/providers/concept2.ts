@@ -135,7 +135,7 @@ export function parseConcept2Result(result: Concept2Result): ParsedConcept2Resul
 // OAuth configuration
 // ============================================================
 
-export function concept2OAuthConfig(): OAuthConfig | null {
+export function concept2OAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.CONCEPT2_CLIENT_ID;
   const clientSecret = process.env.CONCEPT2_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
@@ -337,7 +337,7 @@ export class Concept2Provider implements WebhookProvider {
     return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
   }
 
-  authSetup(): ProviderAuthSetup {
+  authSetup(options?: { host?: string }): ProviderAuthSetup {
     const config = concept2OAuthConfig();
     if (!config) throw new Error("CONCEPT2_CLIENT_ID and CLIENT_SECRET required");
     const fetchFn = this.#fetchFn;

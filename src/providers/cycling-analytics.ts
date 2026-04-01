@@ -99,7 +99,7 @@ export function parseCyclingAnalyticsRide(ride: CyclingAnalyticsRide): ParsedCyc
 // OAuth configuration
 // ============================================================
 
-export function cyclingAnalyticsOAuthConfig(): OAuthConfig | null {
+export function cyclingAnalyticsOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.CYCLING_ANALYTICS_CLIENT_ID;
   const clientSecret = process.env.CYCLING_ANALYTICS_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
@@ -139,7 +139,7 @@ export class CyclingAnalyticsProvider implements SyncProvider {
     return `https://www.cyclinganalytics.com/ride/${externalId}`;
   }
 
-  authSetup(): ProviderAuthSetup {
+  authSetup(options?: { host?: string }): ProviderAuthSetup {
     const config = cyclingAnalyticsOAuthConfig();
     if (!config) throw new Error("CYCLING_ANALYTICS_CLIENT_ID and CLIENT_SECRET required");
     const fetchFn = this.#fetchFn;

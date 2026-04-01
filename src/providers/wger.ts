@@ -92,7 +92,7 @@ export function parseWgerWeightEntry(entry: WgerWeightEntry): ParsedWgerWeightEn
 // OAuth configuration
 // ============================================================
 
-export function wgerOAuthConfig(): OAuthConfig | null {
+export function wgerOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.WGER_CLIENT_ID;
   const clientSecret = process.env.WGER_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
@@ -127,8 +127,8 @@ export class WgerProvider implements SyncProvider {
     return null;
   }
 
-  authSetup(): ProviderAuthSetup {
-    const config = wgerOAuthConfig();
+  authSetup(options?: { host?: string }): ProviderAuthSetup {
+    const config = wgerOAuthConfig(options?.host);
     if (!config) throw new Error("WGER_CLIENT_ID and CLIENT_SECRET required");
     const fetchFn = this.#fetchFn;
     return {

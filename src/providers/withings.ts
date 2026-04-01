@@ -121,7 +121,7 @@ export function parseMeasureGroup(group: WithingsMeasureGroup): ParsedBodyMeasur
 const WITHINGS_API_BASE = "https://wbsapi.withings.net";
 const WITHINGS_AUTH_BASE = "https://account.withings.com";
 
-export function withingsOAuthConfig(): OAuthConfig | null {
+export function withingsOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.WITHINGS_CLIENT_ID;
   const clientSecret = process.env.WITHINGS_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
@@ -130,7 +130,7 @@ export function withingsOAuthConfig(): OAuthConfig | null {
     clientSecret,
     authorizeUrl: `${WITHINGS_AUTH_BASE}/oauth2_user/authorize2`,
     tokenUrl: `${WITHINGS_API_BASE}/v2/oauth2`,
-    redirectUri: getOAuthRedirectUri(),
+    redirectUri: getOAuthRedirectUri(host),
     scopes: ["user.metrics"],
   };
 }
@@ -354,8 +354,8 @@ export class WithingsProvider implements WebhookProvider {
     ];
   }
 
-  authSetup(): ProviderAuthSetup {
-    const config = withingsOAuthConfig();
+  authSetup(options?: { host?: string }): ProviderAuthSetup {
+    const config = withingsOAuthConfig(options?.host);
     if (!config) throw new Error("WITHINGS_CLIENT_ID and WITHINGS_CLIENT_SECRET are required");
     return {
       oauthConfig: config,

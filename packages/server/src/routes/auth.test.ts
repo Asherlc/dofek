@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getOAuthRedirectUri } from "dofek/auth/oauth";
 import { oauthSuccessHtml } from "./auth.ts";
 
 // Mock all heavy dependencies
@@ -1108,8 +1109,11 @@ describe("createAuthRouter", () => {
           id: "strava",
           name: "Strava",
           validate: () => null,
-          authSetup: () => ({
-            oauthConfig: { authorizationEndpoint: "https://strava.com/oauth" },
+          authSetup: (options?: { host?: string }) => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://strava.com/oauth",
+              redirectUri: getOAuthRedirectUri(options?.host),
+            },
             exchangeCode: vi.fn(),
             getUserIdentity: vi.fn(),
           }),
@@ -1145,8 +1149,11 @@ describe("createAuthRouter", () => {
           id: "strava",
           name: "Strava",
           validate: () => null,
-          authSetup: () => ({
-            oauthConfig: { authorizationEndpoint: "https://strava.com/oauth" },
+          authSetup: (options?: { host?: string }) => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://strava.com/oauth",
+              redirectUri: getOAuthRedirectUri(options?.host),
+            },
             exchangeCode: vi.fn(),
             getUserIdentity: vi.fn(),
           }),
@@ -1955,10 +1962,11 @@ describe("createAuthRouter", () => {
         {
           id: "fatsecret",
           name: "FatSecret",
-          authSetup: () => ({
+          authSetup: (options?: { host?: string }) => ({
             oauthConfig: {
               authorizationEndpoint: "https://fatsecret.com/authorize",
               clientId: "test",
+              redirectUri: getOAuthRedirectUri(options?.host),
             },
             oauth1Flow: {
               getRequestToken: mockGetRequestToken,
@@ -2220,10 +2228,11 @@ describe("createAuthRouter", () => {
         {
           id: "fatsecret",
           name: "FatSecret",
-          authSetup: () => ({
+          authSetup: (options?: { host?: string }) => ({
             oauthConfig: {
               authorizationEndpoint: "https://fatsecret.com/authorize",
               clientId: "test",
+              redirectUri: getOAuthRedirectUri(options?.host),
             },
             oauth1Flow: {
               getRequestToken: mockGetRequestToken,
@@ -2258,10 +2267,11 @@ describe("createAuthRouter", () => {
         {
           id: "fatsecret",
           name: "FatSecret",
-          authSetup: () => ({
+          authSetup: (options?: { host?: string }) => ({
             oauthConfig: {
               authorizationEndpoint: "https://fatsecret.com/authorize",
               clientId: "test",
+              redirectUri: getOAuthRedirectUri(options?.host),
             },
             oauth1Flow: {
               getRequestToken: mockGetRequestToken,
@@ -2294,7 +2304,8 @@ describe("createAuthRouter", () => {
     });
 
     it("uses OAUTH_REDIRECT_URI env var for callback URL when set", async () => {
-      process.env.OAUTH_REDIRECT_URI = "https://custom.example.com/callback";
+      const customUrl = "https://custom.example.com/callback";
+      process.env.OAUTH_REDIRECT_URI_unencrypted = customUrl;
       const mockGetRequestToken = vi.fn(() =>
         Promise.resolve({
           oauthToken: "env-tok",
@@ -2310,6 +2321,7 @@ describe("createAuthRouter", () => {
             oauthConfig: {
               authorizationEndpoint: "https://fatsecret.com/authorize",
               clientId: "test",
+              redirectUri: customUrl,
             },
             oauth1Flow: {
               getRequestToken: mockGetRequestToken,
@@ -2321,8 +2333,8 @@ describe("createAuthRouter", () => {
 
       const { app } = createTestApp();
       await request(app, "get", "/auth/provider/fatsecret");
-      expect(mockGetRequestToken).toHaveBeenCalledWith("https://custom.example.com/callback");
-      delete process.env.OAUTH_REDIRECT_URI;
+      expect(mockGetRequestToken).toHaveBeenCalledWith(customUrl);
+      delete process.env.OAUTH_REDIRECT_URI_unencrypted;
     });
   });
 
@@ -3130,10 +3142,11 @@ describe("createAuthRouter", () => {
         {
           id: "fatsecret",
           name: "FatSecret",
-          authSetup: () => ({
+          authSetup: (options?: { host?: string }) => ({
             oauthConfig: {
               authorizationEndpoint: "https://fatsecret.com/authorize",
               clientId: "test",
+              redirectUri: getOAuthRedirectUri(options?.host),
             },
             oauth1Flow: {
               getRequestToken: mockGetRequestToken,
@@ -3173,10 +3186,11 @@ describe("createAuthRouter", () => {
         {
           id: "fatsecret",
           name: "FatSecret",
-          authSetup: () => ({
+          authSetup: (options?: { host?: string }) => ({
             oauthConfig: {
               authorizationEndpoint: "https://fatsecret.com/authorize",
               clientId: "test",
+              redirectUri: getOAuthRedirectUri(options?.host),
             },
             oauth1Flow: {
               getRequestToken: mockGetRequestToken,
@@ -3197,10 +3211,11 @@ describe("createAuthRouter", () => {
         {
           id: "fatsecret",
           name: "FatSecret",
-          authSetup: () => ({
+          authSetup: (options?: { host?: string }) => ({
             oauthConfig: {
               authorizationEndpoint: "https://fatsecret.com/authorize",
               clientId: "test",
+              redirectUri: getOAuthRedirectUri(options?.host),
             },
             // no oauth1Flow
           }),

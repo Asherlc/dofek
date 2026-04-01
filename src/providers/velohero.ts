@@ -44,7 +44,7 @@ export class VeloHeroProvider implements SyncProvider {
     return `https://app.velohero.com/workouts/show/${externalId}`;
   }
 
-  authSetup(): ProviderAuthSetup {
+  authSetup(options?: { host?: string }): ProviderAuthSetup {
     const fetchFn = this.#fetchFn;
     return {
       oauthConfig: {

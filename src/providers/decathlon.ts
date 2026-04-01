@@ -123,7 +123,7 @@ export function parseDecathlonActivity(act: DecathlonActivity): ParsedDecathlonA
 // OAuth configuration
 // ============================================================
 
-export function decathlonOAuthConfig(): OAuthConfig | null {
+export function decathlonOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.DECATHLON_CLIENT_ID;
   const clientSecret = process.env.DECATHLON_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
@@ -162,8 +162,8 @@ export class DecathlonProvider implements SyncProvider {
     return `https://www.decathlon.com/sports-tracking/activity/${externalId}`;
   }
 
-  authSetup(): ProviderAuthSetup {
-    const config = decathlonOAuthConfig();
+  authSetup(options?: { host?: string }): ProviderAuthSetup {
+    const config = decathlonOAuthConfig(options?.host);
     if (!config) throw new Error("DECATHLON_CLIENT_ID and CLIENT_SECRET required");
     const fetchFn = this.#fetchFn;
     return {

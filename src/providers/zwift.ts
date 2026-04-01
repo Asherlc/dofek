@@ -42,7 +42,7 @@ export class ZwiftProvider implements SyncProvider {
     return `https://www.zwift.com/activity/${externalId}`;
   }
 
-  authSetup(): ProviderAuthSetup {
+  authSetup(options?: { host?: string }): ProviderAuthSetup {
     const fetchFn = this.#fetchFn;
     return {
       oauthConfig: {

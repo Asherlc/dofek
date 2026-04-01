@@ -143,7 +143,7 @@ export function parseCorosWorkout(workout: CorosWorkout): ParsedCorosWorkout {
 // OAuth configuration
 // ============================================================
 
-export function corosOAuthConfig(): OAuthConfig | null {
+export function corosOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.COROS_CLIENT_ID;
   const clientSecret = process.env.COROS_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
@@ -285,7 +285,7 @@ export class CorosProvider implements WebhookProvider {
     ];
   }
 
-  authSetup(): ProviderAuthSetup {
+  authSetup(options?: { host?: string }): ProviderAuthSetup {
     const config = corosOAuthConfig();
     if (!config) throw new Error("COROS_CLIENT_ID and CLIENT_SECRET required");
     const fetchFn = this.#fetchFn;

@@ -269,7 +269,7 @@ const PELOTON_CLIENT_ID = "WVoJxVDdPoFx4RNewvvg6ch2mZ7bwnsM";
 const PELOTON_REDIRECT_URI = "https://members.onepeloton.com/callback";
 const AUTH0_CLIENT = btoa(JSON.stringify({ name: "auth0.js-ulp", version: "9.14.3" }));
 
-export function pelotonOAuthConfig(): OAuthConfig {
+export function pelotonOAuthConfig(host?: string): OAuthConfig {
   return {
     clientId: PELOTON_CLIENT_ID,
     authorizeUrl: `${PELOTON_AUTH_DOMAIN}/authorize`,
@@ -538,8 +538,8 @@ export class PelotonProvider implements SyncProvider {
     return `https://members.onepeloton.com/classes/cycling?modal=classDetailsModal&classId=${externalId}`;
   }
 
-  authSetup(): ProviderAuthSetup {
-    const config = pelotonOAuthConfig();
+  authSetup(options?: { host?: string }): ProviderAuthSetup {
+    const config = pelotonOAuthConfig(options?.host);
     const codeVerifier = generateCodeVerifier();
     const codeChallenge = generateCodeChallenge(codeVerifier);
     const fetchFn = this.#fetchFn;

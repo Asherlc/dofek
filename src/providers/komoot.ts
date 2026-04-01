@@ -113,7 +113,7 @@ export function parseKomootTour(tour: KomootTour): ParsedKomootTour {
 // OAuth configuration
 // ============================================================
 
-export function komootOAuthConfig(): OAuthConfig | null {
+export function komootOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.KOMOOT_CLIENT_ID;
   const clientSecret = process.env.KOMOOT_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
@@ -153,7 +153,7 @@ export class KomootProvider implements SyncProvider {
     return `https://www.komoot.com/tour/${externalId}`;
   }
 
-  authSetup(): ProviderAuthSetup {
+  authSetup(options?: { host?: string }): ProviderAuthSetup {
     const config = komootOAuthConfig();
     if (!config) throw new Error("KOMOOT_CLIENT_ID and CLIENT_SECRET required");
     const fetchFn = this.#fetchFn;
