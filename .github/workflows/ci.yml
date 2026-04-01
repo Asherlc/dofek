@@ -1089,7 +1089,8 @@ jobs:
           echo "RELEASE_ID=$RELEASE_ID" >> "$GITHUB_ENV"
           echo "STAGING_DIR=$STAGING_DIR" >> "$GITHUB_ENV"
 
-      - name: Validate OTA R2 secrets
+      - name: Check OTA R2 secrets
+        id: r2-secrets
         env:
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -1104,11 +1105,15 @@ jobs:
           [ -n "${R2_BUCKET:-}" ] || missing+=("R2_BUCKET")
 
           if [ "${#missing[@]}" -gt 0 ]; then
-            echo "::error::OTA deploy missing required GitHub secrets: ${missing[*]}"
-            exit 1
+            echo "::warning::Skipping OTA deploy because required GitHub secrets are missing: ${missing[*]}"
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+
       - name: Deploy OTA assets to R2
+        if: steps.r2-secrets.outputs.configured == 'true'
         env:
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
