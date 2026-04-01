@@ -91,6 +91,10 @@ function isIdentityProviderName(value: string): value is IdentityProviderName {
   return IDENTITY_PROVIDER_NAMES.some((p) => p === value);
 }
 
+function getSinglePathParam(value: string | string[] | undefined): string | null {
+  return typeof value === "string" ? value : null;
+}
+
 const SLACK_SCOPES = [
   "chat:write",
   "im:history",
@@ -561,12 +565,17 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
   // ── Data provider login: use a data provider as an identity/login provider ──
   router.get("/auth/login/data/:provider", authRateLimiter, async (req, res) => {
     try {
+      const providerId = getSinglePathParam(req.params.provider);
+      if (!providerId) {
+        res.status(400).send("Missing provider");
+        return;
+      }
       const redirectScheme =
         typeof req.query.redirect_scheme === "string" ? req.query.redirect_scheme : undefined;
       const mobileScheme =
         redirectScheme && isValidMobileScheme(redirectScheme) ? redirectScheme : undefined;
-      await startDataProviderOAuth(req, res, req.params.provider, {
-        providerId: req.params.provider,
+      await startDataProviderOAuth(req, res, providerId, {
+        providerId,
         intent: "login",
         userId: DEFAULT_USER_ID,
         mobileScheme,
@@ -580,6 +589,11 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
   // ── Data provider link: link a data provider as identity while already logged in ──
   router.get("/auth/link/data/:provider", authRateLimiter, async (req, res) => {
     try {
+      const providerId = getSinglePathParam(req.params.provider);
+      if (!providerId) {
+        res.status(400).send("Missing provider");
+        return;
+      }
       const sessionId = getSessionIdFromRequest(req);
       if (!sessionId) {
         res.status(401).send("You must be logged in to link an account");
@@ -591,8 +605,8 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         return;
       }
 
-      await startDataProviderOAuth(req, res, req.params.provider, {
-        providerId: req.params.provider,
+      await startDataProviderOAuth(req, res, providerId, {
+        providerId,
         intent: "link",
         linkUserId: session.userId,
         userId: session.userId,
@@ -606,13 +620,18 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
   // ── Data-provider OAuth for data sync (Wahoo, Withings, etc.) ──
   router.get("/auth/provider/:provider", authRateLimiter, async (req, res) => {
     try {
+      const providerId = getSinglePathParam(req.params.provider);
+      if (!providerId) {
+        res.status(400).send("Missing provider");
+        return;
+      }
       // Resolve the logged-in user so the provider record is linked to them
       const sessionId = getSessionIdFromRequest(req);
       const session = sessionId ? await validateSession(db, sessionId) : null;
       const userId = session?.userId ?? DEFAULT_USER_ID;
 
-      await startDataProviderOAuth(req, res, req.params.provider, {
-        providerId: req.params.provider,
+      await startDataProviderOAuth(req, res, providerId, {
+        providerId,
         intent: "data",
         userId,
       });
