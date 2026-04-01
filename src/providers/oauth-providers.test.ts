@@ -67,7 +67,7 @@ describe("suuntoOAuthConfig", () => {
     process.env.SUUNTO_CLIENT_SECRET = "test-secret";
     delete process.env.OAUTH_REDIRECT_URI;
     const config = suuntoOAuthConfig();
-    expect(config?.redirectUri).toContain("localhost");
+    expect(config?.redirectUri).toBe("https://dofek.asherlc.com/callback");
   });
 });
 
