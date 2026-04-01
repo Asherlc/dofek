@@ -5,8 +5,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   bodyMeasurement,
   dailyMetrics,
-  metricStream,
   oauthToken,
+  sensorSample,
   sleepSession,
 } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
@@ -201,10 +201,10 @@ describe("EightSleepProvider.sync() (integration)", () => {
     // Verify HR metric stream
     const hrRows = await ctx.db
       .select()
-      .from(metricStream)
-      .where(eq(metricStream.providerId, "eight-sleep"));
+      .from(sensorSample)
+      .where(eq(sensorSample.providerId, "eight-sleep"));
     expect(hrRows).toHaveLength(5); // 3 from day 1 + 2 from day 2
-    expect(hrRows.every((r) => r.heartRate !== null && r.heartRate > 0)).toBe(true);
+    expect(hrRows.every((r) => r.scalar !== null && r.scalar > 0)).toBe(true);
   });
 
   it("skips processing days", async () => {
@@ -219,7 +219,7 @@ describe("EightSleepProvider.sync() (integration)", () => {
     await ctx.db.delete(sleepSession).where(eq(sleepSession.providerId, "eight-sleep"));
     await ctx.db.delete(dailyMetrics).where(eq(dailyMetrics.providerId, "eight-sleep"));
     await ctx.db.delete(bodyMeasurement).where(eq(bodyMeasurement.providerId, "eight-sleep"));
-    await ctx.db.delete(metricStream).where(eq(metricStream.providerId, "eight-sleep"));
+    await ctx.db.delete(sensorSample).where(eq(sensorSample.providerId, "eight-sleep"));
 
     const days = [
       fakeTrendDay({ day: "2026-03-10", processing: true }),
@@ -299,7 +299,7 @@ describe("EightSleepProvider.sync() (integration)", () => {
     await ctx.db.delete(sleepSession).where(eq(sleepSession.providerId, "eight-sleep"));
     await ctx.db.delete(dailyMetrics).where(eq(dailyMetrics.providerId, "eight-sleep"));
     await ctx.db.delete(bodyMeasurement).where(eq(bodyMeasurement.providerId, "eight-sleep"));
-    await ctx.db.delete(metricStream).where(eq(metricStream.providerId, "eight-sleep"));
+    await ctx.db.delete(sensorSample).where(eq(sensorSample.providerId, "eight-sleep"));
 
     const days = [
       fakeTrendDay({

@@ -211,7 +211,7 @@ describe("WahooProvider.sync() (integration)", () => {
       .from(sensorSample)
       .where(eq(sensorSample.activityId, activityId));
 
-    // test.fit has 3229 source samples; sensor_sample fanout should be at least that many rows.
+    // test.fit has 3229 source samples; sensor_sample count should be at least that many rows.
     expect(metrics.length).toBeGreaterThanOrEqual(3229);
     // Verify records have actual speed channel data from test.fit.
     const speedSamples = metrics.filter((sample) => sample.channel === "speed");

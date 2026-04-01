@@ -46,7 +46,7 @@ async function insertBatch(
   db: Database,
   userId: string,
   deviceId: string,
-  deviceType: string,
+  _deviceType: string,
   samples: InertialMeasurementUnitSample[],
 ): Promise<number> {
   if (samples.length === 0) return 0;
