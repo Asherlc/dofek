@@ -1,5 +1,4 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
-import { View } from "react-native";
 import { FoodEntryCard } from "./FoodEntryCard";
 
 const meta = {
@@ -16,7 +15,7 @@ const meta = {
       carbs_g: 0,
       fat_g: 5,
     },
-    onDelete: (id: string) => {},
+    onDelete: (id: string) => void id,
     deleting: false,
   },
 } satisfies Meta<typeof FoodEntryCard>;
