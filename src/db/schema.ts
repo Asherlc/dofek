@@ -545,7 +545,7 @@ export const activityInterval = fitness.table(
 // ============================================================
 // Sensor sample (TimescaleDB hypertable — DDL managed by SQL migration, not Drizzle)
 // Unified time-series table for ALL sensor data using a "medium" layout.
-// Replaces metric_stream, inertial_measurement_unit_sample, and orientation_sample.
+// Replaces metric_stream and other legacy sensor tables.
 // This Drizzle definition exists for type-safe queries/inserts only.
 //
 // Design:
@@ -654,51 +654,6 @@ export const metricStream = fitness.table(
     index("metric_stream_activity_time_idx").on(table.activityId, table.recordedAt),
     index("metric_stream_user_provider_idx").on(table.userId, table.providerId),
   ],
-);
-
-/** @deprecated Use sensorSample instead */
-export const inertialMeasurementUnitSample = fitness.table(
-  "inertial_measurement_unit_sample",
-  {
-    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
-    userId: uuid("user_id")
-      .notNull()
-      .default(DEFAULT_USER_ID)
-      .references(() => userProfile.id),
-    deviceId: text("device_id").notNull(),
-    deviceType: text("device_type").notNull(),
-    providerId: text("provider_id")
-      .notNull()
-      .references(() => provider.id),
-    x: real("x").notNull(),
-    y: real("y").notNull(),
-    z: real("z").notNull(),
-    gyroscopeX: real("gyroscope_x"),
-    gyroscopeY: real("gyroscope_y"),
-    gyroscopeZ: real("gyroscope_z"),
-  },
-  (table) => [index("inertial_measurement_unit_user_time_idx").on(table.userId, table.recordedAt)],
-);
-
-/** @deprecated Use sensorSample instead */
-export const orientationSample = fitness.table(
-  "orientation_sample",
-  {
-    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
-    userId: uuid("user_id")
-      .notNull()
-      .default(DEFAULT_USER_ID)
-      .references(() => userProfile.id),
-    providerId: text("provider_id")
-      .notNull()
-      .references(() => provider.id),
-    deviceId: text("device_id").notNull(),
-    quaternionW: real("quaternion_w").notNull(),
-    quaternionX: real("quaternion_x").notNull(),
-    quaternionY: real("quaternion_y").notNull(),
-    quaternionZ: real("quaternion_z").notNull(),
-  },
-  (table) => [index("orientation_sample_user_time_idx").on(table.userId, table.recordedAt)],
 );
 
 // ============================================================

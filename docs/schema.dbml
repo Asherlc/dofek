@@ -529,21 +529,20 @@ table fitness.health_event {
   }
 }
 
-table fitness.inertial_measurement_unit_sample {
+table fitness.sensor_sample {
   recorded_at "timestamp with time zone" [not null]
   user_id uuid [not null, default: '00000000-0000-0000-0000-000000000001']
-  device_id text [not null]
-  device_type text [not null]
   provider_id text [not null]
-  x real [not null]
-  y real [not null]
-  z real [not null]
-  gyroscope_x real
-  gyroscope_y real
-  gyroscope_z real
+  device_id text
+  source_type text
+  channel text [not null]
+  activity_id uuid
+  scalar real
+  vector real[]
 
   indexes {
-    (user_id, recorded_at) [name: 'inertial_measurement_unit_user_time_idx']
+    (user_id, recorded_at) [name: 'sensor_sample_user_time_idx']
+    (activity_id, channel) [name: 'sensor_sample_activity_channel_idx']
   }
 }
 
@@ -1189,9 +1188,11 @@ ref health_event_provider_id_provider_id_fk: fitness.health_event.provider_id > 
 
 ref health_event_user_id_user_profile_id_fk: fitness.health_event.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
-ref inertial_measurement_unit_sample_user_id_user_profile_id_fk: fitness.inertial_measurement_unit_sample.user_id > fitness.user_profile.id [delete: no action, update: no action]
+ref sensor_sample_user_id_user_profile_id_fk: fitness.sensor_sample.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
-ref inertial_measurement_unit_sample_provider_id_provider_id_fk: fitness.inertial_measurement_unit_sample.provider_id > fitness.provider.id [delete: no action, update: no action]
+ref sensor_sample_provider_id_provider_id_fk: fitness.sensor_sample.provider_id > fitness.provider.id [delete: no action, update: no action]
+
+ref sensor_sample_activity_id_activity_id_fk: fitness.sensor_sample.activity_id > fitness.activity.id [delete: cascade, update: no action]
 
 ref journal_entry_provider_id_provider_id_fk: fitness.journal_entry.provider_id > fitness.provider.id [delete: no action, update: no action]
 

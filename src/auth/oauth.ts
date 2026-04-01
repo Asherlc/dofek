@@ -2,6 +2,51 @@ import { createHash, randomBytes } from "node:crypto";
 
 const DEFAULT_REDIRECT_URI = "https://dofek.asherlc.com/callback";
 
+function isLocalOrPrivateHost(host: string): boolean {
+  if (host.includes("localhost")) {
+    return true;
+  }
+
+  // Strip :port from IPv4/hostname values while preserving bracketed IPv6.
+  const hostWithoutPort =
+    host.startsWith("[") && host.includes("]")
+      ? host.slice(1, host.indexOf("]"))
+      : host.includes(":")
+        ? host.split(":")[0] ?? host
+        : host;
+  if (!hostWithoutPort) {
+    return false;
+  }
+
+  // Treat all 127/8 addresses as loopback.
+  if (hostWithoutPort.startsWith("127.")) {
+    return true;
+  }
+
+  const segments = hostWithoutPort.split(".");
+  if (segments.length !== 4) {
+    return false;
+  }
+
+  const octets = segments.map((segment) => Number(segment));
+  const validIpv4 = octets.every(
+    (octet) => Number.isInteger(octet) && octet >= 0 && octet <= 255,
+  );
+  if (!validIpv4) {
+    return false;
+  }
+
+  const firstOctet = octets[0];
+  const secondOctet = octets[1];
+  if (firstOctet === 10) {
+    return true;
+  }
+  if (firstOctet === 192 && secondOctet === 168) {
+    return true;
+  }
+  return firstOctet === 172 && secondOctet !== undefined && secondOctet >= 16 && secondOctet <= 31;
+}
+
 /**
  * Returns the OAuth redirect URI from OAUTH_REDIRECT_URI_unencrypted env var,
  * falling back to the production default. If a host is provided and the env var
@@ -13,14 +58,8 @@ export function getOAuthRedirectUri(host?: string): string {
     return envValue;
   }
   if (host) {
-    // Use http for local/private IPs, otherwise assume https
-    const isLocal =
-      host.includes("localhost") ||
-      host.includes("127.0.0.1") ||
-      host.startsWith("192.168.") ||
-      host.startsWith("10.") ||
-      host.startsWith("172.");
-    const protocol = isLocal ? "http" : "https";
+    // Use http for localhost/private RFC1918 networks, otherwise use https.
+    const protocol = isLocalOrPrivateHost(host) ? "http" : "https";
     return `${protocol}://${host}/callback`;
   }
   return DEFAULT_REDIRECT_URI;
