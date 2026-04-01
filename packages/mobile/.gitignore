@@ -6,3 +6,6 @@
 
 # Node
 node_modules/
+
+# Storybook generated file
+.rnstorybook/storybook.requires.ts
