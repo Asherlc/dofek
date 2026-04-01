@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ZodError } from "zod";
-import type { ParsedFitRecord } from "../fit/parser.ts";
-import * as loggerModule from "../logger.ts";
-import * as fitParserModule from "../fit/parser.ts";
 import * as resolveTokensModule from "../auth/resolve-tokens.ts";
 import * as sensorSampleWriterModule from "../db/sensor-sample-writer.ts";
+import type { ParsedFitRecord } from "../fit/parser.ts";
+import * as fitParserModule from "../fit/parser.ts";
+import * as loggerModule from "../logger.ts";
 import {
   fitRecordsToMetricStream,
   parseWorkoutList,
@@ -953,16 +953,6 @@ describe("WahooProvider.syncWebhookEvent", () => {
   });
 
   it("writes sensor samples for FIT webhook payloads after clearing prior activity rows", async () => {
-    const metricRows = [
-      {
-        providerId: "wahoo",
-        activityId: "act-uuid",
-        recordedAt: new Date("2026-03-01T08:00:00Z"),
-        heartRate: 145,
-        power: 210,
-        raw: { heart_rate: 145, power: 210 },
-      },
-    ];
     vi.spyOn(fitParserModule, "parseFitFile").mockResolvedValue({
       records: [
         {
@@ -982,7 +972,9 @@ describe("WahooProvider.syncWebhookEvent", () => {
     const dualWriteSpy = vi
       .spyOn(sensorSampleWriterModule, "dualWriteToSensorSample")
       .mockResolvedValue(undefined);
-    const loggerInfoSpy = vi.spyOn(loggerModule.logger, "info").mockImplementation(() => loggerModule.logger);
+    const loggerInfoSpy = vi
+      .spyOn(loggerModule.logger, "info")
+      .mockImplementation(() => loggerModule.logger);
     const whereSpy = vi.fn().mockResolvedValue(undefined);
     const mockDb = {
       select: vi.fn(),
@@ -1161,7 +1153,9 @@ describe("WahooProvider.sync", () => {
     const dualWriteSpy = vi
       .spyOn(sensorSampleWriterModule, "dualWriteToSensorSample")
       .mockResolvedValue(undefined);
-    const loggerInfoSpy = vi.spyOn(loggerModule.logger, "info").mockImplementation(() => loggerModule.logger);
+    const loggerInfoSpy = vi
+      .spyOn(loggerModule.logger, "info")
+      .mockImplementation(() => loggerModule.logger);
     const mockDb = {
       select: vi.fn(),
       insert: makeWahooInsertMock("activity-sync-1"),
