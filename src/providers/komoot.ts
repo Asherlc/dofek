@@ -19,7 +19,7 @@ import type {
 // ============================================================
 
 const KOMOOT_API_BASE = "https://external-api.komoot.de/v007";
-const DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
+const _DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
 
 interface KomootTour {
   id: number;
@@ -117,14 +117,13 @@ export function komootOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.KOMOOT_CLIENT_ID;
   const clientSecret = process.env.KOMOOT_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
-  const redirectUri = process.env.OAUTH_REDIRECT_URI ?? DEFAULT_REDIRECT_URI;
 
   return {
     clientId,
     clientSecret,
     authorizeUrl: "https://auth.komoot.de/oauth/authorize",
     tokenUrl: "https://auth.komoot.de/oauth/token",
-    redirectUri,
+    redirectUri: getOAuthRedirectUri(host),
     scopes: ["profile"],
     tokenAuthMethod: "basic",
   };
@@ -154,7 +153,7 @@ export class KomootProvider implements SyncProvider {
   }
 
   authSetup(options?: { host?: string }): ProviderAuthSetup {
-    const config = komootOAuthConfig();
+    const config = komootOAuthConfig(options?.host);
     if (!config) throw new Error("KOMOOT_CLIENT_ID and CLIENT_SECRET required");
     const fetchFn = this.#fetchFn;
     return {

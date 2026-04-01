@@ -19,7 +19,7 @@ import type {
 // ============================================================
 
 const CYCLING_ANALYTICS_API_BASE = "https://www.cyclinganalytics.com/api";
-const DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
+const _DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
 
 interface CyclingAnalyticsRide {
   id: number;
@@ -103,14 +103,13 @@ export function cyclingAnalyticsOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.CYCLING_ANALYTICS_CLIENT_ID;
   const clientSecret = process.env.CYCLING_ANALYTICS_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
-  const redirectUri = process.env.OAUTH_REDIRECT_URI ?? DEFAULT_REDIRECT_URI;
 
   return {
     clientId,
     clientSecret,
     authorizeUrl: "https://www.cyclinganalytics.com/api/auth",
     tokenUrl: "https://www.cyclinganalytics.com/api/token",
-    redirectUri,
+    redirectUri: getOAuthRedirectUri(host),
     scopes: [],
   };
 }
@@ -140,7 +139,7 @@ export class CyclingAnalyticsProvider implements SyncProvider {
   }
 
   authSetup(options?: { host?: string }): ProviderAuthSetup {
-    const config = cyclingAnalyticsOAuthConfig();
+    const config = cyclingAnalyticsOAuthConfig(options?.host);
     if (!config) throw new Error("CYCLING_ANALYTICS_CLIENT_ID and CLIENT_SECRET required");
     const fetchFn = this.#fetchFn;
     return {

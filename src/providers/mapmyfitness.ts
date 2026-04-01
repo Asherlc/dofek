@@ -1,6 +1,6 @@
 import type { CanonicalActivityType } from "@dofek/training/training";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
-import { exchangeCodeForTokens } from "../auth/oauth.ts";
+import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
@@ -19,7 +19,7 @@ import type {
 // ============================================================
 
 const MAPMYFITNESS_API_BASE = "https://api.mapmyfitness.com";
-const DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
+const _DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
 
 interface MapMyFitnessWorkout {
   _links: { self: Array<{ id: string }> };
@@ -119,14 +119,13 @@ export function mapMyFitnessOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.MAPMYFITNESS_CLIENT_ID;
   const clientSecret = process.env.MAPMYFITNESS_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
-  const redirectUri = process.env.OAUTH_REDIRECT_URI ?? DEFAULT_REDIRECT_URI;
 
   return {
     clientId,
     clientSecret,
     authorizeUrl: "https://www.mapmyfitness.com/v7.1/oauth2/authorize/",
     tokenUrl: `${MAPMYFITNESS_API_BASE}/v7.1/oauth2/access_token/`,
-    redirectUri,
+    redirectUri: getOAuthRedirectUri(host),
     scopes: [],
   };
 }

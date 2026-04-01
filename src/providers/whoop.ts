@@ -647,7 +647,7 @@ export class WhoopProvider implements SyncProvider {
       clientSecret,
       authorizeUrl: "https://api.prod.whoop.com/oauth/oauth2/auth",
       tokenUrl: "https://api.prod.whoop.com/oauth/oauth2/token",
-      redirectUri: getOAuthRedirectUri(),
+      redirectUri: getOAuthRedirectUri(options?.host),
       scopes: ["read:profile"],
     };
     const fetchFn = this.#fetchFn;

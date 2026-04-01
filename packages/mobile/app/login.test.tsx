@@ -203,7 +203,7 @@ describe("LoginScreen", () => {
       data: [],
     });
     const cancelError = new Error("User canceled");
-    (cancelError as any).code = "ERR_REQUEST_CANCELED";
+    Object.assign(cancelError, { code: "ERR_REQUEST_CANCELED" });
     mockStartNativeAppleSignIn.mockRejectedValue(cancelError);
 
     render(<LoginScreen />);

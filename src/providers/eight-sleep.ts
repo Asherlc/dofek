@@ -49,7 +49,7 @@ export class EightSleepProvider implements SyncProvider {
     return null;
   }
 
-  authSetup(options?: { host?: string }): ProviderAuthSetup {
+  authSetup(_options?: { host?: string }): ProviderAuthSetup {
     const fetchFn = this.#fetchFn;
     return {
       oauthConfig: {

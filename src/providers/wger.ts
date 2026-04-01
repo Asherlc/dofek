@@ -19,7 +19,7 @@ import type {
 // ============================================================
 
 const WGER_API_BASE = "https://wger.de/api/v2";
-const DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
+const _DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
 
 interface WgerWorkoutSession {
   id: number;
@@ -96,14 +96,13 @@ export function wgerOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.WGER_CLIENT_ID;
   const clientSecret = process.env.WGER_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
-  const redirectUri = process.env.OAUTH_REDIRECT_URI ?? DEFAULT_REDIRECT_URI;
 
   return {
     clientId,
     clientSecret,
     authorizeUrl: "https://wger.de/en/user/authorize",
     tokenUrl: "https://wger.de/api/v2/token",
-    redirectUri,
+    redirectUri: getOAuthRedirectUri(host),
     scopes: ["read"],
   };
 }

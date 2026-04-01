@@ -237,7 +237,7 @@ export async function catchNotFound<T>(promise: Promise<T>): Promise<T | null> {
 // BodySpec OAuth
 // ============================================================
 
-function bodySpecOAuthConfig(): OAuthConfig | null {
+function bodySpecOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.BODYSPEC_CLIENT_ID;
   const clientSecret = process.env.BODYSPEC_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
@@ -246,7 +246,7 @@ function bodySpecOAuthConfig(): OAuthConfig | null {
     clientSecret,
     authorizeUrl: `${BODYSPEC_API_BASE}/oauth/authorize`,
     tokenUrl: `${BODYSPEC_API_BASE}/oauth/token`,
-    redirectUri: getOAuthRedirectUri(),
+    redirectUri: getOAuthRedirectUri(host),
     scopes: ["read:results"],
   };
 }
@@ -323,8 +323,8 @@ export class BodySpecProvider implements SyncProvider {
     return null;
   }
 
-  authSetup(options?: { host?: string }): ProviderAuthSetup | undefined {
-    const config = bodySpecOAuthConfig();
+  authSetup(_options?: { host?: string }): ProviderAuthSetup | undefined {
+    const config = bodySpecOAuthConfig(options?.host);
     if (!config) return undefined;
     return {
       oauthConfig: config,

@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getOAuthRedirectUri } from "dofek/auth/oauth";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { oauthSuccessHtml } from "./auth.ts";
 
 // Mock all heavy dependencies

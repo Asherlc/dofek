@@ -771,7 +771,7 @@ export class OuraProvider implements WebhookProvider {
   }
 
   authSetup(options?: { host?: string }): ProviderAuthSetup {
-    const config = ouraOAuthConfig();
+    const config = ouraOAuthConfig(options?.host);
     if (!config) throw new Error("OURA_CLIENT_ID and OURA_CLIENT_SECRET are required");
     const fetchFn = this.#fetchFn;
 

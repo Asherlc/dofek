@@ -23,7 +23,7 @@ import type {
 // ============================================================
 
 const CONCEPT2_API_BASE = "https://log.concept2.com";
-const DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
+const _DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
 
 const concept2ResultSchema = z.object({
   id: z.number(),
@@ -139,14 +139,13 @@ export function concept2OAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.CONCEPT2_CLIENT_ID;
   const clientSecret = process.env.CONCEPT2_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
-  const redirectUri = process.env.OAUTH_REDIRECT_URI ?? DEFAULT_REDIRECT_URI;
 
   return {
     clientId,
     clientSecret,
     authorizeUrl: `${CONCEPT2_API_BASE}/oauth/authorize`,
     tokenUrl: `${CONCEPT2_API_BASE}/oauth/access_token`,
-    redirectUri,
+    redirectUri: getOAuthRedirectUri(host),
     scopes: ["user:read", "results:read"],
   };
 }
@@ -338,7 +337,7 @@ export class Concept2Provider implements WebhookProvider {
   }
 
   authSetup(options?: { host?: string }): ProviderAuthSetup {
-    const config = concept2OAuthConfig();
+    const config = concept2OAuthConfig(options?.host);
     if (!config) throw new Error("CONCEPT2_CLIENT_ID and CLIENT_SECRET required");
     const fetchFn = this.#fetchFn;
     return {

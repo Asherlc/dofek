@@ -69,8 +69,7 @@ export default function LoginScreen() {
         err instanceof Error &&
         (err.message.includes("ERR_CANCELED") ||
           err.message.includes("ERR_REQUEST_CANCELED") ||
-          (err as { code?: string }).code === "ERR_REQUEST_CANCELED" ||
-          (err as { code?: string }).code === "ERR_CANCELED");
+          ("code" in err && (err.code === "ERR_REQUEST_CANCELED" || err.code === "ERR_CANCELED")));
 
       if (isCancel) {
         return;
