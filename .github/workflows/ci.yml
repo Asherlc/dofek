@@ -878,7 +878,6 @@ jobs:
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
-          STORYBOOK_PREVIEW_BASE_URL: ${{ secrets.STORYBOOK_PREVIEW_BASE_URL }}
         run: |
           set -euo pipefail
 
@@ -893,14 +892,13 @@ jobs:
           [ -n "${R2_ACCESS_KEY_ID:-}" ] || missing+=("R2_ACCESS_KEY_ID")
           [ -n "${R2_SECRET_ACCESS_KEY:-}" ] || missing+=("R2_SECRET_ACCESS_KEY")
           [ -n "${R2_BUCKET:-}" ] || missing+=("R2_BUCKET")
-          [ -n "${STORYBOOK_PREVIEW_BASE_URL:-}" ] || missing+=("STORYBOOK_PREVIEW_BASE_URL")
 
           if [ "${#missing[@]}" -gt 0 ]; then
             echo "::error::Storybook preview missing required GitHub secrets: ${missing[*]}"
             exit 1
           fi
 
-          BASE_URL="${STORYBOOK_PREVIEW_BASE_URL%/}"
+          BASE_URL="https://storybook.dofek.fit/storybook"
           PREVIEW_PREFIX="storybook/pr-${{ github.event.pull_request.number }}"
           PREVIEW_URL="$BASE_URL/pr-${{ github.event.pull_request.number }}/"
 
