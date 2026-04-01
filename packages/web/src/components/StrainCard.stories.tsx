@@ -83,7 +83,7 @@ export const LowStrain: Story = {
       currentStrain: 4.1,
       progressPercent: 34,
       zone: "Recovery",
-      explanation: "Take it easy today to allow your body to supercompensate.",
+      explanation: "Take it easy today to allow your body to bounce back stronger.",
     },
   },
 };
