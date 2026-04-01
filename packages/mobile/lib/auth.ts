@@ -9,6 +9,7 @@ import * as SecureStore from "expo-secure-store";
 import * as WebBrowser from "expo-web-browser";
 import { Platform } from "react-native";
 import { z } from "zod";
+import { captureException } from "./telemetry";
 
 export { AuthUserSchema, ConfiguredProvidersSchema };
 export type { AuthUser, ConfiguredProviders };
@@ -78,8 +79,17 @@ export async function startOAuthLogin(
 }
 
 /** Whether native Apple Sign In is available (iOS 13+). */
-export function isNativeAppleSignInAvailable(): boolean {
-  return Platform.OS === "ios" && AppleAuthentication.isAvailableAsync !== undefined;
+export async function isNativeAppleSignInAvailable(): Promise<boolean> {
+  if (Platform.OS !== "ios" || AppleAuthentication.isAvailableAsync === undefined) {
+    return false;
+  }
+
+  try {
+    return await AppleAuthentication.isAvailableAsync();
+  } catch (error: unknown) {
+    captureException(error, { source: "apple-auth-availability" });
+    return false;
+  }
 }
 
 /** Sign in using the native iOS Apple Sign In sheet. Returns session token or null if cancelled. */

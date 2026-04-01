@@ -50,6 +50,7 @@
     "./jobs/queues": "./src/jobs/queues.ts",
     "./jobs/provider-queue-config": "./src/jobs/provider-queue-config.ts",
     "./jobs/process-export-job": "./src/jobs/process-export-job.ts",
+    "./lib/r2-client": "./src/lib/r2-client.ts",
     "./personalization/params": "./src/personalization/params.ts",
     "./personalization/storage": "./src/personalization/storage.ts",
     "./personalization/refit": "./src/personalization/refit.ts",
@@ -85,6 +86,12 @@
     "e2e:web": "pnpm e2e:web:up && pnpm e2e:web:run; pnpm e2e:web:down",
     "mobile": "pnpm --filter dofek-mobile start",
     "mobile:device": "pnpm --filter dofek-mobile ios:device",
+    "storybook": "pnpm --filter dofek-web storybook",
+    "storybook:build": "pnpm --filter dofek-web build-storybook",
+    "storybook:web": "pnpm --filter dofek-web storybook",
+    "storybook:web:build": "pnpm --filter dofek-web build-storybook",
+    "storybook:mobile": "pnpm --filter dofek-mobile storybook",
+    "storybook:mobile:ios": "pnpm --filter dofek-mobile storybook:ios",
     "size": "size-limit",
     "depcruise": "depcruise --config .dependency-cruiser.cjs src/ packages/",
     "spellcheck": "cspell --no-progress",
@@ -166,7 +173,12 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
-      "cypress"
+      "@sentry/cli",
+      "core-js",
+      "cypress",
+      "msgpackr-extract",
+      "msw",
+      "sharp"
     ]
   },
   "packageManager": "pnpm@10.28.0+sha512.05df71d1421f21399e053fde567cea34d446fa02c76571441bfc1c7956e98e363088982d940465fd34480d4d90a0668bc12362f8aa88000a64e83d0b0e47be48"

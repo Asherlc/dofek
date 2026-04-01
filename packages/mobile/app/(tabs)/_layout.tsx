@@ -2,27 +2,19 @@ import { Ionicons } from "@expo/vector-icons";
 import { Tabs, useRouter } from "expo-router";
 import { Pressable, StyleSheet } from "react-native";
 import { colors } from "../../theme";
+import { getTabIconName, selectedTabBackgroundColor } from "./tab-selection";
 
 export default function TabsLayout() {
   const router = useRouter();
 
   return (
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: colors.accent,
-        tabBarInactiveTintColor: colors.textTertiary,
-        tabBarStyle: styles.tabBar,
-        headerStyle: styles.header,
-        headerTintColor: colors.text,
-        headerTitleStyle: styles.headerTitle,
-      }}
-    >
+    <Tabs screenOptions={tabsScreenOptions}>
       <Tabs.Screen
         name="index"
         options={{
           title: "Today",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="today-outline" size={size} color={color} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={getTabIconName("index", focused)} size={size} color={color} />
           ),
           headerRight: () => (
             <Pressable onPress={() => router.push("/settings")} style={styles.headerButton}>
@@ -35,8 +27,8 @@ export default function TabsLayout() {
         name="recovery"
         options={{
           title: "Recovery",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="pulse-outline" size={size} color={color} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={getTabIconName("recovery", focused)} size={size} color={color} />
           ),
         }}
       />
@@ -44,8 +36,8 @@ export default function TabsLayout() {
         name="strain"
         options={{
           title: "Training",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="barbell-outline" size={size} color={color} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={getTabIconName("strain", focused)} size={size} color={color} />
           ),
         }}
       />
@@ -53,16 +45,9 @@ export default function TabsLayout() {
         name="food"
         options={{
           title: "Nutrition",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="nutrition-outline" size={size} color={color} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={getTabIconName("food", focused)} size={size} color={color} />
           ),
-        }}
-      />
-      {/* Hide the old health tab — its content moved to Settings stack screen */}
-      <Tabs.Screen
-        name="health"
-        options={{
-          href: null,
         }}
       />
     </Tabs>
@@ -75,6 +60,15 @@ const styles = StyleSheet.create({
     borderTopColor: colors.surface,
     borderTopWidth: 0.5,
     paddingTop: 4,
+  },
+  tabBarItem: {
+    borderRadius: 12,
+    marginHorizontal: 6,
+    marginTop: 4,
+    marginBottom: 2,
+  },
+  tabBarLabel: {
+    fontWeight: "600",
   },
   header: {
     backgroundColor: colors.background,
@@ -90,3 +84,15 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
 });
+
+export const tabsScreenOptions = {
+  tabBarActiveTintColor: colors.accent,
+  tabBarInactiveTintColor: colors.textTertiary,
+  tabBarStyle: styles.tabBar,
+  tabBarItemStyle: styles.tabBarItem,
+  tabBarLabelStyle: styles.tabBarLabel,
+  tabBarActiveBackgroundColor: selectedTabBackgroundColor,
+  headerStyle: styles.header,
+  headerTintColor: colors.text,
+  headerTitleStyle: styles.headerTitle,
+} as const;

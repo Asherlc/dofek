@@ -7,6 +7,7 @@ import compression from "compression";
 import cookieParser from "cookie-parser";
 import { createDatabaseFromEnv } from "dofek/db";
 import { createImportQueue, createSyncQueue } from "dofek/jobs/queues";
+import { createR2Client, createS3Client, parseR2Config } from "dofek/lib/r2-client";
 import { sql } from "drizzle-orm";
 import express from "express";
 import { isAdmin } from "./auth/admin.ts";
@@ -26,6 +27,16 @@ import { startSlackBot } from "./slack/bot.ts";
 import type { Context } from "./trpc.ts";
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
+
+function getSingleHeaderValue(value: string | string[] | undefined): string | undefined {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (Array.isArray(value) && typeof value[0] === "string") {
+    return value[0];
+  }
+  return undefined;
+}
 
 /** Create the Express app with all routes. Exported for testing. */
 export function createApp(db: import("dofek/db").Database): express.Express {
@@ -118,18 +129,50 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
     bullBoardAdapter.getRouter()(req, res, next);
   });
 
+  const updatesStorage = (() => {
+    const endpoint = process.env.R2_ENDPOINT;
+    const accessKeyId = process.env.R2_ACCESS_KEY_ID;
+    const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+    const bucket = process.env.R2_BUCKET;
+    const hasSomeR2Config = [endpoint, accessKeyId, secretAccessKey, bucket].some(Boolean);
+    const hasCompleteR2Config = [endpoint, accessKeyId, secretAccessKey, bucket].every(Boolean);
+
+    if (!hasSomeR2Config) return null;
+    if (!hasCompleteR2Config) {
+      logger.error("[updates] Incomplete R2 config; falling back to filesystem OTA storage");
+      return null;
+    }
+
+    try {
+      const config = parseR2Config({
+        R2_ENDPOINT: endpoint,
+        R2_ACCESS_KEY_ID: accessKeyId,
+        R2_SECRET_ACCESS_KEY: secretAccessKey,
+        R2_BUCKET: bucket,
+      });
+      logger.info("[updates] Using R2 object storage for OTA assets");
+      return createR2Client(createS3Client(config), config.R2_BUCKET);
+    } catch (error) {
+      logger.error(`[updates] Invalid R2 config; falling back to filesystem OTA storage: ${error}`);
+      Sentry.captureException(error);
+      return null;
+    }
+  })();
+
+  const updatesRouter = createUpdatesRouter({
+    updatesDir: process.env.UPDATES_DIR ?? "/app/updates",
+    updatesStorage: updatesStorage ?? undefined,
+    updatesPrefix: process.env.UPDATES_R2_PREFIX ?? "mobile-ota",
+    publicUrl: process.env.PUBLIC_URL ?? "https://dofek.asherlc.com",
+  });
+
   // ── Route modules ──
   // Webhook routes must be mounted before json() middleware — they use raw body for HMAC verification
   app.use("/api/webhooks", createWebhookRouter({ db, getSyncQueue }));
   app.use("/api/upload", createUploadRouter({ getImportQueue, db }));
   app.use("/api/export", createExportRouter(db));
-  app.use(
-    "/api/updates",
-    createUpdatesRouter({
-      updatesDir: process.env.UPDATES_DIR ?? "/app/updates",
-      publicUrl: process.env.PUBLIC_URL ?? "https://dofek.asherlc.com",
-    }),
-  );
+  app.use("/api/updates", updatesRouter);
+  app.use("/updates", updatesRouter);
   // ── Dev-only: auto-login for seed database testing ──
   if (process.env.NODE_ENV !== "production") {
     app.get("/auth/dev-login", async (_req, res) => {
@@ -157,9 +200,10 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       createContext: async ({ req }): Promise<Context> => {
         const sessionId = getSessionIdFromRequest(req);
         const session = sessionId ? await validateSession(db, sessionId) : null;
-        const rawTimezone = req.headers["x-timezone"];
-        const timezone = typeof rawTimezone === "string" ? rawTimezone : "UTC";
-        return { db, userId: session?.userId ?? null, timezone };
+        const timezone = getSingleHeaderValue(req.headers["x-timezone"]) ?? "UTC";
+        const appVersion = getSingleHeaderValue(req.headers["x-app-version"]);
+        const assetsVersion = getSingleHeaderValue(req.headers["x-assets-version"]);
+        return { db, userId: session?.userId ?? null, timezone, appVersion, assetsVersion };
       },
       onError: ({ path, error }) => {
         logger.error(`[trpc] ${path}: ${error.message}`);

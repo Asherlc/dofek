@@ -14,6 +14,7 @@ import { getTrpcUrl } from "../lib/server";
 import { captureException, initTelemetry, logger } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import { useWhoopBleSync } from "../lib/useWhoopBleSync";
+import { getVersionHeaders } from "../lib/version-headers";
 import { addBackgroundRefreshListener, scheduleRefresh } from "../modules/background-refresh";
 import {
   findWhoop,
@@ -101,16 +102,18 @@ function AuthGate() {
 
   const trpcClient = useMemo(() => {
     const url = getTrpcUrl(serverUrl);
+    const versionHeaders = getVersionHeaders();
     return trpc.createClient({
       links: [
         httpBatchLink({
           url,
           methodOverride: "POST",
           headers: () => {
-            const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            const defaultHeaders = { ...versionHeaders, "x-timezone": timezone };
             return sessionToken
-              ? { Authorization: `Bearer ${sessionToken}`, "x-timezone": tz }
-              : { "x-timezone": tz };
+              ? { Authorization: `Bearer ${sessionToken}`, ...defaultHeaders }
+              : defaultHeaders;
           },
         }),
       ],
@@ -277,18 +280,6 @@ function AuthGate() {
             }}
           />
           <Stack.Screen
-            name="tracking"
-            options={{
-              title: "Tracking",
-            }}
-          />
-          <Stack.Screen
-            name="training"
-            options={{
-              title: "Training",
-            }}
-          />
-          <Stack.Screen
             name="nutrition-analytics"
             options={{
               title: "Nutrition Analytics",
@@ -304,12 +295,6 @@ function AuthGate() {
             name="sleep"
             options={{
               title: "Sleep",
-            }}
-          />
-          <Stack.Screen
-            name="insights"
-            options={{
-              title: "Insights",
             }}
           />
           <Stack.Screen
@@ -330,12 +315,6 @@ function AuthGate() {
               title: "Activities",
               headerStyle: { backgroundColor: colors.background },
               headerTintColor: colors.text,
-            }}
-          />
-          <Stack.Screen
-            name="predictions"
-            options={{
-              title: "Predictions",
             }}
           />
           <Stack.Screen

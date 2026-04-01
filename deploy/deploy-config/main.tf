@@ -1,13 +1,3 @@
-terraform {
-  cloud {
-    organization = "dofek"
-
-    workspaces {
-      name = "deploy-config"
-    }
-  }
-}
-
 variable "server_ip" {
   description = "Server IP address to deploy config to"
   type        = string
@@ -86,7 +76,7 @@ resource "null_resource" "deploy_config" {
 
   provisioner "remote-exec" {
     inline = [
-      "cd /opt/dofek && docker compose -f docker-compose.yml -f docker-compose.hotfix.yml up -d"
+      "cd /opt/dofek && docker compose -f docker-compose.yml -f docker-compose.hotfix.yml up -d --scale web=2 --scale client=2"
     ]
   }
 }

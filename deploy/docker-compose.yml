@@ -19,6 +19,12 @@ services:
     restart: unless-stopped
     volumes:
       - /opt/dofek/updates:/usr/share/nginx/html/updates:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/ || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
     depends_on:
       - web
 
@@ -39,7 +45,6 @@ services:
 
   web:
     image: ${DOFEK_IMAGE:-ghcr.io/asherlc/dofek:latest}
-    hostname: dofek-web
     command: web
     restart: unless-stopped
     env_file: .env
@@ -51,7 +56,7 @@ services:
       - DATABASE_URL=postgres://health:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/health
       - REDIS_URL=redis://redis:6379
       - JOB_FILES_DIR=/app/job-files
-      - UPDATES_DIR=/app/updates
+      - UPDATES_R2_PREFIX=mobile-ota
       - PUBLIC_URL=https://dofek.asherlc.com
       - PORT=3000
       - NODE_ENV=production
@@ -65,7 +70,6 @@ services:
       - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://o4511073249067008.ingest.us.sentry.io/api/4511073388593152/integration/otlp/v1/traces?sentry_key=b421c7fde44434a032c86e3357cae397
     volumes:
       - job_files:/app/job-files
-      - /opt/dofek/updates:/app/updates:ro
       - /var/run/docker.sock:/var/run/docker.sock
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/healthz').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))\""]
@@ -73,6 +77,10 @@ services:
       timeout: 3s
       retries: 5
       start_period: 30s
+    networks:
+      default:
+        aliases:
+          - dofek-web
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -203,6 +211,8 @@ services:
       WATCHTOWER_CLEANUP: "true"
       WATCHTOWER_INCLUDE_STOPPED: "true"
       WATCHTOWER_REVIVE_STOPPED: "false"
+      # With 2 replicas for web/client, rolling restart keeps at least one
+      # serving instance available during image updates.
       WATCHTOWER_ROLLING_RESTART: "true"
       WATCHTOWER_STOP_TIMEOUT: "2100"
     volumes:

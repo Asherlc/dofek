@@ -16,6 +16,10 @@ export interface Context {
   userId: string | null;
   /** IANA timezone from client (e.g. "America/Los_Angeles"). Falls back to "UTC". */
   timezone: string;
+  /** Client app semantic version, if provided (e.g. "1.2.3"). */
+  appVersion?: string;
+  /** Client asset/update identifier, if provided (e.g. Expo updateId). */
+  assetsVersion?: string;
 }
 
 /** Context after auth middleware — userId is guaranteed non-null. */

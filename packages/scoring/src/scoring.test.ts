@@ -11,6 +11,9 @@ import {
   healthStatusColor,
   rampRateColor,
   readinessLevelColor,
+  SCORE_RECOVERED_THRESHOLD,
+  SCORE_WARNING_THRESHOLD,
+  SCORE_ZONES,
   StrainScore,
   StrainZone,
   StressScore,
@@ -75,6 +78,16 @@ describe("scoreColor", () => {
 
   it("returns danger for scores < 50", () => {
     expect(scoreColor(0)).toBe(statusColors.danger);
+  });
+});
+
+describe("SCORE_ZONES", () => {
+  it("matches the scoreColor threshold constants", () => {
+    expect(SCORE_ZONES).toEqual([
+      { min: 0, max: SCORE_WARNING_THRESHOLD, status: "danger" },
+      { min: SCORE_WARNING_THRESHOLD, max: SCORE_RECOVERED_THRESHOLD, status: "warning" },
+      { min: SCORE_RECOVERED_THRESHOLD, max: 100, status: "positive" },
+    ]);
   });
 });
 

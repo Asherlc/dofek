@@ -17,11 +17,12 @@ vi.mock("expo-secure-store", () => ({
 vi.mock("expo-web-browser", () => ({
   openAuthSessionAsync: vi.fn(),
 }));
-const { mockSignInAsync } = vi.hoisted(() => ({
+const { mockIsAvailableAsync, mockSignInAsync } = vi.hoisted(() => ({
+  mockIsAvailableAsync: vi.fn(),
   mockSignInAsync: vi.fn(),
 }));
 vi.mock("expo-apple-authentication", () => ({
-  isAvailableAsync: vi.fn(),
+  isAvailableAsync: mockIsAvailableAsync,
   signInAsync: mockSignInAsync,
   AppleAuthenticationScope: { FULL_NAME: 0, EMAIL: 1 },
   AppleAuthenticationButtonType: { SIGN_IN: 0 },
@@ -184,9 +185,18 @@ describe("fetchConfiguredProviders", () => {
 });
 
 describe("isNativeAppleSignInAvailable", () => {
-  it("returns true on iOS when expo-apple-authentication is available", () => {
-    // Platform.OS is mocked as "ios" and isAvailableAsync exists
-    expect(isNativeAppleSignInAvailable()).toBe(true);
+  beforeEach(() => {
+    mockIsAvailableAsync.mockReset();
+  });
+
+  it("returns true on iOS when expo-apple-authentication reports availability", async () => {
+    mockIsAvailableAsync.mockResolvedValueOnce(true);
+    await expect(isNativeAppleSignInAvailable()).resolves.toBe(true);
+  });
+
+  it("returns false when expo-apple-authentication reports unavailability", async () => {
+    mockIsAvailableAsync.mockResolvedValueOnce(false);
+    await expect(isNativeAppleSignInAvailable()).resolves.toBe(false);
   });
 });
 
