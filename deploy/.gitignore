@@ -15,4 +15,4 @@ dns/.terraform/
 dns/.terraform.lock.hcl
 dns/*.tfstate
 dns/*.tfstate.backup
-dns/terraform.tfvars
+dns/terraform.tfvars.plain

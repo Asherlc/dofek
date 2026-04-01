@@ -89,6 +89,14 @@ resource "cloudflare_r2_bucket" "training_data" {
   location   = "WEUR"
 }
 
+resource "cloudflare_r2_custom_domain" "storybook_preview" {
+  account_id  = var.cloudflare_account_id
+  bucket_name = cloudflare_r2_bucket.training_data.name
+  domain      = "storybook.dofek.fit"
+  enabled     = true
+  zone_id     = cloudflare_zone.dofek_fit.id
+}
+
 # NOTE: S3-compatible API credentials (access key ID + secret access key) for R2
 # cannot be created via Terraform — they must be created manually in the
 # Cloudflare dashboard: R2 → Manage R2 API Tokens → Create API Token.
@@ -115,4 +123,9 @@ output "r2_bucket_name" {
 output "r2_endpoint" {
   description = "R2 S3-compatible endpoint URL"
   value       = "https://${var.cloudflare_account_id}.r2.cloudflarestorage.com"
+}
+
+output "storybook_preview_base_url" {
+  description = "Public base URL for PR Storybook previews"
+  value       = "https://${cloudflare_r2_custom_domain.storybook_preview.domain}/storybook"
 }

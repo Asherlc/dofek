@@ -119,7 +119,7 @@ pnpm storybook:web
 pnpm storybook:mobile
 ```
 
-Pull requests can publish a web Storybook preview automatically when CI passes. Configure `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, and `STORYBOOK_PREVIEW_BASE_URL` in GitHub Actions secrets to enable the PR preview link comment.
+Pull requests can publish a web Storybook preview automatically on every PR event. The preview is uploaded to R2 and served from `https://storybook.dofek.fit/storybook/pr-<PR number>/`. Configure `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_BUCKET` in GitHub Actions secrets, then apply `deploy/dns` Terraform to provision the public R2 custom domain.
 
 Tests use [Vitest](https://vitest.dev/). TDD is the standard workflow — write tests first, then implement. Test files are colocated with source files (e.g. `index.test.ts` next to `index.ts`). E2E tests use [Cypress](https://www.cypress.io/) and run against a Docker Compose stack in CI. [Stryker](https://stryker-mutator.io/) mutation testing runs on PRs to verify test quality.
 
@@ -389,6 +389,30 @@ git add .env && git commit && git push
 No SSH to the server needed. The credentials flow through the Docker image.
 
 **Important:** `sops exec-env` decrypted vars override Docker/compose env vars. Never put `DATABASE_URL` in the SOPS `.env` — it must come from the compose file.
+
+### DNS Terraform secrets
+
+Use the same SOPS pattern for `deploy/dns/terraform.tfvars`. The encrypted file is safe to commit; if you need a plaintext scratch file while debugging, use `deploy/dns/terraform.tfvars.plain` and never commit it.
+
+Create or edit the encrypted DNS vars:
+
+```bash
+sops deploy/dns/terraform.tfvars
+```
+
+Suggested contents:
+
+```hcl
+cloudflare_api_token  = "..."
+cloudflare_account_id = "..."
+server_ip             = "..."
+```
+
+Apply without leaving decrypted tfvars on disk:
+
+```bash
+sops exec-file deploy/dns/terraform.tfvars '/opt/homebrew/bin/terraform -chdir=deploy/dns apply -var-file={}'
+```
 
 ### Troubleshooting
 
