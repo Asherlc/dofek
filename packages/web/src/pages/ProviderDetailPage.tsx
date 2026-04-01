@@ -9,6 +9,7 @@ import { Link, useParams } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { PageLayout } from "../components/PageLayout.tsx";
+import { ProviderDisconnectControl } from "../components/ProviderDisconnectControl.tsx";
 import { ProviderLogo } from "../components/ProviderLogo.tsx";
 import { ProviderStatsBreakdown } from "../components/ProviderStatsBreakdown.tsx";
 import { formatRelativeTime, formatTime } from "../lib/dates.ts";
@@ -240,35 +241,14 @@ export function ProviderDetailPage() {
                   Re-authorize
                 </button>
               )}
-              {provider?.authorized &&
-                (showDisconnectConfirm ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted">Are you sure?</span>
-                    <button
-                      type="button"
-                      onClick={handleDisconnect}
-                      disabled={disconnectMutation.isPending}
-                      className="px-3 py-1.5 text-xs rounded bg-red-600 text-white hover:bg-red-500 disabled:opacity-50 transition-colors"
-                    >
-                      {disconnectMutation.isPending ? "Disconnecting..." : "Confirm"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowDisconnectConfirm(false)}
-                      className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setShowDisconnectConfirm(true)}
-                    className="px-3 py-1.5 text-xs rounded bg-accent/10 text-red-400 hover:bg-surface-hover transition-colors"
-                  >
-                    Disconnect
-                  </button>
-                ))}
+              <ProviderDisconnectControl
+                canDisconnect={Boolean(provider?.authorized)}
+                showConfirm={showDisconnectConfirm}
+                isPending={disconnectMutation.isPending}
+                onOpenConfirm={() => setShowDisconnectConfirm(true)}
+                onConfirm={handleDisconnect}
+                onCancel={() => setShowDisconnectConfirm(false)}
+              />
             </div>
           </div>
           {syncMessage && (
