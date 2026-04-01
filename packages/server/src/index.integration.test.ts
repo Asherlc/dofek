@@ -325,14 +325,19 @@ describe("tRPC API", () => {
   });
 
   describe("Auth login flow", () => {
-    it("GET /auth/login/:provider returns 400 for valid but unconfigured provider", async () => {
-      // google is a valid identity provider name but env vars are not set in test
+    it("GET /auth/login/:provider returns 400 or redirects to provider", async () => {
+      // google is a valid identity provider name
       const res = await fetch(`${baseUrl}/auth/login/google`, {
         redirect: "manual",
       });
-      expect(res.status).toBe(400);
-      const body = await res.text();
-      expect(body).toContain("not configured");
+      // If configured in CI, it will redirect (302). If not, 400.
+      expect([302, 400]).toContain(res.status);
+      if (res.status === 302) {
+        expect(res.headers.get("location")).toContain("accounts.google.com");
+      } else {
+        const body = await res.text();
+        expect(body).toContain("not configured");
+      }
     });
   });
 
@@ -536,6 +541,15 @@ describe("tRPC API", () => {
       expect(res.status).toBe(404);
       const body = await res.text();
       expect(body).toContain("Unknown provider");
+    });
+
+    it("GET /auth/provider/:provider returns 401 when unauthenticated for known provider", async () => {
+      const res = await fetch(`${baseUrl}/auth/provider/wahoo`, {
+        redirect: "manual",
+      });
+      expect(res.status).toBe(401);
+      const body = await res.text();
+      expect(body).toContain("You must be logged in");
     });
   });
 

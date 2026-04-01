@@ -133,11 +133,11 @@ export class AutoSupplementsProvider implements SyncProvider {
       return { provider: PROVIDER_ID, recordsSynced: 0, errors, duration: Date.now() - start };
     }
 
-    const firstUserId = allSupplements[0]?.userId;
-    if (!firstUserId) {
+    const firstUser = allSupplements[0];
+    if (!firstUser) {
       return { provider: PROVIDER_ID, recordsSynced: 0, errors, duration: Date.now() - start };
     }
-    await ensureProvider(db, PROVIDER_ID, PROVIDER_NAME, undefined, firstUserId);
+    await ensureProvider(db, PROVIDER_ID, PROVIDER_NAME, undefined, firstUser.user_id);
     const entries = buildDailyEntries(allSupplements, dates);
 
     let synced = 0;

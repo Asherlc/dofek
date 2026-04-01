@@ -608,6 +608,16 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
   // ── Data-provider OAuth for data sync (Wahoo, Withings, etc.) ──
   router.get("/auth/provider/:provider", async (req, res) => {
     try {
+      const { getAllProviders } = await import("dofek/providers/registry");
+      const { ensureProvidersRegistered } = await import("../routers/sync.ts");
+      await ensureProvidersRegistered();
+
+      const provider = getAllProviders().find((p) => p.id === req.params.provider);
+      if (!provider) {
+        res.status(404).send(`Unknown provider: ${req.params.provider}`);
+        return;
+      }
+
       // Resolve the logged-in user so the provider record is linked to them
       const sessionId = getSessionIdFromRequest(req);
       const session = sessionId ? await validateSession(db, sessionId) : null;
