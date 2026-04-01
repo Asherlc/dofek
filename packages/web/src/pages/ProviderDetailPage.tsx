@@ -240,34 +240,35 @@ export function ProviderDetailPage() {
                   Re-authorize
                 </button>
               )}
-              {showDisconnectConfirm ? (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted">Are you sure?</span>
+              {provider?.authorized &&
+                (showDisconnectConfirm ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted">Are you sure?</span>
+                    <button
+                      type="button"
+                      onClick={handleDisconnect}
+                      disabled={disconnectMutation.isPending}
+                      className="px-3 py-1.5 text-xs rounded bg-red-600 text-white hover:bg-red-500 disabled:opacity-50 transition-colors"
+                    >
+                      {disconnectMutation.isPending ? "Disconnecting..." : "Confirm"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowDisconnectConfirm(false)}
+                      className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
                   <button
                     type="button"
-                    onClick={handleDisconnect}
-                    disabled={disconnectMutation.isPending}
-                    className="px-3 py-1.5 text-xs rounded bg-red-600 text-white hover:bg-red-500 disabled:opacity-50 transition-colors"
+                    onClick={() => setShowDisconnectConfirm(true)}
+                    className="px-3 py-1.5 text-xs rounded bg-accent/10 text-red-400 hover:bg-surface-hover transition-colors"
                   >
-                    {disconnectMutation.isPending ? "Disconnecting..." : "Confirm"}
+                    Disconnect
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowDisconnectConfirm(false)}
-                    className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setShowDisconnectConfirm(true)}
-                  className="px-3 py-1.5 text-xs rounded bg-accent/10 text-red-400 hover:bg-surface-hover transition-colors"
-                >
-                  Disconnect
-                </button>
-              )}
+                ))}
             </div>
           </div>
           {syncMessage && (
