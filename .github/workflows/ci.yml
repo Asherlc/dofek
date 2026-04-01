@@ -859,8 +859,7 @@ jobs:
 
   storybook-preview:
     name: Storybook Preview
-    needs: [ci-gate]
-    if: github.event_name == 'pull_request' && needs.ci-gate.result == 'success'
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
