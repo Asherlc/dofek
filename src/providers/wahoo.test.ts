@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ZodError } from "zod";
 import * as resolveTokensModule from "../auth/resolve-tokens.ts";
 import * as sensorSampleWriterModule from "../db/sensor-sample-writer.ts";
-import type { ParsedFitRecord } from "../fit/parser.ts";
+import type { ParsedFitRecord, ParsedFitSession } from "../fit/parser.ts";
 import * as fitParserModule from "../fit/parser.ts";
 import * as loggerModule from "../logger.ts";
 import {
@@ -46,6 +46,16 @@ const sampleWorkout: WahooWorkout = {
   created_at: "2025-03-01T10:00:00.000Z",
   updated_at: "2025-03-01T10:30:00.000Z",
   workout_summary: sampleWorkoutSummary,
+};
+
+const sampleParsedFitSession: ParsedFitSession = {
+  sport: "cycling",
+  startTime: new Date("2026-03-01T08:00:00Z"),
+  totalElapsedTime: 3600,
+  totalTimerTime: 3600,
+  totalDistance: 100,
+  totalCalories: 500,
+  raw: {},
 };
 
 describe("Wahoo Provider", () => {
@@ -954,6 +964,7 @@ describe("WahooProvider.syncWebhookEvent", () => {
 
   it("writes sensor samples for FIT webhook payloads after clearing prior activity rows", async () => {
     vi.spyOn(fitParserModule, "parseFitFile").mockResolvedValue({
+      session: sampleParsedFitSession,
       records: [
         {
           recordedAt: new Date("2026-03-01T08:00:00Z"),
@@ -965,13 +976,12 @@ describe("WahooProvider.syncWebhookEvent", () => {
           raw: { heart_rate: 145, power: 210 },
         },
       ],
-      sessions: [],
       laps: [],
       events: [],
     });
     const dualWriteSpy = vi
       .spyOn(sensorSampleWriterModule, "dualWriteToSensorSample")
-      .mockResolvedValue(undefined);
+      .mockResolvedValue(0);
     const loggerInfoSpy = vi
       .spyOn(loggerModule.logger, "info")
       .mockImplementation(() => loggerModule.logger);
@@ -989,6 +999,7 @@ describe("WahooProvider.syncWebhookEvent", () => {
       throw new Error(`Unexpected fetch: ${String(input)}`);
     });
     vi.spyOn(fitParserModule, "parseFitFile").mockResolvedValue({
+      session: sampleParsedFitSession,
       records: [
         {
           recordedAt: new Date("2026-03-01T08:00:00Z"),
@@ -1000,7 +1011,6 @@ describe("WahooProvider.syncWebhookEvent", () => {
           raw: { heart_rate: 145, power: 210 },
         },
       ],
-      sessions: [],
       laps: [],
       events: [],
     });
@@ -1135,6 +1145,7 @@ describe("WahooProvider.sync", () => {
       scopes: null,
     });
     vi.spyOn(fitParserModule, "parseFitFile").mockResolvedValue({
+      session: sampleParsedFitSession,
       records: [
         {
           recordedAt: new Date("2026-03-01T08:00:00Z"),
@@ -1146,13 +1157,12 @@ describe("WahooProvider.sync", () => {
           raw: { heart_rate: 145, power: 210 },
         },
       ],
-      sessions: [],
       laps: [],
       events: [],
     });
     const dualWriteSpy = vi
       .spyOn(sensorSampleWriterModule, "dualWriteToSensorSample")
-      .mockResolvedValue(undefined);
+      .mockResolvedValue(0);
     const loggerInfoSpy = vi
       .spyOn(loggerModule.logger, "info")
       .mockImplementation(() => loggerModule.logger);
