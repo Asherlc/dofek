@@ -901,7 +901,7 @@ jobs:
 
           BASE_URL="https://storybook.dofek.fit/storybook"
           PREVIEW_PREFIX="storybook/pr-${{ github.event.pull_request.number }}"
-          PREVIEW_URL="$BASE_URL/pr-${{ github.event.pull_request.number }}/"
+          PREVIEW_URL="$BASE_URL/pr-${{ github.event.pull_request.number }}/index.html"
 
           echo "ready=true" >> "$GITHUB_OUTPUT"
           echo "preview_prefix=$PREVIEW_PREFIX" >> "$GITHUB_OUTPUT"
