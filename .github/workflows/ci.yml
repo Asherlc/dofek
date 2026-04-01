@@ -857,6 +857,135 @@ jobs:
             fi
           done
 
+  storybook-preview:
+    name: Storybook Preview
+    needs: [ci-gate]
+    if: github.event_name == 'pull_request' && needs.ci-gate.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: ./.github/actions/setup-node-pnpm
+
+      - name: Build Storybook
+        run: pnpm storybook:web:build
+
+      - name: Prepare preview metadata
+        id: preview
+        env:
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          STORYBOOK_PREVIEW_BASE_URL: ${{ secrets.STORYBOOK_PREVIEW_BASE_URL }}
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping Storybook preview for forked PR (repository secrets are unavailable)."
+            exit 0
+          fi
+
+          missing=()
+          [ -n "${R2_ENDPOINT:-}" ] || missing+=("R2_ENDPOINT")
+          [ -n "${R2_ACCESS_KEY_ID:-}" ] || missing+=("R2_ACCESS_KEY_ID")
+          [ -n "${R2_SECRET_ACCESS_KEY:-}" ] || missing+=("R2_SECRET_ACCESS_KEY")
+          [ -n "${R2_BUCKET:-}" ] || missing+=("R2_BUCKET")
+          [ -n "${STORYBOOK_PREVIEW_BASE_URL:-}" ] || missing+=("STORYBOOK_PREVIEW_BASE_URL")
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Storybook preview missing required GitHub secrets: ${missing[*]}"
+            exit 1
+          fi
+
+          BASE_URL="${STORYBOOK_PREVIEW_BASE_URL%/}"
+          PREVIEW_PREFIX="storybook/pr-${{ github.event.pull_request.number }}"
+          PREVIEW_URL="$BASE_URL/pr-${{ github.event.pull_request.number }}/"
+
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+          echo "preview_prefix=$PREVIEW_PREFIX" >> "$GITHUB_OUTPUT"
+          echo "preview_url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy Storybook to R2
+        if: steps.preview.outputs.ready == 'true'
+        env:
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          set -euo pipefail
+          aws s3 sync packages/web/storybook-static/ "s3://$R2_BUCKET/${{ steps.preview.outputs.preview_prefix }}/" \
+            --delete \
+            --endpoint-url "$R2_ENDPOINT" \
+            --cache-control "no-cache"
+
+      - name: Comment preview URL on PR
+        if: steps.preview.outputs.ready == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_API_URL: ${{ github.api_url }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PREVIEW_URL: ${{ steps.preview.outputs.preview_url }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          python <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          api_url = os.environ["GITHUB_API_URL"]
+          repository = os.environ["REPOSITORY"]
+          pr_number = os.environ["PR_NUMBER"]
+          token = os.environ["GITHUB_TOKEN"]
+          preview_url = os.environ["PREVIEW_URL"]
+          commit_sha = os.environ["COMMIT_SHA"][:8]
+          marker = "<!-- codex-storybook-preview -->"
+          body = (
+              f"{marker}\n"
+              f"Storybook preview for `{commit_sha}` is ready: [Open Storybook]({preview_url})\n\n"
+              f"This comment updates automatically on each PR push."
+          )
+
+          def request(url: str, method: str = "GET", data: dict | None = None) -> dict | list:
+              payload = None if data is None else json.dumps(data).encode("utf-8")
+              req = urllib.request.Request(
+                  url,
+                  data=payload,
+                  method=method,
+                  headers={
+                      "Authorization": f"Bearer {token}",
+                      "Accept": "application/vnd.github+json",
+                      "Content-Type": "application/json",
+                  },
+              )
+              with urllib.request.urlopen(req) as response:
+                  return json.loads(response.read().decode("utf-8"))
+
+          comments_url = f"{api_url}/repos/{repository}/issues/{pr_number}/comments"
+          comments = request(comments_url)
+          existing = next(
+              (
+                  comment
+                  for comment in comments
+                  if marker in comment.get("body", "")
+              ),
+              None,
+          )
+
+          if existing is None:
+              request(comments_url, method="POST", data={"body": body})
+          else:
+              request(existing["url"], method="PATCH", data={"body": body})
+          PY
+
   # ── Deploy (main only) ────────────────────────────────────────────────
 
   check-native-changes:

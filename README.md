@@ -119,6 +119,8 @@ pnpm storybook:web
 pnpm storybook:mobile
 ```
 
+Pull requests can publish a web Storybook preview automatically when CI passes. Configure `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, and `STORYBOOK_PREVIEW_BASE_URL` in GitHub Actions secrets to enable the PR preview link comment.
+
 Tests use [Vitest](https://vitest.dev/). TDD is the standard workflow — write tests first, then implement. Test files are colocated with source files (e.g. `index.test.ts` next to `index.ts`). E2E tests use [Cypress](https://www.cypress.io/) and run against a Docker Compose stack in CI. [Stryker](https://stryker-mutator.io/) mutation testing runs on PRs to verify test quality.
 
 ## Docker
