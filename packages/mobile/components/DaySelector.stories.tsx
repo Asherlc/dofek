@@ -6,6 +6,10 @@ import { DaySelector } from "./DaySelector";
 const meta = {
   title: "Components/DaySelector",
   component: DaySelector,
+  args: {
+    days: 7,
+    onChange: () => {},
+  },
 } satisfies Meta<typeof DaySelector>;
 
 export default meta;
@@ -13,31 +17,32 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {
-  render: () => {
-    const [days, setDays] = useState(7);
+  render: (args) => {
+    const [days, setDays] = useState(args.days);
     return (
       <View style={{ padding: 20 }}>
-        <DaySelector days={days} onChange={setDays} />
+        <DaySelector {...args} days={days} onChange={setDays} />
       </View>
     );
   },
 };
 
 export const CustomOptions: Story = {
-  render: () => {
-    const [days, setDays] = useState(30);
+  args: {
+    days: 30,
+    options: [
+      { label: "1m", value: 30 },
+      { label: "3m", value: 90 },
+      { label: "6m", value: 180 },
+      { label: "1y", value: 365 },
+    ],
+    onChange: () => {},
+  },
+  render: (args) => {
+    const [days, setDays] = useState(args.days);
     return (
       <View style={{ padding: 20 }}>
-        <DaySelector
-          days={days}
-          onChange={setDays}
-          options={[
-            { label: "1m", value: 30 },
-            { label: "3m", value: 90 },
-            { label: "6m", value: 180 },
-            { label: "1y", value: 365 },
-          ]}
-        />
+        <DaySelector {...args} days={days} onChange={setDays} />
       </View>
     );
   },

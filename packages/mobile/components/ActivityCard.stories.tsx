@@ -15,6 +15,7 @@ const meta = {
     endedAt: "2026-03-31T08:45:00Z",
     avgHr: 145,
     maxHr: 172,
+    avgPower: null,
     distanceKm: 8.5,
     calories: 620,
     units: metricUnits,
@@ -37,6 +38,10 @@ export const Cycling: Story = {
   args: {
     name: "Afternoon Ride",
     activityType: "cycling",
+    startedAt: "2026-03-31T14:00:00Z",
+    endedAt: "2026-03-31T15:30:00Z",
+    avgHr: 135,
+    maxHr: 160,
     avgPower: 210,
     distanceKm: 32.4,
     units: metricUnits,
@@ -47,9 +52,12 @@ export const Strength: Story = {
   args: {
     name: "Upper Body Power",
     activityType: "strength_training",
-    distanceKm: undefined,
+    startedAt: "2026-03-31T17:00:00Z",
+    endedAt: "2026-03-31T18:00:00Z",
     avgHr: 115,
     maxHr: 140,
+    avgPower: null,
+    distanceKm: undefined,
     units: metricUnits,
   },
 };
@@ -58,10 +66,13 @@ export const Minimal: Story = {
   args: {
     name: "",
     activityType: "yoga",
+    startedAt: "2026-03-31T10:00:00Z",
+    endedAt: null,
+    avgHr: null,
+    maxHr: null,
+    avgPower: null,
     distanceKm: undefined,
     calories: undefined,
-    avgHr: undefined,
-    maxHr: undefined,
     units: metricUnits,
   },
 };

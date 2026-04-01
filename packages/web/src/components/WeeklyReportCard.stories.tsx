@@ -15,7 +15,9 @@ const meta = {
         sleepPerformancePct: 92,
         avgRestingHr: 52,
         avgHrv: 65,
-        strainZone: "maintain",
+        strainZone: "optimal",
+        avgDailyLoad: 450,
+        avgReadiness: 75,
       },
       history: [
         {
@@ -26,7 +28,9 @@ const meta = {
           sleepPerformancePct: 90,
           avgRestingHr: 53,
           avgHrv: 62,
-          strainZone: "maintain",
+          strainZone: "optimal",
+          avgDailyLoad: 420,
+          avgReadiness: 72,
         },
       ],
     },
