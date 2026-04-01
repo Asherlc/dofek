@@ -905,6 +905,7 @@ jobs:
           echo "ready=true" >> "$GITHUB_OUTPUT"
           echo "preview_prefix=$PREVIEW_PREFIX" >> "$GITHUB_OUTPUT"
           echo "preview_url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
+          echo "commit_sha=${GITHUB_SHA:0:8}" >> "$GITHUB_OUTPUT"
 
       - name: Deploy Storybook to R2
         if: steps.preview.outputs.ready == 'true'
@@ -925,63 +926,13 @@ jobs:
 
       - name: Comment preview URL on PR
         if: steps.preview.outputs.ready == 'true'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_API_URL: ${{ github.api_url }}
-          REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PREVIEW_URL: ${{ steps.preview.outputs.preview_url }}
-          COMMIT_SHA: ${{ github.sha }}
-        run: |
-          python <<'PY'
-          import json
-          import os
-          import urllib.request
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: storybook-preview
+          message: |
+            Storybook preview for `${{ steps.preview.outputs.commit_sha }}` is ready: [Open Storybook](${{ steps.preview.outputs.preview_url }})
 
-          api_url = os.environ["GITHUB_API_URL"]
-          repository = os.environ["REPOSITORY"]
-          pr_number = os.environ["PR_NUMBER"]
-          token = os.environ["GITHUB_TOKEN"]
-          preview_url = os.environ["PREVIEW_URL"]
-          commit_sha = os.environ["COMMIT_SHA"][:8]
-          marker = "<!-- codex-storybook-preview -->"
-          body = (
-              f"{marker}\n"
-              f"Storybook preview for `{commit_sha}` is ready: [Open Storybook]({preview_url})\n\n"
-              f"This comment updates automatically on each PR push."
-          )
-
-          def request(url: str, method: str = "GET", data: dict | None = None) -> dict | list:
-              payload = None if data is None else json.dumps(data).encode("utf-8")
-              req = urllib.request.Request(
-                  url,
-                  data=payload,
-                  method=method,
-                  headers={
-                      "Authorization": f"Bearer {token}",
-                      "Accept": "application/vnd.github+json",
-                      "Content-Type": "application/json",
-                  },
-              )
-              with urllib.request.urlopen(req) as response:
-                  return json.loads(response.read().decode("utf-8"))
-
-          comments_url = f"{api_url}/repos/{repository}/issues/{pr_number}/comments"
-          comments = request(comments_url)
-          existing = next(
-              (
-                  comment
-                  for comment in comments
-                  if marker in comment.get("body", "")
-              ),
-              None,
-          )
-
-          if existing is None:
-              request(comments_url, method="POST", data={"body": body})
-          else:
-              request(existing["url"], method="PATCH", data={"body": body})
-          PY
+            This comment updates automatically on each PR push.
 
   # ── Deploy (main only) ────────────────────────────────────────────────
 
