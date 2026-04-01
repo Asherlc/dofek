@@ -241,18 +241,7 @@ DECLARE
   chunk_end timestamptz;
   chunk_rows bigint;
   total_rows bigint;
-  table_exists boolean;
 BEGIN
-  SELECT EXISTS (
-    SELECT 1 FROM information_schema.tables
-    WHERE table_schema = 'fitness' AND table_name = 'inertial_measurement_unit_sample'
-  ) INTO table_exists;
-
-  IF NOT table_exists THEN
-    RAISE NOTICE 'Table fitness.inertial_measurement_unit_sample does not exist, skipping IMU backfill';
-    RETURN;
-  END IF;
-
   SELECT MIN(recorded_at), MAX(recorded_at) INTO min_time, max_time
   FROM fitness.inertial_measurement_unit_sample;
 
@@ -381,18 +370,7 @@ DECLARE
   chunk_end timestamptz;
   chunk_rows bigint;
   total_rows bigint;
-  table_exists boolean;
 BEGIN
-  SELECT EXISTS (
-    SELECT 1 FROM information_schema.tables
-    WHERE table_schema = 'fitness' AND table_name = 'orientation_sample'
-  ) INTO table_exists;
-
-  IF NOT table_exists THEN
-    RAISE NOTICE 'Table fitness.orientation_sample does not exist, skipping orientation backfill';
-    RETURN;
-  END IF;
-
   SELECT MIN(recorded_at), MAX(recorded_at) INTO min_time, max_time
   FROM fitness.orientation_sample;
 

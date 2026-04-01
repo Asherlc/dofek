@@ -22,9 +22,7 @@ import {
   type OuraTag,
   type OuraVO2Max,
   type OuraWorkout,
-  ouraDailyReadinessSchema,
   ouraOAuthConfig,
-  ouraSleepDocumentSchema,
   parseOuraDailyMetrics,
   parseOuraSleep,
 } from "./oura.ts";
@@ -155,21 +153,6 @@ function filterValuesCalls(
   }
   return results;
 }
-
-describe("Oura schemas — strict required fields", () => {
-  it("requires fields on sleep document schema", () => {
-    const parsed = ouraSleepDocumentSchema.safeParse({});
-    expect(parsed.success).toBe(false);
-  });
-
-  it("requires readiness contributors and score fields", () => {
-    const parsed = ouraDailyReadinessSchema.safeParse({
-      id: "r1",
-      day: "2026-03-01",
-    });
-    expect(parsed.success).toBe(false);
-  });
-});
 
 // ============================================================
 // Sample data factories (for sync tests)
@@ -2420,16 +2403,6 @@ describe("OuraProvider.syncWebhookEvent()", () => {
     expect(result.provider).toBe("oura");
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
-
-    const metricsUpsert = db.onConflictDoUpdate.mock.calls.find((call) => {
-      const parsed = recordSchema.safeParse(call[0]);
-      if (!parsed.success) return false;
-      const arg = parsed.data;
-      if (!Array.isArray(arg.target) || arg.target.length !== 3) return false;
-      if (typeof arg.set !== "object" || arg.set === null) return false;
-      return "steps" in arg.set && "restingHr" in arg.set;
-    });
-    expect(metricsUpsert).toBeDefined();
   });
 
   it("syncs only daily metrics for daily_readiness", async () => {

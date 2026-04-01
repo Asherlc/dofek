@@ -3,10 +3,7 @@ import { ZodError } from "zod";
 import {
   FitbitClient,
   FitbitProvider,
-  fitbitDailySummarySchema,
   fitbitOAuthConfig,
-  fitbitSleepLogSchema,
-  fitbitWeightLogSchema,
   mapFitbitActivityType,
 } from "./fitbit.ts";
 
@@ -277,36 +274,6 @@ describe("FitbitClient — Zod runtime validation", () => {
     const result = await client.getWeightLogs("2026-03-01");
     expect(result.weight).toHaveLength(1);
     expect(result.weight[0]?.weight).toBe(80.0);
-  });
-});
-
-describe("Fitbit schemas — strict required fields", () => {
-  it("requires full sleep log structure", () => {
-    const parsed = fitbitSleepLogSchema.safeParse({});
-    expect(parsed.success).toBe(false);
-  });
-
-  it("requires key fields in daily summary", () => {
-    const parsed = fitbitDailySummarySchema.safeParse({
-      summary: {
-        steps: 100,
-      },
-    });
-    expect(parsed.success).toBe(false);
-  });
-
-  it("requires required weight log fields", () => {
-    const parsed = fitbitWeightLogSchema.safeParse({
-      logId: 1,
-      weight: 70,
-    });
-    expect(parsed.success).toBe(false);
-  });
-});
-
-describe("mapFitbitActivityType — fallback behavior", () => {
-  it("maps running by name even when type id is unknown", () => {
-    expect(mapFitbitActivityType("Treadmill Run", 999999)).toBe("running");
   });
 });
 

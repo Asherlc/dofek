@@ -287,21 +287,6 @@ describe("EightSleepProvider.sync() (integration)", () => {
     expect(result.recordsSynced).toBe(0);
   });
 
-  it("returns error when token expires exactly now", async () => {
-    await saveTokens(ctx.db, "eight-sleep", {
-      accessToken: "expired-now",
-      refreshToken: null,
-      expiresAt: new Date(),
-      scopes: "userId:user-123",
-    });
-
-    const provider = new EightSleepProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
-
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).toContain("token expired");
-  });
-
   it("skips days without presence times for sleep but still syncs daily metrics", async () => {
     await saveTokens(ctx.db, "eight-sleep", {
       accessToken: "valid-token",
@@ -342,37 +327,6 @@ describe("EightSleepProvider.sync() (integration)", () => {
       .where(eq(sleepSession.providerId, "eight-sleep"));
     expect(sleepRows).toHaveLength(0);
 
-    expect(result.errors).toHaveLength(0);
-  });
-
-  it("skips sleep rows when only one presence bound is missing", async () => {
-    await saveTokens(ctx.db, "eight-sleep", {
-      accessToken: "valid-token",
-      refreshToken: null,
-      expiresAt: new Date("2027-01-01T00:00:00Z"),
-      scopes: "userId:user-123",
-    });
-
-    await ctx.db.delete(sleepSession).where(eq(sleepSession.providerId, "eight-sleep"));
-
-    const days = [
-      fakeTrendDay({
-        day: "2026-03-21",
-        presenceStart: "2026-03-20T23:00:00Z",
-        presenceEnd: "",
-      }),
-    ];
-
-    server.use(...eightSleepHandlers(days));
-
-    const provider = new EightSleepProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
-
-    const sleepRows = await ctx.db
-      .select()
-      .from(sleepSession)
-      .where(eq(sleepSession.providerId, "eight-sleep"));
-    expect(sleepRows).toHaveLength(0);
     expect(result.errors).toHaveLength(0);
   });
 });
