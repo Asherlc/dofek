@@ -1507,7 +1507,7 @@ describe("WahooProvider — precise webhook assertions", () => {
     const config = wahooOAuthConfig();
     expect(config?.authorizeUrl).toBe("https://api.wahooligan.com/oauth/authorize");
     expect(config?.tokenUrl).toBe("https://api.wahooligan.com/oauth/token");
-    expect(config?.scopes).toEqual(["user_read", "workouts_read", "offline_data"]);
+    expect(config?.scopes).toEqual(["email", "user_read", "workouts_read", "offline_data"]);
     process.env = { ...originalEnv };
   });
 
