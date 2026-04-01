@@ -113,6 +113,10 @@ cd packages/web && pnpm dev
 
 # API server
 cd packages/server && pnpm dev
+
+# Storybook
+pnpm storybook:web
+pnpm storybook:mobile
 ```
 
 Tests use [Vitest](https://vitest.dev/). TDD is the standard workflow — write tests first, then implement. Test files are colocated with source files (e.g. `index.test.ts` next to `index.ts`). E2E tests use [Cypress](https://www.cypress.io/) and run against a Docker Compose stack in CI. [Stryker](https://stryker-mutator.io/) mutation testing runs on PRs to verify test quality.

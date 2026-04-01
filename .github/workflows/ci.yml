@@ -664,7 +664,9 @@ jobs:
             | { grep -v 'drizzle/' || true; } \
             | { grep -v 'src/db/schema\.ts$' || true; } \
             | { grep -v 'scripts/' || true; } \
-            | { grep -v 'packages/mobile/' || true; })
+            | { grep -v 'packages/mobile/' || true; } \
+            | { grep -v '\.storybook/' || true; } \
+            | { grep -v '\.stories\.ts$' || true; })
 
           ALL_FILES=()
           for f in $CANDIDATES; do
