@@ -40,10 +40,21 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
   const { ensureProvidersRegistered } = await import("./provider-registration.ts");
   await ensureProvidersRegistered();
 
-  const { getSyncProviders } = await import("../providers/index.ts");
+  const { getEnabledSyncProviders, getProvider, isSyncEligibleProvider } = await import(
+    "../providers/index.ts"
+  );
 
-  let providers = getSyncProviders().filter((p) => p.validate() === null);
+  let providers = getEnabledSyncProviders();
   if (providerId) {
+    const registeredProvider = getProvider(providerId);
+    if (registeredProvider && !isSyncEligibleProvider(registeredProvider)) {
+      logger.info(`[worker] Skipping non-sync provider in sync queue: ${providerId}`);
+      await job.updateProgress({
+        providers: { [providerId]: { status: "done", message: "Skipped file-import provider" } },
+        percentage: 100,
+      });
+      return;
+    }
     const specific = providers.find((p) => p.id === providerId);
     if (!specific) throw new Error(`Unknown provider: ${providerId}`);
     providers = [specific];

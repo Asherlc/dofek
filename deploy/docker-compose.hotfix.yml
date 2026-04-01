@@ -1,0 +1,14 @@
+services:
+  worker:
+    volumes:
+      - /opt/dofek/patches/index.ts:/app/src/index.ts:ro
+      - /opt/dofek/patches/providers-index.ts:/app/src/providers/index.ts:ro
+      - /opt/dofek/patches/process-sync-job.ts:/app/src/jobs/process-sync-job.ts:ro
+      - /opt/dofek/patches/process-scheduled-sync-job.ts:/app/src/jobs/process-scheduled-sync-job.ts:ro
+      - /opt/dofek/patches/process-training-export-job.ts:/app/src/jobs/process-training-export-job.ts:ro
+
+  sync:
+    volumes:
+      - /opt/dofek/patches/index.ts:/app/src/index.ts:ro
+      - /opt/dofek/patches/providers-index.ts:/app/src/providers/index.ts:ro
+      - /opt/dofek/patches/process-sync-job.ts:/app/src/jobs/process-sync-job.ts:ro

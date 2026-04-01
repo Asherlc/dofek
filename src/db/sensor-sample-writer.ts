@@ -1,11 +1,17 @@
 import type { InferInsertModel } from "drizzle-orm";
 import type { SyncDatabase } from "./index.ts";
-import type { metricStream, sensorSample } from "./schema.ts";
+import type { sensorSample } from "./schema.ts";
 import { DRIZZLE_FIELD_TO_CHANNEL, METRIC_STREAM_COLUMN_TO_CHANNEL } from "./sensor-channels.ts";
 
-type MetricStreamInsert = InferInsertModel<typeof metricStream>;
-
 export type SensorSampleInsert = InferInsertModel<typeof sensorSample>;
+export interface SensorSampleSourceRow {
+  recordedAt: Date;
+  userId?: string;
+  providerId: string;
+  activityId?: string | null;
+  sourceName?: string | null;
+  [key: string]: unknown;
+}
 
 const DEFAULT_BATCH_SIZE = 5000;
 
@@ -91,12 +97,12 @@ export function metricStreamRowToSensorSamples(
 }
 
 /**
- * Convert a Drizzle metricStream insert object (camelCase keys) into
- * sensor_sample rows. This is the main entry point for dual-write —
- * providers pass the same row objects they already build for metricStream.
+ * Convert a legacy wide-row metric object (camelCase keys) into
+ * sensor_sample rows. Providers can keep their existing field mapping logic
+ * and this helper fans rows out by channel.
  */
 export function drizzleRowToSensorSamples(
-  row: MetricStreamInsert,
+  row: SensorSampleSourceRow,
   sourceType: string,
 ): SensorSampleInsert[] {
   const samples: SensorSampleInsert[] = [];
@@ -123,13 +129,12 @@ export function drizzleRowToSensorSamples(
 }
 
 /**
- * Dual-write helper: converts an array of Drizzle metricStream insert objects
- * into sensor_sample rows and batch-inserts them. Call this alongside the
- * existing `db.insert(metricStream).values(rows)` during the migration period.
+ * Converts an array of legacy wide-row metric objects into sensor_sample rows
+ * and batch-inserts them.
  */
 export async function dualWriteToSensorSample(
   db: Pick<SyncDatabase, "insert">,
-  metricRows: MetricStreamInsert[],
+  metricRows: SensorSampleSourceRow[],
   sourceType: string,
   batchSize = DEFAULT_BATCH_SIZE,
 ): Promise<number> {

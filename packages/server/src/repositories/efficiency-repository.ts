@@ -178,36 +178,46 @@ export class EfficiencyRepository extends BaseRepository {
                AND ${enduranceTypeFilter("a")}
             )::int AS endurance_activities,
             (SELECT COUNT(DISTINCT ms.activity_id)
-             FROM fitness.metric_stream ms
+             FROM fitness.sensor_sample ms
              JOIN fitness.v_activity a ON a.id = ms.activity_id
              WHERE a.user_id = up.id
                AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
                AND ${enduranceTypeFilter("a")}
-               AND ms.power > 0
+               AND ms.channel = 'power'
+               AND ms.scalar > 0
             )::int AS activities_with_power,
             (SELECT COUNT(DISTINCT ms.activity_id)
-             FROM fitness.metric_stream ms
+             FROM fitness.sensor_sample ms
              JOIN fitness.v_activity a ON a.id = ms.activity_id
              WHERE a.user_id = up.id
                AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
                AND ${enduranceTypeFilter("a")}
-               AND ms.heart_rate IS NOT NULL
+               AND ms.channel = 'heart_rate'
+               AND ms.scalar IS NOT NULL
             )::int AS activities_with_hr,
-            (SELECT COUNT(DISTINCT ms.activity_id)
-             FROM fitness.metric_stream ms
-             JOIN fitness.v_activity a ON a.id = ms.activity_id
-             WHERE a.user_id = up.id
-               AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-               AND ${enduranceTypeFilter("a")}
-               AND ms.power > 0
-               AND ms.heart_rate IS NOT NULL
+            (SELECT COUNT(DISTINCT a.id)
+             FROM (
+               SELECT DISTINCT pwr.activity_id
+               FROM fitness.sensor_sample pwr
+               JOIN fitness.sensor_sample hr
+                 ON hr.activity_id = pwr.activity_id
+                AND hr.recorded_at = pwr.recorded_at
+                AND hr.channel = 'heart_rate'
+                AND hr.scalar IS NOT NULL
+               JOIN fitness.v_activity a ON a.id = pwr.activity_id
+               WHERE a.user_id = up.id
+                 AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+                 AND ${enduranceTypeFilter("a")}
+                 AND pwr.channel = 'power'
+                 AND pwr.scalar > 0
+             ) matched_samples
             )::int AS activities_with_both,
             COALESCE((
               SELECT MAX(z2_count)
               FROM (
-                SELECT COUNT(*)::int AS z2_count
-                FROM fitness.metric_stream ms
-                JOIN fitness.v_activity a ON a.id = ms.activity_id
+                SELECT COUNT(DISTINCT hr.recorded_at)::int AS z2_count
+                FROM fitness.sensor_sample hr
+                JOIN fitness.v_activity a ON a.id = hr.activity_id
                 JOIN LATERAL (
                   SELECT dm.resting_hr
                   FROM fitness.v_daily_metrics dm
@@ -219,12 +229,20 @@ export class EfficiencyRepository extends BaseRepository {
                 ) rhr ON true
                 WHERE a.user_id = up.id
                   AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-                  AND ms.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
+                  AND hr.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
                   AND ${enduranceTypeFilter("a")}
                   AND up.max_hr IS NOT NULL
-                  AND ms.power > 0
-                  AND ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[0]}::numeric
-                  AND ms.heart_rate <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[1]}::numeric
+                  AND hr.channel = 'heart_rate'
+                  AND hr.scalar >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[0]}::numeric
+                  AND hr.scalar <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[1]}::numeric
+                  AND EXISTS (
+                    SELECT 1
+                    FROM fitness.sensor_sample pwr
+                    WHERE pwr.activity_id = hr.activity_id
+                      AND pwr.recorded_at = hr.recorded_at
+                      AND pwr.channel = 'power'
+                      AND pwr.scalar > 0
+                  )
                 GROUP BY a.id
               ) sub
             ), 0)::int AS max_z2_samples

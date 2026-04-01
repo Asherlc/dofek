@@ -603,7 +603,7 @@ export class HealthKitSyncRepository {
     return samples.length;
   }
 
-  /** Process metric stream samples */
+  /** Process sensor samples */
   async processMetricStream(samples: HealthKitSample[]): Promise<number> {
     let inserted = 0;
     for (let index = 0; index < samples.length; index += BATCH_SIZE) {
@@ -615,17 +615,6 @@ export class HealthKitSyncRepository {
         const metricValue = INTEGER_METRIC_STREAM_COLUMNS.has(mapping.column)
           ? Math.round(sample.value)
           : sample.value;
-        await this.#db.execute(
-          sql`INSERT INTO fitness.metric_stream (user_id, provider_id, recorded_at, ${sql.identifier(mapping.column)}, raw)
-              VALUES (
-                ${this.#userId},
-                ${PROVIDER_ID},
-                ${sample.startDate}::timestamptz,
-                ${metricValue},
-                ${JSON.stringify({ uuid: sample.uuid, type: sample.type, sourceName: sample.sourceName })}::jsonb
-              )`,
-        );
-        // Dual-write to sensor_sample
         await this.#db.execute(
           sql`INSERT INTO fitness.sensor_sample (recorded_at, user_id, provider_id, device_id, source_type, channel, scalar)
               VALUES (
@@ -709,55 +698,22 @@ export class HealthKitSyncRepository {
     return inserted;
   }
 
-  /** Link heart rate metric_stream rows to overlapping workouts */
+  /** Link heart-rate sensor_sample rows to overlapping workouts. */
   async linkUnassignedHeartRateToWorkouts(bounds?: {
     startAt?: string;
     endAt?: string;
   }): Promise<number> {
     const filters = [
-      sql`ms.user_id = ${this.#userId}`,
-      sql`ms.provider_id = ${PROVIDER_ID}`,
-      sql`ms.activity_id IS NULL`,
-      sql`ms.heart_rate IS NOT NULL`,
-    ];
-    if (bounds?.startAt) filters.push(sql`ms.recorded_at >= ${bounds.startAt}::timestamptz`);
-    if (bounds?.endAt) filters.push(sql`ms.recorded_at <= ${bounds.endAt}::timestamptz`);
-
-    const linked = await this.#db.execute(
-      sql`UPDATE fitness.metric_stream ms
-          SET activity_id = (
-            SELECT a.id
-            FROM fitness.activity a
-            WHERE a.user_id = ${this.#userId}
-              AND a.provider_id = ${PROVIDER_ID}
-              AND ms.recorded_at >= a.started_at
-              AND ms.recorded_at <= a.ended_at
-            ORDER BY a.started_at DESC
-            LIMIT 1
-          )
-          WHERE ${sql.join(filters, sql` AND `)}
-            AND EXISTS (
-              SELECT 1
-              FROM fitness.activity a
-              WHERE a.user_id = ${this.#userId}
-                AND a.provider_id = ${PROVIDER_ID}
-                AND ms.recorded_at >= a.started_at
-                AND ms.recorded_at <= a.ended_at
-            )
-          RETURNING ms.recorded_at`,
-    );
-
-    // Also link activity_id in sensor_sample
-    const sensorFilters = [
-      sql`ss.provider_id = ${PROVIDER_ID}`,
       sql`ss.user_id = ${this.#userId}`,
+      sql`ss.provider_id = ${PROVIDER_ID}`,
       sql`ss.activity_id IS NULL`,
       sql`ss.channel = 'heart_rate'`,
+      sql`ss.scalar IS NOT NULL`,
     ];
-    if (bounds?.startAt) sensorFilters.push(sql`ss.recorded_at >= ${bounds.startAt}::timestamptz`);
-    if (bounds?.endAt) sensorFilters.push(sql`ss.recorded_at <= ${bounds.endAt}::timestamptz`);
+    if (bounds?.startAt) filters.push(sql`ss.recorded_at >= ${bounds.startAt}::timestamptz`);
+    if (bounds?.endAt) filters.push(sql`ss.recorded_at <= ${bounds.endAt}::timestamptz`);
 
-    await this.#db.execute(
+    const linked = await this.#db.execute(
       sql`UPDATE fitness.sensor_sample ss
           SET activity_id = (
             SELECT a.id
@@ -769,7 +725,7 @@ export class HealthKitSyncRepository {
             ORDER BY a.started_at DESC
             LIMIT 1
           )
-          WHERE ${sql.join(sensorFilters, sql` AND `)}
+          WHERE ${sql.join(filters, sql` AND `)}
             AND EXISTS (
               SELECT 1
               FROM fitness.activity a
@@ -777,7 +733,8 @@ export class HealthKitSyncRepository {
                 AND a.provider_id = ${PROVIDER_ID}
                 AND ss.recorded_at >= a.started_at
                 AND ss.recorded_at <= a.ended_at
-            )`,
+            )
+          RETURNING ss.recorded_at`,
     );
 
     return Array.isArray(linked) ? linked.length : 0;

@@ -8,7 +8,7 @@ import type { OAuthConfig } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { activity, dailyMetrics, healthEvent, metricStream, sleepSession } from "../db/schema.ts";
+import { activity, dailyMetrics, healthEvent, sleepSession } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
 import { withSyncLog } from "../db/sync-log.ts";
@@ -631,11 +631,6 @@ export async function fetchAllPagesOptional<T>(
   }
 }
 
-// ============================================================
-// Batch size for metric stream inserts
-// ============================================================
-
-const METRIC_STREAM_BATCH_SIZE = 500;
 const HEALTH_EVENT_BATCH_SIZE = 1000;
 
 // ============================================================
@@ -1017,7 +1012,7 @@ export class OuraProvider implements WebhookProvider {
       });
     }
 
-    // 4. Sync heart rate → metricStream table (batched)
+    // 4. Sync heart rate → sensor_sample table (batched)
     // Oura heart rate API enforces a max 30-day window per request
     try {
       const hrCount = await withSyncLog(
@@ -1050,12 +1045,6 @@ export class OuraProvider implements WebhookProvider {
             heartRate: hr.bpm,
           }));
 
-          for (let i = 0; i < rows.length; i += METRIC_STREAM_BATCH_SIZE) {
-            await db
-              .insert(metricStream)
-              .values(rows.slice(i, i + METRIC_STREAM_BATCH_SIZE))
-              .onConflictDoNothing();
-          }
           await dualWriteToSensorSample(db, rows, SOURCE_TYPE_API);
 
           return { recordCount: rows.length, result: rows.length };

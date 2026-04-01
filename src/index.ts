@@ -14,7 +14,7 @@ import {
   type SyncJobData,
 } from "./jobs/queues.ts";
 import { logger } from "./logger.ts";
-import { getAllProviders, getEnabledProviders } from "./providers/index.ts";
+import { getAllProviders, getEnabledSyncProviders } from "./providers/index.ts";
 
 export async function handleSyncCommand(args: string[]): Promise<number> {
   const fullSync = args.includes("--full-sync");
@@ -23,9 +23,9 @@ export async function handleSyncCommand(args: string[]): Promise<number> {
   // Register all providers so processSyncJob can use them
   await ensureProvidersRegistered();
 
-  const enabled = getEnabledProviders();
+  const enabled = getEnabledSyncProviders();
   if (enabled.length === 0) {
-    logger.info("[sync] No providers enabled. Set API keys in .env to enable providers.");
+    logger.info("[sync] No syncable providers enabled. Set API keys in .env to enable providers.");
     return 0;
   }
 

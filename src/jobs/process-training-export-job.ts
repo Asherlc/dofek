@@ -1,7 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import * as duckdb from "@duckdb/node-bindings";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
@@ -55,6 +54,9 @@ export type SensorSampleRow = z.infer<typeof sensorSampleRowSchema>;
  * as a native DOUBLE[] (list of floats) in Parquet, not as a string.
  */
 export async function writeParquet(rows: SensorSampleRow[], outputPath: string): Promise<void> {
+  // DuckDB native bindings can crash on some host/arch combinations if imported at module load time.
+  // Load lazily so worker startup does not depend on this optional export path.
+  const duckdb = await import("@duckdb/node-bindings");
   const db = await duckdb.open();
   const conn = await duckdb.connect(db);
 

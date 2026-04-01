@@ -22,6 +22,10 @@ write_files:
     content: |
       SOPS_AGE_KEY=${sops_age_key}
       CADDY_DOMAIN=${domain}
+%{ if db_data_path != "" ~}
+      DB_DATA_PATH=${db_data_path}
+      DB_BACKUP_PATH=${db_backup_path}
+%{ endif ~}
 
 runcmd:
   - curl -fsSL https://get.docker.com | sh

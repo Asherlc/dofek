@@ -12,7 +12,12 @@ export class ProviderModel {
   readonly lastSyncedAt: string | null;
 
   constructor(
-    provider: { id: string; name: string; importOnly?: boolean; authSetup?(): unknown },
+    provider: {
+      id: string;
+      name: string;
+      importOnly?: boolean;
+      authSetup?(): unknown;
+    },
     tokenSet: Set<string>,
     lastSyncMap?: Map<string, string>,
     customAuthOverrides?: Record<string, string>,

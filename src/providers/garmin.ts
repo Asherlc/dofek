@@ -20,7 +20,6 @@ import {
   activity,
   DEFAULT_USER_ID,
   dailyMetrics,
-  metricStream,
   sleepSession,
   sleepStage,
   userSettings,
@@ -469,7 +468,6 @@ export class GarminProvider implements SyncProvider {
             temperature:
               sample.directAirTemperature !== null ? sample.directAirTemperature : undefined,
           };
-          await db.insert(metricStream).values(metricRow).onConflictDoNothing();
           await dualWriteToSensorSample(db, [metricRow], SOURCE_TYPE_API);
         }
       } catch {
@@ -639,9 +637,6 @@ export class GarminProvider implements SyncProvider {
           providerId: this.id,
           stress: sample.stressLevel,
         }));
-        for (const row of stressRows) {
-          await db.insert(metricStream).values(row).onConflictDoNothing();
-        }
         await dualWriteToSensorSample(db, stressRows, SOURCE_TYPE_API);
 
         count += stressRows.length;
@@ -670,9 +665,6 @@ export class GarminProvider implements SyncProvider {
           providerId: this.id,
           heartRate: sample.heartRate,
         }));
-        for (const row of hrRows) {
-          await db.insert(metricStream).values(row).onConflictDoNothing();
-        }
         await dualWriteToSensorSample(db, hrRows, SOURCE_TYPE_API);
 
         count += hrRows.length;

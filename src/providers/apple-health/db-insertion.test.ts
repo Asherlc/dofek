@@ -172,7 +172,12 @@ describe("upsertMetricStreamBatch", () => {
 
     const count = await upsertMetricStreamBatch(db, "p1", records);
     expect(count).toBe(1);
-    expect(capture.values[0]?.[0]).toMatchObject({ heartRate: 73, providerId: "p1" });
+    expect(capture.values[0]?.[0]).toMatchObject({
+      providerId: "p1",
+      channel: "heart_rate",
+      scalar: 73,
+      sourceType: "file",
+    });
   });
 
   it("routes spo2 records", async () => {
@@ -180,7 +185,7 @@ describe("upsertMetricStreamBatch", () => {
     const records = [makeRecord({ type: "HKQuantityTypeIdentifierOxygenSaturation", value: 0.97 })];
 
     await upsertMetricStreamBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ spo2: 0.97 });
+    expect(capture.values[0]?.[0]).toMatchObject({ channel: "spo2", scalar: 0.97 });
   });
 
   it("routes respiratory rate records", async () => {
@@ -188,7 +193,7 @@ describe("upsertMetricStreamBatch", () => {
     const records = [makeRecord({ type: "HKQuantityTypeIdentifierRespiratoryRate", value: 16.5 })];
 
     await upsertMetricStreamBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ respiratoryRate: 16.5 });
+    expect(capture.values[0]?.[0]).toMatchObject({ channel: "respiratory_rate", scalar: 16.5 });
   });
 
   it("routes blood glucose records", async () => {
@@ -196,7 +201,7 @@ describe("upsertMetricStreamBatch", () => {
     const records = [makeRecord({ type: "HKQuantityTypeIdentifierBloodGlucose", value: 5.4 })];
 
     await upsertMetricStreamBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ bloodGlucose: 5.4 });
+    expect(capture.values[0]?.[0]).toMatchObject({ channel: "blood_glucose", scalar: 5.4 });
   });
 
   it("routes audio exposure records", async () => {
@@ -206,7 +211,7 @@ describe("upsertMetricStreamBatch", () => {
     ];
 
     await upsertMetricStreamBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ audioExposure: 68.2 });
+    expect(capture.values[0]?.[0]).toMatchObject({ channel: "audio_exposure", scalar: 68.2 });
   });
 
   it("routes headphone audio exposure to audioExposure", async () => {
@@ -216,7 +221,7 @@ describe("upsertMetricStreamBatch", () => {
     ];
 
     await upsertMetricStreamBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ audioExposure: 75 });
+    expect(capture.values[0]?.[0]).toMatchObject({ channel: "audio_exposure", scalar: 75 });
   });
 
   it("skips unknown record types", async () => {
@@ -241,7 +246,7 @@ describe("upsertMetricStreamBatch", () => {
 
     await upsertMetricStreamBatch(db, "p1", records);
     expect(capture.values[0]?.[0]).toMatchObject({
-      sourceName: "My Watch",
+      deviceId: "My Watch",
       recordedAt: date,
     });
   });
@@ -263,10 +268,9 @@ describe("upsertMetricStreamBatch", () => {
 
     const count = await upsertMetricStreamBatch(db, "p1", records);
     expect(count).toBe(1500);
-    // 2 metric_stream batches (1000 + 500) + 1 sensor_sample dual-write batch (1500 rows)
-    expect(capture.values).toHaveLength(3);
-    expect(capture.values[0]).toHaveLength(1000);
-    expect(capture.values[1]).toHaveLength(500);
+    // single sensor_sample batch (default batch size is 5000)
+    expect(capture.values).toHaveLength(1);
+    expect(capture.values[0]).toHaveLength(1500);
   });
 
   it("returns 0 and does not insert when no matching records", async () => {
@@ -286,7 +290,10 @@ describe("upsertMetricStreamBatch", () => {
     ];
 
     await upsertMetricStreamBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ electrodermalActivity: 0.5 });
+    expect(capture.values[0]?.[0]).toMatchObject({
+      channel: "electrodermal_activity",
+      scalar: 0.5,
+    });
   });
 });
 
@@ -1117,17 +1124,24 @@ describe("upsertWorkoutBatch", () => {
 
     await upsertWorkoutBatch(db, "p1", [makeWorkout({ routeLocations: [loc] })]);
 
-    // First insert is the activity, second is the GPS metric_stream data, third is the sensor_sample dual-write
-    expect(capture.values).toHaveLength(3);
-    expect(capture.values[1]?.[0]).toMatchObject({
-      providerId: "p1",
-      activityId: "act-1",
-      lat: 40.7128,
-      lng: -74.006,
-      altitude: 10.5,
-      speed: 3.5,
-      gpsAccuracy: 5,
-    });
+    // First insert is the activity, second is sensor_sample rows.
+    expect(capture.values).toHaveLength(2);
+    expect(capture.values[1]).toContainEqual(
+      expect.objectContaining({
+        providerId: "p1",
+        activityId: "act-1",
+        channel: "lat",
+        scalar: 40.7128,
+      }),
+    );
+    expect(capture.values[1]).toContainEqual(
+      expect.objectContaining({
+        providerId: "p1",
+        activityId: "act-1",
+        channel: "gps_accuracy",
+        scalar: 5,
+      }),
+    );
   });
 
   it("skips GPS insert when no route locations", async () => {
@@ -1149,9 +1163,8 @@ describe("upsertWorkoutBatch", () => {
 
     await upsertWorkoutBatch(db, "p1", [makeWorkout({ routeLocations: [loc] })]);
 
-    expect(capture.values[1]?.[0]).toMatchObject({
-      gpsAccuracy: undefined,
-    });
+    const gpsAccuracyRow = capture.values[1]?.find((row) => row.channel === "gps_accuracy");
+    expect(gpsAccuracyRow).toBeUndefined();
   });
 
   it("populates raw JSONB with workout metrics", async () => {

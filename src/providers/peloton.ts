@@ -10,7 +10,7 @@ import {
 } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { activity, metricStream } from "../db/schema.ts";
+import { activity, sensorSample } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
 import { withSyncLog } from "../db/sync-log.ts";
@@ -681,13 +681,13 @@ export class PelotonProvider implements SyncProvider {
                 0;
 
               if (sampleCount > 0 && activityId) {
-                // Delete existing metric_stream rows for this activity to avoid duplicates
+                // Delete existing sensor_sample rows for this activity to avoid duplicates
                 await db
-                  .delete(metricStream)
+                  .delete(sensorSample)
                   .where(
                     sqlAnd(
-                      sqlEq(metricStream.activityId, activityId),
-                      sqlEq(metricStream.providerId, this.id),
+                      sqlEq(sensorSample.activityId, activityId),
+                      sqlEq(sensorSample.providerId, this.id),
                     ),
                   );
 
@@ -705,10 +705,6 @@ export class PelotonProvider implements SyncProvider {
                   });
                 }
 
-                for (let j = 0; j < rows.length; j += 500) {
-                  const chunk = rows.slice(j, j + 500);
-                  await db.insert(metricStream).values(chunk);
-                }
                 await dualWriteToSensorSample(db, rows, SOURCE_TYPE_API);
 
                 streamCount += rows.length;
@@ -727,7 +723,7 @@ export class PelotonProvider implements SyncProvider {
           page++;
         }
 
-        logger.info(`[peloton] ${workoutCount} workouts, ${streamCount} metric stream rows`);
+        logger.info(`[peloton] ${workoutCount} workouts, ${streamCount} sensor sample rows`);
         return { recordCount: workoutCount + streamCount, result: workoutCount + streamCount };
       },
       userId,

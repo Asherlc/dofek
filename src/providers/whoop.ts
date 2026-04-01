@@ -24,7 +24,6 @@ import {
   exerciseAlias,
   journalEntry,
   journalQuestion,
-  metricStream,
   sleepSession,
   strengthSet,
   strengthWorkout,
@@ -1175,7 +1174,6 @@ export class WhoopProvider implements SyncProvider {
             let windowStart = since.getTime();
             const nowMs = Date.now();
             let totalRecords = 0;
-            const BATCH_SIZE = 500;
 
             while (windowStart < nowMs) {
               const windowEnd = Math.min(windowStart + weekMs, nowMs);
@@ -1190,12 +1188,6 @@ export class WhoopProvider implements SyncProvider {
                 recordedAt: r.recordedAt,
                 heartRate: r.heartRate,
               }));
-              for (let i = 0; i < metricRows.length; i += BATCH_SIZE) {
-                await db
-                  .insert(metricStream)
-                  .values(metricRows.slice(i, i + BATCH_SIZE))
-                  .onConflictDoNothing();
-              }
               await dualWriteToSensorSample(db, metricRows, SOURCE_TYPE_API);
 
               totalRecords += parsed.length;

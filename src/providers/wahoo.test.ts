@@ -1,6 +1,10 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ZodError } from "zod";
-import type { ParsedFitRecord } from "../fit/parser.ts";
+import * as resolveTokensModule from "../auth/resolve-tokens.ts";
+import * as sensorSampleWriterModule from "../db/sensor-sample-writer.ts";
+import type { ParsedFitRecord, ParsedFitSession } from "../fit/parser.ts";
+import * as fitParserModule from "../fit/parser.ts";
+import * as loggerModule from "../logger.ts";
 import {
   fitRecordsToMetricStream,
   parseWorkoutList,
@@ -42,6 +46,16 @@ const sampleWorkout: WahooWorkout = {
   created_at: "2025-03-01T10:00:00.000Z",
   updated_at: "2025-03-01T10:30:00.000Z",
   workout_summary: sampleWorkoutSummary,
+};
+
+const sampleParsedFitSession: ParsedFitSession = {
+  sport: "cycling",
+  startTime: new Date("2026-03-01T08:00:00Z"),
+  totalElapsedTime: 3600,
+  totalTimerTime: 3600,
+  totalDistance: 100,
+  totalCalories: 500,
+  raw: {},
 };
 
 describe("Wahoo Provider", () => {
@@ -708,11 +722,13 @@ describe("WahooProvider.getUserIdentity()", () => {
   });
 });
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 // ============================================================
 // syncWebhookEvent tests
 // ============================================================
-
-import { vi } from "vitest";
 
 function makeWahooInsertMock(returnId = "act-uuid") {
   return vi.fn().mockReturnValue({
@@ -946,6 +962,93 @@ describe("WahooProvider.syncWebhookEvent", () => {
     expect(result.errors[0]?.message).toContain("FIT file");
   });
 
+  it("writes sensor samples for FIT webhook payloads after clearing prior activity rows", async () => {
+    vi.spyOn(fitParserModule, "parseFitFile").mockResolvedValue({
+      session: sampleParsedFitSession,
+      records: [
+        {
+          recordedAt: new Date("2026-03-01T08:00:00Z"),
+          heartRate: 145,
+          power: 210,
+          cadence: 88,
+          speed: 8.5,
+          distance: 100,
+          raw: { heart_rate: 145, power: 210 },
+        },
+      ],
+      laps: [],
+      events: [],
+    });
+    const dualWriteSpy = vi
+      .spyOn(sensorSampleWriterModule, "dualWriteToSensorSample")
+      .mockResolvedValue(0);
+    const loggerInfoSpy = vi
+      .spyOn(loggerModule.logger, "info")
+      .mockImplementation(() => loggerModule.logger);
+    const whereSpy = vi.fn().mockResolvedValue(undefined);
+    const mockDb = {
+      select: vi.fn(),
+      insert: makeWahooInsertMock(),
+      delete: vi.fn().mockReturnValue({ where: whereSpy }),
+      execute: vi.fn(),
+    };
+    const provider = new WahooProvider(async (input): Promise<Response> => {
+      if (String(input) === "https://cdn.wahoo.com/test.fit") {
+        return new Response(new Uint8Array([1, 2, 3]));
+      }
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    });
+    vi.spyOn(fitParserModule, "parseFitFile").mockResolvedValue({
+      session: sampleParsedFitSession,
+      records: [
+        {
+          recordedAt: new Date("2026-03-01T08:00:00Z"),
+          heartRate: 145,
+          power: 210,
+          cadence: 88,
+          speed: 8.5,
+          distance: 100,
+          raw: { heart_rate: 145, power: 210 },
+        },
+      ],
+      laps: [],
+      events: [],
+    });
+
+    const result = await provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "42",
+      eventType: "create",
+      objectType: "workout",
+      objectId: "99",
+      metadata: {
+        payload: {
+          user: { id: 42 },
+          workout: {
+            id: 42,
+            workout_type_id: 0,
+            starts: "2026-03-01T08:00:00Z",
+            created_at: "2026-03-01T10:00:00Z",
+            updated_at: "2026-03-01T10:00:00Z",
+            workout_summary: {
+              id: 101,
+              created_at: "2026-03-01T10:00:00Z",
+              updated_at: "2026-03-01T10:00:00Z",
+              file: { url: "https://cdn.wahoo.com/test.fit" },
+            },
+          },
+        },
+      },
+    });
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(0);
+    expect(whereSpy).toHaveBeenCalledTimes(1);
+    expect(dualWriteSpy).toHaveBeenCalledTimes(1);
+    expect(loggerInfoSpy).toHaveBeenCalledWith(
+      "[wahoo] Webhook: inserted 1 sensor sample rows for workout 42",
+    );
+  });
+
   it("returns early when activity insert returns no id", async () => {
     const mockInsert = vi.fn().mockReturnValue({
       values: vi.fn().mockReturnValue({
@@ -1030,6 +1133,85 @@ describe("WahooProvider.syncWebhookEvent", () => {
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("DB constraint violation");
+  });
+});
+
+describe("WahooProvider.sync", () => {
+  it("writes sensor sample rows from FIT workouts during sync", async () => {
+    vi.spyOn(resolveTokensModule, "resolveOAuthTokens").mockResolvedValue({
+      accessToken: "access-token",
+      refreshToken: "refresh-token",
+      expiresAt: new Date("2026-03-02T00:00:00Z"),
+      scopes: null,
+    });
+    vi.spyOn(fitParserModule, "parseFitFile").mockResolvedValue({
+      session: sampleParsedFitSession,
+      records: [
+        {
+          recordedAt: new Date("2026-03-01T08:00:00Z"),
+          heartRate: 145,
+          power: 210,
+          cadence: 88,
+          speed: 8.5,
+          distance: 100,
+          raw: { heart_rate: 145, power: 210 },
+        },
+      ],
+      laps: [],
+      events: [],
+    });
+    const dualWriteSpy = vi
+      .spyOn(sensorSampleWriterModule, "dualWriteToSensorSample")
+      .mockResolvedValue(0);
+    const loggerInfoSpy = vi
+      .spyOn(loggerModule.logger, "info")
+      .mockImplementation(() => loggerModule.logger);
+    const mockDb = {
+      select: vi.fn(),
+      insert: makeWahooInsertMock("activity-sync-1"),
+      delete: vi.fn(),
+      execute: vi.fn(),
+    };
+    const provider = new WahooProvider(async (input): Promise<Response> => {
+      const url = String(input);
+      if (url.includes("/v1/workouts")) {
+        return Response.json({
+          workouts: [
+            {
+              id: 42,
+              workout_type_id: 0,
+              starts: "2026-03-01T08:00:00Z",
+              created_at: "2026-03-01T10:00:00Z",
+              updated_at: "2026-03-01T10:00:00Z",
+              workout_summary: {
+                id: 101,
+                created_at: "2026-03-01T10:00:00Z",
+                updated_at: "2026-03-01T10:00:00Z",
+                file: { url: "https://cdn.wahoo.com/sync.fit" },
+              },
+            },
+          ],
+          total: 1,
+          page: 1,
+          per_page: 30,
+          order: "desc",
+          sort: "starts",
+        });
+      }
+      if (url === "https://cdn.wahoo.com/sync.fit") {
+        return new Response(new Uint8Array([1, 2, 3]));
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    const result = await provider.sync(mockDb, new Date("2026-02-01T00:00:00Z"));
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(0);
+    expect(dualWriteSpy).toHaveBeenCalledTimes(1);
+    expect(loggerInfoSpy).toHaveBeenCalledWith(
+      "[wahoo] Inserted 1 sensor sample rows for workout 42",
+    );
   });
 });
 

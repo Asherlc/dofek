@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { SOURCE_TYPE_API } from "../../../../src/db/sensor-channels.ts";
 import { logger } from "../logger.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 
@@ -46,7 +47,7 @@ async function insertBatch(
   db: Database,
   userId: string,
   deviceId: string,
-  deviceType: string,
+  _deviceType: string,
   samples: InertialMeasurementUnitSample[],
 ): Promise<number> {
   if (samples.length === 0) return 0;
@@ -56,18 +57,7 @@ async function insertBatch(
   for (let offset = 0; offset < samples.length; offset += INSERT_BATCH_SIZE) {
     const batch = samples.slice(offset, offset + INSERT_BATCH_SIZE);
 
-    const valuesClauses = batch.map(
-      (sample) =>
-        sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${deviceId}, ${deviceType}, ${PROVIDER_ID}, ${sample.x}, ${sample.y}, ${sample.z}, ${sample.gyroscopeX ?? null}, ${sample.gyroscopeY ?? null}, ${sample.gyroscopeZ ?? null})`,
-    );
-
-    await db.execute(
-      sql`INSERT INTO fitness.inertial_measurement_unit_sample
-          (recorded_at, user_id, device_id, device_type, provider_id, x, y, z, gyroscope_x, gyroscope_y, gyroscope_z)
-          VALUES ${sql.join(valuesClauses, sql`, `)}`,
-    );
-
-    // Dual-write to sensor_sample: accel-only as 'accel' channel, 6-axis as 'imu' channel
+    // Write IMU vectors directly to sensor_sample: accel-only as 'accel', 6-axis as 'imu'.
     const sensorValuesClauses = batch.map((sample) => {
       const sampleHasGyro =
         sample.gyroscopeX != null || sample.gyroscopeY != null || sample.gyroscopeZ != null;
@@ -75,7 +65,7 @@ async function insertBatch(
       const vector = sampleHasGyro
         ? sql`ARRAY[${sample.x}, ${sample.y}, ${sample.z}, ${sample.gyroscopeX ?? 0}, ${sample.gyroscopeY ?? 0}, ${sample.gyroscopeZ ?? 0}]::real[]`
         : sql`ARRAY[${sample.x}, ${sample.y}, ${sample.z}]::real[]`;
-      return sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${deviceId}, ${"ble"}, ${channel}, ${vector})`;
+      return sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${deviceId}, ${SOURCE_TYPE_API}, ${channel}, ${vector})`;
     });
     await db.execute(
       sql`INSERT INTO fitness.sensor_sample

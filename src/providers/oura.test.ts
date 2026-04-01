@@ -1498,18 +1498,17 @@ describe("OuraProvider.sync()", () => {
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBeGreaterThanOrEqual(2);
 
-    // Verify HR values are batched (length varies with 30-day windowing vs current date)
-    const hrRows = findBatchValuesCall(db, (arr) => arr.some((r) => r.heartRate === 72));
-    const first = hrRows.find((r) => r.heartRate === 72);
-    const second = hrRows.find((r) => r.heartRate === 85);
-    expect(first?.heartRate).toBe(72);
+    // Verify HR rows are written to sensor_sample with heart_rate channel.
+    const hrRows = findBatchValuesCall(db, (arr) =>
+      arr.some((r) => r.channel === "heart_rate" && r.scalar === 72),
+    );
+    const first = hrRows.find((r) => r.channel === "heart_rate" && r.scalar === 72);
+    const second = hrRows.find((r) => r.channel === "heart_rate" && r.scalar === 85);
+    expect(first?.scalar).toBe(72);
     expect(first?.providerId).toBe("oura");
     expect(first?.recordedAt).toEqual(new Date("2026-03-01T10:00:00+00:00"));
-    expect(second?.heartRate).toBe(85);
+    expect(second?.scalar).toBe(85);
     expect(second?.recordedAt).toEqual(new Date("2026-03-01T10:05:00+00:00"));
-
-    // HR uses onConflictDoNothing, not onConflictDoUpdate
-    expect(db.onConflictDoNothing).toHaveBeenCalled();
   });
 
   it("chunks heart rate fetches into 30-day windows", async () => {

@@ -768,7 +768,7 @@ describe("RideWithGpsProvider — sync", () => {
       .find(
         (value: unknown) => typeof value === "object" && value !== null && "externalId" in value,
       );
-    const metricInsertArg = valuesMock.mock.calls
+    const sensorInsertArg = valuesMock.mock.calls
       .map((call: unknown[]) => call[0])
       .find((value: unknown) => Array.isArray(value));
     const raw = activityInsertArg ? Reflect.get(activityInsertArg, "raw") : undefined;
@@ -799,26 +799,50 @@ describe("RideWithGpsProvider — sync", () => {
     );
     expect(returningMock).toHaveBeenCalledWith(expect.objectContaining({ id: expect.anything() }));
 
-    expect(Array.isArray(metricInsertArg)).toBe(true);
-    if (!Array.isArray(metricInsertArg)) {
-      throw new Error("Expected metric insert payload");
+    expect(Array.isArray(sensorInsertArg)).toBe(true);
+    if (!Array.isArray(sensorInsertArg)) {
+      throw new Error("Expected sensor_sample insert payload");
     }
-    expect(metricInsertArg).toHaveLength(2);
-    expect(metricInsertArg[0]).toMatchObject({
+    // 2 points -> 8 channel rows in sensor_sample (lat/lng/speed/hr/power + lat/lng/speed)
+    expect(sensorInsertArg).toHaveLength(8);
+    expect(sensorInsertArg).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          activityId: 7,
+          providerId: "ride-with-gps",
+          channel: "lat",
+          scalar: 45.5,
+        }),
+        expect.objectContaining({
+          activityId: 7,
+          providerId: "ride-with-gps",
+          channel: "lng",
+          scalar: -122.6,
+        }),
+        expect.objectContaining({
+          activityId: 7,
+          providerId: "ride-with-gps",
+          channel: "speed",
+          scalar: 25 / 3.6,
+        }),
+        expect.objectContaining({
+          activityId: 7,
+          providerId: "ride-with-gps",
+          channel: "heart_rate",
+          scalar: 140,
+        }),
+        expect.objectContaining({
+          activityId: 7,
+          providerId: "ride-with-gps",
+          channel: "power",
+          scalar: 200,
+        }),
+      ]),
+    );
+    expect(sensorInsertArg[0]).toMatchObject({
       activityId: 7,
       providerId: "ride-with-gps",
-      lat: 45.5,
-      lng: -122.6,
-      speed: 25 / 3.6,
-      heartRate: 140,
-      power: 200,
-    });
-    expect(metricInsertArg[1]).toMatchObject({
-      activityId: 7,
-      providerId: "ride-with-gps",
-      lat: 45.51,
-      lng: -122.61,
-      speed: 30 / 3.6,
+      sourceType: "api",
     });
   });
 
@@ -926,10 +950,9 @@ describe("RideWithGpsProvider — sync", () => {
       .map((call: unknown[]) => call[0])
       .filter((value: unknown) => Array.isArray(value));
 
-    // 2 metric_stream batches (500 + 1) + 1 sensor_sample dual-write batch (501 rows)
-    expect(metricInsertCalls).toHaveLength(3);
-    expect(metricInsertCalls[0]).toHaveLength(500);
-    expect(metricInsertCalls[1]).toHaveLength(1);
+    // 501 points with lat/lng/speed -> 1503 sensor_sample rows in one batch
+    expect(metricInsertCalls).toHaveLength(1);
+    expect(metricInsertCalls[0]).toHaveLength(1503);
   });
 
   it("handles deleted trip items", async () => {

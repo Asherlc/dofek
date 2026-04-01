@@ -8,7 +8,7 @@ import {
   parseEightSleepTrendDay,
 } from "eight-sleep-client";
 import type { SyncDatabase } from "../db/index.ts";
-import { bodyMeasurement, dailyMetrics, metricStream, sleepSession } from "../db/schema.ts";
+import { bodyMeasurement, dailyMetrics, sleepSession } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
 import { withSyncLog } from "../db/sync-log.ts";
@@ -291,7 +291,6 @@ export class EightSleepProvider implements SyncProvider {
         "hr_stream",
         async () => {
           let totalRecords = 0;
-          const BATCH_SIZE = 500;
 
           for (const day of trendDays) {
             if (!day.sessions?.length) continue;
@@ -303,12 +302,6 @@ export class EightSleepProvider implements SyncProvider {
               recordedAt: s.recordedAt,
               heartRate: s.heartRate,
             }));
-            for (let i = 0; i < metricRows.length; i += BATCH_SIZE) {
-              await db
-                .insert(metricStream)
-                .values(metricRows.slice(i, i + BATCH_SIZE))
-                .onConflictDoNothing();
-            }
             await dualWriteToSensorSample(db, metricRows, SOURCE_TYPE_API);
             totalRecords += samples.length;
           }

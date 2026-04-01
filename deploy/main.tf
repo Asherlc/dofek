@@ -44,6 +44,22 @@ variable "ghcr_token" {
   sensitive   = true
 }
 
+variable "data_volume_size_gb" {
+  description = "Optional extra block storage volume size in GB (set to 0 to disable)"
+  type        = number
+  default     = 0
+}
+
+variable "data_volume_name" {
+  description = "Hetzner block storage volume name when extra data storage is enabled"
+  type        = string
+  default     = "dofek-data"
+}
+
+locals {
+  data_volume_mountpoint = var.data_volume_size_gb > 0 ? "/mnt/HC_Volume_${var.data_volume_name}" : ""
+}
+
 provider "hcloud" {
   token = var.hcloud_token
 }
@@ -93,9 +109,20 @@ resource "hcloud_server" "dofek" {
     ghcr_username   = var.ghcr_username
     compose_content = file("${path.module}/docker-compose.yml")
     caddy_content   = file("${path.module}/Caddyfile")
+    db_data_path    = local.data_volume_mountpoint != "" ? "${local.data_volume_mountpoint}/postgres" : ""
+    db_backup_path  = local.data_volume_mountpoint != "" ? "${local.data_volume_mountpoint}/backups" : ""
   })
 }
 
+resource "hcloud_volume" "dofek_data" {
+  count = var.data_volume_size_gb > 0 ? 1 : 0
+
+  name      = var.data_volume_name
+  size      = var.data_volume_size_gb
+  server_id = hcloud_server.dofek.id
+  format    = "ext4"
+  automount = true
+}
 
 output "server_ip" {
   value = hcloud_server.dofek.ipv4_address
@@ -103,4 +130,16 @@ output "server_ip" {
 
 output "server_ipv6" {
   value = hcloud_server.dofek.ipv6_address
+}
+
+output "data_volume_id" {
+  value = try(hcloud_volume.dofek_data[0].id, null)
+}
+
+output "data_volume_linux_device" {
+  value = try(hcloud_volume.dofek_data[0].linux_device, null)
+}
+
+output "data_volume_mountpoint" {
+  value = local.data_volume_mountpoint != "" ? local.data_volume_mountpoint : null
 }

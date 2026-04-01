@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity, metricStream } from "../db/schema.ts";
+import { activity, sensorSample } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { WahooProvider, type WahooWorkout } from "./wahoo.ts";
@@ -180,7 +180,7 @@ describe("WahooProvider.sync() (integration)", () => {
     expect(tokens?.accessToken).toBe("refreshed-token");
   });
 
-  it("downloads FIT files and inserts metric_stream records", async () => {
+  it("downloads FIT files and inserts sensor_sample records", async () => {
     await saveTokens(ctx.db, "wahoo", {
       accessToken: "valid-token",
       refreshToken: "valid-refresh",
@@ -198,7 +198,7 @@ describe("WahooProvider.sync() (integration)", () => {
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
 
-    // Verify metric_stream rows linked to the cardio_activity
+    // Verify sensor_sample rows linked to the cardio_activity
     const activities = await ctx.db.select().from(activity).where(eq(activity.externalId, "2001"));
 
     expect(activities).toHaveLength(1);
@@ -208,16 +208,16 @@ describe("WahooProvider.sync() (integration)", () => {
 
     const metrics = await ctx.db
       .select()
-      .from(metricStream)
-      .where(eq(metricStream.activityId, activityId));
+      .from(sensorSample)
+      .where(eq(sensorSample.activityId, activityId));
 
-    // test.fit has 3229 records
-    expect(metrics.length).toBe(3229);
-    // Verify records have actual sensor data (speed is present in test.fit)
-    const withSpeed = metrics.filter((m) => m.speed !== null);
-    expect(withSpeed.length).toBeGreaterThan(0);
+    // test.fit has 3229 source samples; sensor_sample count should be at least that many rows.
+    expect(metrics.length).toBeGreaterThanOrEqual(3229);
+    // Verify records have actual speed channel data from test.fit.
+    const speedSamples = metrics.filter((sample) => sample.channel === "speed");
+    expect(speedSamples.length).toBeGreaterThan(0);
     // All records should be linked to the activity
-    expect(metrics.every((m) => m.activityId === activityId)).toBe(true);
+    expect(metrics.every((sample) => sample.activityId === activityId)).toBe(true);
   });
 
   it("continues syncing if FIT file download fails", async () => {

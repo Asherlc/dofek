@@ -153,13 +153,12 @@ describe("providerDetailRouter", () => {
   // ── DISCONNECT_CHILD_TABLES ──
 
   describe("DISCONNECT_CHILD_TABLES", () => {
-    it("contains 17 child tables", () => {
-      expect(DISCONNECT_CHILD_TABLES).toHaveLength(17);
+    it("contains 16 child tables", () => {
+      expect(DISCONNECT_CHILD_TABLES).toHaveLength(16);
     });
 
     it("includes all required child tables", () => {
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.sensor_sample");
-      expect(DISCONNECT_CHILD_TABLES).toContain("fitness.metric_stream");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.exercise_alias");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.strength_workout");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.body_measurement");
@@ -568,8 +567,8 @@ describe("providerDetailRouter", () => {
       expect(result).toEqual({ success: true });
       expect(mockExecute).toHaveBeenCalledTimes(1);
       expect(mockTransaction).toHaveBeenCalledTimes(1);
-      // 17 child tables + 1 provider delete = 18 deletes inside the transaction
-      expect(txExecute).toHaveBeenCalledTimes(18);
+      // 16 child tables + 1 provider delete = 17 deletes inside the transaction
+      expect(txExecute).toHaveBeenCalledTimes(17);
     });
 
     it("verifies ownership before disconnecting", async () => {

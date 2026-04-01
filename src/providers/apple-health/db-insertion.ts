@@ -8,13 +8,15 @@ import {
   dailyMetrics,
   healthEvent,
   labResult,
-  metricStream,
   nutritionDaily,
   sleepSession,
   sleepStage,
 } from "../../db/schema.ts";
 import { SOURCE_TYPE_FILE } from "../../db/sensor-channels.ts";
-import { dualWriteToSensorSample } from "../../db/sensor-sample-writer.ts";
+import {
+  dualWriteToSensorSample,
+  type SensorSampleSourceRow,
+} from "../../db/sensor-sample-writer.ts";
 import { logger } from "../../logger.ts";
 import type { HealthRecord } from "./records.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
@@ -160,7 +162,7 @@ export async function upsertMetricStreamBatch(
   providerId: string,
   records: HealthRecord[],
 ): Promise<number> {
-  const rows: (typeof metricStream.$inferInsert)[] = [];
+  const rows: SensorSampleSourceRow[] = [];
   for (const record of records) {
     const field = METRIC_STREAM_TYPES[record.type];
     if (!field) continue;
@@ -196,9 +198,7 @@ export async function upsertMetricStreamBatch(
     }
   }
 
-  for (let i = 0; i < rows.length; i += 1000) {
-    await db.insert(metricStream).values(rows.slice(i, i + 1000));
-  }
+  // Metric rows now write directly to sensor_sample.
   await dualWriteToSensorSample(db, rows, SOURCE_TYPE_FILE);
   return rows.length;
 }
@@ -476,8 +476,8 @@ export async function upsertDailyMetricsBatch(
 }
 
 /**
- * Aggregate SpO2 readings from metric_stream into daily_metrics.spo2_avg.
- * Apple Health stores SpO2 as fractions (0-1) in metric_stream; this converts
+ * Aggregate SpO2 readings from sensor_sample into daily_metrics.spo2_avg.
+ * Apple Health stores SpO2 as fractions (0-1) in sensor_sample; this converts
  * the daily average to a percentage (0-100) for consistency with other providers
  * (WHOOP, Oura, Garmin) that report SpO2 as a percentage.
  */
@@ -492,20 +492,21 @@ export async function aggregateSpO2ToDailyMetrics(
           (recorded_at AT TIME ZONE 'UTC')::date AS date,
           provider_id,
           user_id,
-          source_name,
-          AVG(spo2) * 100 AS spo2_avg
-        FROM fitness.metric_stream
+          device_id AS source_name,
+          AVG(scalar) * 100 AS spo2_avg
+        FROM fitness.sensor_sample
         WHERE provider_id = ${providerId}
-          AND spo2 IS NOT NULL
+          AND channel = 'spo2'
+          AND scalar IS NOT NULL
           AND recorded_at >= ${since.toISOString()}::timestamptz
-        GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id, source_name
+        GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id, device_id
         ON CONFLICT (date, provider_id, source_name) DO UPDATE SET
           spo2_avg = EXCLUDED.spo2_avg`,
   );
 }
 
 /**
- * Aggregate wrist temperature readings from metric_stream into daily_metrics.skin_temp_c.
+ * Aggregate wrist temperature readings from sensor_sample into daily_metrics.skin_temp_c.
  * Apple Watch reports sleeping wrist temperature in °C; this computes the daily
  * average and stores it alongside other daily metrics.
  */
@@ -520,13 +521,14 @@ export async function aggregateSkinTempToDailyMetrics(
           (recorded_at AT TIME ZONE 'UTC')::date AS date,
           provider_id,
           user_id,
-          source_name,
-          AVG(skin_temperature) AS skin_temp_c
-        FROM fitness.metric_stream
+          device_id AS source_name,
+          AVG(scalar) AS skin_temp_c
+        FROM fitness.sensor_sample
         WHERE provider_id = ${providerId}
-          AND skin_temperature IS NOT NULL
+          AND channel = 'skin_temperature'
+          AND scalar IS NOT NULL
           AND recorded_at >= ${since.toISOString()}::timestamptz
-        GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id, source_name
+        GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id, device_id
         ON CONFLICT (date, provider_id, source_name) DO UPDATE SET
           skin_temp_c = EXCLUDED.skin_temp_c`,
   );
@@ -696,26 +698,27 @@ export async function linkUnassignedHeartRateToActivities(
   bounds?: { startAt?: Date; endAt?: Date },
 ): Promise<number> {
   const filters = [
-    sql`ms.provider_id = ${providerId}`,
-    sql`ms.activity_id IS NULL`,
-    sql`ms.heart_rate IS NOT NULL`,
+    sql`ss.provider_id = ${providerId}`,
+    sql`ss.activity_id IS NULL`,
+    sql`ss.channel = 'heart_rate'`,
+    sql`ss.scalar IS NOT NULL`,
   ];
   if (bounds?.startAt) {
-    filters.push(sql`ms.recorded_at >= ${bounds.startAt.toISOString()}::timestamptz`);
+    filters.push(sql`ss.recorded_at >= ${bounds.startAt.toISOString()}::timestamptz`);
   }
   if (bounds?.endAt) {
-    filters.push(sql`ms.recorded_at <= ${bounds.endAt.toISOString()}::timestamptz`);
+    filters.push(sql`ss.recorded_at <= ${bounds.endAt.toISOString()}::timestamptz`);
   }
 
   const linkedRows = await db.execute(
-    sql`UPDATE fitness.metric_stream ms
+    sql`UPDATE fitness.sensor_sample ss
         SET activity_id = (
           SELECT a.id
           FROM fitness.activity a
           WHERE a.provider_id = ${providerId}
-            AND a.user_id = ms.user_id
-            AND ms.recorded_at >= a.started_at
-            AND ms.recorded_at <= a.ended_at
+            AND a.user_id = ss.user_id
+            AND ss.recorded_at >= a.started_at
+            AND ss.recorded_at <= a.ended_at
           ORDER BY a.started_at DESC
           LIMIT 1
         )
@@ -724,11 +727,11 @@ export async function linkUnassignedHeartRateToActivities(
             SELECT 1
             FROM fitness.activity a
             WHERE a.provider_id = ${providerId}
-              AND a.user_id = ms.user_id
-              AND ms.recorded_at >= a.started_at
-              AND ms.recorded_at <= a.ended_at
+              AND a.user_id = ss.user_id
+              AND ss.recorded_at >= a.started_at
+              AND ss.recorded_at <= a.ended_at
           )
-        RETURNING ms.recorded_at`,
+        RETURNING ss.recorded_at`,
   );
 
   return Array.isArray(linkedRows) ? linkedRows.length : 0;
@@ -796,7 +799,7 @@ export async function upsertWorkoutBatch(
   }
 
   // Batch all GPS route locations across all workouts
-  const allGpsRows: (typeof metricStream.$inferInsert)[] = [];
+  const allGpsRows: SensorSampleSourceRow[] = [];
   for (const { activityId, workout } of activityResults) {
     if (workout.routeLocations && workout.routeLocations.length > 0) {
       for (const loc of workout.routeLocations) {
@@ -816,9 +819,7 @@ export async function upsertWorkoutBatch(
     }
   }
 
-  for (let i = 0; i < allGpsRows.length; i += 5000) {
-    await db.insert(metricStream).values(allGpsRows.slice(i, i + 5000));
-  }
+  // GPS route points now write directly to sensor_sample.
   await dualWriteToSensorSample(db, allGpsRows, SOURCE_TYPE_FILE);
 
   // Link HR rows for this batch's time window. A global reconciliation pass also

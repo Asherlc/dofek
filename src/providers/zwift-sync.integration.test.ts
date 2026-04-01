@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity, dailyMetrics, metricStream } from "../db/schema.ts";
+import { activity, dailyMetrics, sensorSample } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { ZwiftProvider } from "./zwift.ts";
@@ -250,16 +250,17 @@ describe("ZwiftProvider.sync() (integration)", () => {
     if (!run) throw new Error("expected activity 100002");
     expect(run.activityType).toBe("running");
 
-    // Verify metric_stream rows were inserted from fitness data
+    // Verify sensor_sample rows were inserted from fitness data
     const metrics = await ctx.db
       .select()
-      .from(metricStream)
-      .where(eq(metricStream.providerId, "zwift"));
-    // 2 activities x 3 samples each = 6
-    expect(metrics.length).toBe(6);
+      .from(sensorSample)
+      .where(eq(sensorSample.providerId, "zwift"));
+    // 2 activities x 3 heart-rate samples each = 6
+    const heartRateSamples = metrics.filter((sample) => sample.channel === "heart_rate");
+    expect(heartRateSamples.length).toBe(6);
 
-    const withPower = metrics.filter((m) => m.power !== null);
-    expect(withPower.length).toBeGreaterThan(0);
+    const powerSamples = metrics.filter((sample) => sample.channel === "power");
+    expect(powerSamples.length).toBeGreaterThan(0);
 
     // Verify power curve wrote daily metrics (vo2max)
     const dailyRows = await ctx.db

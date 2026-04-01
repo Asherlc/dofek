@@ -556,6 +556,41 @@ sops decrypt --in-place .env    # now .env is plaintext
 sops encrypt --in-place .env    # re-encrypts
 ```
 
+### 1Password deploy notes
+
+When running from automation/agent shells, `op signin` may not persist a global session for later commands. Use an inline session token per command chain:
+
+```bash
+TOKEN=$(op signin --account my.1password.com --raw)
+OP_SESSION_my_1password_com="$TOKEN" op whoami --account my.1password.com
+```
+
+Use that same pattern to fetch secrets:
+
+```bash
+# SOPS age key (existing item)
+TOKEN=$(op signin --account my.1password.com --raw)
+OP_SESSION_my_1password_com="$TOKEN" op item get "Homelab SOPS Age Key" --field notesPlain
+
+# Hetzner Cloud API token (for Terraform deploy/main.tf hcloud_token)
+TOKEN=$(op signin --account my.1password.com --raw)
+OP_SESSION_my_1password_com="$TOKEN" op item get "Hetzner Cloud API Token" --field password
+
+# Axiom API token (for AXIOM_API_TOKEN in /opt/dofek/.env)
+TOKEN=$(op signin --account my.1password.com --raw)
+OP_SESSION_my_1password_com="$TOKEN" op item get "Axiom API Token" --field password
+```
+
+Important: the existing 1Password item titled `Hetzner` stores Hetzner account login credentials, not a Hetzner Cloud API token. Use the dedicated item `Hetzner Cloud API Token` for Terraform's `hcloud_token`.
+
+Example Terraform env export flow:
+
+```bash
+TOKEN=$(op signin --account my.1password.com --raw)
+export TF_VAR_hcloud_token=$(OP_SESSION_my_1password_com="$TOKEN" op item get "Hetzner Cloud API Token" --field password)
+export TF_VAR_sops_age_key=$(OP_SESSION_my_1password_com="$TOKEN" op item get "Homelab SOPS Age Key" --field notesPlain | grep '^AGE-SECRET-KEY-')
+```
+
 ## Stack
 
 - **TypeScript** — sync scripts, provider plugins, and web + mobile apps (Node 22 native type stripping at runtime — no tsx in production)

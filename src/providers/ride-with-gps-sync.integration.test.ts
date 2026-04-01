@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity, metricStream, oauthToken } from "../db/schema.ts";
+import { activity, oauthToken, sensorSample } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import {
@@ -125,7 +125,7 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     if (ctx) await ctx.cleanup();
   });
 
-  it("syncs trips into activity and metric_stream", async () => {
+  it("syncs trips into activity and sensor_sample", async () => {
     await saveTokens(ctx.db, "ride-with-gps", {
       accessToken: "valid-token",
       refreshToken: "valid-refresh",
@@ -172,18 +172,23 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     if (!run) throw new Error("expected trip 5002");
     expect(run.activityType).toBe("running");
 
-    // Verify metric_stream rows (10 track points per trip)
+    // Verify sensor_sample rows (10 track points per trip)
     const metrics = await ctx.db
       .select()
-      .from(metricStream)
-      .where(eq(metricStream.activityId, ride.id));
+      .from(sensorSample)
+      .where(eq(sensorSample.activityId, ride.id));
 
-    expect(metrics).toHaveLength(10);
-    expect(metrics[0]?.heartRate).toBeDefined();
-    expect(metrics[0]?.power).toBeDefined();
-    expect(metrics[0]?.cadence).toBeDefined();
-    expect(metrics[0]?.lat).toBeDefined();
-    expect(metrics[0]?.lng).toBeDefined();
+    const heartRateSamples = metrics.filter((sample) => sample.channel === "heart_rate");
+    const powerSamples = metrics.filter((sample) => sample.channel === "power");
+    const cadenceSamples = metrics.filter((sample) => sample.channel === "cadence");
+    const latSamples = metrics.filter((sample) => sample.channel === "lat");
+    const lngSamples = metrics.filter((sample) => sample.channel === "lng");
+
+    expect(heartRateSamples).toHaveLength(10);
+    expect(powerSamples).toHaveLength(10);
+    expect(cadenceSamples).toHaveLength(10);
+    expect(latSamples).toHaveLength(10);
+    expect(lngSamples).toHaveLength(10);
   });
 
   it("upserts on re-sync (no duplicates)", async () => {
@@ -332,14 +337,14 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
 
     expect(result.recordsSynced).toBe(1);
 
-    // Activity should exist but no metric_stream rows (no timestamps)
+    // Activity should exist but no sensor_sample rows (no timestamps)
     const activities = await ctx.db.select().from(activity).where(eq(activity.externalId, "8001"));
     expect(activities).toHaveLength(1);
 
     const metrics = await ctx.db
       .select()
-      .from(metricStream)
-      .where(eq(metricStream.activityId, activities[0]?.id ?? ""));
+      .from(sensorSample)
+      .where(eq(sensorSample.activityId, activities[0]?.id ?? ""));
     expect(metrics).toHaveLength(0);
   });
 
