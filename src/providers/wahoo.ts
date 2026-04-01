@@ -249,7 +249,7 @@ export function wahooOAuthConfig(): OAuthConfig | null {
     authorizeUrl: `${WAHOO_API_BASE}/oauth/authorize`,
     tokenUrl: `${WAHOO_API_BASE}/oauth/token`,
     redirectUri: getOAuthRedirectUri(),
-    scopes: ["user_read", "workouts_read", "offline_data"],
+    scopes: ["email", "user_read", "workouts_read", "offline_data"],
   };
 }
 
