@@ -61,5 +61,8 @@ describe("processScheduledSyncJob", () => {
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       "[scheduled-sync] Skipping CSV provider strong-csv",
     );
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      "[scheduled-sync] Enqueued 2 sync jobs for 2 users",
+    );
   });
 });

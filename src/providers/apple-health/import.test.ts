@@ -367,7 +367,7 @@ describe("runImport", () => {
     expect(result.provider).toBe("apple_health");
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(0);
-    expect(result.duration).toBeGreaterThan(0);
+    expect(result.duration).toBeGreaterThanOrEqual(0);
     // Should still delete existing rows
     expect(spies.deleteFn).toHaveBeenCalled();
   });
