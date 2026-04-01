@@ -14,6 +14,15 @@ import { useAuth } from "../lib/auth-context";
 import { captureException } from "../lib/telemetry";
 import { colors } from "../theme";
 
+function hasCancelCode(
+  err: unknown,
+): err is { code: "ERR_REQUEST_CANCELED" | "ERR_CANCELED"; message?: string } {
+  if (!err || typeof err !== "object" || !("code" in err)) {
+    return false;
+  }
+  return err.code === "ERR_REQUEST_CANCELED" || err.code === "ERR_CANCELED";
+}
+
 export default function LoginScreen() {
   const { serverUrl, onLoginSuccess } = useAuth();
   const [providers, setProviders] = useState<ConfiguredProviders | null>(null);
@@ -55,16 +64,7 @@ export default function LoginScreen() {
 
       // Use native Apple Sign In on iOS for the apple identity provider
       if (providerId === "apple" && !isDataProvider && nativeAppleSignInAvailable) {
-        try {
-          token = await startNativeAppleSignIn(serverUrl);
-        } catch (nativeError: unknown) {
-          if (nativeError instanceof Error && nativeError.message.includes("ERR_CANCELED")) {
-            return;
-          }
-          captureException(nativeError, { source: "apple-native-signin-fallback" });
-          // Fall back to browser OAuth so login still works when native flow fails.
-          token = await startOAuthLogin(serverUrl, providerId, isDataProvider);
-        }
+        token = await startNativeAppleSignIn(serverUrl);
       } else {
         token = await startOAuthLogin(serverUrl, providerId, isDataProvider);
       }
@@ -74,7 +74,12 @@ export default function LoginScreen() {
       }
     } catch (err: unknown) {
       // User cancelled native Apple Sign In — not an error
-      if (err instanceof Error && err.message.includes("ERR_CANCELED")) {
+      const isCancel =
+        (err instanceof Error &&
+          (err.message.includes("ERR_CANCELED") || err.message.includes("ERR_REQUEST_CANCELED"))) ||
+        hasCancelCode(err);
+
+      if (isCancel) {
         return;
       }
       captureException(err, { source: "login-screen-handle-login" });

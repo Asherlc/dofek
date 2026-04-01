@@ -172,17 +172,16 @@ export async function signInToXert(
 // OAuth configuration (used for token refresh)
 // ============================================================
 
-export function xertOAuthConfig(): OAuthConfig | null {
+export function xertOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.XERT_CLIENT_ID ?? "xert_public";
   const clientSecret = process.env.XERT_CLIENT_SECRET ?? "xert_public";
-  const redirectUri = getOAuthRedirectUri();
 
   return {
     clientId,
     clientSecret,
     authorizeUrl: `${XERT_API_BASE}/oauth/authorize`,
     tokenUrl: `${XERT_API_BASE}/oauth/token`,
-    redirectUri,
+    redirectUri: getOAuthRedirectUri(host),
     scopes: [],
     tokenAuthMethod: "basic",
   };
@@ -211,8 +210,8 @@ export class XertProvider implements SyncProvider {
     return `https://www.xertonline.com/activities/${externalId}`;
   }
 
-  authSetup(): ProviderAuthSetup {
-    const config = xertOAuthConfig();
+  authSetup(options?: { host?: string }): ProviderAuthSetup {
+    const config = xertOAuthConfig(options?.host);
     if (!config) throw new Error("Failed to create Xert OAuth config");
     const fetchFn = this.#fetchFn;
     return {
