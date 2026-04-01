@@ -922,6 +922,7 @@ jobs:
           set -euo pipefail
           aws s3 sync packages/web/storybook-static/ "s3://$R2_BUCKET/${{ steps.preview.outputs.preview_prefix }}/" \
             --delete \
+            --region auto \
             --endpoint-url "$R2_ENDPOINT" \
             --cache-control "no-cache"
 
@@ -1214,7 +1215,7 @@ jobs:
           if [ -d "$STAGING_DIR/bundles" ]; then
             aws s3 cp "$STAGING_DIR/bundles/" "$R2_RELEASE_URL/bundles/" \
               --recursive \
-              --region WEUR \
+              --region auto \
               --endpoint-url "$R2_ENDPOINT" \
               --cache-control "public, immutable, max-age=31536000"
           fi
@@ -1222,13 +1223,13 @@ jobs:
           if [ -d "$STAGING_DIR/assets" ]; then
             aws s3 cp "$STAGING_DIR/assets/" "$R2_RELEASE_URL/assets/" \
               --recursive \
-              --region WEUR \
+              --region auto \
               --endpoint-url "$R2_ENDPOINT" \
               --cache-control "public, immutable, max-age=31536000"
           fi
 
           aws s3 cp "$STAGING_DIR/metadata.json" "$R2_RELEASE_URL/metadata.json" \
-            --region WEUR \
+            --region auto \
             --endpoint-url "$R2_ENDPOINT" \
             --content-type "application/json" \
             --cache-control "no-cache"
@@ -1236,7 +1237,7 @@ jobs:
           POINTER_FILE="$RUNNER_TEMP/current-release.json"
           printf '{"releaseId":"%s"}\n' "$RELEASE_ID" > "$POINTER_FILE"
           aws s3 cp "$POINTER_FILE" "$R2_POINTER_URL" \
-            --region WEUR \
+            --region auto \
             --endpoint-url "$R2_ENDPOINT" \
             --content-type "application/json" \
             --cache-control "no-cache"
