@@ -20,6 +20,34 @@ vi.mock("../trpc.ts", async () => {
 
 import { whoopBleSyncRouter } from "./whoop-ble-sync.ts";
 
+function flattenSqlChunk(chunk: unknown): Array<string | number> {
+  if (typeof chunk === "string" || typeof chunk === "number") {
+    return [chunk];
+  }
+  if (Array.isArray(chunk)) {
+    return chunk.flatMap((item) => flattenSqlChunk(item));
+  }
+  if (typeof chunk !== "object" || chunk === null) {
+    return [];
+  }
+
+  const queryChunks = Reflect.get(chunk, "queryChunks");
+  if (Array.isArray(queryChunks)) {
+    return queryChunks.flatMap((item) => flattenSqlChunk(item));
+  }
+
+  const value = Reflect.get(chunk, "value");
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => flattenSqlChunk(item));
+  }
+
+  return [];
+}
+
+function getSqlParts(statement: unknown): Array<string | number> {
+  return flattenSqlChunk(statement);
+}
+
 function makeMockDb() {
   return {
     execute: vi.fn().mockResolvedValue({ rows: [] }),
@@ -96,6 +124,13 @@ describe("whoopBleSyncRouter", () => {
 
       // 3 calls: ensure provider + HR sensor_sample + orientation sensor_sample
       expect(mockDb.execute).toHaveBeenCalledTimes(3);
+
+      const heartRateInsert = mockDb.execute.mock.calls[1]?.[0];
+      const sqlParts = getSqlParts(heartRateInsert);
+
+      expect(sqlParts).toEqual(
+        expect.arrayContaining(["heart_rate", "2026-03-30T12:00:00.000Z", "WHOOP Strap", 72]),
+      );
     });
 
     it("skips heart-rate insert when all heartRate values are 0", async () => {
@@ -143,6 +178,19 @@ describe("whoopBleSyncRouter", () => {
       });
 
       expect(result).toEqual({ inserted: 2 });
+
+      const orientationInsert = mockDb.execute.mock.calls[2]?.[0];
+      const sqlParts = getSqlParts(orientationInsert);
+
+      expect(sqlParts).toEqual(
+        expect.arrayContaining([
+          "orientation",
+          "2026-03-30T12:00:00.000Z",
+          "2026-03-30T12:00:01.000Z",
+          0.5,
+          -0.5,
+        ]),
+      );
     });
 
     it("skips orientation insert when quaternion is all zeros (compact 0x28)", async () => {
@@ -184,6 +232,13 @@ describe("whoopBleSyncRouter", () => {
 
       // ensure provider + heart_rate + rr_interval_ms + orientation
       expect(mockDb.execute).toHaveBeenCalledTimes(4);
+
+      const rrInsert = mockDb.execute.mock.calls[2]?.[0];
+      const sqlParts = getSqlParts(rrInsert);
+
+      expect(sqlParts).toEqual(
+        expect.arrayContaining(["rr_interval_ms", "2026-03-30T12:00:00.000Z", "WHOOP Strap", 812]),
+      );
     });
 
     it("inserts orientation when only quaternionX is non-zero", async () => {

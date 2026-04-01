@@ -457,6 +457,26 @@ describe("handleAuthCommand", () => {
     expect(mockWaitForAuthCode).toHaveBeenCalledWith(9876, { https: true });
   });
 
+  it("defaults OAuth 2.0 callback port to 9876 when redirectUri omits an explicit port", async () => {
+    const mockExchangeCode = vi.fn().mockResolvedValue(mockTokens);
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "strava",
+        name: "Strava",
+        authSetup: () => ({
+          oauthConfig: { redirectUri: "http://localhost/callback" },
+          exchangeCode: mockExchangeCode,
+        }),
+        validate: () => null,
+      },
+    ]);
+    mockWaitForAuthCode.mockResolvedValue({ code: "code", cleanup: mockCleanup });
+
+    await handleAuthCommand(["node", "index.ts", "auth", "strava"]);
+
+    expect(mockWaitForAuthCode).toHaveBeenCalledWith(9876, { https: false });
+  });
+
   it("handles OAuth 1.0 flow (FatSecret)", async () => {
     const mockGetRequestToken = vi.fn().mockResolvedValue({
       oauthToken: "req-token",
@@ -507,8 +527,47 @@ describe("handleAuthCommand", () => {
       expiresAt: new Date("2099-12-31T23:59:59Z"),
       scopes: "",
     });
+    expect(mockExecFile).toHaveBeenCalledWith("open", ["https://fatsecret.com/auth"]);
     expect(mockLoggerInfo).toHaveBeenCalledWith("[auth] Requesting OAuth 1.0 request token...");
     expect(mockLoggerInfo).toHaveBeenCalledWith("[auth] Exchanging for access token...");
+  });
+
+  it("defaults OAuth 1.0 callback port to 9876 when redirectUri omits an explicit port", async () => {
+    const mockGetRequestToken = vi.fn().mockResolvedValue({
+      oauthToken: "req-token",
+      oauthTokenSecret: "req-secret",
+      authorizeUrl: "https://fatsecret.com/auth",
+    });
+    const mockExchangeForAccessToken = vi.fn().mockResolvedValue({
+      token: "access-token-1",
+      tokenSecret: "access-secret-1",
+    });
+
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "fatsecret",
+        name: "FatSecret",
+        authSetup: () => ({
+          oauthConfig: {
+            redirectUri: "http://localhost/callback",
+          },
+          exchangeCode: vi.fn(),
+          oauth1Flow: {
+            getRequestToken: mockGetRequestToken,
+            exchangeForAccessToken: mockExchangeForAccessToken,
+          },
+        }),
+        validate: () => null,
+      },
+    ]);
+    mockWaitForAuthCode.mockResolvedValue({ code: "verifier-123", cleanup: mockCleanup });
+
+    await handleAuthCommand(["node", "index.ts", "auth", "fatsecret"]);
+
+    expect(mockWaitForAuthCode).toHaveBeenCalledWith(9876, {
+      https: false,
+      paramName: "oauth_verifier",
+    });
   });
 
   it("handles automated login flow", async () => {

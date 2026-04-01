@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
+vi.mock("../logger.ts", () => ({
+  logger: { info: vi.fn() },
+}));
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC.context<{ db: unknown; userId: string | null }>().create();
@@ -10,12 +14,41 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
+import { logger } from "../logger.ts";
 import { inertialMeasurementUnitSyncRouter } from "./inertial-measurement-unit-sync.ts";
 
 const createCaller = createTestCallerFactory(inertialMeasurementUnitSyncRouter);
 
 function makeExecute() {
   return vi.fn().mockResolvedValue([]);
+}
+
+function flattenSqlChunk(chunk: unknown): Array<string | number> {
+  if (typeof chunk === "string" || typeof chunk === "number") {
+    return [chunk];
+  }
+  if (Array.isArray(chunk)) {
+    return chunk.flatMap((item) => flattenSqlChunk(item));
+  }
+  if (typeof chunk !== "object" || chunk === null) {
+    return [];
+  }
+
+  const queryChunks = Reflect.get(chunk, "queryChunks");
+  if (Array.isArray(queryChunks)) {
+    return queryChunks.flatMap((item) => flattenSqlChunk(item));
+  }
+
+  const value = Reflect.get(chunk, "value");
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => flattenSqlChunk(item));
+  }
+
+  return [];
+}
+
+function getSqlParts(statement: unknown): Array<string | number> {
+  return flattenSqlChunk(statement);
 }
 
 function makeSample(
@@ -68,6 +101,11 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       expect(result.inserted).toBe(0);
       // Only ensureProvider, no insert
       expect(execute).toHaveBeenCalledTimes(1);
+      expect(logger.info).toHaveBeenCalledWith("IMU push with 0 samples", {
+        userId: "user-1",
+        deviceId: "iPhone 15 Pro",
+        deviceType: "iphone",
+      });
     });
 
     it("rejects samples with missing required fields", async () => {
@@ -136,6 +174,13 @@ describe("inertialMeasurementUnitSyncRouter", () => {
 
       expect(result.inserted).toBe(1);
       expect(execute).toHaveBeenCalledTimes(2);
+
+      const insertStatement = execute.mock.calls[1]?.[0];
+      const sqlParts = getSqlParts(insertStatement);
+
+      expect(sqlParts).toContain("imu");
+      expect(sqlParts).toContain("2026-03-25T10:00:00.020Z");
+      expect(sqlParts).toEqual(expect.arrayContaining([0.012, -0.981, 0.043, 0.15, -0.22, 0.08]));
     });
 
     it("accepts a mix of samples with and without gyroscope", async () => {
@@ -158,6 +203,69 @@ describe("inertialMeasurementUnitSyncRouter", () => {
 
       expect(result.inserted).toBe(2);
       expect(execute).toHaveBeenCalledTimes(2);
+
+      const insertStatement = execute.mock.calls[1]?.[0];
+      const sqlParts = getSqlParts(insertStatement);
+
+      expect(sqlParts.filter((part) => part === "accel")).toHaveLength(1);
+      expect(sqlParts.filter((part) => part === "imu")).toHaveLength(1);
+      expect(sqlParts).toEqual(expect.arrayContaining([0.1, 0.2, 0.3]));
+      expect(logger.info).toHaveBeenCalledWith(
+        "IMU samples pushed",
+        expect.objectContaining({
+          userId: "user-1",
+          deviceId: "Apple Watch",
+          deviceType: "apple_watch",
+          sampleCount: 2,
+          firstTimestamp: "2026-03-25T10:00:00.020Z",
+          lastTimestamp: "2026-03-25T10:00:00.040Z",
+        }),
+      );
+    });
+
+    it.each([
+      [{ gyroscopeX: 0.4 }, [0.4, 0, 0]],
+      [{ gyroscopeY: 0.5 }, [0, 0.5, 0]],
+      [{ gyroscopeZ: 0.6 }, [0, 0, 0.6]],
+    ] as const)("treats a partial gyroscope sample as a 6-axis imu vector", async (overrides, expectedGyroValues) => {
+      const execute = makeExecute();
+      const caller = createCaller({ db: { execute }, userId: "user-1" });
+
+      await caller.pushSamples({
+        deviceId: "Apple Watch",
+        deviceType: "apple_watch",
+        samples: [makeSample(overrides)],
+      });
+
+      const insertStatement = execute.mock.calls[1]?.[0];
+      const sqlParts = getSqlParts(insertStatement);
+
+      expect(sqlParts).toContain("imu");
+      expect(sqlParts).toEqual(expect.arrayContaining(expectedGyroValues));
+    });
+
+    it("logs the full timestamp range for successful pushes", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({ db: { execute }, userId: "user-1" });
+
+      await caller.pushSamples({
+        deviceId: "Apple Watch",
+        deviceType: "apple_watch",
+        samples: [
+          makeSample({ timestamp: "2026-03-25T10:00:00.020Z" }),
+          makeSample({ timestamp: "2026-03-25T10:00:00.080Z" }),
+          makeSample({ timestamp: "2026-03-25T10:00:00.140Z" }),
+        ],
+      });
+
+      expect(logger.info).toHaveBeenCalledWith(
+        "IMU samples pushed",
+        expect.objectContaining({
+          firstTimestamp: "2026-03-25T10:00:00.020Z",
+          lastTimestamp: "2026-03-25T10:00:00.140Z",
+          serverTime: expect.any(String),
+        }),
+      );
     });
   });
 });
