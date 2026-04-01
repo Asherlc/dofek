@@ -12,7 +12,7 @@ function isLocalOrPrivateHost(host: string): boolean {
     host.startsWith("[") && host.includes("]")
       ? host.slice(1, host.indexOf("]"))
       : host.includes(":")
-        ? host.split(":")[0] ?? host
+        ? (host.split(":")[0] ?? host)
         : host;
   if (!hostWithoutPort) {
     return false;
@@ -29,9 +29,7 @@ function isLocalOrPrivateHost(host: string): boolean {
   }
 
   const octets = segments.map((segment) => Number(segment));
-  const validIpv4 = octets.every(
-    (octet) => Number.isInteger(octet) && octet >= 0 && octet <= 255,
-  );
+  const validIpv4 = octets.every((octet) => Number.isInteger(octet) && octet >= 0 && octet <= 255);
   if (!validIpv4) {
     return false;
   }
