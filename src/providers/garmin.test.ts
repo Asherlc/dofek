@@ -754,7 +754,7 @@ describe("GarminProvider.sync()", () => {
     expect(conflictCall?.[0].set.vo2max).toBe(55);
     // Verify target includes the expected conflict columns
     expect(conflictCall?.[0].target).toBeDefined();
-    expect(conflictCall?.[0].target.length).toBe(3);
+    expect(conflictCall?.[0].target.length).toBe(4);
   });
 
   it("skips privacy-protected daily summaries", async () => {

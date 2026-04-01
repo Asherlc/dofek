@@ -3,6 +3,12 @@ import { existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+
+vi.mock("../../db/token-user-context.ts", () => ({
+  getTokenUserId: () => "user-1",
+  runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
+}));
+
 import type { SyncDatabase } from "../../db/index.ts";
 import { logger } from "../../logger.ts";
 import {

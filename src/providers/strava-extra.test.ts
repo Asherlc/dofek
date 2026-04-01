@@ -2,6 +2,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
 import { mapStravaActivityType, StravaClient, StravaProvider } from "./strava.ts";
 
+vi.mock("../db/token-user-context.ts", () => ({
+  getTokenUserId: () => "user-1",
+  runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
+}));
+
 // ============================================================
 // Tests targeting uncovered sync paths in strava.ts
 // ============================================================

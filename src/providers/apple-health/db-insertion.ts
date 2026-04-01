@@ -445,7 +445,12 @@ export async function upsertDailyMetricsBatch(
           .insert(dailyMetrics)
           .values(b)
           .onConflictDoUpdate({
-            target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
+            target: [
+              dailyMetrics.userId,
+              dailyMetrics.date,
+              dailyMetrics.providerId,
+              dailyMetrics.sourceName,
+            ],
             set: {
               // Point-in-time metrics: prefer new value, fall back to existing
               restingHr: sql`coalesce(excluded.resting_hr, ${dailyMetrics.restingHr})`,
@@ -504,7 +509,7 @@ export async function aggregateSpO2ToDailyMetrics(
           AND scalar IS NOT NULL
           AND recorded_at >= ${since.toISOString()}::timestamptz
         GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id, device_id
-        ON CONFLICT (date, provider_id, source_name) DO UPDATE SET
+        ON CONFLICT (user_id, date, provider_id, source_name) DO UPDATE SET
           spo2_avg = EXCLUDED.spo2_avg`,
   );
 }
@@ -533,7 +538,7 @@ export async function aggregateSkinTempToDailyMetrics(
           AND scalar IS NOT NULL
           AND recorded_at >= ${since.toISOString()}::timestamptz
         GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id, device_id
-        ON CONFLICT (date, provider_id, source_name) DO UPDATE SET
+        ON CONFLICT (user_id, date, provider_id, source_name) DO UPDATE SET
           skin_temp_c = EXCLUDED.skin_temp_c`,
   );
 }

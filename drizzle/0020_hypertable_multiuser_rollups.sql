@@ -30,9 +30,9 @@ CREATE TABLE IF NOT EXISTS fitness.user_profile (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Seed a baseline user row for single-user migration path
+-- Seed a default user for single-user migration path
 INSERT INTO fitness.user_profile (id, name)
-VALUES ('00000000-0000-0000-0000-000000000001', 'Baseline User')
+VALUES ('00000000-0000-0000-0000-000000000001', 'Default User')
 ON CONFLICT (id) DO NOTHING;
 
 --> statement-breakpoint

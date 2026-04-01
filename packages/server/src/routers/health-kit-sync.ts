@@ -647,7 +647,7 @@ async function processDailyMetrics(
     await db.execute(
       sql`INSERT INTO fitness.daily_metrics (${columnsSql})
           VALUES (${valuesSql})
-          ON CONFLICT (date, provider_id, source_name) DO UPDATE SET ${setSql}`,
+          ON CONFLICT (user_id, date, provider_id, source_name) DO UPDATE SET ${setSql}`,
     );
   }
 
@@ -927,7 +927,7 @@ async function aggregateSpO2ToDailyMetrics(
           AND recorded_at >= ${bounds.startAt}::timestamptz
           AND recorded_at <= ${bounds.endAt}::timestamptz
         GROUP BY 1, provider_id, user_id, device_id
-        ON CONFLICT (date, provider_id, source_name) DO UPDATE SET
+        ON CONFLICT (user_id, date, provider_id, source_name) DO UPDATE SET
           spo2_avg = EXCLUDED.spo2_avg`,
   );
 }
@@ -958,7 +958,7 @@ async function aggregateSkinTempToDailyMetrics(
           AND recorded_at >= ${bounds.startAt}::timestamptz
           AND recorded_at <= ${bounds.endAt}::timestamptz
         GROUP BY 1, provider_id, user_id, device_id
-        ON CONFLICT (date, provider_id, source_name) DO UPDATE SET
+        ON CONFLICT (user_id, date, provider_id, source_name) DO UPDATE SET
           skin_temp_c = EXCLUDED.skin_temp_c`,
   );
 }

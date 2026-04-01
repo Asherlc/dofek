@@ -538,7 +538,11 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
     // Resolve the logged-in user so we can link the Slack identity to them
     const sessionId = getSessionIdFromRequest(req);
     const session = sessionId ? await validateSession(db, sessionId) : null;
-    const userId = session?.userId ?? `slack-anon:${randomBytes(8).toString("hex")}`;
+    if (!session) {
+      res.status(401).send("You must be logged in to connect Slack");
+      return;
+    }
+    const userId = session.userId;
 
     const redirectUri = getOAuthRedirectUri();
     const stateToken = `slack:${randomBytes(16).toString("hex")}`;
@@ -607,7 +611,11 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       // Resolve the logged-in user so the provider record is linked to them
       const sessionId = getSessionIdFromRequest(req);
       const session = sessionId ? await validateSession(db, sessionId) : null;
-      const userId = session?.userId ?? `data-anon:${randomBytes(8).toString("hex")}`;
+      if (!session) {
+        res.status(401).send("You must be logged in to connect a provider");
+        return;
+      }
+      const userId = session.userId;
 
       await startDataProviderOAuth(res, req.params.provider, {
         providerId: req.params.provider,

@@ -171,6 +171,11 @@ async function request(
 describe("createAuthRouter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-default");
+    vi.mocked(validateSession).mockResolvedValue({
+      userId: "user-1",
+      expiresAt: new Date("2027-01-01"),
+    });
   });
 
   describe("GET /api/auth/providers", () => {
@@ -592,6 +597,15 @@ describe("createAuthRouter", () => {
   });
 
   describe("GET /auth/provider/:provider", () => {
+    it("returns 401 when not logged in", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
+      vi.mocked(validateSession).mockResolvedValue(null);
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/auth/provider/nonexistent");
+      expect(res.status).toBe(401);
+      expect(res.body).toContain("logged in");
+    });
+
     it("returns 404 for unknown provider", async () => {
       const { app } = createTestApp();
       const res = await request(app, "get", "/auth/provider/nonexistent");
@@ -1981,11 +1995,6 @@ describe("createAuthRouter", () => {
       process.env.SLACK_CLIENT_ID = "test-client-id";
       delete process.env.SLACK_CLIENT_SECRET;
 
-      // We need the state to start with "slack:" and be in the map
-      // Start the Slack OAuth to get valid state
-      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
-      vi.mocked(validateSession).mockResolvedValue(null);
-
       const { app } = createTestApp();
       const slackRes = await request(app, "get", "/auth/provider/slack");
       expect(slackRes.status).toBe(302);
@@ -2905,7 +2914,7 @@ describe("createAuthRouter", () => {
       );
     });
 
-    it("skips auto-linking when no session is active for data intent", async () => {
+    it("requires session for data-provider OAuth start", async () => {
       const mockExchangeCode = vi.fn(() =>
         Promise.resolve({
           accessToken: "no-session-access",
@@ -2946,19 +2955,8 @@ describe("createAuthRouter", () => {
       const { app } = createTestApp();
 
       const startRes = await request(app, "get", "/auth/provider/wahoo");
-      expect(startRes.status).toBe(302);
-      const location = startRes.headers.location;
-      if (typeof location !== "string") throw new Error("Expected location header");
-      const state = new URL(location).searchParams.get("state");
-
-      const callbackRes = await request(
-        app,
-        "get",
-        `/callback?code=no-session-code&state=${state}`,
-      );
-      expect(callbackRes.status).toBe(200);
-      expect(mockGetUserIdentity).toHaveBeenCalled();
-      // resolveOrCreateUser should NOT have been called since there's no session
+      expect(startRes.status).toBe(401);
+      expect(mockGetUserIdentity).not.toHaveBeenCalled();
       expect(resolveOrCreateUser).not.toHaveBeenCalled();
     });
 
@@ -3066,7 +3064,7 @@ describe("createAuthRouter", () => {
       );
     });
 
-    it("falls back to TEST_USER_ID when no session", async () => {
+    it("returns 401 when no session", async () => {
       vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
       vi.mocked(validateSession).mockResolvedValue(null);
 
@@ -3096,23 +3094,9 @@ describe("createAuthRouter", () => {
 
       const { app } = createTestApp();
       const startRes = await request(app, "get", "/auth/provider/wahoo");
-      expect(startRes.status).toBe(302);
-      const location = startRes.headers.location;
-      if (typeof location !== "string") throw new Error("Expected location header");
-      const state = new URL(location).searchParams.get("state");
-
       const { ensureProvider } = await import("dofek/db/tokens");
-
-      const callbackRes = await request(app, "get", `/callback?code=default-code&state=${state}`);
-      expect(callbackRes.status).toBe(200);
-      // Should use TEST_USER_ID since there's no session
-      expect(ensureProvider).toHaveBeenCalledWith(
-        expect.anything(),
-        "wahoo",
-        "Wahoo",
-        undefined,
-        expect.any(String), // TEST_USER_ID
-      );
+      expect(startRes.status).toBe(401);
+      expect(ensureProvider).not.toHaveBeenCalled();
     });
   });
 
@@ -3289,6 +3273,11 @@ describe("oauthSuccessHtml", () => {
 
 describe("OAuth callback success responses include notification script", () => {
   it("credential providers are rejected at the OAuth route", async () => {
+    vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
+    vi.mocked(validateSession).mockResolvedValue({
+      userId: "user-1",
+      expiresAt: new Date("2027-01-01"),
+    });
     vi.mocked(getAllProviders).mockReturnValue([
       {
         id: "peloton",

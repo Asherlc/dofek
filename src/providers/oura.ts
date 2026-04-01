@@ -1484,7 +1484,12 @@ export class OuraProvider implements WebhookProvider {
                   resilienceLevel: parsed.resilienceLevel,
                 })
                 .onConflictDoUpdate({
-                  target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
+                  target: [
+                    dailyMetrics.userId,
+                    dailyMetrics.date,
+                    dailyMetrics.providerId,
+                    dailyMetrics.sourceName,
+                  ],
                   set: {
                     steps: parsed.steps,
                     restingHr: parsed.restingHr,
@@ -2008,7 +2013,12 @@ export class OuraProvider implements WebhookProvider {
                   resilienceLevel: parsed.resilienceLevel,
                 })
                 .onConflictDoUpdate({
-                  target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
+                  target: [
+                    dailyMetrics.userId,
+                    dailyMetrics.date,
+                    dailyMetrics.providerId,
+                    dailyMetrics.sourceName,
+                  ],
                   set: {
                     steps: parsed.steps,
                     restingHr: parsed.restingHr,

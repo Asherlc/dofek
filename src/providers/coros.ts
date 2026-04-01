@@ -409,7 +409,12 @@ export class CorosProvider implements WebhookProvider {
                     distanceKm: raw.distance ? raw.distance / 1000 : undefined,
                   })
                   .onConflictDoUpdate({
-                    target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
+                    target: [
+                      dailyMetrics.userId,
+                      dailyMetrics.date,
+                      dailyMetrics.providerId,
+                      dailyMetrics.sourceName,
+                    ],
                     set: {
                       steps: raw.steps,
                       restingHr: raw.restingHr,

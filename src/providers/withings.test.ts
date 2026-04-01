@@ -1,4 +1,10 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("../db/token-user-context.ts", () => ({
+  getTokenUserId: () => "user-1",
+  runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
+}));
+
 import { createMockDatabase } from "./test-helpers.ts";
 import {
   exchangeWithingsCode,

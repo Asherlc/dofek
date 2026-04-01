@@ -44,7 +44,9 @@ vi.mock("../logger.ts", () => ({
 }));
 
 vi.mock("dofek/db", () => ({
-  createDatabaseFromEnv: vi.fn(() => ({})),
+  createDatabaseFromEnv: vi.fn(() => ({
+    execute: vi.fn().mockResolvedValue([{ id: "test-user" }]),
+  })),
 }));
 
 import { createDatabaseFromEnv } from "dofek/db";

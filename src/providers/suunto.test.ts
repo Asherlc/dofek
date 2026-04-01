@@ -6,6 +6,11 @@ import {
   suuntoOAuthConfig,
 } from "./suunto.ts";
 
+vi.mock("../db/token-user-context.ts", () => ({
+  getTokenUserId: () => "user-1",
+  runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
+}));
+
 describe("mapSuuntoActivityType", () => {
   it("maps all known activity types", () => {
     expect(mapSuuntoActivityType(2)).toBe("running");

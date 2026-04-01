@@ -801,7 +801,12 @@ export class WhoopProvider implements SyncProvider {
                   skinTempC: parsed.skinTemp,
                 })
                 .onConflictDoUpdate({
-                  target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
+                  target: [
+                    dailyMetrics.userId,
+                    dailyMetrics.date,
+                    dailyMetrics.providerId,
+                    dailyMetrics.sourceName,
+                  ],
                   set: {
                     restingHr: parsed.restingHr,
                     hrv: parsed.hrv,

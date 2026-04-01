@@ -672,7 +672,12 @@ export class FitbitProvider implements WebhookProvider {
                   flightsClimbed: parsed.flightsClimbed,
                 })
                 .onConflictDoUpdate({
-                  target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
+                  target: [
+                    dailyMetrics.userId,
+                    dailyMetrics.date,
+                    dailyMetrics.providerId,
+                    dailyMetrics.sourceName,
+                  ],
                   set: {
                     steps: parsed.steps,
                     restingHr: parsed.restingHr,
@@ -902,7 +907,12 @@ export class FitbitProvider implements WebhookProvider {
                   flightsClimbed: parsed.flightsClimbed,
                 })
                 .onConflictDoUpdate({
-                  target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
+                  target: [
+                    dailyMetrics.userId,
+                    dailyMetrics.date,
+                    dailyMetrics.providerId,
+                    dailyMetrics.sourceName,
+                  ],
                   set: {
                     steps: parsed.steps,
                     restingHr: parsed.restingHr,

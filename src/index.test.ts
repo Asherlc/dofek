@@ -62,7 +62,9 @@ vi.mock("./providers/index.ts", () => ({
 }));
 
 vi.mock("./db/index.ts", () => ({
-  createDatabaseFromEnv: vi.fn(() => ({})),
+  createDatabaseFromEnv: vi.fn(() => ({
+    execute: vi.fn().mockResolvedValue([{ id: "test-user" }]),
+  })),
 }));
 
 vi.mock("./db/schema.ts", () => ({
@@ -370,8 +372,14 @@ describe("handleAuthCommand", () => {
       "strava",
       "Strava",
       "https://www.strava.com/api/v3",
+      "test-user",
     );
-    expect(mockSaveTokens).toHaveBeenCalledWith(expect.any(Object), "strava", mockTokens);
+    expect(mockSaveTokens).toHaveBeenCalledWith(
+      expect.any(Object),
+      "strava",
+      mockTokens,
+      "test-user",
+    );
     expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("[auth] Authorized!"));
     expect(mockLoggerInfo).toHaveBeenCalledWith("[auth] Tokens saved to database.");
   });
@@ -521,12 +529,17 @@ describe("handleAuthCommand", () => {
       "req-secret",
       "verifier-123",
     );
-    expect(mockSaveTokens).toHaveBeenCalledWith(expect.any(Object), "fatsecret", {
-      accessToken: "access-token-1",
-      refreshToken: "access-secret-1",
-      expiresAt: new Date("2099-12-31T23:59:59Z"),
-      scopes: "",
-    });
+    expect(mockSaveTokens).toHaveBeenCalledWith(
+      expect.any(Object),
+      "fatsecret",
+      {
+        accessToken: "access-token-1",
+        refreshToken: "access-secret-1",
+        expiresAt: new Date("2099-12-31T23:59:59Z"),
+        scopes: "",
+      },
+      "test-user",
+    );
     expect(mockExecFile).toHaveBeenCalledWith("open", ["https://fatsecret.com/auth"]);
     expect(mockLoggerInfo).toHaveBeenCalledWith("[auth] Requesting OAuth 1.0 request token...");
     expect(mockLoggerInfo).toHaveBeenCalledWith("[auth] Exchanging for access token...");

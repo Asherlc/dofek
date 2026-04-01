@@ -16,6 +16,11 @@ vi.mock("../db/tokens.ts", () => ({
   ensureProvider: vi.fn(),
 }));
 
+vi.mock("../db/token-user-context.ts", () => ({
+  getTokenUserId: () => "user-1",
+  runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
+}));
+
 vi.mock("../auth/oauth.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../auth/oauth.ts")>();
   return {

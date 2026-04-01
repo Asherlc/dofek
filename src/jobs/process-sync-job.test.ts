@@ -363,7 +363,13 @@ describe("processSyncJob", () => {
 
     await runSyncJob(createMockJob(), mockDb);
 
-    expect(mockEnsureProvider).toHaveBeenCalledWith(mockDb, "test", "Test Provider");
+    expect(mockEnsureProvider).toHaveBeenCalledWith(
+      mockDb,
+      "test",
+      "Test Provider",
+      undefined,
+      "user-1",
+    );
   });
 
   it("calls updateUserMaxHr and refreshDedupViews post-sync", async () => {

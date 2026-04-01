@@ -207,7 +207,12 @@ export class EightSleepProvider implements SyncProvider {
                   skinTempC: parsed.skinTempC,
                 })
                 .onConflictDoUpdate({
-                  target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
+                  target: [
+                    dailyMetrics.userId,
+                    dailyMetrics.date,
+                    dailyMetrics.providerId,
+                    dailyMetrics.sourceName,
+                  ],
                   set: {
                     restingHr: parsed.restingHr ? Math.round(parsed.restingHr) : undefined,
                     hrv: parsed.hrv,

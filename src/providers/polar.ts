@@ -741,7 +741,12 @@ export class PolarProvider implements WebhookProvider {
                   respiratoryRateAvg: parsed.respiratoryRateAvg,
                 })
                 .onConflictDoUpdate({
-                  target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
+                  target: [
+                    dailyMetrics.userId,
+                    dailyMetrics.date,
+                    dailyMetrics.providerId,
+                    dailyMetrics.sourceName,
+                  ],
                   set: {
                     steps: parsed.steps,
                     activeEnergyKcal: parsed.activeEnergyKcal,

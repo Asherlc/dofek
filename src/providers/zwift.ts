@@ -240,7 +240,12 @@ export class ZwiftProvider implements SyncProvider {
               vo2max: curve.vo2Max,
             })
             .onConflictDoUpdate({
-              target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
+              target: [
+                dailyMetrics.userId,
+                dailyMetrics.date,
+                dailyMetrics.providerId,
+                dailyMetrics.sourceName,
+              ],
               set: { vo2max: curve.vo2Max },
             });
 

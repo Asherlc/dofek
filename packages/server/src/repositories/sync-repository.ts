@@ -178,7 +178,11 @@ export class SyncRepository {
         COALESCE(lp.cnt, 0)::text AS lab_panels,
         COALESCE(lr.cnt, 0)::text AS lab_results,
         COALESCE(je.cnt, 0)::text AS journal_entries
-      FROM fitness.provider p
+      FROM (
+        SELECT DISTINCT provider_id AS id
+        FROM fitness.oauth_token
+        WHERE user_id = ${this.#userId}
+      ) p
       LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.activity WHERE user_id = ${this.#userId} GROUP BY provider_id) a ON a.provider_id = p.id
       LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.daily_metrics WHERE user_id = ${this.#userId} GROUP BY provider_id) dm ON dm.provider_id = p.id
       LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.sleep_session WHERE user_id = ${this.#userId} GROUP BY provider_id) ss ON ss.provider_id = p.id
