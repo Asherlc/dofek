@@ -19,6 +19,12 @@ services:
     restart: unless-stopped
     volumes:
       - /opt/dofek/updates:/usr/share/nginx/html/updates:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/ || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
     depends_on:
       - web
 
@@ -39,7 +45,6 @@ services:
 
   web:
     image: ${DOFEK_IMAGE:-ghcr.io/asherlc/dofek:latest}
-    hostname: dofek-web
     command: web
     restart: unless-stopped
     env_file: .env
@@ -73,6 +78,10 @@ services:
       timeout: 3s
       retries: 5
       start_period: 30s
+    networks:
+      default:
+        aliases:
+          - dofek-web
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -202,6 +211,8 @@ services:
       WATCHTOWER_CLEANUP: "true"
       WATCHTOWER_INCLUDE_STOPPED: "true"
       WATCHTOWER_REVIVE_STOPPED: "false"
+      # With 2 replicas for web/client, rolling restart keeps at least one
+      # serving instance available during image updates.
       WATCHTOWER_ROLLING_RESTART: "true"
       WATCHTOWER_STOP_TIMEOUT: "2100"
     volumes:

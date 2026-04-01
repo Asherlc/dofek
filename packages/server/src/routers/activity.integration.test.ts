@@ -1,4 +1,6 @@
+import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { DEFAULT_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
@@ -8,14 +10,73 @@ describe("Activity router", () => {
   let baseUrl: string;
   let testCtx: TestContext;
   let sessionCookie: string;
-
-  const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
+  let metricOnlyActivityId: string;
 
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
 
     const session = await createSession(testCtx.db, DEFAULT_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
+
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES ('test_provider', 'Test Provider', ${DEFAULT_USER_ID})
+          ON CONFLICT DO NOTHING`,
+    );
+
+    await testCtx.db.execute(
+      sql`UPDATE fitness.user_profile
+          SET max_hr = 190
+          WHERE id = ${DEFAULT_USER_ID}`,
+    );
+
+    const insertedActivities = await testCtx.db.execute<{ id: string }>(
+      sql`INSERT INTO fitness.activity (
+            provider_id, user_id, activity_type, started_at, ended_at, name
+          ) VALUES (
+            'test_provider',
+            ${DEFAULT_USER_ID},
+            'running',
+            CURRENT_TIMESTAMP - INTERVAL '2 days',
+            CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '30 minutes',
+            'Metric Stream Only Activity'
+          ) RETURNING id`,
+    );
+    const activityId = insertedActivities[0]?.id;
+    if (!activityId) {
+      throw new Error("Failed to insert test activity");
+    }
+    metricOnlyActivityId = activityId;
+
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.metric_stream (
+            recorded_at, user_id, activity_id, provider_id, heart_rate, power, speed, cadence
+          ) VALUES
+          (
+            CURRENT_TIMESTAMP - INTERVAL '2 days',
+            ${DEFAULT_USER_ID},
+            ${metricOnlyActivityId},
+            'test_provider',
+            150, 210, 3.8, 88
+          ),
+          (
+            CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '1 second',
+            ${DEFAULT_USER_ID},
+            ${metricOnlyActivityId},
+            'test_provider',
+            152, 215, 3.9, 89
+          ),
+          (
+            CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '2 seconds',
+            ${DEFAULT_USER_ID},
+            ${metricOnlyActivityId},
+            'test_provider',
+            155, 220, 4.0, 90
+          )`,
+    );
+
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`);
 
     const app = createApp(testCtx.db);
     await new Promise<void>((resolve) => {
@@ -63,6 +124,22 @@ describe("Activity router", () => {
     });
   });
 
+  describe("list", () => {
+    it("falls back to metric_stream-backed summary when sensor_sample rows are not available yet", async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      const result = await query("activity.list", {
+        days: 30,
+        endDate: today,
+        limit: 20,
+        offset: 0,
+      });
+      const items: Array<{ id: string; avg_hr: number | null }> = result.result?.data?.items ?? [];
+      const insertedActivity = items.find((item) => item.id === metricOnlyActivityId);
+      expect(insertedActivity).toBeDefined();
+      expect(insertedActivity?.avg_hr).toBeCloseTo(152.3333, 4);
+    });
+  });
+
   describe("stream", () => {
     it("returns empty array for non-existent activity", async () => {
       const result = await query("activity.stream", {
@@ -88,6 +165,18 @@ describe("Activity router", () => {
       });
       expect(result.error).toBeDefined();
       expect(result.error.data.code).toBe("BAD_REQUEST");
+    });
+
+    it("falls back to metric_stream when sensor_sample rows are not available yet", async () => {
+      const result = await query("activity.stream", {
+        id: metricOnlyActivityId,
+        maxPoints: 500,
+      });
+      const points = result.result?.data;
+      expect(Array.isArray(points)).toBe(true);
+      expect(points.length).toBeGreaterThan(0);
+      expect(points[0]?.heartRate).toBe(150);
+      expect(points[0]?.power).toBe(210);
     });
   });
 
@@ -120,6 +209,15 @@ describe("Activity router", () => {
         expect(zones[4].minPct).toBe(90);
         expect(zones[4].maxPct).toBe(100);
       }
+    });
+
+    it("falls back to metric_stream when sensor_sample rows are not available yet", async () => {
+      const result = await query("activity.hrZones", {
+        id: metricOnlyActivityId,
+      });
+      const zones: Array<{ seconds: number }> = result.result?.data ?? [];
+      const totalSecondsInZones = zones.reduce((sum, zone) => sum + zone.seconds, 0);
+      expect(totalSecondsInZones).toBeGreaterThan(0);
     });
   });
 

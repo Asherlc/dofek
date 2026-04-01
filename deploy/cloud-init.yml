@@ -26,4 +26,4 @@ write_files:
 runcmd:
   - curl -fsSL https://get.docker.com | sh
   - echo '${ghcr_token}' | docker login ghcr.io -u ${ghcr_username} --password-stdin
-  - cd /opt/dofek && docker compose up -d
+  - cd /opt/dofek && docker compose up -d --scale web=2 --scale client=2
