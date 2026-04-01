@@ -1245,8 +1245,8 @@ jobs:
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          AWS_REGION: auto
-          AWS_DEFAULT_REGION: auto
+          AWS_REGION: WEUR
+          AWS_DEFAULT_REGION: WEUR
         run: |
           set -euo pipefail
           : "${R2_ENDPOINT:?Missing R2_ENDPOINT}"
@@ -1265,7 +1265,7 @@ jobs:
           if [ -d "$STAGING_DIR/bundles" ]; then
             aws s3 cp "$STAGING_DIR/bundles/" "$R2_RELEASE_URL/bundles/" \
               --recursive \
-              --region auto \
+              --region WEUR \
               --endpoint-url "$R2_ENDPOINT" \
               --cache-control "public, immutable, max-age=31536000"
           fi
@@ -1273,13 +1273,13 @@ jobs:
           if [ -d "$STAGING_DIR/assets" ]; then
             aws s3 cp "$STAGING_DIR/assets/" "$R2_RELEASE_URL/assets/" \
               --recursive \
-              --region auto \
+              --region WEUR \
               --endpoint-url "$R2_ENDPOINT" \
               --cache-control "public, immutable, max-age=31536000"
           fi
 
           aws s3 cp "$STAGING_DIR/metadata.json" "$R2_RELEASE_URL/metadata.json" \
-            --region auto \
+            --region WEUR \
             --endpoint-url "$R2_ENDPOINT" \
             --content-type "application/json" \
             --cache-control "no-cache"
@@ -1287,7 +1287,7 @@ jobs:
           POINTER_FILE="$RUNNER_TEMP/current-release.json"
           printf '{"releaseId":"%s"}\n' "$RELEASE_ID" > "$POINTER_FILE"
           aws s3 cp "$POINTER_FILE" "$R2_POINTER_URL" \
-            --region auto \
+            --region WEUR \
             --endpoint-url "$R2_ENDPOINT" \
             --content-type "application/json" \
             --cache-control "no-cache"
