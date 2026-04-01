@@ -390,6 +390,30 @@ No SSH to the server needed. The credentials flow through the Docker image.
 
 **Important:** `sops exec-env` decrypted vars override Docker/compose env vars. Never put `DATABASE_URL` in the SOPS `.env` — it must come from the compose file.
 
+### DNS Terraform secrets
+
+Use the same SOPS pattern for `deploy/dns/terraform.tfvars`. The encrypted file is safe to commit; if you need a plaintext scratch file while debugging, use `deploy/dns/terraform.tfvars.plain` and never commit it.
+
+Create or edit the encrypted DNS vars:
+
+```bash
+sops deploy/dns/terraform.tfvars
+```
+
+Suggested contents:
+
+```hcl
+cloudflare_api_token  = "..."
+cloudflare_account_id = "..."
+server_ip             = "..."
+```
+
+Apply without leaving decrypted tfvars on disk:
+
+```bash
+sops exec-file deploy/dns/terraform.tfvars '/opt/homebrew/bin/terraform -chdir=deploy/dns apply -var-file={}'
+```
+
 ### Troubleshooting
 
 **Login page says "No identity providers configured"** — this usually means the API server (`web`) is down, not that providers are misconfigured. The login page silently shows this message when it can't reach `/api/auth/providers`. Check `docker ps` and `docker logs dofek-web-1`.
