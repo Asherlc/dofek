@@ -110,7 +110,7 @@ async function startDataProviderOAuth(
 
   const provider = getAllProviders().find((p) => p.id === providerId);
   if (!provider) {
-    res.status(404).send(`Unknown provider: ${providerId}`);
+    res.status(404).send("Unknown provider");
     return;
   }
 
@@ -614,7 +614,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
 
       const provider = getAllProviders().find((p) => p.id === req.params.provider);
       if (!provider) {
-        res.status(404).send(`Unknown provider: ${req.params.provider}`);
+        res.status(404).send("Unknown provider");
         return;
       }
 
@@ -674,7 +674,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
 
         const provider = getAllProviders().find((p) => p.id === stored.providerId);
         if (!provider) {
-          res.status(404).send(`Unknown provider: ${stored.providerId}`);
+          res.status(404).send("Unknown provider");
           return;
         }
 
@@ -859,7 +859,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
 
       const provider = getAllProviders().find((p) => p.id === providerId);
       if (!provider) {
-        res.status(404).send(`Unknown provider: ${providerId}`);
+        res.status(404).send("Unknown provider");
         return;
       }
 

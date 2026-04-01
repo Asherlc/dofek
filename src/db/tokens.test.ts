@@ -48,9 +48,19 @@ describe("ensureProvider", () => {
   });
 
   it("throws when userId is not provided and context is absent", async () => {
-    await expect(ensureProvider(mock.db, "wahoo", "Wahoo")).rejects.toThrow(
-      "Token operation requires userId",
-    );
+    const priorTokenUserId = process.env.TEST_TOKEN_USER_ID;
+    delete process.env.TEST_TOKEN_USER_ID;
+    try {
+      await expect(ensureProvider(mock.db, "wahoo", "Wahoo")).rejects.toThrow(
+        "Token operation requires userId",
+      );
+    } finally {
+      if (priorTokenUserId) {
+        process.env.TEST_TOKEN_USER_ID = priorTokenUserId;
+      } else {
+        delete process.env.TEST_TOKEN_USER_ID;
+      }
+    }
   });
 
   it("returns the provider id", async () => {

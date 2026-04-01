@@ -11,7 +11,8 @@ export function getTokenUserId(): string | undefined {
   if (scopedUserId) {
     return scopedUserId;
   }
-  if (process.env.VITEST === "true") {
+  // Test runners can provide a default scoped user via env when no async context is active.
+  if (process.env.TEST_TOKEN_USER_ID) {
     return process.env.TEST_TOKEN_USER_ID;
   }
   return undefined;
