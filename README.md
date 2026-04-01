@@ -474,6 +474,9 @@ See `packages/server/src/routers/life-events.ts` for the API and `packages/web/s
 - [x] Watchtower auto-deploy with Slack notifications
 - [x] CLI for authenticating, pulling, and managing providers (`sync`, `auth`, `import` commands)
 
+### Authentication Follow-ups
+- [ ] When a user signs up with any provider that does not give us an email, require them to enter their email manually before completing signup/account linking
+
 ## Authentication
 
 The web UI requires sign-in via an identity provider (OIDC). Supported providers:
