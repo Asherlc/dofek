@@ -808,6 +808,16 @@ describe("createAuthRouter", () => {
       expect(res.body).toContain("Missing code or state");
     });
 
+    it("returns helpful hint for unknown state on localhost", async () => {
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/callback?code=abc&state=unknown", {
+        headers: { host: "localhost:3000" },
+      });
+      expect(res.status).toBe(400);
+      expect(res.body).toContain("Unknown or expired OAuth state");
+      expect(res.body).toContain("Try setting OAUTH_REDIRECT_URI_unencrypted");
+    });
+
     it("succeeds with server-side state when cookies are missing (Apple form_post)", async () => {
       const mockValidate = vi.fn(() =>
         Promise.resolve({
