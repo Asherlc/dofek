@@ -408,7 +408,8 @@
     "jdoe",
     "AQID",
     "BAUG",
-    "bralette"
+    "bralette",
+    "autodocs"
   ],
   "flagWords": [],
   "useGitignore": false,
