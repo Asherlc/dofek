@@ -299,6 +299,7 @@ describe("wahooOAuthConfig", () => {
     expect(config).not.toBeNull();
     expect(config?.clientId).toBe("test-id");
     expect(config?.clientSecret).toBe("test-secret");
+    expect(config?.scopes).toContain("email");
     expect(config?.scopes).toContain("workouts_read");
   });
 
