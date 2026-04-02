@@ -1775,7 +1775,11 @@ describe("createAuthRouter", () => {
 
       const { app } = createTestApp();
 
-      const startRes = await request(app, "get", "/auth/login/data/strava");
+      const startRes = await request(
+        app,
+        "get",
+        "/auth/login/data/strava?return_to=%2Fdashboard%3Ftab%3Dproviders",
+      );
       const location = startRes.headers.location;
       if (typeof location !== "string") throw new Error("Expected location header");
       const state = new URL(location).searchParams.get("state");
@@ -1794,7 +1798,7 @@ describe("createAuthRouter", () => {
       const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
 
       expect(completeRes.status).toBe(302);
-      expect(completeRes.headers.location).toBe("/");
+      expect(completeRes.headers.location).toBe("/dashboard?tab=providers");
       expect(resolveOrCreateUser).toHaveBeenLastCalledWith(
         expect.anything(),
         "strava",
@@ -1818,6 +1822,60 @@ describe("createAuthRouter", () => {
       });
       expect(createSession).toHaveBeenCalled();
       expect(setSessionCookie).toHaveBeenCalled();
+    });
+
+    it("returns a callback error when provider login fails for a reason other than missing email", async () => {
+      const mockExchangeCode = vi.fn(() =>
+        Promise.resolve({
+          accessToken: "login-error-access-token",
+          refreshToken: "login-error-refresh-token",
+          expiresAt: new Date("2027-06-01"),
+          scopes: "read",
+        }),
+      );
+      const mockGetUserIdentity = vi.fn(() =>
+        Promise.resolve({
+          providerAccountId: "strava-login-error-1",
+          email: null,
+          name: "Runner",
+        }),
+      );
+      vi.mocked(resolveOrCreateUser).mockRejectedValueOnce(new Error("database offline"));
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "strava",
+          name: "Strava",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://www.strava.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["read"],
+            },
+            exchangeCode: mockExchangeCode,
+            getUserIdentity: mockGetUserIdentity,
+            identityCapabilities: { providesEmail: false },
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+
+      const startRes = await request(app, "get", "/auth/login/data/strava");
+      const location = startRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const state = new URL(location).searchParams.get("state");
+
+      const callbackRes = await request(
+        app,
+        "get",
+        `/callback?code=strava-login-error-code&state=${state}`,
+      );
+
+      expect(callbackRes.status).toBe(500);
+      expect(callbackRes.body).toContain("Token exchange failed");
+      expect(createSession).not.toHaveBeenCalled();
+      expect(setSessionCookie).not.toHaveBeenCalled();
     });
 
     it("completes pending signup after collecting email on mobile", async () => {
@@ -1961,6 +2019,153 @@ describe("createAuthRouter", () => {
         undefined,
         "retry-user",
       );
+    });
+
+    it("rejects complete-signup requests without a token", async () => {
+      const { app } = createTestApp();
+
+      const res = await request(app, "post", "/auth/complete-signup", {
+        formBody: { email: "runner@example.com" },
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toContain("Missing signup token");
+    });
+
+    it("rejects expired complete-signup tokens", async () => {
+      const { app } = createTestApp();
+
+      const res = await request(app, "post", "/auth/complete-signup", {
+        formBody: { token: "expired-signup-token", email: "runner@example.com" },
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toContain("Signup session expired");
+    });
+
+    it("re-renders the manual signup form when the submitted email is invalid", async () => {
+      const mockExchangeCode = vi.fn(() =>
+        Promise.resolve({
+          accessToken: "invalid-email-access-token",
+          refreshToken: "invalid-email-refresh-token",
+          expiresAt: new Date("2027-06-01"),
+          scopes: "read",
+        }),
+      );
+      const mockGetUserIdentity = vi.fn(() =>
+        Promise.resolve({
+          providerAccountId: "strava-invalid-email-1",
+          email: null,
+          name: "Runner",
+        }),
+      );
+      vi.mocked(resolveOrCreateUser).mockRejectedValueOnce(
+        new MissingEmailForSignupError("Strava"),
+      );
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "strava",
+          name: "Strava",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://www.strava.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["read"],
+            },
+            exchangeCode: mockExchangeCode,
+            getUserIdentity: mockGetUserIdentity,
+            identityCapabilities: { providesEmail: false },
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+
+      const startRes = await request(app, "get", "/auth/login/data/strava");
+      const location = startRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const state = new URL(location).searchParams.get("state");
+      const callbackRes = await request(
+        app,
+        "get",
+        `/callback?code=strava-invalid-email-code&state=${state}`,
+      );
+      const tokenMatch = callbackRes.body.match(/name="token" value="([^"]+)"/);
+      const token = tokenMatch?.[1];
+      if (!token) throw new Error("Expected pending signup token in form");
+
+      const completeRes = await request(app, "post", "/auth/complete-signup", {
+        formBody: { token, email: "not-an-email" },
+      });
+
+      expect(completeRes.status).toBe(400);
+      expect(completeRes.body).toContain("Enter a valid email address.");
+      expect(completeRes.body).toContain('value="not-an-email"');
+    });
+
+    it("fails complete-signup if the provider is no longer registered", async () => {
+      const mockExchangeCode = vi.fn(() =>
+        Promise.resolve({
+          accessToken: "missing-provider-access-token",
+          refreshToken: "missing-provider-refresh-token",
+          expiresAt: new Date("2027-06-01"),
+          scopes: "read",
+        }),
+      );
+      const mockGetUserIdentity = vi.fn(() =>
+        Promise.resolve({
+          providerAccountId: "strava-missing-provider-1",
+          email: null,
+          name: "Runner",
+        }),
+      );
+      vi.mocked(resolveOrCreateUser)
+        .mockRejectedValueOnce(new MissingEmailForSignupError("Strava"))
+        .mockResolvedValueOnce({ userId: "missing-provider-user", isNewUser: true });
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "strava",
+          name: "Strava",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://www.strava.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["read"],
+            },
+            exchangeCode: mockExchangeCode,
+            getUserIdentity: mockGetUserIdentity,
+            identityCapabilities: { providesEmail: false },
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+
+      const startRes = await request(app, "get", "/auth/login/data/strava");
+      const location = startRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const state = new URL(location).searchParams.get("state");
+      const callbackRes = await request(
+        app,
+        "get",
+        `/callback?code=strava-missing-provider-code&state=${state}`,
+      );
+      const tokenMatch = callbackRes.body.match(/name="token" value="([^"]+)"/);
+      const token = tokenMatch?.[1];
+      if (!token) throw new Error("Expected pending signup token in form");
+
+      vi.mocked(getAllProviders).mockReturnValue([]);
+
+      const completeRes = await request(app, "post", "/auth/complete-signup", {
+        formBody: { token, email: "runner@example.com" },
+      });
+      const { ensureProvider } = await import("dofek/db/tokens");
+
+      expect(completeRes.status).toBe(500);
+      expect(completeRes.body).toContain("Provider no longer available");
+      expect(ensureProvider).not.toHaveBeenCalled();
     });
 
     it("handles link intent: links provider and redirects to /settings", async () => {
