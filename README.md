@@ -46,11 +46,12 @@ docker compose up -d db redis
 # Install dependencies
 pnpm install
 
-# Run migrations
+# Set up SOPS age key (see "Secrets" section below), then edit secrets with:
+sops .env
+
+# Run migrations (requires SOPS age key to decrypt .env)
 pnpm migrate
 
-# Set up SOPS age key (see "Secrets" section below)
-# Then edit secrets with: sops .env
 pnpm sync
 ```
 
