@@ -3,13 +3,14 @@ import { getRedisConnection } from "dofek/jobs/queues";
 import { z } from "zod";
 
 const CHALLENGE_KEY_PREFIX = "whoop:verification:";
-const DEFAULT_CHALLENGE_TTL_MS = 10 * 60 * 1000;
+export const DEFAULT_CHALLENGE_TTL_MS = 10 * 60 * 1000;
 
 export interface WhoopVerificationChallenge {
   session: string;
   method: string;
   username: string;
   expiresAt: number;
+  userId: string;
 }
 
 interface RedisChallengeClient {
@@ -23,6 +24,7 @@ const whoopVerificationChallengeSchema = z.object({
   method: z.string(),
   username: z.string(),
   expiresAt: z.number(),
+  userId: z.string(),
 });
 
 export interface WhoopVerificationChallengeStore {
@@ -93,15 +95,20 @@ export class RedisWhoopVerificationChallengeStore implements WhoopVerificationCh
       return null;
     }
 
-    const parsedChallenge = whoopVerificationChallengeSchema.safeParse(
-      JSON.parse(challengePayload),
-    );
-    if (!parsedChallenge.success) {
+    try {
+      const parsedChallenge = whoopVerificationChallengeSchema.safeParse(
+        JSON.parse(challengePayload),
+      );
+      if (!parsedChallenge.success) {
+        await redisClient.del(challengeKey);
+        return null;
+      }
+
+      return parsedChallenge.data;
+    } catch {
       await redisClient.del(challengeKey);
       return null;
     }
-
-    return parsedChallenge.data;
   }
 
   async delete(challengeId: string): Promise<void> {

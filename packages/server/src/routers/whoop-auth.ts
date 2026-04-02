@@ -2,7 +2,10 @@ import { ensureProvider, saveTokens } from "dofek/db/tokens";
 import { WhoopClient } from "whoop-whoop";
 import { z } from "zod";
 import { queryCache } from "../lib/cache.ts";
-import { getWhoopVerificationChallengeStore } from "../lib/whoop-verification-challenge-store.ts";
+import {
+  DEFAULT_CHALLENGE_TTL_MS,
+  getWhoopVerificationChallengeStore,
+} from "../lib/whoop-verification-challenge-store.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 
 const challengeStore = getWhoopVerificationChallengeStore();
@@ -11,7 +14,7 @@ export const whoopAuthRouter = router({
   /** Step 1: Sign in with email + password via Cognito */
   signIn: protectedProcedure
     .input(z.object({ username: z.string(), password: z.string() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const result = await WhoopClient.signIn(input.username, input.password);
 
       if (result.type === "verification_required") {
@@ -21,7 +24,8 @@ export const whoopAuthRouter = router({
           session: result.session,
           method: result.method,
           username: input.username,
-          expiresAt: Date.now() + 10 * 60 * 1000, // 10 min TTL
+          expiresAt: Date.now() + DEFAULT_CHALLENGE_TTL_MS,
+          userId: ctx.userId,
         });
 
         return {
@@ -46,11 +50,16 @@ export const whoopAuthRouter = router({
   /** Step 2: Submit MFA verification code via Cognito RespondToAuthChallenge */
   verifyCode: protectedProcedure
     .input(z.object({ challengeId: z.string(), code: z.string() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const challenge = await challengeStore.get(input.challengeId);
       if (!challenge) {
         throw new Error("Verification session expired or not found");
       }
+
+      if (challenge.userId !== ctx.userId) {
+        throw new Error("Verification session not owned by current user");
+      }
+
       if (challenge.expiresAt < Date.now()) {
         await challengeStore.delete(input.challengeId);
         throw new Error("Verification session expired — please sign in again");

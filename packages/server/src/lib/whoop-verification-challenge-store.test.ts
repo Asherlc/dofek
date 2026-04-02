@@ -13,6 +13,7 @@ describe("InMemoryWhoopVerificationChallengeStore", () => {
       method: "sms",
       username: "user@example.com",
       expiresAt: Date.now() + 60_000,
+      userId: "user-123",
     });
 
     expect(await challengeStore.get("challenge-1")).toEqual({
@@ -20,6 +21,7 @@ describe("InMemoryWhoopVerificationChallengeStore", () => {
       method: "sms",
       username: "user@example.com",
       expiresAt: expect.any(Number),
+      userId: "user-123",
     });
 
     await challengeStore.delete("challenge-1");
@@ -28,22 +30,26 @@ describe("InMemoryWhoopVerificationChallengeStore", () => {
 
   it("expires challenge sessions after ttl", async () => {
     vi.useFakeTimers();
-    const challengeStore = new InMemoryWhoopVerificationChallengeStore();
+    try {
+      const challengeStore = new InMemoryWhoopVerificationChallengeStore();
 
-    await challengeStore.save(
-      "challenge-expiring",
-      {
-        session: "session-expiring",
-        method: "sms",
-        username: "user@example.com",
-        expiresAt: Date.now() + 100,
-      },
-      100,
-    );
+      await challengeStore.save(
+        "challenge-expiring",
+        {
+          session: "session-expiring",
+          method: "sms",
+          username: "user@example.com",
+          expiresAt: Date.now() + 100,
+          userId: "user-123",
+        },
+        100,
+      );
 
-    vi.advanceTimersByTime(101);
-    expect(await challengeStore.get("challenge-expiring")).toBeNull();
-    vi.useRealTimers();
+      vi.advanceTimersByTime(101);
+      expect(await challengeStore.get("challenge-expiring")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -56,6 +62,7 @@ describe("RedisWhoopVerificationChallengeStore", () => {
         method: "sms",
         username: "user@example.com",
         expiresAt: 12345,
+        userId: "user-123",
       }),
     );
     const deleteMethod = vi.fn(async () => 1);
@@ -71,6 +78,7 @@ describe("RedisWhoopVerificationChallengeStore", () => {
       method: "sms",
       username: "user@example.com",
       expiresAt: 12345,
+      userId: "user-123",
     });
 
     expect(setMethod).toHaveBeenCalledWith(
@@ -86,6 +94,7 @@ describe("RedisWhoopVerificationChallengeStore", () => {
       method: "sms",
       username: "user@example.com",
       expiresAt: 12345,
+      userId: "user-123",
     });
 
     await challengeStore.delete("challenge-redis");
@@ -100,6 +109,23 @@ describe("RedisWhoopVerificationChallengeStore", () => {
     }));
 
     await expect(challengeStore.get("missing-challenge")).resolves.toBeNull();
+  });
+
+  it("returns null and deletes the key when redis returns invalid JSON", async () => {
+    const setMethod = vi.fn(async () => "OK");
+    const getMethod = vi.fn(async () => "{invalid json");
+    const deleteMethod = vi.fn(async () => 1);
+
+    const challengeStore = new RedisWhoopVerificationChallengeStore(async () => ({
+      set: setMethod,
+      get: getMethod,
+      del: deleteMethod,
+    }));
+
+    const result = await challengeStore.get("challenge-redis-invalid-json");
+
+    expect(result).toBeNull();
+    expect(deleteMethod).toHaveBeenCalledWith("whoop:verification:challenge-redis-invalid-json");
   });
 
   it("deletes invalid challenge payloads from redis", async () => {
@@ -123,6 +149,7 @@ describe("RedisWhoopVerificationChallengeStore", () => {
         method: "sms",
         username: "user@example.com",
         expiresAt: 1234,
+        userId: "user-456",
       }),
     );
     const redisDelete = vi.fn(async () => 1);
@@ -166,12 +193,14 @@ describe("RedisWhoopVerificationChallengeStore", () => {
         method: "sms",
         username: "user@example.com",
         expiresAt: 1234,
+        userId: "user-456",
       });
       await expect(challengeStore.get("challenge-shared")).resolves.toEqual({
         session: "shared-session",
         method: "sms",
         username: "user@example.com",
         expiresAt: 1234,
+        userId: "user-456",
       });
       await challengeStore.delete("challenge-shared");
 

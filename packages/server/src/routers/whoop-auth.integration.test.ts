@@ -187,6 +187,7 @@ describe("whoopAuth router", () => {
           method: "sms",
           username: "user@test.com",
           expiresAt: Date.now() - 1_000,
+          userId: DEFAULT_USER_ID,
         },
         60_000,
       );
@@ -198,6 +199,30 @@ describe("whoopAuth router", () => {
 
       expect(result?.error).toBeDefined();
       expect(await challengeStore.get(challengeId)).toBeNull();
+    });
+
+    it("rejects verification challenges owned by another user", async () => {
+      const challengeStore = getWhoopVerificationChallengeStore();
+      const challengeId = "someone-elses-challenge";
+      await challengeStore.save(
+        challengeId,
+        {
+          session: "stolen-session",
+          method: "sms",
+          username: "victim@test.com",
+          expiresAt: Date.now() + 60_000,
+          userId: "another-user-id",
+        },
+        60_000,
+      );
+
+      const { result } = await mutate("whoopAuth.verifyCode", {
+        challengeId,
+        code: "123456",
+      });
+
+      expect(result?.error?.message).toContain("Verification session not owned by current user");
+      expect(await challengeStore.get(challengeId)).toBeDefined();
     });
   });
 
