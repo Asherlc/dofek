@@ -1,13 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  handleAuthCommand,
-  handleImportCommand,
-  handleSyncCommand,
-  main,
-} from "./index.ts";
-import { importAppleHealthFile } from "./providers/apple-health/index.ts";
-import { getAllProviders, getEnabledSyncProviders } from "./providers/index.ts";
-
 
 // ── Mock setup ──
 
@@ -121,7 +112,9 @@ process.argv = ["node", "test", "__test_noop__"];
 
 const suppressRejection = () => {};
 process.on("unhandledRejection", suppressRejection);
-const { handleSyncCommand, handleAuthCommand, handleImportCommand } = await import("./index.ts");
+const { handleSyncCommand, handleAuthCommand, handleImportCommand, main } = await import(
+  "./index.ts"
+);
 await new Promise((resolve) => setTimeout(resolve, 0));
 process.off("unhandledRejection", suppressRejection);
 
@@ -896,16 +889,18 @@ describe("handleImportCommand", () => {
   it("does not iterate and log error items when errors.length is zero", async () => {
     // This leaky iterator will throw if the mutant 'if (true)' is active
     // and the code attempts to enter the for-of loop when length is 0.
-    const failingIterator = {
-      length: 0,
-      [Symbol.iterator]: vi.fn(() => {
-        throw new Error("Should not be iterated when length is 0");
-      }),
-    };
+    const failingErrors: Array<{ message: string }> = [];
+    const iteratorSpy = vi.fn(() => {
+      throw new Error("Should not be iterated when length is 0");
+    });
+    Object.defineProperty(failingErrors, Symbol.iterator, {
+      value: iteratorSpy,
+      configurable: true,
+    });
 
     mockImportAppleHealthFile.mockResolvedValue({
       recordsSynced: 1,
-      errors: failingIterator as unknown as Array<{ message: string }>,
+      errors: failingErrors,
       duration: 10,
     });
 
@@ -919,7 +914,7 @@ describe("handleImportCommand", () => {
 
     expect(code).toBe(0);
     expect(mockLoggerError).not.toHaveBeenCalled();
-    expect(failingIterator[Symbol.iterator]).not.toHaveBeenCalled();
+    expect(iteratorSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -929,9 +924,11 @@ describe("main", () => {
 
   beforeEach(() => {
     // Correctly type the mock implementation to match process.exit
-    mockProcessExit = vi.spyOn(process, "exit").mockImplementation((_code?: string | number | null) => {
-      throw new Error("process.exit should not be called in test");
-    });
+    mockProcessExit = vi
+      .spyOn(process, "exit")
+      .mockImplementation((_code?: string | number | null) => {
+        throw new Error("process.exit should not be called in test");
+      });
     originalArgv = process.argv;
   });
 
@@ -942,9 +939,11 @@ describe("main", () => {
 
   it("exits with 1 for unknown command", async () => {
     process.argv = ["node", "index.ts", "unknown"];
-    mockProcessExit.mockImplementation((() => {}) as any);
+    mockProcessExit.mockImplementation((_code?: string | number | null) => {
+      throw new Error("exit-called");
+    });
 
-    await main();
+    await expect(main()).rejects.toThrow("exit-called");
 
     expect(mockProcessExit).toHaveBeenCalledWith(1);
     expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining("Unknown command"));
@@ -952,11 +951,15 @@ describe("main", () => {
 
   it("calls handleSyncCommand for 'sync'", async () => {
     process.argv = ["node", "index.ts", "sync"];
-    mockProcessExit.mockImplementation((() => {}) as any);
+    mockProcessExit.mockImplementation((_code?: string | number | null) => {
+      throw new Error("exit-called");
+    });
+    mockWaitUntilFinished.mockResolvedValue(undefined);
+    mockAdd.mockResolvedValue({ waitUntilFinished: mockWaitUntilFinished });
     mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
     process.env.DOFEK_USER_ID = "test-user";
 
-    await main();
+    await expect(main()).rejects.toThrow("exit-called");
 
     expect(mockProcessExit).toHaveBeenCalledWith(0);
   });
