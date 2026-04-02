@@ -550,7 +550,7 @@ Each provider is enabled by adding its credentials to `.env` (SOPS-encrypted). O
 | Cronometer | File import | Nutrition | None (upload `.csv` via web UI or share to iOS app) |
 | Auto-Supplements | Config-based | Daily supplement entries | None (configured in UI) |
 
-OAuth providers also need `OAUTH_REDIRECT_URI` set to your deployment's callback URL (e.g. `https://dofek.asherlc.com/callback`). After adding credentials, click the provider tile on the Data Sources page to complete the OAuth flow.
+OAuth providers also need a callback URL env var pointing at your deployment's `/callback` route (for example `https://dofek.asherlc.com/callback`). Most providers read `OAUTH_REDIRECT_URI`; some use the plaintext SOPS helper key `OAUTH_REDIRECT_URI_unencrypted` shown in `.env.example`, so set the one your provider uses or set both to the same value. After adding credentials, click the provider tile on the Data Sources page to complete the OAuth flow.
 
 ### Reverse-Engineered API Packages (7)
 
