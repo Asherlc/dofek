@@ -364,6 +364,7 @@ describe("WahooProvider.authSetup()", () => {
     expect(setup.oauthConfig.clientId).toBe("test-id");
     expect(setup.exchangeCode).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toBe("https://api.wahooligan.com");
+    expect(setup.identityCapabilities?.providesEmail).toBe(false);
   });
 
   it("throws when env vars are missing", () => {
@@ -669,7 +670,7 @@ describe("WahooProvider.getUserIdentity()", () => {
     process.env = { ...originalEnv };
   });
 
-  it("returns identity from user API", async () => {
+  it("returns identity from user API without relying on email", async () => {
     process.env.WAHOO_CLIENT_ID = "test-id";
     process.env.WAHOO_CLIENT_SECRET = "test-secret";
 
@@ -687,7 +688,7 @@ describe("WahooProvider.getUserIdentity()", () => {
     if (!setup.getUserIdentity) throw new Error("getUserIdentity not defined");
     const identity = await setup.getUserIdentity("test-token");
     expect(identity.providerAccountId).toBe("42");
-    expect(identity.email).toBe("user@wahoo.com");
+    expect(identity.email).toBeNull();
     expect(identity.name).toBe("John Smith");
   });
 

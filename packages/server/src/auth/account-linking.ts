@@ -17,6 +17,17 @@ export interface ResolveUserResult {
   isNewUser: boolean;
 }
 
+export interface ResolveOrCreateUserOptions {
+  requireEmailForNewUser?: boolean;
+}
+
+export class MissingEmailForSignupError extends Error {
+  constructor(providerName: string) {
+    super(`Email is required to finish signing up with ${providerName}`);
+    this.name = "MissingEmailForSignupError";
+  }
+}
+
 /**
  * Resolve or create a user from an identity provider's claims.
  *
@@ -35,6 +46,7 @@ export async function resolveOrCreateUser(
   providerName: string,
   identity: ProviderIdentity,
   loggedInUserId?: string,
+  options?: ResolveOrCreateUserOptions,
 ): Promise<ResolveUserResult> {
   // 1. Logged-in linking: always link to the current user
   if (loggedInUserId) {
@@ -96,6 +108,10 @@ export async function resolveOrCreateUser(
       );
       return { userId: crossMatched.user_id, isNewUser: false };
     }
+  }
+
+  if (!identity.email && options?.requireEmailForNewUser) {
+    throw new MissingEmailForSignupError(providerName);
   }
 
   // 4. First-ever user: claim the default user profile
