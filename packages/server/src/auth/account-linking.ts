@@ -1,4 +1,5 @@
 import type { Database } from "dofek/db";
+import { DEFAULT_USER_ID } from "dofek/db/schema";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema } from "../lib/typed-sql.ts";
@@ -16,6 +17,17 @@ export interface ResolveUserResult {
   isNewUser: boolean;
 }
 
+export interface ResolveOrCreateUserOptions {
+  requireEmailForNewUser?: boolean;
+}
+
+export class MissingEmailForSignupError extends Error {
+  constructor(providerName: string) {
+    super(`Email is required to finish signing up with ${providerName}`);
+    this.name = "MissingEmailForSignupError";
+  }
+}
+
 /**
  * Resolve or create a user from an identity provider's claims.
  *
@@ -24,7 +36,8 @@ export interface ResolveUserResult {
  * 2. Lookup existing auth_account by (providerName, providerAccountId).
  * 3. Lookup user_profile by email match (email-based auto-linking).
  * 3.5. Cross-provider email match: check if another auth_account has the same email.
- * 4. Create a new user_profile.
+ * 4. If no accounts exist at all, claim DEFAULT_USER_ID (first-user migration).
+ * 5. Create a new user_profile.
  *
  * In all cases where the auth_account doesn't yet exist, it is created.
  */
@@ -33,6 +46,7 @@ export async function resolveOrCreateUser(
   providerName: string,
   identity: ProviderIdentity,
   loggedInUserId?: string,
+  options?: ResolveOrCreateUserOptions,
 ): Promise<ResolveUserResult> {
   // 1. Logged-in linking: always link to the current user
   if (loggedInUserId) {
@@ -96,7 +110,36 @@ export async function resolveOrCreateUser(
     }
   }
 
-  // 4. Create a new user profile
+  if (!identity.email && options?.requireEmailForNewUser) {
+    throw new MissingEmailForSignupError(providerName);
+  }
+
+  // 4. First-ever user: claim the default user profile
+  const accountCount = await executeWithSchema(
+    db,
+    z.object({ count: z.string() }),
+    sql`SELECT COUNT(*)::text AS count FROM fitness.auth_account`,
+  );
+  const countRow = accountCount[0];
+  if (!countRow) throw new Error("Failed to query account count");
+  const isFirstUser = parseInt(countRow.count, 10) === 0;
+
+  if (isFirstUser) {
+    if (identity.email || identity.name) {
+      await db.execute(
+        sql`UPDATE fitness.user_profile
+            SET email = COALESCE(${identity.email}, email),
+                name = COALESCE(${identity.name}, name),
+                updated_at = NOW()
+            WHERE id = ${DEFAULT_USER_ID}`,
+      );
+    }
+    await upsertAuthAccount(db, DEFAULT_USER_ID, providerName, identity);
+    logger.info(`[auth] First user claimed DEFAULT_USER_ID via ${providerName}`);
+    return { userId: DEFAULT_USER_ID, isNewUser: true };
+  }
+
+  // 5. New user: create a user profile
   const newUser = await executeWithSchema(
     db,
     z.object({ id: z.string() }),

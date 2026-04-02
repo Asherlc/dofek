@@ -484,6 +484,7 @@ describe("StravaProvider.authSetup()", () => {
     expect(setup.oauthConfig.clientId).toBe("test-id");
     expect(setup.exchangeCode).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toBe("https://www.strava.com/api/v3/");
+    expect(setup.identityCapabilities?.providesEmail).toBe(false);
     expect(setup.oauthConfig.authorizeUrl).toBe("https://www.strava.com/oauth/authorize");
     expect(setup.oauthConfig.tokenUrl).toBe("https://www.strava.com/oauth/token");
     expect(setup.oauthConfig.scopes).toEqual(["read", "activity:read_all"]);
@@ -726,7 +727,7 @@ describe("StravaProvider.getUserIdentity()", () => {
     process.env = { ...originalEnv };
   });
 
-  it("returns identity from athlete API", async () => {
+  it("returns identity from athlete API without relying on email", async () => {
     process.env.STRAVA_CLIENT_ID = "test-id";
     process.env.STRAVA_CLIENT_SECRET = "test-secret";
 
@@ -753,7 +754,7 @@ describe("StravaProvider.getUserIdentity()", () => {
     expect(calledUrl).toBe("https://www.strava.com/api/v3/athlete");
     expect(calledHeaders).toEqual(expect.objectContaining({ Authorization: "Bearer test-token" }));
     expect(identity.providerAccountId).toBe("12345");
-    expect(identity.email).toBe("athlete@test.com");
+    expect(identity.email).toBeNull();
     expect(identity.name).toBe("Jane Doe");
   });
 

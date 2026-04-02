@@ -55,7 +55,7 @@ export async function resolveOAuthTokens(options: {
     // When the authorization server returns invalid_grant, the refresh token
     // has been revoked or expired. Delete the stored tokens so the sync
     // scheduler stops retrying every cycle — the user must re-authorize.
-    if (message.includes("invalid_grant")) {
+    if (message.includes("invalid_grant") || message.includes("Too many unrevoked")) {
       logger.warn(
         `[${providerId}] Refresh token revoked, deleting stored tokens. ` +
           `User must re-authorize ${providerName}.`,

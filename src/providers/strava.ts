@@ -537,6 +537,7 @@ export class StravaProvider implements WebhookProvider {
       oauthConfig: config,
       exchangeCode: (code) => exchangeCodeForTokens(config, code),
       apiBaseUrl: STRAVA_API_BASE,
+      identityCapabilities: { providesEmail: false },
       getUserIdentity: async (accessToken: string): Promise<ProviderIdentity> => {
         const response = await this.#fetchFn(`${STRAVA_API_BASE}athlete`, {
           headers: { Authorization: `Bearer ${accessToken}` },
@@ -554,7 +555,7 @@ export class StravaProvider implements WebhookProvider {
         const nameParts = [athlete.firstname, athlete.lastname].filter(Boolean);
         return {
           providerAccountId: String(athlete.id),
-          email: athlete.email ?? null,
+          email: null,
           name: nameParts.length > 0 ? nameParts.join(" ") : null,
         };
       },
