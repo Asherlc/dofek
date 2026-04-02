@@ -638,6 +638,7 @@ describe("processSyncJob", () => {
     await runSyncJob(createMockJob(), mockDb);
 
     expect(provider.sync).toHaveBeenCalledOnce();
+    expect(mockLoadTokens).toHaveBeenCalledWith(mockDb, "strava", "user-1");
   });
 
   it("skips unconnected providers but syncs connected ones", async () => {

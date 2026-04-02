@@ -188,7 +188,7 @@ describe("whoopAuth router", () => {
           method: "sms",
           username: "user@test.com",
           expiresAt: Date.now() - 1_000,
-          userId: DEFAULT_USER_ID,
+          userId: TEST_USER_ID,
         },
         60_000,
       );

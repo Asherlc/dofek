@@ -478,10 +478,9 @@ describe("FatSecretProvider.authSetup()", () => {
       });
       expect(typeof capturedInit?.body).toBe("string");
       const body = String(capturedInit?.body);
+      const encodedCallback = encodeURIComponent("http://localhost:9876/callback");
       expect(body).toContain("oauth_consumer_key=key");
-      expect(body).toContain(
-        `oauth_callback=${encodeURIComponent("http://localhost:9876/callback")}`,
-      );
+      expect(body).toContain(`oauth_callback=${encodedCallback}`);
       expect(body).toContain("oauth_signature=");
       expect(body).toContain("oauth_timestamp=");
     } finally {

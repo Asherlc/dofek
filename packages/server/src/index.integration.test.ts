@@ -551,6 +551,15 @@ describe("tRPC API", () => {
       const body = await res.text();
       expect(body).toContain("You must be logged in");
     });
+
+    it("GET /auth/provider/:provider returns 401 when unauthenticated for known provider", async () => {
+      const res = await fetch(`${baseUrl}/auth/provider/wahoo`, {
+        redirect: "manual",
+      });
+      expect(res.status).toBe(401);
+      const body = await res.text();
+      expect(body).toContain("You must be logged in");
+    });
   });
 
   describe("OAuth callback with missing code", () => {

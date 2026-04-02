@@ -115,6 +115,20 @@ describe("DISCONNECT_CHILD_TABLES", () => {
 // ---------------------------------------------------------------------------
 
 describe("ProviderDetailRepository", () => {
+  function stringifyQuery(query: unknown): string {
+    if (typeof query === "object" && query !== null) {
+      const sqlCandidate = Reflect.get(query, "sql");
+      if (typeof sqlCandidate === "string") {
+        return sqlCandidate;
+      }
+      const queryCandidate = Reflect.get(query, "query");
+      if (typeof queryCandidate === "string") {
+        return queryCandidate;
+      }
+    }
+    return JSON.stringify(query);
+  }
+
   function makeRepository(rows: Record<string, unknown>[] = [], transactionOverride?: unknown) {
     const execute = vi.fn().mockResolvedValue(rows);
     const transaction = transactionOverride ?? vi.fn();
@@ -185,7 +199,18 @@ describe("ProviderDetailRepository", () => {
   // ── verifyOwnership ──
 
   describe("verifyOwnership", () => {
-    it("returns true when provider exists for user", async () => {
+    it("returns true when provider exists in oauth_token table for user", async () => {
+      const { repo, execute } = makeRepository([{ id: "strava" }]);
+      const result = await repo.verifyOwnership("strava");
+      expect(result).toBe(true);
+      // Verify query contains UNION as expected for the expanded check
+      const queryString = stringifyQuery(vi.mocked(execute).mock.calls[0]?.[0]);
+      expect(queryString).toMatch(/UNION/i);
+      expect(queryString).toMatch(/fitness\.oauth_token/i);
+      expect(queryString).toMatch(/fitness\.provider/i);
+    });
+
+    it("returns true when provider exists in provider table for user (even if not in tokens)", async () => {
       const { repo } = makeRepository([{ id: "strava" }]);
       const result = await repo.verifyOwnership("strava");
       expect(result).toBe(true);
@@ -197,7 +222,7 @@ describe("ProviderDetailRepository", () => {
       expect(result).toStrictEqual(true);
     });
 
-    it("returns false when provider does not exist for user", async () => {
+    it("returns false when provider does not exist in either table for user", async () => {
       const { repo } = makeRepository([]);
       const result = await repo.verifyOwnership("unknown");
       expect(result).toBe(false);

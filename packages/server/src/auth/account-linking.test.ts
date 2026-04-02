@@ -67,13 +67,9 @@ describe("resolveOrCreateUser", () => {
     it("skips email lookup when email is null", async () => {
       const noEmailIdentity = { ...identity, email: null };
 
-      // auth_account lookup - not found
       db.execute.mockResolvedValueOnce([]);
-      // account count (skips email lookup since email is null)
       db.execute.mockResolvedValueOnce([{ count: "5" }]);
-      // create new user
       db.execute.mockResolvedValueOnce([{ id: "new-user-1" }]);
-      // upsertAuthAccount
       db.execute.mockResolvedValueOnce([]);
 
       const result = await resolveOrCreateUser(db, "google", noEmailIdentity);
@@ -130,18 +126,13 @@ describe("resolveOrCreateUser", () => {
       const result = await resolveOrCreateUser(db, "google", bareIdentity);
 
       expect(result).toEqual({ userId: "default-user-id", isNewUser: true });
-      // Should be: auth_account lookup, account count, upsertAuthAccount (3 calls, no profile update)
       expect(db.execute).toHaveBeenCalledTimes(3);
     });
 
     it("throws when account count query returns no rows", async () => {
-      // auth_account lookup - not found
       db.execute.mockResolvedValueOnce([]);
-      // email match on user_profile - not found
       db.execute.mockResolvedValueOnce([]);
-      // cross-provider email match on auth_account - not found
       db.execute.mockResolvedValueOnce([]);
-      // account count - empty result
       db.execute.mockResolvedValueOnce([]);
 
       await expect(resolveOrCreateUser(db, "google", identity)).rejects.toThrow(
@@ -199,7 +190,7 @@ describe("resolveOrCreateUser", () => {
     });
   });
 
-  describe("Step 5: new user creation", () => {
+  describe("Step 4: new user creation", () => {
     it("creates a new user profile when no matches found", async () => {
       db.execute.mockResolvedValueOnce([]);
       db.execute.mockResolvedValueOnce([]);
