@@ -1,6 +1,6 @@
 ---
 name: address-pr-comments
-description: Review all unresolved PR comments, fix valid issues (commit + reply with link), explain and resolve invalid ones.
+description: Review all unresolved PR comments, fix valid issues, and reply to each thread with concrete fix details or a clear skip reason before resolving.
 ---
 
 # Address PR Comments
@@ -71,19 +71,38 @@ Determine whether the comment identifies a real issue:
    ```
 3. Commit the fix with a clear message referencing the comment.
 4. Note the commit SHA for the reply.
-5. Reply to the comment with a link to the fix commit:
+5. Reply to the comment with what changed and the commit link. Use one of these formats:
+   ```text
+   Fixed.
+   - <file or behavior changed #1>
+   - <file or behavior changed #2>
+   - Commit: <commit-url>
+   ```
+   ```text
+   Already fixed.
+   - <what was already changed>
+   - Commit: <commit-url>
+   ```
+   Do not post a bare "Fixed in <commit-url>" reply.
+6. Post the reply:
    ```bash
    gh api repos/{owner}/{repo}/pulls/${PR_NUMBER}/comments/${COMMENT_ID}/replies \
-     -f body="Fixed in <commit-url>"
+     -f body="<detailed-reply>"
    ```
-6. Resolve the thread:
+7. Resolve the thread:
    ```bash
    gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: "THREAD_NODE_ID"}) { thread { isResolved } } }'
    ```
 
 **If not valid:**
 
-1. Reply to the comment explaining specifically why the change isn't needed. Be respectful and cite project conventions or code context as evidence.
+1. Reply to the comment explaining specifically why the change is being skipped. Be respectful and cite project conventions or code context as evidence.
+   Use this format:
+   ```text
+   Not applying this change.
+   - Reason: <why this is not needed or would be harmful>
+   - Evidence: <code context, convention, or existing behavior>
+   ```
    ```bash
    gh api repos/{owner}/{repo}/pulls/${PR_NUMBER}/comments/${COMMENT_ID}/replies \
      -f body="<explanation>"
@@ -110,6 +129,8 @@ After processing all comments:
 
 - Never force push or skip hooks.
 - Fix issues properly — no workarounds or disabled lint rules.
+- Reply on every unresolved thread before resolving it.
+- Every reply must include either detailed fix notes (or already-fixed notes) with a commit URL, or a clear skip reason with evidence.
 - If a comment requires a design decision or is ambiguous, ask the user instead of guessing.
 - Batch related fixes into a single commit when they address the same concern.
 - Run all pre-push checks before pushing, per project rules.
