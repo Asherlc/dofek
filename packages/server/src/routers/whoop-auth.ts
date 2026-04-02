@@ -2,20 +2,10 @@ import { ensureProvider, saveTokens } from "dofek/db/tokens";
 import { WhoopClient } from "whoop-whoop";
 import { z } from "zod";
 import { queryCache } from "../lib/cache.ts";
+import { getWhoopVerificationChallengeStore } from "../lib/whoop-verification-challenge-store.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 
-// In-memory store for pending MFA challenges (keyed by a random ID)
-const pendingChallenges = new Map<
-  string,
-  { session: string; method: string; username: string; expiresAt: number }
->();
-
-function cleanupExpired() {
-  const now = Date.now();
-  for (const [key, val] of pendingChallenges) {
-    if (val.expiresAt < now) pendingChallenges.delete(key);
-  }
-}
+const challengeStore = getWhoopVerificationChallengeStore();
 
 export const whoopAuthRouter = router({
   /** Step 1: Sign in with email + password via Cognito */
@@ -25,15 +15,14 @@ export const whoopAuthRouter = router({
       const result = await WhoopClient.signIn(input.username, input.password);
 
       if (result.type === "verification_required") {
-        // Store Cognito session for step 2
+        // Store Cognito session for step 2 in Redis so all API replicas can read it.
         const challengeId = `whoop-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-        pendingChallenges.set(challengeId, {
+        await challengeStore.save(challengeId, {
           session: result.session,
           method: result.method,
           username: input.username,
           expiresAt: Date.now() + 10 * 60 * 1000, // 10 min TTL
         });
-        cleanupExpired();
 
         return {
           status: "verification_required" as const,
@@ -58,17 +47,17 @@ export const whoopAuthRouter = router({
   verifyCode: protectedProcedure
     .input(z.object({ challengeId: z.string(), code: z.string() }))
     .mutation(async ({ input }) => {
-      const challenge = pendingChallenges.get(input.challengeId);
+      const challenge = await challengeStore.get(input.challengeId);
       if (!challenge) {
         throw new Error("Verification session expired or not found");
       }
       if (challenge.expiresAt < Date.now()) {
-        pendingChallenges.delete(input.challengeId);
+        await challengeStore.delete(input.challengeId);
         throw new Error("Verification session expired — please sign in again");
       }
 
       const token = await WhoopClient.verifyCode(challenge.session, input.code, challenge.username);
-      pendingChallenges.delete(input.challengeId);
+      await challengeStore.delete(input.challengeId);
 
       return {
         status: "success" as const,
