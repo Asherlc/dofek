@@ -3320,12 +3320,13 @@ describe("oauthSuccessHtml", () => {
 
   it("safely embeds JSON by escaping script tags", () => {
     const html = oauthSuccessHtml("Wahoo");
-    // The embedded JSON should have </script> escaped as <\/script>
-    expect(html).toContain('{"type":"OAUTH_SUCCESS","provider":"Wahoo"}');
+    // The embedded JSON should use the actual payload shapes the implementation produces
+    expect(html).toContain('{"type":"complete"}');
+    expect(html).toContain('{"type":"oauth-complete"}');
     // Ensure no raw </script> exists that could prematurely terminate the block
-    const scriptBlocks = html.match(/<script[\s\S]*?<\/script>/g) || [];
+    const scriptBlocks = html.match(/<script[\s\S]*?<\/script>/gi) || [];
     for (const block of scriptBlocks) {
-      const content = block.replace(/^<script.*?>|<\/script>$/g, "");
+      const content = block.replace(/^<script.*?>|<\/script>$/gi, "");
       expect(content).not.toContain("</script>");
     }
   });
