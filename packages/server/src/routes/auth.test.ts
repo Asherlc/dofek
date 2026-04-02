@@ -1599,10 +1599,24 @@ describe("createAuthRouter", () => {
 
       // Hit callback
       const callbackRes = await request(app, "get", `/callback?code=strava-code&state=${state}`);
+      const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
       expect(callbackRes.status).toBe(302);
       expect(callbackRes.headers.location).toBe("/");
       expect(mockGetUserIdentity).toHaveBeenCalledWith("login-access-token");
       expect(resolveOrCreateUser).toHaveBeenCalled();
+      expect(ensureProvider).toHaveBeenCalledWith(
+        expect.anything(),
+        "strava",
+        "Strava",
+        undefined,
+        "user-1",
+      );
+      expect(saveTokens).toHaveBeenCalledWith(expect.anything(), "strava", {
+        accessToken: "login-access-token",
+        refreshToken: "login-refresh-token",
+        expiresAt: new Date("2027-06-01"),
+        scopes: "read",
+      });
       expect(createSession).toHaveBeenCalled();
       expect(setSessionCookie).toHaveBeenCalled();
     });
@@ -1712,10 +1726,12 @@ describe("createAuthRouter", () => {
         "get",
         `/callback?code=strava-missing-email-code&state=${state}`,
       );
+      const { ensureProvider } = await import("dofek/db/tokens");
 
       expect(callbackRes.status).toBe(200);
       expect(callbackRes.body).toContain("Enter your email to finish signing in");
       expect(callbackRes.body).toContain('action="/auth/complete-signup"');
+      expect(ensureProvider).not.toHaveBeenCalled();
       expect(createSession).not.toHaveBeenCalled();
       expect(setSessionCookie).not.toHaveBeenCalled();
     });
@@ -1775,6 +1791,7 @@ describe("createAuthRouter", () => {
       const completeRes = await request(app, "post", "/auth/complete-signup", {
         formBody: { token, email: "runner@example.com" },
       });
+      const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
 
       expect(completeRes.status).toBe(302);
       expect(completeRes.headers.location).toBe("/");
@@ -1786,6 +1803,19 @@ describe("createAuthRouter", () => {
           email: "runner@example.com",
         }),
       );
+      expect(ensureProvider).toHaveBeenCalledWith(
+        expect.anything(),
+        "strava",
+        "Strava",
+        undefined,
+        "manual-email-user",
+      );
+      expect(saveTokens).toHaveBeenCalledWith(expect.anything(), "strava", {
+        accessToken: "pending-web-access-token",
+        refreshToken: "pending-web-refresh-token",
+        expiresAt: new Date("2027-06-01"),
+        scopes: "read",
+      });
       expect(createSession).toHaveBeenCalled();
       expect(setSessionCookie).toHaveBeenCalled();
     });
@@ -1845,10 +1875,92 @@ describe("createAuthRouter", () => {
       const completeRes = await request(app, "post", "/auth/complete-signup", {
         formBody: { token, email: "runner-mobile@example.com" },
       });
+      const { ensureProvider } = await import("dofek/db/tokens");
 
       expect(completeRes.status).toBe(302);
       expect(completeRes.headers.location).toContain("dofek://auth/callback?session=");
+      expect(ensureProvider).toHaveBeenCalledWith(
+        expect.anything(),
+        "strava",
+        "Strava",
+        undefined,
+        "mobile-email-user",
+      );
       expect(setSessionCookie).not.toHaveBeenCalled();
+    });
+
+    it("keeps the pending signup token when completion fails so the user can retry", async () => {
+      const mockExchangeCode = vi.fn(() =>
+        Promise.resolve({
+          accessToken: "retry-access-token",
+          refreshToken: "retry-refresh-token",
+          expiresAt: new Date("2027-06-01"),
+          scopes: "read",
+        }),
+      );
+      const mockGetUserIdentity = vi.fn(() =>
+        Promise.resolve({
+          providerAccountId: "strava-retry-signup-1",
+          email: null,
+          name: "Retry Runner",
+        }),
+      );
+      vi.mocked(resolveOrCreateUser)
+        .mockRejectedValueOnce(new MissingEmailForSignupError("Strava"))
+        .mockRejectedValueOnce(new Error("temporary database failure"))
+        .mockResolvedValueOnce({ userId: "retry-user", isNewUser: true });
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "strava",
+          name: "Strava",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://www.strava.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["read"],
+            },
+            exchangeCode: mockExchangeCode,
+            getUserIdentity: mockGetUserIdentity,
+            identityCapabilities: { providesEmail: false },
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+
+      const startRes = await request(app, "get", "/auth/login/data/strava");
+      const location = startRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const state = new URL(location).searchParams.get("state");
+      const callbackRes = await request(
+        app,
+        "get",
+        `/callback?code=strava-retry-code&state=${state}`,
+      );
+      const tokenMatch = callbackRes.body.match(/name="token" value="([^"]+)"/);
+      const token = tokenMatch?.[1];
+      if (!token) throw new Error("Expected pending signup token in form");
+
+      const failedCompleteRes = await request(app, "post", "/auth/complete-signup", {
+        formBody: { token, email: "retry@example.com" },
+      });
+      const successfulRetryRes = await request(app, "post", "/auth/complete-signup", {
+        formBody: { token, email: "retry@example.com" },
+      });
+      const { ensureProvider } = await import("dofek/db/tokens");
+
+      expect(failedCompleteRes.status).toBe(500);
+      expect(successfulRetryRes.status).toBe(302);
+      expect(successfulRetryRes.headers.location).toBe("/");
+      expect(ensureProvider).toHaveBeenCalledTimes(1);
+      expect(ensureProvider).toHaveBeenCalledWith(
+        expect.anything(),
+        "strava",
+        "Strava",
+        undefined,
+        "retry-user",
+      );
     });
 
     it("handles link intent: links provider and redirects to /settings", async () => {
