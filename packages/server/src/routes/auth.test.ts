@@ -1774,12 +1774,9 @@ describe("createAuthRouter", () => {
       ]);
 
       const { app } = createTestApp();
+      const returnTo = encodeURIComponent("/dashboard?tab=providers");
 
-      const startRes = await request(
-        app,
-        "get",
-        "/auth/login/data/strava?return_to=%2Fdashboard%3Ftab%3Dproviders",
-      );
+      const startRes = await request(app, "get", `/auth/login/data/strava?return_to=${returnTo}`);
       const location = startRes.headers.location;
       if (typeof location !== "string") throw new Error("Expected location header");
       const state = new URL(location).searchParams.get("state");
