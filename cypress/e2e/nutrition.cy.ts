@@ -5,13 +5,18 @@ describe("Nutrition page", () => {
     cy.login();
     // Ensure dofek provider exists for test food entries
     cy.task("runQuery", {
-      query: `INSERT INTO fitness.provider (id, name) VALUES ('dofek', 'Dofek App') ON CONFLICT (id) DO NOTHING`,
+      query: `INSERT INTO fitness.provider (id, name, user_id)
+              VALUES ('dofek', 'Dofek App', '${TEST_USER_ID}')
+              ON CONFLICT (id) DO NOTHING`,
     });
   });
 
   afterEach(() => {
     cy.task("runQuery", {
       query: `DELETE FROM fitness.food_entry WHERE user_id = '${TEST_USER_ID}'`,
+    });
+    cy.task("runQuery", {
+      query: `DELETE FROM fitness.provider WHERE id = 'dofek' AND user_id = '${TEST_USER_ID}'`,
     });
     cy.cleanTestData();
   });

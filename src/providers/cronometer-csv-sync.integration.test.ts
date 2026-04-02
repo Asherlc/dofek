@@ -2,7 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { nutrientRowSchema } from "../db/nutrient-columns.ts";
-import { DEFAULT_USER_ID, foodEntry, nutritionDaily } from "../db/schema.ts";
+import { foodEntry, nutritionDaily, TEST_USER_ID } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { CRONOMETER_PROVIDER_ID, importCronometerCsv } from "./cronometer-csv.ts";
 
@@ -71,7 +71,7 @@ describe("importCronometerCsv() (integration)", () => {
   });
 
   it("imports food entries from CSV", async () => {
-    const result = await importCronometerCsv(ctx.db, SIMPLE_CSV, DEFAULT_USER_ID);
+    const result = await importCronometerCsv(ctx.db, SIMPLE_CSV, TEST_USER_ID);
 
     expect(result.provider).toBe(CRONOMETER_PROVIDER_ID);
     expect(result.recordsSynced).toBe(3);
@@ -106,7 +106,7 @@ describe("importCronometerCsv() (integration)", () => {
   });
 
   it("aggregates daily nutrition totals into nutrition_daily", async () => {
-    const result = await importCronometerCsv(ctx.db, SIMPLE_CSV, DEFAULT_USER_ID);
+    const result = await importCronometerCsv(ctx.db, SIMPLE_CSV, TEST_USER_ID);
 
     expect(result.errors).toHaveLength(0);
 
@@ -129,7 +129,7 @@ describe("importCronometerCsv() (integration)", () => {
   });
 
   it("creates separate nutrition_daily rows for different days", async () => {
-    const result = await importCronometerCsv(ctx.db, MULTI_DAY_CSV, DEFAULT_USER_ID);
+    const result = await importCronometerCsv(ctx.db, MULTI_DAY_CSV, TEST_USER_ID);
 
     expect(result.recordsSynced).toBe(2);
     expect(result.errors).toHaveLength(0);
@@ -148,7 +148,7 @@ describe("importCronometerCsv() (integration)", () => {
   });
 
   it("maps snack meal type correctly", async () => {
-    const result = await importCronometerCsv(ctx.db, SNACK_CSV, DEFAULT_USER_ID);
+    const result = await importCronometerCsv(ctx.db, SNACK_CSV, TEST_USER_ID);
 
     expect(result.recordsSynced).toBe(1);
 
@@ -159,8 +159,8 @@ describe("importCronometerCsv() (integration)", () => {
   });
 
   it("upserts food entries on re-import (no duplicates)", async () => {
-    await importCronometerCsv(ctx.db, SIMPLE_CSV, DEFAULT_USER_ID);
-    await importCronometerCsv(ctx.db, SIMPLE_CSV, DEFAULT_USER_ID);
+    await importCronometerCsv(ctx.db, SIMPLE_CSV, TEST_USER_ID);
+    await importCronometerCsv(ctx.db, SIMPLE_CSV, TEST_USER_ID);
 
     const rows = await ctx.db.select().from(foodEntry).where(eq(foodEntry.foodName, "Oatmeal"));
 
@@ -169,7 +169,7 @@ describe("importCronometerCsv() (integration)", () => {
   });
 
   it("stores micronutrient data", async () => {
-    await importCronometerCsv(ctx.db, SIMPLE_CSV, DEFAULT_USER_ID);
+    await importCronometerCsv(ctx.db, SIMPLE_CSV, TEST_USER_ID);
 
     const banana = await queryFoodFromView(ctx.db, "Banana");
     if (!banana) throw new Error("expected Banana entry");
@@ -179,7 +179,7 @@ describe("importCronometerCsv() (integration)", () => {
   });
 
   it("converts omega fatty acids from grams to milligrams", async () => {
-    await importCronometerCsv(ctx.db, MULTI_DAY_CSV, DEFAULT_USER_ID);
+    await importCronometerCsv(ctx.db, MULTI_DAY_CSV, TEST_USER_ID);
 
     const salmon = await queryFoodFromView(ctx.db, "Salmon");
     if (!salmon) throw new Error("expected Salmon entry");
@@ -188,7 +188,7 @@ describe("importCronometerCsv() (integration)", () => {
   });
 
   it("returns empty result for empty CSV", async () => {
-    const result = await importCronometerCsv(ctx.db, CSV_HEADER, DEFAULT_USER_ID);
+    const result = await importCronometerCsv(ctx.db, CSV_HEADER, TEST_USER_ID);
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(0);
@@ -196,7 +196,7 @@ describe("importCronometerCsv() (integration)", () => {
 
   it("handles BOM-prefixed CSV", async () => {
     const bomCsv = `\uFEFF${SNACK_CSV}`;
-    const result = await importCronometerCsv(ctx.db, bomCsv, DEFAULT_USER_ID);
+    const result = await importCronometerCsv(ctx.db, bomCsv, TEST_USER_ID);
 
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toHaveLength(0);

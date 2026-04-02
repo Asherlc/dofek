@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DEFAULT_USER_ID } from "../../../../src/db/schema.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
@@ -18,13 +18,13 @@ describe("Duration curves router — data tests", () => {
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
 
-    const session = await createSession(testCtx.db, DEFAULT_USER_ID);
+    const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
 
     // Insert a test provider
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES ('test_provider', 'Test Provider', ${DEFAULT_USER_ID})
+          VALUES ('test_provider', 'Test Provider', ${TEST_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
 
@@ -33,7 +33,7 @@ describe("Duration curves router — data tests", () => {
       sql`INSERT INTO fitness.activity (
             provider_id, user_id, activity_type, started_at, ended_at, name
           ) VALUES (
-            'test_provider', ${DEFAULT_USER_ID}, 'running',
+            'test_provider', ${TEST_USER_ID}, 'running',
             CURRENT_TIMESTAMP - INTERVAL '2 days',
             CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '60 minutes',
             'Test Run'
@@ -54,11 +54,11 @@ describe("Duration curves router — data tests", () => {
           const speed = 3.2 + Math.sin(s * 0.01) * 0.5; // ~3.2 m/s with variation
           const ts = `CURRENT_TIMESTAMP - INTERVAL '2 days' + ${s} * INTERVAL '1 second'`;
           metricValues.push(
-            `(${ts}, '${DEFAULT_USER_ID}', '${runId}', 'test_provider', ${hr}, null, ${speed.toFixed(3)})`,
+            `(${ts}, '${TEST_USER_ID}', '${runId}', 'test_provider', ${hr}, null, ${speed.toFixed(3)})`,
           );
           sensorValues.push(
-            `(${ts}, '${DEFAULT_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${runId}', ${hr}, NULL)`,
-            `(${ts}, '${DEFAULT_USER_ID}', 'test_provider', NULL, 'api', 'speed', '${runId}', ${speed.toFixed(3)}, NULL)`,
+            `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${runId}', ${hr}, NULL)`,
+            `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'speed', '${runId}', ${speed.toFixed(3)}, NULL)`,
           );
         }
         await testCtx.db.execute(
@@ -79,7 +79,7 @@ describe("Duration curves router — data tests", () => {
       sql`INSERT INTO fitness.activity (
             provider_id, user_id, activity_type, started_at, ended_at, name
           ) VALUES (
-            'test_provider', ${DEFAULT_USER_ID}, 'cycling',
+            'test_provider', ${TEST_USER_ID}, 'cycling',
             CURRENT_TIMESTAMP - INTERVAL '5 days',
             CURRENT_TIMESTAMP - INTERVAL '5 days' + INTERVAL '45 minutes',
             'Test Ride'
@@ -96,10 +96,10 @@ describe("Duration curves router — data tests", () => {
           const hr = 140 + Math.round((s / 2700) * 40 + Math.sin(s * 0.015) * 8);
           const ts = `CURRENT_TIMESTAMP - INTERVAL '5 days' + ${s} * INTERVAL '1 second'`;
           metricValues.push(
-            `(${ts}, '${DEFAULT_USER_ID}', '${cycleId}', 'test_provider', ${hr}, null, null)`,
+            `(${ts}, '${TEST_USER_ID}', '${cycleId}', 'test_provider', ${hr}, null, null)`,
           );
           sensorValues.push(
-            `(${ts}, '${DEFAULT_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${cycleId}', ${hr}, NULL)`,
+            `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${cycleId}', ${hr}, NULL)`,
           );
         }
         await testCtx.db.execute(

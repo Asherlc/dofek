@@ -335,8 +335,8 @@ export class FoodRepository {
   /** Ensure the 'dofek' provider row exists (for self-created entries). */
   async ensureDofekProvider(): Promise<void> {
     await this.#db.execute(
-      sql`INSERT INTO fitness.provider (id, name)
-          VALUES (${DOFEK_PROVIDER_ID}, 'Dofek App')
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES (${DOFEK_PROVIDER_ID}, 'Dofek App', ${this.#userId})
           ON CONFLICT (id) DO NOTHING`,
     );
   }

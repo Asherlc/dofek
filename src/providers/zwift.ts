@@ -160,7 +160,7 @@ export class ZwiftProvider implements SyncProvider {
                     raw: parsed.raw,
                   })
                   .onConflictDoUpdate({
-                    target: [activity.providerId, activity.externalId],
+                    target: [activity.userId, activity.providerId, activity.externalId],
                     set: {
                       activityType: parsed.activityType,
                       name: parsed.name,
@@ -240,7 +240,12 @@ export class ZwiftProvider implements SyncProvider {
               vo2max: curve.vo2Max,
             })
             .onConflictDoUpdate({
-              target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
+              target: [
+                dailyMetrics.userId,
+                dailyMetrics.date,
+                dailyMetrics.providerId,
+                dailyMetrics.sourceName,
+              ],
               set: { vo2max: curve.vo2Max },
             });
 

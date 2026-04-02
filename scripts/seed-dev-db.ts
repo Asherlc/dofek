@@ -5,7 +5,7 @@
  *   DATABASE_URL="postgres://health:health@localhost:5432/health" pnpm seed
  *
  * What it creates:
- *   - 1 user (DEFAULT_USER_ID)
+ *   - 1 baseline user
  *   - 2 providers: WHOOP (priority 1) and Apple Health (priority 2)
  *   - 90 days of daily metrics (resting HR, HRV, steps, SpO2, skin temp)
  *   - 30 days of dual-provider sleep (WHOOP 480min + Apple Health 330min

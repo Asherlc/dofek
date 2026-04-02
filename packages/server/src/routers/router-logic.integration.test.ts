@@ -11,7 +11,7 @@ import { queryCache } from "../lib/cache.ts";
  * with empty tables) by exercising the data transformation paths.
  */
 
-const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
+const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
 
 describe("Router transformation logic", () => {
   let server: ReturnType<import("express").Express["listen"]>;
@@ -22,13 +22,13 @@ describe("Router transformation logic", () => {
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
 
-    const session = await createSession(testCtx.db, DEFAULT_USER_ID);
+    const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
 
     // Insert a test provider (needed for FK constraints)
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES ('test-provider', 'Test Provider', ${DEFAULT_USER_ID})
+          VALUES ('test-provider', 'Test Provider', ${TEST_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
 
@@ -310,14 +310,14 @@ describe("Router transformation logic", () => {
         sleepInserts.push(
           sql`INSERT INTO fitness.sleep_session
               (provider_id, user_id, external_id, started_at, ended_at, duration_minutes, sleep_type)
-              VALUES ('test-provider', ${DEFAULT_USER_ID}, ${`sleep-${i}`}, ${startedAt.toISOString()}, ${endedAt.toISOString()}, ${durationMin}, 'sleep')`,
+              VALUES ('test-provider', ${TEST_USER_ID}, ${`sleep-${i}`}, ${startedAt.toISOString()}, ${endedAt.toISOString()}, ${durationMin}, 'sleep')`,
         );
 
         // Daily metrics: HRV varies with sleep quality (higher sleep = higher HRV next day)
         const hrv = 40 + (durationMin - 400) * 0.5;
         metricsInserts.push(
           sql`INSERT INTO fitness.daily_metrics (date, provider_id, user_id, hrv, resting_hr, steps)
-              VALUES (${dateStr}::date, 'test-provider', ${DEFAULT_USER_ID}, ${hrv}, ${55 + Math.round(Math.random() * 10)}, ${8000 + Math.round(Math.random() * 4000)})
+              VALUES (${dateStr}::date, 'test-provider', ${TEST_USER_ID}, ${hrv}, ${55 + Math.round(Math.random() * 10)}, ${8000 + Math.round(Math.random() * 4000)})
               ON CONFLICT DO NOTHING`,
         );
       }
@@ -395,7 +395,7 @@ describe("Router transformation logic", () => {
           await testCtx.db.execute(
             sql`INSERT INTO fitness.activity
                 (provider_id, user_id, external_id, activity_type, started_at, ended_at, name)
-                VALUES ('test-provider', ${DEFAULT_USER_ID}, ${externalId}, 'cycling', ${startedAt.toISOString()}, ${endedAt.toISOString()}, ${`Ride ${externalId}`})
+                VALUES ('test-provider', ${TEST_USER_ID}, ${externalId}, 'cycling', ${startedAt.toISOString()}, ${endedAt.toISOString()}, ${`Ride ${externalId}`})
                 ON CONFLICT DO NOTHING`,
           );
 
@@ -415,12 +415,12 @@ describe("Router transformation logic", () => {
               const speed = 6.5 + Math.random();
               const ts = `'${sampleTime.toISOString()}'`;
               metricValues.push(
-                `(${ts}, '${DEFAULT_USER_ID}', '${activityId}', 'test-provider', ${hr}, ${power}, ${speed})`,
+                `(${ts}, '${TEST_USER_ID}', '${activityId}', 'test-provider', ${hr}, ${power}, ${speed})`,
               );
               sensorValues.push(
-                `(${ts}, '${DEFAULT_USER_ID}', 'test-provider', NULL, 'api', 'heart_rate', '${activityId}', ${hr}, NULL)`,
-                `(${ts}, '${DEFAULT_USER_ID}', 'test-provider', NULL, 'api', 'power', '${activityId}', ${power}, NULL)`,
-                `(${ts}, '${DEFAULT_USER_ID}', 'test-provider', NULL, 'api', 'speed', '${activityId}', ${speed}, NULL)`,
+                `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'heart_rate', '${activityId}', ${hr}, NULL)`,
+                `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'power', '${activityId}', ${power}, NULL)`,
+                `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'speed', '${activityId}', ${speed}, NULL)`,
               );
             }
             await testCtx.db.execute(
@@ -439,7 +439,7 @@ describe("Router transformation logic", () => {
 
       // Set max_hr on user profile for activity_summary calculations
       await testCtx.db.execute(
-        sql`UPDATE fitness.user_profile SET max_hr = 190 WHERE id = ${DEFAULT_USER_ID}`,
+        sql`UPDATE fitness.user_profile SET max_hr = 190 WHERE id = ${TEST_USER_ID}`,
       );
 
       await refreshViews();
@@ -514,14 +514,14 @@ describe("Router transformation logic", () => {
                   walking_steadiness = ${0.85 + i * 0.005}
               WHERE date = ${dateStr}::date
                 AND provider_id = 'test-provider'
-                AND user_id = ${DEFAULT_USER_ID}`,
+                AND user_id = ${TEST_USER_ID}`,
         );
 
         // Also insert for dates not already present (beyond the 30 days from sleepNeed)
         await testCtx.db.execute(
           sql`INSERT INTO fitness.daily_metrics
               (date, provider_id, user_id, walking_speed, walking_step_length, walking_double_support_pct, walking_asymmetry_pct, walking_steadiness)
-              VALUES (${dateStr}::date, 'test-provider', ${DEFAULT_USER_ID}, ${1.2 + i * 0.01}, ${70 + i * 0.5}, ${28 - i * 0.1}, ${3.5 + i * 0.05}, ${0.85 + i * 0.005})
+              VALUES (${dateStr}::date, 'test-provider', ${TEST_USER_ID}, ${1.2 + i * 0.01}, ${70 + i * 0.5}, ${28 - i * 0.1}, ${3.5 + i * 0.05}, ${0.85 + i * 0.005})
               ON CONFLICT DO NOTHING`,
         );
       }
@@ -590,14 +590,14 @@ describe("Router transformation logic", () => {
       await testCtx.db.execute(
         sql`UPDATE fitness.user_profile
             SET birth_date = '1990-01-01'
-            WHERE id = ${DEFAULT_USER_ID}`,
+            WHERE id = ${TEST_USER_ID}`,
       );
 
       // Insert body measurement for lean mass calculation
       await testCtx.db.execute(
         sql`INSERT INTO fitness.body_measurement
             (provider_id, user_id, recorded_at, weight_kg, body_fat_pct)
-            VALUES ('test-provider', ${DEFAULT_USER_ID}, NOW() - INTERVAL '1 day', 75, 18)
+            VALUES ('test-provider', ${TEST_USER_ID}, NOW() - INTERVAL '1 day', 75, 18)
             ON CONFLICT DO NOTHING`,
       );
 
@@ -607,7 +607,7 @@ describe("Router transformation logic", () => {
       await testCtx.db.execute(
         sql`INSERT INTO fitness.strength_workout
             (provider_id, user_id, external_id, started_at, name)
-            VALUES ('test-provider', ${DEFAULT_USER_ID}, 'strength-1', ${workoutDate.toISOString()}, 'Test Workout')
+            VALUES ('test-provider', ${TEST_USER_ID}, 'strength-1', ${workoutDate.toISOString()}, 'Test Workout')
             ON CONFLICT DO NOTHING`,
       );
 
@@ -801,7 +801,7 @@ describe("Router transformation logic", () => {
         await testCtx.db.execute(
           sql`INSERT INTO fitness.activity
               (provider_id, user_id, external_id, activity_type, started_at, ended_at, name)
-              VALUES ('test-provider', ${DEFAULT_USER_ID}, ${externalId}, 'hiking', ${startedAt.toISOString()}, ${endedAt.toISOString()}, ${`Mountain Hike ${i}`})
+              VALUES ('test-provider', ${TEST_USER_ID}, ${externalId}, 'hiking', ${startedAt.toISOString()}, ${endedAt.toISOString()}, ${`Mountain Hike ${i}`})
               ON CONFLICT DO NOTHING`,
         );
 
@@ -828,15 +828,15 @@ describe("Router transformation logic", () => {
             const ts = `'${sampleTime.toISOString()}'`;
 
             metricValues.push(
-              `(${ts}, '${DEFAULT_USER_ID}', '${activityId}', 'test-provider', ${hr}, ${speed}, ${altitude}, ${grade}, ${lat}, ${baseLng})`,
+              `(${ts}, '${TEST_USER_ID}', '${activityId}', 'test-provider', ${hr}, ${speed}, ${altitude}, ${grade}, ${lat}, ${baseLng})`,
             );
             sensorValues.push(
-              `(${ts}, '${DEFAULT_USER_ID}', 'test-provider', NULL, 'api', 'heart_rate', '${activityId}', ${hr}, NULL)`,
-              `(${ts}, '${DEFAULT_USER_ID}', 'test-provider', NULL, 'api', 'speed', '${activityId}', ${speed}, NULL)`,
-              `(${ts}, '${DEFAULT_USER_ID}', 'test-provider', NULL, 'api', 'altitude', '${activityId}', ${altitude}, NULL)`,
-              `(${ts}, '${DEFAULT_USER_ID}', 'test-provider', NULL, 'api', 'grade', '${activityId}', ${grade}, NULL)`,
-              `(${ts}, '${DEFAULT_USER_ID}', 'test-provider', NULL, 'api', 'lat', '${activityId}', ${lat}, NULL)`,
-              `(${ts}, '${DEFAULT_USER_ID}', 'test-provider', NULL, 'api', 'lng', '${activityId}', ${baseLng}, NULL)`,
+              `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'heart_rate', '${activityId}', ${hr}, NULL)`,
+              `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'speed', '${activityId}', ${speed}, NULL)`,
+              `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'altitude', '${activityId}', ${altitude}, NULL)`,
+              `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'grade', '${activityId}', ${grade}, NULL)`,
+              `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'lat', '${activityId}', ${lat}, NULL)`,
+              `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'lng', '${activityId}', ${baseLng}, NULL)`,
             );
           }
           await testCtx.db.execute(
@@ -916,7 +916,7 @@ describe("Router transformation logic", () => {
         await testCtx.db.execute(
           sql`INSERT INTO fitness.activity
               (provider_id, user_id, external_id, activity_type, started_at, ended_at, name)
-              VALUES ('test-provider', ${DEFAULT_USER_ID}, ${externalId}, 'hiking', ${startedAt.toISOString()}, ${endedAt.toISOString()}, 'Repeated Trail')
+              VALUES ('test-provider', ${TEST_USER_ID}, ${externalId}, 'hiking', ${startedAt.toISOString()}, ${endedAt.toISOString()}, 'Repeated Trail')
               ON CONFLICT DO NOTHING`,
         );
 
@@ -939,15 +939,15 @@ describe("Router transformation logic", () => {
             const ts = `'${sampleTime.toISOString()}'`;
 
             metricValues.push(
-              `(${ts}, '${DEFAULT_USER_ID}', '${activityId}', 'test-provider', ${hr}, ${speed}, ${altitude}, ${grade}, ${lat}, ${baseLng})`,
+              `(${ts}, '${TEST_USER_ID}', '${activityId}', 'test-provider', ${hr}, ${speed}, ${altitude}, ${grade}, ${lat}, ${baseLng})`,
             );
             sensorValues.push(
-              `(${ts}, '${DEFAULT_USER_ID}', 'test-provider', NULL, 'api', 'heart_rate', '${activityId}', ${hr}, NULL)`,
-              `(${ts}, '${DEFAULT_USER_ID}', 'test-provider', NULL, 'api', 'speed', '${activityId}', ${speed}, NULL)`,
-              `(${ts}, '${DEFAULT_USER_ID}', 'test-provider', NULL, 'api', 'altitude', '${activityId}', ${altitude}, NULL)`,
-              `(${ts}, '${DEFAULT_USER_ID}', 'test-provider', NULL, 'api', 'grade', '${activityId}', ${grade}, NULL)`,
-              `(${ts}, '${DEFAULT_USER_ID}', 'test-provider', NULL, 'api', 'lat', '${activityId}', ${lat}, NULL)`,
-              `(${ts}, '${DEFAULT_USER_ID}', 'test-provider', NULL, 'api', 'lng', '${activityId}', ${baseLng}, NULL)`,
+              `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'heart_rate', '${activityId}', ${hr}, NULL)`,
+              `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'speed', '${activityId}', ${speed}, NULL)`,
+              `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'altitude', '${activityId}', ${altitude}, NULL)`,
+              `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'grade', '${activityId}', ${grade}, NULL)`,
+              `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'lat', '${activityId}', ${lat}, NULL)`,
+              `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'lng', '${activityId}', ${baseLng}, NULL)`,
             );
           }
           await testCtx.db.execute(
@@ -1006,7 +1006,7 @@ describe("Router transformation logic", () => {
       await testCtx.db.execute(
         sql`INSERT INTO fitness.activity
             (provider_id, user_id, external_id, activity_type, started_at, ended_at, name)
-            VALUES ('test-provider', ${DEFAULT_USER_ID}, 'interval-detect-1', 'cycling', ${startedAt.toISOString()}, ${endedAt.toISOString()}, 'Interval Workout')
+            VALUES ('test-provider', ${TEST_USER_ID}, 'interval-detect-1', 'cycling', ${startedAt.toISOString()}, ${endedAt.toISOString()}, 'Interval Workout')
             ON CONFLICT DO NOTHING`,
       );
 
@@ -1034,12 +1034,12 @@ describe("Router transformation logic", () => {
         const ts = `'${sampleTime.toISOString()}'`;
 
         metricValues.push(
-          `(${ts}, '${DEFAULT_USER_ID}', '${intervalActivityId}', 'test-provider', ${hr}, ${power}, ${speed})`,
+          `(${ts}, '${TEST_USER_ID}', '${intervalActivityId}', 'test-provider', ${hr}, ${power}, ${speed})`,
         );
         sensorValues.push(
-          `(${ts}, '${DEFAULT_USER_ID}', 'test-provider', NULL, 'api', 'heart_rate', '${intervalActivityId}', ${hr}, NULL)`,
-          `(${ts}, '${DEFAULT_USER_ID}', 'test-provider', NULL, 'api', 'power', '${intervalActivityId}', ${power}, NULL)`,
-          `(${ts}, '${DEFAULT_USER_ID}', 'test-provider', NULL, 'api', 'speed', '${intervalActivityId}', ${speed}, NULL)`,
+          `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'heart_rate', '${intervalActivityId}', ${hr}, NULL)`,
+          `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'power', '${intervalActivityId}', ${power}, NULL)`,
+          `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'speed', '${intervalActivityId}', ${speed}, NULL)`,
         );
       }
       await testCtx.db.execute(

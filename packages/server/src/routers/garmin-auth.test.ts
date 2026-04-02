@@ -65,12 +65,17 @@ describe("garminAuthRouter", () => {
         undefined,
         "user-123",
       );
-      expect(mockSaveTokens).toHaveBeenCalledWith(mockDb, "garmin", {
-        accessToken: JSON.stringify(fakeTokens),
-        refreshToken: null,
-        expiresAt: expect.any(Date),
-        scopes: "garmin-connect-internal",
-      });
+      expect(mockSaveTokens).toHaveBeenCalledWith(
+        mockDb,
+        "garmin",
+        {
+          accessToken: JSON.stringify(fakeTokens),
+          refreshToken: null,
+          expiresAt: expect.any(Date),
+          scopes: "garmin-connect-internal",
+        },
+        "user-123",
+      );
       expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-123:sync.providers");
     });
 

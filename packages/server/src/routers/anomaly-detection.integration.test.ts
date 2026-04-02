@@ -33,8 +33,8 @@ describe("Anomaly detection", () => {
 
   describe("checkAnomalies", () => {
     it("returns empty anomalies and checkedMetrics on empty database", async () => {
-      const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
-      const result = await checkAnomalies(testCtx.db, DEFAULT_USER_ID, "UTC", "2026-03-13");
+      const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
+      const result = await checkAnomalies(testCtx.db, TEST_USER_ID, "UTC", "2026-03-13");
 
       expect(result.anomalies).toEqual([]);
       expect(result.checkedMetrics).toEqual([]);
@@ -42,10 +42,10 @@ describe("Anomaly detection", () => {
   });
 
   describe("sendAnomalyAlertToSlack", () => {
-    const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
+    const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
 
     it("returns false when anomalies array is empty", async () => {
-      const result = await sendAnomalyAlertToSlack(testCtx.db, DEFAULT_USER_ID, []);
+      const result = await sendAnomalyAlertToSlack(testCtx.db, TEST_USER_ID, []);
       expect(result).toBe(false);
     });
 
@@ -62,7 +62,7 @@ describe("Anomaly detection", () => {
         },
       ];
 
-      const result = await sendAnomalyAlertToSlack(testCtx.db, DEFAULT_USER_ID, anomalies);
+      const result = await sendAnomalyAlertToSlack(testCtx.db, TEST_USER_ID, anomalies);
       expect(result).toBe(false);
     });
 
@@ -87,7 +87,7 @@ describe("Anomaly detection", () => {
         },
       ];
 
-      const result = await sendAnomalyAlertToSlack(testCtx.db, DEFAULT_USER_ID, anomalies);
+      const result = await sendAnomalyAlertToSlack(testCtx.db, TEST_USER_ID, anomalies);
       expect(result).toBe(false);
 
       // Cleanup
@@ -109,7 +109,7 @@ describe("Anomaly detection", () => {
       // Link Slack account to user
       await testCtx.db.execute(
         sql`INSERT INTO fitness.auth_account (user_id, auth_provider, provider_account_id, name)
-            VALUES (${DEFAULT_USER_ID}, 'slack', 'U_SLACK_ALERT', 'Alert User')
+            VALUES (${TEST_USER_ID}, 'slack', 'U_SLACK_ALERT', 'Alert User')
             ON CONFLICT DO NOTHING`,
       );
 
@@ -144,7 +144,7 @@ describe("Anomaly detection", () => {
       );
 
       try {
-        const result = await sendAnomalyAlertToSlack(testCtx.db, DEFAULT_USER_ID, anomalies);
+        const result = await sendAnomalyAlertToSlack(testCtx.db, TEST_USER_ID, anomalies);
         expect(result).toBe(true);
 
         // Verify the body includes illness pattern warning
@@ -175,7 +175,7 @@ describe("Anomaly detection", () => {
 
       await testCtx.db.execute(
         sql`INSERT INTO fitness.auth_account (user_id, auth_provider, provider_account_id, name)
-            VALUES (${DEFAULT_USER_ID}, 'slack', 'U_SLACK_FAIL', 'Fail User')
+            VALUES (${TEST_USER_ID}, 'slack', 'U_SLACK_FAIL', 'Fail User')
             ON CONFLICT DO NOTHING`,
       );
 
@@ -198,7 +198,7 @@ describe("Anomaly detection", () => {
       );
 
       try {
-        const result = await sendAnomalyAlertToSlack(testCtx.db, DEFAULT_USER_ID, anomalies);
+        const result = await sendAnomalyAlertToSlack(testCtx.db, TEST_USER_ID, anomalies);
         expect(result).toBe(false);
       } finally {
         await testCtx.db.execute(
@@ -221,7 +221,7 @@ describe("Anomaly detection", () => {
 
       await testCtx.db.execute(
         sql`INSERT INTO fitness.auth_account (user_id, auth_provider, provider_account_id, name)
-            VALUES (${DEFAULT_USER_ID}, 'slack', 'U_SLACK_ERR', 'Error User')
+            VALUES (${TEST_USER_ID}, 'slack', 'U_SLACK_ERR', 'Error User')
             ON CONFLICT DO NOTHING`,
       );
 
@@ -244,7 +244,7 @@ describe("Anomaly detection", () => {
       );
 
       try {
-        const result = await sendAnomalyAlertToSlack(testCtx.db, DEFAULT_USER_ID, anomalies);
+        const result = await sendAnomalyAlertToSlack(testCtx.db, TEST_USER_ID, anomalies);
         expect(result).toBe(false);
       } finally {
         await testCtx.db.execute(
@@ -267,7 +267,7 @@ describe("Anomaly detection", () => {
 
       await testCtx.db.execute(
         sql`INSERT INTO fitness.auth_account (user_id, auth_provider, provider_account_id, name)
-            VALUES (${DEFAULT_USER_ID}, 'slack', 'U_SLACK_NET', 'Net User')
+            VALUES (${TEST_USER_ID}, 'slack', 'U_SLACK_NET', 'Net User')
             ON CONFLICT DO NOTHING`,
       );
 
@@ -290,7 +290,7 @@ describe("Anomaly detection", () => {
       );
 
       try {
-        const result = await sendAnomalyAlertToSlack(testCtx.db, DEFAULT_USER_ID, anomalies);
+        const result = await sendAnomalyAlertToSlack(testCtx.db, TEST_USER_ID, anomalies);
         expect(result).toBe(false);
       } finally {
         await testCtx.db.execute(
@@ -313,7 +313,7 @@ describe("Anomaly detection", () => {
 
       await testCtx.db.execute(
         sql`INSERT INTO fitness.auth_account (user_id, auth_provider, provider_account_id, name)
-            VALUES (${DEFAULT_USER_ID}, 'slack', 'U_SLACK_WARN', 'Warn User')
+            VALUES (${TEST_USER_ID}, 'slack', 'U_SLACK_WARN', 'Warn User')
             ON CONFLICT DO NOTHING`,
       );
 
@@ -339,7 +339,7 @@ describe("Anomaly detection", () => {
       );
 
       try {
-        const result = await sendAnomalyAlertToSlack(testCtx.db, DEFAULT_USER_ID, anomalies);
+        const result = await sendAnomalyAlertToSlack(testCtx.db, TEST_USER_ID, anomalies);
         expect(result).toBe(true);
 
         const callBody = JSON.parse(capturedBody);

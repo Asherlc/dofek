@@ -24,6 +24,10 @@ const mockGetEnabledSyncProviders = vi.fn<() => Array<{ id: string }>>(() => [])
 const mockGetAllProviders = vi.fn<() => Array<Record<string, unknown>>>(() => []);
 const mockEnsureProvidersRegistered = vi.fn(() => Promise.resolve());
 const mockProcessSyncJob = vi.fn();
+const mockDbExecute = vi.fn(async () => [{ id: "test-user" }]);
+const mockCreateDatabaseFromEnv = vi.fn(() => ({
+  execute: mockDbExecute,
+}));
 const mockRedisConnection = { host: "localhost" };
 const mockCreateSyncQueue = vi.fn(() => ({
   add: mockAdd,
@@ -62,11 +66,11 @@ vi.mock("./providers/index.ts", () => ({
 }));
 
 vi.mock("./db/index.ts", () => ({
-  createDatabaseFromEnv: vi.fn(() => ({})),
+  createDatabaseFromEnv: mockCreateDatabaseFromEnv,
 }));
 
 vi.mock("./db/schema.ts", () => ({
-  DEFAULT_USER_ID: "test-user",
+  TEST_USER_ID: "test-user",
 }));
 
 // Mock modules used by auth/import paths
@@ -113,6 +117,11 @@ await new Promise((resolve) => setTimeout(resolve, 0));
 process.off("unhandledRejection", suppressRejection);
 
 process.argv = savedArgv;
+
+beforeEach(() => {
+  mockDbExecute.mockReset();
+  mockDbExecute.mockResolvedValue([{ id: "test-user" }]);
+});
 
 describe("handleSyncCommand", () => {
   beforeEach(() => {
@@ -248,6 +257,40 @@ describe("handleSyncCommand", () => {
     });
   });
 
+  it("uses DOFEK_USER_ID when provided and skips DB user lookup", async () => {
+    const priorUserId = process.env.DOFEK_USER_ID;
+    process.env.DOFEK_USER_ID = "env-user-123";
+    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
+    mockDbExecute.mockRejectedValue(new Error("should not query DB"));
+
+    try {
+      const code = await handleSyncCommand(["node", "index.ts", "sync"]);
+      expect(code).toBe(0);
+      expect(mockAdd).toHaveBeenCalledWith("sync", {
+        providerId: "strava",
+        sinceDays: 7,
+        userId: "env-user-123",
+      });
+      expect(mockDbExecute).not.toHaveBeenCalled();
+    } finally {
+      if (priorUserId === undefined) {
+        delete process.env.DOFEK_USER_ID;
+      } else {
+        process.env.DOFEK_USER_ID = priorUserId;
+      }
+    }
+  });
+
+  it("throws a clear error when no user row can be resolved", async () => {
+    delete process.env.DOFEK_USER_ID;
+    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
+    mockDbExecute.mockResolvedValue([]);
+
+    await expect(handleSyncCommand(["node", "index.ts", "sync"])).rejects.toThrow(
+      "No user found. Set DOFEK_USER_ID or create a user first.",
+    );
+  });
+
   it("cleans up BullMQ resources on success", async () => {
     mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
     await handleSyncCommand(["node", "index.ts", "sync"]);
@@ -370,8 +413,14 @@ describe("handleAuthCommand", () => {
       "strava",
       "Strava",
       "https://www.strava.com/api/v3",
+      "test-user",
     );
-    expect(mockSaveTokens).toHaveBeenCalledWith(expect.any(Object), "strava", mockTokens);
+    expect(mockSaveTokens).toHaveBeenCalledWith(
+      expect.any(Object),
+      "strava",
+      mockTokens,
+      "test-user",
+    );
     expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("[auth] Authorized!"));
     expect(mockLoggerInfo).toHaveBeenCalledWith("[auth] Tokens saved to database.");
   });
@@ -521,12 +570,17 @@ describe("handleAuthCommand", () => {
       "req-secret",
       "verifier-123",
     );
-    expect(mockSaveTokens).toHaveBeenCalledWith(expect.any(Object), "fatsecret", {
-      accessToken: "access-token-1",
-      refreshToken: "access-secret-1",
-      expiresAt: new Date("2099-12-31T23:59:59Z"),
-      scopes: "",
-    });
+    expect(mockSaveTokens).toHaveBeenCalledWith(
+      expect.any(Object),
+      "fatsecret",
+      {
+        accessToken: "access-token-1",
+        refreshToken: "access-secret-1",
+        expiresAt: new Date("2099-12-31T23:59:59Z"),
+        scopes: "",
+      },
+      "test-user",
+    );
     expect(mockExecFile).toHaveBeenCalledWith("open", ["https://fatsecret.com/auth"]);
     expect(mockLoggerInfo).toHaveBeenCalledWith("[auth] Requesting OAuth 1.0 request token...");
     expect(mockLoggerInfo).toHaveBeenCalledWith("[auth] Exchanging for access token...");
@@ -828,5 +882,25 @@ describe("handleImportCommand", () => {
     const sinceArg: Date = mockImportAppleHealthFile.mock.calls[0]?.[2];
     const expectedSince = before - 30 * 24 * 60 * 60 * 1000;
     expect(Math.abs(sinceArg.getTime() - expectedSince)).toBeLessThan(1000);
+  });
+
+  it("does not iterate and log error items when errors.length is zero", async () => {
+    mockImportAppleHealthFile.mockResolvedValue({
+      recordsSynced: 1,
+      errors: [],
+      duration: 10,
+    });
+
+    const code = await handleImportCommand([
+      "node",
+      "index.ts",
+      "import",
+      "apple-health",
+      "/path/to/export.zip",
+    ]);
+
+    expect(code).toBe(0);
+    // With zero errors, no individual error messages should be logged
+    expect(mockLoggerError).not.toHaveBeenCalled();
   });
 });

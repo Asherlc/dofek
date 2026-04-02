@@ -77,7 +77,7 @@ describe("DISCONNECT_CHILD_TABLES", () => {
   });
 
   it("includes all required child tables", () => {
-    expect(DISCONNECT_CHILD_TABLES).toContain("fitness.exercise_alias");
+    expect(DISCONNECT_CHILD_TABLES).toContain("fitness.metric_stream");
     expect(DISCONNECT_CHILD_TABLES).toContain("fitness.strength_workout");
     expect(DISCONNECT_CHILD_TABLES).toContain("fitness.body_measurement");
     expect(DISCONNECT_CHILD_TABLES).toContain("fitness.daily_metrics");
@@ -115,6 +115,20 @@ describe("DISCONNECT_CHILD_TABLES", () => {
 // ---------------------------------------------------------------------------
 
 describe("ProviderDetailRepository", () => {
+  function stringifyQuery(query: unknown): string {
+    if (typeof query === "object" && query !== null) {
+      const sqlCandidate = Reflect.get(query, "sql");
+      if (typeof sqlCandidate === "string") {
+        return sqlCandidate;
+      }
+      const queryCandidate = Reflect.get(query, "query");
+      if (typeof queryCandidate === "string") {
+        return queryCandidate;
+      }
+    }
+    return JSON.stringify(query);
+  }
+
   function makeRepository(rows: Record<string, unknown>[] = [], transactionOverride?: unknown) {
     const execute = vi.fn().mockResolvedValue(rows);
     const transaction = transactionOverride ?? vi.fn();
@@ -185,7 +199,18 @@ describe("ProviderDetailRepository", () => {
   // ── verifyOwnership ──
 
   describe("verifyOwnership", () => {
-    it("returns true when provider exists for user", async () => {
+    it("returns true when provider exists in oauth_token table for user", async () => {
+      const { repo, execute } = makeRepository([{ id: "strava" }]);
+      const result = await repo.verifyOwnership("strava");
+      expect(result).toBe(true);
+      // Verify query contains UNION as expected for the expanded check
+      const queryString = stringifyQuery(vi.mocked(execute).mock.calls[0]?.[0]);
+      expect(queryString).toMatch(/UNION/i);
+      expect(queryString).toMatch(/fitness\.oauth_token/i);
+      expect(queryString).toMatch(/fitness\.provider/i);
+    });
+
+    it("returns true when provider exists in provider table for user (even if not in tokens)", async () => {
       const { repo } = makeRepository([{ id: "strava" }]);
       const result = await repo.verifyOwnership("strava");
       expect(result).toBe(true);
@@ -197,7 +222,7 @@ describe("ProviderDetailRepository", () => {
       expect(result).toStrictEqual(true);
     });
 
-    it("returns false when provider does not exist for user", async () => {
+    it("returns false when provider does not exist in either table for user", async () => {
       const { repo } = makeRepository([]);
       const result = await repo.verifyOwnership("unknown");
       expect(result).toBe(false);
@@ -219,7 +244,7 @@ describe("ProviderDetailRepository", () => {
   // ── deleteProviderData ──
 
   describe("deleteProviderData", () => {
-    it("deletes all child table rows and provider row in a transaction", async () => {
+    it("deletes all user-scoped provider rows in a transaction", async () => {
       const txExecute = vi.fn().mockResolvedValue([]);
       const mockTransaction = vi
         .fn()
@@ -231,8 +256,7 @@ describe("ProviderDetailRepository", () => {
       await repo.deleteProviderData("strava");
 
       expect(mockTransaction).toHaveBeenCalledTimes(1);
-      // 16 child tables + 1 provider delete = 17 deletes inside the transaction
-      expect(txExecute).toHaveBeenCalledTimes(17);
+      expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length);
     });
 
     it("deletes from each child table in order", async () => {
@@ -250,8 +274,7 @@ describe("ProviderDetailRepository", () => {
       for (let index = 0; index < DISCONNECT_CHILD_TABLES.length; index++) {
         expect(txExecute.mock.calls[index]).toBeDefined();
       }
-      // Final call is the provider delete
-      expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length + 1);
+      expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length);
     });
   });
 
@@ -399,7 +422,7 @@ describe("ProviderDetailRepository", () => {
       expect(mockTransaction).toHaveBeenCalledTimes(1);
     });
 
-    it("deleteProviderData deletes from exactly DISCONNECT_CHILD_TABLES.length + 1 tables", async () => {
+    it("deleteProviderData deletes from exactly DISCONNECT_CHILD_TABLES.length tables", async () => {
       const txExecute = vi.fn().mockResolvedValue([]);
       const mockTransaction = vi
         .fn()
@@ -409,10 +432,8 @@ describe("ProviderDetailRepository", () => {
       const { repo } = makeRepository([], mockTransaction);
 
       await repo.deleteProviderData("test-provider");
-      // 16 child tables + 1 provider row = 17
-      expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length + 1);
-      // Verify it's exactly 17, not 16 (BlockStatement removing the final delete)
-      expect(txExecute).toHaveBeenCalledTimes(17);
+      expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length);
+      expect(txExecute).toHaveBeenCalledTimes(16);
     });
 
     it("DISCONNECT_CHILD_TABLES is an array (not empty array from ArrayDeclaration mutation)", () => {
@@ -473,9 +494,9 @@ describe("ProviderDetailRepository", () => {
     it("DISCONNECT_CHILD_TABLES ordering: activity comes before oauth_token", () => {
       const activityIndex = DISCONNECT_CHILD_TABLES.indexOf("fitness.activity");
       const oauthIndex = DISCONNECT_CHILD_TABLES.indexOf("fitness.oauth_token");
+      expect(activityIndex).toBeGreaterThanOrEqual(0);
+      expect(oauthIndex).toBeGreaterThanOrEqual(0);
       expect(activityIndex).toBeLessThan(oauthIndex);
-      expect(activityIndex).toBe(14);
-      expect(oauthIndex).toBe(15);
     });
   });
 });

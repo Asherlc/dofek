@@ -2,7 +2,7 @@ import assert from "node:assert";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { refreshDedupViews } from "../db/dedup.ts";
 import { loadProviderPriorityConfig, syncProviderPriorities } from "../db/provider-priority.ts";
-import { DEFAULT_USER_ID, dailyMetrics, sleepSession } from "../db/schema.ts";
+import { dailyMetrics, sleepSession, TEST_USER_ID } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { fitSleepFromDb } from "./refit.ts";
@@ -54,7 +54,7 @@ async function insertDailyHrv(dates: Map<string, number>): Promise<void> {
   const rows = Array.from(dates.entries()).map(([date, hrv]) => ({
     date,
     providerId: "test-provider",
-    userId: DEFAULT_USER_ID,
+    userId: TEST_USER_ID,
     hrv,
   }));
   if (rows.length > 0) {
@@ -65,7 +65,7 @@ async function insertDailyHrv(dates: Map<string, number>): Promise<void> {
 describe("fitSleepFromDb", () => {
   it("executes the LATERAL subquery SQL without error on an empty database", async () => {
     await refreshDedupViews(ctx.db);
-    const result = await fitSleepFromDb(ctx.db, DEFAULT_USER_ID);
+    const result = await fitSleepFromDb(ctx.db, TEST_USER_ID);
     expect(result).toBeNull();
   });
 
@@ -75,7 +75,7 @@ describe("fitSleepFromDb", () => {
     for (let i = 30; i < 35; i++) {
       sleepRows.push({
         providerId: "test-provider",
-        userId: DEFAULT_USER_ID,
+        userId: TEST_USER_ID,
         startedAt: sleepStart(daysAgo(i)),
         endedAt: sleepEnd(daysAgo(i)),
         durationMinutes: 480,
@@ -96,7 +96,7 @@ describe("fitSleepFromDb", () => {
 
     await refreshDedupViews(ctx.db);
 
-    const result = await fitSleepFromDb(ctx.db, DEFAULT_USER_ID);
+    const result = await fitSleepFromDb(ctx.db, TEST_USER_ID);
     expect(result).toBeNull();
   });
 
@@ -116,7 +116,7 @@ describe("fitSleepFromDb", () => {
     for (let i = 5; i < 25; i++) {
       sleepRows.push({
         providerId: "test-provider",
-        userId: DEFAULT_USER_ID,
+        userId: TEST_USER_ID,
         startedAt: sleepStart(daysAgo(i)),
         endedAt: sleepEnd(daysAgo(i)),
         durationMinutes: sleepDuration,
@@ -128,7 +128,7 @@ describe("fitSleepFromDb", () => {
 
     await refreshDedupViews(ctx.db);
 
-    const result = await fitSleepFromDb(ctx.db, DEFAULT_USER_ID);
+    const result = await fitSleepFromDb(ctx.db, TEST_USER_ID);
     assert(result !== null, "expected non-null sleep target");
     expect(result.minutes).toBe(sleepDuration);
     expect(result.sampleCount).toBeGreaterThanOrEqual(14);
@@ -155,7 +155,7 @@ describe("fitSleepFromDb", () => {
     for (let i = 5; i < 25; i++) {
       sleepRows.push({
         providerId: "test-provider",
-        userId: DEFAULT_USER_ID,
+        userId: TEST_USER_ID,
         startedAt: sleepStart(daysAgo(i)),
         endedAt: sleepEnd(daysAgo(i)),
         durationMinutes: i < 15 ? 540 : 420,
@@ -167,7 +167,7 @@ describe("fitSleepFromDb", () => {
 
     await refreshDedupViews(ctx.db);
 
-    const result = await fitSleepFromDb(ctx.db, DEFAULT_USER_ID);
+    const result = await fitSleepFromDb(ctx.db, TEST_USER_ID);
     // All 20 nights should qualify (10 above median, 10 at median)
     assert(result !== null, "expected non-null sleep target");
     expect(result.sampleCount).toBeGreaterThanOrEqual(14);

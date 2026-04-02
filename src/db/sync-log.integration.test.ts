@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { TEST_USER_ID } from "./schema.ts";
 import { logSync, withSyncLog } from "./sync-log.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
 import { ensureProvider } from "./tokens.ts";
@@ -9,7 +10,7 @@ describe("Sync Log (integration)", () => {
 
   beforeAll(async () => {
     ctx = await setupTestDatabase();
-    await ensureProvider(ctx.db, "test-provider", "Test Provider");
+    await ensureProvider(ctx.db, "test-provider", "Test Provider", undefined, TEST_USER_ID);
   }, 120_000);
 
   afterAll(async () => {
@@ -24,6 +25,7 @@ describe("Sync Log (integration)", () => {
         status: "success",
         recordCount: 10,
         durationMs: 500,
+        userId: TEST_USER_ID,
       });
 
       const rows = await ctx.db.execute<{
@@ -52,6 +54,7 @@ describe("Sync Log (integration)", () => {
         status: "error",
         errorMessage: "API rate limit exceeded",
         durationMs: 100,
+        userId: TEST_USER_ID,
       });
 
       const rows = await ctx.db.execute<{
@@ -73,10 +76,16 @@ describe("Sync Log (integration)", () => {
 
   describe("withSyncLog", () => {
     it("logs success and returns the result", async () => {
-      const result = await withSyncLog(ctx.db, "test-provider", "metrics", async () => ({
-        recordCount: 5,
-        result: "synced-data",
-      }));
+      const result = await withSyncLog(
+        ctx.db,
+        "test-provider",
+        "metrics",
+        async () => ({
+          recordCount: 5,
+          result: "synced-data",
+        }),
+        TEST_USER_ID,
+      );
 
       expect(result).toBe("synced-data");
 
@@ -92,9 +101,15 @@ describe("Sync Log (integration)", () => {
 
     it("logs error and re-throws on failure", async () => {
       await expect(
-        withSyncLog(ctx.db, "test-provider", "workouts", async () => {
-          throw new Error("Connection timeout");
-        }),
+        withSyncLog(
+          ctx.db,
+          "test-provider",
+          "workouts",
+          async () => {
+            throw new Error("Connection timeout");
+          },
+          TEST_USER_ID,
+        ),
       ).rejects.toThrow("Connection timeout");
 
       const rows = await ctx.db.execute<{ status: string; error_message: string }>(
@@ -108,11 +123,17 @@ describe("Sync Log (integration)", () => {
     });
 
     it("records duration in milliseconds", async () => {
-      await withSyncLog(ctx.db, "test-provider", "hr-data", async () => {
-        // Simulate some work
-        await new Promise((r) => setTimeout(r, 50));
-        return { recordCount: 1, result: null };
-      });
+      await withSyncLog(
+        ctx.db,
+        "test-provider",
+        "hr-data",
+        async () => {
+          // Simulate some work
+          await new Promise((r) => setTimeout(r, 50));
+          return { recordCount: 1, result: null };
+        },
+        TEST_USER_ID,
+      );
 
       const rows = await ctx.db.execute<{ duration_ms: number }>(
         sql`SELECT duration_ms
@@ -125,10 +146,16 @@ describe("Sync Log (integration)", () => {
 
     it("logs duration even on error", async () => {
       try {
-        await withSyncLog(ctx.db, "test-provider", "error-timed", async () => {
-          await new Promise((r) => setTimeout(r, 30));
-          throw new Error("timed failure");
-        });
+        await withSyncLog(
+          ctx.db,
+          "test-provider",
+          "error-timed",
+          async () => {
+            await new Promise((r) => setTimeout(r, 30));
+            throw new Error("timed failure");
+          },
+          TEST_USER_ID,
+        );
       } catch {
         // expected
       }

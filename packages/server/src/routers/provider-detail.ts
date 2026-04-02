@@ -80,7 +80,7 @@ export const providerDetailRouter = router({
       return repo.getRecordDetail(input.providerId, input.dataType, input.recordId);
     }),
 
-  /** Disconnect a provider — removes all data, OAuth tokens, and provider row */
+  /** Disconnect a provider — removes all user-scoped data and OAuth tokens */
   disconnect: protectedProcedure
     .input(z.object({ providerId: z.string() }))
     .mutation(async ({ ctx, input }) => {

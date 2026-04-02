@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DEFAULT_USER_ID } from "../../../../src/db/schema.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
@@ -21,13 +21,13 @@ describe("Trends router — continuous aggregate data tests", () => {
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
 
-    const session = await createSession(testCtx.db, DEFAULT_USER_ID);
+    const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
 
     // Insert a test provider
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES ('test_provider', 'Test Provider', ${DEFAULT_USER_ID})
+          VALUES ('test_provider', 'Test Provider', ${TEST_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
 
@@ -42,7 +42,7 @@ describe("Trends router — continuous aggregate data tests", () => {
         sql`INSERT INTO fitness.activity (
               provider_id, user_id, activity_type, started_at, ended_at, name
             ) VALUES (
-              'test_provider', ${DEFAULT_USER_ID}, 'cycling',
+              'test_provider', ${TEST_USER_ID}, 'cycling',
               CURRENT_TIMESTAMP - ${day}::int * INTERVAL '1 day',
               CURRENT_TIMESTAMP - ${day}::int * INTERVAL '1 day' + ${durationMin}::int * INTERVAL '1 minute',
               'Daily Ride'
@@ -61,13 +61,13 @@ describe("Trends router — continuous aggregate data tests", () => {
           const speed = 8 + Math.sin(s * 0.08) * 1.5;
           const ts = `CURRENT_TIMESTAMP - ${day} * INTERVAL '1 day' + ${s} * INTERVAL '1 minute'`;
           metricValues.push(
-            `(${ts}, '${DEFAULT_USER_ID}', '${actId}', 'test_provider', ${hr}, ${power}, ${speed.toFixed(3)}, ${cadence})`,
+            `(${ts}, '${TEST_USER_ID}', '${actId}', 'test_provider', ${hr}, ${power}, ${speed.toFixed(3)}, ${cadence})`,
           );
           sensorValues.push(
-            `(${ts}, '${DEFAULT_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${actId}', ${hr}, NULL)`,
-            `(${ts}, '${DEFAULT_USER_ID}', 'test_provider', NULL, 'api', 'power', '${actId}', ${power}, NULL)`,
-            `(${ts}, '${DEFAULT_USER_ID}', 'test_provider', NULL, 'api', 'speed', '${actId}', ${speed.toFixed(3)}, NULL)`,
-            `(${ts}, '${DEFAULT_USER_ID}', 'test_provider', NULL, 'api', 'cadence', '${actId}', ${cadence}, NULL)`,
+            `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${actId}', ${hr}, NULL)`,
+            `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'power', '${actId}', ${power}, NULL)`,
+            `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'speed', '${actId}', ${speed.toFixed(3)}, NULL)`,
+            `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'cadence', '${actId}', ${cadence}, NULL)`,
           );
         }
         await testCtx.db.execute(

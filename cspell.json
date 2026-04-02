@@ -101,6 +101,7 @@
     "provisioningprofile",
     "agvtool",
     "uuidgen",
+    "appleid",
     "signin",
     "signup",
     "oauth",

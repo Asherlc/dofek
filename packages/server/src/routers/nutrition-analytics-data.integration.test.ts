@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DEFAULT_USER_ID } from "../../../../src/db/schema.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
@@ -28,25 +28,25 @@ describe("Nutrition analytics data coverage", () => {
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
 
-    const session = await createSession(testCtx.db, DEFAULT_USER_ID);
+    const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
 
     // Set up user profile
     await testCtx.db.execute(
       sql`UPDATE fitness.user_profile
           SET max_hr = 190, resting_hr = 50, ftp = 250, birth_date = '1990-01-01'
-          WHERE id = ${DEFAULT_USER_ID}`,
+          WHERE id = ${TEST_USER_ID}`,
     );
 
     // Insert providers
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES ('test_provider', 'Test Provider', ${DEFAULT_USER_ID})
+          VALUES ('test_provider', 'Test Provider', ${TEST_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
     await testCtx.db.execute(
-      sql`INSERT INTO fitness.provider (id, name)
-          VALUES ('dofek', 'Dofek App')
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES ('dofek', 'Dofek App', ${TEST_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
 
@@ -61,7 +61,7 @@ describe("Nutrition analytics data coverage", () => {
         sql`INSERT INTO fitness.nutrition_daily (
               user_id, provider_id, date, calories, protein_g, carbs_g, fat_g
             ) VALUES (
-              ${DEFAULT_USER_ID}, 'dofek',
+              ${TEST_USER_ID}, 'dofek',
               CURRENT_DATE - ${i}::int,
               ${calories}, ${proteinG}, ${carbsG}, ${fatG}
             ) ON CONFLICT DO NOTHING`,
@@ -77,7 +77,7 @@ describe("Nutrition analytics data coverage", () => {
               recorded_at, provider_id, user_id, weight_kg
             ) VALUES (
               (CURRENT_DATE - ${i}::int)::timestamp + INTERVAL '8 hours',
-              'test_provider', ${DEFAULT_USER_ID}, ${weightKg}
+              'test_provider', ${TEST_USER_ID}, ${weightKg}
             )`,
       );
     }
@@ -92,7 +92,7 @@ describe("Nutrition analytics data coverage", () => {
               resting_hr, steps
             ) VALUES (
               CURRENT_DATE - ${i}::int,
-              'test_provider', ${DEFAULT_USER_ID},
+              'test_provider', ${TEST_USER_ID},
               ${activeEnergy}, ${basalEnergy}, 55, 8000
             ) ON CONFLICT DO NOTHING`,
       );
@@ -118,7 +118,7 @@ describe("Nutrition analytics data coverage", () => {
               user_id, provider_id, date, meal, food_name,
               nutrition_data_id, confirmed
             ) VALUES (
-              ${DEFAULT_USER_ID}, 'dofek',
+              ${TEST_USER_ID}, 'dofek',
               CURRENT_DATE - ${i}::int,
               'breakfast', 'Fortified Oatmeal',
               (SELECT id FROM nd), true
@@ -143,7 +143,7 @@ describe("Nutrition analytics data coverage", () => {
               user_id, provider_id, date, meal, food_name,
               nutrition_data_id, confirmed
             ) VALUES (
-              ${DEFAULT_USER_ID}, 'dofek',
+              ${TEST_USER_ID}, 'dofek',
               CURRENT_DATE - ${i}::int,
               'lunch', 'Chicken Salad Bowl',
               (SELECT id FROM nd), true
@@ -168,7 +168,7 @@ describe("Nutrition analytics data coverage", () => {
               user_id, provider_id, date, meal, food_name,
               nutrition_data_id, confirmed
             ) VALUES (
-              ${DEFAULT_USER_ID}, 'dofek',
+              ${TEST_USER_ID}, 'dofek',
               CURRENT_DATE - ${i}::int,
               'dinner', 'Salmon with Vegetables',
               (SELECT id FROM nd), true
@@ -192,7 +192,7 @@ describe("Nutrition analytics data coverage", () => {
                 user_id, provider_id, date, meal, food_name,
                 nutrition_data_id, confirmed
               ) VALUES (
-                ${DEFAULT_USER_ID}, 'dofek',
+                ${TEST_USER_ID}, 'dofek',
                 CURRENT_DATE - ${i}::int,
                 'snack', 'Unconfirmed Snack',
                 (SELECT id FROM nd), false

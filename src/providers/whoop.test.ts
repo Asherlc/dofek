@@ -1036,7 +1036,7 @@ describe("WhoopProvider.sync() — workout collection from cycles", () => {
     // target should be an array (providerId + externalId columns)
     expect(Array.isArray(activityConflict?.target)).toBe(true);
     if (Array.isArray(activityConflict?.target)) {
-      expect(activityConflict.target.length).toBe(2);
+      expect(activityConflict.target.length).toBe(3);
     }
     // set should contain all updatable fields
     expect(isRecord(activityConflict?.set)).toBe(true);
@@ -2250,7 +2250,7 @@ describe("WhoopProvider.sync() — strength sync", () => {
     // target should be an array (providerId + externalId)
     expect(Array.isArray(strengthConflict?.target)).toBe(true);
     if (Array.isArray(strengthConflict?.target)) {
-      expect(strengthConflict.target.length).toBe(2);
+      expect(strengthConflict.target.length).toBe(3);
     }
     // set should contain the updatable fields
     expect(isRecord(strengthConflict?.set)).toBe(true);

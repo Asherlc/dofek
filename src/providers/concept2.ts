@@ -7,6 +7,7 @@ import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
+import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { ProviderHttpClient } from "./http-client.ts";
 import type {
@@ -73,6 +74,14 @@ const concept2ResultsResponseSchema = z.object({
     }),
   }),
 });
+
+function resolveScopedUserId(userId?: string): string {
+  const scopedUserId = userId ?? getTokenUserId();
+  if (!scopedUserId) {
+    throw new Error("concept2 webhook sync requires userId");
+  }
+  return scopedUserId;
+}
 
 // ============================================================
 // Parsed types
@@ -270,9 +279,16 @@ export class Concept2Provider implements WebhookProvider {
 
     // Handle delete events
     if (event.eventType === "delete" && event.objectId) {
+      const scopedUserId = resolveScopedUserId(options?.userId);
       await db
         .delete(activity)
-        .where(and(eq(activity.providerId, this.id), eq(activity.externalId, event.objectId)));
+        .where(
+          and(
+            eq(activity.userId, scopedUserId),
+            eq(activity.providerId, this.id),
+            eq(activity.externalId, event.objectId),
+          ),
+        );
       return { provider: this.id, recordsSynced: 0, errors: [], duration: Date.now() - start };
     }
 
@@ -311,7 +327,7 @@ export class Concept2Provider implements WebhookProvider {
               raw: parsed.raw,
             })
             .onConflictDoUpdate({
-              target: [activity.providerId, activity.externalId],
+              target: [activity.userId, activity.providerId, activity.externalId],
               set: {
                 activityType: parsed.activityType,
                 name: parsed.name,
@@ -403,7 +419,7 @@ export class Concept2Provider implements WebhookProvider {
                     raw: parsed.raw,
                   })
                   .onConflictDoUpdate({
-                    target: [activity.providerId, activity.externalId],
+                    target: [activity.userId, activity.providerId, activity.externalId],
                     set: {
                       activityType: parsed.activityType,
                       name: parsed.name,

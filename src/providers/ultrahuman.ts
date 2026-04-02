@@ -225,7 +225,12 @@ export class UltrahumanProvider implements SyncProvider {
                     skinTempC: daily.skinTempC,
                   })
                   .onConflictDoUpdate({
-                    target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
+                    target: [
+                      dailyMetrics.userId,
+                      dailyMetrics.date,
+                      dailyMetrics.providerId,
+                      dailyMetrics.sourceName,
+                    ],
                     set: {
                       restingHr: daily.restingHr,
                       hrv: daily.hrv,
@@ -251,7 +256,7 @@ export class UltrahumanProvider implements SyncProvider {
                     durationMinutes: sleep.durationMinutes,
                   })
                   .onConflictDoUpdate({
-                    target: [sleepSession.providerId, sleepSession.externalId],
+                    target: [sleepSession.userId, sleepSession.providerId, sleepSession.externalId],
                     set: {
                       durationMinutes: sleep.durationMinutes,
                     },

@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DEFAULT_USER_ID } from "../../../../src/db/schema.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
@@ -15,19 +15,19 @@ describe("Activity router", () => {
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
 
-    const session = await createSession(testCtx.db, DEFAULT_USER_ID);
+    const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
 
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES ('test_provider', 'Test Provider', ${DEFAULT_USER_ID})
+          VALUES ('test_provider', 'Test Provider', ${TEST_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
 
     await testCtx.db.execute(
       sql`UPDATE fitness.user_profile
           SET max_hr = 190
-          WHERE id = ${DEFAULT_USER_ID}`,
+          WHERE id = ${TEST_USER_ID}`,
     );
 
     const insertedActivities = await testCtx.db.execute<{ id: string }>(
@@ -35,7 +35,7 @@ describe("Activity router", () => {
             provider_id, user_id, activity_type, started_at, ended_at, name
           ) VALUES (
             'test_provider',
-            ${DEFAULT_USER_ID},
+            ${TEST_USER_ID},
             'running',
             CURRENT_TIMESTAMP - INTERVAL '2 days',
             CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '30 minutes',
@@ -54,21 +54,21 @@ describe("Activity router", () => {
           ) VALUES
           (
             CURRENT_TIMESTAMP - INTERVAL '2 days',
-            ${DEFAULT_USER_ID},
+            ${TEST_USER_ID},
             ${metricOnlyActivityId},
             'test_provider',
             150, 210, 3.8, 88
           ),
           (
             CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '1 second',
-            ${DEFAULT_USER_ID},
+            ${TEST_USER_ID},
             ${metricOnlyActivityId},
             'test_provider',
             152, 215, 3.9, 89
           ),
           (
             CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '2 seconds',
-            ${DEFAULT_USER_ID},
+            ${TEST_USER_ID},
             ${metricOnlyActivityId},
             'test_provider',
             155, 220, 4.0, 90

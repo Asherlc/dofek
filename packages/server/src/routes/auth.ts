@@ -1,7 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { IDENTITY_PROVIDER_NAMES } from "@dofek/auth/auth";
 import { getOAuthRedirectUri, type TokenSet } from "dofek/auth/oauth";
-import { DEFAULT_USER_ID } from "dofek/db/schema";
 import { sql } from "drizzle-orm";
 import { escapeAttribute, escapeText } from "entities/escape";
 import express, { Router } from "express";
@@ -36,6 +35,15 @@ import { queryCache } from "../lib/cache.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 /**
  * Build the HTML page shown in the OAuth popup after successful authorization.
  * Includes a BroadcastChannel message + window.close() so the parent window
@@ -46,10 +54,18 @@ export function oauthSuccessHtml(
   detail?: string,
   providerId?: string,
 ): string {
-  const detailLine = detail ? `<p>${detail}</p>` : "";
-  const broadcastPayload = JSON.stringify({ type: "complete", providerId });
-  const postMessagePayload = JSON.stringify({ type: "oauth-complete", providerId });
-  return `<html><body style="font-family:system-ui;background:#111;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><h1>Authorized!</h1><p>${providerName} connected successfully.</p>${detailLine}<p><a href="/" style="color:#10b981">Return to dashboard</a></p></div><script>try{new BroadcastChannel('oauth-complete').postMessage(${broadcastPayload})}catch(e){}try{window.opener&&window.opener.postMessage(${postMessagePayload},'*')}catch(e){}setTimeout(function(){window.close()},1500)</script></body></html>`;
+  const safeProviderName = escapeHtml(providerName);
+  const safeDetail = detail ? `<p>${escapeHtml(detail)}</p>` : "";
+  // Ensure JSON payloads don't contain </script> to prevent script injection
+  const broadcastPayload = JSON.stringify({ type: "complete", providerId }).replace(
+    /<\/script/gi,
+    "\\u003c/script",
+  );
+  const postMessagePayload = JSON.stringify({ type: "oauth-complete", providerId }).replace(
+    /<\/script/gi,
+    "\\u003c/script",
+  );
+  return `<html><body style="font-family:system-ui;background:#111;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><h1>Authorized!</h1><p>${safeProviderName} connected successfully.</p>${safeDetail}<p><a href="/" style="color:#10b981">Return to dashboard</a></p></div><script>try{new BroadcastChannel('oauth-complete').postMessage(${broadcastPayload})}catch(e){}try{window.opener&&window.opener.postMessage(${postMessagePayload},'*')}catch(e){}setTimeout(function(){window.close()},1500)</script></body></html>`;
 }
 
 interface OAuthStateEntry {
@@ -149,7 +165,7 @@ async function persistProviderConnection(params: {
     params.apiBaseUrl,
     params.userId,
   );
-  await saveTokens(params.db, params.provider.id, params.tokens);
+  await saveTokens(params.db, params.provider.id, params.tokens, params.userId);
   await queryCache.invalidateByPrefix(`${params.userId}:sync.providers`);
 
   logger.info(
@@ -625,7 +641,11 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
     // Resolve the logged-in user so we can link the Slack identity to them
     const sessionId = getSessionIdFromRequest(req);
     const session = sessionId ? await validateSession(db, sessionId) : null;
-    const userId = session?.userId ?? DEFAULT_USER_ID;
+    if (!session) {
+      res.status(401).send("You must be logged in to connect Slack");
+      return;
+    }
+    const userId = session.userId;
 
     const redirectUri = getOAuthRedirectUri();
     const stateToken = `slack:${randomBytes(16).toString("hex")}`;
@@ -661,7 +681,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       await startDataProviderOAuth(req, res, providerId, {
         providerId,
         intent: "login",
-        userId: DEFAULT_USER_ID,
+        userId: `login:${randomBytes(8).toString("hex")}`,
         mobileScheme,
         returnTo,
       });
@@ -710,10 +730,22 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         res.status(400).send("Missing provider");
         return;
       }
+      const { getAllProviders } = await import("dofek/providers/registry");
+      const { ensureProvidersRegistered } = await import("../routers/sync.ts");
+      await ensureProvidersRegistered();
+      const provider = getAllProviders().find((candidate) => candidate.id === providerId);
+      if (!provider) {
+        res.status(404).send("Unknown provider");
+        return;
+      }
       // Resolve the logged-in user so the provider record is linked to them
       const sessionId = getSessionIdFromRequest(req);
       const session = sessionId ? await validateSession(db, sessionId) : null;
-      const userId = session?.userId ?? DEFAULT_USER_ID;
+      if (!session) {
+        res.status(401).send("You must be logged in to connect a provider");
+        return;
+      }
+      const userId = session.userId;
 
       await startDataProviderOAuth(req, res, providerId, {
         providerId,
@@ -783,12 +815,17 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         await ensureProvider(db, provider.id, provider.name, undefined, stored.userId);
         // Store OAuth 1.0 tokens — token as accessToken, tokenSecret as refreshToken
         // OAuth 1.0 tokens don't expire
-        await saveTokens(db, provider.id, {
-          accessToken: token,
-          refreshToken: tokenSecret,
-          expiresAt: new Date("2099-12-31"),
-          scopes: "",
-        });
+        await saveTokens(
+          db,
+          provider.id,
+          {
+            accessToken: token,
+            refreshToken: tokenSecret,
+            expiresAt: new Date("2099-12-31"),
+            scopes: "",
+          },
+          stored.userId,
+        );
         await queryCache.invalidateByPrefix(`${stored.userId}:sync.providers`);
 
         logger.info(`[auth] ${stored.providerId} OAuth 1.0 tokens saved.`);
@@ -914,7 +951,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         res.send(
           oauthSuccessHtml(
             "Slack",
-            `Bot added to <strong>${tokenData.team.name}</strong>. Send me a DM about what you ate!`,
+            `Bot added to ${tokenData.team.name}. Send me a DM about what you ate!`,
           ),
         );
         return;
@@ -1047,7 +1084,6 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
             logger.info(`[auth] Auto-linked ${providerId} identity to user ${session.userId}`);
           }
         } catch (identityErr: unknown) {
-          // Non-fatal: identity extraction failed but tokens are saved
           logger.warn(`[auth] Failed to extract identity from ${providerId}: ${identityErr}`);
         }
       } else {

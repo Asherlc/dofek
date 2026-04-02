@@ -11,6 +11,11 @@ import {
   pelotonOAuthConfig,
 } from "./peloton.ts";
 
+vi.mock("../db/token-user-context.ts", () => ({
+  getTokenUserId: () => "user-1",
+  runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
+}));
+
 // ============================================================
 // Tests targeting uncovered paths in peloton.ts
 // ============================================================

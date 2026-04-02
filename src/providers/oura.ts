@@ -862,7 +862,7 @@ export class OuraProvider implements WebhookProvider {
                   sleepType: parsed.sleepType,
                 })
                 .onConflictDoUpdate({
-                  target: [sleepSession.providerId, sleepSession.externalId],
+                  target: [sleepSession.userId, sleepSession.providerId, sleepSession.externalId],
                   set: {
                     startedAt: parsed.startedAt,
                     endedAt: parsed.endedAt,
@@ -923,7 +923,7 @@ export class OuraProvider implements WebhookProvider {
                   raw: w,
                 })
                 .onConflictDoUpdate({
-                  target: [activity.providerId, activity.externalId],
+                  target: [activity.userId, activity.providerId, activity.externalId],
                   set: {
                     activityType: mapOuraActivityType(w.activity),
                     startedAt: new Date(w.start_datetime),
@@ -981,7 +981,7 @@ export class OuraProvider implements WebhookProvider {
                   raw: s,
                 })
                 .onConflictDoUpdate({
-                  target: [activity.providerId, activity.externalId],
+                  target: [activity.userId, activity.providerId, activity.externalId],
                   set: {
                     activityType: sessionActivityType,
                     startedAt: new Date(s.start_datetime),
@@ -1085,7 +1085,7 @@ export class OuraProvider implements WebhookProvider {
               .insert(healthEvent)
               .values(rows.slice(i, i + HEALTH_EVENT_BATCH_SIZE))
               .onConflictDoUpdate({
-                target: [healthEvent.providerId, healthEvent.externalId],
+                target: [healthEvent.userId, healthEvent.providerId, healthEvent.externalId],
                 set: {
                   value: rows[i]?.value,
                   valueText: rows[i]?.valueText,
@@ -1129,7 +1129,7 @@ export class OuraProvider implements WebhookProvider {
                 startDate: new Date(`${r.day}T00:00:00`),
               })
               .onConflictDoUpdate({
-                target: [healthEvent.providerId, healthEvent.externalId],
+                target: [healthEvent.userId, healthEvent.providerId, healthEvent.externalId],
                 set: {
                   valueText: r.level,
                 },
@@ -1174,7 +1174,7 @@ export class OuraProvider implements WebhookProvider {
                 startDate: new Date(`${cv.day}T00:00:00`),
               })
               .onConflictDoUpdate({
-                target: [healthEvent.providerId, healthEvent.externalId],
+                target: [healthEvent.userId, healthEvent.providerId, healthEvent.externalId],
                 set: { value: cv.vascular_age },
               });
             count++;
@@ -1215,7 +1215,7 @@ export class OuraProvider implements WebhookProvider {
                 startDate: new Date(t.timestamp),
               })
               .onConflictDoUpdate({
-                target: [healthEvent.providerId, healthEvent.externalId],
+                target: [healthEvent.userId, healthEvent.providerId, healthEvent.externalId],
                 set: { valueText: t.tags.join(", ") },
               });
             count++;
@@ -1258,7 +1258,7 @@ export class OuraProvider implements WebhookProvider {
                 endDate: et.end_time ? new Date(et.end_time) : undefined,
               })
               .onConflictDoUpdate({
-                target: [healthEvent.providerId, healthEvent.externalId],
+                target: [healthEvent.userId, healthEvent.providerId, healthEvent.externalId],
                 set: {
                   valueText: tagName,
                   endDate: et.end_time ? new Date(et.end_time) : undefined,
@@ -1311,7 +1311,7 @@ export class OuraProvider implements WebhookProvider {
                 endDate,
               })
               .onConflictDoUpdate({
-                target: [healthEvent.providerId, healthEvent.externalId],
+                target: [healthEvent.userId, healthEvent.providerId, healthEvent.externalId],
                 set: { endDate },
               });
             count++;
@@ -1352,7 +1352,7 @@ export class OuraProvider implements WebhookProvider {
                 startDate: new Date(`${st.day}T00:00:00`),
               })
               .onConflictDoUpdate({
-                target: [healthEvent.providerId, healthEvent.externalId],
+                target: [healthEvent.userId, healthEvent.providerId, healthEvent.externalId],
                 set: { valueText: st.recommendation },
               });
             count++;
@@ -1484,7 +1484,12 @@ export class OuraProvider implements WebhookProvider {
                   resilienceLevel: parsed.resilienceLevel,
                 })
                 .onConflictDoUpdate({
-                  target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
+                  target: [
+                    dailyMetrics.userId,
+                    dailyMetrics.date,
+                    dailyMetrics.providerId,
+                    dailyMetrics.sourceName,
+                  ],
                   set: {
                     steps: parsed.steps,
                     restingHr: parsed.restingHr,
@@ -1583,7 +1588,7 @@ export class OuraProvider implements WebhookProvider {
                       raw: w,
                     })
                     .onConflictDoUpdate({
-                      target: [activity.providerId, activity.externalId],
+                      target: [activity.userId, activity.providerId, activity.externalId],
                       set: {
                         activityType: mapOuraActivityType(w.activity),
                         startedAt: new Date(w.start_datetime),
@@ -1643,7 +1648,7 @@ export class OuraProvider implements WebhookProvider {
                       raw: s,
                     })
                     .onConflictDoUpdate({
-                      target: [activity.providerId, activity.externalId],
+                      target: [activity.userId, activity.providerId, activity.externalId],
                       set: {
                         activityType: sessionActivityType,
                         startedAt: new Date(s.start_datetime),
@@ -1708,7 +1713,11 @@ export class OuraProvider implements WebhookProvider {
                       sleepType: parsed.sleepType,
                     })
                     .onConflictDoUpdate({
-                      target: [sleepSession.providerId, sleepSession.externalId],
+                      target: [
+                        sleepSession.userId,
+                        sleepSession.providerId,
+                        sleepSession.externalId,
+                      ],
                       set: {
                         startedAt: parsed.startedAt,
                         endedAt: parsed.endedAt,
@@ -1771,7 +1780,7 @@ export class OuraProvider implements WebhookProvider {
                   .insert(healthEvent)
                   .values(rows.slice(i, i + HEALTH_EVENT_BATCH_SIZE))
                   .onConflictDoUpdate({
-                    target: [healthEvent.providerId, healthEvent.externalId],
+                    target: [healthEvent.userId, healthEvent.providerId, healthEvent.externalId],
                     set: {
                       value: rows[i]?.value,
                       valueText: rows[i]?.valueText,
@@ -1827,7 +1836,7 @@ export class OuraProvider implements WebhookProvider {
                     startDate: new Date(`${r.day}T00:00:00`),
                   })
                   .onConflictDoUpdate({
-                    target: [healthEvent.providerId, healthEvent.externalId],
+                    target: [healthEvent.userId, healthEvent.providerId, healthEvent.externalId],
                     set: {
                       valueText: r.level,
                     },
@@ -2004,7 +2013,12 @@ export class OuraProvider implements WebhookProvider {
                   resilienceLevel: parsed.resilienceLevel,
                 })
                 .onConflictDoUpdate({
-                  target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
+                  target: [
+                    dailyMetrics.userId,
+                    dailyMetrics.date,
+                    dailyMetrics.providerId,
+                    dailyMetrics.sourceName,
+                  ],
                   set: {
                     steps: parsed.steps,
                     restingHr: parsed.restingHr,

@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ZodError } from "zod";
+import type { SyncDatabase } from "../db/index.ts";
+import {
+  activity as activityTable,
+  dailyMetrics as dailyMetricsTable,
+  sleepSession as sleepSessionTable,
+} from "../db/schema.ts";
 
 // Mock modules (needed for sync tests)
 vi.mock("../db/sync-log.ts", () => ({
@@ -237,6 +243,134 @@ describe("CorosProvider", () => {
     const result = await new CorosProvider().sync(mockDb, new Date("2026-01-01"));
     expect(result.provider).toBe("coros");
     expect(result.errors.length).toBeGreaterThan(0);
+  });
+
+  it("sync uses user-scoped conflict targets for activity, daily metrics, and sleep", async () => {
+    process.env.COROS_CLIENT_ID = "id";
+    process.env.COROS_CLIENT_SECRET = "secret";
+
+    const { loadTokens, ensureProvider } = await import("../db/tokens.ts");
+    vi.mocked(ensureProvider).mockResolvedValue("coros");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh-token",
+      expiresAt: new Date("2099-01-01T00:00:00Z"),
+      scopes: null,
+    });
+
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
+      const url = input.toString();
+      if (url.includes("/v2/coros/sport/list")) {
+        return Response.json({
+          data: [
+            {
+              labelId: "w-1",
+              mode: 8,
+              subMode: 0,
+              startTime: 1709290800,
+              endTime: 1709294400,
+              duration: 3600,
+              distance: 10000,
+              avgHeartRate: 150,
+              maxHeartRate: 170,
+              avgSpeed: 2.8,
+              maxSpeed: 3.5,
+              totalCalories: 500,
+            },
+          ],
+          message: "OK",
+          result: "0000",
+        });
+      }
+      if (url.includes("/v2/coros/daily/list")) {
+        return Response.json({
+          data: [
+            {
+              date: "20260301",
+              steps: 8000,
+              distance: 6200,
+              calories: 2100,
+              restingHr: 52,
+              hrv: 45,
+              spo2Avg: 97,
+              sleepDuration: 420,
+              deepSleep: 90,
+              lightSleep: 220,
+              remSleep: 80,
+              awakeDuration: 30,
+            },
+          ],
+          message: "OK",
+          result: "0000",
+        });
+      }
+      return new Response("Not Found", { status: 404 });
+    };
+
+    const chain = {
+      values: vi.fn(),
+      onConflictDoUpdate: vi.fn(),
+      onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+    };
+    chain.values.mockReturnValue(chain);
+    chain.onConflictDoUpdate.mockReturnValue(chain);
+    chain.onConflictDoNothing.mockReturnValue(chain);
+
+    const mockDb: SyncDatabase = {
+      select: vi.fn(),
+      insert: vi.fn().mockReturnValue(chain),
+      delete: vi.fn(),
+      execute: vi.fn(),
+    };
+
+    const result = await new CorosProvider(mockFetch).sync(
+      mockDb,
+      new Date("2026-03-01T00:00:00Z"),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBeGreaterThanOrEqual(3);
+
+    const targets = chain.onConflictDoUpdate.mock.calls
+      .map((callArgs) => callArgs[0])
+      .filter((arg): arg is { target: unknown[] } => {
+        if (typeof arg !== "object" || arg === null || !("target" in arg)) return false;
+        return Array.isArray(Reflect.get(arg, "target"));
+      })
+      .map((arg) => arg.target);
+
+    expect(
+      targets.some(
+        (target) =>
+          target.length === 3 &&
+          target[0] === activityTable.userId &&
+          target[1] === activityTable.providerId &&
+          target[2] === activityTable.externalId,
+      ),
+    ).toBe(true);
+
+    expect(
+      targets.some(
+        (target) =>
+          target.length === 4 &&
+          target[0] === dailyMetricsTable.userId &&
+          target[1] === dailyMetricsTable.date &&
+          target[2] === dailyMetricsTable.providerId &&
+          target[3] === dailyMetricsTable.sourceName,
+      ),
+    ).toBe(true);
+
+    expect(
+      targets.some(
+        (target) =>
+          target.length === 3 &&
+          target[0] === sleepSessionTable.userId &&
+          target[1] === sleepSessionTable.providerId &&
+          target[2] === sleepSessionTable.externalId,
+      ),
+    ).toBe(true);
   });
 });
 

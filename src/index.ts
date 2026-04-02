@@ -1,9 +1,12 @@
 import { execFile } from "node:child_process";
 import { QueueEvents, Worker } from "bullmq";
+import { sql } from "drizzle-orm";
+import { z } from "zod";
 import { waitForAuthCode } from "./auth/callback-server.ts";
 import { buildAuthorizationUrl } from "./auth/index.ts";
 import { parseSinceDays } from "./cli.ts";
 import { createDatabaseFromEnv } from "./db/index.ts";
+import { runWithTokenUser } from "./db/token-user-context.ts";
 import { ensureProvider, saveTokens } from "./db/tokens.ts";
 import { processSyncJob } from "./jobs/process-sync-job.ts";
 import { ensureProvidersRegistered } from "./jobs/provider-registration.ts";
@@ -15,6 +18,19 @@ import {
 } from "./jobs/queues.ts";
 import { logger } from "./logger.ts";
 import { getAllProviders, getEnabledSyncProviders } from "./providers/index.ts";
+
+async function resolveCliUserId(db: ReturnType<typeof createDatabaseFromEnv>): Promise<string> {
+  const envUserId = process.env.DOFEK_USER_ID;
+  if (envUserId) return envUserId;
+
+  const rows = await db.execute(
+    sql`SELECT id::text AS id FROM fitness.user_profile ORDER BY created_at ASC LIMIT 1`,
+  );
+  const parsed = z.object({ id: z.string() }).safeParse(rows[0]);
+  if (parsed.success) return parsed.data.id;
+
+  throw new Error("No user found. Set DOFEK_USER_ID or create a user first.");
+}
 
 export async function handleSyncCommand(args: string[]): Promise<number> {
   const fullSync = args.includes("--full-sync");
@@ -32,14 +48,14 @@ export async function handleSyncCommand(args: string[]): Promise<number> {
   const db = createDatabaseFromEnv();
   const connection = getRedisConnection();
   const queue = createSyncQueue(connection);
-  const { DEFAULT_USER_ID } = await import("./db/schema.ts");
+  const userId = await resolveCliUserId(db);
 
   const jobs = await Promise.all(
     enabled.map((provider) =>
       queue.add("sync", {
         providerId: provider.id,
         sinceDays: fullSync ? undefined : days,
-        userId: DEFAULT_USER_ID,
+        userId,
       } satisfies SyncJobData),
     ),
   );
@@ -173,8 +189,9 @@ export async function handleAuthCommand(args: string[]): Promise<number> {
   logger.info(`[auth] Authorized! Token expires at ${tokens.expiresAt.toISOString()}`);
 
   const db = createDatabaseFromEnv();
-  await ensureProvider(db, provider.id, provider.name, apiBaseUrl);
-  await saveTokens(db, provider.id, tokens);
+  const userId = await resolveCliUserId(db);
+  await ensureProvider(db, provider.id, provider.name, apiBaseUrl, userId);
+  await saveTokens(db, provider.id, tokens, userId);
   logger.info("[auth] Tokens saved to database.");
 
   return 0;
@@ -198,7 +215,8 @@ export async function handleImportCommand(args: string[]): Promise<number> {
 
     const { importAppleHealthFile } = await import("./providers/apple-health/index.ts");
     const db = createDatabaseFromEnv();
-    const result = await importAppleHealthFile(db, filePath, since);
+    const userId = await resolveCliUserId(db);
+    const result = await runWithTokenUser(userId, () => importAppleHealthFile(db, filePath, since));
     logger.info(
       `[import] Done: ${result.recordsSynced} records, ${result.errors.length} errors in ${result.duration}ms`,
     );

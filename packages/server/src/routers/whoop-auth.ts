@@ -89,12 +89,17 @@ export const whoopAuthRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       await ensureProvider(ctx.db, "whoop", "WHOOP", undefined, ctx.userId);
-      await saveTokens(ctx.db, "whoop", {
-        accessToken: input.accessToken,
-        refreshToken: input.refreshToken,
-        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-        scopes: `userId:${input.userId}`,
-      });
+      await saveTokens(
+        ctx.db,
+        "whoop",
+        {
+          accessToken: input.accessToken,
+          refreshToken: input.refreshToken,
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+          scopes: `userId:${input.userId}`,
+        },
+        ctx.userId,
+      );
       await queryCache.invalidateByPrefix(`${ctx.userId}:sync.providers`);
       return { success: true };
     }),

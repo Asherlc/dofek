@@ -2,7 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { foodEntry, oauthToken } from "../db/schema.ts";
+import { foodEntry, oauthToken, userProfile } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { type FatSecretFoodEntriesResponse, FatSecretProvider } from "./fatsecret.ts";
@@ -352,5 +352,87 @@ describe("FatSecretProvider.sync() (integration)", () => {
 
     // The Zod error for food_entries path must not appear in errors
     expect(result.errors).toHaveLength(0);
+  });
+
+  it("does not treat another user's matching external_id as existing", async () => {
+    await saveTokens(ctx.db, "fatsecret", {
+      accessToken: "oauth1-token",
+      refreshToken: "oauth1-token-secret",
+      expiresAt: new Date("2099-01-01T00:00:00Z"),
+      scopes: null,
+    });
+
+    const currentUserId = process.env.TEST_TOKEN_USER_ID;
+    if (!currentUserId) {
+      throw new Error("TEST_TOKEN_USER_ID is required for this integration test");
+    }
+
+    const secondUserId = "33333333-3333-3333-3333-333333333333";
+    await ctx.db
+      .insert(userProfile)
+      .values({ id: secondUserId, name: "FatSecret Other User" })
+      .onConflictDoNothing();
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const dateString = today.toISOString().slice(0, 10);
+    const dateInt = String(Math.floor(today.getTime() / 86400000));
+    const sharedExternalId = "entry-cross-user";
+
+    await ctx.db.insert(foodEntry).values({
+      userId: secondUserId,
+      providerId: "fatsecret",
+      externalId: sharedExternalId,
+      date: dateString,
+      meal: "lunch",
+      foodName: "Other User Existing Entry",
+      numberOfUnits: 1,
+    });
+
+    const responses = new Map<string, FatSecretFoodEntriesResponse>();
+    responses.set(
+      dateInt,
+      fakeFoodEntriesResponse(dateInt, [
+        {
+          id: sharedExternalId,
+          name: "Current User Entry",
+          meal: "Lunch",
+          calories: "123",
+          protein: "10",
+          carbohydrate: "11",
+          fat: "4",
+        },
+      ]),
+    );
+    server.use(...fatsecretHandlers(responses));
+
+    const provider = new FatSecretProvider();
+    const result = await provider.sync(ctx.db, today);
+
+    expect(result.errors).toHaveLength(0);
+
+    const matchingRows = await ctx.db
+      .select()
+      .from(foodEntry)
+      .where(eq(foodEntry.externalId, sharedExternalId));
+
+    expect(matchingRows.filter((row) => row.userId === secondUserId)).toHaveLength(1);
+    expect(matchingRows.filter((row) => row.userId === currentUserId)).toHaveLength(1);
+  });
+
+  it("throws when user context is missing", async () => {
+    const originalTestUserId = process.env.TEST_TOKEN_USER_ID;
+    delete process.env.TEST_TOKEN_USER_ID;
+
+    try {
+      const provider = new FatSecretProvider();
+      await expect(provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"))).rejects.toThrow(
+        "fatsecret sync requires user context",
+      );
+    } finally {
+      if (originalTestUserId) {
+        process.env.TEST_TOKEN_USER_ID = originalTestUserId;
+      }
+    }
   });
 });

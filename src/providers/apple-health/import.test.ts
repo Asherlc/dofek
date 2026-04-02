@@ -3,6 +3,12 @@ import { existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+
+vi.mock("../../db/token-user-context.ts", () => ({
+  getTokenUserId: () => "user-1",
+  runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
+}));
+
 import type { SyncDatabase } from "../../db/index.ts";
 import { logger } from "../../logger.ts";
 import {
@@ -473,6 +479,173 @@ describe("runImport", () => {
     expect(loggerInfoSpy).toHaveBeenCalledWith(
       "[apple_health] Linked 1 heart-rate sensor rows to workouts after import",
     );
+  });
+});
+
+describe("runImport (control-flow mutation killers)", () => {
+  function createRunImportDbForMockedStreaming(): SyncDatabase {
+    const deleteWhere = vi.fn().mockResolvedValue(undefined);
+    const deleteFn = vi.fn().mockReturnValue({ where: deleteWhere });
+    const onConflictDoNothing = vi.fn().mockResolvedValue(undefined);
+    const values = vi.fn().mockReturnValue({ onConflictDoNothing });
+    const insertFn = vi.fn().mockReturnValue({ values });
+    return {
+      delete: deleteFn,
+      insert: insertFn,
+      select: vi.fn(),
+      execute: vi.fn().mockResolvedValue([]),
+    };
+  }
+
+  it("routes each record bucket and accumulates exact synced counts", async () => {
+    vi.resetModules();
+
+    const upsertMetricStreamBatch = vi.fn().mockResolvedValue(10);
+    const upsertBodyMeasurementBatch = vi.fn().mockResolvedValue(20);
+    const upsertDailyMetricsBatch = vi.fn().mockResolvedValue(30);
+    const upsertNutritionBatch = vi.fn().mockResolvedValue(40);
+    const upsertHealthEventBatch = vi.fn().mockResolvedValue(50);
+    const upsertSleepBatch = vi.fn().mockResolvedValue(2);
+    const upsertWorkoutBatch = vi.fn().mockResolvedValue(3);
+    const linkUnassignedHeartRateToActivities = vi.fn().mockResolvedValue(0);
+    const aggregateSpO2ToDailyMetrics = vi.fn().mockResolvedValue(undefined);
+    const aggregateSkinTempToDailyMetrics = vi.fn().mockResolvedValue(undefined);
+
+    vi.doMock("./db-insertion.ts", () => ({
+      METRIC_STREAM_TYPES: { "metric.type": true },
+      BODY_MEASUREMENT_TYPES: new Set(["body.type"]),
+      DAILY_METRIC_TYPES: new Set(["daily.type"]),
+      NUTRITION_TYPES: { "nutrition.type": true },
+      ALL_ROUTED_TYPES: new Set(["metric.type", "body.type", "daily.type", "nutrition.type"]),
+      upsertMetricStreamBatch,
+      upsertBodyMeasurementBatch,
+      upsertDailyMetricsBatch,
+      upsertNutritionBatch,
+      upsertHealthEventBatch,
+      upsertSleepBatch,
+      upsertWorkoutBatch,
+      linkUnassignedHeartRateToActivities,
+      aggregateSpO2ToDailyMetrics,
+      aggregateSkinTempToDailyMetrics,
+    }));
+
+    vi.doMock("./streaming.ts", () => ({
+      streamHealthExport: vi.fn(
+        async (
+          _xmlPath: string,
+          _since: Date,
+          handlers: {
+            onRecordBatch: (records: Array<{ type: string }>) => Promise<void>;
+            onSleepBatch: (records: Array<Record<string, unknown>>) => Promise<void>;
+            onWorkoutBatch: (records: Array<Record<string, unknown>>) => Promise<void>;
+            onCategoryBatch: (records: Array<Record<string, unknown>>) => Promise<void>;
+          },
+        ) => {
+          await handlers.onRecordBatch([
+            { type: "metric.type" },
+            { type: "body.type" },
+            { type: "daily.type" },
+            { type: "nutrition.type" },
+            { type: "unknown.type" },
+          ]);
+          await handlers.onSleepBatch([{}]);
+          await handlers.onWorkoutBatch([{}]);
+          await handlers.onCategoryBatch([
+            {
+              type: "category.type",
+              value: "mindful",
+              sourceName: "Watch",
+              startDate: new Date("2026-03-01T10:00:00Z"),
+              endDate: new Date("2026-03-01T10:05:00Z"),
+            },
+          ]);
+          return { recordCount: 5, workoutCount: 1, sleepCount: 1, categoryCount: 1 };
+        },
+      ),
+    }));
+
+    const { runImport: mockedRunImport } = await import("./import.ts");
+    const db = createRunImportDbForMockedStreaming();
+    const result = await mockedRunImport(
+      db,
+      "apple_health",
+      "/tmp/stream.xml",
+      new Date("2026-03-01T00:00:00Z"),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(156);
+    expect(result.duration).toBeGreaterThanOrEqual(0);
+    expect(result.duration).toBeLessThan(60_000);
+
+    expect(upsertMetricStreamBatch).toHaveBeenCalledTimes(1);
+    expect(upsertBodyMeasurementBatch).toHaveBeenCalledTimes(1);
+    expect(upsertDailyMetricsBatch).toHaveBeenCalledTimes(1);
+    expect(upsertNutritionBatch).toHaveBeenCalledTimes(1);
+    expect(upsertHealthEventBatch).toHaveBeenCalledTimes(1);
+    expect(upsertSleepBatch).toHaveBeenCalledTimes(1);
+    expect(upsertWorkoutBatch).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips empty record buckets and does not call unrelated upsert handlers", async () => {
+    vi.resetModules();
+
+    const upsertMetricStreamBatch = vi.fn().mockResolvedValue(1);
+    const upsertBodyMeasurementBatch = vi.fn().mockResolvedValue(2);
+    const upsertDailyMetricsBatch = vi.fn().mockResolvedValue(3);
+    const upsertNutritionBatch = vi.fn().mockResolvedValue(4);
+    const upsertHealthEventBatch = vi.fn().mockResolvedValue(5);
+
+    vi.doMock("./db-insertion.ts", () => ({
+      METRIC_STREAM_TYPES: { "metric.type": true },
+      BODY_MEASUREMENT_TYPES: new Set(["body.type"]),
+      DAILY_METRIC_TYPES: new Set(["daily.type"]),
+      NUTRITION_TYPES: { "nutrition.type": true },
+      ALL_ROUTED_TYPES: new Set(["metric.type", "body.type", "daily.type", "nutrition.type"]),
+      upsertMetricStreamBatch,
+      upsertBodyMeasurementBatch,
+      upsertDailyMetricsBatch,
+      upsertNutritionBatch,
+      upsertHealthEventBatch,
+      upsertSleepBatch: vi.fn().mockResolvedValue(0),
+      upsertWorkoutBatch: vi.fn().mockResolvedValue(0),
+      linkUnassignedHeartRateToActivities: vi.fn().mockResolvedValue(0),
+      aggregateSpO2ToDailyMetrics: vi.fn().mockResolvedValue(undefined),
+      aggregateSkinTempToDailyMetrics: vi.fn().mockResolvedValue(undefined),
+    }));
+
+    vi.doMock("./streaming.ts", () => ({
+      streamHealthExport: vi.fn(
+        async (
+          _xmlPath: string,
+          _since: Date,
+          handlers: {
+            onRecordBatch: (records: Array<{ type: string }>) => Promise<void>;
+          },
+        ) => {
+          await handlers.onRecordBatch([{ type: "metric.type" }]);
+          return { recordCount: 1, workoutCount: 0, sleepCount: 0, categoryCount: 0 };
+        },
+      ),
+    }));
+
+    const { runImport: mockedRunImport } = await import("./import.ts");
+    const db = createRunImportDbForMockedStreaming();
+    const result = await mockedRunImport(
+      db,
+      "apple_health",
+      "/tmp/stream.xml",
+      new Date("2026-03-01T00:00:00Z"),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(1);
+
+    expect(upsertMetricStreamBatch).toHaveBeenCalledTimes(1);
+    expect(upsertBodyMeasurementBatch).not.toHaveBeenCalled();
+    expect(upsertDailyMetricsBatch).not.toHaveBeenCalled();
+    expect(upsertNutritionBatch).not.toHaveBeenCalled();
+    expect(upsertHealthEventBatch).not.toHaveBeenCalled();
   });
 });
 

@@ -4,7 +4,7 @@ import {
   createActivityTypeMapper,
   STRAVA_ACTIVITY_TYPE_MAP,
 } from "@dofek/training/training";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
@@ -13,6 +13,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity, sensorSample } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { dualWriteToSensorSample, type SensorSampleSourceRow } from "../db/sensor-sample-writer.ts";
+import { getTokenUserId } from "../db/token-user-context.ts";
 import { logger } from "../logger.ts";
 import type {
   ProviderAuthSetup,
@@ -578,7 +579,7 @@ export class StravaProvider implements WebhookProvider {
   async syncWebhookEvent(
     db: SyncDatabase,
     event: WebhookEvent,
-    _options?: SyncOptions,
+    options?: SyncOptions,
   ): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
@@ -589,19 +590,30 @@ export class StravaProvider implements WebhookProvider {
     }
 
     const activityExternalId = Number(event.objectId);
+    const scopedUserId = options?.userId ?? getTokenUserId();
+
+    if (!scopedUserId) {
+      throw new Error(`[strava] Cannot sync webhook event: no userId provided or in context`);
+    }
 
     // Handle delete events — remove the activity and its streams
     if (event.eventType === "delete") {
       const deleted = await db
         .delete(activity)
         .where(
-          sql`${activity.providerId} = ${this.id} AND ${activity.externalId} = ${event.objectId}`,
+          and(
+            eq(activity.userId, scopedUserId),
+            eq(activity.providerId, this.id),
+            eq(activity.externalId, event.objectId),
+          ),
         )
         .returning({ id: activity.id });
       const deletedRow = deleted[0];
       if (deletedRow) {
         await db.delete(sensorSample).where(eq(sensorSample.activityId, deletedRow.id));
-        logger.info(`[strava] Deleted activity ${event.objectId} via webhook`);
+        logger.info(
+          `[strava] Deleted activity ${event.objectId} via webhook for user ${scopedUserId}`,
+        );
       }
       return { provider: this.id, recordsSynced: 0, errors: [], duration: Date.now() - start };
     }
@@ -634,7 +646,7 @@ export class StravaProvider implements WebhookProvider {
         raw: detail,
       })
       .onConflictDoUpdate({
-        target: [activity.providerId, activity.externalId],
+        target: [activity.userId, activity.providerId, activity.externalId],
         set: {
           activityType: parsed.activityType,
           startedAt: parsed.startedAt,
@@ -804,7 +816,7 @@ export class StravaProvider implements WebhookProvider {
               raw: rawActivities.find((r) => String(r.id) === act.externalId),
             })
             .onConflictDoUpdate({
-              target: [activity.providerId, activity.externalId],
+              target: [activity.userId, activity.providerId, activity.externalId],
               set: {
                 activityType: act.activityType,
                 startedAt: act.startedAt,

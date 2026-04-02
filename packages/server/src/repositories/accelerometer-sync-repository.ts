@@ -36,8 +36,8 @@ export class AccelerometerSyncRepository {
   /** Ensure the apple_motion provider row exists. */
   async ensureProvider(): Promise<void> {
     await this.#db.execute(
-      sql`INSERT INTO fitness.provider (id, name)
-          VALUES (${PROVIDER_ID}, 'Apple Motion')
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES (${PROVIDER_ID}, 'Apple Motion', ${this.#userId})
           ON CONFLICT (id) DO NOTHING`,
     );
   }

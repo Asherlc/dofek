@@ -447,7 +447,11 @@ export class WithingsProvider implements WebhookProvider {
                     temperatureC: parsed.temperatureC,
                   })
                   .onConflictDoUpdate({
-                    target: [bodyMeasurement.providerId, bodyMeasurement.externalId],
+                    target: [
+                      bodyMeasurement.userId,
+                      bodyMeasurement.providerId,
+                      bodyMeasurement.externalId,
+                    ],
                     set: {
                       weightKg: parsed.weightKg,
                       bodyFatPct: parsed.bodyFatPct,

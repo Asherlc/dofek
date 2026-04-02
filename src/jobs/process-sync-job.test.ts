@@ -376,7 +376,13 @@ describe("processSyncJob", () => {
 
     await runSyncJob(createMockJob(), mockDb);
 
-    expect(mockEnsureProvider).toHaveBeenCalledWith(mockDb, "test", "Test Provider");
+    expect(mockEnsureProvider).toHaveBeenCalledWith(
+      mockDb,
+      "test",
+      "Test Provider",
+      undefined,
+      "user-1",
+    );
   });
 
   it("calls updateUserMaxHr and refreshDedupViews post-sync", async () => {
@@ -632,6 +638,7 @@ describe("processSyncJob", () => {
     await runSyncJob(createMockJob(), mockDb);
 
     expect(provider.sync).toHaveBeenCalledOnce();
+    expect(mockLoadTokens).toHaveBeenCalledWith(mockDb, "strava", "user-1");
   });
 
   it("skips unconnected providers but syncs connected ones", async () => {

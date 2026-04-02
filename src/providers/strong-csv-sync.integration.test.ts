@@ -1,11 +1,11 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
-  DEFAULT_USER_ID,
   exercise,
   exerciseAlias,
   strengthSet,
   strengthWorkout,
+  TEST_USER_ID,
 } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { importStrongCsv, STRONG_PROVIDER_ID } from "./strong-csv.ts";
@@ -52,7 +52,7 @@ describe("importStrongCsv() (integration)", () => {
   });
 
   it("imports a single workout with multiple exercises and sets", async () => {
-    const result = await importStrongCsv(ctx.db, SIMPLE_CSV, DEFAULT_USER_ID, "kg");
+    const result = await importStrongCsv(ctx.db, SIMPLE_CSV, TEST_USER_ID, "kg");
 
     expect(result.provider).toBe(STRONG_PROVIDER_ID);
     expect(result.recordsSynced).toBe(1); // 1 workout
@@ -100,7 +100,7 @@ describe("importStrongCsv() (integration)", () => {
   });
 
   it("imports multiple workouts from CSV", async () => {
-    const result = await importStrongCsv(ctx.db, TWO_WORKOUT_CSV, DEFAULT_USER_ID, "kg");
+    const result = await importStrongCsv(ctx.db, TWO_WORKOUT_CSV, TEST_USER_ID, "kg");
 
     expect(result.recordsSynced).toBe(2); // 2 workouts
     expect(result.errors).toHaveLength(0);
@@ -117,7 +117,7 @@ describe("importStrongCsv() (integration)", () => {
   });
 
   it("converts lbs to kg when weightUnit is lbs", async () => {
-    const result = await importStrongCsv(ctx.db, LBS_CSV, DEFAULT_USER_ID, "lbs");
+    const result = await importStrongCsv(ctx.db, LBS_CSV, TEST_USER_ID, "lbs");
 
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toHaveLength(0);
@@ -142,8 +142,8 @@ describe("importStrongCsv() (integration)", () => {
   });
 
   it("upserts workouts on re-import (no duplicates)", async () => {
-    await importStrongCsv(ctx.db, SIMPLE_CSV, DEFAULT_USER_ID, "kg");
-    await importStrongCsv(ctx.db, SIMPLE_CSV, DEFAULT_USER_ID, "kg");
+    await importStrongCsv(ctx.db, SIMPLE_CSV, TEST_USER_ID, "kg");
+    await importStrongCsv(ctx.db, SIMPLE_CSV, TEST_USER_ID, "kg");
 
     const workouts = await ctx.db
       .select()
@@ -154,7 +154,7 @@ describe("importStrongCsv() (integration)", () => {
   });
 
   it("stores workout and set notes", async () => {
-    const result = await importStrongCsv(ctx.db, WITH_NOTES_CSV, DEFAULT_USER_ID, "kg");
+    const result = await importStrongCsv(ctx.db, WITH_NOTES_CSV, TEST_USER_ID, "kg");
 
     expect(result.recordsSynced).toBe(1);
 
@@ -176,7 +176,7 @@ describe("importStrongCsv() (integration)", () => {
   });
 
   it("creates exercise aliases for provider mapping", async () => {
-    await importStrongCsv(ctx.db, SIMPLE_CSV, DEFAULT_USER_ID, "kg");
+    await importStrongCsv(ctx.db, SIMPLE_CSV, TEST_USER_ID, "kg");
 
     const aliases = await ctx.db
       .select()
@@ -189,14 +189,14 @@ describe("importStrongCsv() (integration)", () => {
   });
 
   it("returns empty result for empty CSV", async () => {
-    const result = await importStrongCsv(ctx.db, STRONG_CSV_HEADER, DEFAULT_USER_ID, "kg");
+    const result = await importStrongCsv(ctx.db, STRONG_CSV_HEADER, TEST_USER_ID, "kg");
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(0);
   });
 
   it("handles duration in HH:MM:SS format", async () => {
-    const result = await importStrongCsv(ctx.db, LBS_CSV, DEFAULT_USER_ID, "lbs");
+    const result = await importStrongCsv(ctx.db, LBS_CSV, TEST_USER_ID, "lbs");
     expect(result.recordsSynced).toBe(1);
 
     const workouts = await ctx.db

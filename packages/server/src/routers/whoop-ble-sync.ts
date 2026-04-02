@@ -34,10 +34,10 @@ export type WhoopBleRealtimeDataSample = z.infer<typeof realtimeDataSampleSchema
 type Database = Parameters<Parameters<typeof protectedProcedure.mutation>[0]>[0]["ctx"]["db"];
 
 /** Ensure the whoop_ble provider row exists */
-async function ensureProvider(database: Database) {
+async function ensureProvider(database: Database, userId: string) {
   await database.execute(
-    sql`INSERT INTO fitness.provider (id, name)
-        VALUES (${PROVIDER_ID}, 'WHOOP BLE')
+    sql`INSERT INTO fitness.provider (id, name, user_id)
+        VALUES (${PROVIDER_ID}, 'WHOOP BLE', ${userId})
         ON CONFLICT (id) DO NOTHING`,
   );
 }
@@ -116,7 +116,7 @@ export const whoopBleSyncRouter = router({
   pushRealtimeData: protectedProcedure
     .input(pushRealtimeDataInput)
     .mutation(async ({ ctx, input }) => {
-      await ensureProvider(ctx.db);
+      await ensureProvider(ctx.db, ctx.userId);
 
       if (input.samples.length === 0) {
         logger.info("WHOOP BLE realtime push with 0 samples", { userId: ctx.userId });

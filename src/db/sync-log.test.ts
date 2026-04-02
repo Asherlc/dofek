@@ -62,6 +62,7 @@ describe("logSync", () => {
       providerId: "wahoo",
       dataType: "activities",
       status: "success",
+      userId: "user-123",
     };
 
     await logSync(db.db, entry);
@@ -75,6 +76,7 @@ describe("logSync", () => {
       dataType: "activities",
       status: "success",
       recordCount: 15,
+      userId: "user-123",
     };
 
     await logSync(db.db, entry);
@@ -98,7 +100,7 @@ describe("withSyncLog", () => {
   it("logs success and returns the result on success", async () => {
     const fn = vi.fn().mockResolvedValue({ recordCount: 10, result: "data" });
 
-    const result = await withSyncLog(db.db, "wahoo", "activities", fn);
+    const result = await withSyncLog(db.db, "wahoo", "activities", fn, "user-123");
 
     expect(result).toBe("data");
     expect(fn).toHaveBeenCalled();
@@ -115,7 +117,9 @@ describe("withSyncLog", () => {
   it("logs error and re-throws on failure", async () => {
     const fn = vi.fn().mockRejectedValue(new Error("sync failed"));
 
-    await expect(withSyncLog(db.db, "whoop", "sleep", fn)).rejects.toThrow("sync failed");
+    await expect(withSyncLog(db.db, "whoop", "sleep", fn, "user-123")).rejects.toThrow(
+      "sync failed",
+    );
 
     expect(db.spies.values).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -130,7 +134,7 @@ describe("withSyncLog", () => {
   it("logs non-Error exceptions as strings", async () => {
     const fn = vi.fn().mockRejectedValue("string error");
 
-    await expect(withSyncLog(db.db, "wahoo", "body", fn)).rejects.toBe("string error");
+    await expect(withSyncLog(db.db, "wahoo", "body", fn, "user-123")).rejects.toBe("string error");
 
     expect(db.spies.values).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -147,7 +151,7 @@ describe("withSyncLog", () => {
       return { recordCount: 1, result: "ok" };
     });
 
-    await withSyncLog(db.db, "wahoo", "activities", fn);
+    await withSyncLog(db.db, "wahoo", "activities", fn, "user-123");
 
     expect(db.spies.values).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -164,7 +168,7 @@ describe("withSyncLog", () => {
       throw new Error("timeout");
     });
 
-    await expect(withSyncLog(db.db, "whoop", "sleep", fn)).rejects.toThrow("timeout");
+    await expect(withSyncLog(db.db, "whoop", "sleep", fn, "user-123")).rejects.toThrow("timeout");
 
     expect(db.spies.values).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -177,7 +181,7 @@ describe("withSyncLog", () => {
   it("passes correct providerId and dataType on success", async () => {
     const fn = vi.fn().mockResolvedValue({ recordCount: 0, result: null });
 
-    await withSyncLog(db.db, "strava", "body_composition", fn);
+    await withSyncLog(db.db, "strava", "body_composition", fn, "user-123");
 
     expect(db.spies.values).toHaveBeenCalledWith(
       expect.objectContaining({
