@@ -3,6 +3,7 @@ import { IDENTITY_PROVIDER_NAMES } from "@dofek/auth/auth";
 import { getOAuthRedirectUri, type TokenSet } from "dofek/auth/oauth";
 import { DEFAULT_USER_ID } from "dofek/db/schema";
 import { sql } from "drizzle-orm";
+import { escapeAttribute, escapeText } from "entities/escape";
 import express, { Router } from "express";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
@@ -111,15 +112,6 @@ function storePendingEmailSignup(entry: PendingEmailSignupEntry): string {
   return token;
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
 function sanitizeReturnTo(returnTo: string | undefined): string | undefined {
   if (!returnTo) return undefined;
   if (!returnTo.startsWith("/") || returnTo.startsWith("//")) return undefined;
@@ -132,11 +124,11 @@ function completeSignupHtml(
   email = "",
   error?: string,
 ): string {
-  const escapedProviderName = escapeHtml(providerName);
-  const escapedToken = escapeHtml(token);
-  const escapedEmail = escapeHtml(email);
+  const escapedProviderName = escapeText(providerName);
+  const escapedToken = escapeAttribute(token);
+  const escapedEmail = escapeAttribute(email);
   const errorHtml = error
-    ? `<p style="margin:0 0 16px;color:#fca5a5;font-size:14px">${escapeHtml(error)}</p>`
+    ? `<p style="margin:0 0 16px;color:#fca5a5;font-size:14px">${escapeText(error)}</p>`
     : "";
   return `<html><body style="font-family:system-ui;background:#111827;color:#f9fafb;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:24px"><div style="width:100%;max-width:420px;background:#1f2937;border:1px solid #374151;border-radius:16px;padding:32px;box-sizing:border-box"><h1 style="margin:0 0 12px;font-size:28px">Enter your email to finish signing in</h1><p style="margin:0 0 20px;color:#d1d5db;line-height:1.5">${escapedProviderName} does not provide your email address, so we need it before creating your account.</p>${errorHtml}<form method="post" action="/auth/complete-signup" style="display:flex;flex-direction:column;gap:16px"><input type="hidden" name="token" value="${escapedToken}" /><label style="display:flex;flex-direction:column;gap:8px;font-size:14px;color:#e5e7eb"><span>Email</span><input type="email" name="email" value="${escapedEmail}" autocomplete="email" required style="border:1px solid #4b5563;border-radius:10px;padding:12px 14px;background:#111827;color:#f9fafb;font-size:16px" /></label><button type="submit" style="border:0;border-radius:10px;padding:12px 16px;background:#10b981;color:#06281f;font-size:16px;font-weight:700;cursor:pointer">Continue</button></form></div></body></html>`;
 }
