@@ -3324,9 +3324,9 @@ describe("oauthSuccessHtml", () => {
     expect(html).toContain('{"type":"complete"}');
     expect(html).toContain('{"type":"oauth-complete"}');
     // Ensure no raw </script> exists that could prematurely terminate the block
-    const scriptBlocks = html.match(/<script[\s\S]*?<\/script>/gi) || [];
+    const scriptBlocks = html.match(/<script[\s\S]*?<\/script[^>]*>/gi) || [];
     for (const block of scriptBlocks) {
-      const content = block.replace(/^<script.*?>|<\/script>$/gi, "");
+      const content = block.replace(/^<script[\s\S]*?>|<\/script[^>]*>$/gi, "");
       expect(content).not.toContain("</script>");
     }
   });
