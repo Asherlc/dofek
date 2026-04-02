@@ -82,6 +82,13 @@ export interface WhoopSleepRecord {
   score_state?: string;
   state?: string; // BFF v0 uses "state" instead of "score_state"
   score?: WhoopSleepScore;
+  // Raw stage timing from /sleep-service/v1/sleep-events
+  stages?: WhoopSleepEvent[];
+}
+
+export interface WhoopSleepEvent {
+  stage: string; // "deep", "light", "rem", "awake", "no_data"
+  during: string; // Postgres range format: "['2026-03-01T00:00:00Z','2026-03-01T00:15:00Z')"
 }
 
 export interface WhoopZoneDuration {

@@ -171,6 +171,13 @@ enum set_type {
   failure
 }
 
+enum sleep_stage_name {
+  deep
+  light
+  rem
+  awake
+}
+
 table fitness.activity {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   provider_id text [not null]
@@ -1006,7 +1013,7 @@ table fitness.sleep_session {
 table fitness.sleep_stage {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   session_id uuid [not null]
-  stage text [not null]
+  stage sleep_stage_name [not null]
   started_at "timestamp with time zone" [not null]
   ended_at "timestamp with time zone" [not null]
   source_name text

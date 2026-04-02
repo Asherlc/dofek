@@ -4,17 +4,17 @@ Providers are plugins that pull data from an external API and upsert it into the
 
 ## 1. Create the provider file
 
-```
+```text
 src/providers/my-provider.ts
 ```
 
-## 2. Implement the Provider interface
+## 2. Implement the current provider interface
 
 ```typescript
-import type { Provider, SyncResult } from "./types.js";
-import type { Database } from "../db/index.js";
+import type { SyncDatabase } from "../db/index.ts";
+import type { SyncOptions, SyncProvider, SyncResult } from "./types.ts";
 
-export class MyProvider implements Provider {
+export class MyProvider implements SyncProvider {
   readonly id = "my-provider";
   readonly name = "My Provider";
 
@@ -29,14 +29,19 @@ export class MyProvider implements Provider {
     return null;
   }
 
-  async sync(db: Database, since: Date): Promise<SyncResult> {
+  async sync(
+    db: SyncDatabase,
+    since: Date,
+    options?: SyncOptions,
+  ): Promise<SyncResult> {
     const errors = [];
     let recordsSynced = 0;
     const start = Date.now();
 
-    // 1. Fetch data from API
-    // 2. Transform to schema types
-    // 3. Upsert into database
+    // 1. Fetch data from the API
+    // 2. Parse/validate responses with Zod
+    // 3. Upsert raw records into schema tables
+    // 4. Report progress with options?.onProgress?.(percentage, message)
 
     return {
       provider: this.id,
@@ -48,33 +53,43 @@ export class MyProvider implements Provider {
 }
 ```
 
+If the provider is file-import-only (like Strong CSV or Cronometer CSV), implement `ImportProvider` instead and add `readonly importOnly = true` rather than a `sync()` method.
+
 ## 3. Register the provider
 
-In `src/providers/index.ts`, import and register:
+Add it to the lazy registration list in `src/jobs/provider-registration.ts`:
 
 ```typescript
-import { MyProvider } from "./my-provider.js";
-registerProvider(new MyProvider());
+["my-provider", () => import("../providers/my-provider.ts").then((m) => new m.MyProvider())],
 ```
 
-## 4. Add env var to .env.example
+That keeps provider loading consistent for the worker, CLI, and server routes via `ensureProvidersRegistered()`.
 
-```
+If other packages need a bare import such as `dofek/providers/my-provider`, add a matching export to the root `package.json`.
+
+## 4. Add env vars and setup notes
+
+Add any new env vars to `.env.example`, and update `README.md` or a provider-specific doc if the provider has unusual setup or auth requirements.
+
+```text
 MY_PROVIDER_API_KEY=
 ```
 
-## 5. Write tests first (TDD)
+## 5. Write tests first
 
-Create `src/providers/my-provider.test.ts` (colocated next to the source file) with:
-- API response parsing tests (mock the HTTP calls)
-- Data transformation tests
-- Upsert/dedup logic tests
+Create `src/providers/my-provider.test.ts` next to the provider source file with:
+- API response parsing tests
+- data transformation tests
+- sync/upsert behavior tests
+- validation tests
 
 Run `pnpm test:watch` while developing.
 
 ## Key conventions
 
-- **Deduplication**: Use `(provider_id, external_id)` unique constraints. Always upsert.
-- **Exercise mapping**: When a provider has its own exercise names, create entries in `exercise_alias` to map them to canonical exercises.
-- **Incremental sync**: Use the `since` parameter to only fetch new/updated data. Don't re-sync everything on every run.
-- **Error handling**: Catch per-record errors and continue syncing. Return errors in the `SyncResult` rather than throwing.
+- **Validation gates visibility**: providers whose `validate()` returns an error are hidden from enabled-provider lists and the UI.
+- **Incremental sync**: use the `since` parameter to fetch only new or updated records when the provider API supports it.
+- **Zod at boundaries**: validate external API payloads with Zod instead of trusting TypeScript-only types.
+- **Raw data first**: store raw/provider-native records and leave deduplication/aggregation to query-time logic.
+- **Error handling**: collect per-record errors in `SyncResult.errors` instead of aborting the whole sync.
+- **Tests stay colocated**: keep unit tests next to the provider file as `<provider>.test.ts`.

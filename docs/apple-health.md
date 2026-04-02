@@ -102,14 +102,14 @@ As of migration `0037`, the `apple_health_kit` provider ID (iOS HealthKit live s
 
 Apple Watch records SDNN (the standard HRV metric) during both overnight sleep and Breathe/Mindfulness sessions. Breathe session values are typically ~2x the overnight baseline because deliberate slow breathing maximises parasympathetic tone.
 
-To avoid this inflation, both ingestion paths (XML import and iOS HealthKit sync) select the **earliest reading of each day** rather than averaging or taking the latest. Overnight/early-morning readings come first chronologically and reflect resting autonomic status. This logic lives in `packages/shared/src/heart-rate-variability.ts` (`selectDailyHeartRateVariability`).
+To avoid this inflation, both ingestion paths (XML import and iOS HealthKit sync) select the **earliest reading of each day** rather than averaging or taking the latest. Overnight/early-morning readings come first chronologically and reflect resting autonomic status. This logic lives in `packages/heart-rate-variability/src/heart-rate-variability.ts` (`selectDailyHeartRateVariability`).
 
 ## Import
 
 ### CLI
 
 ```bash
-pnpm dev import apple-health <path-to-export.zip> [--full-sync] [--since-days=N]
+./scripts/with-env.sh tsx src/index.ts import apple-health <path-to-export.zip|xml> [--full-sync] [--since-days=N]
 ```
 
 ### Backpressure

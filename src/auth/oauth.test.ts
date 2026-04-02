@@ -29,11 +29,25 @@ describe("OAuth", () => {
       process.env.OAUTH_REDIRECT_URI = originalRedirectUri;
     });
 
-    it("uses OAUTH_REDIRECT_URI_unencrypted when set", () => {
+    it("uses host for dynamic redirect when provided, ignoring env", () => {
       process.env.OAUTH_REDIRECT_URI_unencrypted = "https://custom.example.com/callback";
       process.env.OAUTH_REDIRECT_URI = "https://legacy.example.com/callback";
 
-      expect(getOAuthRedirectUri("localhost:3000")).toBe("https://custom.example.com/callback");
+      expect(getOAuthRedirectUri("localhost:3000")).toBe("http://localhost:3000/callback");
+    });
+
+    it("uses OAUTH_REDIRECT_URI when set and no host provided", () => {
+      process.env.OAUTH_REDIRECT_URI = "https://env.example.com/callback";
+      delete process.env.OAUTH_REDIRECT_URI_unencrypted;
+
+      expect(getOAuthRedirectUri()).toBe("https://env.example.com/callback");
+    });
+
+    it("uses OAUTH_REDIRECT_URI_unencrypted as fallback when no host and no OAUTH_REDIRECT_URI", () => {
+      delete process.env.OAUTH_REDIRECT_URI;
+      process.env.OAUTH_REDIRECT_URI_unencrypted = "https://unencrypted.example.com/callback";
+
+      expect(getOAuthRedirectUri()).toBe("https://unencrypted.example.com/callback");
     });
 
     it("uses http for private 172.16/12 hosts", () => {
