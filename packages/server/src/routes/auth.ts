@@ -730,14 +730,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         res.status(400).send("Missing provider");
         return;
       }
-      const { getAllProviders } = await import("dofek/providers/registry");
-      const { ensureProvidersRegistered } = await import("../routers/sync.ts");
-      await ensureProvidersRegistered();
-      const provider = getAllProviders().find((candidate) => candidate.id === providerId);
-      if (!provider) {
-        res.status(404).send("Unknown provider");
-        return;
-      }
+
       // Resolve the logged-in user so the provider record is linked to them
       const sessionId = getSessionIdFromRequest(req);
       const session = sessionId ? await validateSession(db, sessionId) : null;
@@ -746,6 +739,15 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         return;
       }
       const userId = session.userId;
+
+      const { getAllProviders } = await import("dofek/providers/registry");
+      const { ensureProvidersRegistered } = await import("../routers/sync.ts");
+      await ensureProvidersRegistered();
+      const provider = getAllProviders().find((candidate) => candidate.id === providerId);
+      if (!provider) {
+        res.status(404).send("Unknown provider");
+        return;
+      }
 
       await startDataProviderOAuth(req, res, providerId, {
         providerId,
