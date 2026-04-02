@@ -25,14 +25,14 @@ describe("resolveOrCreateUser (integration)", () => {
     );
   });
 
-  it("creates a new user for the first external login", async () => {
+  it("claims the default user for the first external login", async () => {
     const result = await resolveOrCreateUser(ctx.db, "google", {
       providerAccountId: "google-123",
       email: "first@example.com",
       name: "First User",
     });
 
-    expect(result.userId).not.toBe(TEST_USER_ID);
+    expect(result.userId).toBe(TEST_USER_ID);
     expect(result.isNewUser).toBe(true);
 
     const newUser = await ctx.db.execute<{ email: string; name: string }>(
@@ -40,12 +40,6 @@ describe("resolveOrCreateUser (integration)", () => {
     );
     expect(newUser[0]?.email).toBe("first@example.com");
     expect(newUser[0]?.name).toBe("First User");
-
-    const baseline = await ctx.db.execute<{ email: string | null; name: string }>(
-      sql`SELECT email, name FROM fitness.user_profile WHERE id = ${TEST_USER_ID}`,
-    );
-    expect(baseline[0]?.email).toBeNull();
-    expect(baseline[0]?.name).toBe("Baseline User");
   });
 
   it("returns existing user when auth_account already exists", async () => {

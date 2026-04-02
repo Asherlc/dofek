@@ -25,6 +25,11 @@ export interface ProviderIdentity {
   name: string | null;
 }
 
+export interface ProviderIdentityCapabilities {
+  /** Whether the provider reliably supplies the user's email during identity lookup. */
+  providesEmail: boolean;
+}
+
 /**
  * Auth setup returned by providers that use OAuth.
  */
@@ -40,6 +45,8 @@ export interface ProviderAuthSetup {
   oauth1Flow?: OAuth1Flow;
   /** Extract user identity from this provider (enables using it as a login provider) */
   getUserIdentity?: (accessToken: string) => Promise<ProviderIdentity>;
+  /** Provider-specific identity traits used to drive signup/login behavior. */
+  identityCapabilities?: ProviderIdentityCapabilities;
 }
 
 /**

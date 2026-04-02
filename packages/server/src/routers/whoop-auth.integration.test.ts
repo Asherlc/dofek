@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import { getWhoopVerificationChallengeStore } from "../lib/whoop-verification-challenge-store.ts";
 
 const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -174,6 +175,54 @@ describe("whoopAuth router", () => {
 
       // Should get an error response
       expect(result?.error).toBeDefined();
+    });
+
+    it("deletes stale verification challenges", async () => {
+      const challengeStore = getWhoopVerificationChallengeStore();
+      const challengeId = "expired-challenge";
+      await challengeStore.save(
+        challengeId,
+        {
+          session: "expired-session",
+          method: "sms",
+          username: "user@test.com",
+          expiresAt: Date.now() - 1_000,
+          userId: TEST_USER_ID,
+        },
+        60_000,
+      );
+
+      const { result } = await mutate("whoopAuth.verifyCode", {
+        challengeId,
+        code: "123456",
+      });
+
+      expect(result?.error).toBeDefined();
+      expect(await challengeStore.get(challengeId)).toBeNull();
+    });
+
+    it("rejects verification challenges owned by another user", async () => {
+      const challengeStore = getWhoopVerificationChallengeStore();
+      const challengeId = "someone-elses-challenge";
+      await challengeStore.save(
+        challengeId,
+        {
+          session: "stolen-session",
+          method: "sms",
+          username: "victim@test.com",
+          expiresAt: Date.now() + 60_000,
+          userId: "another-user-id",
+        },
+        60_000,
+      );
+
+      const { result } = await mutate("whoopAuth.verifyCode", {
+        challengeId,
+        code: "123456",
+      });
+
+      expect(result?.error?.message).toContain("Verification session not owned by current user");
+      expect(await challengeStore.get(challengeId)).toBeDefined();
     });
   });
 

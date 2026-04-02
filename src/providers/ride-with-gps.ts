@@ -29,9 +29,9 @@ import type {
 // ============================================================
 
 export interface RideWithGpsTrackPoint {
-  longitude: number;
-  latitude: number;
-  distanceMeters: number;
+  longitude?: number;
+  latitude?: number;
+  distanceMeters?: number;
   elevationMeters?: number;
   epochSeconds?: number;
   speedKph?: number;
@@ -45,9 +45,9 @@ export interface RideWithGpsTrackPoint {
 // Transforms the API's compact single-letter field names to descriptive names.
 const rideWithGpsTrackPointSchema = z
   .object({
-    x: z.number(),
-    y: z.number(),
-    d: z.number(),
+    x: z.number().optional(),
+    y: z.number().optional(),
+    d: z.number().optional(),
     e: z.number().optional(),
     t: z.number().optional(),
     s: z.number().optional(),
@@ -58,9 +58,9 @@ const rideWithGpsTrackPointSchema = z
   })
   .transform(
     (raw): RideWithGpsTrackPoint => ({
-      longitude: raw.x,
-      latitude: raw.y,
-      distanceMeters: raw.d,
+      longitude: raw.x ?? undefined,
+      latitude: raw.y ?? undefined,
+      distanceMeters: raw.d ?? undefined,
       elevationMeters: raw.e,
       epochSeconds: raw.t,
       speedKph: raw.s,
@@ -80,11 +80,11 @@ export interface RideWithGpsTripSummary {
   description?: string | null;
   departed_at?: string | null;
   activity_type?: string | null;
-  distance: number;
-  duration: number;
-  moving_time: number;
-  elevation_gain: number;
-  elevation_loss: number;
+  distance?: number | null;
+  duration?: number | null;
+  moving_time?: number | null;
+  elevation_gain?: number | null;
+  elevation_loss?: number | null;
   created_at: string;
   updated_at: string;
   /** Recording source/device — e.g., "ridewithgps_iphone", "garmin_connect". */
@@ -98,11 +98,11 @@ const rideWithGpsTripDetailSchema = z.object({
   description: z.string().nullable().optional(),
   departed_at: z.string().nullable().optional(),
   activity_type: z.string().nullable().optional(),
-  distance: z.number(),
-  duration: z.number(),
-  moving_time: z.number(),
-  elevation_gain: z.number(),
-  elevation_loss: z.number(),
+  distance: z.number().nullable().optional(),
+  duration: z.number().nullable().optional(),
+  moving_time: z.number().nullable().optional(),
+  elevation_gain: z.number().nullable().optional(),
+  elevation_loss: z.number().nullable().optional(),
   created_at: z.string(),
   updated_at: z.string(),
   source: z.string().nullable().optional(),
@@ -206,6 +206,8 @@ export function parseTrackPoints(points: RideWithGpsTrackPoint[]): ParsedTrackPo
   for (const point of points) {
     // Skip points without a timestamp — can't insert into metric_stream
     if (point.epochSeconds === undefined) continue;
+    // Skip points without coordinates — indoor/GPS-less activities may omit lat/lng
+    if (point.latitude === undefined || point.longitude === undefined) continue;
 
     result.push({
       recordedAt: new Date(point.epochSeconds * 1000),

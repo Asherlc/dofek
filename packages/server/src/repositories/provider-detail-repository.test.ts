@@ -115,6 +115,20 @@ describe("DISCONNECT_CHILD_TABLES", () => {
 // ---------------------------------------------------------------------------
 
 describe("ProviderDetailRepository", () => {
+  function stringifyQuery(query: unknown): string {
+    if (typeof query === "object" && query !== null) {
+      const sqlCandidate = Reflect.get(query, "sql");
+      if (typeof sqlCandidate === "string") {
+        return sqlCandidate;
+      }
+      const queryCandidate = Reflect.get(query, "query");
+      if (typeof queryCandidate === "string") {
+        return queryCandidate;
+      }
+    }
+    return JSON.stringify(query);
+  }
+
   function makeRepository(rows: Record<string, unknown>[] = [], transactionOverride?: unknown) {
     const execute = vi.fn().mockResolvedValue(rows);
     const transaction = transactionOverride ?? vi.fn();
@@ -190,10 +204,7 @@ describe("ProviderDetailRepository", () => {
       const result = await repo.verifyOwnership("strava");
       expect(result).toBe(true);
       // Verify query contains UNION as expected for the expanded check
-      // Drizzle sql tags produce objects with a 'sql' property if they are from certain versions/utils,
-      // but in our mock we just want to verify the intent.
-      const queryObj = vi.mocked(execute).mock.calls[0][0] as any;
-      const queryString = queryObj?.sql || queryObj?.query || JSON.stringify(queryObj);
+      const queryString = stringifyQuery(vi.mocked(execute).mock.calls[0]?.[0]);
       expect(queryString).toMatch(/UNION/i);
       expect(queryString).toMatch(/fitness\.oauth_token/i);
       expect(queryString).toMatch(/fitness\.provider/i);
