@@ -1,7 +1,7 @@
 import type { CanonicalActivityType } from "@dofek/training/training";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
-import { exchangeCodeForTokens } from "../auth/oauth.ts";
+import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity, dailyMetrics, sleepSession } from "../db/schema.ts";
@@ -22,7 +22,7 @@ import type {
 // ============================================================
 
 const COROS_API_BASE = "https://open.coros.com";
-const DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
+const _DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
 
 const corosWorkoutSchema = z.object({
   labelId: z.string(),
@@ -143,18 +143,17 @@ export function parseCorosWorkout(workout: CorosWorkout): ParsedCorosWorkout {
 // OAuth configuration
 // ============================================================
 
-export function corosOAuthConfig(): OAuthConfig | null {
+export function corosOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.COROS_CLIENT_ID;
   const clientSecret = process.env.COROS_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
-  const redirectUri = process.env.OAUTH_REDIRECT_URI ?? DEFAULT_REDIRECT_URI;
 
   return {
     clientId,
     clientSecret,
     authorizeUrl: `${COROS_API_BASE}/oauth2/authorize`,
     tokenUrl: `${COROS_API_BASE}/oauth2/token`,
-    redirectUri,
+    redirectUri: getOAuthRedirectUri(host),
     scopes: [],
   };
 }
@@ -285,8 +284,8 @@ export class CorosProvider implements WebhookProvider {
     ];
   }
 
-  authSetup(): ProviderAuthSetup {
-    const config = corosOAuthConfig();
+  authSetup(options?: { host?: string }): ProviderAuthSetup {
+    const config = corosOAuthConfig(options?.host);
     if (!config) throw new Error("COROS_CLIENT_ID and CLIENT_SECRET required");
     const fetchFn = this.#fetchFn;
     return {

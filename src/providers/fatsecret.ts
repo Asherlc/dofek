@@ -527,7 +527,7 @@ export class FatSecretProvider implements SyncProvider {
    * We store the access token as accessToken and token secret as refreshToken
    * in the existing oauthToken table (OAuth 1.0 tokens don't expire).
    */
-  authSetup() {
+  authSetup(options?: { host?: string }) {
     const consumerKey = this.#consumerKey;
     const consumerSecret = this.#consumerSecret;
     const fetchFn = this.#fetchFn;
@@ -539,7 +539,7 @@ export class FatSecretProvider implements SyncProvider {
         clientSecret: consumerSecret,
         authorizeUrl: AUTHORIZE_URL,
         tokenUrl: ACCESS_TOKEN_URL,
-        redirectUri: getOAuthRedirectUri(),
+        redirectUri: getOAuthRedirectUri(options?.host),
         scopes: [],
       },
       oauth1Flow: {

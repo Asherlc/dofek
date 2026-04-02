@@ -24,6 +24,9 @@ vi.mock("../db/tokens.ts", () => ({
 
 vi.mock("../auth/oauth.ts", () => ({
   exchangeCodeForTokens: vi.fn(),
+  getOAuthRedirectUri: vi.fn(
+    () => process.env.OAUTH_REDIRECT_URI ?? "https://dofek.asherlc.com/callback",
+  ),
   refreshAccessToken: vi.fn(),
 }));
 
@@ -164,7 +167,7 @@ describe("corosOAuthConfig", () => {
     process.env.COROS_CLIENT_SECRET = "test-secret";
     delete process.env.OAUTH_REDIRECT_URI;
     const config = corosOAuthConfig();
-    expect(config?.redirectUri).toContain("localhost");
+    expect(config?.redirectUri).toBe("https://dofek.asherlc.com/callback");
   });
 });
 

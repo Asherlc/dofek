@@ -29,6 +29,7 @@ export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
   const { current, history } = data;
   const currentZone = new StrainZone(current.strainZone);
   const zoneColor = currentZone.color;
+  const sleepWasTracked = current.avgSleepMinutes > 0;
   const prevWeek = history.length > 0 ? history[history.length - 1] : null;
 
   return (
@@ -44,12 +45,18 @@ export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
             })}
           </p>
         </div>
-        <div
-          className="px-3 py-1 rounded-full text-xs font-semibold"
-          style={{ backgroundColor: `${zoneColor}20`, color: zoneColor }}
-        >
-          {currentZone.label}
-        </div>
+        {sleepWasTracked ? (
+          <div
+            className="px-3 py-1 rounded-full text-xs font-semibold"
+            style={{ backgroundColor: `${zoneColor}20`, color: zoneColor }}
+          >
+            {currentZone.label}
+          </div>
+        ) : (
+          <div className="px-3 py-1 rounded-full text-xs font-semibold bg-surface-hover text-subtle">
+            Sleep not tracked
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-4 mb-5">
@@ -61,13 +68,21 @@ export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
         />
         <StatBlock
           label="Sleep"
-          value={formatHoursMinutes(current.avgSleepMinutes)}
+          value={sleepWasTracked ? formatHoursMinutes(current.avgSleepMinutes) : "Not tracked"}
           sub={
-            <span style={{ color: sleepPerformanceColor(current.sleepPerformancePct) }}>
-              {current.sleepPerformancePct}% of avg
-            </span>
+            sleepWasTracked ? (
+              <span style={{ color: sleepPerformanceColor(current.sleepPerformancePct) }}>
+                {current.sleepPerformancePct}% of avg
+              </span>
+            ) : (
+              "Track sleep to compare weeks"
+            )
           }
-          prevValue={prevWeek ? formatHoursMinutes(prevWeek.avgSleepMinutes) : undefined}
+          prevValue={
+            prevWeek && prevWeek.avgSleepMinutes > 0
+              ? formatHoursMinutes(prevWeek.avgSleepMinutes)
+              : undefined
+          }
         />
         <StatBlock
           label="Resting HR"
@@ -88,20 +103,28 @@ export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
           <div className="flex gap-1">
             {history.slice(-8).map((w) => {
               const zone = new StrainZone(w.strainZone);
+              const weekHasSleepData = w.avgSleepMinutes > 0;
               return (
                 <div
                   key={w.weekStart}
-                  className="flex-1 h-2 rounded-full"
-                  style={{ backgroundColor: zone.color }}
-                  title={`${w.weekStart}: ${zone.label}`}
+                  className={`flex-1 h-2 rounded-full ${weekHasSleepData ? "" : "bg-surface-hover"}`}
+                  style={weekHasSleepData ? { backgroundColor: zone.color } : undefined}
+                  title={`${w.weekStart}: ${weekHasSleepData ? zone.label : "Sleep not tracked"}`}
                 />
               );
             })}
-            <div
-              className="flex-1 h-2 rounded-full ring-2 ring-border-strong"
-              style={{ backgroundColor: zoneColor }}
-              title="This week"
-            />
+            {sleepWasTracked ? (
+              <div
+                className="flex-1 h-2 rounded-full ring-2 ring-border-strong"
+                style={{ backgroundColor: zoneColor }}
+                title="This week"
+              />
+            ) : (
+              <div
+                className="flex-1 h-2 rounded-full ring-2 ring-border-strong bg-surface-hover"
+                title="This week: Sleep not tracked"
+              />
+            )}
           </div>
         </div>
       )}

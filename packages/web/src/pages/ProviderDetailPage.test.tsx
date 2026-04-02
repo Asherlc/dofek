@@ -286,6 +286,26 @@ describe("ProviderDetailPage import-only providers", () => {
     expect(screen.getByText("Connected")).toBeTruthy();
     expect(screen.queryByText("Import only")).toBeNull();
   });
+
+  it("does not render disconnect for providers that are not connected", async () => {
+    mockProviders.data = [
+      {
+        id: "strong-csv",
+        name: "Wahoo",
+        authorized: false,
+        authType: "oauth",
+        lastSyncedAt: null,
+        importOnly: false,
+      },
+    ];
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    expect(screen.getByText("Sync Controls")).toBeTruthy();
+    expect(screen.getByText("Not connected")).toBeTruthy();
+    expect(screen.queryByText("Disconnect")).toBeNull();
+  });
 });
 
 describe("WhoopWearLocationPicker", () => {

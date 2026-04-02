@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import type { CanonicalActivityType } from "@dofek/training/training";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
-import { exchangeCodeForTokens } from "../auth/oauth.ts";
+import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
@@ -22,7 +22,7 @@ import type {
 // ============================================================
 
 const SUUNTO_API_BASE = "https://cloudapi.suunto.com";
-const DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
+const _DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
 
 interface SuuntoWorkout {
   workoutKey: string;
@@ -138,18 +138,17 @@ export function parseSuuntoWorkout(workout: SuuntoWorkout): ParsedSuuntoWorkout 
 // OAuth configuration
 // ============================================================
 
-export function suuntoOAuthConfig(): OAuthConfig | null {
+export function suuntoOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.SUUNTO_CLIENT_ID;
   const clientSecret = process.env.SUUNTO_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
-  const redirectUri = process.env.OAUTH_REDIRECT_URI ?? DEFAULT_REDIRECT_URI;
 
   return {
     clientId,
     clientSecret,
     authorizeUrl: "https://cloudapi-oauth.suunto.com/oauth/authorize",
     tokenUrl: "https://cloudapi-oauth.suunto.com/oauth/token",
-    redirectUri,
+    redirectUri: getOAuthRedirectUri(host),
     scopes: ["workout"],
     tokenAuthMethod: "basic",
   };
@@ -306,8 +305,8 @@ export class SuuntoProvider implements WebhookProvider {
     return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
   }
 
-  authSetup(): ProviderAuthSetup {
-    const config = suuntoOAuthConfig();
+  authSetup(options?: { host?: string }): ProviderAuthSetup {
+    const config = suuntoOAuthConfig(options?.host);
     if (!config) throw new Error("SUUNTO_CLIENT_ID and CLIENT_SECRET required");
     const fetchFn = this.#fetchFn;
     return {
