@@ -79,16 +79,19 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
     await ensureProvider(db, provider.id, provider.name);
     const syncStart = Date.now();
 
-    const tokens = await loadTokens(db, provider.id);
-    if (!tokens) {
-      logger.info(`[worker] Skipping ${provider.name}: not connected`);
-      completedCount++;
-      providerStatus[provider.id] = { status: "done", message: "Skipped — not connected" };
-      await job.updateProgress({
-        providers: providerStatus,
-        percentage: computePercentage(completedCount, 0, totalProviders),
-      });
-      continue;
+    const requiresTokens = provider.authSetup !== undefined;
+    if (requiresTokens) {
+      const tokens = await loadTokens(db, provider.id);
+      if (!tokens) {
+        logger.info(`[worker] Skipping ${provider.name}: not connected`);
+        completedCount++;
+        providerStatus[provider.id] = { status: "done", message: "Skipped — not connected" };
+        await job.updateProgress({
+          providers: providerStatus,
+          percentage: computePercentage(completedCount, 0, totalProviders),
+        });
+        continue;
+      }
     }
 
     try {

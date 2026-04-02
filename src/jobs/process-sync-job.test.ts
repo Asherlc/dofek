@@ -579,15 +579,14 @@ describe("processSyncJob", () => {
   });
 
   it("skips providers without stored tokens and logs a message", async () => {
+    // Wahoo uses OAuth — has authSetup — so the token check applies
     const provider = createMockProvider({
       id: "wahoo",
       name: "Wahoo",
+      authSetup: () => undefined,
     });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
     mockLoadTokens.mockResolvedValue(null);
-
-    // Mock logger to verify it's called (kills mutant removing logger call)
-    const loggerSpy = vi.spyOn(console, "info").mockImplementation(() => {});
 
     const progressSnapshots: Array<Record<string, unknown>> = [];
     const job = createMockJob();
@@ -602,9 +601,9 @@ describe("processSyncJob", () => {
     expect(provider.sync).not.toHaveBeenCalled();
     expect(mockCaptureException).not.toHaveBeenCalled();
 
-    // Verify logger was called (kills logger mutant)
-    expect(loggerSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Skipping Wahoo sync — not connected"),
+    // Verify logger was called via the mocked logger
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      expect.stringContaining("Skipping Wahoo: not connected"),
     );
 
     // Should report skipped status
@@ -613,12 +612,11 @@ describe("processSyncJob", () => {
       providers: { wahoo: { status: "done", message: "Skipped — not connected" } },
       percentage: 100,
     });
-
-    loggerSpy.mockRestore();
   });
 
   it("syncs providers that have stored tokens", async () => {
-    const provider = createMockProvider({ id: "strava", name: "Strava" });
+    // Strava uses OAuth — has authSetup — so the token check applies and tokens are present
+    const provider = createMockProvider({ id: "strava", name: "Strava", authSetup: () => undefined });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
     mockLoadTokens.mockResolvedValue({
       accessToken: "valid",
@@ -633,8 +631,8 @@ describe("processSyncJob", () => {
   });
 
   it("skips unconnected providers but syncs connected ones", async () => {
-    const connected = createMockProvider({ id: "strava", name: "Strava" });
-    const unconnected = createMockProvider({ id: "wahoo", name: "Wahoo" });
+    const connected = createMockProvider({ id: "strava", name: "Strava", authSetup: () => undefined });
+    const unconnected = createMockProvider({ id: "wahoo", name: "Wahoo", authSetup: () => undefined });
     mockGetEnabledSyncProviders.mockReturnValue([connected, unconnected]);
     mockLoadTokens.mockImplementation(async (_db: SyncDatabase, providerId: string) => {
       if (providerId === "strava") {
@@ -652,5 +650,21 @@ describe("processSyncJob", () => {
 
     expect(connected.sync).toHaveBeenCalledOnce();
     expect(unconnected.sync).not.toHaveBeenCalled();
+  });
+
+  it("always syncs tokenless providers (no authSetup) even when loadTokens returns null", async () => {
+    // Tokenless providers like AppleHealth have no authSetup — the token check must be skipped
+    const provider = createMockProvider({ id: "apple_health", name: "Apple Health" });
+    // No authSetup on the provider (default from createMockProvider)
+    expect(provider.authSetup).toBeUndefined();
+
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+    mockLoadTokens.mockResolvedValue(null);
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    // sync() should be called regardless of tokens
+    expect(provider.sync).toHaveBeenCalledOnce();
+    expect(mockLoadTokens).not.toHaveBeenCalled();
   });
 });

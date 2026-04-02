@@ -78,11 +78,11 @@ export interface RideWithGpsTripSummary {
   description?: string | null;
   departed_at?: string | null;
   activity_type?: string | null;
-  distance: number;
-  duration: number;
-  moving_time: number;
-  elevation_gain: number;
-  elevation_loss: number;
+  distance?: number | null;
+  duration?: number | null;
+  moving_time?: number | null;
+  elevation_gain?: number | null;
+  elevation_loss?: number | null;
   created_at: string;
   updated_at: string;
   /** Recording source/device — e.g., "ridewithgps_iphone", "garmin_connect". */
@@ -96,11 +96,11 @@ const rideWithGpsTripDetailSchema = z.object({
   description: z.string().nullable().optional(),
   departed_at: z.string().nullable().optional(),
   activity_type: z.string().nullable().optional(),
-  distance: z.number(),
-  duration: z.number(),
-  moving_time: z.number(),
-  elevation_gain: z.number(),
-  elevation_loss: z.number(),
+  distance: z.number().nullable().optional(),
+  duration: z.number().nullable().optional(),
+  moving_time: z.number().nullable().optional(),
+  elevation_gain: z.number().nullable().optional(),
+  elevation_loss: z.number().nullable().optional(),
   created_at: z.string(),
   updated_at: z.string(),
   source: z.string().nullable().optional(),
