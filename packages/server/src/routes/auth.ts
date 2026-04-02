@@ -6,7 +6,7 @@ import { sql } from "drizzle-orm";
 import express, { Router } from "express";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
-import { resolveOrCreateUser } from "../auth/account-linking.ts";
+import { MissingEmailForSignupError, resolveOrCreateUser } from "../auth/account-linking.ts";
 import {
   clearOAuthFlowCookies,
   clearSessionCookie,
@@ -59,6 +59,7 @@ interface OAuthStateEntry {
   userId: string;
   /** Mobile app URL scheme for deep link redirect after OAuth. */
   mobileScheme?: string;
+  returnTo?: string;
 }
 
 const oauthStateMap = new Map<string, OAuthStateEntry>();
@@ -82,9 +83,60 @@ interface IdentityFlowEntry {
 }
 const identityFlowMap = new Map<string, IdentityFlowEntry>();
 
+interface PendingEmailSignupEntry {
+  providerId: string;
+  providerName: string;
+  identity: {
+    providerAccountId: string;
+    email: null;
+    name: string | null;
+  };
+  mobileScheme?: string;
+  returnTo?: string;
+}
+
+const pendingEmailSignupMap = new Map<string, PendingEmailSignupEntry>();
+
 function storeIdentityFlow(state: string, entry: IdentityFlowEntry): void {
   identityFlowMap.set(state, entry);
   setTimeout(() => identityFlowMap.delete(state), 10 * 60 * 1000);
+}
+
+function storePendingEmailSignup(entry: PendingEmailSignupEntry): string {
+  const token = randomBytes(16).toString("hex");
+  pendingEmailSignupMap.set(token, entry);
+  setTimeout(() => pendingEmailSignupMap.delete(token), 10 * 60 * 1000);
+  return token;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function sanitizeReturnTo(returnTo: string | undefined): string | undefined {
+  if (!returnTo) return undefined;
+  if (!returnTo.startsWith("/") || returnTo.startsWith("//")) return undefined;
+  return returnTo;
+}
+
+function completeSignupHtml(
+  providerName: string,
+  token: string,
+  email = "",
+  error?: string,
+): string {
+  const escapedProviderName = escapeHtml(providerName);
+  const escapedToken = escapeHtml(token);
+  const escapedEmail = escapeHtml(email);
+  const errorHtml = error
+    ? `<p style="margin:0 0 16px;color:#fca5a5;font-size:14px">${escapeHtml(error)}</p>`
+    : "";
+  return `<html><body style="font-family:system-ui;background:#111827;color:#f9fafb;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:24px"><div style="width:100%;max-width:420px;background:#1f2937;border:1px solid #374151;border-radius:16px;padding:32px;box-sizing:border-box"><h1 style="margin:0 0 12px;font-size:28px">Enter your email to finish signing in</h1><p style="margin:0 0 20px;color:#d1d5db;line-height:1.5">${escapedProviderName} does not provide your email address, so we need it before creating your account.</p>${errorHtml}<form method="post" action="/auth/complete-signup" style="display:flex;flex-direction:column;gap:16px"><input type="hidden" name="token" value="${escapedToken}" /><label style="display:flex;flex-direction:column;gap:8px;font-size:14px;color:#e5e7eb"><span>Email</span><input type="email" name="email" value="${escapedEmail}" autocomplete="email" required style="border:1px solid #4b5563;border-radius:10px;padding:12px 14px;background:#111827;color:#f9fafb;font-size:16px" /></label><button type="submit" style="border:0;border-radius:10px;padding:12px 16px;background:#10b981;color:#06281f;font-size:16px;font-weight:700;cursor:pointer">Continue</button></form></div></body></html>`;
 }
 
 function isIdentityProviderName(value: string): value is IdentityProviderName {
@@ -564,11 +616,15 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         typeof req.query.redirect_scheme === "string" ? req.query.redirect_scheme : undefined;
       const mobileScheme =
         redirectScheme && isValidMobileScheme(redirectScheme) ? redirectScheme : undefined;
+      const returnTo = sanitizeReturnTo(
+        typeof req.query.return_to === "string" ? req.query.return_to : undefined,
+      );
       await startDataProviderOAuth(res, req.params.provider, {
         providerId: req.params.provider,
         intent: "login",
         userId: DEFAULT_USER_ID,
         mobileScheme,
+        returnTo,
       });
     } catch (err: unknown) {
       logger.error(`[auth] Failed to start data provider login: ${err}`);
@@ -829,6 +885,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         intent,
         linkUserId,
         userId: stateUserId,
+        returnTo,
       } = stateEntry;
 
       const { getAllProviders } = await import("dofek/providers/registry");
@@ -872,13 +929,14 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       }
 
       // Auto-link identity when connecting data providers (if getUserIdentity is available)
-      if (setup.getUserIdentity) {
-        try {
-          const identity = await setup.getUserIdentity(tokens.accessToken);
+      if (setup.getUserIdentity && intent !== "data") {
+        const identity = await setup.getUserIdentity(tokens.accessToken);
 
-          if (intent === "login") {
-            // Data provider login: resolve/create user and create session
-            const { userId } = await resolveOrCreateUser(db, providerId, identity);
+        if (intent === "login") {
+          try {
+            const { userId } = await resolveOrCreateUser(db, providerId, identity, undefined, {
+              requireEmailForNewUser: setup.identityCapabilities?.providesEmail === false,
+            });
             const sessionInfo = await createSession(db, userId);
 
             // Mobile: redirect to app via deep link with session token
@@ -894,19 +952,37 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
 
             setSessionCookie(res, sessionInfo.sessionId, sessionInfo.expiresAt);
             logger.info(`[auth] User ${userId} logged in via data provider ${providerId}`);
-            res.redirect("/");
+            res.redirect(returnTo ?? "/");
             return;
+          } catch (loginErr: unknown) {
+            if (loginErr instanceof MissingEmailForSignupError) {
+              const token = storePendingEmailSignup({
+                providerId,
+                providerName: provider.name,
+                identity: {
+                  providerAccountId: identity.providerAccountId,
+                  email: null,
+                  name: identity.name,
+                },
+                mobileScheme: stateEntry.mobileScheme,
+                returnTo,
+              });
+              res.status(200).send(completeSignupHtml(provider.name, token));
+              return;
+            }
+            throw loginErr;
           }
+        }
 
-          if (intent === "link" && linkUserId) {
-            // Data provider link: link to logged-in user
-            await resolveOrCreateUser(db, providerId, identity, linkUserId);
-            logger.info(`[auth] Linked ${providerId} to user ${linkUserId}`);
-            res.redirect("/settings");
-            return;
-          }
-
-          // intent === "data": auto-link identity to the current session user (if logged in)
+        if (linkUserId) {
+          await resolveOrCreateUser(db, providerId, identity, linkUserId);
+          logger.info(`[auth] Linked ${providerId} to user ${linkUserId}`);
+          res.redirect("/settings");
+          return;
+        }
+      } else if (setup.getUserIdentity) {
+        try {
+          const identity = await setup.getUserIdentity(tokens.accessToken);
           const sessionId = getSessionIdFromRequest(req);
           const session = sessionId ? await validateSession(db, sessionId) : null;
           if (session) {
@@ -931,6 +1007,64 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       res.status(500).send("Token exchange failed");
     }
   });
+
+  router.post(
+    "/auth/complete-signup",
+    express.urlencoded({ extended: false }),
+    async (req, res) => {
+      try {
+        const token = typeof req.body.token === "string" ? req.body.token : undefined;
+        const rawEmail = typeof req.body.email === "string" ? req.body.email : "";
+        if (!token) {
+          res.status(400).type("text/plain").send("Missing signup token");
+          return;
+        }
+
+        const pending = pendingEmailSignupMap.get(token);
+        if (!pending) {
+          res.status(400).type("text/plain").send("Signup session expired — please try again");
+          return;
+        }
+
+        const parsedEmail = z.string().trim().email().safeParse(rawEmail);
+        if (!parsedEmail.success) {
+          res
+            .status(400)
+            .send(
+              completeSignupHtml(
+                pending.providerName,
+                token,
+                rawEmail,
+                "Enter a valid email address.",
+              ),
+            );
+          return;
+        }
+
+        pendingEmailSignupMap.delete(token);
+
+        const { userId } = await resolveOrCreateUser(db, pending.providerId, {
+          providerAccountId: pending.identity.providerAccountId,
+          email: parsedEmail.data,
+          name: pending.identity.name,
+        });
+        const sessionInfo = await createSession(db, userId);
+
+        if (pending.mobileScheme && isValidMobileScheme(pending.mobileScheme)) {
+          logger.info(`[auth] User ${userId} completed signup via ${pending.providerId} (mobile)`);
+          res.redirect(`${pending.mobileScheme}://auth/callback?session=${sessionInfo.sessionId}`);
+          return;
+        }
+
+        setSessionCookie(res, sessionInfo.sessionId, sessionInfo.expiresAt);
+        logger.info(`[auth] User ${userId} completed signup via ${pending.providerId}`);
+        res.redirect(pending.returnTo ?? "/");
+      } catch (err: unknown) {
+        logger.error(`[auth] Completing signup failed: ${err}`);
+        res.status(500).send("Signup failed — please try again");
+      }
+    },
+  );
 
   return router;
 }

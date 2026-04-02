@@ -8,7 +8,7 @@ vi.mock("dofek/db/schema", () => ({
   DEFAULT_USER_ID: "default-user-id",
 }));
 
-import { resolveOrCreateUser } from "./account-linking.ts";
+import { MissingEmailForSignupError, resolveOrCreateUser } from "./account-linking.ts";
 
 function createMockDb() {
   return {
@@ -84,6 +84,19 @@ describe("resolveOrCreateUser", () => {
       const result = await resolveOrCreateUser(db, "google", noEmailIdentity);
 
       expect(result.isNewUser).toBe(true);
+    });
+
+    it("requires email before creating a new user when configured", async () => {
+      const noEmailIdentity = { ...identity, email: null };
+
+      db.execute.mockResolvedValueOnce([]);
+
+      await expect(
+        resolveOrCreateUser(db, "strava", noEmailIdentity, undefined, {
+          requireEmailForNewUser: true,
+        }),
+      ).rejects.toBeInstanceOf(MissingEmailForSignupError);
+      expect(db.execute).toHaveBeenCalledTimes(1);
     });
   });
 

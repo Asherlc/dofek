@@ -462,6 +462,7 @@ export class WahooProvider implements WebhookProvider {
       oauthConfig: config,
       exchangeCode: (code) => exchangeCodeForTokens(config, code),
       apiBaseUrl: WAHOO_API_BASE,
+      identityCapabilities: { providesEmail: false },
       getUserIdentity: async (accessToken: string): Promise<ProviderIdentity> => {
         const response = await this.#fetchFn(`${WAHOO_API_BASE}/v1/user`, {
           headers: { Authorization: `Bearer ${accessToken}` },
@@ -479,7 +480,7 @@ export class WahooProvider implements WebhookProvider {
         const nameParts = [user.first_name, user.last_name].filter(Boolean);
         return {
           providerAccountId: String(user.id),
-          email: user.email ?? null,
+          email: null,
           name: nameParts.length > 0 ? nameParts.join(" ") : null,
         };
       },
