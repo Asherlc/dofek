@@ -25,6 +25,7 @@ import {
   journalEntry,
   journalQuestion,
   sleepSession,
+  sleepStage,
   strengthSet,
   strengthWorkout,
 } from "../db/schema.ts";
@@ -158,7 +159,7 @@ export function parseSleepStages(record: WhoopSleepRecord): ParsedSleepStage[] {
       const { start, end } = parseDuringRange(s.during);
       stages.push({ stage, startedAt: start, endedAt: end });
     } catch {
-      continue;
+      // Skip malformed stage rows from the API payload.
     }
   }
   return stages;

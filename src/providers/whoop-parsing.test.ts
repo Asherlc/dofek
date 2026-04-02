@@ -1615,4 +1615,23 @@ describe("parseSleepStages", () => {
     expect(parseSleepStages(record)).toHaveLength(0);
     expect(parseSleepStages({ ...record, stages: [] })).toHaveLength(0);
   });
+
+  it("skips stages with unparseable during ranges", () => {
+    const record: WhoopSleepRecord = {
+      id: 103,
+      user_id: 1,
+      created_at: "2026-03-01T08:00:00Z",
+      updated_at: "2026-03-01T08:00:00Z",
+      timezone_offset: "Z",
+      nap: false,
+      stages: [
+        { stage: "light", during: "not-a-range" },
+        { stage: "rem", during: "['2026-03-01T01:00:00Z','2026-03-01T01:30:00Z')" },
+      ],
+    };
+
+    const parsed = parseSleepStages(record);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]?.stage).toBe("rem");
+  });
 });

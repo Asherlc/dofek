@@ -80,9 +80,6 @@ importers:
       eight-sleep-client:
         specifier: workspace:*
         version: link:packages/eight-sleep
-      entities:
-        specifier: 6.0.1
-        version: 6.0.1
       fit-file-parser:
         specifier: 2.3.3
         version: 2.3.3
