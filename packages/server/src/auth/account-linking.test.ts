@@ -4,7 +4,7 @@ vi.mock("../logger.ts", () => ({
   logger: { info: vi.fn(), warn: vi.fn() },
 }));
 
-import { resolveOrCreateUser } from "./account-linking.ts";
+import { MissingEmailForSignupError, resolveOrCreateUser } from "./account-linking.ts";
 
 function createMockDb() {
   return {
@@ -71,6 +71,19 @@ describe("resolveOrCreateUser", () => {
 
       expect(result).toEqual({ userId: "new-user-1", isNewUser: true });
       expect(db.execute).toHaveBeenCalledTimes(3);
+    });
+
+    it("requires email before creating a new user when configured", async () => {
+      const noEmailIdentity = { ...identity, email: null };
+
+      db.execute.mockResolvedValueOnce([]);
+
+      await expect(
+        resolveOrCreateUser(db, "strava", noEmailIdentity, undefined, {
+          requireEmailForNewUser: true,
+        }),
+      ).rejects.toBeInstanceOf(MissingEmailForSignupError);
+      expect(db.execute).toHaveBeenCalledTimes(1);
     });
   });
 
