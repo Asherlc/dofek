@@ -1,6 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { View } from "react-native";
-import { AuthProvider } from "../lib/auth-context";
 import LoginScreen from "./login";
 
 const meta = {
