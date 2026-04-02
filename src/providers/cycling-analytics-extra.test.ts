@@ -109,7 +109,7 @@ describe("cyclingAnalyticsOAuthConfig", () => {
     process.env.CYCLING_ANALYTICS_CLIENT_SECRET = "test-secret";
     delete process.env.OAUTH_REDIRECT_URI;
     const config = cyclingAnalyticsOAuthConfig();
-    expect(config?.redirectUri).toContain("localhost");
+    expect(config?.redirectUri).toBe("https://dofek.asherlc.com/callback");
   });
 });
 

@@ -42,7 +42,7 @@ export class TrainerRoadProvider implements SyncProvider {
     return `https://www.trainerroad.com/app/cycling/rides/${externalId}`;
   }
 
-  authSetup(): ProviderAuthSetup {
+  authSetup(_options?: { host?: string }): ProviderAuthSetup {
     const fetchFn = this.#fetchFn;
     return {
       oauthConfig: {

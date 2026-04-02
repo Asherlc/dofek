@@ -105,7 +105,7 @@ interface BaseProvider {
    * Returns undefined if OAuth is not supported or not configured (e.g. missing env vars).
    * Call sites should treat undefined as "not available for login" and surface configuration errors to the user.
    */
-  authSetup?(): ProviderAuthSetup | undefined;
+  authSetup?(options?: { host?: string }): ProviderAuthSetup | undefined;
 }
 
 /**
@@ -156,12 +156,12 @@ export function isSyncProvider(provider: Provider): provider is SyncProvider {
 
 /** Provider that authenticates via OAuth 2.0 redirect (Strava, Fitbit, Wahoo, etc.) */
 export interface OAuthProvider extends SyncProvider {
-  authSetup(): ProviderAuthSetup;
+  authSetup(options?: { host?: string }): ProviderAuthSetup;
 }
 
 /** Provider that authenticates via user-provided credentials (Eight Sleep, Zwift, etc.) */
 export interface CredentialProvider extends SyncProvider {
-  authSetup(): ProviderAuthSetup & {
+  authSetup(options?: { host?: string }): ProviderAuthSetup & {
     automatedLogin: NonNullable<ProviderAuthSetup["automatedLogin"]>;
   };
 }

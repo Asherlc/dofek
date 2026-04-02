@@ -1,6 +1,6 @@
 import type { CanonicalActivityType } from "@dofek/training/training";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
-import { exchangeCodeForTokens } from "../auth/oauth.ts";
+import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity, bodyMeasurement } from "../db/schema.ts";
@@ -19,7 +19,7 @@ import type {
 // ============================================================
 
 const WGER_API_BASE = "https://wger.de/api/v2";
-const DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
+const _DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
 
 interface WgerWorkoutSession {
   id: number;
@@ -92,18 +92,17 @@ export function parseWgerWeightEntry(entry: WgerWeightEntry): ParsedWgerWeightEn
 // OAuth configuration
 // ============================================================
 
-export function wgerOAuthConfig(): OAuthConfig | null {
+export function wgerOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.WGER_CLIENT_ID;
   const clientSecret = process.env.WGER_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
-  const redirectUri = process.env.OAUTH_REDIRECT_URI ?? DEFAULT_REDIRECT_URI;
 
   return {
     clientId,
     clientSecret,
     authorizeUrl: "https://wger.de/en/user/authorize",
     tokenUrl: "https://wger.de/api/v2/token",
-    redirectUri,
+    redirectUri: getOAuthRedirectUri(host),
     scopes: ["read"],
   };
 }
@@ -127,8 +126,8 @@ export class WgerProvider implements SyncProvider {
     return null;
   }
 
-  authSetup(): ProviderAuthSetup {
-    const config = wgerOAuthConfig();
+  authSetup(options?: { host?: string }): ProviderAuthSetup {
+    const config = wgerOAuthConfig(options?.host);
     if (!config) throw new Error("WGER_CLIENT_ID and CLIENT_SECRET required");
     const fetchFn = this.#fetchFn;
     return {

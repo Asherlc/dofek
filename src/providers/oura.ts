@@ -558,7 +558,7 @@ export class OuraClient extends ProviderHttpClient {
 // OAuth configuration
 // ============================================================
 
-export function ouraOAuthConfig(): OAuthConfig | null {
+export function ouraOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.OURA_CLIENT_ID;
   const clientSecret = process.env.OURA_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
@@ -568,7 +568,7 @@ export function ouraOAuthConfig(): OAuthConfig | null {
     clientSecret,
     authorizeUrl: "https://cloud.ouraring.com/oauth/authorize",
     tokenUrl: `${OURA_API_BASE}/oauth/token`,
-    redirectUri: getOAuthRedirectUri(),
+    redirectUri: getOAuthRedirectUri(host),
     scopes: [
       "daily",
       "email",
@@ -770,8 +770,8 @@ export class OuraProvider implements WebhookProvider {
     return null;
   }
 
-  authSetup(): ProviderAuthSetup {
-    const config = ouraOAuthConfig();
+  authSetup(options?: { host?: string }): ProviderAuthSetup {
+    const config = ouraOAuthConfig(options?.host);
     if (!config) throw new Error("OURA_CLIENT_ID and OURA_CLIENT_SECRET are required");
     const fetchFn = this.#fetchFn;
 

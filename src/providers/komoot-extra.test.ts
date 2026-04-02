@@ -131,7 +131,7 @@ describe("komootOAuthConfig", () => {
     process.env.KOMOOT_CLIENT_SECRET = "test-secret";
     delete process.env.OAUTH_REDIRECT_URI;
     const config = komootOAuthConfig();
-    expect(config?.redirectUri).toContain("localhost");
+    expect(config?.redirectUri).toBe("https://dofek.asherlc.com/callback");
   });
 });
 

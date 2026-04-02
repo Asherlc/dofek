@@ -90,6 +90,10 @@ function isIdentityProviderName(value: string): value is IdentityProviderName {
   return IDENTITY_PROVIDER_NAMES.some((p) => p === value);
 }
 
+function getSinglePathParam(value: string | string[] | undefined): string | null {
+  return typeof value === "string" ? value : null;
+}
+
 const SLACK_SCOPES = [
   "chat:write",
   "im:history",
@@ -100,6 +104,7 @@ const SLACK_SCOPES = [
 ];
 
 async function startDataProviderOAuth(
+  req: import("express").Request,
   res: import("express").Response,
   providerId: string,
   stateEntry: OAuthStateEntry,
@@ -114,15 +119,17 @@ async function startDataProviderOAuth(
     return;
   }
 
-  const setup = provider.authSetup?.();
+  // Pass current host to ensure the redirect URI matches the server that started the flow
+  const host = req.get("host");
+  const setup = provider.authSetup?.({ host });
   if (!setup?.oauthConfig) {
-    res.status(400).send(`Provider ${providerId} does not use OAuth`);
+    res.status(400).send("Provider does not use OAuth");
     return;
   }
 
   // Login intent requires getUserIdentity to extract user info from the provider
   if (stateEntry.intent === "login" && !setup.getUserIdentity) {
-    res.status(400).send(`Provider ${providerId} cannot be used for login`);
+    res.status(400).send("Provider cannot be used for login");
     return;
   }
 
@@ -130,15 +137,13 @@ async function startDataProviderOAuth(
   if (setup.automatedLogin && stateEntry.intent === "data") {
     res
       .status(400)
-      .send(
-        `Provider ${providerId} uses credential authentication — sign in via the Settings page`,
-      );
+      .send("Provider uses credential authentication and cannot be connected via OAuth here");
     return;
   }
 
   // OAuth 1.0 providers (e.g. FatSecret) — only for data intent
   if (setup.oauth1Flow && stateEntry.intent === "data") {
-    const callbackUrl = `${process.env.OAUTH_REDIRECT_URI ?? "https://dofek.asherlc.com/callback"}`;
+    const callbackUrl = setup.oauthConfig.redirectUri;
     const result = await setup.oauth1Flow.getRequestToken(callbackUrl);
     oauth1Secrets.set(result.oauthToken, {
       providerId,
@@ -188,7 +193,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
   db = database;
   const router = Router();
 
-  router.get("/api/auth/providers", async (_req, res) => {
+  router.get("/api/auth/providers", async (req, res) => {
     try {
       const identityProviders = getConfiguredProviders();
       const { getAllProviders } = await import("dofek/providers/registry");
@@ -198,7 +203,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       const dataLoginProviders = getAllProviders()
         .filter((p) => {
           try {
-            const setup = p.authSetup?.();
+            const setup = p.authSetup?.({ host: req.get("host") });
             return setup?.getUserIdentity && setup.oauthConfig;
           } catch (err: unknown) {
             logger.warn(`[auth] Skipping ${p.id} for login: authSetup() threw: ${err}`);
@@ -528,7 +533,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
   });
 
   // ── Slack OAuth (Add to Slack) ──
-  router.get("/auth/provider/slack", async (req, res) => {
+  router.get("/auth/provider/slack", authRateLimiter, async (req, res) => {
     const clientId = process.env.SLACK_CLIENT_ID;
     if (!clientId) {
       res.status(400).send("SLACK_CLIENT_ID is not configured");
@@ -561,14 +566,19 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
   });
 
   // ── Data provider login: use a data provider as an identity/login provider ──
-  router.get("/auth/login/data/:provider", async (req, res) => {
+  router.get("/auth/login/data/:provider", authRateLimiter, async (req, res) => {
     try {
+      const providerId = getSinglePathParam(req.params.provider);
+      if (!providerId) {
+        res.status(400).send("Missing provider");
+        return;
+      }
       const redirectScheme =
         typeof req.query.redirect_scheme === "string" ? req.query.redirect_scheme : undefined;
       const mobileScheme =
         redirectScheme && isValidMobileScheme(redirectScheme) ? redirectScheme : undefined;
-      await startDataProviderOAuth(res, req.params.provider, {
-        providerId: req.params.provider,
+      await startDataProviderOAuth(req, res, providerId, {
+        providerId,
         intent: "login",
         userId: `login:${randomBytes(8).toString("hex")}`,
         mobileScheme,
@@ -580,8 +590,13 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
   });
 
   // ── Data provider link: link a data provider as identity while already logged in ──
-  router.get("/auth/link/data/:provider", async (req, res) => {
+  router.get("/auth/link/data/:provider", authRateLimiter, async (req, res) => {
     try {
+      const providerId = getSinglePathParam(req.params.provider);
+      if (!providerId) {
+        res.status(400).send("Missing provider");
+        return;
+      }
       const sessionId = getSessionIdFromRequest(req);
       if (!sessionId) {
         res.status(401).send("You must be logged in to link an account");
@@ -593,8 +608,8 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         return;
       }
 
-      await startDataProviderOAuth(res, req.params.provider, {
-        providerId: req.params.provider,
+      await startDataProviderOAuth(req, res, providerId, {
+        providerId,
         intent: "link",
         linkUserId: session.userId,
         userId: session.userId,
@@ -606,18 +621,13 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
   });
 
   // ── Data-provider OAuth for data sync (Wahoo, Withings, etc.) ──
-  router.get("/auth/provider/:provider", async (req, res) => {
+  router.get("/auth/provider/:provider", authRateLimiter, async (req, res) => {
     try {
-      const { getAllProviders } = await import("dofek/providers/registry");
-      const { ensureProvidersRegistered } = await import("../routers/sync.ts");
-      await ensureProvidersRegistered();
-
-      const provider = getAllProviders().find((p) => p.id === req.params.provider);
-      if (!provider) {
-        res.status(404).send("Unknown provider");
+      const providerId = getSinglePathParam(req.params.provider);
+      if (!providerId) {
+        res.status(400).send("Missing provider");
         return;
       }
-
       // Resolve the logged-in user so the provider record is linked to them
       const sessionId = getSessionIdFromRequest(req);
       const session = sessionId ? await validateSession(db, sessionId) : null;
@@ -627,8 +637,8 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       }
       const userId = session.userId;
 
-      await startDataProviderOAuth(res, req.params.provider, {
-        providerId: req.params.provider,
+      await startDataProviderOAuth(req, res, providerId, {
+        providerId,
         intent: "data",
         userId,
       });
@@ -638,7 +648,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
     }
   });
 
-  router.get("/callback", async (req, res) => {
+  router.get("/callback", authRateLimiter, async (req, res) => {
     try {
       const code = typeof req.query.code === "string" ? req.query.code : undefined;
       const state = typeof req.query.state === "string" ? req.query.state : undefined;
@@ -678,9 +688,9 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
           return;
         }
 
-        const setup = provider.authSetup?.();
+        const setup = provider.authSetup?.({ host: req.get("host") });
         if (!setup?.oauth1Flow) {
-          res.status(400).send(`Provider ${stored.providerId} does not support OAuth 1.0`);
+          res.status(400).send("Provider does not support OAuth 1.0");
           return;
         }
 
@@ -755,7 +765,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         } = await tokenResponse.json();
 
         if (!tokenData.ok || !tokenData.access_token || !tokenData.team?.id) {
-          res.status(400).send(`Slack OAuth failed: ${tokenData.error ?? "unknown error"}`);
+          res.status(400).send("Slack OAuth failed");
           return;
         }
 
@@ -840,7 +850,10 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       // Resolve provider from random state token
       const stateEntry = oauthStateMap.get(state);
       if (!stateEntry) {
-        res.status(400).send("Unknown or expired OAuth state");
+        const errorDetail = req.get("host")?.includes("localhost")
+          ? " (Are you using an IP or host that differs from what the provider redirected to? Try setting OAUTH_REDIRECT_URI_unencrypted in your .env if testing on mobile.)"
+          : "";
+        res.status(400).send(`Unknown or expired OAuth state${errorDetail}`);
         return;
       }
       oauthStateMap.delete(state);
@@ -863,9 +876,9 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         return;
       }
 
-      const setup = provider.authSetup?.();
+      const setup = provider.authSetup?.({ host: req.get("host") });
       if (!setup?.oauthConfig || !setup.exchangeCode) {
-        res.status(400).send(`Provider ${providerId} does not support OAuth code exchange`);
+        res.status(400).send("Provider does not support OAuth code exchange");
         return;
       }
 

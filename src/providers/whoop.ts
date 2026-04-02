@@ -637,7 +637,7 @@ export class WhoopProvider implements SyncProvider {
    * Returns undefined if WHOOP_CLIENT_ID or WHOOP_CLIENT_SECRET are not set.
    * Whoop supports OAuth for login, but data sync can continue using Cognito tokens.
    */
-  authSetup(): ProviderAuthSetup | undefined {
+  authSetup(options?: { host?: string }): ProviderAuthSetup | undefined {
     const clientId = process.env.WHOOP_CLIENT_ID;
     const clientSecret = process.env.WHOOP_CLIENT_SECRET;
     if (!clientId || !clientSecret) return undefined;
@@ -647,7 +647,7 @@ export class WhoopProvider implements SyncProvider {
       clientSecret,
       authorizeUrl: "https://api.prod.whoop.com/oauth/oauth2/auth",
       tokenUrl: "https://api.prod.whoop.com/oauth/oauth2/token",
-      redirectUri: getOAuthRedirectUri(),
+      redirectUri: getOAuthRedirectUri(options?.host),
       scopes: ["read:profile"],
     };
     const fetchFn = this.#fetchFn;

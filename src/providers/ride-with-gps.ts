@@ -133,7 +133,7 @@ export interface RideWithGpsSyncResponse {
 const RWGPS_OAUTH_AUTHORIZE_URL = "https://ridewithgps.com/oauth/authorize";
 const RWGPS_OAUTH_TOKEN_URL = "https://ridewithgps.com/oauth/token.json";
 
-export function rideWithGpsOAuthConfig(): OAuthConfig | null {
+export function rideWithGpsOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.RWGPS_CLIENT_ID;
   if (!clientId) return null;
 
@@ -142,7 +142,7 @@ export function rideWithGpsOAuthConfig(): OAuthConfig | null {
     clientSecret: process.env.RWGPS_CLIENT_SECRET,
     authorizeUrl: RWGPS_OAUTH_AUTHORIZE_URL,
     tokenUrl: RWGPS_OAUTH_TOKEN_URL,
-    redirectUri: getOAuthRedirectUri(),
+    redirectUri: getOAuthRedirectUri(host),
     scopes: ["user"],
   };
 }
@@ -336,8 +336,8 @@ export class RideWithGpsProvider implements SyncProvider {
     return `https://ridewithgps.com/trips/${externalId}`;
   }
 
-  authSetup(): ProviderAuthSetup {
-    const config = rideWithGpsOAuthConfig();
+  authSetup(options?: { host?: string }): ProviderAuthSetup {
+    const config = rideWithGpsOAuthConfig(options?.host);
     if (!config) throw new Error("RWGPS_CLIENT_ID is required");
 
     return {

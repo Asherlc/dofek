@@ -274,7 +274,7 @@ const POLAR_API_BASE = "https://www.polaraccesslink.com/v3";
 const POLAR_AUTHORIZE_URL = "https://flow.polar.com/oauth2/authorization";
 const POLAR_TOKEN_URL = "https://polarremote.com/v2/oauth2/token";
 
-function polarOAuthConfig(): OAuthConfig | null {
+export function polarOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.POLAR_CLIENT_ID;
   const clientSecret = process.env.POLAR_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
@@ -283,7 +283,7 @@ function polarOAuthConfig(): OAuthConfig | null {
     clientSecret,
     authorizeUrl: POLAR_AUTHORIZE_URL,
     tokenUrl: POLAR_TOKEN_URL,
-    redirectUri: getOAuthRedirectUri(),
+    redirectUri: getOAuthRedirectUri(host),
     scopes: ["accesslink.read_all"],
     tokenAuthMethod: "basic",
   };
@@ -490,8 +490,8 @@ export class PolarProvider implements WebhookProvider {
     ];
   }
 
-  authSetup(): ProviderAuthSetup {
-    const config = polarOAuthConfig();
+  authSetup(options?: { host?: string }): ProviderAuthSetup {
+    const config = polarOAuthConfig(options?.host);
     if (!config) throw new Error("POLAR_CLIENT_ID and POLAR_CLIENT_SECRET are required");
     return {
       oauthConfig: config,
