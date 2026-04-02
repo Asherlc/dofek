@@ -91,4 +91,110 @@ describe("RedisWhoopVerificationChallengeStore", () => {
     await challengeStore.delete("challenge-redis");
     expect(deleteMethod).toHaveBeenCalledWith("whoop:verification:challenge-redis");
   });
+
+  it("returns null when redis has no challenge payload", async () => {
+    const challengeStore = new RedisWhoopVerificationChallengeStore(async () => ({
+      set: vi.fn(async () => "OK"),
+      get: vi.fn(async () => null),
+      del: vi.fn(async () => 0),
+    }));
+
+    await expect(challengeStore.get("missing-challenge")).resolves.toBeNull();
+  });
+
+  it("deletes invalid challenge payloads from redis", async () => {
+    const deleteMethod = vi.fn(async () => 1);
+    const challengeStore = new RedisWhoopVerificationChallengeStore(async () => ({
+      set: vi.fn(async () => "OK"),
+      get: vi.fn(async () => JSON.stringify({ session: "incomplete" })),
+      del: deleteMethod,
+    }));
+
+    await expect(challengeStore.get("invalid-challenge")).resolves.toBeNull();
+    expect(deleteMethod).toHaveBeenCalledWith("whoop:verification:invalid-challenge");
+  });
+
+  it("uses shared redis connection outside test environment", async () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    const redisSet = vi.fn(async () => "OK" as const);
+    const redisGet = vi.fn(async () =>
+      JSON.stringify({
+        session: "shared-session",
+        method: "sms",
+        username: "user@example.com",
+        expiresAt: 1234,
+      }),
+    );
+    const redisDelete = vi.fn(async () => 1);
+    let capturedConnectionOptions: unknown;
+    let capturedRedisConnectionOptions: unknown;
+
+    class MockRedisConnection {
+      readonly client: Promise<{
+        set: typeof redisSet;
+        get: typeof redisGet;
+        del: typeof redisDelete;
+      }>;
+
+      constructor(connectionOptions: unknown, redisConnectionOptions: unknown) {
+        capturedConnectionOptions = connectionOptions;
+        capturedRedisConnectionOptions = redisConnectionOptions;
+        this.client = Promise.resolve({
+          set: redisSet,
+          get: redisGet,
+          del: redisDelete,
+        });
+      }
+    }
+
+    const getRedisConnection = vi.fn(() => ({
+      host: "localhost",
+      port: 6379,
+    }));
+
+    process.env.NODE_ENV = "production";
+    vi.resetModules();
+    vi.doMock("bullmq", () => ({ RedisConnection: MockRedisConnection }));
+    vi.doMock("dofek/jobs/queues", () => ({ getRedisConnection }));
+
+    try {
+      const challengeStoreModule = await import("./whoop-verification-challenge-store.ts");
+      const challengeStore = challengeStoreModule.getWhoopVerificationChallengeStore();
+
+      await challengeStore.save("challenge-shared", {
+        session: "shared-session",
+        method: "sms",
+        username: "user@example.com",
+        expiresAt: 1234,
+      });
+      await expect(challengeStore.get("challenge-shared")).resolves.toEqual({
+        session: "shared-session",
+        method: "sms",
+        username: "user@example.com",
+        expiresAt: 1234,
+      });
+      await challengeStore.delete("challenge-shared");
+
+      expect(getRedisConnection).toHaveBeenCalledTimes(1);
+      expect(capturedConnectionOptions).toEqual({
+        host: "localhost",
+        port: 6379,
+      });
+      expect(capturedRedisConnectionOptions).toEqual({
+        shared: true,
+        blocking: false,
+        skipVersionCheck: true,
+      });
+      expect(redisSet).toHaveBeenCalledWith(
+        "whoop:verification:challenge-shared",
+        expect.any(String),
+        "PX",
+        600_000,
+      );
+      expect(redisDelete).toHaveBeenCalledWith("whoop:verification:challenge-shared");
+    } finally {
+      vi.resetModules();
+      process.env.NODE_ENV = originalNodeEnv;
+    }
+  });
 });
