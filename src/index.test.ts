@@ -919,16 +919,15 @@ describe("handleImportCommand", () => {
 });
 
 describe("main", () => {
-  let mockProcessExit: ReturnType<typeof vi.spyOn>;
+  const createProcessExitSpy = () => vi.spyOn(process, "exit");
+  let mockProcessExit: ReturnType<typeof createProcessExitSpy>;
   let originalArgv: string[];
 
   beforeEach(() => {
     // Correctly type the mock implementation to match process.exit
-    mockProcessExit = vi
-      .spyOn(process, "exit")
-      .mockImplementation((_code?: string | number | null) => {
-        throw new Error("process.exit should not be called in test");
-      });
+    mockProcessExit = createProcessExitSpy().mockImplementation((..._args: unknown[]) => {
+      throw new Error("process.exit should not be called in test");
+    });
     originalArgv = process.argv;
   });
 
@@ -939,7 +938,7 @@ describe("main", () => {
 
   it("exits with 1 for unknown command", async () => {
     process.argv = ["node", "index.ts", "unknown"];
-    mockProcessExit.mockImplementation((_code?: string | number | null) => {
+    mockProcessExit.mockImplementation((..._args: unknown[]) => {
       throw new Error("exit-called");
     });
 
@@ -951,7 +950,7 @@ describe("main", () => {
 
   it("calls handleSyncCommand for 'sync'", async () => {
     process.argv = ["node", "index.ts", "sync"];
-    mockProcessExit.mockImplementation((_code?: string | number | null) => {
+    mockProcessExit.mockImplementation((..._args: unknown[]) => {
       throw new Error("exit-called");
     });
     mockWaitUntilFinished.mockResolvedValue(undefined);
