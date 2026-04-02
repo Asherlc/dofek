@@ -578,13 +578,16 @@ describe("processSyncJob", () => {
     });
   });
 
-  it("skips providers without stored tokens", async () => {
+  it("skips providers without stored tokens and logs a message", async () => {
     const provider = createMockProvider({
       id: "wahoo",
       name: "Wahoo",
     });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
     mockLoadTokens.mockResolvedValue(null);
+
+    // Mock logger to verify it's called (kills mutant removing logger call)
+    const loggerSpy = vi.spyOn(console, "info").mockImplementation(() => {});
 
     const progressSnapshots: Array<Record<string, unknown>> = [];
     const job = createMockJob();
@@ -599,12 +602,19 @@ describe("processSyncJob", () => {
     expect(provider.sync).not.toHaveBeenCalled();
     expect(mockCaptureException).not.toHaveBeenCalled();
 
+    // Verify logger was called (kills logger mutant)
+    expect(loggerSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Skipping Wahoo sync — not connected"),
+    );
+
     // Should report skipped status
     const lastSnapshot = progressSnapshots[progressSnapshots.length - 1];
     expect(lastSnapshot).toEqual({
       providers: { wahoo: { status: "done", message: "Skipped — not connected" } },
       percentage: 100,
     });
+
+    loggerSpy.mockRestore();
   });
 
   it("syncs providers that have stored tokens", async () => {

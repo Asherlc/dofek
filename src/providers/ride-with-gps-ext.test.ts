@@ -188,6 +188,34 @@ describe("RideWithGpsClient — API calls", () => {
     expect(pointWithCoords?.latitude).toBe(45.5);
   });
 
+  it("getTrip allows track points with missing x/y/d entirely (Zod optional)", async () => {
+    const mockFetch: typeof globalThis.fetch = async () => {
+      return Response.json({
+        trip: {
+          id: 44,
+          name: "Stationary Activity",
+          created_at: "2026-03-15T10:00:00Z",
+          updated_at: "2026-03-15T10:00:00Z",
+          track_points: [
+            {
+              t: 1742025600,
+              h: 150,
+              // x, y, d are missing
+            },
+          ],
+        },
+      });
+    };
+
+    const client = new RideWithGpsClient("test-token", mockFetch);
+    const result = await client.getTrip(44);
+    expect(result.trip.track_points).toHaveLength(1);
+    expect(result.trip.track_points[0]?.longitude).toBeUndefined();
+    expect(result.trip.track_points[0]?.latitude).toBeUndefined();
+    expect(result.trip.track_points[0]?.distanceMeters).toBeUndefined();
+    expect(result.trip.track_points[0]?.heartRateBpm).toBe(150);
+  });
+
   it("throws on non-OK response", async () => {
     const mockFetch: typeof globalThis.fetch = async () => {
       return new Response("Unauthorized", { status: 401 });
