@@ -22,6 +22,8 @@ const fitness = pgSchema("fitness");
 
 // Stable user ID used in integration tests and fixtures.
 export const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
+// Legacy primary-user id used by bootstrap and backwards-compatible auth flows.
+export const DEFAULT_USER_ID = TEST_USER_ID;
 
 function resolveImplicitUserId(): string {
   const userId = getTokenUserId();

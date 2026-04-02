@@ -349,13 +349,13 @@ describe("Upload & Auth - extended coverage", () => {
       expect(body).toContain("SLACK_CLIENT_ID");
     });
 
-    it("GET /auth/provider/:provider returns 404 for truly unknown provider", async () => {
+    it("GET /auth/provider/:provider returns 401 before validating provider ids", async () => {
       const res = await fetch(`${baseUrl}/auth/provider/does_not_exist`, {
         redirect: "manual",
       });
-      expect(res.status).toBe(404);
+      expect(res.status).toBe(401);
       const body = await res.text();
-      expect(body).toContain("Unknown provider");
+      expect(body).toContain("You must be logged in");
     });
 
     it("GET /auth/provider/:provider returns 401 when unauthenticated for known provider", async () => {

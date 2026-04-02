@@ -1,9 +1,8 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { DEFAULT_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { resolveOrCreateUser } from "./account-linking.ts";
-
-const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
 
 describe("resolveOrCreateUser (integration)", () => {
   let ctx: TestContext;
@@ -19,33 +18,27 @@ describe("resolveOrCreateUser (integration)", () => {
   beforeEach(async () => {
     await ctx.db.execute(sql`DELETE FROM fitness.session`);
     await ctx.db.execute(sql`DELETE FROM fitness.auth_account`);
-    await ctx.db.execute(sql`DELETE FROM fitness.user_profile WHERE id != ${TEST_USER_ID}`);
+    await ctx.db.execute(sql`DELETE FROM fitness.user_profile WHERE id != ${DEFAULT_USER_ID}`);
     await ctx.db.execute(
-      sql`UPDATE fitness.user_profile SET email = NULL, name = 'Baseline User' WHERE id = ${TEST_USER_ID}`,
+      sql`UPDATE fitness.user_profile SET email = NULL, name = 'Baseline User' WHERE id = ${DEFAULT_USER_ID}`,
     );
   });
 
-  it("creates a new user for the first external login", async () => {
+  it("claims DEFAULT_USER_ID for the first external login", async () => {
     const result = await resolveOrCreateUser(ctx.db, "google", {
       providerAccountId: "google-123",
       email: "first@example.com",
       name: "First User",
     });
 
-    expect(result.userId).not.toBe(TEST_USER_ID);
+    expect(result.userId).toBe(DEFAULT_USER_ID);
     expect(result.isNewUser).toBe(true);
 
-    const newUser = await ctx.db.execute<{ email: string; name: string }>(
+    const defaultUser = await ctx.db.execute<{ email: string | null; name: string }>(
       sql`SELECT email, name FROM fitness.user_profile WHERE id = ${result.userId}`,
     );
-    expect(newUser[0]?.email).toBe("first@example.com");
-    expect(newUser[0]?.name).toBe("First User");
-
-    const baseline = await ctx.db.execute<{ email: string | null; name: string }>(
-      sql`SELECT email, name FROM fitness.user_profile WHERE id = ${TEST_USER_ID}`,
-    );
-    expect(baseline[0]?.email).toBeNull();
-    expect(baseline[0]?.name).toBe("Baseline User");
+    expect(defaultUser[0]?.email).toBe("first@example.com");
+    expect(defaultUser[0]?.name).toBe("First User");
   });
 
   it("returns existing user when auth_account already exists", async () => {
@@ -102,7 +95,7 @@ describe("resolveOrCreateUser (integration)", () => {
     });
 
     expect(second.userId).not.toBe(first.userId);
-    expect(second.userId).not.toBe(TEST_USER_ID);
+    expect(second.userId).not.toBe(DEFAULT_USER_ID);
     expect(second.isNewUser).toBe(true);
   });
 
@@ -141,7 +134,7 @@ describe("resolveOrCreateUser (integration)", () => {
       name: "Fitbit User",
     });
 
-    expect(noEmail.userId).not.toBe(TEST_USER_ID);
+    expect(noEmail.userId).not.toBe(DEFAULT_USER_ID);
     expect(noEmail.isNewUser).toBe(true);
   });
 
