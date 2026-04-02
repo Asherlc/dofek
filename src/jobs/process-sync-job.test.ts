@@ -46,8 +46,15 @@ vi.mock("../db/sync-log.ts", () => ({
 }));
 
 const mockEnsureProvider = vi.fn().mockResolvedValue("test-id");
+const mockLoadTokens = vi.fn().mockResolvedValue({
+  accessToken: "valid",
+  refreshToken: "refresh",
+  expiresAt: new Date("2099-01-01"),
+  scopes: null,
+});
 vi.mock("../db/tokens.ts", () => ({
   ensureProvider: (...args: unknown[]) => mockEnsureProvider(...args),
+  loadTokens: (...args: unknown[]) => mockLoadTokens(...args),
 }));
 
 const mockUpdateUserMaxHr = vi.fn().mockResolvedValue(undefined);
@@ -123,6 +130,12 @@ describe("processSyncJob", () => {
     mockIsSyncEligibleProvider.mockReturnValue(true);
     mockLogSync.mockResolvedValue(undefined);
     mockEnsureProvider.mockResolvedValue("test-id");
+    mockLoadTokens.mockResolvedValue({
+      accessToken: "valid",
+      refreshToken: "refresh",
+      expiresAt: new Date("2099-01-01"),
+      scopes: null,
+    });
     mockUpdateUserMaxHr.mockResolvedValue(undefined);
     mockRefreshDedupViews.mockResolvedValue(undefined);
   });
@@ -563,5 +576,71 @@ describe("processSyncJob", () => {
       provider: "broken",
       data_type: "sync",
     });
+  });
+
+  it("skips providers without stored tokens", async () => {
+    const provider = createMockProvider({
+      id: "wahoo",
+      name: "Wahoo",
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+    mockLoadTokens.mockResolvedValue(null);
+
+    const progressSnapshots: Array<Record<string, unknown>> = [];
+    const job = createMockJob();
+    job.updateProgress.mockImplementation((data: Record<string, unknown>) => {
+      progressSnapshots.push(structuredClone(data));
+      return Promise.resolve();
+    });
+
+    await runSyncJob(job, mockDb);
+
+    // sync() should never be called
+    expect(provider.sync).not.toHaveBeenCalled();
+    expect(mockCaptureException).not.toHaveBeenCalled();
+
+    // Should report skipped status
+    const lastSnapshot = progressSnapshots[progressSnapshots.length - 1];
+    expect(lastSnapshot).toEqual({
+      providers: { wahoo: { status: "done", message: "Skipped — not connected" } },
+      percentage: 100,
+    });
+  });
+
+  it("syncs providers that have stored tokens", async () => {
+    const provider = createMockProvider({ id: "strava", name: "Strava" });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+    mockLoadTokens.mockResolvedValue({
+      accessToken: "valid",
+      refreshToken: "refresh",
+      expiresAt: new Date("2099-01-01"),
+      scopes: null,
+    });
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    expect(provider.sync).toHaveBeenCalledOnce();
+  });
+
+  it("skips unconnected providers but syncs connected ones", async () => {
+    const connected = createMockProvider({ id: "strava", name: "Strava" });
+    const unconnected = createMockProvider({ id: "wahoo", name: "Wahoo" });
+    mockGetEnabledSyncProviders.mockReturnValue([connected, unconnected]);
+    mockLoadTokens.mockImplementation(async (_db: SyncDatabase, providerId: string) => {
+      if (providerId === "strava") {
+        return {
+          accessToken: "valid",
+          refreshToken: "refresh",
+          expiresAt: new Date("2099-01-01"),
+          scopes: null,
+        };
+      }
+      return null;
+    });
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    expect(connected.sync).toHaveBeenCalledOnce();
+    expect(unconnected.sync).not.toHaveBeenCalled();
   });
 });

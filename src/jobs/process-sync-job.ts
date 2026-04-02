@@ -1,7 +1,7 @@
 import * as Sentry from "@sentry/node";
 import type { SyncDatabase } from "../db/index.ts";
 import { logSync } from "../db/sync-log.ts";
-import { ensureProvider } from "../db/tokens.ts";
+import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
 import {
   syncDuration,
@@ -78,6 +78,18 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
 
     await ensureProvider(db, provider.id, provider.name);
     const syncStart = Date.now();
+
+    const tokens = await loadTokens(db, provider.id);
+    if (!tokens) {
+      logger.info(`[worker] Skipping ${provider.name}: not connected`);
+      completedCount++;
+      providerStatus[provider.id] = { status: "done", message: "Skipped — not connected" };
+      await job.updateProgress({
+        providers: providerStatus,
+        percentage: computePercentage(completedCount, 0, totalProviders),
+      });
+      continue;
+    }
 
     try {
       logger.info(`[worker] Starting ${provider.name}...`);

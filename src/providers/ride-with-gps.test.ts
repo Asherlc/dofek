@@ -173,4 +173,22 @@ describe("parseTrackPoints", () => {
   it("returns empty array for empty input", () => {
     expect(parseTrackPoints([])).toEqual([]);
   });
+
+  it("skips track points with missing longitude/latitude", () => {
+    const points: RideWithGpsTrackPoint[] = [
+      {
+        distanceMeters: 0,
+        epochSeconds: 1723276200,
+      },
+      {
+        longitude: -122.7,
+        latitude: 45.6,
+        distanceMeters: 100,
+        epochSeconds: 1723276300,
+      },
+    ];
+    const result = parseTrackPoints(points);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.lng).toBe(-122.7);
+  });
 });

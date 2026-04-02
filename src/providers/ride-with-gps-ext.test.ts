@@ -151,6 +151,43 @@ describe("RideWithGpsClient — API calls", () => {
     expect(point).not.toHaveProperty("T");
   });
 
+  it("getTrip tolerates track points with missing x/y/d fields", async () => {
+    const mockFetch: typeof globalThis.fetch = async () => {
+      return Response.json({
+        trip: {
+          id: 43,
+          name: "Indoor Ride",
+          distance: 0,
+          duration: 1800,
+          moving_time: 1800,
+          elevation_gain: 0,
+          elevation_loss: 0,
+          created_at: "2026-03-15T10:00:00Z",
+          updated_at: "2026-03-15T10:00:00Z",
+          track_points: [
+            { t: 1742025600, h: 140, p: 200 },
+            { x: -122.6, y: 45.5, d: 100, t: 1742025610 },
+          ],
+        },
+      });
+    };
+
+    const client = new RideWithGpsClient("test-token", mockFetch);
+    const result = await client.getTrip(43);
+    expect(result.trip.track_points).toHaveLength(2);
+
+    const pointWithoutCoords = result.trip.track_points[0];
+    expect(pointWithoutCoords?.longitude).toBeUndefined();
+    expect(pointWithoutCoords?.latitude).toBeUndefined();
+    expect(pointWithoutCoords?.distanceMeters).toBeUndefined();
+    expect(pointWithoutCoords?.heartRateBpm).toBe(140);
+    expect(pointWithoutCoords?.powerWatts).toBe(200);
+
+    const pointWithCoords = result.trip.track_points[1];
+    expect(pointWithCoords?.longitude).toBe(-122.6);
+    expect(pointWithCoords?.latitude).toBe(45.5);
+  });
+
   it("throws on non-OK response", async () => {
     const mockFetch: typeof globalThis.fetch = async () => {
       return new Response("Unauthorized", { status: 401 });

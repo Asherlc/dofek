@@ -233,4 +233,31 @@ describe("resolveOAuthTokens", () => {
 
     expect(mockRefreshAccessToken).toHaveBeenCalledWith(fakeConfig, "refresh", customFetch);
   });
+
+  it("deletes tokens and throws on 'Too many unrevoked access tokens'", async () => {
+    mockLoadTokens.mockResolvedValue({
+      accessToken: "old",
+      refreshToken: "dead-refresh",
+      expiresAt: pastDate(),
+      scopes: null,
+    });
+    mockRefreshAccessToken.mockRejectedValue(
+      new Error(
+        'Token refresh failed (400): {"error":"Too many unrevoked access tokens exist for this app and user. You can only create a new token if you revoke an old one first."}',
+      ),
+    );
+    mockDeleteTokens.mockResolvedValue(undefined);
+
+    await expect(
+      resolveOAuthTokens({
+        db: fakeDb,
+        providerId: "wahoo",
+        providerName: "Wahoo",
+        getOAuthConfig: () => fakeConfig,
+      }),
+    ).rejects.toThrow("Wahoo authorization revoked");
+
+    expect(mockDeleteTokens).toHaveBeenCalledWith(fakeDb, "wahoo");
+    expect(mockSaveTokens).not.toHaveBeenCalled();
+  });
 });

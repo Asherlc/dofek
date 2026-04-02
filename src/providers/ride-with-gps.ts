@@ -27,9 +27,9 @@ import type {
 // ============================================================
 
 export interface RideWithGpsTrackPoint {
-  longitude: number;
-  latitude: number;
-  distanceMeters: number;
+  longitude?: number;
+  latitude?: number;
+  distanceMeters?: number;
   elevationMeters?: number;
   epochSeconds?: number;
   speedKph?: number;
@@ -43,9 +43,9 @@ export interface RideWithGpsTrackPoint {
 // Transforms the API's compact single-letter field names to descriptive names.
 const rideWithGpsTrackPointSchema = z
   .object({
-    x: z.number(),
-    y: z.number(),
-    d: z.number(),
+    x: z.number().optional(),
+    y: z.number().optional(),
+    d: z.number().optional(),
     e: z.number().optional(),
     t: z.number().optional(),
     s: z.number().optional(),
@@ -56,9 +56,9 @@ const rideWithGpsTrackPointSchema = z
   })
   .transform(
     (raw): RideWithGpsTrackPoint => ({
-      longitude: raw.x,
-      latitude: raw.y,
-      distanceMeters: raw.d,
+      longitude: raw.x ?? undefined,
+      latitude: raw.y ?? undefined,
+      distanceMeters: raw.d ?? undefined,
       elevationMeters: raw.e,
       epochSeconds: raw.t,
       speedKph: raw.s,
@@ -204,6 +204,8 @@ export function parseTrackPoints(points: RideWithGpsTrackPoint[]): ParsedTrackPo
   for (const point of points) {
     // Skip points without a timestamp — can't insert into metric_stream
     if (point.epochSeconds === undefined) continue;
+    // Skip points without coordinates — indoor/GPS-less activities may omit lat/lng
+    if (point.latitude === undefined || point.longitude === undefined) continue;
 
     result.push({
       recordedAt: new Date(point.epochSeconds * 1000),
