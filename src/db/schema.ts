@@ -70,6 +70,13 @@ export const labResultStatusEnum = fitness.enum("lab_result_status", [
   "cancelled",
 ]);
 
+export const sleepStageNameEnum = fitness.enum("sleep_stage_name", [
+  "deep",
+  "light",
+  "rem",
+  "awake",
+]);
+
 export const activityTypeEnum = fitness.enum("activity_type", [
   // Cycling subtypes
   "cycling",
@@ -866,7 +873,7 @@ export const sleepStage = fitness.table(
     sessionId: uuid("session_id")
       .notNull()
       .references(() => sleepSession.id, { onDelete: "cascade" }),
-    stage: text("stage").notNull(), // "deep", "light", "rem", "awake"
+    stage: sleepStageNameEnum("stage").notNull(),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
     endedAt: timestamp("ended_at", { withTimezone: true }).notNull(),
     sourceName: text("source_name"),

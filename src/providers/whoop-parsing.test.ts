@@ -8,6 +8,7 @@ import {
   parseJournalResponse,
   parseRecovery,
   parseSleep,
+  parseSleepStages,
   parseWeightliftingWorkout,
   parseWorkout,
   resolveActivityType,
@@ -1567,5 +1568,51 @@ describe("parseWeightliftingWorkout — additional edge cases", () => {
 
     const result = parseWeightliftingWorkout(response);
     expect(result.exercises[0]?.equipment).toBeNull();
+  });
+});
+
+describe("parseSleepStages", () => {
+  it("maps WHOOP stage names to canonical stages", () => {
+    const record: WhoopSleepRecord = {
+      id: 101,
+      user_id: 1,
+      created_at: "2026-03-01T08:00:00Z",
+      updated_at: "2026-03-01T08:00:00Z",
+      timezone_offset: "Z",
+      nap: false,
+      stages: [
+        { stage: "awake", during: "['2026-03-01T00:00:00Z','2026-03-01T00:15:00Z')" },
+        { stage: "light", during: "['2026-03-01T00:15:00Z','2026-03-01T01:00:00Z')" },
+        { stage: "rem", during: "['2026-03-01T01:00:00Z','2026-03-01T01:30:00Z')" },
+        { stage: "deep", during: "['2026-03-01T01:30:00Z','2026-03-01T02:00:00Z')" },
+        { stage: "slow_wave", during: "['2026-03-01T02:00:00Z','2026-03-01T02:30:00Z')" },
+        { stage: "unknown", during: "['2026-03-01T02:30:00Z','2026-03-01T02:45:00Z')" },
+      ],
+    };
+
+    const parsed = parseSleepStages(record);
+    expect(parsed).toHaveLength(5);
+    expect(parsed[0]).toEqual({
+      stage: "awake",
+      startedAt: new Date("2026-03-01T00:00:00Z"),
+      endedAt: new Date("2026-03-01T00:15:00Z"),
+    });
+    expect(parsed[1]?.stage).toBe("light");
+    expect(parsed[2]?.stage).toBe("rem");
+    expect(parsed[3]?.stage).toBe("deep");
+    expect(parsed[4]?.stage).toBe("deep"); // slow_wave -> deep
+  });
+
+  it("handles empty or missing stages", () => {
+    const record: WhoopSleepRecord = {
+      id: 102,
+      user_id: 1,
+      created_at: "2026-03-01T08:00:00Z",
+      updated_at: "2026-03-01T08:00:00Z",
+      timezone_offset: "Z",
+      nap: false,
+    };
+    expect(parseSleepStages(record)).toHaveLength(0);
+    expect(parseSleepStages({ ...record, stages: [] })).toHaveLength(0);
   });
 });

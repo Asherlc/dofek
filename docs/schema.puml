@@ -687,7 +687,7 @@ entity "sleep_stage" {
   * id : uuid <<PK>>
   --
   session_id : uuid <<FK>>
-  stage : text
+  stage : sleep_stage_name
   started_at : timestamp
   ended_at : timestamp
   source_name : text

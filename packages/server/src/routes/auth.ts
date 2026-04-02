@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { IDENTITY_PROVIDER_NAMES } from "@dofek/auth/auth";
 import { getOAuthRedirectUri, type TokenSet } from "dofek/auth/oauth";
 import { sql } from "drizzle-orm";
-import { escapeAttribute, escapeText } from "entities/escape";
+import { escapeAttribute, escapeText } from "entities";
 import express, { Router } from "express";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";

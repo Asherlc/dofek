@@ -51,14 +51,14 @@ function isLocalOrPrivateHost(host: string): boolean {
  * is missing, it constructs a dynamic redirect URI based on that host.
  */
 export function getOAuthRedirectUri(host?: string): string {
-  const envValue = process.env.OAUTH_REDIRECT_URI_unencrypted ?? process.env.OAUTH_REDIRECT_URI;
-  if (envValue) {
-    return envValue;
-  }
   if (host) {
     // Use http for localhost/private RFC1918 networks, otherwise use https.
     const protocol = isLocalOrPrivateHost(host) ? "http" : "https";
     return `${protocol}://${host}/callback`;
+  }
+  const envValue = process.env.OAUTH_REDIRECT_URI ?? process.env.OAUTH_REDIRECT_URI_unencrypted;
+  if (envValue) {
+    return envValue;
   }
   return DEFAULT_REDIRECT_URI;
 }

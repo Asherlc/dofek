@@ -18,7 +18,7 @@ export const sleepListRowSchema = z.object({
 });
 
 const sleepStageRowSchema = z.object({
-  stage: z.string(),
+  stage: z.enum(["deep", "light", "rem", "awake"]),
   started_at: z.string(),
   ended_at: z.string(),
 });

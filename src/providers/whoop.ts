@@ -134,6 +134,36 @@ export interface ParsedSleep {
   sleepNeedFromNapMinutes?: number;
 }
 
+export interface ParsedSleepStage {
+  stage: "deep" | "light" | "rem" | "awake";
+  startedAt: Date;
+  endedAt: Date;
+}
+
+/** Map WHOOP stage names to canonical stages */
+const WHOOP_STAGE_MAP: Record<string, "deep" | "light" | "rem" | "awake"> = {
+  deep: "deep",
+  slow_wave: "deep",
+  light: "light",
+  rem: "rem",
+  awake: "awake",
+};
+
+export function parseSleepStages(record: WhoopSleepRecord): ParsedSleepStage[] {
+  const stages: ParsedSleepStage[] = [];
+  for (const s of record.stages ?? []) {
+    const stage = WHOOP_STAGE_MAP[s.stage];
+    if (!stage) continue;
+    try {
+      const { start, end } = parseDuringRange(s.during);
+      stages.push({ stage, startedAt: start, endedAt: end });
+    } catch {
+      continue;
+    }
+  }
+  return stages;
+}
+
 /**
  * Zod schema for inline sleep records from the BFF v0 cycle.sleeps array.
  * The sleep-service endpoint now returns raw stage data, so we parse from
@@ -924,6 +954,70 @@ export class WhoopProvider implements SyncProvider {
     } catch (err) {
       errors.push({
         message: `sleep: ${err instanceof Error ? err.message : String(err)}`,
+        cause: err,
+      });
+    }
+
+    // --- Sync detailed sleep stages from sleep-service ---
+    try {
+      const stageCount = await withSyncLog(
+        db,
+        this.id,
+        "sleep_stages",
+        async () => {
+          let count = 0;
+          const sleepIds = new Set<string>();
+          for (const cycle of cycles) {
+            const ids = extractSleepIdsFromCycle(cycle);
+            for (const id of ids) sleepIds.add(id);
+          }
+
+          for (const sleepId of sleepIds) {
+            try {
+              const record = await client.getSleep(sleepId);
+              if (!record.stages || record.stages.length === 0) continue;
+
+              const stages = parseSleepStages(record);
+              if (stages.length === 0) continue;
+
+              // Find the session ID in our DB
+              const sessionRows = await db
+                .select({ id: sleepSession.id })
+                .from(sleepSession)
+                .where(
+                  and(
+                    eq(sleepSession.providerId, this.id),
+                    eq(sleepSession.externalId, String(sleepId)),
+                  ),
+                )
+                .limit(1);
+
+              const sessionId = sessionRows[0]?.id;
+              if (!sessionId) continue;
+
+              // Insert stages
+              await db.delete(sleepStage).where(eq(sleepStage.sessionId, sessionId));
+              await db.insert(sleepStage).values(
+                stages.map((s) => ({
+                  sessionId,
+                  stage: s.stage,
+                  startedAt: s.startedAt,
+                  endedAt: s.endedAt,
+                })),
+              );
+              count++;
+            } catch (err) {
+              logger.warn(`[whoop] Failed to fetch sleep stages for ${sleepId}: ${err}`);
+            }
+          }
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
+      recordsSynced += stageCount;
+    } catch (err) {
+      errors.push({
+        message: `sleep_stages: ${err instanceof Error ? err.message : String(err)}`,
         cause: err,
       });
     }
