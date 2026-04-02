@@ -1,15 +1,34 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { SyncDatabase } from "../db/index.ts";
+import { ensureProvider } from "../db/tokens.ts";
 import {
   AutoSupplementsProvider,
   buildDailyEntries,
   type SupplementWithNutrition,
 } from "./auto-supplements.ts";
 
+vi.mock("../db/tokens.ts", () => ({
+  ensureProvider: vi.fn(async () => "auto-supplements"),
+}));
+
 // ============================================================
 // Helpers
 // ============================================================
 
 const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
+
+function createMockDb(overrides: {
+  execute?: ReturnType<typeof vi.fn>;
+  select?: ReturnType<typeof vi.fn>;
+  insert?: ReturnType<typeof vi.fn>;
+}): SyncDatabase {
+  return {
+    execute: overrides.execute ?? vi.fn(),
+    select: overrides.select ?? vi.fn(),
+    insert: overrides.insert ?? vi.fn(),
+    delete: vi.fn(),
+  };
+}
 
 /** Create a minimal supplement-with-nutrition row for testing.
  *  The view returns snake_case column names for nutrient fields. */
@@ -73,6 +92,10 @@ const sampleRows: SupplementWithNutrition[] = [
 // ============================================================
 
 describe("Auto-Supplements Provider", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   describe("buildDailyEntries", () => {
     it("generates entries for a single date", () => {
       const entries = buildDailyEntries(sampleRows, ["2024-03-15"]);
@@ -188,6 +211,148 @@ describe("Auto-Supplements Provider", () => {
     it("validate always returns null (supplements stored in DB)", () => {
       const provider = new AutoSupplementsProvider();
       expect(provider.validate()).toBeNull();
+    });
+
+    it("normalizes since to UTC midnight and includes same-day sync at midnight", async () => {
+      vi.useFakeTimers({ now: new Date("2026-04-01T00:00:00.000Z") });
+      const provider = new AutoSupplementsProvider();
+
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([
+          makeRow({
+            name: "Zinc",
+            user_id: TEST_USER_ID,
+            userId: TEST_USER_ID,
+            nutrition_data_id: "nd-existing",
+          }),
+        ])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([]);
+
+      const where = vi.fn().mockResolvedValue([{ nutritionDataId: "nd-existing" }]);
+      const from = vi.fn().mockReturnValue({ where });
+      const select = vi.fn().mockReturnValue({ from });
+
+      const db = createMockDb({ execute, select, insert: vi.fn() });
+
+      const result = await provider.sync(db, new Date("2026-04-01T20:00:00.000Z"));
+      vi.useRealTimers();
+
+      expect(result.errors).toHaveLength(0);
+      expect(result.recordsSynced).toBe(1);
+      expect(where).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(ensureProvider)).toHaveBeenCalledWith(
+        db,
+        "auto-supplements",
+        "Auto-Supplements",
+        undefined,
+        TEST_USER_ID,
+      );
+      expect(result.duration).toBeGreaterThanOrEqual(0);
+      expect(result.duration).toBeLessThan(60_000);
+    });
+
+    it("updates existing nutrition data in-place when nutritionDataId exists", async () => {
+      vi.useFakeTimers({ now: new Date("2026-04-01T12:00:00.000Z") });
+      const provider = new AutoSupplementsProvider();
+
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([
+          makeRow({
+            name: "Omega 3",
+            user_id: TEST_USER_ID,
+            userId: TEST_USER_ID,
+            nutrition_data_id: "nd-existing",
+            calories: 10,
+          }),
+        ])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([]);
+
+      const where = vi.fn().mockResolvedValue([{ nutritionDataId: "nd-existing" }]);
+      const from = vi.fn().mockReturnValue({ where });
+      const select = vi.fn().mockReturnValue({ from });
+      const insert = vi.fn();
+
+      const db = createMockDb({ execute, select, insert });
+
+      const result = await provider.sync(db, new Date("2026-04-01T00:00:00.000Z"));
+      vi.useRealTimers();
+
+      expect(result.errors).toHaveLength(0);
+      expect(result.recordsSynced).toBe(1);
+      expect(insert).not.toHaveBeenCalled();
+      expect(execute).toHaveBeenCalledTimes(3);
+    });
+
+    it("inserts nutrition and food rows when existing entry has no nutritionDataId", async () => {
+      vi.useFakeTimers({ now: new Date("2026-04-01T12:00:00.000Z") });
+      const provider = new AutoSupplementsProvider();
+
+      const execute = vi.fn().mockResolvedValueOnce([
+        makeRow({
+          name: "Creatine",
+          user_id: TEST_USER_ID,
+          userId: TEST_USER_ID,
+          nutrition_data_id: null,
+        }),
+      ]);
+
+      const where = vi.fn().mockResolvedValue([{ nutritionDataId: null }]);
+      const from = vi.fn().mockReturnValue({ where });
+      const select = vi.fn().mockReturnValue({ from });
+
+      const nutritionReturning = vi.fn().mockResolvedValue([{ id: "nd-new" }]);
+      const nutritionValues = vi.fn().mockReturnValue({ returning: nutritionReturning });
+      const foodConflict = vi.fn().mockResolvedValue(undefined);
+      const foodValues = vi.fn().mockReturnValue({ onConflictDoNothing: foodConflict });
+      const insert = vi
+        .fn()
+        .mockImplementationOnce(() => ({ values: nutritionValues }))
+        .mockImplementationOnce(() => ({ values: foodValues }));
+
+      const db = createMockDb({ execute, select, insert });
+
+      const result = await provider.sync(db, new Date("2026-04-01T00:00:00.000Z"));
+      vi.useRealTimers();
+
+      expect(result.errors).toHaveLength(0);
+      expect(result.recordsSynced).toBe(1);
+      expect(insert).toHaveBeenCalledTimes(2);
+      expect(nutritionReturning).toHaveBeenCalledTimes(1);
+      expect(foodConflict).toHaveBeenCalledTimes(1);
+    });
+
+    it("returns a structured error with externalId when entry upsert fails", async () => {
+      vi.useFakeTimers({ now: new Date("2026-04-01T12:00:00.000Z") });
+      const provider = new AutoSupplementsProvider();
+
+      const execute = vi.fn().mockResolvedValueOnce([
+        makeRow({
+          name: "Magnesium",
+          user_id: TEST_USER_ID,
+          userId: TEST_USER_ID,
+          nutrition_data_id: "nd-existing",
+        }),
+      ]);
+
+      const where = vi.fn().mockRejectedValue(new Error("select failed"));
+      const from = vi.fn().mockReturnValue({ where });
+      const select = vi.fn().mockReturnValue({ from });
+
+      const db = createMockDb({ execute, select, insert: vi.fn() });
+
+      const result = await provider.sync(db, new Date("2026-04-01T00:00:00.000Z"));
+      vi.useRealTimers();
+
+      expect(result.recordsSynced).toBe(0);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]?.message).toContain("Failed to upsert Magnesium");
+      expect(result.errors[0]?.externalId).toContain("auto:magnesium");
+      expect(result.duration).toBeGreaterThanOrEqual(0);
+      expect(result.duration).toBeLessThan(60_000);
     });
   });
 });

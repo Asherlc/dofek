@@ -24,6 +24,10 @@ const mockGetEnabledSyncProviders = vi.fn<() => Array<{ id: string }>>(() => [])
 const mockGetAllProviders = vi.fn<() => Array<Record<string, unknown>>>(() => []);
 const mockEnsureProvidersRegistered = vi.fn(() => Promise.resolve());
 const mockProcessSyncJob = vi.fn();
+const mockDbExecute = vi.fn(async () => [{ id: "test-user" }]);
+const mockCreateDatabaseFromEnv = vi.fn(() => ({
+  execute: mockDbExecute,
+}));
 const mockRedisConnection = { host: "localhost" };
 const mockCreateSyncQueue = vi.fn(() => ({
   add: mockAdd,
@@ -62,9 +66,7 @@ vi.mock("./providers/index.ts", () => ({
 }));
 
 vi.mock("./db/index.ts", () => ({
-  createDatabaseFromEnv: vi.fn(() => ({
-    execute: vi.fn().mockResolvedValue([{ id: "test-user" }]),
-  })),
+  createDatabaseFromEnv: mockCreateDatabaseFromEnv,
 }));
 
 vi.mock("./db/schema.ts", () => ({
@@ -115,6 +117,11 @@ await new Promise((resolve) => setTimeout(resolve, 0));
 process.off("unhandledRejection", suppressRejection);
 
 process.argv = savedArgv;
+
+beforeEach(() => {
+  mockDbExecute.mockReset();
+  mockDbExecute.mockResolvedValue([{ id: "test-user" }]);
+});
 
 describe("handleSyncCommand", () => {
   beforeEach(() => {
@@ -248,6 +255,40 @@ describe("handleSyncCommand", () => {
       sinceDays: 30,
       userId: "test-user",
     });
+  });
+
+  it("uses DOFEK_USER_ID when provided and skips DB user lookup", async () => {
+    const priorUserId = process.env.DOFEK_USER_ID;
+    process.env.DOFEK_USER_ID = "env-user-123";
+    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
+    mockDbExecute.mockRejectedValue(new Error("should not query DB"));
+
+    try {
+      const code = await handleSyncCommand(["node", "index.ts", "sync"]);
+      expect(code).toBe(0);
+      expect(mockAdd).toHaveBeenCalledWith("sync", {
+        providerId: "strava",
+        sinceDays: 7,
+        userId: "env-user-123",
+      });
+      expect(mockDbExecute).not.toHaveBeenCalled();
+    } finally {
+      if (priorUserId === undefined) {
+        delete process.env.DOFEK_USER_ID;
+      } else {
+        process.env.DOFEK_USER_ID = priorUserId;
+      }
+    }
+  });
+
+  it("throws a clear error when no user row can be resolved", async () => {
+    delete process.env.DOFEK_USER_ID;
+    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
+    mockDbExecute.mockResolvedValue([]);
+
+    await expect(handleSyncCommand(["node", "index.ts", "sync"])).rejects.toThrow(
+      "No user found. Set DOFEK_USER_ID or create a user first.",
+    );
   });
 
   it("cleans up BullMQ resources on success", async () => {
@@ -841,5 +882,25 @@ describe("handleImportCommand", () => {
     const sinceArg: Date = mockImportAppleHealthFile.mock.calls[0]?.[2];
     const expectedSince = before - 30 * 24 * 60 * 60 * 1000;
     expect(Math.abs(sinceArg.getTime() - expectedSince)).toBeLessThan(1000);
+  });
+
+  it("does not iterate and log error items when errors.length is zero", async () => {
+    mockImportAppleHealthFile.mockResolvedValue({
+      recordsSynced: 1,
+      errors: [],
+      duration: 10,
+    });
+
+    const code = await handleImportCommand([
+      "node",
+      "index.ts",
+      "import",
+      "apple-health",
+      "/path/to/export.zip",
+    ]);
+
+    expect(code).toBe(0);
+    // With zero errors, no individual error messages should be logged
+    expect(mockLoggerError).not.toHaveBeenCalled();
   });
 });

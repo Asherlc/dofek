@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildOAuth1Header,
   type FatSecretFoodEntriesResponse,
@@ -453,6 +453,70 @@ describe("FatSecretProvider.authSetup()", () => {
     expect(result.authorizeUrl).toContain("req-token");
   });
 
+  it("oauth1Flow.getRequestToken sends form-urlencoded POST body with OAuth callback", async () => {
+    process.env.FATSECRET_CONSUMER_KEY = "key";
+    process.env.FATSECRET_CONSUMER_SECRET = "secret";
+    vi.useFakeTimers({ now: new Date("2026-04-01T00:00:00Z") });
+
+    try {
+      let capturedInit: RequestInit | undefined;
+      const mockFetch: typeof globalThis.fetch = async (
+        _input: RequestInfo | URL,
+        init?: RequestInit,
+      ): Promise<Response> => {
+        capturedInit = init;
+        return new Response("oauth_token=req-token&oauth_token_secret=req-secret", { status: 200 });
+      };
+
+      const provider = new FatSecretProvider(mockFetch);
+      const setup = provider.authSetup();
+      await setup.oauth1Flow.getRequestToken("http://localhost:9876/callback");
+
+      expect(capturedInit?.method).toBe("POST");
+      expect(capturedInit?.headers).toEqual({
+        "Content-Type": "application/x-www-form-urlencoded",
+      });
+      expect(typeof capturedInit?.body).toBe("string");
+      const body = String(capturedInit?.body);
+      expect(body).toContain("oauth_consumer_key=key");
+      expect(body).toContain("oauth_callback=http%3A%2F%2Flocalhost%3A9876%2Fcallback");
+      expect(body).toContain("oauth_signature=");
+      expect(body).toContain("oauth_timestamp=");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("oauth1Flow.getRequestToken throws on non-OK response", async () => {
+    process.env.FATSECRET_CONSUMER_KEY = "key";
+    process.env.FATSECRET_CONSUMER_SECRET = "secret";
+
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response("nope", { status: 401 });
+    };
+
+    const provider = new FatSecretProvider(mockFetch);
+    const setup = provider.authSetup();
+    await expect(
+      setup.oauth1Flow.getRequestToken("http://localhost:9876/callback"),
+    ).rejects.toThrow("FatSecret request token failed (401)");
+  });
+
+  it("oauth1Flow.getRequestToken throws when token payload is incomplete", async () => {
+    process.env.FATSECRET_CONSUMER_KEY = "key";
+    process.env.FATSECRET_CONSUMER_SECRET = "secret";
+
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response("oauth_token=req-token", { status: 200 });
+    };
+
+    const provider = new FatSecretProvider(mockFetch);
+    const setup = provider.authSetup();
+    await expect(
+      setup.oauth1Flow.getRequestToken("http://localhost:9876/callback"),
+    ).rejects.toThrow("Invalid request token response");
+  });
+
   it("oauth1Flow.exchangeForAccessToken calls FatSecret and returns access tokens", async () => {
     process.env.FATSECRET_CONSUMER_KEY = "key";
     process.env.FATSECRET_CONSUMER_SECRET = "secret";
@@ -476,5 +540,71 @@ describe("FatSecretProvider.authSetup()", () => {
 
     expect(result.token).toBe("access-token");
     expect(result.tokenSecret).toBe("access-secret");
+  });
+
+  it("oauth1Flow.exchangeForAccessToken sends verifier and token in POST body", async () => {
+    process.env.FATSECRET_CONSUMER_KEY = "key";
+    process.env.FATSECRET_CONSUMER_SECRET = "secret";
+    vi.useFakeTimers({ now: new Date("2026-04-01T00:00:00Z") });
+
+    try {
+      let capturedInit: RequestInit | undefined;
+      const mockFetch: typeof globalThis.fetch = async (
+        _input: RequestInfo | URL,
+        init?: RequestInit,
+      ): Promise<Response> => {
+        capturedInit = init;
+        return new Response("oauth_token=access-token&oauth_token_secret=access-secret", {
+          status: 200,
+        });
+      };
+
+      const provider = new FatSecretProvider(mockFetch);
+      const setup = provider.authSetup();
+      await setup.oauth1Flow.exchangeForAccessToken("req-token", "req-secret", "verifier-123");
+
+      expect(capturedInit?.method).toBe("POST");
+      expect(capturedInit?.headers).toEqual({
+        "Content-Type": "application/x-www-form-urlencoded",
+      });
+      expect(typeof capturedInit?.body).toBe("string");
+      const body = String(capturedInit?.body);
+      expect(body).toContain("oauth_token=req-token");
+      expect(body).toContain("oauth_verifier=verifier-123");
+      expect(body).toContain("oauth_signature=");
+      expect(body).toContain("oauth_timestamp=");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("oauth1Flow.exchangeForAccessToken throws on non-OK response", async () => {
+    process.env.FATSECRET_CONSUMER_KEY = "key";
+    process.env.FATSECRET_CONSUMER_SECRET = "secret";
+
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response("bad", { status: 403 });
+    };
+
+    const provider = new FatSecretProvider(mockFetch);
+    const setup = provider.authSetup();
+    await expect(
+      setup.oauth1Flow.exchangeForAccessToken("req-token", "req-secret", "v"),
+    ).rejects.toThrow("FatSecret access token exchange failed (403)");
+  });
+
+  it("oauth1Flow.exchangeForAccessToken throws when response lacks token fields", async () => {
+    process.env.FATSECRET_CONSUMER_KEY = "key";
+    process.env.FATSECRET_CONSUMER_SECRET = "secret";
+
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response("oauth_token=access-only", { status: 200 });
+    };
+
+    const provider = new FatSecretProvider(mockFetch);
+    const setup = provider.authSetup();
+    await expect(
+      setup.oauth1Flow.exchangeForAccessToken("req-token", "req-secret", "v"),
+    ).rejects.toThrow("Invalid access token response");
   });
 });
