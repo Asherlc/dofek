@@ -638,12 +638,12 @@ describe("suuntoOAuthConfig — exact URL values", () => {
     expect(config?.tokenUrl).toBe("https://cloudapi-oauth.suunto.com/oauth/token");
   });
 
-  it("defaults redirectUri to localhost:9876 when OAUTH_REDIRECT_URI is not set", () => {
+  it("defaults redirectUri to production callback when OAUTH_REDIRECT_URI is not set", () => {
     process.env.SUUNTO_CLIENT_ID = "id";
     process.env.SUUNTO_CLIENT_SECRET = "secret";
     delete process.env.OAUTH_REDIRECT_URI;
     const config = suuntoOAuthConfig();
-    expect(config?.redirectUri).toBe("https://localhost:9876/callback");
+    expect(config?.redirectUri).toBe("https://dofek.asherlc.com/callback");
   });
 
   it("uses OAUTH_REDIRECT_URI when set", () => {

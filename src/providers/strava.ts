@@ -385,7 +385,7 @@ export class StravaNotFoundError extends Error {
 
 const STRAVA_AUTH_BASE = "https://www.strava.com/oauth";
 
-export function stravaOAuthConfig(): OAuthConfig | null {
+export function stravaOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.STRAVA_CLIENT_ID;
   const clientSecret = process.env.STRAVA_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
@@ -394,7 +394,7 @@ export function stravaOAuthConfig(): OAuthConfig | null {
     clientSecret,
     authorizeUrl: `${STRAVA_AUTH_BASE}/authorize`,
     tokenUrl: `${STRAVA_AUTH_BASE}/token`,
-    redirectUri: getOAuthRedirectUri(),
+    redirectUri: getOAuthRedirectUri(host),
     scopes: ["read", "activity:read_all"],
     scopeSeparator: ",",
   };
@@ -529,13 +529,14 @@ export class StravaProvider implements WebhookProvider {
     return { "hub.challenge": challenge };
   }
 
-  authSetup(): ProviderAuthSetup {
-    const config = stravaOAuthConfig();
+  authSetup(options?: { host?: string }): ProviderAuthSetup {
+    const config = stravaOAuthConfig(options?.host);
     if (!config) throw new Error("STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET are required");
     return {
       oauthConfig: config,
       exchangeCode: (code) => exchangeCodeForTokens(config, code),
       apiBaseUrl: STRAVA_API_BASE,
+      identityCapabilities: { providesEmail: false },
       getUserIdentity: async (accessToken: string): Promise<ProviderIdentity> => {
         const response = await this.#fetchFn(`${STRAVA_API_BASE}athlete`, {
           headers: { Authorization: `Bearer ${accessToken}` },
@@ -553,7 +554,7 @@ export class StravaProvider implements WebhookProvider {
         const nameParts = [athlete.firstname, athlete.lastname].filter(Boolean);
         return {
           providerAccountId: String(athlete.id),
-          email: athlete.email ?? null,
+          email: null,
           name: nameParts.length > 0 ? nameParts.join(" ") : null,
         };
       },

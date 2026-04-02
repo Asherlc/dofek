@@ -239,7 +239,7 @@ export class WahooClient extends ProviderHttpClient {
 // Provider implementation
 // ============================================================
 
-export function wahooOAuthConfig(): OAuthConfig | null {
+export function wahooOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.WAHOO_CLIENT_ID;
   const clientSecret = process.env.WAHOO_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
@@ -248,7 +248,7 @@ export function wahooOAuthConfig(): OAuthConfig | null {
     clientSecret,
     authorizeUrl: `${WAHOO_API_BASE}/oauth/authorize`,
     tokenUrl: `${WAHOO_API_BASE}/oauth/token`,
-    redirectUri: getOAuthRedirectUri(),
+    redirectUri: getOAuthRedirectUri(host),
     scopes: ["email", "user_read", "workouts_read", "offline_data"],
   };
 }
@@ -455,13 +455,14 @@ export class WahooProvider implements WebhookProvider {
     };
   }
 
-  authSetup(): ProviderAuthSetup {
-    const config = wahooOAuthConfig();
+  authSetup(options?: { host?: string }): ProviderAuthSetup {
+    const config = wahooOAuthConfig(options?.host);
     if (!config) throw new Error("WAHOO_CLIENT_ID and WAHOO_CLIENT_SECRET are required");
     return {
       oauthConfig: config,
       exchangeCode: (code) => exchangeCodeForTokens(config, code),
       apiBaseUrl: WAHOO_API_BASE,
+      identityCapabilities: { providesEmail: false },
       getUserIdentity: async (accessToken: string): Promise<ProviderIdentity> => {
         const response = await this.#fetchFn(`${WAHOO_API_BASE}/v1/user`, {
           headers: { Authorization: `Bearer ${accessToken}` },
@@ -479,7 +480,7 @@ export class WahooProvider implements WebhookProvider {
         const nameParts = [user.first_name, user.last_name].filter(Boolean);
         return {
           providerAccountId: String(user.id),
-          email: user.email ?? null,
+          email: null,
           name: nameParts.length > 0 ? nameParts.join(" ") : null,
         };
       },

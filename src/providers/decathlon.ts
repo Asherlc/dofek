@@ -1,6 +1,6 @@
 import type { CanonicalActivityType } from "@dofek/training/training";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
-import { exchangeCodeForTokens } from "../auth/oauth.ts";
+import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
@@ -19,7 +19,7 @@ import type {
 // ============================================================
 
 const DECATHLON_API_BASE = "https://api.decathlon.net/sportstrackingdata/v2";
-const DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
+const _DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
 
 interface DecathlonActivity {
   id: string;
@@ -123,18 +123,17 @@ export function parseDecathlonActivity(act: DecathlonActivity): ParsedDecathlonA
 // OAuth configuration
 // ============================================================
 
-export function decathlonOAuthConfig(): OAuthConfig | null {
+export function decathlonOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.DECATHLON_CLIENT_ID;
   const clientSecret = process.env.DECATHLON_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
-  const redirectUri = process.env.OAUTH_REDIRECT_URI ?? DEFAULT_REDIRECT_URI;
 
   return {
     clientId,
     clientSecret,
     authorizeUrl: "https://api.decathlon.net/connect/oauth/authorize",
     tokenUrl: "https://api.decathlon.net/connect/oauth/token",
-    redirectUri,
+    redirectUri: getOAuthRedirectUri(host),
     scopes: ["openid", "profile"],
   };
 }
@@ -162,8 +161,8 @@ export class DecathlonProvider implements SyncProvider {
     return `https://www.decathlon.com/sports-tracking/activity/${externalId}`;
   }
 
-  authSetup(): ProviderAuthSetup {
-    const config = decathlonOAuthConfig();
+  authSetup(options?: { host?: string }): ProviderAuthSetup {
+    const config = decathlonOAuthConfig(options?.host);
     if (!config) throw new Error("DECATHLON_CLIENT_ID and CLIENT_SECRET required");
     const fetchFn = this.#fetchFn;
     return {
