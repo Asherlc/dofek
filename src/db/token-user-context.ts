@@ -12,7 +12,9 @@ export function getTokenUserId(): string | undefined {
     return scopedUserId;
   }
   // Test runners can provide a default scoped user via env when no async context is active.
-  if (process.env.TEST_TOKEN_USER_ID) {
+  // This fallback is intentionally restricted to test environments to prevent accidental
+  // attribution of writes to the wrong user in production.
+  if ((process.env.NODE_ENV === "test" || process.env.VITEST) && process.env.TEST_TOKEN_USER_ID) {
     return process.env.TEST_TOKEN_USER_ID;
   }
   return undefined;

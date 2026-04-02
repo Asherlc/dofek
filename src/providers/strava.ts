@@ -591,14 +591,23 @@ export class StravaProvider implements WebhookProvider {
     const activityExternalId = Number(event.objectId);
     const scopedUserId = options?.userId ?? getTokenUserId();
 
+    if (!scopedUserId) {
+      const message = `[strava] Cannot process webhook event for activity ${event.objectId}: no user context available`;
+      logger.error(message);
+      return {
+        provider: this.id,
+        recordsSynced: 0,
+        errors: [{ message }],
+        duration: Date.now() - start,
+      };
+    }
+
     // Handle delete events — remove the activity and its streams
     if (event.eventType === "delete") {
       const deleted = await db
         .delete(activity)
         .where(
-          scopedUserId
-            ? sql`${activity.userId} = ${scopedUserId} AND ${activity.providerId} = ${this.id} AND ${activity.externalId} = ${event.objectId}`
-            : sql`${activity.providerId} = ${this.id} AND ${activity.externalId} = ${event.objectId}`,
+          sql`${activity.userId} = ${scopedUserId} AND ${activity.providerId} = ${this.id} AND ${activity.externalId} = ${event.objectId}`,
         )
         .returning({ id: activity.id });
       const deletedRow = deleted[0];
@@ -627,6 +636,7 @@ export class StravaProvider implements WebhookProvider {
     const [row] = await db
       .insert(activity)
       .values({
+        userId: scopedUserId,
         providerId: this.id,
         externalId: parsed.externalId,
         activityType: parsed.activityType,
