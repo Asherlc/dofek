@@ -100,6 +100,7 @@ describe("cyclingAnalyticsOAuthConfig", () => {
     process.env.CYCLING_ANALYTICS_CLIENT_ID = "test-id";
     process.env.CYCLING_ANALYTICS_CLIENT_SECRET = "test-secret";
     process.env.OAUTH_REDIRECT_URI = "https://example.com/callback";
+    delete process.env.OAUTH_REDIRECT_URI_unencrypted;
     const config = cyclingAnalyticsOAuthConfig();
     expect(config?.redirectUri).toBe("https://example.com/callback");
   });
@@ -108,6 +109,7 @@ describe("cyclingAnalyticsOAuthConfig", () => {
     process.env.CYCLING_ANALYTICS_CLIENT_ID = "test-id";
     process.env.CYCLING_ANALYTICS_CLIENT_SECRET = "test-secret";
     delete process.env.OAUTH_REDIRECT_URI;
+    delete process.env.OAUTH_REDIRECT_URI_unencrypted;
     const config = cyclingAnalyticsOAuthConfig();
     expect(config?.redirectUri).toBe("https://dofek.asherlc.com/callback");
   });
