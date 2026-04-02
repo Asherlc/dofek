@@ -610,7 +610,9 @@ export class StravaProvider implements WebhookProvider {
       const deletedRow = deleted[0];
       if (deletedRow) {
         await db.delete(sensorSample).where(eq(sensorSample.activityId, deletedRow.id));
-        logger.info(`[strava] Deleted activity ${event.objectId} via webhook for user ${scopedUserId}`);
+        logger.info(
+          `[strava] Deleted activity ${event.objectId} via webhook for user ${scopedUserId}`,
+        );
       }
       return { provider: this.id, recordsSynced: 0, errors: [], duration: Date.now() - start };
     }

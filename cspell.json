@@ -410,7 +410,9 @@
     "AQID",
     "BAUG",
     "bralette",
-    "autodocs"
+    "autodocs",
+    "Flocalhost",
+    "Fcallback"
   ],
   "flagWords": [],
   "useGitignore": false,
