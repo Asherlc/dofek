@@ -730,7 +730,18 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         res.status(400).send("Missing provider");
         return;
       }
-      // Resolve the logged-in user so the provider record is linked to them
+
+      // 1. Check if provider exists first (returns 404 if not)
+      const { getAllProviders } = await import("dofek/providers/registry");
+      const { ensureProvidersRegistered } = await import("../routers/sync.ts");
+      await ensureProvidersRegistered();
+      const provider = getAllProviders().find((p) => p.id === providerId);
+      if (!provider) {
+        res.status(404).send("Unknown provider");
+        return;
+      }
+
+      // 2. Then check session (returns 401 if not logged in)
       const sessionId = getSessionIdFromRequest(req);
       const session = sessionId ? await validateSession(db, sessionId) : null;
       if (!session) {
