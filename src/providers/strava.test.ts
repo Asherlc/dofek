@@ -857,7 +857,7 @@ describe("StravaProvider.syncWebhookEvent", () => {
       eventType: "create",
       objectType: "athlete",
       objectId: "456",
-    });
+    }, { userId: "test-user" });
 
     expect(result.provider).toBe("strava");
     expect(result.recordsSynced).toBe(0);
@@ -878,7 +878,7 @@ describe("StravaProvider.syncWebhookEvent", () => {
       ownerExternalId: "123",
       eventType: "create",
       objectType: "activity",
-    });
+    }, { userId: "test-user" });
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(0);
@@ -904,7 +904,7 @@ describe("StravaProvider.syncWebhookEvent", () => {
       eventType: "delete",
       objectType: "activity",
       objectId: "99999",
-    });
+    }, { userId: "test-user" });
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(0);
@@ -932,7 +932,7 @@ describe("StravaProvider.syncWebhookEvent", () => {
       eventType: "delete",
       objectType: "activity",
       objectId: "nonexistent",
-    });
+    }, { userId: "test-user" });
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(0);
@@ -954,7 +954,7 @@ describe("StravaProvider.syncWebhookEvent", () => {
       eventType: "create",
       objectType: "activity",
       objectId: "12345",
-    });
+    }, { userId: "test-user" });
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens");
@@ -1008,7 +1008,7 @@ describe("StravaProvider.syncWebhookEvent", () => {
       eventType: "create",
       objectType: "activity",
       objectId: "12345678",
-    });
+    }, { userId: "test-user" });
 
     expect(result.provider).toBe("strava");
     expect(result.recordsSynced).toBe(1);
@@ -1051,7 +1051,7 @@ describe("StravaProvider.syncWebhookEvent", () => {
       eventType: "update",
       objectType: "activity",
       objectId: "12345678",
-    });
+    }, { userId: "test-user" });
 
     // Activity still synced, no errors from 404 streams
     expect(result.recordsSynced).toBe(1);
@@ -1090,7 +1090,7 @@ describe("StravaProvider.syncWebhookEvent", () => {
       eventType: "create",
       objectType: "activity",
       objectId: "12345678",
-    });
+    }, { userId: "test-user" });
 
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toHaveLength(1);
@@ -1132,7 +1132,7 @@ describe("StravaProvider.syncWebhookEvent", () => {
       eventType: "create",
       objectType: "activity",
       objectId: "12345678",
-    });
+    }, { userId: "test-user" });
 
     // recordsSynced is 1 (activity itself counted), but no stream insert
     expect(result.recordsSynced).toBe(1);
@@ -1434,9 +1434,31 @@ describe("StravaProvider — precise webhook string/object assertions", () => {
       eventType: "delete",
       objectType: "activity",
       objectId: "999",
-    });
+    }, { userId: "user-123" });
     expect(result.provider).toBe("strava");
     expect(result.recordsSynced).toBe(0);
+
+    // Verify delete was called for both activity and sensor_sample tables
+    expect(mockDelete).toHaveBeenCalledTimes(2);
+    // Verify delete predicate includes userId for scoping
+    const whereCalls = vi.mocked(mockDelete().where).mock.calls;
+    for (const call of whereCalls) {
+      const predicate = call[0].toString();
+      expect(predicate).toContain("user_123");
+      // Check that it's an AND condition (mutation killing)
+      expect(predicate).toMatch(/\bAND\b/i);
+    }
+  });
+
+  it("syncWebhookEvent throws error when options.userId is missing", async () => {
+    const provider = new StravaProvider(async () => new Response(), 0);
+    const mockDb = { select: vi.fn(), insert: vi.fn(), delete: vi.fn(), execute: vi.fn() };
+    await expect(provider.syncWebhookEvent(mockDb, {
+      ownerExternalId: "1",
+      eventType: "update",
+      objectType: "activity",
+      objectId: "123",
+    })).rejects.toThrow("Strava webhook sync requires a userId");
   });
 });
 

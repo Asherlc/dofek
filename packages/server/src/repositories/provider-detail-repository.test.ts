@@ -185,7 +185,21 @@ describe("ProviderDetailRepository", () => {
   // ── verifyOwnership ──
 
   describe("verifyOwnership", () => {
-    it("returns true when provider exists for user", async () => {
+    it("returns true when provider exists in oauth_token table for user", async () => {
+      const { repo, execute } = makeRepository([{ id: "strava" }]);
+      const result = await repo.verifyOwnership("strava");
+      expect(result).toBe(true);
+      // Verify query contains UNION as expected for the expanded check
+      // Drizzle sql tags produce objects with a 'sql' property if they are from certain versions/utils,
+      // but in our mock we just want to verify the intent.
+      const queryObj = vi.mocked(execute).mock.calls[0][0] as any;
+      const queryString = queryObj?.sql || queryObj?.query || JSON.stringify(queryObj);
+      expect(queryString).toMatch(/UNION/i);
+      expect(queryString).toMatch(/fitness\.oauth_token/i);
+      expect(queryString).toMatch(/fitness\.provider/i);
+    });
+
+    it("returns true when provider exists in provider table for user (even if not in tokens)", async () => {
       const { repo } = makeRepository([{ id: "strava" }]);
       const result = await repo.verifyOwnership("strava");
       expect(result).toBe(true);
@@ -197,7 +211,7 @@ describe("ProviderDetailRepository", () => {
       expect(result).toStrictEqual(true);
     });
 
-    it("returns false when provider does not exist for user", async () => {
+    it("returns false when provider does not exist in either table for user", async () => {
       const { repo } = makeRepository([]);
       const result = await repo.verifyOwnership("unknown");
       expect(result).toBe(false);

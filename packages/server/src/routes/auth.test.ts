@@ -3306,6 +3306,29 @@ describe("oauthSuccessHtml", () => {
     expect(html).toContain('<a href="/"');
     expect(html).toContain("Return to dashboard");
   });
+
+  it("escapes special characters in providerName to prevent XSS", () => {
+    const html = oauthSuccessHtml('<script>alert("xss")</script>');
+    expect(html).toContain("&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;");
+    expect(html).not.toContain("<script>alert");
+  });
+
+  it("escapes special characters in detail string", () => {
+    const html = oauthSuccessHtml("Wahoo", 'Attempt & "Fail"');
+    expect(html).toContain("Attempt &amp; &quot;Fail&quot;");
+  });
+
+  it("safely embeds JSON by escaping script tags", () => {
+    const html = oauthSuccessHtml("Wahoo");
+    // The embedded JSON should have </script> escaped as <\/script>
+    expect(html).toContain('{"type":"OAUTH_SUCCESS","provider":"Wahoo"}');
+    // Ensure no raw </script> exists that could prematurely terminate the block
+    const scriptBlocks = html.match(/<script[\s\S]*?<\/script>/g) || [];
+    for (const block of scriptBlocks) {
+      const content = block.replace(/^<script.*?>|<\/script>$/g, "");
+      expect(content).not.toContain("</script>");
+    }
+  });
 });
 
 describe("OAuth callback success responses include notification script", () => {
