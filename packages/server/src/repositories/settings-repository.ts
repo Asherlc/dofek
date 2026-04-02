@@ -38,17 +38,16 @@ const USER_SCOPED_DELETE_TABLES = [
 const GLOBAL_PROVIDER_TABLES = new Set(["fitness.exercise_alias"]);
 
 function isUndefinedTableError(error: unknown): boolean {
-  if (!(typeof error === "object" && error !== null)) {
-    if (error instanceof Error) {
+  if (error instanceof Error) {
+    return error.message.includes("does not exist");
+  }
+  if (typeof error === "object" && error !== null) {
+    if ("code" in error && error.code === "42P01") {
+      return true;
+    }
+    if ("message" in error && typeof error.message === "string") {
       return error.message.includes("does not exist");
     }
-    return false;
-  }
-  if ("code" in error && error.code === "42P01") {
-    return true;
-  }
-  if ("message" in error && typeof error.message === "string") {
-    return error.message.includes("does not exist");
   }
   return false;
 }

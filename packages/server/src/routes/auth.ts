@@ -34,6 +34,15 @@ import { queryCache } from "../lib/cache.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 /**
  * Build the HTML page shown in the OAuth popup after successful authorization.
  * Includes a BroadcastChannel message + window.close() so the parent window
@@ -44,10 +53,18 @@ export function oauthSuccessHtml(
   detail?: string,
   providerId?: string,
 ): string {
-  const detailLine = detail ? `<p>${detail}</p>` : "";
-  const broadcastPayload = JSON.stringify({ type: "complete", providerId });
-  const postMessagePayload = JSON.stringify({ type: "oauth-complete", providerId });
-  return `<html><body style="font-family:system-ui;background:#111;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><h1>Authorized!</h1><p>${providerName} connected successfully.</p>${detailLine}<p><a href="/" style="color:#10b981">Return to dashboard</a></p></div><script>try{new BroadcastChannel('oauth-complete').postMessage(${broadcastPayload})}catch(e){}try{window.opener&&window.opener.postMessage(${postMessagePayload},'*')}catch(e){}setTimeout(function(){window.close()},1500)</script></body></html>`;
+  const safeProviderName = escapeHtml(providerName);
+  const safeDetail = detail ? `<p>${escapeHtml(detail)}</p>` : "";
+  // Ensure JSON payloads don't contain </script> to prevent script injection
+  const broadcastPayload = JSON.stringify({ type: "complete", providerId }).replace(
+    /<\/script/gi,
+    "\\u003c/script",
+  );
+  const postMessagePayload = JSON.stringify({ type: "oauth-complete", providerId }).replace(
+    /<\/script/gi,
+    "\\u003c/script",
+  );
+  return `<html><body style="font-family:system-ui;background:#111;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><h1>Authorized!</h1><p>${safeProviderName} connected successfully.</p>${safeDetail}<p><a href="/" style="color:#10b981">Return to dashboard</a></p></div><script>try{new BroadcastChannel('oauth-complete').postMessage(${broadcastPayload})}catch(e){}try{window.opener&&window.opener.postMessage(${postMessagePayload},'*')}catch(e){}setTimeout(function(){window.close()},1500)</script></body></html>`;
 }
 
 interface OAuthStateEntry {
@@ -841,7 +858,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         res.send(
           oauthSuccessHtml(
             "Slack",
-            `Bot added to <strong>${tokenData.team.name}</strong>. Send me a DM about what you ate!`,
+            `Bot added to ${tokenData.team.name}. Send me a DM about what you ate!`,
           ),
         );
         return;

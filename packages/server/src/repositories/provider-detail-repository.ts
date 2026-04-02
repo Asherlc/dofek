@@ -91,17 +91,16 @@ const ownerCheckSchema = z.object({ id: z.string() });
 const genericRowSchema = z.record(z.string(), z.unknown());
 
 function isUndefinedTableError(error: unknown): boolean {
-  if (!(typeof error === "object" && error !== null)) {
-    if (error instanceof Error) {
+  if (error instanceof Error) {
+    return error.message.includes("does not exist");
+  }
+  if (typeof error === "object" && error !== null) {
+    if ("code" in error && error.code === "42P01") {
+      return true;
+    }
+    if ("message" in error && typeof error.message === "string") {
       return error.message.includes("does not exist");
     }
-    return false;
-  }
-  if ("code" in error && error.code === "42P01") {
-    return true;
-  }
-  if ("message" in error && typeof error.message === "string") {
-    return error.message.includes("does not exist");
   }
   return false;
 }
@@ -163,7 +162,11 @@ export class ProviderDetailRepository {
       this.#db,
       ownerCheckSchema,
       sql`SELECT provider_id AS id FROM fitness.oauth_token
-          WHERE provider_id = ${providerId} AND user_id = ${this.#userId}`,
+          WHERE provider_id = ${providerId} AND user_id = ${this.#userId}
+          UNION ALL
+          SELECT id FROM fitness.provider
+          WHERE id = ${providerId} AND user_id = ${this.#userId}
+          LIMIT 1`,
     );
     return rows.length > 0;
   }

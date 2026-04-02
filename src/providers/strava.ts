@@ -4,7 +4,7 @@ import {
   createActivityTypeMapper,
   STRAVA_ACTIVITY_TYPE_MAP,
 } from "@dofek/training/training";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
@@ -591,20 +591,26 @@ export class StravaProvider implements WebhookProvider {
     const activityExternalId = Number(event.objectId);
     const scopedUserId = options?.userId ?? getTokenUserId();
 
+    if (!scopedUserId) {
+      throw new Error(`[strava] Cannot sync webhook event: no userId provided or in context`);
+    }
+
     // Handle delete events — remove the activity and its streams
     if (event.eventType === "delete") {
       const deleted = await db
         .delete(activity)
         .where(
-          scopedUserId
-            ? sql`${activity.userId} = ${scopedUserId} AND ${activity.providerId} = ${this.id} AND ${activity.externalId} = ${event.objectId}`
-            : sql`${activity.providerId} = ${this.id} AND ${activity.externalId} = ${event.objectId}`,
+          and(
+            eq(activity.userId, scopedUserId),
+            eq(activity.providerId, this.id),
+            eq(activity.externalId, event.objectId),
+          ),
         )
         .returning({ id: activity.id });
       const deletedRow = deleted[0];
       if (deletedRow) {
         await db.delete(sensorSample).where(eq(sensorSample.activityId, deletedRow.id));
-        logger.info(`[strava] Deleted activity ${event.objectId} via webhook`);
+        logger.info(`[strava] Deleted activity ${event.objectId} via webhook for user ${scopedUserId}`);
       }
       return { provider: this.id, recordsSynced: 0, errors: [], duration: Date.now() - start };
     }
