@@ -616,7 +616,11 @@ describe("processSyncJob", () => {
 
   it("syncs providers that have stored tokens", async () => {
     // Strava uses OAuth — has authSetup — so the token check applies and tokens are present
-    const provider = createMockProvider({ id: "strava", name: "Strava", authSetup: () => undefined });
+    const provider = createMockProvider({
+      id: "strava",
+      name: "Strava",
+      authSetup: () => undefined,
+    });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
     mockLoadTokens.mockResolvedValue({
       accessToken: "valid",
@@ -631,8 +635,16 @@ describe("processSyncJob", () => {
   });
 
   it("skips unconnected providers but syncs connected ones", async () => {
-    const connected = createMockProvider({ id: "strava", name: "Strava", authSetup: () => undefined });
-    const unconnected = createMockProvider({ id: "wahoo", name: "Wahoo", authSetup: () => undefined });
+    const connected = createMockProvider({
+      id: "strava",
+      name: "Strava",
+      authSetup: () => undefined,
+    });
+    const unconnected = createMockProvider({
+      id: "wahoo",
+      name: "Wahoo",
+      authSetup: () => undefined,
+    });
     mockGetEnabledSyncProviders.mockReturnValue([connected, unconnected]);
     mockLoadTokens.mockImplementation(async (_db: SyncDatabase, providerId: string) => {
       if (providerId === "strava") {
@@ -652,8 +664,8 @@ describe("processSyncJob", () => {
     expect(unconnected.sync).not.toHaveBeenCalled();
   });
 
-  it("always syncs tokenless providers (no authSetup) even when loadTokens returns null", async () => {
-    // Tokenless providers like AppleHealth have no authSetup — the token check must be skipped
+  it("always syncs providers without auth setup even when loadTokens returns null", async () => {
+    // Providers like AppleHealth have no authSetup — the token check must be skipped
     const provider = createMockProvider({ id: "apple_health", name: "Apple Health" });
     // No authSetup on the provider (default from createMockProvider)
     expect(provider.authSetup).toBeUndefined();
