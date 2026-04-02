@@ -165,7 +165,7 @@ async function persistProviderConnection(params: {
     params.apiBaseUrl,
     params.userId,
   );
-  await saveTokens(params.db, params.provider.id, params.tokens);
+  await saveTokens(params.db, params.provider.id, params.tokens, params.userId);
   await queryCache.invalidateByPrefix(`${params.userId}:sync.providers`);
 
   logger.info(
@@ -730,17 +730,15 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         res.status(400).send("Missing provider");
         return;
       }
-
       // 1. Check if provider exists first (returns 404 if not)
       const { getAllProviders } = await import("dofek/providers/registry");
       const { ensureProvidersRegistered } = await import("../routers/sync.ts");
       await ensureProvidersRegistered();
-      const provider = getAllProviders().find((p) => p.id === providerId);
+      const provider = getAllProviders().find((candidate) => candidate.id === providerId);
       if (!provider) {
         res.status(404).send("Unknown provider");
         return;
       }
-
       // 2. Then check session (returns 401 if not logged in)
       const sessionId = getSessionIdFromRequest(req);
       const session = sessionId ? await validateSession(db, sessionId) : null;
@@ -1087,7 +1085,6 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
             logger.info(`[auth] Auto-linked ${providerId} identity to user ${session.userId}`);
           }
         } catch (identityErr: unknown) {
-          // Non-fatal: identity extraction failed but tokens are saved
           logger.warn(`[auth] Failed to extract identity from ${providerId}: ${identityErr}`);
         }
       } else {

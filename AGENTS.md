@@ -40,7 +40,7 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 - **Ask about trade-offs**: When there are design decisions with multiple valid approaches (e.g., completeness vs simplicity, stability vs features), always ask the user rather than making assumptions. Don't cut corners without asking first.
 - **Commit regularly**: Commit at regular intervals — after each meaningful chunk of work (new feature, passing tests, refactor). Don't let changes accumulate.
 - **Always push after commit**: Push to remote after every commit so CI runs and changes are backed up.
-- **Pre-push checks**: Before every push, run `pnpm lint`, `pnpm test`, and typecheck all packages (`pnpm tsc --noEmit`, `cd packages/server && pnpm tsc --noEmit`, `cd packages/web && pnpm tsc --noEmit`). Never push code that fails lint, tests, or type checking.
+- **Pre-push checks**: Before every push, run `pnpm lint`, `pnpm test:changed`, and typecheck all packages (`pnpm tsc --noEmit`, `cd packages/server && pnpm tsc --noEmit`, `cd packages/web && pnpm tsc --noEmit`). CI runs the full test suite, but never push code that fails lint, changed-test coverage, or type checking.
 - **Test Docker changes locally end-to-end**: Before pushing Dockerfile or entrypoint changes, do a full local test — not just image builds. Run the server container against a real database and verify it starts, runs migrations, and serves API responses. Run the client container and verify it serves HTML and the SPA fallback works:
   ```bash
   # Build both targets
@@ -75,6 +75,7 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 
 ## Commands
 - `pnpm test` — run tests
+- `pnpm test:changed` — run tests affected by files changed from `origin/main`
 - `pnpm test:watch` — run tests in watch mode
 - `pnpm dev` — run sync in dev mode
 - `pnpm generate` — generate Drizzle migrations from schema changes

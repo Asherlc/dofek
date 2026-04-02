@@ -177,7 +177,11 @@ export function createWebhookRouter({ db, getSyncQueue }: WebhookRouterDeps): Ro
 
       // Resolve external owner IDs → internal user+provider and process events
       const queue = getSyncQueue();
+      // `processed` counts all successfully handled events (targeted or fallback) and is used for log summary.
+      // `fallbackJobsEnqueued` counts only events that fell back to full BullMQ sync,
+      // which determines whether the worker container needs to be started.
       let processed = 0;
+      let fallbackJobsEnqueued = 0;
 
       for (const event of events) {
         try {
@@ -234,6 +238,7 @@ export function createWebhookRouter({ db, getSyncQueue }: WebhookRouterDeps): Ro
             userId: user_id,
           });
           processed++;
+          fallbackJobsEnqueued++;
 
           logger.info(
             `[webhook] ${providerName}: enqueued full sync for user ${user_id} (${event.eventType} ${event.objectType})`,
@@ -246,7 +251,7 @@ export function createWebhookRouter({ db, getSyncQueue }: WebhookRouterDeps): Ro
       }
 
       // Spin up the worker container if fallback sync jobs were enqueued
-      if (processed > 0 && !provider.syncWebhookEvent) {
+      if (fallbackJobsEnqueued > 0) {
         try {
           const { startWorker } = await import("../lib/start-worker.ts");
           await startWorker();

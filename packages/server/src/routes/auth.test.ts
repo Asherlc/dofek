@@ -1637,12 +1637,17 @@ describe("createAuthRouter", () => {
         undefined,
         "user-1",
       );
-      expect(saveTokens).toHaveBeenCalledWith(expect.anything(), "strava", {
-        accessToken: "login-access-token",
-        refreshToken: "login-refresh-token",
-        expiresAt: new Date("2027-06-01"),
-        scopes: "read",
-      });
+      expect(saveTokens).toHaveBeenCalledWith(
+        expect.anything(),
+        "strava",
+        {
+          accessToken: "login-access-token",
+          refreshToken: "login-refresh-token",
+          expiresAt: new Date("2027-06-01"),
+          scopes: "read",
+        },
+        "user-1",
+      );
       expect(createSession).toHaveBeenCalled();
       expect(setSessionCookie).toHaveBeenCalled();
     });
@@ -1837,12 +1842,17 @@ describe("createAuthRouter", () => {
         undefined,
         "manual-email-user",
       );
-      expect(saveTokens).toHaveBeenCalledWith(expect.anything(), "strava", {
-        accessToken: "pending-web-access-token",
-        refreshToken: "pending-web-refresh-token",
-        expiresAt: new Date("2027-06-01"),
-        scopes: "read",
-      });
+      expect(saveTokens).toHaveBeenCalledWith(
+        expect.anything(),
+        "strava",
+        {
+          accessToken: "pending-web-access-token",
+          refreshToken: "pending-web-refresh-token",
+          expiresAt: new Date("2027-06-01"),
+          scopes: "read",
+        },
+        "manual-email-user",
+      );
       expect(createSession).toHaveBeenCalled();
       expect(setSessionCookie).toHaveBeenCalled();
     });
@@ -3815,6 +3825,30 @@ describe("oauthSuccessHtml", () => {
     const html = oauthSuccessHtml("Wahoo");
     expect(html).toContain('<a href="/"');
     expect(html).toContain("Return to dashboard");
+  });
+
+  it("escapes special characters in providerName to prevent XSS", () => {
+    const html = oauthSuccessHtml('<script>alert("xss")</script>');
+    expect(html).toContain("&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;");
+    expect(html).not.toContain("<script>alert");
+  });
+
+  it("escapes special characters in detail string", () => {
+    const html = oauthSuccessHtml("Wahoo", 'Attempt & "Fail"');
+    expect(html).toContain("Attempt &amp; &quot;Fail&quot;");
+  });
+
+  it("safely embeds JSON by escaping script tags", () => {
+    const html = oauthSuccessHtml("Wahoo");
+    // The embedded JSON should use the actual payload shapes the implementation produces
+    expect(html).toContain('{"type":"complete"}');
+    expect(html).toContain('{"type":"oauth-complete"}');
+    // Ensure no raw </script> exists that could prematurely terminate the block
+    const scriptBlocks = html.match(/<script[\s\S]*?<\/script[^>]*>/gi) || [];
+    for (const block of scriptBlocks) {
+      const content = block.replace(/^<script[\s\S]*?>|<\/script[^>]*>$/gi, "");
+      expect(content).not.toContain("</script>");
+    }
   });
 });
 

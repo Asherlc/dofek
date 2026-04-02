@@ -166,6 +166,15 @@ export class ProviderDetailRepository {
           UNION ALL
           SELECT id FROM fitness.provider
           WHERE id = ${providerId} AND user_id = ${this.#userId}
+          UNION ALL
+          SELECT provider_id AS id FROM fitness.activity
+          WHERE provider_id = ${providerId} AND user_id = ${this.#userId}
+          UNION ALL
+          SELECT provider_id AS id FROM fitness.daily_metrics
+          WHERE provider_id = ${providerId} AND user_id = ${this.#userId}
+          UNION ALL
+          SELECT provider_id AS id FROM fitness.sleep_session
+          WHERE provider_id = ${providerId} AND user_id = ${this.#userId}
           LIMIT 1`,
     );
     return rows.length > 0;

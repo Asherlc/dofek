@@ -82,7 +82,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
 
     const requiresTokens = provider.authSetup !== undefined;
     if (requiresTokens) {
-      const tokens = await loadTokens(db, provider.id);
+      const tokens = await loadTokens(db, provider.id, job.data.userId);
       if (!tokens) {
         logger.info(`[worker] Skipping ${provider.name}: not connected`);
         completedCount++;

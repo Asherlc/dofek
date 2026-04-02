@@ -70,6 +70,7 @@
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "test": "vitest",
+    "test:changed": "vitest run --changed origin/main",
     "test:unit": "vitest run --project unit",
     "test:watch": "vitest --watch",
     "test:coverage": "vitest run --coverage",
