@@ -1,4 +1,13 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  handleAuthCommand,
+  handleImportCommand,
+  handleSyncCommand,
+  main,
+} from "./index.ts";
+import { importAppleHealthFile } from "./providers/apple-health/index.ts";
+import { getAllProviders, getEnabledSyncProviders } from "./providers/index.ts";
+
 
 // ── Mock setup ──
 
@@ -885,9 +894,18 @@ describe("handleImportCommand", () => {
   });
 
   it("does not iterate and log error items when errors.length is zero", async () => {
+    // This leaky iterator will throw if the mutant 'if (true)' is active
+    // and the code attempts to enter the for-of loop when length is 0.
+    const failingIterator = {
+      length: 0,
+      [Symbol.iterator]: vi.fn(() => {
+        throw new Error("Should not be iterated when length is 0");
+      }),
+    };
+
     mockImportAppleHealthFile.mockResolvedValue({
       recordsSynced: 1,
-      errors: [],
+      errors: failingIterator as unknown as Array<{ message: string }>,
       duration: 10,
     });
 
@@ -900,7 +918,46 @@ describe("handleImportCommand", () => {
     ]);
 
     expect(code).toBe(0);
-    // With zero errors, no individual error messages should be logged
     expect(mockLoggerError).not.toHaveBeenCalled();
+    expect(failingIterator[Symbol.iterator]).not.toHaveBeenCalled();
+  });
+});
+
+describe("main", () => {
+  let mockProcessExit: ReturnType<typeof vi.spyOn>;
+  let originalArgv: string[];
+
+  beforeEach(() => {
+    // Correctly type the mock implementation to match process.exit
+    mockProcessExit = vi.spyOn(process, "exit").mockImplementation((_code?: string | number | null) => {
+      throw new Error("process.exit should not be called in test");
+    });
+    originalArgv = process.argv;
+  });
+
+  afterEach(() => {
+    mockProcessExit.mockRestore();
+    process.argv = originalArgv;
+  });
+
+  it("exits with 1 for unknown command", async () => {
+    process.argv = ["node", "index.ts", "unknown"];
+    mockProcessExit.mockImplementation((() => {}) as any);
+
+    await main();
+
+    expect(mockProcessExit).toHaveBeenCalledWith(1);
+    expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining("Unknown command"));
+  });
+
+  it("calls handleSyncCommand for 'sync'", async () => {
+    process.argv = ["node", "index.ts", "sync"];
+    mockProcessExit.mockImplementation((() => {}) as any);
+    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
+    process.env.DOFEK_USER_ID = "test-user";
+
+    await main();
+
+    expect(mockProcessExit).toHaveBeenCalledWith(0);
   });
 });

@@ -230,7 +230,7 @@ export async function handleImportCommand(args: string[]): Promise<number> {
   return 1;
 }
 
-async function main() {
+export async function main() {
   const command = process.argv[2] ?? "sync";
 
   if (command === "sync") {
@@ -249,4 +249,6 @@ async function main() {
   process.exit(1);
 }
 
-main();
+if (process.env.NODE_ENV !== "test") {
+  main();
+}
