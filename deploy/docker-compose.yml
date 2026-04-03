@@ -138,7 +138,7 @@ services:
         condition: service_healthy
 
   collector:
-    image: otel/opentelemetry-collector-contrib:latest
+    image: otel/opentelemetry-collector-contrib:0.149.0
     restart: unless-stopped
     user: "0:0"
     environment:
@@ -146,6 +146,11 @@ services:
     volumes:
       - ./otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:13133/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
     labels:
       - "com.centurylinklabs.watchtower.enable=false"
 
