@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { IDENTITY_PROVIDER_NAMES } from "@dofek/auth/auth";
 import * as Sentry from "@sentry/node";
-import { getOAuthRedirectUri, type TokenSet } from "dofek/auth/oauth";
+import { getOAuthRedirectUri, revokeToken, type TokenSet } from "dofek/auth/oauth";
 import { sql } from "drizzle-orm";
 import { escapeAttribute, escapeText } from "entities";
 import express, { Router } from "express";
@@ -1003,6 +1003,29 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       if (!setup?.oauthConfig || !setup.exchangeCode) {
         res.status(400).send("Provider does not support OAuth code exchange");
         return;
+      }
+
+      // Revoke existing tokens before exchange — some providers (e.g. Wahoo) limit
+      // the number of active tokens per app+user and reject new token creation until
+      // old tokens are revoked.
+      if (setup.oauthConfig.revokeUrl) {
+        try {
+          const { loadTokens } = await import("dofek/db/tokens");
+          const existingTokens = await loadTokens(db, providerId, stateUserId);
+          if (existingTokens?.accessToken) {
+            logger.info(`[auth] Revoking existing ${providerId} access token before exchange...`);
+            await revokeToken(setup.oauthConfig, existingTokens.accessToken);
+          }
+          if (existingTokens?.refreshToken) {
+            logger.info(`[auth] Revoking existing ${providerId} refresh token before exchange...`);
+            await revokeToken(setup.oauthConfig, existingTokens.refreshToken);
+          }
+        } catch (revokeError) {
+          logger.warn(
+            `[auth] Pre-exchange token revocation failed for ${providerId}: ${revokeError}`,
+          );
+          Sentry.captureException(revokeError);
+        }
       }
 
       logger.info(`[auth] Exchanging code for ${providerId} tokens...`);
