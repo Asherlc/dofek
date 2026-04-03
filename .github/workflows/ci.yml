@@ -1148,86 +1148,11 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - uses: ./.github/actions/setup-node-pnpm
 
-      - name: Export iOS bundle
-        run: cd packages/mobile && pnpm expo export --platform ios --clear
-
-      - name: Generate OTA manifest and stage release
-        run: |
-          RELEASE_ID="$(date +%Y-%m-%d)-${GITHUB_SHA::8}"
-          STAGING_DIR="$RUNNER_TEMP/ota/$RELEASE_ID"
-          mkdir -p "$STAGING_DIR"
-
-          # Use expo-updates CLI to generate the protocol v1 manifest from the exported dist
-          # This is the "least custom" way to generate a standard manifest
-          cd packages/mobile
-          npx expo-updates manifest:generate --platform ios --dist dist --output "$STAGING_DIR/expo-updates-manifest.json"
-
-          # Copy everything from dist to staging so we preserve the standard Expo structure
-          cp -r dist/* "$STAGING_DIR/"
-
-          echo "RELEASE_ID=$RELEASE_ID" >> "$GITHUB_ENV"
-          echo "STAGING_DIR=$STAGING_DIR" >> "$GITHUB_ENV"
-
-      - name: Validate OTA R2 secrets
+      - name: Publish OTA update
+        working-directory: packages/mobile
         env:
-          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
-          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_BUCKET: ${{ secrets.R2_BUCKET }}
-        run: |
-          set -euo pipefail
-          missing=()
-          [ -n "${R2_ENDPOINT:-}" ] || missing+=("R2_ENDPOINT")
-          [ -n "${R2_ACCESS_KEY_ID:-}" ] || missing+=("R2_ACCESS_KEY_ID")
-          [ -n "${R2_SECRET_ACCESS_KEY:-}" ] || missing+=("R2_SECRET_ACCESS_KEY")
-          [ -n "${R2_BUCKET:-}" ] || missing+=("R2_BUCKET")
-
-          if [ "${#missing[@]}" -gt 0 ]; then
-            echo "::error::OTA deploy missing required GitHub secrets: ${missing[*]}"
-            exit 1
-          fi
-
-      - name: Deploy OTA assets to R2
-        env:
-          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
-          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_BUCKET: ${{ secrets.R2_BUCKET }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          AWS_REGION: WEUR
-          AWS_DEFAULT_REGION: WEUR
-        run: |
-          set -euo pipefail
-          : "${R2_ENDPOINT:?Missing R2_ENDPOINT}"
-          : "${R2_ACCESS_KEY_ID:?Missing R2_ACCESS_KEY_ID}"
-          : "${R2_SECRET_ACCESS_KEY:?Missing R2_SECRET_ACCESS_KEY}"
-          : "${R2_BUCKET:?Missing R2_BUCKET}"
-
-          R2_RELEASE_PREFIX="mobile-ota/releases/$RELEASE_ID"
-          R2_RELEASE_URL="s3://$R2_BUCKET/$R2_RELEASE_PREFIX"
-          R2_POINTER_KEY="mobile-ota/current-release.json"
-          R2_POINTER_URL="s3://$R2_BUCKET/$R2_POINTER_KEY"
-
-          # Upload the entire staged release directory to R2.
-          # We use recursive copy to preserve the Expo dist structure.
-          aws s3 cp "$STAGING_DIR/" "$R2_RELEASE_URL/" \
-            --recursive \
-            --region auto \
-            --endpoint-url "$R2_ENDPOINT" \
-            --cache-control "public, immutable, max-age=31536000"
-
-          # Update the current release pointer last to ensure atomic switch
-          POINTER_FILE="$RUNNER_TEMP/current-release.json"
-          printf '{"releaseId":"%s"}\n' "$RELEASE_ID" > "$POINTER_FILE"
-          aws s3 cp "$POINTER_FILE" "$R2_POINTER_URL" \
-            --region auto \
-            --endpoint-url "$R2_ENDPOINT" \
-            --content-type "application/json" \
-            --cache-control "no-cache"
-
-          echo "OTA update deployed: r2://$R2_BUCKET/$R2_RELEASE_PREFIX"
-          echo "Current release pointer: r2://$R2_BUCKET/$R2_POINTER_KEY -> $RELEASE_ID"
+          EXPO_TOKEN: ${{ secrets.EXPO_ACCESS_TOKEN }}
+        run: npx eoas publish --branch main --platform ios --nonInteractive
 
   deploy-config:
     name: Deploy Config

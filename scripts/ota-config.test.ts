@@ -5,33 +5,32 @@ import { describe, expect, it } from "vitest";
 const repoRoot = join(import.meta.dirname, "..");
 const dockerComposePath = join(repoRoot, "deploy", "docker-compose.yml");
 const ciWorkflowPath = join(repoRoot, ".github", "workflows", "ci.yml");
-const deployConfigPath = join(repoRoot, "deploy", "deploy-config", "main.tf");
+const caddyfilePath = join(repoRoot, "deploy", "Caddyfile");
+const appJsonPath = join(repoRoot, "packages", "mobile", "app.json");
 
-describe("OTA deployment config", () => {
-  it("reads the OTA bucket from env in production services", () => {
+describe("OTA deployment config (expo-open-ota)", () => {
+  it("defines the ota service in docker-compose", () => {
     const dockerCompose = readFileSync(dockerComposePath, "utf-8");
-    const composeBucketEnv = "- R2_BUCKET=$" + "{R2_BUCKET:?Set R2_BUCKET in .env}";
-
-    expect(dockerCompose).toContain(composeBucketEnv);
-    expect(dockerCompose).not.toContain("- R2_BUCKET=dofek-training-data");
+    expect(dockerCompose).toContain("ghcr.io/axelmarciano/expo-open-ota:");
+    expect(dockerCompose).toContain("EXPO_APP_ID=");
+    expect(dockerCompose).toContain("STORAGE_MODE=s3");
   });
 
-  it("uses the same bucket variable in CI OTA deploy", () => {
+  it("routes ota subdomain in Caddyfile", () => {
+    const caddyfile = readFileSync(caddyfilePath, "utf-8");
+    expect(caddyfile).toContain("ota.dofek.asherlc.com");
+    expect(caddyfile).toContain("reverse_proxy ota:3000");
+  });
+
+  it("uses eoas publish in CI OTA deploy", () => {
     const ciWorkflow = readFileSync(ciWorkflowPath, "utf-8");
-    const ciBucketSecret = "R2_BUCKET: $" + "{{ secrets.R2_BUCKET }}";
-    const ciBucketGuard = ': "$' + '{R2_BUCKET:?Missing R2_BUCKET}"';
-
-    expect(ciWorkflow).toContain(ciBucketSecret);
-    expect(ciWorkflow).toContain(ciBucketGuard);
+    expect(ciWorkflow).toContain("eoas publish");
+    expect(ciWorkflow).toContain("EXPO_TOKEN");
   });
 
-  it("keeps deploy-config responsible for the server R2 bucket", () => {
-    const deployConfig = readFileSync(deployConfigPath, "utf-8");
-    const deployConfigBucketWrite = "R2_BUCKET=$" + "{var.r2_bucket}";
-
-    expect(deployConfig).toContain('variable "r2_bucket"');
-    expect(deployConfig).toContain('default     = "dofek-training-data"');
-    expect(deployConfig).toContain("r2_bucket           = var.r2_bucket");
-    expect(deployConfig).toContain(deployConfigBucketWrite);
+  it("points mobile app at the expo-open-ota server", () => {
+    const appJson = JSON.parse(readFileSync(appJsonPath, "utf-8"));
+    expect(appJson.expo.updates.url).toBe("https://ota.dofek.asherlc.com/manifest");
+    expect(appJson.expo.updates.requestHeaders).toHaveProperty("expo-channel-name");
   });
 });
