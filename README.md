@@ -278,7 +278,7 @@ terraform apply
 
 After the server exists:
 
-1. Add host-specific vars to `/opt/dofek/.env`: `SOPS_AGE_KEY`, `POSTGRES_PASSWORD`, `CADDY_DOMAIN`, and optionally `DOCKER_GID` and storage paths. Secrets like `AXIOM_API_TOKEN` and `R2_*` keys live in SOPS (the repo's `.env`) but also need to be copied here if referenced by `docker-compose.yml` interpolation.
+1. Add host-specific vars to `/opt/dofek/.env`: `SOPS_AGE_KEY`, `POSTGRES_PASSWORD`, `CADDY_DOMAIN`, and optionally `DOCKER_GID` and storage paths. All other secrets (`AXIOM_API_TOKEN`, `SLACK_BOT_TOKEN`, `GHCR_TOKEN`, etc.) are synced from SOPS to the server automatically by `deploy-config`.
 2. Run the deploy-config module once to push `otel-collector-config.yaml`, `docker-compose.hotfix.yml`, and the current patch-mounted files.
 3. Point DNS at the Hetzner IP (`terraform output -raw server_ip`). Caddy will provision TLS automatically.
 
@@ -320,10 +320,13 @@ The `deploy-config` module is intentionally separate from the main `deploy/main.
 ```bash
 export SSH_AUTH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
 cd deploy/deploy-config
-terraform apply -var="server_ip=159.69.3.40"
+# Secrets are read from SOPS and passed as TF_VAR_ env vars
+sops exec-env ../../.env 'terraform apply -var="server_ip=159.69.3.40" -var="axiom_api_token=$AXIOM_API_TOKEN" -var="slack_bot_token=$SLACK_BOT_TOKEN" -var="ghcr_token=$GHCR_TOKEN"'
 ```
 
 Note: Terraform's SSH client also cannot use passphrase-protected keys from `~/.ssh/` without the agent, and `private_key` in the connection block doesn't work with keys stored in 1Password. The `agent = true` approach is the only reliable option.
+
+`deploy-config` syncs these secrets from SOPS to the server's `.env` and Docker config on every apply: `AXIOM_API_TOKEN`, `SLACK_BOT_TOKEN`, `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, `R2_BUCKET`, and GHCR Docker auth.
 
 **Finding the server IP:** The domain is behind Cloudflare so you need the direct Hetzner IP:
 - `~/.ssh/known_hosts` — grep for Hetzner ranges (`159.69.*`, `116.203.*`, `49.12.*`)
