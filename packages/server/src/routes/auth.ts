@@ -33,7 +33,11 @@ import {
 } from "../auth/providers.ts";
 import { createSession, deleteSession, validateSession } from "../auth/session.ts";
 import { queryCache } from "../lib/cache.ts";
-import { getIdentityFlowStore, type IdentityFlowStore } from "../lib/identity-flow-store.ts";
+import {
+  getIdentityFlowStore,
+  type IdentityFlowEntry,
+  type IdentityFlowStore,
+} from "../lib/identity-flow-store.ts";
 import {
   getOAuth1SecretStore,
   getOAuthStateStore,
@@ -104,11 +108,12 @@ interface PendingEmailSignupEntry {
 
 const pendingEmailSignupMap = new Map<string, PendingEmailSignupEntry>();
 
-async function storeIdentityFlow(
-  state: string,
-  entry: { codeVerifier: string; linkUserId?: string; mobileScheme?: string; returnTo?: string },
-): Promise<void> {
-  await identityFlowStore.save(state, entry);
+async function storeIdentityFlow(state: string, entry: IdentityFlowEntry): Promise<void> {
+  try {
+    await identityFlowStore.save(state, entry);
+  } catch (error: unknown) {
+    logger.warn(`[auth] Failed to persist identity flow state: ${error}`);
+  }
 }
 
 function storePendingEmailSignup(entry: PendingEmailSignupEntry): string {
@@ -347,7 +352,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         codeVerifier,
         mobileScheme:
           redirectScheme && isValidMobileScheme(redirectScheme) ? redirectScheme : undefined,
-        returnTo,
+        returnTo: sanitizeReturnTo(returnTo),
       });
 
       res.redirect(url.toString());
@@ -454,14 +459,18 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
 
       // Fall back to Redis-backed store when cookies are unavailable
       // (Apple form_post: SameSite=Lax cookies aren't sent on cross-site POST)
+      const cookieHadState = !!cookieFlow.state;
+      const cookieHadVerifier = !!cookieFlow.codeVerifier;
+      let storeHit = false;
       if (!storedState || !codeVerifier) {
         const flowEntry = await identityFlowStore.get(stateParam);
         if (flowEntry) {
+          storeHit = true;
           storedState = stateParam;
           codeVerifier = flowEntry.codeVerifier;
           linkUserId = linkUserId ?? flowEntry.linkUserId;
           mobileScheme = mobileScheme ?? flowEntry.mobileScheme;
-          returnTo = returnTo ?? flowEntry.returnTo;
+          returnTo = returnTo ?? sanitizeReturnTo(flowEntry.returnTo);
           await identityFlowStore.delete(stateParam);
         }
       }
@@ -469,7 +478,8 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       if (!storedState || !codeVerifier || stateParam !== storedState) {
         logger.warn(
           `[auth] Identity callback state mismatch for ${providerName}: ` +
-            `cookies=${!!cookieFlow.state}, store=${!!storedState}, method=${req.method}`,
+            `cookieState=${cookieHadState}, cookieVerifier=${cookieHadVerifier}, ` +
+            `storeHit=${storeHit}, method=${req.method}`,
         );
         res.status(400).type("text/plain").send("Invalid state — please try logging in again");
         return;

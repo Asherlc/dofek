@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  getIdentityFlowStore,
   type IdentityFlowEntry,
   InMemoryIdentityFlowStore,
   RedisIdentityFlowStore,
@@ -156,5 +157,12 @@ describe("RedisIdentityFlowStore", () => {
       "PX",
       30_000,
     );
+  });
+});
+
+describe("getIdentityFlowStore", () => {
+  it("returns InMemoryIdentityFlowStore in test environment", () => {
+    const store = getIdentityFlowStore();
+    expect(store).toBeInstanceOf(InMemoryIdentityFlowStore);
   });
 });

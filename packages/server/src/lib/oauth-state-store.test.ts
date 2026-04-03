@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  getOAuth1SecretStore,
+  getOAuthStateStore,
   InMemoryOAuth1SecretStore,
   InMemoryOAuthStateStore,
   type OAuth1SecretEntry,
@@ -210,5 +212,15 @@ describe("RedisOAuth1SecretStore", () => {
     }));
     expect(await store.get("bad")).toBeNull();
     expect(deleteMethod).toHaveBeenCalledWith("oauth1-secret:bad");
+  });
+});
+
+describe("factory functions", () => {
+  it("getOAuthStateStore returns InMemoryOAuthStateStore in test environment", () => {
+    expect(getOAuthStateStore()).toBeInstanceOf(InMemoryOAuthStateStore);
+  });
+
+  it("getOAuth1SecretStore returns InMemoryOAuth1SecretStore in test environment", () => {
+    expect(getOAuth1SecretStore()).toBeInstanceOf(InMemoryOAuth1SecretStore);
   });
 });
