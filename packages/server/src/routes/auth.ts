@@ -33,6 +33,13 @@ import {
 import { createSession, deleteSession, validateSession } from "../auth/session.ts";
 import { queryCache } from "../lib/cache.ts";
 import { getIdentityFlowStore, type IdentityFlowStore } from "../lib/identity-flow-store.ts";
+import {
+  getOAuth1SecretStore,
+  getOAuthStateStore,
+  type OAuth1SecretStore,
+  type OAuthStateEntry,
+  type OAuthStateStore,
+} from "../lib/oauth-state-store.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 
@@ -69,23 +76,8 @@ export function oauthSuccessHtml(
   return `<html><body style="font-family:system-ui;background:#111;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><h1>Authorized!</h1><p>${safeProviderName} connected successfully.</p>${safeDetail}<p><a href="/" style="color:#10b981">Return to dashboard</a></p></div><script>try{new BroadcastChannel('oauth-complete').postMessage(${broadcastPayload})}catch(e){}try{window.opener&&window.opener.postMessage(${postMessagePayload},'*')}catch(e){}setTimeout(function(){window.close()},1500)</script></body></html>`;
 }
 
-interface OAuthStateEntry {
-  providerId: string;
-  codeVerifier?: string;
-  intent: "data" | "login" | "link";
-  linkUserId?: string;
-  userId: string;
-  /** Mobile app URL scheme for deep link redirect after OAuth. */
-  mobileScheme?: string;
-  returnTo?: string;
-}
-
-const oauthStateMap = new Map<string, OAuthStateEntry>();
-// OAuth 1.0 request token secrets (keyed by oauth_token)
-const oauth1Secrets = new Map<
-  string,
-  { providerId: string; tokenSecret: string; userId: string }
->();
+let oauthStateStore: OAuthStateStore;
+let oauth1SecretStore: OAuth1SecretStore;
 
 /**
  * Server-side state store for identity provider OAuth flows.
@@ -240,12 +232,11 @@ async function startDataProviderOAuth(
   if (setup.oauth1Flow && stateEntry.intent === "data") {
     const callbackUrl = setup.oauthConfig.redirectUri;
     const result = await setup.oauth1Flow.getRequestToken(callbackUrl);
-    oauth1Secrets.set(result.oauthToken, {
+    await oauth1SecretStore.save(result.oauthToken, {
       providerId,
       tokenSecret: result.oauthTokenSecret,
       userId: stateEntry.userId,
     });
-    setTimeout(() => oauth1Secrets.delete(result.oauthToken), 10 * 60 * 1000);
     res.redirect(result.authorizeUrl);
     return;
   }
@@ -265,8 +256,7 @@ async function startDataProviderOAuth(
 
   const url = buildAuthorizationUrl(setup.oauthConfig, pkceParam);
   const stateToken = randomBytes(16).toString("hex");
-  oauthStateMap.set(stateToken, { ...stateEntry, codeVerifier: pkceVerifier });
-  setTimeout(() => oauthStateMap.delete(stateToken), 10 * 60 * 1000);
+  await oauthStateStore.save(stateToken, { ...stateEntry, codeVerifier: pkceVerifier });
   const authUrl = new URL(url);
   authUrl.searchParams.set("state", stateToken);
   res.redirect(authUrl.toString());
@@ -287,6 +277,8 @@ const authRateLimiter = rateLimit({
 export function createAuthRouter(database: import("dofek/db").Database): Router {
   db = database;
   identityFlowStore = getIdentityFlowStore();
+  oauthStateStore = getOAuthStateStore();
+  oauth1SecretStore = getOAuth1SecretStore();
   const router = Router();
 
   router.get("/api/auth/providers", async (req, res) => {
@@ -651,12 +643,11 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
 
     const redirectUri = getOAuthRedirectUri();
     const stateToken = `slack:${randomBytes(16).toString("hex")}`;
-    oauthStateMap.set(stateToken, {
+    await oauthStateStore.save(stateToken, {
       providerId: "slack",
       intent: "data",
       userId,
     });
-    setTimeout(() => oauthStateMap.delete(stateToken), 10 * 60 * 1000);
     const url = new URL("https://slack.com/oauth/v2/authorize");
     url.searchParams.set("client_id", clientId);
     url.searchParams.set("scope", SLACK_SCOPES.join(","));
@@ -784,12 +775,12 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
 
       // ── OAuth 1.0 callback (FatSecret) ──
       if (oauthToken && oauthVerifier) {
-        const stored = oauth1Secrets.get(oauthToken);
+        const stored = await oauth1SecretStore.get(oauthToken);
         if (!stored) {
           res.status(400).send("Unknown or expired OAuth 1.0 request token");
           return;
         }
-        oauth1Secrets.delete(oauthToken);
+        await oauth1SecretStore.delete(oauthToken);
 
         const { getAllProviders } = await import("dofek/providers/registry");
         const { ensureProvidersRegistered } = await import("../routers/sync.ts");
@@ -843,9 +834,9 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       }
 
       // ── Slack OAuth callback (Add to Slack) ──
-      if (state.startsWith("slack:") && oauthStateMap.has(state)) {
-        const slackState = oauthStateMap.get(state);
-        oauthStateMap.delete(state);
+      if (state.startsWith("slack:") && (await oauthStateStore.has(state))) {
+        const slackState = await oauthStateStore.get(state);
+        await oauthStateStore.delete(state);
         const clientId = process.env.SLACK_CLIENT_ID;
         const clientSecret = process.env.SLACK_CLIENT_SECRET;
         if (!clientId || !clientSecret) {
@@ -961,7 +952,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       }
 
       // Resolve provider from random state token
-      const stateEntry = oauthStateMap.get(state);
+      const stateEntry = await oauthStateStore.get(state);
       if (!stateEntry) {
         const errorDetail = req.get("host")?.includes("localhost")
           ? " (Are you using an IP or host that differs from what the provider redirected to? Try setting OAUTH_REDIRECT_URI_unencrypted in your .env if testing on mobile.)"
@@ -969,7 +960,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         res.status(400).send(`Unknown or expired OAuth state${errorDetail}`);
         return;
       }
-      oauthStateMap.delete(state);
+      await oauthStateStore.delete(state);
 
       const {
         providerId,
@@ -1108,8 +1099,9 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         ),
       );
     } catch (err: unknown) {
-      logger.error(`[auth] OAuth callback failed: ${err}`);
-      res.status(500).send("Token exchange failed");
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error(`[auth] OAuth callback failed: ${message}`, { err });
+      res.status(500).send("Token exchange failed — please try again");
     }
   });
 
