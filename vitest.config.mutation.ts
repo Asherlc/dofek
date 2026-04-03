@@ -10,6 +10,9 @@ export default defineConfig({
     testTimeout: 30_000,
     hookTimeout: 120_000,
     fileParallelism: true,
+    env: {
+      TEST_TOKEN_USER_ID: "00000000-0000-0000-0000-000000000001",
+    },
     include: [
       "src/**/*.test.ts",
       "packages/format/src/**/*.test.ts",

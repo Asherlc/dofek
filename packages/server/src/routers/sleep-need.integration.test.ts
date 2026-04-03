@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DEFAULT_USER_ID } from "../../../../src/db/schema.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
@@ -22,13 +22,13 @@ describe("sleep-need router integration", () => {
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
 
-    const session = await createSession(testCtx.db, DEFAULT_USER_ID);
+    const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
 
     // Insert provider
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES ('apple_health', 'Apple Health', ${DEFAULT_USER_ID})
+          VALUES ('apple_health', 'Apple Health', ${TEST_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
 
@@ -41,7 +41,7 @@ describe("sleep-need router integration", () => {
             duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes,
             efficiency_pct, sleep_type
           ) VALUES (
-            'apple_health', ${DEFAULT_USER_ID},
+            'apple_health', ${TEST_USER_ID},
             NOW() - INTERVAL '8 hours',
             NOW(),
             480, 60, 120, 240, 60,
@@ -107,7 +107,7 @@ describe("sleep-need router integration", () => {
     // Insert a second provider with lower priority and different duration
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES ('test_low_prio', 'Low Priority Provider', ${DEFAULT_USER_ID})
+          VALUES ('test_low_prio', 'Low Priority Provider', ${TEST_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
     // Set explicit provider priority: apple_health = 1 (highest), test_low_prio = 50
@@ -130,7 +130,7 @@ describe("sleep-need router integration", () => {
             duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes,
             efficiency_pct, sleep_type
           ) VALUES (
-            'test_low_prio', ${DEFAULT_USER_ID},
+            'test_low_prio', ${TEST_USER_ID},
             NOW() - INTERVAL '7.5 hours',
             NOW() - INTERVAL '30 minutes',
             120, 20, 30, 50, 20,
@@ -176,18 +176,18 @@ describe("sleep data consistency: multiple sessions per date", () => {
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
 
-    const session = await createSession(testCtx.db, DEFAULT_USER_ID);
+    const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
 
     // Two providers: whoop (priority 10) and apple_health (priority 50)
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES ('whoop', 'WHOOP', ${DEFAULT_USER_ID})
+          VALUES ('whoop', 'WHOOP', ${TEST_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES ('apple_health', 'Apple Health', ${DEFAULT_USER_ID})
+          VALUES ('apple_health', 'Apple Health', ${TEST_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
     await testCtx.db.execute(
@@ -215,7 +215,7 @@ describe("sleep data consistency: multiple sessions per date", () => {
               duration_minutes, deep_minutes, rem_minutes, light_minutes,
               awake_minutes, efficiency_pct, sleep_type
             ) VALUES (
-              'whoop', ${DEFAULT_USER_ID}, ${`w-${daysAgo}`},
+              'whoop', ${TEST_USER_ID}, ${`w-${daysAgo}`},
               (CURRENT_DATE - ${daysAgo}::int)::timestamp + INTERVAL '22 hours',
               (CURRENT_DATE - ${daysAgo}::int + 1)::timestamp + INTERVAL '6 hours',
               480, 96, 106, 216, 62, 92.0, 'sleep'
@@ -229,7 +229,7 @@ describe("sleep data consistency: multiple sessions per date", () => {
               duration_minutes, deep_minutes, rem_minutes, light_minutes,
               awake_minutes, efficiency_pct, sleep_type
             ) VALUES (
-              'apple_health', ${DEFAULT_USER_ID}, ${`ah-${daysAgo}`},
+              'apple_health', ${TEST_USER_ID}, ${`ah-${daysAgo}`},
               (CURRENT_DATE - ${daysAgo}::int)::timestamp + INTERVAL '23 hours 30 minutes',
               (CURRENT_DATE - ${daysAgo}::int + 1)::timestamp + INTERVAL '5 hours',
               330, 50, 70, 160, 50, NULL, 'sleep'

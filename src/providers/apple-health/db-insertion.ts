@@ -283,7 +283,11 @@ export async function upsertBodyMeasurementBatch(
           .insert(bodyMeasurement)
           .values(b)
           .onConflictDoUpdate({
-            target: [bodyMeasurement.providerId, bodyMeasurement.externalId],
+            target: [
+              bodyMeasurement.userId,
+              bodyMeasurement.providerId,
+              bodyMeasurement.externalId,
+            ],
             set: {
               recordedAt: sql`excluded.recorded_at`,
               weightKg: sql`coalesce(excluded.weight_kg, ${bodyMeasurement.weightKg})`,
@@ -441,7 +445,12 @@ export async function upsertDailyMetricsBatch(
           .insert(dailyMetrics)
           .values(b)
           .onConflictDoUpdate({
-            target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
+            target: [
+              dailyMetrics.userId,
+              dailyMetrics.date,
+              dailyMetrics.providerId,
+              dailyMetrics.sourceName,
+            ],
             set: {
               // Point-in-time metrics: prefer new value, fall back to existing
               restingHr: sql`coalesce(excluded.resting_hr, ${dailyMetrics.restingHr})`,
@@ -500,7 +509,7 @@ export async function aggregateSpO2ToDailyMetrics(
           AND scalar IS NOT NULL
           AND recorded_at >= ${since.toISOString()}::timestamptz
         GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id, device_id
-        ON CONFLICT (date, provider_id, source_name) DO UPDATE SET
+        ON CONFLICT (user_id, date, provider_id, source_name) DO UPDATE SET
           spo2_avg = EXCLUDED.spo2_avg`,
   );
 }
@@ -529,7 +538,7 @@ export async function aggregateSkinTempToDailyMetrics(
           AND scalar IS NOT NULL
           AND recorded_at >= ${since.toISOString()}::timestamptz
         GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id, device_id
-        ON CONFLICT (date, provider_id, source_name) DO UPDATE SET
+        ON CONFLICT (user_id, date, provider_id, source_name) DO UPDATE SET
           skin_temp_c = EXCLUDED.skin_temp_c`,
   );
 }
@@ -631,7 +640,7 @@ export async function upsertNutritionBatch(
           .insert(nutritionDaily)
           .values(b)
           .onConflictDoUpdate({
-            target: [nutritionDaily.date, nutritionDaily.providerId],
+            target: [nutritionDaily.userId, nutritionDaily.date, nutritionDaily.providerId],
             set: {
               // Nutrition is always additive (import.ts clears before import)
               calories: sql`coalesce(${nutritionDaily.calories}, 0) + coalesce(excluded.calories, 0)`,
@@ -779,7 +788,7 @@ export async function upsertWorkoutBatch(
       .insert(activity)
       .values(insertRows)
       .onConflictDoUpdate({
-        target: [activity.providerId, activity.externalId],
+        target: [activity.userId, activity.providerId, activity.externalId],
         set: {
           activityType: sql`excluded.activity_type`,
           endedAt: sql`excluded.ended_at`,
@@ -931,7 +940,7 @@ export async function upsertSleepBatch(
           .insert(sleepSession)
           .values(b)
           .onConflictDoUpdate({
-            target: [sleepSession.providerId, sleepSession.externalId],
+            target: [sleepSession.userId, sleepSession.providerId, sleepSession.externalId],
             set: {
               endedAt: sql`excluded.ended_at`,
               durationMinutes: sql`excluded.duration_minutes`,

@@ -3,11 +3,22 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
 import {
+  activity as activityTable,
+  bodyMeasurement as bodyMeasurementTable,
+  dailyMetrics as dailyMetricsTable,
+  sleepSession as sleepSessionTable,
+} from "../db/schema.ts";
+import {
   type FitbitActivity,
+  FitbitClient,
   type FitbitDailySummary,
   FitbitProvider,
   type FitbitSleepLog,
   type FitbitWeightLog,
+  fitbitActivitySchema,
+  fitbitDailySummarySchema,
+  fitbitSleepLogSchema,
+  fitbitWeightLogSchema,
   mapFitbitActivityType,
   parseFitbitActivity,
   parseFitbitDailySummary,
@@ -91,6 +102,65 @@ function createMockDb() {
   };
 
   return Object.assign(db, chain);
+}
+
+function expectConflictTarget(
+  db: ReturnType<typeof createMockDb>,
+  expectedTarget: ReadonlyArray<unknown>,
+): void {
+  const targetMatched = db.onConflictDoUpdate.mock.calls.some((callArgs) => {
+    const [arg] = callArgs;
+    if (typeof arg !== "object" || arg === null || !("target" in arg)) {
+      return false;
+    }
+    const target = Reflect.get(arg, "target");
+    if (!Array.isArray(target) || target.length !== expectedTarget.length) {
+      return false;
+    }
+    return target.every((column, index) => column === expectedTarget[index]);
+  });
+  expect(targetMatched).toBe(true);
+}
+
+function expectConflictSetContainsKey(
+  db: ReturnType<typeof createMockDb>,
+  expectedTarget: ReadonlyArray<unknown>,
+  key: string,
+): void {
+  const setMatched = db.onConflictDoUpdate.mock.calls.some((callArgs) => {
+    const [arg] = callArgs;
+    if (typeof arg !== "object" || arg === null || !("target" in arg) || !("set" in arg)) {
+      return false;
+    }
+    const target = Reflect.get(arg, "target");
+    const set = Reflect.get(arg, "set");
+    if (!Array.isArray(target) || target.length !== expectedTarget.length) {
+      return false;
+    }
+    const targetMatches = target.every((column, index) => column === expectedTarget[index]);
+    if (!targetMatches || typeof set !== "object" || set === null) {
+      return false;
+    }
+    return key in set;
+  });
+  expect(setMatched).toBe(true);
+}
+
+function expectReasonableDuration(durationMilliseconds: number): void {
+  expect(durationMilliseconds).toBeGreaterThanOrEqual(0);
+  expect(durationMilliseconds).toBeLessThan(60_000);
+}
+
+function expectSchemaParseAndKeys<T extends Record<string, unknown>>(
+  schema: z.ZodSchema<T>,
+  input: T,
+  requiredKeys: string[],
+): void {
+  const parsed: Record<string, unknown> = schema.parse(input);
+  for (const key of requiredKeys) {
+    expect(key in parsed).toBe(true);
+    expect(parsed[key]).not.toBeUndefined();
+  }
 }
 
 const recordSchema = z.record(z.string(), z.unknown());
@@ -277,8 +347,70 @@ describe("Fitbit Provider", () => {
       expect(mapFitbitActivityType("Elliptical", 90017)).toBe("elliptical");
     });
 
+    it("maps rowing activities", () => {
+      expect(mapFitbitActivityType("Rowing", 90019)).toBe("rowing");
+      expect(mapFitbitActivityType("Row", 90019)).toBe("rowing");
+    });
+
     it("returns other for unknown activities", () => {
       expect(mapFitbitActivityType("Unknown Sport", 99999)).toBe("other");
+    });
+  });
+
+  describe("Fitbit API schemas", () => {
+    it("accepts valid activity, sleep, daily summary, and weight objects", () => {
+      expectSchemaParseAndKeys(fitbitActivitySchema, sampleActivity, [
+        "logId",
+        "activityName",
+        "activityTypeId",
+      ]);
+      expectSchemaParseAndKeys(fitbitSleepLogSchema, sampleSleep, ["logId", "dateOfSleep", "type"]);
+      expectSchemaParseAndKeys(fitbitDailySummarySchema, sampleDailySummary, ["summary"]);
+      expectSchemaParseAndKeys(fitbitWeightLogSchema, sampleWeightLog, ["logId", "weight", "date"]);
+    });
+
+    it("rejects malformed data and invalid enum values", () => {
+      expect(fitbitActivitySchema.safeParse({}).success).toBe(false);
+      expect(
+        fitbitActivitySchema.safeParse({
+          ...sampleActivity,
+          heartRateZones: [{ min: 120, max: 150, minutes: 20 }],
+        }).success,
+      ).toBe(false);
+      expect(fitbitSleepLogSchema.safeParse({ ...sampleSleep, type: "nap" }).success).toBe(false);
+      expect(
+        fitbitDailySummarySchema.safeParse({
+          summary: { ...sampleDailySummary.summary, distances: [{ distance: 5 }] },
+        }).success,
+      ).toBe(false);
+      expect(fitbitWeightLogSchema.safeParse({ ...sampleWeightLog, weight: "82.5" }).success).toBe(
+        false,
+      );
+    });
+  });
+
+  describe("FitbitClient schema validation", () => {
+    it("rejects malformed list responses from activity/sleep/weight endpoints", async () => {
+      const mockFetch: typeof globalThis.fetch = async (
+        input: RequestInfo | URL,
+      ): Promise<Response> => {
+        const url = input.toString();
+        if (url.includes("/activities/list.json")) {
+          return Response.json({ activities: [sampleActivity] });
+        }
+        if (url.includes("/sleep/list.json")) {
+          return Response.json({ sleep: [sampleSleep] });
+        }
+        if (url.includes("/body/log/weight/date/")) {
+          return Response.json({});
+        }
+        return new Response("Not found", { status: 404 });
+      };
+
+      const client = new FitbitClient("test-token", mockFetch);
+      await expect(client.getActivities("2026-03-01", 0)).rejects.toThrow();
+      await expect(client.getSleepLogs("2026-03-01", 0)).rejects.toThrow();
+      await expect(client.getWeightLogs("2026-03-01")).rejects.toThrow();
     });
   });
 
@@ -667,6 +799,190 @@ describe("FitbitProvider", () => {
     });
   });
 
+  describe("sync()", () => {
+    it("syncs activities, sleep, daily metrics, and body measurements with user-scoped targets", async () => {
+      setupEnv();
+      const mockFetch = createMockApiFetch({
+        activities: [sampleActivity],
+        sleep: [sampleSleep],
+        dailySummary: sampleDailySummary,
+        weight: [sampleWeightLog],
+      });
+      const provider = new FitbitProvider(mockFetch);
+      const db = createMockDb();
+
+      const since = new Date();
+      since.setUTCHours(0, 0, 0, 0);
+      const result = await provider.sync(db, since);
+
+      expect(result.provider).toBe("fitbit");
+      expect(result.errors).toHaveLength(0);
+      expect(result.recordsSynced).toBeGreaterThanOrEqual(4);
+      expectReasonableDuration(result.duration);
+
+      expectConflictTarget(db, [
+        activityTable.userId,
+        activityTable.providerId,
+        activityTable.externalId,
+      ]);
+      expectConflictSetContainsKey(
+        db,
+        [activityTable.userId, activityTable.providerId, activityTable.externalId],
+        "activityType",
+      );
+      expectConflictTarget(db, [
+        sleepSessionTable.userId,
+        sleepSessionTable.providerId,
+        sleepSessionTable.externalId,
+      ]);
+      expectConflictSetContainsKey(
+        db,
+        [sleepSessionTable.userId, sleepSessionTable.providerId, sleepSessionTable.externalId],
+        "durationMinutes",
+      );
+      expectConflictTarget(db, [
+        dailyMetricsTable.userId,
+        dailyMetricsTable.date,
+        dailyMetricsTable.providerId,
+        dailyMetricsTable.sourceName,
+      ]);
+      expectConflictSetContainsKey(
+        db,
+        [
+          dailyMetricsTable.userId,
+          dailyMetricsTable.date,
+          dailyMetricsTable.providerId,
+          dailyMetricsTable.sourceName,
+        ],
+        "steps",
+      );
+      expectConflictTarget(db, [
+        bodyMeasurementTable.userId,
+        bodyMeasurementTable.providerId,
+        bodyMeasurementTable.externalId,
+      ]);
+      expectConflictSetContainsKey(
+        db,
+        [
+          bodyMeasurementTable.userId,
+          bodyMeasurementTable.providerId,
+          bodyMeasurementTable.externalId,
+        ],
+        "weightKg",
+      );
+    });
+
+    it("captures per-record insert errors without aborting the whole sync", async () => {
+      setupEnv();
+      const mockFetch = createMockApiFetch({ activities: [sampleActivity] });
+      const provider = new FitbitProvider(mockFetch);
+      const db = createMockDb();
+      db.onConflictDoUpdate.mockImplementationOnce(() => {
+        throw new Error("insert failed");
+      });
+
+      const since = new Date();
+      since.setUTCHours(0, 0, 0, 0);
+      const result = await provider.sync(db, since);
+
+      expect(result.provider).toBe("fitbit");
+      expect(result.errors.length).toBeGreaterThanOrEqual(1);
+      expect(result.errors.some((error) => error.externalId === "12345678")).toBe(true);
+      expectReasonableDuration(result.duration);
+    });
+
+    it("includes the current day in daily summary and weight sync loops", async () => {
+      setupEnv();
+      vi.useFakeTimers({ now: new Date("2026-03-01T12:00:00Z") });
+
+      const provider = new FitbitProvider(
+        createMockApiFetch({
+          activities: [],
+          sleep: [],
+          dailySummary: sampleDailySummary,
+          weight: [sampleWeightLog],
+        }),
+      );
+      const db = createMockDb();
+
+      const result = await provider.sync(db, new Date("2026-03-01T00:00:00Z"));
+      vi.useRealTimers();
+
+      expect(result.errors).toHaveLength(0);
+      expect(result.recordsSynced).toBeGreaterThanOrEqual(2);
+
+      const dailyRow = findValuesCall(
+        db,
+        (value) => value.providerId === "fitbit" && value.date === "2026-03-01",
+      );
+      expect(dailyRow.steps).toBe(12345);
+
+      const weightRow = findValuesCall(
+        db,
+        (value) => value.providerId === "fitbit" && value.externalId === "55555",
+      );
+      expect(weightRow.weightKg).toBe(82.5);
+    });
+
+    it("paginates activity sync by increasing offset", async () => {
+      setupEnv();
+      vi.useFakeTimers({ now: new Date("2026-03-01T12:00:00Z") });
+
+      const firstActivity: FitbitActivity = sampleActivity;
+      const secondActivity: FitbitActivity = {
+        ...sampleActivity,
+        logId: 12345679,
+        startTime: "09:30",
+      };
+      const seenOffsets: number[] = [];
+
+      const mockFetch: typeof globalThis.fetch = async (
+        input: RequestInfo | URL,
+      ): Promise<Response> => {
+        const url = input.toString();
+        if (url.includes("/activities/list.json")) {
+          const offsetMatch = url.match(/[?&]offset=(\d+)/);
+          const offset = offsetMatch?.[1] ? Number(offsetMatch[1]) : 0;
+          seenOffsets.push(offset);
+          if (offset === 0) {
+            return Response.json({
+              activities: [firstActivity],
+              pagination: { next: "/next", previous: "", limit: 1, offset: 0, sort: "asc" },
+            });
+          }
+          return Response.json({
+            activities: [secondActivity],
+            pagination: { next: "", previous: "", limit: 1, offset: 1, sort: "asc" },
+          });
+        }
+        if (url.includes("/sleep/list.json")) {
+          return Response.json({
+            sleep: [],
+            pagination: { next: "", previous: "", limit: 20, offset: 0, sort: "asc" },
+          });
+        }
+        if (url.includes("/activities/date/")) {
+          return Response.json(sampleDailySummary);
+        }
+        if (url.includes("/body/log/weight/date/")) {
+          return Response.json({ weight: [] });
+        }
+        return new Response("Not found", { status: 404 });
+      };
+
+      const provider = new FitbitProvider(mockFetch);
+      const db = createMockDb();
+      const result = await provider.sync(db, new Date("2026-03-01T00:00:00Z"));
+      vi.useRealTimers();
+
+      expect(result.errors).toHaveLength(0);
+      expect(seenOffsets).toEqual([0, 1]);
+      expect(findValuesCall(db, (value) => value.externalId === "12345678").name).toBe("Run");
+      expect(findValuesCall(db, (value) => value.externalId === "12345679").name).toBe("Run");
+      expectReasonableDuration(result.duration);
+    });
+  });
+
   describe("syncWebhookEvent()", () => {
     it("syncs activities when objectType is activities", async () => {
       setupEnv();
@@ -690,6 +1006,7 @@ describe("FitbitProvider", () => {
       expect(result.errors).toHaveLength(0);
       // Should sync 1 activity + 1 daily metrics
       expect(result.recordsSynced).toBe(2);
+      expectReasonableDuration(result.duration);
 
       // Verify activity was inserted with correct values
       const activityValues = findValuesCall(
@@ -698,6 +1015,32 @@ describe("FitbitProvider", () => {
       );
       expect(activityValues.activityType).toBe("running");
       expect(activityValues.name).toBe("Run");
+      expectConflictTarget(db, [
+        activityTable.userId,
+        activityTable.providerId,
+        activityTable.externalId,
+      ]);
+      expectConflictSetContainsKey(
+        db,
+        [activityTable.userId, activityTable.providerId, activityTable.externalId],
+        "activityType",
+      );
+      expectConflictTarget(db, [
+        dailyMetricsTable.userId,
+        dailyMetricsTable.date,
+        dailyMetricsTable.providerId,
+        dailyMetricsTable.sourceName,
+      ]);
+      expectConflictSetContainsKey(
+        db,
+        [
+          dailyMetricsTable.userId,
+          dailyMetricsTable.date,
+          dailyMetricsTable.providerId,
+          dailyMetricsTable.sourceName,
+        ],
+        "steps",
+      );
     });
 
     it("syncs sleep when objectType is sleep", async () => {
@@ -718,6 +1061,7 @@ describe("FitbitProvider", () => {
       expect(result.provider).toBe("fitbit");
       expect(result.errors).toHaveLength(0);
       expect(result.recordsSynced).toBe(1);
+      expectReasonableDuration(result.duration);
 
       const sleepValues = findValuesCall(
         db,
@@ -726,6 +1070,16 @@ describe("FitbitProvider", () => {
       expect(sleepValues.durationMinutes).toBe(465);
       expect(sleepValues.efficiencyPct).toBe(92);
       expect(sleepValues.sleepType).toBe("main");
+      expectConflictTarget(db, [
+        sleepSessionTable.userId,
+        sleepSessionTable.providerId,
+        sleepSessionTable.externalId,
+      ]);
+      expectConflictSetContainsKey(
+        db,
+        [sleepSessionTable.userId, sleepSessionTable.providerId, sleepSessionTable.externalId],
+        "sleepType",
+      );
     });
 
     it("syncs body measurements when objectType is body", async () => {
@@ -746,6 +1100,7 @@ describe("FitbitProvider", () => {
       expect(result.provider).toBe("fitbit");
       expect(result.errors).toHaveLength(0);
       expect(result.recordsSynced).toBe(1);
+      expectReasonableDuration(result.duration);
 
       const weightValues = findValuesCall(
         db,
@@ -753,6 +1108,20 @@ describe("FitbitProvider", () => {
       );
       expect(weightValues.weightKg).toBe(82.5);
       expect(weightValues.bodyFatPct).toBe(18.5);
+      expectConflictTarget(db, [
+        bodyMeasurementTable.userId,
+        bodyMeasurementTable.providerId,
+        bodyMeasurementTable.externalId,
+      ]);
+      expectConflictSetContainsKey(
+        db,
+        [
+          bodyMeasurementTable.userId,
+          bodyMeasurementTable.providerId,
+          bodyMeasurementTable.externalId,
+        ],
+        "weightKg",
+      );
     });
 
     it("returns empty result for unknown objectType", async () => {
@@ -772,6 +1141,7 @@ describe("FitbitProvider", () => {
       expect(result.provider).toBe("fitbit");
       expect(result.recordsSynced).toBe(0);
       expect(result.errors).toHaveLength(0);
+      expectReasonableDuration(result.duration);
     });
 
     it("uses current date when event has no date metadata", async () => {
@@ -791,6 +1161,7 @@ describe("FitbitProvider", () => {
 
       expect(result.provider).toBe("fitbit");
       expect(result.errors).toHaveLength(0);
+      expectReasonableDuration(result.duration);
     });
 
     it("returns error when token resolution fails", async () => {
@@ -815,6 +1186,7 @@ describe("FitbitProvider", () => {
       expect(result.recordsSynced).toBe(0);
       expect(result.errors.length).toBeGreaterThanOrEqual(1);
       expect(result.errors[0]?.message).toContain("No OAuth tokens found for Fitbit");
+      expectReasonableDuration(result.duration);
     });
   });
 });

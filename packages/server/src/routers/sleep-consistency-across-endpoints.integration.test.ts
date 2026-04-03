@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DEFAULT_USER_ID } from "../../../../src/db/schema.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
@@ -35,18 +35,18 @@ describe("sleep data consistency across endpoints", () => {
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
 
-    const session = await createSession(testCtx.db, DEFAULT_USER_ID);
+    const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
 
     // Two providers: WHOOP (longer sessions) and Apple Health (shorter sessions)
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES ('whoop', 'WHOOP', ${DEFAULT_USER_ID})
+          VALUES ('whoop', 'WHOOP', ${TEST_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES ('apple_health', 'Apple Health', ${DEFAULT_USER_ID})
+          VALUES ('apple_health', 'Apple Health', ${TEST_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
 
@@ -78,7 +78,7 @@ describe("sleep data consistency across endpoints", () => {
               duration_minutes, deep_minutes, rem_minutes, light_minutes,
               awake_minutes, efficiency_pct, sleep_type
             ) VALUES (
-              'whoop', ${DEFAULT_USER_ID},
+              'whoop', ${TEST_USER_ID},
               (CURRENT_DATE - ${daysAgo}::int) + TIME '22:00:00' - INTERVAL '1 day',
               (CURRENT_DATE - ${daysAgo}::int) + TIME '06:00:00',
               ${whoopDuration}, 96, 106, 216, 62, 87.1, 'sleep'
@@ -92,7 +92,7 @@ describe("sleep data consistency across endpoints", () => {
               duration_minutes, deep_minutes, rem_minutes, light_minutes,
               awake_minutes, efficiency_pct, sleep_type
             ) VALUES (
-              'apple_health', ${DEFAULT_USER_ID},
+              'apple_health', ${TEST_USER_ID},
               (CURRENT_DATE - ${daysAgo}::int) + TIME '23:30:00' - INTERVAL '1 day',
               (CURRENT_DATE - ${daysAgo}::int) + TIME '05:00:00',
               ${appleDuration}, 50, 70, 180, 30, 90.9, 'sleep'
@@ -115,7 +115,7 @@ describe("sleep data consistency across endpoints", () => {
               active_energy_kcal, basal_energy_kcal
             ) VALUES (
               CURRENT_DATE - ${daysAgo}::int,
-              'whoop', ${DEFAULT_USER_ID}, 55, 60, 8000, 500, 1800
+              'whoop', ${TEST_USER_ID}, 55, 60, 8000, 500, 1800
             ) ON CONFLICT DO NOTHING`,
       );
     }

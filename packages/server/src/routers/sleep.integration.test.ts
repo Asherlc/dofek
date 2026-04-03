@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { DEFAULT_USER_ID } from "../../../../src/db/schema.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
@@ -22,13 +22,13 @@ describe("sleep router integration", () => {
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
 
-    const session = await createSession(testCtx.db, DEFAULT_USER_ID);
+    const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
 
     // Insert provider (foreign key for sleep_session)
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES ('test_provider', 'Test Provider', ${DEFAULT_USER_ID})
+          VALUES ('test_provider', 'Test Provider', ${TEST_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
 
@@ -39,7 +39,7 @@ describe("sleep router integration", () => {
             duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes,
             efficiency_pct, sleep_type
           ) VALUES (
-            'test_provider', ${DEFAULT_USER_ID},
+            'test_provider', ${TEST_USER_ID},
             NOW() - INTERVAL '6 hours',
             NOW(),
             360, 54, 79, 200, 27,
@@ -133,7 +133,7 @@ describe("sleep router integration", () => {
     // Insert a second provider (simulating WHOOP winning dedup but having no stages)
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES ('whoop', 'WHOOP', ${DEFAULT_USER_ID})
+          VALUES ('whoop', 'WHOOP', ${TEST_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
     await testCtx.db.execute(
@@ -149,7 +149,7 @@ describe("sleep router integration", () => {
             duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes,
             sleep_type
           ) VALUES (
-            'whoop', ${DEFAULT_USER_ID},
+            'whoop', ${TEST_USER_ID},
             NOW() - INTERVAL '7 hours',
             NOW() - INTERVAL '30 minutes',
             390, 60, 90, 200, 40,
@@ -162,7 +162,7 @@ describe("sleep router integration", () => {
       testCtx.db,
       z.object({ id: z.string() }),
       sql`SELECT id FROM fitness.sleep_session
-          WHERE provider_id = 'test_provider' AND user_id = ${DEFAULT_USER_ID}
+          WHERE provider_id = 'test_provider' AND user_id = ${TEST_USER_ID}
           ORDER BY started_at DESC LIMIT 1`,
     );
     const sessionId = sessionRows[0]?.id;

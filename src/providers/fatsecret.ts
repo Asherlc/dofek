@@ -4,6 +4,7 @@ import { z } from "zod";
 import { getOAuthRedirectUri } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { foodEntry, nutritionData } from "../db/schema.ts";
+import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
 import type { SyncError, SyncProvider, SyncResult } from "./types.ts";
@@ -569,6 +570,10 @@ export class FatSecretProvider implements SyncProvider {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
+    const scopedUserId = getTokenUserId();
+    if (!scopedUserId) {
+      throw new Error("fatsecret sync requires user context");
+    }
 
     await ensureProvider(db, this.id, this.name);
 
@@ -628,7 +633,7 @@ export class FatSecretProvider implements SyncProvider {
               .select({ id: foodEntry.id })
               .from(foodEntry)
               .where(
-                sql`${foodEntry.providerId} = ${this.id} AND ${foodEntry.externalId} = ${e.externalId}`,
+                sql`${foodEntry.userId} = ${scopedUserId} AND ${foodEntry.providerId} = ${this.id} AND ${foodEntry.externalId} = ${e.externalId}`,
               );
             if (existing.length > 0) continue;
 

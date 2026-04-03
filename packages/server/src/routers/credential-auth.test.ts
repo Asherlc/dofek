@@ -110,7 +110,7 @@ describe("credentialAuthRouter", () => {
         "https://api.8slp.net",
         "user-abc",
       );
-      expect(mockSaveTokens).toHaveBeenCalledWith(mockDb, "eight-sleep", fakeTokens);
+      expect(mockSaveTokens).toHaveBeenCalledWith(mockDb, "eight-sleep", fakeTokens, "user-abc");
       expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-abc:sync.providers");
     });
 

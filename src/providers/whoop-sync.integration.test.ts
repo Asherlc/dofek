@@ -2,7 +2,15 @@ import { and, eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity, dailyMetrics, journalEntry, sensorSample, sleepSession } from "../db/schema.ts";
+import {
+  activity,
+  dailyMetrics,
+  journalEntry,
+  sensorSample,
+  sleepSession,
+  sleepStage,
+  TEST_USER_ID,
+} from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import {
@@ -132,7 +140,12 @@ function fakeHrValues(count: number, startTime: number): WhoopHrValue[] {
 
 function whoopHandlers(
   cycles: FakeCycle[],
-  opts?: { hrValues?: WhoopHrValue[]; authError?: boolean },
+  opts?: {
+    hrValues?: WhoopHrValue[];
+    authError?: boolean;
+    /** Per-activityId response for GET sleep-events (detailed sleep + stages). */
+    sleepDetailByActivityId?: Record<string, WhoopSleepRecord>;
+  },
 ) {
   return [
     // Cognito v3 auth endpoint (token refresh via REFRESH_TOKEN_AUTH)
@@ -169,8 +182,14 @@ function whoopHandlers(
       },
     ),
 
-    // Sleep events
-    http.get("https://api.prod.whoop.com/sleep-service/v1/sleep-events", () => {
+    // Sleep events (list or single-sleep fetch via activityId)
+    http.get("https://api.prod.whoop.com/sleep-service/v1/sleep-events", ({ request }) => {
+      const url = new URL(request.url);
+      const activityId = url.searchParams.get("activityId") ?? "";
+      const detail = opts?.sleepDetailByActivityId?.[activityId];
+      if (detail) {
+        return HttpResponse.json(detail);
+      }
       return HttpResponse.json(fakeSleepResponse);
     }),
 
@@ -295,6 +314,71 @@ describe("WhoopProvider.sync() (integration)", () => {
     expect(session.sleepType).toBe("sleep");
     expect(session.startedAt).toEqual(new Date("2026-02-28T23:00:00Z"));
     expect(session.endedAt).toEqual(new Date("2026-03-01T06:30:00Z"));
+  });
+
+  it("syncs per-stage timings into sleep_stage when session exists for sleep id", async () => {
+    const existingSessions = await ctx.db
+      .select({ id: sleepSession.id })
+      .from(sleepSession)
+      .where(and(eq(sleepSession.providerId, "whoop"), eq(sleepSession.externalId, "10235")));
+
+    for (const row of existingSessions) {
+      await ctx.db.delete(sleepStage).where(eq(sleepStage.sessionId, row.id));
+    }
+    await ctx.db
+      .delete(sleepSession)
+      .where(and(eq(sleepSession.providerId, "whoop"), eq(sleepSession.externalId, "10235")));
+
+    const cycles = [fakeCycle({ sleeps: [] })];
+    server.use(
+      ...whoopHandlers(cycles, {
+        sleepDetailByActivityId: {
+          "10235": {
+            ...fakeSleepResponse,
+            stages: [
+              { stage: "light", during: "['2026-02-28T23:00:00Z','2026-02-28T23:30:00Z')" },
+              { stage: "deep", during: "['2026-02-28T23:30:00Z','2026-03-01T01:00:00Z')" },
+            ],
+          },
+        },
+      }),
+    );
+
+    await ctx.db.insert(sleepSession).values({
+      providerId: "whoop",
+      userId: TEST_USER_ID,
+      externalId: "10235",
+      startedAt: new Date("2026-02-28T23:00:00Z"),
+      endedAt: new Date("2026-03-01T06:30:00Z"),
+      durationMinutes: 450,
+      deepMinutes: 120,
+      remMinutes: 90,
+      lightMinutes: 180,
+      awakeMinutes: 30,
+      efficiencyPct: 91.7,
+      sleepType: "sleep",
+    });
+
+    const provider = new WhoopProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+
+    expect(
+      result.errors.filter((syncError) => syncError.message.includes("sleep_stages")),
+    ).toHaveLength(0);
+
+    const sessions = await ctx.db
+      .select({ id: sleepSession.id })
+      .from(sleepSession)
+      .where(and(eq(sleepSession.providerId, "whoop"), eq(sleepSession.externalId, "10235")));
+    const sessionId = sessions[0]?.id;
+    if (!sessionId) throw new Error("expected seed sleep session");
+
+    const stageRows = await ctx.db
+      .select()
+      .from(sleepStage)
+      .where(eq(sleepStage.sessionId, sessionId));
+    expect(stageRows).toHaveLength(2);
+    expect(stageRows.map((row) => row.stage).sort()).toEqual(["deep", "light"]);
   });
 
   it("syncs workouts from cycles into cardio_activity", async () => {

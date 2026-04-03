@@ -36,8 +36,7 @@ export class MissingEmailForSignupError extends Error {
  * 2. Lookup existing auth_account by (providerName, providerAccountId).
  * 3. Lookup user_profile by email match (email-based auto-linking).
  * 3.5. Cross-provider email match: check if another auth_account has the same email.
- * 4. If no accounts exist at all, claim DEFAULT_USER_ID (first-user migration).
- * 5. Create a new user_profile.
+ * 4. Create a new user_profile.
  *
  * In all cases where the auth_account doesn't yet exist, it is created.
  */

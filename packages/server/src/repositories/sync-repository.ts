@@ -100,8 +100,7 @@ export class SyncRepository {
       tokenRowSchema,
       sql`SELECT DISTINCT ot.provider_id
           FROM fitness.oauth_token ot
-          JOIN fitness.provider p ON p.id = ot.provider_id
-          WHERE p.user_id = ${this.#userId}`,
+          WHERE ot.user_id = ${this.#userId}`,
     );
     return rows.map((row) => ({ providerId: row.provider_id }));
   }
@@ -179,7 +178,33 @@ export class SyncRepository {
         COALESCE(lp.cnt, 0)::text AS lab_panels,
         COALESCE(lr.cnt, 0)::text AS lab_results,
         COALESCE(je.cnt, 0)::text AS journal_entries
-      FROM fitness.provider p
+      FROM (
+        SELECT DISTINCT provider_id AS id
+        FROM fitness.oauth_token
+        WHERE user_id = ${this.#userId}
+        UNION
+        SELECT DISTINCT provider_id AS id FROM fitness.activity WHERE user_id = ${this.#userId}
+        UNION
+        SELECT DISTINCT provider_id AS id FROM fitness.daily_metrics WHERE user_id = ${this.#userId}
+        UNION
+        SELECT DISTINCT provider_id AS id FROM fitness.sleep_session WHERE user_id = ${this.#userId}
+        UNION
+        SELECT DISTINCT provider_id AS id FROM fitness.body_measurement WHERE user_id = ${this.#userId}
+        UNION
+        SELECT DISTINCT provider_id AS id FROM fitness.food_entry WHERE user_id = ${this.#userId}
+        UNION
+        SELECT DISTINCT provider_id AS id FROM fitness.health_event WHERE user_id = ${this.#userId}
+        UNION
+        SELECT DISTINCT provider_id AS id FROM fitness.sensor_sample WHERE user_id = ${this.#userId}
+        UNION
+        SELECT DISTINCT provider_id AS id FROM fitness.nutrition_daily WHERE user_id = ${this.#userId}
+        UNION
+        SELECT DISTINCT provider_id AS id FROM fitness.lab_panel WHERE user_id = ${this.#userId}
+        UNION
+        SELECT DISTINCT provider_id AS id FROM fitness.lab_result WHERE user_id = ${this.#userId}
+        UNION
+        SELECT DISTINCT provider_id AS id FROM fitness.journal_entry WHERE user_id = ${this.#userId}
+      ) p
       LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.activity WHERE user_id = ${this.#userId} GROUP BY provider_id) a ON a.provider_id = p.id
       LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.daily_metrics WHERE user_id = ${this.#userId} GROUP BY provider_id) dm ON dm.provider_id = p.id
       LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.sleep_session WHERE user_id = ${this.#userId} GROUP BY provider_id) ss ON ss.provider_id = p.id

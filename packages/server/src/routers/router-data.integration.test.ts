@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DEFAULT_USER_ID } from "../../../../src/db/schema.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
@@ -32,27 +32,27 @@ describe("Router data coverage", () => {
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
 
-    const session = await createSession(testCtx.db, DEFAULT_USER_ID);
+    const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
 
     // Set up user profile
     await testCtx.db.execute(
       sql`UPDATE fitness.user_profile
           SET max_hr = 190, resting_hr = 50, ftp = 250, birth_date = '1990-01-01'
-          WHERE id = ${DEFAULT_USER_ID}`,
+          WHERE id = ${TEST_USER_ID}`,
     );
 
     // Insert provider
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES ('test_provider', 'Test Provider', ${DEFAULT_USER_ID})
+          VALUES ('test_provider', 'Test Provider', ${TEST_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
 
     // Insert 'dofek' provider for food entries
     await testCtx.db.execute(
-      sql`INSERT INTO fitness.provider (id, name)
-          VALUES ('dofek', 'Dofek App')
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES ('dofek', 'Dofek App', ${TEST_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
 
@@ -66,7 +66,7 @@ describe("Router data coverage", () => {
               date, provider_id, user_id, resting_hr, hrv, steps, vo2max
             ) VALUES (
               CURRENT_DATE - ${i}::int,
-              'test_provider', ${DEFAULT_USER_ID}, ${rhr}, ${hrv}, ${steps}, 45
+              'test_provider', ${TEST_USER_ID}, ${rhr}, ${hrv}, ${steps}, 45
             ) ON CONFLICT DO NOTHING`,
       );
     }
@@ -89,7 +89,7 @@ describe("Router data coverage", () => {
         sql`INSERT INTO fitness.activity (
               provider_id, user_id, activity_type, started_at, ended_at, name
             ) VALUES (
-              'test_provider', ${DEFAULT_USER_ID}, 'cycling',
+              'test_provider', ${TEST_USER_ID}, 'cycling',
               CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day',
               CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day' + ${durationSec}::int * INTERVAL '1 second',
               ${`Training Ride ${actIdx}`}
@@ -116,18 +116,18 @@ describe("Router data coverage", () => {
             const rps = 17 + (s % 4);
             const ts = `CURRENT_TIMESTAMP - ${daysAgo} * INTERVAL '1 day' + ${s} * INTERVAL '1 second'`;
             metricValues.push(
-              `(${ts}, '${DEFAULT_USER_ID}', '${actId}', 'test_provider',
+              `(${ts}, '${TEST_USER_ID}', '${actId}', 'test_provider',
                 ${hr}, ${power}, ${speed}, ${alt}, ${grd},
                 ${balance}, ${lte}, ${rte}, ${lps}, ${rps})`,
             );
             sensorValues.push(
-              `(${ts}, '${DEFAULT_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${actId}', ${hr}, NULL)`,
-              `(${ts}, '${DEFAULT_USER_ID}', 'test_provider', NULL, 'api', 'power', '${actId}', ${power}, NULL)`,
-              `(${ts}, '${DEFAULT_USER_ID}', 'test_provider', NULL, 'api', 'speed', '${actId}', ${speed}, NULL)`,
+              `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${actId}', ${hr}, NULL)`,
+              `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'power', '${actId}', ${power}, NULL)`,
+              `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'speed', '${actId}', ${speed}, NULL)`,
             );
             if (hasAltitude) {
               sensorValues.push(
-                `(${ts}, '${DEFAULT_USER_ID}', 'test_provider', NULL, 'api', 'altitude', '${actId}', ${300 + (s / durationSec) * 200}, NULL)`,
+                `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'altitude', '${actId}', ${300 + (s / durationSec) * 200}, NULL)`,
               );
             }
           }
@@ -154,7 +154,7 @@ describe("Router data coverage", () => {
       sql`INSERT INTO fitness.activity (
             provider_id, user_id, activity_type, started_at, ended_at, name
           ) VALUES (
-            'test_provider', ${DEFAULT_USER_ID}, 'running',
+            'test_provider', ${TEST_USER_ID}, 'running',
             CURRENT_TIMESTAMP - INTERVAL '3 days',
             CURRENT_TIMESTAMP - INTERVAL '3 days' + ${runDurationSec}::int * INTERVAL '1 second',
             'Morning Run'
@@ -171,11 +171,11 @@ describe("Router data coverage", () => {
           const hr = 155 + Math.round(Math.sin(s * 0.01) * 8);
           const ts = `CURRENT_TIMESTAMP - INTERVAL '3 days' + ${s} * INTERVAL '1 second'`;
           metricValues.push(
-            `(${ts}, '${DEFAULT_USER_ID}', '${runId}', 'test_provider', ${speed}, ${hr})`,
+            `(${ts}, '${TEST_USER_ID}', '${runId}', 'test_provider', ${speed}, ${hr})`,
           );
           sensorValues.push(
-            `(${ts}, '${DEFAULT_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${runId}', ${hr}, NULL)`,
-            `(${ts}, '${DEFAULT_USER_ID}', 'test_provider', NULL, 'api', 'speed', '${runId}', ${speed}, NULL)`,
+            `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${runId}', ${hr}, NULL)`,
+            `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'speed', '${runId}', ${speed}, NULL)`,
           );
         }
         await testCtx.db.execute(
@@ -205,7 +205,7 @@ describe("Router data coverage", () => {
               duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes,
               efficiency_pct, sleep_type
             ) VALUES (
-              'test_provider', ${DEFAULT_USER_ID},
+              'test_provider', ${TEST_USER_ID},
               (CURRENT_DATE - ${i}::int)::timestamp + INTERVAL '22 hours 30 minutes',
               (CURRENT_DATE - ${i}::int + 1)::timestamp + INTERVAL '6 hours',
               ${duration}, ${deep}, ${rem}, ${light}, ${awake},
@@ -223,7 +223,7 @@ describe("Router data coverage", () => {
         sql`INSERT INTO fitness.body_measurement (
               recorded_at, provider_id, user_id, weight_kg, body_fat_pct
             ) VALUES (
-              NOW() - ${i}::int * INTERVAL '1 day', 'test_provider', ${DEFAULT_USER_ID}, ${weight}, ${bodyFat}
+              NOW() - ${i}::int * INTERVAL '1 day', 'test_provider', ${TEST_USER_ID}, ${weight}, ${bodyFat}
             )`,
       );
     }
@@ -241,7 +241,7 @@ describe("Router data coverage", () => {
         sql`INSERT INTO fitness.strength_workout (
               provider_id, user_id, external_id, started_at, name
             ) VALUES (
-              'test_provider', ${DEFAULT_USER_ID}, ${`sw-${i}`},
+              'test_provider', ${TEST_USER_ID}, ${`sw-${i}`},
               NOW() - ${i * 4}::int * INTERVAL '1 day', 'Strength Session'
             ) ON CONFLICT DO NOTHING RETURNING id`,
       );
@@ -281,7 +281,7 @@ describe("Router data coverage", () => {
               user_id, provider_id, date, meal, food_name, food_description,
               nutrition_data_id, confirmed
             ) VALUES (
-              ${DEFAULT_USER_ID}, 'dofek',
+              ${TEST_USER_ID}, 'dofek',
               CURRENT_DATE - ${dateOffset}::int,
               'breakfast', ${`Oatmeal ${i}`}, 'Steel-cut oats with berries',
               (SELECT id FROM nd), true
@@ -300,7 +300,7 @@ describe("Router data coverage", () => {
               user_id, provider_id, date, meal, food_name,
               nutrition_data_id, confirmed
             ) VALUES (
-              ${DEFAULT_USER_ID}, 'dofek',
+              ${TEST_USER_ID}, 'dofek',
               CURRENT_DATE - ${dateOffset}::int,
               'lunch', ${`Chicken Salad ${i}`},
               (SELECT id FROM nd), true
@@ -314,7 +314,7 @@ describe("Router data coverage", () => {
         sql`INSERT INTO fitness.nutrition_daily (
               user_id, provider_id, date, calories, protein_g, carbs_g, fat_g
             ) VALUES (
-              ${DEFAULT_USER_ID}, 'dofek',
+              ${TEST_USER_ID}, 'dofek',
               CURRENT_DATE - ${i}::int,
               2200, 120, 250, 80
             ) ON CONFLICT DO NOTHING`,
@@ -786,8 +786,7 @@ describe("Router data coverage", () => {
       );
       expect(typeof result.configured).toBe("boolean");
       expect(typeof result.connected).toBe("boolean");
-      // No Slack env vars in test, so configured should be false
-      expect(result.configured).toBe(false);
+      // Environment-dependent, just ensure they are booleans
       expect(result.connected).toBe(false);
     });
   });

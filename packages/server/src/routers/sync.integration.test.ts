@@ -58,7 +58,8 @@ describe("triggerSync token lookup SQL", () => {
       sql`INSERT INTO fitness.provider (id, name, user_id) VALUES ('wahoo', 'Wahoo', ${testUserId})`,
     );
     await testCtx.db.execute(
-      sql`INSERT INTO fitness.oauth_token (provider_id, access_token, expires_at) VALUES ('strava', 'tok', '2099-01-01T00:00:00Z')`,
+      sql`INSERT INTO fitness.oauth_token (user_id, provider_id, access_token, expires_at)
+          VALUES (${testUserId}, 'strava', 'tok', '2099-01-01T00:00:00Z')`,
     );
   });
 
@@ -74,8 +75,7 @@ describe("triggerSync token lookup SQL", () => {
       tokenRowSchema,
       sql`SELECT DISTINCT ot.provider_id
           FROM fitness.oauth_token ot
-          JOIN fitness.provider p ON p.id = ot.provider_id
-          WHERE p.user_id = ${testUserId}`,
+          WHERE ot.user_id = ${testUserId}`,
     );
     expect(rows).toEqual([{ provider_id: "strava" }]);
   });
@@ -94,8 +94,7 @@ describe("triggerSync token lookup SQL", () => {
       tokenRowSchema,
       sql`SELECT DISTINCT ot.provider_id
           FROM fitness.oauth_token ot
-          JOIN fitness.provider p ON p.id = ot.provider_id
-          WHERE p.user_id = ${otherUserId}`,
+          WHERE ot.user_id = ${otherUserId}`,
     );
     expect(rows).toEqual([]);
   });

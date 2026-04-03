@@ -8,6 +8,7 @@ import {
   oauthToken,
   sensorSample,
   sleepSession,
+  userProfile,
 } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
@@ -328,5 +329,85 @@ describe("EightSleepProvider.sync() (integration)", () => {
     expect(sleepRows).toHaveLength(0);
 
     expect(result.errors).toHaveLength(0);
+  });
+
+  it("does not overwrite another user's rows with matching external identifiers", async () => {
+    await saveTokens(ctx.db, "eight-sleep", {
+      accessToken: "valid-token",
+      refreshToken: null,
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "userId:user-123",
+    });
+
+    const currentUserId = process.env.TEST_TOKEN_USER_ID;
+    if (!currentUserId) {
+      throw new Error("TEST_TOKEN_USER_ID is required for this integration test");
+    }
+
+    const secondUserId = "44444444-4444-4444-4444-444444444444";
+    await ctx.db
+      .insert(userProfile)
+      .values({ id: secondUserId, name: "Eight Sleep Other User" })
+      .onConflictDoNothing();
+
+    const day = "2026-03-29";
+    const sleepExternalId = `eightsleep-${day}`;
+    const temperatureExternalId = `eightsleep-temp-${day}`;
+
+    await ctx.db.insert(sleepSession).values({
+      userId: secondUserId,
+      providerId: "eight-sleep",
+      externalId: sleepExternalId,
+      startedAt: new Date("2026-03-28T23:00:00Z"),
+      endedAt: new Date("2026-03-29T07:00:00Z"),
+      durationMinutes: 300,
+    });
+    await ctx.db.insert(dailyMetrics).values({
+      userId: secondUserId,
+      providerId: "eight-sleep",
+      date: day,
+      steps: 1234,
+    });
+    await ctx.db.insert(bodyMeasurement).values({
+      userId: secondUserId,
+      providerId: "eight-sleep",
+      externalId: temperatureExternalId,
+      recordedAt: new Date("2026-03-28T23:00:00Z"),
+      temperatureC: 31.2,
+    });
+
+    server.use(
+      ...eightSleepHandlers([
+        fakeTrendDay({
+          day,
+          presenceStart: "2026-03-28T23:00:00Z",
+          presenceEnd: "2026-03-29T07:00:00Z",
+        }),
+      ]),
+    );
+
+    const provider = new EightSleepProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-03-20T00:00:00Z"));
+
+    expect(result.errors).toHaveLength(0);
+
+    const sleepRows = await ctx.db
+      .select()
+      .from(sleepSession)
+      .where(eq(sleepSession.externalId, sleepExternalId));
+    expect(sleepRows.filter((row) => row.userId === secondUserId)).toHaveLength(1);
+    expect(sleepRows.filter((row) => row.userId === currentUserId)).toHaveLength(1);
+
+    const dailyRows = await ctx.db.select().from(dailyMetrics).where(eq(dailyMetrics.date, day));
+    const providerDailyRows = dailyRows.filter((row) => row.providerId === "eight-sleep");
+    expect(providerDailyRows.filter((row) => row.userId === secondUserId)).toHaveLength(1);
+    expect(providerDailyRows.filter((row) => row.userId === currentUserId)).toHaveLength(1);
+
+    const temperatureRows = await ctx.db
+      .select()
+      .from(bodyMeasurement)
+      .where(eq(bodyMeasurement.externalId, temperatureExternalId));
+    expect(temperatureRows.filter((row) => row.userId === secondUserId)).toHaveLength(1);
+    expect(temperatureRows.filter((row) => row.userId === currentUserId)).toHaveLength(1);
   });
 });

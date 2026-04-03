@@ -534,7 +534,7 @@ export class FitbitProvider implements WebhookProvider {
                     raw: raw,
                   })
                   .onConflictDoUpdate({
-                    target: [activity.providerId, activity.externalId],
+                    target: [activity.userId, activity.providerId, activity.externalId],
                     set: {
                       activityType: parsed.activityType,
                       startedAt: parsed.startedAt,
@@ -603,7 +603,7 @@ export class FitbitProvider implements WebhookProvider {
                     sleepType: parsed.sleepType,
                   })
                   .onConflictDoUpdate({
-                    target: [sleepSession.providerId, sleepSession.externalId],
+                    target: [sleepSession.userId, sleepSession.providerId, sleepSession.externalId],
                     set: {
                       startedAt: parsed.startedAt,
                       endedAt: parsed.endedAt,
@@ -672,7 +672,12 @@ export class FitbitProvider implements WebhookProvider {
                   flightsClimbed: parsed.flightsClimbed,
                 })
                 .onConflictDoUpdate({
-                  target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
+                  target: [
+                    dailyMetrics.userId,
+                    dailyMetrics.date,
+                    dailyMetrics.providerId,
+                    dailyMetrics.sourceName,
+                  ],
                   set: {
                     steps: parsed.steps,
                     restingHr: parsed.restingHr,
@@ -735,7 +740,11 @@ export class FitbitProvider implements WebhookProvider {
                       bodyFatPct: parsed.bodyFatPct,
                     })
                     .onConflictDoUpdate({
-                      target: [bodyMeasurement.providerId, bodyMeasurement.externalId],
+                      target: [
+                        bodyMeasurement.userId,
+                        bodyMeasurement.providerId,
+                        bodyMeasurement.externalId,
+                      ],
                       set: {
                         weightKg: parsed.weightKg,
                         bodyFatPct: parsed.bodyFatPct,
@@ -840,7 +849,7 @@ export class FitbitProvider implements WebhookProvider {
                         raw: raw,
                       })
                       .onConflictDoUpdate({
-                        target: [activity.providerId, activity.externalId],
+                        target: [activity.userId, activity.providerId, activity.externalId],
                         set: {
                           activityType: parsed.activityType,
                           startedAt: parsed.startedAt,
@@ -898,7 +907,12 @@ export class FitbitProvider implements WebhookProvider {
                   flightsClimbed: parsed.flightsClimbed,
                 })
                 .onConflictDoUpdate({
-                  target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
+                  target: [
+                    dailyMetrics.userId,
+                    dailyMetrics.date,
+                    dailyMetrics.providerId,
+                    dailyMetrics.sourceName,
+                  ],
                   set: {
                     steps: parsed.steps,
                     restingHr: parsed.restingHr,
@@ -956,7 +970,11 @@ export class FitbitProvider implements WebhookProvider {
                         sleepType: parsed.sleepType,
                       })
                       .onConflictDoUpdate({
-                        target: [sleepSession.providerId, sleepSession.externalId],
+                        target: [
+                          sleepSession.userId,
+                          sleepSession.providerId,
+                          sleepSession.externalId,
+                        ],
                         set: {
                           startedAt: parsed.startedAt,
                           endedAt: parsed.endedAt,
@@ -1020,7 +1038,11 @@ export class FitbitProvider implements WebhookProvider {
                       bodyFatPct: parsed.bodyFatPct,
                     })
                     .onConflictDoUpdate({
-                      target: [bodyMeasurement.providerId, bodyMeasurement.externalId],
+                      target: [
+                        bodyMeasurement.userId,
+                        bodyMeasurement.providerId,
+                        bodyMeasurement.externalId,
+                      ],
                       set: {
                         weightKg: parsed.weightKg,
                         bodyFatPct: parsed.bodyFatPct,

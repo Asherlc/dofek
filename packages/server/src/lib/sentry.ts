@@ -3,6 +3,11 @@ import type express from "express";
 
 let initialized = false;
 
+/** @internal - For testing only */
+export function __resetSentryInitialized() {
+  initialized = false;
+}
+
 /**
  * Initialize Sentry error capture for the server.
  * Uses `skipOpenTelemetrySetup` to avoid conflicting with the existing

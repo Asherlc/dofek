@@ -42,8 +42,8 @@ export class ActivityRecordingRepository {
   /** Ensure the "dofek" provider row exists. */
   async ensureProvider(): Promise<void> {
     await this.#db.execute(
-      sql`INSERT INTO fitness.provider (id, name)
-          VALUES (${PROVIDER_ID}, 'Dofek')
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES (${PROVIDER_ID}, 'Dofek', ${this.#userId})
           ON CONFLICT (id) DO NOTHING`,
     );
   }
@@ -72,7 +72,7 @@ export class ActivityRecordingRepository {
               ${input.notes},
               ${input.sourceName}
             )
-            ON CONFLICT (provider_id, external_id) DO UPDATE SET
+            ON CONFLICT (user_id, provider_id, external_id) DO UPDATE SET
               activity_type = EXCLUDED.activity_type,
               started_at = EXCLUDED.started_at,
               ended_at = EXCLUDED.ended_at,

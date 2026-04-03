@@ -6,6 +6,11 @@ import {
   suuntoOAuthConfig,
 } from "./suunto.ts";
 
+vi.mock("../db/token-user-context.ts", () => ({
+  getTokenUserId: () => "user-1",
+  runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
+}));
+
 describe("mapSuuntoActivityType", () => {
   it("maps all known activity types", () => {
     expect(mapSuuntoActivityType(2)).toBe("running");
@@ -642,6 +647,7 @@ describe("suuntoOAuthConfig — exact URL values", () => {
     process.env.SUUNTO_CLIENT_ID = "id";
     process.env.SUUNTO_CLIENT_SECRET = "secret";
     delete process.env.OAUTH_REDIRECT_URI;
+    delete process.env.OAUTH_REDIRECT_URI_unencrypted;
     const config = suuntoOAuthConfig();
     expect(config?.redirectUri).toBe("https://dofek.asherlc.com/callback");
   });
@@ -650,6 +656,7 @@ describe("suuntoOAuthConfig — exact URL values", () => {
     process.env.SUUNTO_CLIENT_ID = "id";
     process.env.SUUNTO_CLIENT_SECRET = "secret";
     process.env.OAUTH_REDIRECT_URI = "https://custom.example.com/cb";
+    delete process.env.OAUTH_REDIRECT_URI_unencrypted;
     const config = suuntoOAuthConfig();
     expect(config?.redirectUri).toBe("https://custom.example.com/cb");
   });

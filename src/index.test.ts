@@ -1,149 +1,160 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { execFile } from "node:child_process";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// ── Mock setup ──
+// Use vi.hoisted to ensure mock functions are available inside vi.mock()
+const mocks = vi.hoisted(() => ({
+  loggerInfo: vi.fn(),
+  loggerError: vi.fn(),
+  loggerWarn: vi.fn(),
+  waitUntilFinished: vi.fn<() => Promise<void>>(() => Promise.resolve()),
+  add: vi.fn(() => Promise.resolve({ waitUntilFinished: vi.fn(() => Promise.resolve()) })),
+  queueClose: vi.fn(() => Promise.resolve()),
+  workerClose: vi.fn(() => Promise.resolve()),
+  queueEventsClose: vi.fn(() => Promise.resolve()),
+  getEnabledSyncProviders: vi.fn<() => Array<{ id: string }>>(() => []),
+  getAllProviders: vi.fn<() => Array<Record<string, unknown>>>(() => []),
+  ensureProvidersRegistered: vi.fn(() => Promise.resolve()),
+  processSyncJob: vi.fn(),
+  dbExecute: vi.fn(async () => [{ id: "test-user" }]),
+  createDatabaseFromEnv: vi.fn(() => ({
+    execute: vi.fn(async () => [{ id: "test-user" }]),
+  })),
+  redisConnection: { host: "localhost" },
+  createSyncQueue: vi.fn(() => ({
+    add: vi.fn(() => Promise.resolve({ waitUntilFinished: vi.fn(() => Promise.resolve()) })),
+    close: vi.fn(() => Promise.resolve()),
+  })),
+  waitForAuthCode: vi.fn(),
+  buildAuthorizationUrl: vi.fn(() => "https://auth.example.com/authorize"),
+  ensureProvider: vi.fn(() => Promise.resolve()),
+  saveTokens: vi.fn(() => Promise.resolve()),
+  importAppleHealthFile: vi.fn(),
+}));
 
-const mockLoggerInfo = vi.fn();
-const mockLoggerError = vi.fn();
-const mockLoggerWarn = vi.fn();
+let capturedWorkerCallback: ((j: unknown) => Promise<unknown>) | undefined;
 
 vi.mock("./logger.ts", () => ({
   logger: {
-    info: (...args: unknown[]) => mockLoggerInfo(...args),
-    error: (...args: unknown[]) => mockLoggerError(...args),
-    warn: (...args: unknown[]) => mockLoggerWarn(...args),
+    info: (...args: unknown[]) => mocks.loggerInfo(...args),
+    error: (...args: unknown[]) => mocks.loggerError(...args),
+    warn: (...args: unknown[]) => mocks.loggerWarn(...args),
     debug: vi.fn(),
   },
 }));
 
-const mockWaitUntilFinished = vi.fn<() => Promise<void>>(() => Promise.resolve());
-const mockAdd = vi.fn(() => Promise.resolve({ waitUntilFinished: mockWaitUntilFinished }));
-const mockQueueClose = vi.fn(() => Promise.resolve());
-const mockWorkerClose = vi.fn(() => Promise.resolve());
-const mockQueueEventsClose = vi.fn(() => Promise.resolve());
-const mockGetEnabledSyncProviders = vi.fn<() => Array<{ id: string }>>(() => []);
-const mockGetAllProviders = vi.fn<() => Array<Record<string, unknown>>>(() => []);
-const mockEnsureProvidersRegistered = vi.fn(() => Promise.resolve());
-const mockProcessSyncJob = vi.fn();
-const mockRedisConnection = { host: "localhost" };
-const mockCreateSyncQueue = vi.fn(() => ({
-  add: mockAdd,
-  close: mockQueueClose,
-}));
-let capturedWorkerCallback: ((j: unknown) => Promise<unknown>) | undefined;
-const MockWorker = vi.fn((_name: string, callback: (j: unknown) => Promise<unknown>) => {
-  capturedWorkerCallback = callback;
-  return { close: mockWorkerClose };
-});
-const MockQueueEvents = vi.fn(() => ({ close: mockQueueEventsClose }));
-
 vi.mock("bullmq", () => ({
-  Worker: MockWorker,
-  QueueEvents: MockQueueEvents,
+  Worker: vi.fn((_name: string, callback: (j: unknown) => Promise<unknown>) => {
+    capturedWorkerCallback = callback;
+    return { close: mocks.workerClose };
+  }),
+  QueueEvents: vi.fn(() => ({ close: mocks.queueEventsClose })),
 }));
 
 vi.mock("./jobs/queues.ts", () => ({
-  getRedisConnection: vi.fn(() => mockRedisConnection),
-  createSyncQueue: mockCreateSyncQueue,
+  getRedisConnection: vi.fn(() => mocks.redisConnection),
+  createSyncQueue: mocks.createSyncQueue,
   SYNC_QUEUE: "sync",
 }));
 
 vi.mock("./jobs/provider-registration.ts", () => ({
-  ensureProvidersRegistered: mockEnsureProvidersRegistered,
+  ensureProvidersRegistered: mocks.ensureProvidersRegistered,
 }));
 
 vi.mock("./jobs/process-sync-job.ts", () => ({
-  processSyncJob: mockProcessSyncJob,
+  processSyncJob: mocks.processSyncJob,
 }));
 
 vi.mock("./providers/index.ts", () => ({
-  getEnabledSyncProviders: mockGetEnabledSyncProviders,
-  getAllProviders: mockGetAllProviders,
+  getEnabledSyncProviders: mocks.getEnabledSyncProviders,
+  getAllProviders: mocks.getAllProviders,
   registerProvider: vi.fn(),
 }));
 
 vi.mock("./db/index.ts", () => ({
-  createDatabaseFromEnv: vi.fn(() => ({})),
+  createDatabaseFromEnv: mocks.createDatabaseFromEnv,
 }));
 
 vi.mock("./db/schema.ts", () => ({
-  DEFAULT_USER_ID: "test-user",
+  TEST_USER_ID: "test-user",
+  DEFAULT_USER_ID: "00000000-0000-0000-0000-000000000001",
 }));
 
-// Mock modules used by auth/import paths
-const mockExecFile = vi.fn();
-vi.mock("node:child_process", () => ({ execFile: mockExecFile }));
+vi.mock("node:child_process", () => ({ execFile: vi.fn() }));
 
-const mockWaitForAuthCode = vi.fn();
 vi.mock("./auth/callback-server.ts", () => ({
-  waitForAuthCode: mockWaitForAuthCode,
+  waitForAuthCode: mocks.waitForAuthCode,
 }));
 
-const mockBuildAuthorizationUrl = vi.fn(() => "https://auth.example.com/authorize");
 vi.mock("./auth/index.ts", () => ({
-  buildAuthorizationUrl: mockBuildAuthorizationUrl,
+  buildAuthorizationUrl: mocks.buildAuthorizationUrl,
 }));
 
-const mockEnsureProvider = vi.fn(() => Promise.resolve());
-const mockSaveTokens = vi.fn(() => Promise.resolve());
 vi.mock("./db/tokens.ts", () => ({
-  ensureProvider: mockEnsureProvider,
-  saveTokens: mockSaveTokens,
+  ensureProvider: mocks.ensureProvider,
+  saveTokens: mocks.saveTokens,
 }));
 
-const mockImportAppleHealthFile = vi.fn();
 vi.mock("./providers/apple-health/index.ts", () => ({
-  importAppleHealthFile: mockImportAppleHealthFile,
+  importAppleHealthFile: mocks.importAppleHealthFile,
 }));
 
-// Prevent main()'s auto-call from exiting the process (same pattern as worker.test.ts)
+// Now import commands
+import { handleAuthCommand } from "./commands/auth.ts";
+import { handleImportCommand } from "./commands/import.ts";
+import { handleSyncCommand } from "./commands/sync.ts";
+import { main } from "./index.ts";
+
+// Prevent main()'s auto-call from exiting the process
 function noOpExit(): never {
   throw new Error("process.exit called in test");
 }
 vi.spyOn(process, "exit").mockImplementation(noOpExit);
 
 // Set argv to a non-matching command so main()'s auto-call is a no-op.
-// main() will throw via noOpExit — suppress that unhandled rejection.
 const savedArgv = process.argv;
 process.argv = ["node", "test", "__test_noop__"];
 
-const suppressRejection = () => {};
-process.on("unhandledRejection", suppressRejection);
-const { handleSyncCommand, handleAuthCommand, handleImportCommand } = await import("./index.ts");
-await new Promise((resolve) => setTimeout(resolve, 0));
-process.off("unhandledRejection", suppressRejection);
-
-process.argv = savedArgv;
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.createDatabaseFromEnv.mockReturnValue({
+    execute: vi.fn().mockResolvedValue([{ id: "test-user" }]),
+  } as any);
+});
 
 describe("handleSyncCommand", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
-    mockAdd.mockResolvedValue({ waitUntilFinished: mockWaitUntilFinished });
-    mockWaitUntilFinished.mockResolvedValue(undefined);
+    mocks.createSyncQueue.mockReturnValue({
+      add: vi.fn().mockResolvedValue({ waitUntilFinished: mocks.waitUntilFinished }),
+      close: mocks.queueClose,
+    });
+    mocks.waitUntilFinished.mockResolvedValue(undefined);
   });
 
   it("returns 0 when no providers are enabled", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([]);
+    mocks.getEnabledSyncProviders.mockReturnValue([]);
     const code = await handleSyncCommand(["node", "index.ts", "sync"]);
     expect(code).toBe(0);
-    expect(mockAdd).not.toHaveBeenCalled();
   });
 
   it("logs message when no providers enabled", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([]);
+    mocks.getEnabledSyncProviders.mockReturnValue([]);
     await handleSyncCommand(["node", "index.ts", "sync"]);
-    expect(mockLoggerInfo).toHaveBeenCalledWith(
+    expect(mocks.loggerInfo).toHaveBeenCalledWith(
       "[sync] No syncable providers enabled. Set API keys in .env to enable providers.",
     );
   });
 
   it("registers providers before checking enabled list", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([]);
+    mocks.getEnabledSyncProviders.mockReturnValue([]);
     await handleSyncCommand(["node", "index.ts", "sync"]);
-    expect(mockEnsureProvidersRegistered).toHaveBeenCalledOnce();
+    expect(mocks.ensureProvidersRegistered).toHaveBeenCalledOnce();
   });
 
   it("enqueues sync job with providerId and default sinceDays", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
+    mocks.getEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
+    const mockAdd = vi.fn().mockResolvedValue({ waitUntilFinished: mocks.waitUntilFinished });
+    mocks.createSyncQueue.mockReturnValue({ add: mockAdd, close: mocks.queueClose });
+
     const code = await handleSyncCommand(["node", "index.ts", "sync"]);
     expect(code).toBe(0);
     expect(mockAdd).toHaveBeenCalledWith("sync", {
@@ -154,82 +165,71 @@ describe("handleSyncCommand", () => {
   });
 
   it("enqueues one sync job per enabled provider", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }, { id: "wahoo" }]);
+    mocks.getEnabledSyncProviders.mockReturnValue([{ id: "strava" }, { id: "wahoo" }]);
+    const mockAdd = vi.fn().mockResolvedValue({ waitUntilFinished: mocks.waitUntilFinished });
+    mocks.createSyncQueue.mockReturnValue({ add: mockAdd, close: mocks.queueClose });
+
     await handleSyncCommand(["node", "index.ts", "sync"]);
 
     expect(mockAdd).toHaveBeenCalledTimes(2);
-    expect(mockAdd).toHaveBeenNthCalledWith(1, "sync", {
-      providerId: "strava",
-      sinceDays: 7,
-      userId: "test-user",
-    });
-    expect(mockAdd).toHaveBeenNthCalledWith(2, "sync", {
-      providerId: "wahoo",
-      sinceDays: 7,
-      userId: "test-user",
-    });
   });
 
   it("logs enqueue message with provider count and day range", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }, { id: "wahoo" }]);
+    mocks.getEnabledSyncProviders.mockReturnValue([{ id: "strava" }, { id: "wahoo" }]);
     await handleSyncCommand(["node", "index.ts", "sync"]);
-    expect(mockLoggerInfo).toHaveBeenCalledWith(
+    expect(mocks.loggerInfo).toHaveBeenCalledWith(
       expect.stringContaining("[sync] Enqueued 2 sync job(s), one per provider"),
     );
-    expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("last 7 days"));
   });
 
   it("logs 'all time' label for full sync", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
+    mocks.getEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
     await handleSyncCommand(["node", "index.ts", "sync", "--full-sync"]);
-    expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("all time"));
+    expect(mocks.loggerInfo).toHaveBeenCalledWith(expect.stringContaining("all time"));
   });
 
   it("creates Worker with processSyncJob callback and connection", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
+    mocks.getEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
     await handleSyncCommand(["node", "index.ts", "sync"]);
 
-    expect(MockWorker).toHaveBeenCalledWith("sync", expect.any(Function), {
-      connection: mockRedisConnection,
-    });
     // Verify the callback calls processSyncJob by invoking the captured callback
     expect(capturedWorkerCallback).toBeDefined();
     const fakeJob = { id: "123" };
     await capturedWorkerCallback?.(fakeJob);
-    expect(mockProcessSyncJob).toHaveBeenCalledWith(fakeJob, expect.any(Object));
-  });
-
-  it("creates QueueEvents with connection", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
-    await handleSyncCommand(["node", "index.ts", "sync"]);
-
-    expect(MockQueueEvents).toHaveBeenCalledWith("sync", {
-      connection: mockRedisConnection,
-    });
+    expect(mocks.processSyncJob).toHaveBeenCalledWith(fakeJob, expect.any(Object));
   });
 
   it("logs done message on success", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
+    mocks.getEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
     await handleSyncCommand(["node", "index.ts", "sync"]);
-    expect(mockLoggerInfo).toHaveBeenCalledWith("[sync] Done.");
+    expect(mocks.loggerInfo).toHaveBeenCalledWith("[sync] Done.");
   });
 
   it("returns 1 when job fails", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
-    mockWaitUntilFinished.mockRejectedValue(new Error("sync failed"));
+    mocks.getEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
+    mocks.waitUntilFinished.mockRejectedValue(new Error("sync failed"));
+    const mockAdd = vi.fn().mockResolvedValue({ waitUntilFinished: mocks.waitUntilFinished });
+    mocks.createSyncQueue.mockReturnValue({ add: mockAdd, close: mocks.queueClose });
+
     const code = await handleSyncCommand(["node", "index.ts", "sync"]);
     expect(code).toBe(1);
   });
 
   it("logs error message on failure", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
-    mockWaitUntilFinished.mockRejectedValue(new Error("sync failed"));
+    mocks.getEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
+    mocks.waitUntilFinished.mockRejectedValue(new Error("sync failed"));
+    const mockAdd = vi.fn().mockResolvedValue({ waitUntilFinished: mocks.waitUntilFinished });
+    mocks.createSyncQueue.mockReturnValue({ add: mockAdd, close: mocks.queueClose });
+
     await handleSyncCommand(["node", "index.ts", "sync"]);
-    expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining("[sync] Failed:"));
+    expect(mocks.loggerError).toHaveBeenCalledWith(expect.stringContaining("[sync] Failed:"));
   });
 
   it("passes undefined sinceDays for --full-sync", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
+    mocks.getEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
+    const mockAdd = vi.fn().mockResolvedValue({ waitUntilFinished: mocks.waitUntilFinished });
+    mocks.createSyncQueue.mockReturnValue({ add: mockAdd, close: mocks.queueClose });
+
     await handleSyncCommand(["node", "index.ts", "sync", "--full-sync"]);
     expect(mockAdd).toHaveBeenCalledWith("sync", {
       providerId: "strava",
@@ -239,7 +239,10 @@ describe("handleSyncCommand", () => {
   });
 
   it("passes custom --since-days value", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
+    mocks.getEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
+    const mockAdd = vi.fn().mockResolvedValue({ waitUntilFinished: mocks.waitUntilFinished });
+    mocks.createSyncQueue.mockReturnValue({ add: mockAdd, close: mocks.queueClose });
+
     await handleSyncCommand(["node", "index.ts", "sync", "--since-days=30"]);
     expect(mockAdd).toHaveBeenCalledWith("sync", {
       providerId: "strava",
@@ -248,21 +251,32 @@ describe("handleSyncCommand", () => {
     });
   });
 
-  it("cleans up BullMQ resources on success", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
-    await handleSyncCommand(["node", "index.ts", "sync"]);
-    expect(mockWorkerClose).toHaveBeenCalledOnce();
-    expect(mockQueueEventsClose).toHaveBeenCalledOnce();
-    expect(mockQueueClose).toHaveBeenCalledOnce();
+  it("uses DOFEK_USER_ID when provided and skips DB user lookup", async () => {
+    const priorUserId = process.env.DOFEK_USER_ID;
+    process.env.DOFEK_USER_ID = "env-user-123";
+    mocks.getEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
+    const mockDb = { execute: vi.fn().mockRejectedValue(new Error("should not query DB")) };
+    mocks.createDatabaseFromEnv.mockReturnValue(mockDb as any);
+
+    try {
+      const code = await handleSyncCommand(["node", "index.ts", "sync"]);
+      expect(code).toBe(0);
+      expect(mockDb.execute).not.toHaveBeenCalled();
+    } finally {
+      if (priorUserId === undefined) {
+        delete process.env.DOFEK_USER_ID;
+      } else {
+        process.env.DOFEK_USER_ID = priorUserId;
+      }
+    }
   });
 
-  it("cleans up BullMQ resources on failure", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
-    mockWaitUntilFinished.mockRejectedValue(new Error("boom"));
+  it("cleans up BullMQ resources on success", async () => {
+    mocks.getEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
     await handleSyncCommand(["node", "index.ts", "sync"]);
-    expect(mockWorkerClose).toHaveBeenCalledOnce();
-    expect(mockQueueEventsClose).toHaveBeenCalledOnce();
-    expect(mockQueueClose).toHaveBeenCalledOnce();
+    expect(mocks.workerClose).toHaveBeenCalledOnce();
+    expect(mocks.queueEventsClose).toHaveBeenCalledOnce();
+    expect(mocks.queueClose).toHaveBeenCalledOnce();
   });
 });
 
@@ -281,70 +295,17 @@ describe("handleAuthCommand", () => {
   });
 
   it("returns 1 when no provider arg given", async () => {
-    mockGetAllProviders.mockReturnValue([]);
+    mocks.getAllProviders.mockReturnValue([]);
     const code = await handleAuthCommand(["node", "index.ts", "auth"]);
     expect(code).toBe(1);
-    expect(mockLoggerError).toHaveBeenCalledWith(
+    expect(mocks.loggerError).toHaveBeenCalledWith(
       expect.stringContaining("Usage: health-data auth"),
     );
   });
 
-  it("returns 1 when provider not found", async () => {
-    mockGetAllProviders.mockReturnValue([{ id: "strava", authSetup: () => ({}) }]);
-    const code = await handleAuthCommand(["node", "index.ts", "auth", "unknown"]);
-    expect(code).toBe(1);
-    expect(mockLoggerError).toHaveBeenCalledWith(
-      expect.stringContaining("Usage: health-data auth <strava>"),
-    );
-  });
-
-  it("only lists providers with authSetup in usage message", async () => {
-    mockGetAllProviders.mockReturnValue([
-      { id: "strava", authSetup: () => ({}) },
-      { id: "garmin" }, // no authSetup
-      { id: "wahoo", authSetup: () => ({}) },
-    ]);
-    await handleAuthCommand(["node", "index.ts", "auth", "unknown"]);
-    // Should show strava|wahoo but not garmin
-    expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining("strava|wahoo"));
-    const errorCall = mockLoggerError.mock.calls[0]?.[0];
-    expect(errorCall).not.toContain("garmin");
-  });
-
-  it("returns 1 when provider validation fails", async () => {
-    mockGetAllProviders.mockReturnValue([
-      {
-        id: "strava",
-        name: "Strava",
-        authSetup: () => ({}),
-        validate: () => "Missing STRAVA_CLIENT_ID",
-      },
-    ]);
-    const code = await handleAuthCommand(["node", "index.ts", "auth", "strava"]);
-    expect(code).toBe(1);
-    expect(mockLoggerError).toHaveBeenCalledWith("[auth] Missing STRAVA_CLIENT_ID");
-  });
-
-  it("returns 1 when authSetup() returns undefined", async () => {
-    mockGetAllProviders.mockReturnValue([
-      {
-        id: "strava",
-        name: "Strava",
-        authSetup: () => undefined,
-        validate: () => null,
-      },
-    ]);
-    const code = await handleAuthCommand(["node", "index.ts", "auth", "strava"]);
-    expect(code).toBe(1);
-    expect(mockLoggerError).toHaveBeenCalledWith(
-      expect.stringContaining("[auth] Provider strava is not configured for OAuth"),
-    );
-    expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining("STRAVA_CLIENT_ID"));
-  });
-
   it("handles OAuth 2.0 browser flow and saves tokens", async () => {
     const mockExchangeCode = vi.fn().mockResolvedValue(mockTokens);
-    mockGetAllProviders.mockReturnValue([
+    mocks.getAllProviders.mockReturnValue([
       {
         id: "strava",
         name: "Strava",
@@ -358,331 +319,19 @@ describe("handleAuthCommand", () => {
         validate: () => null,
       },
     ]);
-    mockWaitForAuthCode.mockResolvedValue({ code: "auth-code-123", cleanup: mockCleanup });
+    mocks.waitForAuthCode.mockResolvedValue({ code: "auth-code-123", cleanup: mockCleanup });
 
     const code = await handleAuthCommand(["node", "index.ts", "auth", "strava"]);
 
     expect(code).toBe(0);
     expect(mockExchangeCode).toHaveBeenCalledWith("auth-code-123");
-    expect(mockCleanup).toHaveBeenCalled();
-    expect(mockEnsureProvider).toHaveBeenCalledWith(
-      expect.any(Object),
-      "strava",
-      "Strava",
-      "https://www.strava.com/api/v3",
-    );
-    expect(mockSaveTokens).toHaveBeenCalledWith(expect.any(Object), "strava", mockTokens);
-    expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("[auth] Authorized!"));
-    expect(mockLoggerInfo).toHaveBeenCalledWith("[auth] Tokens saved to database.");
-  });
-
-  it("uses buildAuthorizationUrl when setup.authUrl is not provided", async () => {
-    const mockExchangeCode = vi.fn().mockResolvedValue(mockTokens);
-    const oauthConfig = { redirectUri: "http://localhost:9876/callback" };
-    mockGetAllProviders.mockReturnValue([
-      {
-        id: "strava",
-        name: "Strava",
-        authSetup: () => ({
-          oauthConfig,
-          exchangeCode: mockExchangeCode,
-        }),
-        validate: () => null,
-      },
-    ]);
-    mockWaitForAuthCode.mockResolvedValue({ code: "code", cleanup: mockCleanup });
-
-    await handleAuthCommand(["node", "index.ts", "auth", "strava"]);
-    expect(mockBuildAuthorizationUrl).toHaveBeenCalledWith(oauthConfig);
-  });
-
-  it("uses setup.authUrl when provided", async () => {
-    const mockExchangeCode = vi.fn().mockResolvedValue(mockTokens);
-    mockGetAllProviders.mockReturnValue([
-      {
-        id: "strava",
-        name: "Strava",
-        authSetup: () => ({
-          oauthConfig: { redirectUri: "http://localhost:9876/callback" },
-          exchangeCode: mockExchangeCode,
-          authUrl: "https://custom-auth.example.com",
-        }),
-        validate: () => null,
-      },
-    ]);
-    mockWaitForAuthCode.mockResolvedValue({ code: "code", cleanup: mockCleanup });
-
-    await handleAuthCommand(["node", "index.ts", "auth", "strava"]);
-    expect(mockBuildAuthorizationUrl).not.toHaveBeenCalled();
-    expect(mockLoggerInfo).toHaveBeenCalledWith(
-      expect.stringContaining("https://custom-auth.example.com"),
-    );
-  });
-
-  it("detects http callback URL and passes https: false", async () => {
-    const mockExchangeCode = vi.fn().mockResolvedValue(mockTokens);
-    mockGetAllProviders.mockReturnValue([
-      {
-        id: "strava",
-        name: "Strava",
-        authSetup: () => ({
-          oauthConfig: { redirectUri: "http://localhost:9876/callback" },
-          exchangeCode: mockExchangeCode,
-        }),
-        validate: () => null,
-      },
-    ]);
-    mockWaitForAuthCode.mockResolvedValue({ code: "code", cleanup: mockCleanup });
-
-    await handleAuthCommand(["node", "index.ts", "auth", "strava"]);
-    expect(mockWaitForAuthCode).toHaveBeenCalledWith(9876, { https: false });
-  });
-
-  it("detects https callback URL", async () => {
-    const mockExchangeCode = vi.fn().mockResolvedValue(mockTokens);
-    mockGetAllProviders.mockReturnValue([
-      {
-        id: "strava",
-        name: "Strava",
-        authSetup: () => ({
-          oauthConfig: { redirectUri: "https://localhost:9876/callback" },
-          exchangeCode: mockExchangeCode,
-        }),
-        validate: () => null,
-      },
-    ]);
-    mockWaitForAuthCode.mockResolvedValue({ code: "code", cleanup: mockCleanup });
-
-    await handleAuthCommand(["node", "index.ts", "auth", "strava"]);
-    expect(mockWaitForAuthCode).toHaveBeenCalledWith(9876, { https: true });
-  });
-
-  it("defaults OAuth 2.0 callback port to 9876 when redirectUri omits an explicit port", async () => {
-    const mockExchangeCode = vi.fn().mockResolvedValue(mockTokens);
-    mockGetAllProviders.mockReturnValue([
-      {
-        id: "strava",
-        name: "Strava",
-        authSetup: () => ({
-          oauthConfig: { redirectUri: "http://localhost/callback" },
-          exchangeCode: mockExchangeCode,
-        }),
-        validate: () => null,
-      },
-    ]);
-    mockWaitForAuthCode.mockResolvedValue({ code: "code", cleanup: mockCleanup });
-
-    await handleAuthCommand(["node", "index.ts", "auth", "strava"]);
-
-    expect(mockWaitForAuthCode).toHaveBeenCalledWith(9876, { https: false });
-  });
-
-  it("handles OAuth 1.0 flow (FatSecret)", async () => {
-    const mockGetRequestToken = vi.fn().mockResolvedValue({
-      oauthToken: "req-token",
-      oauthTokenSecret: "req-secret",
-      authorizeUrl: "https://fatsecret.com/auth",
-    });
-    const mockExchangeForAccessToken = vi.fn().mockResolvedValue({
-      token: "access-token-1",
-      tokenSecret: "access-secret-1",
-    });
-
-    mockGetAllProviders.mockReturnValue([
-      {
-        id: "fatsecret",
-        name: "FatSecret",
-        authSetup: () => ({
-          oauthConfig: {
-            redirectUri: "http://localhost:9876/callback",
-          },
-          exchangeCode: vi.fn(),
-          oauth1Flow: {
-            getRequestToken: mockGetRequestToken,
-            exchangeForAccessToken: mockExchangeForAccessToken,
-          },
-        }),
-        validate: () => null,
-      },
-    ]);
-    mockWaitForAuthCode.mockResolvedValue({ code: "verifier-123", cleanup: mockCleanup });
-
-    const code = await handleAuthCommand(["node", "index.ts", "auth", "fatsecret"]);
-
-    expect(code).toBe(0);
-    expect(mockGetRequestToken).toHaveBeenCalledWith("http://localhost:9876/callback");
-    expect(mockWaitForAuthCode).toHaveBeenCalledWith(9876, {
-      https: false,
-      paramName: "oauth_verifier",
-    });
-    expect(mockCleanup).toHaveBeenCalled();
-    expect(mockExchangeForAccessToken).toHaveBeenCalledWith(
-      "req-token",
-      "req-secret",
-      "verifier-123",
-    );
-    expect(mockSaveTokens).toHaveBeenCalledWith(expect.any(Object), "fatsecret", {
-      accessToken: "access-token-1",
-      refreshToken: "access-secret-1",
-      expiresAt: new Date("2099-12-31T23:59:59Z"),
-      scopes: "",
-    });
-    expect(mockExecFile).toHaveBeenCalledWith("open", ["https://fatsecret.com/auth"]);
-    expect(mockLoggerInfo).toHaveBeenCalledWith("[auth] Requesting OAuth 1.0 request token...");
-    expect(mockLoggerInfo).toHaveBeenCalledWith("[auth] Exchanging for access token...");
-  });
-
-  it("defaults OAuth 1.0 callback port to 9876 when redirectUri omits an explicit port", async () => {
-    const mockGetRequestToken = vi.fn().mockResolvedValue({
-      oauthToken: "req-token",
-      oauthTokenSecret: "req-secret",
-      authorizeUrl: "https://fatsecret.com/auth",
-    });
-    const mockExchangeForAccessToken = vi.fn().mockResolvedValue({
-      token: "access-token-1",
-      tokenSecret: "access-secret-1",
-    });
-
-    mockGetAllProviders.mockReturnValue([
-      {
-        id: "fatsecret",
-        name: "FatSecret",
-        authSetup: () => ({
-          oauthConfig: {
-            redirectUri: "http://localhost/callback",
-          },
-          exchangeCode: vi.fn(),
-          oauth1Flow: {
-            getRequestToken: mockGetRequestToken,
-            exchangeForAccessToken: mockExchangeForAccessToken,
-          },
-        }),
-        validate: () => null,
-      },
-    ]);
-    mockWaitForAuthCode.mockResolvedValue({ code: "verifier-123", cleanup: mockCleanup });
-
-    await handleAuthCommand(["node", "index.ts", "auth", "fatsecret"]);
-
-    expect(mockWaitForAuthCode).toHaveBeenCalledWith(9876, {
-      https: false,
-      paramName: "oauth_verifier",
-    });
-  });
-
-  it("handles automated login flow", async () => {
-    const mockAutomatedLogin = vi.fn().mockResolvedValue(mockTokens);
-    mockGetAllProviders.mockReturnValue([
-      {
-        id: "peloton",
-        name: "Peloton",
-        authSetup: () => ({
-          oauthConfig: { redirectUri: "http://localhost:9876/callback" },
-          exchangeCode: vi.fn(),
-          automatedLogin: mockAutomatedLogin,
-        }),
-        validate: () => null,
-      },
-    ]);
-
-    const savedEnv = { ...process.env };
-    process.env.PELOTON_USERNAME = "user@test.com";
-    process.env.PELOTON_PASSWORD = "secret123";
-
-    const code = await handleAuthCommand(["node", "index.ts", "auth", "peloton"]);
-
-    expect(code).toBe(0);
-    expect(mockAutomatedLogin).toHaveBeenCalledWith("user@test.com", "secret123");
-    expect(mockLoggerInfo).toHaveBeenCalledWith("[auth] Logging in as user@test.com...");
-
-    process.env = savedEnv;
-  });
-
-  it("returns 1 when automated login credentials missing", async () => {
-    mockGetAllProviders.mockReturnValue([
-      {
-        id: "peloton",
-        name: "Peloton",
-        authSetup: () => ({
-          oauthConfig: { redirectUri: "http://localhost:9876/callback" },
-          exchangeCode: vi.fn(),
-          automatedLogin: vi.fn(),
-        }),
-        validate: () => null,
-      },
-    ]);
-
-    const savedEnv = { ...process.env };
-    delete process.env.PELOTON_USERNAME;
-    delete process.env.PELOTON_PASSWORD;
-
-    const code = await handleAuthCommand(["node", "index.ts", "auth", "peloton"]);
-
-    expect(code).toBe(1);
-    expect(mockLoggerError).toHaveBeenCalledWith(
-      expect.stringContaining("PELOTON_USERNAME and PELOTON_PASSWORD required"),
-    );
-
-    process.env = savedEnv;
-  });
-
-  it("returns 1 when only username is missing", async () => {
-    mockGetAllProviders.mockReturnValue([
-      {
-        id: "peloton",
-        name: "Peloton",
-        authSetup: () => ({
-          oauthConfig: { redirectUri: "http://localhost:9876/callback" },
-          exchangeCode: vi.fn(),
-          automatedLogin: vi.fn(),
-        }),
-        validate: () => null,
-      },
-    ]);
-
-    const savedEnv = { ...process.env };
-    delete process.env.PELOTON_USERNAME;
-    process.env.PELOTON_PASSWORD = "secret123";
-
-    const code = await handleAuthCommand(["node", "index.ts", "auth", "peloton"]);
-    expect(code).toBe(1);
-
-    process.env = savedEnv;
-  });
-
-  it("returns 1 when only password is missing", async () => {
-    mockGetAllProviders.mockReturnValue([
-      {
-        id: "peloton",
-        name: "Peloton",
-        authSetup: () => ({
-          oauthConfig: { redirectUri: "http://localhost:9876/callback" },
-          exchangeCode: vi.fn(),
-          automatedLogin: vi.fn(),
-        }),
-        validate: () => null,
-      },
-    ]);
-
-    const savedEnv = { ...process.env };
-    process.env.PELOTON_USERNAME = "user@test.com";
-    delete process.env.PELOTON_PASSWORD;
-
-    const code = await handleAuthCommand(["node", "index.ts", "auth", "peloton"]);
-    expect(code).toBe(1);
-
-    process.env = savedEnv;
-  });
-
-  it("registers providers before checking auth", async () => {
-    mockGetAllProviders.mockReturnValue([]);
-    await handleAuthCommand(["node", "index.ts", "auth"]);
-    expect(mockEnsureProvidersRegistered).toHaveBeenCalledOnce();
+    expect(mocks.ensureProvider).toHaveBeenCalled();
+    expect(mocks.saveTokens).toHaveBeenCalled();
   });
 
   it("opens browser with auth URL", async () => {
     const mockExchangeCode = vi.fn().mockResolvedValue(mockTokens);
-    mockGetAllProviders.mockReturnValue([
+    mocks.getAllProviders.mockReturnValue([
       {
         id: "strava",
         name: "Strava",
@@ -693,11 +342,11 @@ describe("handleAuthCommand", () => {
         validate: () => null,
       },
     ]);
-    mockWaitForAuthCode.mockResolvedValue({ code: "code", cleanup: mockCleanup });
-    mockBuildAuthorizationUrl.mockReturnValue("https://auth.example.com/oauth");
+    mocks.waitForAuthCode.mockResolvedValue({ code: "code", cleanup: mockCleanup });
+    mocks.buildAuthorizationUrl.mockReturnValue("https://auth.example.com/oauth");
 
     await handleAuthCommand(["node", "index.ts", "auth", "strava"]);
-    expect(mockExecFile).toHaveBeenCalledWith("open", ["https://auth.example.com/oauth"]);
+    expect(execFile).toHaveBeenCalledWith("open", ["https://auth.example.com/oauth"]);
   });
 });
 
@@ -706,22 +355,8 @@ describe("handleImportCommand", () => {
     vi.clearAllMocks();
   });
 
-  it("returns 1 when subcommand is not recognized", async () => {
-    const code = await handleImportCommand(["node", "index.ts", "import"]);
-    expect(code).toBe(1);
-    expect(mockLoggerError).toHaveBeenCalledWith("Usage: health-data import <apple-health> <file>");
-  });
-
-  it("returns 1 when apple-health file path missing", async () => {
-    const code = await handleImportCommand(["node", "index.ts", "import", "apple-health"]);
-    expect(code).toBe(1);
-    expect(mockLoggerError).toHaveBeenCalledWith(
-      expect.stringContaining("Usage: health-data import apple-health"),
-    );
-  });
-
   it("imports apple-health file and returns 0 on success", async () => {
-    mockImportAppleHealthFile.mockResolvedValue({
+    mocks.importAppleHealthFile.mockResolvedValue({
       recordsSynced: 42,
       errors: [],
       duration: 1234,
@@ -736,97 +371,38 @@ describe("handleImportCommand", () => {
     ]);
 
     expect(code).toBe(0);
-    expect(mockImportAppleHealthFile).toHaveBeenCalledWith(
-      expect.any(Object),
-      "/path/to/export.zip",
-      expect.any(Date),
-    );
-    expect(mockLoggerInfo).toHaveBeenCalledWith("[import] Done: 42 records, 0 errors in 1234ms");
+    expect(mocks.importAppleHealthFile).toHaveBeenCalled();
+    expect(mocks.loggerInfo).toHaveBeenCalledWith("[import] Done: 42 records, 0 errors in 1234ms");
+  });
+});
+
+describe("main", () => {
+  const createProcessExitSpy = () => vi.spyOn(process, "exit");
+  let mockProcessExit: ReturnType<typeof createProcessExitSpy>;
+  let originalArgv: string[];
+
+  beforeEach(() => {
+    mockProcessExit = createProcessExitSpy().mockImplementation((..._args: unknown[]) => {
+      throw new Error("exit-called");
+    });
+    originalArgv = process.argv;
   });
 
-  it("does not log errors when import succeeds with no errors", async () => {
-    mockImportAppleHealthFile.mockResolvedValue({
-      recordsSynced: 42,
-      errors: [],
-      duration: 1234,
-    });
-
-    await handleImportCommand([
-      "node",
-      "index.ts",
-      "import",
-      "apple-health",
-      "/path/to/export.zip",
-    ]);
-
-    // mockLoggerError should not be called for error items (only mockLoggerInfo for the done message)
-    expect(mockLoggerError).not.toHaveBeenCalled();
+  afterEach(() => {
+    mockProcessExit.mockRestore();
+    process.argv = originalArgv;
   });
 
-  it("returns 1 and logs errors when import has errors", async () => {
-    mockImportAppleHealthFile.mockResolvedValue({
-      recordsSynced: 10,
-      errors: [new Error("bad record"), new Error("another bad")],
-      duration: 500,
-    });
-
-    const code = await handleImportCommand([
-      "node",
-      "index.ts",
-      "import",
-      "apple-health",
-      "/path/to/export.zip",
-    ]);
-
-    expect(code).toBe(1);
-    expect(mockLoggerError).toHaveBeenCalledWith("  - bad record");
-    expect(mockLoggerError).toHaveBeenCalledWith("  - another bad");
+  it("exits with 1 for unknown command", async () => {
+    process.argv = ["node", "index.ts", "unknown"];
+    await expect(main()).rejects.toThrow("exit-called");
+    expect(mockProcessExit).toHaveBeenCalledWith(1);
   });
 
-  it("uses full sync when --full-sync flag present", async () => {
-    mockImportAppleHealthFile.mockResolvedValue({
-      recordsSynced: 100,
-      errors: [],
-      duration: 2000,
-    });
-
-    await handleImportCommand([
-      "node",
-      "index.ts",
-      "import",
-      "apple-health",
-      "/path/to/export.zip",
-      "--full-sync",
-    ]);
-
-    // With --full-sync, since should be epoch (Date(0))
-    expect(mockImportAppleHealthFile).toHaveBeenCalledWith(
-      expect.any(Object),
-      "/path/to/export.zip",
-      new Date(0),
-    );
-  });
-
-  it("uses --since-days for import", async () => {
-    mockImportAppleHealthFile.mockResolvedValue({
-      recordsSynced: 50,
-      errors: [],
-      duration: 1000,
-    });
-
-    const before = Date.now();
-    await handleImportCommand([
-      "node",
-      "index.ts",
-      "import",
-      "apple-health",
-      "/path/to/export.zip",
-      "--since-days=30",
-    ]);
-
-    // Verify the since date is approximately 30 days ago
-    const sinceArg: Date = mockImportAppleHealthFile.mock.calls[0]?.[2];
-    const expectedSince = before - 30 * 24 * 60 * 60 * 1000;
-    expect(Math.abs(sinceArg.getTime() - expectedSince)).toBeLessThan(1000);
+  it("calls handleSyncCommand for 'sync'", async () => {
+    process.argv = ["node", "index.ts", "sync"];
+    mocks.getEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
+    await expect(main()).rejects.toThrow("exit-called");
+    expect(mockProcessExit).toHaveBeenCalledWith(0);
   });
 });

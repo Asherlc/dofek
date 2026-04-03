@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DEFAULT_USER_ID } from "../../../../src/db/schema.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
@@ -26,25 +26,25 @@ describe("Router coverage", () => {
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
 
-    const session = await createSession(testCtx.db, DEFAULT_USER_ID);
+    const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
 
     // Set up user profile
     await testCtx.db.execute(
       sql`UPDATE fitness.user_profile
           SET max_hr = 190, resting_hr = 50, ftp = 250, birth_date = '1990-01-01'
-          WHERE id = ${DEFAULT_USER_ID}`,
+          WHERE id = ${TEST_USER_ID}`,
     );
 
     // Insert providers
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES ('test_provider', 'Test Provider', ${DEFAULT_USER_ID})
+          VALUES ('test_provider', 'Test Provider', ${TEST_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
     await testCtx.db.execute(
-      sql`INSERT INTO fitness.provider (id, name)
-          VALUES ('dofek', 'Dofek App')
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES ('dofek', 'Dofek App', ${TEST_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
 
@@ -59,7 +59,7 @@ describe("Router coverage", () => {
               active_energy_kcal, basal_energy_kcal
             ) VALUES (
               CURRENT_DATE - ${i}::int,
-              'test_provider', ${DEFAULT_USER_ID}, ${rhr}, ${hrv}, ${steps}, 45,
+              'test_provider', ${TEST_USER_ID}, ${rhr}, ${hrv}, ${steps}, 45,
               500, 1800
             ) ON CONFLICT DO NOTHING`,
       );
@@ -79,7 +79,7 @@ describe("Router coverage", () => {
               duration_minutes, deep_minutes, rem_minutes, light_minutes,
               awake_minutes, efficiency_pct, sleep_type
             ) VALUES (
-              'test_provider', ${DEFAULT_USER_ID},
+              'test_provider', ${TEST_USER_ID},
               (CURRENT_DATE - ${i}::int)::timestamp + INTERVAL '22 hours 30 minutes',
               (CURRENT_DATE - ${i}::int + 1)::timestamp + INTERVAL '6 hours',
               ${duration}, ${deep}, ${rem}, ${light}, ${awake}, ${efficiency}, 'sleep'
@@ -98,7 +98,7 @@ describe("Router coverage", () => {
         sql`INSERT INTO fitness.activity (
               provider_id, user_id, activity_type, started_at, ended_at, name
             ) VALUES (
-              'test_provider', ${DEFAULT_USER_ID}, 'cycling',
+              'test_provider', ${TEST_USER_ID}, 'cycling',
               CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day',
               CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day' + ${durationSec}::int * INTERVAL '1 second',
               ${`Training Ride ${actIdx}`}
@@ -117,13 +117,13 @@ describe("Router coverage", () => {
             const speed = 7.5 + Math.sin(s * 0.005) * 1.5;
             const ts = `CURRENT_TIMESTAMP - ${daysAgo} * INTERVAL '1 day' + ${s} * INTERVAL '1 second'`;
             metricValues.push(
-              `(${ts}, '${DEFAULT_USER_ID}', '${actId}', 'test_provider',
+              `(${ts}, '${TEST_USER_ID}', '${actId}', 'test_provider',
                 ${hr}, ${power}, ${speed})`,
             );
             sensorValues.push(
-              `(${ts}, '${DEFAULT_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${actId}', ${hr}, NULL)`,
-              `(${ts}, '${DEFAULT_USER_ID}', 'test_provider', NULL, 'api', 'power', '${actId}', ${power}, NULL)`,
-              `(${ts}, '${DEFAULT_USER_ID}', 'test_provider', NULL, 'api', 'speed', '${actId}', ${speed}, NULL)`,
+              `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${actId}', ${hr}, NULL)`,
+              `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'power', '${actId}', ${power}, NULL)`,
+              `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'speed', '${actId}', ${speed}, NULL)`,
             );
           }
           await testCtx.db.execute(
@@ -170,7 +170,7 @@ describe("Router coverage", () => {
           sql`INSERT INTO fitness.strength_workout (
                 provider_id, user_id, external_id, started_at, ended_at, name
               ) VALUES (
-                'test_provider', ${DEFAULT_USER_ID},
+                'test_provider', ${TEST_USER_ID},
                 ${`sw-cov-${weekIdx}-${dayIdx}`},
                 NOW() - ${daysAgo}::int * INTERVAL '1 day',
                 NOW() - ${daysAgo}::int * INTERVAL '1 day' + INTERVAL '1 hour',
@@ -211,7 +211,7 @@ describe("Router coverage", () => {
         sql`INSERT INTO fitness.nutrition_daily (
               user_id, provider_id, date, calories, protein_g, carbs_g, fat_g
             ) VALUES (
-              ${DEFAULT_USER_ID}, 'dofek',
+              ${TEST_USER_ID}, 'dofek',
               CURRENT_DATE - ${i}::int,
               2200, 120, 250, 80
             ) ON CONFLICT DO NOTHING`,
@@ -223,7 +223,7 @@ describe("Router coverage", () => {
       sql`INSERT INTO fitness.body_measurement (
             recorded_at, provider_id, user_id, weight_kg, body_fat_pct
           ) VALUES (
-            NOW() - INTERVAL '1 day', 'test_provider', ${DEFAULT_USER_ID}, 75, 18
+            NOW() - INTERVAL '1 day', 'test_provider', ${TEST_USER_ID}, 75, 18
           )`,
     );
 
@@ -244,7 +244,7 @@ describe("Router coverage", () => {
               user_id, provider_id, date, meal, food_name,
               nutrition_data_id, confirmed
             ) VALUES (
-              ${DEFAULT_USER_ID}, 'dofek',
+              ${TEST_USER_ID}, 'dofek',
               CURRENT_DATE - ${i}::int,
               'breakfast', ${`Oatmeal ${i}`},
               (SELECT id FROM nd), true
@@ -552,7 +552,7 @@ describe("Router coverage", () => {
       // Insert apple_health provider
       await testCtx.db.execute(
         sql`INSERT INTO fitness.provider (id, name, user_id)
-            VALUES ('apple_health', 'Apple Health', ${DEFAULT_USER_ID})
+            VALUES ('apple_health', 'Apple Health', ${TEST_USER_ID})
             ON CONFLICT DO NOTHING`,
       );
 
@@ -572,7 +572,7 @@ describe("Router coverage", () => {
               duration_minutes, deep_minutes, rem_minutes, light_minutes,
               awake_minutes, efficiency_pct, sleep_type
             ) VALUES (
-              'apple_health', ${DEFAULT_USER_ID},
+              'apple_health', ${TEST_USER_ID},
               CURRENT_TIMESTAMP + INTERVAL '1 day',
               CURRENT_TIMESTAMP + INTERVAL '1 day' + INTERVAL '8 hours',
               ${inBedDuration}, ${deep}, ${rem}, ${light}, ${awake}, 81, 'sleep'
@@ -1480,15 +1480,15 @@ describe("Router coverage", () => {
     });
 
     it("unlinkAccount succeeds when user has 2+ accounts", async () => {
-      // Insert two auth_account rows for the default user
+      // Insert two auth_account rows for the fixture user
       await testCtx.db.execute(
         sql`INSERT INTO fitness.auth_account (auth_provider, provider_account_id, user_id, email, name)
-            VALUES ('test-provider-a', 'acct-a', ${DEFAULT_USER_ID}, 'a@test.com', 'A')
+            VALUES ('test-provider-a', 'acct-a', ${TEST_USER_ID}, 'a@test.com', 'A')
             ON CONFLICT DO NOTHING`,
       );
       await testCtx.db.execute(
         sql`INSERT INTO fitness.auth_account (auth_provider, provider_account_id, user_id, email, name)
-            VALUES ('test-provider-b', 'acct-b', ${DEFAULT_USER_ID}, 'b@test.com', 'B')
+            VALUES ('test-provider-b', 'acct-b', ${TEST_USER_ID}, 'b@test.com', 'B')
             ON CONFLICT DO NOTHING`,
       );
       await queryCache.invalidateAll();
@@ -1507,7 +1507,7 @@ describe("Router coverage", () => {
 
       // Clean up remaining test accounts
       await testCtx.db.execute(
-        sql`DELETE FROM fitness.auth_account WHERE user_id = ${DEFAULT_USER_ID}`,
+        sql`DELETE FROM fitness.auth_account WHERE user_id = ${TEST_USER_ID}`,
       );
     });
 
@@ -1515,12 +1515,12 @@ describe("Router coverage", () => {
       // Insert 2 accounts so the count check passes, then try to unlink a non-existent ID
       await testCtx.db.execute(
         sql`INSERT INTO fitness.auth_account (auth_provider, provider_account_id, user_id, email, name)
-            VALUES ('test-x', 'x1', ${DEFAULT_USER_ID}, 'x@test.com', 'X')
+            VALUES ('test-x', 'x1', ${TEST_USER_ID}, 'x@test.com', 'X')
             ON CONFLICT DO NOTHING`,
       );
       await testCtx.db.execute(
         sql`INSERT INTO fitness.auth_account (auth_provider, provider_account_id, user_id, email, name)
-            VALUES ('test-y', 'y1', ${DEFAULT_USER_ID}, 'y@test.com', 'Y')
+            VALUES ('test-y', 'y1', ${TEST_USER_ID}, 'y@test.com', 'Y')
             ON CONFLICT DO NOTHING`,
       );
       await queryCache.invalidateAll();
@@ -1531,7 +1531,7 @@ describe("Router coverage", () => {
 
       // Clean up
       await testCtx.db.execute(
-        sql`DELETE FROM fitness.auth_account WHERE user_id = ${DEFAULT_USER_ID}`,
+        sql`DELETE FROM fitness.auth_account WHERE user_id = ${TEST_USER_ID}`,
       );
     });
   });

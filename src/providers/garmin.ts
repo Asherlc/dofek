@@ -16,17 +16,11 @@ import {
 import { z } from "zod";
 import type { TokenSet } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import {
-  activity,
-  DEFAULT_USER_ID,
-  dailyMetrics,
-  sleepSession,
-  sleepStage,
-  userSettings,
-} from "../db/schema.ts";
+import { activity, dailyMetrics, sleepSession, sleepStage, userSettings } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
 import { withSyncLog } from "../db/sync-log.ts";
+import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
 import type {
@@ -110,11 +104,20 @@ export function eachDay(since: Date, until: Date): string[] {
 
 const SYNC_CURSOR_KEY = "garmin_sync_cursor";
 
-async function loadSyncCursor(db: SyncDatabase): Promise<string | null> {
+function resolveScopedUserId(userId?: string): string {
+  const scopedUserId = userId ?? getTokenUserId();
+  if (!scopedUserId) {
+    throw new Error("garmin sync requires a userId");
+  }
+  return scopedUserId;
+}
+
+async function loadSyncCursor(db: SyncDatabase, userId?: string): Promise<string | null> {
+  const scopedUserId = resolveScopedUserId(userId);
   const rows = await db
     .select({ value: userSettings.value })
     .from(userSettings)
-    .where(and(eq(userSettings.userId, DEFAULT_USER_ID), eq(userSettings.key, SYNC_CURSOR_KEY)))
+    .where(and(eq(userSettings.userId, scopedUserId), eq(userSettings.key, SYNC_CURSOR_KEY)))
     .limit(1);
 
   if (rows.length === 0 || !rows[0]) return null;
@@ -123,11 +126,12 @@ async function loadSyncCursor(db: SyncDatabase): Promise<string | null> {
   return value.cursor ?? null;
 }
 
-async function saveSyncCursor(db: SyncDatabase, cursor: string): Promise<void> {
+async function saveSyncCursor(db: SyncDatabase, cursor: string, userId?: string): Promise<void> {
+  const scopedUserId = resolveScopedUserId(userId);
   await db
     .insert(userSettings)
     .values({
-      userId: DEFAULT_USER_ID,
+      userId: scopedUserId,
       key: SYNC_CURSOR_KEY,
       value: { cursor },
     })
@@ -184,8 +188,9 @@ export class GarminProvider implements SyncProvider {
     };
   }
 
-  async #resolveTokens(db: SyncDatabase): Promise<GarminTokens> {
-    const tokens = await loadTokens(db, this.id);
+  async #resolveTokens(db: SyncDatabase, userId?: string): Promise<GarminTokens> {
+    const scopedUserId = resolveScopedUserId(userId);
+    const tokens = await loadTokens(db, this.id, scopedUserId);
     if (!tokens) {
       throw new Error("No OAuth tokens found for Garmin. Sign in via the dashboard first.");
     }
@@ -210,7 +215,7 @@ export class GarminProvider implements SyncProvider {
     );
     const refreshed = client.getTokens();
     if (!refreshed) throw new Error("Failed to refresh Garmin Connect tokens");
-    await saveTokens(db, this.id, serializeInternalTokens(refreshed));
+    await saveTokens(db, this.id, serializeInternalTokens(refreshed), scopedUserId);
     return refreshed;
   }
 
@@ -218,9 +223,11 @@ export class GarminProvider implements SyncProvider {
     const start = Date.now();
     const errors: SyncError[] = [];
 
+    const scopedUserId = resolveScopedUserId(options?.userId);
+
     let internalTokens: GarminTokens;
     try {
-      internalTokens = await this.#resolveTokens(db);
+      internalTokens = await this.#resolveTokens(db, scopedUserId);
     } catch (err) {
       return {
         provider: this.id,
@@ -233,7 +240,7 @@ export class GarminProvider implements SyncProvider {
     await ensureProvider(db, this.id, this.name);
 
     // Use sync cursor if available, otherwise fall back to `since` param
-    const cursor = await loadSyncCursor(db);
+    const cursor = await loadSyncCursor(db, scopedUserId);
     const effectiveSince = cursor ? new Date(cursor) : since;
     const now = new Date();
 
@@ -243,11 +250,11 @@ export class GarminProvider implements SyncProvider {
       effectiveSince,
       now,
       errors,
-      options?.userId,
+      scopedUserId,
     );
 
     // Save sync cursor
-    await saveSyncCursor(db, now.toISOString());
+    await saveSyncCursor(db, now.toISOString(), scopedUserId);
 
     return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
   }
@@ -264,6 +271,7 @@ export class GarminProvider implements SyncProvider {
     errors: SyncError[],
     userId?: string,
   ): Promise<number> {
+    const scopedUserId = resolveScopedUserId(userId);
     let client: GarminConnectClient;
     try {
       client = await GarminConnectClient.fromTokens(tokens, "garmin.com", this.#fetchFn);
@@ -278,7 +286,7 @@ export class GarminProvider implements SyncProvider {
     // Save refreshed tokens back
     const refreshedTokens = client.getTokens();
     if (refreshedTokens) {
-      await saveTokens(db, this.id, serializeInternalTokens(refreshedTokens));
+      await saveTokens(db, this.id, serializeInternalTokens(refreshedTokens), scopedUserId);
     }
 
     const dates = eachDay(since, until);
@@ -291,10 +299,10 @@ export class GarminProvider implements SyncProvider {
         this.id,
         "activities",
         async () => {
-          const activitiesCount = await this.#syncConnectActivities(db, client);
+          const activitiesCount = await this.#syncConnectActivities(db, client, scopedUserId);
           return { recordCount: activitiesCount, result: activitiesCount };
         },
-        userId,
+        scopedUserId,
       );
       recordsSynced += count;
     } catch (err) {
@@ -314,7 +322,7 @@ export class GarminProvider implements SyncProvider {
           const sleepCount = await this.#syncConnectSleep(db, client, dates);
           return { recordCount: sleepCount, result: sleepCount };
         },
-        userId,
+        scopedUserId,
       );
       recordsSynced += count;
     } catch (err) {
@@ -334,7 +342,7 @@ export class GarminProvider implements SyncProvider {
           const dailyMetricsCount = await this.#syncConnectDailyMetrics(db, client, dates);
           return { recordCount: dailyMetricsCount, result: dailyMetricsCount };
         },
-        userId,
+        scopedUserId,
       );
       recordsSynced += count;
     } catch (err) {
@@ -354,7 +362,7 @@ export class GarminProvider implements SyncProvider {
           const stressCount = await this.#syncConnectStress(db, client, dates);
           return { recordCount: stressCount, result: stressCount };
         },
-        userId,
+        scopedUserId,
       );
       recordsSynced += count;
     } catch (err) {
@@ -391,7 +399,11 @@ export class GarminProvider implements SyncProvider {
   // Connect API sync methods
   // ============================================================
 
-  async #syncConnectActivities(db: SyncDatabase, client: GarminConnectClient): Promise<number> {
+  async #syncConnectActivities(
+    db: SyncDatabase,
+    client: GarminConnectClient,
+    userId: string,
+  ): Promise<number> {
     // Fetch recent activities (paginated, most recent first)
     const activities = await client.getActivities(0, 50);
     let count = 0;
@@ -414,7 +426,7 @@ export class GarminProvider implements SyncProvider {
           raw: parsed.raw,
         })
         .onConflictDoUpdate({
-          target: [activity.providerId, activity.externalId],
+          target: [activity.userId, activity.providerId, activity.externalId],
           set: {
             activityType: parsed.activityType,
             startedAt: parsed.startedAt,
@@ -439,7 +451,11 @@ export class GarminProvider implements SyncProvider {
             .select({ id: activity.id })
             .from(activity)
             .where(
-              and(eq(activity.providerId, this.id), eq(activity.externalId, parsed.externalId)),
+              and(
+                eq(activity.userId, userId),
+                eq(activity.providerId, this.id),
+                eq(activity.externalId, parsed.externalId),
+              ),
             )
             .limit(1);
 
@@ -507,7 +523,7 @@ export class GarminProvider implements SyncProvider {
             awakeMinutes: parsed.awakeMinutes,
           })
           .onConflictDoUpdate({
-            target: [sleepSession.providerId, sleepSession.externalId],
+            target: [sleepSession.userId, sleepSession.providerId, sleepSession.externalId],
             set: {
               startedAt: parsed.startedAt,
               endedAt: parsed.endedAt,
@@ -595,7 +611,12 @@ export class GarminProvider implements SyncProvider {
             vo2max,
           })
           .onConflictDoUpdate({
-            target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
+            target: [
+              dailyMetrics.userId,
+              dailyMetrics.date,
+              dailyMetrics.providerId,
+              dailyMetrics.sourceName,
+            ],
             set: {
               steps: parsed.steps,
               distanceKm: parsed.distanceKm,

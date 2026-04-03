@@ -16,6 +16,7 @@ import {
   nutritionDaily,
   sensorSample,
 } from "../../db/schema.ts";
+import { getTokenUserId } from "../../db/token-user-context.ts";
 import { ensureProvider } from "../../db/tokens.ts";
 import { logger } from "../../logger.ts";
 import type { SyncError, SyncResult } from "../types.ts";
@@ -130,6 +131,10 @@ export async function runImport(
   const start = Date.now();
   const errors: SyncError[] = [];
   let recordsSynced = 0;
+  const scopedUserId = getTokenUserId();
+  if (!scopedUserId) {
+    throw new Error("apple-health import requires user context");
+  }
 
   try {
     // Delete existing rows for this provider/time range so re-imports don't
@@ -138,13 +143,31 @@ export async function runImport(
     const sinceDate = sql`${since.toISOString().slice(0, 10)}::date`;
     await db
       .delete(sensorSample)
-      .where(and(eq(sensorSample.providerId, providerId), gte(sensorSample.recordedAt, since)));
+      .where(
+        and(
+          eq(sensorSample.userId, scopedUserId),
+          eq(sensorSample.providerId, providerId),
+          gte(sensorSample.recordedAt, since),
+        ),
+      );
     await db
       .delete(dailyMetrics)
-      .where(and(eq(dailyMetrics.providerId, providerId), gte(dailyMetrics.date, sinceDate)));
+      .where(
+        and(
+          eq(dailyMetrics.userId, scopedUserId),
+          eq(dailyMetrics.providerId, providerId),
+          gte(dailyMetrics.date, sinceDate),
+        ),
+      );
     await db
       .delete(nutritionDaily)
-      .where(and(eq(nutritionDaily.providerId, providerId), gte(nutritionDaily.date, sinceDate)));
+      .where(
+        and(
+          eq(nutritionDaily.userId, scopedUserId),
+          eq(nutritionDaily.providerId, providerId),
+          gte(nutritionDaily.date, sinceDate),
+        ),
+      );
 
     const counts = await streamHealthExport(xmlPath, since, {
       onProgress,
@@ -362,15 +385,34 @@ export async function importClinicalRecords(
   xmlPath: string,
 ): Promise<{ inserted: number; skipped: number; errors: SyncError[] }> {
   const errors: SyncError[] = [];
+  const scopedUserId = getTokenUserId();
+  if (!scopedUserId) {
+    throw new Error("apple-health clinical import requires user context");
+  }
 
   // Delete existing clinical records for this provider so re-imports
   // don't create duplicate panels (lab_result FK references lab_panel,
   // so lab_result must be deleted first).
-  await db.delete(labResult).where(eq(labResult.providerId, providerId));
-  await db.delete(labPanel).where(eq(labPanel.providerId, providerId));
-  await db.delete(medication).where(eq(medication.providerId, providerId));
-  await db.delete(condition).where(eq(condition.providerId, providerId));
-  await db.delete(allergyIntolerance).where(eq(allergyIntolerance.providerId, providerId));
+  await db
+    .delete(labResult)
+    .where(and(eq(labResult.userId, scopedUserId), eq(labResult.providerId, providerId)));
+  await db
+    .delete(labPanel)
+    .where(and(eq(labPanel.userId, scopedUserId), eq(labPanel.providerId, providerId)));
+  await db
+    .delete(medication)
+    .where(and(eq(medication.userId, scopedUserId), eq(medication.providerId, providerId)));
+  await db
+    .delete(condition)
+    .where(and(eq(condition.userId, scopedUserId), eq(condition.providerId, providerId)));
+  await db
+    .delete(allergyIntolerance)
+    .where(
+      and(
+        eq(allergyIntolerance.userId, scopedUserId),
+        eq(allergyIntolerance.providerId, providerId),
+      ),
+    );
 
   // Read all FHIR JSON files from the zip
   const clinicalFiles = await readZipEntries(
@@ -469,7 +511,7 @@ export async function importClinicalRecords(
     const panelRows = await db
       .select({ id: labPanel.id, externalId: labPanel.externalId })
       .from(labPanel)
-      .where(eq(labPanel.providerId, providerId));
+      .where(and(eq(labPanel.userId, scopedUserId), eq(labPanel.providerId, providerId)));
     for (const row of panelRows) {
       if (row.externalId) {
         panelIdMap.set(row.externalId, row.id);

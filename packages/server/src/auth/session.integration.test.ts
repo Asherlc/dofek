@@ -3,7 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession, deleteExpiredSessions, deleteSession, validateSession } from "./session.ts";
 
-const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
+const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
 
 describe("Auth session (integration)", () => {
   let ctx: TestContext;
@@ -22,41 +22,41 @@ describe("Auth session (integration)", () => {
 
   describe("createSession", () => {
     it("creates a session and returns sessionId, userId, and expiresAt", async () => {
-      const result = await createSession(ctx.db, DEFAULT_USER_ID);
+      const result = await createSession(ctx.db, TEST_USER_ID);
 
       expect(result.sessionId).toBeDefined();
       expect(result.sessionId).toHaveLength(64); // 32 bytes hex
-      expect(result.userId).toBe(DEFAULT_USER_ID);
+      expect(result.userId).toBe(TEST_USER_ID);
       expect(result.expiresAt).toBeInstanceOf(Date);
       expect(result.expiresAt.getTime()).toBeGreaterThan(Date.now());
     });
 
     it("creates unique session tokens for each call", async () => {
-      const session1 = await createSession(ctx.db, DEFAULT_USER_ID);
-      const session2 = await createSession(ctx.db, DEFAULT_USER_ID);
+      const session1 = await createSession(ctx.db, TEST_USER_ID);
+      const session2 = await createSession(ctx.db, TEST_USER_ID);
 
       expect(session1.sessionId).not.toBe(session2.sessionId);
     });
 
     it("persists session in the database", async () => {
-      const session = await createSession(ctx.db, DEFAULT_USER_ID);
+      const session = await createSession(ctx.db, TEST_USER_ID);
 
       const rows = await ctx.db.execute<{ id: string; user_id: string }>(
         sql`SELECT id, user_id FROM fitness.session WHERE id = ${session.sessionId}`,
       );
       expect(rows.length).toBe(1);
-      expect(rows[0]?.user_id).toBe(DEFAULT_USER_ID);
+      expect(rows[0]?.user_id).toBe(TEST_USER_ID);
     });
   });
 
   describe("validateSession", () => {
     it("returns userId for a valid, non-expired session", async () => {
-      const session = await createSession(ctx.db, DEFAULT_USER_ID);
+      const session = await createSession(ctx.db, TEST_USER_ID);
 
       const result = await validateSession(ctx.db, session.sessionId);
 
       expect(result).not.toBeNull();
-      expect(result?.userId).toBe(DEFAULT_USER_ID);
+      expect(result?.userId).toBe(TEST_USER_ID);
     });
 
     it("returns null for a non-existent session", async () => {
@@ -69,7 +69,7 @@ describe("Auth session (integration)", () => {
       const expiredSessionId = `expired-session-${Date.now().toString(16)}`;
       await ctx.db.execute(
         sql`INSERT INTO fitness.session (id, user_id, expires_at)
-            VALUES (${expiredSessionId}, ${DEFAULT_USER_ID}, ${new Date("2020-01-01").toISOString()})`,
+            VALUES (${expiredSessionId}, ${TEST_USER_ID}, ${new Date("2020-01-01").toISOString()})`,
       );
 
       const result = await validateSession(ctx.db, expiredSessionId);
@@ -79,7 +79,7 @@ describe("Auth session (integration)", () => {
 
   describe("deleteSession", () => {
     it("removes the session from the database", async () => {
-      const session = await createSession(ctx.db, DEFAULT_USER_ID);
+      const session = await createSession(ctx.db, TEST_USER_ID);
 
       await deleteSession(ctx.db, session.sessionId);
 
@@ -95,13 +95,13 @@ describe("Auth session (integration)", () => {
   describe("deleteExpiredSessions", () => {
     it("removes expired sessions but keeps valid ones", async () => {
       // Create a valid session
-      const validSession = await createSession(ctx.db, DEFAULT_USER_ID);
+      const validSession = await createSession(ctx.db, TEST_USER_ID);
 
       // Insert an expired session
       const expiredId = `expired-${Date.now().toString(16)}`;
       await ctx.db.execute(
         sql`INSERT INTO fitness.session (id, user_id, expires_at)
-            VALUES (${expiredId}, ${DEFAULT_USER_ID}, ${new Date("2020-01-01").toISOString()})`,
+            VALUES (${expiredId}, ${TEST_USER_ID}, ${new Date("2020-01-01").toISOString()})`,
       );
 
       await deleteExpiredSessions(ctx.db);
@@ -118,7 +118,7 @@ describe("Auth session (integration)", () => {
     });
 
     it("handles case with no expired sessions", async () => {
-      await createSession(ctx.db, DEFAULT_USER_ID);
+      await createSession(ctx.db, TEST_USER_ID);
 
       await expect(deleteExpiredSessions(ctx.db)).resolves.not.toThrow();
     });

@@ -1,10 +1,4 @@
-import { isIndoorCycling } from "@dofek/training/endurance-types";
-import {
-  type CanonicalActivityType,
-  createActivityTypeMapper,
-  STRAVA_ACTIVITY_TYPE_MAP,
-} from "@dofek/training/training";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
@@ -12,8 +6,22 @@ import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity, sensorSample } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
-import { dualWriteToSensorSample, type SensorSampleSourceRow } from "../db/sensor-sample-writer.ts";
+import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
+import { getTokenUserId } from "../db/token-user-context.ts";
 import { logger } from "../logger.ts";
+import {
+  StravaClient,
+  StravaNotFoundError,
+  StravaRateLimitError,
+  STRAVA_THROTTLE_MS,
+  StravaUnauthorizedError,
+} from "./strava/client.ts";
+import {
+  parseStravaActivity,
+  parseStravaActivityList,
+  stravaStreamsToMetricStream,
+} from "./strava/mapping.ts";
+import type { StravaActivity } from "./strava/types.ts";
 import type {
   ProviderAuthSetup,
   ProviderIdentity,
@@ -25,370 +33,17 @@ import type {
 } from "./types.ts";
 
 // ============================================================
-// Strava API types
-// ============================================================
-
-export interface StravaActivity {
-  id: number;
-  name: string;
-  type: string;
-  sport_type: string;
-  start_date: string;
-  elapsed_time: number;
-  moving_time: number;
-  distance: number;
-  total_elevation_gain: number;
-  average_speed?: number;
-  max_speed?: number;
-  average_heartrate?: number;
-  max_heartrate?: number;
-  average_watts?: number;
-  max_watts?: number;
-  weighted_average_watts?: number;
-  kilojoules?: number;
-  average_cadence?: number;
-  suffer_score?: number;
-  calories?: number;
-  start_latlng?: [number, number];
-  end_latlng?: [number, number];
-  trainer: boolean;
-  commute: boolean;
-  manual: boolean;
-  gear_id?: string;
-  device_watts?: boolean;
-  /** Recording device name — only present on detailed activity responses. */
-  device_name?: string;
-}
-
-/** Detailed activity response from GET /activities/{id}. */
-export interface StravaDetailedActivity extends StravaActivity {
-  device_name?: string;
-}
-
-export interface StravaStream {
-  data: number[] | [number, number][];
-  series_type: string;
-  resolution: string;
-  original_size: number;
-}
-
-export interface StravaStreamSet {
-  time?: StravaStream;
-  heartrate?: StravaStream;
-  watts?: StravaStream;
-  cadence?: StravaStream;
-  velocity_smooth?: StravaStream;
-  latlng?: StravaStream;
-  altitude?: StravaStream;
-  distance?: StravaStream;
-  temp?: StravaStream;
-  grade_smooth?: StravaStream;
-}
-
-const STREAM_KEYS = new Set<string>([
-  "time",
-  "heartrate",
-  "watts",
-  "cadence",
-  "velocity_smooth",
-  "latlng",
-  "altitude",
-  "distance",
-  "temp",
-  "grade_smooth",
-]);
-
-function isStreamKey(key: string): key is keyof StravaStreamSet {
-  return STREAM_KEYS.has(key);
-}
-
-// ============================================================
-// Activity type mapping
-// ============================================================
-
-const mapStravaType = createActivityTypeMapper(STRAVA_ACTIVITY_TYPE_MAP);
-
-/**
- * Map a Strava activity to its canonical type.
- * When sport_type is "Ride" and trainer is true, override to indoor_cycling
- * (covers spin bikes and other stationary trainers recorded via Strava).
- */
-export function mapStravaActivityType(sportType: string, trainer = false): CanonicalActivityType {
-  if (sportType === "Ride" && trainer) return "indoor_cycling";
-  return mapStravaType(sportType);
-}
-
-// ============================================================
-// Parsing / mapping (pure functions, easy to test)
-// ============================================================
-
-export interface ParsedStravaActivity {
-  externalId: string;
-  activityType: CanonicalActivityType;
-  name: string;
-  startedAt: Date;
-  endedAt: Date;
-  sourceName: string | undefined;
-}
-
-export function parseStravaActivity(act: StravaActivity): ParsedStravaActivity {
-  const startedAt = new Date(act.start_date);
-  return {
-    externalId: String(act.id),
-    activityType: mapStravaActivityType(act.sport_type, act.trainer),
-    name: act.name,
-    startedAt,
-    endedAt: new Date(startedAt.getTime() + act.elapsed_time * 1000),
-    sourceName: act.device_name,
-  };
-}
-
-export interface ParsedStravaActivityList {
-  activities: ParsedStravaActivity[];
-  hasMore: boolean;
-}
-
-export function parseStravaActivityList(
-  activities: StravaActivity[],
-  perPage: number,
-): ParsedStravaActivityList {
-  return {
-    activities: activities.map(parseStravaActivity),
-    hasMore: activities.length >= perPage,
-  };
-}
-
-// ============================================================
-// Streams → metric_stream mapping
-// ============================================================
-
-export function stravaStreamsToMetricStream(
-  streams: StravaStreamSet,
-  providerId: string,
-  activityId: string,
-  startedAt: Date,
-  activityType?: string,
-): SensorSampleSourceRow[] {
-  // Scalar streams contain number[], latlng contains [number, number][]
-  function isScalarArray(data: number[] | [number, number][]): data is number[] {
-    return data.length === 0 || !Array.isArray(data[0]);
-  }
-  function isTupleArray(data: number[] | [number, number][]): data is [number, number][] {
-    return data.length > 0 && Array.isArray(data[0]);
-  }
-  function scalarData(s: StravaStream | undefined): number[] | undefined {
-    if (!s?.data) return undefined;
-    return isScalarArray(s.data) ? s.data : undefined;
-  }
-  function tupleData(s: StravaStream | undefined): [number, number][] | undefined {
-    if (!s?.data) return undefined;
-    return isTupleArray(s.data) ? s.data : undefined;
-  }
-  const timeData = scalarData(streams.time);
-  if (!timeData || timeData.length === 0) return [];
-
-  const heartrates = scalarData(streams.heartrate);
-  const watts = scalarData(streams.watts);
-  const cadences = scalarData(streams.cadence);
-  const speeds = scalarData(streams.velocity_smooth);
-  const latlngs = tupleData(streams.latlng);
-  const altitudes = scalarData(streams.altitude);
-  const distances = scalarData(streams.distance);
-  const temps = scalarData(streams.temp);
-  const grades = scalarData(streams.grade_smooth);
-
-  return timeData.map((timeOffset, i) => {
-    const latlng = latlngs?.[i];
-
-    const raw: Record<string, unknown> = { time: timeOffset };
-    if (heartrates?.[i] !== undefined) raw.heartrate = heartrates[i];
-    if (watts?.[i] !== undefined) raw.watts = watts[i];
-    if (cadences?.[i] !== undefined) raw.cadence = cadences[i];
-    if (speeds?.[i] !== undefined) raw.velocity_smooth = speeds[i];
-    if (latlng !== undefined) raw.latlng = latlng;
-    if (altitudes?.[i] !== undefined) raw.altitude = altitudes[i];
-    if (distances?.[i] !== undefined) raw.distance = distances[i];
-    if (temps?.[i] !== undefined) raw.temp = temps[i];
-    if (grades?.[i] !== undefined) raw.grade_smooth = grades[i];
-
-    return {
-      providerId,
-      activityId,
-      recordedAt: new Date(startedAt.getTime() + timeOffset * 1000),
-      heartRate: heartrates?.[i],
-      power: watts?.[i],
-      cadence: cadences?.[i],
-      speed: activityType && isIndoorCycling(activityType) ? undefined : speeds?.[i],
-      lat: latlng?.[0],
-      lng: latlng?.[1],
-      altitude: altitudes?.[i],
-      temperature: temps?.[i],
-      grade: grades?.[i],
-      raw,
-    };
-  });
-}
-
-// ============================================================
-// Strava API client
-// ============================================================
-
-const STRAVA_API_BASE = "https://www.strava.com/api/v3/";
-
-/** Minimum delay between consecutive Strava API requests (ms).
- *  Strava allows 100 requests per 15 minutes = 9s/request average.
- *  10s provides a safety margin. */
-export const STRAVA_THROTTLE_MS = 10_000;
-
-export class StravaClient {
-  #accessToken: string;
-  #fetchFn: typeof globalThis.fetch;
-  #lastRequestTime = 0;
-  #throttleMs: number;
-
-  constructor(
-    accessToken: string,
-    fetchFn: typeof globalThis.fetch = globalThis.fetch,
-    throttleMs = STRAVA_THROTTLE_MS,
-  ) {
-    this.#accessToken = accessToken;
-    this.#fetchFn = fetchFn;
-    this.#throttleMs = throttleMs;
-  }
-
-  async #throttle(): Promise<void> {
-    if (this.#throttleMs <= 0) return;
-    const now = Date.now();
-    const elapsed = now - this.#lastRequestTime;
-    if (this.#lastRequestTime > 0 && elapsed < this.#throttleMs) {
-      await new Promise((resolve) => setTimeout(resolve, this.#throttleMs - elapsed));
-    }
-    this.#lastRequestTime = Date.now();
-  }
-
-  async #get<T>(path: string, params?: Record<string, string>): Promise<T> {
-    await this.#throttle();
-    const url = new URL(path, STRAVA_API_BASE);
-    if (params) {
-      for (const [key, value] of Object.entries(params)) {
-        url.searchParams.set(key, value);
-      }
-    }
-
-    const response = await this.#fetchFn(url.toString(), {
-      headers: { Authorization: `Bearer ${this.#accessToken}` },
-    });
-
-    if (response.status === 429) {
-      throw new StravaRateLimitError(`Strava API rate limit exceeded (429)`);
-    }
-
-    if (response.status === 401 || response.status === 403) {
-      throw new StravaUnauthorizedError(
-        `Strava API unauthorized (${response.status}): ${url.pathname}`,
-      );
-    }
-
-    if (response.status === 404) {
-      throw new StravaNotFoundError(`Strava API 404: ${url.pathname}`);
-    }
-
-    if (!response.ok) {
-      const contentType = response.headers.get("content-type") ?? "";
-      let detail: string;
-      if (contentType.includes("application/json")) {
-        const json = await response.json();
-        detail = JSON.stringify(json);
-      } else if (contentType.includes("text/html")) {
-        detail = "(HTML error page)";
-      } else {
-        const text = await response.text();
-        detail = text.length > 200 ? `${text.slice(0, 200)}…` : text;
-      }
-      throw new Error(`Strava API error (${response.status}): ${detail}`);
-    }
-
-    return response.json();
-  }
-
-  async getActivity(activityId: number): Promise<StravaDetailedActivity> {
-    return this.#get<StravaDetailedActivity>(`activities/${activityId}`);
-  }
-
-  async getActivities(after: number, page = 1, perPage = 30): Promise<StravaActivity[]> {
-    return this.#get<StravaActivity[]>("athlete/activities", {
-      after: String(after),
-      page: String(page),
-      per_page: String(perPage),
-    });
-  }
-
-  async getActivityStreams(activityId: number): Promise<StravaStreamSet> {
-    const streamTypes = [
-      "time",
-      "heartrate",
-      "watts",
-      "cadence",
-      "velocity_smooth",
-      "latlng",
-      "altitude",
-      "distance",
-      "temp",
-      "grade_smooth",
-    ];
-
-    const response = await this.#get<Array<{ type: string } & StravaStream>>(
-      `activities/${activityId}/streams`,
-      { keys: streamTypes.join(","), key_type: "time" },
-    );
-
-    // Strava returns an array of stream objects; convert to a keyed object
-    const streams: StravaStreamSet = {};
-    for (const stream of response) {
-      const streamKey = stream.type;
-      if (!isStreamKey(streamKey)) continue;
-      streams[streamKey] = {
-        data: stream.data,
-        series_type: stream.series_type,
-        resolution: stream.resolution,
-        original_size: stream.original_size,
-      };
-    }
-    return streams;
-  }
-}
-
-export class StravaRateLimitError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "StravaRateLimitError";
-  }
-}
-
-export class StravaUnauthorizedError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "StravaUnauthorizedError";
-  }
-}
-
-export class StravaNotFoundError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "StravaNotFoundError";
-  }
-}
-
-// ============================================================
-// Provider implementation
+// Strava OAuth Config
 // ============================================================
 
 const STRAVA_AUTH_BASE = "https://www.strava.com/oauth";
+const STRAVA_API_BASE = "https://www.strava.com/api/v3/";
 
 export function stravaOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.STRAVA_CLIENT_ID;
   const clientSecret = process.env.STRAVA_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
+
   return {
     clientId,
     clientSecret,
@@ -399,6 +54,8 @@ export function stravaOAuthConfig(host?: string): OAuthConfig | null {
     scopeSeparator: ",",
   };
 }
+
+export { STRAVA_THROTTLE_MS } from "./strava/client.ts";
 
 export class StravaProvider implements WebhookProvider {
   readonly id = "strava";
@@ -578,7 +235,7 @@ export class StravaProvider implements WebhookProvider {
   async syncWebhookEvent(
     db: SyncDatabase,
     event: WebhookEvent,
-    _options?: SyncOptions,
+    options?: SyncOptions,
   ): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
@@ -589,19 +246,30 @@ export class StravaProvider implements WebhookProvider {
     }
 
     const activityExternalId = Number(event.objectId);
+    const scopedUserId = options?.userId ?? getTokenUserId();
+
+    if (!scopedUserId) {
+      throw new Error(`[strava] Cannot sync webhook event: no userId provided or in context`);
+    }
 
     // Handle delete events — remove the activity and its streams
     if (event.eventType === "delete") {
       const deleted = await db
         .delete(activity)
         .where(
-          sql`${activity.providerId} = ${this.id} AND ${activity.externalId} = ${event.objectId}`,
+          and(
+            eq(activity.userId, scopedUserId),
+            eq(activity.providerId, this.id),
+            eq(activity.externalId, event.objectId),
+          ),
         )
         .returning({ id: activity.id });
       const deletedRow = deleted[0];
       if (deletedRow) {
         await db.delete(sensorSample).where(eq(sensorSample.activityId, deletedRow.id));
-        logger.info(`[strava] Deleted activity ${event.objectId} via webhook`);
+        logger.info(
+          `[strava] Deleted activity ${event.objectId} via webhook for user ${scopedUserId}`,
+        );
       }
       return { provider: this.id, recordsSynced: 0, errors: [], duration: Date.now() - start };
     }
@@ -624,6 +292,7 @@ export class StravaProvider implements WebhookProvider {
     const [row] = await db
       .insert(activity)
       .values({
+        userId: scopedUserId,
         providerId: this.id,
         externalId: parsed.externalId,
         activityType: parsed.activityType,
@@ -634,7 +303,7 @@ export class StravaProvider implements WebhookProvider {
         raw: detail,
       })
       .onConflictDoUpdate({
-        target: [activity.providerId, activity.externalId],
+        target: [activity.userId, activity.providerId, activity.externalId],
         set: {
           activityType: parsed.activityType,
           startedAt: parsed.startedAt,
@@ -794,6 +463,7 @@ export class StravaProvider implements WebhookProvider {
           const [row] = await db
             .insert(activity)
             .values({
+              userId: scopedUserId,
               providerId: this.id,
               externalId: act.externalId,
               activityType: act.activityType,
@@ -804,7 +474,7 @@ export class StravaProvider implements WebhookProvider {
               raw: rawActivities.find((r) => String(r.id) === act.externalId),
             })
             .onConflictDoUpdate({
-              target: [activity.providerId, activity.externalId],
+              target: [activity.userId, activity.providerId, activity.externalId],
               set: {
                 activityType: act.activityType,
                 startedAt: act.startedAt,

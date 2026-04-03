@@ -58,6 +58,7 @@ describe("suuntoOAuthConfig", () => {
     process.env.SUUNTO_CLIENT_ID = "test-id";
     process.env.SUUNTO_CLIENT_SECRET = "test-secret";
     process.env.OAUTH_REDIRECT_URI = "https://example.com/callback";
+    delete process.env.OAUTH_REDIRECT_URI_unencrypted;
     const config = suuntoOAuthConfig();
     expect(config?.redirectUri).toBe("https://example.com/callback");
   });
@@ -251,6 +252,7 @@ describe("wgerOAuthConfig", () => {
     process.env.WGER_CLIENT_ID = "test-id";
     process.env.WGER_CLIENT_SECRET = "test-secret";
     process.env.OAUTH_REDIRECT_URI = "https://example.com/callback";
+    delete process.env.OAUTH_REDIRECT_URI_unencrypted;
     const config = wgerOAuthConfig();
     expect(config?.redirectUri).toBe("https://example.com/callback");
   });
@@ -480,6 +482,7 @@ describe("mapMyFitnessOAuthConfig", () => {
     process.env.MAPMYFITNESS_CLIENT_ID = "test-id";
     process.env.MAPMYFITNESS_CLIENT_SECRET = "test-secret";
     process.env.OAUTH_REDIRECT_URI = "https://example.com/callback";
+    delete process.env.OAUTH_REDIRECT_URI_unencrypted;
     const config = mapMyFitnessOAuthConfig();
     expect(config?.redirectUri).toBe("https://example.com/callback");
   });

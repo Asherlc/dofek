@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DEFAULT_USER_ID } from "../../../../src/db/schema.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
@@ -24,18 +24,18 @@ describe("healthspan zone time with variable-interval HR data", () => {
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
 
-    const session = await createSession(testCtx.db, DEFAULT_USER_ID);
+    const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
 
     await testCtx.db.execute(
       sql`UPDATE fitness.user_profile
           SET max_hr = ${MAX_HR}, resting_hr = ${RESTING_HR}, ftp = 250, birth_date = '1990-01-01'
-          WHERE id = ${DEFAULT_USER_ID}`,
+          WHERE id = ${TEST_USER_ID}`,
     );
 
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES ('test_provider', 'Test Provider', ${DEFAULT_USER_ID})
+          VALUES ('test_provider', 'Test Provider', ${TEST_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
 
@@ -46,7 +46,7 @@ describe("healthspan zone time with variable-interval HR data", () => {
               date, provider_id, user_id, resting_hr, steps, vo2max
             ) VALUES (
               CURRENT_DATE - ${i}::int,
-              'test_provider', ${DEFAULT_USER_ID}, ${RESTING_HR}, 10000, 45
+              'test_provider', ${TEST_USER_ID}, ${RESTING_HR}, 10000, 45
             ) ON CONFLICT DO NOTHING`,
       );
     }
@@ -59,7 +59,7 @@ describe("healthspan zone time with variable-interval HR data", () => {
       sql`INSERT INTO fitness.activity (
             provider_id, user_id, activity_type, started_at, ended_at, name
           ) VALUES (
-            'test_provider', ${DEFAULT_USER_ID}, 'cycling',
+            'test_provider', ${TEST_USER_ID}, 'cycling',
             CURRENT_TIMESTAMP - INTERVAL '2 days',
             CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '600 seconds',
             'Apple Watch HIIT'
@@ -74,9 +74,9 @@ describe("healthspan zone time with variable-interval HR data", () => {
       const offsetSeconds = sample * 5; // 5-second intervals
       const hr = sample < 60 ? 140 : 175; // first half aerobic, second half high intensity
       const ts = `CURRENT_TIMESTAMP - INTERVAL '2 days' + ${offsetSeconds} * INTERVAL '1 second'`;
-      metricValues.push(`(${ts}, '${DEFAULT_USER_ID}', '${actId}', 'test_provider', ${hr})`);
+      metricValues.push(`(${ts}, '${TEST_USER_ID}', '${actId}', 'test_provider', ${hr})`);
       sensorValues.push(
-        `(${ts}, '${DEFAULT_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${actId}', ${hr}, NULL)`,
+        `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${actId}', ${hr}, NULL)`,
       );
     }
     await testCtx.db.execute(
@@ -96,7 +96,7 @@ describe("healthspan zone time with variable-interval HR data", () => {
             provider_id, user_id, started_at, ended_at,
             duration_minutes, sleep_type
           ) VALUES (
-            'test_provider', ${DEFAULT_USER_ID},
+            'test_provider', ${TEST_USER_ID},
             CURRENT_DATE - INTERVAL '1 day' + INTERVAL '22 hours',
             CURRENT_DATE + INTERVAL '6 hours',
             480, 'sleep'

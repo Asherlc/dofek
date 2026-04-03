@@ -150,7 +150,7 @@ export class EightSleepProvider implements SyncProvider {
                   sleepType: parsed.sleepType,
                 })
                 .onConflictDoUpdate({
-                  target: [sleepSession.providerId, sleepSession.externalId],
+                  target: [sleepSession.userId, sleepSession.providerId, sleepSession.externalId],
                   set: {
                     startedAt: parsed.startedAt,
                     endedAt: parsed.endedAt,
@@ -207,7 +207,12 @@ export class EightSleepProvider implements SyncProvider {
                   skinTempC: parsed.skinTempC,
                 })
                 .onConflictDoUpdate({
-                  target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
+                  target: [
+                    dailyMetrics.userId,
+                    dailyMetrics.date,
+                    dailyMetrics.providerId,
+                    dailyMetrics.sourceName,
+                  ],
                   set: {
                     restingHr: parsed.restingHr ? Math.round(parsed.restingHr) : undefined,
                     hrv: parsed.hrv,
@@ -259,7 +264,11 @@ export class EightSleepProvider implements SyncProvider {
                   temperatureC: bedTemp,
                 })
                 .onConflictDoUpdate({
-                  target: [bodyMeasurement.providerId, bodyMeasurement.externalId],
+                  target: [
+                    bodyMeasurement.userId,
+                    bodyMeasurement.providerId,
+                    bodyMeasurement.externalId,
+                  ],
                   set: { temperatureC: bedTemp },
                 });
               count++;

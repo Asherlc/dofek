@@ -2,11 +2,13 @@ import { sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { DEFAULT_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import { getWhoopVerificationChallengeStore } from "../lib/whoop-verification-challenge-store.ts";
 
-const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
+const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
 
 // MSW handlers for WHOOP Cognito auth and bootstrap endpoints
 function cognitoSuccessHandler(accessToken: string, refreshToken: string) {
@@ -47,7 +49,7 @@ describe("whoopAuth router", () => {
     mswServer.listen({ onUnhandledRequest: "bypass" });
     testCtx = await setupTestDatabase();
 
-    const session = await createSession(testCtx.db, DEFAULT_USER_ID);
+    const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
 
     const app = createApp(testCtx.db);
@@ -175,6 +177,54 @@ describe("whoopAuth router", () => {
       // Should get an error response
       expect(result?.error).toBeDefined();
     });
+
+    it("deletes stale verification challenges", async () => {
+      const challengeStore = getWhoopVerificationChallengeStore();
+      const challengeId = "expired-challenge";
+      await challengeStore.save(
+        challengeId,
+        {
+          session: "expired-session",
+          method: "sms",
+          username: "user@test.com",
+          expiresAt: Date.now() - 1_000,
+          userId: TEST_USER_ID,
+        },
+        60_000,
+      );
+
+      const { result } = await mutate("whoopAuth.verifyCode", {
+        challengeId,
+        code: "123456",
+      });
+
+      expect(result?.error).toBeDefined();
+      expect(await challengeStore.get(challengeId)).toBeNull();
+    });
+
+    it("rejects verification challenges owned by another user", async () => {
+      const challengeStore = getWhoopVerificationChallengeStore();
+      const challengeId = "someone-elses-challenge";
+      await challengeStore.save(
+        challengeId,
+        {
+          session: "stolen-session",
+          method: "sms",
+          username: "victim@test.com",
+          expiresAt: Date.now() + 60_000,
+          userId: "another-user-id",
+        },
+        60_000,
+      );
+
+      const { result } = await mutate("whoopAuth.verifyCode", {
+        challengeId,
+        code: "123456",
+      });
+
+      expect(result?.error?.message).toContain("Verification session not owned by current user");
+      expect(await challengeStore.get(challengeId)).toBeDefined();
+    });
   });
 
   describe("saveTokens", () => {
@@ -194,25 +244,32 @@ describe("whoopAuth router", () => {
         sql`SELECT id, user_id FROM fitness.provider WHERE id = 'whoop'`,
       );
       expect(providerRows.length).toBe(1);
-      expect(providerRows[0]?.user_id).toBe(DEFAULT_USER_ID);
+      expect(providerRows[0]?.user_id).toBe(TEST_USER_ID);
 
-      // Verify token was saved
-      const tokenRows = await testCtx.db.execute<{ access_token: string; scopes: string }>(
-        sql`SELECT access_token, scopes FROM fitness.oauth_token WHERE provider_id = 'whoop'`,
+      // Verify token was saved for the authenticated user
+      const tokenRows = await testCtx.db.execute<{
+        user_id: string;
+        access_token: string;
+        scopes: string;
+      }>(
+        sql`SELECT user_id, access_token, scopes
+            FROM fitness.oauth_token
+            WHERE provider_id = 'whoop' AND user_id = ${TEST_USER_ID}`,
       );
       expect(tokenRows.length).toBe(1);
+      expect(tokenRows[0]?.user_id).toBe(TEST_USER_ID);
       expect(tokenRows[0]?.access_token).toBe("saved-access-token");
       expect(tokenRows[0]?.scopes).toBe("userId:42");
     });
 
-    it("saves provider for non-default user", async () => {
-      // Create a non-default user to ensure the regression isn't masked
+    it("saves whoop token for a second user", async () => {
+      // Create a second user to ensure the regression isn't masked
       const testUserId = "11111111-1111-1111-1111-111111111111";
       await testCtx.db.execute(
         sql`INSERT INTO fitness.user_profile (id, name) VALUES (${testUserId}, 'Test User')`,
       );
 
-      // Create a session for this non-default user
+      // Create a session for this user
       const session = await createSession(testCtx.db, testUserId);
       const testSessionCookie = `session=${session.sessionId}`;
 
@@ -229,12 +286,19 @@ describe("whoopAuth router", () => {
       });
       expect(response.status).toBe(200);
 
-      // Verify provider was created with the test user's ID, not DEFAULT_USER_ID
+      // Provider row remains shared/global.
       const providerRows = await testCtx.db.execute<{ id: string; user_id: string }>(
         sql`SELECT id, user_id FROM fitness.provider WHERE id = 'whoop'`,
       );
       expect(providerRows.length).toBe(1);
-      expect(providerRows[0]?.user_id).toBe(testUserId);
+      expect(providerRows[0]?.user_id).toBe(TEST_USER_ID);
+
+      // Token row must be scoped to the authenticated user.
+      const tokenRows = await testCtx.db.execute<{ user_id: string }>(
+        sql`SELECT user_id FROM fitness.oauth_token WHERE provider_id = 'whoop' AND user_id = ${testUserId}`,
+      );
+      expect(tokenRows).toHaveLength(1);
+      expect(tokenRows[0]?.user_id).toBe(testUserId);
     });
   });
 });

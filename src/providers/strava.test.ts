@@ -1,20 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { StravaProvider, stravaOAuthConfig } from "./strava.ts";
+import {
+  StravaClient,
+  StravaNotFoundError,
+  StravaRateLimitError,
+  STRAVA_THROTTLE_MS,
+  StravaUnauthorizedError,
+} from "./strava/client.ts";
 import {
   mapStravaActivityType,
   parseStravaActivity,
   parseStravaActivityList,
-  STRAVA_THROTTLE_MS,
-  type StravaActivity,
-  StravaClient,
-  type StravaDetailedActivity,
-  StravaNotFoundError,
-  StravaProvider,
-  StravaRateLimitError,
-  type StravaStreamSet,
-  StravaUnauthorizedError,
-  stravaOAuthConfig,
   stravaStreamsToMetricStream,
-} from "./strava.ts";
+} from "./strava/mapping.ts";
+import type {
+  StravaActivity,
+  StravaDetailedActivity,
+  StravaStreamSet,
+} from "./strava/types.ts";
+
+vi.mock("../db/token-user-context.ts", () => ({
+  getTokenUserId: () => "00000000-0000-0000-0000-000000000001",
+  runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
+}));
 
 const sampleActivity: StravaActivity = {
   id: 12345678,
@@ -848,12 +856,16 @@ describe("StravaProvider.syncWebhookEvent", () => {
       execute: vi.fn(),
     };
 
-    const result = await provider.syncWebhookEvent(mockDb, {
-      ownerExternalId: "123",
-      eventType: "create",
-      objectType: "athlete",
-      objectId: "456",
-    });
+    const result = await provider.syncWebhookEvent(
+      mockDb,
+      {
+        ownerExternalId: "123",
+        eventType: "create",
+        objectType: "athlete",
+        objectId: "456",
+      },
+      { userId: "test-user" },
+    );
 
     expect(result.provider).toBe("strava");
     expect(result.recordsSynced).toBe(0);
@@ -870,11 +882,15 @@ describe("StravaProvider.syncWebhookEvent", () => {
       execute: vi.fn(),
     };
 
-    const result = await provider.syncWebhookEvent(mockDb, {
-      ownerExternalId: "123",
-      eventType: "create",
-      objectType: "activity",
-    });
+    const result = await provider.syncWebhookEvent(
+      mockDb,
+      {
+        ownerExternalId: "123",
+        eventType: "create",
+        objectType: "activity",
+      },
+      { userId: "test-user" },
+    );
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(0);
@@ -895,12 +911,16 @@ describe("StravaProvider.syncWebhookEvent", () => {
       execute: vi.fn(),
     };
 
-    const result = await provider.syncWebhookEvent(mockDb, {
-      ownerExternalId: "123",
-      eventType: "delete",
-      objectType: "activity",
-      objectId: "99999",
-    });
+    const result = await provider.syncWebhookEvent(
+      mockDb,
+      {
+        ownerExternalId: "123",
+        eventType: "delete",
+        objectType: "activity",
+        objectId: "99999",
+      },
+      { userId: "test-user" },
+    );
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(0);
@@ -923,12 +943,16 @@ describe("StravaProvider.syncWebhookEvent", () => {
       execute: vi.fn(),
     };
 
-    const result = await provider.syncWebhookEvent(mockDb, {
-      ownerExternalId: "123",
-      eventType: "delete",
-      objectType: "activity",
-      objectId: "nonexistent",
-    });
+    const result = await provider.syncWebhookEvent(
+      mockDb,
+      {
+        ownerExternalId: "123",
+        eventType: "delete",
+        objectType: "activity",
+        objectId: "nonexistent",
+      },
+      { userId: "test-user" },
+    );
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(0);
@@ -945,12 +969,16 @@ describe("StravaProvider.syncWebhookEvent", () => {
       execute: vi.fn(),
     };
 
-    const result = await provider.syncWebhookEvent(mockDb, {
-      ownerExternalId: "123",
-      eventType: "create",
-      objectType: "activity",
-      objectId: "12345",
-    });
+    const result = await provider.syncWebhookEvent(
+      mockDb,
+      {
+        ownerExternalId: "123",
+        eventType: "create",
+        objectType: "activity",
+        objectId: "12345",
+      },
+      { userId: "test-user" },
+    );
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens");
@@ -999,12 +1027,16 @@ describe("StravaProvider.syncWebhookEvent", () => {
     };
 
     const provider = new StravaProvider(mockFetch, 0);
-    const result = await provider.syncWebhookEvent(mockDb, {
-      ownerExternalId: "123",
-      eventType: "create",
-      objectType: "activity",
-      objectId: "12345678",
-    });
+    const result = await provider.syncWebhookEvent(
+      mockDb,
+      {
+        ownerExternalId: "123",
+        eventType: "create",
+        objectType: "activity",
+        objectId: "12345678",
+      },
+      { userId: "test-user" },
+    );
 
     expect(result.provider).toBe("strava");
     expect(result.recordsSynced).toBe(1);
@@ -1042,12 +1074,16 @@ describe("StravaProvider.syncWebhookEvent", () => {
     };
 
     const provider = new StravaProvider(mockFetch, 0);
-    const result = await provider.syncWebhookEvent(mockDb, {
-      ownerExternalId: "123",
-      eventType: "update",
-      objectType: "activity",
-      objectId: "12345678",
-    });
+    const result = await provider.syncWebhookEvent(
+      mockDb,
+      {
+        ownerExternalId: "123",
+        eventType: "update",
+        objectType: "activity",
+        objectId: "12345678",
+      },
+      { userId: "test-user" },
+    );
 
     // Activity still synced, no errors from 404 streams
     expect(result.recordsSynced).toBe(1);
@@ -1081,12 +1117,16 @@ describe("StravaProvider.syncWebhookEvent", () => {
     };
 
     const provider = new StravaProvider(mockFetch, 0);
-    const result = await provider.syncWebhookEvent(mockDb, {
-      ownerExternalId: "123",
-      eventType: "create",
-      objectType: "activity",
-      objectId: "12345678",
-    });
+    const result = await provider.syncWebhookEvent(
+      mockDb,
+      {
+        ownerExternalId: "123",
+        eventType: "create",
+        objectType: "activity",
+        objectId: "12345678",
+      },
+      { userId: "test-user" },
+    );
 
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toHaveLength(1);
@@ -1123,12 +1163,16 @@ describe("StravaProvider.syncWebhookEvent", () => {
     };
 
     const provider = new StravaProvider(mockFetch, 0);
-    const result = await provider.syncWebhookEvent(mockDb, {
-      ownerExternalId: "123",
-      eventType: "create",
-      objectType: "activity",
-      objectId: "12345678",
-    });
+    const result = await provider.syncWebhookEvent(
+      mockDb,
+      {
+        ownerExternalId: "123",
+        eventType: "create",
+        objectType: "activity",
+        objectId: "12345678",
+      },
+      { userId: "test-user" },
+    );
 
     // recordsSynced is 1 (activity itself counted), but no stream insert
     expect(result.recordsSynced).toBe(1);
@@ -1412,11 +1456,15 @@ describe("StravaProvider — precise webhook string/object assertions", () => {
   });
 
   it("syncWebhookEvent delete path returns provider 'strava'", async () => {
+    const mockDeleteWhere = vi.fn();
     const mockDelete = vi.fn().mockReturnValue({
-      where: vi.fn().mockReturnValue({
-        returning: vi.fn().mockResolvedValue([]),
-      }),
+      where: mockDeleteWhere,
     });
+    mockDeleteWhere
+      .mockReturnValueOnce({
+        returning: vi.fn().mockResolvedValue([{ id: "activity-1" }]),
+      })
+      .mockReturnValueOnce({});
     const mockDb = {
       select: vi.fn(),
       insert: vi.fn(),
@@ -1425,14 +1473,46 @@ describe("StravaProvider — precise webhook string/object assertions", () => {
     };
 
     const provider = new StravaProvider(async () => new Response(), 0);
+    const result = await provider.syncWebhookEvent(
+      mockDb,
+      {
+        ownerExternalId: "1",
+        eventType: "delete",
+        objectType: "activity",
+        objectId: "999",
+      },
+      { userId: "user-123" },
+    );
+    expect(result.provider).toBe("strava");
+    expect(result.recordsSynced).toBe(0);
+
+    // Verify delete was called for both activity and sensor_sample tables
+    expect(mockDelete).toHaveBeenCalledTimes(2);
+    const whereCalls = mockDeleteWhere.mock.calls;
+    expect(whereCalls).toHaveLength(2);
+    expect(whereCalls[0]?.[0]).toBeDefined();
+    expect(whereCalls[1]?.[0]).toBeDefined();
+  });
+
+  it("syncWebhookEvent falls back to token user context when options.userId is missing", async () => {
+    const provider = new StravaProvider(async () => new Response(), 0);
+    const mockDelete = vi.fn().mockReturnValue({
+      where: vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([]),
+      }),
+    });
+    const mockDb = { select: vi.fn(), insert: vi.fn(), delete: mockDelete, execute: vi.fn() };
+
     const result = await provider.syncWebhookEvent(mockDb, {
       ownerExternalId: "1",
       eventType: "delete",
       objectType: "activity",
-      objectId: "999",
+      objectId: "123",
     });
+
     expect(result.provider).toBe("strava");
-    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toEqual([]);
+    expect(mockDelete).toHaveBeenCalledOnce();
   });
 });
 

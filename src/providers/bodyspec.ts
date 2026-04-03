@@ -457,7 +457,7 @@ export class BodySpecProvider implements SyncProvider {
       .insert(dexaScan)
       .values(scanValues)
       .onConflictDoUpdate({
-        target: [dexaScan.providerId, dexaScan.externalId],
+        target: [dexaScan.userId, dexaScan.providerId, dexaScan.externalId],
         set: scanValues,
       })
       .returning({ id: dexaScan.id });

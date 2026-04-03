@@ -10,14 +10,16 @@ import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { activity, DEFAULT_USER_ID, sensorSample, userSettings } from "../db/schema.ts";
+import { activity, sensorSample, userSettings } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
+import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import type {
   ProviderAuthSetup,
   ProviderIdentity,
   SyncError,
+  SyncOptions,
   SyncProvider,
   SyncResult,
 } from "./types.ts";
@@ -27,9 +29,9 @@ import type {
 // ============================================================
 
 export interface RideWithGpsTrackPoint {
-  longitude: number;
-  latitude: number;
-  distanceMeters: number;
+  longitude?: number;
+  latitude?: number;
+  distanceMeters?: number;
   elevationMeters?: number;
   epochSeconds?: number;
   speedKph?: number;
@@ -43,9 +45,9 @@ export interface RideWithGpsTrackPoint {
 // Transforms the API's compact single-letter field names to descriptive names.
 const rideWithGpsTrackPointSchema = z
   .object({
-    x: z.number(),
-    y: z.number(),
-    d: z.number(),
+    x: z.number().optional(),
+    y: z.number().optional(),
+    d: z.number().optional(),
     e: z.number().optional(),
     t: z.number().optional(),
     s: z.number().optional(),
@@ -56,9 +58,9 @@ const rideWithGpsTrackPointSchema = z
   })
   .transform(
     (raw): RideWithGpsTrackPoint => ({
-      longitude: raw.x,
-      latitude: raw.y,
-      distanceMeters: raw.d,
+      longitude: raw.x ?? undefined,
+      latitude: raw.y ?? undefined,
+      distanceMeters: raw.d ?? undefined,
       elevationMeters: raw.e,
       epochSeconds: raw.t,
       speedKph: raw.s,
@@ -78,11 +80,11 @@ export interface RideWithGpsTripSummary {
   description?: string | null;
   departed_at?: string | null;
   activity_type?: string | null;
-  distance: number;
-  duration: number;
-  moving_time: number;
-  elevation_gain: number;
-  elevation_loss: number;
+  distance?: number | null;
+  duration?: number | null;
+  moving_time?: number | null;
+  elevation_gain?: number | null;
+  elevation_loss?: number | null;
   created_at: string;
   updated_at: string;
   /** Recording source/device — e.g., "ridewithgps_iphone", "garmin_connect". */
@@ -96,11 +98,11 @@ const rideWithGpsTripDetailSchema = z.object({
   description: z.string().nullable().optional(),
   departed_at: z.string().nullable().optional(),
   activity_type: z.string().nullable().optional(),
-  distance: z.number(),
-  duration: z.number(),
-  moving_time: z.number(),
-  elevation_gain: z.number(),
-  elevation_loss: z.number(),
+  distance: z.number().nullable().optional(),
+  duration: z.number().nullable().optional(),
+  moving_time: z.number().nullable().optional(),
+  elevation_gain: z.number().nullable().optional(),
+  elevation_loss: z.number().nullable().optional(),
   created_at: z.string(),
   updated_at: z.string(),
   source: z.string().nullable().optional(),
@@ -204,6 +206,8 @@ export function parseTrackPoints(points: RideWithGpsTrackPoint[]): ParsedTrackPo
   for (const point of points) {
     // Skip points without a timestamp — can't insert into metric_stream
     if (point.epochSeconds === undefined) continue;
+    // Skip points without coordinates — indoor/GPS-less activities may omit lat/lng
+    if (point.latitude === undefined || point.longitude === undefined) continue;
 
     result.push({
       recordedAt: new Date(point.epochSeconds * 1000),
@@ -274,11 +278,20 @@ export class RideWithGpsClient {
 
 const SYNC_CURSOR_KEY = "rwgps_sync_cursor";
 
-async function loadSyncCursor(db: SyncDatabase): Promise<string | null> {
+function resolveScopedUserId(userId?: string): string {
+  const scopedUserId = userId ?? getTokenUserId();
+  if (!scopedUserId) {
+    throw new Error("ride-with-gps sync requires a userId");
+  }
+  return scopedUserId;
+}
+
+async function loadSyncCursor(db: SyncDatabase, userId?: string): Promise<string | null> {
+  const scopedUserId = resolveScopedUserId(userId);
   const rows = await db
     .select({ value: userSettings.value })
     .from(userSettings)
-    .where(and(eq(userSettings.userId, DEFAULT_USER_ID), eq(userSettings.key, SYNC_CURSOR_KEY)))
+    .where(and(eq(userSettings.userId, scopedUserId), eq(userSettings.key, SYNC_CURSOR_KEY)))
     .limit(1);
 
   if (rows.length === 0 || !rows[0]) return null;
@@ -287,11 +300,12 @@ async function loadSyncCursor(db: SyncDatabase): Promise<string | null> {
   return value.cursor ?? null;
 }
 
-async function saveSyncCursor(db: SyncDatabase, cursor: string): Promise<void> {
+async function saveSyncCursor(db: SyncDatabase, cursor: string, userId?: string): Promise<void> {
+  const scopedUserId = resolveScopedUserId(userId);
   await db
     .insert(userSettings)
     .values({
-      userId: DEFAULT_USER_ID,
+      userId: scopedUserId,
       key: SYNC_CURSOR_KEY,
       value: { cursor },
     })
@@ -371,7 +385,7 @@ export class RideWithGpsProvider implements SyncProvider {
     });
   }
 
-  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -395,9 +409,10 @@ export class RideWithGpsProvider implements SyncProvider {
     }
 
     const client = new RideWithGpsClient(tokens.accessToken, this.#fetchFn);
+    const scopedUserId = resolveScopedUserId(options?.userId);
 
     // Load sync cursor or fall back to since param
-    const cursor = (await loadSyncCursor(db)) ?? since.toISOString();
+    const cursor = (await loadSyncCursor(db, scopedUserId)) ?? since.toISOString();
 
     let syncResponse: RideWithGpsSyncResponse;
     try {
@@ -425,7 +440,11 @@ export class RideWithGpsProvider implements SyncProvider {
           await db
             .delete(activity)
             .where(
-              and(eq(activity.providerId, this.id), eq(activity.externalId, String(item.item_id))),
+              and(
+                eq(activity.userId, scopedUserId),
+                eq(activity.providerId, this.id),
+                eq(activity.externalId, String(item.item_id)),
+              ),
             );
         } catch (err) {
           errors.push({
@@ -457,7 +476,7 @@ export class RideWithGpsProvider implements SyncProvider {
             raw: parsed.raw,
           })
           .onConflictDoUpdate({
-            target: [activity.providerId, activity.externalId],
+            target: [activity.userId, activity.providerId, activity.externalId],
             set: {
               activityType: parsed.activityType,
               startedAt: parsed.startedAt,
@@ -507,7 +526,7 @@ export class RideWithGpsProvider implements SyncProvider {
 
     // Save sync cursor for next run
     if (syncResponse.meta?.rwgps_datetime) {
-      await saveSyncCursor(db, syncResponse.meta.rwgps_datetime);
+      await saveSyncCursor(db, syncResponse.meta.rwgps_datetime, scopedUserId);
     }
 
     return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };

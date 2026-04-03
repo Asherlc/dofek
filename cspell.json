@@ -101,6 +101,7 @@
     "provisioningprofile",
     "agvtool",
     "uuidgen",
+    "appleid",
     "signin",
     "signup",
     "oauth",
@@ -409,7 +410,9 @@
     "AQID",
     "BAUG",
     "bralette",
-    "autodocs"
+    "autodocs",
+    "Flocalhost",
+    "Fcallback"
   ],
   "flagWords": [],
   "useGitignore": false,

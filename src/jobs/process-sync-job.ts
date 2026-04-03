@@ -1,7 +1,8 @@
 import * as Sentry from "@sentry/node";
 import type { SyncDatabase } from "../db/index.ts";
 import { logSync } from "../db/sync-log.ts";
-import { ensureProvider } from "../db/tokens.ts";
+import { runWithTokenUser } from "../db/token-user-context.ts";
+import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
 import {
   syncDuration,
@@ -76,21 +77,38 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
       percentage: computePercentage(completedCount, 0, totalProviders),
     });
 
-    await ensureProvider(db, provider.id, provider.name);
+    await ensureProvider(db, provider.id, provider.name, undefined, job.data.userId);
     const syncStart = Date.now();
+
+    const requiresTokens = provider.authSetup !== undefined;
+    if (requiresTokens) {
+      const tokens = await loadTokens(db, provider.id, job.data.userId);
+      if (!tokens) {
+        logger.info(`[worker] Skipping ${provider.name}: not connected`);
+        completedCount++;
+        providerStatus[provider.id] = { status: "done", message: "Skipped — not connected" };
+        await job.updateProgress({
+          providers: providerStatus,
+          percentage: computePercentage(completedCount, 0, totalProviders),
+        });
+        continue;
+      }
+    }
 
     try {
       logger.info(`[worker] Starting ${provider.name}...`);
-      const result = await provider.sync(db, since, {
-        onProgress: (percentage, message) => {
-          providerStatus[provider.id] = { status: "running", message };
-          job.updateProgress({
-            providers: providerStatus,
-            percentage: computePercentage(completedCount, percentage, totalProviders),
-          });
-        },
-        userId: job.data.userId,
-      });
+      const result = await runWithTokenUser(job.data.userId, () =>
+        provider.sync(db, since, {
+          onProgress: (percentage, message) => {
+            providerStatus[provider.id] = { status: "running", message };
+            job.updateProgress({
+              providers: providerStatus,
+              percentage: computePercentage(completedCount, percentage, totalProviders),
+            });
+          },
+          userId: job.data.userId,
+        }),
+      );
       completedCount++;
       const hasErrors = result.errors.length > 0;
       const parts = [`${result.recordsSynced} synced`];

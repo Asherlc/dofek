@@ -44,7 +44,11 @@
     "dist/**",
     ".codex/**",
     ".claude/**",
-    ".context/**"
+    ".context/**",
+    "packages/ios/**",
+    "**/build/**",
+    "**/.build/**",
+    "**/.expo/**"
   ],
   "mutator": {
     "excludedMutations": ["StringLiteral"]

@@ -1,4 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("../db/token-user-context.ts", () => ({
+  getTokenUserId: () => "user-1",
+  runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
+}));
+
 import {
   DecathlonProvider,
   decathlonOAuthConfig,
@@ -125,6 +131,7 @@ describe("decathlonOAuthConfig", () => {
     process.env.DECATHLON_CLIENT_ID = "test-id";
     process.env.DECATHLON_CLIENT_SECRET = "test-secret";
     process.env.OAUTH_REDIRECT_URI = "https://example.com/callback";
+    delete process.env.OAUTH_REDIRECT_URI_unencrypted;
     const config = decathlonOAuthConfig();
     expect(config?.redirectUri).toBe("https://example.com/callback");
   });
@@ -133,6 +140,7 @@ describe("decathlonOAuthConfig", () => {
     process.env.DECATHLON_CLIENT_ID = "test-id";
     process.env.DECATHLON_CLIENT_SECRET = "test-secret";
     delete process.env.OAUTH_REDIRECT_URI;
+    delete process.env.OAUTH_REDIRECT_URI_unencrypted;
     const config = decathlonOAuthConfig();
     expect(config?.redirectUri).toBe("https://dofek.asherlc.com/callback");
   });

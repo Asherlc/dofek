@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DEFAULT_USER_ID } from "../../../../src/db/schema.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
@@ -29,7 +29,7 @@ describe("dailyMetrics data correctness", () => {
     testCtx = await setupTestDatabase();
     await queryCache.invalidateAll();
 
-    const session = await createSession(testCtx.db, DEFAULT_USER_ID);
+    const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
 
     // Get the DB's current date so endDate is consistent with inserted data
@@ -41,12 +41,12 @@ describe("dailyMetrics data correctness", () => {
     // Insert provider
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES ('apple_health', 'Apple Health', ${DEFAULT_USER_ID})
+          VALUES ('apple_health', 'Apple Health', ${TEST_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES ('garmin', 'Garmin Connect', ${DEFAULT_USER_ID})
+          VALUES ('garmin', 'Garmin Connect', ${TEST_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
 
@@ -63,7 +63,7 @@ describe("dailyMetrics data correctness", () => {
               active_energy_kcal, spo2_avg
             ) VALUES (
               CURRENT_DATE - ${i}::int,
-              'apple_health', ${DEFAULT_USER_ID}, ${rhr}, ${hrv}, ${steps},
+              'apple_health', ${TEST_USER_ID}, ${rhr}, ${hrv}, ${steps},
               ${activeEnergy}, ${spo2}
             ) ON CONFLICT DO NOTHING`,
       );
@@ -78,7 +78,7 @@ describe("dailyMetrics data correctness", () => {
               date, provider_id, user_id, distance_km
             ) VALUES (
               CURRENT_DATE - ${i}::int,
-              'garmin', ${DEFAULT_USER_ID}, 0
+              'garmin', ${TEST_USER_ID}, 0
             ) ON CONFLICT DO NOTHING`,
       );
     }
