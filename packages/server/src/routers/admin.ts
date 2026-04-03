@@ -50,10 +50,10 @@ const syncLogRowSchema = z.object({
   user_name: z.string().nullable(),
   data_type: z.string(),
   status: z.string(),
-  records_synced: z.coerce.number().nullable(),
+  record_count: z.coerce.number().nullable(),
   error_message: z.string().nullable(),
-  started_at: timestampStringSchema,
-  completed_at: timestampStringSchema.nullable(),
+  duration_ms: z.coerce.number().nullable(),
+  synced_at: timestampStringSchema,
 });
 
 const activityRowSchema = z.object({
@@ -119,6 +119,8 @@ const dailyMetricRowSchema = z.object({
 });
 
 const oauthTokenRowSchema = z.object({
+  user_id: z.string(),
+  user_name: z.string().nullable(),
   provider_id: z.string(),
   expires_at: timestampStringSchema.nullable(),
   scopes: z.string().nullable(),
@@ -225,11 +227,11 @@ export const adminRouter = router({
         ctx.db,
         syncLogRowSchema,
         sql`SELECT sl.id, sl.provider_id, sl.user_id, up.name AS user_name,
-                   sl.data_type, sl.status, sl.records_synced::text, sl.error_message,
-                   sl.started_at::text, sl.completed_at::text
+                   sl.data_type, sl.status, sl.record_count::text, sl.error_message,
+                   sl.duration_ms::text, sl.synced_at::text
             FROM fitness.sync_log sl
             LEFT JOIN fitness.user_profile up ON up.id = sl.user_id
-            ORDER BY sl.started_at DESC
+            ORDER BY sl.synced_at DESC
             LIMIT ${input.limit} OFFSET ${input.offset}`,
       ),
       executeWithSchema(
@@ -389,9 +391,11 @@ export const adminRouter = router({
     return executeWithSchema(
       ctx.db,
       oauthTokenRowSchema,
-      sql`SELECT provider_id, expires_at::text, scopes, updated_at::text
-          FROM fitness.oauth_token
-          ORDER BY updated_at DESC`,
+      sql`SELECT ot.user_id, up.name AS user_name,
+                 ot.provider_id, ot.expires_at::text, ot.scopes, ot.updated_at::text
+          FROM fitness.oauth_token ot
+          LEFT JOIN fitness.user_profile up ON up.id = ot.user_id
+          ORDER BY ot.updated_at DESC`,
     );
   }),
 
@@ -411,9 +415,9 @@ export const adminRouter = router({
                  COUNT(*)::text AS total,
                  COUNT(*) FILTER (WHERE status = 'success')::text AS succeeded,
                  COUNT(*) FILTER (WHERE status = 'error')::text AS failed,
-                 MAX(started_at)::text AS last_sync
+                 MAX(synced_at)::text AS last_sync
           FROM fitness.sync_log
-          WHERE started_at > NOW() - INTERVAL '7 days'
+          WHERE synced_at > NOW() - INTERVAL '7 days'
           GROUP BY provider_id
           ORDER BY failed DESC, total DESC`,
     );
