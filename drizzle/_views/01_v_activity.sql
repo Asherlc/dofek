@@ -108,7 +108,7 @@ merged AS (
        AND r.external_id IS NOT NULL
        AND r.external_id <> ''
     ) AS source_external_ids,
-    (SELECT array_agg(fg2.activity_id)
+    (SELECT array_agg(fg2.activity_id ORDER BY fg2.activity_id)
      FROM final_groups fg2
      WHERE fg2.group_id = b.group_id) AS member_activity_ids
   FROM best_per_group b

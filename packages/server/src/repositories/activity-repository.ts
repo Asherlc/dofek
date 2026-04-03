@@ -196,6 +196,18 @@ export class ActivityRepository extends BaseRepository {
             FROM fitness.v_activity a
             WHERE a.id = ${activityId} AND a.user_id = ${this.userId}
           ),
+          best_source AS (
+            SELECT DISTINCT ON (channel)
+              channel, provider_id
+            FROM (
+              SELECT ss.channel, ss.provider_id, COUNT(*) AS sample_count
+              FROM fitness.sensor_sample ss
+              JOIN member_ids m ON ss.activity_id = m.activity_id
+              WHERE ss.channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude', 'lat', 'lng')
+              GROUP BY ss.channel, ss.provider_id
+            ) counts
+            ORDER BY channel, sample_count DESC
+          ),
           sensor_pivoted AS (
             SELECT
               ss.recorded_at,
@@ -208,7 +220,7 @@ export class ActivityRepository extends BaseRepository {
               MAX(ss.scalar) FILTER (WHERE ss.channel = 'lng') AS lng
             FROM fitness.sensor_sample ss
             JOIN member_ids m ON ss.activity_id = m.activity_id
-            WHERE ss.channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude', 'lat', 'lng')
+            JOIN best_source bs ON ss.channel = bs.channel AND ss.provider_id = bs.provider_id
             GROUP BY ss.recorded_at
           ),
           legacy_pivoted AS (
@@ -266,11 +278,24 @@ export class ActivityRepository extends BaseRepository {
             FROM fitness.v_activity a
             WHERE a.id = ${activityId} AND a.user_id = ${this.userId}
           ),
+          hr_best_source AS (
+            SELECT provider_id
+            FROM (
+              SELECT ss.provider_id, COUNT(*) AS sample_count
+              FROM fitness.sensor_sample ss
+              JOIN member_ids m ON ss.activity_id = m.activity_id
+              WHERE ss.channel = 'heart_rate'
+              GROUP BY ss.provider_id
+            ) counts
+            ORDER BY sample_count DESC
+            LIMIT 1
+          ),
           hr_samples AS (
             WITH sensor_hr_samples AS (
               SELECT ms.scalar AS heart_rate
               FROM fitness.sensor_sample ms
               JOIN member_ids m ON ms.activity_id = m.activity_id
+              JOIN hr_best_source bs ON ms.provider_id = bs.provider_id
               WHERE ms.channel = 'heart_rate'
             ),
             legacy_hr_samples AS (
