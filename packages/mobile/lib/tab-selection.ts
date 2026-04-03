@@ -1,4 +1,4 @@
-import { colors } from "../../theme";
+import { colors } from "../theme";
 
 const tabIconNames = {
   index: { focused: "today", unfocused: "today-outline" },
