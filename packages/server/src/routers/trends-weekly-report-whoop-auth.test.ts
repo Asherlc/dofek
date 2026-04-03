@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
+const { mockLoggerInfo, mockLoggerError, mockCaptureException } = vi.hoisted(() => ({
+  mockLoggerInfo: vi.fn(),
+  mockLoggerError: vi.fn(),
+  mockCaptureException: vi.fn(),
+}));
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
@@ -33,6 +39,17 @@ vi.mock("whoop-whoop", () => ({
     signIn: vi.fn(),
     verifyCode: vi.fn(),
   },
+}));
+
+vi.mock("../logger.ts", () => ({
+  logger: {
+    info: mockLoggerInfo,
+    error: mockLoggerError,
+  },
+}));
+
+vi.mock("@sentry/node", () => ({
+  captureException: mockCaptureException,
 }));
 
 vi.mock("dofek/db/tokens", () => ({
@@ -201,13 +218,37 @@ describe("weeklyReportRouter", () => {
 describe("whoopAuthRouter", () => {
   const createCaller = createTestCallerFactory(whoopAuthRouter);
 
+  it("logs and reports signIn failures", async () => {
+    const { WhoopClient } = await import("whoop-whoop");
+    const error = new Error("bad sms code request");
+    vi.mocked(WhoopClient.signIn).mockRejectedValueOnce(error);
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      timezone: "UTC",
+    });
+
+    await expect(caller.signIn({ username: "test@example.com", password: "pass" })).rejects.toThrow(
+      "bad sms code request",
+    );
+
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      "[whoopAuth] signIn start userId=user-1 usernameDomain=example.com",
+    );
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      "[whoopAuth] signIn failed userId=user-1 message=bad sms code request",
+    );
+    expect(mockCaptureException).toHaveBeenCalledWith(error);
+  });
+
   describe("signIn", () => {
     it("returns verification_required when MFA needed", async () => {
       const { WhoopClient } = await import("whoop-whoop");
       vi.mocked(WhoopClient.signIn).mockResolvedValueOnce({
         type: "verification_required",
         session: "cognito-session-123",
-        method: "SMS",
+        method: "sms",
       });
 
       const caller = createCaller({
@@ -219,7 +260,15 @@ describe("whoopAuthRouter", () => {
 
       expect(result.status).toBe("verification_required");
       expect(result).toHaveProperty("challengeId");
-      expect(result).toHaveProperty("method", "SMS");
+      expect(result).toHaveProperty("method", "sms");
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        "[whoopAuth] signIn start userId=user-1 usernameDomain=example.com",
+      );
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        expect.stringMatching(
+          /^\[whoopAuth\] signIn verification_required userId=user-1 method=sms challengeId=whoop-/,
+        ),
+      );
     });
 
     it("returns success when no MFA required", async () => {
@@ -238,6 +287,9 @@ describe("whoopAuthRouter", () => {
 
       expect(result.status).toBe("success");
       expect(result).toHaveProperty("token");
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        "[whoopAuth] signIn success userId=user-1 whoopUserId=123",
+      );
     });
   });
 
@@ -259,7 +311,7 @@ describe("whoopAuthRouter", () => {
       vi.mocked(WhoopClient.signIn).mockResolvedValueOnce({
         type: "verification_required",
         session: "session-xyz",
-        method: "SMS",
+        method: "sms",
       });
       vi.mocked(WhoopClient.verifyCode).mockResolvedValueOnce({
         accessToken: "new-at",
@@ -280,6 +332,56 @@ describe("whoopAuthRouter", () => {
       // Step 2: verify code
       const result = await caller.verifyCode({ challengeId, code: "123456" });
       expect(result.status).toBe("success");
+      expect(vi.mocked(WhoopClient.verifyCode)).toHaveBeenCalledWith(
+        "session-xyz",
+        "123456",
+        "test@example.com",
+        "sms",
+      );
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        expect.stringMatching(
+          /^\[whoopAuth\] verifyCode lookup userId=user-1 challengeId=whoop-.* found=true$/,
+        ),
+      );
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        expect.stringMatching(
+          /^\[whoopAuth\] verifyCode start userId=user-1 challengeId=whoop-.* method=sms$/,
+        ),
+      );
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        expect.stringMatching(
+          /^\[whoopAuth\] verifyCode success userId=user-1 challengeId=whoop-.* method=sms whoopUserId=456$/,
+        ),
+      );
+    });
+
+    it("logs and reports verifyCode failures", async () => {
+      const { WhoopClient } = await import("whoop-whoop");
+      vi.mocked(WhoopClient.signIn).mockResolvedValueOnce({
+        type: "verification_required",
+        session: "session-xyz",
+        method: "sms",
+      });
+      const error = new Error("WHOOP Cognito CodeMismatchException: Invalid code");
+      vi.mocked(WhoopClient.verifyCode).mockRejectedValueOnce(error);
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const signInResult = await caller.signIn({ username: "test@example.com", password: "pass" });
+      await expect(
+        caller.verifyCode({ challengeId: signInResult.challengeId, code: "123456" }),
+      ).rejects.toThrow("WHOOP Cognito CodeMismatchException: Invalid code");
+
+      expect(mockLoggerError).toHaveBeenCalledWith(
+        expect.stringMatching(
+          /^\[whoopAuth\] verifyCode failed userId=user-1 challengeId=whoop-.* method=sms message=WHOOP Cognito CodeMismatchException: Invalid code$/,
+        ),
+      );
+      expect(mockCaptureException).toHaveBeenCalledWith(error);
     });
   });
 

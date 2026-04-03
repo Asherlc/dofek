@@ -223,7 +223,9 @@ export interface WhoopAuthToken {
   userId: number;
 }
 
+export type WhoopVerificationMethod = "sms" | "totp";
+
 /** Result of the initial sign-in — either success or 2FA challenge */
 export type WhoopSignInResult =
   | { type: "success"; token: WhoopAuthToken }
-  | { type: "verification_required"; session: string; method: string };
+  | { type: "verification_required"; session: string; method: WhoopVerificationMethod };

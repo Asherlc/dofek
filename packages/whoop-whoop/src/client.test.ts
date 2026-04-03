@@ -192,6 +192,7 @@ describe("WhoopClient.verifyCode", () => {
       "session-123",
       "123456",
       "user@example.com",
+      "sms",
       fetchFn,
     );
 
@@ -200,27 +201,18 @@ describe("WhoopClient.verifyCode", () => {
     expect(result.userId).toBe(42);
   });
 
-  it("falls back to SOFTWARE_TOKEN_MFA when SMS_MFA fails", async () => {
-    const callCount = { value: 0 };
+  it("submits SOFTWARE_TOKEN_MFA when the challenge method is totp", async () => {
+    const requestBodies: unknown[] = [];
+    let callCount = 0;
 
     const fetchFn = createTypedMockFetch();
-    fetchFn.mockImplementation(() => {
-      callCount.value++;
-      if (callCount.value === 1) {
-        // SMS_MFA fails
-        return Promise.resolve(
-          createMockResponse({
-            ok: false,
-            status: 400,
-            body: {
-              __type: "com.amazonaws.cognito#CodeMismatchException",
-              message: "Invalid code",
-            },
-          }),
-        );
+    fetchFn.mockImplementation((_input, init) => {
+      callCount++;
+      if (typeof init?.body === "string") {
+        requestBodies.push(JSON.parse(init.body));
       }
-      if (callCount.value === 2) {
-        // SOFTWARE_TOKEN_MFA succeeds
+
+      if (callCount === 1) {
         return Promise.resolve(
           createMockResponse({
             body: {
@@ -240,9 +232,18 @@ describe("WhoopClient.verifyCode", () => {
       "session-123",
       "654321",
       "user@example.com",
+      "totp",
       fetchFn,
     );
 
+    expect(requestBodies).toHaveLength(1);
+    expect(requestBodies[0]).toMatchObject({
+      ChallengeName: "SOFTWARE_TOKEN_MFA",
+      ChallengeResponses: {
+        USERNAME: "user@example.com",
+        SOFTWARE_TOKEN_MFA_CODE: "654321",
+      },
+    });
     expect(result.accessToken).toBe("totp-token");
     expect(result.userId).toBe(55);
   });
@@ -251,7 +252,7 @@ describe("WhoopClient.verifyCode", () => {
     const fetchFn = createMockFetch({ ok: true, status: 200, body: {} });
 
     await expect(
-      WhoopClient.verifyCode("session-123", "123456", "user@example.com", fetchFn),
+      WhoopClient.verifyCode("session-123", "123456", "user@example.com", "sms", fetchFn),
     ).rejects.toThrow("no tokens in response");
   });
 
@@ -278,7 +279,7 @@ describe("WhoopClient.verifyCode", () => {
     });
 
     await expect(
-      WhoopClient.verifyCode("session-123", "123456", "user@example.com", fetchFn),
+      WhoopClient.verifyCode("session-123", "123456", "user@example.com", "sms", fetchFn),
     ).rejects.toThrow("could not determine user ID");
   });
 });

@@ -167,6 +167,63 @@ describe("whoopAuth router", () => {
       expect(data.token.userId).toBe(99999);
     });
 
+    it("verifies a mobile-app code with the stored totp challenge method", async () => {
+      const challengeNames: string[] = [];
+
+      mswServer.use(
+        http.post("https://api.prod.whoop.com/auth-service/v3/whoop/", async ({ request }) => {
+          const target = request.headers.get("X-Amz-Target");
+          if (target?.endsWith("InitiateAuth")) {
+            return HttpResponse.json({
+              ChallengeName: "SOFTWARE_TOKEN_MFA",
+              Session: "cognito-session-totp",
+            });
+          }
+
+          const raw = await request.json();
+          const body =
+            typeof raw === "object" && raw !== null ? (raw satisfies Record<string, unknown>) : {};
+          challengeNames.push(String(body.ChallengeName));
+          expect(body.ChallengeResponses).toEqual({
+            USERNAME: "user@test.com",
+            SOFTWARE_TOKEN_MFA_CODE: "123456",
+          });
+
+          return HttpResponse.json({
+            AuthenticationResult: {
+              AccessToken: "totp-access-token",
+              RefreshToken: "totp-refresh-token",
+            },
+          });
+        }),
+        bootstrapHandler(123123),
+      );
+
+      const signInResult = await mutate("whoopAuth.signIn", {
+        username: "user@test.com",
+        password: "password123",
+      });
+      const signInData: {
+        challengeId: string;
+        method: string;
+      } = signInResult.result?.result?.data;
+
+      expect(signInData.method).toBe("totp");
+
+      const { result } = await mutate("whoopAuth.verifyCode", {
+        challengeId: signInData.challengeId,
+        code: "123456",
+      });
+
+      const data: {
+        status: string;
+        token: { accessToken: string; refreshToken: string; userId: number };
+      } = result?.result?.data;
+      expect(data.status).toBe("success");
+      expect(data.token.accessToken).toBe("totp-access-token");
+      expect(challengeNames).toEqual(["SOFTWARE_TOKEN_MFA"]);
+    });
+
     it("returns error for expired/missing challenge", async () => {
       const { result } = await mutate("whoopAuth.verifyCode", {
         challengeId: "nonexistent-challenge",

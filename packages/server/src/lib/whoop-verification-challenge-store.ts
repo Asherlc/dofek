@@ -1,5 +1,6 @@
 import { RedisConnection } from "bullmq";
 import { getRedisConnection } from "dofek/jobs/queues";
+import type { WhoopVerificationMethod } from "whoop-whoop";
 import { z } from "zod";
 
 const CHALLENGE_KEY_PREFIX = "whoop:verification:";
@@ -7,7 +8,7 @@ export const DEFAULT_CHALLENGE_TTL_MS = 10 * 60 * 1000;
 
 export interface WhoopVerificationChallenge {
   session: string;
-  method: string;
+  method: WhoopVerificationMethod;
   username: string;
   expiresAt: number;
   userId: string;
@@ -21,7 +22,7 @@ interface RedisChallengeClient {
 
 const whoopVerificationChallengeSchema = z.object({
   session: z.string(),
-  method: z.string(),
+  method: z.enum(["sms", "totp"]),
   username: z.string(),
   expiresAt: z.number(),
   userId: z.string(),
