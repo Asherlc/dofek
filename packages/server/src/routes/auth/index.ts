@@ -30,7 +30,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
   router.get("/auth/login/:provider", authRateLimiter, handleIdentityLogin);
 
   // Identity link (add identity provider to existing account)
-  router.get("/auth/link/:provider", handleIdentityLink);
+  router.get("/auth/link/:provider", authRateLimiter, handleIdentityLink);
 
   // Identity callback (GET for most providers, POST for Apple form_post)
   router.get("/auth/callback/:provider", authRateLimiter, handleIdentityCallback);

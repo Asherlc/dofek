@@ -29,7 +29,7 @@ export async function handleIdentityLogin(req: Request, res: Response): Promise<
     }
     const providerName = providerNameRaw;
     if (!isProviderConfigured(providerName)) {
-      res.status(400).send(`Provider ${providerName} is not configured`);
+      res.status(400).send("Provider is not configured");
       return;
     }
 
