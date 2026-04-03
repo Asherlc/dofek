@@ -519,7 +519,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       logger.info(
         `[auth] User ${userId} ${linkUserId ? "linked" : "logged in via"} ${providerName}`,
       );
-      res.redirect(linkUserId ? "/settings" : (returnTo ?? "/"));
+      res.redirect(linkUserId ? "/settings" : (sanitizeReturnTo(returnTo) ?? "/"));
     } catch (err: unknown) {
       Sentry.captureException(err);
       const message = err instanceof Error ? err.message : String(err);
@@ -1040,7 +1040,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
 
             setSessionCookie(res, sessionInfo.sessionId, sessionInfo.expiresAt);
             logger.info(`[auth] User ${userId} logged in via data provider ${providerId}`);
-            res.redirect(returnTo ?? "/");
+            res.redirect(sanitizeReturnTo(returnTo) ?? "/");
             return;
           } catch (loginErr: unknown) {
             if (loginErr instanceof MissingEmailForSignupError) {
@@ -1188,7 +1188,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
 
         setSessionCookie(res, sessionInfo.sessionId, sessionInfo.expiresAt);
         logger.info(`[auth] User ${userId} completed signup via ${pending.providerId}`);
-        res.redirect(pending.returnTo ?? "/");
+        res.redirect(sanitizeReturnTo(pending.returnTo) ?? "/");
       } catch (err: unknown) {
         Sentry.captureException(err);
         logger.error(`[auth] Completing signup failed: ${err}`);

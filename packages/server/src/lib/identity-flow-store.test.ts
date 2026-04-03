@@ -165,4 +165,47 @@ describe("getIdentityFlowStore", () => {
     const store = getIdentityFlowStore();
     expect(store).toBeInstanceOf(InMemoryIdentityFlowStore);
   });
+
+  it("uses shared Redis connection outside test environment", async () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    const redisSet = vi.fn(async () => "OK" as const);
+    const redisGet = vi.fn(async () => JSON.stringify({ codeVerifier: "v", linkUserId: "u1" }));
+    const redisDel = vi.fn(async () => 1);
+
+    class MockRedisConnection {
+      readonly client: Promise<{
+        set: typeof redisSet;
+        get: typeof redisGet;
+        del: typeof redisDel;
+      }>;
+      constructor() {
+        this.client = Promise.resolve({ set: redisSet, get: redisGet, del: redisDel });
+      }
+    }
+
+    const getRedisConnection = vi.fn(() => ({ host: "localhost", port: 6379 }));
+
+    process.env.NODE_ENV = "production";
+    vi.resetModules();
+    vi.doMock("bullmq", () => ({ RedisConnection: MockRedisConnection }));
+    vi.doMock("dofek/jobs/queues", () => ({ getRedisConnection }));
+
+    try {
+      const mod = await import("./identity-flow-store.ts");
+      const store = mod.getIdentityFlowStore();
+      expect(store).toBeInstanceOf(mod.RedisIdentityFlowStore);
+
+      await store.save("s1", { codeVerifier: "v", linkUserId: "u1" });
+      expect(redisSet).toHaveBeenCalledWith("identity-flow:s1", expect.any(String), "PX", 600_000);
+
+      const loaded = await store.get("s1");
+      expect(loaded).toEqual({ codeVerifier: "v", linkUserId: "u1" });
+
+      await store.delete("s1");
+      expect(redisDel).toHaveBeenCalledWith("identity-flow:s1");
+    } finally {
+      vi.resetModules();
+      process.env.NODE_ENV = originalNodeEnv;
+    }
+  });
 });

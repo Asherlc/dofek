@@ -223,4 +223,68 @@ describe("factory functions", () => {
   it("getOAuth1SecretStore returns InMemoryOAuth1SecretStore in test environment", () => {
     expect(getOAuth1SecretStore()).toBeInstanceOf(InMemoryOAuth1SecretStore);
   });
+
+  it("uses shared Redis connection outside test environment", async () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    const redisSet = vi.fn(async () => "OK" as const);
+    const redisGet = vi.fn(async () =>
+      JSON.stringify({ providerId: "wahoo", intent: "data", userId: "u1" }),
+    );
+    const redisDel = vi.fn(async () => 1);
+    const redisExists = vi.fn(async () => 1);
+
+    class MockRedisConnection {
+      readonly client: Promise<{
+        set: typeof redisSet;
+        get: typeof redisGet;
+        del: typeof redisDel;
+        exists: typeof redisExists;
+      }>;
+      constructor() {
+        this.client = Promise.resolve({
+          set: redisSet,
+          get: redisGet,
+          del: redisDel,
+          exists: redisExists,
+        });
+      }
+    }
+
+    const getRedisConnection = vi.fn(() => ({ host: "localhost", port: 6379 }));
+
+    process.env.NODE_ENV = "production";
+    vi.resetModules();
+    vi.doMock("bullmq", () => ({ RedisConnection: MockRedisConnection }));
+    vi.doMock("dofek/jobs/queues", () => ({ getRedisConnection }));
+
+    try {
+      const mod = await import("./oauth-state-store.ts");
+      const stateStore = mod.getOAuthStateStore();
+      expect(stateStore).toBeInstanceOf(mod.RedisOAuthStateStore);
+
+      await stateStore.save("s1", { providerId: "wahoo", intent: "data", userId: "u1" });
+      expect(redisSet).toHaveBeenCalledWith("oauth-state:s1", expect.any(String), "PX", 600_000);
+
+      const loaded = await stateStore.get("s1");
+      expect(loaded).toEqual({ providerId: "wahoo", intent: "data", userId: "u1" });
+
+      expect(await stateStore.has("s1")).toBe(true);
+
+      await stateStore.delete("s1");
+      expect(redisDel).toHaveBeenCalledWith("oauth-state:s1");
+
+      const secretStore = mod.getOAuth1SecretStore();
+      expect(secretStore).toBeInstanceOf(mod.RedisOAuth1SecretStore);
+
+      await secretStore.save("t1", {
+        providerId: "fatsecret",
+        tokenSecret: "sec",
+        userId: "u1",
+      });
+      expect(redisSet).toHaveBeenCalledWith("oauth1-secret:t1", expect.any(String), "PX", 600_000);
+    } finally {
+      vi.resetModules();
+      process.env.NODE_ENV = originalNodeEnv;
+    }
+  });
 });
