@@ -202,10 +202,10 @@ describe("createApp HTTP routes", () => {
 
     it("records duration in seconds (not milliseconds)", async () => {
       vi.mocked(httpRequestDuration.observe).mockClear();
-      await fetch(`${baseUrl}/healthz`);
+      await fetch(`${baseUrl}/api/trpc/nonexistent`);
       const durationSeconds = vi.mocked(httpRequestDuration.observe).mock.calls[0]?.[1];
       expect(durationSeconds).toBeDefined();
-      // Duration should be in seconds (< 5s for a health check), not milliseconds
+      // Duration should be in seconds (< 5s for a simple request), not milliseconds
       expect(durationSeconds).toBeLessThan(5);
     });
 
