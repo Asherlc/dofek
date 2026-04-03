@@ -157,12 +157,7 @@ function getProviderQueue(providerId: string): Queue<SyncJobData> {
 }
 
 /** @deprecated Legacy queue for syncStatus/activeSyncs backward compat. */
-let _legacySyncQueue: ReturnType<typeof createSyncQueue> | null = null;
-
-function getLegacySyncQueue() {
-  if (!_legacySyncQueue) _legacySyncQueue = createSyncQueue();
-  return _legacySyncQueue;
-}
+const legacySyncQueue = createSyncQueue();
 
 /** Map BullMQ job state to the frontend SyncJobStatus shape */
 export function mapBullMqStateToSyncStatus(state: string): "running" | "done" | "error" {
@@ -286,7 +281,7 @@ export const syncRouter = router({
       }
       // Fall back to legacy queue for old jobs
       if (!job) {
-        job = await getLegacySyncQueue().getJob(input.jobId);
+        job = await legacySyncQueue.getJob(input.jobId);
       }
     } catch {
       return null; // Redis unavailable
@@ -339,7 +334,7 @@ export const syncRouter = router({
       const states: Array<"active" | "waiting" | "delayed"> = ["active", "waiting", "delayed"];
       const jobArrays: Job<SyncJobData>[][] = await Promise.all([
         ...getConfiguredProviderIds().map((id) => getProviderQueue(id).getJobs(states)),
-        getLegacySyncQueue().getJobs(states),
+        legacySyncQueue.getJobs(states),
       ]);
       jobs = jobArrays.flat();
     } catch {

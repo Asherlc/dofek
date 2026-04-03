@@ -94,7 +94,7 @@ function createTestApp() {
     "/api/webhooks",
     createWebhookRouter({
       db: getMockDb(),
-      getSyncQueue: () => mockQueue,
+      syncQueue: mockQueue,
     }),
   );
   return app;

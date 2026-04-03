@@ -205,7 +205,6 @@ export default function StrainScreen() {
                       maxHr={activity.max_hr ?? null}
                       avgPower={activity.avg_power ?? null}
                       distanceKm={activity.distance_meters ? activity.distance_meters / 1000 : null}
-                      calories={activity.calories ?? null}
                       units={units}
                     />
                   </TouchableOpacity>

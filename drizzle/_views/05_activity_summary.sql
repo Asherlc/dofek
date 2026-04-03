@@ -2,30 +2,40 @@
 -- This view depends on fitness.v_activity — it must be created after 01_v_activity.sql.
 --
 -- Reads from fitness.sensor_sample with built-in dedup:
--- For each (activity_id, channel), picks the provider_id with the most samples.
--- This ensures BLE data (50Hz) is preferred over API data (1Hz) automatically.
+-- For each (canonical_activity, channel), picks the provider_id with the most samples
+-- across all member activities in a merge group.
+-- This ensures BLE data (50Hz) is preferred over API data (1Hz) automatically,
+-- and cross-provider HR data (e.g. Apple Watch HR for a Peloton ride) is included.
 
 CREATE MATERIALIZED VIEW fitness.activity_summary AS
 
--- Step 1: For each (activity, channel), pick the provider with the most samples
-WITH best_source AS (
-  SELECT DISTINCT ON (activity_id, channel)
-    activity_id, channel, provider_id
+-- Step 0: Flatten v_activity to get canonical_id → member_id mapping
+WITH activity_members AS (
+  SELECT a.id AS canonical_id, a.user_id, unnest(a.member_activity_ids) AS member_id
+  FROM fitness.v_activity a
+),
+
+-- Step 1: For each (canonical_activity, channel), pick the provider with the most samples
+best_source AS (
+  SELECT DISTINCT ON (canonical_id, channel)
+    canonical_id, channel, provider_id
   FROM (
-    SELECT activity_id, channel, provider_id, COUNT(*) AS sample_count
-    FROM fitness.sensor_sample
-    WHERE activity_id IS NOT NULL
-    GROUP BY activity_id, channel, provider_id
+    SELECT am.canonical_id, ss.channel, ss.provider_id, COUNT(*) AS sample_count
+    FROM fitness.sensor_sample ss
+    JOIN activity_members am ON ss.activity_id = am.member_id
+    WHERE ss.activity_id IS NOT NULL
+    GROUP BY am.canonical_id, ss.channel, ss.provider_id
   ) counts
-  ORDER BY activity_id, channel, sample_count DESC
+  ORDER BY canonical_id, channel, sample_count DESC
 ),
 
 -- Step 2: Deduplicated scalar samples (only the winning provider per channel)
 sensor_deduped AS (
-  SELECT ss.activity_id, ss.user_id, ss.recorded_at, ss.channel, ss.scalar
+  SELECT am.canonical_id AS activity_id, am.user_id, ss.recorded_at, ss.channel, ss.scalar
   FROM fitness.sensor_sample ss
+  JOIN activity_members am ON ss.activity_id = am.member_id
   JOIN best_source bs
-    ON ss.activity_id = bs.activity_id
+    ON am.canonical_id = bs.canonical_id
     AND ss.channel = bs.channel
     AND ss.provider_id = bs.provider_id
   WHERE ss.activity_id IS NOT NULL
@@ -37,12 +47,13 @@ sensor_deduped AS (
 -- produced any sensor_sample rows.
 legacy_fallback AS (
   SELECT
-    ms.activity_id,
-    ms.user_id,
+    am.canonical_id AS activity_id,
+    am.user_id,
     ms.recorded_at,
     expanded.channel,
     expanded.scalar
   FROM fitness.metric_stream ms
+  JOIN activity_members am ON ms.activity_id = am.member_id
   CROSS JOIN LATERAL (
     VALUES
       ('heart_rate', ms.heart_rate::REAL),
@@ -67,7 +78,8 @@ legacy_fallback AS (
     AND NOT EXISTS (
       SELECT 1
       FROM fitness.sensor_sample ss
-      WHERE ss.activity_id = ms.activity_id
+      JOIN activity_members am2 ON ss.activity_id = am2.member_id
+      WHERE am2.canonical_id = am.canonical_id
     )
 ),
 deduped AS (

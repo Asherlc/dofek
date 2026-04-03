@@ -24,7 +24,6 @@ const activityListRowSchema = z
     max_hr: z.number().nullable(),
     avg_power: z.number().nullable(),
     distance_meters: z.number().nullable(),
-    calories: z.number().nullable(),
     total_count: z.coerce.number(),
   })
   .passthrough();
@@ -54,7 +53,6 @@ const activityDetailRowSchema = z.object({
   total_distance: z.number().nullable(),
   elevation_gain_m: z.number().nullable(),
   elevation_loss_m: z.number().nullable(),
-  calories: z.number().nullable(),
   sample_count: z.number().nullable(),
 });
 
@@ -143,11 +141,6 @@ export class ActivityRepository extends BaseRepository {
             s.max_hr,
             s.avg_power,
             s.total_distance AS distance_meters,
-            COALESCE(
-              (a.raw->>'calories')::REAL,
-              (a.raw->>'totalEnergyBurned')::REAL,
-              (a.raw->>'total_energy_burned')::REAL
-            ) AS calories,
             COUNT(*) OVER()::int AS total_count
           FROM fitness.v_activity a
           LEFT JOIN fitness.activity_summary s ON s.activity_id = a.id
@@ -185,11 +178,6 @@ export class ActivityRepository extends BaseRepository {
             s.total_distance,
             s.elevation_gain_m,
             s.elevation_loss_m,
-            COALESCE(
-              (a.raw->>'calories')::REAL,
-              (a.raw->>'totalEnergyBurned')::REAL,
-              (a.raw->>'total_energy_burned')::REAL
-            ) AS calories,
             s.sample_count
           FROM fitness.v_activity a
           LEFT JOIN fitness.activity_summary s ON s.activity_id = a.id
@@ -203,7 +191,24 @@ export class ActivityRepository extends BaseRepository {
   async getStream(activityId: string, maxPoints: number): Promise<StreamPoint[]> {
     const rows = await this.query(
       streamPointRowSchema,
-      sql`WITH sensor_pivoted AS (
+      sql`WITH member_ids AS (
+            SELECT unnest(a.member_activity_ids) AS activity_id
+            FROM fitness.v_activity a
+            WHERE a.id = ${activityId} AND a.user_id = ${this.userId}
+          ),
+          best_source AS (
+            SELECT DISTINCT ON (channel)
+              channel, provider_id
+            FROM (
+              SELECT ss.channel, ss.provider_id, COUNT(*) AS sample_count
+              FROM fitness.sensor_sample ss
+              JOIN member_ids m ON ss.activity_id = m.activity_id
+              WHERE ss.channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude', 'lat', 'lng')
+              GROUP BY ss.channel, ss.provider_id
+            ) counts
+            ORDER BY channel, sample_count DESC
+          ),
+          sensor_pivoted AS (
             SELECT
               ss.recorded_at,
               MAX(ss.scalar) FILTER (WHERE ss.channel = 'heart_rate')::SMALLINT AS heart_rate,
@@ -214,9 +219,8 @@ export class ActivityRepository extends BaseRepository {
               MAX(ss.scalar) FILTER (WHERE ss.channel = 'lat') AS lat,
               MAX(ss.scalar) FILTER (WHERE ss.channel = 'lng') AS lng
             FROM fitness.sensor_sample ss
-            JOIN fitness.v_activity a ON a.id = ss.activity_id AND a.user_id = ${this.userId}
-            WHERE ss.activity_id = ${activityId}
-              AND ss.channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude', 'lat', 'lng')
+            JOIN member_ids m ON ss.activity_id = m.activity_id
+            JOIN best_source bs ON ss.channel = bs.channel AND ss.provider_id = bs.provider_id
             GROUP BY ss.recorded_at
           ),
           legacy_pivoted AS (
@@ -230,8 +234,7 @@ export class ActivityRepository extends BaseRepository {
               ms.lat,
               ms.lng
             FROM fitness.metric_stream ms
-            JOIN fitness.v_activity a ON a.id = ms.activity_id AND a.user_id = ${this.userId}
-            WHERE ms.activity_id = ${activityId}
+            JOIN member_ids m ON ms.activity_id = m.activity_id
           ),
           pivoted AS (
             SELECT * FROM sensor_pivoted
@@ -270,20 +273,36 @@ export class ActivityRepository extends BaseRepository {
             WHERE up.id = ${this.userId}
               AND up.max_hr IS NOT NULL
           ),
+          member_ids AS (
+            SELECT unnest(a.member_activity_ids) AS activity_id
+            FROM fitness.v_activity a
+            WHERE a.id = ${activityId} AND a.user_id = ${this.userId}
+          ),
+          hr_best_source AS (
+            SELECT provider_id
+            FROM (
+              SELECT ss.provider_id, COUNT(*) AS sample_count
+              FROM fitness.sensor_sample ss
+              JOIN member_ids m ON ss.activity_id = m.activity_id
+              WHERE ss.channel = 'heart_rate'
+              GROUP BY ss.provider_id
+            ) counts
+            ORDER BY sample_count DESC
+            LIMIT 1
+          ),
           hr_samples AS (
             WITH sensor_hr_samples AS (
               SELECT ms.scalar AS heart_rate
               FROM fitness.sensor_sample ms
-              JOIN fitness.v_activity a ON a.id = ms.activity_id AND a.user_id = ${this.userId}
-              WHERE ms.activity_id = ${activityId}
-                AND ms.channel = 'heart_rate'
+              JOIN member_ids m ON ms.activity_id = m.activity_id
+              JOIN hr_best_source bs ON ms.provider_id = bs.provider_id
+              WHERE ms.channel = 'heart_rate'
             ),
             legacy_hr_samples AS (
               SELECT ms.heart_rate::REAL AS heart_rate
               FROM fitness.metric_stream ms
-              JOIN fitness.v_activity a ON a.id = ms.activity_id AND a.user_id = ${this.userId}
-              WHERE ms.activity_id = ${activityId}
-                AND ms.heart_rate IS NOT NULL
+              JOIN member_ids m ON ms.activity_id = m.activity_id
+              WHERE ms.heart_rate IS NOT NULL
             )
             SELECT heart_rate
             FROM sensor_hr_samples

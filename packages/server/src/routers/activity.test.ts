@@ -87,7 +87,6 @@ describe("activityRouter", () => {
           max_hr: 180,
           avg_power: 200,
           total_distance: 30000,
-          calories: 450,
           distance_meters: 30000,
           total_count: 5,
         },
@@ -106,7 +105,6 @@ describe("activityRouter", () => {
         max_hr: 180,
         avg_power: 200,
         distance_meters: 30000,
-        calories: 450,
       });
     });
 
@@ -124,7 +122,6 @@ describe("activityRouter", () => {
           max_hr: 165,
           avg_power: null,
           total_distance: 5200,
-          calories: 380,
           distance_meters: 5200,
           total_count: 1,
         },
@@ -137,7 +134,6 @@ describe("activityRouter", () => {
         max_hr: 165,
         avg_power: null,
         distance_meters: 5200,
-        calories: 380,
       });
     });
 
@@ -386,7 +382,6 @@ describe("Activity model (via router integration)", () => {
     total_distance: 42000,
     elevation_gain_m: 350,
     elevation_loss_m: 340,
-    calories: null,
     sample_count: 5400,
   };
 
@@ -434,7 +429,6 @@ describe("Activity model (via router integration)", () => {
         total_distance: null,
         elevation_gain_m: null,
         elevation_loss_m: null,
-        calories: null,
         sample_count: null,
       },
       mockLookup,

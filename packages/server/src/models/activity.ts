@@ -24,7 +24,6 @@ export interface ActivityDetail {
   totalDistance: number | null;
   elevationGain: number | null;
   elevationLoss: number | null;
-  calories: number | null;
   sampleCount: number | null;
 }
 
@@ -48,7 +47,6 @@ export interface ActivityRow {
   total_distance: number | null;
   elevation_gain_m: number | null;
   elevation_loss_m: number | null;
-  calories: number | null;
   sample_count: number | null;
 }
 
@@ -154,10 +152,6 @@ export class Activity {
     return this.#row.elevation_loss_m != null ? Number(this.#row.elevation_loss_m) : null;
   }
 
-  get calories(): number | null {
-    return this.#row.calories != null ? Number(this.#row.calories) : null;
-  }
-
   get sampleCount(): number | null {
     return this.#row.sample_count != null ? Number(this.#row.sample_count) : null;
   }
@@ -184,7 +178,6 @@ export class Activity {
       totalDistance: this.totalDistance,
       elevationGain: this.elevationGain,
       elevationLoss: this.elevationLoss,
-      calories: this.calories,
       sampleCount: this.sampleCount,
     };
   }
