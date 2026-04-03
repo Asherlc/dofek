@@ -1124,9 +1124,6 @@ export const healthKitSyncRouter = router({
         } catch (error) {
           logger.error(`[apple_health] Failed to refresh activity views: ${error}`);
         }
-      }
-
-      if (inserted > 0) {
         await queryCache.invalidateByPrefix(`${ctx.userId}:`);
       }
 
@@ -1151,9 +1148,6 @@ export const healthKitSyncRouter = router({
         } catch (error) {
           logger.error(`[apple_health] Failed to refresh v_sleep: ${error}`);
         }
-      }
-
-      if (inserted > 0) {
         await queryCache.invalidateByPrefix(`${ctx.userId}:`);
       }
 
