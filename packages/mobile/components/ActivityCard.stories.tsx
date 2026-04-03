@@ -17,7 +17,6 @@ const meta = {
     maxHr: 172,
     avgPower: null,
     distanceKm: 8.5,
-    calories: 620,
     units: metricUnits,
   },
 } satisfies Meta<typeof ActivityCard>;
@@ -72,7 +71,6 @@ export const Minimal: Story = {
     maxHr: null,
     avgPower: null,
     distanceKm: undefined,
-    calories: undefined,
     units: metricUnits,
   },
 };

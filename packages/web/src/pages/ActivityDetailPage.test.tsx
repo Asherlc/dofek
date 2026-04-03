@@ -29,7 +29,6 @@ const mockActivity = {
   startedAt: "2026-03-18T07:00:00Z",
   endedAt: "2026-03-18T07:45:00Z",
   totalDistance: 10000,
-  calories: 500,
   elevationGain: 200,
   avgHr: 150,
   maxHr: 175,

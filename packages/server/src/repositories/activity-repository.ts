@@ -24,7 +24,6 @@ const activityListRowSchema = z
     max_hr: z.number().nullable(),
     avg_power: z.number().nullable(),
     distance_meters: z.number().nullable(),
-    calories: z.number().nullable(),
     total_count: z.coerce.number(),
   })
   .passthrough();
@@ -54,7 +53,6 @@ const activityDetailRowSchema = z.object({
   total_distance: z.number().nullable(),
   elevation_gain_m: z.number().nullable(),
   elevation_loss_m: z.number().nullable(),
-  calories: z.number().nullable(),
   sample_count: z.number().nullable(),
 });
 
@@ -143,11 +141,6 @@ export class ActivityRepository extends BaseRepository {
             s.max_hr,
             s.avg_power,
             s.total_distance AS distance_meters,
-            COALESCE(
-              (a.raw->>'calories')::REAL,
-              (a.raw->>'totalEnergyBurned')::REAL,
-              (a.raw->>'total_energy_burned')::REAL
-            ) AS calories,
             COUNT(*) OVER()::int AS total_count
           FROM fitness.v_activity a
           LEFT JOIN fitness.activity_summary s ON s.activity_id = a.id
@@ -185,11 +178,6 @@ export class ActivityRepository extends BaseRepository {
             s.total_distance,
             s.elevation_gain_m,
             s.elevation_loss_m,
-            COALESCE(
-              (a.raw->>'calories')::REAL,
-              (a.raw->>'totalEnergyBurned')::REAL,
-              (a.raw->>'total_energy_burned')::REAL
-            ) AS calories,
             s.sample_count
           FROM fitness.v_activity a
           LEFT JOIN fitness.activity_summary s ON s.activity_id = a.id

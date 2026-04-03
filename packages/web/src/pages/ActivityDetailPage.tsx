@@ -235,8 +235,6 @@ function ActivityHeader({ activity, units }: { activity: ActivityDetail; units: 
       label: "Distance",
       value: `${formatNumber(units.convertDistance(activity.totalDistance / 1000))} ${units.distanceLabel}`,
     });
-  if (activity.calories != null)
-    stats.push({ label: "Calories", value: `${Math.round(activity.calories)} kcal` });
   if (activity.elevationGain != null)
     stats.push({
       label: "Elevation Gain",

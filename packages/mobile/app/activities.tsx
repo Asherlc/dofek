@@ -76,7 +76,6 @@ export default function ActivitiesScreen() {
                 maxHr={item.max_hr ?? null}
                 avgPower={item.avg_power ?? null}
                 distanceKm={item.distance_meters ? item.distance_meters / 1000 : null}
-                calories={item.calories ?? null}
                 units={units}
               />
             </TouchableOpacity>

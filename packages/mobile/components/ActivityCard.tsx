@@ -13,7 +13,6 @@ interface ActivityCardProps {
   maxHr: number | null;
   avgPower: number | null;
   distanceKm?: number | null;
-  calories?: number | null;
   units: UnitConverter;
 }
 
@@ -58,7 +57,6 @@ export function ActivityCard({
   maxHr,
   avgPower,
   distanceKm,
-  calories,
   units,
 }: ActivityCardProps) {
   return (
@@ -84,9 +82,6 @@ export function ActivityCard({
             label="Distance"
             unit={units.distanceLabel}
           />
-        )}
-        {calories != null && calories > 0 && (
-          <Stat value={Math.round(calories)} label="Calories" unit="kcal" />
         )}
         {avgHr != null && <Stat value={Math.round(avgHr)} label="Avg HR" unit="bpm" />}
         {maxHr != null && <Stat value={Math.round(maxHr)} label="Max HR" unit="bpm" />}
