@@ -13,9 +13,13 @@ import type {
   WebhookProvider,
 } from "../types.ts";
 import { WahooActivityPersister } from "./activity-persister.ts";
-import { WAHOO_API_BASE, WahooClient } from "./client.ts";
+import {
+  WAHOO_API_BASE,
+  WahooClient,
+  type WahooWorkout,
+  wahooWebhookPayloadSchema,
+} from "./client.ts";
 import { parseWorkoutList, parseWorkoutSummary } from "./parsers.ts";
-import { type WahooWorkout, wahooWebhookPayloadSchema } from "./schemas.ts";
 
 export function wahooOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.WAHOO_CLIENT_ID;

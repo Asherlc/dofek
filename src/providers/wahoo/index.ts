@@ -1,5 +1,23 @@
 export { WahooActivityPersister } from "./activity-persister.ts";
-export { WAHOO_API_BASE, WahooClient } from "./client.ts";
+export {
+  createWahooNumeric,
+  createWahooSingleWorkoutResponseSchema,
+  createWahooWebhookPayloadSchema,
+  createWahooWorkoutListResponseSchema,
+  createWahooWorkoutSchema,
+  createWahooWorkoutSummarySchema,
+  WAHOO_API_BASE,
+  WahooClient,
+  type WahooWorkout,
+  type WahooWorkoutListResponse,
+  type WahooWorkoutSummary,
+  wahooNumeric,
+  wahooSingleWorkoutResponseSchema,
+  wahooWebhookPayloadSchema,
+  wahooWorkoutListResponseSchema,
+  wahooWorkoutSchema,
+  wahooWorkoutSummarySchema,
+} from "./client.ts";
 export {
   fitRecordsToMetricStream,
   type ParsedCardioActivity,
@@ -8,13 +26,3 @@ export {
   parseWorkoutSummary,
 } from "./parsers.ts";
 export { WahooProvider, wahooOAuthConfig } from "./provider.ts";
-export {
-  type WahooWorkout,
-  type WahooWorkoutListResponse,
-  type WahooWorkoutSummary,
-  wahooSingleWorkoutResponseSchema,
-  wahooWebhookPayloadSchema,
-  wahooWorkoutListResponseSchema,
-  wahooWorkoutSchema,
-  wahooWorkoutSummarySchema,
-} from "./schemas.ts";

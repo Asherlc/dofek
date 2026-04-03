@@ -6,7 +6,7 @@ import {
 } from "@dofek/training/training";
 import type { SensorSampleSourceRow } from "../../db/sensor-sample-writer.ts";
 import type { ParsedFitRecord } from "../../fit/parser.ts";
-import type { WahooWorkout, WahooWorkoutListResponse } from "./schemas.ts";
+import type { WahooWorkout, WahooWorkoutListResponse } from "./client.ts";
 
 // ============================================================
 // Activity type mapping

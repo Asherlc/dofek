@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-  wahooNumeric,
-  wahooSingleWorkoutResponseSchema,
-  wahooWebhookPayloadSchema,
-  wahooWorkoutListResponseSchema,
-  wahooWorkoutSchema,
-  wahooWorkoutSummarySchema,
-} from "./schemas.ts";
+  createWahooNumeric,
+  createWahooSingleWorkoutResponseSchema,
+  createWahooWebhookPayloadSchema,
+  createWahooWorkoutListResponseSchema,
+  createWahooWorkoutSchema,
+  createWahooWorkoutSummarySchema,
+} from "./client.ts";
 
 const validSummary = {
   id: 1,
@@ -43,21 +43,25 @@ const validWorkout = {
 describe("Wahoo schemas", () => {
   describe("wahooNumeric", () => {
     it("coerces string to number", () => {
-      expect(wahooNumeric.parse("42")).toBe(42);
+      const schema = createWahooNumeric();
+      expect(schema.parse("42")).toBe(42);
     });
 
     it("coerces null to undefined", () => {
-      expect(wahooNumeric.parse(null)).toBeUndefined();
+      const schema = createWahooNumeric();
+      expect(schema.parse(null)).toBeUndefined();
     });
 
     it("passes through a number unchanged", () => {
-      expect(wahooNumeric.parse(99)).toBe(99);
+      const schema = createWahooNumeric();
+      expect(schema.parse(99)).toBe(99);
     });
   });
 
   describe("wahooWorkoutSummarySchema", () => {
     it("parses valid summary and coerces string numerics", () => {
-      const result = wahooWorkoutSummarySchema.parse(validSummary);
+      const schema = createWahooWorkoutSummarySchema();
+      const result = schema.parse(validSummary);
       expect(result.id).toBe(1);
       expect(result.ascent_accum).toBe(100);
       expect(result.heart_rate_avg).toBe(140);
@@ -65,7 +69,8 @@ describe("Wahoo schemas", () => {
     });
 
     it("coerces null numeric fields to undefined", () => {
-      const result = wahooWorkoutSummarySchema.parse({
+      const schema = createWahooWorkoutSummarySchema();
+      const result = schema.parse({
         ...validSummary,
         power_avg: null,
         cadence_avg: null,
@@ -77,7 +82,8 @@ describe("Wahoo schemas", () => {
 
   describe("wahooWorkoutSchema", () => {
     it("parses valid workout with required fields", () => {
-      const result = wahooWorkoutSchema.parse(validWorkout);
+      const schema = createWahooWorkoutSchema();
+      const result = schema.parse(validWorkout);
       expect(result.id).toBe(42);
       expect(result.workout_type_id).toBe(1);
       expect(result.starts).toBe("2025-01-01T06:00:00Z");
@@ -85,14 +91,16 @@ describe("Wahoo schemas", () => {
     });
 
     it("rejects workout missing required workout_type_id", () => {
+      const schema = createWahooWorkoutSchema();
       const { workout_type_id: _, ...missing } = validWorkout;
-      expect(() => wahooWorkoutSchema.parse(missing)).toThrow();
+      expect(() => schema.parse(missing)).toThrow();
     });
   });
 
   describe("wahooWorkoutListResponseSchema", () => {
     it("parses valid list response", () => {
-      const result = wahooWorkoutListResponseSchema.parse({
+      const schema = createWahooWorkoutListResponseSchema();
+      const result = schema.parse({
         workouts: [validWorkout],
         total: 1,
         page: 1,
@@ -111,14 +119,16 @@ describe("Wahoo schemas", () => {
 
   describe("wahooSingleWorkoutResponseSchema", () => {
     it("parses wrapped workout response", () => {
-      const result = wahooSingleWorkoutResponseSchema.parse({ workout: validWorkout });
+      const schema = createWahooSingleWorkoutResponseSchema();
+      const result = schema.parse({ workout: validWorkout });
       expect(result.workout.id).toBe(42);
     });
   });
 
   describe("wahooWebhookPayloadSchema", () => {
     it("parses webhook payload with user and workout data", () => {
-      const result = wahooWebhookPayloadSchema.parse({
+      const schema = createWahooWebhookPayloadSchema();
+      const result = schema.parse({
         event_type: "workout_summary.updated",
         webhook_token: "tok123",
         user: { id: 99 },
@@ -131,7 +141,8 @@ describe("Wahoo schemas", () => {
     });
 
     it("rejects payload missing required user field", () => {
-      expect(() => wahooWebhookPayloadSchema.parse({ event_type: "test" })).toThrow();
+      const schema = createWahooWebhookPayloadSchema();
+      expect(() => schema.parse({ event_type: "test" })).toThrow();
     });
   });
 });
