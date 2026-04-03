@@ -1,0 +1,149 @@
+import * as Sentry from "@sentry/node";
+import express, { type Router } from "express";
+import { resolveOrCreateUser } from "../../auth/account-linking.ts";
+import {
+  clearOAuthFlowCookies,
+  getLinkUserCookie,
+  getMobileSchemeCookie,
+  getOAuthFlowCookies,
+  getPostLoginRedirectCookie,
+  isValidMobileScheme,
+  setSessionCookie,
+} from "../../auth/cookies.ts";
+import { getIdentityProvider, isProviderConfigured } from "../../auth/providers.ts";
+import { createSession } from "../../auth/session.ts";
+import { logger } from "../../logger.ts";
+import {
+  authRateLimiter,
+  getDb,
+  getIdentityFlowStoreRef,
+  isIdentityProviderName,
+  sanitizeReturnTo,
+} from "./shared.ts";
+
+export function registerIdentityCallbackRoutes(router: Router): void {
+  /**
+   * Shared handler for identity provider OAuth callbacks.
+   * Accepts code/state/error from either query params (GET) or form body (POST).
+   * Apple Sign In uses response_mode=form_post, so the callback comes as a POST
+   * where SameSite=Lax cookies are not sent. Falls back to server-side state map.
+   */
+  async function handleIdentityCallback(
+    req: import("express").Request<{ provider: string }>,
+    res: import("express").Response,
+  ) {
+    try {
+      const providerNameRaw = req.params.provider;
+      if (!isIdentityProviderName(providerNameRaw)) {
+        res.status(404).type("text/plain").send("Unknown identity provider");
+        return;
+      }
+      const providerName = providerNameRaw;
+
+      // Read code/state/error from query params (GET) or body (POST form_post)
+      const rawParams = req.method === "POST" ? req.body : req.query;
+      const code = typeof rawParams.code === "string" ? rawParams.code : undefined;
+      const stateParam = typeof rawParams.state === "string" ? rawParams.state : undefined;
+      const error = typeof rawParams.error === "string" ? rawParams.error : undefined;
+
+      if (error) {
+        res.status(400).type("text/plain").send("Authorization denied");
+        return;
+      }
+      if (!code || !stateParam) {
+        res.status(400).type("text/plain").send("Missing code or state parameter");
+        return;
+      }
+
+      // Try cookies first (works for GET redirects from Google/Authentik)
+      const cookieFlow = getOAuthFlowCookies(req);
+      let storedState = cookieFlow.state;
+      let codeVerifier = cookieFlow.codeVerifier;
+      let linkUserId = getLinkUserCookie(req);
+      let mobileScheme = getMobileSchemeCookie(req);
+      let returnTo = getPostLoginRedirectCookie(req);
+      clearOAuthFlowCookies(res);
+
+      // Fall back to Redis-backed store when cookies are unavailable
+      // (Apple form_post: SameSite=Lax cookies aren't sent on cross-site POST)
+      const cookieHadState = !!cookieFlow.state;
+      const cookieHadVerifier = !!cookieFlow.codeVerifier;
+      let storeHit = false;
+      const identityFlowStore = getIdentityFlowStoreRef();
+      if (!storedState || !codeVerifier) {
+        const flowEntry = await identityFlowStore.get(stateParam);
+        if (flowEntry) {
+          storeHit = true;
+          storedState = stateParam;
+          codeVerifier = flowEntry.codeVerifier;
+          linkUserId = linkUserId ?? flowEntry.linkUserId;
+          mobileScheme = mobileScheme ?? flowEntry.mobileScheme;
+          returnTo = returnTo ?? sanitizeReturnTo(flowEntry.returnTo);
+          await identityFlowStore.delete(stateParam);
+        }
+      }
+
+      if (!storedState || !codeVerifier || stateParam !== storedState) {
+        logger.warn(
+          `[auth] Identity callback state mismatch for ${providerName}: ` +
+            `cookieState=${cookieHadState}, cookieVerifier=${cookieHadVerifier}, ` +
+            `storeHit=${storeHit}, method=${req.method}`,
+        );
+        res.status(400).type("text/plain").send("Invalid state — please try logging in again");
+        return;
+      }
+
+      // Validate the authorization code
+      const provider = getIdentityProvider(providerName);
+      const { user: identityUser } = await provider.validateCallback(code, codeVerifier);
+
+      const db = getDb();
+
+      // Resolve or create user (with email-based auto-linking and optional logged-in linking)
+      const { userId } = await resolveOrCreateUser(
+        db,
+        providerName,
+        {
+          providerAccountId: identityUser.sub,
+          email: identityUser.email,
+          name: identityUser.name,
+          groups: identityUser.groups,
+        },
+        linkUserId,
+      );
+
+      // Create session (or keep existing if linking)
+      if (!linkUserId) {
+        const sessionInfo = await createSession(db, userId);
+
+        // Mobile: redirect to app via deep link with session token
+        if (mobileScheme && isValidMobileScheme(mobileScheme)) {
+          logger.info(`[auth] User ${userId} logged in via ${providerName} (mobile)`);
+          res.redirect(`${mobileScheme}://auth/callback?session=${sessionInfo.sessionId}`);
+          return;
+        }
+
+        setSessionCookie(res, sessionInfo.sessionId, sessionInfo.expiresAt);
+      }
+
+      logger.info(
+        `[auth] User ${userId} ${linkUserId ? "linked" : "logged in via"} ${providerName}`,
+      );
+      res.redirect(linkUserId ? "/settings" : (sanitizeReturnTo(returnTo) ?? "/"));
+    } catch (err: unknown) {
+      Sentry.captureException(err);
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error(`[auth] Identity callback failed: ${message}`);
+      res.status(500).send("Login failed — please try again");
+    }
+  }
+
+  router.get("/auth/callback/:provider", authRateLimiter, handleIdentityCallback);
+  // Apple Sign In uses response_mode=form_post, sending code/state as POST body
+  router.post(
+    "/auth/callback/:provider",
+    authRateLimiter,
+    express.urlencoded({ extended: false }),
+    handleIdentityCallback,
+  );
+}
