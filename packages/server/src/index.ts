@@ -191,7 +191,8 @@ export function runStartupTasks(
   });
 }
 
-async function main() {
+/** Validate env, create app, and start listening. Exported for testability. */
+export async function main() {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
     throw new Error("DATABASE_URL environment variable is required");

@@ -90,7 +90,7 @@ import express from "express";
 import { isAdmin } from "./auth/admin.ts";
 import { getSessionIdFromRequest } from "./auth/cookies.ts";
 import { validateSession } from "./auth/session.ts";
-import { createApp, runStartupTasks } from "./index.ts";
+import { createApp, main, runStartupTasks } from "./index.ts";
 import { httpRequestDuration, registry } from "./lib/metrics.ts";
 import { warmCache } from "./lib/warm-cache.ts";
 import { logger } from "./logger.ts";
@@ -524,5 +524,48 @@ describe("runStartupTasks", () => {
 
     expect(vi.mocked(logger.error)).toHaveBeenCalledWith(expect.stringContaining("slack boom"));
     expect(vi.mocked(Sentry.captureException)).toHaveBeenCalledWith(error);
+  });
+});
+
+describe("main", () => {
+  const originalDatabaseUrl = process.env.DATABASE_URL;
+
+  afterEach(() => {
+    if (originalDatabaseUrl === undefined) {
+      delete process.env.DATABASE_URL;
+    } else {
+      process.env.DATABASE_URL = originalDatabaseUrl;
+    }
+  });
+
+  it("throws when DATABASE_URL is not set", async () => {
+    delete process.env.DATABASE_URL;
+    await expect(main()).rejects.toThrow("DATABASE_URL environment variable is required");
+  });
+
+  it("creates db and app when DATABASE_URL is set", async () => {
+    process.env.DATABASE_URL = "postgres://test:test@localhost:5432/test";
+    vi.mocked(createDatabaseFromEnv).mockClear();
+    vi.mocked(logger.info).mockClear();
+
+    // main() calls app.listen which binds a port — use port 0 via env
+    const originalPort = process.env.PORT;
+    process.env.PORT = "0";
+
+    try {
+      // main() returns after calling app.listen (non-blocking)
+      await main();
+      // Give the listen callback time to fire
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(vi.mocked(createDatabaseFromEnv)).toHaveBeenCalled();
+      expect(vi.mocked(logger.info)).toHaveBeenCalledWith(expect.stringContaining("API running"));
+    } finally {
+      if (originalPort === undefined) {
+        delete process.env.PORT;
+      } else {
+        process.env.PORT = originalPort;
+      }
+    }
   });
 });
