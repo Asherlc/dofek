@@ -194,10 +194,9 @@ deploy/
 ├── main.tf                       # Terraform — Hetzner server, firewall, SSH key
 ├── cloud-init.yml                # First-boot bootstrap: Docker, GHCR login, base compose files
 ├── docker-compose.yml            # Production stack (all services)
-├── docker-compose.hotfix.yml     # Runtime overlay for patch-mounted hotfix files
 ├── otel-collector-config.yaml    # OTel Collector — receives app logs/traces + tails Docker logs → Axiom
 ├── Caddyfile                     # Auto-HTTPS via Let's Encrypt (multiple domains)
-├── deploy-config/main.tf         # Terraform — pushes compose/Caddy/collector/hotfix updates via SSH
+├── deploy-config/main.tf         # Terraform — pushes compose/Caddy/collector updates via SSH
 ├── dns/main.tf                   # Terraform — Cloudflare DNS for dofek.fit + dofek.live
 ├── terraform.tfvars.example      # Example config
 └── .gitignore                    # Excludes secrets and state
@@ -214,6 +213,7 @@ Internet → Caddy (auto-HTTPS :443, serves dofek.asherlc.com + dofek.fit + dofe
                    ├── /callback    → proxy_pass dofek-web:3000
                    ├── /admin/*     → proxy_pass dofek-web:3000 (BullMQ dashboard)
                    ├── /metrics     → proxy_pass dofek-web:3000 (Prometheus)
+                   ├── /updates/*   → proxy_pass dofek-web:3000 (Expo OTA)
                    └── /*           → index.html (SPA fallback)
 ```
 
@@ -236,29 +236,29 @@ Internet → Caddy (auto-HTTPS :443, serves dofek.asherlc.com + dofek.fit + dofe
 
 ### Checking mobile OTA update status
 
-The server hosts a self-hosted Expo Updates endpoint at `/api/updates/manifest`. To check what OTA update is currently deployed on prod:
+The server hosts a self-hosted Expo Updates endpoint at `/api/updates/manifest`. This implementation follows the **Expo Updates Protocol v1 (Modern Manifest)** with mandatory **RSA-SHA256 code signing** for security.
+
+To check what OTA update is currently deployed on prod:
 
 ```bash
-curl -s -H "expo-protocol-version: 1" -H "expo-platform: ios" -H "expo-runtime-version: 1.0" \
+curl -s -v -H "expo-protocol-version: 1" -H "expo-platform: ios" -H "expo-runtime-version: 1.0" \
   https://dofek.asherlc.com/api/updates/manifest
 ```
 
-- **Multipart response** with JSON manifest → an update is published (includes `id`, `createdAt`, `runtimeVersion`, and asset hashes)
+- **Multipart response** with JSON manifest and `expo-signature` header → an update is published (includes `id`, `createdAt`, `runtimeVersion`, and asset hashes)
 - **204 No Content** → no update is published (the app uses its embedded bundle)
 
-OTA artifacts (`metadata.json`, bundles, assets) are stored in Cloudflare R2 under versioned prefixes:
+OTA artifacts (`expo-updates-manifest.json` and the standard Expo `dist/` structure) are stored in Cloudflare R2 under versioned prefixes:
 - `mobile-ota/releases/<release-id>/...`
 - `mobile-ota/current-release.json` (pointer file with `{ "releaseId": "..." }`)
 
-The API serves `/api/updates/*` directly from R2 and reads `current-release.json` to pick the active release.
-
-The runtime version must match what's in `packages/mobile/app.json` (`runtimeVersion`).
+The API serves `/api/updates/*` directly from R2. The runtime version must match what's in `packages/mobile/app.json`.
 
 ### CI/CD pipeline
 
 ```
-sops .env → commit → push → GHA builds ARM Docker images
-→ pushes to GHCR → Watchtower polls (5min) → rolling-restarts replicated `web`/`client` containers
+git push → GHA builds ARM Docker images + exports Expo OTA bundle → signs manifest → uploads to R2
+→ Docker images pushed to GHCR → Watchtower polls (5min) → rolling-restarts replicated `web`/`client` containers
 ```
 
 Migrations run at two levels for reliability: a dedicated one-shot `migrate` container runs first during `docker compose up` (via `depends_on: { condition: service_completed_successfully }`), and each service's entrypoint also runs migrations before starting. A Postgres advisory lock serializes concurrent runs so only one container applies migrations at a time. With replicated `web` instances and rolling restarts, at least one healthy API instance remains available while another instance migrates and boots. In local dev, run `pnpm migrate` manually.
@@ -278,8 +278,8 @@ terraform apply
 
 After the server exists:
 
-1. Add host-specific vars to `/opt/dofek/.env`: `SOPS_AGE_KEY`, `POSTGRES_PASSWORD`, `CADDY_DOMAIN`, and optionally `DOCKER_GID` and storage paths. All other secrets (`AXIOM_API_TOKEN`, `SLACK_BOT_TOKEN`, `GHCR_TOKEN`, etc.) are synced from SOPS to the server automatically by `deploy-config`.
-2. Run the deploy-config module once to push `otel-collector-config.yaml`, `docker-compose.hotfix.yml`, and the current patch-mounted files.
+1. Add host-specific vars to `/opt/dofek/.env`: `SOPS_AGE_KEY`, `POSTGRES_PASSWORD`, `CADDY_DOMAIN`, and optionally `DOCKER_GID` and storage paths. All other secrets (`AXIOM_API_TOKEN`, `SLACK_BOT_TOKEN`, `GHCR_TOKEN`, `OTA_SIGNING_PRIVATE_KEY`, etc.) are synced from SOPS to the server automatically by `deploy-config`.
+2. Run the deploy-config module once to push `otel-collector-config.yaml` and the current base config.
 3. Point DNS at the Hetzner IP (`terraform output -raw server_ip`). Caddy will provision TLS automatically.
 
 ```bash
@@ -294,15 +294,13 @@ terraform apply -var="server_ip=$(cd .. && terraform output -raw server_ip)"
 
 `deploy-config` currently syncs:
 - `deploy/docker-compose.yml`
-- `deploy/docker-compose.hotfix.yml`
 - `deploy/Caddyfile`
 - `deploy/otel-collector-config.yaml`
-- the hotfix-mounted patch files under `src/`
 
 After copying those files, it runs:
 
 ```bash
-cd /opt/dofek && docker compose -f docker-compose.yml -f docker-compose.hotfix.yml up -d --scale web=2 --scale client=2
+cd /opt/dofek && docker compose up -d --scale web=2 --scale client=2
 ```
 
 ```bash
