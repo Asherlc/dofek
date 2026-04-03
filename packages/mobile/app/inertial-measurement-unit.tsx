@@ -5,7 +5,6 @@ import {
   type AppStateStatus,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TouchableOpacity,
   useWindowDimensions,
@@ -373,25 +372,6 @@ export default function InertialMeasurementUnitScreen() {
   const syncStatus = trpc.inertialMeasurementUnit.getSyncStatus.useQuery();
   const dailyHeatmap = trpc.inertialMeasurementUnit.getDailyHeatmap.useQuery({ days: 30 });
 
-  const trpcUtils = trpc.useUtils();
-  const whoopImuSetting = trpc.settings.get.useQuery({ key: "whoopAlwaysOnImu" });
-  const setSettingMutation = trpc.settings.set.useMutation();
-  const whoopImuEnabled = whoopImuSetting.data?.value === true;
-
-  function handleWhoopImuToggle(enabled: boolean) {
-    trpcUtils.settings.get.setData(
-      { key: "whoopAlwaysOnImu" },
-      { key: "whoopAlwaysOnImu", value: enabled },
-    );
-    setSettingMutation.mutate(
-      { key: "whoopAlwaysOnImu", value: enabled },
-      {
-        onSuccess: () => whoopImuSetting.refetch(),
-        onError: () => whoopImuSetting.refetch(),
-      },
-    );
-  }
-
   const whoopDevice = syncStatus.data?.find((device) =>
     device.deviceId.toLowerCase().includes("whoop"),
   );
@@ -406,10 +386,8 @@ export default function InertialMeasurementUnitScreen() {
   if (recordingWarning) problems.push(`iPhone: ${recordingWarning}`);
   const watchWarning = getWatchWarning(watchStatus);
   if (watchWarning) problems.push(`Watch: ${watchWarning}`);
-  if (whoopImuEnabled) {
-    const whoopWarning = getWhoopWarning(bleState, whoopBleState);
-    if (whoopWarning) problems.push(`WHOOP: ${whoopWarning}`);
-  }
+  const whoopWarning = getWhoopWarning(bleState, whoopBleState);
+  if (whoopWarning) problems.push(`WHOOP: ${whoopWarning}`);
 
   const noDataSources =
     !recording && !watchStatus.isWatchAppInstalled && whoopBleState !== "streaming";
@@ -522,25 +500,11 @@ export default function InertialMeasurementUnitScreen() {
               }
             />
           </View>
-          <View style={styles.toggleRow}>
-            <View style={styles.toggleInfo}>
-              <Text style={styles.toggleLabel}>Always-on recording</Text>
-              <Text style={styles.toggleDescription}>
-                Streams motion data whenever the app is open
-              </Text>
-            </View>
-            <Switch
-              value={whoopImuEnabled}
-              onValueChange={handleWhoopImuToggle}
-              disabled={setSettingMutation.isPending}
-              trackColor={{ false: colors.surfaceSecondary, true: colors.accent }}
-            />
-          </View>
           {(() => {
-            const warning = whoopImuEnabled ? getWhoopWarning(bleState, whoopBleState) : null;
+            const warning = getWhoopWarning(bleState, whoopBleState);
             return warning ? <StatusWarning message={warning} /> : null;
           })()}
-          {whoopImuEnabled && whoopBleState !== "idle" && (
+          {whoopBleState !== "idle" && (
             <View style={styles.diagnosticBlock}>
               <Text style={styles.diagnosticTitle}>Data Path</Text>
               <Text style={styles.diagnosticLine}>
@@ -625,18 +589,6 @@ const styles = StyleSheet.create({
   },
   badgeLabel: { fontSize: 12, color: colors.textSecondary, marginBottom: 4 },
   badgeValue: { fontSize: 14, fontWeight: "600" },
-  toggleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: 12,
-    backgroundColor: colors.surface,
-    borderRadius: 8,
-    padding: 12,
-  },
-  toggleInfo: { flex: 1, marginRight: 12 },
-  toggleLabel: { fontSize: 14, fontWeight: "600", color: colors.text },
-  toggleDescription: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
   statRow: {
     flexDirection: "row",
     justifyContent: "space-between",
