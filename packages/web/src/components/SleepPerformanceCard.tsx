@@ -1,5 +1,6 @@
 import { sleepTierColor } from "@dofek/scoring/scoring";
 import type { SleepPerformanceInfo } from "dofek-server/types";
+import { useFetchingCount } from "../lib/FetchingContext.tsx";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface SleepPerformanceCardProps {
@@ -8,11 +9,16 @@ interface SleepPerformanceCardProps {
 }
 
 export function SleepPerformanceCard({ data, loading }: SleepPerformanceCardProps) {
+  const fetchingCount = useFetchingCount();
+
   if (loading) {
     return <ChartLoadingSkeleton height={140} />;
   }
 
   if (!data) {
+    if (fetchingCount > 0) {
+      return <ChartLoadingSkeleton height={140} />;
+    }
     return (
       <div className="card p-6 flex items-center justify-center h-[140px]">
         <span className="text-dim text-sm">No sleep data yet</span>

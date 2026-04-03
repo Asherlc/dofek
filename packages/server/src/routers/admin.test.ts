@@ -1,6 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
+const mockAdd = vi.fn().mockResolvedValue({ id: "job-123" });
+vi.mock("dofek/jobs/queues", () => ({
+  createTrainingExportQueue: () => ({ add: mockAdd }),
+}));
+
+vi.mock("../lib/start-worker.ts", () => ({
+  startWorker: vi.fn(),
+}));
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
@@ -138,10 +147,10 @@ describe("adminRouter", () => {
             user_name: "Test",
             data_type: "sleep",
             status: "success",
-            records_synced: "10",
+            record_count: 10,
             error_message: null,
-            started_at: "2024-01-01T00:00:00Z",
-            completed_at: "2024-01-01T00:01:00Z",
+            duration_ms: 60000,
+            synced_at: "2024-01-01T00:00:00Z",
           },
         ],
         [{ count: "100" }],
@@ -150,6 +159,14 @@ describe("adminRouter", () => {
       const result = await caller.syncLogs({ limit: 50, offset: 0 });
       expect(result.rows).toHaveLength(1);
       expect(result.total).toBe("100");
+    });
+
+    it("returns zero total when count query returns empty", async () => {
+      const execute = mockPaginatedExecute([], []);
+      const caller = makeCaller(execute);
+      const result = await caller.syncLogs({ limit: 50, offset: 0 });
+      expect(result.rows).toHaveLength(0);
+      expect(result.total).toBe(0);
     });
   });
 
@@ -177,6 +194,14 @@ describe("adminRouter", () => {
       expect(result.rows[0]?.name).toBe("Morning Run");
       expect(result.total).toBe("500");
     });
+
+    it("returns zero total when count query returns empty", async () => {
+      const execute = mockPaginatedExecute([], []);
+      const caller = makeCaller(execute);
+      const result = await caller.activities({ limit: 50, offset: 0 });
+      expect(result.rows).toHaveLength(0);
+      expect(result.total).toBe(0);
+    });
   });
 
   describe("sleepSessions", () => {
@@ -202,6 +227,14 @@ describe("adminRouter", () => {
       expect(result.rows[0]?.sleep_type).toBe("night");
       expect(result.total).toBe("200");
     });
+
+    it("returns zero total when count query returns empty", async () => {
+      const execute = mockPaginatedExecute([], []);
+      const caller = makeCaller(execute);
+      const result = await caller.sleepSessions({ limit: 50, offset: 0 });
+      expect(result.rows).toHaveLength(0);
+      expect(result.total).toBe(0);
+    });
   });
 
   describe("sessions", () => {
@@ -224,6 +257,14 @@ describe("adminRouter", () => {
       expect(result.rows).toHaveLength(1);
       expect(result.rows[0]?.is_expired).toBe(false);
       expect(result.total).toBe("10");
+    });
+
+    it("returns zero total when count query returns empty", async () => {
+      const execute = mockPaginatedExecute([], []);
+      const caller = makeCaller(execute);
+      const result = await caller.sessions({ limit: 50, offset: 0 });
+      expect(result.rows).toHaveLength(0);
+      expect(result.total).toBe(0);
     });
   });
 
@@ -261,6 +302,14 @@ describe("adminRouter", () => {
       expect(result.rows[0]?.name).toBe("Chicken Breast");
       expect(result.total).toBe("1000");
     });
+
+    it("returns zero total when count query returns empty", async () => {
+      const execute = mockPaginatedExecute([], []);
+      const caller = makeCaller(execute);
+      const result = await caller.foodEntries({ limit: 50, offset: 0 });
+      expect(result.rows).toHaveLength(0);
+      expect(result.total).toBe(0);
+    });
   });
 
   describe("bodyMeasurements", () => {
@@ -283,6 +332,14 @@ describe("adminRouter", () => {
       expect(result.rows).toHaveLength(1);
       expect(result.rows[0]?.provider_id).toBe("withings");
       expect(result.total).toBe("300");
+    });
+
+    it("returns zero total when count query returns empty", async () => {
+      const execute = mockPaginatedExecute([], []);
+      const caller = makeCaller(execute);
+      const result = await caller.bodyMeasurements({ limit: 50, offset: 0 });
+      expect(result.rows).toHaveLength(0);
+      expect(result.total).toBe(0);
     });
   });
 
@@ -307,12 +364,22 @@ describe("adminRouter", () => {
       expect(result.rows[0]?.date).toBe("2024-01-01");
       expect(result.total).toBe("365");
     });
+
+    it("returns zero total when count query returns empty", async () => {
+      const execute = mockPaginatedExecute([], []);
+      const caller = makeCaller(execute);
+      const result = await caller.dailyMetrics({ limit: 50, offset: 0 });
+      expect(result.rows).toHaveLength(0);
+      expect(result.total).toBe(0);
+    });
   });
 
   describe("oauthTokens", () => {
     it("returns token metadata without secrets", async () => {
       const rows = [
         {
+          user_id: "user-1",
+          user_name: "Test",
           provider_id: "whoop",
           expires_at: "2025-01-01T00:00:00Z",
           scopes: "read:recovery read:sleep",
@@ -328,20 +395,58 @@ describe("adminRouter", () => {
   });
 
   describe("syncHealth", () => {
-    it("returns provider sync stats", async () => {
+    it("returns provider sync stats with all fields", async () => {
       const rows = [
         {
           provider_id: "whoop",
-          total: "50",
-          succeeded: "48",
-          failed: "2",
+          total: 50,
+          succeeded: 48,
+          failed: 2,
           last_sync: "2024-01-01T00:00:00Z",
         },
       ];
       const caller = makeCaller(vi.fn().mockResolvedValue(rows));
       const result = await caller.syncHealth();
       expect(result).toHaveLength(1);
-      expect(result[0]?.provider_id).toBe("whoop");
+      expect(result[0]).toEqual({
+        provider_id: "whoop",
+        total: 50,
+        succeeded: 48,
+        failed: 2,
+        last_sync: "2024-01-01T00:00:00Z",
+      });
+    });
+  });
+
+  describe("triggerTrainingExport", () => {
+    it("enqueues a training export job and returns job ID", async () => {
+      const execute = vi.fn();
+      const caller = makeCaller(execute);
+      const result = await caller.triggerTrainingExport({
+        since: "2024-01-01",
+        until: "2024-02-01",
+      });
+      expect(result).toEqual({ jobId: "job-123" });
+      expect(mockAdd).toHaveBeenCalledWith("training-export", {
+        since: "2024-01-01",
+        until: "2024-02-01",
+      });
+    });
+  });
+
+  describe("trainingExportStatus", () => {
+    it("returns watermark data", async () => {
+      const rows = [
+        {
+          table_name: "activity",
+          last_exported_at: "2024-01-01T00:00:00Z",
+          row_count: 500,
+          updated_at: "2024-01-01T00:00:00Z",
+        },
+      ];
+      const caller = makeCaller(vi.fn().mockResolvedValue(rows));
+      const result = await caller.trainingExportStatus();
+      expect(result).toEqual({ watermarks: rows });
     });
   });
 });

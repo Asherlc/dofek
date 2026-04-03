@@ -38,7 +38,10 @@ export function SmoothedWeightChart({ data, loading }: SmoothedWeightChartProps)
     legend: dofekLegend(true),
     xAxis: dofekAxis.time(),
     yAxis: [
-      dofekAxis.value({ name: units.weightLabel, min: "dataMin" }),
+      dofekAxis.value({
+        name: units.weightLabel,
+        min: (value) => Math.floor(value.min / 2) * 2,
+      }),
       dofekAxis.value({
         name: `${units.weightLabel}/week`,
         position: "right",

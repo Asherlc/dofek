@@ -462,10 +462,10 @@ function SyncLogsTab() {
       },
     },
     {
-      id: "records_synced",
+      id: "record_count",
       header: "Records",
       cell: ({ row }) => {
-        const value = row.original.records_synced;
+        const value = row.original.record_count;
         return value !== null ? value.toLocaleString() : "\u2014";
       },
     },
@@ -483,9 +483,9 @@ function SyncLogsTab() {
       },
     },
     {
-      id: "started_at",
-      header: "Started",
-      cell: ({ row }) => formatTimestamp(row.original.started_at),
+      id: "synced_at",
+      header: "Synced",
+      cell: ({ row }) => formatTimestamp(row.original.synced_at),
     },
   ];
 
@@ -797,6 +797,7 @@ function TokensTab() {
   const { data, isLoading, error } = trpc.admin.oauthTokens.useQuery();
 
   const columns: ColumnDef<NonNullable<typeof data>[number], unknown>[] = [
+    { id: "user_name", header: "User", cell: ({ row }) => row.original.user_name ?? "\u2014" },
     { accessorKey: "provider_id", header: "Provider" },
     {
       id: "scopes",

@@ -175,6 +175,48 @@ describe("LoginScreen", () => {
     });
   });
 
+  it("keeps provider buttons visible after login error so user can retry", async () => {
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: ["google"],
+      data: [],
+    });
+    mockStartOAuthLogin.mockRejectedValue(new Error("Login failed"));
+
+    render(<LoginScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Sign in with Google")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByText("Sign in with Google"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Login failed")).toBeTruthy();
+    });
+    // Provider buttons must still be visible so the user can retry
+    expect(screen.getByText("Sign in with Google")).toBeTruthy();
+  });
+
+  it("keeps native Apple button visible after sign-in error so user can retry", async () => {
+    mockIsNativeAppleSignInAvailable.mockResolvedValue(true);
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: ["apple"],
+      data: [],
+    });
+    mockStartNativeAppleSignIn.mockRejectedValue(new Error("Apple Sign In failed: 500"));
+
+    render(<LoginScreen />);
+
+    const appleButton = await screen.findByText("AppleAuthenticationButton");
+    fireEvent.click(appleButton);
+
+    await waitFor(() => {
+      expect(screen.getByText("Apple Sign In failed: 500")).toBeTruthy();
+    });
+    // Native Apple button must still be visible so the user can retry
+    expect(screen.getByText("AppleAuthenticationButton")).toBeTruthy();
+  });
+
   it("does not fall back to OAuth when native Apple Sign In fails", async () => {
     mockIsNativeAppleSignInAvailable.mockResolvedValue(true);
     mockFetchConfiguredProviders.mockResolvedValue({

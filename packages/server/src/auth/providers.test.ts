@@ -32,6 +32,7 @@ import {
   decodePemToDer,
   getConfiguredProviders,
   getIdentityProvider,
+  isNativeAppleConfigured,
   isProviderConfigured,
 } from "./providers.ts";
 
@@ -52,6 +53,7 @@ describe("auth/providers", () => {
       "APPLE_KEY_ID",
       "APPLE_PRIVATE_KEY",
       "APPLE_REDIRECT_URI",
+      "APPLE_BUNDLE_ID",
       "AUTHENTIK_BASE_URL",
       "AUTHENTIK_CLIENT_ID",
       "AUTHENTIK_CLIENT_SECRET",
@@ -119,6 +121,53 @@ describe("auth/providers", () => {
       process.env.AUTHENTIK_CLIENT_SECRET = "secret";
       process.env.AUTHENTIK_REDIRECT_URI = "http://localhost/callback";
       expect(isProviderConfigured("authentik")).toBe(true);
+    });
+  });
+
+  describe("isNativeAppleConfigured", () => {
+    it("returns false when APPLE_BUNDLE_ID is missing", () => {
+      process.env.APPLE_TEAM_ID = "team";
+      process.env.APPLE_KEY_ID = "key";
+      process.env.APPLE_PRIVATE_KEY = "key-content";
+      expect(isNativeAppleConfigured()).toBe(false);
+    });
+
+    it("returns false when APPLE_TEAM_ID is missing", () => {
+      process.env.APPLE_BUNDLE_ID = "com.dofek.app";
+      process.env.APPLE_KEY_ID = "key";
+      process.env.APPLE_PRIVATE_KEY = "key-content";
+      expect(isNativeAppleConfigured()).toBe(false);
+    });
+
+    it("returns false when APPLE_KEY_ID is missing", () => {
+      process.env.APPLE_BUNDLE_ID = "com.dofek.app";
+      process.env.APPLE_TEAM_ID = "team";
+      process.env.APPLE_PRIVATE_KEY = "key-content";
+      expect(isNativeAppleConfigured()).toBe(false);
+    });
+
+    it("returns false when APPLE_PRIVATE_KEY is missing", () => {
+      process.env.APPLE_BUNDLE_ID = "com.dofek.app";
+      process.env.APPLE_TEAM_ID = "team";
+      process.env.APPLE_KEY_ID = "key";
+      expect(isNativeAppleConfigured()).toBe(false);
+    });
+
+    it("returns true when all native Apple env vars are set", () => {
+      process.env.APPLE_BUNDLE_ID = "com.dofek.app";
+      process.env.APPLE_TEAM_ID = "team";
+      process.env.APPLE_KEY_ID = "key";
+      process.env.APPLE_PRIVATE_KEY = "key-content";
+      expect(isNativeAppleConfigured()).toBe(true);
+    });
+
+    it("does not require APPLE_CLIENT_ID or APPLE_REDIRECT_URI", () => {
+      process.env.APPLE_BUNDLE_ID = "com.dofek.app";
+      process.env.APPLE_TEAM_ID = "team";
+      process.env.APPLE_KEY_ID = "key";
+      process.env.APPLE_PRIVATE_KEY = "key-content";
+      // APPLE_CLIENT_ID and APPLE_REDIRECT_URI are NOT set
+      expect(isNativeAppleConfigured()).toBe(true);
     });
   });
 

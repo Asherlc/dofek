@@ -17,8 +17,6 @@ services:
   client:
     image: ${DOFEK_CLIENT_IMAGE:-ghcr.io/asherlc/dofek-client:latest}
     restart: unless-stopped
-    volumes:
-      - /opt/dofek/updates:/usr/share/nginx/html/updates:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/ || exit 1"]
       interval: 5s
@@ -56,14 +54,9 @@ services:
       - DATABASE_URL=postgres://health:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/health
       - REDIS_URL=redis://redis:6379
       - JOB_FILES_DIR=/app/job-files
-      - UPDATES_R2_PREFIX=mobile-ota
       - PUBLIC_URL=https://dofek.asherlc.com
       - PORT=3000
       - NODE_ENV=production
-      - R2_ENDPOINT=${R2_ENDPOINT:?Set R2_ENDPOINT in .env}
-      - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID:?Set R2_ACCESS_KEY_ID in .env}
-      - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY:?Set R2_SECRET_ACCESS_KEY in .env}
-      - R2_BUCKET=${R2_BUCKET:?Set R2_BUCKET in .env}
       - OTEL_SERVICE_NAME=dofek-web
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318
       - OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://collector:4318/v1/logs
@@ -99,10 +92,6 @@ services:
       - DATABASE_URL=postgres://health:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/health
       - REDIS_URL=redis://redis:6379
       - NODE_ENV=production
-      - R2_ENDPOINT=${R2_ENDPOINT:?Set R2_ENDPOINT in .env}
-      - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID:?Set R2_ACCESS_KEY_ID in .env}
-      - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY:?Set R2_SECRET_ACCESS_KEY in .env}
-      - R2_BUCKET=${R2_BUCKET:?Set R2_BUCKET in .env}
       - OTEL_SERVICE_NAME=dofek-worker
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318
       - OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://collector:4318/v1/logs
@@ -136,6 +125,40 @@ services:
         condition: service_completed_successfully
       db:
         condition: service_healthy
+
+  ota:
+    image: ghcr.io/axelmarciano/expo-open-ota:latest
+    restart: unless-stopped
+    environment:
+      - BASE_URL=https://ota.dofek.asherlc.com
+      - STORAGE_MODE=s3
+      - S3_BUCKET_NAME=${R2_BUCKET:?Set R2_BUCKET in .env}
+      - S3_KEY_PREFIX=expo-open-ota/
+      - AWS_REGION=auto
+      - AWS_BASE_ENDPOINT=${R2_ENDPOINT:?Set R2_ENDPOINT in .env}
+      - AWS_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID:?Set R2_ACCESS_KEY_ID in .env}
+      - AWS_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY:?Set R2_SECRET_ACCESS_KEY in .env}
+      - EXPO_APP_ID=${EXPO_APP_ID:?Set EXPO_APP_ID in .env}
+      - EXPO_ACCESS_TOKEN=${EXPO_ACCESS_TOKEN:?Set EXPO_ACCESS_TOKEN in .env}
+      - JWT_SECRET=${OTA_JWT_SECRET:?Set OTA_JWT_SECRET in .env}
+      - KEYS_STORAGE_TYPE=environment
+      - PUBLIC_EXPO_KEY_B64=${OTA_PUBLIC_KEY_B64}
+      - PRIVATE_EXPO_KEY_B64=${OTA_PRIVATE_KEY_B64}
+      - CACHE_MODE=redis
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - PORT=3000
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    labels:
+      - "com.centurylinklabs.watchtower.enable=false"
 
   collector:
     image: otel/opentelemetry-collector-contrib:0.149.0
@@ -220,6 +243,9 @@ services:
       # serving instance available during image updates.
       WATCHTOWER_ROLLING_RESTART: "true"
       WATCHTOWER_STOP_TIMEOUT: "2100"
+      # Slack DM notifications on updates and failures
+      WATCHTOWER_NOTIFICATION_URL: "slack://${SLACK_BOT_TOKEN}@U83CF6FDJ"
+      WATCHTOWER_NOTIFICATION_TEMPLATE: "{{range .}}{{.Message}}{{println}}{{end}}"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /root/.docker/config.json:/config.json:ro

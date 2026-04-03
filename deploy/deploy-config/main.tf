@@ -9,52 +9,109 @@ variable "r2_bucket" {
   default     = "dofek-training-data"
 }
 
-variable "slack_client_id" {
-  description = "Slack OAuth app client ID"
+variable "axiom_api_token" {
+  description = "Axiom API token (xaat-...) for OTEL collector log/metric/trace export"
   type        = string
   sensitive   = true
 }
 
-variable "slack_client_secret" {
-  description = "Slack OAuth app client secret"
+variable "slack_bot_token" {
+  description = "Slack bot token (xoxb-...) for Watchtower notifications and app bot"
+  type        = string
+  sensitive   = true
+}
+
+variable "ghcr_token" {
+  description = "GitHub PAT (ghp_...) with read:packages scope for pulling images from GHCR"
+  type        = string
+  sensitive   = true
+}
+
+variable "ghcr_username" {
+  description = "GitHub username for GHCR authentication"
+  type        = string
+  default     = "asherlc"
+}
+
+variable "expo_app_id" {
+  description = "Expo project ID for expo-open-ota"
+  type        = string
+}
+
+variable "expo_access_token" {
+  description = "Expo personal access token for expo-open-ota"
+  type        = string
+  sensitive   = true
+}
+
+variable "ota_jwt_secret" {
+  description = "JWT secret for expo-open-ota server endpoints"
+  type        = string
+  sensitive   = true
+}
+
+variable "ota_public_key_b64" {
+  description = "Base64-encoded public key for OTA code signing"
+  type        = string
+}
+
+variable "ota_private_key_b64" {
+  description = "Base64-encoded private key for OTA code signing"
   type        = string
   sensitive   = true
 }
 
 resource "null_resource" "deploy_config" {
   triggers = {
-    compose_hash                 = filemd5("${path.module}/../docker-compose.yml")
-    hotfix_compose_hash          = filemd5("${path.module}/../docker-compose.hotfix.yml")
-    caddy_hash                   = filemd5("${path.module}/../Caddyfile")
-    collector_hash               = filemd5("${path.module}/../otel-collector-config.yaml")
-    root_index_patch_hash        = filemd5("${path.module}/../../src/index.ts")
-    provider_index_patch_hash    = filemd5("${path.module}/../../src/providers/index.ts")
-    process_sync_patch_hash      = filemd5("${path.module}/../../src/jobs/process-sync-job.ts")
-    process_scheduled_patch_hash = filemd5("${path.module}/../../src/jobs/process-scheduled-sync-job.ts")
-    training_export_patch_hash   = filemd5("${path.module}/../../src/jobs/process-training-export-job.ts")
-    r2_bucket                    = var.r2_bucket
-    slack_client_id              = var.slack_client_id
-    slack_client_secret          = var.slack_client_secret
+    compose_hash        = filemd5("${path.module}/../docker-compose.yml")
+    caddy_hash          = filemd5("${path.module}/../Caddyfile")
+    collector_hash      = filemd5("${path.module}/../otel-collector-config.yaml")
+    r2_bucket           = var.r2_bucket
+    axiom_api_token     = var.axiom_api_token
+    slack_bot_token     = var.slack_bot_token
+    ghcr_token          = var.ghcr_token
+    ghcr_username       = var.ghcr_username
+    expo_app_id         = var.expo_app_id
+    expo_access_token   = var.expo_access_token
+    ota_jwt_secret      = var.ota_jwt_secret
+    ota_public_key_b64  = var.ota_public_key_b64
+    ota_private_key_b64 = var.ota_private_key_b64
   }
 
-  provisioner "local-exec" {
-    interpreter = ["/bin/bash", "-lc"]
-    command     = <<-EOT
-      set -euo pipefail
-      ssh root@${var.server_ip} "mkdir -p /opt/dofek/patches"
-      scp ${path.module}/../docker-compose.yml root@${var.server_ip}:/opt/dofek/docker-compose.yml
-      scp ${path.module}/../docker-compose.hotfix.yml root@${var.server_ip}:/opt/dofek/docker-compose.hotfix.yml
-      scp ${path.module}/../Caddyfile root@${var.server_ip}:/opt/dofek/Caddyfile
-      scp ${path.module}/../otel-collector-config.yaml root@${var.server_ip}:/opt/dofek/otel-collector-config.yaml
-      scp ${path.module}/../../src/index.ts root@${var.server_ip}:/opt/dofek/patches/index.ts
-      scp ${path.module}/../../src/providers/index.ts root@${var.server_ip}:/opt/dofek/patches/providers-index.ts
-      scp ${path.module}/../../src/jobs/process-sync-job.ts root@${var.server_ip}:/opt/dofek/patches/process-sync-job.ts
-      scp ${path.module}/../../src/jobs/process-scheduled-sync-job.ts root@${var.server_ip}:/opt/dofek/patches/process-scheduled-sync-job.ts
-      scp ${path.module}/../../src/jobs/process-training-export-job.ts root@${var.server_ip}:/opt/dofek/patches/process-training-export-job.ts
-      ssh root@${var.server_ip} "if grep -q '^R2_BUCKET=' /opt/dofek/.env; then sed -i 's/^R2_BUCKET=.*/R2_BUCKET=${var.r2_bucket}/' /opt/dofek/.env; else printf '\nR2_BUCKET=${var.r2_bucket}\n' >> /opt/dofek/.env; fi"
-      ssh root@${var.server_ip} "if grep -q '^SLACK_CLIENT_ID=' /opt/dofek/.env; then sed -i 's/^SLACK_CLIENT_ID=.*/SLACK_CLIENT_ID=${var.slack_client_id}/' /opt/dofek/.env; else printf '\nSLACK_CLIENT_ID=${var.slack_client_id}\n' >> /opt/dofek/.env; fi"
-      ssh root@${var.server_ip} "if grep -q '^SLACK_CLIENT_SECRET=' /opt/dofek/.env; then sed -i 's/^SLACK_CLIENT_SECRET=.*/SLACK_CLIENT_SECRET=${var.slack_client_secret}/' /opt/dofek/.env; else printf '\nSLACK_CLIENT_SECRET=${var.slack_client_secret}\n' >> /opt/dofek/.env; fi"
-      ssh root@${var.server_ip} "cd /opt/dofek && docker compose -f docker-compose.yml -f docker-compose.hotfix.yml up -d --scale web=2 --scale client=2"
-    EOT
+  connection {
+    type  = "ssh"
+    host  = var.server_ip
+    user  = "root"
+    agent = true
+  }
+
+  provisioner "file" {
+    source      = "${path.module}/../docker-compose.yml"
+    destination = "/opt/dofek/docker-compose.yml"
+  }
+
+  provisioner "file" {
+    source      = "${path.module}/../Caddyfile"
+    destination = "/opt/dofek/Caddyfile"
+  }
+
+  provisioner "file" {
+    source      = "${path.module}/../otel-collector-config.yaml"
+    destination = "/opt/dofek/otel-collector-config.yaml"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "if grep -q '^R2_BUCKET=' /opt/dofek/.env; then sed -i 's/^R2_BUCKET=.*/R2_BUCKET=${var.r2_bucket}/' /opt/dofek/.env; else printf '\\nR2_BUCKET=${var.r2_bucket}\\n' >> /opt/dofek/.env; fi",
+      "if grep -q '^AXIOM_API_TOKEN=' /opt/dofek/.env; then sed -i 's/^AXIOM_API_TOKEN=.*/AXIOM_API_TOKEN=${var.axiom_api_token}/' /opt/dofek/.env; else printf '\\nAXIOM_API_TOKEN=${var.axiom_api_token}\\n' >> /opt/dofek/.env; fi",
+      "if grep -q '^SLACK_BOT_TOKEN=' /opt/dofek/.env; then sed -i 's/^SLACK_BOT_TOKEN=.*/SLACK_BOT_TOKEN=${var.slack_bot_token}/' /opt/dofek/.env; else printf '\\nSLACK_BOT_TOKEN=${var.slack_bot_token}\\n' >> /opt/dofek/.env; fi",
+      "if grep -q '^EXPO_APP_ID=' /opt/dofek/.env; then sed -i 's/^EXPO_APP_ID=.*/EXPO_APP_ID=${var.expo_app_id}/' /opt/dofek/.env; else printf '\\nEXPO_APP_ID=${var.expo_app_id}\\n' >> /opt/dofek/.env; fi",
+      "if grep -q '^EXPO_ACCESS_TOKEN=' /opt/dofek/.env; then sed -i 's|^EXPO_ACCESS_TOKEN=.*|EXPO_ACCESS_TOKEN=${var.expo_access_token}|' /opt/dofek/.env; else printf '\\nEXPO_ACCESS_TOKEN=${var.expo_access_token}\\n' >> /opt/dofek/.env; fi",
+      "if grep -q '^OTA_JWT_SECRET=' /opt/dofek/.env; then sed -i 's|^OTA_JWT_SECRET=.*|OTA_JWT_SECRET=${var.ota_jwt_secret}|' /opt/dofek/.env; else printf '\\nOTA_JWT_SECRET=${var.ota_jwt_secret}\\n' >> /opt/dofek/.env; fi",
+      "if grep -q '^OTA_PUBLIC_KEY_B64=' /opt/dofek/.env; then sed -i 's|^OTA_PUBLIC_KEY_B64=.*|OTA_PUBLIC_KEY_B64=${var.ota_public_key_b64}|' /opt/dofek/.env; else printf '\\nOTA_PUBLIC_KEY_B64=${var.ota_public_key_b64}\\n' >> /opt/dofek/.env; fi",
+      "if grep -q '^OTA_PRIVATE_KEY_B64=' /opt/dofek/.env; then sed -i 's|^OTA_PRIVATE_KEY_B64=.*|OTA_PRIVATE_KEY_B64=${var.ota_private_key_b64}|' /opt/dofek/.env; else printf '\\nOTA_PRIVATE_KEY_B64=${var.ota_private_key_b64}\\n' >> /opt/dofek/.env; fi",
+      "echo '{\"auths\":{\"ghcr.io\":{\"auth\":\"'$(echo -n '${var.ghcr_username}:${var.ghcr_token}' | base64)'\"}}}'  > /root/.docker/config.json",
+      "cd /opt/dofek && docker compose up -d --scale web=2 --scale client=2"
+    ]
   }
 }

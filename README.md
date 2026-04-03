@@ -194,10 +194,9 @@ deploy/
 ├── main.tf                       # Terraform — Hetzner server, firewall, SSH key
 ├── cloud-init.yml                # First-boot bootstrap: Docker, GHCR login, base compose files
 ├── docker-compose.yml            # Production stack (all services)
-├── docker-compose.hotfix.yml     # Runtime overlay for patch-mounted hotfix files
 ├── otel-collector-config.yaml    # OTel Collector — receives app logs/traces + tails Docker logs → Axiom
 ├── Caddyfile                     # Auto-HTTPS via Let's Encrypt (multiple domains)
-├── deploy-config/main.tf         # Terraform — pushes compose/Caddy/collector/hotfix updates via SSH
+├── deploy-config/main.tf         # Terraform — pushes compose/Caddy/collector updates via SSH
 ├── dns/main.tf                   # Terraform — Cloudflare DNS for dofek.fit + dofek.live
 ├── terraform.tfvars.example      # Example config
 └── .gitignore                    # Excludes secrets and state
@@ -214,6 +213,7 @@ Internet → Caddy (auto-HTTPS :443, serves dofek.asherlc.com + dofek.fit + dofe
                    ├── /callback    → proxy_pass dofek-web:3000
                    ├── /admin/*     → proxy_pass dofek-web:3000 (BullMQ dashboard)
                    ├── /metrics     → proxy_pass dofek-web:3000 (Prometheus)
+                   ├── /updates/*   → proxy_pass dofek-web:3000 (Expo OTA)
                    └── /*           → index.html (SPA fallback)
 ```
 
@@ -236,29 +236,29 @@ Internet → Caddy (auto-HTTPS :443, serves dofek.asherlc.com + dofek.fit + dofe
 
 ### Checking mobile OTA update status
 
-The server hosts a self-hosted Expo Updates endpoint at `/api/updates/manifest`. To check what OTA update is currently deployed on prod:
+The server hosts a self-hosted Expo Updates endpoint at `/api/updates/manifest`. This implementation follows the **Expo Updates Protocol v1 (Modern Manifest)** with mandatory **RSA-SHA256 code signing** for security.
+
+To check what OTA update is currently deployed on prod:
 
 ```bash
-curl -s -H "expo-protocol-version: 1" -H "expo-platform: ios" -H "expo-runtime-version: 1.0" \
+curl -s -v -H "expo-protocol-version: 1" -H "expo-platform: ios" -H "expo-runtime-version: 1.0" \
   https://dofek.asherlc.com/api/updates/manifest
 ```
 
-- **Multipart response** with JSON manifest → an update is published (includes `id`, `createdAt`, `runtimeVersion`, and asset hashes)
+- **Multipart response** with JSON manifest and `expo-signature` header → an update is published (includes `id`, `createdAt`, `runtimeVersion`, and asset hashes)
 - **204 No Content** → no update is published (the app uses its embedded bundle)
 
-OTA artifacts (`metadata.json`, bundles, assets) are stored in Cloudflare R2 under versioned prefixes:
+OTA artifacts (`expo-updates-manifest.json` and the standard Expo `dist/` structure) are stored in Cloudflare R2 under versioned prefixes:
 - `mobile-ota/releases/<release-id>/...`
 - `mobile-ota/current-release.json` (pointer file with `{ "releaseId": "..." }`)
 
-The API serves `/api/updates/*` directly from R2 and reads `current-release.json` to pick the active release.
-
-The runtime version must match what's in `packages/mobile/app.json` (`runtimeVersion`).
+The API serves `/api/updates/*` directly from R2. The runtime version must match what's in `packages/mobile/app.json`.
 
 ### CI/CD pipeline
 
 ```
-sops .env → commit → push → GHA builds ARM Docker images
-→ pushes to GHCR → Watchtower polls (5min) → rolling-restarts replicated `web`/`client` containers
+git push → GHA builds ARM Docker images + exports Expo OTA bundle → signs manifest → uploads to R2
+→ Docker images pushed to GHCR → Watchtower polls (5min) → rolling-restarts replicated `web`/`client` containers
 ```
 
 Migrations run at two levels for reliability: a dedicated one-shot `migrate` container runs first during `docker compose up` (via `depends_on: { condition: service_completed_successfully }`), and each service's entrypoint also runs migrations before starting. A Postgres advisory lock serializes concurrent runs so only one container applies migrations at a time. With replicated `web` instances and rolling restarts, at least one healthy API instance remains available while another instance migrates and boots. In local dev, run `pnpm migrate` manually.
@@ -278,8 +278,8 @@ terraform apply
 
 After the server exists:
 
-1. Add the required runtime vars to `/opt/dofek/.env`: `POSTGRES_PASSWORD`, `AXIOM_API_TOKEN`, `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, and optionally `DOCKER_GID`.
-2. Run the deploy-config module once to push `otel-collector-config.yaml`, `docker-compose.hotfix.yml`, and the current patch-mounted files.
+1. Add host-specific vars to `/opt/dofek/.env`: `SOPS_AGE_KEY`, `POSTGRES_PASSWORD`, `CADDY_DOMAIN`, and optionally `DOCKER_GID` and storage paths. All other secrets (`AXIOM_API_TOKEN`, `SLACK_BOT_TOKEN`, `GHCR_TOKEN`, `OTA_SIGNING_PRIVATE_KEY`, etc.) are synced from SOPS to the server automatically by `deploy-config`.
+2. Run the deploy-config module once to push `otel-collector-config.yaml` and the current base config.
 3. Point DNS at the Hetzner IP (`terraform output -raw server_ip`). Caddy will provision TLS automatically.
 
 ```bash
@@ -294,15 +294,13 @@ terraform apply -var="server_ip=$(cd .. && terraform output -raw server_ip)"
 
 `deploy-config` currently syncs:
 - `deploy/docker-compose.yml`
-- `deploy/docker-compose.hotfix.yml`
 - `deploy/Caddyfile`
 - `deploy/otel-collector-config.yaml`
-- the hotfix-mounted patch files under `src/`
 
 After copying those files, it runs:
 
 ```bash
-cd /opt/dofek && docker compose -f docker-compose.yml -f docker-compose.hotfix.yml up -d --scale web=2 --scale client=2
+cd /opt/dofek && docker compose up -d --scale web=2 --scale client=2
 ```
 
 ```bash
@@ -320,10 +318,13 @@ The `deploy-config` module is intentionally separate from the main `deploy/main.
 ```bash
 export SSH_AUTH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
 cd deploy/deploy-config
-terraform apply -var="server_ip=159.69.3.40"
+# Secrets are read from SOPS and passed as TF_VAR_ env vars
+sops exec-env ../../.env 'terraform apply -var="server_ip=159.69.3.40" -var="axiom_api_token=$AXIOM_API_TOKEN" -var="slack_bot_token=$SLACK_BOT_TOKEN" -var="ghcr_token=$GHCR_TOKEN"'
 ```
 
 Note: Terraform's SSH client also cannot use passphrase-protected keys from `~/.ssh/` without the agent, and `private_key` in the connection block doesn't work with keys stored in 1Password. The `agent = true` approach is the only reliable option.
+
+`deploy-config` syncs these secrets from SOPS to the server's `.env` and Docker config on every apply: `AXIOM_API_TOKEN`, `SLACK_BOT_TOKEN`, `R2_BUCKET`, and GHCR Docker auth. Other secrets (provider API keys, OAuth client IDs/secrets like `SLACK_CLIENT_ID`) reach containers through the SOPS-encrypted `.env` baked into the Docker image.
 
 **Finding the server IP:** The domain is behind Cloudflare so you need the direct Hetzner IP:
 - `~/.ssh/known_hosts` — grep for Hetzner ranges (`159.69.*`, `116.203.*`, `49.12.*`)
@@ -393,18 +394,20 @@ OTEL_EXPORTER_OTLP_TRACES_HEADERS=Authorization=Bearer <SENTRY_AUTH_TOKEN>
 
 ### Production secrets
 
-There are two sources of environment variables for the production containers:
+**All secrets go in the SOPS-encrypted `.env` in this repo.** SOPS is the single source of truth for credentials — if a secret isn't in SOPS, it's untracked and unrecoverable.
 
-1. **SOPS-encrypted `.env` (this repo)** — provider credentials (API keys, OAuth client IDs/secrets). Baked into the Docker image at build time. The entrypoint decrypts it at container startup using the age key.
+The production containers get environment variables from two places:
 
-2. **`.env` on server (`/opt/dofek/.env`)** — deployment/runtime vars used by Docker Compose interpolation and `env_file`: `SOPS_AGE_KEY`, `CADDY_DOMAIN`, `POSTGRES_PASSWORD`, `AXIOM_API_TOKEN`, `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, optional storage paths, and any host-specific overrides such as `DOCKER_GID`.
+1. **SOPS-encrypted `.env` (this repo)** — all credentials: provider API keys, OAuth client IDs/secrets, `AXIOM_API_TOKEN`, `R2_*` keys, etc. Baked into the Docker image at build time. The entrypoint decrypts it at container startup using the age key.
 
-The entrypoint merges both: compose `env_file` sets vars first, then `sops exec-env` adds decrypted provider credentials on top.
+2. **`.env` on server (`/opt/dofek/.env`)** — host-specific, non-secret config that Docker Compose needs for interpolation: `SOPS_AGE_KEY`, `CADDY_DOMAIN`, `POSTGRES_PASSWORD`, optional storage paths (`DB_DATA_PATH`, `DB_BACKUP_PATH`), and `DOCKER_GID`. Secrets that are also needed for compose interpolation (e.g., `AXIOM_API_TOKEN` for the collector container) must exist in both places, but SOPS is canonical.
 
-**Adding new provider credentials:**
+The entrypoint merges both: compose `env_file` sets vars first, then `sops exec-env` adds decrypted credentials on top.
+
+**Adding or updating secrets:**
 
 ```bash
-sops .env          # add the new key=value pairs
+sops .env          # add/edit key=value pairs
 git add .env && git commit && git push
 # CI builds new image → Watchtower deploys automatically
 ```
@@ -524,7 +527,7 @@ Each provider is enabled by adding its credentials to `.env` (SOPS-encrypted). O
 | BodySpec | OAuth 2.0 | DEXA scans (body composition, bone density, visceral fat, RMR) | `BODYSPEC_CLIENT_ID`, `BODYSPEC_CLIENT_SECRET` |
 | Wahoo | OAuth 2.0 | Activities with FIT file parsing (GPS, power, HR, cadence, running dynamics) | `WAHOO_CLIENT_ID`, `WAHOO_CLIENT_SECRET` |
 | WHOOP | RE'd (Cognito) | Sleep, recovery, workouts, 6s HR streams, journal, strength sets | None (credentials entered in UI modal) |
-| Peloton | Automated login | Workouts with performance metrics | `PELOTON_USERNAME`, `PELOTON_PASSWORD` |
+| Peloton | Automated login | Workouts with performance metrics | None (credentials entered in UI modal) |
 | FatSecret | OAuth 1.0 | Per-food-item nutrition with full micro/macronutrients | `FATSECRET_CONSUMER_KEY`, `FATSECRET_CONSUMER_SECRET` |
 | Withings | OAuth 2.0 | Scale, BP, thermometer | `WITHINGS_CLIENT_ID`, `WITHINGS_CLIENT_SECRET` |
 | RideWithGPS | Custom | Trips with GPS track points | None (entered in UI modal) |

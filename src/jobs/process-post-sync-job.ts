@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/node";
 import type { SyncDatabase } from "../db/index.ts";
 import { logger } from "../logger.ts";
 import type { PostSyncJobData } from "./queues.ts";
@@ -20,6 +21,7 @@ export async function processPostSyncJob(job: PostSyncJob, db: SyncDatabase) {
     await updateUserMaxHr(db);
   } catch (err) {
     logger.error(`[post-sync] Failed to update max HR: ${err}`);
+    Sentry.captureException(err, { tags: { postSyncStep: "updateMaxHr" } });
   }
 
   try {
@@ -32,6 +34,7 @@ export async function processPostSyncJob(job: PostSyncJob, db: SyncDatabase) {
     }
   } catch (err) {
     logger.error(`[post-sync] Failed to sync provider priorities: ${err}`);
+    Sentry.captureException(err, { tags: { postSyncStep: "syncProviderPriorities" } });
   }
 
   try {
@@ -39,6 +42,7 @@ export async function processPostSyncJob(job: PostSyncJob, db: SyncDatabase) {
     await refreshDedupViews(db);
   } catch (err) {
     logger.error(`[post-sync] Failed to refresh views: ${err}`);
+    Sentry.captureException(err, { tags: { postSyncStep: "refreshDedupViews" } });
   }
 
   try {
@@ -48,6 +52,7 @@ export async function processPostSyncJob(job: PostSyncJob, db: SyncDatabase) {
     logger.info("[post-sync] Personalized parameters updated.");
   } catch (err) {
     logger.error(`[post-sync] Failed to refit parameters: ${err}`);
+    Sentry.captureException(err, { tags: { postSyncStep: "refitParams" } });
   }
 
   logger.info(`[post-sync] Post-sync work complete for user ${userId}`);
