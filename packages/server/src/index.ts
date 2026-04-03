@@ -208,6 +208,9 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       },
       onError: ({ path, error }) => {
         logger.error(`[trpc] ${path}: ${error.message}`);
+        if (error.code === "INTERNAL_SERVER_ERROR") {
+          Sentry.captureException(error.cause ?? error, { tags: { trpcPath: path } });
+        }
       },
       allowMethodOverride: true,
     }),

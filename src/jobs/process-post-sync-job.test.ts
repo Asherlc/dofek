@@ -1,5 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PostSyncJob } from "./process-post-sync-job.ts";
+
+const mockCaptureException = vi.fn();
+vi.mock("@sentry/node", () => ({
+  captureException: (...args: unknown[]) => mockCaptureException(...args),
+}));
 
 const mockUpdateUserMaxHr = vi.fn();
 const mockRefreshDedupViews = vi.fn();
@@ -36,6 +41,10 @@ function makeJob(userId: string): PostSyncJob {
 const fakeDb: Parameters<typeof processPostSyncJob>[1] = Object.create(null);
 
 describe("processPostSyncJob", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("runs all four post-sync operations", async () => {
     await processPostSyncJob(makeJob("user-1"), fakeDb);
 
@@ -88,5 +97,49 @@ describe("processPostSyncJob", () => {
     await processPostSyncJob(makeJob("user-6"), fakeDb);
 
     expect(mockSyncProviderPriorities).not.toHaveBeenCalledWith(fakeDb, null);
+  });
+
+  it("reports errors to Sentry when refreshDedupViews fails", async () => {
+    const viewError = new Error("view refresh failed");
+    mockRefreshDedupViews.mockRejectedValueOnce(viewError);
+
+    await processPostSyncJob(makeJob("user-7"), fakeDb);
+
+    expect(mockCaptureException).toHaveBeenCalledWith(viewError, {
+      tags: { postSyncStep: "refreshDedupViews" },
+    });
+  });
+
+  it("reports errors to Sentry when updateUserMaxHr fails", async () => {
+    const maxHrError = new Error("max hr failed");
+    mockUpdateUserMaxHr.mockRejectedValueOnce(maxHrError);
+
+    await processPostSyncJob(makeJob("user-8"), fakeDb);
+
+    expect(mockCaptureException).toHaveBeenCalledWith(maxHrError, {
+      tags: { postSyncStep: "updateMaxHr" },
+    });
+  });
+
+  it("reports errors to Sentry when syncProviderPriorities fails", async () => {
+    const prioritiesError = new Error("priorities failed");
+    mockSyncProviderPriorities.mockRejectedValueOnce(prioritiesError);
+
+    await processPostSyncJob(makeJob("user-9"), fakeDb);
+
+    expect(mockCaptureException).toHaveBeenCalledWith(prioritiesError, {
+      tags: { postSyncStep: "syncProviderPriorities" },
+    });
+  });
+
+  it("reports errors to Sentry when refitAllParams fails", async () => {
+    const refitError = new Error("refit failed");
+    mockRefitAllParams.mockRejectedValueOnce(refitError);
+
+    await processPostSyncJob(makeJob("user-10"), fakeDb);
+
+    expect(mockCaptureException).toHaveBeenCalledWith(refitError, {
+      tags: { postSyncStep: "refitParams" },
+    });
   });
 });
