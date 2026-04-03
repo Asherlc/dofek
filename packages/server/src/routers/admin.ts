@@ -119,6 +119,8 @@ const dailyMetricRowSchema = z.object({
 });
 
 const oauthTokenRowSchema = z.object({
+  user_id: z.string(),
+  user_name: z.string().nullable(),
   provider_id: z.string(),
   expires_at: timestampStringSchema.nullable(),
   scopes: z.string().nullable(),
@@ -389,9 +391,11 @@ export const adminRouter = router({
     return executeWithSchema(
       ctx.db,
       oauthTokenRowSchema,
-      sql`SELECT provider_id, expires_at::text, scopes, updated_at::text
-          FROM fitness.oauth_token
-          ORDER BY updated_at DESC`,
+      sql`SELECT ot.user_id, up.name AS user_name,
+                 ot.provider_id, ot.expires_at::text, ot.scopes, ot.updated_at::text
+          FROM fitness.oauth_token ot
+          LEFT JOIN fitness.user_profile up ON up.id = ot.user_id
+          ORDER BY ot.updated_at DESC`,
     );
   }),
 

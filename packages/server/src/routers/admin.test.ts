@@ -313,6 +313,8 @@ describe("adminRouter", () => {
     it("returns token metadata without secrets", async () => {
       const rows = [
         {
+          user_id: "user-1",
+          user_name: "Test",
           provider_id: "whoop",
           expires_at: "2025-01-01T00:00:00Z",
           scopes: "read:recovery read:sleep",

@@ -797,6 +797,7 @@ function TokensTab() {
   const { data, isLoading, error } = trpc.admin.oauthTokens.useQuery();
 
   const columns: ColumnDef<NonNullable<typeof data>[number], unknown>[] = [
+    { id: "user_name", header: "User", cell: ({ row }) => row.original.user_name ?? "\u2014" },
     { accessorKey: "provider_id", header: "Provider" },
     {
       id: "scopes",
