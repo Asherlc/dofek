@@ -535,7 +535,7 @@ export class PelotonProvider implements SyncProvider {
   }
 
   activityUrl(externalId: string): string {
-    return `https://members.onepeloton.com/classes/cycling?modal=classDetailsModal&classId=${externalId}`;
+    return `https://members.onepeloton.com/profile/workouts/${externalId}`;
   }
 
   authSetup(options?: { host?: string }): ProviderAuthSetup {
