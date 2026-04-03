@@ -2,7 +2,8 @@ import { mkdirSync } from "node:fs";
 import { stat, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createExportQueue } from "dofek/jobs/queues";
+import type { Queue } from "bullmq";
+import type { ExportJobData } from "dofek/jobs/queues";
 import { Router } from "express";
 import { z } from "zod";
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
@@ -23,14 +24,12 @@ const exportProgressSchema = z.object({
   message: z.string(),
 });
 
-let _exportQueue: ReturnType<typeof createExportQueue> | null = null;
-
-function getExportQueue() {
-  if (!_exportQueue) _exportQueue = createExportQueue();
-  return _exportQueue;
+interface ExportRouterDeps {
+  db: import("dofek/db").Database;
+  exportQueue: Queue<ExportJobData>;
 }
 
-export function createExportRouter(db: import("dofek/db").Database): Router {
+export function createExportRouter({ db, exportQueue }: ExportRouterDeps): Router {
   const router = Router();
 
   router.post("/", async (req, res) => {
@@ -45,7 +44,7 @@ export function createExportRouter(db: import("dofek/db").Database): Router {
       return;
     }
 
-    const queue = getExportQueue();
+    const queue = exportQueue;
     const job = await queue.add("export", {
       userId: session.userId,
       outputPath: join(
@@ -72,7 +71,7 @@ export function createExportRouter(db: import("dofek/db").Database): Router {
       return;
     }
 
-    const queue = getExportQueue();
+    const queue = exportQueue;
     let job: Awaited<ReturnType<typeof queue.getJob>>;
     try {
       job = await queue.getJob(req.params.jobId);
@@ -123,7 +122,7 @@ export function createExportRouter(db: import("dofek/db").Database): Router {
       return;
     }
 
-    const queue = getExportQueue();
+    const queue = exportQueue;
     let job: Awaited<ReturnType<typeof queue.getJob>>;
     try {
       job = await queue.getJob(req.params.jobId);

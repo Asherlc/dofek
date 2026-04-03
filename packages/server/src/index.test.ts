@@ -8,7 +8,7 @@ vi.mock("@bull-board/api", () => ({
   createBullBoard: vi.fn(),
 }));
 vi.mock("@bull-board/api/bullMQAdapter", () => ({
-  BullMQAdapter: vi.fn(),
+  BullMQAdapter: vi.fn((queue: unknown) => ({ queue })),
 }));
 vi.mock("@bull-board/express", () => ({
   ExpressAdapter: vi.fn(() => ({
@@ -29,8 +29,12 @@ vi.mock("@trpc/server/adapters/express", () => ({
   ),
 }));
 vi.mock("dofek/jobs/queues", () => ({
-  createImportQueue: vi.fn(),
-  createSyncQueue: vi.fn(),
+  createImportQueue: vi.fn(() => ({ _queue: "import" })),
+  createSyncQueue: vi.fn(() => ({ _queue: "sync" })),
+  createExportQueue: vi.fn(() => ({ _queue: "export" })),
+  createScheduledSyncQueue: vi.fn(() => ({ _queue: "scheduled-sync" })),
+  createPostSyncQueue: vi.fn(() => ({ _queue: "post-sync" })),
+  createTrainingExportQueue: vi.fn(() => ({ _queue: "training-export" })),
 }));
 vi.mock("./auth/admin.ts", () => ({
   isAdmin: vi.fn().mockResolvedValue(false),
@@ -73,6 +77,12 @@ vi.mock("./routes/upload.ts", () => ({
     return Router();
   }),
 }));
+vi.mock("./routes/webhooks.ts", () => ({
+  createWebhookRouter: vi.fn(() => {
+    const { Router } = require("express");
+    return Router();
+  }),
+}));
 vi.mock("./slack/bot.ts", () => ({
   startSlackBot: vi.fn(() => Promise.resolve()),
 }));
@@ -95,6 +105,8 @@ import { httpRequestDuration, registry } from "./lib/metrics.ts";
 import { warmCache } from "./lib/warm-cache.ts";
 import { logger } from "./logger.ts";
 import { createAuthRouter } from "./routes/auth.ts";
+import { createUploadRouter } from "./routes/upload.ts";
+import { createWebhookRouter } from "./routes/webhooks.ts";
 import { startSlackBot } from "./slack/bot.ts";
 
 function startApp(
@@ -200,13 +212,32 @@ describe("createApp HTTP routes", () => {
       );
     });
 
-    it("records duration in seconds (not milliseconds)", async () => {
-      vi.mocked(httpRequestDuration.observe).mockClear();
-      await fetch(`${baseUrl}/api/trpc/nonexistent`);
-      const durationSeconds = vi.mocked(httpRequestDuration.observe).mock.calls[0]?.[1];
-      expect(durationSeconds).toBeDefined();
-      // Duration should be in seconds (< 5s for a simple request), not milliseconds
-      expect(durationSeconds).toBeLessThan(5);
+    it("records duration in seconds (divided by 1000)", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      const baseTime = new Date("2026-01-01T00:00:00.000Z");
+      vi.setSystemTime(baseTime);
+
+      // Override tRPC mock so the handler advances fake clock before responding,
+      // giving the logging middleware a non-zero duration between start and finish.
+      const handler: import("express").RequestHandler = (_req, res) => {
+        vi.setSystemTime(new Date(baseTime.getTime() + 42));
+        res.status(404).json({ error: "not found" });
+      };
+      vi.mocked(createExpressMiddleware).mockReturnValueOnce(handler);
+
+      const fakeDb = createDatabaseFromEnv();
+      const app = createApp(fakeDb);
+      const { baseUrl: testUrl, close: testClose } = await startApp(app);
+      try {
+        vi.mocked(httpRequestDuration.observe).mockClear();
+        await fetch(`${testUrl}/api/trpc/nonexistent`);
+        const durationSeconds = vi.mocked(httpRequestDuration.observe).mock.calls[0][1];
+        // 42ms / 1000 = 0.042 seconds
+        expect(durationSeconds).toBeCloseTo(0.042, 3);
+      } finally {
+        await testClose();
+        vi.useRealTimers();
+      }
     });
 
     it("strips query params from the route label", async () => {
@@ -286,38 +317,39 @@ describe("createApp HTTP routes", () => {
       expect(body).toBe("bull-board");
     });
 
-    it("initializes Bull Board only once across multiple admin requests", async () => {
+    it("registers all 6 queue types with Bull Board during app creation", async () => {
       const { createBullBoard: mockCreateBullBoard } = await import("@bull-board/api");
-      vi.mocked(mockCreateBullBoard).mockClear();
-      vi.mocked(getSessionIdFromRequest).mockReturnValue("admin-session");
-      vi.mocked(validateSession).mockResolvedValue({
-        userId: "admin-1",
-        expiresAt: new Date("2027-01-01"),
-      });
-      vi.mocked(isAdmin).mockResolvedValue(true);
+      const { BullMQAdapter: MockBullMQAdapter } = await import("@bull-board/api/bullMQAdapter");
 
-      await fetch(`${baseUrl}/admin/queues`);
-      await fetch(`${baseUrl}/admin/queues`);
-
-      // createBullBoard should only be called once (lazy init)
-      expect(vi.mocked(mockCreateBullBoard)).toHaveBeenCalledTimes(1);
+      // Bull Board is initialized eagerly during createApp, so check the calls
+      // from the beforeEach setup
+      expect(vi.mocked(MockBullMQAdapter)).toHaveBeenCalledTimes(6);
+      expect(vi.mocked(mockCreateBullBoard)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          queues: expect.arrayContaining([
+            expect.anything(),
+            expect.anything(),
+            expect.anything(),
+            expect.anything(),
+            expect.anything(),
+            expect.anything(),
+          ]),
+        }),
+      );
+      const call = vi.mocked(mockCreateBullBoard).mock.calls[0][0];
+      expect(call.queues).toHaveLength(6);
     });
 
-    it("lazily creates sync queue only once across admin requests", async () => {
-      const { createSyncQueue: mockCreateSyncQueue } = await import("dofek/jobs/queues");
-      vi.mocked(mockCreateSyncQueue).mockClear();
-      vi.mocked(getSessionIdFromRequest).mockReturnValue("admin-session");
-      vi.mocked(validateSession).mockResolvedValue({
-        userId: "admin-1",
-        expiresAt: new Date("2027-01-01"),
-      });
-      vi.mocked(isAdmin).mockResolvedValue(true);
+    it("passes queue factory results to BullMQAdapter", async () => {
+      const { BullMQAdapter: MockBullMQAdapter } = await import("@bull-board/api/bullMQAdapter");
 
-      await fetch(`${baseUrl}/admin/queues`);
-      await fetch(`${baseUrl}/admin/queues`);
-
-      // createSyncQueue should be called only once despite two requests
-      expect(vi.mocked(mockCreateSyncQueue)).toHaveBeenCalledTimes(1);
+      const adapterArgs = vi.mocked(MockBullMQAdapter).mock.calls.map((call) => call[0]);
+      expect(adapterArgs).toContainEqual({ _queue: "sync" });
+      expect(adapterArgs).toContainEqual({ _queue: "import" });
+      expect(adapterArgs).toContainEqual({ _queue: "export" });
+      expect(adapterArgs).toContainEqual({ _queue: "scheduled-sync" });
+      expect(adapterArgs).toContainEqual({ _queue: "post-sync" });
+      expect(adapterArgs).toContainEqual({ _queue: "training-export" });
     });
   });
 
@@ -382,6 +414,11 @@ describe("createApp HTTP routes", () => {
       expect(context.assetsVersion).toBe("update-abc123");
     });
 
+    it("enables allowMethodOverride", () => {
+      const [middlewareOptions] = vi.mocked(createExpressMiddleware).mock.calls.at(-1) ?? [];
+      expect(middlewareOptions).toHaveProperty("allowMethodOverride", true);
+    });
+
     it("defaults timezone to UTC when header is missing", async () => {
       const [middlewareOptions] = vi.mocked(createExpressMiddleware).mock.calls.at(-1) ?? [];
       if (!middlewareOptions) throw new Error("Expected createExpressMiddleware to be called");
@@ -403,7 +440,6 @@ describe("createApp HTTP routes", () => {
         expiresAt: new Date("2027-01-01"),
       });
 
-      // Need a fresh app so createExpressMiddleware captures the new mock
       const fakeDb = createDatabaseFromEnv();
       createApp(fakeDb);
       const [middlewareOptions] = vi.mocked(createExpressMiddleware).mock.calls.at(-1) ?? [];
@@ -431,20 +467,63 @@ describe("createApp HTTP routes", () => {
       expect(context.userId).toBeNull();
     });
 
-    it("calls onError with path and error message", async () => {
+    it("logs and reports internal server errors to Sentry via onError", () => {
       const [middlewareOptions] = vi.mocked(createExpressMiddleware).mock.calls.at(-1) ?? [];
-      if (!middlewareOptions) throw new Error("Expected createExpressMiddleware to be called");
-
+      if (!middlewareOptions?.onError) {
+        throw new Error("Expected onError to be defined");
+      }
       vi.mocked(logger.error).mockClear();
-      // Trigger the onError handler via a request that exercises it
-      // Since we mock createExpressMiddleware, test the captured handler directly
-      const onError: ((...args: unknown[]) => void) | undefined = middlewareOptions.onError;
-      onError?.({
-        path: "test.route",
-        error: { message: "something broke" },
+      vi.mocked(Sentry.captureException).mockClear();
+
+      const cause = new Error("db connection failed");
+      const onError: (opts: {
+        path: string;
+        error: { message: string; code: string; cause?: unknown };
+      }) => void = middlewareOptions.onError;
+      onError({
+        path: "user.get",
+        error: { message: "Something went wrong", code: "INTERNAL_SERVER_ERROR", cause },
       });
 
-      expect(vi.mocked(logger.error)).toHaveBeenCalledWith("[trpc] test.route: something broke");
+      expect(vi.mocked(logger.error)).toHaveBeenCalledWith("[trpc] user.get: Something went wrong");
+      expect(vi.mocked(Sentry.captureException)).toHaveBeenCalledWith(cause, {
+        tags: { trpcPath: "user.get" },
+      });
+    });
+
+    it("does not report non-internal errors to Sentry", () => {
+      const [middlewareOptions] = vi.mocked(createExpressMiddleware).mock.calls.at(-1) ?? [];
+      if (!middlewareOptions?.onError) {
+        throw new Error("Expected onError to be defined");
+      }
+      vi.mocked(Sentry.captureException).mockClear();
+
+      const onError: (opts: { path: string; error: { message: string; code: string } }) => void =
+        middlewareOptions.onError;
+      onError({ path: "user.get", error: { message: "Not found", code: "NOT_FOUND" } });
+
+      expect(vi.mocked(Sentry.captureException)).not.toHaveBeenCalled();
+    });
+
+    it("reports the error itself when no cause is present", () => {
+      const [middlewareOptions] = vi.mocked(createExpressMiddleware).mock.calls.at(-1) ?? [];
+      if (!middlewareOptions?.onError) {
+        throw new Error("Expected onError to be defined");
+      }
+      vi.mocked(Sentry.captureException).mockClear();
+
+      const errorObj = {
+        message: "Internal failure",
+        code: "INTERNAL_SERVER_ERROR",
+        cause: undefined,
+      };
+      const onError: (opts: { path: string; error: typeof errorObj }) => void =
+        middlewareOptions.onError;
+      onError({ path: "data.list", error: errorObj });
+
+      expect(vi.mocked(Sentry.captureException)).toHaveBeenCalledWith(errorObj, {
+        tags: { trpcPath: "data.list" },
+      });
     });
 
     it("extracts first element when header is an array", async () => {
@@ -472,7 +551,6 @@ describe("createApp HTTP routes", () => {
       const context = await middlewareOptions.createContext({
         req: {
           headers: {
-            // Empty array — first element is undefined, not a string
             "x-app-version": [],
           },
         },
@@ -486,6 +564,26 @@ describe("createApp HTTP routes", () => {
   describe("createAuthRouter mounting", () => {
     it("calls createAuthRouter during app setup", () => {
       expect(vi.mocked(createAuthRouter)).toHaveBeenCalled();
+    });
+  });
+
+  describe("route module mounting", () => {
+    it("passes db and syncQueue to createWebhookRouter", () => {
+      expect(vi.mocked(createWebhookRouter)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          db: expect.anything(),
+          syncQueue: expect.anything(),
+        }),
+      );
+    });
+
+    it("passes importQueue and db to createUploadRouter", () => {
+      expect(vi.mocked(createUploadRouter)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          importQueue: expect.anything(),
+          db: expect.anything(),
+        }),
+      );
     });
   });
 });

@@ -6,7 +6,14 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import compression from "compression";
 import cookieParser from "cookie-parser";
 import { createDatabaseFromEnv } from "dofek/db";
-import { createImportQueue, createSyncQueue } from "dofek/jobs/queues";
+import {
+  createExportQueue,
+  createImportQueue,
+  createPostSyncQueue,
+  createScheduledSyncQueue,
+  createSyncQueue,
+  createTrainingExportQueue,
+} from "dofek/jobs/queues";
 import { sql } from "drizzle-orm";
 import express from "express";
 import { isAdmin } from "./auth/admin.ts";
@@ -36,7 +43,7 @@ function getSingleHeaderValue(value: string | string[] | undefined): string | un
   return undefined;
 }
 
-/** Create the Express app with all routes. Exported for testing. */
+/** Create the Express app with all routes. */
 export function createApp(db: import("dofek/db").Database): express.Express {
   initSentry();
   const app = express();
@@ -80,25 +87,28 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
     next();
   });
 
-  // ── BullMQ queues (lazy init — deferred until first use to avoid Redis
-  //    connection attempts in test environments) ──
-  let _importQueue: ReturnType<typeof createImportQueue> | null = null;
-  let _syncQueue: ReturnType<typeof createSyncQueue> | null = null;
-
-  function getImportQueue() {
-    if (!_importQueue) _importQueue = createImportQueue();
-    return _importQueue;
-  }
-
-  function getSyncQueue() {
-    if (!_syncQueue) _syncQueue = createSyncQueue();
-    return _syncQueue;
-  }
+  // ── BullMQ queues ──
+  const importQueue = createImportQueue();
+  const syncQueue = createSyncQueue();
+  const exportQueue = createExportQueue();
+  const scheduledSyncQueue = createScheduledSyncQueue();
+  const postSyncQueue = createPostSyncQueue();
+  const trainingExportQueue = createTrainingExportQueue();
 
   // ── Bull Board dashboard (admin-only) ──
   const bullBoardAdapter = new ExpressAdapter();
   bullBoardAdapter.setBasePath("/admin/queues");
-  const lazyBullBoard = { initialized: false };
+  createBullBoard({
+    queues: [
+      new BullMQAdapter(syncQueue),
+      new BullMQAdapter(importQueue),
+      new BullMQAdapter(exportQueue),
+      new BullMQAdapter(scheduledSyncQueue),
+      new BullMQAdapter(postSyncQueue),
+      new BullMQAdapter(trainingExportQueue),
+    ],
+    serverAdapter: bullBoardAdapter,
+  });
   app.use("/admin/queues", async (req, res, next) => {
     // Require authenticated admin user
     const sessionId = getSessionIdFromRequest(req);
@@ -117,21 +127,14 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       return;
     }
 
-    if (!lazyBullBoard.initialized) {
-      createBullBoard({
-        queues: [new BullMQAdapter(getSyncQueue()), new BullMQAdapter(getImportQueue())],
-        serverAdapter: bullBoardAdapter,
-      });
-      lazyBullBoard.initialized = true;
-    }
     bullBoardAdapter.getRouter()(req, res, next);
   });
 
   // ── Route modules ──
   // Webhook routes must be mounted before json() middleware — they use raw body for HMAC verification
-  app.use("/api/webhooks", createWebhookRouter({ db, getSyncQueue }));
-  app.use("/api/upload", createUploadRouter({ getImportQueue, db }));
-  app.use("/api/export", createExportRouter(db));
+  app.use("/api/webhooks", createWebhookRouter({ db, syncQueue }));
+  app.use("/api/upload", createUploadRouter({ importQueue, db }));
+  app.use("/api/export", createExportRouter({ db, exportQueue }));
   // ── Dev-only: auto-login for seed database testing ──
   if (process.env.NODE_ENV !== "production") {
     app.get("/auth/dev-login", async (_req, res) => {
@@ -176,7 +179,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
 }
 
 /**
- * Fire-and-forget startup tasks. Exported for testability.
+ * Fire-and-forget startup tasks.
  * Errors are logged and reported to Sentry but don't crash the server.
  */
 export function runStartupTasks(
@@ -194,7 +197,7 @@ export function runStartupTasks(
   });
 }
 
-/** Validate env, create app, and start listening. Exported for testability. */
+/** Validate env, create app, and start listening. */
 export async function main() {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {

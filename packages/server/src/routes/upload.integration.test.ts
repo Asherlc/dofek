@@ -49,7 +49,7 @@ function createTestApp() {
   const queue = createFakeQueue();
   const fakeDb = createFakeDb();
   const app = express();
-  app.use("/api/upload", createUploadRouter({ getImportQueue: () => queue, db: fakeDb }));
+  app.use("/api/upload", createUploadRouter({ importQueue: queue, db: fakeDb }));
   return { app, queue };
 }
 

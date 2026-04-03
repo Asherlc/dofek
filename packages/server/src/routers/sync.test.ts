@@ -539,9 +539,11 @@ describe("syncRouter", () => {
       expect(result.jobId).toBe("job-123");
     });
 
-    it("reuses the sync queue across calls", async () => {
+    it("uses same queue instance across calls (not recreated)", async () => {
       const { createSyncQueue } = await import("dofek/jobs/queues");
       mockGetAllProviders.mockReturnValue([{ id: "wahoo", name: "Wahoo", validate: () => null }]);
+
+      const callCountBefore = vi.mocked(createSyncQueue).mock.calls.length;
 
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
@@ -552,8 +554,8 @@ describe("syncRouter", () => {
       await caller.triggerSync({});
       await caller.triggerSync({});
 
-      // Queue should be created at most once (lazy singleton)
-      expect(vi.mocked(createSyncQueue).mock.calls.length).toBeLessThanOrEqual(1);
+      // No additional queue creation calls — the module-level instance is reused
+      expect(vi.mocked(createSyncQueue).mock.calls.length).toBe(callCountBefore);
     });
 
     it("throws for unknown provider", async () => {
