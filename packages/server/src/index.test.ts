@@ -234,22 +234,30 @@ describe("createApp HTTP routes", () => {
     });
 
     it("records duration in seconds (divided by 1000)", async () => {
-      vi.mocked(httpRequestDuration.observe).mockClear();
-      // Mock Date.now to return a known 42ms gap
-      const realDateNow = Date.now;
-      let callCount = 0;
-      const baseTime = realDateNow();
-      vi.spyOn(Date, "now").mockImplementation(() => {
-        // First call is the "start" timestamp, second is the "finish" timestamp
-        return callCount++ === 0 ? baseTime : baseTime + 42;
-      });
+      vi.useFakeTimers({ toFake: ["Date"] });
+      const baseTime = new Date("2026-01-01T00:00:00.000Z");
+      vi.setSystemTime(baseTime);
+
+      // Override tRPC mock so the handler advances fake clock before responding,
+      // giving the logging middleware a non-zero duration between start and finish.
+      const handler: import("express").RequestHandler = (_req, res) => {
+        vi.setSystemTime(new Date(baseTime.getTime() + 42));
+        res.status(404).json({ error: "not found" });
+      };
+      vi.mocked(createExpressMiddleware).mockReturnValueOnce(handler);
+
+      const fakeDb = createDatabaseFromEnv();
+      const app = createApp(fakeDb);
+      const { baseUrl: testUrl, close: testClose } = await startApp(app);
       try {
-        await fetch(`${baseUrl}/api/trpc/nonexistent`);
+        vi.mocked(httpRequestDuration.observe).mockClear();
+        await fetch(`${testUrl}/api/trpc/nonexistent`);
         const durationSeconds = vi.mocked(httpRequestDuration.observe).mock.calls[0][1];
         // 42ms / 1000 = 0.042 seconds
         expect(durationSeconds).toBeCloseTo(0.042, 3);
       } finally {
-        vi.spyOn(Date, "now").mockRestore();
+        await testClose();
+        vi.useRealTimers();
       }
     });
   });
