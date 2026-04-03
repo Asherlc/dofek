@@ -1157,10 +1157,13 @@ jobs:
           STAGING_DIR="$RUNNER_TEMP/ota/$RELEASE_ID"
           mkdir -p "$STAGING_DIR"
 
-          RUNTIME_VERSION=$(node -e "console.log(JSON.parse(require('fs').readFileSync('packages/mobile/app.json','utf-8')).expo.runtimeVersion)")
-
+          # Use expo-updates CLI to generate the protocol v1 manifest from the exported dist
+          # This is the "least custom" way to generate a standard manifest
           cd packages/mobile
-          npx tsx scripts/generate-ota-manifest.ts dist "$STAGING_DIR" ios "$RELEASE_ID" "$RUNTIME_VERSION"
+          npx expo-updates manifest:generate --platform ios --dist dist --output "$STAGING_DIR/expo-updates-manifest.json"
+
+          # Copy everything from dist to staging so we preserve the standard Expo structure
+          cp -r dist/* "$STAGING_DIR/"
 
           echo "RELEASE_ID=$RELEASE_ID" >> "$GITHUB_ENV"
           echo "STAGING_DIR=$STAGING_DIR" >> "$GITHUB_ENV"
