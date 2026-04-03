@@ -33,9 +33,10 @@ receivers:
       - type: move
         from: attributes.log
         to: body
-      # Drop noisy Postgres NOTICE lines (e.g. migration progress)
+      # Drop noisy Postgres NOTICE lines (e.g. migration progress).
+      # Each PL/pgSQL RAISE NOTICE emits ~8 lines; a backfill can produce 50k+.
       - type: filter
-        expr: 'body matches "severity_local: .NOTICE." or body matches "severity: .NOTICE." or body matches "routine: .exec_stmt_raise." or body matches "file: .pl_exec.c."'
+        expr: 'body matches "severity(_local)?: .NOTICE." or body matches "routine: .exec_stmt_raise."'
 
 processors:
   batch:
