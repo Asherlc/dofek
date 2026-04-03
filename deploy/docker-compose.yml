@@ -220,6 +220,9 @@ services:
       # serving instance available during image updates.
       WATCHTOWER_ROLLING_RESTART: "true"
       WATCHTOWER_STOP_TIMEOUT: "2100"
+      # Slack DM notifications on updates and failures
+      WATCHTOWER_NOTIFICATION_URL: "slack://${SLACK_BOT_TOKEN}@U83CF6FDJ"
+      WATCHTOWER_NOTIFICATION_TEMPLATE: "{{range .}}{{.Message}}{{println}}{{end}}"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /root/.docker/config.json:/config.json:ro

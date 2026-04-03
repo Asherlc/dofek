@@ -75,6 +75,15 @@ exporters:
       enabled: true
       num_consumers: 4
       queue_size: 5000
+  otlphttp/sentry-logs:
+    logs_endpoint: https://o4511073249067008.ingest.us.sentry.io/api/4511073388593152/integration/otlp/v1/logs?sentry_key=b421c7fde44434a032c86e3357cae397
+    retry_on_failure:
+      enabled: true
+      max_elapsed_time: 300s
+    sending_queue:
+      enabled: true
+      num_consumers: 2
+      queue_size: 1000
   otlphttp/metrics:
     endpoint: https://api.axiom.co
     headers:
@@ -98,11 +107,11 @@ service:
     logs/app:
       receivers: [otlp]
       processors: [batch]
-      exporters: [otlphttp/logs]
+      exporters: [otlphttp/logs, otlphttp/sentry-logs]
     logs/docker:
       receivers: [filelog]
       processors: [resource/docker, batch]
-      exporters: [otlphttp/logs]
+      exporters: [otlphttp/logs, otlphttp/sentry-logs]
     metrics:
       receivers: [otlp]
       processors: [batch]

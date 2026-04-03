@@ -278,7 +278,7 @@ terraform apply
 
 After the server exists:
 
-1. Add the required runtime vars to `/opt/dofek/.env`: `POSTGRES_PASSWORD`, `AXIOM_API_TOKEN`, `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `OTA_SIGNING_PRIVATE_KEY`, and optionally `DOCKER_GID`.
+1. Add host-specific vars to `/opt/dofek/.env`: `SOPS_AGE_KEY`, `POSTGRES_PASSWORD`, `CADDY_DOMAIN`, and optionally `DOCKER_GID` and storage paths. All other secrets (`AXIOM_API_TOKEN`, `SLACK_BOT_TOKEN`, `GHCR_TOKEN`, `OTA_SIGNING_PRIVATE_KEY`, etc.) are synced from SOPS to the server automatically by `deploy-config`.
 2. Run the deploy-config module once to push `otel-collector-config.yaml` and the current base config.
 3. Point DNS at the Hetzner IP (`terraform output -raw server_ip`). Caddy will provision TLS automatically.
 
@@ -318,10 +318,13 @@ The `deploy-config` module is intentionally separate from the main `deploy/main.
 ```bash
 export SSH_AUTH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
 cd deploy/deploy-config
-terraform apply -var="server_ip=159.69.3.40"
+# Secrets are read from SOPS and passed as TF_VAR_ env vars
+sops exec-env ../../.env 'terraform apply -var="server_ip=159.69.3.40" -var="axiom_api_token=$AXIOM_API_TOKEN" -var="slack_bot_token=$SLACK_BOT_TOKEN" -var="ghcr_token=$GHCR_TOKEN"'
 ```
 
 Note: Terraform's SSH client also cannot use passphrase-protected keys from `~/.ssh/` without the agent, and `private_key` in the connection block doesn't work with keys stored in 1Password. The `agent = true` approach is the only reliable option.
+
+`deploy-config` syncs these secrets from SOPS to the server's `.env` and Docker config on every apply: `AXIOM_API_TOKEN`, `SLACK_BOT_TOKEN`, `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, `R2_BUCKET`, and GHCR Docker auth.
 
 **Finding the server IP:** The domain is behind Cloudflare so you need the direct Hetzner IP:
 - `~/.ssh/known_hosts` — grep for Hetzner ranges (`159.69.*`, `116.203.*`, `49.12.*`)
@@ -391,18 +394,20 @@ OTEL_EXPORTER_OTLP_TRACES_HEADERS=Authorization=Bearer <SENTRY_AUTH_TOKEN>
 
 ### Production secrets
 
-There are two sources of environment variables for the production containers:
+**All secrets go in the SOPS-encrypted `.env` in this repo.** SOPS is the single source of truth for credentials — if a secret isn't in SOPS, it's untracked and unrecoverable.
 
-1. **SOPS-encrypted `.env` (this repo)** — provider credentials (API keys, OAuth client IDs/secrets). Baked into the Docker image at build time. The entrypoint decrypts it at container startup using the age key.
+The production containers get environment variables from two places:
 
-2. **`.env` on server (`/opt/dofek/.env`)** — deployment/runtime vars used by Docker Compose interpolation and `env_file`: `SOPS_AGE_KEY`, `CADDY_DOMAIN`, `POSTGRES_PASSWORD`, `AXIOM_API_TOKEN`, `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, optional storage paths, and any host-specific overrides such as `DOCKER_GID`.
+1. **SOPS-encrypted `.env` (this repo)** — all credentials: provider API keys, OAuth client IDs/secrets, `AXIOM_API_TOKEN`, `R2_*` keys, etc. Baked into the Docker image at build time. The entrypoint decrypts it at container startup using the age key.
 
-The entrypoint merges both: compose `env_file` sets vars first, then `sops exec-env` adds decrypted provider credentials on top.
+2. **`.env` on server (`/opt/dofek/.env`)** — host-specific, non-secret config that Docker Compose needs for interpolation: `SOPS_AGE_KEY`, `CADDY_DOMAIN`, `POSTGRES_PASSWORD`, optional storage paths (`DB_DATA_PATH`, `DB_BACKUP_PATH`), and `DOCKER_GID`. Secrets that are also needed for compose interpolation (e.g., `AXIOM_API_TOKEN` for the collector container) must exist in both places, but SOPS is canonical.
 
-**Adding new provider credentials:**
+The entrypoint merges both: compose `env_file` sets vars first, then `sops exec-env` adds decrypted credentials on top.
+
+**Adding or updating secrets:**
 
 ```bash
-sops .env          # add the new key=value pairs
+sops .env          # add/edit key=value pairs
 git add .env && git commit && git push
 # CI builds new image → Watchtower deploys automatically
 ```
