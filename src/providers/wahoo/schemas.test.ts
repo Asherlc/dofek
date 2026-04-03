@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  wahooNumeric,
   wahooSingleWorkoutResponseSchema,
   wahooWebhookPayloadSchema,
   wahooWorkoutListResponseSchema,
@@ -40,6 +41,20 @@ const validWorkout = {
 };
 
 describe("Wahoo schemas", () => {
+  describe("wahooNumeric", () => {
+    it("coerces string to number", () => {
+      expect(wahooNumeric.parse("42")).toBe(42);
+    });
+
+    it("coerces null to undefined", () => {
+      expect(wahooNumeric.parse(null)).toBeUndefined();
+    });
+
+    it("passes through a number unchanged", () => {
+      expect(wahooNumeric.parse(99)).toBe(99);
+    });
+  });
+
   describe("wahooWorkoutSummarySchema", () => {
     it("parses valid summary and coerces string numerics", () => {
       const result = wahooWorkoutSummarySchema.parse(validSummary);

@@ -4,7 +4,7 @@ import { z } from "zod";
  * Wahoo's API returns numeric fields as strings or null — coerce to number
  * or undefined so downstream code always sees `number | undefined`.
  */
-const wahooNumeric = z.preprocess(
+export const wahooNumeric = z.preprocess(
   (val) => (val === null || val === undefined ? undefined : Number(val)),
   z.number().optional(),
 );
