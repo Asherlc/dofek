@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/node";
+import { TRPCError } from "@trpc/server";
 import { ensureProvider, saveTokens } from "dofek/db/tokens";
 import { WhoopClient } from "whoop-whoop";
 import { z } from "zod";
@@ -74,16 +75,25 @@ export const whoopAuthRouter = router({
         `[whoopAuth] verifyCode lookup userId=${ctx.userId} challengeId=${input.challengeId} found=${challenge ? "true" : "false"}`,
       );
       if (!challenge) {
-        throw new Error("Verification session expired or not found");
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Verification session expired or not found — please sign in again",
+        });
       }
 
       if (challenge.userId !== ctx.userId) {
-        throw new Error("Verification session not owned by current user");
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Verification session not owned by current user",
+        });
       }
 
       if (challenge.expiresAt < Date.now()) {
         await challengeStore.delete(input.challengeId);
-        throw new Error("Verification session expired — please sign in again");
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Verification session expired — please sign in again",
+        });
       }
 
       logger.info(
