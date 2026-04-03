@@ -23,10 +23,12 @@ vi.mock("../auth/cookies.ts", () => ({
 vi.mock("../auth/providers.ts", () => ({
   getConfiguredProviders: vi.fn(() => ["google"]),
   isProviderConfigured: vi.fn((name: string) => name === "google"),
+  isNativeAppleConfigured: vi.fn(() => false),
   getIdentityProvider: vi.fn(() => ({
     createAuthorizationUrl: vi.fn(() => new URL("https://accounts.google.com/authorize")),
     validateCallback: vi.fn(),
   })),
+  validateNativeAppleCallback: vi.fn(),
   generateState: vi.fn(() => "mock-state"),
   generateCodeVerifier: vi.fn(() => "mock-verifier"),
 }));
@@ -119,7 +121,12 @@ import {
   setPostLoginRedirectCookie,
   setSessionCookie,
 } from "../auth/cookies.ts";
-import { getIdentityProvider, isProviderConfigured } from "../auth/providers.ts";
+import {
+  getIdentityProvider,
+  isNativeAppleConfigured,
+  isProviderConfigured,
+  validateNativeAppleCallback,
+} from "../auth/providers.ts";
 import { createSession, deleteSession, validateSession } from "../auth/session.ts";
 import { logger } from "../logger.ts";
 import { createAuthRouter } from "./auth.ts";
@@ -2568,39 +2575,32 @@ describe("createAuthRouter", () => {
   });
 
   describe("POST /auth/apple/native", () => {
-    it("returns 400 when Apple is not configured", async () => {
-      vi.mocked(isProviderConfigured).mockReturnValue(false);
+    it("returns 400 when native Apple is not configured", async () => {
+      vi.mocked(isNativeAppleConfigured).mockReturnValue(false);
       const { app } = createTestApp();
       const res = await request(app, "post", "/auth/apple/native", {
         formBody: { authorizationCode: "code", identityToken: "token" },
       });
       expect(res.status).toBe(400);
       expect(res.body).toContain("not configured");
-      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "google");
+      vi.mocked(isNativeAppleConfigured).mockReturnValue(false);
     });
 
     it("returns 400 when authorizationCode is missing", async () => {
-      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "apple");
+      vi.mocked(isNativeAppleConfigured).mockReturnValue(true);
       const { app } = createTestApp();
       const res = await request(app, "post", "/auth/apple/native", {
         formBody: { identityToken: "token" },
       });
       expect(res.status).toBe(400);
       expect(res.body).toContain("authorizationCode");
-      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "google");
+      vi.mocked(isNativeAppleConfigured).mockReturnValue(false);
     });
 
     it("returns session token on success", async () => {
-      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "apple");
-      const mockValidate = vi.fn(() =>
-        Promise.resolve({
-          tokens: {},
-          user: { sub: "apple-native-1", email: "alice@icloud.com", name: null, groups: null },
-        }),
-      );
-      vi.mocked(getIdentityProvider).mockReturnValue({
-        createAuthorizationUrl: vi.fn(() => new URL("https://appleid.apple.com/auth/authorize")),
-        validateCallback: mockValidate,
+      vi.mocked(isNativeAppleConfigured).mockReturnValue(true);
+      vi.mocked(validateNativeAppleCallback).mockResolvedValue({
+        user: { sub: "apple-native-1", email: "alice@icloud.com", name: null, groups: null },
       });
       const { app } = createTestApp();
       const res = await request(app, "post", "/auth/apple/native", {
@@ -2609,21 +2609,14 @@ describe("createAuthRouter", () => {
       expect(res.status).toBe(200);
       const data = JSON.parse(res.body);
       expect(data.session).toBeDefined();
-      expect(mockValidate).toHaveBeenCalledWith("native-code", "");
-      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "google");
+      expect(validateNativeAppleCallback).toHaveBeenCalledWith("native-code");
+      vi.mocked(isNativeAppleConfigured).mockReturnValue(false);
     });
 
     it("passes fullName from givenName+familyName to resolveOrCreateUser when identity token has no name", async () => {
-      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "apple");
-      const mockValidate = vi.fn(() =>
-        Promise.resolve({
-          tokens: {},
-          user: { sub: "apple-native-2", email: "bob@icloud.com", name: null, groups: null },
-        }),
-      );
-      vi.mocked(getIdentityProvider).mockReturnValue({
-        createAuthorizationUrl: vi.fn(() => new URL("https://appleid.apple.com/auth/authorize")),
-        validateCallback: mockValidate,
+      vi.mocked(isNativeAppleConfigured).mockReturnValue(true);
+      vi.mocked(validateNativeAppleCallback).mockResolvedValue({
+        user: { sub: "apple-native-2", email: "bob@icloud.com", name: null, groups: null },
       });
       const { resolveOrCreateUser } = await import("../auth/account-linking.ts");
       const { app } = createTestApp();
@@ -2646,25 +2639,18 @@ describe("createAuthRouter", () => {
           email: "bob@icloud.com",
         }),
       );
-      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "google");
+      vi.mocked(isNativeAppleConfigured).mockReturnValue(false);
     });
 
     it("prefers identity token name over fullName from SDK", async () => {
-      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "apple");
-      const mockValidate = vi.fn(() =>
-        Promise.resolve({
-          tokens: {},
-          user: {
-            sub: "apple-native-3",
-            email: "carol@icloud.com",
-            name: "Carol Token",
-            groups: null,
-          },
-        }),
-      );
-      vi.mocked(getIdentityProvider).mockReturnValue({
-        createAuthorizationUrl: vi.fn(() => new URL("https://appleid.apple.com/auth/authorize")),
-        validateCallback: mockValidate,
+      vi.mocked(isNativeAppleConfigured).mockReturnValue(true);
+      vi.mocked(validateNativeAppleCallback).mockResolvedValue({
+        user: {
+          sub: "apple-native-3",
+          email: "carol@icloud.com",
+          name: "Carol Token",
+          groups: null,
+        },
       });
       const { resolveOrCreateUser } = await import("../auth/account-linking.ts");
       const { app } = createTestApp();
@@ -2683,20 +2669,13 @@ describe("createAuthRouter", () => {
         "apple",
         expect.objectContaining({ name: "Carol Token" }),
       );
-      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "google");
+      vi.mocked(isNativeAppleConfigured).mockReturnValue(false);
     });
 
     it("handles only givenName without familyName", async () => {
-      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "apple");
-      const mockValidate = vi.fn(() =>
-        Promise.resolve({
-          tokens: {},
-          user: { sub: "apple-native-4", email: null, name: null, groups: null },
-        }),
-      );
-      vi.mocked(getIdentityProvider).mockReturnValue({
-        createAuthorizationUrl: vi.fn(() => new URL("https://appleid.apple.com/auth/authorize")),
-        validateCallback: mockValidate,
+      vi.mocked(isNativeAppleConfigured).mockReturnValue(true);
+      vi.mocked(validateNativeAppleCallback).mockResolvedValue({
+        user: { sub: "apple-native-4", email: null, name: null, groups: null },
       });
       const { resolveOrCreateUser } = await import("../auth/account-linking.ts");
       const { app } = createTestApp();
@@ -2709,20 +2688,13 @@ describe("createAuthRouter", () => {
         "apple",
         expect.objectContaining({ name: "Dave", email: null }),
       );
-      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "google");
+      vi.mocked(isNativeAppleConfigured).mockReturnValue(false);
     });
 
     it("passes null name when no name sources are available", async () => {
-      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "apple");
-      const mockValidate = vi.fn(() =>
-        Promise.resolve({
-          tokens: {},
-          user: { sub: "apple-native-5", email: null, name: null, groups: null },
-        }),
-      );
-      vi.mocked(getIdentityProvider).mockReturnValue({
-        createAuthorizationUrl: vi.fn(() => new URL("https://appleid.apple.com/auth/authorize")),
-        validateCallback: mockValidate,
+      vi.mocked(isNativeAppleConfigured).mockReturnValue(true);
+      vi.mocked(validateNativeAppleCallback).mockResolvedValue({
+        user: { sub: "apple-native-5", email: null, name: null, groups: null },
       });
       const { resolveOrCreateUser } = await import("../auth/account-linking.ts");
       const { app } = createTestApp();
@@ -2735,26 +2707,23 @@ describe("createAuthRouter", () => {
         "apple",
         expect.objectContaining({ name: null }),
       );
-      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "google");
+      vi.mocked(isNativeAppleConfigured).mockReturnValue(false);
     });
 
-    it("returns 500 when validateCallback throws", async () => {
-      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "apple");
-      vi.mocked(getIdentityProvider).mockReturnValue({
-        createAuthorizationUrl: vi.fn(() => new URL("https://appleid.apple.com/auth/authorize")),
-        validateCallback: vi.fn(() => Promise.reject(new Error("Invalid code"))),
-      });
+    it("returns 500 when validateNativeAppleCallback throws", async () => {
+      vi.mocked(isNativeAppleConfigured).mockReturnValue(true);
+      vi.mocked(validateNativeAppleCallback).mockRejectedValue(new Error("Invalid code"));
       const { app } = createTestApp();
       const res = await request(app, "post", "/auth/apple/native", {
         formBody: { authorizationCode: "bad-code" },
       });
       expect(res.status).toBe(500);
       expect(res.body).toContain("Apple Sign In failed");
-      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "google");
+      vi.mocked(isNativeAppleConfigured).mockReturnValue(false);
     });
 
     it("rejects non-string authorizationCode", async () => {
-      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "apple");
+      vi.mocked(isNativeAppleConfigured).mockReturnValue(true);
       const { app } = createTestApp();
       // Sending empty formBody — authorizationCode absent
       const res = await request(app, "post", "/auth/apple/native", {
@@ -2762,7 +2731,7 @@ describe("createAuthRouter", () => {
       });
       expect(res.status).toBe(400);
       expect(res.body).toContain("authorizationCode");
-      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "google");
+      vi.mocked(isNativeAppleConfigured).mockReturnValue(false);
     });
   });
 

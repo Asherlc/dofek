@@ -51,7 +51,6 @@
     "./jobs/queues": "./src/jobs/queues.ts",
     "./jobs/provider-queue-config": "./src/jobs/provider-queue-config.ts",
     "./jobs/process-export-job": "./src/jobs/process-export-job.ts",
-    "./lib/r2-client": "./src/lib/r2-client.ts",
     "./personalization/params": "./src/personalization/params.ts",
     "./personalization/storage": "./src/personalization/storage.ts",
     "./personalization/refit": "./src/personalization/refit.ts",
@@ -100,7 +99,6 @@
     "check:mobile-update": "./scripts/check-mobile-update.sh"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "3.1020.0",
     "@bull-board/api": "6.20.5",
     "@bull-board/express": "6.20.5",
     "@dofek/heart-rate-variability": "workspace:*",

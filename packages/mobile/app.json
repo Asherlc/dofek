@@ -6,14 +6,17 @@
     "version": "1.0.0",
     "runtimeVersion": "1.0",
     "updates": {
-      "url": "https://dofek.asherlc.com/api/updates/manifest",
+      "url": "https://ota.dofek.asherlc.com/manifest",
       "enabled": true,
       "checkAutomatically": "ON_LOAD",
       "fallbackToCacheTimeout": 5000,
-      "codeSigningCertificate": "-----BEGIN CERTIFICATE-----\nMIICzTCCAbWgAwIBAgIJPUwiB6zFKr6fMA0GCSqGSIb3DQEBCwUAMBAxDjAMBgNV\nBAMTBURvZmVrMB4XDTI2MDQwMzE2MjI1NFoXDTM2MDQwMzE2MjI1NFowEDEOMAwG\nA1UEAxMFRG9mZWswggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQC6PmTJ\nbaEzZS91Yllo7GEg65vwFZsQNoAKzltPhGcibP0H57Bel/d4NWUeQQmoaGafZupU\nsbhpptNqcBj2Mpsa8dHXCWFahCFUiqG5QuoEoj3Z9eWToYL/Z45vF1+xQWFnKyGM\n9jN0iRqAtE7g3vy6xPRtuA6YxgX3536+9uEs1vg/KnESspSg8A3q36Qjz2g+7ZPJ\niGFMAYWGtE9VYPHCOalhxAjVF7B5ADbcKiWJw01qYqZnvJ0eF1JA6GhhxxTx3VHe\npPh/qCAN0Q744cayZDS6XA9tUkNquBUQxYqg19c80uDqOZu5sAr9LYLsOuZbAA43\nXLF/6X6tYvPLFpYDAgMBAAGjKjAoMA4GA1UdDwEB/wQEAwIHgDAWBgNVHSUBAf8E\nDDAKBggrBgEFBQcDAzANBgkqhkiG9w0BAQsFAAOCAQEAFAbaSBeF+Tl2eEdWb44M\n2bqll/dF6oz7TuvXJ/uVCSPeuphJUOO/VQFGiJGDSgGQ2dBMS91pXDmUK7fXpQQ1\nRd77m9yX2uaYgpG3Vg4T3DtxgY8fLEavSuRGyr1+bU+Fe/XUq9I+mchjfNRync34\nVjlbA13HkCjEffIOGQxZOmsfqUGSA+hbneWZlRyGYSFxM2+nO9NK6coaw6dnoh7o\ndGBM+t5VDOP4T+nb/tN2zGEqVoFXsYu+S5HTDrxbC/xhWUnAAA9FNKRC/Wq4jDdZ\n+BLTigfoL4vpZSauxHhlgJKtqX6IjXKd42F5vQG75U+YU6cKRpW3+v+NEckOKCXb\nWA==\n-----END CERTIFICATE-----",
+      "codeSigningCertificate": "./certs/certificate.pem",
       "codeSigningMetadata": {
         "keyid": "main",
         "alg": "rsa-v1_5-sha256"
+      },
+      "requestHeaders": {
+        "expo-channel-name": "production"
       }
     },
     "orientation": "default",

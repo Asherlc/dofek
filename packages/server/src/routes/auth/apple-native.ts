@@ -1,7 +1,7 @@
 import * as Sentry from "@sentry/node";
 import type { Request, Response } from "express";
 import { resolveOrCreateUser } from "../../auth/account-linking.ts";
-import { getIdentityProvider, isProviderConfigured } from "../../auth/providers.ts";
+import { isNativeAppleConfigured, validateNativeAppleCallback } from "../../auth/providers.ts";
 import { createSession } from "../../auth/session.ts";
 import { logger } from "../../logger.ts";
 import { getDb } from "./shared.ts";
@@ -11,8 +11,8 @@ import { getDb } from "./shared.ts";
 // This endpoint exchanges the code for tokens and creates a session.
 export async function handleAppleNativeSignIn(req: Request, res: Response): Promise<void> {
   try {
-    if (!isProviderConfigured("apple")) {
-      res.status(400).send("Apple Sign In is not configured");
+    if (!isNativeAppleConfigured()) {
+      res.status(400).send("Native Apple Sign In is not configured");
       return;
     }
 
@@ -28,9 +28,9 @@ export async function handleAppleNativeSignIn(req: Request, res: Response): Prom
     const familyName = typeof req.body.familyName === "string" ? req.body.familyName : undefined;
     const fullName = [givenName, familyName].filter(Boolean).join(" ") || null;
 
-    const provider = getIdentityProvider("apple");
-    // Apple doesn't use PKCE, so pass empty string as codeVerifier
-    const { user: identityUser } = await provider.validateCallback(authorizationCode, "");
+    // Native auth codes use the app's Bundle ID, not the web Services ID,
+    // and must be exchanged without a redirect_uri
+    const { user: identityUser } = await validateNativeAppleCallback(authorizationCode);
 
     // Use the name from the native SDK if the identity token didn't include it
     const userName = identityUser.name ?? fullName;
