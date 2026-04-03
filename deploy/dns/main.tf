@@ -81,6 +81,25 @@ resource "cloudflare_dns_record" "dofek_live_www" {
   ttl     = 1
 }
 
+# --- asherlc.com (dofek subdomains) ---
+# The asherlc.com zone already exists in Cloudflare; import it rather than creating it.
+# Run: terraform import cloudflare_zone.asherlc_com <zone-id>
+
+data "cloudflare_zone" "asherlc_com" {
+  filter = {
+    name = "asherlc.com"
+  }
+}
+
+resource "cloudflare_dns_record" "ota_dofek_asherlc" {
+  zone_id = data.cloudflare_zone.asherlc_com.zone_id
+  type    = "A"
+  name    = "ota.dofek.asherlc.com"
+  content = var.server_ip
+  proxied = false
+  ttl     = 1
+}
+
 # --- R2 Storage ---
 
 resource "cloudflare_r2_bucket" "training_data" {
