@@ -32,11 +32,6 @@ vi.mock("dofek/jobs/queues", () => ({
   createImportQueue: vi.fn(),
   createSyncQueue: vi.fn(),
 }));
-vi.mock("dofek/lib/r2-client", () => ({
-  createR2Client: vi.fn(),
-  createS3Client: vi.fn(),
-  parseR2Config: vi.fn(),
-}));
 vi.mock("./auth/admin.ts", () => ({
   isAdmin: vi.fn().mockResolvedValue(false),
 }));
@@ -91,12 +86,11 @@ vi.mock("dofek/db", () => ({
 import * as Sentry from "@sentry/node";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { createDatabaseFromEnv } from "dofek/db";
-import { createR2Client, createS3Client, parseR2Config, type R2Config } from "dofek/lib/r2-client";
 import express from "express";
 import { isAdmin } from "./auth/admin.ts";
 import { getSessionIdFromRequest } from "./auth/cookies.ts";
 import { validateSession } from "./auth/session.ts";
-import { createApp, runStartupTasks } from "./index.ts";
+import { createApp, main, runStartupTasks } from "./index.ts";
 import { httpRequestDuration, registry } from "./lib/metrics.ts";
 import { warmCache } from "./lib/warm-cache.ts";
 import { logger } from "./logger.ts";
@@ -201,9 +195,26 @@ describe("createApp HTTP routes", () => {
       vi.mocked(httpRequestDuration.observe).mockClear();
       await fetch(`${baseUrl}/api/trpc/nonexistent`);
       expect(httpRequestDuration.observe).toHaveBeenCalledWith(
-        expect.objectContaining({ method: "GET" }),
+        expect.objectContaining({ method: "GET", status_code: expect.any(Number) }),
         expect.any(Number),
       );
+    });
+
+    it("records duration in seconds (not milliseconds)", async () => {
+      vi.mocked(httpRequestDuration.observe).mockClear();
+      await fetch(`${baseUrl}/api/trpc/nonexistent`);
+      const durationSeconds = vi.mocked(httpRequestDuration.observe).mock.calls[0]?.[1];
+      expect(durationSeconds).toBeDefined();
+      // Duration should be in seconds (< 5s for a simple request), not milliseconds
+      expect(durationSeconds).toBeLessThan(5);
+    });
+
+    it("strips query params from the route label", async () => {
+      vi.mocked(httpRequestDuration.observe).mockClear();
+      await fetch(`${baseUrl}/api/trpc/nonexistent?batch=1&input=foo`);
+      const labels = vi.mocked(httpRequestDuration.observe).mock.calls[0]?.[0];
+      expect(labels?.route).not.toContain("?");
+      expect(labels?.route).toContain("/api/trpc/nonexistent");
     });
   });
 
@@ -291,6 +302,23 @@ describe("createApp HTTP routes", () => {
       // createBullBoard should only be called once (lazy init)
       expect(vi.mocked(mockCreateBullBoard)).toHaveBeenCalledTimes(1);
     });
+
+    it("lazily creates sync queue only once across admin requests", async () => {
+      const { createSyncQueue: mockCreateSyncQueue } = await import("dofek/jobs/queues");
+      vi.mocked(mockCreateSyncQueue).mockClear();
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("admin-session");
+      vi.mocked(validateSession).mockResolvedValue({
+        userId: "admin-1",
+        expiresAt: new Date("2027-01-01"),
+      });
+      vi.mocked(isAdmin).mockResolvedValue(true);
+
+      await fetch(`${baseUrl}/admin/queues`);
+      await fetch(`${baseUrl}/admin/queues`);
+
+      // createSyncQueue should be called only once despite two requests
+      expect(vi.mocked(mockCreateSyncQueue)).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe("GET /auth/dev-login", () => {
@@ -353,112 +381,111 @@ describe("createApp HTTP routes", () => {
       expect(context.appVersion).toBe("2.3.4");
       expect(context.assetsVersion).toBe("update-abc123");
     });
+
+    it("defaults timezone to UTC when header is missing", async () => {
+      const [middlewareOptions] = vi.mocked(createExpressMiddleware).mock.calls.at(-1) ?? [];
+      if (!middlewareOptions) throw new Error("Expected createExpressMiddleware to be called");
+
+      const context = await middlewareOptions.createContext({
+        req: { headers: {} },
+        res: {},
+      });
+
+      expect(context.timezone).toBe("UTC");
+      expect(context.appVersion).toBeUndefined();
+      expect(context.assetsVersion).toBeUndefined();
+    });
+
+    it("resolves userId from session when cookie is present", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-123");
+      vi.mocked(validateSession).mockResolvedValue({
+        userId: "user-99",
+        expiresAt: new Date("2027-01-01"),
+      });
+
+      // Need a fresh app so createExpressMiddleware captures the new mock
+      const fakeDb = createDatabaseFromEnv();
+      createApp(fakeDb);
+      const [middlewareOptions] = vi.mocked(createExpressMiddleware).mock.calls.at(-1) ?? [];
+      if (!middlewareOptions) throw new Error("Expected createExpressMiddleware to be called");
+
+      const context = await middlewareOptions.createContext({
+        req: { headers: {} },
+        res: {},
+      });
+
+      expect(context.userId).toBe("user-99");
+    });
+
+    it("sets userId to null when no session cookie", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
+
+      const [middlewareOptions] = vi.mocked(createExpressMiddleware).mock.calls.at(-1) ?? [];
+      if (!middlewareOptions) throw new Error("Expected createExpressMiddleware to be called");
+
+      const context = await middlewareOptions.createContext({
+        req: { headers: {} },
+        res: {},
+      });
+
+      expect(context.userId).toBeNull();
+    });
+
+    it("calls onError with path and error message", async () => {
+      const [middlewareOptions] = vi.mocked(createExpressMiddleware).mock.calls.at(-1) ?? [];
+      if (!middlewareOptions) throw new Error("Expected createExpressMiddleware to be called");
+
+      vi.mocked(logger.error).mockClear();
+      // Trigger the onError handler via a request that exercises it
+      // Since we mock createExpressMiddleware, test the captured handler directly
+      const onError: ((...args: unknown[]) => void) | undefined = middlewareOptions.onError;
+      onError?.({
+        path: "test.route",
+        error: { message: "something broke" },
+      });
+
+      expect(vi.mocked(logger.error)).toHaveBeenCalledWith("[trpc] test.route: something broke");
+    });
+
+    it("extracts first element when header is an array", async () => {
+      const [middlewareOptions] = vi.mocked(createExpressMiddleware).mock.calls.at(-1) ?? [];
+      if (!middlewareOptions) throw new Error("Expected createExpressMiddleware to be called");
+
+      const context = await middlewareOptions.createContext({
+        req: {
+          headers: {
+            "x-timezone": ["Europe/Berlin", "US/Pacific"],
+            "x-app-version": ["1.0.0", "2.0.0"],
+          },
+        },
+        res: {},
+      });
+
+      expect(context.timezone).toBe("Europe/Berlin");
+      expect(context.appVersion).toBe("1.0.0");
+    });
+
+    it("returns undefined for non-string array header values", async () => {
+      const [middlewareOptions] = vi.mocked(createExpressMiddleware).mock.calls.at(-1) ?? [];
+      if (!middlewareOptions) throw new Error("Expected createExpressMiddleware to be called");
+
+      const context = await middlewareOptions.createContext({
+        req: {
+          headers: {
+            // Empty array — first element is undefined, not a string
+            "x-app-version": [],
+          },
+        },
+        res: {},
+      });
+
+      expect(context.appVersion).toBeUndefined();
+    });
   });
 
   describe("createAuthRouter mounting", () => {
     it("calls createAuthRouter during app setup", () => {
       expect(vi.mocked(createAuthRouter)).toHaveBeenCalled();
-    });
-  });
-
-  describe("R2 OTA configuration", () => {
-    const r2EnvKeys = [
-      "R2_ENDPOINT",
-      "R2_ACCESS_KEY_ID",
-      "R2_SECRET_ACCESS_KEY",
-      "R2_BUCKET",
-    ] as const;
-    const originalR2Env: Record<(typeof r2EnvKeys)[number], string | undefined> = {
-      R2_ENDPOINT: process.env.R2_ENDPOINT,
-      R2_ACCESS_KEY_ID: process.env.R2_ACCESS_KEY_ID,
-      R2_SECRET_ACCESS_KEY: process.env.R2_SECRET_ACCESS_KEY,
-      R2_BUCKET: process.env.R2_BUCKET,
-    };
-
-    function setR2Env(values: Partial<Record<(typeof r2EnvKeys)[number], string>>) {
-      for (const key of r2EnvKeys) {
-        const value = values[key];
-        if (value === undefined) {
-          delete process.env[key];
-        } else {
-          process.env[key] = value;
-        }
-      }
-    }
-
-    afterEach(() => {
-      for (const key of r2EnvKeys) {
-        const originalValue = originalR2Env[key];
-        if (originalValue === undefined) {
-          delete process.env[key];
-        } else {
-          process.env[key] = originalValue;
-        }
-      }
-    });
-
-    it("logs fallback when R2 config is incomplete", () => {
-      setR2Env({
-        R2_ENDPOINT: "https://example.r2.cloudflarestorage.com",
-      });
-
-      const fakeDb = createDatabaseFromEnv();
-      createApp(fakeDb);
-
-      expect(vi.mocked(logger.error)).toHaveBeenCalledWith(
-        "[updates] Incomplete R2 config; falling back to filesystem OTA storage",
-      );
-      expect(vi.mocked(parseR2Config)).not.toHaveBeenCalled();
-    });
-
-    it("logs and reports invalid complete R2 config", () => {
-      setR2Env({
-        R2_ENDPOINT: "https://example.r2.cloudflarestorage.com",
-        R2_ACCESS_KEY_ID: "key-id",
-        R2_SECRET_ACCESS_KEY: "secret",
-        R2_BUCKET: "ota-assets",
-      });
-      const parseError = new Error("bad r2 config");
-      vi.mocked(parseR2Config).mockImplementationOnce(() => {
-        throw parseError;
-      });
-
-      const fakeDb = createDatabaseFromEnv();
-      createApp(fakeDb);
-
-      expect(vi.mocked(parseR2Config)).toHaveBeenCalled();
-      expect(vi.mocked(logger.error)).toHaveBeenCalledWith(
-        expect.stringContaining("Invalid R2 config; falling back to filesystem OTA storage"),
-      );
-      expect(vi.mocked(Sentry.captureException)).toHaveBeenCalledWith(parseError);
-      expect(vi.mocked(createS3Client)).not.toHaveBeenCalled();
-      expect(vi.mocked(createR2Client)).not.toHaveBeenCalled();
-    });
-
-    it("builds an R2 client when complete config is valid", () => {
-      setR2Env({
-        R2_ENDPOINT: "https://example.r2.cloudflarestorage.com",
-        R2_ACCESS_KEY_ID: "key-id",
-        R2_SECRET_ACCESS_KEY: "secret",
-        R2_BUCKET: "ota-assets",
-      });
-      const parsedConfig: R2Config = {
-        R2_ENDPOINT: "https://example.r2.cloudflarestorage.com",
-        R2_ACCESS_KEY_ID: "key-id",
-        R2_SECRET_ACCESS_KEY: "secret",
-        R2_BUCKET: "ota-assets",
-      };
-      vi.mocked(parseR2Config).mockReturnValueOnce(parsedConfig);
-
-      const fakeDb = createDatabaseFromEnv();
-      createApp(fakeDb);
-
-      expect(vi.mocked(parseR2Config)).toHaveBeenCalledWith(parsedConfig);
-      expect(vi.mocked(createS3Client)).toHaveBeenCalledWith(parsedConfig);
-      expect(vi.mocked(createR2Client)).toHaveBeenCalledWith(undefined, "ota-assets");
-      expect(vi.mocked(logger.info)).toHaveBeenCalledWith(
-        "[updates] Using R2 object storage for OTA assets",
-      );
     });
   });
 });
@@ -497,5 +524,48 @@ describe("runStartupTasks", () => {
 
     expect(vi.mocked(logger.error)).toHaveBeenCalledWith(expect.stringContaining("slack boom"));
     expect(vi.mocked(Sentry.captureException)).toHaveBeenCalledWith(error);
+  });
+});
+
+describe("main", () => {
+  const originalDatabaseUrl = process.env.DATABASE_URL;
+
+  afterEach(() => {
+    if (originalDatabaseUrl === undefined) {
+      delete process.env.DATABASE_URL;
+    } else {
+      process.env.DATABASE_URL = originalDatabaseUrl;
+    }
+  });
+
+  it("throws when DATABASE_URL is not set", async () => {
+    delete process.env.DATABASE_URL;
+    await expect(main()).rejects.toThrow("DATABASE_URL environment variable is required");
+  });
+
+  it("creates db and app when DATABASE_URL is set", async () => {
+    process.env.DATABASE_URL = "postgres://test:test@localhost:5432/test";
+    vi.mocked(createDatabaseFromEnv).mockClear();
+    vi.mocked(logger.info).mockClear();
+
+    // main() calls app.listen which binds a port — use port 0 via env
+    const originalPort = process.env.PORT;
+    process.env.PORT = "0";
+
+    try {
+      // main() returns after calling app.listen (non-blocking)
+      await main();
+      // Give the listen callback time to fire
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(vi.mocked(createDatabaseFromEnv)).toHaveBeenCalled();
+      expect(vi.mocked(logger.info)).toHaveBeenCalledWith(expect.stringContaining("API running"));
+    } finally {
+      if (originalPort === undefined) {
+        delete process.env.PORT;
+      } else {
+        process.env.PORT = originalPort;
+      }
+    }
   });
 });
