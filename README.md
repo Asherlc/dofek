@@ -319,12 +319,12 @@ The `deploy-config` module is intentionally separate from the main `deploy/main.
 export SSH_AUTH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
 cd deploy/deploy-config
 # Secrets are read from SOPS and passed as TF_VAR_ env vars
-sops exec-env ../../.env 'terraform apply -var="server_ip=159.69.3.40" -var="axiom_api_token=$AXIOM_API_TOKEN" -var="slack_bot_token=$SLACK_BOT_TOKEN" -var="slack_client_id=$SLACK_CLIENT_ID" -var="slack_client_secret=$SLACK_CLIENT_SECRET" -var="ghcr_token=$GHCR_TOKEN"'
+sops exec-env ../../.env 'terraform apply -var="server_ip=159.69.3.40" -var="axiom_api_token=$AXIOM_API_TOKEN" -var="slack_bot_token=$SLACK_BOT_TOKEN" -var="ghcr_token=$GHCR_TOKEN"'
 ```
 
 Note: Terraform's SSH client also cannot use passphrase-protected keys from `~/.ssh/` without the agent, and `private_key` in the connection block doesn't work with keys stored in 1Password. The `agent = true` approach is the only reliable option.
 
-`deploy-config` syncs these secrets from SOPS to the server's `.env` and Docker config on every apply: `AXIOM_API_TOKEN`, `SLACK_BOT_TOKEN`, `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, `R2_BUCKET`, and GHCR Docker auth.
+`deploy-config` syncs these secrets from SOPS to the server's `.env` and Docker config on every apply: `AXIOM_API_TOKEN`, `SLACK_BOT_TOKEN`, `R2_BUCKET`, and GHCR Docker auth. Other secrets (provider API keys, OAuth client IDs/secrets like `SLACK_CLIENT_ID`) reach containers through the SOPS-encrypted `.env` baked into the Docker image.
 
 **Finding the server IP:** The domain is behind Cloudflare so you need the direct Hetzner IP:
 - `~/.ssh/known_hosts` — grep for Hetzner ranges (`159.69.*`, `116.203.*`, `49.12.*`)
