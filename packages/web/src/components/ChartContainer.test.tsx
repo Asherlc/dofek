@@ -1,11 +1,6 @@
 /** @vitest-environment jsdom */
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
-
-vi.mock("@tanstack/react-query", () => ({
-  useIsFetching: () => 0,
-}));
-
+import { describe, expect, it } from "vitest";
 import { ChartContainer } from "./ChartContainer.tsx";
 
 describe("ChartContainer", () => {

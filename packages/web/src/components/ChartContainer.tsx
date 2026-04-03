@@ -1,5 +1,5 @@
-import { useIsFetching } from "@tanstack/react-query";
 import type { ReactNode } from "react";
+import { useFetchingCount } from "../lib/FetchingContext.tsx";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface ChartContainerProps {
@@ -25,7 +25,7 @@ export function ChartContainer({
   emptyMessage = "No data available",
   children,
 }: ChartContainerProps) {
-  const fetchingCount = useIsFetching();
+  const fetchingCount = useFetchingCount();
 
   if (loading) {
     return <ChartLoadingSkeleton height={height} />;

@@ -1,6 +1,6 @@
 import { sleepTierColor } from "@dofek/scoring/scoring";
-import { useIsFetching } from "@tanstack/react-query";
 import type { SleepPerformanceInfo } from "dofek-server/types";
+import { useFetchingCount } from "../lib/FetchingContext.tsx";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface SleepPerformanceCardProps {
@@ -9,7 +9,7 @@ interface SleepPerformanceCardProps {
 }
 
 export function SleepPerformanceCard({ data, loading }: SleepPerformanceCardProps) {
-  const fetchingCount = useIsFetching();
+  const fetchingCount = useFetchingCount();
 
   if (loading) {
     return <ChartLoadingSkeleton height={140} />;

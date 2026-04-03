@@ -1,10 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SleepPerformanceCard } from "./SleepPerformanceCard";
-
-const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: false } },
-});
 
 const meta = {
   title: "Sleep/SleepPerformanceCard",
@@ -12,11 +7,9 @@ const meta = {
   tags: ["autodocs"],
   decorators: [
     (Story) => (
-      <QueryClientProvider client={queryClient}>
-        <div style={{ width: 400 }}>
-          <Story />
-        </div>
-      </QueryClientProvider>
+      <div style={{ width: 400 }}>
+        <Story />
+      </div>
     ),
   ],
   args: {

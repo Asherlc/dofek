@@ -2,12 +2,12 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-const { mockUseIsFetching } = vi.hoisted(() => ({
-  mockUseIsFetching: vi.fn(() => 0),
+const { mockUseFetchingCount } = vi.hoisted(() => ({
+  mockUseFetchingCount: vi.fn(() => 0),
 }));
 
-vi.mock("@tanstack/react-query", () => ({
-  useIsFetching: mockUseIsFetching,
+vi.mock("../lib/FetchingContext.tsx", () => ({
+  useFetchingCount: mockUseFetchingCount,
 }));
 
 // Mock echarts-for-react before importing the component
@@ -164,30 +164,30 @@ describe("DofekChart", () => {
   });
 
   it("shows skeleton instead of empty message when queries are fetching", () => {
-    mockUseIsFetching.mockReturnValue(1);
+    mockUseFetchingCount.mockReturnValue(1);
     render(<DofekChart option={{}} empty={true} />);
     expect(screen.getByTestId("loading-skeleton")).toBeDefined();
     expect(screen.queryByText("No data available")).toBeNull();
-    mockUseIsFetching.mockReturnValue(0);
+    mockUseFetchingCount.mockReturnValue(0);
   });
 
   it("shows empty message when empty and no queries fetching", () => {
-    mockUseIsFetching.mockReturnValue(0);
+    mockUseFetchingCount.mockReturnValue(0);
     render(<DofekChart option={{}} empty={true} />);
     expect(screen.getByText("No data available")).toBeDefined();
     expect(screen.queryByTestId("loading-skeleton")).toBeNull();
   });
 
   it("shows refresh spinner when data present and queries are fetching", () => {
-    mockUseIsFetching.mockReturnValue(2);
+    mockUseFetchingCount.mockReturnValue(2);
     const { container } = render(<DofekChart option={{ series: [] }} />);
     expect(screen.getByTestId("echarts-mock")).toBeDefined();
     expect(container.querySelector(".animate-spin")).not.toBeNull();
-    mockUseIsFetching.mockReturnValue(0);
+    mockUseFetchingCount.mockReturnValue(0);
   });
 
   it("hides refresh spinner when no queries are fetching", () => {
-    mockUseIsFetching.mockReturnValue(0);
+    mockUseFetchingCount.mockReturnValue(0);
     const { container } = render(<DofekChart option={{ series: [] }} />);
     expect(screen.getByTestId("echarts-mock")).toBeDefined();
     expect(container.querySelector(".animate-spin")).toBeNull();

@@ -15,8 +15,8 @@
  *     emptyMessage="No sleep data yet"
  *   />
  */
-import { useIsFetching } from "@tanstack/react-query";
 import ReactECharts from "echarts-for-react";
+import { useFetchingCount } from "../lib/FetchingContext.tsx";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface DofekChartProps {
@@ -37,7 +37,7 @@ export function DofekChart({
   emptyMessage = "No data available",
   opts,
 }: DofekChartProps) {
-  const fetchingCount = useIsFetching();
+  const fetchingCount = useFetchingCount();
 
   if (loading) {
     return <ChartLoadingSkeleton height={height} />;

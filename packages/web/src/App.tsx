@@ -4,6 +4,7 @@ import { useState } from "react";
 import { DashboardLayoutProvider } from "./components/DashboardLayoutProvider.tsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
 import { UnitProvider } from "./components/UnitProvider.tsx";
+import { FetchingProvider } from "./lib/FetchingContext.tsx";
 import { capturePageView, initPostHog } from "./lib/posthog.ts";
 import { createTRPCClient, trpc } from "./lib/trpc.ts";
 import { routeTree } from "./routeTree.gen.ts";
@@ -41,11 +42,13 @@ export function App() {
     <ErrorBoundary>
       <trpc.Provider client={trpcClient} queryClient={queryClient}>
         <QueryClientProvider client={queryClient}>
-          <UnitProvider>
-            <DashboardLayoutProvider>
-              <RouterProvider router={router} />
-            </DashboardLayoutProvider>
-          </UnitProvider>
+          <FetchingProvider>
+            <UnitProvider>
+              <DashboardLayoutProvider>
+                <RouterProvider router={router} />
+              </DashboardLayoutProvider>
+            </UnitProvider>
+          </FetchingProvider>
         </QueryClientProvider>
       </trpc.Provider>
       <div className="fixed bottom-1 right-1 font-mono text-[10px] text-dim opacity-30 hover:opacity-100 select-all transition-opacity">

@@ -1,10 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ChartContainer } from "./ChartContainer";
-
-const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: false } },
-});
 
 const meta = {
   title: "Charts/ChartContainer",
@@ -12,11 +7,9 @@ const meta = {
   tags: ["autodocs"],
   decorators: [
     (Story) => (
-      <QueryClientProvider client={queryClient}>
-        <div style={{ width: 600 }}>
-          <Story />
-        </div>
-      </QueryClientProvider>
+      <div style={{ width: 600 }}>
+        <Story />
+      </div>
     ),
   ],
   args: {
