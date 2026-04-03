@@ -107,7 +107,10 @@ merged AS (
      WHERE fg2.group_id = b.group_id
        AND r.external_id IS NOT NULL
        AND r.external_id <> ''
-    ) AS source_external_ids
+    ) AS source_external_ids,
+    (SELECT array_agg(fg2.activity_id)
+     FROM final_groups fg2
+     WHERE fg2.group_id = b.group_id) AS member_activity_ids
   FROM best_per_group b
 )
 SELECT
@@ -124,7 +127,8 @@ SELECT
   m.timezone,
   m.raw,
   m.source_providers,
-  m.source_external_ids
+  m.source_external_ids,
+  m.member_activity_ids
 FROM merged m
 ORDER BY m.started_at DESC;
 

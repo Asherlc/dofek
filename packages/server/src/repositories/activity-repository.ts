@@ -191,7 +191,12 @@ export class ActivityRepository extends BaseRepository {
   async getStream(activityId: string, maxPoints: number): Promise<StreamPoint[]> {
     const rows = await this.query(
       streamPointRowSchema,
-      sql`WITH sensor_pivoted AS (
+      sql`WITH member_ids AS (
+            SELECT unnest(a.member_activity_ids) AS activity_id
+            FROM fitness.v_activity a
+            WHERE a.id = ${activityId} AND a.user_id = ${this.userId}
+          ),
+          sensor_pivoted AS (
             SELECT
               ss.recorded_at,
               MAX(ss.scalar) FILTER (WHERE ss.channel = 'heart_rate')::SMALLINT AS heart_rate,
@@ -202,9 +207,8 @@ export class ActivityRepository extends BaseRepository {
               MAX(ss.scalar) FILTER (WHERE ss.channel = 'lat') AS lat,
               MAX(ss.scalar) FILTER (WHERE ss.channel = 'lng') AS lng
             FROM fitness.sensor_sample ss
-            JOIN fitness.v_activity a ON a.id = ss.activity_id AND a.user_id = ${this.userId}
-            WHERE ss.activity_id = ${activityId}
-              AND ss.channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude', 'lat', 'lng')
+            JOIN member_ids m ON ss.activity_id = m.activity_id
+            WHERE ss.channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude', 'lat', 'lng')
             GROUP BY ss.recorded_at
           ),
           legacy_pivoted AS (
@@ -218,8 +222,7 @@ export class ActivityRepository extends BaseRepository {
               ms.lat,
               ms.lng
             FROM fitness.metric_stream ms
-            JOIN fitness.v_activity a ON a.id = ms.activity_id AND a.user_id = ${this.userId}
-            WHERE ms.activity_id = ${activityId}
+            JOIN member_ids m ON ms.activity_id = m.activity_id
           ),
           pivoted AS (
             SELECT * FROM sensor_pivoted
@@ -258,20 +261,23 @@ export class ActivityRepository extends BaseRepository {
             WHERE up.id = ${this.userId}
               AND up.max_hr IS NOT NULL
           ),
+          member_ids AS (
+            SELECT unnest(a.member_activity_ids) AS activity_id
+            FROM fitness.v_activity a
+            WHERE a.id = ${activityId} AND a.user_id = ${this.userId}
+          ),
           hr_samples AS (
             WITH sensor_hr_samples AS (
               SELECT ms.scalar AS heart_rate
               FROM fitness.sensor_sample ms
-              JOIN fitness.v_activity a ON a.id = ms.activity_id AND a.user_id = ${this.userId}
-              WHERE ms.activity_id = ${activityId}
-                AND ms.channel = 'heart_rate'
+              JOIN member_ids m ON ms.activity_id = m.activity_id
+              WHERE ms.channel = 'heart_rate'
             ),
             legacy_hr_samples AS (
               SELECT ms.heart_rate::REAL AS heart_rate
               FROM fitness.metric_stream ms
-              JOIN fitness.v_activity a ON a.id = ms.activity_id AND a.user_id = ${this.userId}
-              WHERE ms.activity_id = ${activityId}
-                AND ms.heart_rate IS NOT NULL
+              JOIN member_ids m ON ms.activity_id = m.activity_id
+              WHERE ms.heart_rate IS NOT NULL
             )
             SELECT heart_rate
             FROM sensor_hr_samples
