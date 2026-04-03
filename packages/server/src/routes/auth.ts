@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { IDENTITY_PROVIDER_NAMES } from "@dofek/auth/auth";
+import * as Sentry from "@sentry/node";
 import { getOAuthRedirectUri, type TokenSet } from "dofek/auth/oauth";
 import { sql } from "drizzle-orm";
 import { escapeAttribute, escapeText } from "entities";
@@ -351,6 +352,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
 
       res.redirect(url.toString());
     } catch (err: unknown) {
+      Sentry.captureException(err);
       const message = err instanceof Error ? err.message : String(err);
       logger.error(`[auth] Failed to start login flow: ${message}`);
       res.status(500).send("Auth error: failed to start login flow");
@@ -401,6 +403,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
 
       res.redirect(url.toString());
     } catch (err: unknown) {
+      Sentry.captureException(err);
       const message = err instanceof Error ? err.message : String(err);
       logger.error(`[auth] Failed to start link flow: ${message}`);
       res.status(500).send("Auth error: failed to start link flow");
@@ -508,6 +511,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       );
       res.redirect(linkUserId ? "/settings" : (returnTo ?? "/"));
     } catch (err: unknown) {
+      Sentry.captureException(err);
       const message = err instanceof Error ? err.message : String(err);
       logger.error(`[auth] Identity callback failed: ${message}`);
       res.status(500).send("Login failed — please try again");
@@ -569,6 +573,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         logger.info(`[auth] User ${userId} logged in via native Apple Sign In`);
         res.json({ session: sessionInfo.sessionId });
       } catch (err: unknown) {
+        Sentry.captureException(err);
         const message = err instanceof Error ? err.message : String(err);
         logger.error(`[auth] Native Apple Sign In failed: ${message}`);
         res.status(500).send("Apple Sign In failed — please try again");
@@ -679,6 +684,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         returnTo,
       });
     } catch (err: unknown) {
+      Sentry.captureException(err);
       logger.error(`[auth] Failed to start data provider login: ${err}`);
       res.status(500).send("Auth error: failed to start login flow");
     }
@@ -710,6 +716,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         userId: session.userId,
       });
     } catch (err: unknown) {
+      Sentry.captureException(err);
       logger.error(`[auth] Failed to start data provider link: ${err}`);
       res.status(500).send("Auth error: failed to start link flow");
     }
@@ -747,6 +754,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         userId,
       });
     } catch (err: unknown) {
+      Sentry.captureException(err);
       logger.error(`[auth] Failed to start OAuth flow: ${err}`);
       res.status(500).send("Auth error: failed to start OAuth flow");
     }
@@ -1099,6 +1107,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         ),
       );
     } catch (err: unknown) {
+      Sentry.captureException(err);
       const message = err instanceof Error ? err.message : String(err);
       logger.error(`[auth] OAuth callback failed: ${message}`, { err });
       res.status(500).send("Token exchange failed — please try again");
@@ -1171,6 +1180,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         logger.info(`[auth] User ${userId} completed signup via ${pending.providerId}`);
         res.redirect(pending.returnTo ?? "/");
       } catch (err: unknown) {
+        Sentry.captureException(err);
         logger.error(`[auth] Completing signup failed: ${err}`);
         res.status(500).send("Signup failed — please try again");
       }
