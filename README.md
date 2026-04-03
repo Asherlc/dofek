@@ -278,7 +278,7 @@ terraform apply
 
 After the server exists:
 
-1. Add the required runtime vars to `/opt/dofek/.env`: `POSTGRES_PASSWORD`, `AXIOM_API_TOKEN`, `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and optionally `DOCKER_GID`.
+1. Add the required runtime vars to `/opt/dofek/.env`: `POSTGRES_PASSWORD`, `AXIOM_API_TOKEN`, `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, and optionally `DOCKER_GID`.
 2. Run the deploy-config module once to push `otel-collector-config.yaml`, `docker-compose.hotfix.yml`, and the current patch-mounted files.
 3. Point DNS at the Hetzner IP (`terraform output -raw server_ip`). Caddy will provision TLS automatically.
 
@@ -397,7 +397,7 @@ There are two sources of environment variables for the production containers:
 
 1. **SOPS-encrypted `.env` (this repo)** — provider credentials (API keys, OAuth client IDs/secrets). Baked into the Docker image at build time. The entrypoint decrypts it at container startup using the age key.
 
-2. **`.env` on server (`/opt/dofek/.env`)** — deployment/runtime vars used by Docker Compose interpolation and `env_file`: `SOPS_AGE_KEY`, `CADDY_DOMAIN`, `POSTGRES_PASSWORD`, `AXIOM_API_TOKEN`, `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, optional storage paths, and any host-specific overrides such as `DOCKER_GID`.
+2. **`.env` on server (`/opt/dofek/.env`)** — deployment/runtime vars used by Docker Compose interpolation and `env_file`: `SOPS_AGE_KEY`, `CADDY_DOMAIN`, `POSTGRES_PASSWORD`, `AXIOM_API_TOKEN`, `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, optional storage paths, and any host-specific overrides such as `DOCKER_GID`.
 
 The entrypoint merges both: compose `env_file` sets vars first, then `sops exec-env` adds decrypted provider credentials on top.
 
