@@ -689,8 +689,8 @@ jobs:
             exit 0
           fi
 
-          # Split into shards of 1 file each for maximum parallelism
-          SHARD_SIZE=1
+          # Split into shards of up to 5 files each
+          SHARD_SIZE=5
           SHARDS="["
           for (( i=0; i<COUNT; i+=SHARD_SIZE )); do
             CHUNK=""
