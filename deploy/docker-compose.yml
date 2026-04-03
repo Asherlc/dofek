@@ -132,8 +132,7 @@ services:
     environment:
       - BASE_URL=https://ota.dofek.asherlc.com
       - STORAGE_MODE=s3
-      - S3_BUCKET_NAME=${R2_BUCKET:?Set R2_BUCKET in .env}
-      - S3_KEY_PREFIX=expo-open-ota/
+      - S3_BUCKET_NAME=${R2_OTA_BUCKET:-dofek-ota}
       - AWS_REGION=auto
       - AWS_BASE_ENDPOINT=${R2_ENDPOINT:?Set R2_ENDPOINT in .env}
       - AWS_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID:?Set R2_ACCESS_KEY_ID in .env}

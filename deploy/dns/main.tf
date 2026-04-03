@@ -114,9 +114,21 @@ resource "cloudflare_r2_bucket" "training_data" {
   location   = "WEUR"
 }
 
+resource "cloudflare_r2_bucket" "ota" {
+  account_id = var.cloudflare_account_id
+  name       = "dofek-ota"
+  location   = "WEUR"
+}
+
+resource "cloudflare_r2_bucket" "storybook" {
+  account_id = var.cloudflare_account_id
+  name       = "dofek-storybook"
+  location   = "WEUR"
+}
+
 resource "cloudflare_r2_custom_domain" "storybook_preview" {
   account_id  = var.cloudflare_account_id
-  bucket_name = cloudflare_r2_bucket.training_data.name
+  bucket_name = cloudflare_r2_bucket.storybook.name
   domain      = "storybook.dofek.fit"
   enabled     = true
   zone_id     = cloudflare_zone.dofek_fit.id
@@ -125,8 +137,8 @@ resource "cloudflare_r2_custom_domain" "storybook_preview" {
 # NOTE: S3-compatible API credentials (access key ID + secret access key) for R2
 # cannot be created via Terraform — they must be created manually in the
 # Cloudflare dashboard: R2 → Manage R2 API Tokens → Create API Token.
-# Scope the token to "Object Read & Write" for the dofek-training-data bucket.
-# Then add R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY to the SOPS-encrypted .env.
+# The existing token scoped to dofek-training-data must be updated to also
+# cover dofek-ota and dofek-storybook (or create separate tokens per bucket).
 
 # --- Outputs ---
 
@@ -145,6 +157,16 @@ output "r2_bucket_name" {
   value       = cloudflare_r2_bucket.training_data.name
 }
 
+output "r2_ota_bucket_name" {
+  description = "R2 bucket name for OTA updates"
+  value       = cloudflare_r2_bucket.ota.name
+}
+
+output "r2_storybook_bucket_name" {
+  description = "R2 bucket name for Storybook previews"
+  value       = cloudflare_r2_bucket.storybook.name
+}
+
 output "r2_endpoint" {
   description = "R2 S3-compatible endpoint URL"
   value       = "https://${var.cloudflare_account_id}.r2.cloudflarestorage.com"
@@ -152,5 +174,5 @@ output "r2_endpoint" {
 
 output "storybook_preview_base_url" {
   description = "Public base URL for PR Storybook previews"
-  value       = "https://${cloudflare_r2_custom_domain.storybook_preview.domain}/storybook"
+  value       = "https://${cloudflare_r2_custom_domain.storybook_preview.domain}"
 }
