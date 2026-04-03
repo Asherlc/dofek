@@ -2,9 +2,9 @@
  * Standard chart wrapper. Handles loading skeletons, empty states,
  * and consistent sizing so individual charts only define their ECharts option.
  *
- * Automatically detects background refetches via React Query's useIsFetching():
- * - Empty data + refetch in progress → loading skeleton (not "No data")
- * - Data present + refetch in progress → subtle refresh spinner overlay
+ * Automatically detects background fetching via React Query's useIsFetching():
+ * - Empty data + fetch in progress → loading skeleton (not "No data")
+ * - Data present + fetch in progress → subtle refresh spinner overlay
  *
  * Usage:
  *   <DofekChart
