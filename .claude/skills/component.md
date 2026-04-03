@@ -4,7 +4,7 @@ description: Use when writing or modifying React components in packages/web or p
 
 # React Component Development
 
-When creating or modifying React components, you MUST write or update Storybook stories to illustrate your changes.
+When creating or modifying React components, you MUST write or update both **tests** and **Storybook stories** to cover your changes.
 
 ## Web (`packages/web`)
 
@@ -24,12 +24,23 @@ When creating or modifying React components, you MUST write or update Storybook 
 - Use `@storybook/react-native` imports
 - Run `pnpm storybook:mobile` to verify on-device
 
+## Tests
+
+- Test files live next to the component: `ComponentName.test.tsx`
+- Mock ECharts with `vi.mock("echarts-for-react", ...)` to capture the option object for assertion
+- Mock `LoadingSkeleton.tsx` to render a simple `data-testid` div
+- Test all states: default rendering, loading, empty, and any behavioral logic (e.g., axis rounding, color thresholds, conditional rendering)
+- When fixing a bug, write a failing test that reproduces the bug before writing the fix
+
 ## Checklist
 
 Before finishing component work:
 
-1. [ ] Story file exists for the component (`ComponentName.stories.tsx`)
-2. [ ] Default story shows the standard/happy-path rendering
-3. [ ] Key variant stories cover loading, empty, and error states where applicable
-4. [ ] Stories use realistic mock data (not lorem ipsum or placeholder values)
-5. [ ] Stories render without console errors in Storybook
+1. [ ] Test file exists for the component (`ComponentName.test.tsx`)
+2. [ ] Tests cover default rendering, loading, empty, and error states
+3. [ ] Tests verify any non-trivial logic (axis functions, color rules, conditional display)
+4. [ ] Story file exists for the component (`ComponentName.stories.tsx`)
+5. [ ] Default story shows the standard/happy-path rendering
+6. [ ] Key variant stories cover loading, empty, and error states where applicable
+7. [ ] Stories use realistic mock data (not lorem ipsum or placeholder values)
+8. [ ] Stories render without console errors in Storybook
