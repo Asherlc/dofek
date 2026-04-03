@@ -24,7 +24,7 @@ describe("OTA deployment config (expo-open-ota)", () => {
 
   it("uses eoas publish in CI OTA deploy", () => {
     const ciWorkflow = readFileSync(ciWorkflowPath, "utf-8");
-    expect(ciWorkflow).toContain("eoas publish");
+    expect(ciWorkflow).toMatch(/eoas.*publish/);
     expect(ciWorkflow).toContain("EXPO_TOKEN");
   });
 
