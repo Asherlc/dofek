@@ -2,26 +2,26 @@
  * Standard chart wrapper. Handles loading skeletons, empty states,
  * and consistent sizing so individual charts only define their ECharts option.
  *
+ * Automatically detects background refetches via React Query's useIsFetching():
+ * - Empty data + refetch in progress → loading skeleton (not "No data")
+ * - Data present + refetch in progress → subtle refresh spinner overlay
+ *
  * Usage:
  *   <DofekChart
  *     option={option}
  *     loading={query.isLoading}
- *     fetching={query.isFetching}
  *     empty={data.length === 0}
  *     height={250}
  *     emptyMessage="No sleep data yet"
  *   />
  */
+import { useIsFetching } from "@tanstack/react-query";
 import ReactECharts from "echarts-for-react";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface DofekChartProps {
   option: Record<string, unknown>;
   loading?: boolean;
-  /** Background refetch in progress (from query.isFetching). When true and
-   *  data is empty, shows a skeleton instead of "No data". When true with
-   *  data present, shows a subtle refresh indicator over the chart. */
-  fetching?: boolean;
   empty?: boolean;
   height?: number;
   emptyMessage?: string;
@@ -32,19 +32,20 @@ interface DofekChartProps {
 export function DofekChart({
   option,
   loading,
-  fetching,
   empty,
   height = 250,
   emptyMessage = "No data available",
   opts,
 }: DofekChartProps) {
+  const fetchingCount = useIsFetching();
+
   if (loading) {
     return <ChartLoadingSkeleton height={height} />;
   }
 
   if (empty) {
     // Data is empty but a refetch is running — show skeleton, not "No data"
-    if (fetching) {
+    if (fetchingCount > 0) {
       return <ChartLoadingSkeleton height={height} />;
     }
     return (
@@ -56,7 +57,7 @@ export function DofekChart({
 
   return (
     <div className="relative" style={{ height }}>
-      {fetching && (
+      {fetchingCount > 0 && (
         <div className="absolute top-2 right-2 z-10">
           <div className="w-3.5 h-3.5 border-2 border-border-strong border-t-muted rounded-full animate-spin" />
         </div>

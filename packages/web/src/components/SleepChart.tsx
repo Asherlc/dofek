@@ -14,10 +14,9 @@ interface SleepData {
 interface SleepChartProps {
   data: SleepData[];
   loading?: boolean;
-  fetching?: boolean;
 }
 
-export function SleepChart({ data, loading, fetching }: SleepChartProps) {
+export function SleepChart({ data, loading }: SleepChartProps) {
   const option = {
     grid: dofekGrid("single", { top: 30, bottom: 40, left: 50 }),
     tooltip: dofekTooltip({
@@ -80,7 +79,5 @@ export function SleepChart({ data, loading, fetching }: SleepChartProps) {
     ],
   };
 
-  return (
-    <DofekChart option={option} loading={loading} fetching={fetching} empty={data.length === 0} />
-  );
+  return <DofekChart option={option} loading={loading} empty={data.length === 0} />;
 }
