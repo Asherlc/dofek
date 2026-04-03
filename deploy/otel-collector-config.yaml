@@ -33,6 +33,9 @@ receivers:
       - type: move
         from: attributes.log
         to: body
+      # Drop noisy Postgres NOTICE lines (e.g. migration progress)
+      - type: filter
+        expr: 'body matches "severity_local: .NOTICE." or body matches "severity: .NOTICE." or body matches "routine: .exec_stmt_raise." or body matches "file: .pl_exec.c."'
 
 processors:
   batch:
