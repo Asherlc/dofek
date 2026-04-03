@@ -1,20 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { StravaProvider, stravaOAuthConfig } from "./strava.ts";
+import {
+  StravaClient,
+  StravaNotFoundError,
+  StravaRateLimitError,
+  STRAVA_THROTTLE_MS,
+  StravaUnauthorizedError,
+} from "./strava/client.ts";
 import {
   mapStravaActivityType,
   parseStravaActivity,
   parseStravaActivityList,
-  STRAVA_THROTTLE_MS,
-  type StravaActivity,
-  StravaClient,
-  type StravaDetailedActivity,
-  StravaNotFoundError,
-  StravaProvider,
-  StravaRateLimitError,
-  type StravaStreamSet,
-  StravaUnauthorizedError,
-  stravaOAuthConfig,
   stravaStreamsToMetricStream,
-} from "./strava.ts";
+} from "./strava/mapping.ts";
+import type {
+  StravaActivity,
+  StravaDetailedActivity,
+  StravaStreamSet,
+} from "./strava/types.ts";
 
 vi.mock("../db/token-user-context.ts", () => ({
   getTokenUserId: () => "00000000-0000-0000-0000-000000000001",
