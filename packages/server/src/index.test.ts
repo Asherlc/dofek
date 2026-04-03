@@ -8,7 +8,7 @@ vi.mock("@bull-board/api", () => ({
   createBullBoard: vi.fn(),
 }));
 vi.mock("@bull-board/api/bullMQAdapter", () => ({
-  BullMQAdapter: vi.fn(),
+  BullMQAdapter: vi.fn((queue: unknown) => ({ queue })),
 }));
 vi.mock("@bull-board/express", () => ({
   ExpressAdapter: vi.fn(() => ({
@@ -294,6 +294,38 @@ describe("createApp HTTP routes", () => {
 
       // createBullBoard should only be called once (lazy init)
       expect(vi.mocked(mockCreateBullBoard)).toHaveBeenCalledTimes(1);
+    });
+
+    it("registers all 6 queue types with Bull Board", async () => {
+      const { createBullBoard: mockCreateBullBoard } = await import("@bull-board/api");
+      const { BullMQAdapter: MockBullMQAdapter } = await import("@bull-board/api/bullMQAdapter");
+      vi.mocked(mockCreateBullBoard).mockClear();
+      vi.mocked(MockBullMQAdapter).mockClear();
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("admin-session");
+      vi.mocked(validateSession).mockResolvedValue({
+        userId: "admin-1",
+        expiresAt: new Date("2027-01-01"),
+      });
+      vi.mocked(isAdmin).mockResolvedValue(true);
+
+      await fetch(`${baseUrl}/admin/queues`);
+
+      expect(vi.mocked(MockBullMQAdapter)).toHaveBeenCalledTimes(6);
+      expect(vi.mocked(mockCreateBullBoard)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          queues: expect.arrayContaining([
+            expect.anything(),
+            expect.anything(),
+            expect.anything(),
+            expect.anything(),
+            expect.anything(),
+            expect.anything(),
+          ]),
+        }),
+      );
+      // Verify the exact count to catch accidental omissions
+      const call = vi.mocked(mockCreateBullBoard).mock.calls[0][0];
+      expect(call.queues).toHaveLength(6);
     });
   });
 
