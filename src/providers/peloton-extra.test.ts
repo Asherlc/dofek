@@ -283,36 +283,7 @@ describe("PelotonClient", () => {
 });
 
 describe("PelotonProvider", () => {
-  const originalEnv = { ...process.env };
-
-  afterEach(() => {
-    process.env = { ...originalEnv };
-  });
-
-  it("validate returns error when only username missing", () => {
-    delete process.env.PELOTON_USERNAME;
-    process.env.PELOTON_PASSWORD = "pass123";
-    const provider = new PelotonProvider();
-    expect(provider.validate()).toContain("PELOTON_USERNAME");
-  });
-
-  it("validate returns error when only password missing", () => {
-    process.env.PELOTON_USERNAME = "test@test.com";
-    delete process.env.PELOTON_PASSWORD;
-    const provider = new PelotonProvider();
-    expect(provider.validate()).toContain("PELOTON_PASSWORD");
-  });
-
-  it("validate returns error when both credentials missing", () => {
-    delete process.env.PELOTON_USERNAME;
-    delete process.env.PELOTON_PASSWORD;
-    const provider = new PelotonProvider();
-    expect(provider.validate()).toContain("PELOTON_USERNAME");
-  });
-
-  it("validate returns null when credentials set", () => {
-    process.env.PELOTON_USERNAME = "test@test.com";
-    process.env.PELOTON_PASSWORD = "pass123";
+  it("validate always returns null (credentials come from UI)", () => {
     const provider = new PelotonProvider();
     expect(provider.validate()).toBeNull();
   });

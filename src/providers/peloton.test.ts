@@ -583,22 +583,7 @@ describe("pelotonOAuthConfig", () => {
 });
 
 describe("PelotonProvider.validate()", () => {
-  const originalEnv = { ...process.env };
-
-  afterEach(() => {
-    process.env = { ...originalEnv };
-  });
-
-  it("returns error when credentials are missing", () => {
-    delete process.env.PELOTON_USERNAME;
-    delete process.env.PELOTON_PASSWORD;
-    const provider = new PelotonProvider();
-    expect(provider.validate()).toContain("PELOTON_USERNAME");
-  });
-
-  it("returns null when credentials are set", () => {
-    process.env.PELOTON_USERNAME = "user@test.com";
-    process.env.PELOTON_PASSWORD = "password";
+  it("always returns null (credentials come from UI, not env vars)", () => {
     const provider = new PelotonProvider();
     expect(provider.validate()).toBeNull();
   });

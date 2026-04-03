@@ -528,9 +528,8 @@ export class PelotonProvider implements SyncProvider {
   }
 
   validate(): string | null {
-    if (!process.env.PELOTON_USERNAME || !process.env.PELOTON_PASSWORD) {
-      return "PELOTON_USERNAME and PELOTON_PASSWORD are required for Peloton auth";
-    }
+    // Peloton credentials are entered via the UI modal (automated Auth0 login),
+    // not env vars. Always enabled — auth state is checked at sync time.
     return null;
   }
 
