@@ -319,7 +319,7 @@ The `deploy-config` module is intentionally separate from the main `deploy/main.
 export SSH_AUTH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
 cd deploy/deploy-config
 # Secrets are read from SOPS and passed as TF_VAR_ env vars
-sops exec-env ../../.env 'terraform apply -var="server_ip=159.69.3.40" -var="axiom_api_token=$AXIOM_API_TOKEN" -var="slack_bot_token=$SLACK_BOT_TOKEN" -var="ghcr_token=$GHCR_TOKEN"'
+sops exec-env ../../.env 'terraform apply -var="server_ip=159.69.3.40" -var="axiom_api_token=$AXIOM_API_TOKEN" -var="slack_bot_token=$SLACK_BOT_TOKEN" -var="slack_client_id=$SLACK_CLIENT_ID" -var="slack_client_secret=$SLACK_CLIENT_SECRET" -var="ghcr_token=$GHCR_TOKEN"'
 ```
 
 Note: Terraform's SSH client also cannot use passphrase-protected keys from `~/.ssh/` without the agent, and `private_key` in the connection block doesn't work with keys stored in 1Password. The `agent = true` approach is the only reliable option.
