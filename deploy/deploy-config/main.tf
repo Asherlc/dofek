@@ -13,12 +13,14 @@ variable "slack_client_id" {
   description = "Slack OAuth app client ID"
   type        = string
   sensitive   = true
+  default     = ""
 }
 
 variable "slack_client_secret" {
   description = "Slack OAuth app client secret"
   type        = string
   sensitive   = true
+  default     = ""
 }
 
 resource "null_resource" "deploy_config" {
