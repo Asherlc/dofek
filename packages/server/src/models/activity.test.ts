@@ -44,7 +44,6 @@ const fullRow: ActivityRow = {
   total_distance: 42000,
   elevation_gain_m: 350,
   elevation_loss_m: 340,
-  calories: 650,
   sample_count: 5400,
 };
 
@@ -70,7 +69,6 @@ describe("Activity", () => {
     expect(activity.totalDistance).toBe(42000);
     expect(activity.elevationGain).toBe(350);
     expect(activity.elevationLoss).toBe(340);
-    expect(activity.calories).toBe(650);
     expect(activity.sampleCount).toBe(5400);
   });
 
@@ -121,7 +119,6 @@ describe("Activity", () => {
       total_distance: null,
       elevation_gain_m: null,
       elevation_loss_m: null,
-      calories: null,
       sample_count: null,
     };
     const activity = new Activity(row, mockLookup);
@@ -139,7 +136,6 @@ describe("Activity", () => {
     expect(activity.totalDistance).toBeNull();
     expect(activity.elevationGain).toBeNull();
     expect(activity.elevationLoss).toBeNull();
-    expect(activity.calories).toBeNull();
     expect(activity.sampleCount).toBeNull();
   });
 
@@ -182,7 +178,6 @@ describe("Activity", () => {
         totalDistance: 42000,
         elevationGain: 350,
         elevationLoss: 340,
-        calories: 650,
         sampleCount: 5400,
       });
     });

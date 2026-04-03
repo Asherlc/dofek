@@ -213,7 +213,13 @@ function DeleteActivityButton({ activityId }: { activityId: string }) {
   );
 }
 
-function ActivityHeader({ activity, units }: { activity: ActivityDetail; units: UnitConverter }) {
+export function ActivityHeader({
+  activity,
+  units,
+}: {
+  activity: ActivityDetail;
+  units: UnitConverter;
+}) {
   const durationMin =
     activity.startedAt && activity.endedAt
       ? Math.round(
@@ -235,8 +241,6 @@ function ActivityHeader({ activity, units }: { activity: ActivityDetail; units: 
       label: "Distance",
       value: `${formatNumber(units.convertDistance(activity.totalDistance / 1000))} ${units.distanceLabel}`,
     });
-  if (activity.calories != null)
-    stats.push({ label: "Calories", value: `${Math.round(activity.calories)} kcal` });
   if (activity.elevationGain != null)
     stats.push({
       label: "Elevation Gain",
@@ -621,7 +625,7 @@ function ElevationChart({
   return <DofekChart option={option} height={200} />;
 }
 
-function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: boolean }) {
+export function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: boolean }) {
   if (loading) return <ChartLoadingSkeleton height={200} />;
 
   const totalSeconds = zones.reduce((sum, z) => sum + z.seconds, 0);

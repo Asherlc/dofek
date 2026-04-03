@@ -104,7 +104,6 @@ describe("ActivityRepository", () => {
           max_hr: 175,
           avg_power: 200,
           distance_meters: 30000,
-          calories: 500,
           total_count: 5,
         },
       ]);
@@ -135,7 +134,6 @@ describe("ActivityRepository", () => {
           max_hr: 175,
           avg_power: null,
           distance_meters: 10000,
-          calories: 400,
           total_count: 1,
         },
       ]);
@@ -174,7 +172,6 @@ describe("ActivityRepository", () => {
           total_distance: 8000,
           elevation_gain_m: 50,
           elevation_loss_m: 45,
-          calories: 400,
           sample_count: 2700,
         },
       ]);

@@ -57,17 +57,9 @@ describe("ActivityCard", () => {
     expect(screen.getByText("mi")).toBeTruthy();
   });
 
-  it("shows calories when provided", () => {
-    render(<ActivityCard {...baseProps} calories={450.2} />);
-    expect(screen.getByText("450")).toBeTruthy();
-    expect(screen.getByText("Calories")).toBeTruthy();
-    expect(screen.getByText("kcal")).toBeTruthy();
-  });
-
   it("hides stats when values are null or zero", () => {
-    render(<ActivityCard {...baseProps} distanceKm={0} calories={null} />);
+    render(<ActivityCard {...baseProps} distanceKm={0} />);
     expect(screen.queryByText("Distance")).toBeNull();
-    expect(screen.queryByText("Calories")).toBeNull();
     expect(screen.queryByText("Avg HR")).toBeNull();
   });
 
