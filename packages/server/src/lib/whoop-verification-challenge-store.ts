@@ -2,6 +2,7 @@ import { RedisConnection } from "bullmq";
 import { getRedisConnection } from "dofek/jobs/queues";
 import type { WhoopVerificationMethod } from "whoop-whoop";
 import { z } from "zod";
+import { logger } from "../logger.ts";
 
 const CHALLENGE_KEY_PREFIX = "whoop:verification:";
 export const DEFAULT_CHALLENGE_TTL_MS = 10 * 60 * 1000;
@@ -85,7 +86,21 @@ export class RedisWhoopVerificationChallengeStore implements WhoopVerificationCh
   ): Promise<void> {
     const redisClient = await this.#getRedisClient();
     const challengeKey = getChallengeRedisKey(challengeId);
-    await redisClient.set(challengeKey, JSON.stringify(challenge), "PX", timeToLiveMs);
+    const result = await redisClient.set(
+      challengeKey,
+      JSON.stringify(challenge),
+      "PX",
+      timeToLiveMs,
+    );
+    if (result !== "OK") {
+      logger.error(
+        `[whoopChallengeStore] save failed challengeId=${challengeId} result=${String(result)}`,
+      );
+    } else {
+      logger.info(
+        `[whoopChallengeStore] save success challengeId=${challengeId} ttlMs=${timeToLiveMs}`,
+      );
+    }
   }
 
   async get(challengeId: string): Promise<WhoopVerificationChallenge | null> {
@@ -93,6 +108,7 @@ export class RedisWhoopVerificationChallengeStore implements WhoopVerificationCh
     const challengeKey = getChallengeRedisKey(challengeId);
     const challengePayload = await redisClient.get(challengeKey);
     if (!challengePayload) {
+      logger.warn(`[whoopChallengeStore] get miss challengeId=${challengeId} (key not in Redis)`);
       return null;
     }
 
@@ -101,12 +117,18 @@ export class RedisWhoopVerificationChallengeStore implements WhoopVerificationCh
         JSON.parse(challengePayload),
       );
       if (!parsedChallenge.success) {
+        logger.error(
+          `[whoopChallengeStore] get zod validation failed challengeId=${challengeId} errors=${JSON.stringify(parsedChallenge.error.issues)}`,
+        );
         await redisClient.del(challengeKey);
         return null;
       }
 
       return parsedChallenge.data;
-    } catch {
+    } catch (error) {
+      logger.error(
+        `[whoopChallengeStore] get parse error challengeId=${challengeId} error=${error instanceof Error ? error.message : String(error)}`,
+      );
       await redisClient.del(challengeKey);
       return null;
     }

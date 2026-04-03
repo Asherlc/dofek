@@ -1,8 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
+import { logger } from "../logger.ts";
 import {
   InMemoryWhoopVerificationChallengeStore,
   RedisWhoopVerificationChallengeStore,
 } from "./whoop-verification-challenge-store.ts";
+
+vi.mock("../logger.ts", () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}));
 
 describe("InMemoryWhoopVerificationChallengeStore", () => {
   it("stores, loads, and deletes challenge sessions", async () => {
@@ -138,6 +143,90 @@ describe("RedisWhoopVerificationChallengeStore", () => {
 
     await expect(challengeStore.get("invalid-challenge")).resolves.toBeNull();
     expect(deleteMethod).toHaveBeenCalledWith("whoop:verification:invalid-challenge");
+  });
+
+  it("logs error when save returns non-OK result", async () => {
+    const challengeStore = new RedisWhoopVerificationChallengeStore(async () => ({
+      set: vi.fn(async () => null),
+      get: vi.fn(async () => null),
+      del: vi.fn(async () => 0),
+    }));
+
+    await challengeStore.save("fail-save", {
+      session: "session",
+      method: "sms",
+      username: "user@example.com",
+      expiresAt: 12345,
+      userId: "user-123",
+    });
+
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("[whoopChallengeStore] save failed challengeId=fail-save"),
+    );
+  });
+
+  it("logs success when save returns OK", async () => {
+    const challengeStore = new RedisWhoopVerificationChallengeStore(async () => ({
+      set: vi.fn(async () => "OK"),
+      get: vi.fn(async () => null),
+      del: vi.fn(async () => 0),
+    }));
+
+    await challengeStore.save("ok-save", {
+      session: "session",
+      method: "sms",
+      username: "user@example.com",
+      expiresAt: 12345,
+      userId: "user-123",
+    });
+
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.stringContaining("[whoopChallengeStore] save success challengeId=ok-save"),
+    );
+  });
+
+  it("logs warning when get finds no key in Redis", async () => {
+    const challengeStore = new RedisWhoopVerificationChallengeStore(async () => ({
+      set: vi.fn(async () => "OK"),
+      get: vi.fn(async () => null),
+      del: vi.fn(async () => 0),
+    }));
+
+    await challengeStore.get("missing-key");
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("[whoopChallengeStore] get miss challengeId=missing-key"),
+    );
+  });
+
+  it("logs Zod validation errors on invalid payloads", async () => {
+    const challengeStore = new RedisWhoopVerificationChallengeStore(async () => ({
+      set: vi.fn(async () => "OK"),
+      get: vi.fn(async () => JSON.stringify({ session: "incomplete" })),
+      del: vi.fn(async () => 1),
+    }));
+
+    await challengeStore.get("zod-fail");
+
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "[whoopChallengeStore] get zod validation failed challengeId=zod-fail",
+      ),
+    );
+  });
+
+  it("logs JSON parse errors", async () => {
+    const challengeStore = new RedisWhoopVerificationChallengeStore(async () => ({
+      set: vi.fn(async () => "OK"),
+      get: vi.fn(async () => "{not valid json"),
+      del: vi.fn(async () => 1),
+    }));
+
+    await challengeStore.get("json-fail");
+
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("[whoopChallengeStore] get parse error challengeId=json-fail"),
+    );
   });
 
   it("uses shared redis connection outside test environment", async () => {
