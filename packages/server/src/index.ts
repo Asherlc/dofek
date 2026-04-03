@@ -164,6 +164,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
     updatesStorage: updatesStorage ?? undefined,
     updatesPrefix: process.env.UPDATES_R2_PREFIX ?? "mobile-ota",
     publicUrl: process.env.PUBLIC_URL ?? "https://dofek.asherlc.com",
+    signingPrivateKey: process.env.OTA_SIGNING_PRIVATE_KEY,
   });
 
   // ── Route modules ──

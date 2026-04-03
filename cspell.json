@@ -412,7 +412,14 @@
     "bralette",
     "autodocs",
     "Flocalhost",
-    "Fcallback"
+    "Fcallback",
+    "pipefail",
+    "runcmd",
+    "keyid",
+    "otlphttp",
+    "otelcol",
+    "WEUR",
+    "asherlc"
   ],
   "flagWords": [],
   "useGitignore": false,
