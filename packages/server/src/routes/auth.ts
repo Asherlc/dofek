@@ -32,6 +32,7 @@ import {
 } from "../auth/providers.ts";
 import { createSession, deleteSession, validateSession } from "../auth/session.ts";
 import { queryCache } from "../lib/cache.ts";
+import { getIdentityFlowStore, type IdentityFlowStore } from "../lib/identity-flow-store.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 
@@ -89,16 +90,10 @@ const oauth1Secrets = new Map<
 /**
  * Server-side state store for identity provider OAuth flows.
  * Cookies (SameSite=Lax) aren't sent on cross-site POST requests, which
- * breaks Apple Sign In (response_mode=form_post). This map provides a
- * fallback when cookies are unavailable.
+ * breaks Apple Sign In (response_mode=form_post). Backed by Redis so state
+ * survives server restarts and works across multiple instances.
  */
-interface IdentityFlowEntry {
-  codeVerifier: string;
-  linkUserId?: string;
-  mobileScheme?: string;
-  returnTo?: string;
-}
-const identityFlowMap = new Map<string, IdentityFlowEntry>();
+let identityFlowStore: IdentityFlowStore;
 
 interface PendingEmailSignupEntry {
   providerId: string;
@@ -116,9 +111,11 @@ interface PendingEmailSignupEntry {
 
 const pendingEmailSignupMap = new Map<string, PendingEmailSignupEntry>();
 
-function storeIdentityFlow(state: string, entry: IdentityFlowEntry): void {
-  identityFlowMap.set(state, entry);
-  setTimeout(() => identityFlowMap.delete(state), 10 * 60 * 1000);
+async function storeIdentityFlow(
+  state: string,
+  entry: { codeVerifier: string; linkUserId?: string; mobileScheme?: string; returnTo?: string },
+): Promise<void> {
+  await identityFlowStore.save(state, entry);
 }
 
 function storePendingEmailSignup(entry: PendingEmailSignupEntry): string {
@@ -289,6 +286,7 @@ const authRateLimiter = rateLimit({
 
 export function createAuthRouter(database: import("dofek/db").Database): Router {
   db = database;
+  identityFlowStore = getIdentityFlowStore();
   const router = Router();
 
   router.get("/api/auth/providers", async (req, res) => {
@@ -317,7 +315,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
     }
   });
 
-  router.get("/auth/login/:provider", (req, res) => {
+  router.get("/auth/login/:provider", async (req, res) => {
     try {
       const providerNameRaw = req.params.provider;
       if (!isIdentityProviderName(providerNameRaw)) {
@@ -352,7 +350,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
 
       // Server-side fallback for providers that use form_post (Apple):
       // SameSite=Lax cookies aren't sent on cross-site POST requests.
-      storeIdentityFlow(statePayload, {
+      await storeIdentityFlow(statePayload, {
         codeVerifier,
         mobileScheme:
           redirectScheme && isValidMobileScheme(redirectScheme) ? redirectScheme : undefined,
@@ -404,7 +402,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       setLinkUserCookie(res, session.userId);
 
       // Server-side fallback (same reason as login handler above)
-      storeIdentityFlow(statePayload, {
+      await storeIdentityFlow(statePayload, {
         codeVerifier,
         linkUserId: session.userId,
       });
@@ -459,21 +457,25 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       let returnTo = getPostLoginRedirectCookie(req);
       clearOAuthFlowCookies(res);
 
-      // Fall back to server-side map when cookies are unavailable
+      // Fall back to Redis-backed store when cookies are unavailable
       // (Apple form_post: SameSite=Lax cookies aren't sent on cross-site POST)
       if (!storedState || !codeVerifier) {
-        const flowEntry = identityFlowMap.get(stateParam);
+        const flowEntry = await identityFlowStore.get(stateParam);
         if (flowEntry) {
           storedState = stateParam;
           codeVerifier = flowEntry.codeVerifier;
           linkUserId = linkUserId ?? flowEntry.linkUserId;
           mobileScheme = mobileScheme ?? flowEntry.mobileScheme;
           returnTo = returnTo ?? flowEntry.returnTo;
-          identityFlowMap.delete(stateParam);
+          await identityFlowStore.delete(stateParam);
         }
       }
 
       if (!storedState || !codeVerifier || stateParam !== storedState) {
+        logger.warn(
+          `[auth] Identity callback state mismatch for ${providerName}: ` +
+            `cookies=${!!cookieFlow.state}, store=${!!storedState}, method=${req.method}`,
+        );
         res.status(400).type("text/plain").send("Invalid state — please try logging in again");
         return;
       }
