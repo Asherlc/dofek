@@ -29,12 +29,12 @@ const manifestSchema = z.object({
       hash: z.string(),
       key: z.string(),
       contentType: z.string(),
-      fileExtension: z.string(),
+      fileExtension: z.string().optional(),
       url: z.string(),
     }),
   ),
-  metadata: z.record(z.unknown()),
-  extra: z.record(z.unknown()),
+  metadata: z.record(z.unknown()).optional(),
+  extra: z.record(z.unknown()).optional(),
 });
 
 /** Extract manifest JSON from multipart response body. Throws if parsing fails. */
@@ -73,7 +73,7 @@ let updatesDir: string;
 function writeMetadata(metadata: Record<string, unknown>) {
   const currentDir = join(updatesDir, "current");
   mkdirSync(currentDir, { recursive: true });
-  writeFileSync(join(currentDir, "metadata.json"), JSON.stringify(metadata));
+  writeFileSync(join(currentDir, "expo-updates-manifest.json"), JSON.stringify(metadata));
 }
 
 function writeReleaseFiles(metadata: ReturnType<typeof validMetadata>) {
@@ -145,7 +145,7 @@ function createReleaseStorageFiles(
 ): ObjectStorageFileMap {
   return {
     "mobile-ota/current-release.json": JSON.stringify({ releaseId }),
-    [`mobile-ota/releases/${releaseId}/metadata.json`]: JSON.stringify(metadata),
+    [`mobile-ota/releases/${releaseId}/expo-updates-manifest.json`]: JSON.stringify(metadata),
     [`mobile-ota/releases/${releaseId}/bundles/${metadata.launchAsset.key}`]: "bundle-bytes",
     [`mobile-ota/releases/${releaseId}/assets/${metadata.assets[0].key}`]: "asset-bytes",
   };
@@ -223,7 +223,7 @@ describe("createUpdatesRouter", () => {
     expect(res.status).toBe(400);
   });
 
-  it("returns 204 if no current/metadata.json exists", async () => {
+  it("returns 204 if no current/expo-updates-manifest.json exists", async () => {
     const emptyDir = join(
       tmpdir(),
       `dofek-updates-empty-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -280,8 +280,6 @@ describe("createUpdatesRouter", () => {
     expect(manifest.id).toBe("2026-03-22-abc123");
     expect(manifest.createdAt).toBe("2026-03-22T12:00:00.000Z");
     expect(manifest.runtimeVersion).toBe("1.0");
-    expect(manifest.metadata).toEqual({});
-    expect(manifest.extra).toEqual({});
   });
 
   it("manifest contains correct full URLs for launch asset and assets", async () => {
@@ -337,14 +335,14 @@ describe("createUpdatesRouter", () => {
     expect(res.headers.get("expo-protocol-version")).toBe("1");
   });
 
-  it("returns 204 when metadata.json contains malformed JSON", async () => {
+  it("returns 204 when expo-updates-manifest.json contains malformed JSON", async () => {
     const badDir = join(
       tmpdir(),
       `dofek-updates-malformed-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     );
     const currentDir = join(badDir, "current");
     mkdirSync(currentDir, { recursive: true });
-    writeFileSync(join(currentDir, "metadata.json"), "{not valid json!!!");
+    writeFileSync(join(currentDir, "expo-updates-manifest.json"), "{not valid json!!!");
     const app = createTestApp(badDir);
     const res = await request(app, "/updates/manifest", {
       "expo-protocol-version": "1",
@@ -354,14 +352,14 @@ describe("createUpdatesRouter", () => {
     expect(res.status).toBe(204);
   });
 
-  it("returns 204 when metadata.json has invalid shape", async () => {
+  it("returns 204 when expo-updates-manifest.json has invalid shape", async () => {
     const badDir = join(
       tmpdir(),
       `dofek-updates-bad-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     );
     const currentDir = join(badDir, "current");
     mkdirSync(currentDir, { recursive: true });
-    writeFileSync(join(currentDir, "metadata.json"), JSON.stringify({ broken: true }));
+    writeFileSync(join(currentDir, "expo-updates-manifest.json"), JSON.stringify({ broken: true }));
     const app = createTestApp(badDir);
     const res = await request(app, "/updates/manifest", {
       "expo-protocol-version": "1",
@@ -464,7 +462,7 @@ describe("createUpdatesRouter", () => {
     );
     const currentDir = join(noBundleDir, "current");
     mkdirSync(currentDir, { recursive: true });
-    writeFileSync(join(currentDir, "metadata.json"), JSON.stringify(validMetadata()));
+    writeFileSync(join(currentDir, "expo-updates-manifest.json"), JSON.stringify(validMetadata()));
     const app = createTestApp(noBundleDir);
     const res = await request(app, "/updates/releases/current/bundles/ios-abc123def456.hbc");
     expect(res.status).toBe(404);
@@ -563,15 +561,14 @@ describe("createUpdatesRouter", () => {
     );
   });
 
-  it("returns 204 when metadata.json is missing for the current release", async () => {
-    const releaseId = "release-metadata-missing";
+  it("returns 204 when expo-updates-manifest.json is missing for the current release", async () => {
+    const releaseId = "release-manifest-missing";
     const app = createObjectStorageApp(
       createMockStorage(
         { "mobile-ota/current-release.json": JSON.stringify({ releaseId }) },
         {
-          [`mobile-ota/releases/${releaseId}/metadata.json`]: new ObjectStorageNotFoundError(
-            "missing metadata",
-          ),
+          [`mobile-ota/releases/${releaseId}/expo-updates-manifest.json`]:
+            new ObjectStorageNotFoundError("missing manifest"),
         },
       ),
     );
@@ -585,34 +582,34 @@ describe("createUpdatesRouter", () => {
     expect(res.status).toBe(204);
   });
 
-  it("returns 404 for release assets when key does not exist in metadata", async () => {
-    const releaseId = "release-asset-metadata-mismatch";
+  it("returns 404 for release assets when key does not exist in manifest", async () => {
+    const releaseId = "release-asset-manifest-mismatch";
     const metadata = validMetadata();
     const app = createObjectStorageApp(
       createMockStorage(createReleaseStorageFiles(releaseId, metadata)),
     );
     const res = await request(
       app,
-      "/updates/releases/release-asset-metadata-mismatch/assets/unknown.png",
+      "/updates/releases/release-asset-manifest-mismatch/assets/unknown.png",
     );
 
     expect(res.status).toBe(404);
-    expect(JSON.parse(res.body)).toEqual({ error: "Asset not found in metadata" });
+    expect(JSON.parse(res.body)).toEqual({ error: "Asset not found in manifest" });
   });
 
-  it("returns 404 for release bundles when key does not match metadata launch asset", async () => {
-    const releaseId = "release-bundle-metadata-mismatch";
+  it("returns 404 for release bundles when key does not match manifest launch asset", async () => {
+    const releaseId = "release-bundle-manifest-mismatch";
     const metadata = validMetadata();
     const app = createObjectStorageApp(
       createMockStorage(createReleaseStorageFiles(releaseId, metadata)),
     );
     const res = await request(
       app,
-      "/updates/releases/release-bundle-metadata-mismatch/bundles/wrong.hbc",
+      "/updates/releases/release-bundle-manifest-mismatch/bundles/wrong.hbc",
     );
 
     expect(res.status).toBe(404);
-    expect(JSON.parse(res.body)).toEqual({ error: "Bundle not found in metadata" });
+    expect(JSON.parse(res.body)).toEqual({ error: "Bundle not found in manifest" });
   });
 
   it("returns 404 for release asset when file is missing from object storage", async () => {
@@ -686,7 +683,7 @@ describe("createUpdatesRouter", () => {
     expect(JSON.parse(res.body)).toEqual({ error: "No current OTA release configured" });
   });
 
-  it("uses object storage pointer and metadata caches for repeated requests", async () => {
+  it("uses object storage pointer and manifest caches for repeated requests", async () => {
     const releaseId = "release-cache-hit";
     const metadata = validMetadata();
     const downloadBuffer = vi.fn(createMockStorage(createReleaseStorageFiles(releaseId, metadata)));
@@ -706,11 +703,11 @@ describe("createUpdatesRouter", () => {
     const pointerCalls = downloadBuffer.mock.calls.filter(
       ([key]) => key === "mobile-ota/current-release.json",
     );
-    const metadataCalls = downloadBuffer.mock.calls.filter(
-      ([key]) => key === `mobile-ota/releases/${releaseId}/metadata.json`,
+    const manifestCalls = downloadBuffer.mock.calls.filter(
+      ([key]) => key === `mobile-ota/releases/${releaseId}/expo-updates-manifest.json`,
     );
     expect(pointerCalls).toHaveLength(1);
-    expect(metadataCalls).toHaveLength(1);
+    expect(manifestCalls).toHaveLength(1);
     nowSpy.mockRestore();
   });
 
@@ -759,8 +756,8 @@ describe("createUpdatesRouter", () => {
     expect(res.headers.get("expo-protocol-version")).toBe("1");
   });
 
-  it("handles unknown metadata read failures from object storage", async () => {
-    const releaseId = "release-metadata-read-fail";
+  it("handles unknown manifest read failures from object storage", async () => {
+    const releaseId = "release-manifest-read-fail";
     const logger = {
       info: vi.fn<(message: string) => void>(),
       error: vi.fn<(message: string) => void>(),
@@ -769,7 +766,9 @@ describe("createUpdatesRouter", () => {
       createMockStorage(
         { "mobile-ota/current-release.json": JSON.stringify({ releaseId }) },
         {
-          [`mobile-ota/releases/${releaseId}/metadata.json`]: new Error("metadata read exploded"),
+          [`mobile-ota/releases/${releaseId}/expo-updates-manifest.json`]: new Error(
+            "manifest read exploded",
+          ),
         },
       ),
       logger,
@@ -783,13 +782,13 @@ describe("createUpdatesRouter", () => {
     expect(res.status).toBe(204);
     expect(logger.error).toHaveBeenCalledWith(
       expect.stringContaining(
-        `Failed to read metadata.json from object storage for release ${releaseId}`,
+        `Failed to read manifest from object storage for release ${releaseId}`,
       ),
     );
   });
 
-  it("returns 204 when object storage metadata.json is malformed JSON", async () => {
-    const releaseId = "release-metadata-malformed";
+  it("returns 204 when object storage expo-updates-manifest.json is malformed JSON", async () => {
+    const releaseId = "release-manifest-malformed";
     const logger = {
       info: vi.fn<(message: string) => void>(),
       error: vi.fn<(message: string) => void>(),
@@ -797,7 +796,7 @@ describe("createUpdatesRouter", () => {
     const app = createObjectStorageApp(
       createMockStorage({
         "mobile-ota/current-release.json": JSON.stringify({ releaseId }),
-        [`mobile-ota/releases/${releaseId}/metadata.json`]: "{not-json",
+        [`mobile-ota/releases/${releaseId}/expo-updates-manifest.json`]: "{not-json",
       }),
       logger,
     );
@@ -808,11 +807,13 @@ describe("createUpdatesRouter", () => {
       "expo-runtime-version": "1.0",
     });
     expect(res.status).toBe(204);
-    expect(logger.error).toHaveBeenCalledWith("[updates] Malformed JSON in metadata.json");
+    expect(logger.error).toHaveBeenCalledWith(
+      "[updates] Malformed JSON in expo-updates-manifest.json",
+    );
   });
 
-  it("returns 204 when object storage metadata.json has invalid schema", async () => {
-    const releaseId = "release-metadata-invalid";
+  it("returns 204 when object storage expo-updates-manifest.json has invalid schema", async () => {
+    const releaseId = "release-manifest-invalid";
     const logger = {
       info: vi.fn<(message: string) => void>(),
       error: vi.fn<(message: string) => void>(),
@@ -820,7 +821,9 @@ describe("createUpdatesRouter", () => {
     const app = createObjectStorageApp(
       createMockStorage({
         "mobile-ota/current-release.json": JSON.stringify({ releaseId }),
-        [`mobile-ota/releases/${releaseId}/metadata.json`]: JSON.stringify({ broken: true }),
+        [`mobile-ota/releases/${releaseId}/expo-updates-manifest.json`]: JSON.stringify({
+          broken: true,
+        }),
       }),
       logger,
     );
@@ -831,7 +834,9 @@ describe("createUpdatesRouter", () => {
       "expo-runtime-version": "1.0",
     });
     expect(res.status).toBe(204);
-    expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("Invalid metadata.json"));
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("Invalid expo-updates-manifest.json"),
+    );
   });
 
   it("returns 204 when no updatesDir is configured in disk mode", async () => {
@@ -848,7 +853,7 @@ describe("createUpdatesRouter", () => {
     expect(res.headers.get("expo-protocol-version")).toBe("1");
   });
 
-  it("returns release-metadata 404 for non-current disk release asset and bundle requests", async () => {
+  it("returns release-manifest 404 for non-current disk release asset and bundle requests", async () => {
     const metadata = validMetadata();
     writeMetadata(metadata);
     writeReleaseFiles(metadata);
@@ -864,21 +869,21 @@ describe("createUpdatesRouter", () => {
     );
 
     expect(assetRes.status).toBe(404);
-    expect(JSON.parse(assetRes.body)).toEqual({ error: "No update metadata found for release" });
+    expect(JSON.parse(assetRes.body)).toEqual({ error: "No update manifest found for release" });
     expect(bundleRes.status).toBe(404);
-    expect(JSON.parse(bundleRes.body)).toEqual({ error: "No update metadata found for release" });
+    expect(JSON.parse(bundleRes.body)).toEqual({ error: "No update manifest found for release" });
   });
 
-  it("handles disk metadata read failures that are not not-found errors", async () => {
+  it("handles disk manifest read failures that are not not-found errors", async () => {
     const badDir = join(
       tmpdir(),
-      `dofek-updates-metadata-read-fail-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      `dofek-updates-manifest-read-fail-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     );
     const logger = {
       info: vi.fn<(message: string) => void>(),
       error: vi.fn<(message: string) => void>(),
     };
-    mkdirSync(join(badDir, "current", "metadata.json"), { recursive: true });
+    mkdirSync(join(badDir, "current", "expo-updates-manifest.json"), { recursive: true });
     const app = express();
     app.use(
       "/updates",
@@ -897,7 +902,7 @@ describe("createUpdatesRouter", () => {
 
     expect(res.status).toBe(204);
     expect(logger.error).toHaveBeenCalledWith(
-      expect.stringContaining("Failed to read metadata.json from disk"),
+      expect.stringContaining("Failed to read manifest from disk"),
     );
   });
 
@@ -942,7 +947,7 @@ describe("createUpdatesRouter", () => {
     };
     const currentDir = join(badDir, "current");
     mkdirSync(currentDir, { recursive: true });
-    writeFileSync(join(currentDir, "metadata.json"), JSON.stringify(metadata));
+    writeFileSync(join(currentDir, "expo-updates-manifest.json"), JSON.stringify(metadata));
     mkdirSync(join(currentDir, "assets", metadata.assets[0].key), { recursive: true });
     const app = express();
     app.use(

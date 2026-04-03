@@ -31,7 +31,7 @@ describe("OTA deployment config", () => {
 
     expect(deployConfig).toContain('variable "r2_bucket"');
     expect(deployConfig).toContain('default     = "dofek-training-data"');
-    expect(deployConfig).toContain("r2_bucket                    = var.r2_bucket");
+    expect(deployConfig).toContain("r2_bucket           = var.r2_bucket");
     expect(deployConfig).toContain(deployConfigBucketWrite);
   });
 });
