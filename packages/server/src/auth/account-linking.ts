@@ -1,4 +1,5 @@
 import type { Database } from "dofek/db";
+import { DEFAULT_USER_ID } from "dofek/db/schema";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema } from "../lib/typed-sql.ts";
@@ -112,7 +113,32 @@ export async function resolveOrCreateUser(
     throw new MissingEmailForSignupError(providerName);
   }
 
-  // 4. Create a new user profile
+  // 4. First-ever user: claim the default user profile
+  const accountCount = await executeWithSchema(
+    db,
+    z.object({ count: z.string() }),
+    sql`SELECT COUNT(*)::text AS count FROM fitness.auth_account`,
+  );
+  const countRow = accountCount[0];
+  if (!countRow) throw new Error("Failed to query account count");
+  const isFirstUser = parseInt(countRow.count, 10) === 0;
+
+  if (isFirstUser) {
+    if (identity.email || identity.name) {
+      await db.execute(
+        sql`UPDATE fitness.user_profile
+            SET email = COALESCE(${identity.email}, email),
+                name = COALESCE(${identity.name}, name),
+                updated_at = NOW()
+            WHERE id = ${DEFAULT_USER_ID}`,
+      );
+    }
+    await upsertAuthAccount(db, DEFAULT_USER_ID, providerName, identity);
+    logger.info(`[auth] First user claimed DEFAULT_USER_ID via ${providerName}`);
+    return { userId: DEFAULT_USER_ID, isNewUser: true };
+  }
+
+  // 5. New user: create a user profile
   const newUser = await executeWithSchema(
     db,
     z.object({ id: z.string() }),

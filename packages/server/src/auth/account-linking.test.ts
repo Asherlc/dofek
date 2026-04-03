@@ -64,13 +64,14 @@ describe("resolveOrCreateUser", () => {
       const noEmailIdentity = { ...identity, email: null };
 
       db.execute.mockResolvedValueOnce([]);
+      db.execute.mockResolvedValueOnce([{ count: "5" }]);
       db.execute.mockResolvedValueOnce([{ id: "new-user-1" }]);
       db.execute.mockResolvedValueOnce([]);
 
       const result = await resolveOrCreateUser(db, "google", noEmailIdentity);
 
       expect(result).toEqual({ userId: "new-user-1", isNewUser: true });
-      expect(db.execute).toHaveBeenCalledTimes(3);
+      expect(db.execute).toHaveBeenCalledTimes(4);
     });
 
     it("requires email before creating a new user when configured", async () => {
@@ -113,6 +114,7 @@ describe("resolveOrCreateUser", () => {
       };
 
       db.execute.mockResolvedValueOnce([]);
+      db.execute.mockResolvedValueOnce([{ count: "5" }]);
       db.execute.mockResolvedValueOnce([{ id: "new-user-1" }]);
       db.execute.mockResolvedValueOnce([]);
 
@@ -125,6 +127,7 @@ describe("resolveOrCreateUser", () => {
       db.execute.mockResolvedValueOnce([]);
       db.execute.mockResolvedValueOnce([]);
       db.execute.mockResolvedValueOnce([]);
+      db.execute.mockResolvedValueOnce([{ count: "5" }]);
       db.execute.mockResolvedValueOnce([{ id: "new-user-2" }]);
       db.execute.mockResolvedValueOnce([]);
 
@@ -139,6 +142,7 @@ describe("resolveOrCreateUser", () => {
       db.execute.mockResolvedValueOnce([]);
       db.execute.mockResolvedValueOnce([]);
       db.execute.mockResolvedValueOnce([]);
+      db.execute.mockResolvedValueOnce([{ count: "5" }]);
       db.execute.mockResolvedValueOnce([{ id: "new-user-456" }]);
       db.execute.mockResolvedValueOnce([]);
 

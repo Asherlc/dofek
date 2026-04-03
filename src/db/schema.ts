@@ -20,8 +20,9 @@ import { getTokenUserId } from "./token-user-context.ts";
 // All tables live in the 'fitness' schema
 const fitness = pgSchema("fitness");
 
-// Stable user ID used in integration tests and fixtures.
-export const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
+// Stable user ID used by the first-user migration path and integration fixtures.
+export const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
+export const TEST_USER_ID = DEFAULT_USER_ID;
 
 function resolveImplicitUserId(): string {
   const userId = getTokenUserId();
