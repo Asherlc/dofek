@@ -55,8 +55,16 @@ export function SleepPage() {
     >
       {/* Sleep Performance Score + Bedtime Recommendation */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <SleepPerformanceCard data={sleepPerformance.data} loading={sleepPerformance.isLoading} />
-        <SleepNeedCard data={sleepNeed.data} loading={sleepNeed.isLoading} />
+        <SleepPerformanceCard
+          data={sleepPerformance.data}
+          loading={sleepPerformance.isLoading}
+          fetching={sleepPerformance.isFetching}
+        />
+        <SleepNeedCard
+          data={sleepNeed.data}
+          loading={sleepNeed.isLoading}
+          fetching={sleepNeed.isFetching}
+        />
       </div>
 
       {/* Sleep Stage Chart */}
@@ -64,12 +72,17 @@ export function SleepPage() {
         <SleepChart
           data={assertRows(sleepData.data, sleepRowSchema)}
           loading={sleepData.isLoading}
+          fetching={sleepData.isFetching}
         />
       </PageSection>
 
       {/* Last Night Hypnogram */}
       <PageSection title="Last Night">
-        <Hypnogram data={latestStages.data ?? []} loading={latestStages.isLoading} />
+        <Hypnogram
+          data={latestStages.data ?? []}
+          loading={latestStages.isLoading}
+          fetching={latestStages.isFetching}
+        />
       </PageSection>
 
       {/* Sleep Insights */}

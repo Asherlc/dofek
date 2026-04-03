@@ -14,6 +14,7 @@ import { DofekChart } from "./DofekChart.tsx";
 interface SleepNeedCardProps {
   data: SleepNeedResult | undefined;
   loading?: boolean;
+  fetching?: boolean;
 }
 
 function formatHoursMinutes(minutes: number): string {
@@ -22,12 +23,13 @@ function formatHoursMinutes(minutes: number): string {
   return `${hours}h ${remainingMinutes}m`;
 }
 
-export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
+export function SleepNeedCard({ data, loading, fetching }: SleepNeedCardProps) {
   if (loading || !data) {
     return (
       <DofekChart
         option={{}}
         loading={loading}
+        fetching={fetching}
         empty={!data}
         height={320}
         emptyMessage="No sleep data"

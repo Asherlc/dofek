@@ -5,14 +5,18 @@ import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 interface SleepPerformanceCardProps {
   data: SleepPerformanceInfo | null | undefined;
   loading?: boolean;
+  fetching?: boolean;
 }
 
-export function SleepPerformanceCard({ data, loading }: SleepPerformanceCardProps) {
+export function SleepPerformanceCard({ data, loading, fetching }: SleepPerformanceCardProps) {
   if (loading) {
     return <ChartLoadingSkeleton height={140} />;
   }
 
   if (!data) {
+    if (fetching) {
+      return <ChartLoadingSkeleton height={140} />;
+    }
     return (
       <div className="card p-6 flex items-center justify-center h-[140px]">
         <span className="text-dim text-sm">No sleep data yet</span>

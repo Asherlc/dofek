@@ -11,6 +11,7 @@ interface SleepStage {
 interface HypnogramProps {
   data: SleepStage[];
   loading?: boolean;
+  fetching?: boolean;
 }
 
 const STAGE_VALUE: Record<string, number> = {
@@ -43,7 +44,7 @@ function buildHypnogramData(stages: SleepStage[]) {
   return points;
 }
 
-export function Hypnogram({ data, loading }: HypnogramProps) {
+export function Hypnogram({ data, loading, fetching }: HypnogramProps) {
   const points = buildHypnogramData(data);
 
   const option = {
@@ -112,6 +113,7 @@ export function Hypnogram({ data, loading }: HypnogramProps) {
     <DofekChart
       option={option}
       loading={loading}
+      fetching={fetching}
       empty={data.length === 0}
       height={200}
       emptyMessage="No sleep stage data available"
