@@ -41,8 +41,7 @@ describe("activityUrl", () => {
     {
       name: "Peloton",
       provider: new PelotonProvider(),
-      expected:
-        "https://members.onepeloton.com/classes/cycling?modal=classDetailsModal&classId=123",
+      expected: "https://members.onepeloton.com/profile/workouts/123",
     },
     {
       name: "Polar",
