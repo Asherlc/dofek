@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { IDENTITY_PROVIDER_NAMES } from "@dofek/auth/auth";
+import * as Sentry from "@sentry/node";
 import { getOAuthRedirectUri, type TokenSet } from "dofek/auth/oauth";
 import { sql } from "drizzle-orm";
 import { escapeAttribute, escapeText } from "entities";
@@ -32,6 +33,18 @@ import {
 } from "../auth/providers.ts";
 import { createSession, deleteSession, validateSession } from "../auth/session.ts";
 import { queryCache } from "../lib/cache.ts";
+import {
+  getIdentityFlowStore,
+  type IdentityFlowEntry,
+  type IdentityFlowStore,
+} from "../lib/identity-flow-store.ts";
+import {
+  getOAuth1SecretStore,
+  getOAuthStateStore,
+  type OAuth1SecretStore,
+  type OAuthStateEntry,
+  type OAuthStateStore,
+} from "../lib/oauth-state-store.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 
@@ -68,37 +81,16 @@ export function oauthSuccessHtml(
   return `<html><body style="font-family:system-ui;background:#111;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><h1>Authorized!</h1><p>${safeProviderName} connected successfully.</p>${safeDetail}<p><a href="/" style="color:#10b981">Return to dashboard</a></p></div><script>try{new BroadcastChannel('oauth-complete').postMessage(${broadcastPayload})}catch(e){}try{window.opener&&window.opener.postMessage(${postMessagePayload},'*')}catch(e){}setTimeout(function(){window.close()},1500)</script></body></html>`;
 }
 
-interface OAuthStateEntry {
-  providerId: string;
-  codeVerifier?: string;
-  intent: "data" | "login" | "link";
-  linkUserId?: string;
-  userId: string;
-  /** Mobile app URL scheme for deep link redirect after OAuth. */
-  mobileScheme?: string;
-  returnTo?: string;
-}
-
-const oauthStateMap = new Map<string, OAuthStateEntry>();
-// OAuth 1.0 request token secrets (keyed by oauth_token)
-const oauth1Secrets = new Map<
-  string,
-  { providerId: string; tokenSecret: string; userId: string }
->();
+let oauthStateStore: OAuthStateStore;
+let oauth1SecretStore: OAuth1SecretStore;
 
 /**
  * Server-side state store for identity provider OAuth flows.
  * Cookies (SameSite=Lax) aren't sent on cross-site POST requests, which
- * breaks Apple Sign In (response_mode=form_post). This map provides a
- * fallback when cookies are unavailable.
+ * breaks Apple Sign In (response_mode=form_post). Backed by Redis so state
+ * survives server restarts and works across multiple instances.
  */
-interface IdentityFlowEntry {
-  codeVerifier: string;
-  linkUserId?: string;
-  mobileScheme?: string;
-  returnTo?: string;
-}
-const identityFlowMap = new Map<string, IdentityFlowEntry>();
+let identityFlowStore: IdentityFlowStore;
 
 interface PendingEmailSignupEntry {
   providerId: string;
@@ -116,9 +108,12 @@ interface PendingEmailSignupEntry {
 
 const pendingEmailSignupMap = new Map<string, PendingEmailSignupEntry>();
 
-function storeIdentityFlow(state: string, entry: IdentityFlowEntry): void {
-  identityFlowMap.set(state, entry);
-  setTimeout(() => identityFlowMap.delete(state), 10 * 60 * 1000);
+async function storeIdentityFlow(state: string, entry: IdentityFlowEntry): Promise<void> {
+  try {
+    await identityFlowStore.save(state, entry);
+  } catch (error: unknown) {
+    logger.warn(`[auth] Failed to persist identity flow state: ${error}`);
+  }
 }
 
 function storePendingEmailSignup(entry: PendingEmailSignupEntry): string {
@@ -243,12 +238,11 @@ async function startDataProviderOAuth(
   if (setup.oauth1Flow && stateEntry.intent === "data") {
     const callbackUrl = setup.oauthConfig.redirectUri;
     const result = await setup.oauth1Flow.getRequestToken(callbackUrl);
-    oauth1Secrets.set(result.oauthToken, {
+    await oauth1SecretStore.save(result.oauthToken, {
       providerId,
       tokenSecret: result.oauthTokenSecret,
       userId: stateEntry.userId,
     });
-    setTimeout(() => oauth1Secrets.delete(result.oauthToken), 10 * 60 * 1000);
     res.redirect(result.authorizeUrl);
     return;
   }
@@ -268,8 +262,7 @@ async function startDataProviderOAuth(
 
   const url = buildAuthorizationUrl(setup.oauthConfig, pkceParam);
   const stateToken = randomBytes(16).toString("hex");
-  oauthStateMap.set(stateToken, { ...stateEntry, codeVerifier: pkceVerifier });
-  setTimeout(() => oauthStateMap.delete(stateToken), 10 * 60 * 1000);
+  await oauthStateStore.save(stateToken, { ...stateEntry, codeVerifier: pkceVerifier });
   const authUrl = new URL(url);
   authUrl.searchParams.set("state", stateToken);
   res.redirect(authUrl.toString());
@@ -289,6 +282,9 @@ const authRateLimiter = rateLimit({
 
 export function createAuthRouter(database: import("dofek/db").Database): Router {
   db = database;
+  identityFlowStore = getIdentityFlowStore();
+  oauthStateStore = getOAuthStateStore();
+  oauth1SecretStore = getOAuth1SecretStore();
   const router = Router();
 
   router.get("/api/auth/providers", async (req, res) => {
@@ -317,10 +313,10 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
     }
   });
 
-  router.get("/auth/login/:provider", (req, res) => {
+  router.get("/auth/login/:provider", authRateLimiter, async (req, res) => {
     try {
-      const providerNameRaw = req.params.provider;
-      if (!isIdentityProviderName(providerNameRaw)) {
+      const providerNameRaw = getSinglePathParam(req.params.provider);
+      if (!providerNameRaw || !isIdentityProviderName(providerNameRaw)) {
         res.status(404).type("text/plain").send("Unknown identity provider");
         return;
       }
@@ -352,15 +348,16 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
 
       // Server-side fallback for providers that use form_post (Apple):
       // SameSite=Lax cookies aren't sent on cross-site POST requests.
-      storeIdentityFlow(statePayload, {
+      await storeIdentityFlow(statePayload, {
         codeVerifier,
         mobileScheme:
           redirectScheme && isValidMobileScheme(redirectScheme) ? redirectScheme : undefined,
-        returnTo,
+        returnTo: sanitizeReturnTo(returnTo),
       });
 
       res.redirect(url.toString());
     } catch (err: unknown) {
+      Sentry.captureException(err);
       const message = err instanceof Error ? err.message : String(err);
       logger.error(`[auth] Failed to start login flow: ${message}`);
       res.status(500).send("Auth error: failed to start login flow");
@@ -404,13 +401,14 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       setLinkUserCookie(res, session.userId);
 
       // Server-side fallback (same reason as login handler above)
-      storeIdentityFlow(statePayload, {
+      await storeIdentityFlow(statePayload, {
         codeVerifier,
         linkUserId: session.userId,
       });
 
       res.redirect(url.toString());
     } catch (err: unknown) {
+      Sentry.captureException(err);
       const message = err instanceof Error ? err.message : String(err);
       logger.error(`[auth] Failed to start link flow: ${message}`);
       res.status(500).send("Auth error: failed to start link flow");
@@ -459,21 +457,30 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       let returnTo = getPostLoginRedirectCookie(req);
       clearOAuthFlowCookies(res);
 
-      // Fall back to server-side map when cookies are unavailable
+      // Fall back to Redis-backed store when cookies are unavailable
       // (Apple form_post: SameSite=Lax cookies aren't sent on cross-site POST)
+      const cookieHadState = !!cookieFlow.state;
+      const cookieHadVerifier = !!cookieFlow.codeVerifier;
+      let storeHit = false;
       if (!storedState || !codeVerifier) {
-        const flowEntry = identityFlowMap.get(stateParam);
+        const flowEntry = await identityFlowStore.get(stateParam);
         if (flowEntry) {
+          storeHit = true;
           storedState = stateParam;
           codeVerifier = flowEntry.codeVerifier;
           linkUserId = linkUserId ?? flowEntry.linkUserId;
           mobileScheme = mobileScheme ?? flowEntry.mobileScheme;
-          returnTo = returnTo ?? flowEntry.returnTo;
-          identityFlowMap.delete(stateParam);
+          returnTo = returnTo ?? sanitizeReturnTo(flowEntry.returnTo);
+          await identityFlowStore.delete(stateParam);
         }
       }
 
       if (!storedState || !codeVerifier || stateParam !== storedState) {
+        logger.warn(
+          `[auth] Identity callback state mismatch for ${providerName}: ` +
+            `cookieState=${cookieHadState}, cookieVerifier=${cookieHadVerifier}, ` +
+            `storeHit=${storeHit}, method=${req.method}`,
+        );
         res.status(400).type("text/plain").send("Invalid state — please try logging in again");
         return;
       }
@@ -512,8 +519,9 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       logger.info(
         `[auth] User ${userId} ${linkUserId ? "linked" : "logged in via"} ${providerName}`,
       );
-      res.redirect(linkUserId ? "/settings" : (returnTo ?? "/"));
+      res.redirect(linkUserId ? "/settings" : (sanitizeReturnTo(returnTo) ?? "/"));
     } catch (err: unknown) {
+      Sentry.captureException(err);
       const message = err instanceof Error ? err.message : String(err);
       logger.error(`[auth] Identity callback failed: ${message}`);
       res.status(500).send("Login failed — please try again");
@@ -575,6 +583,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         logger.info(`[auth] User ${userId} logged in via native Apple Sign In`);
         res.json({ session: sessionInfo.sessionId });
       } catch (err: unknown) {
+        Sentry.captureException(err);
         const message = err instanceof Error ? err.message : String(err);
         logger.error(`[auth] Native Apple Sign In failed: ${message}`);
         res.status(500).send("Apple Sign In failed — please try again");
@@ -649,12 +658,11 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
 
     const redirectUri = getOAuthRedirectUri();
     const stateToken = `slack:${randomBytes(16).toString("hex")}`;
-    oauthStateMap.set(stateToken, {
+    await oauthStateStore.save(stateToken, {
       providerId: "slack",
       intent: "data",
       userId,
     });
-    setTimeout(() => oauthStateMap.delete(stateToken), 10 * 60 * 1000);
     const url = new URL("https://slack.com/oauth/v2/authorize");
     url.searchParams.set("client_id", clientId);
     url.searchParams.set("scope", SLACK_SCOPES.join(","));
@@ -686,6 +694,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         returnTo,
       });
     } catch (err: unknown) {
+      Sentry.captureException(err);
       logger.error(`[auth] Failed to start data provider login: ${err}`);
       res.status(500).send("Auth error: failed to start login flow");
     }
@@ -717,6 +726,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         userId: session.userId,
       });
     } catch (err: unknown) {
+      Sentry.captureException(err);
       logger.error(`[auth] Failed to start data provider link: ${err}`);
       res.status(500).send("Auth error: failed to start link flow");
     }
@@ -754,6 +764,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         userId,
       });
     } catch (err: unknown) {
+      Sentry.captureException(err);
       logger.error(`[auth] Failed to start OAuth flow: ${err}`);
       res.status(500).send("Auth error: failed to start OAuth flow");
     }
@@ -782,12 +793,12 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
 
       // ── OAuth 1.0 callback (FatSecret) ──
       if (oauthToken && oauthVerifier) {
-        const stored = oauth1Secrets.get(oauthToken);
+        const stored = await oauth1SecretStore.get(oauthToken);
         if (!stored) {
           res.status(400).send("Unknown or expired OAuth 1.0 request token");
           return;
         }
-        oauth1Secrets.delete(oauthToken);
+        await oauth1SecretStore.delete(oauthToken);
 
         const { getAllProviders } = await import("dofek/providers/registry");
         const { ensureProvidersRegistered } = await import("../routers/sync.ts");
@@ -841,9 +852,9 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       }
 
       // ── Slack OAuth callback (Add to Slack) ──
-      if (state.startsWith("slack:") && oauthStateMap.has(state)) {
-        const slackState = oauthStateMap.get(state);
-        oauthStateMap.delete(state);
+      if (state.startsWith("slack:") && (await oauthStateStore.has(state))) {
+        const slackState = await oauthStateStore.get(state);
+        await oauthStateStore.delete(state);
         const clientId = process.env.SLACK_CLIENT_ID;
         const clientSecret = process.env.SLACK_CLIENT_SECRET;
         if (!clientId || !clientSecret) {
@@ -959,7 +970,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       }
 
       // Resolve provider from random state token
-      const stateEntry = oauthStateMap.get(state);
+      const stateEntry = await oauthStateStore.get(state);
       if (!stateEntry) {
         const errorDetail = req.get("host")?.includes("localhost")
           ? " (Are you using an IP or host that differs from what the provider redirected to? Try setting OAUTH_REDIRECT_URI_unencrypted in your .env if testing on mobile.)"
@@ -967,7 +978,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         res.status(400).send(`Unknown or expired OAuth state${errorDetail}`);
         return;
       }
-      oauthStateMap.delete(state);
+      await oauthStateStore.delete(state);
 
       const {
         providerId,
@@ -1029,7 +1040,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
 
             setSessionCookie(res, sessionInfo.sessionId, sessionInfo.expiresAt);
             logger.info(`[auth] User ${userId} logged in via data provider ${providerId}`);
-            res.redirect(returnTo ?? "/");
+            res.redirect(sanitizeReturnTo(returnTo) ?? "/");
             return;
           } catch (loginErr: unknown) {
             if (loginErr instanceof MissingEmailForSignupError) {
@@ -1106,8 +1117,10 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         ),
       );
     } catch (err: unknown) {
-      logger.error(`[auth] OAuth callback failed: ${err}`);
-      res.status(500).send("Token exchange failed");
+      Sentry.captureException(err);
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error(`[auth] OAuth callback failed: ${message}`, { err });
+      res.status(500).send("Token exchange failed — please try again");
     }
   });
 
@@ -1175,8 +1188,9 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
 
         setSessionCookie(res, sessionInfo.sessionId, sessionInfo.expiresAt);
         logger.info(`[auth] User ${userId} completed signup via ${pending.providerId}`);
-        res.redirect(pending.returnTo ?? "/");
+        res.redirect(sanitizeReturnTo(pending.returnTo) ?? "/");
       } catch (err: unknown) {
+        Sentry.captureException(err);
         logger.error(`[auth] Completing signup failed: ${err}`);
         res.status(500).send("Signup failed — please try again");
       }
