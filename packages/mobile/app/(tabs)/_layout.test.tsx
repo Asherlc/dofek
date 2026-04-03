@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { getTabIconName, selectedTabBackgroundColor } from "../../lib/tab-selection";
 import { colors } from "../../theme";
-import { getTabIconName, selectedTabBackgroundColor } from "./tab-selection";
 
 describe("tab layout selected state", () => {
   it("uses filled icons for focused tabs and outline icons for unfocused tabs", () => {

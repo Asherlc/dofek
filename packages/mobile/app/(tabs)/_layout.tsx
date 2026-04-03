@@ -1,8 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs, useRouter } from "expo-router";
 import { Pressable, StyleSheet } from "react-native";
+import { getTabIconName, selectedTabBackgroundColor } from "../../lib/tab-selection";
 import { colors } from "../../theme";
-import { getTabIconName, selectedTabBackgroundColor } from "./tab-selection";
 
 export default function TabsLayout() {
   const router = useRouter();
