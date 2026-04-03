@@ -772,12 +772,12 @@ describe("WhoopClient — verifyCode", () => {
       }),
     );
 
-    const token = await WhoopClient.verifyCode("session-xyz", "123456", "user@test.com");
+    const token = await WhoopClient.verifyCode("session-xyz", "123456", "user@test.com", "sms");
     expect(token.accessToken).toBe("verified-tok");
     expect(token.userId).toBe(55);
   });
 
-  it("falls back to SOFTWARE_TOKEN_MFA when SMS_MFA fails", async () => {
+  it("verifies code via SOFTWARE_TOKEN_MFA challenge when method is totp", async () => {
     const challengeNames: string[] = [];
 
     clientServer.use(
@@ -786,12 +786,10 @@ describe("WhoopClient — verifyCode", () => {
         const body =
           typeof raw === "object" && raw !== null ? (raw satisfies Record<string, unknown>) : {};
         challengeNames.push(String(body.ChallengeName));
-        if (body.ChallengeName === "SMS_MFA") {
-          return HttpResponse.json(
-            { __type: "#NotAuthorizedException", message: "Wrong challenge" },
-            { status: 400 },
-          );
-        }
+        expect(body.ChallengeResponses).toEqual({
+          USERNAME: "user@test.com",
+          SOFTWARE_TOKEN_MFA_CODE: "654321",
+        });
         return HttpResponse.json({
           AuthenticationResult: { AccessToken: "totp-tok", RefreshToken: "totp-ref" },
         });
@@ -801,9 +799,8 @@ describe("WhoopClient — verifyCode", () => {
       }),
     );
 
-    const token = await WhoopClient.verifyCode("session-xyz", "654321", "user@test.com");
-    expect(challengeNames).toContain("SMS_MFA");
-    expect(challengeNames).toContain("SOFTWARE_TOKEN_MFA");
+    const token = await WhoopClient.verifyCode("session-xyz", "654321", "user@test.com", "totp");
+    expect(challengeNames).toEqual(["SOFTWARE_TOKEN_MFA"]);
     expect(token.accessToken).toBe("totp-tok");
     expect(token.userId).toBe(77);
   });
@@ -815,9 +812,9 @@ describe("WhoopClient — verifyCode", () => {
       }),
     );
 
-    await expect(WhoopClient.verifyCode("session", "123456", "user@test.com")).rejects.toThrow(
-      /no tokens/i,
-    );
+    await expect(
+      WhoopClient.verifyCode("session", "123456", "user@test.com", "sms"),
+    ).rejects.toThrow(/no tokens/i);
   });
 
   it("throws when bootstrap returns no userId during verifyCode", async () => {
@@ -832,9 +829,9 @@ describe("WhoopClient — verifyCode", () => {
       }),
     );
 
-    await expect(WhoopClient.verifyCode("session", "123456", "user@test.com")).rejects.toThrow(
-      /user ID/i,
-    );
+    await expect(
+      WhoopClient.verifyCode("session", "123456", "user@test.com", "sms"),
+    ).rejects.toThrow(/user ID/i);
   });
 });
 

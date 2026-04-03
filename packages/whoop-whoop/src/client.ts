@@ -5,6 +5,7 @@ import type {
   WhoopHrValue,
   WhoopSignInResult,
   WhoopSleepRecord,
+  WhoopVerificationMethod,
   WhoopWeightliftingWorkoutResponse,
 } from "./types.ts";
 
@@ -171,39 +172,24 @@ export class WhoopClient {
     session: string,
     code: string,
     username: string,
+    method: WhoopVerificationMethod,
     fetchFn: typeof globalThis.fetch = globalThis.fetch,
   ): Promise<WhoopAuthToken> {
-    // Try SMS_MFA first, fall back to SOFTWARE_TOKEN_MFA
-    let data: Record<string, unknown>;
-    try {
-      data = await cognitoCall(
-        "RespondToAuthChallenge",
-        {
-          ChallengeName: "SMS_MFA",
-          ClientId: COGNITO_CLIENT_ID,
-          Session: session,
-          ChallengeResponses: {
-            USERNAME: username,
-            SMS_MFA_CODE: code,
-          },
+    const challengeName = method === "totp" ? "SOFTWARE_TOKEN_MFA" : "SMS_MFA";
+    const challengeCodeField = method === "totp" ? "SOFTWARE_TOKEN_MFA_CODE" : "SMS_MFA_CODE";
+    const data = await cognitoCall(
+      "RespondToAuthChallenge",
+      {
+        ChallengeName: challengeName,
+        ClientId: COGNITO_CLIENT_ID,
+        Session: session,
+        ChallengeResponses: {
+          USERNAME: username,
+          [challengeCodeField]: code,
         },
-        fetchFn,
-      );
-    } catch {
-      data = await cognitoCall(
-        "RespondToAuthChallenge",
-        {
-          ChallengeName: "SOFTWARE_TOKEN_MFA",
-          ClientId: COGNITO_CLIENT_ID,
-          Session: session,
-          ChallengeResponses: {
-            USERNAME: username,
-            SOFTWARE_TOKEN_MFA_CODE: code,
-          },
-        },
-        fetchFn,
-      );
-    }
+      },
+      fetchFn,
+    );
 
     const authResult = getRecord(data, "AuthenticationResult");
     const accessToken = authResult ? getString(authResult, "AccessToken") : undefined;

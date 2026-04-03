@@ -32,6 +32,7 @@ if (result.type === "verification_required") {
     result.session,
     "123456", // MFA code
     "email@example.com",
+    result.method,
   );
   const client = new WhoopClient(token);
 }
@@ -75,7 +76,7 @@ const { start, end } = parseDuringRange("['2025-01-01T10:00:00Z','2025-01-01T11:
 | Method | Description |
 |---|---|
 | `WhoopClient.signIn(email, password)` | Sign in, returns token or MFA challenge |
-| `WhoopClient.verifyCode(session, code, email)` | Complete MFA verification |
+| `WhoopClient.verifyCode(session, code, email, method)` | Complete MFA verification |
 | `WhoopClient.authenticate(email, password)` | Sign in (no MFA accounts only) |
 | `WhoopClient.refreshAccessToken(refreshToken)` | Refresh an expired access token |
 | `client.getHeartRate(start, end, step?)` | Fetch heart rate samples |

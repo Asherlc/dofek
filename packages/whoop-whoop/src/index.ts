@@ -15,6 +15,7 @@ export type {
   WhoopSleepScore,
   WhoopSleepStageSummary,
   WhoopV2Activity,
+  WhoopVerificationMethod,
   WhoopWeightliftingExercise,
   WhoopWeightliftingGroup,
   WhoopWeightliftingSet,
