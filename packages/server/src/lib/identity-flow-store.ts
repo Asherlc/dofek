@@ -28,13 +28,23 @@ export interface IdentityFlowStore {
 
 export class InMemoryIdentityFlowStore implements IdentityFlowStore {
   #store = new Map<string, { entry: IdentityFlowEntry; expiresAt: number }>();
+  #timers = new Map<string, ReturnType<typeof setTimeout>>();
 
   async save(
     state: string,
     entry: IdentityFlowEntry,
     timeToLiveMs = DEFAULT_IDENTITY_FLOW_TTL_MS,
   ): Promise<void> {
+    const existing = this.#timers.get(state);
+    if (existing) clearTimeout(existing);
     this.#store.set(state, { entry, expiresAt: Date.now() + timeToLiveMs });
+    this.#timers.set(
+      state,
+      setTimeout(() => {
+        this.#store.delete(state);
+        this.#timers.delete(state);
+      }, timeToLiveMs),
+    );
   }
 
   async get(state: string): Promise<IdentityFlowEntry | null> {
@@ -51,6 +61,11 @@ export class InMemoryIdentityFlowStore implements IdentityFlowStore {
 
   async delete(state: string): Promise<void> {
     this.#store.delete(state);
+    const timer = this.#timers.get(state);
+    if (timer) {
+      clearTimeout(timer);
+      this.#timers.delete(state);
+    }
   }
 }
 

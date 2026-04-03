@@ -313,10 +313,10 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
     }
   });
 
-  router.get("/auth/login/:provider", async (req, res) => {
+  router.get("/auth/login/:provider", authRateLimiter, async (req, res) => {
     try {
-      const providerNameRaw = req.params.provider;
-      if (!isIdentityProviderName(providerNameRaw)) {
+      const providerNameRaw = getSinglePathParam(req.params.provider);
+      if (!providerNameRaw || !isIdentityProviderName(providerNameRaw)) {
         res.status(404).type("text/plain").send("Unknown identity provider");
         return;
       }

@@ -36,9 +36,19 @@ export interface OAuthStateStore {
 
 export class InMemoryOAuthStateStore implements OAuthStateStore {
   #store = new Map<string, { entry: OAuthStateEntry; expiresAt: number }>();
+  #timers = new Map<string, ReturnType<typeof setTimeout>>();
 
   async save(state: string, entry: OAuthStateEntry, timeToLiveMs = DEFAULT_TTL_MS): Promise<void> {
+    const existing = this.#timers.get(state);
+    if (existing) clearTimeout(existing);
     this.#store.set(state, { entry, expiresAt: Date.now() + timeToLiveMs });
+    this.#timers.set(
+      state,
+      setTimeout(() => {
+        this.#store.delete(state);
+        this.#timers.delete(state);
+      }, timeToLiveMs),
+    );
   }
 
   async get(state: string): Promise<OAuthStateEntry | null> {
@@ -58,6 +68,11 @@ export class InMemoryOAuthStateStore implements OAuthStateStore {
 
   async delete(state: string): Promise<void> {
     this.#store.delete(state);
+    const timer = this.#timers.get(state);
+    if (timer) {
+      clearTimeout(timer);
+      this.#timers.delete(state);
+    }
   }
 }
 
@@ -129,13 +144,23 @@ export interface OAuth1SecretStore {
 
 export class InMemoryOAuth1SecretStore implements OAuth1SecretStore {
   #store = new Map<string, { entry: OAuth1SecretEntry; expiresAt: number }>();
+  #timers = new Map<string, ReturnType<typeof setTimeout>>();
 
   async save(
     oauthToken: string,
     entry: OAuth1SecretEntry,
     timeToLiveMs = DEFAULT_TTL_MS,
   ): Promise<void> {
+    const existing = this.#timers.get(oauthToken);
+    if (existing) clearTimeout(existing);
     this.#store.set(oauthToken, { entry, expiresAt: Date.now() + timeToLiveMs });
+    this.#timers.set(
+      oauthToken,
+      setTimeout(() => {
+        this.#store.delete(oauthToken);
+        this.#timers.delete(oauthToken);
+      }, timeToLiveMs),
+    );
   }
 
   async get(oauthToken: string): Promise<OAuth1SecretEntry | null> {
@@ -150,6 +175,11 @@ export class InMemoryOAuth1SecretStore implements OAuth1SecretStore {
 
   async delete(oauthToken: string): Promise<void> {
     this.#store.delete(oauthToken);
+    const timer = this.#timers.get(oauthToken);
+    if (timer) {
+      clearTimeout(timer);
+      this.#timers.delete(oauthToken);
+    }
   }
 }
 
