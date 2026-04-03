@@ -214,7 +214,7 @@ function getWatchWarning(watchStatus: {
 
 function getWhoopWarning(bleState: string, connectionState: string): string | null {
   if (bleState === "uninitialized")
-    return "Bluetooth not initialized. Enable WHOOP always-on recording in Settings.";
+    return "Bluetooth not initialized. Enable Bluetooth and reopen the app to connect.";
   if (bleState === "poweredOff")
     return "Bluetooth is turned off. Enable it in Control Center or Settings.";
   if (bleState === "unauthorized")

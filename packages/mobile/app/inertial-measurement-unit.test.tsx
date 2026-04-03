@@ -71,10 +71,13 @@ vi.mock("../modules/core-motion", () => ({
   isRecordingActive: (...args: unknown[]) => mockIsRecordingActive(...args),
 }));
 
+const mockGetConnectionState = vi.fn(() => "idle");
+const mockGetBluetoothState = vi.fn(() => "poweredOff");
+
 vi.mock("../modules/whoop-ble", () => ({
   isBluetoothAvailable: () => false,
-  getConnectionState: () => "idle",
-  getBluetoothState: () => "poweredOff",
+  getConnectionState: (...args: unknown[]) => mockGetConnectionState(...args),
+  getBluetoothState: (...args: unknown[]) => mockGetBluetoothState(...args),
   getBufferedSampleCount: () => 0,
   getDataPathStats: () => ({
     dataNotificationCount: 0,
@@ -148,6 +151,8 @@ describe("InertialMeasurementUnitScreen", () => {
     mockRequestMotionPermission.mockResolvedValue("authorized");
     mockIsAccelerometerRecordingAvailable.mockReturnValue(true);
     mockIsRecordingActive.mockReturnValue(false);
+    mockGetConnectionState.mockReturnValue("idle");
+    mockGetBluetoothState.mockReturnValue("poweredOff");
     appStateCallback = null;
   });
 
@@ -178,6 +183,23 @@ describe("InertialMeasurementUnitScreen", () => {
     );
 
     expect(mockRequestMotionPermission).toHaveBeenCalled();
+
+    unmount();
+  });
+
+  it("shows WHOOP warning and diagnostics when BLE is active", async () => {
+    mockGetBluetoothState.mockReturnValue("poweredOn");
+    mockGetConnectionState.mockReturnValue("scanning");
+
+    const { unmount } = render(
+      React.createElement((await import("./inertial-measurement-unit")).default),
+    );
+
+    // Warning should appear in both the error banner and the inline warning
+    expect(screen.getAllByText(/Scanning for WHOOP strap/).length).toBeGreaterThanOrEqual(1);
+
+    // Diagnostics block should be visible (connectionState !== "idle")
+    expect(screen.getByText("Data Path")).toBeTruthy();
 
     unmount();
   });
