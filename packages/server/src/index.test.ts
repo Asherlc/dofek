@@ -31,6 +31,10 @@ vi.mock("@trpc/server/adapters/express", () => ({
 vi.mock("dofek/jobs/queues", () => ({
   createImportQueue: vi.fn(),
   createSyncQueue: vi.fn(),
+  createExportQueue: vi.fn(),
+  createScheduledSyncQueue: vi.fn(),
+  createPostSyncQueue: vi.fn(),
+  createTrainingExportQueue: vi.fn(),
 }));
 vi.mock("dofek/lib/r2-client", () => ({
   createR2Client: vi.fn(),

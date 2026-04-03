@@ -6,7 +6,14 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import compression from "compression";
 import cookieParser from "cookie-parser";
 import { createDatabaseFromEnv } from "dofek/db";
-import { createImportQueue, createSyncQueue } from "dofek/jobs/queues";
+import {
+  createExportQueue,
+  createImportQueue,
+  createPostSyncQueue,
+  createScheduledSyncQueue,
+  createSyncQueue,
+  createTrainingExportQueue,
+} from "dofek/jobs/queues";
 import { createR2Client, createS3Client, parseR2Config } from "dofek/lib/r2-client";
 import { sql } from "drizzle-orm";
 import express from "express";
@@ -86,6 +93,10 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
   //    connection attempts in test environments) ──
   let _importQueue: ReturnType<typeof createImportQueue> | null = null;
   let _syncQueue: ReturnType<typeof createSyncQueue> | null = null;
+  let _exportQueue: ReturnType<typeof createExportQueue> | null = null;
+  let _scheduledSyncQueue: ReturnType<typeof createScheduledSyncQueue> | null = null;
+  let _postSyncQueue: ReturnType<typeof createPostSyncQueue> | null = null;
+  let _trainingExportQueue: ReturnType<typeof createTrainingExportQueue> | null = null;
 
   function getImportQueue() {
     if (!_importQueue) _importQueue = createImportQueue();
@@ -95,6 +106,26 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
   function getSyncQueue() {
     if (!_syncQueue) _syncQueue = createSyncQueue();
     return _syncQueue;
+  }
+
+  function getExportQueue() {
+    if (!_exportQueue) _exportQueue = createExportQueue();
+    return _exportQueue;
+  }
+
+  function getScheduledSyncQueue() {
+    if (!_scheduledSyncQueue) _scheduledSyncQueue = createScheduledSyncQueue();
+    return _scheduledSyncQueue;
+  }
+
+  function getPostSyncQueue() {
+    if (!_postSyncQueue) _postSyncQueue = createPostSyncQueue();
+    return _postSyncQueue;
+  }
+
+  function getTrainingExportQueue() {
+    if (!_trainingExportQueue) _trainingExportQueue = createTrainingExportQueue();
+    return _trainingExportQueue;
   }
 
   // ── Bull Board dashboard (admin-only) ──
@@ -121,7 +152,14 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
 
     if (!lazyBullBoard.initialized) {
       createBullBoard({
-        queues: [new BullMQAdapter(getSyncQueue()), new BullMQAdapter(getImportQueue())],
+        queues: [
+          new BullMQAdapter(getSyncQueue()),
+          new BullMQAdapter(getImportQueue()),
+          new BullMQAdapter(getExportQueue()),
+          new BullMQAdapter(getScheduledSyncQueue()),
+          new BullMQAdapter(getPostSyncQueue()),
+          new BullMQAdapter(getTrainingExportQueue()),
+        ],
         serverAdapter: bullBoardAdapter,
       });
       lazyBullBoard.initialized = true;
