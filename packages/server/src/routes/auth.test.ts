@@ -66,6 +66,7 @@ vi.mock("dofek/providers/registry", () => ({
 vi.mock("dofek/db/tokens", () => ({
   ensureProvider: vi.fn(() => Promise.resolve()),
   saveTokens: vi.fn(() => Promise.resolve()),
+  loadTokens: vi.fn(() => Promise.resolve(null)),
 }));
 
 vi.mock("dofek/auth/oauth", () => ({
@@ -73,6 +74,7 @@ vi.mock("dofek/auth/oauth", () => ({
   buildAuthorizationUrl: vi.fn(() => "https://oauth.example.com/authorize?client_id=test"),
   generateCodeVerifier: vi.fn(() => "pkce-verifier"),
   generateCodeChallenge: vi.fn(() => "pkce-challenge"),
+  revokeToken: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock("../routers/sync.ts", () => ({
@@ -101,7 +103,9 @@ vi.mock("dofek/db", () => ({
 
 import type { AddressInfo } from "node:net";
 import cookieParser from "cookie-parser";
+import { revokeToken } from "dofek/auth/oauth";
 import { createDatabaseFromEnv } from "dofek/db";
+import { loadTokens } from "dofek/db/tokens";
 import { getAllProviders } from "dofek/providers/registry";
 import { isWebhookProvider, type SyncProvider } from "dofek/providers/types";
 import express from "express";
@@ -3369,6 +3373,146 @@ describe("createAuthRouter", () => {
       );
 
       vi.mocked(isWebhookProvider).mockReturnValue(false);
+    });
+  });
+
+  describe("GET /callback (pre-exchange token revocation)", () => {
+    it("revokes existing access and refresh tokens when revokeUrl is configured", async () => {
+      vi.mocked(loadTokens).mockResolvedValueOnce({
+        accessToken: "old-access",
+        refreshToken: "old-refresh",
+        expiresAt: new Date("2027-01-01"),
+        scopes: "read",
+      });
+
+      const mockExchangeCode = vi.fn(() =>
+        Promise.resolve({
+          accessToken: "new-access",
+          refreshToken: "new-refresh",
+          expiresAt: new Date("2027-06-01"),
+          scopes: "read",
+        }),
+      );
+      const revokeUrl = "https://api.wahoo.com/oauth/token/revoke";
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          authSetup: () => ({
+            oauthConfig: {
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["user_read"],
+              revokeUrl,
+            },
+            exchangeCode: mockExchangeCode,
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+      const startRes = await request(app, "get", "/auth/provider/wahoo");
+      expect(startRes.status).toBe(302);
+      const location = startRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const state = new URL(location).searchParams.get("state");
+
+      const callbackRes = await request(app, "get", `/callback?code=code&state=${state}`);
+      expect(callbackRes.status).toBe(200);
+
+      // Both access and refresh tokens should have been revoked
+      expect(revokeToken).toHaveBeenCalledTimes(2);
+      expect(revokeToken).toHaveBeenCalledWith(
+        expect.objectContaining({ revokeUrl }),
+        "old-access",
+      );
+      expect(revokeToken).toHaveBeenCalledWith(
+        expect.objectContaining({ revokeUrl }),
+        "old-refresh",
+      );
+
+      // Exchange should still happen after revocation
+      expect(mockExchangeCode).toHaveBeenCalledWith("code", undefined);
+    });
+
+    it("skips revocation when no existing tokens are stored", async () => {
+      vi.mocked(loadTokens).mockResolvedValueOnce(null);
+
+      const mockExchangeCode = vi.fn(() =>
+        Promise.resolve({
+          accessToken: "new-access",
+          refreshToken: "new-refresh",
+          expiresAt: new Date("2027-06-01"),
+          scopes: "read",
+        }),
+      );
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          authSetup: () => ({
+            oauthConfig: {
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["user_read"],
+              revokeUrl: "https://api.wahoo.com/oauth/token/revoke",
+            },
+            exchangeCode: mockExchangeCode,
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+      const startRes = await request(app, "get", "/auth/provider/wahoo");
+      const location = startRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const state = new URL(location).searchParams.get("state");
+
+      const callbackRes = await request(app, "get", `/callback?code=code&state=${state}`);
+      expect(callbackRes.status).toBe(200);
+      expect(revokeToken).not.toHaveBeenCalled();
+      expect(mockExchangeCode).toHaveBeenCalled();
+    });
+
+    it("proceeds with exchange even when revocation fails", async () => {
+      vi.mocked(loadTokens).mockRejectedValueOnce(new Error("DB connection lost"));
+
+      const mockExchangeCode = vi.fn(() =>
+        Promise.resolve({
+          accessToken: "new-access",
+          refreshToken: "new-refresh",
+          expiresAt: new Date("2027-06-01"),
+          scopes: "read",
+        }),
+      );
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          authSetup: () => ({
+            oauthConfig: {
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["user_read"],
+              revokeUrl: "https://api.wahoo.com/oauth/token/revoke",
+            },
+            exchangeCode: mockExchangeCode,
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+      const startRes = await request(app, "get", "/auth/provider/wahoo");
+      const location = startRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const state = new URL(location).searchParams.get("state");
+
+      const callbackRes = await request(app, "get", `/callback?code=code&state=${state}`);
+      expect(callbackRes.status).toBe(200);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining("Pre-exchange token revocation failed for wahoo"),
+      );
+      expect(mockExchangeCode).toHaveBeenCalled();
     });
   });
 

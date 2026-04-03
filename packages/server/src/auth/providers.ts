@@ -204,6 +204,9 @@ export function isNativeAppleConfigured(): boolean {
 export function getIdentityProvider(name: IdentityProviderName): IdentityProvider {
   let provider = providers.get(name);
   if (!provider) {
+    if (!(name in initializers)) {
+      throw new Error(`Unknown identity provider: ${name}`);
+    }
     provider = initializers[name]();
     providers.set(name, provider);
   }

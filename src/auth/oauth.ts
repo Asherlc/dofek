@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { logger } from "../logger.ts";
 
 const DEFAULT_REDIRECT_URI = "https://dofek.asherlc.com/callback";
 
@@ -81,6 +82,9 @@ export interface OAuthConfig {
   /** Separator for scopes in the authorization URL. Default is " " (space, per OAuth 2.0 spec).
    *  Some providers (e.g. Strava) require "," instead. */
   scopeSeparator?: string;
+  /** OAuth 2.0 Token Revocation endpoint (RFC 7009).
+   *  When set, existing tokens can be revoked before exchanging a new authorization code. */
+  revokeUrl?: string;
 }
 
 // ============================================================
@@ -220,4 +224,47 @@ export async function refreshAccessToken(
   const data = await response.json();
   const parsed: Record<string, unknown> = data;
   return parseTokenResponse(parsed);
+}
+
+/**
+ * Revoke an OAuth 2.0 token via the provider's revocation endpoint (RFC 7009).
+ * No-op if `config.revokeUrl` is not set. Non-fatal — logs but does not throw
+ * on failure, since revocation is best-effort before a new token exchange.
+ */
+export async function revokeToken(
+  config: OAuthConfig,
+  token: string,
+  fetchFn: FetchFn = globalThis.fetch,
+): Promise<void> {
+  if (!config.revokeUrl) return;
+
+  const useBasicAuth = config.tokenAuthMethod === "basic";
+  const params: Record<string, string> = { token };
+  if (!useBasicAuth) {
+    params.client_id = config.clientId;
+    if (config.clientSecret) params.client_secret = config.clientSecret;
+  }
+
+  const body = new URLSearchParams(params);
+  const headers: Record<string, string> = {
+    "Content-Type": "application/x-www-form-urlencoded",
+  };
+  if (useBasicAuth && config.clientSecret) {
+    headers.Authorization = `Basic ${Buffer.from(`${config.clientId}:${config.clientSecret}`, "utf8").toString("base64")}`;
+  }
+
+  try {
+    const response = await fetchFn(config.revokeUrl, {
+      method: "POST",
+      headers,
+      body: body.toString(),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      logger.warn(`Token revocation failed (${response.status}): ${text}`);
+    }
+  } catch (error) {
+    logger.warn(`Token revocation failed: ${error}`);
+  }
 }

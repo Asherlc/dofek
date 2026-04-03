@@ -12,7 +12,7 @@ import {
   WahooClient,
   WahooProvider,
   type WahooWorkout,
-} from "./wahoo.ts";
+} from "./wahoo/index.ts";
 
 // ============================================================
 // Tests targeting uncovered sync paths in wahoo.ts

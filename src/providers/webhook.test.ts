@@ -260,13 +260,13 @@ describe("PolarProvider webhook methods", () => {
 // ── Wahoo webhook tests ──
 describe("WahooProvider webhook methods", () => {
   it("is detected as a WebhookProvider", async () => {
-    const { WahooProvider } = await import("./wahoo.ts");
+    const { WahooProvider } = await import("./wahoo/index.ts");
     const provider = new WahooProvider(async () => new Response());
     expect(isWebhookProvider(provider)).toBe(true);
   });
 
   it("parseWebhookPayload extracts workout event", async () => {
-    const { WahooProvider } = await import("./wahoo.ts");
+    const { WahooProvider } = await import("./wahoo/index.ts");
     const provider = new WahooProvider(async () => new Response());
 
     const events = provider.parseWebhookPayload({
@@ -485,26 +485,26 @@ describe("SuuntoProvider register/unregister", () => {
 
 describe("WahooProvider register/unregister", () => {
   it("registerWebhook returns portal subscription ID", async () => {
-    const { WahooProvider } = await import("./wahoo.ts");
+    const { WahooProvider } = await import("./wahoo/index.ts");
     const provider = new WahooProvider(async () => new Response());
     const result = await provider.registerWebhook("https://example.com/cb", "tok");
     expect(result.subscriptionId).toBe("wahoo-portal-subscription");
   });
 
   it("unregisterWebhook is a no-op", async () => {
-    const { WahooProvider } = await import("./wahoo.ts");
+    const { WahooProvider } = await import("./wahoo/index.ts");
     const provider = new WahooProvider(async () => new Response());
     await expect(provider.unregisterWebhook("sub-1")).resolves.toBeUndefined();
   });
 
   it("verifyWebhookSignature always returns true", async () => {
-    const { WahooProvider } = await import("./wahoo.ts");
+    const { WahooProvider } = await import("./wahoo/index.ts");
     const provider = new WahooProvider(async () => new Response());
     expect(provider.verifyWebhookSignature(Buffer.from("{}"), {}, "secret")).toBe(true);
   });
 
   it("parseWebhookPayload still returns event when user.id is present without event_type", async () => {
-    const { WahooProvider } = await import("./wahoo.ts");
+    const { WahooProvider } = await import("./wahoo/index.ts");
     const provider = new WahooProvider(async () => new Response());
     // Wahoo parses as long as user.id exists
     const events = provider.parseWebhookPayload({ user: { id: 1 } });
@@ -513,7 +513,7 @@ describe("WahooProvider register/unregister", () => {
   });
 
   it("parseWebhookPayload returns empty for null input", async () => {
-    const { WahooProvider } = await import("./wahoo.ts");
+    const { WahooProvider } = await import("./wahoo/index.ts");
     const provider = new WahooProvider(async () => new Response());
     expect(provider.parseWebhookPayload(null)).toHaveLength(0);
   });
@@ -983,7 +983,7 @@ describe("StravaProvider webhook — precise assertions", () => {
 
 describe("WahooProvider webhook — precise assertions", () => {
   it("parseWebhookPayload returns eventType 'update' for workout_summary.updated", async () => {
-    const { WahooProvider } = await import("./wahoo.ts");
+    const { WahooProvider } = await import("./wahoo/index.ts");
     const provider = new WahooProvider(async () => new Response());
 
     const events = provider.parseWebhookPayload({
@@ -1007,7 +1007,7 @@ describe("WahooProvider webhook — precise assertions", () => {
   });
 
   it("parseWebhookPayload returns eventType 'create' for workout_summary.created", async () => {
-    const { WahooProvider } = await import("./wahoo.ts");
+    const { WahooProvider } = await import("./wahoo/index.ts");
     const provider = new WahooProvider(async () => new Response());
 
     const events = provider.parseWebhookPayload({
@@ -1020,7 +1020,7 @@ describe("WahooProvider webhook — precise assertions", () => {
   });
 
   it("parseWebhookPayload returns objectId as undefined when workout_summary is absent", async () => {
-    const { WahooProvider } = await import("./wahoo.ts");
+    const { WahooProvider } = await import("./wahoo/index.ts");
     const provider = new WahooProvider(async () => new Response());
 
     const events = provider.parseWebhookPayload({
@@ -1033,7 +1033,7 @@ describe("WahooProvider webhook — precise assertions", () => {
   });
 
   it("parseWebhookPayload returns empty array for invalid payload structure", async () => {
-    const { WahooProvider } = await import("./wahoo.ts");
+    const { WahooProvider } = await import("./wahoo/index.ts");
     const provider = new WahooProvider(async () => new Response());
 
     expect(provider.parseWebhookPayload({ bad: true })).toHaveLength(0);
@@ -1042,19 +1042,19 @@ describe("WahooProvider webhook — precise assertions", () => {
   });
 
   it("id is exactly 'wahoo'", async () => {
-    const { WahooProvider } = await import("./wahoo.ts");
+    const { WahooProvider } = await import("./wahoo/index.ts");
     const provider = new WahooProvider(async () => new Response());
     expect(provider.id).toBe("wahoo");
   });
 
   it("name is exactly 'Wahoo'", async () => {
-    const { WahooProvider } = await import("./wahoo.ts");
+    const { WahooProvider } = await import("./wahoo/index.ts");
     const provider = new WahooProvider(async () => new Response());
     expect(provider.name).toBe("Wahoo");
   });
 
   it("webhookScope is exactly 'app'", async () => {
-    const { WahooProvider } = await import("./wahoo.ts");
+    const { WahooProvider } = await import("./wahoo/index.ts");
     const provider = new WahooProvider(async () => new Response());
     expect(provider.webhookScope).toBe("app");
   });

@@ -7,6 +7,7 @@ import {
   getOAuthRedirectUri,
   type OAuthConfig,
   refreshAccessToken,
+  revokeToken,
   type TokenSet,
 } from "./oauth.ts";
 
@@ -452,6 +453,75 @@ describe("OAuth", () => {
       const body = new URLSearchParams(options?.body);
       expect(body.get("code_verifier")).toBe("my-verifier");
       expect(body.get("client_secret")).toBeNull();
+    });
+  });
+
+  describe("revokeToken", () => {
+    it("sends token to revocation endpoint with client credentials in body", async () => {
+      const revokeConfig: OAuthConfig = {
+        ...config,
+        revokeUrl: "https://api.example.com/oauth/revoke",
+      };
+      const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+
+      await revokeToken(revokeConfig, "old-access-token", mockFetch);
+
+      expect(mockFetch).toHaveBeenCalledOnce();
+      const [url, options] = mockFetch.mock.calls[0] ?? [];
+      expect(url).toBe("https://api.example.com/oauth/revoke");
+      expect(options?.method).toBe("POST");
+
+      const body = new URLSearchParams(options?.body);
+      expect(body.get("token")).toBe("old-access-token");
+      expect(body.get("client_id")).toBe("test-client-id");
+      expect(body.get("client_secret")).toBe("test-client-secret");
+    });
+
+    it("uses Basic auth when tokenAuthMethod is basic", async () => {
+      const revokeConfig: OAuthConfig = {
+        ...config,
+        revokeUrl: "https://api.example.com/oauth/revoke",
+        tokenAuthMethod: "basic",
+      };
+      const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+
+      await revokeToken(revokeConfig, "old-token", mockFetch);
+
+      const [, options] = mockFetch.mock.calls[0] ?? [];
+      expect(options?.headers?.Authorization).toMatch(/^Basic /);
+      const body = new URLSearchParams(options?.body);
+      expect(body.has("client_id")).toBe(false);
+    });
+
+    it("does not throw on failed revocation", async () => {
+      const revokeConfig: OAuthConfig = {
+        ...config,
+        revokeUrl: "https://api.example.com/oauth/revoke",
+      };
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 503,
+        text: () => Promise.resolve("Service unavailable"),
+      });
+
+      await expect(revokeToken(revokeConfig, "old-token", mockFetch)).resolves.toBeUndefined();
+    });
+
+    it("does not throw on network error", async () => {
+      const revokeConfig: OAuthConfig = {
+        ...config,
+        revokeUrl: "https://api.example.com/oauth/revoke",
+      };
+      const mockFetch = vi.fn().mockRejectedValue(new Error("Network error"));
+
+      await expect(revokeToken(revokeConfig, "old-token", mockFetch)).resolves.toBeUndefined();
+    });
+
+    it("is a no-op when revokeUrl is not set", async () => {
+      const mockFetch = vi.fn();
+
+      await expect(revokeToken(config, "old-token", mockFetch)).resolves.toBeUndefined();
+      expect(mockFetch).not.toHaveBeenCalled();
     });
   });
 });
