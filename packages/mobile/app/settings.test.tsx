@@ -33,6 +33,16 @@ vi.mock("../components/SlackIntegrationPanel", () => ({
   SlackIntegrationPanel: () => React.createElement("div", null, "SlackIntegrationPanel"),
 }));
 
+vi.mock("../components/ProviderLogo", () => ({
+  ProviderLogo: ({ provider }: { provider: string }) =>
+    React.createElement("span", { "data-testid": `provider-logo-${provider}` }),
+}));
+
+const mockRouterPush = vi.fn();
+vi.mock("expo-router", () => ({
+  useRouter: () => ({ push: mockRouterPush }),
+}));
+
 vi.mock("../lib/auth-context", () => ({
   useAuth: () => ({
     logout: vi.fn(),
@@ -43,9 +53,20 @@ vi.mock("../lib/auth-context", () => ({
 
 const mockLinkedAccountsRefetch = vi.fn();
 
+const mockProvidersData = [
+  { id: "wahoo", name: "Wahoo", authorized: true, importOnly: false },
+  { id: "strava", name: "Strava", authorized: true, importOnly: false },
+  { id: "polar", name: "Polar", authorized: false, importOnly: false },
+];
+
 vi.mock("../lib/trpc", () => ({
   trpc: {
     useUtils: () => ({ invalidate: vi.fn() }),
+    sync: {
+      providers: {
+        useQuery: () => ({ data: mockProvidersData, isLoading: false }),
+      },
+    },
     auth: {
       linkedAccounts: {
         useQuery: () => ({
@@ -80,6 +101,37 @@ vi.mock("../lib/trpc", () => ({
     },
   },
 }));
+
+describe("SettingsScreen data sources", () => {
+  it("renders Data Sources section with connected count", async () => {
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    expect(screen.getByText("Data Sources")).toBeTruthy();
+    expect(screen.getByText("2 connected")).toBeTruthy();
+  });
+
+  it("renders provider logos for connected providers only", async () => {
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    expect(screen.getByTestId("provider-logo-wahoo")).toBeTruthy();
+    expect(screen.getByTestId("provider-logo-strava")).toBeTruthy();
+    expect(screen.queryByTestId("provider-logo-polar")).toBeNull();
+  });
+
+  it("navigates to providers screen when tapped", async () => {
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    fireEvent.click(screen.getByText("2 connected"));
+
+    expect(mockRouterPush).toHaveBeenCalledWith("/providers");
+  });
+});
 
 describe("SettingsScreen linked accounts", () => {
   it("renders friendly provider names instead of raw provider IDs", async () => {

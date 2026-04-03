@@ -810,7 +810,7 @@ describe("syncRouter", () => {
       expect(result).toBeNull();
     });
 
-    it("invalidates server-side cache when job completes", async () => {
+    it("invalidates all user caches when job completes", async () => {
       mockGetJob.mockResolvedValueOnce({
         data: { userId: "user-1" },
         getState: vi.fn().mockResolvedValue("completed"),
@@ -824,12 +824,12 @@ describe("syncRouter", () => {
 
       await caller.syncStatus({ jobId: "done-job" });
 
-      expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:sync.providers");
-      expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:sync.providerStats");
-      expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:sync.logs");
+      // Should invalidate ALL user caches so data queries (sleep.list, etc.)
+      // pick up fresh data from the refreshed materialized views
+      expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:");
     });
 
-    it("invalidates server-side cache when job fails", async () => {
+    it("invalidates all user caches when job fails", async () => {
       mockGetJob.mockResolvedValueOnce({
         data: { userId: "user-1" },
         getState: vi.fn().mockResolvedValue("failed"),
@@ -844,7 +844,7 @@ describe("syncRouter", () => {
 
       await caller.syncStatus({ jobId: "failed-job" });
 
-      expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:sync.providers");
+      expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:");
     });
 
     it("does not invalidate cache for active jobs", async () => {

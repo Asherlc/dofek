@@ -2,6 +2,10 @@
     reverse_proxy client:80
 }
 
+ota.dofek.asherlc.com {
+    reverse_proxy ota:3000
+}
+
 portainer.dofek.asherlc.com {
     reverse_proxy https://portainer:9443 {
         transport http {

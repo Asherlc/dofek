@@ -187,6 +187,19 @@ export function isProviderConfigured(name: IdentityProviderName): boolean {
   return requiredEnvKeys[name].every((key) => !!process.env[key]);
 }
 
+/** Required env vars for native iOS Apple Sign In (uses Bundle ID, not Services ID). */
+const nativeAppleRequiredEnvKeys = [
+  "APPLE_BUNDLE_ID",
+  "APPLE_TEAM_ID",
+  "APPLE_KEY_ID",
+  "APPLE_PRIVATE_KEY",
+];
+
+/** Check if native iOS Apple Sign In is configured. */
+export function isNativeAppleConfigured(): boolean {
+  return nativeAppleRequiredEnvKeys.every((key) => !!process.env[key]);
+}
+
 /** Get a configured identity provider. Throws if env vars are missing. */
 export function getIdentityProvider(name: IdentityProviderName): IdentityProvider {
   let provider = providers.get(name);
@@ -200,6 +213,94 @@ export function getIdentityProvider(name: IdentityProviderName): IdentityProvide
 /** List all configured identity providers. */
 export function getConfiguredProviders(): IdentityProviderName[] {
   return [...IDENTITY_PROVIDER_NAMES].filter(isProviderConfigured);
+}
+
+const appleTokenEndpoint = "https://appleid.apple.com/auth/token";
+
+const appleTokenResponseSchema = z.object({
+  id_token: z.string(),
+});
+
+/** Create the ES256 client_secret JWT that Apple requires for token exchange. */
+async function createAppleClientSecret(
+  teamId: string,
+  keyId: string,
+  pkcs8PrivateKey: Uint8Array,
+  clientId: string,
+): Promise<string> {
+  const privateKey = await crypto.subtle.importKey(
+    "pkcs8",
+    pkcs8PrivateKey.slice().buffer,
+    { name: "ECDSA", namedCurve: "P-256" },
+    false,
+    ["sign"],
+  );
+  const now = Math.floor(Date.now() / 1000);
+  const header = Buffer.from(JSON.stringify({ alg: "ES256", kid: keyId, typ: "JWT" })).toString(
+    "base64url",
+  );
+  const payload = Buffer.from(
+    JSON.stringify({
+      iss: teamId,
+      iat: now,
+      exp: now + 5 * 60,
+      aud: "https://appleid.apple.com",
+      sub: clientId,
+    }),
+  ).toString("base64url");
+  const signingInput = new TextEncoder().encode(`${header}.${payload}`);
+  const signature = Buffer.from(
+    await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, privateKey, signingInput),
+  ).toString("base64url");
+  return `${header}.${payload}.${signature}`;
+}
+
+/**
+ * Exchange a native iOS Apple Sign In authorization code for user info.
+ *
+ * Native codes are issued by ASAuthorizationController using the app's Bundle ID,
+ * not the web Services ID. The token exchange must use the Bundle ID as client_id
+ * and must NOT include a redirect_uri (there is none in the native flow).
+ */
+export async function validateNativeAppleCallback(
+  authorizationCode: string,
+): Promise<{ user: IdentityUser }> {
+  const bundleId = getEnvRequired("APPLE_BUNDLE_ID");
+  const teamId = getEnvRequired("APPLE_TEAM_ID");
+  const keyId = getEnvRequired("APPLE_KEY_ID");
+  const privateKeyPem = getEnvRequired("APPLE_PRIVATE_KEY");
+  const derBytes = decodePemToDer(privateKeyPem);
+
+  const clientSecret = await createAppleClientSecret(teamId, keyId, derBytes, bundleId);
+
+  const body = new URLSearchParams();
+  body.set("grant_type", "authorization_code");
+  body.set("code", authorizationCode);
+  body.set("client_id", bundleId);
+  body.set("client_secret", clientSecret);
+  // No redirect_uri — native auth codes are not associated with one
+
+  const response = await fetch(appleTokenEndpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json",
+    },
+    body: body.toString(),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Apple token exchange failed (${response.status}): ${text}`);
+  }
+
+  const data: unknown = await response.json();
+  const { id_token: idToken } = appleTokenResponseSchema.parse(data);
+  const claims = appleClaimsSchema.parse(decodeIdToken(idToken));
+
+  return {
+    user: { sub: claims.sub, email: claims.email ?? null, name: null, groups: null },
+  };
 }
 
 export { generateCodeVerifier, generateState };

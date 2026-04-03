@@ -14,7 +14,6 @@ import {
   createSyncQueue,
   createTrainingExportQueue,
 } from "dofek/jobs/queues";
-import { createR2Client, createS3Client, parseR2Config } from "dofek/lib/r2-client";
 import { sql } from "drizzle-orm";
 import express from "express";
 import { isAdmin } from "./auth/admin.ts";
@@ -27,7 +26,6 @@ import { logger } from "./logger.ts";
 import { appRouter } from "./router.ts";
 import { createAuthRouter } from "./routes/auth.ts";
 import { createExportRouter } from "./routes/export.ts";
-import { createUpdatesRouter } from "./routes/updates.ts";
 import { createUploadRouter } from "./routes/upload.ts";
 import { createWebhookRouter } from "./routes/webhooks.ts";
 import { startSlackBot } from "./slack/bot.ts";
@@ -132,51 +130,11 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
     bullBoardAdapter.getRouter()(req, res, next);
   });
 
-  const updatesStorage = (() => {
-    const endpoint = process.env.R2_ENDPOINT;
-    const accessKeyId = process.env.R2_ACCESS_KEY_ID;
-    const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
-    const bucket = process.env.R2_BUCKET;
-    const hasSomeR2Config = [endpoint, accessKeyId, secretAccessKey, bucket].some(Boolean);
-    const hasCompleteR2Config = [endpoint, accessKeyId, secretAccessKey, bucket].every(Boolean);
-
-    if (!hasSomeR2Config) return null;
-    if (!hasCompleteR2Config) {
-      logger.error("[updates] Incomplete R2 config; falling back to filesystem OTA storage");
-      return null;
-    }
-
-    try {
-      const config = parseR2Config({
-        R2_ENDPOINT: endpoint,
-        R2_ACCESS_KEY_ID: accessKeyId,
-        R2_SECRET_ACCESS_KEY: secretAccessKey,
-        R2_BUCKET: bucket,
-      });
-      logger.info("[updates] Using R2 object storage for OTA assets");
-      return createR2Client(createS3Client(config), config.R2_BUCKET);
-    } catch (error) {
-      logger.error(`[updates] Invalid R2 config; falling back to filesystem OTA storage: ${error}`);
-      Sentry.captureException(error);
-      return null;
-    }
-  })();
-
-  const updatesRouter = createUpdatesRouter({
-    updatesDir: process.env.UPDATES_DIR ?? "/app/updates",
-    updatesStorage: updatesStorage ?? undefined,
-    updatesPrefix: process.env.UPDATES_R2_PREFIX ?? "mobile-ota",
-    publicUrl: process.env.PUBLIC_URL ?? "https://dofek.asherlc.com",
-    signingPrivateKey: process.env.OTA_SIGNING_PRIVATE_KEY,
-  });
-
   // ── Route modules ──
   // Webhook routes must be mounted before json() middleware — they use raw body for HMAC verification
   app.use("/api/webhooks", createWebhookRouter({ db, syncQueue }));
   app.use("/api/upload", createUploadRouter({ importQueue, db }));
   app.use("/api/export", createExportRouter({ db, exportQueue }));
-  app.use("/api/updates", updatesRouter);
-  app.use("/updates", updatesRouter);
   // ── Dev-only: auto-login for seed database testing ──
   if (process.env.NODE_ENV !== "production") {
     app.get("/auth/dev-login", async (_req, res) => {
@@ -239,7 +197,8 @@ export function runStartupTasks(
   });
 }
 
-async function main() {
+/** Validate env, create app, and start listening. */
+export async function main() {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
     throw new Error("DATABASE_URL environment variable is required");

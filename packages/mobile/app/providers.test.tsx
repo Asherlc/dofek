@@ -170,6 +170,10 @@ const mockActiveSyncsQuery = vi.fn();
 const mockInvalidate = vi.fn();
 const mockSyncStatusFetch = vi.fn();
 const mockCredentialSignIn = vi.fn();
+const mockGarminSignIn = vi.fn();
+const mockWhoopSignIn = vi.fn();
+const mockWhoopVerifyCode = vi.fn();
+const mockWhoopSaveTokens = vi.fn();
 
 vi.mock("../lib/trpc", () => ({
   trpc: {
@@ -182,6 +186,14 @@ vi.mock("../lib/trpc", () => ({
     },
     credentialAuth: {
       signIn: { useMutation: () => ({ mutateAsync: mockCredentialSignIn }) },
+    },
+    garminAuth: {
+      signIn: { useMutation: () => ({ mutateAsync: mockGarminSignIn }) },
+    },
+    whoopAuth: {
+      signIn: { useMutation: () => ({ mutateAsync: mockWhoopSignIn }) },
+      verifyCode: { useMutation: () => ({ mutateAsync: mockWhoopVerifyCode }) },
+      saveTokens: { useMutation: () => ({ mutateAsync: mockWhoopSaveTokens }) },
     },
     useUtils: () => ({
       invalidate: mockInvalidate,
@@ -565,6 +577,10 @@ describe("ProvidersScreen", () => {
     mockInvalidate.mockReset();
     mockSyncStatusFetch.mockReset();
     mockCredentialSignIn.mockReset();
+    mockGarminSignIn.mockReset();
+    mockWhoopSignIn.mockReset();
+    mockWhoopVerifyCode.mockReset();
+    mockWhoopSaveTokens.mockReset();
     setupDefaultMocks();
   });
 
@@ -829,6 +845,197 @@ describe("ProvidersScreen", () => {
       expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith(
         "https://test.example.com/auth/provider/strava",
       );
+    });
+  });
+
+  it("opens Garmin auth modal when Connect is clicked on a custom:garmin provider", async () => {
+    const garminProvider = {
+      id: "garmin",
+      name: "Garmin",
+      authType: "custom:garmin",
+      authorized: false,
+      importOnly: false,
+      lastSyncedAt: null,
+    };
+    mockProvidersQuery.mockReturnValue({
+      data: [garminProvider],
+      isLoading: false,
+    });
+
+    const { default: ProvidersScreen } = await import("./providers");
+    render(<ProvidersScreen />);
+
+    fireEvent.click(screen.getByText("Connect"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Connect Garmin")).toBeTruthy();
+    });
+  });
+
+  it("Garmin auth modal calls signIn mutation with correct args", async () => {
+    const garminProvider = {
+      id: "garmin",
+      name: "Garmin",
+      authType: "custom:garmin",
+      authorized: false,
+      importOnly: false,
+      lastSyncedAt: null,
+    };
+    mockProvidersQuery.mockReturnValue({
+      data: [garminProvider],
+      isLoading: false,
+    });
+    mockGarminSignIn.mockResolvedValue({ success: true });
+
+    const { default: ProvidersScreen } = await import("./providers");
+    render(<ProvidersScreen />);
+
+    fireEvent.click(screen.getByText("Connect"));
+    await waitFor(() => {
+      expect(screen.getByText("Connect Garmin")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("Email"), {
+      target: { value: "user@garmin.com" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Password"), { target: { value: "garminpass" } });
+    fireEvent.click(screen.getByText("Sign In"));
+
+    await waitFor(() => {
+      expect(mockGarminSignIn).toHaveBeenCalledWith({
+        username: "user@garmin.com",
+        password: "garminpass",
+      });
+    });
+  });
+
+  it("opens WHOOP auth modal when Connect is clicked on a custom:whoop provider", async () => {
+    const whoopProvider = {
+      id: "whoop",
+      name: "WHOOP",
+      authType: "custom:whoop",
+      authorized: false,
+      importOnly: false,
+      lastSyncedAt: null,
+    };
+    mockProvidersQuery.mockReturnValue({
+      data: [whoopProvider],
+      isLoading: false,
+    });
+
+    const { default: ProvidersScreen } = await import("./providers");
+    render(<ProvidersScreen />);
+
+    fireEvent.click(screen.getByText("Connect"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Connect WHOOP")).toBeTruthy();
+    });
+  });
+
+  it("WHOOP auth modal handles direct sign-in without MFA", async () => {
+    const whoopProvider = {
+      id: "whoop",
+      name: "WHOOP",
+      authType: "custom:whoop",
+      authorized: false,
+      importOnly: false,
+      lastSyncedAt: null,
+    };
+    mockProvidersQuery.mockReturnValue({
+      data: [whoopProvider],
+      isLoading: false,
+    });
+    mockWhoopSignIn.mockResolvedValue({
+      status: "success",
+      token: { accessToken: "at", refreshToken: "rt", userId: 123 },
+    });
+    mockWhoopSaveTokens.mockResolvedValue({ success: true });
+
+    const { default: ProvidersScreen } = await import("./providers");
+    render(<ProvidersScreen />);
+
+    fireEvent.click(screen.getByText("Connect"));
+    await waitFor(() => {
+      expect(screen.getByText("Connect WHOOP")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("Email"), { target: { value: "user@whoop.com" } });
+    fireEvent.change(screen.getByPlaceholderText("Password"), { target: { value: "whooppass" } });
+    fireEvent.click(screen.getByText("Sign In"));
+
+    await waitFor(() => {
+      expect(mockWhoopSignIn).toHaveBeenCalledWith({
+        username: "user@whoop.com",
+        password: "whooppass",
+      });
+      expect(mockWhoopSaveTokens).toHaveBeenCalledWith({
+        accessToken: "at",
+        refreshToken: "rt",
+        userId: 123,
+      });
+    });
+  });
+
+  it("WHOOP auth modal handles MFA verification flow", async () => {
+    const whoopProvider = {
+      id: "whoop",
+      name: "WHOOP",
+      authType: "custom:whoop",
+      authorized: false,
+      importOnly: false,
+      lastSyncedAt: null,
+    };
+    mockProvidersQuery.mockReturnValue({
+      data: [whoopProvider],
+      isLoading: false,
+    });
+    mockWhoopSignIn.mockResolvedValue({
+      status: "verification_required",
+      challengeId: "challenge-123",
+      method: "sms",
+    });
+    mockWhoopVerifyCode.mockResolvedValue({
+      status: "success",
+      token: { accessToken: "at2", refreshToken: "rt2", userId: 456 },
+    });
+    mockWhoopSaveTokens.mockResolvedValue({ success: true });
+
+    const { default: ProvidersScreen } = await import("./providers");
+    render(<ProvidersScreen />);
+
+    // Open modal and sign in
+    fireEvent.click(screen.getByText("Connect"));
+    await waitFor(() => {
+      expect(screen.getByText("Connect WHOOP")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("Email"), { target: { value: "user@whoop.com" } });
+    fireEvent.change(screen.getByPlaceholderText("Password"), { target: { value: "whooppass" } });
+    fireEvent.click(screen.getByText("Sign In"));
+
+    // Should show verification step
+    await waitFor(() => {
+      expect(screen.getByText("Verify Code")).toBeTruthy();
+      expect(screen.getByPlaceholderText("Verification code")).toBeTruthy();
+    });
+
+    // Enter code and verify
+    fireEvent.change(screen.getByPlaceholderText("Verification code"), {
+      target: { value: "123456" },
+    });
+    fireEvent.click(screen.getByText("Verify"));
+
+    await waitFor(() => {
+      expect(mockWhoopVerifyCode).toHaveBeenCalledWith({
+        challengeId: "challenge-123",
+        code: "123456",
+      });
+      expect(mockWhoopSaveTokens).toHaveBeenCalledWith({
+        accessToken: "at2",
+        refreshToken: "rt2",
+        userId: 456,
+      });
     });
   });
 });

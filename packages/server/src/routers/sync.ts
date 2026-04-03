@@ -308,12 +308,13 @@ export const syncRouter = router({
     const parsed = progressSchema.safeParse(job.progress);
     const progress = parsed.success ? parsed.data : undefined;
 
-    // When a sync job finishes, invalidate the server-side cache so the next
-    // providers fetch returns fresh timestamps instead of stale cached data.
+    // When a sync job finishes, invalidate ALL cached data for this user.
+    // The sync worker (separate process) refreshes materialized views after
+    // ingesting new data, but the API server's in-memory cache still holds
+    // stale results. Without full invalidation, data queries (sleep.list,
+    // dailyMetrics.list, etc.) serve cached pre-sync results until TTL expiry.
     if (state === "completed" || state === "failed") {
-      await queryCache.invalidateByPrefix(`${ctx.userId}:sync.providers`);
-      await queryCache.invalidateByPrefix(`${ctx.userId}:sync.providerStats`);
-      await queryCache.invalidateByPrefix(`${ctx.userId}:sync.logs`);
+      await queryCache.invalidateByPrefix(`${ctx.userId}:`);
     }
 
     return {

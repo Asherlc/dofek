@@ -29,7 +29,9 @@ import {
   getConfiguredProviders,
   getIdentityProvider,
   type IdentityProviderName,
+  isNativeAppleConfigured,
   isProviderConfigured,
+  validateNativeAppleCallback,
 } from "../auth/providers.ts";
 import { createSession, deleteSession, validateSession } from "../auth/session.ts";
 import { queryCache } from "../lib/cache.ts";
@@ -547,8 +549,8 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
     express.json(),
     async (req, res) => {
       try {
-        if (!isProviderConfigured("apple")) {
-          res.status(400).send("Apple Sign In is not configured");
+        if (!isNativeAppleConfigured()) {
+          res.status(400).send("Native Apple Sign In is not configured");
           return;
         }
 
@@ -565,9 +567,9 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
           typeof req.body.familyName === "string" ? req.body.familyName : undefined;
         const fullName = [givenName, familyName].filter(Boolean).join(" ") || null;
 
-        const provider = getIdentityProvider("apple");
-        // Apple doesn't use PKCE, so pass empty string as codeVerifier
-        const { user: identityUser } = await provider.validateCallback(authorizationCode, "");
+        // Native auth codes use the app's Bundle ID, not the web Services ID,
+        // and must be exchanged without a redirect_uri
+        const { user: identityUser } = await validateNativeAppleCallback(authorizationCode);
 
         // Use the name from the native SDK if the identity token didn't include it
         const userName = identityUser.name ?? fullName;

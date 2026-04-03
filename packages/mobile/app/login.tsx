@@ -107,12 +107,14 @@ export default function LoginScreen() {
         <Text style={styles.title}>Dofek</Text>
         <Text style={styles.subtitle}>Sign in to view your health data</Text>
 
-        {loading ? (
-          <ActivityIndicator color={colors.accent} style={styles.spinner} />
-        ) : error ? (
+        {error ? (
           <View style={styles.errorContainer}>
             <Text style={styles.error}>{error}</Text>
           </View>
+        ) : null}
+
+        {loading ? (
+          <ActivityIndicator color={colors.accent} style={styles.spinner} />
         ) : allProviders.length === 0 && !useNativeApple ? (
           <Text style={styles.noProviders}>No login providers configured on this server.</Text>
         ) : (

@@ -42,13 +42,8 @@ export const rootStackScreenOptions = {
 };
 
 /**
- * Headless component that reactively starts/stops WHOOP BLE accelerometer
- * sync based on the `whoopAlwaysOnImu` user setting. Must be rendered
- * inside the tRPC provider tree so it can use tRPC query hooks.
- *
- * Previously, WHOOP BLE sync was initialized via a one-shot query in the
- * main useEffect, which only ran at app startup. Toggling the setting from
- * the UI had no effect until the app was restarted.
+ * Headless component that manages WHOOP BLE accelerometer sync.
+ * Must be rendered inside the tRPC provider tree so it can use tRPC query hooks.
  */
 function WhoopBleSyncManager({ trpcClient }: { trpcClient: ReturnType<typeof trpc.createClient> }) {
   const whoopSyncClient = useMemo(
