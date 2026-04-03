@@ -40,7 +40,8 @@ export default function SleepScreen() {
   const avgEfficiency =
     nightly.length > 0 ? nightly.reduce((sum, n) => sum + n.efficiency, 0) / nightly.length : 0;
 
-  const isLoading = sleepQuery.isLoading;
+  const hasNoData = nightly.length === 0;
+  const isLoading = sleepQuery.isLoading || (sleepQuery.isFetching && hasNoData);
   const { refreshing, onRefresh } = useRefresh();
 
   return (
