@@ -1,24 +1,18 @@
 import { randomBytes } from "node:crypto";
 import { getOAuthRedirectUri } from "dofek/auth/oauth";
 import { sql } from "drizzle-orm";
-import type { Router } from "express";
+import type { Request, Response } from "express";
 import { z } from "zod";
 import { getSessionIdFromRequest } from "../../auth/cookies.ts";
 import { validateSession } from "../../auth/session.ts";
 import type { OAuthStateEntry } from "../../lib/oauth-state-store.ts";
 import { executeWithSchema } from "../../lib/typed-sql.ts";
 import { logger } from "../../logger.ts";
-import {
-  authRateLimiter,
-  getDb,
-  getOAuthStateStoreRef,
-  oauthSuccessHtml,
-  SLACK_SCOPES,
-} from "./shared.ts";
+import { getDb, getOAuthStateStoreRef, oauthSuccessHtml, SLACK_SCOPES } from "./shared.ts";
 
 export async function handleSlackCallback(
-  req: import("express").Request,
-  res: import("express").Response,
+  _req: Request,
+  res: Response,
   code: string,
   state: string,
   slackState: OAuthStateEntry | null | undefined,
@@ -137,38 +131,36 @@ export async function handleSlackCallback(
   );
 }
 
-export function registerSlackOAuthRoutes(router: Router): void {
-  // ── Slack OAuth (Add to Slack) ──
-  router.get("/auth/provider/slack", authRateLimiter, async (req, res) => {
-    const clientId = process.env.SLACK_CLIENT_ID;
-    if (!clientId) {
-      res.status(400).send("SLACK_CLIENT_ID is not configured");
-      return;
-    }
+// ── Slack OAuth (Add to Slack) ──
+export async function handleSlackOAuthStart(req: Request, res: Response): Promise<void> {
+  const clientId = process.env.SLACK_CLIENT_ID;
+  if (!clientId) {
+    res.status(400).send("SLACK_CLIENT_ID is not configured");
+    return;
+  }
 
-    // Resolve the logged-in user so we can link the Slack identity to them
-    const sessionId = getSessionIdFromRequest(req);
-    const db = getDb();
-    const session = sessionId ? await validateSession(db, sessionId) : null;
-    if (!session) {
-      res.status(401).send("You must be logged in to connect Slack");
-      return;
-    }
-    const userId = session.userId;
+  // Resolve the logged-in user so we can link the Slack identity to them
+  const sessionId = getSessionIdFromRequest(req);
+  const db = getDb();
+  const session = sessionId ? await validateSession(db, sessionId) : null;
+  if (!session) {
+    res.status(401).send("You must be logged in to connect Slack");
+    return;
+  }
+  const userId = session.userId;
 
-    const redirectUri = getOAuthRedirectUri();
-    const stateToken = `slack:${randomBytes(16).toString("hex")}`;
-    const oauthStateStore = getOAuthStateStoreRef();
-    await oauthStateStore.save(stateToken, {
-      providerId: "slack",
-      intent: "data",
-      userId,
-    });
-    const url = new URL("https://slack.com/oauth/v2/authorize");
-    url.searchParams.set("client_id", clientId);
-    url.searchParams.set("scope", SLACK_SCOPES.join(","));
-    url.searchParams.set("redirect_uri", redirectUri);
-    url.searchParams.set("state", stateToken);
-    res.redirect(url.toString());
+  const redirectUri = getOAuthRedirectUri();
+  const stateToken = `slack:${randomBytes(16).toString("hex")}`;
+  const oauthStateStore = getOAuthStateStoreRef();
+  await oauthStateStore.save(stateToken, {
+    providerId: "slack",
+    intent: "data",
+    userId,
   });
+  const url = new URL("https://slack.com/oauth/v2/authorize");
+  url.searchParams.set("client_id", clientId);
+  url.searchParams.set("scope", SLACK_SCOPES.join(","));
+  url.searchParams.set("redirect_uri", redirectUri);
+  url.searchParams.set("state", stateToken);
+  res.redirect(url.toString());
 }

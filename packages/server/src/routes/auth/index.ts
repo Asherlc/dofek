@@ -1,15 +1,19 @@
-import { Router } from "express";
-import { registerAppleNativeRoutes } from "./apple-native.ts";
-import { registerCompleteSignupRoutes } from "./complete-signup.ts";
-import { registerDataProviderCallbackRoutes } from "./data-provider-callback.ts";
-import { registerDataProviderOAuthRoutes } from "./data-provider-oauth.ts";
-import { registerIdentityCallbackRoutes } from "./identity-callback.ts";
-import { registerIdentityLinkRoutes } from "./identity-link.ts";
-import { registerIdentityLoginRoutes } from "./identity-login.ts";
-import { registerProvidersListRoutes } from "./providers-list.ts";
-import { registerSessionRoutes } from "./session.ts";
-import { initAuthStores } from "./shared.ts";
-import { registerSlackOAuthRoutes } from "./slack-oauth.ts";
+import express, { Router } from "express";
+import { handleAppleNativeSignIn } from "./apple-native.ts";
+import { handleCompleteSignup } from "./complete-signup.ts";
+import { handleOAuth2Callback } from "./data-provider-callback.ts";
+import {
+  handleDataLinkStart,
+  handleDataLoginStart,
+  handleDataProviderOAuthStart,
+} from "./data-provider-oauth.ts";
+import { handleIdentityCallback } from "./identity-callback.ts";
+import { handleIdentityLink } from "./identity-link.ts";
+import { handleIdentityLogin } from "./identity-login.ts";
+import { handleGetAuthProviders } from "./providers-list.ts";
+import { handleGetMe, handleLogout } from "./session.ts";
+import { authRateLimiter, initAuthStores } from "./shared.ts";
+import { handleSlackOAuthStart } from "./slack-oauth.ts";
 
 export { oauthSuccessHtml } from "./shared.ts";
 
@@ -18,17 +22,55 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
   const router = Router();
 
   // Route registration order matters for Express — preserve the same order as the original file.
-  registerProvidersListRoutes(router);
-  registerIdentityLoginRoutes(router);
-  registerIdentityLinkRoutes(router);
-  registerIdentityCallbackRoutes(router);
-  registerAppleNativeRoutes(router);
-  registerSessionRoutes(router);
+
+  // Providers list
+  router.get("/api/auth/providers", handleGetAuthProviders);
+
+  // Identity login
+  router.get("/auth/login/:provider", authRateLimiter, handleIdentityLogin);
+
+  // Identity link (add identity provider to existing account)
+  router.get("/auth/link/:provider", handleIdentityLink);
+
+  // Identity callback (GET for most providers, POST for Apple form_post)
+  router.get("/auth/callback/:provider", authRateLimiter, handleIdentityCallback);
+  router.post(
+    "/auth/callback/:provider",
+    authRateLimiter,
+    express.urlencoded({ extended: false }),
+    handleIdentityCallback,
+  );
+
+  // Native Apple Sign In (iOS)
+  router.post(
+    "/auth/apple/native",
+    authRateLimiter,
+    express.urlencoded({ extended: false }),
+    express.json(),
+    handleAppleNativeSignIn,
+  );
+
+  // Session management
+  router.post("/auth/logout", handleLogout);
+  router.get("/api/auth/me", handleGetMe);
+
   // Slack must be registered before the generic :provider route
-  registerSlackOAuthRoutes(router);
-  registerDataProviderOAuthRoutes(router);
-  registerDataProviderCallbackRoutes(router);
-  registerCompleteSignupRoutes(router);
+  router.get("/auth/provider/slack", authRateLimiter, handleSlackOAuthStart);
+
+  // Data provider OAuth routes (login, link, data sync)
+  router.get("/auth/login/data/:provider", authRateLimiter, handleDataLoginStart);
+  router.get("/auth/link/data/:provider", authRateLimiter, handleDataLinkStart);
+  router.get("/auth/provider/:provider", authRateLimiter, handleDataProviderOAuthStart);
+
+  // OAuth2 callback (shared for all data providers + Slack)
+  router.get("/callback", authRateLimiter, handleOAuth2Callback);
+
+  // Complete signup (email collection for providers that don't provide email)
+  router.post(
+    "/auth/complete-signup",
+    express.urlencoded({ extended: false }),
+    handleCompleteSignup,
+  );
 
   return router;
 }

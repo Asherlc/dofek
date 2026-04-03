@@ -1,12 +1,11 @@
 import { randomBytes } from "node:crypto";
 import * as Sentry from "@sentry/node";
-import type { Router } from "express";
+import type { Request, Response } from "express";
 import { getSessionIdFromRequest, isValidMobileScheme } from "../../auth/cookies.ts";
 import { validateSession } from "../../auth/session.ts";
 import type { OAuthStateEntry } from "../../lib/oauth-state-store.ts";
 import { logger } from "../../logger.ts";
 import {
-  authRateLimiter,
   getDb,
   getOAuth1SecretStoreRef,
   getOAuthStateStoreRef,
@@ -14,9 +13,9 @@ import {
   sanitizeReturnTo,
 } from "./shared.ts";
 
-export async function startDataProviderOAuth(
-  req: import("express").Request,
-  res: import("express").Response,
+async function startDataProviderOAuth(
+  req: Request,
+  res: Response,
   providerId: string,
   stateEntry: OAuthStateEntry,
 ): Promise<void> {
@@ -89,104 +88,102 @@ export async function startDataProviderOAuth(
   res.redirect(authUrl.toString());
 }
 
-export function registerDataProviderOAuthRoutes(router: Router): void {
-  // ── Data provider login: use a data provider as an identity/login provider ──
-  router.get("/auth/login/data/:provider", authRateLimiter, async (req, res) => {
-    try {
-      const providerId = getSinglePathParam(req.params.provider);
-      if (!providerId) {
-        res.status(400).send("Missing provider");
-        return;
-      }
-      const redirectScheme =
-        typeof req.query.redirect_scheme === "string" ? req.query.redirect_scheme : undefined;
-      const mobileScheme =
-        redirectScheme && isValidMobileScheme(redirectScheme) ? redirectScheme : undefined;
-      const returnTo = sanitizeReturnTo(
-        typeof req.query.return_to === "string" ? req.query.return_to : undefined,
-      );
-      await startDataProviderOAuth(req, res, providerId, {
-        providerId,
-        intent: "login",
-        userId: `login:${randomBytes(8).toString("hex")}`,
-        mobileScheme,
-        returnTo,
-      });
-    } catch (err: unknown) {
-      Sentry.captureException(err);
-      logger.error(`[auth] Failed to start data provider login: ${err}`);
-      res.status(500).send("Auth error: failed to start login flow");
+// ── Data provider login: use a data provider as an identity/login provider ──
+export async function handleDataLoginStart(req: Request, res: Response): Promise<void> {
+  try {
+    const providerId = getSinglePathParam(req.params.provider);
+    if (!providerId) {
+      res.status(400).send("Missing provider");
+      return;
     }
-  });
+    const redirectScheme =
+      typeof req.query.redirect_scheme === "string" ? req.query.redirect_scheme : undefined;
+    const mobileScheme =
+      redirectScheme && isValidMobileScheme(redirectScheme) ? redirectScheme : undefined;
+    const returnTo = sanitizeReturnTo(
+      typeof req.query.return_to === "string" ? req.query.return_to : undefined,
+    );
+    await startDataProviderOAuth(req, res, providerId, {
+      providerId,
+      intent: "login",
+      userId: `login:${randomBytes(8).toString("hex")}`,
+      mobileScheme,
+      returnTo,
+    });
+  } catch (err: unknown) {
+    Sentry.captureException(err);
+    logger.error(`[auth] Failed to start data provider login: ${err}`);
+    res.status(500).send("Auth error: failed to start login flow");
+  }
+}
 
-  // ── Data provider link: link a data provider as identity while already logged in ──
-  router.get("/auth/link/data/:provider", authRateLimiter, async (req, res) => {
-    try {
-      const providerId = getSinglePathParam(req.params.provider);
-      if (!providerId) {
-        res.status(400).send("Missing provider");
-        return;
-      }
-      const sessionId = getSessionIdFromRequest(req);
-      if (!sessionId) {
-        res.status(401).send("You must be logged in to link an account");
-        return;
-      }
-      const session = await validateSession(getDb(), sessionId);
-      if (!session) {
-        res.status(401).send("Session expired — please log in first");
-        return;
-      }
-
-      await startDataProviderOAuth(req, res, providerId, {
-        providerId,
-        intent: "link",
-        linkUserId: session.userId,
-        userId: session.userId,
-      });
-    } catch (err: unknown) {
-      Sentry.captureException(err);
-      logger.error(`[auth] Failed to start data provider link: ${err}`);
-      res.status(500).send("Auth error: failed to start link flow");
+// ── Data provider link: link a data provider as identity while already logged in ──
+export async function handleDataLinkStart(req: Request, res: Response): Promise<void> {
+  try {
+    const providerId = getSinglePathParam(req.params.provider);
+    if (!providerId) {
+      res.status(400).send("Missing provider");
+      return;
     }
-  });
-
-  // ── Data-provider OAuth for data sync (Wahoo, Withings, etc.) ──
-  router.get("/auth/provider/:provider", authRateLimiter, async (req, res) => {
-    try {
-      const providerId = getSinglePathParam(req.params.provider);
-      if (!providerId) {
-        res.status(400).send("Missing provider");
-        return;
-      }
-      // 1. Check if provider exists first (returns 404 if not)
-      const { getAllProviders } = await import("dofek/providers/registry");
-      const { ensureProvidersRegistered } = await import("../../routers/sync.ts");
-      await ensureProvidersRegistered();
-      const provider = getAllProviders().find((candidate) => candidate.id === providerId);
-      if (!provider) {
-        res.status(404).send("Unknown provider");
-        return;
-      }
-      // 2. Then check session (returns 401 if not logged in)
-      const sessionId = getSessionIdFromRequest(req);
-      const db = getDb();
-      const session = sessionId ? await validateSession(db, sessionId) : null;
-      if (!session) {
-        res.status(401).send("You must be logged in to connect a provider");
-        return;
-      }
-      const userId = session.userId;
-
-      await startDataProviderOAuth(req, res, providerId, {
-        providerId,
-        intent: "data",
-        userId,
-      });
-    } catch (err: unknown) {
-      Sentry.captureException(err);
-      logger.error(`[auth] Failed to start OAuth flow: ${err}`);
-      res.status(500).send("Auth error: failed to start OAuth flow");
+    const sessionId = getSessionIdFromRequest(req);
+    if (!sessionId) {
+      res.status(401).send("You must be logged in to link an account");
+      return;
     }
-  });
+    const session = await validateSession(getDb(), sessionId);
+    if (!session) {
+      res.status(401).send("Session expired — please log in first");
+      return;
+    }
+
+    await startDataProviderOAuth(req, res, providerId, {
+      providerId,
+      intent: "link",
+      linkUserId: session.userId,
+      userId: session.userId,
+    });
+  } catch (err: unknown) {
+    Sentry.captureException(err);
+    logger.error(`[auth] Failed to start data provider link: ${err}`);
+    res.status(500).send("Auth error: failed to start link flow");
+  }
+}
+
+// ── Data-provider OAuth for data sync (Wahoo, Withings, etc.) ──
+export async function handleDataProviderOAuthStart(req: Request, res: Response): Promise<void> {
+  try {
+    const providerId = getSinglePathParam(req.params.provider);
+    if (!providerId) {
+      res.status(400).send("Missing provider");
+      return;
+    }
+    // 1. Check if provider exists first (returns 404 if not)
+    const { getAllProviders } = await import("dofek/providers/registry");
+    const { ensureProvidersRegistered } = await import("../../routers/sync.ts");
+    await ensureProvidersRegistered();
+    const provider = getAllProviders().find((candidate) => candidate.id === providerId);
+    if (!provider) {
+      res.status(404).send("Unknown provider");
+      return;
+    }
+    // 2. Then check session (returns 401 if not logged in)
+    const sessionId = getSessionIdFromRequest(req);
+    const db = getDb();
+    const session = sessionId ? await validateSession(db, sessionId) : null;
+    if (!session) {
+      res.status(401).send("You must be logged in to connect a provider");
+      return;
+    }
+    const userId = session.userId;
+
+    await startDataProviderOAuth(req, res, providerId, {
+      providerId,
+      intent: "data",
+      userId,
+    });
+  } catch (err: unknown) {
+    Sentry.captureException(err);
+    logger.error(`[auth] Failed to start OAuth flow: ${err}`);
+    res.status(500).send("Auth error: failed to start OAuth flow");
+  }
 }
