@@ -1,7 +1,7 @@
 import { UnitConverter } from "@dofek/format/units";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { ActivityDetail } from "../../../server/src/routers/activity.ts";
-import { ActivityHeader, HrZonesChart } from "./ActivityDetailPage.tsx";
+import { ActivityHeader } from "./ActivityDetailPage.tsx";
 
 // ── ActivityHeader ──────────────────────────────────────────
 

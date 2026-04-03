@@ -213,7 +213,13 @@ function DeleteActivityButton({ activityId }: { activityId: string }) {
   );
 }
 
-export function ActivityHeader({ activity, units }: { activity: ActivityDetail; units: UnitConverter }) {
+export function ActivityHeader({
+  activity,
+  units,
+}: {
+  activity: ActivityDetail;
+  units: UnitConverter;
+}) {
   const durationMin =
     activity.startedAt && activity.endedAt
       ? Math.round(

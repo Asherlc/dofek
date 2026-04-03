@@ -1,6 +1,6 @@
+import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink } from "@trpc/client";
-import type { Meta, StoryObj } from "@storybook/react-native";
 import { View } from "react-native";
 import { trpc } from "../lib/trpc";
 import ActivitiesScreen from "./activities";
