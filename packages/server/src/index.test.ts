@@ -302,6 +302,23 @@ describe("createApp HTTP routes", () => {
       // createBullBoard should only be called once (lazy init)
       expect(vi.mocked(mockCreateBullBoard)).toHaveBeenCalledTimes(1);
     });
+
+    it("lazily creates sync queue only once across admin requests", async () => {
+      const { createSyncQueue: mockCreateSyncQueue } = await import("dofek/jobs/queues");
+      vi.mocked(mockCreateSyncQueue).mockClear();
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("admin-session");
+      vi.mocked(validateSession).mockResolvedValue({
+        userId: "admin-1",
+        expiresAt: new Date("2027-01-01"),
+      });
+      vi.mocked(isAdmin).mockResolvedValue(true);
+
+      await fetch(`${baseUrl}/admin/queues`);
+      await fetch(`${baseUrl}/admin/queues`);
+
+      // createSyncQueue should be called only once despite two requests
+      expect(vi.mocked(mockCreateSyncQueue)).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe("GET /auth/dev-login", () => {
@@ -421,7 +438,7 @@ describe("createApp HTTP routes", () => {
       vi.mocked(logger.error).mockClear();
       // Trigger the onError handler via a request that exercises it
       // Since we mock createExpressMiddleware, test the captured handler directly
-      const onError: Function | undefined = middlewareOptions.onError;
+      const onError: ((...args: unknown[]) => void) | undefined = middlewareOptions.onError;
       onError?.({
         path: "test.route",
         error: { message: "something broke" },
@@ -446,6 +463,23 @@ describe("createApp HTTP routes", () => {
 
       expect(context.timezone).toBe("Europe/Berlin");
       expect(context.appVersion).toBe("1.0.0");
+    });
+
+    it("returns undefined for non-string array header values", async () => {
+      const [middlewareOptions] = vi.mocked(createExpressMiddleware).mock.calls.at(-1) ?? [];
+      if (!middlewareOptions) throw new Error("Expected createExpressMiddleware to be called");
+
+      const context = await middlewareOptions.createContext({
+        req: {
+          headers: {
+            // Empty array — first element is undefined, not a string
+            "x-app-version": [],
+          },
+        },
+        res: {},
+      });
+
+      expect(context.appVersion).toBeUndefined();
     });
   });
 
