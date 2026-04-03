@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
+import type { ComponentType } from "react";
 import { View } from "react-native";
 import { ProviderCard } from "./providers";
 
@@ -26,7 +27,7 @@ const providerCardMeta = {
     onPress: () => {},
   },
   decorators: [
-    (Story: React.ComponentType) => (
+    (Story: ComponentType) => (
       <View style={{ padding: 16, backgroundColor: "#000" }}>
         <Story />
       </View>

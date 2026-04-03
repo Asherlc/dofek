@@ -773,13 +773,17 @@ export function GarminAuthModal({
     }
   }, [username, password, signInMutation, onSuccess]);
 
+  const handleClose = useCallback(() => {
+    if (!loading) onClose();
+  }, [loading, onClose]);
+
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible transparent animationType="fade" onRequestClose={handleClose}>
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Connect Garmin</Text>
-            <TouchableOpacity onPress={onClose} activeOpacity={0.7}>
+            <TouchableOpacity onPress={handleClose} activeOpacity={0.7} disabled={loading}>
               <Text style={styles.modalClose}>{"\u00D7"}</Text>
             </TouchableOpacity>
           </View>
@@ -890,15 +894,20 @@ export function WhoopAuthModal({
     }
   }, [challengeId, code, verifyMutation, saveTokensMutation, onSuccess]);
 
+  const canClose = !loading && step !== "saving";
+  const handleClose = useCallback(() => {
+    if (canClose) onClose();
+  }, [canClose, onClose]);
+
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible transparent animationType="fade" onRequestClose={handleClose}>
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>
               {step === "verify" ? "Verify Code" : "Connect WHOOP"}
             </Text>
-            <TouchableOpacity onPress={onClose} activeOpacity={0.7}>
+            <TouchableOpacity onPress={handleClose} activeOpacity={0.7} disabled={!canClose}>
               <Text style={styles.modalClose}>{"\u00D7"}</Text>
             </TouchableOpacity>
           </View>
