@@ -741,7 +741,13 @@ function CredentialAuthModal({
 
 // ── Garmin Auth Modal ──
 
-function GarminAuthModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+export function GarminAuthModal({
+  onClose,
+  onSuccess,
+}: {
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -821,7 +827,13 @@ function GarminAuthModal({ onClose, onSuccess }: { onClose: () => void; onSucces
 
 type WhoopStep = "credentials" | "verify" | "saving";
 
-function WhoopAuthModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+export function WhoopAuthModal({
+  onClose,
+  onSuccess,
+}: {
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
   const [step, setStep] = useState<WhoopStep>("credentials");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
