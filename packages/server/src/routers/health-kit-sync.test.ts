@@ -1,9 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
+const { mockInvalidateByPrefix } = vi.hoisted(() => ({
+  mockInvalidateByPrefix: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("dofek/sync-metrics", () => ({
   healthKitRecordsTotal: { add: vi.fn() },
   healthKitPushTotal: { add: vi.fn() },
+}));
+
+vi.mock("../lib/cache.ts", () => ({
+  queryCache: {
+    invalidateByPrefix: mockInvalidateByPrefix,
+    get: vi.fn().mockResolvedValue(undefined),
+    set: vi.fn().mockResolvedValue(undefined),
+    invalidateAll: vi.fn().mockResolvedValue(undefined),
+  },
 }));
 
 vi.mock("../trpc.ts", async () => {
@@ -53,6 +66,7 @@ describe("healthKitSyncRouter", () => {
   beforeEach(() => {
     vi.mocked(healthKitRecordsTotal.add).mockClear();
     vi.mocked(healthKitPushTotal.add).mockClear();
+    mockInvalidateByPrefix.mockClear();
   });
 
   describe("pushQuantitySamples", () => {
@@ -2958,6 +2972,75 @@ describe("healthKitSyncRouter", () => {
       expect(result.errors.length).toBeGreaterThan(0);
       // Should use String() conversion for non-Error objects
       expect(result.errors[0]).toContain("string error");
+    });
+  });
+
+  describe("cache invalidation after data push", () => {
+    it("invalidates all user caches after pushSleepSamples inserts data", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+      });
+
+      await caller.pushSleepSamples({
+        samples: [
+          {
+            uuid: "sleep-1",
+            startDate: "2026-04-02T22:00:00Z",
+            endDate: "2026-04-03T06:00:00Z",
+            value: "inBed",
+            sourceName: "iPhone",
+          },
+        ],
+      });
+
+      expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:");
+    });
+
+    it("invalidates all user caches after pushWorkouts inserts data", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+      });
+
+      await caller.pushWorkouts({
+        workouts: [
+          {
+            uuid: "workout-1",
+            workoutType: "HKWorkoutActivityTypeRunning",
+            startDate: "2026-04-03T08:00:00Z",
+            endDate: "2026-04-03T09:00:00Z",
+            duration: 3600,
+            totalDistance: 5000,
+            totalEnergyBurned: 400,
+            sourceName: "Apple Watch",
+            sourceBundle: "com.apple.Health",
+          },
+        ],
+      });
+
+      expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:");
+    });
+
+    it("invalidates all user caches after pushQuantitySamples inserts data", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+      });
+
+      await caller.pushQuantitySamples({
+        samples: [
+          makeSample({
+            type: "HKQuantityTypeIdentifierStepCount",
+            value: 5000,
+          }),
+        ],
+      });
+
+      expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:");
     });
   });
 });

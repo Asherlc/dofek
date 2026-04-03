@@ -2,6 +2,7 @@ import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
 import { healthKitPushTotal, healthKitRecordsTotal } from "dofek/sync-metrics";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { queryCache } from "../lib/cache.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import { protectedProcedure, router } from "../trpc.ts";
@@ -1080,6 +1081,11 @@ export const healthKitSyncRouter = router({
         }
       }
 
+      // Invalidate cached data so queries pick up the newly ingested data
+      if (inserted > 0) {
+        await queryCache.invalidateByPrefix(`${ctx.userId}:`);
+      }
+
       healthKitPushTotal.add(1, {
         endpoint: "pushQuantitySamples",
         status: errors.length > 0 ? "error" : "success",
@@ -1120,6 +1126,10 @@ export const healthKitSyncRouter = router({
         }
       }
 
+      if (inserted > 0) {
+        await queryCache.invalidateByPrefix(`${ctx.userId}:`);
+      }
+
       healthKitPushTotal.add(1, { endpoint: "pushWorkouts", status: "success" });
       healthKitRecordsTotal.add(input.workouts.length, {
         endpoint: "pushWorkouts",
@@ -1141,6 +1151,10 @@ export const healthKitSyncRouter = router({
         } catch (error) {
           logger.error(`[apple_health] Failed to refresh v_sleep: ${error}`);
         }
+      }
+
+      if (inserted > 0) {
+        await queryCache.invalidateByPrefix(`${ctx.userId}:`);
       }
 
       healthKitPushTotal.add(1, { endpoint: "pushSleepSamples", status: "success" });
