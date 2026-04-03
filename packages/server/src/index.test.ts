@@ -195,9 +195,26 @@ describe("createApp HTTP routes", () => {
       vi.mocked(httpRequestDuration.observe).mockClear();
       await fetch(`${baseUrl}/api/trpc/nonexistent`);
       expect(httpRequestDuration.observe).toHaveBeenCalledWith(
-        expect.objectContaining({ method: "GET" }),
+        expect.objectContaining({ method: "GET", status_code: expect.any(Number) }),
         expect.any(Number),
       );
+    });
+
+    it("records duration in seconds (not milliseconds)", async () => {
+      vi.mocked(httpRequestDuration.observe).mockClear();
+      await fetch(`${baseUrl}/healthz`);
+      const durationSeconds = vi.mocked(httpRequestDuration.observe).mock.calls[0]?.[1];
+      expect(durationSeconds).toBeDefined();
+      // Duration should be in seconds (< 5s for a health check), not milliseconds
+      expect(durationSeconds).toBeLessThan(5);
+    });
+
+    it("strips query params from the route label", async () => {
+      vi.mocked(httpRequestDuration.observe).mockClear();
+      await fetch(`${baseUrl}/api/trpc/nonexistent?batch=1&input=foo`);
+      const labels = vi.mocked(httpRequestDuration.observe).mock.calls[0]?.[0];
+      expect(labels?.route).not.toContain("?");
+      expect(labels?.route).toContain("/api/trpc/nonexistent");
     });
   });
 
@@ -346,6 +363,89 @@ describe("createApp HTTP routes", () => {
       expect(context.timezone).toBe("America/Los_Angeles");
       expect(context.appVersion).toBe("2.3.4");
       expect(context.assetsVersion).toBe("update-abc123");
+    });
+
+    it("defaults timezone to UTC when header is missing", async () => {
+      const [middlewareOptions] = vi.mocked(createExpressMiddleware).mock.calls.at(-1) ?? [];
+      if (!middlewareOptions) throw new Error("Expected createExpressMiddleware to be called");
+
+      const context = await middlewareOptions.createContext({
+        req: { headers: {} },
+        res: {},
+      });
+
+      expect(context.timezone).toBe("UTC");
+      expect(context.appVersion).toBeUndefined();
+      expect(context.assetsVersion).toBeUndefined();
+    });
+
+    it("resolves userId from session when cookie is present", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-123");
+      vi.mocked(validateSession).mockResolvedValue({
+        userId: "user-99",
+        expiresAt: new Date("2027-01-01"),
+      });
+
+      // Need a fresh app so createExpressMiddleware captures the new mock
+      const fakeDb = createDatabaseFromEnv();
+      createApp(fakeDb);
+      const [middlewareOptions] = vi.mocked(createExpressMiddleware).mock.calls.at(-1) ?? [];
+      if (!middlewareOptions) throw new Error("Expected createExpressMiddleware to be called");
+
+      const context = await middlewareOptions.createContext({
+        req: { headers: {} },
+        res: {},
+      });
+
+      expect(context.userId).toBe("user-99");
+    });
+
+    it("sets userId to null when no session cookie", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
+
+      const [middlewareOptions] = vi.mocked(createExpressMiddleware).mock.calls.at(-1) ?? [];
+      if (!middlewareOptions) throw new Error("Expected createExpressMiddleware to be called");
+
+      const context = await middlewareOptions.createContext({
+        req: { headers: {} },
+        res: {},
+      });
+
+      expect(context.userId).toBeNull();
+    });
+
+    it("calls onError with path and error message", async () => {
+      const [middlewareOptions] = vi.mocked(createExpressMiddleware).mock.calls.at(-1) ?? [];
+      if (!middlewareOptions) throw new Error("Expected createExpressMiddleware to be called");
+
+      vi.mocked(logger.error).mockClear();
+      // Trigger the onError handler via a request that exercises it
+      // Since we mock createExpressMiddleware, test the captured handler directly
+      const onError: Function | undefined = middlewareOptions.onError;
+      onError?.({
+        path: "test.route",
+        error: { message: "something broke" },
+      });
+
+      expect(vi.mocked(logger.error)).toHaveBeenCalledWith("[trpc] test.route: something broke");
+    });
+
+    it("extracts first element when header is an array", async () => {
+      const [middlewareOptions] = vi.mocked(createExpressMiddleware).mock.calls.at(-1) ?? [];
+      if (!middlewareOptions) throw new Error("Expected createExpressMiddleware to be called");
+
+      const context = await middlewareOptions.createContext({
+        req: {
+          headers: {
+            "x-timezone": ["Europe/Berlin", "US/Pacific"],
+            "x-app-version": ["1.0.0", "2.0.0"],
+          },
+        },
+        res: {},
+      });
+
+      expect(context.timezone).toBe("Europe/Berlin");
+      expect(context.appVersion).toBe("1.0.0");
     });
   });
 
