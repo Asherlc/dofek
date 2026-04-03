@@ -324,7 +324,7 @@ sops exec-env ../../.env 'terraform apply -var="server_ip=159.69.3.40" -var="axi
 
 Note: Terraform's SSH client also cannot use passphrase-protected keys from `~/.ssh/` without the agent, and `private_key` in the connection block doesn't work with keys stored in 1Password. The `agent = true` approach is the only reliable option.
 
-`deploy-config` syncs these secrets from SOPS to the server's `.env` and Docker config on every apply: `AXIOM_API_TOKEN`, `SLACK_BOT_TOKEN`, `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, `R2_BUCKET`, and GHCR Docker auth.
+`deploy-config` syncs these secrets from SOPS to the server's `.env` and Docker config on every apply: `AXIOM_API_TOKEN`, `SLACK_BOT_TOKEN`, `R2_BUCKET`, and GHCR Docker auth. Other secrets (provider API keys, OAuth client IDs/secrets like `SLACK_CLIENT_ID`) reach containers through the SOPS-encrypted `.env` baked into the Docker image.
 
 **Finding the server IP:** The domain is behind Cloudflare so you need the direct Hetzner IP:
 - `~/.ssh/known_hosts` — grep for Hetzner ranges (`159.69.*`, `116.203.*`, `49.12.*`)
@@ -527,7 +527,7 @@ Each provider is enabled by adding its credentials to `.env` (SOPS-encrypted). O
 | BodySpec | OAuth 2.0 | DEXA scans (body composition, bone density, visceral fat, RMR) | `BODYSPEC_CLIENT_ID`, `BODYSPEC_CLIENT_SECRET` |
 | Wahoo | OAuth 2.0 | Activities with FIT file parsing (GPS, power, HR, cadence, running dynamics) | `WAHOO_CLIENT_ID`, `WAHOO_CLIENT_SECRET` |
 | WHOOP | RE'd (Cognito) | Sleep, recovery, workouts, 6s HR streams, journal, strength sets | None (credentials entered in UI modal) |
-| Peloton | Automated login | Workouts with performance metrics | `PELOTON_USERNAME`, `PELOTON_PASSWORD` |
+| Peloton | Automated login | Workouts with performance metrics | None (credentials entered in UI modal) |
 | FatSecret | OAuth 1.0 | Per-food-item nutrition with full micro/macronutrients | `FATSECRET_CONSUMER_KEY`, `FATSECRET_CONSUMER_SECRET` |
 | Withings | OAuth 2.0 | Scale, BP, thermometer | `WITHINGS_CLIENT_ID`, `WITHINGS_CLIENT_SECRET` |
 | RideWithGPS | Custom | Trips with GPS track points | None (entered in UI modal) |
