@@ -235,12 +235,22 @@ describe("createApp HTTP routes", () => {
 
     it("records duration in seconds (divided by 1000)", async () => {
       vi.mocked(httpRequestDuration.observe).mockClear();
-      // Use /api/trpc which is after the logging middleware
-      await fetch(`${baseUrl}/api/trpc/nonexistent`);
-      const durationSeconds = vi.mocked(httpRequestDuration.observe).mock.calls[0][1];
-      // A local request should complete in well under 1 second
-      expect(durationSeconds).toBeGreaterThan(0);
-      expect(durationSeconds).toBeLessThan(1);
+      // Mock Date.now to return a known 42ms gap
+      const realDateNow = Date.now;
+      let callCount = 0;
+      const baseTime = realDateNow();
+      vi.spyOn(Date, "now").mockImplementation(() => {
+        // First call is the "start" timestamp, second is the "finish" timestamp
+        return callCount++ === 0 ? baseTime : baseTime + 42;
+      });
+      try {
+        await fetch(`${baseUrl}/api/trpc/nonexistent`);
+        const durationSeconds = vi.mocked(httpRequestDuration.observe).mock.calls[0][1];
+        // 42ms / 1000 = 0.042 seconds
+        expect(durationSeconds).toBeCloseTo(0.042, 3);
+      } finally {
+        vi.spyOn(Date, "now").mockRestore();
+      }
     });
   });
 
