@@ -13,7 +13,7 @@
     "./providers/types": "./src/providers/types.ts",
     "./providers/provider-model": "./src/providers/provider-model.ts",
     "./providers/registry": "./src/providers/index.ts",
-    "./providers/wahoo": "./src/providers/wahoo.ts",
+    "./providers/wahoo": "./src/providers/wahoo/index.ts",
     "./providers/withings": "./src/providers/withings.ts",
     "./providers/whoop": "./src/providers/whoop.ts",
     "./providers/peloton": "./src/providers/peloton.ts",

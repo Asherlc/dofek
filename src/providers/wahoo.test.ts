@@ -14,7 +14,7 @@ import {
   type WahooWorkout,
   type WahooWorkoutSummary,
   wahooOAuthConfig,
-} from "./wahoo.ts";
+} from "./wahoo/index.ts";
 
 const sampleWorkoutSummary: WahooWorkoutSummary = {
   id: 101,

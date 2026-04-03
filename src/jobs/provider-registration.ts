@@ -12,7 +12,7 @@ export function ensureProvidersRegistered(): Promise<void> {
 
 async function doRegisterProviders() {
   const providers = [
-    ["wahoo", () => import("../providers/wahoo.ts").then((m) => new m.WahooProvider())],
+    ["wahoo", () => import("../providers/wahoo/index.ts").then((m) => new m.WahooProvider())],
     ["withings", () => import("../providers/withings.ts").then((m) => new m.WithingsProvider())],
     ["peloton", () => import("../providers/peloton.ts").then((m) => new m.PelotonProvider())],
     ["fatsecret", () => import("../providers/fatsecret.ts").then((m) => new m.FatSecretProvider())],
