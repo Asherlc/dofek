@@ -29,12 +29,12 @@ vi.mock("@trpc/server/adapters/express", () => ({
   ),
 }));
 vi.mock("dofek/jobs/queues", () => ({
-  createImportQueue: vi.fn(),
-  createSyncQueue: vi.fn(),
-  createExportQueue: vi.fn(),
-  createScheduledSyncQueue: vi.fn(),
-  createPostSyncQueue: vi.fn(),
-  createTrainingExportQueue: vi.fn(),
+  createImportQueue: vi.fn(() => ({ _queue: "import" })),
+  createSyncQueue: vi.fn(() => ({ _queue: "sync" })),
+  createExportQueue: vi.fn(() => ({ _queue: "export" })),
+  createScheduledSyncQueue: vi.fn(() => ({ _queue: "scheduled-sync" })),
+  createPostSyncQueue: vi.fn(() => ({ _queue: "post-sync" })),
+  createTrainingExportQueue: vi.fn(() => ({ _queue: "training-export" })),
 }));
 vi.mock("dofek/lib/r2-client", () => ({
   createR2Client: vi.fn(),
@@ -82,6 +82,18 @@ vi.mock("./routes/upload.ts", () => ({
     return Router();
   }),
 }));
+vi.mock("./routes/updates.ts", () => ({
+  createUpdatesRouter: vi.fn(() => {
+    const { Router } = require("express");
+    return Router();
+  }),
+}));
+vi.mock("./routes/webhooks.ts", () => ({
+  createWebhookRouter: vi.fn(() => {
+    const { Router } = require("express");
+    return Router();
+  }),
+}));
 vi.mock("./slack/bot.ts", () => ({
   startSlackBot: vi.fn(() => Promise.resolve()),
 }));
@@ -95,6 +107,14 @@ vi.mock("dofek/db", () => ({
 import * as Sentry from "@sentry/node";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { createDatabaseFromEnv } from "dofek/db";
+import {
+  createExportQueue,
+  createImportQueue,
+  createPostSyncQueue,
+  createScheduledSyncQueue,
+  createSyncQueue,
+  createTrainingExportQueue,
+} from "dofek/jobs/queues";
 import { createR2Client, createS3Client, parseR2Config, type R2Config } from "dofek/lib/r2-client";
 import express from "express";
 import { isAdmin } from "./auth/admin.ts";
@@ -105,6 +125,9 @@ import { httpRequestDuration, registry } from "./lib/metrics.ts";
 import { warmCache } from "./lib/warm-cache.ts";
 import { logger } from "./logger.ts";
 import { createAuthRouter } from "./routes/auth.ts";
+import { createUpdatesRouter } from "./routes/updates.ts";
+import { createUploadRouter } from "./routes/upload.ts";
+import { createWebhookRouter } from "./routes/webhooks.ts";
 import { startSlackBot } from "./slack/bot.ts";
 
 function startApp(
@@ -208,6 +231,16 @@ describe("createApp HTTP routes", () => {
         expect.objectContaining({ method: "GET" }),
         expect.any(Number),
       );
+    });
+
+    it("records duration in seconds (divided by 1000)", async () => {
+      vi.mocked(httpRequestDuration.observe).mockClear();
+      // Use /api/trpc which is after the logging middleware
+      await fetch(`${baseUrl}/api/trpc/nonexistent`);
+      const durationSeconds = vi.mocked(httpRequestDuration.observe).mock.calls[0][1];
+      // A local request should complete in well under 1 second
+      expect(durationSeconds).toBeGreaterThan(0);
+      expect(durationSeconds).toBeLessThan(1);
     });
   });
 
@@ -327,6 +360,51 @@ describe("createApp HTTP routes", () => {
       const call = vi.mocked(mockCreateBullBoard).mock.calls[0][0];
       expect(call.queues).toHaveLength(6);
     });
+
+    it("calls each queue factory exactly once (lazy init)", async () => {
+      vi.mocked(createExportQueue).mockClear();
+      vi.mocked(createScheduledSyncQueue).mockClear();
+      vi.mocked(createPostSyncQueue).mockClear();
+      vi.mocked(createTrainingExportQueue).mockClear();
+      vi.mocked(createImportQueue).mockClear();
+      vi.mocked(createSyncQueue).mockClear();
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("admin-session");
+      vi.mocked(validateSession).mockResolvedValue({
+        userId: "admin-1",
+        expiresAt: new Date("2027-01-01"),
+      });
+      vi.mocked(isAdmin).mockResolvedValue(true);
+
+      await fetch(`${baseUrl}/admin/queues`);
+
+      expect(vi.mocked(createSyncQueue)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(createImportQueue)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(createExportQueue)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(createScheduledSyncQueue)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(createPostSyncQueue)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(createTrainingExportQueue)).toHaveBeenCalledTimes(1);
+    });
+
+    it("passes queue factory results to BullMQAdapter", async () => {
+      const { BullMQAdapter: MockBullMQAdapter } = await import("@bull-board/api/bullMQAdapter");
+      vi.mocked(MockBullMQAdapter).mockClear();
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("admin-session");
+      vi.mocked(validateSession).mockResolvedValue({
+        userId: "admin-1",
+        expiresAt: new Date("2027-01-01"),
+      });
+      vi.mocked(isAdmin).mockResolvedValue(true);
+
+      await fetch(`${baseUrl}/admin/queues`);
+
+      const adapterArgs = vi.mocked(MockBullMQAdapter).mock.calls.map((call) => call[0]);
+      expect(adapterArgs).toContainEqual({ _queue: "sync" });
+      expect(adapterArgs).toContainEqual({ _queue: "import" });
+      expect(adapterArgs).toContainEqual({ _queue: "export" });
+      expect(adapterArgs).toContainEqual({ _queue: "scheduled-sync" });
+      expect(adapterArgs).toContainEqual({ _queue: "post-sync" });
+      expect(adapterArgs).toContainEqual({ _queue: "training-export" });
+    });
   });
 
   describe("GET /auth/dev-login", () => {
@@ -389,11 +467,105 @@ describe("createApp HTTP routes", () => {
       expect(context.appVersion).toBe("2.3.4");
       expect(context.assetsVersion).toBe("update-abc123");
     });
+
+    it("enables allowMethodOverride", () => {
+      const [middlewareOptions] = vi.mocked(createExpressMiddleware).mock.calls.at(-1) ?? [];
+      expect(middlewareOptions).toHaveProperty("allowMethodOverride", true);
+    });
+
+    it("logs and reports internal server errors to Sentry via onError", () => {
+      const [middlewareOptions] = vi.mocked(createExpressMiddleware).mock.calls.at(-1) ?? [];
+      if (!middlewareOptions?.onError) {
+        throw new Error("Expected onError to be defined");
+      }
+      vi.mocked(logger.error).mockClear();
+      vi.mocked(Sentry.captureException).mockClear();
+
+      const cause = new Error("db connection failed");
+      const onError: (opts: {
+        path: string;
+        error: { message: string; code: string; cause?: unknown };
+      }) => void = middlewareOptions.onError;
+      onError({
+        path: "user.get",
+        error: { message: "Something went wrong", code: "INTERNAL_SERVER_ERROR", cause },
+      });
+
+      expect(vi.mocked(logger.error)).toHaveBeenCalledWith("[trpc] user.get: Something went wrong");
+      expect(vi.mocked(Sentry.captureException)).toHaveBeenCalledWith(cause, {
+        tags: { trpcPath: "user.get" },
+      });
+    });
+
+    it("does not report non-internal errors to Sentry", () => {
+      const [middlewareOptions] = vi.mocked(createExpressMiddleware).mock.calls.at(-1) ?? [];
+      if (!middlewareOptions?.onError) {
+        throw new Error("Expected onError to be defined");
+      }
+      vi.mocked(Sentry.captureException).mockClear();
+
+      const onError: (opts: { path: string; error: { message: string; code: string } }) => void =
+        middlewareOptions.onError;
+      onError({ path: "user.get", error: { message: "Not found", code: "NOT_FOUND" } });
+
+      expect(vi.mocked(Sentry.captureException)).not.toHaveBeenCalled();
+    });
+
+    it("reports the error itself when no cause is present", () => {
+      const [middlewareOptions] = vi.mocked(createExpressMiddleware).mock.calls.at(-1) ?? [];
+      if (!middlewareOptions?.onError) {
+        throw new Error("Expected onError to be defined");
+      }
+      vi.mocked(Sentry.captureException).mockClear();
+
+      const errorObj = {
+        message: "Internal failure",
+        code: "INTERNAL_SERVER_ERROR",
+        cause: undefined,
+      };
+      const onError: (opts: { path: string; error: typeof errorObj }) => void =
+        middlewareOptions.onError;
+      onError({ path: "data.list", error: errorObj });
+
+      expect(vi.mocked(Sentry.captureException)).toHaveBeenCalledWith(errorObj, {
+        tags: { trpcPath: "data.list" },
+      });
+    });
   });
 
   describe("createAuthRouter mounting", () => {
     it("calls createAuthRouter during app setup", () => {
       expect(vi.mocked(createAuthRouter)).toHaveBeenCalled();
+    });
+  });
+
+  describe("route module mounting", () => {
+    it("passes default config to createUpdatesRouter", () => {
+      expect(vi.mocked(createUpdatesRouter)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          updatesDir: "/app/updates",
+          updatesPrefix: "mobile-ota",
+          publicUrl: "https://dofek.asherlc.com",
+        }),
+      );
+    });
+
+    it("passes db and getSyncQueue to createWebhookRouter", () => {
+      expect(vi.mocked(createWebhookRouter)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          db: expect.anything(),
+          getSyncQueue: expect.any(Function),
+        }),
+      );
+    });
+
+    it("passes getImportQueue and db to createUploadRouter", () => {
+      expect(vi.mocked(createUploadRouter)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          getImportQueue: expect.any(Function),
+          db: expect.anything(),
+        }),
+      );
     });
   });
 
