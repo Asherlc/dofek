@@ -213,7 +213,7 @@ function DeleteActivityButton({ activityId }: { activityId: string }) {
   );
 }
 
-function ActivityHeader({ activity, units }: { activity: ActivityDetail; units: UnitConverter }) {
+export function ActivityHeader({ activity, units }: { activity: ActivityDetail; units: UnitConverter }) {
   const durationMin =
     activity.startedAt && activity.endedAt
       ? Math.round(
@@ -619,7 +619,7 @@ function ElevationChart({
   return <DofekChart option={option} height={200} />;
 }
 
-function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: boolean }) {
+export function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: boolean }) {
   if (loading) return <ChartLoadingSkeleton height={200} />;
 
   const totalSeconds = zones.reduce((sum, z) => sum + z.seconds, 0);
