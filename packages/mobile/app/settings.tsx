@@ -1,5 +1,6 @@
 import { providerLabel } from "@dofek/providers/providers";
 import { File as ExpoFile, Paths } from "expo-file-system";
+import { useRouter } from "expo-router";
 import * as Sharing from "expo-sharing";
 import * as Updates from "expo-updates";
 import { useState } from "react";
@@ -16,6 +17,7 @@ import {
 } from "react-native";
 import { z } from "zod";
 import { PersonalizationPanel } from "../components/PersonalizationPanel";
+import { ProviderLogo } from "../components/ProviderLogo";
 import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel";
 import { useAuth } from "../lib/auth-context";
 import { trpc } from "../lib/trpc";
@@ -47,9 +49,13 @@ function formatLocalizedDateTime(date: Date | null | undefined): string {
 
 export default function SettingsScreen() {
   const auth = useAuth();
+  const router = useRouter();
   const { width } = useWindowDimensions();
   const isWide = width >= 600;
   const trpcUtils = trpc.useUtils();
+
+  // ── Data Sources ──
+  const providers = trpc.sync.providers.useQuery();
 
   // ── Data Export ──
   const [exportState, setExportState] = useState<ExportState>("idle");
@@ -223,6 +229,46 @@ export default function SettingsScreen() {
         />
       }
     >
+      {/* ── Data Sources ── */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Data Sources</Text>
+        <Text style={styles.sectionDescription}>Connect and manage health data providers</Text>
+        <TouchableOpacity
+          style={styles.card}
+          onPress={() => router.push("/providers")}
+          activeOpacity={0.7}
+        >
+          <View style={styles.dataSourcesRow}>
+            <View style={styles.dataSourcesInfo}>
+              {providers.isLoading ? (
+                <ActivityIndicator color={colors.accent} size="small" />
+              ) : (
+                <>
+                  <View style={styles.providerLogos}>
+                    {(providers.data ?? [])
+                      .filter((provider) => provider.authorized)
+                      .slice(0, 5)
+                      .map((provider) => (
+                        <ProviderLogo
+                          key={provider.id}
+                          provider={provider.id}
+                          serverUrl={auth.serverUrl}
+                          size={20}
+                        />
+                      ))}
+                  </View>
+                  <Text style={styles.dataSourcesCount}>
+                    {(providers.data ?? []).filter((provider) => provider.authorized).length}{" "}
+                    connected
+                  </Text>
+                </>
+              )}
+            </View>
+            <Text style={styles.devToolChevron}>›</Text>
+          </View>
+        </TouchableOpacity>
+      </View>
+
       {/* ── Linked Accounts ── */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Linked Accounts</Text>
@@ -468,6 +514,27 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 14,
     color: colors.textTertiary,
+  },
+
+  // ── Data Sources ──
+  dataSourcesRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  dataSourcesInfo: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  providerLogos: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  dataSourcesCount: {
+    fontSize: 14,
+    color: colors.textSecondary,
   },
 
   // ── Linked Accounts ──
