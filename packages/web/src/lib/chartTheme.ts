@@ -46,8 +46,8 @@ export function dofekTooltip(overrides?: TooltipOverrides) {
 
 interface ValueAxisOptions {
   name?: string;
-  min?: number | "dataMin";
-  max?: number | "dataMax";
+  min?: number | "dataMin" | ((value: { min: number; max: number }) => number);
+  max?: number | "dataMax" | ((value: { min: number; max: number }) => number);
   position?: "left" | "right";
   showSplitLine?: boolean;
   type?: "value" | "log";
