@@ -1212,6 +1212,43 @@ jobs:
           terraform init
           terraform apply -auto-approve
 
+  deploy-dns:
+    name: Deploy DNS
+    needs: [ci-gate]
+    if: always() && needs.ci-gate.result == 'success' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          fetch-depth: 2
+      - name: Check for DNS changes
+        id: changes
+        run: |
+          CHANGED=$(git diff --name-only HEAD~1...HEAD -- deploy/dns/)
+          if [ -n "$CHANGED" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "DNS config changed:"
+            echo "$CHANGED"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No DNS changes, skipping deploy"
+          fi
+      - name: Setup Terraform
+        if: steps.changes.outputs.changed == 'true'
+        uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+      - name: Terraform Apply
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: deploy/dns
+        env:
+          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TF_VAR_server_ip: ${{ secrets.SERVER_HOST }}
+        run: |
+          terraform init
+          terraform apply -auto-approve
+
   docker:
     name: Docker (${{ matrix.target }})
     needs: [ci-gate]

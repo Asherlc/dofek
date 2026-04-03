@@ -1,4 +1,10 @@
 terraform {
+  cloud {
+    organization = "asherlc-org"
+    workspaces {
+      name = "dofek-dns"
+    }
+  }
   required_providers {
     cloudflare = {
       source  = "cloudflare/cloudflare"
