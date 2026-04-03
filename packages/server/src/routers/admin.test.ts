@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
-const mockAdd = vi.fn().mockResolvedValue({ id: "job-123" });
+const { mockAdd } = vi.hoisted(() => ({
+  mockAdd: vi.fn().mockResolvedValue({ id: "job-123" }),
+}));
 vi.mock("dofek/jobs/queues", () => ({
   createTrainingExportQueue: () => ({ add: mockAdd }),
 }));

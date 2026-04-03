@@ -5,6 +5,8 @@ import { startWorker } from "../lib/start-worker.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { adminProcedure, router } from "../trpc.ts";
 
+const trainingExportQueue = createTrainingExportQueue();
+
 // ── Schemas for admin queries ──
 
 const overviewCountSchema = z.object({
@@ -432,7 +434,7 @@ export const adminRouter = router({
       }),
     )
     .mutation(async ({ input }) => {
-      const queue = createTrainingExportQueue();
+      const queue = trainingExportQueue;
       const job = await queue.add("training-export", {
         since: input.since,
         until: input.until,

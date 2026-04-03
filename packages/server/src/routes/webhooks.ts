@@ -36,10 +36,10 @@ const providerUserRow = z.object({
 
 interface WebhookRouterDeps {
   db: import("dofek/db").Database;
-  getSyncQueue: () => import("bullmq").Queue;
+  syncQueue: import("bullmq").Queue;
 }
 
-export function createWebhookRouter({ db, getSyncQueue }: WebhookRouterDeps): Router {
+export function createWebhookRouter({ db, syncQueue }: WebhookRouterDeps): Router {
   const router = Router();
 
   // Use raw body parser for all webhook routes — needed for HMAC signature verification.
@@ -176,7 +176,7 @@ export function createWebhookRouter({ db, getSyncQueue }: WebhookRouterDeps): Ro
       }
 
       // Resolve external owner IDs → internal user+provider and process events
-      const queue = getSyncQueue();
+      const queue = syncQueue;
       // `processed` counts all successfully handled events (targeted or fallback) and is used for log summary.
       // `fallbackJobsEnqueued` counts only events that fell back to full BullMQ sync,
       // which determines whether the worker container needs to be started.

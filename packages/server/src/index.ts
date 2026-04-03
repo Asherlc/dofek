@@ -45,7 +45,7 @@ function getSingleHeaderValue(value: string | string[] | undefined): string | un
   return undefined;
 }
 
-/** Create the Express app with all routes. Exported for testing. */
+/** Create the Express app with all routes. */
 export function createApp(db: import("dofek/db").Database): express.Express {
   initSentry();
   const app = express();
@@ -89,49 +89,28 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
     next();
   });
 
-  // ── BullMQ queues (lazy init — deferred until first use to avoid Redis
-  //    connection attempts in test environments) ──
-  let _importQueue: ReturnType<typeof createImportQueue> | null = null;
-  let _syncQueue: ReturnType<typeof createSyncQueue> | null = null;
-  let _exportQueue: ReturnType<typeof createExportQueue> | null = null;
-  let _scheduledSyncQueue: ReturnType<typeof createScheduledSyncQueue> | null = null;
-  let _postSyncQueue: ReturnType<typeof createPostSyncQueue> | null = null;
-  let _trainingExportQueue: ReturnType<typeof createTrainingExportQueue> | null = null;
-
-  function getImportQueue() {
-    if (!_importQueue) _importQueue = createImportQueue();
-    return _importQueue;
-  }
-
-  function getSyncQueue() {
-    if (!_syncQueue) _syncQueue = createSyncQueue();
-    return _syncQueue;
-  }
-
-  function getExportQueue() {
-    if (!_exportQueue) _exportQueue = createExportQueue();
-    return _exportQueue;
-  }
-
-  function getScheduledSyncQueue() {
-    if (!_scheduledSyncQueue) _scheduledSyncQueue = createScheduledSyncQueue();
-    return _scheduledSyncQueue;
-  }
-
-  function getPostSyncQueue() {
-    if (!_postSyncQueue) _postSyncQueue = createPostSyncQueue();
-    return _postSyncQueue;
-  }
-
-  function getTrainingExportQueue() {
-    if (!_trainingExportQueue) _trainingExportQueue = createTrainingExportQueue();
-    return _trainingExportQueue;
-  }
+  // ── BullMQ queues ──
+  const importQueue = createImportQueue();
+  const syncQueue = createSyncQueue();
+  const exportQueue = createExportQueue();
+  const scheduledSyncQueue = createScheduledSyncQueue();
+  const postSyncQueue = createPostSyncQueue();
+  const trainingExportQueue = createTrainingExportQueue();
 
   // ── Bull Board dashboard (admin-only) ──
   const bullBoardAdapter = new ExpressAdapter();
   bullBoardAdapter.setBasePath("/admin/queues");
-  const lazyBullBoard = { initialized: false };
+  createBullBoard({
+    queues: [
+      new BullMQAdapter(syncQueue),
+      new BullMQAdapter(importQueue),
+      new BullMQAdapter(exportQueue),
+      new BullMQAdapter(scheduledSyncQueue),
+      new BullMQAdapter(postSyncQueue),
+      new BullMQAdapter(trainingExportQueue),
+    ],
+    serverAdapter: bullBoardAdapter,
+  });
   app.use("/admin/queues", async (req, res, next) => {
     // Require authenticated admin user
     const sessionId = getSessionIdFromRequest(req);
@@ -150,20 +129,6 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       return;
     }
 
-    if (!lazyBullBoard.initialized) {
-      createBullBoard({
-        queues: [
-          new BullMQAdapter(getSyncQueue()),
-          new BullMQAdapter(getImportQueue()),
-          new BullMQAdapter(getExportQueue()),
-          new BullMQAdapter(getScheduledSyncQueue()),
-          new BullMQAdapter(getPostSyncQueue()),
-          new BullMQAdapter(getTrainingExportQueue()),
-        ],
-        serverAdapter: bullBoardAdapter,
-      });
-      lazyBullBoard.initialized = true;
-    }
     bullBoardAdapter.getRouter()(req, res, next);
   });
 
@@ -207,9 +172,9 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
 
   // ── Route modules ──
   // Webhook routes must be mounted before json() middleware — they use raw body for HMAC verification
-  app.use("/api/webhooks", createWebhookRouter({ db, getSyncQueue }));
-  app.use("/api/upload", createUploadRouter({ getImportQueue, db }));
-  app.use("/api/export", createExportRouter(db));
+  app.use("/api/webhooks", createWebhookRouter({ db, syncQueue }));
+  app.use("/api/upload", createUploadRouter({ importQueue, db }));
+  app.use("/api/export", createExportRouter({ db, exportQueue }));
   app.use("/api/updates", updatesRouter);
   app.use("/updates", updatesRouter);
   // ── Dev-only: auto-login for seed database testing ──
@@ -256,7 +221,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
 }
 
 /**
- * Fire-and-forget startup tasks. Exported for testability.
+ * Fire-and-forget startup tasks.
  * Errors are logged and reported to Sentry but don't crash the server.
  */
 export function runStartupTasks(

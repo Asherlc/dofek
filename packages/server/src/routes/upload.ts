@@ -2,8 +2,9 @@ import { mkdirSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Queue } from "bullmq";
 import type { Database } from "dofek/db";
-import type { createImportQueue } from "dofek/jobs/queues";
+import type { ImportJobData } from "dofek/jobs/queues";
 import { type Request, type Response, Router } from "express";
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
@@ -44,14 +45,14 @@ function cleanupUploadStatus(id: string) {
 }
 
 async function enqueueImport(
-  getImportQueue: () => ReturnType<typeof createImportQueue>,
+  importQueue: Queue<ImportJobData>,
   filePath: string,
   since: Date,
   importType: "apple-health" | "strong-csv" | "cronometer-csv",
   userId: string,
   opts?: { weightUnit?: "kg" | "lbs"; jobId?: string },
 ): Promise<string> {
-  const job = await getImportQueue().add(
+  const job = await importQueue.add(
     importType,
     {
       filePath,
@@ -66,13 +67,10 @@ async function enqueueImport(
   return job.id ?? `job-${Date.now()}`;
 }
 
-async function getImportJobStatus(
-  getImportQueue: () => ReturnType<typeof createImportQueue>,
-  jobId: string,
-) {
-  let job: Awaited<ReturnType<ReturnType<typeof createImportQueue>["getJob"]>> | undefined;
+async function getImportJobStatus(importQueue: Queue<ImportJobData>, jobId: string) {
+  let job: Awaited<ReturnType<Queue<ImportJobData>["getJob"]>> | undefined;
   try {
-    job = await getImportQueue().getJob(jobId);
+    job = await importQueue.getJob(jobId);
   } catch {
     return null; // Redis unavailable
   }
@@ -114,7 +112,7 @@ async function getImportJobStatus(
 }
 
 interface UploadRouteDeps {
-  getImportQueue: () => ReturnType<typeof createImportQueue>;
+  importQueue: Queue<ImportJobData>;
   db: Database;
 }
 
@@ -135,7 +133,7 @@ async function authenticate(req: Request, res: Response, db: Database): Promise<
 
 export function createUploadRouter(deps: UploadRouteDeps): Router {
   const router = Router();
-  const { getImportQueue, db } = deps;
+  const { importQueue, db } = deps;
 
   // Poll job status — checks BullMQ first, falls back to upload-phase status
   router.get("/apple-health/status/:jobId", async (req, res) => {
@@ -152,7 +150,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
       return;
     }
 
-    const status = await getImportJobStatus(getImportQueue, req.params.jobId);
+    const status = await getImportJobStatus(importQueue, req.params.jobId);
     if (!status) {
       res.status(404).json({ error: "Unknown job" });
       return;
@@ -215,7 +213,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
       const tmpFile = join(JOB_FILES_DIR, `apple-health-${tmpId}${ext}`);
       try {
         await streamToFile(req, tmpFile);
-        const jobId = await enqueueImport(getImportQueue, tmpFile, since, "apple-health", userId);
+        const jobId = await enqueueImport(importQueue, tmpFile, since, "apple-health", userId);
         res.json({ status: "processing", jobId });
       } catch (err: unknown) {
         logger.error(`[upload] Apple Health upload failed: ${err}`);
@@ -302,7 +300,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
           await assembleChunks(chunkDir, assembledFile);
           await rm(chunkDir, { recursive: true, force: true });
           // Use uploadId as the BullMQ job ID so the client can poll the same ID
-          await enqueueImport(getImportQueue, assembledFile, since, "apple-health", userId, {
+          await enqueueImport(importQueue, assembledFile, since, "apple-health", userId, {
             jobId: uploadId,
           });
           // Clear upload status — BullMQ job status takes over
@@ -341,7 +339,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
     const userId = await authenticate(req, res, db);
     if (!userId) return;
 
-    const status = await getImportJobStatus(getImportQueue, req.params.jobId);
+    const status = await getImportJobStatus(importQueue, req.params.jobId);
     if (!status) {
       res.status(404).json({ error: "Unknown job" });
       return;
@@ -375,14 +373,9 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
 
     try {
       await streamToFile(req, tmpFile);
-      const jobId = await enqueueImport(
-        getImportQueue,
-        tmpFile,
-        new Date(0),
-        "strong-csv",
-        userId,
-        { weightUnit },
-      );
+      const jobId = await enqueueImport(importQueue, tmpFile, new Date(0), "strong-csv", userId, {
+        weightUnit,
+      });
       res.json({ status: "processing", jobId });
     } catch (err: unknown) {
       logger.error(`[strong-csv] Upload failed: ${err}`);
@@ -395,7 +388,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
     const userId = await authenticate(req, res, db);
     if (!userId) return;
 
-    const status = await getImportJobStatus(getImportQueue, req.params.jobId);
+    const status = await getImportJobStatus(importQueue, req.params.jobId);
     if (!status) {
       res.status(404).json({ error: "Unknown job" });
       return;
@@ -429,7 +422,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
     try {
       await streamToFile(req, tmpFile);
       const jobId = await enqueueImport(
-        getImportQueue,
+        importQueue,
         tmpFile,
         new Date(0),
         "cronometer-csv",

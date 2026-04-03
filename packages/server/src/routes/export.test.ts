@@ -41,10 +41,6 @@ const mockQueue = {
   getJob: vi.fn().mockResolvedValue(mockJob),
 };
 
-vi.mock("dofek/jobs/queues", () => ({
-  createExportQueue: vi.fn(() => mockQueue),
-}));
-
 import { writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -61,7 +57,7 @@ function createTestApp() {
   const fakeDb = createDatabaseFromEnv();
   const app = express();
   app.use(cookieParser());
-  app.use("/api/export", createExportRouter(fakeDb));
+  app.use("/api/export", createExportRouter({ db: fakeDb, exportQueue: mockQueue }));
   return { app };
 }
 

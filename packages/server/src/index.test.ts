@@ -330,37 +330,12 @@ describe("createApp HTTP routes", () => {
       expect(body).toBe("bull-board");
     });
 
-    it("initializes Bull Board only once across multiple admin requests", async () => {
-      const { createBullBoard: mockCreateBullBoard } = await import("@bull-board/api");
-      vi.mocked(mockCreateBullBoard).mockClear();
-      vi.mocked(getSessionIdFromRequest).mockReturnValue("admin-session");
-      vi.mocked(validateSession).mockResolvedValue({
-        userId: "admin-1",
-        expiresAt: new Date("2027-01-01"),
-      });
-      vi.mocked(isAdmin).mockResolvedValue(true);
-
-      await fetch(`${baseUrl}/admin/queues`);
-      await fetch(`${baseUrl}/admin/queues`);
-
-      // createBullBoard should only be called once (lazy init)
-      expect(vi.mocked(mockCreateBullBoard)).toHaveBeenCalledTimes(1);
-    });
-
-    it("registers all 6 queue types with Bull Board", async () => {
+    it("registers all 6 queue types with Bull Board during app creation", async () => {
       const { createBullBoard: mockCreateBullBoard } = await import("@bull-board/api");
       const { BullMQAdapter: MockBullMQAdapter } = await import("@bull-board/api/bullMQAdapter");
-      vi.mocked(mockCreateBullBoard).mockClear();
-      vi.mocked(MockBullMQAdapter).mockClear();
-      vi.mocked(getSessionIdFromRequest).mockReturnValue("admin-session");
-      vi.mocked(validateSession).mockResolvedValue({
-        userId: "admin-1",
-        expiresAt: new Date("2027-01-01"),
-      });
-      vi.mocked(isAdmin).mockResolvedValue(true);
 
-      await fetch(`${baseUrl}/admin/queues`);
-
+      // Bull Board is initialized eagerly during createApp, so check the calls
+      // from the beforeEach setup
       expect(vi.mocked(MockBullMQAdapter)).toHaveBeenCalledTimes(6);
       expect(vi.mocked(mockCreateBullBoard)).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -374,46 +349,12 @@ describe("createApp HTTP routes", () => {
           ]),
         }),
       );
-      // Verify the exact count to catch accidental omissions
       const call = vi.mocked(mockCreateBullBoard).mock.calls[0][0];
       expect(call.queues).toHaveLength(6);
     });
 
-    it("calls each queue factory exactly once (lazy init)", async () => {
-      vi.mocked(createExportQueue).mockClear();
-      vi.mocked(createScheduledSyncQueue).mockClear();
-      vi.mocked(createPostSyncQueue).mockClear();
-      vi.mocked(createTrainingExportQueue).mockClear();
-      vi.mocked(createImportQueue).mockClear();
-      vi.mocked(createSyncQueue).mockClear();
-      vi.mocked(getSessionIdFromRequest).mockReturnValue("admin-session");
-      vi.mocked(validateSession).mockResolvedValue({
-        userId: "admin-1",
-        expiresAt: new Date("2027-01-01"),
-      });
-      vi.mocked(isAdmin).mockResolvedValue(true);
-
-      await fetch(`${baseUrl}/admin/queues`);
-
-      expect(vi.mocked(createSyncQueue)).toHaveBeenCalledTimes(1);
-      expect(vi.mocked(createImportQueue)).toHaveBeenCalledTimes(1);
-      expect(vi.mocked(createExportQueue)).toHaveBeenCalledTimes(1);
-      expect(vi.mocked(createScheduledSyncQueue)).toHaveBeenCalledTimes(1);
-      expect(vi.mocked(createPostSyncQueue)).toHaveBeenCalledTimes(1);
-      expect(vi.mocked(createTrainingExportQueue)).toHaveBeenCalledTimes(1);
-    });
-
     it("passes queue factory results to BullMQAdapter", async () => {
       const { BullMQAdapter: MockBullMQAdapter } = await import("@bull-board/api/bullMQAdapter");
-      vi.mocked(MockBullMQAdapter).mockClear();
-      vi.mocked(getSessionIdFromRequest).mockReturnValue("admin-session");
-      vi.mocked(validateSession).mockResolvedValue({
-        userId: "admin-1",
-        expiresAt: new Date("2027-01-01"),
-      });
-      vi.mocked(isAdmin).mockResolvedValue(true);
-
-      await fetch(`${baseUrl}/admin/queues`);
 
       const adapterArgs = vi.mocked(MockBullMQAdapter).mock.calls.map((call) => call[0]);
       expect(adapterArgs).toContainEqual({ _queue: "sync" });
@@ -568,19 +509,19 @@ describe("createApp HTTP routes", () => {
       );
     });
 
-    it("passes db and getSyncQueue to createWebhookRouter", () => {
+    it("passes db and syncQueue to createWebhookRouter", () => {
       expect(vi.mocked(createWebhookRouter)).toHaveBeenCalledWith(
         expect.objectContaining({
           db: expect.anything(),
-          getSyncQueue: expect.any(Function),
+          syncQueue: expect.anything(),
         }),
       );
     });
 
-    it("passes getImportQueue and db to createUploadRouter", () => {
+    it("passes importQueue and db to createUploadRouter", () => {
       expect(vi.mocked(createUploadRouter)).toHaveBeenCalledWith(
         expect.objectContaining({
-          getImportQueue: expect.any(Function),
+          importQueue: expect.anything(),
           db: expect.anything(),
         }),
       );
