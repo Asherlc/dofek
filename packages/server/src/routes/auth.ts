@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { IDENTITY_PROVIDER_NAMES } from "@dofek/auth/auth";
 import { getOAuthRedirectUri, type TokenSet } from "dofek/auth/oauth";
 import { sql } from "drizzle-orm";
-import { escapeAttribute, escapeText } from "entities/escape";
+import { escapeAttribute, escapeText } from "entities";
 import express, { Router } from "express";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
@@ -731,7 +731,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         return;
       }
 
-      // Resolve the logged-in user so the provider record is linked to them
+      // 1. Check session first (returns 401 if not logged in)
       const sessionId = getSessionIdFromRequest(req);
       const session = sessionId ? await validateSession(db, sessionId) : null;
       if (!session) {
@@ -740,6 +740,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       }
       const userId = session.userId;
 
+      // 2. Then check if provider exists (returns 404 if not)
       const { getAllProviders } = await import("dofek/providers/registry");
       const { ensureProvidersRegistered } = await import("../routers/sync.ts");
       await ensureProvidersRegistered();

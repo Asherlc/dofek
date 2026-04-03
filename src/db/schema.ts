@@ -20,9 +20,8 @@ import { getTokenUserId } from "./token-user-context.ts";
 // All tables live in the 'fitness' schema
 const fitness = pgSchema("fitness");
 
-// Stable user ID used by the first-user migration path and integration fixtures.
-export const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
-export const TEST_USER_ID = DEFAULT_USER_ID;
+// Stable user ID used in integration tests and fixtures.
+export const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
 
 function resolveImplicitUserId(): string {
   const userId = getTokenUserId();
@@ -69,6 +68,13 @@ export const labResultStatusEnum = fitness.enum("lab_result_status", [
   "preliminary",
   "corrected",
   "cancelled",
+]);
+
+export const sleepStageNameEnum = fitness.enum("sleep_stage_name", [
+  "deep",
+  "light",
+  "rem",
+  "awake",
 ]);
 
 export const activityTypeEnum = fitness.enum("activity_type", [
@@ -867,7 +873,7 @@ export const sleepStage = fitness.table(
     sessionId: uuid("session_id")
       .notNull()
       .references(() => sleepSession.id, { onDelete: "cascade" }),
-    stage: text("stage").notNull(), // "deep", "light", "rem", "awake"
+    stage: sleepStageNameEnum("stage").notNull(),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
     endedAt: timestamp("ended_at", { withTimezone: true }).notNull(),
     sourceName: text("source_name"),
