@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PostSyncJob } from "./process-post-sync-job.ts";
 
+const mockCaptureException = vi.fn();
+vi.mock("@sentry/node", () => ({
+  captureException: (...args: unknown[]) => mockCaptureException(...args),
+}));
+
 const mockUpdateUserMaxHr = vi.fn();
 const mockRefreshDedupViews = vi.fn();
 const mockLoadProviderPriorityConfig = vi.fn((): unknown => ({ priorities: [] }));
@@ -88,5 +93,27 @@ describe("processPostSyncJob", () => {
     await processPostSyncJob(makeJob("user-6"), fakeDb);
 
     expect(mockSyncProviderPriorities).not.toHaveBeenCalledWith(fakeDb, null);
+  });
+
+  it("reports errors to Sentry when refreshDedupViews fails", async () => {
+    const viewError = new Error("view refresh failed");
+    mockRefreshDedupViews.mockRejectedValueOnce(viewError);
+
+    await processPostSyncJob(makeJob("user-7"), fakeDb);
+
+    expect(mockCaptureException).toHaveBeenCalledWith(viewError, {
+      tags: { postSyncStep: "refreshDedupViews" },
+    });
+  });
+
+  it("reports errors to Sentry when updateUserMaxHr fails", async () => {
+    const maxHrError = new Error("max hr failed");
+    mockUpdateUserMaxHr.mockRejectedValueOnce(maxHrError);
+
+    await processPostSyncJob(makeJob("user-8"), fakeDb);
+
+    expect(mockCaptureException).toHaveBeenCalledWith(maxHrError, {
+      tags: { postSyncStep: "updateMaxHr" },
+    });
   });
 });

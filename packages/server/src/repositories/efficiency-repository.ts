@@ -195,7 +195,7 @@ export class EfficiencyRepository extends BaseRepository {
                AND ms.channel = 'heart_rate'
                AND ms.scalar IS NOT NULL
             )::int AS activities_with_hr,
-            (SELECT COUNT(DISTINCT a.id)
+            (SELECT COUNT(*)
              FROM (
                SELECT DISTINCT pwr.activity_id
                FROM fitness.sensor_sample pwr
