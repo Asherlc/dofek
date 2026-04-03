@@ -198,6 +198,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
       - run: cd deploy/deploy-config && terraform init -backend=false && terraform validate
+      - run: cd deploy/dns && terraform init -backend=false && terraform validate
 
   quality-gate:
     name: Lint & Static Analysis
