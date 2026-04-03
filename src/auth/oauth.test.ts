@@ -507,6 +507,16 @@ describe("OAuth", () => {
       await expect(revokeToken(revokeConfig, "old-token", mockFetch)).resolves.toBeUndefined();
     });
 
+    it("does not throw on network error", async () => {
+      const revokeConfig: OAuthConfig = {
+        ...config,
+        revokeUrl: "https://api.example.com/oauth/revoke",
+      };
+      const mockFetch = vi.fn().mockRejectedValue(new Error("Network error"));
+
+      await expect(revokeToken(revokeConfig, "old-token", mockFetch)).resolves.toBeUndefined();
+    });
+
     it("is a no-op when revokeUrl is not set", async () => {
       const mockFetch = vi.fn();
 

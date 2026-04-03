@@ -250,17 +250,21 @@ export async function revokeToken(
     "Content-Type": "application/x-www-form-urlencoded",
   };
   if (useBasicAuth && config.clientSecret) {
-    headers.Authorization = `Basic ${btoa(`${config.clientId}:${config.clientSecret}`)}`;
+    headers.Authorization = `Basic ${Buffer.from(`${config.clientId}:${config.clientSecret}`, "utf8").toString("base64")}`;
   }
 
-  const response = await fetchFn(config.revokeUrl, {
-    method: "POST",
-    headers,
-    body: body.toString(),
-  });
+  try {
+    const response = await fetchFn(config.revokeUrl, {
+      method: "POST",
+      headers,
+      body: body.toString(),
+    });
 
-  if (!response.ok) {
-    const text = await response.text();
-    logger.warn(`Token revocation failed (${response.status}): ${text}`);
+    if (!response.ok) {
+      const text = await response.text();
+      logger.warn(`Token revocation failed (${response.status}): ${text}`);
+    }
+  } catch (error) {
+    logger.warn(`Token revocation failed: ${error}`);
   }
 }
