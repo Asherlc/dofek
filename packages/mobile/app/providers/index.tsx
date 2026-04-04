@@ -15,13 +15,13 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { ProviderLogo } from "../components/ProviderLogo";
-import { ProviderStatsBreakdown } from "../components/ProviderStatsBreakdown";
-import { useAuth } from "../lib/auth-context";
-import { importSharedFile, type ShareImportProgress } from "../lib/share-import";
-import { trpc } from "../lib/trpc";
-import { useRefresh } from "../lib/useRefresh";
-import { colors } from "../theme";
+import { ProviderLogo } from "../../components/ProviderLogo";
+import { ProviderStatsBreakdown } from "../../components/ProviderStatsBreakdown";
+import { useAuth } from "../../lib/auth-context";
+import { importSharedFile, type ShareImportProgress } from "../../lib/share-import";
+import { trpc } from "../../lib/trpc";
+import { useRefresh } from "../../lib/useRefresh";
+import { colors } from "../../theme";
 
 function readBlobFromFileUri(fileUri: string): Promise<Blob> {
   return Promise.resolve(new ExpoFile(fileUri));

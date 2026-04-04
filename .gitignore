@@ -1,5 +1,8 @@
 node_modules/
 dist/
+# OTA code signing keys (secrets — only certificate.pem is committed)
+packages/mobile/certs/private-key.pem
+packages/mobile/certs/public-key.pem
 # Track .claude/skills (custom skills), ignore everything else
 .claude/*
 !.claude/skills/
