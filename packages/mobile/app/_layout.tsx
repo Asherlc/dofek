@@ -265,7 +265,7 @@ function AuthGate() {
           <Stack.Screen
             name="providers"
             options={{
-              title: "Data Sources",
+              headerShown: false,
             }}
           />
           <Stack.Screen
@@ -290,12 +290,6 @@ function AuthGate() {
             name="sleep"
             options={{
               title: "Sleep",
-            }}
-          />
-          <Stack.Screen
-            name="providers/[id]"
-            options={{
-              title: "Provider Detail",
             }}
           />
           <Stack.Screen
