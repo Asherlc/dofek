@@ -75,21 +75,17 @@ FROM base AS server
 ENV NODE_ENV=production
 WORKDIR /app
 
-# Install Infisical CLI for runtime secret injection + Docker CLI for starting worker container
-# Skip in test/e2e builds with INSTALL_EXTRAS=false to speed up image builds
-ARG INSTALL_EXTRAS=true
+# Infisical CLI (pinned) for runtime secret injection + Docker CLI for worker container
 ARG INFISICAL_CLI_VERSION=0.43.69
-RUN if [ "$INSTALL_EXTRAS" = "true" ]; then \
-      apk add --no-cache curl ca-certificates && \
-      ARCH=$(uname -m) && \
-      case "$ARCH" in x86_64) INF_ARCH=amd64;; aarch64) INF_ARCH=arm64;; *) INF_ARCH=$ARCH;; esac && \
-      curl -fsSL "https://github.com/Infisical/infisical/releases/download/infisical-cli/v${INFISICAL_CLI_VERSION}/infisical_${INFISICAL_CLI_VERSION}_linux_${INF_ARCH}.tar.gz" \
-        | tar xz -C /usr/local/bin infisical && \
-      chmod +x /usr/local/bin/infisical && \
-      curl -fsSL "https://download.docker.com/linux/static/stable/${ARCH}/docker-27.5.1.tgz" | \
-        tar xz --strip-components=1 -C /usr/local/bin docker/docker && \
-      apk del curl ; \
-    fi
+RUN apk add --no-cache curl ca-certificates && \
+    ARCH=$(uname -m) && \
+    case "$ARCH" in x86_64) INF_ARCH=amd64;; aarch64) INF_ARCH=arm64;; *) INF_ARCH=$ARCH;; esac && \
+    curl -fsSL "https://github.com/Infisical/infisical/releases/download/infisical-cli/v${INFISICAL_CLI_VERSION}/infisical_${INFISICAL_CLI_VERSION}_linux_${INF_ARCH}.tar.gz" \
+      | tar xz -C /usr/local/bin infisical && \
+    chmod +x /usr/local/bin/infisical && \
+    curl -fsSL "https://download.docker.com/linux/static/stable/${ARCH}/docker-27.5.1.tgz" | \
+      tar xz --strip-components=1 -C /usr/local/bin docker/docker && \
+    apk del curl
 
 COPY --from=source --chown=node:node /app/src ./src
 COPY --from=source --chown=node:node /app/drizzle ./drizzle
