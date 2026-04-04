@@ -6,7 +6,8 @@ set -e
 if [ -f .env ]; then
   while IFS='=' read -r key value; do
     case "$key" in ''|\#*) continue ;; esac
-    eval "[ -z \"\${$key+x}\" ] && export $key=\"$value\""
+    # Use if/then instead of && to avoid triggering set -e when var is already set
+    eval "if [ -z \"\${$key+x}\" ]; then export $key=\"$value\"; fi"
   done < .env
 fi
 
