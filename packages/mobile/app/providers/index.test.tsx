@@ -3,7 +3,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { providerActionLabel } from "./providers";
+import { providerActionLabel } from "./index";
 
 const mockPush = vi.fn();
 const mockReplace = vi.fn();
@@ -109,7 +109,7 @@ vi.mock("expo-router", () => ({
   useLocalSearchParams: (...args: unknown[]) => mockUseLocalSearchParams(...args),
 }));
 
-vi.mock("../theme", () => ({
+vi.mock("../../theme", () => ({
   colors: {
     background: "#000",
     surface: "#1a1a1a",
@@ -129,7 +129,7 @@ vi.mock("../theme", () => ({
   },
 }));
 
-vi.mock("../lib/auth-context", () => ({
+vi.mock("../../lib/auth-context", () => ({
   useAuth: () => ({
     serverUrl: "https://test.example.com",
     sessionToken: "test-token",
@@ -155,7 +155,7 @@ vi.mock("expo-web-browser", () => ({
   openBrowserAsync: vi.fn().mockResolvedValue({ type: "cancel" }),
 }));
 
-vi.mock("../lib/share-import", () => ({
+vi.mock("../../lib/share-import", () => ({
   importSharedFile: (...args: unknown[]) => mockImportSharedFile(...args),
 }));
 
@@ -175,7 +175,7 @@ const mockWhoopSignIn = vi.fn();
 const mockWhoopVerifyCode = vi.fn();
 const mockWhoopSaveTokens = vi.fn();
 
-vi.mock("../lib/trpc", () => ({
+vi.mock("../../lib/trpc", () => ({
   trpc: {
     sync: {
       providers: { useQuery: (...args: unknown[]) => mockProvidersQuery(...args) },
@@ -295,7 +295,7 @@ describe("providerActionLabel", () => {
 describe("ProviderCard", () => {
   describe("sync progress", () => {
     it("renders progress bar when syncing with percentage", async () => {
-      const { ProviderCard } = await import("./providers");
+      const { ProviderCard } = await import("./index");
       render(
         <ProviderCard
           provider={makeProvider()}
@@ -315,7 +315,7 @@ describe("ProviderCard", () => {
     });
 
     it("renders progress message without percentage", async () => {
-      const { ProviderCard } = await import("./providers");
+      const { ProviderCard } = await import("./index");
       render(
         <ProviderCard
           provider={makeProvider()}
@@ -333,7 +333,7 @@ describe("ProviderCard", () => {
     });
 
     it("renders progress bar without message when only percentage is provided", async () => {
-      const { ProviderCard } = await import("./providers");
+      const { ProviderCard } = await import("./index");
       render(
         <ProviderCard
           provider={makeProvider()}
@@ -354,7 +354,7 @@ describe("ProviderCard", () => {
 
   describe("normal metadata when not syncing", () => {
     it("renders auth status and last sync time when not syncing", async () => {
-      const { ProviderCard } = await import("./providers");
+      const { ProviderCard } = await import("./index");
       render(
         <ProviderCard
           provider={makeProvider({ lastSyncAt: "2026-03-19T12:00:00Z" })}
@@ -373,7 +373,7 @@ describe("ProviderCard", () => {
     });
 
     it("renders 'Never synced' when provider has no lastSyncAt", async () => {
-      const { ProviderCard } = await import("./providers");
+      const { ProviderCard } = await import("./index");
       render(
         <ProviderCard
           provider={makeProvider({ lastSyncAt: null })}
@@ -392,7 +392,7 @@ describe("ProviderCard", () => {
     });
 
     it("renders normal metadata when syncing but syncProgress is undefined", async () => {
-      const { ProviderCard } = await import("./providers");
+      const { ProviderCard } = await import("./index");
       render(
         <ProviderCard
           provider={makeProvider()}
@@ -411,7 +411,7 @@ describe("ProviderCard", () => {
     });
 
     it("renders 'Not connected' status for disconnected providers", async () => {
-      const { ProviderCard } = await import("./providers");
+      const { ProviderCard } = await import("./index");
       render(
         <ProviderCard
           provider={makeProvider({ authStatus: "not_connected" })}
@@ -429,7 +429,7 @@ describe("ProviderCard", () => {
     });
 
     it("renders 'Expired' status for expired providers", async () => {
-      const { ProviderCard } = await import("./providers");
+      const { ProviderCard } = await import("./index");
       render(
         <ProviderCard
           provider={makeProvider({ authStatus: "expired" })}
@@ -449,7 +449,7 @@ describe("ProviderCard", () => {
 
   describe("progress percentage clamping", () => {
     it("renders without error when percentage is negative", async () => {
-      const { ProviderCard } = await import("./providers");
+      const { ProviderCard } = await import("./index");
       render(
         <ProviderCard
           provider={makeProvider()}
@@ -468,7 +468,7 @@ describe("ProviderCard", () => {
     });
 
     it("renders without error when percentage exceeds 100", async () => {
-      const { ProviderCard } = await import("./providers");
+      const { ProviderCard } = await import("./index");
       render(
         <ProviderCard
           provider={makeProvider()}
@@ -487,7 +487,7 @@ describe("ProviderCard", () => {
   });
 
   it("renders provider label", async () => {
-    const { ProviderCard } = await import("./providers");
+    const { ProviderCard } = await import("./index");
     render(
       <ProviderCard
         provider={makeProvider({ label: "Wahoo" })}
@@ -505,7 +505,7 @@ describe("ProviderCard", () => {
 
   describe("import-only providers", () => {
     it("does not render Sync button for import-only providers", async () => {
-      const { ProviderCard } = await import("./providers");
+      const { ProviderCard } = await import("./index");
       render(
         <ProviderCard
           provider={makeProvider({ importOnly: true, authStatus: "connected" })}
@@ -524,7 +524,7 @@ describe("ProviderCard", () => {
     });
 
     it("does not render Full sync link for import-only providers", async () => {
-      const { ProviderCard } = await import("./providers");
+      const { ProviderCard } = await import("./index");
       render(
         <ProviderCard
           provider={makeProvider({ importOnly: true, authStatus: "connected" })}
@@ -542,7 +542,7 @@ describe("ProviderCard", () => {
     });
 
     it("shows 'Import only' instead of connection status", async () => {
-      const { ProviderCard } = await import("./providers");
+      const { ProviderCard } = await import("./index");
       render(
         <ProviderCard
           provider={makeProvider({ importOnly: true, authStatus: "connected" })}
@@ -585,7 +585,7 @@ describe("ProvidersScreen", () => {
   });
 
   it("renders Full sync link for connected providers", async () => {
-    const { default: ProvidersScreen } = await import("./providers");
+    const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
     expect(screen.getByText("Full sync")).toBeTruthy();
@@ -597,14 +597,14 @@ describe("ProvidersScreen", () => {
       isLoading: false,
     });
 
-    const { default: ProvidersScreen } = await import("./providers");
+    const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
     expect(screen.queryByText("Full sync")).toBeNull();
   });
 
   it("renders Full Sync All button alongside Sync All", async () => {
-    const { default: ProvidersScreen } = await import("./providers");
+    const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
     expect(screen.getByText("Sync All")).toBeTruthy();
@@ -618,7 +618,7 @@ describe("ProvidersScreen", () => {
       providers: { wahoo: { status: "done" } },
     });
 
-    const { default: ProvidersScreen } = await import("./providers");
+    const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
     fireEvent.click(screen.getByText("Sync"));
@@ -638,7 +638,7 @@ describe("ProvidersScreen", () => {
       providers: { wahoo: { status: "done" } },
     });
 
-    const { default: ProvidersScreen } = await import("./providers");
+    const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
     fireEvent.click(screen.getByText("Full sync"));
@@ -658,7 +658,7 @@ describe("ProvidersScreen", () => {
       providers: { wahoo: { status: "done" } },
     });
 
-    const { default: ProvidersScreen } = await import("./providers");
+    const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
     fireEvent.click(screen.getByText("Sync All"));
@@ -675,7 +675,7 @@ describe("ProvidersScreen", () => {
       providers: { wahoo: { status: "done" } },
     });
 
-    const { default: ProvidersScreen } = await import("./providers");
+    const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
     fireEvent.click(screen.getByText("Full Sync All"));
@@ -691,7 +691,7 @@ describe("ProvidersScreen", () => {
       isLoading: false,
     });
 
-    const { default: ProvidersScreen } = await import("./providers");
+    const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
     fireEvent.click(screen.getByText("Connect"));
@@ -708,7 +708,7 @@ describe("ProvidersScreen", () => {
     });
     mockCredentialSignIn.mockResolvedValue({});
 
-    const { default: ProvidersScreen } = await import("./providers");
+    const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
     // Open the modal
@@ -739,7 +739,7 @@ describe("ProvidersScreen", () => {
       sharedFile: "file:///tmp/Strong%20Export.csv",
     });
 
-    const { default: ProvidersScreen } = await import("./providers");
+    const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
     await waitFor(() => {
@@ -768,7 +768,7 @@ describe("ProvidersScreen", () => {
       sharedFile: "file:///tmp/Strong%20Export.csv",
     });
 
-    const { default: ProvidersScreen } = await import("./providers");
+    const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
     await waitFor(() => {
@@ -788,7 +788,7 @@ describe("ProvidersScreen", () => {
       isLoading: false,
     });
 
-    const { default: ProvidersScreen } = await import("./providers");
+    const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
     expect(screen.getByText("Strong")).toBeTruthy();
@@ -803,7 +803,7 @@ describe("ProvidersScreen", () => {
       isLoading: false,
     });
 
-    const { default: ProvidersScreen } = await import("./providers");
+    const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
     // Sync All button should not appear when only import-only providers exist
@@ -822,7 +822,7 @@ describe("ProvidersScreen", () => {
       isLoading: false,
     });
 
-    const { default: ProvidersScreen } = await import("./providers");
+    const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
     expect(screen.getByText("Expired")).toBeTruthy();
@@ -836,7 +836,7 @@ describe("ProvidersScreen", () => {
       isLoading: false,
     });
 
-    const { default: ProvidersScreen } = await import("./providers");
+    const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
     fireEvent.click(screen.getByText("Connect"));
@@ -862,7 +862,7 @@ describe("ProvidersScreen", () => {
       isLoading: false,
     });
 
-    const { default: ProvidersScreen } = await import("./providers");
+    const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
     fireEvent.click(screen.getByText("Connect"));
@@ -887,7 +887,7 @@ describe("ProvidersScreen", () => {
     });
     mockGarminSignIn.mockResolvedValue({ success: true });
 
-    const { default: ProvidersScreen } = await import("./providers");
+    const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
     fireEvent.click(screen.getByText("Connect"));
@@ -923,7 +923,7 @@ describe("ProvidersScreen", () => {
       isLoading: false,
     });
 
-    const { default: ProvidersScreen } = await import("./providers");
+    const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
     fireEvent.click(screen.getByText("Connect"));
@@ -952,7 +952,7 @@ describe("ProvidersScreen", () => {
     });
     mockWhoopSaveTokens.mockResolvedValue({ success: true });
 
-    const { default: ProvidersScreen } = await import("./providers");
+    const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
     fireEvent.click(screen.getByText("Connect"));
@@ -1001,7 +1001,7 @@ describe("ProvidersScreen", () => {
     });
     mockWhoopSaveTokens.mockResolvedValue({ success: true });
 
-    const { default: ProvidersScreen } = await import("./providers");
+    const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
     // Open modal and sign in
