@@ -32,8 +32,8 @@ variable "ssh_allowed_ips" {
   default     = ["0.0.0.0/0", "::/0"]
 }
 
-variable "sops_age_key" {
-  description = "SOPS age secret key for decrypting provider credentials"
+variable "infisical_token" {
+  description = "Infisical service token or machine identity token for fetching secrets at runtime"
   type        = string
   sensitive   = true
 }
@@ -104,7 +104,7 @@ resource "hcloud_server" "dofek" {
 
   user_data = templatefile("${path.module}/cloud-init.yml", {
     domain          = var.domain
-    sops_age_key    = var.sops_age_key
+    infisical_token = var.infisical_token
     ghcr_token      = var.ghcr_token
     ghcr_username   = var.ghcr_username
     compose_content = file("${path.module}/docker-compose.yml")

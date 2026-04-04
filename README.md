@@ -46,11 +46,8 @@ docker compose up -d db redis
 # Install dependencies
 pnpm install
 
-# Set up SOPS age key (see "Secrets" section below), then edit secrets with:
-sops .env
-
-# Run migrations (requires SOPS age key to decrypt .env)
-pnpm migrate
+# Log in to Infisical (see "Secrets" section below), then run with secrets:
+infisical run -- pnpm migrate
 
 pnpm sync
 ```
@@ -271,14 +268,14 @@ Migrations run at two levels for reliability: a dedicated one-shot `migrate` con
 cd deploy
 cp terraform.tfvars.example terraform.tfvars
 # Edit terraform.tfvars with your Hetzner API token, SSH key, domain,
-# SOPS age key, and GHCR token
+# Infisical token, and GHCR token
 terraform init
 terraform apply
 ```
 
 After the server exists:
 
-1. Add host-specific vars to `/opt/dofek/.env`: `SOPS_AGE_KEY`, `POSTGRES_PASSWORD`, `CADDY_DOMAIN`, and optionally `DOCKER_GID` and storage paths. All other secrets (`AXIOM_API_TOKEN`, `SLACK_BOT_TOKEN`, `GHCR_TOKEN`, `OTA_SIGNING_PRIVATE_KEY`, etc.) are synced from SOPS to the server automatically by `deploy-config`.
+1. Add host-specific vars to `/opt/dofek/.env`: `INFISICAL_TOKEN`, `POSTGRES_PASSWORD`, `CADDY_DOMAIN`, and optionally `DOCKER_GID` and storage paths. All other secrets are fetched from Infisical at container startup. Some secrets (`AXIOM_API_TOKEN`, `SLACK_BOT_TOKEN`, `GHCR_TOKEN`, etc.) are also synced to the server's `.env` by `deploy-config` for Docker Compose interpolation.
 2. Run the deploy-config module once to push `otel-collector-config.yaml` and the current base config.
 3. Point DNS at the Hetzner IP (`terraform output -raw server_ip`). Caddy will provision TLS automatically.
 
@@ -296,6 +293,7 @@ terraform apply -var="server_ip=$(cd .. && terraform output -raw server_ip)"
 - `deploy/docker-compose.yml`
 - `deploy/Caddyfile`
 - `deploy/otel-collector-config.yaml`
+- Select secrets to `/opt/dofek/.env` for Docker Compose interpolation
 
 After copying those files, it runs:
 
@@ -318,13 +316,13 @@ The `deploy-config` module is intentionally separate from the main `deploy/main.
 ```bash
 export SSH_AUTH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
 cd deploy/deploy-config
-# Secrets are read from SOPS and passed as TF_VAR_ env vars
-sops exec-env ../../.env 'terraform apply -var="server_ip=159.69.3.40" -var="axiom_api_token=$AXIOM_API_TOKEN" -var="slack_bot_token=$SLACK_BOT_TOKEN" -var="ghcr_token=$GHCR_TOKEN"'
+# Secrets are fetched from Infisical and passed as TF_VAR_ env vars
+infisical run --env=prod -- terraform apply -var="server_ip=159.69.3.40" -var="axiom_api_token=$AXIOM_API_TOKEN" -var="slack_bot_token=$SLACK_BOT_TOKEN" -var="ghcr_token=$GHCR_TOKEN"
 ```
 
 Note: Terraform's SSH client also cannot use passphrase-protected keys from `~/.ssh/` without the agent, and `private_key` in the connection block doesn't work with keys stored in 1Password. The `agent = true` approach is the only reliable option.
 
-`deploy-config` syncs these secrets from SOPS to the server's `.env` and Docker config on every apply: `AXIOM_API_TOKEN`, `SLACK_BOT_TOKEN`, `R2_BUCKET`, and GHCR Docker auth. Other secrets (provider API keys, OAuth client IDs/secrets like `SLACK_CLIENT_ID`) reach containers through the SOPS-encrypted `.env` baked into the Docker image.
+`deploy-config` syncs a subset of secrets to the server's `.env` for Docker Compose interpolation: `AXIOM_API_TOKEN`, `SLACK_BOT_TOKEN`, `R2_BUCKET`, and GHCR Docker auth. All other secrets (provider API keys, OAuth client IDs/secrets) are fetched directly from Infisical at container startup.
 
 **Finding the server IP:** The domain is behind Cloudflare so you need the direct Hetzner IP:
 - `~/.ssh/known_hosts` — grep for Hetzner ranges (`159.69.*`, `116.203.*`, `49.12.*`)
@@ -380,10 +378,10 @@ Frontend telemetry is initialized in `packages/web/src/lib/telemetry.ts` and onl
 
 The browser instrumentation propagates trace headers on `/api`, `/auth`, and `/callback` so backend OpenTelemetry can continue frontend traces.
 
-Backend telemetry is initialized in `src/instrumentation.ts` and supports both standard OTLP env vars and SOPS plaintext fallback keys with `_unencrypted` suffix for endpoints:
-- `OTEL_EXPORTER_OTLP_ENDPOINT_unencrypted`
-- `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT_unencrypted`
-- `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT_unencrypted`
+Backend telemetry is initialized in `src/instrumentation.ts` and uses the standard OTLP env vars:
+- `OTEL_EXPORTER_OTLP_ENDPOINT`
+- `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`
+- `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`
 
 Example OTLP endpoint for Sentry (as a backend destination):
 
@@ -394,60 +392,35 @@ OTEL_EXPORTER_OTLP_TRACES_HEADERS=Authorization=Bearer <SENTRY_AUTH_TOKEN>
 
 ### Production secrets
 
-**All secrets go in the SOPS-encrypted `.env` in this repo.** SOPS is the single source of truth for credentials — if a secret isn't in SOPS, it's untracked and unrecoverable.
+**All secrets are managed in [Infisical](https://infisical.com/).** Infisical is the single source of truth for credentials — if a secret isn't in Infisical, it's untracked.
 
 The production containers get environment variables from two places:
 
-1. **SOPS-encrypted `.env` (this repo)** — all credentials: provider API keys, OAuth client IDs/secrets, `AXIOM_API_TOKEN`, `R2_*` keys, etc. Baked into the Docker image at build time. The entrypoint decrypts it at container startup using the age key.
+1. **Infisical (prod environment)** — all credentials: provider API keys, OAuth client IDs/secrets, `AXIOM_API_TOKEN`, `R2_*` keys, etc. Fetched at container startup by the Infisical CLI.
 
-2. **`.env` on server (`/opt/dofek/.env`)** — host-specific, non-secret config that Docker Compose needs for interpolation: `SOPS_AGE_KEY`, `CADDY_DOMAIN`, `POSTGRES_PASSWORD`, optional storage paths (`DB_DATA_PATH`, `DB_BACKUP_PATH`), and `DOCKER_GID`. Secrets that are also needed for compose interpolation (e.g., `AXIOM_API_TOKEN` for the collector container) must exist in both places, but SOPS is canonical.
+2. **`.env` on server (`/opt/dofek/.env`)** — host-specific config that Docker Compose needs for interpolation: `INFISICAL_TOKEN`, `CADDY_DOMAIN`, `POSTGRES_PASSWORD`, optional storage paths (`DB_DATA_PATH`, `DB_BACKUP_PATH`), and `DOCKER_GID`. Secrets also needed for compose interpolation (e.g., `AXIOM_API_TOKEN` for the collector) are synced by `deploy-config`.
 
-The entrypoint merges both: compose `env_file` sets vars first, then `sops exec-env` adds decrypted credentials on top.
+The entrypoint checks for Infisical credentials: if `INFISICAL_TOKEN` or Universal Auth client ID/secret are set, it runs `infisical run --env=prod` to inject all secrets. Otherwise, it falls back to env vars from Docker/compose.
 
 **Adding or updating secrets:**
 
 ```bash
-sops .env          # add/edit key=value pairs
-git add .env && git commit && git push
-# CI builds new image → Watchtower deploys automatically
+infisical secrets set --env prod KEY=value
+# Containers pick up changes on next restart (Watchtower rolling restart)
 ```
 
-No SSH to the server needed. The credentials flow through the Docker image.
+No SSH to the server needed. No image rebuild needed — secrets are fetched at startup.
 
-**Important:** `sops exec-env` decrypted vars override Docker/compose env vars. Never put `DATABASE_URL` in the SOPS `.env` — it must come from the compose file.
-
-### DNS Terraform secrets
-
-Use the same SOPS pattern for `deploy/dns/terraform.tfvars`. The encrypted file is safe to commit; if you need a plaintext scratch file while debugging, use `deploy/dns/terraform.tfvars.plain` and never commit it.
-
-Create or edit the encrypted DNS vars:
-
-```bash
-sops deploy/dns/terraform.tfvars
-```
-
-Suggested contents:
-
-```hcl
-cloudflare_api_token  = "..."
-cloudflare_account_id = "..."
-server_ip             = "..."
-```
-
-Apply without leaving decrypted tfvars on disk:
-
-```bash
-sops exec-file deploy/dns/terraform.tfvars '/opt/homebrew/bin/terraform -chdir=deploy/dns apply -var-file={}'
-```
+**Important:** Infisical-injected vars override Docker/compose env vars. Never put `DATABASE_URL` in Infisical — it must come from the compose file.
 
 ### Troubleshooting
 
 **Login page says "No identity providers configured"** — this can mean either there are truly no configured login providers, or the API server (`web`) is unreachable and the frontend fell back to an empty `/api/auth/providers` result. Check `docker ps`, then inspect `docker logs dofek-web-1`.
 
 **If a provider is missing from the Data Sources page** it usually means `validate()` is failing, so the provider is being filtered out entirely rather than shown disabled. Check:
-1. Are the vars in the repo's `.env`? → `sops .env` to verify/add them
-2. Is the age key set on the server? → check `/opt/dofek/.env`
-3. Is the container running the latest image? → `docker logs dofek-web-1` to check for SOPS errors
+1. Are the vars in Infisical? → `infisical secrets get <VAR_NAME> --env=prod`
+2. Is the Infisical token set on the server? → check `/opt/dofek/.env`
+3. Is the container running the latest image? → `docker logs dofek-web-1` to check for Infisical errors
 
 ## Supplements
 
@@ -495,7 +468,7 @@ See `packages/server/src/routers/life-events.ts` for the API and `packages/web/s
 ### Infrastructure
 - [x] Winston structured logging with ring buffer transport for UI system logs
 - [x] OTel Collector sidecar shipping app logs + Docker container logs to Axiom
-- [x] SOPS + Age encrypted secrets
+- [x] Infisical secrets management (migrated from SOPS + Age)
 - [x] GHA CI with Docker build + push to GHCR
 - [x] Watchtower auto-deploy with Slack notifications
 - [x] CLI for authenticating, pulling, and managing providers (`sync`, `auth`, `import` commands)
@@ -513,11 +486,11 @@ The web UI requires sign-in via an identity provider (OIDC). Supported providers
 | Google | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` |
 | Apple | `APPLE_CLIENT_ID`, `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`, `APPLE_REDIRECT_URI` |
 
-All credentials go in the SOPS-encrypted `.env`. The login page auto-discovers which providers are configured and shows buttons accordingly. If no provider env vars are set, the login page shows "No identity providers configured."
+All credentials are stored in Infisical. The login page auto-discovers which providers are configured and shows buttons accordingly. If no provider env vars are set, the login page shows "No identity providers configured."
 
 ## Provider Configuration
 
-Each provider is enabled by adding its credentials to `.env` (SOPS-encrypted). OAuth providers also require a one-time browser authorization via the Data Sources page.
+Each provider is enabled by adding its credentials to Infisical. OAuth providers also require a one-time browser authorization via the Data Sources page.
 
 ### Implemented Providers (30)
 
@@ -554,7 +527,7 @@ Each provider is enabled by adding its credentials to `.env` (SOPS-encrypted). O
 | Cronometer | File import | Nutrition | None (upload `.csv` via web UI or share to iOS app) |
 | Auto-Supplements | Config-based | Daily supplement entries | None (configured in UI) |
 
-OAuth providers also need a callback URL env var pointing at your deployment's `/callback` route (for example `https://dofek.asherlc.com/callback`). Most providers read `OAUTH_REDIRECT_URI`; some use the plaintext SOPS helper key `OAUTH_REDIRECT_URI_unencrypted` shown in `.env.example`, so set the one your provider uses or set both to the same value. After adding credentials, click the provider tile on the Data Sources page to complete the OAuth flow.
+OAuth providers also need a callback URL env var pointing at your deployment's `/callback` route (for example `https://dofek.asherlc.com/callback`). Set `OAUTH_REDIRECT_URI` in Infisical. After adding credentials, click the provider tile on the Data Sources page to complete the OAuth flow.
 
 ### Reverse-Engineered API Packages (7)
 
@@ -583,32 +556,38 @@ See [docs/provider-api-audit.md](docs/provider-api-audit.md) for detailed RE fea
 
 ## Secrets
 
-`.env` is encrypted with [SOPS](https://github.com/getsops/sops) + [age](https://github.com/FiloSottile/age). To decrypt/edit secrets you need the age private key.
+Secrets are managed in [Infisical](https://infisical.com/). The Infisical CLI fetches secrets at runtime — no encrypted files in the repo.
 
 ### Setup (new machine)
 
-The age private key is stored in 1Password ("Homelab SOPS Age Key"). Either place it on disk or export it as an env var:
-
 ```bash
-# Option A: Place your age private key where SOPS can find it
-mkdir -p ~/Library/Application\ Support/sops/age
-# Copy your age key into keys.txt (the private key starts with AGE-SECRET-KEY-)
-chmod 600 ~/Library/Application\ Support/sops/age/keys.txt
+# Install the CLI
+brew install infisical/get-cli/infisical
 
-# Option B: Export from 1Password (no file needed)
-export SOPS_AGE_KEY=$(op item get "Homelab SOPS Age Key" --fields notesPlain | grep "^AGE-SECRET-KEY-")
+# Log in (opens browser)
+infisical login
+
+# Link this project (already done — .infisical.json is committed)
+# infisical init
 ```
 
-### Editing secrets
+### Managing secrets
 
 ```bash
-# Interactive: opens decrypted file in $EDITOR; re-encrypts on save
-sops .env
+# List all secrets
+infisical secrets --env=prod
 
-# Non-interactive: decrypt → edit → re-encrypt in place
-sops decrypt --in-place .env    # now .env is plaintext
-# ... edit .env with any tool ...
-sops encrypt --in-place .env    # re-encrypts
+# Add or update a secret
+infisical secrets set --env=prod KEY=value
+
+# Get a single secret
+infisical secrets get KEY --env=prod
+
+# Delete a secret
+infisical secrets delete KEY --env=prod
+
+# Run a command with secrets injected
+infisical run --env=prod -- pnpm dev
 ```
 
 ### 1Password deploy notes
@@ -620,31 +599,15 @@ TOKEN=$(op signin --account my.1password.com --raw)
 OP_SESSION_my_1password_com="$TOKEN" op whoami --account my.1password.com
 ```
 
-Use that same pattern to fetch secrets:
+Use that same pattern to fetch deploy secrets:
 
 ```bash
-# SOPS age key (existing item)
-TOKEN=$(op signin --account my.1password.com --raw)
-OP_SESSION_my_1password_com="$TOKEN" op item get "Homelab SOPS Age Key" --field notesPlain
-
 # Hetzner Cloud API token (for Terraform deploy/main.tf hcloud_token)
 TOKEN=$(op signin --account my.1password.com --raw)
 OP_SESSION_my_1password_com="$TOKEN" op item get "Hetzner Cloud API Token" --field password
-
-# Axiom API token (for AXIOM_API_TOKEN in /opt/dofek/.env)
-TOKEN=$(op signin --account my.1password.com --raw)
-OP_SESSION_my_1password_com="$TOKEN" op item get "Axiom API Token" --field password
 ```
 
 Important: the existing 1Password item titled `Hetzner` stores Hetzner account login credentials, not a Hetzner Cloud API token. Use the dedicated item `Hetzner Cloud API Token` for Terraform's `hcloud_token`.
-
-Example Terraform env export flow:
-
-```bash
-TOKEN=$(op signin --account my.1password.com --raw)
-export TF_VAR_hcloud_token=$(OP_SESSION_my_1password_com="$TOKEN" op item get "Hetzner Cloud API Token" --field password)
-export TF_VAR_sops_age_key=$(OP_SESSION_my_1password_com="$TOKEN" op item get "Homelab SOPS Age Key" --field notesPlain | grep '^AGE-SECRET-KEY-')
-```
 
 ## Stack
 

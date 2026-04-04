@@ -75,15 +75,14 @@ FROM base AS server
 ENV NODE_ENV=production
 WORKDIR /app
 
-# Install SOPS for runtime .env decryption + Docker CLI for starting worker container
+# Install Infisical CLI for runtime secret injection + Docker CLI for starting worker container
 # Skip in test/e2e builds with INSTALL_EXTRAS=false to speed up image builds
 ARG INSTALL_EXTRAS=true
 RUN if [ "$INSTALL_EXTRAS" = "true" ]; then \
-      apk add --no-cache curl ca-certificates && \
+      apk add --no-cache curl ca-certificates bash && \
+      curl -1sLf 'https://dl.cloudsmith.io/public/infisical/infisical-cli/setup.alpine.sh' | bash && \
+      apk add --no-cache infisical && \
       ARCH=$(uname -m) && \
-      case "$ARCH" in x86_64) SOPS_ARCH=amd64;; aarch64) SOPS_ARCH=arm64;; *) SOPS_ARCH=$ARCH;; esac && \
-      curl -fsSL "https://github.com/getsops/sops/releases/download/v3.9.4/sops-v3.9.4.linux.${SOPS_ARCH}" \
-        -o /usr/local/bin/sops && chmod +x /usr/local/bin/sops && \
       curl -fsSL "https://download.docker.com/linux/static/stable/${ARCH}/docker-27.5.1.tgz" | \
         tar xz --strip-components=1 -C /usr/local/bin docker/docker && \
       apk del curl ; \
@@ -143,9 +142,8 @@ RUN ln -sf /app node_modules/dofek && \
     ln -sf /app/packages/recovery node_modules/@dofek/recovery && \
     ln -sf /app/packages/zones node_modules/@dofek/zones
 
-# SOPS-encrypted .env — decrypted at runtime via SOPS_AGE_KEY env var
-COPY --from=source --chown=node:node /app/.env .
-COPY --from=source --chown=node:node /app/.sops.yaml .
+# Infisical project config for secret injection at runtime
+COPY --from=source --chown=node:node /app/.infisical.json .
 
 COPY --chown=node:node entrypoint.sh .
 

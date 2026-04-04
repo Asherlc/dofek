@@ -3,6 +3,6 @@ ssh_public_key  = "ssh-ed25519 AAAA..."
 domain          = "dofek.example.com"
 ghcr_username   = "your-github-username"
 ghcr_token      = "ghp_..."
-sops_age_key    = "AGE-SECRET-KEY-..."
+infisical_token = "st...."  # Infisical service token or machine identity token
 # ssh_allowed_ips = ["1.2.3.4/32"]  # Restrict SSH to your IP (recommended)
 # data_volume_size_gb = 50          # Optional extra volume attached/mounted at /mnt/HC_Volume_dofek-data

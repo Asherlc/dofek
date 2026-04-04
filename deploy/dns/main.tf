@@ -101,7 +101,7 @@ resource "cloudflare_r2_custom_domain" "storybook_preview" {
 # cannot be created via Terraform — they must be created manually in the
 # Cloudflare dashboard: R2 → Manage R2 API Tokens → Create API Token.
 # Scope the token to "Object Read & Write" for the dofek-training-data bucket.
-# Then add R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY to the SOPS-encrypted .env.
+# Then add R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY to Infisical (prod environment).
 
 # --- Outputs ---
 

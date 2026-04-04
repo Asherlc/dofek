@@ -27,7 +27,7 @@ import {
 } from "./queues.ts";
 import { setupScheduledSync } from "./scheduled-sync.ts";
 
-const sentryDsn = process.env.SENTRY_DSN || process.env.SENTRY_DSN_unencrypted;
+const sentryDsn = process.env.SENTRY_DSN;
 if (sentryDsn) {
   Sentry.init({ dsn: sentryDsn, skipOpenTelemetrySetup: true });
 }

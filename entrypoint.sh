@@ -6,8 +6,8 @@ NODE="node --experimental-transform-types --enable-source-maps --disable-warning
 
 MIGRATE="$NODE src/db/run-migrate.ts"
 
-# If SOPS age key is available and .env exists, decrypt secrets into the environment
-if { [ -n "$SOPS_AGE_KEY" ] || [ -n "$SOPS_AGE_KEY_FILE" ]; } && [ -f .env ]; then
+# If Infisical credentials are available, fetch secrets from Infisical and inject into env
+if [ -n "$INFISICAL_TOKEN" ] || { [ -n "$INFISICAL_UNIVERSAL_AUTH_CLIENT_ID" ] && [ -n "$INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET" ]; }; then
   case "${1:-sync}" in
     web)     CMD="$MIGRATE && exec $NODE packages/server/src/index.ts" ;;
     sync)    CMD="$MIGRATE && exec $NODE src/index.ts sync" ;;
@@ -15,7 +15,7 @@ if { [ -n "$SOPS_AGE_KEY" ] || [ -n "$SOPS_AGE_KEY_FILE" ]; } && [ -f .env ]; th
     migrate) CMD="$NODE src/db/run-migrate.ts" ;;
     *)       echo "Unknown mode: $1 (expected 'web', 'sync', 'worker', or 'migrate')" >&2; exit 1 ;;
   esac
-  exec sops exec-env .env ". ./scripts/strip-env-suffix.sh && $CMD"
+  exec infisical run --env=prod --projectId=54712f56-98a9-4531-9e97-0b588d2e5a88 -- sh -c "$CMD"
 fi
 
 # Fallback: run directly (env vars already set via docker env/env_file)

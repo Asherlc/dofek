@@ -582,7 +582,7 @@ function PrivacySection() {
             {
               title: "Encrypted secrets",
               description:
-                "All API credentials are SOPS + Age encrypted at rest. No plaintext secrets, ever",
+                "All API credentials are managed via Infisical. No plaintext secrets in the repo, ever",
             },
             {
               title: "Open source",

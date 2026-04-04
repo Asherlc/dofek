@@ -11,9 +11,8 @@ dist/
 .vscode/
 .env.local
 .env.*.local
-# .env is SOPS-encrypted and safe to commit
-# .env.plain is the decrypted version — never commit
-.env.plain
+# Secrets live in Infisical — .env is for local non-secret config only
+.env
 *.log
 # Personal supplement stack — differs per user
 src/supplements.config.ts
