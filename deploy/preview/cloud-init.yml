@@ -1,0 +1,23 @@
+#cloud-config
+
+package_update: true
+
+packages:
+  - ca-certificates
+  - curl
+
+write_files:
+  - path: /opt/dofek/docker-compose.yml
+    permissions: "0644"
+    content: |
+      ${indent(6, compose_content)}
+
+  - path: /opt/dofek/Caddyfile
+    permissions: "0644"
+    content: |
+      ${indent(6, caddy_content)}
+
+runcmd:
+  - curl -fsSL https://get.docker.com | sh
+  - echo '${ghcr_token}' | docker login ghcr.io -u ${ghcr_username} --password-stdin
+  - cd /opt/dofek && docker compose up -d

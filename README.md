@@ -263,6 +263,46 @@ git push → GHA builds ARM Docker images + exports Expo OTA bundle → signs ma
 
 Migrations run at two levels for reliability: a dedicated one-shot `migrate` container runs first during `docker compose up` (via `depends_on: { condition: service_completed_successfully }`), and each service's entrypoint also runs migrations before starting. A Postgres advisory lock serializes concurrent runs so only one container applies migrations at a time. With replicated `web` instances and rolling restarts, at least one healthy API instance remains available while another instance migrates and boots. In local dev, run `pnpm migrate` manually.
 
+### Preview environments (ephemeral per-PR)
+
+Every pull request gets its own isolated preview environment — a dedicated Hetzner CAX11 server with its own database, Redis, and full application stack.
+
+**How it works:**
+
+```
+PR opened/updated → GHA builds PR-tagged Docker images (ghcr.io/asherlc/dofek:pr-{N})
+  → Terraform provisions a Hetzner server + Cloudflare DNS record (pr-{N}.preview.dofek.fit)
+  → Cloud-init installs Docker, pulls images, starts the preview stack
+  → PR comment posted with preview URL
+  → Expo OTA update published to branch pr-{N} for mobile preview
+
+PR closed/merged → Terraform destroys server + DNS record
+  → Docker images cleaned up from GHCR
+  → Daily cron deletes any orphaned servers older than 72h
+```
+
+**Preview stack** (`deploy/preview/docker-compose.yml`): Caddy, client (nginx), web (API), migrate, seed, Redis, TimescaleDB. No worker, sync, watchtower, OTel collector, backups, or portainer.
+
+**Login:** The preview database is seeded with a dev user and session via `scripts/seed-dev-db.ts`. OAuth callbacks don't work on preview subdomains — email+password auth is planned (see [Authentication Follow-ups](#authentication-follow-ups)).
+
+**Required GitHub secrets:**
+
+| Secret | Purpose |
+|--------|---------|
+| `HCLOUD_TOKEN` | Hetzner Cloud API token for provisioning preview servers |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare API token with DNS:Edit on dofek.fit zone |
+| `CLOUDFLARE_ZONE_ID` | Cloudflare zone ID for dofek.fit |
+| `GHCR_TOKEN` | GitHub PAT with `read:packages` for pulling images on preview servers |
+| `SSH_PUBLIC_KEY` | SSH public key for accessing preview servers |
+| `R2_ACCESS_KEY_ID` | R2 credentials for Terraform state backend |
+| `R2_SECRET_ACCESS_KEY` | R2 credentials for Terraform state backend |
+| `R2_ENDPOINT` | R2 S3-compatible endpoint URL |
+| `EXPO_TOKEN` | Expo access token for publishing OTA updates |
+
+**Terraform state** is stored in the existing R2 bucket (`dofek-training-data`) under `terraform/preview/`, using one workspace per PR.
+
+**Cost:** ~€0.006/hr per preview server (CAX11). A PR open for 24h costs ~€0.14.
+
 ### Deploying from scratch
 
 `deploy/main.tf` provisions the Hetzner server and uses cloud-init to install Docker, log into GHCR, write `/opt/dofek/docker-compose.yml`, `/opt/dofek/Caddyfile`, and a minimal `/opt/dofek/.env`, then start the stack.
@@ -499,9 +539,11 @@ See `packages/server/src/routers/life-events.ts` for the API and `packages/web/s
 - [x] GHA CI with Docker build + push to GHCR
 - [x] Watchtower auto-deploy with Slack notifications
 - [x] CLI for authenticating, pulling, and managing providers (`sync`, `auth`, `import` commands)
+- [x] Ephemeral preview environments per PR (Hetzner server + Cloudflare DNS + seeded DB + Expo OTA)
 
 ### Authentication Follow-ups
 - [ ] When a user signs up with any provider that does not give us an email, require them to enter their email manually before completing signup/account linking
+- [ ] Email + password authentication: add `auth_credential` table (email + argon2 hash), registration and login routes (`POST /auth/register`, `POST /auth/login/email`), login forms on web and mobile, account linking with existing OAuth users by email. Needed for ephemeral preview environments where OAuth callbacks don't work on preview subdomains. Password reset flow (requires email sender like Resend/SES) can be added separately.
 
 ## Authentication
 

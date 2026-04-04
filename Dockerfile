@@ -143,6 +143,9 @@ RUN ln -sf /app node_modules/dofek && \
     ln -sf /app/packages/recovery node_modules/@dofek/recovery && \
     ln -sf /app/packages/zones node_modules/@dofek/zones
 
+# Seed script for preview/dev environments
+COPY --from=source --chown=node:node /app/scripts ./scripts
+
 # SOPS-encrypted .env — decrypted at runtime via SOPS_AGE_KEY env var
 COPY --from=source --chown=node:node /app/.env .
 COPY --from=source --chown=node:node /app/.sops.yaml .
