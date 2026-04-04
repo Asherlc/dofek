@@ -47,7 +47,7 @@ docker compose up -d db redis
 pnpm install
 
 # Log in to Infisical (see "Secrets" section below), then run with secrets:
-infisical run -- pnpm migrate
+infisical run --env=prod -- pnpm migrate
 
 pnpm sync
 ```
@@ -394,13 +394,15 @@ OTEL_EXPORTER_OTLP_TRACES_HEADERS=Authorization=Bearer <SENTRY_AUTH_TOKEN>
 
 **All secrets are managed in [Infisical](https://infisical.com/).** Infisical is the single source of truth for credentials — if a secret isn't in Infisical, it's untracked.
 
-The production containers get environment variables from two places:
+The production containers get environment variables from three places:
 
-1. **Infisical (prod environment)** — all credentials: provider API keys, OAuth client IDs/secrets, `AXIOM_API_TOKEN`, `R2_*` keys, etc. Fetched at container startup by the Infisical CLI.
+1. **Committed `.env` (this repo)** — non-secret config: client IDs, redirect URIs, endpoints, DSNs. Baked into the Docker image. Loaded by the entrypoint on startup.
 
-2. **`.env` on server (`/opt/dofek/.env`)** — host-specific config that Docker Compose needs for interpolation: `INFISICAL_TOKEN`, `CADDY_DOMAIN`, `POSTGRES_PASSWORD`, optional storage paths (`DB_DATA_PATH`, `DB_BACKUP_PATH`), and `DOCKER_GID`. Secrets also needed for compose interpolation (e.g., `AXIOM_API_TOKEN` for the collector) are synced by `deploy-config`.
+2. **Infisical (prod environment)** — actual secrets: client secrets, API keys/tokens, private keys. Fetched at container startup by the Infisical CLI.
 
-The entrypoint checks for Infisical credentials: if `INFISICAL_TOKEN` or Universal Auth client ID/secret are set, it runs `infisical run --env=prod` to inject all secrets. Otherwise, it falls back to env vars from Docker/compose.
+3. **`.env` on server (`/opt/dofek/.env`)** — host-specific config for Docker Compose interpolation: `INFISICAL_TOKEN`, `CADDY_DOMAIN`, `POSTGRES_PASSWORD`, optional storage paths. Secrets also needed for compose interpolation (e.g., `AXIOM_API_TOKEN` for the collector) are synced by `deploy-config`.
+
+The entrypoint sources `.env` for non-secret config, then checks for Infisical credentials: if `INFISICAL_TOKEN` or Universal Auth client ID/secret are set, it runs `infisical run --env=prod` to inject secrets on top. Otherwise, it falls back to env vars from Docker/compose.
 
 **Adding or updating secrets:**
 

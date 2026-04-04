@@ -11,8 +11,9 @@ dist/
 .vscode/
 .env.local
 .env.*.local
-# Secrets live in Infisical — .env is for local non-secret config only
-.env
+# .env is committed non-secret config; .env.local is gitignored for local overrides
+.env.local
+.env.*.local
 *.log
 # Personal supplement stack — differs per user
 src/supplements.config.ts

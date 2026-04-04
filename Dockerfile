@@ -142,7 +142,8 @@ RUN ln -sf /app node_modules/dofek && \
     ln -sf /app/packages/recovery node_modules/@dofek/recovery && \
     ln -sf /app/packages/zones node_modules/@dofek/zones
 
-# Infisical project config for secret injection at runtime
+# Non-secret config (.env) and Infisical project config for secret injection at runtime
+COPY --from=source --chown=node:node /app/.env .
 COPY --from=source --chown=node:node /app/.infisical.json .
 
 COPY --chown=node:node entrypoint.sh .

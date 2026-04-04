@@ -1,6 +1,14 @@
 #!/bin/sh
 set -e
 
+# Load non-secret config from committed .env (client IDs, redirect URIs, endpoints)
+# Secrets are injected by Infisical below; docker env/env_file vars take precedence.
+if [ -f .env ]; then
+  set -a
+  . ./.env
+  set +a
+fi
+
 # Node 22+ natively handles TypeScript — transform-types also rewrites .ts imports
 NODE="node --experimental-transform-types --enable-source-maps --disable-warning=ExperimentalWarning --import @opentelemetry/instrumentation/hook.mjs --import ./src/instrumentation.ts"
 
