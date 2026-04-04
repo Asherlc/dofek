@@ -69,25 +69,34 @@ function createSeededProviders() {
 
   // personalization.status (used by PersonalizationPanel)
   queryClient.setQueryData([["personalization", "status"], { type: "query" }], {
-    status: "personalized",
-    updatedAt: "2026-04-03T08:00:00Z",
+    isPersonalized: true,
+    fittedAt: "2026-04-03T08:00:00Z",
+    effective: {
+      exponentialMovingAverage: { chronicTrainingLoadDays: 42, acuteTrainingLoadDays: 7 },
+      readinessWeights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
+      sleepTarget: { minutes: 480 },
+      stressThresholds: { hrvThresholds: [30.0, 50.0, 70.0] },
+      trainingImpulseConstants: { genderFactor: 1.92, exponent: 1.67 },
+    },
+    defaults: {
+      exponentialMovingAverage: { chronicTrainingLoadDays: 42, acuteTrainingLoadDays: 7 },
+      readinessWeights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
+      sleepTarget: { minutes: 480 },
+      stressThresholds: { hrvThresholds: [30.0, 50.0, 70.0] },
+      trainingImpulseConstants: { genderFactor: 1.92, exponent: 1.67 },
+    },
     parameters: {
-      fitnessWindow: { value: 42, isDefault: true },
-      fatigueWindow: { value: 7, isDefault: true },
-      readinessWeights: {
-        value: {
-          heartRateVariability: 0.5,
-          restingHeartRate: 0.2,
-          sleep: 0.15,
-          respiratoryRate: 0.15,
-        },
-        isDefault: true,
-      },
+      exponentialMovingAverage: null,
+      readinessWeights: null,
+      sleepTarget: null,
+      stressThresholds: null,
+      trainingImpulseConstants: null,
     },
   });
 
   // settings.slackStatus (used by SlackIntegrationPanel)
   queryClient.setQueryData([["settings", "slackStatus"], { type: "query" }], {
+    configured: true,
     connected: false,
     channelName: null,
   });
