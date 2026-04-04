@@ -1,12 +1,13 @@
 #!/bin/sh
 set -e
 
-# Load non-secret config from committed .env (client IDs, redirect URIs, endpoints)
-# Secrets are injected by Infisical below; docker env/env_file vars take precedence.
+# Load non-secret config from committed .env as defaults.
+# Only sets vars that aren't already provided by Docker/Compose env_file.
 if [ -f .env ]; then
-  set -a
-  . ./.env
-  set +a
+  while IFS='=' read -r key value; do
+    case "$key" in ''|\#*) continue ;; esac
+    eval "[ -z \"\${$key+x}\" ] && export $key=\"$value\""
+  done < .env
 fi
 
 # Node 22+ natively handles TypeScript — transform-types also rewrites .ts imports
@@ -23,7 +24,7 @@ if [ -n "$INFISICAL_TOKEN" ] || { [ -n "$INFISICAL_UNIVERSAL_AUTH_CLIENT_ID" ] &
     migrate) CMD="$NODE src/db/run-migrate.ts" ;;
     *)       echo "Unknown mode: $1 (expected 'web', 'sync', 'worker', or 'migrate')" >&2; exit 1 ;;
   esac
-  exec infisical run --env=prod --projectId=54712f56-98a9-4531-9e97-0b588d2e5a88 -- sh -c "$CMD"
+  exec infisical run --env=prod -- sh -c "$CMD"
 fi
 
 # Fallback: run directly (env vars already set via docker env/env_file)
