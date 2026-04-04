@@ -265,9 +265,15 @@ Migrations run at two levels for reliability: a dedicated one-shot `migrate` con
 
 ```bash
 cd deploy
-cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars with your Hetzner API token, SSH key, domain,
-# Infisical token, and GHCR token
+# Fetch deploy secrets from 1Password and pass as TF_VAR_ env vars
+TOKEN=$(op signin --account my.1password.com --raw)
+export TF_VAR_hcloud_token=$(OP_SESSION_my_1password_com="$TOKEN" op item get "Hetzner Cloud API Token" --field password)
+export TF_VAR_infisical_token=$(OP_SESSION_my_1password_com="$TOKEN" op item get "Infisical Machine Identity Token" --field password)
+# Set remaining non-secret vars
+export TF_VAR_ssh_public_key="ssh-ed25519 AAAA..."
+export TF_VAR_domain="dofek.asherlc.com"
+export TF_VAR_ghcr_username="asherlc"
+export TF_VAR_ghcr_token="ghp_..."
 terraform init
 terraform apply
 ```
@@ -615,24 +621,41 @@ infisical secrets delete KEY --env=prod --type shared
 - **Is it a secret?** (API key, token, password, private key, client secret) → Add to Infisical: `infisical secrets set --env=prod KEY=value`
 - **Is it non-secret config?** (client ID, redirect URI, endpoint, DSN) → Add to the committed `.env` at the repo root
 
+### Production machine identity
+
+Production containers authenticate to Infisical using a machine identity token stored in 1Password. To create or rotate:
+
+1. In the [Infisical dashboard](https://app.infisical.com/) → Project Settings → Machine Identities
+2. Create a Universal Auth identity with read access to the `prod` environment
+3. Copy the access token
+4. Store it in 1Password as `Infisical Machine Identity Token` (password field)
+5. The token reaches the server via Terraform's `infisical_token` variable → cloud-init writes it to `/opt/dofek/.env` as `INFISICAL_TOKEN`
+
 ### 1Password deploy notes
 
-When running from automation/agent shells, `op signin` may not persist a global session for later commands. Use an inline session token per command chain:
+Deploy secrets (Hetzner API token, Infisical machine identity token) are stored in 1Password — never in `terraform.tfvars` or any committed file.
+
+| 1Password Item | Use |
+|---|---|
+| `Hetzner Cloud API Token` | Terraform `hcloud_token` for server provisioning |
+| `Infisical Machine Identity Token` | `INFISICAL_TOKEN` for production containers to fetch secrets |
+
+Important: the 1Password item titled `Hetzner` stores Hetzner account login credentials, not a Cloud API token. Use `Hetzner Cloud API Token` for Terraform.
+
+When running from automation/agent shells, `op signin` may not persist a global session. Use an inline session token:
 
 ```bash
 TOKEN=$(op signin --account my.1password.com --raw)
 OP_SESSION_my_1password_com="$TOKEN" op whoami --account my.1password.com
 ```
 
-Use that same pattern to fetch deploy secrets:
+Example Terraform env export flow:
 
 ```bash
-# Hetzner Cloud API token (for Terraform deploy/main.tf hcloud_token)
 TOKEN=$(op signin --account my.1password.com --raw)
-OP_SESSION_my_1password_com="$TOKEN" op item get "Hetzner Cloud API Token" --field password
+export TF_VAR_hcloud_token=$(OP_SESSION_my_1password_com="$TOKEN" op item get "Hetzner Cloud API Token" --field password)
+export TF_VAR_infisical_token=$(OP_SESSION_my_1password_com="$TOKEN" op item get "Infisical Machine Identity Token" --field password)
 ```
-
-Important: the existing 1Password item titled `Hetzner` stores Hetzner account login credentials, not a Hetzner Cloud API token. Use the dedicated item `Hetzner Cloud API Token` for Terraform's `hcloud_token`.
 
 ## Stack
 
