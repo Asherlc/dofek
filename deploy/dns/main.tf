@@ -139,6 +139,7 @@ resource "cloudflare_r2_custom_domain" "storybook_preview" {
 # Cloudflare dashboard: R2 → Manage R2 API Tokens → Create API Token.
 # The existing token scoped to dofek-training-data must be updated to also
 # cover dofek-ota and dofek-storybook (or create separate tokens per bucket).
+# Then add R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY to Infisical (prod environment).
 
 # --- Outputs ---
 

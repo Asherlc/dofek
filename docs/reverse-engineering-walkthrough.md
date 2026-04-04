@@ -413,7 +413,7 @@ private async resolveTokens(db: Database): Promise<TokenSet> {
 ### 5.3 Register and test
 
 1. Add to `src/index.ts`: `registerProvider(new ServiceProvider())`
-2. Add env vars to `.env` (via SOPS if credentials)
+2. Add env vars to Infisical (`infisical secrets set --env prod KEY=value`)
 3. Run `pnpm test` to verify parsing tests pass
 4. Run a manual sync to verify the full flow works end-to-end
 

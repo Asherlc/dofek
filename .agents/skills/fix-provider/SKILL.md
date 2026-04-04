@@ -49,7 +49,7 @@ Verify the provider is registered in `packages/server/src/routers/sync.ts` in th
 ### 5. Diagnose and fix
 
 Common causes:
-- **Missing env vars**: Add them to the SOPS-encrypted `.env` file locally, commit, and deploy via Terraform
+- **Missing env vars**: Add them to Infisical (prod environment) via `infisical secrets set --env prod KEY=value`
 - **Wrong env var names**: The provider expects a different name than what's configured
 - **OAuth app not created**: The provider needs an OAuth app registered with the third-party service
 - **Registration error**: The provider constructor throws during `doRegisterProviders()` — check server logs for warnings
@@ -64,5 +64,5 @@ After fixing, verify locally:
 ## Important
 
 - Never disable validation or show broken providers as a workaround
-- Environment secrets must be edited locally in the SOPS `.env` file, never on the server directly
+- Environment secrets are managed in Infisical, never on the server directly
 - If the fix requires creating an OAuth app with a third-party service, document the steps and ask the user to complete them

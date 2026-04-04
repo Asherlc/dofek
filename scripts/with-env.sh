@@ -1,6 +1,26 @@
 #!/bin/bash
-# Decrypt .env via SOPS and run a command with the decrypted env vars.
-# Usage: ./scripts/with-env.sh tsx src/index.ts sync --full-sync
-export SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/sops/age/keys.txt}"
+# Load non-secret config from .env (as defaults), apply .env.local overrides,
+# then fetch secrets from Infisical and run a command.
+# Usage: ./scripts/with-env.sh pnpm dev
+#
+# Requires: infisical CLI installed and authenticated (run `infisical login` first)
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-exec sops exec-env "$REPO_ROOT/.env" ". $REPO_ROOT/scripts/strip-env-suffix.sh && $*"
+
+# Load .env as defaults (don't overwrite existing vars)
+if [ -f "$REPO_ROOT/.env" ]; then
+  while IFS='=' read -r key value; do
+    case "$key" in ''|\#*) continue ;; esac
+    if [ -z "${!key+x}" ]; then
+      export "$key=$value"
+    fi
+  done < "$REPO_ROOT/.env"
+fi
+
+# Load .env.local as overrides (always overwrite)
+if [ -f "$REPO_ROOT/.env.local" ]; then
+  set -a
+  . "$REPO_ROOT/.env.local"
+  set +a
+fi
+
+exec infisical run --env=prod -- "$@"

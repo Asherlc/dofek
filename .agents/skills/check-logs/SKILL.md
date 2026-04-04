@@ -80,11 +80,7 @@ The Data Sources page has a "System Logs" panel showing the last 500 log entries
 
 ## Environment details
 
-- **SOPS decryption**: The container's `.env` is SOPS-encrypted and decrypted at runtime via `sops exec-env`. Variables injected by SOPS are NOT visible via `docker exec printenv` — they only exist in the Node process. To check if a variable is set (without displaying the value), use:
-  ```bash
-  ssh <SERVER> 'docker exec dofek-web-1 sh -c "sops -d .env 2>/dev/null | grep -q <VAR_NAME> && echo present || echo missing"'
-  ```
-  **Warning:** Do not use `| grep <VAR_NAME>` without `-q` or redirect, as it will print decrypted values to the terminal.
+- **Secret injection**: Secrets are fetched from Infisical at container startup via `infisical run`. Variables injected by Infisical are NOT visible via `docker exec printenv` — they only exist in the Node process. To check if a variable is set, inspect the Infisical dashboard or use `infisical secrets get <VAR_NAME> --env=prod`.
 - **OTel config**: Endpoint is `https://api.axiom.co` via an OTel Collector sidecar. Traces go to `dofek-traces`, logs go to `dofek-app-logs`. Service names: `dofek-web`, `dofek-worker`, `dofek-sync`.
 
 ## Important
