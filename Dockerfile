@@ -147,6 +147,7 @@ RUN ln -sf /app node_modules/dofek && \
 COPY --from=source --chown=node:node /app/.env .
 COPY --from=source --chown=node:node /app/.sops.yaml .
 
+COPY --from=source --chown=node:node /app/scripts/strip-env-suffix.sh ./scripts/
 COPY --chown=node:node entrypoint.sh .
 
 # Create job-files directory for upload chunks (volume mount point)
