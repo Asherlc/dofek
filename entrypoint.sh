@@ -13,7 +13,7 @@ if { [ -n "$SOPS_AGE_KEY" ] || [ -n "$SOPS_AGE_KEY_FILE" ]; } && [ -f .env ]; th
     sync)    CMD="$MIGRATE && exec $NODE src/index.ts sync" ;;
     worker)  CMD="$MIGRATE && exec $NODE src/jobs/worker.ts" ;;
     migrate) CMD="$NODE src/db/run-migrate.ts" ;;
-    seed)    CMD="$MIGRATE && exec $NODE scripts/seed-dev-db.ts" ;;
+    seed)    CMD="exec $NODE scripts/seed-dev-db.ts" ;;
     *)       echo "Unknown mode: $1 (expected 'web', 'sync', 'worker', 'migrate', or 'seed')" >&2; exit 1 ;;
   esac
   exec sops exec-env .env "$CMD"
@@ -37,7 +37,6 @@ case "${1:-sync}" in
     exec $NODE src/db/run-migrate.ts
     ;;
   seed)
-    $NODE src/db/run-migrate.ts
     exec $NODE scripts/seed-dev-db.ts
     ;;
   *)

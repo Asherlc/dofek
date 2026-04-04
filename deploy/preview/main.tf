@@ -89,6 +89,12 @@ variable "ssh_public_key" {
   type        = string
 }
 
+variable "ssh_allowed_ips" {
+  description = "CIDR blocks allowed to SSH (e.g. [\"1.2.3.4/32\"]). Defaults to all."
+  type        = list(string)
+  default     = ["0.0.0.0/0", "::/0"]
+}
+
 # ── Providers ────────────────────────────────────────────────────────────
 
 provider "hcloud" {
@@ -124,7 +130,7 @@ resource "hcloud_firewall" "preview" {
     direction  = "in"
     protocol   = "tcp"
     port       = "22"
-    source_ips = ["0.0.0.0/0", "::/0"]
+    source_ips = var.ssh_allowed_ips
   }
 
   rule {

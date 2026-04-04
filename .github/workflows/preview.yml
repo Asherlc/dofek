@@ -108,7 +108,7 @@ jobs:
             -var="hcloud_token=${{ secrets.HCLOUD_TOKEN }}" \
             -var="cloudflare_api_token=${{ secrets.CLOUDFLARE_API_TOKEN }}" \
             -var="cloudflare_zone_id=${{ secrets.CLOUDFLARE_ZONE_ID }}" \
-            -var="ghcr_username=${{ github.actor }}" \
+            -var="ghcr_username=${{ github.repository_owner }}" \
             -var="ghcr_token=${{ secrets.GHCR_TOKEN }}" \
             -var="ssh_public_key=${{ secrets.SSH_PUBLIC_KEY }}"
 
@@ -118,16 +118,17 @@ jobs:
       - name: Wait for Server Ready
         run: |
           URL="${{ steps.apply.outputs.preview_url }}"
-          echo "Waiting for $URL to become healthy..."
+          echo "Waiting for $URL to become reachable..."
           for i in $(seq 1 60); do
-            if curl -sf --max-time 5 "$URL/healthz" > /dev/null 2>&1; then
-              echo "Server is ready!"
+            status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "$URL/healthz" 2>/dev/null || echo 000)"
+            if [ "$status" -ge 200 ] && [ "$status" -lt 400 ]; then
+              echo "Server is ready (HTTP $status)!"
               exit 0
             fi
-            echo "Attempt $i/60 — not ready yet, waiting 10s..."
+            echo "Attempt $i/60 — got HTTP $status, waiting 10s..."
             sleep 10
           done
-          echo "::warning::Server did not become healthy within 10 minutes"
+          echo "::warning::Server did not become reachable within 10 minutes"
 
       - name: Comment PR with Preview URL
         uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043 # v4
@@ -203,7 +204,7 @@ jobs:
             -var="hcloud_token=${{ secrets.HCLOUD_TOKEN }}" \
             -var="cloudflare_api_token=${{ secrets.CLOUDFLARE_API_TOKEN }}" \
             -var="cloudflare_zone_id=${{ secrets.CLOUDFLARE_ZONE_ID }}" \
-            -var="ghcr_username=${{ github.actor }}" \
+            -var="ghcr_username=${{ github.repository_owner }}" \
             -var="ghcr_token=${{ secrets.GHCR_TOKEN }}" \
             -var="ssh_public_key=${{ secrets.SSH_PUBLIC_KEY }}"
 
@@ -283,9 +284,10 @@ jobs:
             SERVER_TS=$(date -u -d "$created_at" +%s 2>/dev/null || date -u -j -f "%Y-%m-%dT%H:%M:%S" "$created_at" +%s)
             if [ "$SERVER_TS" -lt "$CUTOFF" ]; then
               echo "Server $name is older than 72h — destroying"
-              # Extract PR number from server name (dofek-preview-pr-123)
               PR_NUM=$(echo "$name" | sed 's/dofek-preview-pr-//')
-              terraform workspace select "pr-$PR_NUM" 2>/dev/null && \
+
+              # Try Terraform destroy first (clean path)
+              if terraform workspace select "pr-$PR_NUM" 2>/dev/null; then
                 terraform destroy -auto-approve \
                   -var="pr_number=$PR_NUM" \
                   -var="server_image_tag=pr-$PR_NUM" \
@@ -293,11 +295,26 @@ jobs:
                   -var="hcloud_token=${{ secrets.HCLOUD_TOKEN }}" \
                   -var="cloudflare_api_token=${{ secrets.CLOUDFLARE_API_TOKEN }}" \
                   -var="cloudflare_zone_id=${{ secrets.CLOUDFLARE_ZONE_ID }}" \
-                  -var="ghcr_username=${{ github.actor }}" \
+                  -var="ghcr_username=${{ github.repository_owner }}" \
                   -var="ghcr_token=${{ secrets.GHCR_TOKEN }}" \
                   -var="ssh_public_key=${{ secrets.SSH_PUBLIC_KEY }}" && \
                 terraform workspace select default && \
                 terraform workspace delete "pr-$PR_NUM" || true
+              else
+                # Fallback: workspace missing — delete resources directly
+                echo "No Terraform workspace for pr-$PR_NUM — deleting server directly"
+                docker run --rm -e HCLOUD_TOKEN hetznercloud/cli server delete "$name" || true
+                # DNS record cleanup via Cloudflare API
+                ZONE_ID="${{ secrets.CLOUDFLARE_ZONE_ID }}"
+                RECORD_ID=$(curl -sf -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+                  "https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records?name=pr-${PR_NUM}.preview.dofek.fit&type=A" \
+                  | jq -r '.result[0].id // empty')
+                if [ -n "$RECORD_ID" ]; then
+                  curl -sf -X DELETE -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+                    "https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records/${RECORD_ID}" || true
+                  echo "Deleted DNS record for pr-${PR_NUM}.preview.dofek.fit"
+                fi
+              fi
             else
               echo "Server $name is still within 72h — keeping"
             fi
