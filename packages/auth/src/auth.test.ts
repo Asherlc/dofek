@@ -72,4 +72,21 @@ describe("ConfiguredProvidersSchema", () => {
     expect(result.identity).toEqual([]);
     expect(result.data).toEqual([]);
   });
+
+  it("accepts nativeApple flag", () => {
+    const result = ConfiguredProvidersSchema.parse({
+      identity: ["apple"],
+      data: [],
+      nativeApple: true,
+    });
+    expect(result.nativeApple).toBe(true);
+  });
+
+  it("defaults nativeApple to undefined when omitted", () => {
+    const result = ConfiguredProvidersSchema.parse({
+      identity: [],
+      data: [],
+    });
+    expect(result.nativeApple).toBeUndefined();
+  });
 });

@@ -204,6 +204,7 @@ describe("createAuthRouter", () => {
       const data = JSON.parse(res.body);
       expect(data.identity).toEqual(["google"]);
       expect(data.data).toEqual([]);
+      expect(data.nativeApple).toBe(false);
     });
   });
 
@@ -1228,6 +1229,7 @@ describe("createAuthRouter", () => {
       const data = JSON.parse(res.body);
       expect(data.identity).toEqual(["google"]);
       expect(data.data).toEqual([]);
+      expect(data.nativeApple).toBe(false);
     });
   });
 

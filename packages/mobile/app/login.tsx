@@ -90,7 +90,7 @@ export default function LoginScreen() {
   }
 
   const useNativeApple =
-    nativeAppleSignInAvailable && (providers?.identity.includes("apple") ?? false);
+    nativeAppleSignInAvailable && (providers?.identity.includes("apple") ?? false) && (providers?.nativeApple ?? false);
   const allProviders = providers
     ? [
         // Exclude Apple from generic list when native sign-in is available

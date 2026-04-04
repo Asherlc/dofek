@@ -187,17 +187,17 @@ export function isProviderConfigured(name: IdentityProviderName): boolean {
   return requiredEnvKeys[name].every((key) => !!process.env[key]);
 }
 
+/** Resolve APPLE_BUNDLE_ID, supporting the SOPS `_unencrypted` suffix convention. */
+export function getAppleBundleId(): string | undefined {
+  return process.env.APPLE_BUNDLE_ID || process.env.APPLE_BUNDLE_ID_unencrypted;
+}
+
 /** Required env vars for native iOS Apple Sign In (uses Bundle ID, not Services ID). */
-const nativeAppleRequiredEnvKeys = [
-  "APPLE_BUNDLE_ID",
-  "APPLE_TEAM_ID",
-  "APPLE_KEY_ID",
-  "APPLE_PRIVATE_KEY",
-];
+const nativeAppleSharedEnvKeys = ["APPLE_TEAM_ID", "APPLE_KEY_ID", "APPLE_PRIVATE_KEY"];
 
 /** Check if native iOS Apple Sign In is configured. */
 export function isNativeAppleConfigured(): boolean {
-  return nativeAppleRequiredEnvKeys.every((key) => !!process.env[key]);
+  return !!getAppleBundleId() && nativeAppleSharedEnvKeys.every((key) => !!process.env[key]);
 }
 
 /** Get a configured identity provider. Throws if env vars are missing. */
@@ -268,7 +268,8 @@ async function createAppleClientSecret(
 export async function validateNativeAppleCallback(
   authorizationCode: string,
 ): Promise<{ user: IdentityUser }> {
-  const bundleId = getEnvRequired("APPLE_BUNDLE_ID");
+  const bundleId = getAppleBundleId();
+  if (!bundleId) throw new Error("Missing required env var: APPLE_BUNDLE_ID or APPLE_BUNDLE_ID_unencrypted");
   const teamId = getEnvRequired("APPLE_TEAM_ID");
   const keyId = getEnvRequired("APPLE_KEY_ID");
   const privateKeyPem = getEnvRequired("APPLE_PRIVATE_KEY");

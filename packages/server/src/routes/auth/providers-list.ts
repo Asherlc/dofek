@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { getConfiguredProviders } from "../../auth/providers.ts";
+import { getConfiguredProviders, isNativeAppleConfigured } from "../../auth/providers.ts";
 import { logger } from "../../logger.ts";
 
 export async function handleGetAuthProviders(req: Request, res: Response): Promise<void> {
@@ -21,9 +21,9 @@ export async function handleGetAuthProviders(req: Request, res: Response): Promi
       })
       .map((p) => p.id);
 
-    res.json({ identity: identityProviders, data: dataLoginProviders });
+    res.json({ identity: identityProviders, data: dataLoginProviders, nativeApple: isNativeAppleConfigured() });
   } catch (err: unknown) {
     logger.error(`[auth] Failed to list providers: ${err}`);
-    res.json({ identity: getConfiguredProviders(), data: [] });
+    res.json({ identity: getConfiguredProviders(), data: [], nativeApple: isNativeAppleConfigured() });
   }
 }
