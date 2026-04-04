@@ -48,8 +48,7 @@ pnpm install
 
 # Log in to Infisical (see "Secrets" section below), then run with secrets:
 infisical run --env=prod -- pnpm migrate
-
-pnpm sync
+infisical run --env=prod -- pnpm sync
 ```
 
 ## Adding a Provider
@@ -413,6 +412,8 @@ infisical secrets set --env prod KEY=value
 
 No SSH to the server needed. No image rebuild needed — secrets are fetched at startup.
 
+**Adding or updating non-secret config:** Edit `.env` in this repo, commit, push. CI builds a new image; Watchtower deploys it.
+
 **Important:** Infisical-injected vars override Docker/compose env vars. Never put `DATABASE_URL` in Infisical — it must come from the compose file.
 
 ### Troubleshooting
@@ -558,7 +559,12 @@ See [docs/provider-api-audit.md](docs/provider-api-audit.md) for detailed RE fea
 
 ## Secrets
 
-Secrets are managed in [Infisical](https://infisical.com/). The Infisical CLI fetches secrets at runtime — no encrypted files in the repo.
+Environment variables are split into two tiers:
+
+| Tier | Where | Examples | Needs rebuild? |
+|------|-------|----------|----------------|
+| **Non-secret config** | Committed `.env` in this repo | Client IDs, redirect URIs, endpoints, DSNs | Yes (baked into image) |
+| **Secrets** | [Infisical](https://infisical.com/) (prod environment) | Client secrets, API keys, tokens, private keys | No (fetched at startup) |
 
 ### Setup (new machine)
 
@@ -571,6 +577,21 @@ infisical login
 
 # Link this project (already done — .infisical.json is committed)
 # infisical init
+```
+
+### Local development
+
+Non-secret config is loaded automatically from `.env`. Secrets are injected by the Infisical CLI:
+
+```bash
+# Run any command with secrets injected
+infisical run --env=prod -- pnpm dev
+
+# Or use the helper script (sources .env + Infisical)
+./scripts/with-env.sh pnpm dev
+
+# Vite dev server (VITE_ vars come from packages/web/.env)
+infisical run --env=prod -- sh -c 'cd packages/web && pnpm dev'
 ```
 
 ### Managing secrets
@@ -586,11 +607,13 @@ infisical secrets set --env=prod KEY=value
 infisical secrets get KEY --env=prod
 
 # Delete a secret
-infisical secrets delete KEY --env=prod
-
-# Run a command with secrets injected
-infisical run --env=prod -- pnpm dev
+infisical secrets delete KEY --env=prod --type shared
 ```
+
+### Adding a new env var
+
+- **Is it a secret?** (API key, token, password, private key, client secret) → Add to Infisical: `infisical secrets set --env=prod KEY=value`
+- **Is it non-secret config?** (client ID, redirect URI, endpoint, DSN) → Add to the committed `.env` at the repo root
 
 ### 1Password deploy notes
 
@@ -628,4 +651,5 @@ Important: the existing 1Password item titled `Hetzner` stores Hetzner account l
 - **Cypress** — E2E testing
 - **Stryker** — mutation testing
 - **Biome** — linting and formatting
+- **Infisical** — secrets management (client secrets, API keys, tokens)
 - **Docker + GHCR** — deployment via GitHub Actions + Watchtower
