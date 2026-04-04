@@ -145,17 +145,6 @@ describe("instrumentation", () => {
     await sdk?.shutdown();
   });
 
-  it("picks up OTEL_EXPORTER_OTLP_ENDPOINT_unencrypted (SOPS convention)", async () => {
-    const { startInstrumentation } = await import("./instrumentation.ts");
-
-    const sdk = startInstrumentation({
-      OTEL_EXPORTER_OTLP_ENDPOINT_unencrypted: "http://localhost:4318",
-    });
-
-    expect(sdk).toBeDefined();
-    await sdk?.shutdown();
-  });
-
   it("returns an SDK instance when OTEL_EXPORTER_OTLP_TRACES_ENDPOINT is set", async () => {
     const { startInstrumentation } = await import("./instrumentation.ts");
 
@@ -165,17 +154,6 @@ describe("instrumentation", () => {
 
     expect(sdk).toBeDefined();
     expect(mockStart).toHaveBeenCalled();
-    await sdk?.shutdown();
-  });
-
-  it("picks up OTEL_EXPORTER_OTLP_TRACES_ENDPOINT_unencrypted (SOPS convention)", async () => {
-    const { startInstrumentation } = await import("./instrumentation.ts");
-
-    const sdk = startInstrumentation({
-      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT_unencrypted: "http://localhost:4318/v1/traces",
-    });
-
-    expect(sdk).toBeDefined();
     await sdk?.shutdown();
   });
 
@@ -263,31 +241,6 @@ describe("instrumentation", () => {
       }),
     );
     await sdk?.shutdown();
-  });
-
-  it("picks up OTEL_EXPORTER_OTLP_METRICS_ENDPOINT_unencrypted (SOPS convention)", async () => {
-    const { startInstrumentation } = await import("./instrumentation.ts");
-
-    const sdk = startInstrumentation({
-      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT_unencrypted: "http://localhost:4318/v1/metrics",
-    });
-
-    expect(sdk).toBeDefined();
-    const config = vi.mocked(NodeSDK).mock.calls[0]?.[0];
-    expect(config?.metricReader).toBeDefined();
-    await sdk?.shutdown();
-  });
-
-  it("does not override configured endpoint with *_unencrypted fallback", async () => {
-    const { startInstrumentation } = await import("./instrumentation.ts");
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://process.example";
-
-    startInstrumentation({
-      OTEL_EXPORTER_OTLP_ENDPOINT: "https://configured.example",
-      OTEL_EXPORTER_OTLP_ENDPOINT_unencrypted: "https://fallback.example",
-    });
-
-    expect(process.env.OTEL_EXPORTER_OTLP_ENDPOINT).toBe("https://process.example");
   });
 
   it("registers SIGTERM and SIGINT handlers that call sdk.shutdown", async () => {

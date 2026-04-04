@@ -65,11 +65,12 @@ describe("LoginScreen", () => {
     expect(screen.getByText("Sign in with Apple")).toBeTruthy();
   });
 
-  it("hides generic Apple OAuth button when native Apple Sign In is available", async () => {
+  it("hides generic Apple OAuth button when native Apple Sign In is available and server supports it", async () => {
     mockIsNativeAppleSignInAvailable.mockResolvedValue(true);
     mockFetchConfiguredProviders.mockResolvedValue({
       identity: ["google", "apple"],
       data: [],
+      nativeApple: true,
     });
     render(<LoginScreen />);
 
@@ -77,6 +78,21 @@ describe("LoginScreen", () => {
       expect(screen.getByText("Sign in with Google")).toBeTruthy();
     });
     expect(screen.queryByText("Sign in with Apple")).toBeNull();
+  });
+
+  it("falls back to OAuth Apple button when server does not support native Apple Sign In", async () => {
+    mockIsNativeAppleSignInAvailable.mockResolvedValue(true);
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: ["google", "apple"],
+      data: [],
+      nativeApple: false,
+    });
+    render(<LoginScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Sign in with Google")).toBeTruthy();
+    });
+    expect(screen.getByText("Sign in with Apple")).toBeTruthy();
   });
 
   it("shows data provider buttons", async () => {
@@ -202,6 +218,7 @@ describe("LoginScreen", () => {
     mockFetchConfiguredProviders.mockResolvedValue({
       identity: ["apple"],
       data: [],
+      nativeApple: true,
     });
     mockStartNativeAppleSignIn.mockRejectedValue(new Error("Apple Sign In failed: 500"));
 
@@ -222,6 +239,7 @@ describe("LoginScreen", () => {
     mockFetchConfiguredProviders.mockResolvedValue({
       identity: ["apple"],
       data: [],
+      nativeApple: true,
     });
     mockStartNativeAppleSignIn.mockRejectedValue(new Error("native apple failed"));
     mockStartOAuthLogin.mockResolvedValue("fallback-token");
@@ -243,6 +261,7 @@ describe("LoginScreen", () => {
     mockFetchConfiguredProviders.mockResolvedValue({
       identity: ["apple"],
       data: [],
+      nativeApple: true,
     });
     const cancelError = new Error("User canceled");
     Object.assign(cancelError, { code: "ERR_REQUEST_CANCELED" });

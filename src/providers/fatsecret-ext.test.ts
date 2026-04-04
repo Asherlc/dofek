@@ -308,17 +308,17 @@ describe("FatSecretProvider — authSetup oauth1Flow", () => {
   it("oauthConfig redirectUri uses env var or default", () => {
     process.env.FATSECRET_CONSUMER_KEY = "test-key";
     process.env.FATSECRET_CONSUMER_SECRET = "test-secret";
-    delete process.env.OAUTH_REDIRECT_URI_unencrypted;
+    delete process.env.OAUTH_REDIRECT_URI;
 
     const provider = new FatSecretProvider();
     const setup = provider.authSetup();
     expect(setup.oauthConfig.redirectUri).toContain("dofek");
   });
 
-  it("oauthConfig uses OAUTH_REDIRECT_URI_unencrypted when set", () => {
+  it("oauthConfig uses custom OAUTH_REDIRECT_URI when set", () => {
     process.env.FATSECRET_CONSUMER_KEY = "test-key";
     process.env.FATSECRET_CONSUMER_SECRET = "test-secret";
-    process.env.OAUTH_REDIRECT_URI_unencrypted = "https://my-app.com/callback";
+    process.env.OAUTH_REDIRECT_URI = "https://my-app.com/callback";
 
     const provider = new FatSecretProvider();
     const setup = provider.authSetup();

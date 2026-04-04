@@ -6,23 +6,17 @@ describe("getOAuthRedirectUri", () => {
 
   afterEach(() => {
     process.env = { ...originalEnv };
-    delete process.env.OAUTH_REDIRECT_URI_unencrypted;
+    delete process.env.OAUTH_REDIRECT_URI;
     delete process.env.OAUTH_REDIRECT_URI;
   });
 
-  it("uses OAUTH_REDIRECT_URI_unencrypted when set", () => {
-    process.env.OAUTH_REDIRECT_URI_unencrypted = "https://custom.com/callback";
+  it("uses OAUTH_REDIRECT_URI when set", () => {
+    process.env.OAUTH_REDIRECT_URI = "https://custom.com/callback";
     expect(getOAuthRedirectUri()).toBe("https://custom.com/callback");
   });
 
-  it("uses OAUTH_REDIRECT_URI as fallback when OAUTH_REDIRECT_URI_unencrypted is missing", () => {
-    delete process.env.OAUTH_REDIRECT_URI_unencrypted;
-    process.env.OAUTH_REDIRECT_URI = "https://legacy.com/callback";
-    expect(getOAuthRedirectUri()).toBe("https://legacy.com/callback");
-  });
-
   it("builds dynamic http URI for localhost", () => {
-    delete process.env.OAUTH_REDIRECT_URI_unencrypted;
+    delete process.env.OAUTH_REDIRECT_URI;
     delete process.env.OAUTH_REDIRECT_URI;
     expect(getOAuthRedirectUri("localhost:3000")).toBe("http://localhost:3000/callback");
   });
@@ -48,7 +42,7 @@ describe("getOAuthRedirectUri", () => {
   });
 
   it("falls back to default production URI when no host and no env vars", () => {
-    delete process.env.OAUTH_REDIRECT_URI_unencrypted;
+    delete process.env.OAUTH_REDIRECT_URI;
     delete process.env.OAUTH_REDIRECT_URI;
     expect(getOAuthRedirectUri()).toBe("https://dofek.asherlc.com/callback");
   });

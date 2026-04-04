@@ -118,7 +118,7 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
     const stateEntry = await oauthStateStore.get(state);
     if (!stateEntry) {
       const errorDetail = req.get("host")?.includes("localhost")
-        ? " (Are you using an IP or host that differs from what the provider redirected to? Try setting OAUTH_REDIRECT_URI_unencrypted in your .env if testing on mobile.)"
+        ? " (Are you using an IP or host that differs from what the provider redirected to? Try setting OAUTH_REDIRECT_URI in your .env if testing on mobile.)"
         : "";
       res.status(400).send(`Unknown or expired OAuth state${errorDetail}`);
       return;
