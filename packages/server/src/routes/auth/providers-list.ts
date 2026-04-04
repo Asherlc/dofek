@@ -21,9 +21,17 @@ export async function handleGetAuthProviders(req: Request, res: Response): Promi
       })
       .map((p) => p.id);
 
-    res.json({ identity: identityProviders, data: dataLoginProviders, nativeApple: isNativeAppleConfigured() });
+    res.json({
+      identity: identityProviders,
+      data: dataLoginProviders,
+      nativeApple: isNativeAppleConfigured(),
+    });
   } catch (err: unknown) {
     logger.error(`[auth] Failed to list providers: ${err}`);
-    res.json({ identity: getConfiguredProviders(), data: [], nativeApple: isNativeAppleConfigured() });
+    res.json({
+      identity: getConfiguredProviders(),
+      data: [],
+      nativeApple: isNativeAppleConfigured(),
+    });
   }
 }

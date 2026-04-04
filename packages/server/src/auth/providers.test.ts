@@ -169,7 +169,6 @@ describe("auth/providers", () => {
       // APPLE_CLIENT_ID and APPLE_REDIRECT_URI are NOT set
       expect(isNativeAppleConfigured()).toBe(true);
     });
-
   });
 
   describe("getConfiguredProviders", () => {
