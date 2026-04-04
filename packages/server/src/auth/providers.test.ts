@@ -54,7 +54,6 @@ describe("auth/providers", () => {
       "APPLE_PRIVATE_KEY",
       "APPLE_REDIRECT_URI",
       "APPLE_BUNDLE_ID",
-      "APPLE_BUNDLE_ID_unencrypted",
       "AUTHENTIK_BASE_URL",
       "AUTHENTIK_CLIENT_ID",
       "AUTHENTIK_CLIENT_SECRET",
@@ -171,13 +170,6 @@ describe("auth/providers", () => {
       expect(isNativeAppleConfigured()).toBe(true);
     });
 
-    it("accepts APPLE_BUNDLE_ID_unencrypted (SOPS convention)", () => {
-      process.env.APPLE_BUNDLE_ID_unencrypted = "com.dofek.app";
-      process.env.APPLE_TEAM_ID = "team";
-      process.env.APPLE_KEY_ID = "key";
-      process.env.APPLE_PRIVATE_KEY = "key-content";
-      expect(isNativeAppleConfigured()).toBe(true);
-    });
   });
 
   describe("getConfiguredProviders", () => {

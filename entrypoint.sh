@@ -15,7 +15,7 @@ if { [ -n "$SOPS_AGE_KEY" ] || [ -n "$SOPS_AGE_KEY_FILE" ]; } && [ -f .env ]; th
     migrate) CMD="$NODE src/db/run-migrate.ts" ;;
     *)       echo "Unknown mode: $1 (expected 'web', 'sync', 'worker', or 'migrate')" >&2; exit 1 ;;
   esac
-  exec sops exec-env .env "$CMD"
+  exec sops exec-env .env ". ./scripts/strip-env-suffix.sh && $CMD"
 fi
 
 # Fallback: run directly (env vars already set via docker env/env_file)

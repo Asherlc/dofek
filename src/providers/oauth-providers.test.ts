@@ -368,8 +368,8 @@ describe("xertOAuthConfig", () => {
     expect(config?.clientSecret).toBe("custom-secret");
   });
 
-  it("uses custom OAUTH_REDIRECT_URI_unencrypted when set", () => {
-    process.env.OAUTH_REDIRECT_URI_unencrypted = "https://example.com/callback";
+  it("uses custom OAUTH_REDIRECT_URI when set", () => {
+    process.env.OAUTH_REDIRECT_URI = "https://example.com/callback";
     const config = xertOAuthConfig();
     expect(config?.redirectUri).toBe("https://example.com/callback");
   });

@@ -64,7 +64,7 @@ vi.mock("../auth/oauth.ts", () => ({
     scopes: "activity",
   })),
   getOAuthRedirectUri: vi.fn(
-    () => process.env.OAUTH_REDIRECT_URI_unencrypted ?? "https://dofek.example.com/callback",
+    () => process.env.OAUTH_REDIRECT_URI ?? "https://dofek.example.com/callback",
   ),
   buildAuthorizationUrl: vi.fn(() => "https://fitbit.com/authorize?client_id=test"),
   generateCodeVerifier: vi.fn(() => "test-verifier"),

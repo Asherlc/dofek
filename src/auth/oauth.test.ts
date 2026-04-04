@@ -22,44 +22,33 @@ const config: OAuthConfig = {
 
 describe("OAuth", () => {
   describe("getOAuthRedirectUri", () => {
-    const originalUnencryptedRedirectUri = process.env.OAUTH_REDIRECT_URI_unencrypted;
     const originalRedirectUri = process.env.OAUTH_REDIRECT_URI;
 
     afterEach(() => {
-      process.env.OAUTH_REDIRECT_URI_unencrypted = originalUnencryptedRedirectUri;
       process.env.OAUTH_REDIRECT_URI = originalRedirectUri;
     });
 
     it("uses host for dynamic redirect when provided, ignoring env", () => {
-      process.env.OAUTH_REDIRECT_URI_unencrypted = "https://custom.example.com/callback";
-      process.env.OAUTH_REDIRECT_URI = "https://legacy.example.com/callback";
+      process.env.OAUTH_REDIRECT_URI = "https://custom.example.com/callback";
 
       expect(getOAuthRedirectUri("localhost:3000")).toBe("http://localhost:3000/callback");
     });
 
     it("uses OAUTH_REDIRECT_URI when set and no host provided", () => {
       process.env.OAUTH_REDIRECT_URI = "https://env.example.com/callback";
-      delete process.env.OAUTH_REDIRECT_URI_unencrypted;
 
       expect(getOAuthRedirectUri()).toBe("https://env.example.com/callback");
     });
 
-    it("uses OAUTH_REDIRECT_URI_unencrypted as fallback when no host and no OAUTH_REDIRECT_URI", () => {
-      delete process.env.OAUTH_REDIRECT_URI;
-      process.env.OAUTH_REDIRECT_URI_unencrypted = "https://unencrypted.example.com/callback";
-
-      expect(getOAuthRedirectUri()).toBe("https://unencrypted.example.com/callback");
-    });
-
     it("uses http for private 172.16/12 hosts", () => {
-      delete process.env.OAUTH_REDIRECT_URI_unencrypted;
+      delete process.env.OAUTH_REDIRECT_URI;
       delete process.env.OAUTH_REDIRECT_URI;
 
       expect(getOAuthRedirectUri("172.16.5.4:3000")).toBe("http://172.16.5.4:3000/callback");
     });
 
     it("uses https for public 172.x hosts", () => {
-      delete process.env.OAUTH_REDIRECT_URI_unencrypted;
+      delete process.env.OAUTH_REDIRECT_URI;
       delete process.env.OAUTH_REDIRECT_URI;
 
       expect(getOAuthRedirectUri("172.67.12.45")).toBe("https://172.67.12.45/callback");

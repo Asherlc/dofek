@@ -27,9 +27,8 @@ import {
 } from "./queues.ts";
 import { setupScheduledSync } from "./scheduled-sync.ts";
 
-const sentryDsn = process.env.SENTRY_DSN || process.env.SENTRY_DSN_unencrypted;
-if (sentryDsn) {
-  Sentry.init({ dsn: sentryDsn, skipOpenTelemetrySetup: true });
+if (process.env.SENTRY_DSN) {
+  Sentry.init({ dsn: process.env.SENTRY_DSN, skipOpenTelemetrySetup: true });
 }
 
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes

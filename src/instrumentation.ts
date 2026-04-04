@@ -8,37 +8,17 @@ import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-node";
 
-function resolveOtelEnvValue(
-  env: Record<string, string | undefined>,
-  key: string,
-): string | undefined {
-  const configured = env[key];
-  if (configured) {
-    return configured;
-  }
-
-  const unencrypted = env[`${key}_unencrypted`];
-  if (unencrypted) {
-    process.env[key] = unencrypted;
-    return unencrypted;
-  }
-
-  return undefined;
-}
-
 /**
  * Starts OpenTelemetry instrumentation when OTLP export env vars are set.
- * Also checks *_unencrypted variants (SOPS stores non-secret values with this
- * suffix to keep them in plaintext).
  * Returns the SDK instance for shutdown, or undefined if OTel is disabled.
  */
 export function startInstrumentation(
   env: Record<string, string | undefined> = process.env,
 ): NodeSDK | undefined {
-  const endpoint = resolveOtelEnvValue(env, "OTEL_EXPORTER_OTLP_ENDPOINT");
-  const tracesEndpoint = resolveOtelEnvValue(env, "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT");
-  const logsEndpoint = resolveOtelEnvValue(env, "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT");
-  const metricsEndpoint = resolveOtelEnvValue(env, "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT");
+  const endpoint = env.OTEL_EXPORTER_OTLP_ENDPOINT;
+  const tracesEndpoint = env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
+  const logsEndpoint = env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT;
+  const metricsEndpoint = env.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT;
 
   const hasTraceExport = Boolean(endpoint || tracesEndpoint);
   const hasLogExport = Boolean(endpoint || logsEndpoint);
