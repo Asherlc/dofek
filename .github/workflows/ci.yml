@@ -754,7 +754,9 @@ jobs:
           key: stryker-v2-${{ github.head_ref || 'main' }}-${{ hashFiles(matrix.files) }}-${{ github.sha }}
           restore-keys: |
             stryker-v2-${{ github.head_ref || 'main' }}-${{ hashFiles(matrix.files) }}-
+            stryker-v2-${{ github.head_ref || 'main' }}-
             stryker-v2-main-${{ hashFiles(matrix.files) }}-
+            stryker-v2-main-
           save-always: true
       - name: Run Stryker
         run: pnpm test:mutation --mutate "${{ matrix.files }}"
