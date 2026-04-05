@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
+import {
+  DASHBOARD_GRID_PAIR_SECONDARIES,
+  DASHBOARD_GRID_PAIRS,
+} from "../lib/dashboardGridPairs.ts";
 import { DEFAULT_LAYOUT } from "../lib/dashboardLayoutContext.ts";
 import { UnitConverter } from "../lib/units.ts";
 import {
   buildSkinTempSeries,
   DASHBOARD_SECTION_IDS,
-  GRID_PAIR_SECONDARY,
-  GRID_PAIRS,
   healthMonitorSubtitle,
   spo2TempSectionConfig,
 } from "./Dashboard";
@@ -134,7 +136,7 @@ describe("DASHBOARD_SECTION_IDS", () => {
 
 describe("grid pair consistency", () => {
   it("every grid pair primary is in DASHBOARD_SECTION_IDS", () => {
-    for (const primary of Object.keys(GRID_PAIRS)) {
+    for (const primary of Object.keys(DASHBOARD_GRID_PAIRS)) {
       expect(
         DASHBOARD_SECTION_IDS.has(primary),
         `primary "${primary}" missing from DASHBOARD_SECTION_IDS`,
@@ -143,7 +145,7 @@ describe("grid pair consistency", () => {
   });
 
   it("every grid pair secondary is in DASHBOARD_SECTION_IDS", () => {
-    for (const secondary of Object.values(GRID_PAIRS)) {
+    for (const secondary of Object.values(DASHBOARD_GRID_PAIRS)) {
       expect(
         DASHBOARD_SECTION_IDS.has(secondary),
         `secondary "${secondary}" missing from DASHBOARD_SECTION_IDS`,
@@ -152,17 +154,17 @@ describe("grid pair consistency", () => {
   });
 
   it("every grid pair primary is in DEFAULT_ORDER", () => {
-    for (const primary of Object.keys(GRID_PAIRS)) {
+    for (const primary of Object.keys(DASHBOARD_GRID_PAIRS)) {
       expect(
         DEFAULT_LAYOUT.order.includes(primary),
-        `primary "${primary}" missing from DEFAULT_ORDER`,
+        `primary "${primary}" missing from DEFAULT_LAYOUT.order`,
       ).toBe(true);
     }
   });
 
   it("GRID_PAIR_SECONDARY is the inverse of GRID_PAIRS", () => {
-    for (const [primary, secondary] of Object.entries(GRID_PAIRS)) {
-      expect(GRID_PAIR_SECONDARY[secondary]).toBe(primary);
+    for (const [primary, secondary] of Object.entries(DASHBOARD_GRID_PAIRS)) {
+      expect(DASHBOARD_GRID_PAIR_SECONDARIES[secondary]).toBe(primary);
     }
   });
 });
