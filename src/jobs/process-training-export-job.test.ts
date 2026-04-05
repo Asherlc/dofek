@@ -159,6 +159,24 @@ describe("writeParquet", () => {
     const buffer = readFileSync(outputPath);
     expect(buffer.slice(0, 4).toString("ascii")).toBe("PAR1");
   });
+
+  it("yields to the event loop during large appender loops", async () => {
+    const setImmediateSpy = vi.spyOn(globalThis, "setImmediate");
+    try {
+      const rows = Array.from({ length: 10_001 }, (_, index) =>
+        makeSensorSampleRow({ scalar: index }),
+      );
+      const outputPath = join(testDir, "large.parquet");
+
+      await writeParquet(rows, outputPath);
+
+      expect(existsSync(outputPath)).toBe(true);
+      // 10001 rows → yield fires once at row 10000
+      expect(setImmediateSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      setImmediateSpy.mockRestore();
+    }
+  });
 });
 
 // ── Time filter tests ──
