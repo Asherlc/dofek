@@ -9,6 +9,7 @@ resource "null_resource" "deploy_config" {
     caddy_hash     = filemd5("${path.module}/../Caddyfile")
     collector_hash = filemd5("${path.module}/../otel-collector-config.yaml")
     deploy_hash    = filemd5("${path.module}/../deploy.sh")
+    config_hash    = filemd5("${path.module}/../../.env")
   }
 
   connection {
@@ -16,6 +17,11 @@ resource "null_resource" "deploy_config" {
     host  = var.server_ip
     user  = "root"
     agent = true
+  }
+
+  provisioner "file" {
+    source      = "${path.module}/../../.env"
+    destination = "/opt/dofek/config.env"
   }
 
   provisioner "file" {
