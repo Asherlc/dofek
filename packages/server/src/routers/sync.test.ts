@@ -134,8 +134,7 @@ import {
   isAuthError,
   logsInput,
   mapBullMqStateToSyncStatus,
-  REDACTED_ERROR_MESSAGE,
-  redactLogErrorMessage,
+  sanitizeLogErrorMessage,
   syncRouter,
   syncStatusInput,
   toJobId,
@@ -1102,14 +1101,20 @@ describe("syncRouter", () => {
     });
   });
 
-  describe("REDACTED_ERROR_MESSAGE", () => {
-    it("is a non-empty string constant", () => {
-      expect(typeof REDACTED_ERROR_MESSAGE).toBe("string");
-      expect(REDACTED_ERROR_MESSAGE.length).toBeGreaterThan(0);
+  describe("sanitizeLogErrorMessage", () => {
+    it("returns null when errorMessage is null", () => {
+      expect(sanitizeLogErrorMessage(null)).toBeNull();
     });
 
-    it("equals 'Details hidden'", () => {
-      expect(REDACTED_ERROR_MESSAGE).toBe("Details hidden");
+    it("returns null when errorMessage is empty string", () => {
+      expect(sanitizeLogErrorMessage("")).toBeNull();
+    });
+
+    it("passes through non-empty error messages", () => {
+      expect(sanitizeLogErrorMessage("some error")).toBe("some error");
+      expect(sanitizeLogErrorMessage("Connect API authentication failed")).toBe(
+        "Connect API authentication failed",
+      );
     });
   });
 
@@ -1159,29 +1164,18 @@ describe("syncRouter", () => {
 
       const result = await caller.logs({});
       expect(result).toHaveLength(1);
-      expect(result[0]?.errorMessage).toBe(REDACTED_ERROR_MESSAGE);
+      expect(result[0]?.errorMessage).toBe("provider stack trace here");
     });
   });
 
-  describe("redactLogErrorMessage", () => {
-    it("returns null when errorMessage is null", () => {
-      expect(redactLogErrorMessage(null)).toBeNull();
+  describe("sanitizeLogErrorMessage (additional cases)", () => {
+    it("preserves the original error string", () => {
+      expect(sanitizeLogErrorMessage("OAuth2 token expired")).toBe("OAuth2 token expired");
     });
 
-    it("returns null when errorMessage is empty string", () => {
-      expect(redactLogErrorMessage("")).toBeNull();
-    });
-
-    it("returns REDACTED_ERROR_MESSAGE for any non-empty string", () => {
-      expect(redactLogErrorMessage("some error")).toBe(REDACTED_ERROR_MESSAGE);
-      expect(redactLogErrorMessage("stack trace details")).toBe(REDACTED_ERROR_MESSAGE);
-    });
-
-    it("returns the exact constant (not a different string)", () => {
-      const result = redactLogErrorMessage("error");
-      expect(result).toBe("Details hidden");
-      expect(result).not.toBe("Error");
-      expect(result).not.toBe("");
+    it("returns null for falsy values", () => {
+      expect(sanitizeLogErrorMessage(null)).toBeNull();
+      expect(sanitizeLogErrorMessage("")).toBeNull();
     });
   });
 

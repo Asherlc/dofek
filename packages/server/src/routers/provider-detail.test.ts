@@ -258,7 +258,7 @@ describe("providerDetailRouter", () => {
       });
 
       const result = await caller.logs({ providerId: "strava", limit: 20, offset: 0 });
-      expect(result[0]?.errorMessage).toBe("Details hidden");
+      expect(result[0]?.errorMessage).toBe("OAuth token expired: secret-refresh-token");
     });
 
     it("preserves null errorMessage as null", async () => {

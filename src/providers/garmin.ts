@@ -1,6 +1,8 @@
 import { isIndoorCycling } from "@dofek/training/endurance-types";
+import { captureException } from "@sentry/node";
 import { and, eq } from "drizzle-orm";
 import {
+  GarminApiError,
   GarminConnectClient,
   type GarminTokens,
   parseActivityDetail,
@@ -139,6 +141,15 @@ async function saveSyncCursor(db: SyncDatabase, cursor: string, userId?: string)
       target: [userSettings.userId, userSettings.key],
       set: { value: { cursor }, updatedAt: new Date() },
     });
+}
+
+// ============================================================
+// Error helpers
+// ============================================================
+
+/** Returns true for "no data available" (204) responses, which are expected for some dates. */
+function isNoDataError(error: unknown): boolean {
+  return error instanceof GarminApiError && error.statusCode === 204;
 }
 
 // ============================================================
@@ -382,7 +393,7 @@ export class GarminProvider implements SyncProvider {
           const heartRateCount = await this.#syncConnectHeartRate(db, client, dates);
           return { recordCount: heartRateCount, result: heartRateCount };
         },
-        userId,
+        scopedUserId,
       );
       recordsSynced += count;
     } catch (err) {
@@ -486,8 +497,11 @@ export class GarminProvider implements SyncProvider {
           };
           await dualWriteToSensorSample(db, [metricRow], SOURCE_TYPE_API);
         }
-      } catch {
-        // Activity detail may not be available for all activities (manual entries, etc.)
+      } catch (error) {
+        if (!isNoDataError(error)) {
+          logger.warn(`[garmin] Activity detail fetch failed for ${raw.activityId}: ${error}`);
+          captureException(error, { tags: { provider: "garmin", operation: "activity_detail" } });
+        }
       }
 
       count++;
@@ -551,8 +565,11 @@ export class GarminProvider implements SyncProvider {
         }
 
         count++;
-      } catch {
-        // No sleep data for this date
+      } catch (error) {
+        if (!isNoDataError(error)) {
+          logger.warn(`[garmin] Sleep data fetch failed for ${date}: ${error}`);
+          captureException(error, { tags: { provider: "garmin", operation: "sleep" } });
+        }
       }
     }
 
@@ -581,16 +598,22 @@ export class GarminProvider implements SyncProvider {
           const hrvData = await client.getHrvSummary(date);
           const parsedHrv = parseHrvSummary(hrvData);
           hrv = parsedHrv.lastNightAvg ?? parsedHrv.lastNight;
-        } catch {
-          // HRV not available for this date
+        } catch (error) {
+          if (!isNoDataError(error)) {
+            logger.warn(`[garmin] HRV fetch failed for ${date}: ${error}`);
+            captureException(error, { tags: { provider: "garmin", operation: "hrv" } });
+          }
         }
 
         try {
           const trainingData = await client.getTrainingStatus(date);
           const parsedTraining = parseTrainingStatus(trainingData, date);
           vo2max = parsedTraining.vo2MaxRunning ?? parsedTraining.vo2MaxCycling;
-        } catch {
-          // Training status not available
+        } catch (error) {
+          if (!isNoDataError(error)) {
+            logger.warn(`[garmin] Training status fetch failed for ${date}: ${error}`);
+            captureException(error, { tags: { provider: "garmin", operation: "training_status" } });
+          }
         }
 
         await db
@@ -633,8 +656,11 @@ export class GarminProvider implements SyncProvider {
           });
 
         count++;
-      } catch {
-        // No daily summary for this date
+      } catch (error) {
+        if (!isNoDataError(error)) {
+          logger.warn(`[garmin] Daily summary fetch failed for ${date}: ${error}`);
+          captureException(error, { tags: { provider: "garmin", operation: "daily_metrics" } });
+        }
       }
     }
 
@@ -661,8 +687,11 @@ export class GarminProvider implements SyncProvider {
         await dualWriteToSensorSample(db, stressRows, SOURCE_TYPE_API);
 
         count += stressRows.length;
-      } catch {
-        // No stress data for this date
+      } catch (error) {
+        if (!isNoDataError(error)) {
+          logger.warn(`[garmin] Stress data fetch failed for ${date}: ${error}`);
+          captureException(error, { tags: { provider: "garmin", operation: "stress" } });
+        }
       }
     }
 
@@ -689,8 +718,11 @@ export class GarminProvider implements SyncProvider {
         await dualWriteToSensorSample(db, hrRows, SOURCE_TYPE_API);
 
         count += hrRows.length;
-      } catch {
-        // No heart rate data for this date
+      } catch (error) {
+        if (!isNoDataError(error)) {
+          logger.warn(`[garmin] Heart rate data fetch failed for ${date}: ${error}`);
+          captureException(error, { tags: { provider: "garmin", operation: "heart_rate" } });
+        }
       }
     }
 

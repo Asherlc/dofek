@@ -10,11 +10,8 @@ import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../t
 // Re-export for backward compatibility (used by settings router and tests)
 export { DISCONNECT_CHILD_TABLES, dataTypeEnum, tableInfo };
 
-const REDACTED_ERROR_MESSAGE = "Details hidden";
-
-function redactLogErrorMessage(errorMessage: string | null): string | null {
-  if (!errorMessage) return null;
-  return REDACTED_ERROR_MESSAGE;
+function sanitizeLogErrorMessage(errorMessage: string | null): string | null {
+  return errorMessage || null;
 }
 
 export const providerDetailRouter = router({
@@ -41,7 +38,7 @@ export const providerDetailRouter = router({
 
       return rows.map((row) => ({
         ...row,
-        errorMessage: redactLogErrorMessage(row.errorMessage),
+        errorMessage: sanitizeLogErrorMessage(row.errorMessage),
       }));
     }),
 

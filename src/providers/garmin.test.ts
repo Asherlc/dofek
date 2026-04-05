@@ -52,21 +52,29 @@ const mocks = vi.hoisted(() => {
   };
 });
 
-vi.mock("garmin-connect", () => ({
-  GarminConnectClient: {
-    signIn: mocks.signIn,
-    fromTokens: mocks.fromTokens,
-  },
-  parseConnectActivity: mocks.parseConnectActivity,
-  parseConnectSleep: mocks.parseConnectSleep,
-  parseConnectSleepStages: mocks.parseConnectSleepStages,
-  parseConnectDailySummary: mocks.parseConnectDailySummary,
-  parseHrvSummary: mocks.parseHrvSummary,
-  parseTrainingStatus: mocks.parseTrainingStatus,
-  parseStressTimeSeries: mocks.parseStressTimeSeries,
-  parseHeartRateTimeSeries: mocks.parseHeartRateTimeSeries,
-  parseActivityDetail: mocks.parseActivityDetail,
+vi.mock("@sentry/node", () => ({
+  captureException: vi.fn(),
 }));
+
+vi.mock("garmin-connect", async (importOriginal) => {
+  const original = await importOriginal<typeof import("garmin-connect")>();
+  return {
+    GarminApiError: original.GarminApiError,
+    GarminConnectClient: {
+      signIn: mocks.signIn,
+      fromTokens: mocks.fromTokens,
+    },
+    parseConnectActivity: mocks.parseConnectActivity,
+    parseConnectSleep: mocks.parseConnectSleep,
+    parseConnectSleepStages: mocks.parseConnectSleepStages,
+    parseConnectDailySummary: mocks.parseConnectDailySummary,
+    parseHrvSummary: mocks.parseHrvSummary,
+    parseTrainingStatus: mocks.parseTrainingStatus,
+    parseStressTimeSeries: mocks.parseStressTimeSeries,
+    parseHeartRateTimeSeries: mocks.parseHeartRateTimeSeries,
+    parseActivityDetail: mocks.parseActivityDetail,
+  };
+});
 
 vi.mock("../db/tokens.ts", () => ({
   loadTokens: mocks.loadTokens,
