@@ -29,8 +29,11 @@ case "${1:-sync}" in
   migrate)
     exec $NODE src/db/run-migrate.ts
     ;;
+  seed)
+    exec $NODE scripts/seed-dev-db.ts
+    ;;
   *)
-    echo "Unknown mode: $1 (expected 'web', 'sync', 'worker', or 'migrate')" >&2
+    echo "Unknown mode: $1 (expected 'web', 'sync', 'worker', 'migrate', or 'seed')" >&2
     exit 1
     ;;
 esac

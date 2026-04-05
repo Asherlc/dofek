@@ -1155,7 +1155,7 @@ jobs:
       - name: Publish OTA update
         working-directory: packages/mobile
         env:
-          EXPO_TOKEN: ${{ secrets.EXPO_ACCESS_TOKEN }}
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: npx eoas@2.3.16 publish --branch main --platform ios --nonInteractive
 
   deploy-config:

@@ -139,8 +139,8 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
   app.use("/api/webhooks", createWebhookRouter({ db, syncQueue }));
   app.use("/api/upload", createUploadRouter({ importQueue, db }));
   app.use("/api/export", createExportRouter({ db, exportQueue }));
-  // ── Dev-only: auto-login for seed database testing ──
-  if (process.env.NODE_ENV !== "production") {
+  // ── Seeded-login helper for local dev and preview environments ──
+  if (process.env.NODE_ENV !== "production" || process.env.ENABLE_DEV_LOGIN === "true") {
     app.get("/auth/dev-login", async (_req, res) => {
       const { setSessionCookie } = await import("./auth/cookies.ts");
       const rows = await db.execute<{ id: string; expires_at: Date }>(

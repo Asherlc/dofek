@@ -358,6 +358,23 @@ describe("createApp HTTP routes", () => {
   });
 
   describe("GET /auth/dev-login", () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    const originalEnableDevLogin = process.env.ENABLE_DEV_LOGIN;
+
+    afterEach(() => {
+      if (originalNodeEnv === undefined) {
+        delete process.env.NODE_ENV;
+      } else {
+        process.env.NODE_ENV = originalNodeEnv;
+      }
+
+      if (originalEnableDevLogin === undefined) {
+        delete process.env.ENABLE_DEV_LOGIN;
+      } else {
+        process.env.ENABLE_DEV_LOGIN = originalEnableDevLogin;
+      }
+    });
+
     it("returns 404 when no dev-session exists", async () => {
       const res = await fetch(`${baseUrl}/auth/dev-login`, { redirect: "manual" });
       expect(res.status).toBe(404);
@@ -365,7 +382,49 @@ describe("createApp HTTP routes", () => {
       expect(body).toContain("No dev-session found");
     });
 
+    it("returns 404 in production when preview login is not explicitly enabled", async () => {
+      process.env.NODE_ENV = "production";
+      delete process.env.ENABLE_DEV_LOGIN;
+
+      const fakeDb = createDatabaseFromEnv();
+      const app = createApp(fakeDb);
+      const { baseUrl: devUrl, close: devClose } = await startApp(app);
+      try {
+        const res = await fetch(`${devUrl}/auth/dev-login`, { redirect: "manual" });
+        expect(res.status).toBe(404);
+      } finally {
+        await devClose();
+      }
+    });
+
     it("sets session cookie and redirects when dev-session exists", async () => {
+      const fakeDb = createDatabaseFromEnv();
+      const expiresAt = new Date("2027-01-01");
+      vi.mocked(fakeDb.execute).mockResolvedValueOnce([
+        { id: "dev-session", expires_at: expiresAt },
+      ]);
+
+      const app = createApp(fakeDb);
+      const { baseUrl: devUrl, close: devClose } = await startApp(app);
+      try {
+        const res = await fetch(`${devUrl}/auth/dev-login`, { redirect: "manual" });
+        expect(res.status).toBe(302);
+        expect(res.headers.get("location")).toBe("/dashboard");
+        const { setSessionCookie } = await import("./auth/cookies.ts");
+        expect(vi.mocked(setSessionCookie)).toHaveBeenCalledWith(
+          expect.anything(),
+          "dev-session",
+          expiresAt,
+        );
+      } finally {
+        await devClose();
+      }
+    });
+
+    it("allows preview login in production when ENABLE_DEV_LOGIN=true", async () => {
+      process.env.NODE_ENV = "production";
+      process.env.ENABLE_DEV_LOGIN = "true";
+
       const fakeDb = createDatabaseFromEnv();
       const expiresAt = new Date("2027-01-01");
       vi.mocked(fakeDb.execute).mockResolvedValueOnce([
