@@ -108,6 +108,47 @@ jobs:
           echo "preview_url=$(terraform output -raw preview_url)" >> "$GITHUB_OUTPUT"
           echo "server_ip=$(terraform output -raw server_ip)" >> "$GITHUB_OUTPUT"
 
+      - name: Setup SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SERVER_IP: ${{ steps.apply.outputs.server_ip }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          for attempt in 1 2 3; do
+            tmp="$(mktemp)"
+            if ssh-keyscan -T 10 -H "$SERVER_IP" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
+              mv "$tmp" ~/.ssh/known_hosts
+              break
+            fi
+            rm -f "$tmp"
+            echo "ssh-keyscan attempt $attempt, retrying..."
+            sleep 10
+          done
+
+      - name: Redeploy services
+        env:
+          SERVER_IP: ${{ steps.apply.outputs.server_ip }}
+        run: |
+          # Pull latest images and restart services.
+          # Idempotent: on first deploy cloud-init already started services,
+          # on subsequent pushes this pulls the new PR-tagged image and recreates.
+          ssh root@"$SERVER_IP" bash -s <<'SCRIPT'
+            set -euo pipefail
+            cd /opt/dofek
+
+            # Wait for Docker to be installed (cloud-init may still be running on first deploy)
+            for i in $(seq 1 30); do
+              if command -v docker &>/dev/null; then break; fi
+              echo "Waiting for Docker install (attempt $i/30)..."
+              sleep 10
+            done
+
+            docker compose pull --quiet
+            docker compose up -d --remove-orphans --force-recreate
+          SCRIPT
+
       - name: Wait for Server Ready
         run: |
           URL="${{ steps.apply.outputs.preview_url }}"

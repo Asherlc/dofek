@@ -47,7 +47,9 @@ services:
       start_period: 30s
     depends_on:
       seed:
-        condition: service_completed_successfully
+        # Seed populates demo data but is not required for the app to function.
+        # Don't block the preview on seed failure — an empty DB is still usable.
+        condition: service_started
       db:
         condition: service_healthy
       redis:
