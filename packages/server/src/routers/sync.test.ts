@@ -134,7 +134,7 @@ import {
   isAuthError,
   logsInput,
   mapBullMqStateToSyncStatus,
-  sanitizeLogErrorMessage,
+  sanitizeErrorMessage,
   syncRouter,
   syncStatusInput,
   toJobId,
@@ -1101,18 +1101,18 @@ describe("syncRouter", () => {
     });
   });
 
-  describe("sanitizeLogErrorMessage", () => {
+  describe("sanitizeErrorMessage", () => {
     it("returns null when errorMessage is null", () => {
-      expect(sanitizeLogErrorMessage(null)).toBeNull();
+      expect(sanitizeErrorMessage(null)).toBeNull();
     });
 
     it("returns null when errorMessage is empty string", () => {
-      expect(sanitizeLogErrorMessage("")).toBeNull();
+      expect(sanitizeErrorMessage("")).toBeNull();
     });
 
     it("passes through non-empty error messages", () => {
-      expect(sanitizeLogErrorMessage("some error")).toBe("some error");
-      expect(sanitizeLogErrorMessage("Connect API authentication failed")).toBe(
+      expect(sanitizeErrorMessage("some error")).toBe("some error");
+      expect(sanitizeErrorMessage("Connect API authentication failed")).toBe(
         "Connect API authentication failed",
       );
     });
@@ -1168,14 +1168,14 @@ describe("syncRouter", () => {
     });
   });
 
-  describe("sanitizeLogErrorMessage (additional cases)", () => {
+  describe("sanitizeErrorMessage (additional cases)", () => {
     it("preserves the original error string", () => {
-      expect(sanitizeLogErrorMessage("OAuth2 token expired")).toBe("OAuth2 token expired");
+      expect(sanitizeErrorMessage("OAuth2 token expired")).toBe("OAuth2 token expired");
     });
 
     it("returns null for falsy values", () => {
-      expect(sanitizeLogErrorMessage(null)).toBeNull();
-      expect(sanitizeLogErrorMessage("")).toBeNull();
+      expect(sanitizeErrorMessage(null)).toBeNull();
+      expect(sanitizeErrorMessage("")).toBeNull();
     });
   });
 

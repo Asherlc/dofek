@@ -10,9 +10,7 @@ import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../t
 // Re-export for backward compatibility (used by settings router and tests)
 export { DISCONNECT_CHILD_TABLES, dataTypeEnum, tableInfo };
 
-function sanitizeLogErrorMessage(errorMessage: string | null): string | null {
-  return errorMessage || null;
-}
+import { sanitizeErrorMessage } from "../lib/sanitize-error.ts";
 
 export const providerDetailRouter = router({
   /** Paginated sync logs for a specific provider */
@@ -38,7 +36,7 @@ export const providerDetailRouter = router({
 
       return rows.map((row) => ({
         ...row,
-        errorMessage: sanitizeLogErrorMessage(row.errorMessage),
+        errorMessage: sanitizeErrorMessage(row.errorMessage),
       }));
     }),
 

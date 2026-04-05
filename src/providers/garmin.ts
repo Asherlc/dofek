@@ -152,6 +152,55 @@ function isNoDataError(error: unknown): boolean {
   return error instanceof GarminApiError && error.statusCode === 204;
 }
 
+/**
+ * Tracks unexpected errors within a sync operation (e.g., "sleep", "stress").
+ * Reports only the first error to Sentry to avoid noise when Garmin is down,
+ * and collects all errors for a summary message.
+ */
+class SyncErrorTracker {
+  readonly operation: string;
+  readonly errors: Array<{ context: string; error: unknown }> = [];
+  #sentryReported = false;
+
+  constructor(operation: string) {
+    this.operation = operation;
+  }
+
+  /** Record an error. Only the first error per operation is sent to Sentry. */
+  record(context: string, error: unknown): void {
+    if (isNoDataError(error)) return;
+
+    this.errors.push({ context, error });
+    logger.warn(`[garmin] ${this.operation} failed for ${context}: ${error}`);
+
+    if (!this.#sentryReported) {
+      captureException(error, {
+        tags: { provider: "garmin", operation: this.operation },
+        extra: { context },
+      });
+      this.#sentryReported = true;
+    }
+  }
+
+  get hasErrors(): boolean {
+    return this.errors.length > 0;
+  }
+
+  /** Throws a summary error if any unexpected errors were recorded. */
+  throwIfErrors(): void {
+    if (!this.hasErrors) return;
+    const count = this.errors.length;
+    const firstContext = this.errors[0]?.context ?? "unknown";
+    const firstMessage =
+      this.errors[0]?.error instanceof Error
+        ? this.errors[0].error.message
+        : String(this.errors[0]?.error);
+    throw new Error(
+      `${this.operation}: ${count} error(s), first at ${firstContext}: ${firstMessage}`,
+    );
+  }
+}
+
 // ============================================================
 // Provider
 // ============================================================
@@ -418,6 +467,7 @@ export class GarminProvider implements SyncProvider {
     // Fetch recent activities (paginated, most recent first)
     const activities = await client.getActivities(0, 50);
     let count = 0;
+    const detailErrors = new SyncErrorTracker("activity_detail");
 
     for (const raw of activities) {
       const parsed = parseConnectActivity(raw);
@@ -498,15 +548,14 @@ export class GarminProvider implements SyncProvider {
           await dualWriteToSensorSample(db, [metricRow], SOURCE_TYPE_API);
         }
       } catch (error) {
-        if (!isNoDataError(error)) {
-          logger.warn(`[garmin] Activity detail fetch failed for ${raw.activityId}: ${error}`);
-          captureException(error, { tags: { provider: "garmin", operation: "activity_detail" } });
-        }
+        // Activity detail is non-critical — don't fail the sync, but track errors
+        detailErrors.record(String(raw.activityId), error);
       }
 
       count++;
     }
 
+    // Don't throw for detail errors — activity metadata is still synced
     return count;
   }
 
@@ -516,6 +565,7 @@ export class GarminProvider implements SyncProvider {
     dates: string[],
   ): Promise<number> {
     let count = 0;
+    const tracker = new SyncErrorTracker("sleep");
 
     for (const date of dates) {
       try {
@@ -566,12 +616,11 @@ export class GarminProvider implements SyncProvider {
 
         count++;
       } catch (error) {
-        if (!isNoDataError(error)) {
-          logger.warn(`[garmin] Sleep data fetch failed for ${date}: ${error}`);
-          captureException(error, { tags: { provider: "garmin", operation: "sleep" } });
-        }
+        tracker.record(date, error);
       }
     }
+
+    tracker.throwIfErrors();
 
     return count;
   }
@@ -582,6 +631,10 @@ export class GarminProvider implements SyncProvider {
     dates: string[],
   ): Promise<number> {
     let count = 0;
+    const tracker = new SyncErrorTracker("daily_metrics");
+    // HRV/training are enrichment — track separately but don't fail the sync
+    const hrvTracker = new SyncErrorTracker("hrv");
+    const trainingTracker = new SyncErrorTracker("training_status");
 
     for (const date of dates) {
       try {
@@ -599,10 +652,7 @@ export class GarminProvider implements SyncProvider {
           const parsedHrv = parseHrvSummary(hrvData);
           hrv = parsedHrv.lastNightAvg ?? parsedHrv.lastNight;
         } catch (error) {
-          if (!isNoDataError(error)) {
-            logger.warn(`[garmin] HRV fetch failed for ${date}: ${error}`);
-            captureException(error, { tags: { provider: "garmin", operation: "hrv" } });
-          }
+          hrvTracker.record(date, error);
         }
 
         try {
@@ -610,10 +660,7 @@ export class GarminProvider implements SyncProvider {
           const parsedTraining = parseTrainingStatus(trainingData, date);
           vo2max = parsedTraining.vo2MaxRunning ?? parsedTraining.vo2MaxCycling;
         } catch (error) {
-          if (!isNoDataError(error)) {
-            logger.warn(`[garmin] Training status fetch failed for ${date}: ${error}`);
-            captureException(error, { tags: { provider: "garmin", operation: "training_status" } });
-          }
+          trainingTracker.record(date, error);
         }
 
         await db
@@ -657,13 +704,11 @@ export class GarminProvider implements SyncProvider {
 
         count++;
       } catch (error) {
-        if (!isNoDataError(error)) {
-          logger.warn(`[garmin] Daily summary fetch failed for ${date}: ${error}`);
-          captureException(error, { tags: { provider: "garmin", operation: "daily_metrics" } });
-        }
+        tracker.record(date, error);
       }
     }
 
+    tracker.throwIfErrors();
     return count;
   }
 
@@ -673,6 +718,7 @@ export class GarminProvider implements SyncProvider {
     dates: string[],
   ): Promise<number> {
     let count = 0;
+    const tracker = new SyncErrorTracker("stress");
 
     for (const date of dates) {
       try {
@@ -688,13 +734,11 @@ export class GarminProvider implements SyncProvider {
 
         count += stressRows.length;
       } catch (error) {
-        if (!isNoDataError(error)) {
-          logger.warn(`[garmin] Stress data fetch failed for ${date}: ${error}`);
-          captureException(error, { tags: { provider: "garmin", operation: "stress" } });
-        }
+        tracker.record(date, error);
       }
     }
 
+    tracker.throwIfErrors();
     return count;
   }
 
@@ -704,6 +748,7 @@ export class GarminProvider implements SyncProvider {
     dates: string[],
   ): Promise<number> {
     let count = 0;
+    const tracker = new SyncErrorTracker("heart_rate");
 
     for (const date of dates) {
       try {
@@ -719,12 +764,11 @@ export class GarminProvider implements SyncProvider {
 
         count += hrRows.length;
       } catch (error) {
-        if (!isNoDataError(error)) {
-          logger.warn(`[garmin] Heart rate data fetch failed for ${date}: ${error}`);
-          captureException(error, { tags: { provider: "garmin", operation: "heart_rate" } });
-        }
+        tracker.record(date, error);
       }
     }
+
+    tracker.throwIfErrors();
 
     return count;
   }

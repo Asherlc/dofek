@@ -50,9 +50,8 @@ const syncJobDataSchema = z.object({
   sinceDays: z.number().optional(),
 });
 
-export function sanitizeLogErrorMessage(errorMessage: string | null): string | null {
-  return errorMessage || null;
-}
+import { sanitizeErrorMessage } from "../lib/sanitize-error.ts";
+export { sanitizeErrorMessage };
 
 export function toJobId(id: string | number | undefined, providerId: string): string {
   return id === undefined ? `job-${providerId}-${Date.now()}` : String(id);
@@ -385,7 +384,7 @@ export const syncRouter = router({
 
       return rows.map((row) => ({
         ...row,
-        errorMessage: sanitizeLogErrorMessage(row.errorMessage),
+        errorMessage: sanitizeErrorMessage(row.errorMessage),
       }));
     }),
 
