@@ -420,7 +420,8 @@
     "otlphttp",
     "otelcol",
     "WEUR",
-    "asherlc"
+    "asherlc",
+    "apikey"
   ],
   "flagWords": [],
   "useGitignore": false,
