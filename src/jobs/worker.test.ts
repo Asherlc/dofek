@@ -237,97 +237,90 @@ describe("worker module", () => {
   // ── Processor callback tests ──
   // Invoke each worker's processor to verify it delegates to the correct job handler.
 
-  it("per-provider sync processor delegates to processSyncJob", async () => {
+  /**
+   * Invoke the processor function registered for a given queue name with mock job data.
+   * Uses Reflect.apply to call the BullMQ Processor without needing a full Job instance.
+   */
+  async function invokeProcessor(
+    queueName: string,
+    jobData: Record<string, unknown>,
+  ): Promise<void> {
     const { Worker } = await import("bullmq");
+    const call = vi.mocked(Worker).mock.calls.find((workerCall) => workerCall[0] === queueName);
+    const processor = call?.[1];
+    if (typeof processor !== "function") {
+      throw new Error(`No processor function found for queue "${queueName}"`);
+    }
+    await Reflect.apply(processor, undefined, [{ data: jobData }]);
+  }
+
+  it("per-provider sync processor delegates to processSyncJob", async () => {
     const { processSyncJob } = await import("./process-sync-job.ts");
     vi.mocked(processSyncJob).mockClear();
 
-    const stravaCall = vi.mocked(Worker).mock.calls.find((call) => call[0] === "sync-strava");
-    const processor = stravaCall?.[1];
-    expect(processor).toBeDefined();
-    await processor?.({ data: { providerId: "strava", userId: "user-1" } });
+    await invokeProcessor("sync-strava", { providerId: "strava", userId: "user-1" });
 
     expect(processSyncJob).toHaveBeenCalled();
   });
 
   it("legacy sync processor delegates to processSyncJob and logs warning", async () => {
-    const { Worker } = await import("bullmq");
     const { processSyncJob } = await import("./process-sync-job.ts");
     const { logger } = await import("../logger.ts");
     vi.mocked(processSyncJob).mockClear();
     vi.mocked(logger.warn).mockClear();
 
-    const legacyCall = vi.mocked(Worker).mock.calls.find((call) => call[0] === "sync-queue");
-    const processor = legacyCall?.[1];
-    expect(processor).toBeDefined();
-    await processor?.({ data: { providerId: "wahoo", userId: "user-1" } });
+    await invokeProcessor("sync-queue", { providerId: "wahoo", userId: "user-1" });
 
     expect(processSyncJob).toHaveBeenCalled();
     expect(logger.warn).toHaveBeenCalled();
   });
 
   it("import processor delegates to processImportJob", async () => {
-    const { Worker } = await import("bullmq");
     const { processImportJob } = await import("./process-import-job.ts");
     vi.mocked(processImportJob).mockClear();
 
-    const importCall = vi.mocked(Worker).mock.calls.find((call) => call[0] === "import-queue");
-    const processor = importCall?.[1];
-    await processor?.({
-      data: { filePath: "/tmp/f", since: "2026-01-01", userId: "u", importType: "apple-health" },
+    await invokeProcessor("import-queue", {
+      filePath: "/tmp/f",
+      since: "2026-01-01",
+      userId: "u",
+      importType: "apple-health",
     });
 
     expect(processImportJob).toHaveBeenCalled();
   });
 
   it("export processor delegates to processExportJob", async () => {
-    const { Worker } = await import("bullmq");
     const { processExportJob } = await import("./process-export-job.ts");
     vi.mocked(processExportJob).mockClear();
 
-    const exportCall = vi.mocked(Worker).mock.calls.find((call) => call[0] === "export-queue");
-    const processor = exportCall?.[1];
-    await processor?.({ data: { userId: "u", outputPath: "/tmp/out.zip" } });
+    await invokeProcessor("export-queue", { userId: "u", outputPath: "/tmp/out.zip" });
 
     expect(processExportJob).toHaveBeenCalled();
   });
 
   it("scheduled-sync processor delegates to processScheduledSyncJob", async () => {
-    const { Worker } = await import("bullmq");
     const { processScheduledSyncJob } = await import("./process-scheduled-sync-job.ts");
     vi.mocked(processScheduledSyncJob).mockClear();
 
-    const scheduledCall = vi
-      .mocked(Worker)
-      .mock.calls.find((call) => call[0] === "scheduled-sync-queue");
-    const processor = scheduledCall?.[1];
-    await processor?.({ data: { type: "scheduled-sync-all" } });
+    await invokeProcessor("scheduled-sync-queue", { type: "scheduled-sync-all" });
 
     expect(processScheduledSyncJob).toHaveBeenCalled();
   });
 
   it("post-sync processor delegates to processPostSyncJob", async () => {
-    const { Worker } = await import("bullmq");
     const { processPostSyncJob } = await import("./process-post-sync-job.ts");
     vi.mocked(processPostSyncJob).mockClear();
 
-    const postSyncCall = vi.mocked(Worker).mock.calls.find((call) => call[0] === "post-sync-queue");
-    const processor = postSyncCall?.[1];
-    await processor?.({ data: { userId: "u" } });
+    await invokeProcessor("post-sync-queue", { userId: "u" });
 
     expect(processPostSyncJob).toHaveBeenCalled();
   });
 
   it("training-export processor delegates to processTrainingExportJob", async () => {
-    const { Worker } = await import("bullmq");
     const { processTrainingExportJob } = await import("./process-training-export-job.ts");
     vi.mocked(processTrainingExportJob).mockClear();
 
-    const trainingExportCall = vi
-      .mocked(Worker)
-      .mock.calls.find((call) => call[0] === "training-export-queue");
-    const processor = trainingExportCall?.[1];
-    await processor?.({ data: {} });
+    await invokeProcessor("training-export-queue", {});
 
     expect(processTrainingExportJob).toHaveBeenCalled();
   });
