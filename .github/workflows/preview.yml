@@ -155,12 +155,31 @@ jobs:
 
             # Fail fast on cloud-init failure
             if [ "$ci_step" = "failed" ]; then
+              echo ""
               echo "::error::cloud-init reported failure"
+
+              # Read failure_reason label
+              reason="$(echo "$server_json" | jq -r '.server.labels.failure_reason // "unknown"')"
+              echo "Failure reason: $reason"
+              echo ""
+
+              # Try to fetch full diagnostics via Hetzner API (server metadata)
+              echo "=== Server Actions ==="
+              curl -sf -H "$AUTH" "$HETZNER_API/servers/$SERVER_ID/actions?sort=started:desc&per_page=5" 2>/dev/null \
+                | jq -r '.actions[] | "[" + .started + "] " + .command + " " + .status + " " + (.progress|tostring) + "%"' 2>/dev/null || echo "  (unavailable)"
+
               exit 1
             fi
             sleep 10
           done
-          echo "::error::Server did not become reachable within 10 minutes (cloud-init=$ci_step)"
+
+          echo ""
+          echo "::error::Server did not become reachable within 10 minutes"
+          echo "Final state: server=$hetzner_status | cloud-init=$ci_step"
+          echo ""
+          echo "=== Server Actions ==="
+          curl -sf -H "$AUTH" "$HETZNER_API/servers/$SERVER_ID/actions?sort=started:desc&per_page=5" 2>/dev/null \
+            | jq -r '.actions[] | "[" + .started + "] " + .command + " " + .status + " " + (.progress|tostring) + "%"' 2>/dev/null || echo "  (unavailable)"
           exit 1
 
       - name: Comment PR with Preview URL
