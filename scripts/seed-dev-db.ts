@@ -104,7 +104,6 @@ async function seedData() {
   // Clear existing seed data (idempotent re-runs)
   await sql`DELETE FROM fitness.metric_stream WHERE provider_id IN ('whoop', 'apple_health')`;
   await sql`DELETE FROM fitness.sleep_session WHERE provider_id IN ('whoop', 'apple_health')`;
-  await sql`DELETE FROM fitness.cardio_activity WHERE provider_id IN ('whoop', 'apple_health')`;
   await sql`DELETE FROM fitness.activity WHERE provider_id IN ('whoop', 'apple_health')`;
   await sql`DELETE FROM fitness.daily_metrics WHERE provider_id IN ('whoop', 'apple_health')`;
   await sql`DELETE FROM fitness.nutrition_daily WHERE provider_id IN ('whoop', 'apple_health')`;
@@ -261,13 +260,6 @@ async function seedData() {
 				${activityName}
 			) RETURNING id
 		`;
-    // cardio_activity FK required by metric_stream
-    await sql`
-			INSERT INTO fitness.cardio_activity (id, provider_id, external_id, activity_type, started_at, ended_at, name)
-			VALUES (${activityId}, 'whoop', ${`act-${daysAgo}`}, ${activityType}, ${startedAt}, ${endedAt}, ${activityName})
-			ON CONFLICT DO NOTHING
-		`;
-
     // Seed metric_stream samples so activity_summary computes avg_hr / max_hr
     const baseHr = activityType === "strength_training" ? randInt(100, 120) : randInt(130, 155);
     const sampleCount = Math.floor(durationMin / 5); // one sample every 5 min
@@ -388,7 +380,20 @@ function randFloat(min: number, max: number, decimals: number): number {
 
 async function main() {
   console.log("Seeding development database...\n");
-  await applyMigrations();
+
+  // Skip migrations if the schema already exists (e.g., web container already ran them).
+  // This avoids "relation already exists" errors when seed runs after web in Docker Compose.
+  const [{ exists: schemaExists }] = await sql`
+    SELECT EXISTS (
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'fitness' AND table_name = 'activity'
+    ) AS exists`;
+  if (schemaExists) {
+    console.log("Schema already exists — skipping migrations (web already applied them)");
+  } else {
+    await applyMigrations();
+  }
+
   await seedData();
   await refreshViews();
 

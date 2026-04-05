@@ -2,6 +2,7 @@ import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { dateWindowEnd, dateWindowStart, timestampWindowStart } from "../lib/date-window.ts";
+import { sleepNightDate } from "../lib/sql-fragments.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 
@@ -148,7 +149,7 @@ export class AnomalyDetectionRepository {
           ),
           sleep_raw AS (
             SELECT
-              (started_at AT TIME ZONE ${this.#timezone})::date AS date,
+              ${sleepNightDate(this.#timezone)} AS date,
               duration_minutes
             FROM fitness.v_sleep
             WHERE user_id = ${this.#userId}

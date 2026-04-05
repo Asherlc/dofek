@@ -1,10 +1,12 @@
 #cloud-config
+# commit: ${commit_sha}
 
 package_update: true
 
 packages:
   - ca-certificates
   - curl
+  - jq
 
 write_files:
   - path: /opt/dofek/docker-compose.yml
@@ -17,13 +19,66 @@ write_files:
     content: |
       ${indent(6, caddy_content)}
 
+  # Helper script to update the cloud_init label on this server via Hetzner API.
+  # CI polls this label to show real-time provisioning progress.
+  - path: /usr/local/bin/set-init-step
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      STEP="$1"
+      SERVER_ID=$(curl -sf http://169.254.169.254/hetzner/v1/metadata/instance-id)
+      curl -sf -X PUT "https://api.hetzner.cloud/v1/servers/$SERVER_ID" \
+        -H "Authorization: Bearer ${hcloud_token}" \
+        -H "Content-Type: application/json" \
+        -d "{\"labels\":{\"purpose\":\"preview\",\"pr_number\":\"${pr_number}\",\"managed_by\":\"terraform\",\"cloud_init\":\"$STEP\"}}" \
+        > /dev/null 2>&1 || true
+
 runcmd:
-  # Install Docker from the official apt repository (not curl|sh) for reproducibility
+  - set-init-step "installing-docker"
   - install -m 0755 -d /etc/apt/keyrings
   - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
   - chmod a+r /etc/apt/keyrings/docker.asc
   - echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list
   - apt-get update
   - apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+  - set-init-step "logging-into-ghcr"
   - echo '${ghcr_token}' | docker login ghcr.io -u ${ghcr_username} --password-stdin
+  - set-init-step "pulling-images"
+  - cd /opt/dofek && docker compose pull --quiet
+  - set-init-step "starting-services"
   - cd /opt/dofek && docker compose up -d
+  - set-init-step "waiting-for-healthy"
+  # Give containers up to 60s to pass their health checks.
+  # On failure, write container status + last log line to a label so CI can read it.
+  - |
+    for i in $(seq 1 12); do
+      if docker compose -f /opt/dofek/docker-compose.yml ps --format json | jq -e 'select(.Health == "healthy" and .Name == "dofek-web-1")' > /dev/null 2>&1; then
+        set-init-step "done"
+        exit 0
+      fi
+      sleep 5
+    done
+
+    # Dump container status to /opt/dofek/diagnostics.txt so CI can read it
+    {
+      echo "=== Container Status ==="
+      docker compose -f /opt/dofek/docker-compose.yml ps -a 2>&1
+      echo ""
+      for svc in web seed caddy; do
+        echo "=== Logs: $svc (last 20 lines) ==="
+        docker compose -f /opt/dofek/docker-compose.yml logs --tail=20 "$svc" 2>&1
+        echo ""
+      done
+    } > /opt/dofek/diagnostics.txt 2>&1
+
+    # Write a truncated summary to a Hetzner label (63 char limit).
+    # Get the first non-healthy container's status for the label.
+    REASON="$(docker compose -f /opt/dofek/docker-compose.yml ps -a --format '{{.Name}} {{.Status}}' 2>/dev/null \
+      | grep -v healthy | head -1 | cut -c1-63)"
+    SERVER_ID=$(curl -sf http://169.254.169.254/hetzner/v1/metadata/instance-id)
+    curl -sf -X PUT "https://api.hetzner.cloud/v1/servers/$SERVER_ID" \
+      -H "Authorization: Bearer ${hcloud_token}" \
+      -H "Content-Type: application/json" \
+      -d "$(jq -nc --arg r "$REASON" '{labels:{purpose:"preview",pr_number:"${pr_number}",managed_by:"terraform",cloud_init:"failed",failure_reason:$r}}')" \
+      > /dev/null 2>&1 || true
+    set-init-step "failed"

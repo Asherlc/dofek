@@ -17,17 +17,6 @@ services:
       web:
         condition: service_healthy
 
-  seed:
-    image: ${server_image}
-    command: seed
-    restart: "no"
-    environment:
-      - DATABASE_URL=postgres://health:health@db:5432/health
-      - NODE_ENV=production
-    depends_on:
-      db:
-        condition: service_healthy
-
   web:
     image: ${server_image}
     command: web
@@ -46,11 +35,22 @@ services:
       retries: 5
       start_period: 30s
     depends_on:
-      seed:
-        condition: service_completed_successfully
       db:
         condition: service_healthy
       redis:
+        condition: service_healthy
+
+  # Seed runs AFTER web is healthy (migrations complete). It only inserts
+  # demo data — if it fails the preview still works, just with an empty DB.
+  seed:
+    image: ${server_image}
+    command: seed
+    restart: "no"
+    environment:
+      - DATABASE_URL=postgres://health:health@db:5432/health
+      - NODE_ENV=production
+    depends_on:
+      web:
         condition: service_healthy
 
   redis:

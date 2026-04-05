@@ -13,6 +13,7 @@ import {
   endDateSchema,
   timestampWindowStart,
 } from "../lib/date-window.ts";
+import { sleepNightDate } from "../lib/sql-fragments.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
@@ -106,7 +107,7 @@ export const recoveryRouter = router({
         consistencyRowSchema,
         sql`WITH raw_sleep AS (
               SELECT
-                (started_at AT TIME ZONE ${tz})::date AS date,
+                ${sleepNightDate(tz)} AS date,
                 EXTRACT(HOUR FROM started_at AT TIME ZONE ${tz}) + EXTRACT(MINUTE FROM started_at AT TIME ZONE ${tz}) / 60.0 AS bedtime_hour,
                 EXTRACT(HOUR FROM ended_at AT TIME ZONE ${tz}) + EXTRACT(MINUTE FROM ended_at AT TIME ZONE ${tz}) / 60.0 AS waketime_hour,
                 duration_minutes
@@ -327,7 +328,7 @@ export const recoveryRouter = router({
         sleepRowSchema,
         sql`WITH raw_sleep AS (
               SELECT
-                (started_at AT TIME ZONE ${tz})::date AS date,
+                ${sleepNightDate(tz)} AS date,
                 duration_minutes,
                 -- Actual time asleep: for Apple Health, duration = in-bed time,
                 -- so derive sleep time from stages. Other providers already exclude awake.
@@ -614,7 +615,7 @@ export const recoveryRouter = router({
           z.object({ efficiency_pct: z.number().nullable() }),
           sql`
             WITH raw_sleep AS (
-              SELECT (started_at AT TIME ZONE ${ctx.timezone})::date AS date,
+              SELECT ${sleepNightDate(ctx.timezone)} AS date,
                 efficiency_pct, started_at, duration_minutes
               FROM fitness.v_sleep
               WHERE user_id = ${ctx.userId}

@@ -6,6 +6,7 @@ import {
   endDateSchema,
   timestampWindowStart,
 } from "../lib/date-window.ts";
+import { sleepNightDate } from "../lib/sql-fragments.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
@@ -115,7 +116,7 @@ export const weeklyReportRouter = router({
             ),
             raw_sleep AS (
               SELECT
-                (started_at AT TIME ZONE ${ctx.timezone})::date AS date,
+                ${sleepNightDate(ctx.timezone)} AS date,
                 duration_minutes
               FROM fitness.v_sleep
               WHERE user_id = ${ctx.userId}

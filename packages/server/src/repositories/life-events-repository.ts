@@ -1,6 +1,7 @@
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { sleepNightDate } from "../lib/sql-fragments.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 
 // ---------------------------------------------------------------------------
@@ -227,11 +228,11 @@ export class LifeEventsRepository {
         sql`
 				WITH before_raw AS (
 					SELECT 'before' as period,
-						(started_at AT TIME ZONE ${this.#timezone})::date AS sleep_date,
+						${sleepNightDate(this.#timezone)} AS sleep_date,
 						duration_minutes, deep_minutes, rem_minutes, efficiency_pct
 					FROM fitness.v_sleep
 					WHERE user_id = ${this.#userId}
-						AND (started_at AT TIME ZONE ${this.#timezone})::date BETWEEN (${startDate}::date - ${windowDays}::int) AND (${startDate}::date - 1)
+						AND ${sleepNightDate(this.#timezone)} BETWEEN (${startDate}::date - ${windowDays}::int) AND (${startDate}::date - 1)
 						AND NOT is_nap
 				),
 				before_sleep AS (
@@ -241,16 +242,16 @@ export class LifeEventsRepository {
 				),
 				after_raw AS (
 					SELECT 'after' as period,
-						(started_at AT TIME ZONE ${this.#timezone})::date AS sleep_date,
+						${sleepNightDate(this.#timezone)} AS sleep_date,
 						duration_minutes, deep_minutes, rem_minutes, efficiency_pct
 					FROM fitness.v_sleep
 					WHERE user_id = ${this.#userId}
 						AND ${
               endDate
                 ? endDate === "NOW()"
-                  ? sql`(started_at AT TIME ZONE ${this.#timezone})::date BETWEEN ${startDate}::date AND CURRENT_DATE`
-                  : sql`(started_at AT TIME ZONE ${this.#timezone})::date BETWEEN ${startDate}::date AND ${endDate}::date`
-                : sql`(started_at AT TIME ZONE ${this.#timezone})::date BETWEEN ${startDate}::date AND (${startDate}::date + ${windowDays}::int)`
+                  ? sql`${sleepNightDate(this.#timezone)} BETWEEN ${startDate}::date AND CURRENT_DATE`
+                  : sql`${sleepNightDate(this.#timezone)} BETWEEN ${startDate}::date AND ${endDate}::date`
+                : sql`${sleepNightDate(this.#timezone)} BETWEEN ${startDate}::date AND (${startDate}::date + ${windowDays}::int)`
             }
 						AND NOT is_nap
 				),
