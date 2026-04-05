@@ -2,6 +2,7 @@ import { scoreToYearsDelta } from "@dofek/scoring/healthspan-years";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { dateWindowStart, endDateSchema, timestampWindowStart } from "../lib/date-window.ts";
+import { sleepNightDate } from "../lib/sql-fragments.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
@@ -179,7 +180,7 @@ export const healthspanRouter = router({
         rawRowSchema,
         sql`WITH sleep_raw AS (
               SELECT
-                (started_at AT TIME ZONE ${ctx.timezone})::date AS date,
+                ${sleepNightDate(ctx.timezone)} AS date,
                 duration_minutes,
                 EXTRACT(HOUR FROM started_at AT TIME ZONE ${ctx.timezone}) * 60 + EXTRACT(MINUTE FROM started_at AT TIME ZONE ${ctx.timezone}) AS bedtime_minutes
               FROM fitness.v_sleep

@@ -99,6 +99,7 @@ jobs:
           terraform apply -auto-approve \
             -var="pr_number=${{ github.event.number }}" \
             -var="server_image_tag=pr-${{ github.event.number }}" \
+            -var="commit_sha=${{ github.sha }}" \
             -var="hcloud_token=${{ secrets.HCLOUD_TOKEN }}" \
             -var="cloudflare_zone_id=${{ secrets.CLOUDFLARE_ZONE_ID }}" \
             -var="ghcr_username=${{ github.repository_owner }}" \
@@ -109,19 +110,77 @@ jobs:
           echo "server_ip=$(terraform output -raw server_ip)" >> "$GITHUB_OUTPUT"
 
       - name: Wait for Server Ready
+        env:
+          SERVER_IP: ${{ steps.apply.outputs.server_ip }}
+          HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+          SERVER_NAME: dofek-preview-pr-${{ github.event.number }}
         run: |
           URL="${{ steps.apply.outputs.preview_url }}"
-          echo "Waiting for $URL to become reachable..."
+          echo "=== Preview Health Check ==="
+          echo "Server: $SERVER_NAME ($SERVER_IP)"
+          echo "URL:    $URL"
+          echo ""
+
+          HETZNER_API="https://api.hetzner.cloud/v1"
+          AUTH="Authorization: Bearer $HCLOUD_TOKEN"
+
+          # Get the server ID for actions API
+          SERVER_ID="$(curl -sf -H "$AUTH" "$HETZNER_API/servers?name=$SERVER_NAME" | jq -r '.servers[0].id // empty')"
+          echo "Hetzner server ID: $SERVER_ID"
+          echo ""
+
+          prev_step=""
           for i in $(seq 1 60); do
-            status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "$URL/healthz" 2>/dev/null || echo 000)"
-            if [ "$status" -ge 200 ] && [ "$status" -lt 400 ]; then
-              echo "Server is ready (HTTP $status)!"
+            # 1. Check HTTP health — are we done?
+            http="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "$URL/healthz" 2>/dev/null || echo 000)"
+            if [ "$http" -ge 200 ] && [ "$http" -lt 400 ]; then
+              echo "✓ Server is ready (HTTP $http)"
               exit 0
             fi
-            echo "Attempt $i/60 — got HTTP $status, waiting 10s..."
+
+            # 2. Read cloud-init step from server labels
+            server_json="$(curl -sf -H "$AUTH" "$HETZNER_API/servers/$SERVER_ID" 2>/dev/null)"
+            ci_step="$(echo "$server_json" | jq -r '.server.labels.cloud_init // "pending"')"
+            hetzner_status="$(echo "$server_json" | jq -r '.server.status // "unknown"')"
+
+            # 3. Read latest Hetzner action (create_server, start_server, etc.)
+            latest_action="$(curl -sf -H "$AUTH" "$HETZNER_API/servers/$SERVER_ID/actions?sort=started:desc&per_page=1" 2>/dev/null \
+              | jq -r '.actions[0] | "\(.command) \(.status) \(.progress)%"' 2>/dev/null || echo "unknown")"
+
+            # Only log when something changes, or every 5th attempt
+            if [ "$ci_step" != "$prev_step" ] || (( i % 5 == 0 )); then
+              echo "[$(date -u +%H:%M:%S)] server=$hetzner_status | cloud-init=$ci_step | action=$latest_action | HTTP=$http"
+              prev_step="$ci_step"
+            fi
+
+            # Fail fast on cloud-init failure
+            if [ "$ci_step" = "failed" ]; then
+              echo ""
+              echo "::error::cloud-init reported failure"
+
+              # Read failure_reason label
+              reason="$(echo "$server_json" | jq -r '.server.labels.failure_reason // "unknown"')"
+              echo "Failure reason: $reason"
+              echo ""
+
+              # Try to fetch full diagnostics via Hetzner API (server metadata)
+              echo "=== Server Actions ==="
+              curl -sf -H "$AUTH" "$HETZNER_API/servers/$SERVER_ID/actions?sort=started:desc&per_page=5" 2>/dev/null \
+                | jq -r '.actions[] | "[" + .started + "] " + .command + " " + .status + " " + (.progress|tostring) + "%"' 2>/dev/null || echo "  (unavailable)"
+
+              exit 1
+            fi
             sleep 10
           done
-          echo "::warning::Server did not become reachable within 10 minutes"
+
+          echo ""
+          echo "::error::Server did not become reachable within 10 minutes"
+          echo "Final state: server=$hetzner_status | cloud-init=$ci_step"
+          echo ""
+          echo "=== Server Actions ==="
+          curl -sf -H "$AUTH" "$HETZNER_API/servers/$SERVER_ID/actions?sort=started:desc&per_page=5" 2>/dev/null \
+            | jq -r '.actions[] | "[" + .started + "] " + .command + " " + .status + " " + (.progress|tostring) + "%"' 2>/dev/null || echo "  (unavailable)"
+          exit 1
 
       - name: Comment PR with Preview URL
         uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043 # v4
@@ -176,6 +235,7 @@ jobs:
           terraform destroy -auto-approve \
             -var="pr_number=${{ github.event.number }}" \
             -var="server_image_tag=pr-${{ github.event.number }}" \
+            -var="commit_sha=destroy" \
             -var="hcloud_token=${{ secrets.HCLOUD_TOKEN }}" \
             -var="cloudflare_zone_id=${{ secrets.CLOUDFLARE_ZONE_ID }}" \
             -var="ghcr_username=${{ github.repository_owner }}" \
@@ -277,6 +337,7 @@ jobs:
                 terraform destroy -auto-approve \
                   -var="pr_number=$PR_NUM" \
                   -var="server_image_tag=pr-$PR_NUM" \
+                  -var="commit_sha=cleanup" \
                   -var="hcloud_token=${{ secrets.HCLOUD_TOKEN }}" \
                   -var="cloudflare_zone_id=${{ secrets.CLOUDFLARE_ZONE_ID }}" \
                   -var="ghcr_username=${{ github.repository_owner }}" \

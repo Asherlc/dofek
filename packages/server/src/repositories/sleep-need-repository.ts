@@ -7,6 +7,7 @@ import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { dateWindowStart, timestampWindowStart } from "../lib/date-window.ts";
+import { sleepNightDate } from "../lib/sql-fragments.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 
 // ---------------------------------------------------------------------------
@@ -96,7 +97,7 @@ export class SleepNeedRepository {
       sleepNeedRowSchema,
       sql`WITH sleep_raw AS (
             SELECT
-              (started_at AT TIME ZONE ${this.#timezone})::date AS date,
+              ${sleepNightDate(this.#timezone)} AS date,
               COALESCE(duration_minutes, EXTRACT(EPOCH FROM (ended_at - started_at)) / 60)::int AS duration_minutes
             FROM fitness.v_sleep
             WHERE user_id = ${this.#userId}
@@ -185,7 +186,7 @@ export class SleepNeedRepository {
       baselineRowSchema,
       sql`
         WITH raw_sleep AS (
-          SELECT (started_at AT TIME ZONE ${this.#timezone})::date AS date, duration_minutes
+          SELECT ${sleepNightDate(this.#timezone)} AS date, duration_minutes
           FROM fitness.v_sleep
           WHERE user_id = ${this.#userId}
             AND is_nap = false
