@@ -193,7 +193,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
 
     // SPA fallback — serve index.html for non-API GET requests
     const indexPath = join(webDistPath, "index.html");
-    app.get("*", (req, res, next) => {
+    app.get("/{*path}", (req, res, next) => {
       if (
         req.path.startsWith("/api/") ||
         req.path.startsWith("/auth/") ||

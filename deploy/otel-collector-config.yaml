@@ -76,7 +76,7 @@ exporters:
       num_consumers: 4
       queue_size: 5000
   otlphttp/sentry-logs:
-    logs_endpoint: https://o4511073249067008.ingest.us.sentry.io/api/4511073388593152/integration/otlp/v1/logs?sentry_key=b421c7fde44434a032c86e3357cae397
+    logs_endpoint: ${env:SENTRY_OTLP_LOGS_ENDPOINT}
     retry_on_failure:
       enabled: true
       max_elapsed_time: 300s
