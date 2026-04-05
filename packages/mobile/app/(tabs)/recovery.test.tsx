@@ -24,7 +24,17 @@ vi.mock("../../lib/trpc", () => ({
       trends: { useQuery: () => ({ data: mockTrendsData, isLoading: false }) },
       list: { useQuery: () => ({ data: mockDailyMetricsData, isLoading: false }) },
     },
-    bodyAnalytics: { smoothedWeight: q(() => []) },
+    bodyAnalytics: {
+      smoothedWeight: q(() => []),
+      weightPrediction: q(() => ({
+        ratePerWeek: null,
+        rateConfidence: null,
+        impliedDailyCalories: null,
+        periodDeltas: { days7: null, days14: null, days30: null },
+        goal: null,
+        projectionLine: [],
+      })),
+    },
     healthspan: { score: q() },
     useUtils: () => ({ invalidate: vi.fn() }),
   },

@@ -7,6 +7,7 @@ import {
   CorrelationCardSkeleton,
   type Insight,
 } from "../components/CorrelationCard.tsx";
+import { GoalWeightInput } from "../components/GoalWeightInput.tsx";
 import { HealthStatusBar } from "../components/HealthStatusBar.tsx";
 import { HrvBaselineChart } from "../components/HrvBaselineChart.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
@@ -15,6 +16,7 @@ import { SmoothedWeightChart } from "../components/SmoothedWeightChart.tsx";
 import { StressChart } from "../components/StressChart.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { TimeSeriesChart } from "../components/TimeSeriesChart.tsx";
+import { WeightPredictionSummary } from "../components/WeightPredictionSummary.tsx";
 import { chartColors } from "../lib/chartTheme.ts";
 import { formatDateForQuery } from "../lib/dates.ts";
 import { trpc } from "../lib/trpc.ts";
@@ -90,6 +92,10 @@ export function BodyPage() {
   const hrvBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({ days, endDate });
   const stressData = trpc.stress.scores.useQuery({ days, endDate });
   const smoothedWeight = trpc.bodyAnalytics.smoothedWeight.useQuery({
+    days: Math.max(days, 90),
+    endDate,
+  });
+  const weightPrediction = trpc.bodyAnalytics.weightPrediction.useQuery({
     days: Math.max(days, 90),
     endDate,
   });
@@ -220,14 +226,24 @@ export function BodyPage() {
 
       {/* Body Composition */}
       <PageSection title="Body Composition" card={false}>
+        <div className="card p-2 sm:p-4 mb-4">
+          <div className="mb-2 flex items-center justify-between">
+            <h4 className="text-xs font-medium text-subtle uppercase">Weight Prediction</h4>
+            <GoalWeightInput />
+          </div>
+          {weightPrediction.data?.ratePerWeek != null && (
+            <WeightPredictionSummary prediction={weightPrediction.data} />
+          )}
+        </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="card p-2 sm:p-4">
             <div className="mb-2 flex items-center gap-2">
               <h4 className="text-xs font-medium text-subtle uppercase">Weight Trend</h4>
-              <ChartDescriptionTooltip description="This chart shows your smoothed body weight trend over time to highlight your underlying direction." />
+              <ChartDescriptionTooltip description="This chart shows your smoothed body weight trend over time, with goal weight and forward projection when set." />
             </div>
             <SmoothedWeightChart
               data={smoothedWeight.data ?? []}
+              prediction={weightPrediction.data}
               loading={smoothedWeight.isLoading}
             />
           </div>

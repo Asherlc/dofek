@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
+vi.mock("../lib/cache.ts", () => ({
+  queryCache: { invalidateByPrefix: vi.fn().mockResolvedValue(undefined) },
+}));
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
@@ -144,6 +148,58 @@ describe("bodyAnalyticsRouter", () => {
       const result = await caller.weightTrend({});
 
       expect(result.trend).toBe("stable");
+    });
+  });
+
+  describe("weightPrediction", () => {
+    it("returns prediction with all fields when sufficient data", async () => {
+      const rows = Array.from({ length: 20 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: 80 - index * 0.1,
+        key: "goalWeight",
+        value: null,
+      }));
+      const caller = makeCaller(rows);
+      const result = await caller.weightPrediction({ days: 90, endDate: "2026-03-15" });
+
+      expect(result.ratePerWeek).not.toBeNull();
+      expect(result.periodDeltas).toBeDefined();
+      expect(result.projectionLine.length).toBeGreaterThan(0);
+    });
+
+    it("returns empty prediction when no data", async () => {
+      const caller = makeCaller([]);
+      const result = await caller.weightPrediction({ days: 90, endDate: "2026-03-15" });
+
+      expect(result.ratePerWeek).toBeNull();
+      expect(result.goal).toBeNull();
+      expect(result.projectionLine).toEqual([]);
+    });
+  });
+
+  describe("setGoalWeight", () => {
+    it("stores goal weight and returns it", async () => {
+      const mockExecute = vi.fn().mockResolvedValue([{ key: "goalWeight", value: 75 }]);
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+      const result = await caller.setGoalWeight({ weightKg: 75 });
+
+      expect(result.goalWeightKg).toBe(75);
+    });
+
+    it("clears goal weight when null", async () => {
+      const mockExecute = vi.fn().mockResolvedValue([{ key: "goalWeight", value: null }]);
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+      const result = await caller.setGoalWeight({ weightKg: null });
+
+      expect(result.goalWeightKg).toBeNull();
     });
   });
 });

@@ -83,6 +83,10 @@ export default function RecoveryScreen() {
   });
   const weightData = weightQuery.data ?? [];
   const latestWeight = weightData.length > 0 ? weightData[weightData.length - 1] : null;
+  const weightPrediction = trpc.bodyAnalytics.weightPrediction.useQuery({
+    days: Math.max(days, 90),
+    endDate,
+  });
 
   // Healthspan
   const healthspanQuery = trpc.healthspan.score.useQuery({
@@ -322,6 +326,38 @@ export default function RecoveryScreen() {
                     {formatNumber(units.convertWeight(latestWeight.smoothedWeight))}
                   </Text>
                   <Text style={styles.weightUnit}>{units.weightLabel}</Text>
+                  {weightPrediction.data?.ratePerWeek != null && (
+                    <Text
+                      style={[
+                        styles.weightRate,
+                        {
+                          color:
+                            Math.abs(weightPrediction.data.ratePerWeek) < 0.05
+                              ? colors.textSecondary
+                              : weightPrediction.data.ratePerWeek > 0
+                                ? colors.positive
+                                : colors.danger,
+                        },
+                      ]}
+                    >
+                      {weightPrediction.data.ratePerWeek > 0 ? "+" : ""}
+                      {formatNumber(units.convertWeight(weightPrediction.data.ratePerWeek))}{" "}
+                      {units.weightLabel}/wk
+                    </Text>
+                  )}
+                  {weightPrediction.data?.goal?.estimatedDate != null && (
+                    <Text style={styles.weightGoal}>
+                      Goal:{" "}
+                      {formatNumber(units.convertWeight(weightPrediction.data.goal.goalWeightKg))}{" "}
+                      {units.weightLabel} by ~
+                      {new Date(
+                        `${weightPrediction.data.goal.estimatedDate}T12:00:00`,
+                      ).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                      })}
+                    </Text>
+                  )}
                 </View>
                 {weightData.length >= 2 && (
                   <View style={styles.sparkContainer}>
@@ -469,6 +505,16 @@ const styles = StyleSheet.create({
   weightUnit: {
     fontSize: 13,
     color: colors.textSecondary,
+  },
+  weightRate: {
+    fontSize: 13,
+    fontWeight: "600",
+    marginTop: 2,
+  },
+  weightGoal: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
   stepsValue: {
     fontSize: 32,
