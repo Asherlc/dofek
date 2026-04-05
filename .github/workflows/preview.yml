@@ -112,10 +112,12 @@ jobs:
       - name: Wait for Server Ready
         env:
           SERVER_IP: ${{ steps.apply.outputs.server_ip }}
+          HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+          SERVER_NAME: dofek-preview-pr-${{ github.event.number }}
         run: |
           URL="${{ steps.apply.outputs.preview_url }}"
           echo "Waiting for $URL to become reachable..."
-          echo "Server IP: $SERVER_IP"
+          echo "Server: $SERVER_NAME ($SERVER_IP)"
           for i in $(seq 1 60); do
             status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "$URL/healthz" 2>/dev/null || echo 000)"
             if [ "$status" -ge 200 ] && [ "$status" -lt 400 ]; then
@@ -126,12 +128,20 @@ jobs:
             # Show diagnostics every 5 attempts instead of a silent loop
             if (( i % 5 == 0 )); then
               echo "--- Diagnostics (attempt $i/60, HTTP $status) ---"
-              echo "DNS:"
-              dig +short "$(echo "$URL" | sed 's|https\?://||')" 2>/dev/null || echo "  dig not available"
-              echo "TCP 443:"
-              timeout 2 bash -c "echo > /dev/tcp/$SERVER_IP/443" 2>/dev/null && echo "  open" || echo "  closed (cloud-init/Caddy still starting)"
-              echo "TCP 80:"
-              timeout 2 bash -c "echo > /dev/tcp/$SERVER_IP/80" 2>/dev/null && echo "  open" || echo "  closed"
+
+              # Hetzner server status (running/initializing/starting)
+              hcloud_status="$(docker run --rm -e HCLOUD_TOKEN hetznercloud/cli server describe "$SERVER_NAME" -o json 2>/dev/null | jq -r '.status // "unknown"')" || hcloud_status="api-error"
+              echo "Hetzner status: $hcloud_status"
+
+              # TCP port checks
+              for port in 80 443; do
+                timeout 2 bash -c "echo > /dev/tcp/$SERVER_IP/$port" 2>/dev/null \
+                  && echo "TCP $port: open" \
+                  || echo "TCP $port: closed"
+              done
+
+              # DNS resolution
+              dig +short "$(echo "$URL" | sed 's|https\?://||')" 2>/dev/null || echo "DNS: dig not available"
             else
               echo "Attempt $i/60 — HTTP $status, waiting 10s..."
             fi
