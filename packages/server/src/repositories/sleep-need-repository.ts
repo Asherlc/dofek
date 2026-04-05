@@ -164,7 +164,7 @@ export class SleepNeedRepository {
       lastSleepRowSchema,
       sql`
         SELECT duration_minutes, efficiency_pct,
-          ${sleepNightDate(this.#timezone)}::text AS sleep_date
+          (COALESCE(ended_at, started_at + interval '8 hours') AT TIME ZONE ${this.#timezone})::date::text AS sleep_date
         FROM fitness.v_sleep
         WHERE user_id = ${this.#userId}
           AND is_nap = false

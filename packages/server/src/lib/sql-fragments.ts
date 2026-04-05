@@ -17,6 +17,7 @@ import { dateWindowEnd, dateWindowStart, timestampWindowStart } from "./date-win
  *    5:00 AM → (−6 h = 11 PM prior)    → previous date ✓
  *    7:00 AM → (−6 h = 1 AM same day)  → same date ✓
  *
+ * @param timezone - IANA timezone string for the user (e.g., `"America/New_York"`)
  * @param column - Qualified or unqualified column expression
  *                 (default: `started_at`)
  */
@@ -32,8 +33,9 @@ export function sleepNightDate(timezone: string, column?: SQL): SQL {
 /**
  * Reusable CTE that deduplicates sleep sessions to one per calendar night.
  *
- * Picks the longest non-nap session per local date. Returns two named CTEs:
- * `sleep_raw` (all non-nap sessions with local date) and `sleep_deduped`
+ * Picks the longest non-nap session per calendar night (using `sleepNightDate`
+ * to attribute pre-6 AM sessions to the previous day). Returns two named CTEs:
+ * `sleep_raw` (all non-nap sessions with night date) and `sleep_deduped`
  * (one row per night, longest duration wins).
  *
  * Columns available from `sleep_deduped`:

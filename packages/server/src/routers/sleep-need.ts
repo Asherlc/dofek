@@ -235,7 +235,7 @@ export const sleepNeedRouter = router({
             SELECT
               ${sleepNightDate(tz)} AS sleep_date_val,
               duration_minutes, efficiency_pct, started_at,
-              ${sleepNightDate(tz)}::text AS sleep_date
+              (COALESCE(ended_at, started_at + interval '8 hours') AT TIME ZONE ${tz})::date::text AS sleep_date
             FROM fitness.v_sleep
             WHERE user_id = ${ctx.userId}
               AND is_nap = false
