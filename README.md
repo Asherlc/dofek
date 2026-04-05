@@ -121,12 +121,11 @@ Tests use [Vitest](https://vitest.dev/). TDD is the standard workflow — write 
 
 ## Docker
 
-Two images are built from a single multi-stage Dockerfile:
+A single image is built from a multi-stage Dockerfile:
 
 | Image | Base | Contents |
 |-------|------|----------|
-| `ghcr.io/asherlc/dofek:latest` | node:22-alpine | Express API + migrations + sync/worker entrypoints |
-| `ghcr.io/asherlc/dofek-client:latest` | nginx:alpine | Vite static bundle + nginx reverse proxy config |
+| `ghcr.io/asherlc/dofek:latest` | node:22-alpine | Express API + built web assets + migrations + sync/worker entrypoints |
 
 ### How it works
 
@@ -134,25 +133,20 @@ Two images are built from a single multi-stage Dockerfile:
 Dockerfile (multi-stage)
 ├── prod-deps      — production-only hoisted workspace install
 ├── client-build   — full install + Vite build
-├── server target  — Node 22 runtime with TypeScript sources + entrypoint
-└── client target  — nginx serving static files + proxying API routes
+└── server target  — Node 22 runtime with TypeScript sources + built web assets + entrypoint
 ```
 
-The server image copies the workspace source tree plus a production-only hoisted `node_modules`, then creates explicit symlinks for workspace packages so bare imports resolve at runtime. The client image is built from `packages/web/dist`. BuildKit cache mounts keep the pnpm store warm across builds. Production runs TypeScript directly on Node 22 with `--experimental-transform-types`; there is no separate server transpile step inside the container.
+The server image copies the workspace source tree plus a production-only hoisted `node_modules`, then creates explicit symlinks for workspace packages so bare imports resolve at runtime. Built web assets from `packages/web/dist` are included in the server image — Express serves them directly with SPA fallback. BuildKit cache mounts keep the pnpm store warm across builds. Production runs TypeScript directly on Node 22 with `--experimental-transform-types`; there is no separate server transpile step inside the container.
 
 ### Building locally
 
 ```bash
-# Build and test both targets before pushing
+# Build and test
 docker build --target server -t dofek-server:local .
-docker build --target client -t dofek-client:local .
 
 # Verify server can resolve its dependencies
 docker run --rm --entrypoint node dofek-server:local \
   --experimental-transform-types -e "console.log('OK')"
-
-# Verify nginx config is valid
-docker run --rm dofek-client:local nginx -t
 ```
 
 Always test Docker builds locally before deploying. The CI build runs on Linux and may behave differently than local dev.
@@ -192,7 +186,8 @@ deploy/
 ├── docker-compose.yml            # Production stack (all services)
 ├── otel-collector-config.yaml    # OTel Collector — receives app logs/traces + tails Docker logs → Axiom
 ├── Caddyfile                     # Auto-HTTPS via Let's Encrypt (multiple domains)
-├── deploy-config/main.tf         # Terraform — pushes compose/Caddy/collector updates via SSH
+├── deploy.sh                     # Fetches secrets from Infisical + starts Docker Compose
+├── deploy-config/main.tf         # Terraform — pushes config updates to server via SSH
 ├── dns/main.tf                   # Terraform — Cloudflare DNS for dofek.fit + dofek.live
 ├── terraform.tfvars.example      # Example config
 └── .gitignore                    # Excludes secrets and state
@@ -202,14 +197,13 @@ deploy/
 
 ```
 Internet → Caddy (auto-HTTPS :443, serves dofek.asherlc.com + dofek.fit + dofek.live)
-             └── dofek-client (Nginx :80)
-                   ├── /assets/*    → static files (1yr cache)
-                   ├── /api/*       → proxy_pass dofek-web:3000
-                   ├── /auth/*      → proxy_pass dofek-web:3000
-                   ├── /callback    → proxy_pass dofek-web:3000
-                   ├── /admin/*     → proxy_pass dofek-web:3000 (BullMQ dashboard)
-                   ├── /metrics     → proxy_pass dofek-web:3000 (Prometheus)
-                   ├── /updates/*   → proxy_pass dofek-web:3000 (Expo OTA)
+             └── dofek-web (Express :3000, 2 replicas)
+                   ├── /assets/*    → static files (1yr immutable cache)
+                   ├── /api/*       → tRPC + REST API
+                   ├── /auth/*      → OAuth flows
+                   ├── /callback    → OAuth callback
+                   ├── /admin/*     → BullMQ dashboard
+                   ├── /metrics     → Prometheus metrics
                    └── /*           → index.html (SPA fallback)
 ```
 
@@ -217,10 +211,9 @@ Internet → Caddy (auto-HTTPS :443, serves dofek.asherlc.com + dofek.fit + dofe
 
 | Container | Image | Purpose |
 |-----------|-------|---------|
-| `caddy` | caddy:2-alpine | TLS termination + reverse proxy to nginx |
-| `client` | ghcr.io/asherlc/dofek-client | Nginx serving Vite bundle + proxying API routes (2 replicas) |
+| `caddy` | caddy:2-alpine | TLS termination + reverse proxy to Express |
 | `migrate` | ghcr.io/asherlc/dofek | Runs pending DB migrations (one-shot, exits on completion) |
-| `web` | ghcr.io/asherlc/dofek | Express + tRPC API server (port 3000, internal only, 2 replicas) |
+| `web` | ghcr.io/asherlc/dofek | Express + tRPC API + static file serving (port 3000, 2 replicas) |
 | `worker` | ghcr.io/asherlc/dofek | BullMQ job worker (processes sync jobs, file imports) |
 | `sync` | ghcr.io/asherlc/dofek | Sync runner (provider data sync, one-shot) |
 | `redis` | redis:7-alpine | Job queue backend for BullMQ |
@@ -363,7 +356,6 @@ docker ps                                         # container status
 docker logs dofek-web-1 --tail 100                # API server logs (OAuth, tRPC, sync)
 docker logs dofek-web-1 --tail 100 | grep error   # filter for errors
 docker logs dofek-sync-1 --tail 100               # sync runner logs (one-shot container)
-docker logs dofek-client-1 --tail 50              # nginx access logs
 docker logs dofek-caddy-1 --tail 50               # TLS/reverse proxy logs
 
 # Follow logs in real-time

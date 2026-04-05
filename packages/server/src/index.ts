@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { createBullBoard } from "@bull-board/api";
 import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
 import { ExpressAdapter } from "@bull-board/express";
@@ -176,6 +178,38 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       allowMethodOverride: true,
     }),
   );
+
+  // ── Static files + SPA fallback (production: built web assets) ──
+  const webDistPath = resolve("packages/web/dist");
+  if (existsSync(webDistPath)) {
+    // Vite-hashed assets — cache aggressively
+    app.use(
+      "/assets",
+      express.static(join(webDistPath, "assets"), { maxAge: "1y", immutable: true }),
+    );
+
+    // Other static files (favicon, manifest, etc.)
+    app.use(express.static(webDistPath, { index: false }));
+
+    // SPA fallback — serve index.html for non-API GET requests
+    const indexPath = join(webDistPath, "index.html");
+    app.get("*", (req, res, next) => {
+      if (
+        req.path.startsWith("/api/") ||
+        req.path.startsWith("/auth/") ||
+        req.path.startsWith("/admin/") ||
+        req.path.startsWith("/slack/") ||
+        req.path === "/callback" ||
+        req.path === "/healthz" ||
+        req.path === "/metrics"
+      ) {
+        next();
+        return;
+      }
+      res.set("Cache-Control", "no-cache");
+      res.sendFile(indexPath);
+    });
+  }
 }
 
 /**

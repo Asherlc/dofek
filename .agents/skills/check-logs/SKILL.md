@@ -47,7 +47,6 @@ Container names and what they handle:
 - `dofek-web-1` — Express API server (OAuth, file uploads, tRPC, sync triggers)
 - `dofek-worker` — BullMQ worker (sync jobs, Apple Health import, CSV import)
 - `dofek-sync-1` — Cron-triggered sync runner
-- `dofek-client-1` — Nginx serving the SPA
 - `dofek-caddy-1` — TLS termination / reverse proxy
 
 ```bash

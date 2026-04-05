@@ -384,7 +384,6 @@ jobs:
           files: docker-compose.e2e.yml
           targets: |
             server
-            client
           load: true
           set: |
             *.cache-from=type=gha,scope=e2e
@@ -1172,7 +1171,8 @@ jobs:
           CHANGED=$(git diff --name-only HEAD~1...HEAD -- \
             deploy/Caddyfile \
             deploy/docker-compose.yml \
-            deploy/otel-collector-config.yaml)
+            deploy/otel-collector-config.yaml \
+            deploy/deploy.sh)
           if [ -n "$CHANGED" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "Config files changed:"
@@ -1202,15 +1202,6 @@ jobs:
         working-directory: deploy/deploy-config
         env:
           TF_VAR_server_ip: ${{ secrets.SERVER_HOST }}
-          TF_VAR_r2_bucket: ${{ secrets.R2_BUCKET }}
-          TF_VAR_axiom_api_token: ${{ secrets.AXIOM_API_TOKEN }}
-          TF_VAR_slack_bot_token: ${{ secrets.SLACK_BOT_TOKEN }}
-          TF_VAR_ghcr_token: ${{ secrets.GHCR_TOKEN }}
-          TF_VAR_expo_app_id: ${{ secrets.EXPO_APP_ID }}
-          TF_VAR_expo_access_token: ${{ secrets.EXPO_ACCESS_TOKEN }}
-          TF_VAR_ota_jwt_secret: ${{ secrets.OTA_JWT_SECRET }}
-          TF_VAR_ota_public_key_b64: ${{ secrets.OTA_PUBLIC_KEY_B64 }}
-          TF_VAR_ota_private_key_b64: ${{ secrets.OTA_PRIVATE_KEY_B64 }}
         run: |
           terraform init
           terraform apply -auto-approve
@@ -1268,8 +1259,6 @@ jobs:
         include:
           - target: server
             suffix: ""
-          - target: client
-            suffix: "-client"
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
