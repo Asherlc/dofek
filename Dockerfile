@@ -36,7 +36,7 @@ COPY packages/zones/package.json ./packages/zones/
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile --prod --node-linker=hoisted
 
-# ── Client build: full install + Vite build (only needed for client target)
+# ── Client build: full install + Vite build (assets copied into server stage)
 FROM base AS client-build
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
@@ -75,14 +75,9 @@ FROM base AS server
 ENV NODE_ENV=production
 WORKDIR /app
 
-# Infisical CLI (pinned) for runtime secret injection + Docker CLI for worker container
-ARG INFISICAL_CLI_VERSION=0.43.69
+# Docker CLI for worker container management (startWorker)
 RUN apk add --no-cache curl ca-certificates && \
     ARCH=$(uname -m) && \
-    case "$ARCH" in x86_64) INF_ARCH=amd64;; aarch64) INF_ARCH=arm64;; *) INF_ARCH=$ARCH;; esac && \
-    curl -fsSL "https://github.com/Infisical/cli/releases/download/v${INFISICAL_CLI_VERSION}/cli_${INFISICAL_CLI_VERSION}_linux_${INF_ARCH}.tar.gz" \
-      | tar xz -C /usr/local/bin infisical && \
-    chmod +x /usr/local/bin/infisical && \
     curl -fsSL "https://download.docker.com/linux/static/stable/${ARCH}/docker-27.5.1.tgz" | \
       tar xz --strip-components=1 -C /usr/local/bin docker/docker && \
     apk del curl
@@ -144,9 +139,11 @@ RUN ln -sf /app node_modules/dofek && \
 # Seed script for preview/dev environments
 COPY --from=source --chown=node:node /app/scripts ./scripts
 
-# Non-secret config (.env) and Infisical project config for secret injection at runtime
+# Non-secret config (.env)
 COPY --from=source --chown=node:node /app/.env .
-COPY --from=source --chown=node:node /app/.infisical.json .
+
+# Built web assets for static serving (Express serves these in production)
+COPY --from=client-build --chown=node:node /app/packages/web/dist ./packages/web/dist
 
 COPY --chown=node:node entrypoint.sh .
 
@@ -160,9 +157,3 @@ USER node
 
 ENTRYPOINT ["./entrypoint.sh"]
 CMD ["sync"]
-
-# ── Client image (Nginx serving Vite bundle) ────────────────────────────
-FROM nginx:alpine AS client
-COPY --from=client-build /app/packages/web/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-EXPOSE 80

@@ -3,46 +3,12 @@ variable "server_ip" {
   type        = string
 }
 
-variable "r2_bucket" {
-  description = "R2 bucket name used by production services"
-  type        = string
-  default     = "dofek-training-data"
-}
-
-variable "axiom_api_token" {
-  description = "Axiom API token (xaat-...) for OTEL collector log/metric/trace export"
-  type        = string
-  sensitive   = true
-}
-
-variable "slack_bot_token" {
-  description = "Slack bot token (xoxb-...) for Watchtower notifications and app bot"
-  type        = string
-  sensitive   = true
-}
-
-variable "ghcr_token" {
-  description = "GitHub PAT (ghp_...) with read:packages scope for pulling images from GHCR"
-  type        = string
-  sensitive   = true
-}
-
-variable "ghcr_username" {
-  description = "GitHub username for GHCR authentication"
-  type        = string
-  default     = "asherlc"
-}
-
 resource "null_resource" "deploy_config" {
   triggers = {
-    compose_hash    = filemd5("${path.module}/../docker-compose.yml")
-    caddy_hash      = filemd5("${path.module}/../Caddyfile")
-    collector_hash  = filemd5("${path.module}/../otel-collector-config.yaml")
-    r2_bucket       = var.r2_bucket
-    axiom_api_token = var.axiom_api_token
-    slack_bot_token = var.slack_bot_token
-    ghcr_token      = var.ghcr_token
-    ghcr_username   = var.ghcr_username
+    compose_hash   = filemd5("${path.module}/../docker-compose.yml")
+    caddy_hash     = filemd5("${path.module}/../Caddyfile")
+    collector_hash = filemd5("${path.module}/../otel-collector-config.yaml")
+    deploy_hash    = filemd5("${path.module}/../deploy.sh")
   }
 
   connection {
@@ -67,13 +33,15 @@ resource "null_resource" "deploy_config" {
     destination = "/opt/dofek/otel-collector-config.yaml"
   }
 
+  provisioner "file" {
+    source      = "${path.module}/../deploy.sh"
+    destination = "/opt/dofek/deploy.sh"
+  }
+
   provisioner "remote-exec" {
     inline = [
-      "if grep -q '^R2_BUCKET=' /opt/dofek/.env; then sed -i 's/^R2_BUCKET=.*/R2_BUCKET=${var.r2_bucket}/' /opt/dofek/.env; else printf '\\nR2_BUCKET=${var.r2_bucket}\\n' >> /opt/dofek/.env; fi",
-      "if grep -q '^AXIOM_API_TOKEN=' /opt/dofek/.env; then sed -i 's/^AXIOM_API_TOKEN=.*/AXIOM_API_TOKEN=${var.axiom_api_token}/' /opt/dofek/.env; else printf '\\nAXIOM_API_TOKEN=${var.axiom_api_token}\\n' >> /opt/dofek/.env; fi",
-      "if grep -q '^SLACK_BOT_TOKEN=' /opt/dofek/.env; then sed -i 's/^SLACK_BOT_TOKEN=.*/SLACK_BOT_TOKEN=${var.slack_bot_token}/' /opt/dofek/.env; else printf '\\nSLACK_BOT_TOKEN=${var.slack_bot_token}\\n' >> /opt/dofek/.env; fi",
-      "echo '{\"auths\":{\"ghcr.io\":{\"auth\":\"'$(echo -n '${var.ghcr_username}:${var.ghcr_token}' | base64)'\"}}}'  > /root/.docker/config.json",
-      "cd /opt/dofek && docker compose up -d --scale web=2 --scale client=2"
+      "chmod +x /opt/dofek/deploy.sh",
+      "cd /opt/dofek && ./deploy.sh"
     ]
   }
 }

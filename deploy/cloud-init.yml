@@ -17,6 +17,16 @@ write_files:
     content: |
       ${indent(6, caddy_content)}
 
+  - path: /opt/dofek/otel-collector-config.yaml
+    permissions: "0644"
+    content: |
+      ${indent(6, otel_collector_content)}
+
+  - path: /opt/dofek/deploy.sh
+    permissions: "0755"
+    content: |
+      ${indent(6, deploy_script_content)}
+
   - path: /opt/dofek/.env
     permissions: "0600"
     content: |
@@ -30,4 +40,4 @@ write_files:
 runcmd:
   - curl -fsSL https://get.docker.com | sh
   - echo '${ghcr_token}' | docker login ghcr.io -u ${ghcr_username} --password-stdin
-  - cd /opt/dofek && docker compose up -d --scale web=2 --scale client=2
+  - cd /opt/dofek && ./deploy.sh
