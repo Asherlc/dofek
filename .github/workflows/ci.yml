@@ -886,7 +886,7 @@ jobs:
       - name: Prepare preview metadata
         id: preview
         env:
-          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_ENDPOINT: https://8e5b2f62ffe8ebdd48e725d325a6d51e.r2.cloudflarestorage.com
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_BUCKET: dofek-storybook
@@ -922,7 +922,7 @@ jobs:
       - name: Deploy Storybook to R2
         if: steps.preview.outputs.ready == 'true'
         env:
-          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_ENDPOINT: https://8e5b2f62ffe8ebdd48e725d325a6d51e.r2.cloudflarestorage.com
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_BUCKET: dofek-storybook
