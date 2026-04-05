@@ -226,15 +226,15 @@ export function BodyPage() {
 
       {/* Body Composition */}
       <PageSection title="Body Composition" card={false}>
-        {weightPrediction.data?.ratePerWeek != null && (
-          <div className="card p-2 sm:p-4 mb-4">
-            <div className="mb-2 flex items-center justify-between">
-              <h4 className="text-xs font-medium text-subtle uppercase">Weight Prediction</h4>
-              <GoalWeightInput />
-            </div>
-            <WeightPredictionSummary prediction={weightPrediction.data} />
+        <div className="card p-2 sm:p-4 mb-4">
+          <div className="mb-2 flex items-center justify-between">
+            <h4 className="text-xs font-medium text-subtle uppercase">Weight Prediction</h4>
+            <GoalWeightInput />
           </div>
-        )}
+          {weightPrediction.data?.ratePerWeek != null && (
+            <WeightPredictionSummary prediction={weightPrediction.data} />
+          )}
+        </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="card p-2 sm:p-4">
             <div className="mb-2 flex items-center gap-2">

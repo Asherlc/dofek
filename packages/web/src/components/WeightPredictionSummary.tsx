@@ -7,7 +7,7 @@ interface WeightPredictionSummaryProps {
 }
 
 function formatDate(isoDate: string): string {
-  const date = new Date(isoDate);
+  const date = new Date(`${isoDate}T12:00:00`);
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
@@ -74,7 +74,7 @@ export function WeightPredictionSummary({ prediction }: WeightPredictionSummaryP
           <div className="text-subtle text-xs uppercase">Goal</div>
           <div className="font-medium text-muted">
             {formatNumber(units.convertWeight(prediction.goal.goalWeightKg))} {units.weightLabel}
-            {" — trending away"}
+            {" — estimate unavailable"}
           </div>
         </div>
       )}

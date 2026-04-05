@@ -433,7 +433,10 @@ export class BodyAnalyticsRepository extends BaseRepository {
       rateConfidence: null,
       impliedDailyCalories: null,
       periodDeltas: { days7: null, days14: null, days30: null },
-      goal: null,
+      goal:
+        goalWeightKg != null
+          ? { goalWeightKg, remainingKg: 0, estimatedDate: null, daysRemaining: null }
+          : null,
       projectionLine: [],
     };
 

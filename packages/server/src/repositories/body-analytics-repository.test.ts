@@ -852,6 +852,20 @@ describe("BodyAnalyticsRepository", () => {
       expect(result.projectionLine).toEqual([]);
     });
 
+    it("returns goal info even with insufficient data when goalWeightKg is set", async () => {
+      const rows = Array.from({ length: 3 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: String(80),
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightPrediction(90, "2024-06-01", 75);
+
+      expect(result.ratePerWeek).toBeNull();
+      expect(result.goal).not.toBeNull();
+      expect(result.goal?.goalWeightKg).toBe(75);
+      expect(result.goal?.estimatedDate).toBeNull();
+    });
+
     it("returns nulls for empty data", async () => {
       const { repo } = makeRepository([]);
       const result = await repo.getWeightPrediction(90, "2024-06-01", null);

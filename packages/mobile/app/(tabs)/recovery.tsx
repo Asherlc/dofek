@@ -350,13 +350,12 @@ export default function RecoveryScreen() {
                       Goal:{" "}
                       {formatNumber(units.convertWeight(weightPrediction.data.goal.goalWeightKg))}{" "}
                       {units.weightLabel} by ~
-                      {new Date(weightPrediction.data.goal.estimatedDate).toLocaleDateString(
-                        "en-US",
-                        {
-                          month: "short",
-                          day: "numeric",
-                        },
-                      )}
+                      {new Date(
+                        `${weightPrediction.data.goal.estimatedDate}T12:00:00`,
+                      ).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                      })}
                     </Text>
                   )}
                 </View>

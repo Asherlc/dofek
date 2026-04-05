@@ -8,7 +8,9 @@ export function GoalWeightInput() {
   const utils = trpc.useUtils();
 
   const settingsQuery = trpc.settings.get.useQuery({ key: "goalWeight" });
-  const currentGoalKg = settingsQuery.data?.value != null ? Number(settingsQuery.data.value) : null;
+  const rawGoalWeightValue = settingsQuery.data?.value;
+  const parsedGoalKg = rawGoalWeightValue != null ? Number(rawGoalWeightValue) : null;
+  const currentGoalKg = parsedGoalKg != null && Number.isFinite(parsedGoalKg) ? parsedGoalKg : null;
 
   const [editing, setEditing] = useState(false);
   const [inputValue, setInputValue] = useState("");
@@ -46,7 +48,8 @@ export function GoalWeightInput() {
             if (event.key === "Enter") handleSave();
             if (event.key === "Escape") setEditing(false);
           }}
-          ref={(element) => element?.focus()}
+          // biome-ignore lint/a11y/noAutofocus: intentional focus on inline edit activation
+          autoFocus
         />
         <button
           type="button"
