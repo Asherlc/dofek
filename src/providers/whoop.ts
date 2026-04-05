@@ -74,8 +74,9 @@ function milliToMinutes(milli: number): number {
 }
 
 /**
- * Normalize an efficiency value to the 0-100 percentage scale.
- * WHOOP's `in_sleep_efficiency` field has been observed returning both
+ * Normalize a WHOOP efficiency value to the 0-100 percentage scale.
+ * WHOOP sleep efficiency fields (`in_sleep_efficiency` and
+ * `sleep_efficiency_percentage`) have been observed returning both
  * percentage (89.4) and fraction (0.894) formats. Values ≤ 1 are treated
  * as fractions and scaled to percentage.
  */
