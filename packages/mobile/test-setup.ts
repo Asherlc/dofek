@@ -382,6 +382,26 @@ vi.mock("./modules/whoop-ble", () => ({
   disconnect: vi.fn(),
 }));
 
+// ── React Native Maps mock ──────────────────────────────────────────
+vi.mock("react-native-maps", () => {
+  const React = require("react");
+  function mapComponent(name: string) {
+    const component = ({ children, testID, ...props }: Record<string, unknown>) =>
+      React.createElement(name, { ...props, "data-testid": testID }, children);
+    component.displayName = name;
+    return component;
+  }
+  const MapView = mapComponent("MapView");
+  const Polyline = mapComponent("Polyline");
+  const Marker = mapComponent("Marker");
+  return {
+    __esModule: true,
+    default: MapView,
+    Polyline,
+    Marker,
+  };
+});
+
 // ── Watch Motion native module mock ─────────────────────────────────
 vi.mock("./modules/watch-motion", () => ({
   isWatchSupported: vi.fn(() => true),

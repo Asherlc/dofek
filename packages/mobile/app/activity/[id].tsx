@@ -29,6 +29,7 @@ import Svg, {
 } from "react-native-svg";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { MuscleGroupBodyDiagram } from "../../components/MuscleGroupBodyDiagram";
+import { RouteMap } from "../../components/RouteMap";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { colors } from "../../theme";
@@ -665,6 +666,7 @@ export default function ActivityDetailScreen() {
   const points = stream.data ?? [];
   const zones = hrZones.data ?? [];
 
+  const hasGps = points.some((p) => p.lat != null && p.lng != null);
   const hasHr = points.some((p) => p.heartRate != null);
   const hasPower = points.some((p) => p.power != null);
   const hasAltitude = points.some((p) => p.altitude != null);
@@ -783,6 +785,9 @@ export default function ActivityDetailScreen() {
 
       {/* Stats Grid */}
       {stats.length > 0 && <StatsGrid stats={stats} />}
+
+      {/* Route Map */}
+      {hasGps && <RouteMap points={points} />}
 
       {/* Strength Exercises */}
       {(strengthExercises.data?.length ?? 0) > 0 && (
