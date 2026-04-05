@@ -28,7 +28,7 @@ write_files:
       ${indent(6, deploy_script_content)}
 
   - path: /opt/dofek/config.env
-    permissions: "0644"
+    permissions: "0600"
     content: |
       ${indent(6, config_env_content)}
 

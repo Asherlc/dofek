@@ -40,8 +40,8 @@ infisical export \
   > secrets.env
 
 # Start services with config (config.env + .env) and secrets (secrets.env)
-docker compose \
-  --env-file config.env \
-  --env-file .env \
-  --env-file secrets.env \
-  up -d --scale web=2
+compose_args="--env-file .env --env-file secrets.env"
+if [ -f config.env ]; then
+  compose_args="--env-file config.env $compose_args"
+fi
+docker compose $compose_args up -d --scale web=2

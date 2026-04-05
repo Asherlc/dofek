@@ -47,6 +47,7 @@ resource "null_resource" "deploy_config" {
   provisioner "remote-exec" {
     inline = [
       "chmod +x /opt/dofek/deploy.sh",
+      "chmod 600 /opt/dofek/config.env",
       "cd /opt/dofek && ./deploy.sh"
     ]
   }
