@@ -1144,8 +1144,8 @@ jobs:
 
   ota-deploy:
     name: OTA Deploy
-    needs: [ci-gate]
-    if: always() && needs.ci-gate.result == 'success' && github.ref == 'refs/heads/main'
+    needs: [ci-gate, deploy-config]
+    if: always() && needs.ci-gate.result == 'success' && needs.deploy-config.result == 'success' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
@@ -1164,28 +1164,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-        with:
-          fetch-depth: 2
-      - name: Check for config changes
-        id: changes
-        run: |
-          CHANGED=$(git diff --name-only HEAD~1...HEAD -- \
-            deploy/Caddyfile \
-            deploy/docker-compose.yml \
-            deploy/otel-collector-config.yaml)
-          if [ -n "$CHANGED" ]; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "Config files changed:"
-            echo "$CHANGED"
-          else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "No config changes, skipping deploy"
-          fi
       - name: Setup Terraform
-        if: steps.changes.outputs.changed == 'true'
         uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
       - name: Setup SSH
-        if: steps.changes.outputs.changed == 'true'
         env:
           SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
@@ -1193,12 +1174,27 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          rm -f ~/.ssh/known_hosts
+          for attempt in 1 2 3; do
+            tmp_known_hosts="$(mktemp)"
+            if ssh-keyscan -T 10 -H "$SERVER_HOST" > "$tmp_known_hosts" 2>/dev/null && [ -s "$tmp_known_hosts" ]; then
+              mv "$tmp_known_hosts" ~/.ssh/known_hosts
+              break
+            fi
+            rm -f "$tmp_known_hosts"
+            if [ "$attempt" -lt 3 ]; then
+              echo "ssh-keyscan attempt $attempt failed, retrying..."
+              sleep 2
+            fi
+          done
+          if [ ! -s ~/.ssh/known_hosts ]; then
+            echo "::error::ssh-keyscan failed after 3 attempts"
+            exit 1
+          fi
           eval "$(ssh-agent -s)"
           ssh-add ~/.ssh/id_ed25519
           echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> "$GITHUB_ENV"
       - name: Terraform Apply
-        if: steps.changes.outputs.changed == 'true'
         working-directory: deploy/deploy-config
         env:
           TF_VAR_server_ip: ${{ secrets.SERVER_HOST }}
@@ -1206,11 +1202,6 @@ jobs:
           TF_VAR_axiom_api_token: ${{ secrets.AXIOM_API_TOKEN }}
           TF_VAR_slack_bot_token: ${{ secrets.SLACK_BOT_TOKEN }}
           TF_VAR_ghcr_token: ${{ secrets.GHCR_TOKEN }}
-          TF_VAR_expo_app_id: ${{ secrets.EXPO_APP_ID }}
-          TF_VAR_expo_access_token: ${{ secrets.EXPO_ACCESS_TOKEN }}
-          TF_VAR_ota_jwt_secret: ${{ secrets.OTA_JWT_SECRET }}
-          TF_VAR_ota_public_key_b64: ${{ secrets.OTA_PUBLIC_KEY_B64 }}
-          TF_VAR_ota_private_key_b64: ${{ secrets.OTA_PRIVATE_KEY_B64 }}
         run: |
           terraform init
           terraform apply -auto-approve
