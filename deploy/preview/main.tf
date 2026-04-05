@@ -63,6 +63,12 @@ variable "server_image_tag" {
   type        = string
 }
 
+variable "commit_sha" {
+  description = "Git commit SHA — forces server replacement on every push"
+  type        = string
+  default     = ""
+}
+
 variable "ghcr_username" {
   description = "GitHub username for GHCR image pulls"
   type        = string
@@ -88,8 +94,8 @@ provider "hcloud" {
 
 provider "cloudflare" {
   # Authenticated via CLOUDFLARE_API_TOKEN env var.
-  # The provider v5 schema rejects Cloudflare's new cfut_-prefixed tokens
-  # in the api_token attribute (cloudflare/terraform-provider-cloudflare#1990).
+  # The provider v5 api_token attribute rejects cfut_-prefixed User API Tokens
+  # (cloudflare/terraform-provider-cloudflare#1990), so we must use the env var.
 }
 
 # ── Locals ───────────────────────────────────────────────────────────────
@@ -148,9 +154,12 @@ resource "hcloud_server" "preview" {
   firewall_ids = [hcloud_firewall.preview.id]
 
   user_data = templatefile("${path.module}/cloud-init.yml", {
+    commit_sha    = var.commit_sha
     domain        = local.preview_domain
     ghcr_token    = var.ghcr_token
     ghcr_username = var.ghcr_username
+    hcloud_token  = var.hcloud_token
+    pr_number     = var.pr_number
     server_image  = local.server_image
     compose_content = templatefile("${path.module}/docker-compose.yml", {
       server_image = local.server_image
