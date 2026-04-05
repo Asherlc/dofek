@@ -1,4 +1,4 @@
-import type { GarminTokens } from "garmin-connect";
+import { GarminApiError, type GarminTokens } from "garmin-connect";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TokenSet } from "../auth/oauth.ts";
 import {
@@ -52,21 +52,29 @@ const mocks = vi.hoisted(() => {
   };
 });
 
-vi.mock("garmin-connect", () => ({
-  GarminConnectClient: {
-    signIn: mocks.signIn,
-    fromTokens: mocks.fromTokens,
-  },
-  parseConnectActivity: mocks.parseConnectActivity,
-  parseConnectSleep: mocks.parseConnectSleep,
-  parseConnectSleepStages: mocks.parseConnectSleepStages,
-  parseConnectDailySummary: mocks.parseConnectDailySummary,
-  parseHrvSummary: mocks.parseHrvSummary,
-  parseTrainingStatus: mocks.parseTrainingStatus,
-  parseStressTimeSeries: mocks.parseStressTimeSeries,
-  parseHeartRateTimeSeries: mocks.parseHeartRateTimeSeries,
-  parseActivityDetail: mocks.parseActivityDetail,
+vi.mock("@sentry/node", () => ({
+  captureException: vi.fn(),
 }));
+
+vi.mock("garmin-connect", async (importOriginal) => {
+  const original = await importOriginal<typeof import("garmin-connect")>();
+  return {
+    GarminApiError: original.GarminApiError,
+    GarminConnectClient: {
+      signIn: mocks.signIn,
+      fromTokens: mocks.fromTokens,
+    },
+    parseConnectActivity: mocks.parseConnectActivity,
+    parseConnectSleep: mocks.parseConnectSleep,
+    parseConnectSleepStages: mocks.parseConnectSleepStages,
+    parseConnectDailySummary: mocks.parseConnectDailySummary,
+    parseHrvSummary: mocks.parseHrvSummary,
+    parseTrainingStatus: mocks.parseTrainingStatus,
+    parseStressTimeSeries: mocks.parseStressTimeSeries,
+    parseHeartRateTimeSeries: mocks.parseHeartRateTimeSeries,
+    parseActivityDetail: mocks.parseActivityDetail,
+  };
+});
 
 vi.mock("../db/tokens.ts", () => ({
   loadTokens: mocks.loadTokens,
@@ -417,14 +425,15 @@ describe("GarminProvider.sync()", () => {
     mocks.fromTokens.mockResolvedValue(mocks.client);
     mocks.client.getTokens.mockReturnValue(fakeGarminTokens());
 
-    // Default: all client methods return empty/no data
+    // Default: all client methods return empty/no data (204 = expected "no content")
+    const noDataError = new GarminApiError("No content available (204)", 204);
     mocks.client.getActivities.mockResolvedValue([]);
-    mocks.client.getSleepData.mockRejectedValue(new Error("no data"));
-    mocks.client.getDailySummary.mockRejectedValue(new Error("no data"));
-    mocks.client.getHrvSummary.mockRejectedValue(new Error("no data"));
-    mocks.client.getTrainingStatus.mockRejectedValue(new Error("no data"));
-    mocks.client.getDailyStress.mockRejectedValue(new Error("no data"));
-    mocks.client.getDailyHeartRate.mockRejectedValue(new Error("no data"));
+    mocks.client.getSleepData.mockRejectedValue(noDataError);
+    mocks.client.getDailySummary.mockRejectedValue(noDataError);
+    mocks.client.getHrvSummary.mockRejectedValue(noDataError);
+    mocks.client.getTrainingStatus.mockRejectedValue(noDataError);
+    mocks.client.getDailyStress.mockRejectedValue(noDataError);
+    mocks.client.getDailyHeartRate.mockRejectedValue(noDataError);
 
     // Default: withSyncLog calls the function and returns result
     mocks.withSyncLog.mockImplementation(
@@ -775,8 +784,12 @@ describe("GarminProvider.sync()", () => {
       activeEnergyKcal: 300,
       basalEnergyKcal: 1700,
     });
-    mocks.client.getHrvSummary.mockRejectedValue(new Error("not available"));
-    mocks.client.getTrainingStatus.mockRejectedValue(new Error("not available"));
+    mocks.client.getHrvSummary.mockRejectedValue(
+      new GarminApiError("No content available (204)", 204),
+    );
+    mocks.client.getTrainingStatus.mockRejectedValue(
+      new GarminApiError("No content available (204)", 204),
+    );
 
     const result = await syncProvider(provider, db, new Date());
 
@@ -838,7 +851,9 @@ describe("GarminProvider.sync()", () => {
       endedAt: new Date(),
       raw: {},
     });
-    mocks.client.getActivityDetail.mockRejectedValue(new Error("no detail"));
+    mocks.client.getActivityDetail.mockRejectedValue(
+      new GarminApiError("No content available (204)", 204),
+    );
 
     mocks.client.getSleepData.mockResolvedValue({});
     mocks.parseConnectSleep.mockReturnValue({
@@ -860,8 +875,12 @@ describe("GarminProvider.sync()", () => {
       activeEnergyKcal: 500,
       basalEnergyKcal: 1800,
     });
-    mocks.client.getHrvSummary.mockRejectedValue(new Error("n/a"));
-    mocks.client.getTrainingStatus.mockRejectedValue(new Error("n/a"));
+    mocks.client.getHrvSummary.mockRejectedValue(
+      new GarminApiError("No content available (204)", 204),
+    );
+    mocks.client.getTrainingStatus.mockRejectedValue(
+      new GarminApiError("No content available (204)", 204),
+    );
 
     mocks.client.getDailyStress.mockResolvedValue({});
     mocks.parseStressTimeSeries.mockReturnValue({
@@ -946,5 +965,51 @@ describe("GarminProvider.sync()", () => {
     await syncProvider(provider, db, new Date());
 
     expect(mocks.withSyncLog).toHaveBeenCalledTimes(5);
+  });
+
+  it("does not call captureException for 204 (no data) errors", async () => {
+    const { captureException } = await import("@sentry/node");
+
+    await syncProvider(provider, db, new Date());
+
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("calls captureException for non-204 errors (once per operation)", async () => {
+    const { captureException } = await import("@sentry/node");
+
+    // Sleep will fail with a real error on every date
+    mocks.client.getSleepData.mockRejectedValue(new Error("server error"));
+
+    const result = await syncProvider(provider, db, new Date());
+
+    // captureException should be called exactly once for the sleep operation
+    // (rate-limited to first error per operation)
+    expect(captureException).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({
+        tags: { provider: "garmin", operation: "sleep" },
+      }),
+    );
+
+    // The error should propagate to the sync result
+    expect(
+      result.errors.some((syncError: { message: string }) =>
+        syncError.message.includes("Sleep sync failed"),
+      ),
+    ).toBe(true);
+  });
+
+  it("propagates per-date errors to sync result so withSyncLog records them", async () => {
+    // Make daily summary fail with a real error
+    mocks.client.getDailySummary.mockRejectedValue(new Error("API outage"));
+
+    const result = await syncProvider(provider, db, new Date());
+
+    expect(
+      result.errors.some((syncError: { message: string }) =>
+        syncError.message.includes("Daily metrics sync failed"),
+      ),
+    ).toBe(true);
   });
 });
