@@ -48,12 +48,6 @@ variable "hcloud_token" {
   sensitive   = true
 }
 
-variable "cloudflare_api_token" {
-  description = "Cloudflare API token with DNS:Edit permissions on dofek.fit zone"
-  type        = string
-  sensitive   = true
-}
-
 variable "cloudflare_zone_id" {
   description = "Cloudflare zone ID for dofek.fit"
   type        = string
@@ -103,7 +97,9 @@ provider "hcloud" {
 }
 
 provider "cloudflare" {
-  api_token = var.cloudflare_api_token
+  # Authenticated via CLOUDFLARE_API_TOKEN env var.
+  # The provider v5 schema rejects Cloudflare's new cfut_-prefixed tokens
+  # in the api_token attribute (cloudflare/terraform-provider-cloudflare#1990).
 }
 
 # ── Locals ───────────────────────────────────────────────────────────────
