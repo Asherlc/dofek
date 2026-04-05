@@ -19,7 +19,7 @@ terraform {
     }
     cloudflare = {
       source  = "cloudflare/cloudflare"
-      version = "~> 4.0"
+      version = "~> 5.0"
     }
   }
 
@@ -44,12 +44,6 @@ terraform {
 
 variable "hcloud_token" {
   description = "Hetzner Cloud API token"
-  type        = string
-  sensitive   = true
-}
-
-variable "cloudflare_api_token" {
-  description = "Cloudflare API token with DNS:Edit permissions on dofek.fit zone"
   type        = string
   sensitive   = true
 }
@@ -103,7 +97,8 @@ provider "hcloud" {
 }
 
 provider "cloudflare" {
-  api_token = var.cloudflare_api_token
+  # api_token read from CLOUDFLARE_API_TOKEN env var to avoid
+  # provider v5 schema validation rejecting the new cfut_ token format
 }
 
 # ── Locals ───────────────────────────────────────────────────────────────
@@ -184,11 +179,11 @@ resource "hcloud_server" "preview" {
 
 # ── DNS ──────────────────────────────────────────────────────────────────
 
-resource "cloudflare_record" "preview" {
+resource "cloudflare_dns_record" "preview" {
   zone_id = var.cloudflare_zone_id
   type    = "A"
   name    = "pr-${var.pr_number}.preview"
-  value   = hcloud_server.preview.ipv4_address
+  content = hcloud_server.preview.ipv4_address
   ttl     = 60
   proxied = false # Direct connection — Caddy handles TLS
 }
