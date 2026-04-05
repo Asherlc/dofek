@@ -63,6 +63,12 @@ variable "server_image_tag" {
   type        = string
 }
 
+variable "commit_sha" {
+  description = "Git commit SHA — forces server replacement on every push"
+  type        = string
+  default     = ""
+}
+
 variable "ghcr_username" {
   description = "GitHub username for GHCR image pulls"
   type        = string
@@ -150,6 +156,7 @@ resource "hcloud_server" "preview" {
   firewall_ids = [hcloud_firewall.preview.id]
 
   user_data = templatefile("${path.module}/cloud-init.yml", {
+    commit_sha    = var.commit_sha
     domain        = local.preview_domain
     ghcr_token    = var.ghcr_token
     ghcr_username = var.ghcr_username

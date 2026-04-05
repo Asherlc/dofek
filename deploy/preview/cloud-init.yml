@@ -1,4 +1,5 @@
 #cloud-config
+# commit: ${commit_sha}
 
 package_update: true
 
