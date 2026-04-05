@@ -25,6 +25,12 @@ const TRAINING_EXPORT_DIR = join(JOB_FILES_DIR, "training-export");
 
 const BATCH_SIZE = 100_000;
 
+/**
+ * Yield to the event loop so BullMQ can renew the job lock.
+ * Called periodically during long synchronous DuckDB appender loops.
+ */
+const yieldToEventLoop = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
 // ── Zod schema for sensor_sample query results ──
 
 const sensorSampleRowSchema = z.object({
@@ -79,6 +85,8 @@ export async function writeParquet(rows: SensorSampleRow[], outputPath: string):
 
     const appender = duckdb.appender_create(conn, null, "sensor_sample");
 
+    const YIELD_INTERVAL = 10_000;
+    let rowIndex = 0;
     for (const row of rows) {
       duckdb.append_varchar(appender, row.recorded_at);
       duckdb.append_varchar(appender, row.user_id);
@@ -114,6 +122,12 @@ export async function writeParquet(rows: SensorSampleRow[], outputPath: string):
         duckdb.append_null(appender);
       }
       duckdb.appender_end_row(appender);
+
+      // Yield to the event loop every 10K rows so BullMQ can renew the job lock
+      rowIndex++;
+      if (rowIndex % YIELD_INTERVAL === 0) {
+        await yieldToEventLoop();
+      }
     }
 
     duckdb.appender_flush_sync(appender);

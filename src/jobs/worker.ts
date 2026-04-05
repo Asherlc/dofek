@@ -96,7 +96,7 @@ const postSyncWorker = new Worker<PostSyncJobData>(
 const trainingExportWorker = new Worker<TrainingExportJobData>(
   TRAINING_EXPORT_QUEUE,
   (job) => jobContext.run(job, () => processTrainingExportJob(job, db)),
-  { connection },
+  { connection, lockDuration: 300_000 },
 );
 
 // ── Idle spin-down ──
