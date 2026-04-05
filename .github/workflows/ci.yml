@@ -1174,10 +1174,18 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
+          rm -f ~/.ssh/known_hosts
           for attempt in 1 2 3; do
-            ssh-keyscan -T 10 -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null && break
-            echo "ssh-keyscan attempt $attempt failed, retrying..."
-            sleep 2
+            tmp_known_hosts="$(mktemp)"
+            if ssh-keyscan -T 10 -H "$SERVER_HOST" > "$tmp_known_hosts" 2>/dev/null && [ -s "$tmp_known_hosts" ]; then
+              mv "$tmp_known_hosts" ~/.ssh/known_hosts
+              break
+            fi
+            rm -f "$tmp_known_hosts"
+            if [ "$attempt" -lt 3 ]; then
+              echo "ssh-keyscan attempt $attempt failed, retrying..."
+              sleep 2
+            fi
           done
           if [ ! -s ~/.ssh/known_hosts ]; then
             echo "::error::ssh-keyscan failed after 3 attempts"
