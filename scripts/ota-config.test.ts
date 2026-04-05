@@ -16,6 +16,12 @@ describe("OTA deployment config (expo-open-ota)", () => {
     expect(dockerCompose).toContain("ota-secrets:");
   });
 
+  it("fails the ota healthcheck when the manifest probe fails", () => {
+    const dockerCompose = readFileSync(dockerComposePath, "utf-8");
+    expect(dockerCompose).toContain("wget -qO- http://localhost:3000/manifest");
+    expect(dockerCompose).not.toContain("grep -q 'channel' || exit 0");
+  });
+
   it("routes ota subdomain in Caddyfile", () => {
     const caddyfile = readFileSync(caddyfilePath, "utf-8");
     expect(caddyfile).toContain("ota.dofek.asherlc.com");
