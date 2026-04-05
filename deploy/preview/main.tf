@@ -85,6 +85,12 @@ variable "ssh_allowed_ips" {
   default     = ["0.0.0.0/0", "::/0"]
 }
 
+variable "cloudflare_api_token" {
+  description = "Cloudflare API token for DNS record management"
+  type        = string
+  sensitive   = true
+}
+
 # ── Providers ────────────────────────────────────────────────────────────
 
 provider "hcloud" {
@@ -92,9 +98,7 @@ provider "hcloud" {
 }
 
 provider "cloudflare" {
-  # Authenticated via CLOUDFLARE_API_TOKEN env var.
-  # The provider v5 schema rejects Cloudflare's new cfut_-prefixed tokens
-  # in the api_token attribute (cloudflare/terraform-provider-cloudflare#1990).
+  api_token = var.cloudflare_api_token
 }
 
 # ── Locals ───────────────────────────────────────────────────────────────
