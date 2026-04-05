@@ -19,7 +19,7 @@ terraform {
     }
     cloudflare = {
       source  = "cloudflare/cloudflare"
-      version = "~> 5.0"
+      version = "~> 4.0"
     }
   }
 
@@ -184,11 +184,11 @@ resource "hcloud_server" "preview" {
 
 # ── DNS ──────────────────────────────────────────────────────────────────
 
-resource "cloudflare_dns_record" "preview" {
+resource "cloudflare_record" "preview" {
   zone_id = var.cloudflare_zone_id
   type    = "A"
   name    = "pr-${var.pr_number}.preview"
-  content = hcloud_server.preview.ipv4_address
+  value   = hcloud_server.preview.ipv4_address
   ttl     = 60
   proxied = false # Direct connection — Caddy handles TLS
 }
