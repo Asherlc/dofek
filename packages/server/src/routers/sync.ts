@@ -63,7 +63,8 @@ export function toJobId(id: string | number | undefined, providerId: string): st
 }
 
 /** Parse a composite jobId into its provider hint and raw BullMQ ID.
- *  New format: "providerId:numericId". Legacy format: plain numeric string. */
+ *  New format: "providerId:rawId", where rawId may be numeric or non-numeric.
+ *  Legacy format: plain raw ID string. */
 export function parseJobId(compositeId: string): { providerId: string | null; rawId: string } {
   const colonIndex = compositeId.indexOf(":");
   if (colonIndex > 0) {
@@ -287,13 +288,14 @@ export const syncRouter = router({
 
     const { providerId: hintProviderId, rawId } = parseJobId(input.jobId);
 
-    // Search the hinted provider queue first, then fall back to all queues
+    // Search the hinted provider queue first (only if configured), then fall back to all queues
+    const configuredIds = new Set(getConfiguredProviderIds());
     let job: Awaited<ReturnType<Queue<SyncJobData>["getJob"]>> | undefined;
     try {
-      if (hintProviderId) {
+      if (hintProviderId && configuredIds.has(hintProviderId)) {
         job = await getProviderQueue(hintProviderId).getJob(rawId);
       } else {
-        for (const providerId of getConfiguredProviderIds()) {
+        for (const providerId of configuredIds) {
           job = await getProviderQueue(providerId).getJob(rawId);
           if (job) break;
         }

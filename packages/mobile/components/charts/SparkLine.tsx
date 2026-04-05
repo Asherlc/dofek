@@ -182,12 +182,17 @@ export function SparkLine({
   }
 
   return (
-    <View style={axisStyles.container}>
+    <View
+      style={[
+        axisStyles.container,
+        { width: fixedWidth, height: fixedHeight, flex: fixedWidth ? undefined : 1 },
+      ]}
+    >
       <View style={axisStyles.yAxis}>
         <Text style={axisStyles.yLabel}>{formatLabel(max)}</Text>
         <Text style={axisStyles.yLabel}>{formatLabel(min)}</Text>
       </View>
-      <View style={{ flex: 1, height: fixedHeight }} onLayout={onLayout}>
+      <View style={{ flex: 1 }} onLayout={onLayout}>
         {svgElement}
       </View>
     </View>

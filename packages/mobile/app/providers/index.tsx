@@ -456,8 +456,9 @@ export default function ProvidersScreen() {
       switch (provider.authType) {
         case "oauth":
         case "oauth1":
+          if (!sessionToken) break;
           await WebBrowser.openBrowserAsync(
-            `${serverUrl}/auth/provider/${provider.id}?session=${sessionToken}`,
+            `${serverUrl}/auth/provider/${provider.id}?session=${encodeURIComponent(sessionToken)}`,
           );
           await trpcUtils.sync.providers.invalidate();
           break;
