@@ -48,6 +48,12 @@ variable "hcloud_token" {
   sensitive   = true
 }
 
+variable "cloudflare_api_token" {
+  description = "Cloudflare API token with DNS:Edit permissions on dofek.fit zone"
+  type        = string
+  sensitive   = true
+}
+
 variable "cloudflare_zone_id" {
   description = "Cloudflare zone ID for dofek.fit"
   type        = string
@@ -97,8 +103,7 @@ provider "hcloud" {
 }
 
 provider "cloudflare" {
-  # api_token read from CLOUDFLARE_API_TOKEN env var to avoid
-  # provider v5 schema validation rejecting the new cfut_ token format
+  api_token = var.cloudflare_api_token
 }
 
 # ── Locals ───────────────────────────────────────────────────────────────
