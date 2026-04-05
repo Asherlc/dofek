@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_LAYOUT } from "../lib/dashboardLayoutContext.ts";
 import { UnitConverter } from "../lib/units.ts";
 import {
   buildSkinTempSeries,
   DASHBOARD_SECTION_IDS,
+  GRID_PAIR_SECONDARY,
+  GRID_PAIRS,
   healthMonitorSubtitle,
   spo2TempSectionConfig,
 } from "./Dashboard";
@@ -122,5 +125,44 @@ describe("DASHBOARD_SECTION_IDS", () => {
 
   it("includes sleepNeed section (paired with weeklyReport)", () => {
     expect(DASHBOARD_SECTION_IDS.has("sleepNeed")).toBe(true);
+  });
+
+  it("includes strain section", () => {
+    expect(DASHBOARD_SECTION_IDS.has("strain")).toBe(true);
+  });
+});
+
+describe("grid pair consistency", () => {
+  it("every grid pair primary is in DASHBOARD_SECTION_IDS", () => {
+    for (const primary of Object.keys(GRID_PAIRS)) {
+      expect(
+        DASHBOARD_SECTION_IDS.has(primary),
+        `primary "${primary}" missing from DASHBOARD_SECTION_IDS`,
+      ).toBe(true);
+    }
+  });
+
+  it("every grid pair secondary is in DASHBOARD_SECTION_IDS", () => {
+    for (const secondary of Object.values(GRID_PAIRS)) {
+      expect(
+        DASHBOARD_SECTION_IDS.has(secondary),
+        `secondary "${secondary}" missing from DASHBOARD_SECTION_IDS`,
+      ).toBe(true);
+    }
+  });
+
+  it("every grid pair primary is in DEFAULT_ORDER", () => {
+    for (const primary of Object.keys(GRID_PAIRS)) {
+      expect(
+        DEFAULT_LAYOUT.order.includes(primary),
+        `primary "${primary}" missing from DEFAULT_ORDER`,
+      ).toBe(true);
+    }
+  });
+
+  it("GRID_PAIR_SECONDARY is the inverse of GRID_PAIRS", () => {
+    for (const [primary, secondary] of Object.entries(GRID_PAIRS)) {
+      expect(GRID_PAIR_SECONDARY[secondary]).toBe(primary);
+    }
   });
 });

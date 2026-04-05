@@ -10,6 +10,8 @@ const SETTINGS_KEY = "dashboardLayout";
 
 /** Grid-paired sections: if one moves, its pair moves with it. */
 const GRID_PAIRS: Record<string, string> = {
+  strain: "nextWorkout",
+  nextWorkout: "strain",
   weeklyReport: "sleepNeed",
   sleepNeed: "weeklyReport",
   stress: "healthspan",
