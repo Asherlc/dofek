@@ -12,6 +12,7 @@ import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { dateWindowStart, endDateSchema, timestampWindowStart } from "../lib/date-window.ts";
+import { sleepNightDate } from "../lib/sql-fragments.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
@@ -72,7 +73,7 @@ export const stressRouter = router({
                 local_date AS date,
                 efficiency_pct
               FROM (
-                SELECT (started_at AT TIME ZONE ${ctx.timezone})::date AS local_date,
+                SELECT ${sleepNightDate(ctx.timezone)} AS local_date,
                        efficiency_pct, duration_minutes
                 FROM fitness.v_sleep
                 WHERE user_id = ${ctx.userId}

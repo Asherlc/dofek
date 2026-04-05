@@ -6,6 +6,7 @@ import {
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { dateWindowStart, endDateSchema, timestampWindowStart } from "../lib/date-window.ts";
+import { sleepNightDate } from "../lib/sql-fragments.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
@@ -77,7 +78,7 @@ export const sleepNeedRouter = router({
         sleepNeedRowSchema,
         sql`WITH raw_sleep AS (
               SELECT
-                (started_at AT TIME ZONE ${ctx.timezone})::date AS date,
+                ${sleepNightDate(ctx.timezone)} AS date,
                 COALESCE(duration_minutes, EXTRACT(EPOCH FROM (ended_at - started_at)) / 60)::int AS duration_minutes
               FROM fitness.v_sleep
               WHERE user_id = ${ctx.userId}
@@ -232,9 +233,9 @@ export const sleepNeedRouter = router({
         sql`
           WITH raw_sleep AS (
             SELECT
-              (started_at AT TIME ZONE ${tz})::date AS sleep_date_val,
+              ${sleepNightDate(tz)} AS sleep_date_val,
               duration_minutes, efficiency_pct, started_at,
-              (COALESCE(ended_at, started_at + interval '8 hours') AT TIME ZONE ${tz})::date::text AS sleep_date
+              ${sleepNightDate(tz)}::text AS sleep_date
             FROM fitness.v_sleep
             WHERE user_id = ${ctx.userId}
               AND is_nap = false
@@ -265,7 +266,7 @@ export const sleepNeedRouter = router({
         z.object({ avg_duration: z.coerce.number().nullable() }),
         sql`
           WITH raw_sleep AS (
-            SELECT (started_at AT TIME ZONE ${tz})::date AS date, duration_minutes
+            SELECT ${sleepNightDate(tz)} AS date, duration_minutes
             FROM fitness.v_sleep
             WHERE user_id = ${ctx.userId}
               AND is_nap = false
