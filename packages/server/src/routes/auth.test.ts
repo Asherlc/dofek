@@ -1113,6 +1113,52 @@ describe("createAuthRouter", () => {
     });
   });
 
+  describe("identity callback error handling", () => {
+    it("returns 500 and logs error when validateCallback throws", async () => {
+      vi.mocked(getIdentityProvider).mockReturnValue({
+        createAuthorizationUrl: vi.fn(() => new URL("https://accounts.google.com/authorize")),
+        validateCallback: vi.fn().mockRejectedValue(new Error("Token exchange failed")),
+      });
+      vi.mocked(getOAuthFlowCookies).mockReturnValue({
+        state: "google:test-state",
+        codeVerifier: "verifier",
+      });
+      const { app } = createTestApp();
+      const res = await request(
+        app,
+        "get",
+        "/auth/callback/google?code=authcode&state=google:test-state",
+      );
+      expect(res.status).toBe(500);
+      expect(res.body).toContain("Login failed");
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining("Identity callback failed for google"),
+      );
+    });
+
+    it("logs OAuth error code when error has code property", async () => {
+      const oauthError = Object.assign(new Error("OAuth request error: invalid_client"), {
+        code: "invalid_client",
+      });
+      vi.mocked(getIdentityProvider).mockReturnValue({
+        createAuthorizationUrl: vi.fn(() => new URL("https://accounts.google.com/authorize")),
+        validateCallback: vi.fn().mockRejectedValue(oauthError),
+      });
+      vi.mocked(getOAuthFlowCookies).mockReturnValue({
+        state: "google:test-state",
+        codeVerifier: "verifier",
+      });
+      const { app } = createTestApp();
+      const res = await request(
+        app,
+        "get",
+        "/auth/callback/google?code=authcode&state=google:test-state",
+      );
+      expect(res.status).toBe(500);
+      expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("(code=invalid_client)"));
+    });
+  });
+
   describe("GET /auth/callback/:provider (link flow)", () => {
     it("redirects to /settings on successful link callback", async () => {
       const mockValidate = vi.fn(() =>

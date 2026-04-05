@@ -404,6 +404,19 @@ describe("auth/providers", () => {
       const result = decodePemToDer(pem);
       expect(Array.from(result)).toEqual([1, 2, 3, 4, 5, 6]);
     });
+
+    it("handles literal backslash-n from secret managers (e.g. Infisical)", () => {
+      // Secret managers may store newlines as literal \n (two chars) instead of real newlines
+      const pem = "-----BEGIN PRIVATE KEY-----\\nAQID\\n-----END PRIVATE KEY-----";
+      const result = decodePemToDer(pem);
+      expect(Array.from(result)).toEqual([1, 2, 3]);
+    });
+
+    it("handles literal backslash-n in multi-line base64", () => {
+      const pem = "-----BEGIN PRIVATE KEY-----\\nAQID\\nBAUG\\n-----END PRIVATE KEY-----";
+      const result = decodePemToDer(pem);
+      expect(Array.from(result)).toEqual([1, 2, 3, 4, 5, 6]);
+    });
   });
 
   describe("generateCodeVerifier and generateState", () => {

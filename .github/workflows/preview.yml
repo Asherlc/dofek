@@ -103,8 +103,7 @@ jobs:
             -var="hcloud_token=${{ secrets.HCLOUD_TOKEN }}" \
             -var="cloudflare_zone_id=${{ secrets.CLOUDFLARE_ZONE_ID }}" \
             -var="ghcr_username=${{ github.repository_owner }}" \
-            -var="ghcr_token=${{ secrets.GHCR_TOKEN }}" \
-            -var="ssh_public_key=${{ secrets.SSH_PUBLIC_KEY }}"
+            -var="ghcr_token=${{ secrets.GHCR_TOKEN }}"
 
           echo "preview_url=$(terraform output -raw preview_url)" >> "$GITHUB_OUTPUT"
           echo "server_ip=$(terraform output -raw server_ip)" >> "$GITHUB_OUTPUT"
@@ -239,8 +238,7 @@ jobs:
             -var="hcloud_token=${{ secrets.HCLOUD_TOKEN }}" \
             -var="cloudflare_zone_id=${{ secrets.CLOUDFLARE_ZONE_ID }}" \
             -var="ghcr_username=${{ github.repository_owner }}" \
-            -var="ghcr_token=${{ secrets.GHCR_TOKEN }}" \
-            -var="ssh_public_key=${{ secrets.SSH_PUBLIC_KEY }}"
+            -var="ghcr_token=${{ secrets.GHCR_TOKEN }}"
 
       - name: Delete Workspace
         working-directory: deploy/preview
@@ -341,8 +339,7 @@ jobs:
                   -var="hcloud_token=${{ secrets.HCLOUD_TOKEN }}" \
                   -var="cloudflare_zone_id=${{ secrets.CLOUDFLARE_ZONE_ID }}" \
                   -var="ghcr_username=${{ github.repository_owner }}" \
-                  -var="ghcr_token=${{ secrets.GHCR_TOKEN }}" \
-                  -var="ssh_public_key=${{ secrets.SSH_PUBLIC_KEY }}" && \
+                  -var="ghcr_token=${{ secrets.GHCR_TOKEN }}" && \
                 terraform workspace select default && \
                 terraform workspace delete "pr-$PR_NUM" || true
               else

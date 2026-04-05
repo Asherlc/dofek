@@ -129,7 +129,12 @@ export async function handleIdentityCallback(
   } catch (err: unknown) {
     Sentry.captureException(err);
     const message = err instanceof Error ? err.message : String(err);
-    logger.error(`[auth] Identity callback failed: ${message}`);
+    const oauthCode =
+      err instanceof Error && "code" in err && typeof err.code === "string" ? err.code : undefined;
+    const errorDetail = oauthCode ? ` (code=${oauthCode})` : "";
+    logger.error(
+      `[auth] Identity callback failed for ${req.params.provider}: ${message}${errorDetail}`,
+    );
     res.status(500).send("Login failed — please try again");
   }
 }

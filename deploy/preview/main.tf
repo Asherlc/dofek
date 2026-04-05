@@ -80,11 +80,6 @@ variable "ghcr_token" {
   sensitive   = true
 }
 
-variable "ssh_public_key" {
-  description = "SSH public key for server access"
-  type        = string
-}
-
 variable "ssh_allowed_ips" {
   description = "CIDR blocks allowed to SSH (e.g. [\"1.2.3.4/32\"]). Defaults to all."
   type        = list(string)
@@ -112,10 +107,13 @@ locals {
 }
 
 # ── SSH Key ──────────────────────────────────────────────────────────────
+# Hetzner SSH keys are account-global and unique by public key content.
+# Creating a per-PR key with the same content fails with uniqueness_error
+# when multiple workspaces exist. Instead, look up the production key
+# ("dofek-deploy" from deploy/main.tf) that already exists.
 
-resource "hcloud_ssh_key" "preview" {
-  name       = "dofek-preview-pr-${var.pr_number}"
-  public_key = var.ssh_public_key
+data "hcloud_ssh_key" "deploy" {
+  name = "dofek-deploy"
 }
 
 # ── Firewall ─────────────────────────────────────────────────────────────
@@ -152,7 +150,7 @@ resource "hcloud_server" "preview" {
   image        = "ubuntu-24.04"
   server_type  = "cax11"
   location     = "nbg1"
-  ssh_keys     = [hcloud_ssh_key.preview.id]
+  ssh_keys     = [data.hcloud_ssh_key.deploy.id]
   firewall_ids = [hcloud_firewall.preview.id]
 
   user_data = templatefile("${path.module}/cloud-init.yml", {

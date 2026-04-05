@@ -89,6 +89,7 @@ export function decodePemToDer(pem: string): Uint8Array {
   const base64 = pem
     .replace(/-----BEGIN PRIVATE KEY-----/g, "")
     .replace(/-----END PRIVATE KEY-----/g, "")
+    .replace(/\\n/g, "")
     .replace(/\s/g, "");
   return new Uint8Array(Buffer.from(base64, "base64"));
 }
