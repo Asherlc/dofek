@@ -380,7 +380,20 @@ function randFloat(min: number, max: number, decimals: number): number {
 
 async function main() {
   console.log("Seeding development database...\n");
-  await applyMigrations();
+
+  // Skip migrations if the schema already exists (e.g., web container already ran them).
+  // This avoids "relation already exists" errors when seed runs after web in Docker Compose.
+  const [{ exists: schemaExists }] = await sql`
+    SELECT EXISTS (
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'fitness' AND table_name = 'activity'
+    ) AS exists`;
+  if (schemaExists) {
+    console.log("Schema already exists — skipping migrations (web already applied them)");
+  } else {
+    await applyMigrations();
+  }
+
   await seedData();
   await refreshViews();
 
