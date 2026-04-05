@@ -1,6 +1,8 @@
 /** @vitest-environment jsdom */
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
+import type { SmoothedWeightRow } from "../../../server/src/routers/body-analytics.ts";
 
 let capturedOption: Record<string, unknown> | null = null;
 
@@ -33,17 +35,77 @@ vi.mock("./LoadingSkeleton.tsx", () => ({
 
 const { SmoothedWeightChart } = await import("./SmoothedWeightChart.tsx");
 
-const sampleData = [
-  { date: "2026-03-01", rawWeight: 84.0, smoothedWeight: 84.0, weeklyChange: null },
-  { date: "2026-03-02", rawWeight: 83.8, smoothedWeight: 83.98, weeklyChange: null },
-  { date: "2026-03-03", rawWeight: 84.2, smoothedWeight: 84.0, weeklyChange: null },
-  { date: "2026-03-04", rawWeight: 83.7, smoothedWeight: 83.97, weeklyChange: null },
-  { date: "2026-03-05", rawWeight: 84.1, smoothedWeight: 83.98, weeklyChange: null },
-  { date: "2026-03-06", rawWeight: 83.9, smoothedWeight: 83.97, weeklyChange: null },
-  { date: "2026-03-07", rawWeight: 84.0, smoothedWeight: 83.98, weeklyChange: null },
-  { date: "2026-03-08", rawWeight: 83.6, smoothedWeight: 83.94, weeklyChange: -0.06 },
-  { date: "2026-03-09", rawWeight: 83.5, smoothedWeight: 83.9, weeklyChange: -0.08 },
-  { date: "2026-03-10", rawWeight: 83.4, smoothedWeight: 83.85, weeklyChange: -0.15 },
+const sampleData: SmoothedWeightRow[] = [
+  {
+    date: "2026-03-01",
+    rawWeight: 84.0,
+    smoothedWeight: 84.0,
+    weeklyChange: null,
+    interpolated: false,
+  },
+  {
+    date: "2026-03-02",
+    rawWeight: 83.8,
+    smoothedWeight: 83.98,
+    weeklyChange: null,
+    interpolated: false,
+  },
+  {
+    date: "2026-03-03",
+    rawWeight: 84.2,
+    smoothedWeight: 84.0,
+    weeklyChange: null,
+    interpolated: false,
+  },
+  {
+    date: "2026-03-04",
+    rawWeight: 83.7,
+    smoothedWeight: 83.97,
+    weeklyChange: null,
+    interpolated: false,
+  },
+  {
+    date: "2026-03-05",
+    rawWeight: 84.1,
+    smoothedWeight: 83.98,
+    weeklyChange: null,
+    interpolated: false,
+  },
+  {
+    date: "2026-03-06",
+    rawWeight: 83.9,
+    smoothedWeight: 83.97,
+    weeklyChange: null,
+    interpolated: false,
+  },
+  {
+    date: "2026-03-07",
+    rawWeight: 84.0,
+    smoothedWeight: 83.98,
+    weeklyChange: null,
+    interpolated: false,
+  },
+  {
+    date: "2026-03-08",
+    rawWeight: 83.6,
+    smoothedWeight: 83.94,
+    weeklyChange: -0.06,
+    interpolated: false,
+  },
+  {
+    date: "2026-03-09",
+    rawWeight: 83.5,
+    smoothedWeight: 83.9,
+    weeklyChange: -0.08,
+    interpolated: false,
+  },
+  {
+    date: "2026-03-10",
+    rawWeight: 83.4,
+    smoothedWeight: 83.85,
+    weeklyChange: -0.15,
+    interpolated: false,
+  },
 ];
 
 describe("SmoothedWeightChart", () => {
@@ -83,5 +145,93 @@ describe("SmoothedWeightChart", () => {
     expect(weightAxis.min({ min: 186.5, max: 195 })).toBe(186);
     expect(weightAxis.min({ min: 84.0, max: 90 })).toBe(84);
     expect(weightAxis.min({ min: 83.3, max: 90 })).toBe(82);
+  });
+
+  it("filters out interpolated points from scatter series", () => {
+    const dataWithInterpolation: SmoothedWeightRow[] = [
+      {
+        date: "2026-03-01",
+        rawWeight: 84.0,
+        smoothedWeight: 84.0,
+        weeklyChange: null,
+        interpolated: false,
+      },
+      {
+        date: "2026-03-02",
+        rawWeight: null,
+        smoothedWeight: 83.9,
+        weeklyChange: null,
+        interpolated: true,
+      },
+      {
+        date: "2026-03-03",
+        rawWeight: 83.8,
+        smoothedWeight: 83.89,
+        weeklyChange: null,
+        interpolated: false,
+      },
+    ];
+    render(<SmoothedWeightChart data={dataWithInterpolation} />);
+    expect(capturedOption).not.toBeNull();
+
+    const series = z
+      .array(z.object({ name: z.string(), data: z.array(z.unknown()) }))
+      .parse(capturedOption?.series);
+    const scatterSeries = series.find((s) => s.name === "Raw Weight");
+    // Should only have 2 data points (interpolated point filtered out)
+    expect(scatterSeries?.data).toHaveLength(2);
+  });
+
+  it("renders goal markLine when prediction has goal", () => {
+    render(
+      <SmoothedWeightChart
+        data={sampleData}
+        prediction={{
+          ratePerWeek: -0.3,
+          rateConfidence: 0.92,
+          impliedDailyCalories: -330,
+          periodDeltas: { days7: -0.3, days14: -0.6, days30: null },
+          goal: {
+            goalWeightKg: 80,
+            remainingKg: -3.85,
+            estimatedDate: "2026-06-01",
+            daysRemaining: 90,
+          },
+          projectionLine: [],
+        }}
+      />,
+    );
+    expect(capturedOption).not.toBeNull();
+
+    const series = z
+      .array(z.object({ name: z.string() }).passthrough())
+      .parse(capturedOption?.series);
+    const trendSeries = series.find((s) => s.name === "Trend");
+    expect(trendSeries).toBeDefined();
+    expect("markLine" in (trendSeries ?? {})).toBe(true);
+  });
+
+  it("renders projection line as separate series", () => {
+    render(
+      <SmoothedWeightChart
+        data={sampleData}
+        prediction={{
+          ratePerWeek: -0.3,
+          rateConfidence: 0.92,
+          impliedDailyCalories: -330,
+          periodDeltas: { days7: -0.3, days14: -0.6, days30: null },
+          goal: null,
+          projectionLine: [
+            { date: "2026-03-11", projectedWeight: 83.8 },
+            { date: "2026-03-12", projectedWeight: 83.75 },
+          ],
+        }}
+      />,
+    );
+    expect(capturedOption).not.toBeNull();
+
+    const series = z.array(z.object({ name: z.string() })).parse(capturedOption?.series);
+    const projectionSeries = series.find((s) => s.name === "Projection");
+    expect(projectionSeries).toBeDefined();
   });
 });

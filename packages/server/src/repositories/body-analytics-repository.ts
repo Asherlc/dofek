@@ -74,9 +74,10 @@ const recompositionRowSchema = z.object({
  * Simple univariate least-squares linear regression.
  * Returns the slope (value change per day index unit) and R-squared.
  */
-export function leastSquaresSlope(
-  values: ReadonlyArray<{ dayIndex: number; value: number }>,
-): { slopePerDay: number; rSquared: number } {
+export function leastSquaresSlope(values: ReadonlyArray<{ dayIndex: number; value: number }>): {
+  slopePerDay: number;
+  rSquared: number;
+} {
   const count = values.length;
   if (count <= 1) return { slopePerDay: 0, rSquared: 1 };
 
@@ -127,10 +128,10 @@ function dateToMs(date: string): number {
 
 /** Format epoch ms (UTC midnight) back to YYYY-MM-DD. */
 function msToDate(ms: number): string {
-  const d = new Date(ms);
-  const year = d.getUTCFullYear();
-  const month = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(d.getUTCDate()).padStart(2, "0");
+  const utcDate = new Date(ms);
+  const year = utcDate.getUTCFullYear();
+  const month = String(utcDate.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(utcDate.getUTCDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
 
@@ -149,14 +150,17 @@ export function interpolateMissingDays(
   sparse: ReadonlyArray<{ date: string; value: number }>,
 ): InterpolatedPoint[] {
   if (sparse.length === 0) return [];
+  const first = sparse[0];
+  if (!first) return [];
   if (sparse.length === 1) {
-    return [{ date: sparse[0]!.date, value: sparse[0]!.value, interpolated: false }];
+    return [{ date: first.date, value: first.value, interpolated: false }];
   }
 
   const result: InterpolatedPoint[] = [];
 
   for (let index = 0; index < sparse.length; index++) {
-    const current = sparse[index]!;
+    const current = sparse[index];
+    if (!current) continue;
     result.push({ date: current.date, value: current.value, interpolated: false });
 
     const next = sparse[index + 1];
@@ -467,18 +471,18 @@ export class BodyAnalyticsRepository extends BaseRepository {
       ratePerWeek != null ? Math.round(((ratePerWeek / 7) * 7700 * 10) / 10) : null;
 
     // Period deltas from smoothed values
-    const latest = smoothed[smoothed.length - 1]!;
+    const latest = smoothed[smoothed.length - 1] ?? 0;
     const days7 =
       smoothed.length >= 8
-        ? Math.round((latest - smoothed[smoothed.length - 8]!) * 100) / 100
+        ? Math.round((latest - (smoothed[smoothed.length - 8] ?? 0)) * 100) / 100
         : null;
     const days14 =
       smoothed.length >= 15
-        ? Math.round((latest - smoothed[smoothed.length - 15]!) * 100) / 100
+        ? Math.round((latest - (smoothed[smoothed.length - 15] ?? 0)) * 100) / 100
         : null;
     const days30 =
       smoothed.length >= 31
-        ? Math.round((latest - smoothed[smoothed.length - 31]!) * 100) / 100
+        ? Math.round((latest - (smoothed[smoothed.length - 31] ?? 0)) * 100) / 100
         : null;
 
     // Goal projection
@@ -491,10 +495,10 @@ export class BodyAnalyticsRepository extends BaseRepository {
       let estimatedDate: string | null = null;
       let daysRemaining: number | null = null;
 
-      if (trendingTowardGoal && Math.abs(slopePerDay) > 0.001) {
+      const lastInterpolatedPoint = interpolated[interpolated.length - 1];
+      if (trendingTowardGoal && Math.abs(slopePerDay) > 0.001 && lastInterpolatedPoint) {
         daysRemaining = Math.ceil(Math.abs(remainingKg / slopePerDay));
-        const lastDate = interpolated[interpolated.length - 1]!.date;
-        const lastMs = dateToMs(lastDate);
+        const lastMs = dateToMs(lastInterpolatedPoint.date);
         estimatedDate = msToDate(lastMs + daysRemaining * MS_PER_DAY);
       }
 
@@ -503,8 +507,9 @@ export class BodyAnalyticsRepository extends BaseRepository {
 
     // Projection line: up to 30 days forward (or until goal)
     const projectionLine: WeightPrediction["projectionLine"] = [];
-    if (ratePerWeek != null) {
-      const lastDate = interpolated[interpolated.length - 1]!.date;
+    const lastInterpolatedPoint = interpolated[interpolated.length - 1];
+    if (ratePerWeek != null && lastInterpolatedPoint) {
+      const lastDate = lastInterpolatedPoint.date;
       const lastMs = dateToMs(lastDate);
       const maxDays = goal?.daysRemaining != null ? Math.min(goal.daysRemaining, 30) : 30;
 

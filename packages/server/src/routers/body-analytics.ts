@@ -40,8 +40,7 @@ export const bodyAnalyticsRouter = router({
     .query(async ({ ctx, input }) => {
       const settingsRepo = new SettingsRepository(ctx.db, ctx.userId);
       const goalSetting = await settingsRepo.get("goalWeight");
-      const goalWeightKg =
-        goalSetting?.value != null ? Number(goalSetting.value) : null;
+      const goalWeightKg = goalSetting?.value != null ? Number(goalSetting.value) : null;
 
       const repo = new BodyAnalyticsRepository(ctx.db, ctx.userId, ctx.timezone);
       return repo.getWeightPrediction(input.days, input.endDate, goalWeightKg);
