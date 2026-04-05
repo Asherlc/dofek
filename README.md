@@ -92,7 +92,7 @@ dofek/
 ├── cypress/                       # E2E tests (Cypress)
 ├── drizzle/                       # SQL migrations
 ├── deploy/                        # Terraform + Docker Compose + Caddy
-└── Dockerfile                     # Multi-stage: server + client targets
+└── Dockerfile                     # Multi-stage: server image with built web assets
 ```
 
 The server imports shared code from the root package via `dofek` workspace dependency (e.g. `import { createDatabaseFromEnv } from "dofek/db"`). The web client imports the `AppRouter` type from the server via `dofek-server/router`. Shared domain logic lives in dedicated packages (`@dofek/format`, `@dofek/scoring`, etc.) imported by both web and mobile.
@@ -247,7 +247,7 @@ The API serves `/api/updates/*` directly from R2. The runtime version must match
 
 ```
 git push → GHA builds ARM Docker images + exports Expo OTA bundle → signs manifest → uploads to R2
-→ Docker images pushed to GHCR → Watchtower polls (5min) → rolling-restarts replicated `web`/`client` containers
+→ Docker image pushed to GHCR → Watchtower polls (5min) → rolling-restarts replicated `web` containers
 ```
 
 Migrations run at two levels for reliability: a dedicated one-shot `migrate` container runs first during `docker compose up` (via `depends_on: { condition: service_completed_successfully }`), and each service's entrypoint also runs migrations before starting. A Postgres advisory lock serializes concurrent runs so only one container applies migrations at a time. With replicated `web` instances and rolling restarts, at least one healthy API instance remains available while another instance migrates and boots. In local dev, run `pnpm migrate` manually.
@@ -273,7 +273,7 @@ terraform apply
 
 After the server exists:
 
-1. Add host-specific vars to `/opt/dofek/.env`: `INFISICAL_TOKEN`, `POSTGRES_PASSWORD`, `CADDY_DOMAIN`, and optionally `DOCKER_GID` and storage paths. All other secrets are fetched from Infisical at container startup. Some secrets (`AXIOM_API_TOKEN`, `SLACK_BOT_TOKEN`, `GHCR_TOKEN`, etc.) are also synced to the server's `.env` by `deploy-config` for Docker Compose interpolation.
+1. Add host-specific vars to `/opt/dofek/.env`: `INFISICAL_TOKEN`, `POSTGRES_PASSWORD`, `CADDY_DOMAIN`, and optionally `DOCKER_GID` and storage paths. `deploy.sh` uses `INFISICAL_TOKEN` to export the production secrets into `/opt/dofek/secrets.env` before `docker compose up`.
 2. Run the deploy-config module once to push `otel-collector-config.yaml` and the current base config.
 3. Point DNS at the Hetzner IP (`terraform output -raw server_ip`). Caddy will provision TLS automatically.
 
@@ -291,12 +291,12 @@ terraform apply -var="server_ip=$(cd .. && terraform output -raw server_ip)"
 - `deploy/docker-compose.yml`
 - `deploy/Caddyfile`
 - `deploy/otel-collector-config.yaml`
-- Select secrets to `/opt/dofek/.env` for Docker Compose interpolation
+- `deploy/deploy.sh`
 
 After copying those files, it runs:
 
 ```bash
-cd /opt/dofek && docker compose up -d --scale web=2 --scale client=2
+cd /opt/dofek && ./deploy.sh
 ```
 
 ```bash
@@ -314,13 +314,12 @@ The `deploy-config` module is intentionally separate from the main `deploy/main.
 ```bash
 export SSH_AUTH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
 cd deploy/deploy-config
-# Secrets are fetched from Infisical and passed as TF_VAR_ env vars
-infisical run --env=prod -- terraform apply -var="server_ip=159.69.3.40" -var="axiom_api_token=$AXIOM_API_TOKEN" -var="slack_bot_token=$SLACK_BOT_TOKEN" -var="ghcr_token=$GHCR_TOKEN"
+terraform apply -var="server_ip=159.69.3.40"
 ```
 
 Note: Terraform's SSH client also cannot use passphrase-protected keys from `~/.ssh/` without the agent, and `private_key` in the connection block doesn't work with keys stored in 1Password. The `agent = true` approach is the only reliable option.
 
-`deploy-config` syncs a subset of secrets to the server's `.env` for Docker Compose interpolation: `AXIOM_API_TOKEN`, `SLACK_BOT_TOKEN`, `R2_BUCKET`, and GHCR Docker auth. All other secrets (provider API keys, OAuth client IDs/secrets) are fetched directly from Infisical at container startup.
+`deploy-config` no longer writes secrets into `/opt/dofek/.env`. The host keeps only deploy-time configuration there (`INFISICAL_TOKEN`, `POSTGRES_PASSWORD`, `CADDY_DOMAIN`, optional storage paths). `deploy.sh` bootstraps the Infisical CLI if needed, exports the production secrets to `/opt/dofek/secrets.env`, and then runs Docker Compose with both env files.
 
 **Finding the server IP:** The domain is behind Cloudflare so you need the direct Hetzner IP:
 - `~/.ssh/known_hosts` — grep for Hetzner ranges (`159.69.*`, `116.203.*`, `49.12.*`)
@@ -395,11 +394,11 @@ The production containers get environment variables from three places:
 
 1. **Committed `.env` (this repo)** — non-secret config: client IDs, redirect URIs, endpoints, DSNs. Baked into the Docker image. Loaded by the entrypoint on startup.
 
-2. **Infisical (prod environment)** — actual secrets: client secrets, API keys/tokens, private keys. Fetched at container startup by the Infisical CLI.
+2. **Infisical (prod environment)** — actual secrets: client secrets, API keys/tokens, private keys. Fetched by `/opt/dofek/deploy.sh` on the host and written to `/opt/dofek/secrets.env` before containers are started or updated.
 
-3. **`.env` on server (`/opt/dofek/.env`)** — host-specific config for Docker Compose interpolation: `INFISICAL_TOKEN`, `CADDY_DOMAIN`, `POSTGRES_PASSWORD`, optional storage paths. Secrets also needed for compose interpolation (e.g., `AXIOM_API_TOKEN` for the collector) are synced by `deploy-config`.
+3. **`.env` on server (`/opt/dofek/.env`)** — host-specific config for Docker Compose interpolation and secret export: `INFISICAL_TOKEN`, `CADDY_DOMAIN`, `POSTGRES_PASSWORD`, optional storage paths.
 
-The entrypoint sources `.env` for non-secret config, then checks for Infisical credentials: if `INFISICAL_TOKEN` or Universal Auth client ID/secret are set, it runs `infisical run --env=prod` to inject secrets on top. Otherwise, it falls back to env vars from Docker/compose.
+The container entrypoint now reads the committed repo `.env` for non-secret defaults only. Production secrets come from Docker Compose via `/opt/dofek/secrets.env`, which is refreshed by `deploy.sh` before each deploy.
 
 **Adding or updating secrets:**
 
@@ -630,7 +629,7 @@ Deploy secrets (Hetzner API token, Infisical machine identity token) are stored 
 | 1Password Item | Use |
 |---|---|
 | `Hetzner Cloud API Token` | Terraform `hcloud_token` for server provisioning |
-| `Infisical Machine Identity Token` | `INFISICAL_TOKEN` for production containers to fetch secrets |
+| `Infisical Machine Identity Token` | `INFISICAL_TOKEN` for the host deploy script to export production secrets |
 
 Important: the 1Password item titled `Hetzner` stores Hetzner account login credentials, not a Cloud API token. Use `Hetzner Cloud API Token` for Terraform.
 
