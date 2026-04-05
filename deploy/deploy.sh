@@ -39,8 +39,9 @@ infisical export \
   --projectId="54712f56-98a9-4531-9e97-0b588d2e5a88" \
   > secrets.env
 
-# Start services with both config (.env) and secrets (secrets.env)
-docker compose \
-  --env-file .env \
-  --env-file secrets.env \
-  up -d --scale web=2
+# Start services with config (config.env + .env) and secrets (secrets.env)
+compose_args="--env-file .env --env-file secrets.env"
+if [ -f config.env ]; then
+  compose_args="--env-file config.env $compose_args"
+fi
+docker compose $compose_args up -d --scale web=2

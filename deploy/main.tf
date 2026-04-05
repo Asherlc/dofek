@@ -111,6 +111,7 @@ resource "hcloud_server" "dofek" {
     caddy_content          = file("${path.module}/Caddyfile")
     otel_collector_content = file("${path.module}/otel-collector-config.yaml")
     deploy_script_content  = file("${path.module}/deploy.sh")
+    config_env_content     = file("${path.module}/../.env")
     db_data_path           = local.data_volume_mountpoint != "" ? "${local.data_volume_mountpoint}/postgres" : ""
     db_backup_path         = local.data_volume_mountpoint != "" ? "${local.data_volume_mountpoint}/backups" : ""
   })

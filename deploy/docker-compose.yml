@@ -20,6 +20,8 @@ services:
     command: migrate
     restart: "no"
     env_file:
+      - path: config.env
+        required: false
       - .env
       - path: secrets.env
         required: false
@@ -38,6 +40,8 @@ services:
     command: web
     restart: unless-stopped
     env_file:
+      - path: config.env
+        required: false
       - .env
       - path: secrets.env
         required: false
@@ -83,6 +87,8 @@ services:
     command: worker
     restart: on-failure:3
     env_file:
+      - path: config.env
+        required: false
       - .env
       - path: secrets.env
         required: false
@@ -110,6 +116,8 @@ services:
     command: sync
     restart: "no"
     env_file:
+      - path: config.env
+        required: false
       - .env
       - path: secrets.env
         required: false
