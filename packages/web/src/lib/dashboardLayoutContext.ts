@@ -9,6 +9,7 @@ export interface DashboardLayout {
 const DEFAULT_ORDER = [
   "healthMonitor",
   "topInsights",
+  "strain",
   "weeklyReport",
   "nextWorkout",
   "sleepNeed",
@@ -32,6 +33,7 @@ export const DEFAULT_LAYOUT: DashboardLayout = {
 export const SECTION_LABELS: Record<string, string> = {
   healthMonitor: "Health Monitor",
   topInsights: "Top Insights",
+  strain: "Strain",
   weeklyReport: "Weekly Performance",
   nextWorkout: "Next Workout",
   sleepNeed: "Sleep Coach",

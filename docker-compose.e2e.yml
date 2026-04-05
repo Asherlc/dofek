@@ -32,6 +32,8 @@ services:
     build:
       context: .
       target: server
+    ports:
+      - "3100:3000"
     environment:
       DATABASE_URL: postgres://health:health@db:5432/health
       PORT: "3000"
@@ -43,21 +45,9 @@ services:
       db:
         condition: service_healthy
     command: ["web"]
-    # The nginx upstream expects hostname "dofek-web"
-    hostname: dofek-web
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/healthz').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))\""]
       interval: 3s
       timeout: 3s
       retries: 10
       start_period: 15s
-
-  client:
-    image: e2e-client
-    build:
-      context: .
-      target: client
-    ports:
-      - "3100:80"
-    depends_on:
-      - server

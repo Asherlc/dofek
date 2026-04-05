@@ -24,6 +24,10 @@ import { WeeklyReportCard } from "../components/WeeklyReportCard.tsx";
 import { useAutoSync } from "../hooks/useAutoSync.ts";
 import { useScrollReveal } from "../hooks/useScrollReveal.ts";
 import { chartColors } from "../lib/chartTheme.ts";
+import {
+  DASHBOARD_GRID_PAIR_SECONDARIES,
+  DASHBOARD_GRID_PAIRS,
+} from "../lib/dashboardGridPairs.ts";
 import { useDashboardLayout } from "../lib/dashboardLayoutContext.ts";
 import { formatDateForQuery } from "../lib/dates.ts";
 import { trpc } from "../lib/trpc.ts";
@@ -107,22 +111,6 @@ export function healthMonitorSubtitle(): string {
   return "Today's values vs. rolling average";
 }
 
-/** Sections that render side-by-side in a 2-column grid. The key is the "primary" (left) section. */
-const GRID_PAIRS: Record<string, string> = {
-  strain: "nextWorkout",
-  weeklyReport: "sleepNeed",
-  stress: "healthspan",
-  spo2Temp: "steps",
-};
-
-/** Reverse lookup: secondary -> primary */
-const GRID_PAIR_SECONDARY: Record<string, string> = {
-  nextWorkout: "strain",
-  sleepNeed: "weeklyReport",
-  healthspan: "stress",
-  steps: "spo2Temp",
-};
-
 type DailyMetricRow = z.infer<typeof dailyMetricRowSchema>;
 
 export function spo2TempSectionConfig(
@@ -166,9 +154,11 @@ export function buildSkinTempSeries(metrics: DailyMetricRow[], units: UnitConver
 export const DASHBOARD_SECTION_IDS = new Set([
   "healthMonitor",
   "strain",
+  "nextWorkout",
   "weeklyReport",
   "sleepNeed",
-  "nextWorkout",
+  "stress",
+  "healthspan",
   "spo2Temp",
   "steps",
   "sleep",
@@ -507,10 +497,18 @@ export function Dashboard() {
     const section = sectionContent[id];
     if (!section) continue;
 
-    // Check if this section is the secondary of a grid pair (its primary should render it)
-    if (GRID_PAIR_SECONDARY[id]) continue;
+    // Check if this section is the secondary of a grid pair.
+    // Only skip if the primary will actually render it (is in the section set, in the order, and not hidden).
+    const primaryId = DASHBOARD_GRID_PAIR_SECONDARIES[id];
+    if (primaryId) {
+      const primaryWillRender =
+        DASHBOARD_SECTION_IDS.has(primaryId) &&
+        !layout.hidden.includes(primaryId) &&
+        layout.order.includes(primaryId);
+      if (primaryWillRender) continue;
+    }
 
-    const pairId = GRID_PAIRS[id];
+    const pairId = DASHBOARD_GRID_PAIRS[id];
     const pairSection = pairId ? sectionContent[pairId] : undefined;
     const pairHidden = pairId ? layout.hidden.includes(pairId) : false;
 
