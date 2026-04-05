@@ -140,31 +140,12 @@ jobs:
             | | |
             |---|---|
             | **URL** | ${{ steps.apply.outputs.preview_url }} |
+            | **Login** | ${{ steps.apply.outputs.preview_url }}/auth/dev-login |
             | **Server** | `${{ steps.apply.outputs.server_ip }}` |
             | **Commit** | ${{ github.sha }} |
 
-            > Login with the seeded dev session: visit the URL above and use the pre-seeded credentials.
+            > Use the login URL above to mint the seeded `dev-session` cookie for the preview database.
             > _(Email+password login for previews is on the [roadmap](../blob/main/README.md#authentication-follow-ups))_
-
-  # ── Expo OTA preview for mobile ────────────────────────────────────────
-
-  mobile-preview:
-    name: Mobile Preview
-    if: github.event_name == 'pull_request' && github.event.action != 'closed'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: ./.github/actions/setup-node-pnpm
-      - uses: expo/expo-github-action@c7b66a9c327a43a8fa7c0158e7f30d6040d2481e # v8
-        with:
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
-      - name: Publish OTA Update
-        working-directory: packages/mobile
-        run: eas update --auto --branch pr-${{ github.event.number }}
 
   # ── Teardown on PR close ───────────────────────────────────────────────
 
@@ -250,6 +231,9 @@ jobs:
     name: Cleanup Orphaned Previews
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
@@ -264,6 +248,7 @@ jobs:
       - name: Destroy Orphaned Environments
         working-directory: deploy/preview
         env:
+          GH_TOKEN: ${{ github.token }}
           HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
         run: |
           # List all Hetzner servers with the preview label
@@ -283,8 +268,15 @@ jobs:
           echo "$SERVERS" | while read -r name created_at; do
             SERVER_TS=$(date -u -d "$created_at" +%s 2>/dev/null || date -u -j -f "%Y-%m-%dT%H:%M:%S" "$created_at" +%s)
             if [ "$SERVER_TS" -lt "$CUTOFF" ]; then
-              echo "Server $name is older than 72h — destroying"
               PR_NUM=$(echo "$name" | sed 's/dofek-preview-pr-//')
+              PR_STATE="$(gh pr view "$PR_NUM" --json state --jq .state 2>/dev/null || echo "MISSING")"
+
+              if [ "$PR_STATE" = "OPEN" ]; then
+                echo "PR #$PR_NUM is still open — keeping $name"
+                continue
+              fi
+
+              echo "Server $name is older than 72h and PR state is $PR_STATE — destroying"
 
               # Try Terraform destroy first (clean path)
               if terraform workspace select "pr-$PR_NUM" 2>/dev/null; then

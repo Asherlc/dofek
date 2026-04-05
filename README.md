@@ -270,16 +270,15 @@ PR opened/updated → GHA builds PR-tagged Docker images (ghcr.io/asherlc/dofek:
   → Terraform provisions a Hetzner server + Cloudflare DNS record (pr-{N}.preview.dofek.fit)
   → Cloud-init installs Docker, pulls images, starts the preview stack
   → PR comment posted with preview URL
-  → Expo OTA update published to branch pr-{N} for mobile preview
 
 PR closed/merged → Terraform destroys server + DNS record
   → Docker images cleaned up from GHCR
-  → Daily cron deletes any orphaned servers older than 72h
+  → Daily cron deletes any stale previews older than 72h once their PR is no longer open
 ```
 
 **Preview stack** (`deploy/preview/docker-compose.yml`): Caddy, client (nginx), web (API), migrate, seed, Redis, TimescaleDB. No worker, sync, watchtower, OTel collector, backups, or portainer.
 
-**Login:** The preview database is seeded with a dev user and session via `scripts/seed-dev-db.ts`. OAuth callbacks don't work on preview subdomains — email+password auth is planned (see [Authentication Follow-ups](#authentication-follow-ups)).
+**Login:** The preview database is seeded with a dev user and session via `scripts/seed-dev-db.ts`. Visit `https://pr-{N}.preview.dofek.fit/auth/dev-login` to mint the seeded `dev-session` cookie, then you'll be redirected to the dashboard. OAuth callbacks don't work on preview subdomains — email+password auth is planned (see [Authentication Follow-ups](#authentication-follow-ups)).
 
 **Required GitHub secrets:**
 
@@ -293,8 +292,6 @@ PR closed/merged → Terraform destroys server + DNS record
 | `R2_ACCESS_KEY_ID` | R2 credentials for Terraform state backend |
 | `R2_SECRET_ACCESS_KEY` | R2 credentials for Terraform state backend |
 | `R2_ENDPOINT` | R2 S3-compatible endpoint URL |
-| `EXPO_TOKEN` | Expo access token for publishing OTA updates |
-
 **Terraform state** is stored in the existing R2 bucket (`dofek-training-data`) under `terraform/preview/`, using one workspace per PR.
 
 **Cost:** ~€0.006/hr per preview server (CAX11). A PR open for 24h costs ~€0.14.
@@ -521,7 +518,7 @@ See `packages/server/src/routers/life-events.ts` for the API and `packages/web/s
 - [x] GHA CI with Docker build + push to GHCR
 - [x] Watchtower auto-deploy with Slack notifications
 - [x] CLI for authenticating, pulling, and managing providers (`sync`, `auth`, `import` commands)
-- [x] Ephemeral preview environments per PR (Hetzner server + Cloudflare DNS + seeded DB + Expo OTA)
+- [x] Ephemeral preview environments per PR (Hetzner server + Cloudflare DNS + seeded DB)
 
 ### Authentication Follow-ups
 - [ ] When a user signs up with any provider that does not give us an email, require them to enter their email manually before completing signup/account linking
