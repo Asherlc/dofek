@@ -789,40 +789,50 @@ export default function ActivityDetailScreen() {
         <ExerciseBreakdown exercises={strengthExercises.data ?? []} units={units} />
       )}
 
-      {/* Heart Rate Chart */}
-      {hasHr && (
-        <LineChart
-          data={points.map((p) => ({ value: p.heartRate }))}
-          color={CHART_COLORS.heartRate}
-          label="Heart Rate"
-          unit="bpm"
-        />
-      )}
+      {/* Time-series charts (load progressively) */}
+      {stream.isLoading ? (
+        <View style={styles.chartsLoading}>
+          <ActivityIndicator color={colors.accent} size="small" />
+          <Text style={styles.chartsLoadingText}>Loading charts...</Text>
+        </View>
+      ) : (
+        <>
+          {/* Heart Rate Chart */}
+          {hasHr && (
+            <LineChart
+              data={points.map((p) => ({ value: p.heartRate }))}
+              color={CHART_COLORS.heartRate}
+              label="Heart Rate"
+              unit="bpm"
+            />
+          )}
 
-      {/* Power Chart */}
-      {hasPower && (
-        <LineChart
-          data={points.map((p) => ({ value: p.power }))}
-          color={CHART_COLORS.power}
-          label="Power"
-          unit="W"
-        />
-      )}
+          {/* Power Chart */}
+          {hasPower && (
+            <LineChart
+              data={points.map((p) => ({ value: p.power }))}
+              color={CHART_COLORS.power}
+              label="Power"
+              unit="W"
+            />
+          )}
 
-      {/* Elevation Profile */}
-      {hasAltitude && (
-        <AreaChart
-          data={points.map((p) => ({
-            value: p.altitude != null ? units.convertElevation(p.altitude) : null,
-          }))}
-          color={CHART_COLORS.altitude}
-          label="Elevation Profile"
-          unit={units.elevationLabel}
-        />
-      )}
+          {/* Elevation Profile */}
+          {hasAltitude && (
+            <AreaChart
+              data={points.map((p) => ({
+                value: p.altitude != null ? units.convertElevation(p.altitude) : null,
+              }))}
+              color={CHART_COLORS.altitude}
+              label="Elevation Profile"
+              unit={units.elevationLabel}
+            />
+          )}
 
-      {/* HR Zones */}
-      {zones.length > 0 && <HrZonesChart zones={zones} />}
+          {/* HR Zones */}
+          {zones.length > 0 && <HrZonesChart zones={zones} />}
+        </>
+      )}
 
       {/* Delete Activity */}
       <Pressable
@@ -861,6 +871,17 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 16,
+    color: colors.textTertiary,
+  },
+  chartsLoading: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 24,
+    alignItems: "center",
+    gap: 8,
+  },
+  chartsLoadingText: {
+    fontSize: 13,
     color: colors.textTertiary,
   },
   errorContainer: {

@@ -64,7 +64,7 @@ export default function StrainScreen() {
             day: "numeric",
           })}`;
 
-  const strainTrend = workloadData.slice(-14).map((d) => d.strain);
+  const strainTrend = workloadData.map((d) => d.strain);
 
   const isLoading = workloadQuery.isLoading;
   const { refreshing, onRefresh } = useRefresh();
@@ -133,10 +133,16 @@ export default function StrainScreen() {
               description="This chart shows your day-to-day strain trend across the selected date range."
               textStyle={styles.cardTitle}
             />
-            {strainTrend.length >= 2 && (
-              <View style={styles.sparkContainer}>
-                <SparkLine data={strainTrend} height={60} color={colors.accent} showBaseline />
-              </View>
+            {strainTrend.length >= 2 ? (
+              <SparkLine
+                data={strainTrend}
+                height={60}
+                color={colors.accent}
+                showBaseline
+                showYAxis
+              />
+            ) : (
+              <Text style={styles.emptyChartText}>No training data yet for this period</Text>
             )}
           </View>
 
@@ -285,6 +291,12 @@ const styles = StyleSheet.create({
   },
   sparkContainer: {
     alignItems: "center",
+  },
+  emptyChartText: {
+    fontSize: 13,
+    color: colors.textTertiary,
+    textAlign: "center",
+    paddingVertical: 16,
   },
   volumeStack: {
     gap: 8,
