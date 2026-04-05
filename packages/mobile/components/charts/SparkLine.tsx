@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { type LayoutChangeEvent, View } from "react-native";
+import { type LayoutChangeEvent, StyleSheet, Text, View } from "react-native";
 import Svg, { Line, Polyline, Rect } from "react-native-svg";
 import { colors } from "../../theme";
 
@@ -31,6 +31,10 @@ interface SparkLineProps {
   domain?: ChartDomain;
   /** Background threshold layers aligned to the y-axis domain */
   backgroundBands?: BackgroundBand[];
+  /** Show min/max Y-axis labels alongside the chart */
+  showYAxis?: boolean;
+  /** Format function for Y-axis labels (defaults to rounding) */
+  formatYLabel?: (value: number) => string;
 }
 
 /** Split data into contiguous non-null segments for gap rendering */
@@ -75,6 +79,8 @@ export function SparkLine({
   showBaseline = false,
   domain,
   backgroundBands,
+  showYAxis = false,
+  formatYLabel,
 }: SparkLineProps) {
   const [layout, setLayout] = useState({ width: fixedWidth ?? 0, height: fixedHeight ?? 0 });
 
@@ -134,36 +140,78 @@ export function SparkLine({
       );
     }) ?? [];
 
+  const formatLabel = formatYLabel ?? ((value: number) => String(Math.round(value)));
+
+  const svgElement = (
+    <Svg width={currentWidth} height={currentHeight}>
+      {chartBackgroundBands}
+      {showBaseline && (
+        <Line
+          x1={padding}
+          y1={avgY}
+          x2={currentWidth - padding}
+          y2={avgY}
+          stroke={colors.surfaceSecondary}
+          strokeWidth={1}
+          strokeDasharray="4,4"
+        />
+      )}
+      {segments.map((points) => (
+        <Polyline
+          key={points}
+          points={points}
+          fill="none"
+          stroke={color}
+          strokeWidth={lineWidth}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      ))}
+    </Svg>
+  );
+
+  if (!showYAxis) {
+    return (
+      <View
+        style={{ width: fixedWidth, height: fixedHeight, flex: fixedWidth ? undefined : 1 }}
+        onLayout={onLayout}
+      >
+        {svgElement}
+      </View>
+    );
+  }
+
   return (
     <View
-      style={{ width: fixedWidth, height: fixedHeight, flex: fixedWidth ? undefined : 1 }}
-      onLayout={onLayout}
+      style={[
+        axisStyles.container,
+        { width: fixedWidth, height: fixedHeight, flex: fixedWidth ? undefined : 1 },
+      ]}
     >
-      <Svg width={currentWidth} height={currentHeight}>
-        {chartBackgroundBands}
-        {showBaseline && (
-          <Line
-            x1={padding}
-            y1={avgY}
-            x2={currentWidth - padding}
-            y2={avgY}
-            stroke={colors.surfaceSecondary}
-            strokeWidth={1}
-            strokeDasharray="4,4"
-          />
-        )}
-        {segments.map((points) => (
-          <Polyline
-            key={points}
-            points={points}
-            fill="none"
-            stroke={color}
-            strokeWidth={lineWidth}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        ))}
-      </Svg>
+      <View style={axisStyles.yAxis}>
+        <Text style={axisStyles.yLabel}>{formatLabel(max)}</Text>
+        <Text style={axisStyles.yLabel}>{formatLabel(min)}</Text>
+      </View>
+      <View style={{ flex: 1 }} onLayout={onLayout}>
+        {svgElement}
+      </View>
     </View>
   );
 }
+
+const axisStyles = StyleSheet.create({
+  container: {
+    flexDirection: "row",
+    alignItems: "stretch",
+  },
+  yAxis: {
+    justifyContent: "space-between",
+    paddingVertical: 2,
+    marginRight: 6,
+  },
+  yLabel: {
+    fontSize: 10,
+    color: colors.textTertiary,
+    fontVariant: ["tabular-nums"],
+  },
+});
