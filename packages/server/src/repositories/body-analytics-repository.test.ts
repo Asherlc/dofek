@@ -319,12 +319,12 @@ describe("BodyAnalyticsRepository", () => {
         { date: "2024-01-04", weight_kg: "83" },
       ]);
       const result = await repo.getSmoothedWeight(90, "2024-06-01");
-      // 4 days: 80, 81(interp), 82(interp), 83
+      // 4 days: 80, 81(interpolated), 82(interpolated), 83
       expect(result).toHaveLength(4);
       // Smoothed values should progress gradually (EWMA with alpha=0.1)
-      expect(result[1]?.smoothedWeight).toBeGreaterThan(result[0]!.smoothedWeight);
-      expect(result[2]?.smoothedWeight).toBeGreaterThan(result[1]!.smoothedWeight);
-      expect(result[3]?.smoothedWeight).toBeGreaterThan(result[2]!.smoothedWeight);
+      expect(result[1]?.smoothedWeight).toBeGreaterThan(result[0]?.smoothedWeight ?? 0);
+      expect(result[2]?.smoothedWeight).toBeGreaterThan(result[1]?.smoothedWeight ?? 0);
+      expect(result[3]?.smoothedWeight).toBeGreaterThan(result[2]?.smoothedWeight ?? 0);
     });
 
     it("rounds values to 2 decimal places", async () => {
@@ -873,10 +873,10 @@ describe("BodyAnalyticsRepository", () => {
 
       // 7-day delta should be approximately -0.7 (smoothed, so not exact)
       expect(result.periodDeltas.days7).not.toBeNull();
-      expect(result.periodDeltas.days7!).toBeLessThan(0);
+      expect(result.periodDeltas.days7 ?? 0).toBeLessThan(0);
       // 14-day delta should be approximately -1.4
       expect(result.periodDeltas.days14).not.toBeNull();
-      expect(result.periodDeltas.days14!).toBeLessThan(result.periodDeltas.days7!);
+      expect(result.periodDeltas.days14 ?? 0).toBeLessThan(result.periodDeltas.days7 ?? 0);
       // 30-day should be null for exactly 30 points (smoothed[0] vs smoothed[29] requires 30 entries)
       // Actually days30 = smoothed[last] - smoothed[last-30], which needs >= 31 entries
     });
@@ -892,10 +892,10 @@ describe("BodyAnalyticsRepository", () => {
 
       expect(result.ratePerWeek).not.toBeNull();
       // slope ≈ -0.1 kg/day → -0.7 kg/week (smoothed, so close but not exact)
-      expect(result.ratePerWeek!).toBeLessThan(-0.5);
-      expect(result.ratePerWeek!).toBeGreaterThan(-1);
+      expect(result.ratePerWeek ?? 0).toBeLessThan(-0.5);
+      expect(result.ratePerWeek ?? 0).toBeGreaterThan(-1);
       expect(result.rateConfidence).not.toBeNull();
-      expect(result.rateConfidence!).toBeGreaterThan(0.9);
+      expect(result.rateConfidence ?? 0).toBeGreaterThan(0.9);
     });
 
     it("computes implied daily calories from rate", async () => {
@@ -909,7 +909,7 @@ describe("BodyAnalyticsRepository", () => {
 
       // 7700 kcal/kg: if losing ~0.7 kg/week → ~0.1 kg/day → ~770 kcal/day deficit
       expect(result.impliedDailyCalories).not.toBeNull();
-      expect(result.impliedDailyCalories!).toBeLessThan(-500);
+      expect(result.impliedDailyCalories ?? 0).toBeLessThan(-500);
     });
 
     it("returns goal projection when losing toward lower goal", async () => {
@@ -922,11 +922,11 @@ describe("BodyAnalyticsRepository", () => {
       const result = await repo.getWeightPrediction(90, "2024-06-01", 75);
 
       expect(result.goal).not.toBeNull();
-      expect(result.goal!.goalWeightKg).toBe(75);
-      expect(result.goal!.remainingKg).toBeLessThan(0); // need to lose weight
-      expect(result.goal!.estimatedDate).not.toBeNull();
-      expect(result.goal!.daysRemaining).not.toBeNull();
-      expect(result.goal!.daysRemaining!).toBeGreaterThan(0);
+      expect(result.goal?.goalWeightKg).toBe(75);
+      expect(result.goal?.remainingKg).toBeLessThan(0); // need to lose weight
+      expect(result.goal?.estimatedDate).not.toBeNull();
+      expect(result.goal?.daysRemaining).not.toBeNull();
+      expect(result.goal?.daysRemaining ?? 0).toBeGreaterThan(0);
     });
 
     it("returns null estimatedDate when trending away from goal", async () => {
@@ -939,8 +939,8 @@ describe("BodyAnalyticsRepository", () => {
       const result = await repo.getWeightPrediction(90, "2024-06-01", 75);
 
       expect(result.goal).not.toBeNull();
-      expect(result.goal!.estimatedDate).toBeNull();
-      expect(result.goal!.daysRemaining).toBeNull();
+      expect(result.goal?.estimatedDate).toBeNull();
+      expect(result.goal?.daysRemaining).toBeNull();
     });
 
     it("returns goal=null when no goalWeightKg provided", async () => {
