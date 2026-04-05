@@ -75,7 +75,7 @@ describe("processTrainingExportJob", () => {
     // Call sequence:
     // 1. sensor_sample COUNT
     // 2. sensor_sample rows batch 1
-    mockExecuteWithSchema.mockResolvedValueOnce([{ count: "2" }]).mockResolvedValueOnce([
+    mockExecuteWithSchema.mockResolvedValueOnce([{ count: "3" }]).mockResolvedValueOnce([
       {
         recorded_at: "2026-03-30T15:00:00Z",
         user_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
@@ -99,6 +99,18 @@ describe("processTrainingExportJob", () => {
         activity_type: null,
         scalar: null,
         vector: [0.012, 0.138, -0.987],
+      },
+      {
+        recorded_at: "2026-03-30T15:00:00.040Z",
+        user_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        provider_id: "wahoo",
+        device_id: null,
+        source_type: "ble",
+        channel: "power",
+        activity_id: "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+        activity_type: "cycling",
+        scalar: 250,
+        vector: null,
       },
     ]);
 
@@ -125,6 +137,17 @@ describe("processTrainingExportJob", () => {
     expect(mockDuckDb.disconnect_sync).toHaveBeenCalledTimes(1);
     expect(mockDuckDb.close_sync).toHaveBeenCalledTimes(1);
 
+    // DuckDB appender handles non-null device_id (row 2 has "Apple Watch")
+    expect(mockDuckDb.append_varchar).toHaveBeenCalledWith(expect.anything(), "Apple Watch");
+    // DuckDB appender handles non-null activity_id (row 3)
+    expect(mockDuckDb.append_varchar).toHaveBeenCalledWith(
+      expect.anything(),
+      "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+    );
+    // DuckDB appender handles non-null scalar (row 1 has 142, row 3 has 250)
+    expect(mockDuckDb.append_double).toHaveBeenCalledWith(expect.anything(), 142);
+    expect(mockDuckDb.append_double).toHaveBeenCalledWith(expect.anything(), 250);
+
     // Should update progress
     expect(job.updateProgress).toHaveBeenCalledWith({
       percentage: 0,
@@ -132,7 +155,7 @@ describe("processTrainingExportJob", () => {
     });
     expect(job.updateProgress).toHaveBeenCalledWith({
       percentage: 90,
-      message: "Exporting sensor_sample: 2/2 rows",
+      message: "Exporting sensor_sample: 3/3 rows",
     });
     expect(job.updateProgress).toHaveBeenCalledWith({
       percentage: 95,
@@ -152,14 +175,14 @@ describe("processTrainingExportJob", () => {
     expect(manifest.files).toHaveLength(1);
     expect(manifest.files[0].table).toBe("sensor_sample");
     expect(manifest.files[0].path).toBe("sensor_sample/2026-03-30T15:00:00Z.parquet");
-    expect(manifest.totalRows).toBe(2);
+    expect(manifest.totalRows).toBe(3);
 
     // Start and completion logs include user-facing context
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       "[training-export] Starting training data export (since=all, until=now)",
     );
     expect(mockLoggerInfo).toHaveBeenCalledWith(
-      "[training-export] Export complete: 2 total rows, 1 files",
+      "[training-export] Export complete: 3 total rows, 1 files",
     );
   });
 

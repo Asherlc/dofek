@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, type MockInstance, vi } from "vitest";
 
 // Mock dependencies before importing worker module
 const mockOn = vi.fn();
@@ -45,7 +45,11 @@ vi.mock("./scheduled-sync.ts", () => ({
 
 vi.mock("./provider-queue-config.ts", () => ({
   getConfiguredProviderIds: vi.fn(() => ["strava", "garmin"]),
-  getProviderQueueConfig: vi.fn(() => ({ concurrency: 3, syncTier: "frequent" })),
+  getProviderQueueConfig: vi.fn(() => ({
+    concurrency: 3,
+    syncTier: "frequent",
+    limiter: { max: 10, duration: 1000 },
+  })),
 }));
 
 vi.mock("./queues.ts", () => ({
@@ -59,6 +63,20 @@ vi.mock("./queues.ts", () => ({
   TRAINING_EXPORT_QUEUE: "training-export-queue",
 }));
 
+vi.mock("@sentry/node", () => ({
+  init: vi.fn(),
+  captureException: vi.fn(),
+}));
+
+vi.mock("../logger.ts", () => ({
+  jobContext: { run: vi.fn((_store: unknown, fn: () => unknown) => fn()) },
+  logger: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
 // Prevent process.exit from actually exiting — must return `never` to match the real signature.
 // The throw is unreachable because no test triggers SIGTERM/SIGINT.
 function noOpExit(): never {
@@ -67,7 +85,13 @@ function noOpExit(): never {
 const exitSpy = vi.spyOn(process, "exit").mockImplementation(noOpExit);
 
 describe("worker module", () => {
+  let setTimeoutSpy: MockInstance;
+  let clearTimeoutSpy: MockInstance;
+
   beforeAll(async () => {
+    process.env.SENTRY_DSN = "https://test@sentry.io/123";
+    setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    clearTimeoutSpy = vi.spyOn(globalThis, "clearTimeout");
     // Import the module to trigger its side effects
     await import("./worker.ts");
   });
@@ -103,6 +127,23 @@ describe("worker module", () => {
     );
   });
 
+  it("passes limiter config to per-provider workers", async () => {
+    const { Worker } = await import("bullmq");
+    expect(Worker).toHaveBeenCalledWith(
+      "sync-strava",
+      expect.any(Function),
+      expect.objectContaining({ limiter: { max: 10, duration: 1000 } }),
+    );
+  });
+
+  it("initializes Sentry when DSN is set", async () => {
+    const Sentry = await import("@sentry/node");
+    expect(Sentry.init).toHaveBeenCalledWith({
+      dsn: "https://test@sentry.io/123",
+      skipOpenTelemetrySetup: true,
+    });
+  });
+
   it("registers event handlers on each worker", () => {
     // Each worker registers active, completed, failed, error = 4 events x N workers
     expect(mockOn).toHaveBeenCalledTimes(4 * EXPECTED_WORKER_COUNT);
@@ -122,30 +163,165 @@ describe("worker module", () => {
     expect(exitSpy).not.toHaveBeenCalled();
   });
 
-  it("active event handler increments active job count", () => {
-    // Find an "active" callback and invoke it
-    const activeCall = mockOn.mock.calls.find((call) => call[0] === "active");
-    expect(activeCall).toBeDefined();
-    // Calling the active handler should not throw
-    activeCall?.[1]();
+  it("starts idle timer at init (setTimeout called)", () => {
+    // Module init calls startIdleTimer() which calls setTimeout
+    expect(setTimeoutSpy).toHaveBeenCalled();
   });
 
-  it("completed event handler does not throw", () => {
+  it("active event handler resets idle timer", () => {
+    const clearBefore = clearTimeoutSpy.mock.calls.length;
+    const activeCall = mockOn.mock.calls.find((call) => call[0] === "active");
+    expect(activeCall).toBeDefined();
+    activeCall?.[1]();
+    // resetIdleTimer should call clearTimeout
+    expect(clearTimeoutSpy.mock.calls.length).toBeGreaterThan(clearBefore);
+  });
+
+  it("completed event handler restarts idle timer when no active jobs", () => {
+    const setTimeoutBefore = setTimeoutSpy.mock.calls.length;
+    // The active handler above incremented activeJobs to 1.
+    // Calling completed decrements it to 0, triggering startIdleTimer.
     const completedCall = mockOn.mock.calls.find((call) => call[0] === "completed");
     expect(completedCall).toBeDefined();
     completedCall?.[1]();
+    // startIdleTimer should call setTimeout
+    expect(setTimeoutSpy.mock.calls.length).toBeGreaterThan(setTimeoutBefore);
   });
 
-  it("failed event handler logs the error", () => {
+  it("failed event handler reports to Sentry and logs the error", async () => {
+    const Sentry = await import("@sentry/node");
+    const { logger } = await import("../logger.ts");
+    vi.mocked(Sentry.captureException).mockClear();
+    vi.mocked(logger.error).mockClear();
+
     const failedCall = mockOn.mock.calls.find((call) => call[0] === "failed");
     expect(failedCall).toBeDefined();
-    // The failed handler receives (job, error) — pass a mock error
-    failedCall?.[1](undefined, new Error("test failure"));
+    const error = new Error("test failure");
+    failedCall?.[1](undefined, error);
+
+    expect(Sentry.captureException).toHaveBeenCalledWith(error);
+    expect(logger.error).toHaveBeenCalledWith("[worker] Job failed: test failure");
   });
 
-  it("error event handler logs the error", () => {
+  it("error event handler reports to Sentry and logs the error", async () => {
+    const Sentry = await import("@sentry/node");
+    const { logger } = await import("../logger.ts");
+    vi.mocked(Sentry.captureException).mockClear();
+    vi.mocked(logger.error).mockClear();
+
     const errorCall = mockOn.mock.calls.find((call) => call[0] === "error");
     expect(errorCall).toBeDefined();
-    errorCall?.[1](new Error("test worker error"));
+    const error = new Error("test worker error");
+    errorCall?.[1](error);
+
+    expect(Sentry.captureException).toHaveBeenCalledWith(error);
+    expect(logger.error).toHaveBeenCalledWith("[worker] Worker error: test worker error");
+  });
+
+  it("unhandledRejection handler reports to Sentry and logs", async () => {
+    const Sentry = await import("@sentry/node");
+    const { logger } = await import("../logger.ts");
+    vi.mocked(Sentry.captureException).mockClear();
+    vi.mocked(logger.error).mockClear();
+
+    const handlers = process.listeners("unhandledRejection");
+    const handler = handlers[handlers.length - 1];
+    expect(handler).toBeDefined();
+    const error = new Error("test unhandled");
+    handler?.(error, Promise.resolve());
+
+    expect(Sentry.captureException).toHaveBeenCalledWith(error);
+    expect(logger.error).toHaveBeenCalled();
+  });
+
+  // ── Processor callback tests ──
+  // Invoke each worker's processor to verify it delegates to the correct job handler.
+
+  /**
+   * Invoke the processor function registered for a given queue name with mock job data.
+   * Uses Reflect.apply to call the BullMQ Processor without needing a full Job instance.
+   */
+  async function invokeProcessor(
+    queueName: string,
+    jobData: Record<string, unknown>,
+  ): Promise<void> {
+    const { Worker } = await import("bullmq");
+    const call = vi.mocked(Worker).mock.calls.find((workerCall) => workerCall[0] === queueName);
+    const processor = call?.[1];
+    if (typeof processor !== "function") {
+      throw new Error(`No processor function found for queue "${queueName}"`);
+    }
+    await Reflect.apply(processor, undefined, [{ data: jobData }]);
+  }
+
+  it("per-provider sync processor delegates to processSyncJob", async () => {
+    const { processSyncJob } = await import("./process-sync-job.ts");
+    vi.mocked(processSyncJob).mockClear();
+
+    await invokeProcessor("sync-strava", { providerId: "strava", userId: "user-1" });
+
+    expect(processSyncJob).toHaveBeenCalled();
+  });
+
+  it("legacy sync processor delegates to processSyncJob and logs warning", async () => {
+    const { processSyncJob } = await import("./process-sync-job.ts");
+    const { logger } = await import("../logger.ts");
+    vi.mocked(processSyncJob).mockClear();
+    vi.mocked(logger.warn).mockClear();
+
+    await invokeProcessor("sync-queue", { providerId: "wahoo", userId: "user-1" });
+
+    expect(processSyncJob).toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalled();
+  });
+
+  it("import processor delegates to processImportJob", async () => {
+    const { processImportJob } = await import("./process-import-job.ts");
+    vi.mocked(processImportJob).mockClear();
+
+    await invokeProcessor("import-queue", {
+      filePath: "/tmp/f",
+      since: "2026-01-01",
+      userId: "u",
+      importType: "apple-health",
+    });
+
+    expect(processImportJob).toHaveBeenCalled();
+  });
+
+  it("export processor delegates to processExportJob", async () => {
+    const { processExportJob } = await import("./process-export-job.ts");
+    vi.mocked(processExportJob).mockClear();
+
+    await invokeProcessor("export-queue", { userId: "u", outputPath: "/tmp/out.zip" });
+
+    expect(processExportJob).toHaveBeenCalled();
+  });
+
+  it("scheduled-sync processor delegates to processScheduledSyncJob", async () => {
+    const { processScheduledSyncJob } = await import("./process-scheduled-sync-job.ts");
+    vi.mocked(processScheduledSyncJob).mockClear();
+
+    await invokeProcessor("scheduled-sync-queue", { type: "scheduled-sync-all" });
+
+    expect(processScheduledSyncJob).toHaveBeenCalled();
+  });
+
+  it("post-sync processor delegates to processPostSyncJob", async () => {
+    const { processPostSyncJob } = await import("./process-post-sync-job.ts");
+    vi.mocked(processPostSyncJob).mockClear();
+
+    await invokeProcessor("post-sync-queue", { userId: "u" });
+
+    expect(processPostSyncJob).toHaveBeenCalled();
+  });
+
+  it("training-export processor delegates to processTrainingExportJob", async () => {
+    const { processTrainingExportJob } = await import("./process-training-export-job.ts");
+    vi.mocked(processTrainingExportJob).mockClear();
+
+    await invokeProcessor("training-export-queue", {});
+
+    expect(processTrainingExportJob).toHaveBeenCalled();
   });
 });
