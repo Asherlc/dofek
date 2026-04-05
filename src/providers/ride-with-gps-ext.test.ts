@@ -298,11 +298,18 @@ describe("RideWithGpsProvider — validate and properties", () => {
     expect(provider.validate()).toContain("RWGPS_CLIENT_ID");
   });
 
-  it("returns null when RWGPS_CLIENT_ID is set", () => {
+  it("returns null when both RWGPS_CLIENT_ID and RWGPS_CLIENT_SECRET are set", () => {
     process.env.RWGPS_CLIENT_ID = "test-id";
     process.env.RWGPS_CLIENT_SECRET = "test-secret";
     const provider = new RideWithGpsProvider();
     expect(provider.validate()).toBeNull();
+  });
+
+  it("returns error when RWGPS_CLIENT_SECRET is not set", () => {
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    delete process.env.RWGPS_CLIENT_SECRET;
+    const provider = new RideWithGpsProvider();
+    expect(provider.validate()).toContain("RWGPS_CLIENT_SECRET");
   });
 });
 
