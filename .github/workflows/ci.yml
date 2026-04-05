@@ -930,8 +930,10 @@ jobs:
           AWS_DEFAULT_REGION: auto
         run: |
           set -euo pipefail
-          aws s3 sync packages/web/storybook-static/ "s3://$R2_BUCKET/${{ steps.preview.outputs.preview_prefix }}/" \
-            --delete \
+          # The preview token can write objects but does not have bucket list permission.
+          # Use a recursive copy so preview deploys don't depend on ListObjectsV2.
+          aws s3 cp packages/web/storybook-static/ "s3://$R2_BUCKET/${{ steps.preview.outputs.preview_prefix }}/" \
+            --recursive \
             --region auto \
             --endpoint-url "$R2_ENDPOINT" \
             --cache-control "no-cache"

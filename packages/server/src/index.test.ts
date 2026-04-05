@@ -1,5 +1,7 @@
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@sentry/node", () => ({
@@ -628,7 +630,7 @@ describe("runStartupTasks", () => {
 });
 
 describe("static file serving", () => {
-  const distPath = resolve("packages/web/dist");
+  const distPath = fileURLToPath(new URL("../../web/dist", import.meta.url));
   const assetsPath = join(distPath, "assets");
 
   beforeAll(() => {
@@ -699,6 +701,25 @@ describe("static file serving", () => {
     const res = await fetch(`${baseUrl}/favicon.ico`);
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("icon");
+  });
+
+  it("serves index.html for SPA routes even when process.cwd() points elsewhere", async () => {
+    await close();
+    const temporaryWorkingDirectory = mkdtempSync(join(tmpdir(), "dofek-server-cwd-"));
+    const workingDirectorySpy = vi.spyOn(process, "cwd").mockReturnValue(temporaryWorkingDirectory);
+
+    try {
+      const fakeDb = createDatabaseFromEnv();
+      const app = createApp(fakeDb);
+      ({ baseUrl, close } = await startApp(app));
+
+      const res = await fetch(`${baseUrl}/dashboard`);
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain("SPA");
+    } finally {
+      workingDirectorySpy.mockRestore();
+      rmSync(temporaryWorkingDirectory, { recursive: true, force: true });
+    }
   });
 });
 
