@@ -134,6 +134,8 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
       userId: stateUserId,
       returnTo,
     } = stateEntry;
+    // Use providerId immediately so errors before provider lookup still carry context.
+    resolvedProviderName = providerId;
 
     const { getAllProviders } = await import("dofek/providers/registry");
     const { ensureProvidersRegistered } = await import("../../routers/sync.ts");

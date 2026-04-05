@@ -136,10 +136,12 @@ const RWGPS_OAUTH_TOKEN_URL = "https://ridewithgps.com/oauth/token.json";
 export function rideWithGpsOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.RWGPS_CLIENT_ID;
   if (!clientId) return null;
+  const clientSecret = process.env.RWGPS_CLIENT_SECRET;
+  if (!clientSecret) return null;
 
   return {
     clientId,
-    clientSecret: process.env.RWGPS_CLIENT_SECRET,
+    clientSecret,
     authorizeUrl: RWGPS_OAUTH_AUTHORIZE_URL,
     tokenUrl: RWGPS_OAUTH_TOKEN_URL,
     revokeUrl: "https://ridewithgps.com/oauth/revoke",
@@ -330,8 +332,8 @@ export class RideWithGpsProvider implements SyncProvider {
   }
 
   validate(): string | null {
-    const config = rideWithGpsOAuthConfig();
-    if (!config) return "RWGPS_CLIENT_ID is not set";
+    if (!process.env.RWGPS_CLIENT_ID) return "RWGPS_CLIENT_ID is not set";
+    if (!process.env.RWGPS_CLIENT_SECRET) return "RWGPS_CLIENT_SECRET is not set";
     return null;
   }
 
@@ -341,7 +343,7 @@ export class RideWithGpsProvider implements SyncProvider {
 
   authSetup(options?: { host?: string }): ProviderAuthSetup {
     const config = rideWithGpsOAuthConfig(options?.host);
-    if (!config) throw new Error("RWGPS_CLIENT_ID is required");
+    if (!config) throw new Error("RWGPS_CLIENT_ID and RWGPS_CLIENT_SECRET are required");
 
     return {
       oauthConfig: config,
