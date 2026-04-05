@@ -13,7 +13,6 @@ describe("OTA deployment config (expo-open-ota)", () => {
     const dockerCompose = readFileSync(dockerComposePath, "utf-8");
     expect(dockerCompose).toContain("ghcr.io/axelmarciano/expo-open-ota:");
     expect(dockerCompose).toContain("STORAGE_MODE=s3");
-    expect(dockerCompose).toContain("ota-secrets:");
   });
 
   it("fails the ota healthcheck when the manifest probe fails", () => {

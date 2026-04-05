@@ -50,16 +50,25 @@ const syncJobDataSchema = z.object({
   sinceDays: z.number().optional(),
 });
 
-export const REDACTED_ERROR_MESSAGE = "Details hidden";
-
-// Exported for unit testing — these are pure helpers with no side effects.
-export function redactLogErrorMessage(errorMessage: string | null): string | null {
-  if (!errorMessage) return null;
-  return REDACTED_ERROR_MESSAGE;
-}
+import { sanitizeErrorMessage } from "../lib/sanitize-error.ts";
+export { sanitizeErrorMessage };
 
 export function toJobId(id: string | number | undefined, providerId: string): string {
-  return id === undefined ? `job-${providerId}-${Date.now()}` : String(id);
+  return id === undefined ? `job-${providerId}-${Date.now()}` : `${providerId}:${id}`;
+}
+
+/** Parse a composite jobId into its provider hint and raw BullMQ ID.
+ *  New format: "providerId:rawId", where rawId may be numeric or non-numeric.
+ *  Legacy format: plain raw ID string. */
+export function parseJobId(compositeId: string): { providerId: string | null; rawId: string } {
+  const colonIndex = compositeId.indexOf(":");
+  if (colonIndex > 0) {
+    return {
+      providerId: compositeId.slice(0, colonIndex),
+      rawId: compositeId.slice(colonIndex + 1),
+    };
+  }
+  return { providerId: null, rawId: compositeId };
 }
 
 // ── Provider registration (race-safe) ──
@@ -272,16 +281,23 @@ export const syncRouter = router({
   syncStatus: protectedProcedure.input(syncStatusInput).query(async ({ ctx, input }) => {
     if (!input.jobId) return null;
 
-    // Search per-provider queues first, fall back to legacy queue
+    const { providerId: hintProviderId, rawId } = parseJobId(input.jobId);
+
+    // Search the hinted provider queue first (only if configured), then fall back to all queues
+    const configuredIds = new Set(getConfiguredProviderIds());
     let job: Awaited<ReturnType<Queue<SyncJobData>["getJob"]>> | undefined;
     try {
-      for (const providerId of getConfiguredProviderIds()) {
-        job = await getProviderQueue(providerId).getJob(input.jobId);
-        if (job) break;
+      if (hintProviderId && configuredIds.has(hintProviderId)) {
+        job = await getProviderQueue(hintProviderId).getJob(rawId);
+      } else {
+        for (const providerId of configuredIds) {
+          job = await getProviderQueue(providerId).getJob(rawId);
+          if (job) break;
+        }
       }
       // Fall back to legacy queue for old jobs
       if (!job) {
-        job = await legacySyncQueue.getJob(input.jobId);
+        job = await legacySyncQueue.getJob(rawId);
       }
     } catch {
       return null; // Redis unavailable
@@ -370,7 +386,7 @@ export const syncRouter = router({
       const parsed = progressSchema.safeParse(job.progress);
       const progress = parsed.success ? parsed.data : undefined;
       results.push({
-        jobId: job.id ?? `job-${Date.now()}`,
+        jobId: toJobId(job.id, jobData.data.providerId ?? "unknown"),
         status: mapBullMqStateToSyncStatus(state),
         percentage: progress?.percentage,
         providers: progress?.providers ?? {},
@@ -389,7 +405,7 @@ export const syncRouter = router({
 
       return rows.map((row) => ({
         ...row,
-        errorMessage: redactLogErrorMessage(row.errorMessage),
+        errorMessage: sanitizeErrorMessage(row.errorMessage),
       }));
     }),
 

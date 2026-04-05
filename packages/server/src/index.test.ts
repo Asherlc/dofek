@@ -1,4 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@sentry/node", () => ({
   captureException: vi.fn(),
@@ -354,6 +358,23 @@ describe("createApp HTTP routes", () => {
   });
 
   describe("GET /auth/dev-login", () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    const originalEnableDevLogin = process.env.ENABLE_DEV_LOGIN;
+
+    afterEach(() => {
+      if (originalNodeEnv === undefined) {
+        delete process.env.NODE_ENV;
+      } else {
+        process.env.NODE_ENV = originalNodeEnv;
+      }
+
+      if (originalEnableDevLogin === undefined) {
+        delete process.env.ENABLE_DEV_LOGIN;
+      } else {
+        process.env.ENABLE_DEV_LOGIN = originalEnableDevLogin;
+      }
+    });
+
     it("returns 404 when no dev-session exists", async () => {
       const res = await fetch(`${baseUrl}/auth/dev-login`, { redirect: "manual" });
       expect(res.status).toBe(404);
@@ -361,7 +382,49 @@ describe("createApp HTTP routes", () => {
       expect(body).toContain("No dev-session found");
     });
 
+    it("returns 404 in production when preview login is not explicitly enabled", async () => {
+      process.env.NODE_ENV = "production";
+      delete process.env.ENABLE_DEV_LOGIN;
+
+      const fakeDb = createDatabaseFromEnv();
+      const app = createApp(fakeDb);
+      const { baseUrl: devUrl, close: devClose } = await startApp(app);
+      try {
+        const res = await fetch(`${devUrl}/auth/dev-login`, { redirect: "manual" });
+        expect(res.status).toBe(404);
+      } finally {
+        await devClose();
+      }
+    });
+
     it("sets session cookie and redirects when dev-session exists", async () => {
+      const fakeDb = createDatabaseFromEnv();
+      const expiresAt = new Date("2027-01-01");
+      vi.mocked(fakeDb.execute).mockResolvedValueOnce([
+        { id: "dev-session", expires_at: expiresAt },
+      ]);
+
+      const app = createApp(fakeDb);
+      const { baseUrl: devUrl, close: devClose } = await startApp(app);
+      try {
+        const res = await fetch(`${devUrl}/auth/dev-login`, { redirect: "manual" });
+        expect(res.status).toBe(302);
+        expect(res.headers.get("location")).toBe("/dashboard");
+        const { setSessionCookie } = await import("./auth/cookies.ts");
+        expect(vi.mocked(setSessionCookie)).toHaveBeenCalledWith(
+          expect.anything(),
+          "dev-session",
+          expiresAt,
+        );
+      } finally {
+        await devClose();
+      }
+    });
+
+    it("allows preview login in production when ENABLE_DEV_LOGIN=true", async () => {
+      process.env.NODE_ENV = "production";
+      process.env.ENABLE_DEV_LOGIN = "true";
+
       const fakeDb = createDatabaseFromEnv();
       const expiresAt = new Date("2027-01-01");
       vi.mocked(fakeDb.execute).mockResolvedValueOnce([
@@ -622,6 +685,100 @@ describe("runStartupTasks", () => {
 
     expect(vi.mocked(logger.error)).toHaveBeenCalledWith(expect.stringContaining("slack boom"));
     expect(vi.mocked(Sentry.captureException)).toHaveBeenCalledWith(error);
+  });
+});
+
+describe("static file serving", () => {
+  const distPath = fileURLToPath(new URL("../../web/dist", import.meta.url));
+  const assetsPath = join(distPath, "assets");
+
+  beforeAll(() => {
+    mkdirSync(assetsPath, { recursive: true });
+    writeFileSync(join(distPath, "index.html"), "<html><body>SPA</body></html>");
+    writeFileSync(join(assetsPath, "app-abc123.js"), "console.log('app')");
+  });
+
+  afterAll(() => {
+    rmSync(distPath, { recursive: true, force: true });
+  });
+
+  let baseUrl: string;
+  let close: () => Promise<void>;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
+    vi.mocked(validateSession).mockResolvedValue(null);
+    const fakeDb = createDatabaseFromEnv();
+    const app = createApp(fakeDb);
+    ({ baseUrl, close } = await startApp(app));
+  });
+
+  afterEach(async () => {
+    await close();
+  });
+
+  it("serves index.html for SPA routes with no-cache header", async () => {
+    const res = await fetch(`${baseUrl}/dashboard`);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("SPA");
+    expect(res.headers.get("cache-control")).toContain("no-cache");
+  });
+
+  it("serves static assets from /assets/", async () => {
+    const res = await fetch(`${baseUrl}/assets/app-abc123.js`);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("console.log('app')");
+  });
+
+  it("does not serve SPA fallback for /api/ routes", async () => {
+    const res = await fetch(`${baseUrl}/api/trpc/nonexistent`);
+    const body = await res.text();
+    expect(body).not.toContain("SPA");
+  });
+
+  it("does not serve SPA fallback for /auth/ routes", async () => {
+    const res = await fetch(`${baseUrl}/auth/something`);
+    const body = await res.text();
+    expect(body).not.toContain("SPA");
+  });
+
+  it("does not serve SPA fallback for /healthz", async () => {
+    const res = await fetch(`${baseUrl}/healthz`);
+    const body = await res.json();
+    expect(body).toEqual({ status: "ok" });
+  });
+
+  it("does not serve SPA fallback for /metrics", async () => {
+    const res = await fetch(`${baseUrl}/metrics`);
+    const body = await res.text();
+    expect(body).not.toContain("SPA");
+  });
+
+  it("serves other static files from dist root", async () => {
+    writeFileSync(join(distPath, "favicon.ico"), "icon");
+    const res = await fetch(`${baseUrl}/favicon.ico`);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("icon");
+  });
+
+  it("serves index.html for SPA routes even when process.cwd() points elsewhere", async () => {
+    await close();
+    const temporaryWorkingDirectory = mkdtempSync(join(tmpdir(), "dofek-server-cwd-"));
+    const workingDirectorySpy = vi.spyOn(process, "cwd").mockReturnValue(temporaryWorkingDirectory);
+
+    try {
+      const fakeDb = createDatabaseFromEnv();
+      const app = createApp(fakeDb);
+      ({ baseUrl, close } = await startApp(app));
+
+      const res = await fetch(`${baseUrl}/dashboard`);
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain("SPA");
+    } finally {
+      workingDirectorySpy.mockRestore();
+      rmSync(temporaryWorkingDirectory, { recursive: true, force: true });
+    }
   });
 });
 

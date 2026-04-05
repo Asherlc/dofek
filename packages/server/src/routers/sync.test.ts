@@ -134,8 +134,8 @@ import {
   isAuthError,
   logsInput,
   mapBullMqStateToSyncStatus,
-  REDACTED_ERROR_MESSAGE,
-  redactLogErrorMessage,
+  parseJobId,
+  sanitizeErrorMessage,
   syncRouter,
   syncStatusInput,
   toJobId,
@@ -400,11 +400,11 @@ describe("syncRouter", () => {
       });
 
       const result = await caller.triggerSync({});
-      expect(result.jobId).toBe("job-strava");
-      expect(result.jobIds).toEqual(["job-strava", "job-wahoo"]);
+      expect(result.jobId).toBe("strava:job-strava");
+      expect(result.jobIds).toEqual(["strava:job-strava", "wahoo:job-wahoo"]);
       expect(result.providerJobs).toEqual([
-        { providerId: "strava", jobId: "job-strava", queueName: "sync-strava" },
-        { providerId: "wahoo", jobId: "job-wahoo", queueName: "sync-wahoo" },
+        { providerId: "strava", jobId: "strava:job-strava", queueName: "sync-strava" },
+        { providerId: "wahoo", jobId: "wahoo:job-wahoo", queueName: "sync-wahoo" },
       ]);
       expect(mockAdd).toHaveBeenNthCalledWith(1, "sync", {
         providerId: "strava",
@@ -469,8 +469,8 @@ describe("syncRouter", () => {
       // strava has authSetup and has token — included
       // intervals has no authSetup — included (no auth needed)
       expect(result.providerJobs).toEqual([
-        { providerId: "strava", jobId: "job-strava", queueName: "sync-strava" },
-        { providerId: "intervals", jobId: "job-intervals", queueName: "sync-intervals" },
+        { providerId: "strava", jobId: "strava:job-strava", queueName: "sync-strava" },
+        { providerId: "intervals", jobId: "intervals:job-intervals", queueName: "sync-intervals" },
       ]);
       expect(mockAdd).toHaveBeenCalledTimes(2);
     });
@@ -490,7 +490,7 @@ describe("syncRouter", () => {
 
       const result = await caller.triggerSync({});
       expect(result.providerJobs).toEqual([
-        { providerId: "strava", jobId: "job-strava", queueName: "sync-strava" },
+        { providerId: "strava", jobId: "strava:job-strava", queueName: "sync-strava" },
       ]);
       expect(mockAdd).toHaveBeenCalledTimes(1);
       expect(mockAdd).toHaveBeenCalledWith("sync", {
@@ -510,10 +510,10 @@ describe("syncRouter", () => {
       });
 
       const result = await caller.triggerSync({ providerId: "wahoo" });
-      expect(result.jobId).toBe("job-123");
-      expect(result.jobIds).toEqual(["job-123"]);
+      expect(result.jobId).toBe("wahoo:job-123");
+      expect(result.jobIds).toEqual(["wahoo:job-123"]);
       expect(result.providerJobs).toEqual([
-        { providerId: "wahoo", jobId: "job-123", queueName: "sync-wahoo" },
+        { providerId: "wahoo", jobId: "wahoo:job-123", queueName: "sync-wahoo" },
       ]);
       expect(mockAdd).toHaveBeenCalledWith("sync", {
         providerId: "wahoo",
@@ -536,7 +536,7 @@ describe("syncRouter", () => {
 
       // Should find wahoo specifically, not just the first provider
       const result = await caller.triggerSync({ providerId: "wahoo" });
-      expect(result.jobId).toBe("job-123");
+      expect(result.jobId).toBe("wahoo:job-123");
     });
 
     it("uses same queue instance across calls (not recreated)", async () => {
@@ -926,7 +926,7 @@ describe("syncRouter", () => {
 
       const result = await caller.activeSyncs();
       expect(result).toHaveLength(1);
-      expect(result[0]?.jobId).toBe("job-1");
+      expect(result[0]?.jobId).toBe("unknown:job-1");
       expect(result[0]?.status).toBe("running");
       expect(result[0]?.providers).toEqual({
         wahoo: { status: "running", message: "Syncing..." },
@@ -1008,7 +1008,7 @@ describe("syncRouter", () => {
       });
 
       const result = await caller.activeSyncs();
-      expect(result[0]?.jobId).toMatch(/^job-\d+$/);
+      expect(result[0]?.jobId).toMatch(/^job-unknown-\d+$/);
     });
 
     it("skips jobs with malformed data", async () => {
@@ -1041,7 +1041,7 @@ describe("syncRouter", () => {
 
       const result = await caller.activeSyncs();
       expect(result).toHaveLength(1);
-      expect(result[0]?.jobId).toBe("job-good");
+      expect(result[0]?.jobId).toBe("unknown:job-good");
     });
   });
 
@@ -1102,14 +1102,20 @@ describe("syncRouter", () => {
     });
   });
 
-  describe("REDACTED_ERROR_MESSAGE", () => {
-    it("is a non-empty string constant", () => {
-      expect(typeof REDACTED_ERROR_MESSAGE).toBe("string");
-      expect(REDACTED_ERROR_MESSAGE.length).toBeGreaterThan(0);
+  describe("sanitizeErrorMessage", () => {
+    it("returns null when errorMessage is null", () => {
+      expect(sanitizeErrorMessage(null)).toBeNull();
     });
 
-    it("equals 'Details hidden'", () => {
-      expect(REDACTED_ERROR_MESSAGE).toBe("Details hidden");
+    it("returns null when errorMessage is empty string", () => {
+      expect(sanitizeErrorMessage("")).toBeNull();
+    });
+
+    it("passes through non-empty error messages", () => {
+      expect(sanitizeErrorMessage("some error")).toBe("some error");
+      expect(sanitizeErrorMessage("Connect API authentication failed")).toBe(
+        "Connect API authentication failed",
+      );
     });
   });
 
@@ -1159,39 +1165,28 @@ describe("syncRouter", () => {
 
       const result = await caller.logs({});
       expect(result).toHaveLength(1);
-      expect(result[0]?.errorMessage).toBe(REDACTED_ERROR_MESSAGE);
+      expect(result[0]?.errorMessage).toBe("provider stack trace here");
     });
   });
 
-  describe("redactLogErrorMessage", () => {
-    it("returns null when errorMessage is null", () => {
-      expect(redactLogErrorMessage(null)).toBeNull();
+  describe("sanitizeErrorMessage (additional cases)", () => {
+    it("preserves the original error string", () => {
+      expect(sanitizeErrorMessage("OAuth2 token expired")).toBe("OAuth2 token expired");
     });
 
-    it("returns null when errorMessage is empty string", () => {
-      expect(redactLogErrorMessage("")).toBeNull();
-    });
-
-    it("returns REDACTED_ERROR_MESSAGE for any non-empty string", () => {
-      expect(redactLogErrorMessage("some error")).toBe(REDACTED_ERROR_MESSAGE);
-      expect(redactLogErrorMessage("stack trace details")).toBe(REDACTED_ERROR_MESSAGE);
-    });
-
-    it("returns the exact constant (not a different string)", () => {
-      const result = redactLogErrorMessage("error");
-      expect(result).toBe("Details hidden");
-      expect(result).not.toBe("Error");
-      expect(result).not.toBe("");
+    it("returns null for falsy values", () => {
+      expect(sanitizeErrorMessage(null)).toBeNull();
+      expect(sanitizeErrorMessage("")).toBeNull();
     });
   });
 
   describe("toJobId", () => {
-    it("returns String(id) when id is defined as a number", () => {
-      expect(toJobId(123, "wahoo")).toBe("123");
+    it("returns providerId:id when id is defined as a number", () => {
+      expect(toJobId(123, "wahoo")).toBe("wahoo:123");
     });
 
-    it("returns String(id) when id is defined as a string", () => {
-      expect(toJobId("abc-456", "wahoo")).toBe("abc-456");
+    it("returns providerId:id when id is defined as a string", () => {
+      expect(toJobId("abc-456", "wahoo")).toBe("wahoo:abc-456");
     });
 
     it("generates fallback ID when id is undefined", () => {
@@ -1206,8 +1201,25 @@ describe("syncRouter", () => {
     });
 
     it("uses strict === undefined check (0 and empty string are valid IDs)", () => {
-      expect(toJobId(0, "wahoo")).toBe("0");
-      expect(toJobId("", "wahoo")).toBe("");
+      expect(toJobId(0, "wahoo")).toBe("wahoo:0");
+      expect(toJobId("", "wahoo")).toBe("wahoo:");
+    });
+  });
+
+  describe("parseJobId", () => {
+    it("parses composite jobId with provider prefix", () => {
+      expect(parseJobId("wahoo:123")).toEqual({ providerId: "wahoo", rawId: "123" });
+    });
+
+    it("handles legacy plain numeric jobId", () => {
+      expect(parseJobId("123")).toEqual({ providerId: null, rawId: "123" });
+    });
+
+    it("handles fallback jobId format", () => {
+      expect(parseJobId("job-wahoo-1234567890")).toEqual({
+        providerId: null,
+        rawId: "job-wahoo-1234567890",
+      });
     });
   });
 

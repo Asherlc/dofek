@@ -12,27 +12,19 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - client
-
-  client:
-    image: ${DOFEK_CLIENT_IMAGE:-ghcr.io/asherlc/dofek-client:latest}
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/ || exit 1"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-      start_period: 15s
-    depends_on:
-      - web
+      web:
+        condition: service_healthy
 
   migrate:
     image: ${DOFEK_IMAGE:-ghcr.io/asherlc/dofek:latest}
     command: migrate
     restart: "no"
-    env_file: .env
+    env_file:
+      - .env
+      - path: secrets.env
+        required: false
     environment:
-      - DATABASE_URL=postgres://health:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/health
+      - DATABASE_URL=postgres://health:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in Infisical}@db:5432/health
       - NODE_ENV=production
       - OTEL_SERVICE_NAME=dofek-migrate
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318
@@ -45,13 +37,16 @@ services:
     image: ${DOFEK_IMAGE:-ghcr.io/asherlc/dofek:latest}
     command: web
     restart: unless-stopped
-    env_file: .env
+    env_file:
+      - .env
+      - path: secrets.env
+        required: false
     # Add docker group so node user (uid 1000) can access /var/run/docker.sock
     # DOCKER_GID should be set via .env (run `getent group docker | cut -d: -f3` to find host docker GID)
     group_add:
       - "${DOCKER_GID:-988}"
     environment:
-      - DATABASE_URL=postgres://health:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/health
+      - DATABASE_URL=postgres://health:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in Infisical}@db:5432/health
       - REDIS_URL=redis://redis:6379
       - JOB_FILES_DIR=/app/job-files
       - PUBLIC_URL=https://dofek.asherlc.com
@@ -60,7 +55,7 @@ services:
       - OTEL_SERVICE_NAME=dofek-web
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318
       - OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://collector:4318/v1/logs
-      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://o4511073249067008.ingest.us.sentry.io/api/4511073388593152/integration/otlp/v1/traces?sentry_key=b421c7fde44434a032c86e3357cae397
+      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=${SENTRY_OTLP_TRACES_ENDPOINT}
     volumes:
       - job_files:/app/job-files
       - /var/run/docker.sock:/var/run/docker.sock
@@ -87,15 +82,18 @@ services:
     container_name: dofek-worker
     command: worker
     restart: on-failure:3
-    env_file: .env
+    env_file:
+      - .env
+      - path: secrets.env
+        required: false
     environment:
-      - DATABASE_URL=postgres://health:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/health
+      - DATABASE_URL=postgres://health:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in Infisical}@db:5432/health
       - REDIS_URL=redis://redis:6379
       - NODE_ENV=production
       - OTEL_SERVICE_NAME=dofek-worker
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318
       - OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://collector:4318/v1/logs
-      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://o4511073249067008.ingest.us.sentry.io/api/4511073388593152/integration/otlp/v1/traces?sentry_key=b421c7fde44434a032c86e3357cae397
+      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=${SENTRY_OTLP_TRACES_ENDPOINT}
     volumes:
       - job_files:/app/job-files
     depends_on:
@@ -111,64 +109,46 @@ services:
     image: ${DOFEK_IMAGE:-ghcr.io/asherlc/dofek:latest}
     command: sync
     restart: "no"
-    env_file: .env
+    env_file:
+      - .env
+      - path: secrets.env
+        required: false
     environment:
-      - DATABASE_URL=postgres://health:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/health
+      - DATABASE_URL=postgres://health:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in Infisical}@db:5432/health
       - REDIS_URL=redis://redis:6379
       - NODE_ENV=production
       - OTEL_SERVICE_NAME=dofek-sync
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318
       - OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://collector:4318/v1/logs
-      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://o4511073249067008.ingest.us.sentry.io/api/4511073388593152/integration/otlp/v1/traces?sentry_key=b421c7fde44434a032c86e3357cae397
+      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=${SENTRY_OTLP_TRACES_ENDPOINT}
     depends_on:
       migrate:
         condition: service_completed_successfully
       db:
         condition: service_healthy
 
-  ota-secrets:
-    image: infisical/cli:latest
-    restart: "no"
-    environment:
-      - INFISICAL_TOKEN=${INFISICAL_TOKEN:?Set INFISICAL_TOKEN in .env}
-      - INFISICAL_PROJECT_ID=54712f56-98a9-4531-9e97-0b588d2e5a88
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - infisical export --env=prod --format=dotenv > /secrets/ota.env
-    volumes:
-      - ota_secrets:/secrets
-    labels:
-      - "com.centurylinklabs.watchtower.enable=false"
-
   ota:
     image: ghcr.io/axelmarciano/expo-open-ota:latest
     restart: unless-stopped
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        set -a
-        . /run/secrets/ota.env
-        set +a
-        export AWS_ACCESS_KEY_ID="$$R2_ACCESS_KEY_ID"
-        export AWS_SECRET_ACCESS_KEY="$$R2_SECRET_ACCESS_KEY"
-        export JWT_SECRET="$$OTA_JWT_SECRET"
-        export PUBLIC_EXPO_KEY_B64="$$OTA_PUBLIC_KEY_B64"
-        export PRIVATE_EXPO_KEY_B64="$$OTA_PRIVATE_KEY_B64"
-        exec /app/main
     environment:
       - BASE_URL=https://ota.dofek.asherlc.com
       - STORAGE_MODE=s3
       - S3_BUCKET_NAME=${R2_OTA_BUCKET:-dofek-ota}
       - AWS_REGION=auto
-      - AWS_BASE_ENDPOINT=${R2_ENDPOINT:?Set R2_ENDPOINT in .env}
+      - AWS_BASE_ENDPOINT=${R2_ENDPOINT:?Set R2_ENDPOINT in Infisical}
+      - AWS_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID:?Set R2_ACCESS_KEY_ID in Infisical}
+      - AWS_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY:?Set R2_SECRET_ACCESS_KEY in Infisical}
+      - EXPO_APP_ID=${EXPO_APP_ID:?Set EXPO_APP_ID in Infisical}
+      - EXPO_ACCESS_TOKEN=${EXPO_ACCESS_TOKEN:?Set EXPO_ACCESS_TOKEN in Infisical}
+      - JWT_SECRET=${OTA_JWT_SECRET:?Set OTA_JWT_SECRET in Infisical}
       - KEYS_STORAGE_TYPE=environment
+      - PUBLIC_EXPO_KEY_B64=${OTA_PUBLIC_KEY_B64}
+      - PRIVATE_EXPO_KEY_B64=${OTA_PRIVATE_KEY_B64}
       - CACHE_MODE=redis
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - PORT=3000
     depends_on:
-      ota-secrets:
-        condition: service_completed_successfully
       redis:
         condition: service_healthy
     healthcheck:
@@ -177,8 +157,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
-    volumes:
-      - ota_secrets:/run/secrets:ro
     labels:
       - "com.centurylinklabs.watchtower.enable=false"
 
@@ -187,7 +165,8 @@ services:
     restart: unless-stopped
     user: "0:0"
     environment:
-      - AXIOM_API_TOKEN=${AXIOM_API_TOKEN:?Set AXIOM_API_TOKEN in .env}
+      - AXIOM_API_TOKEN=${AXIOM_API_TOKEN:?Set AXIOM_API_TOKEN in Infisical}
+      - SENTRY_OTLP_LOGS_ENDPOINT=${SENTRY_OTLP_LOGS_ENDPOINT}
     volumes:
       - ./otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
@@ -216,7 +195,7 @@ services:
     environment:
       POSTGRES_DB: health
       POSTGRES_USER: health
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in Infisical}
     volumes:
       - ${DB_DATA_PATH:-db_data}:/var/lib/postgresql/data
     healthcheck:
@@ -232,7 +211,7 @@ services:
       POSTGRES_HOST: db
       POSTGRES_DB: health
       POSTGRES_USER: health
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in Infisical}
       SCHEDULE: "@daily"
       BACKUP_KEEP_DAYS: 7
       BACKUP_KEEP_WEEKS: 4
@@ -261,7 +240,7 @@ services:
       WATCHTOWER_CLEANUP: "true"
       WATCHTOWER_INCLUDE_STOPPED: "true"
       WATCHTOWER_REVIVE_STOPPED: "false"
-      # With 2 replicas for web/client, rolling restart keeps at least one
+      # With 2 replicas for web, rolling restart keeps at least one
       # serving instance available during image updates.
       WATCHTOWER_ROLLING_RESTART: "true"
       WATCHTOWER_STOP_TIMEOUT: "2100"
@@ -280,4 +259,3 @@ volumes:
   redis_data:
   job_files:
   portainer_data:
-  ota_secrets:

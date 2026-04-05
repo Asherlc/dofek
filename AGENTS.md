@@ -38,32 +38,31 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 - **Zod for runtime data boundaries**: Use Zod schemas to parse and validate any data whose shape TypeScript cannot guarantee at runtime — API responses, database query results, uploaded files, webhook payloads, browser messages (postMessage, BroadcastChannel), and any other data that crosses a boundary where the compiler cannot verify the type. Prefer `executeWithSchema()` (from `packages/server/src/lib/typed-sql.ts`) over `db.execute<T>()` generics for raw SQL queries. TypeScript generics only provide compile-time safety; Zod catches runtime shape mismatches.
 - **Avoid acronyms and single-letter variables**: Use descriptive names instead of acronyms or single-letter variables for variables, parameters, types, and interfaces. Common unit abbreviations are fine (lbs, mg, km, etc.), but domain-specific acronyms should be spelled out. Single-letter variable names are never descriptive enough — use a meaningful name instead. For example, use `CriticalPowerModel` not `CpModel`, `heartRateTrainingStressScore` not `hrTSS`, `const micronutrients = ...` not `const n = ...`. The only exception is `_` for intentionally unused bindings. Enforced by the `plugins/no-single-letter-variables.grit` Biome plugin.
 - **Layman-readable UI text**: All user-facing text — chart titles, axis labels, legends, tooltips, badges, empty states, and explanatory captions — must be understandable without domain expertise. Never use unexpanded acronyms (CTL, ATL, TSB, ACWR, FTP, HRV, EF, NP, VI, IF, PI, CP, W', etc.) as standalone labels. Either spell them out ("Fitness" not "CTL", "Heart Rate Variability" not "HRV") or put the acronym in parentheses after the readable name ("Fitness (CTL)"). Abbreviations for units (W, bpm, ms, km) are fine.
+- **Storybook stories for every component**: Every React component in `packages/web/src/components/` and `packages/mobile/components/` must have a colocated `.stories.tsx` file. When adding or modifying a component, add or update its Storybook stories in the same PR. Stories should cover: default state, loading state, empty/no-data state, and any significant visual variants. Context providers (e.g., `DashboardLayoutProvider`) and non-visual utilities are exempt.
 - **No coverage exclusions for convenience**: Never exclude source files from code coverage just to keep thresholds high. If a file has low coverage, write tests for it — don't hide it. The only legitimate coverage exclusions are test files themselves, test helpers, fixture files, and `node_modules/`.
 - **Ask about trade-offs**: When there are design decisions with multiple valid approaches (e.g., completeness vs simplicity, stability vs features), always ask the user rather than making assumptions. Don't cut corners without asking first.
 - **Commit regularly**: Commit at regular intervals — after each meaningful chunk of work (new feature, passing tests, refactor). Don't let changes accumulate.
 - **Always push after commit**: Push to remote after every commit so CI runs and changes are backed up.
 - **Pre-push checks**: Before every push, run `pnpm lint`, `pnpm test:changed`, and typecheck all packages (`pnpm tsc --noEmit`, `cd packages/server && pnpm tsc --noEmit`, `cd packages/web && pnpm tsc --noEmit`). CI runs the full test suite, but never push code that fails lint, changed-test coverage, or type checking.
-- **Test Docker changes locally end-to-end**: Before pushing Dockerfile or entrypoint changes, do a full local test — not just image builds. Run the server container against a real database and verify it starts, runs migrations, and serves API responses. Run the client container and verify it serves HTML and the SPA fallback works:
+- **Test Docker changes locally end-to-end**: Before pushing Dockerfile or entrypoint changes, do a full local test — not just image builds. Run the server container against a real database and verify it starts, runs migrations, serves API responses, and serves the SPA:
   ```bash
-  # Build both targets
+  # Build the server image
   docker build --target server -t dofek-server:local .
-  docker build --target client -t dofek-client:local .
   # Stand up a test DB and run the server
   docker network create dofek-test
   docker run -d --name dofek-test-db --network dofek-test \
     -e POSTGRES_DB=health -e POSTGRES_USER=health -e POSTGRES_PASSWORD=test \
     timescale/timescaledb:latest-pg16
   sleep 5
-  docker run -d --name dofek-test-web --network dofek-test \
+  docker run -d --name dofek-test-web --network dofek-test -p 3000:3000 \
     -e DATABASE_URL=postgres://health:test@dofek-test-db:5432/health -e PORT=3000 \
     dofek-server:local web
   sleep 8
   docker logs dofek-test-web  # should show migrations + "API running"
-  # Test client serves HTML
-  docker run -d --name dofek-test-client --network dofek-test -p 8888:80 dofek-client:local
-  curl http://localhost:8888/  # should return index.html
+  curl http://localhost:3000/  # should return index.html (SPA)
+  curl http://localhost:3000/healthz  # should return {"status":"ok"}
   # Clean up
-  docker rm -f dofek-test-web dofek-test-client dofek-test-db
+  docker rm -f dofek-test-web dofek-test-db
   docker network rm dofek-test
   ```
 - **Document as you go**: Keep README.md and docs/ updated with every significant change. When learning about external APIs, data formats, auth protocols, or provider quirks, write notes in `docs/` (e.g., `docs/peloton.md`, `docs/apple-health.md`). These notes help future development and debugging.
@@ -137,7 +136,6 @@ packages/
   trainingpeaks-connect/     — RE'd TrainingPeaks internal API client
 cypress/                     — E2E tests (Cypress)
 drizzle/                     — SQL migrations
-deploy/                      — Terraform + Docker Compose + Caddy + DNS
-Dockerfile                   — Multi-stage: server + client targets
-nginx.conf                   — Nginx config (static files + API proxy)
+deploy/                      — Terraform + Docker Compose + Caddy + DNS + deploy.sh
+Dockerfile                   — Multi-stage: server target (includes built web assets)
 ```

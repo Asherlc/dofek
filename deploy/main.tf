@@ -103,14 +103,16 @@ resource "hcloud_server" "dofek" {
   firewall_ids = [hcloud_firewall.dofek.id]
 
   user_data = templatefile("${path.module}/cloud-init.yml", {
-    domain          = var.domain
-    infisical_token = var.infisical_token
-    ghcr_token      = var.ghcr_token
-    ghcr_username   = var.ghcr_username
-    compose_content = file("${path.module}/docker-compose.yml")
-    caddy_content   = file("${path.module}/Caddyfile")
-    db_data_path    = local.data_volume_mountpoint != "" ? "${local.data_volume_mountpoint}/postgres" : ""
-    db_backup_path  = local.data_volume_mountpoint != "" ? "${local.data_volume_mountpoint}/backups" : ""
+    domain                 = var.domain
+    infisical_token        = var.infisical_token
+    ghcr_token             = var.ghcr_token
+    ghcr_username          = var.ghcr_username
+    compose_content        = file("${path.module}/docker-compose.yml")
+    caddy_content          = file("${path.module}/Caddyfile")
+    otel_collector_content = file("${path.module}/otel-collector-config.yaml")
+    deploy_script_content  = file("${path.module}/deploy.sh")
+    db_data_path           = local.data_volume_mountpoint != "" ? "${local.data_volume_mountpoint}/postgres" : ""
+    db_backup_path         = local.data_volume_mountpoint != "" ? "${local.data_volume_mountpoint}/backups" : ""
   })
 }
 
