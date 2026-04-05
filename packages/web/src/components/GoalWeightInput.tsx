@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { formatNumber } from "../lib/format.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
@@ -14,6 +14,11 @@ export function GoalWeightInput() {
 
   const [editing, setEditing] = useState(false);
   const [inputValue, setInputValue] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) inputRef.current?.focus();
+  }, [editing]);
 
   const mutation = trpc.bodyAnalytics.setGoalWeight.useMutation({
     onSuccess: () => {
@@ -48,8 +53,7 @@ export function GoalWeightInput() {
             if (event.key === "Enter") handleSave();
             if (event.key === "Escape") setEditing(false);
           }}
-          // biome-ignore lint/a11y/noAutofocus: intentional focus on inline edit activation
-          autoFocus
+          ref={inputRef}
         />
         <button
           type="button"

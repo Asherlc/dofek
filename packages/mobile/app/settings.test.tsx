@@ -99,6 +99,14 @@ vi.mock("../lib/trpc", () => ({
         useMutation: () => ({ mutate: vi.fn(), isPending: false }),
       },
     },
+    bodyAnalytics: {
+      setGoalWeight: {
+        useMutation: () => ({ mutate: vi.fn(), isPending: false }),
+      },
+      weightPrediction: {
+        invalidate: vi.fn(),
+      },
+    },
   },
 }));
 
