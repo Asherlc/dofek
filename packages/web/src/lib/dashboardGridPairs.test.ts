@@ -44,12 +44,12 @@ describe("reorderDashboardSections", () => {
   });
 
   it("returns the same array when moving the first section up", () => {
-    const result = reorderDashboardSections(order, order[0], "up");
+    const result = reorderDashboardSections(order, order[0]!, "up");
     expect(result).toBe(order);
   });
 
   it("returns the same array when moving the last section down", () => {
-    const lastSection = order[order.length - 1];
+    const lastSection = order[order.length - 1]!;
     const result = reorderDashboardSections(order, lastSection, "down");
     expect(result).toBe(order);
   });
