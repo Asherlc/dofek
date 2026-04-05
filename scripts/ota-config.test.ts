@@ -12,8 +12,8 @@ describe("OTA deployment config (expo-open-ota)", () => {
   it("defines the ota service in docker-compose", () => {
     const dockerCompose = readFileSync(dockerComposePath, "utf-8");
     expect(dockerCompose).toContain("ghcr.io/axelmarciano/expo-open-ota:");
-    expect(dockerCompose).toContain("EXPO_APP_ID=");
     expect(dockerCompose).toContain("STORAGE_MODE=s3");
+    expect(dockerCompose).toContain("ota-secrets:");
   });
 
   it("routes ota subdomain in Caddyfile", () => {
