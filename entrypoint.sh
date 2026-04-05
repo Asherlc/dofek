@@ -1,13 +1,23 @@
 #!/bin/sh
 set -e
 
+# Load non-secret config from committed .env as defaults.
+# Only sets vars that aren't already provided by Docker/Compose env_file.
+if [ -f .env ]; then
+  while IFS='=' read -r key value; do
+    case "$key" in ''|\#*) continue ;; esac
+    # Use if/then instead of && to avoid triggering set -e when var is already set
+    eval "if [ -z \"\${$key+x}\" ]; then export $key=\"$value\"; fi"
+  done < .env
+fi
+
 # Node 22+ natively handles TypeScript — transform-types also rewrites .ts imports
 NODE="node --experimental-transform-types --enable-source-maps --disable-warning=ExperimentalWarning --import @opentelemetry/instrumentation/hook.mjs --import ./src/instrumentation.ts"
 
 MIGRATE="$NODE src/db/run-migrate.ts"
 
-# If SOPS age key is available and .env exists, decrypt secrets into the environment
-if { [ -n "$SOPS_AGE_KEY" ] || [ -n "$SOPS_AGE_KEY_FILE" ]; } && [ -f .env ]; then
+# If Infisical credentials are available, fetch secrets from Infisical and inject into env
+if [ -n "$INFISICAL_TOKEN" ] || { [ -n "$INFISICAL_UNIVERSAL_AUTH_CLIENT_ID" ] && [ -n "$INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET" ]; }; then
   case "${1:-sync}" in
     web)     CMD="$MIGRATE && exec $NODE packages/server/src/index.ts" ;;
     sync)    CMD="$MIGRATE && exec $NODE src/index.ts sync" ;;
@@ -16,7 +26,7 @@ if { [ -n "$SOPS_AGE_KEY" ] || [ -n "$SOPS_AGE_KEY_FILE" ]; } && [ -f .env ]; th
     seed)    CMD="exec $NODE scripts/seed-dev-db.ts" ;;
     *)       echo "Unknown mode: $1 (expected 'web', 'sync', 'worker', 'migrate', or 'seed')" >&2; exit 1 ;;
   esac
-  exec sops exec-env .env "$CMD"
+  exec infisical run --env=prod -- sh -c "$CMD"
 fi
 
 # Fallback: run directly (env vars already set via docker env/env_file)

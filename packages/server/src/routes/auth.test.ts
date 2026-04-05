@@ -204,6 +204,7 @@ describe("createAuthRouter", () => {
       const data = JSON.parse(res.body);
       expect(data.identity).toEqual(["google"]);
       expect(data.data).toEqual([]);
+      expect(data.nativeApple).toBe(false);
     });
   });
 
@@ -858,7 +859,7 @@ describe("createAuthRouter", () => {
       });
       expect(res.status).toBe(400);
       expect(res.body).toContain("Unknown or expired OAuth state");
-      expect(res.body).toContain("Try setting OAUTH_REDIRECT_URI_unencrypted");
+      expect(res.body).toContain("Try setting OAUTH_REDIRECT_URI");
     });
 
     it("succeeds with server-side state when cookies are missing (Apple form_post)", async () => {
@@ -1228,6 +1229,7 @@ describe("createAuthRouter", () => {
       const data = JSON.parse(res.body);
       expect(data.identity).toEqual(["google"]);
       expect(data.data).toEqual([]);
+      expect(data.nativeApple).toBe(false);
     });
   });
 
@@ -2829,7 +2831,7 @@ describe("createAuthRouter", () => {
 
     it("uses OAUTH_REDIRECT_URI env var for callback URL when set", async () => {
       const customUrl = "https://custom.example.com/callback";
-      process.env.OAUTH_REDIRECT_URI_unencrypted = customUrl;
+      process.env.OAUTH_REDIRECT_URI = customUrl;
       const mockGetRequestToken = vi.fn(() =>
         Promise.resolve({
           oauthToken: "env-tok",
@@ -2858,7 +2860,7 @@ describe("createAuthRouter", () => {
       const { app } = createTestApp();
       await request(app, "get", "/auth/provider/fatsecret");
       expect(mockGetRequestToken).toHaveBeenCalledWith(customUrl);
-      delete process.env.OAUTH_REDIRECT_URI_unencrypted;
+      delete process.env.OAUTH_REDIRECT_URI;
     });
   });
 

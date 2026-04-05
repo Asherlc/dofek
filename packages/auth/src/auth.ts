@@ -17,6 +17,7 @@ export type AuthUser = z.infer<typeof AuthUserSchema>;
 export const ConfiguredProvidersSchema = z.object({
   identity: z.array(z.enum(IDENTITY_PROVIDER_NAMES)),
   data: z.array(z.string()),
+  nativeApple: z.boolean().optional(),
 });
 
 export type ConfiguredProviders = z.infer<typeof ConfiguredProvidersSchema>;

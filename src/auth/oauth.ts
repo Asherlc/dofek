@@ -47,7 +47,7 @@ function isLocalOrPrivateHost(host: string): boolean {
 }
 
 /**
- * Returns the OAuth redirect URI from OAUTH_REDIRECT_URI_unencrypted env var,
+ * Returns the OAuth redirect URI from OAUTH_REDIRECT_URI env var,
  * falling back to the production default. If a host is provided and the env var
  * is missing, it constructs a dynamic redirect URI based on that host.
  */
@@ -57,7 +57,7 @@ export function getOAuthRedirectUri(host?: string): string {
     const protocol = isLocalOrPrivateHost(host) ? "http" : "https";
     return `${protocol}://${host}/callback`;
   }
-  const envValue = process.env.OAUTH_REDIRECT_URI ?? process.env.OAUTH_REDIRECT_URI_unencrypted;
+  const envValue = process.env.OAUTH_REDIRECT_URI;
   if (envValue) {
     return envValue;
   }

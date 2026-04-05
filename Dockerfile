@@ -75,19 +75,17 @@ FROM base AS server
 ENV NODE_ENV=production
 WORKDIR /app
 
-# Install SOPS for runtime .env decryption + Docker CLI for starting worker container
-# Skip in test/e2e builds with INSTALL_EXTRAS=false to speed up image builds
-ARG INSTALL_EXTRAS=true
-RUN if [ "$INSTALL_EXTRAS" = "true" ]; then \
-      apk add --no-cache curl ca-certificates && \
-      ARCH=$(uname -m) && \
-      case "$ARCH" in x86_64) SOPS_ARCH=amd64;; aarch64) SOPS_ARCH=arm64;; *) SOPS_ARCH=$ARCH;; esac && \
-      curl -fsSL "https://github.com/getsops/sops/releases/download/v3.9.4/sops-v3.9.4.linux.${SOPS_ARCH}" \
-        -o /usr/local/bin/sops && chmod +x /usr/local/bin/sops && \
-      curl -fsSL "https://download.docker.com/linux/static/stable/${ARCH}/docker-27.5.1.tgz" | \
-        tar xz --strip-components=1 -C /usr/local/bin docker/docker && \
-      apk del curl ; \
-    fi
+# Infisical CLI (pinned) for runtime secret injection + Docker CLI for worker container
+ARG INFISICAL_CLI_VERSION=0.43.69
+RUN apk add --no-cache curl ca-certificates && \
+    ARCH=$(uname -m) && \
+    case "$ARCH" in x86_64) INF_ARCH=amd64;; aarch64) INF_ARCH=arm64;; *) INF_ARCH=$ARCH;; esac && \
+    curl -fsSL "https://github.com/Infisical/cli/releases/download/v${INFISICAL_CLI_VERSION}/cli_${INFISICAL_CLI_VERSION}_linux_${INF_ARCH}.tar.gz" \
+      | tar xz -C /usr/local/bin infisical && \
+    chmod +x /usr/local/bin/infisical && \
+    curl -fsSL "https://download.docker.com/linux/static/stable/${ARCH}/docker-27.5.1.tgz" | \
+      tar xz --strip-components=1 -C /usr/local/bin docker/docker && \
+    apk del curl
 
 COPY --from=source --chown=node:node /app/src ./src
 COPY --from=source --chown=node:node /app/drizzle ./drizzle
@@ -146,9 +144,9 @@ RUN ln -sf /app node_modules/dofek && \
 # Seed script for preview/dev environments
 COPY --from=source --chown=node:node /app/scripts ./scripts
 
-# SOPS-encrypted .env — decrypted at runtime via SOPS_AGE_KEY env var
+# Non-secret config (.env) and Infisical project config for secret injection at runtime
 COPY --from=source --chown=node:node /app/.env .
-COPY --from=source --chown=node:node /app/.sops.yaml .
+COPY --from=source --chown=node:node /app/.infisical.json .
 
 COPY --chown=node:node entrypoint.sh .
 

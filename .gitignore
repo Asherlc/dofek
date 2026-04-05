@@ -1,5 +1,8 @@
 node_modules/
 dist/
+# OTA code signing keys (secrets — only certificate.pem is committed)
+packages/mobile/certs/private-key.pem
+packages/mobile/certs/public-key.pem
 # Track .claude/skills (custom skills), ignore everything else
 .claude/*
 !.claude/skills/
@@ -11,9 +14,9 @@ dist/
 .vscode/
 .env.local
 .env.*.local
-# .env is SOPS-encrypted and safe to commit
-# .env.plain is the decrypted version — never commit
-.env.plain
+# .env is committed non-secret config; .env.local is gitignored for local overrides
+.env.local
+.env.*.local
 *.log
 # Personal supplement stack — differs per user
 src/supplements.config.ts

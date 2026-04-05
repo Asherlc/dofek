@@ -18,8 +18,6 @@ services:
     build:
       context: .
       target: server
-      args:
-        INSTALL_EXTRAS: "false"
     environment:
       DATABASE_URL: postgres://health:health@db:5432/health
       NODE_ENV: test
@@ -34,8 +32,6 @@ services:
     build:
       context: .
       target: server
-      args:
-        INSTALL_EXTRAS: "false"
     environment:
       DATABASE_URL: postgres://health:health@db:5432/health
       PORT: "3000"

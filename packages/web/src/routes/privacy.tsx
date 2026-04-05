@@ -88,7 +88,7 @@ function PrivacyPage() {
               <li>
                 API keys and OAuth tokens are stored encrypted and are never exposed to the frontend
               </li>
-              <li>Environment secrets are encrypted at rest using SOPS with age encryption</li>
+              <li>Environment secrets are managed via Infisical and injected at runtime</li>
             </ul>
           </section>
 

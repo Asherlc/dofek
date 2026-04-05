@@ -20,7 +20,7 @@ write_files:
   - path: /opt/dofek/.env
     permissions: "0600"
     content: |
-      SOPS_AGE_KEY=${sops_age_key}
+      INFISICAL_TOKEN=${infisical_token}
       CADDY_DOMAIN=${domain}
 %{ if db_data_path != "" ~}
       DB_DATA_PATH=${db_data_path}

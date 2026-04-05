@@ -1,4 +1,5 @@
 ignore:
-  # Go stdlib CVE in node:22-alpine base image — no fix available in our
-  # control (requires upstream Node.js Alpine image rebuild with Go 1.24+)
+  # Go stdlib CVEs in vendored static binaries (Infisical CLI, Docker CLI).
+  # Fix requires upstream projects to rebuild with newer Go — not in our control.
   - vulnerability: CVE-2025-68121
+  - vulnerability: CVE-2025-22871
