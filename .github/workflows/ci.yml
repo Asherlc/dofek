@@ -1154,7 +1154,7 @@ jobs:
       - name: Publish OTA update
         working-directory: packages/mobile
         env:
-          EXPO_TOKEN: ${{ secrets.EXPO_ACCESS_TOKEN }}
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: npx eoas@2.3.16 publish --branch main --platform ios --nonInteractive
 
   deploy-config:
@@ -1207,7 +1207,7 @@ jobs:
           TF_VAR_slack_bot_token: ${{ secrets.SLACK_BOT_TOKEN }}
           TF_VAR_ghcr_token: ${{ secrets.GHCR_TOKEN }}
           TF_VAR_expo_app_id: ${{ secrets.EXPO_APP_ID }}
-          TF_VAR_expo_access_token: ${{ secrets.EXPO_ACCESS_TOKEN }}
+          TF_VAR_expo_access_token: ${{ secrets.EXPO_TOKEN }}
           TF_VAR_ota_jwt_secret: ${{ secrets.OTA_JWT_SECRET }}
           TF_VAR_ota_public_key_b64: ${{ secrets.OTA_PUBLIC_KEY_B64 }}
           TF_VAR_ota_private_key_b64: ${{ secrets.OTA_PRIVATE_KEY_B64 }}
