@@ -1,21 +1,3 @@
 ${domain} {
-    handle /healthz {
-        reverse_proxy web:3000
-    }
-
-    handle /api/* {
-        reverse_proxy web:3000
-    }
-
-    handle /auth/* {
-        reverse_proxy web:3000
-    }
-
-    handle /callback {
-        reverse_proxy web:3000
-    }
-
-    handle {
-        reverse_proxy client:80
-    }
+    reverse_proxy web:3000
 }

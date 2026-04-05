@@ -63,11 +63,6 @@ variable "server_image_tag" {
   type        = string
 }
 
-variable "client_image_tag" {
-  description = "Docker image tag for the client image (e.g., sha-abc1234)"
-  type        = string
-}
-
 variable "ghcr_username" {
   description = "GitHub username for GHCR image pulls"
   type        = string
@@ -108,7 +103,6 @@ locals {
   preview_domain = "pr-${var.pr_number}.preview.dofek.fit"
   server_name    = "dofek-preview-pr-${var.pr_number}"
   server_image   = "ghcr.io/asherlc/dofek:${var.server_image_tag}"
-  client_image   = "ghcr.io/asherlc/dofek-client:${var.client_image_tag}"
 }
 
 # ── SSH Key ──────────────────────────────────────────────────────────────
@@ -160,10 +154,8 @@ resource "hcloud_server" "preview" {
     ghcr_token    = var.ghcr_token
     ghcr_username = var.ghcr_username
     server_image  = local.server_image
-    client_image  = local.client_image
     compose_content = templatefile("${path.module}/docker-compose.yml", {
       server_image = local.server_image
-      client_image = local.client_image
       domain       = local.preview_domain
     })
     caddy_content = templatefile("${path.module}/Caddyfile", {

@@ -1,5 +1,6 @@
 # Ephemeral preview stack — minimal services for PR validation.
 # No worker, sync, watchtower, portainer, backups, or OTel collector.
+# Express serves both API and static web assets (no separate client container).
 
 services:
   caddy:
@@ -12,19 +13,6 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
-    depends_on:
-      client:
-        condition: service_healthy
-
-  client:
-    image: ${client_image}
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/ || exit 1"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-      start_period: 15s
     depends_on:
       web:
         condition: service_healthy
@@ -57,10 +45,6 @@ services:
       timeout: 3s
       retries: 5
       start_period: 30s
-    networks:
-      default:
-        aliases:
-          - dofek-web
     depends_on:
       seed:
         condition: service_completed_successfully
