@@ -24,6 +24,10 @@ import { WeeklyReportCard } from "../components/WeeklyReportCard.tsx";
 import { useAutoSync } from "../hooks/useAutoSync.ts";
 import { useScrollReveal } from "../hooks/useScrollReveal.ts";
 import { chartColors } from "../lib/chartTheme.ts";
+import {
+  DASHBOARD_GRID_PAIR_SECONDARIES,
+  DASHBOARD_GRID_PAIRS,
+} from "../lib/dashboardGridPairs.ts";
 import { useDashboardLayout } from "../lib/dashboardLayoutContext.ts";
 import { formatDateForQuery } from "../lib/dates.ts";
 import { trpc } from "../lib/trpc.ts";
@@ -106,22 +110,6 @@ const activityRowSchema = z.object({
 export function healthMonitorSubtitle(): string {
   return "Today's values vs. rolling average";
 }
-
-/** Sections that render side-by-side in a 2-column grid. The key is the "primary" (left) section. */
-export const GRID_PAIRS: Record<string, string> = {
-  strain: "nextWorkout",
-  weeklyReport: "sleepNeed",
-  stress: "healthspan",
-  spo2Temp: "steps",
-};
-
-/** Reverse lookup: secondary -> primary */
-export const GRID_PAIR_SECONDARY: Record<string, string> = {
-  nextWorkout: "strain",
-  sleepNeed: "weeklyReport",
-  healthspan: "stress",
-  steps: "spo2Temp",
-};
 
 type DailyMetricRow = z.infer<typeof dailyMetricRowSchema>;
 
@@ -511,7 +499,7 @@ export function Dashboard() {
 
     // Check if this section is the secondary of a grid pair.
     // Only skip if the primary will actually render it (is in the section set, in the order, and not hidden).
-    const primaryId = GRID_PAIR_SECONDARY[id];
+    const primaryId = DASHBOARD_GRID_PAIR_SECONDARIES[id];
     if (primaryId) {
       const primaryWillRender =
         DASHBOARD_SECTION_IDS.has(primaryId) &&
@@ -520,7 +508,7 @@ export function Dashboard() {
       if (primaryWillRender) continue;
     }
 
-    const pairId = GRID_PAIRS[id];
+    const pairId = DASHBOARD_GRID_PAIRS[id];
     const pairSection = pairId ? sectionContent[pairId] : undefined;
     const pairHidden = pairId ? layout.hidden.includes(pairId) : false;
 
