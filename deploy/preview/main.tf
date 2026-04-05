@@ -160,6 +160,8 @@ resource "hcloud_server" "preview" {
     domain        = local.preview_domain
     ghcr_token    = var.ghcr_token
     ghcr_username = var.ghcr_username
+    hcloud_token  = var.hcloud_token
+    pr_number     = var.pr_number
     server_image  = local.server_image
     compose_content = templatefile("${path.module}/docker-compose.yml", {
       server_image = local.server_image

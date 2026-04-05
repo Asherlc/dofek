@@ -118,36 +118,33 @@ jobs:
           URL="${{ steps.apply.outputs.preview_url }}"
           echo "Waiting for $URL to become reachable..."
           echo "Server: $SERVER_NAME ($SERVER_IP)"
+
+          # Query Hetzner API for server labels (cloud_init status set by cloud-init runcmd)
+          get_cloud_init_label() {
+            curl -sf -H "Authorization: Bearer $HCLOUD_TOKEN" \
+              "https://api.hetzner.cloud/v1/servers?name=$SERVER_NAME" \
+              | jq -r '.servers[0].labels.cloud_init // "pending"' 2>/dev/null || echo "api-error"
+          }
+
           for i in $(seq 1 60); do
+            # Check HTTP health
             status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "$URL/healthz" 2>/dev/null || echo 000)"
             if [ "$status" -ge 200 ] && [ "$status" -lt 400 ]; then
               echo "Server is ready (HTTP $status)!"
               exit 0
             fi
 
-            # Show diagnostics every 5 attempts instead of a silent loop
-            if (( i % 5 == 0 )); then
-              echo "--- Diagnostics (attempt $i/60, HTTP $status) ---"
+            # Check cloud-init progress via Hetzner labels
+            ci_status="$(get_cloud_init_label)"
+            echo "Attempt $i/60 — HTTP $status | cloud-init: $ci_status"
 
-              # Hetzner server status (running/initializing/starting)
-              hcloud_status="$(docker run --rm -e HCLOUD_TOKEN hetznercloud/cli server describe "$SERVER_NAME" -o json 2>/dev/null | jq -r '.status // "unknown"')" || hcloud_status="api-error"
-              echo "Hetzner status: $hcloud_status"
-
-              # TCP port checks
-              for port in 80 443; do
-                timeout 2 bash -c "echo > /dev/tcp/$SERVER_IP/$port" 2>/dev/null \
-                  && echo "TCP $port: open" \
-                  || echo "TCP $port: closed"
-              done
-
-              # DNS resolution
-              dig +short "$(echo "$URL" | sed 's|https\?://||')" 2>/dev/null || echo "DNS: dig not available"
-            else
-              echo "Attempt $i/60 — HTTP $status, waiting 10s..."
+            if [ "$ci_status" = "failed" ]; then
+              echo "::error::cloud-init reported failure (check server logs)"
+              exit 1
             fi
             sleep 10
           done
-          echo "::error::Server did not become reachable within 10 minutes"
+          echo "::error::Server did not become reachable within 10 minutes (cloud-init: $(get_cloud_init_label))"
           exit 1
 
       - name: Comment PR with Preview URL

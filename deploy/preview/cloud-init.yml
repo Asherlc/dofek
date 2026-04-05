@@ -19,6 +19,18 @@ write_files:
       ${indent(6, caddy_content)}
 
 runcmd:
+  # Signal cloud-init progress via Hetzner server labels (read by CI health check).
+  # Uses the metadata endpoint to get the server ID, then the Hetzner API to update labels.
+  - |
+    SERVER_ID=$(curl -sf http://169.254.169.254/hetzner/v1/metadata/instance-id)
+    update_label() {
+      curl -sf -X PUT "https://api.hetzner.cloud/v1/servers/$SERVER_ID" \
+        -H "Authorization: Bearer ${hcloud_token}" \
+        -H "Content-Type: application/json" \
+        -d "{\"labels\":{\"purpose\":\"preview\",\"pr_number\":\"${pr_number}\",\"managed_by\":\"terraform\",\"cloud_init\":\"$1\"}}" \
+        > /dev/null 2>&1 || true
+    }
+    update_label "running"
   # Install Docker from the official apt repository (not curl|sh) for reproducibility
   - install -m 0755 -d /etc/apt/keyrings
   - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
@@ -28,3 +40,18 @@ runcmd:
   - apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
   - echo '${ghcr_token}' | docker login ghcr.io -u ${ghcr_username} --password-stdin
   - cd /opt/dofek && docker compose up -d
+  # Signal completion (or failure if docker compose up failed)
+  - |
+    SERVER_ID=$(curl -sf http://169.254.169.254/hetzner/v1/metadata/instance-id)
+    update_label() {
+      curl -sf -X PUT "https://api.hetzner.cloud/v1/servers/$SERVER_ID" \
+        -H "Authorization: Bearer ${hcloud_token}" \
+        -H "Content-Type: application/json" \
+        -d "{\"labels\":{\"purpose\":\"preview\",\"pr_number\":\"${pr_number}\",\"managed_by\":\"terraform\",\"cloud_init\":\"$1\"}}" \
+        > /dev/null 2>&1 || true
+    }
+    if docker compose -f /opt/dofek/docker-compose.yml ps --format json | grep -q '"Health":"healthy"'; then
+      update_label "done"
+    else
+      update_label "failed"
+    fi
