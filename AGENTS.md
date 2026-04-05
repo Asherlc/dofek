@@ -43,27 +43,25 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 - **Commit regularly**: Commit at regular intervals — after each meaningful chunk of work (new feature, passing tests, refactor). Don't let changes accumulate.
 - **Always push after commit**: Push to remote after every commit so CI runs and changes are backed up.
 - **Pre-push checks**: Before every push, run `pnpm lint`, `pnpm test:changed`, and typecheck all packages (`pnpm tsc --noEmit`, `cd packages/server && pnpm tsc --noEmit`, `cd packages/web && pnpm tsc --noEmit`). CI runs the full test suite, but never push code that fails lint, changed-test coverage, or type checking.
-- **Test Docker changes locally end-to-end**: Before pushing Dockerfile or entrypoint changes, do a full local test — not just image builds. Run the server container against a real database and verify it starts, runs migrations, and serves API responses. Run the client container and verify it serves HTML and the SPA fallback works:
+- **Test Docker changes locally end-to-end**: Before pushing Dockerfile or entrypoint changes, do a full local test — not just image builds. Run the server container against a real database and verify it starts, runs migrations, serves API responses, and serves the SPA:
   ```bash
-  # Build both targets
+  # Build the server image
   docker build --target server -t dofek-server:local .
-  docker build --target client -t dofek-client:local .
   # Stand up a test DB and run the server
   docker network create dofek-test
   docker run -d --name dofek-test-db --network dofek-test \
     -e POSTGRES_DB=health -e POSTGRES_USER=health -e POSTGRES_PASSWORD=test \
     timescale/timescaledb:latest-pg16
   sleep 5
-  docker run -d --name dofek-test-web --network dofek-test \
+  docker run -d --name dofek-test-web --network dofek-test -p 3000:3000 \
     -e DATABASE_URL=postgres://health:test@dofek-test-db:5432/health -e PORT=3000 \
     dofek-server:local web
   sleep 8
   docker logs dofek-test-web  # should show migrations + "API running"
-  # Test client serves HTML
-  docker run -d --name dofek-test-client --network dofek-test -p 8888:80 dofek-client:local
-  curl http://localhost:8888/  # should return index.html
+  curl http://localhost:3000/  # should return index.html (SPA)
+  curl http://localhost:3000/healthz  # should return {"status":"ok"}
   # Clean up
-  docker rm -f dofek-test-web dofek-test-client dofek-test-db
+  docker rm -f dofek-test-web dofek-test-db
   docker network rm dofek-test
   ```
 - **Document as you go**: Keep README.md and docs/ updated with every significant change. When learning about external APIs, data formats, auth protocols, or provider quirks, write notes in `docs/` (e.g., `docs/peloton.md`, `docs/apple-health.md`). These notes help future development and debugging.
@@ -137,7 +135,6 @@ packages/
   trainingpeaks-connect/     — RE'd TrainingPeaks internal API client
 cypress/                     — E2E tests (Cypress)
 drizzle/                     — SQL migrations
-deploy/                      — Terraform + Docker Compose + Caddy + DNS
-Dockerfile                   — Multi-stage: server + client targets
-nginx.conf                   — Nginx config (static files + API proxy)
+deploy/                      — Terraform + Docker Compose + Caddy + DNS + deploy.sh
+Dockerfile                   — Multi-stage: server target (includes built web assets)
 ```

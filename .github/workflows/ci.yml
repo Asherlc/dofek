@@ -384,7 +384,6 @@ jobs:
           files: docker-compose.e2e.yml
           targets: |
             server
-            client
           load: true
           set: |
             *.cache-from=type=gha,scope=e2e
@@ -931,8 +930,10 @@ jobs:
           AWS_DEFAULT_REGION: auto
         run: |
           set -euo pipefail
-          aws s3 sync packages/web/storybook-static/ "s3://$R2_BUCKET/${{ steps.preview.outputs.preview_prefix }}/" \
-            --delete \
+          # The preview token can write objects but does not have bucket list permission.
+          # Use a recursive copy so preview deploys don't depend on ListObjectsV2.
+          aws s3 cp packages/web/storybook-static/ "s3://$R2_BUCKET/${{ steps.preview.outputs.preview_prefix }}/" \
+            --recursive \
             --region auto \
             --endpoint-url "$R2_ENDPOINT" \
             --cache-control "no-cache"
@@ -1198,10 +1199,6 @@ jobs:
         working-directory: deploy/deploy-config
         env:
           TF_VAR_server_ip: ${{ secrets.SERVER_HOST }}
-          TF_VAR_r2_bucket: ${{ secrets.R2_BUCKET }}
-          TF_VAR_axiom_api_token: ${{ secrets.AXIOM_API_TOKEN }}
-          TF_VAR_slack_bot_token: ${{ secrets.SLACK_BOT_TOKEN }}
-          TF_VAR_ghcr_token: ${{ secrets.GHCR_TOKEN }}
         run: |
           terraform init
           terraform apply -auto-approve
@@ -1259,8 +1256,6 @@ jobs:
         include:
           - target: server
             suffix: ""
-          - target: client
-            suffix: "-client"
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3

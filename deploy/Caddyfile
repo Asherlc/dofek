@@ -1,5 +1,12 @@
 {$domain}, dofek.fit, www.dofek.fit, dofek.live, www.dofek.live {
-    reverse_proxy client:80
+    header {
+        X-Frame-Options "DENY"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
+    }
+
+    reverse_proxy web:3000
 }
 
 ota.dofek.asherlc.com {

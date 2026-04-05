@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createBullBoard } from "@bull-board/api";
 import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
 import { ExpressAdapter } from "@bull-board/express";
@@ -32,6 +35,7 @@ import { startSlackBot } from "./slack/bot.ts";
 import type { Context } from "./trpc.ts";
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
+const WEB_DIST_PATH = fileURLToPath(new URL("../../web/dist", import.meta.url));
 
 function getSingleHeaderValue(value: string | string[] | undefined): string | undefined {
   if (typeof value === "string") {
@@ -176,6 +180,42 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       allowMethodOverride: true,
     }),
   );
+
+  // ── Static files + SPA fallback (production: built web assets) ──
+  const webDistPath = WEB_DIST_PATH;
+  if (existsSync(webDistPath)) {
+    const indexPath = join(webDistPath, "index.html");
+    const indexHtml = existsSync(indexPath) ? readFileSync(indexPath, "utf8") : null;
+
+    // Vite-hashed assets — cache aggressively
+    app.use(
+      "/assets",
+      express.static(join(webDistPath, "assets"), { maxAge: "1y", immutable: true }),
+    );
+
+    // Other static files (favicon, manifest, etc.)
+    app.use(express.static(webDistPath, { index: false }));
+
+    if (indexHtml) {
+      // SPA fallback — serve the built index shell for non-API GET requests.
+      app.get("/{*path}", (req, res, next) => {
+        if (
+          req.path.startsWith("/api/") ||
+          req.path.startsWith("/auth/") ||
+          req.path.startsWith("/admin/") ||
+          req.path.startsWith("/slack/") ||
+          req.path === "/callback" ||
+          req.path === "/healthz" ||
+          req.path === "/metrics"
+        ) {
+          next();
+          return;
+        }
+        res.set("Cache-Control", "no-cache");
+        res.type("html").send(indexHtml);
+      });
+    }
+  }
 }
 
 /**
