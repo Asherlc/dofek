@@ -189,18 +189,16 @@ export default function RecoveryScreen() {
           {/* HRV variability (coefficient of variation) */}
           {hrvData.length >= 2 && (
             <Card title="Heart Rate Variability Stability">
-              <View style={styles.sparkContainer}>
-                <SparkLine
-                  data={hrvData.flatMap((d) =>
-                    d.rollingCoefficientOfVariation != null
-                      ? [d.rollingCoefficientOfVariation]
-                      : [],
-                  )}
-                  height={50}
-                  color={colors.teal}
-                  showBaseline
-                />
-              </View>
+              <SparkLine
+                data={hrvData.flatMap((d) =>
+                  d.rollingCoefficientOfVariation != null ? [d.rollingCoefficientOfVariation] : [],
+                )}
+                height={50}
+                color={colors.teal}
+                showBaseline
+                showYAxis
+                formatYLabel={(value) => `${Math.round(value)}%`}
+              />
               <Text style={styles.chartSubtitle}>
                 Lower variability = more stable autonomic nervous system
               </Text>
@@ -368,6 +366,8 @@ export default function RecoveryScreen() {
                       data={weightData.map((d) => d.smoothedWeight)}
                       height={50}
                       color={colors.blue}
+                      showYAxis
+                      formatYLabel={(value) => `${Math.round(units.convertWeight(value))}`}
                     />
                   </View>
                 )}

@@ -371,6 +371,16 @@ describe("parseInlineSleep — BFF v0 cycle.sleeps format", () => {
     expect(parsed?.sleepNeedFromStrainMinutes).toBeUndefined();
     expect(parsed?.sleepNeedFromNapMinutes).toBeUndefined();
   });
+
+  it("normalizes fractional in_sleep_efficiency to percentage", () => {
+    const parsed = parseInlineSleep(inlineSleep({ in_sleep_efficiency: 0.894 }), 0);
+    expect(parsed?.efficiencyPct).toBeCloseTo(89.4, 1);
+  });
+
+  it("keeps percentage-scale in_sleep_efficiency as-is", () => {
+    const parsed = parseInlineSleep(inlineSleep({ in_sleep_efficiency: 89.4 }), 0);
+    expect(parsed?.efficiencyPct).toBe(89.4);
+  });
 });
 
 describe("parseSleep — edge cases", () => {
@@ -442,6 +452,45 @@ describe("parseSleep — edge cases", () => {
     expect(parsed?.remMinutes).toBe(5);
     expect(parsed?.awakeMinutes).toBe(5);
     expect(parsed?.efficiencyPct).toBeCloseTo(83.3);
+  });
+
+  it("normalizes fractional sleep_efficiency_percentage to percentage", () => {
+    const record: WhoopSleepRecord = {
+      id: 302,
+      user_id: 10129,
+      created_at: "2026-03-01T06:00:00Z",
+      updated_at: "2026-03-01T06:30:00Z",
+      start: "2026-02-28T23:00:00Z",
+      end: "2026-03-01T07:00:00Z",
+      timezone_offset: "-05:00",
+      nap: false,
+      score_state: "SCORED",
+      score: {
+        stage_summary: {
+          total_in_bed_time_milli: 27000000,
+          total_awake_time_milli: 1800000,
+          total_no_data_time_milli: 0,
+          total_light_sleep_time_milli: 10800000,
+          total_slow_wave_sleep_time_milli: 7200000,
+          total_rem_sleep_time_milli: 5400000,
+          sleep_cycle_count: 4,
+          disturbance_count: 2,
+        },
+        sleep_needed: {
+          baseline_milli: 28800000,
+          need_from_sleep_debt_milli: 0,
+          need_from_recent_strain_milli: 0,
+          need_from_recent_nap_milli: 0,
+        },
+        respiratory_rate: 16.1,
+        sleep_performance_percentage: 92,
+        sleep_consistency_percentage: 88,
+        sleep_efficiency_percentage: 0.917,
+      },
+    };
+
+    const parsed = parseSleep(record);
+    expect(parsed?.efficiencyPct).toBeCloseTo(91.7, 1);
   });
 });
 

@@ -1,4 +1,3 @@
-import { providerLabel } from "@dofek/providers/providers";
 import { File as ExpoFile, Paths } from "expo-file-system";
 import { useRouter } from "expo-router";
 import * as Sharing from "expo-sharing";
@@ -63,16 +62,6 @@ export default function SettingsScreen() {
   const [exportProgress, setExportProgress] = useState(0);
   const [exportMessage, setExportMessage] = useState("");
 
-  // ── Linked Accounts ──
-  const linkedAccounts = trpc.auth.linkedAccounts.useQuery();
-  const unlinkMutation = trpc.auth.unlinkAccount.useMutation({
-    onSuccess: () => linkedAccounts.refetch(),
-    onError: (error) => Alert.alert("Error", error.message),
-  });
-
-  const accounts = linkedAccounts.data ?? [];
-  const canUnlink = accounts.length > 1;
-
   // ── Unit System ──
   const unitSetting = trpc.settings.get.useQuery({ key: "unitSystem" });
   const setSettingMutation = trpc.settings.set.useMutation();
@@ -111,17 +100,6 @@ export default function SettingsScreen() {
         onError: () => unitSetting.refetch(),
       },
     );
-  }
-
-  function handleUnlink(accountId: string) {
-    Alert.alert("Unlink Account", "Are you sure you want to unlink this account?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Unlink",
-        style: "destructive",
-        onPress: () => unlinkMutation.mutate({ accountId }),
-      },
-    ]);
   }
 
   function handleLogout() {
@@ -283,42 +261,6 @@ export default function SettingsScreen() {
             <Text style={styles.devToolChevron}>›</Text>
           </View>
         </TouchableOpacity>
-      </View>
-
-      {/* ── Linked Accounts ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Linked Accounts</Text>
-        <Text style={styles.sectionDescription}>Manage login methods linked to your account</Text>
-        <View style={styles.card}>
-          {linkedAccounts.isLoading ? (
-            <ActivityIndicator color={colors.accent} size="small" />
-          ) : accounts.length === 0 ? (
-            <Text style={styles.emptyText}>No linked accounts</Text>
-          ) : (
-            accounts.map((account) => (
-              <View key={account.id} style={styles.accountRow}>
-                <View style={styles.accountInfo}>
-                  <Text style={styles.accountProvider}>{providerLabel(account.authProvider)}</Text>
-                  {account.email ? <Text style={styles.accountEmail}>{account.email}</Text> : null}
-                </View>
-                <TouchableOpacity
-                  onPress={() => handleUnlink(account.id)}
-                  disabled={!canUnlink || unlinkMutation.isPending}
-                  activeOpacity={0.7}
-                >
-                  <Text
-                    style={[
-                      styles.unlinkText,
-                      (!canUnlink || unlinkMutation.isPending) && styles.unlinkTextDisabled,
-                    ]}
-                  >
-                    Unlink
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            ))
-          )}
-        </View>
       </View>
 
       {/* ── Units ── */}
@@ -620,38 +562,6 @@ const styles = StyleSheet.create({
   dataSourcesCount: {
     fontSize: 14,
     color: colors.textSecondary,
-  },
-
-  // ── Linked Accounts ──
-  accountRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.surfaceSecondary,
-  },
-  accountInfo: {
-    flex: 1,
-    marginRight: 12,
-  },
-  accountProvider: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: colors.text,
-  },
-  accountEmail: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  unlinkText: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: colors.danger,
-  },
-  unlinkTextDisabled: {
-    color: colors.textTertiary,
   },
 
   // ── Toggle Row ──

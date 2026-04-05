@@ -456,8 +456,11 @@ export default function ProvidersScreen() {
       switch (provider.authType) {
         case "oauth":
         case "oauth1":
-          await WebBrowser.openBrowserAsync(`${serverUrl}/auth/provider/${provider.id}`);
-          trpcUtils.sync.providers.invalidate();
+          if (!sessionToken) break;
+          await WebBrowser.openBrowserAsync(
+            `${serverUrl}/auth/provider/${provider.id}?session=${encodeURIComponent(sessionToken)}`,
+          );
+          await trpcUtils.sync.providers.invalidate();
           break;
         case "credential":
           setCredentialAuthProvider({ id: provider.id, name: provider.label });
@@ -470,7 +473,7 @@ export default function ProvidersScreen() {
           break;
       }
     },
-    [serverUrl, trpcUtils],
+    [serverUrl, sessionToken, trpcUtils],
   );
 
   const providerList: Provider[] = (providers.data ?? []).map((p) => ({

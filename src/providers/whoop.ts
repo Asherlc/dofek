@@ -73,6 +73,18 @@ function milliToMinutes(milli: number): number {
   return Math.round(milli / 60000);
 }
 
+/**
+ * Normalize a WHOOP efficiency value to the 0-100 percentage scale.
+ * WHOOP sleep efficiency fields (`in_sleep_efficiency` and
+ * `sleep_efficiency_percentage`) have been observed returning both
+ * percentage (89.4) and fraction (0.894) formats. Values ≤ 1 are treated
+ * as fractions and scaled to percentage.
+ */
+function normalizeEfficiencyPct(value: number | undefined): number | undefined {
+  if (value == null) return undefined;
+  return value <= 1 ? Math.round(value * 1000) / 10 : value;
+}
+
 export interface ParsedRecovery {
   cycleId: number;
   restingHr?: number;
@@ -219,7 +231,7 @@ export function parseInlineSleep(
     remMinutes: milliToMinutes(record.rem_sleep_duration),
     lightMinutes: milliToMinutes(record.light_sleep_duration),
     awakeMinutes: milliToMinutes(record.wake_duration),
-    efficiencyPct: record.in_sleep_efficiency,
+    efficiencyPct: normalizeEfficiencyPct(record.in_sleep_efficiency),
     sleepType: record.significant === false ? "nap" : "sleep",
     isNap: record.significant === false,
     sleepNeedBaselineMinutes:
@@ -265,7 +277,7 @@ export function parseSleep(record: WhoopSleepRecord): ParsedSleep | null {
     remMinutes: milliToMinutes(stages?.total_rem_sleep_time_milli ?? 0),
     lightMinutes: milliToMinutes(stages?.total_light_sleep_time_milli ?? 0),
     awakeMinutes: milliToMinutes(stages?.total_awake_time_milli ?? 0),
-    efficiencyPct: record.score?.sleep_efficiency_percentage,
+    efficiencyPct: normalizeEfficiencyPct(record.score?.sleep_efficiency_percentage),
     sleepType: record.nap ? "nap" : "sleep",
     isNap: record.nap,
     sleepNeedBaselineMinutes: sleepNeeded ? milliToMinutes(sleepNeeded.baseline_milli) : undefined,

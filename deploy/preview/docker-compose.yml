@@ -1,0 +1,80 @@
+# Ephemeral preview stack — minimal services for PR validation.
+# No worker, sync, watchtower, portainer, backups, or OTel collector.
+# Express serves both API and static web assets (no separate client container).
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+
+  seed:
+    image: ${server_image}
+    command: seed
+    restart: "no"
+    environment:
+      - DATABASE_URL=postgres://health:health@db:5432/health
+      - NODE_ENV=production
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    image: ${server_image}
+    command: web
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgres://health:health@db:5432/health
+      - REDIS_URL=redis://redis:6379
+      - PUBLIC_URL=https://${domain}
+      - PORT=3000
+      - NODE_ENV=production
+      - ENABLE_DEV_LOGIN=true
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/healthz').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))\""]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  db:
+    image: timescale/timescaledb:2.17.2-pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: health
+      POSTGRES_USER: health
+      POSTGRES_PASSWORD: health
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U health -d health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  caddy_data:
+  caddy_config:

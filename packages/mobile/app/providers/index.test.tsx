@@ -843,7 +843,7 @@ describe("ProvidersScreen", () => {
 
     await waitFor(() => {
       expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith(
-        "https://test.example.com/auth/provider/strava",
+        "https://test.example.com/auth/provider/strava?session=test-token",
       );
     });
   });

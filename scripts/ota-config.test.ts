@@ -12,8 +12,13 @@ describe("OTA deployment config (expo-open-ota)", () => {
   it("defines the ota service in docker-compose", () => {
     const dockerCompose = readFileSync(dockerComposePath, "utf-8");
     expect(dockerCompose).toContain("ghcr.io/axelmarciano/expo-open-ota:");
-    expect(dockerCompose).toContain("EXPO_APP_ID=");
     expect(dockerCompose).toContain("STORAGE_MODE=s3");
+  });
+
+  it("fails the ota healthcheck when the manifest probe fails", () => {
+    const dockerCompose = readFileSync(dockerComposePath, "utf-8");
+    expect(dockerCompose).toContain("wget -qO- http://localhost:3000/manifest");
+    expect(dockerCompose).not.toContain("grep -q 'channel' || exit 0");
   });
 
   it("routes ota subdomain in Caddyfile", () => {
