@@ -264,6 +264,13 @@ describe("rideWithGpsOAuthConfig", () => {
     expect(config?.authorizeUrl).toContain("ridewithgps.com");
     expect(config?.tokenUrl).toContain("ridewithgps.com");
   });
+
+  it("includes revokeUrl for Doorkeeper token revocation", () => {
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    process.env.RWGPS_CLIENT_SECRET = "test-secret";
+    const config = rideWithGpsOAuthConfig();
+    expect(config?.revokeUrl).toBe("https://ridewithgps.com/oauth/revoke");
+  });
 });
 
 describe("RideWithGpsProvider — validate and properties", () => {

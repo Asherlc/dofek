@@ -142,6 +142,7 @@ export function rideWithGpsOAuthConfig(host?: string): OAuthConfig | null {
     clientSecret: process.env.RWGPS_CLIENT_SECRET,
     authorizeUrl: RWGPS_OAUTH_AUTHORIZE_URL,
     tokenUrl: RWGPS_OAUTH_TOKEN_URL,
+    revokeUrl: "https://ridewithgps.com/oauth/revoke",
     redirectUri: getOAuthRedirectUri(host),
     scopes: ["user"],
   };
