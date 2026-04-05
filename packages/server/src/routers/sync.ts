@@ -50,13 +50,8 @@ const syncJobDataSchema = z.object({
   sinceDays: z.number().optional(),
 });
 
-export const REDACTED_ERROR_MESSAGE = "Details hidden";
-
-// Exported for unit testing — these are pure helpers with no side effects.
-export function redactLogErrorMessage(errorMessage: string | null): string | null {
-  if (!errorMessage) return null;
-  return REDACTED_ERROR_MESSAGE;
-}
+import { sanitizeErrorMessage } from "../lib/sanitize-error.ts";
+export { sanitizeErrorMessage };
 
 export function toJobId(id: string | number | undefined, providerId: string): string {
   return id === undefined ? `job-${providerId}-${Date.now()}` : `${providerId}:${id}`;
@@ -410,7 +405,7 @@ export const syncRouter = router({
 
       return rows.map((row) => ({
         ...row,
-        errorMessage: redactLogErrorMessage(row.errorMessage),
+        errorMessage: sanitizeErrorMessage(row.errorMessage),
       }));
     }),
 
