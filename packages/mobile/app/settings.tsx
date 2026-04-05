@@ -11,6 +11,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   useWindowDimensions,
   View,
@@ -85,6 +86,21 @@ export default function SettingsScreen() {
 
   const currentUnitSystem: UnitSystem =
     unitSetting.data?.value === "imperial" ? "imperial" : "metric";
+
+  // ── Goal Weight ──
+  const goalWeightSetting = trpc.settings.get.useQuery({ key: "goalWeight" });
+  const goalWeightMutation = trpc.bodyAnalytics.setGoalWeight.useMutation({
+    onSuccess: () => {
+      goalWeightSetting.refetch();
+      trpcUtils.bodyAnalytics.weightPrediction.invalidate();
+    },
+  });
+  const currentGoalKg =
+    goalWeightSetting.data?.value != null ? Number(goalWeightSetting.data.value) : null;
+  const [goalInput, setGoalInput] = useState("");
+  const [editingGoal, setEditingGoal] = useState(false);
+  const isImperial = currentUnitSystem === "imperial";
+  const kgToLbs = 2.20462;
 
   function handleUnitChange(value: UnitSystem) {
     trpcUtils.settings.get.setData({ key: "unitSystem" }, { key: "unitSystem", value });
@@ -327,6 +343,75 @@ export default function SettingsScreen() {
               </TouchableOpacity>
             );
           })}
+        </View>
+      </View>
+
+      {/* ── Goal Weight ── */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Goal Weight</Text>
+        <Text style={styles.sectionDescription}>
+          Set a target weight to see projected completion dates
+        </Text>
+        <View style={styles.card}>
+          {editingGoal ? (
+            <View style={styles.goalEditRow}>
+              <TextInput
+                style={styles.goalInput}
+                value={goalInput}
+                onChangeText={setGoalInput}
+                keyboardType="decimal-pad"
+                placeholder={isImperial ? "lbs" : "kg"}
+                placeholderTextColor={colors.textSecondary}
+              />
+              <TouchableOpacity
+                style={styles.goalSaveButton}
+                onPress={() => {
+                  const parsed = Number.parseFloat(goalInput);
+                  if (!Number.isNaN(parsed) && parsed > 0) {
+                    const weightKg = isImperial ? parsed / kgToLbs : parsed;
+                    goalWeightMutation.mutate({ weightKg });
+                  }
+                  setEditingGoal(false);
+                }}
+              >
+                <Text style={styles.goalSaveText}>Save</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setEditingGoal(false)}>
+                <Text style={styles.goalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          ) : currentGoalKg != null ? (
+            <View style={styles.goalDisplayRow}>
+              <Text style={styles.goalDisplayText}>
+                {(isImperial ? currentGoalKg * kgToLbs : currentGoalKg).toFixed(1)}{" "}
+                {isImperial ? "lbs" : "kg"}
+              </Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setGoalInput(
+                    String(
+                      Math.round((isImperial ? currentGoalKg * kgToLbs : currentGoalKg) * 10) / 10,
+                    ),
+                  );
+                  setEditingGoal(true);
+                }}
+              >
+                <Text style={styles.goalEditText}>Edit</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => goalWeightMutation.mutate({ weightKg: null })}>
+                <Text style={styles.goalCancelText}>Clear</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity
+              onPress={() => {
+                setGoalInput("");
+                setEditingGoal(true);
+              }}
+            >
+              <Text style={styles.goalEditText}>Set Goal Weight</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
@@ -620,6 +705,52 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textTertiary,
     marginTop: 2,
+  },
+
+  // ── Goal Weight ──
+  goalEditRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  goalInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    color: colors.text,
+    fontSize: 14,
+  },
+  goalSaveButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  goalSaveText: {
+    color: colors.blue,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  goalCancelText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    paddingHorizontal: 8,
+  },
+  goalDisplayRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  goalDisplayText: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  goalEditText: {
+    color: colors.blue,
+    fontSize: 14,
+    fontWeight: "600",
   },
 
   // ── Data Export ──
