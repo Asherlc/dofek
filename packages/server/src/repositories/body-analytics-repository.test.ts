@@ -1,5 +1,171 @@
 import { describe, expect, it, vi } from "vitest";
-import { BodyAnalyticsRepository, ewmaSmooth } from "./body-analytics-repository.ts";
+import {
+  BodyAnalyticsRepository,
+  ewmaSmooth,
+  interpolateMissingDays,
+  leastSquaresSlope,
+} from "./body-analytics-repository.ts";
+
+// ── leastSquaresSlope ───────────────────────────────────────────────
+
+describe("leastSquaresSlope", () => {
+  it("returns zero slope for constant values", () => {
+    const result = leastSquaresSlope([
+      { dayIndex: 0, value: 80 },
+      { dayIndex: 1, value: 80 },
+      { dayIndex: 2, value: 80 },
+    ]);
+    expect(result.slopePerDay).toBe(0);
+    expect(result.rSquared).toBe(1);
+  });
+
+  it("returns correct slope for perfectly linear data", () => {
+    // y = 80 + 0.5 * x
+    const result = leastSquaresSlope([
+      { dayIndex: 0, value: 80 },
+      { dayIndex: 1, value: 80.5 },
+      { dayIndex: 2, value: 81 },
+      { dayIndex: 3, value: 81.5 },
+    ]);
+    expect(result.slopePerDay).toBeCloseTo(0.5, 10);
+    expect(result.rSquared).toBeCloseTo(1, 10);
+  });
+
+  it("returns negative slope for decreasing data", () => {
+    const result = leastSquaresSlope([
+      { dayIndex: 0, value: 80 },
+      { dayIndex: 1, value: 79.5 },
+      { dayIndex: 2, value: 79 },
+    ]);
+    expect(result.slopePerDay).toBeCloseTo(-0.5, 10);
+  });
+
+  it("handles noisy data and returns rSquared < 1", () => {
+    const result = leastSquaresSlope([
+      { dayIndex: 0, value: 80 },
+      { dayIndex: 1, value: 82 },
+      { dayIndex: 2, value: 79 },
+      { dayIndex: 3, value: 81 },
+    ]);
+    // Should have some slope, but rSquared should be low due to noise
+    expect(result.rSquared).toBeLessThan(0.5);
+  });
+
+  it("returns zero slope and rSquared=1 for single point", () => {
+    const result = leastSquaresSlope([{ dayIndex: 0, value: 80 }]);
+    expect(result.slopePerDay).toBe(0);
+    expect(result.rSquared).toBe(1);
+  });
+
+  it("returns zero slope and rSquared=1 for empty input", () => {
+    const result = leastSquaresSlope([]);
+    expect(result.slopePerDay).toBe(0);
+    expect(result.rSquared).toBe(1);
+  });
+
+  it("handles two-point regression exactly", () => {
+    const result = leastSquaresSlope([
+      { dayIndex: 0, value: 80 },
+      { dayIndex: 7, value: 79 },
+    ]);
+    // slope = (79-80)/(7-0) = -1/7 ≈ -0.1429
+    expect(result.slopePerDay).toBeCloseTo(-1 / 7, 10);
+    expect(result.rSquared).toBeCloseTo(1, 10);
+  });
+});
+
+// ── interpolateMissingDays ──────────────────────────────────────────
+
+describe("interpolateMissingDays", () => {
+  it("returns empty array for empty input", () => {
+    expect(interpolateMissingDays([])).toEqual([]);
+  });
+
+  it("returns single point unchanged with interpolated=false", () => {
+    const result = interpolateMissingDays([{ date: "2024-01-01", value: 80 }]);
+    expect(result).toEqual([{ date: "2024-01-01", value: 80, interpolated: false }]);
+  });
+
+  it("returns consecutive days unchanged (no gaps to fill)", () => {
+    const input = [
+      { date: "2024-01-01", value: 80 },
+      { date: "2024-01-02", value: 81 },
+      { date: "2024-01-03", value: 79 },
+    ];
+    const result = interpolateMissingDays(input);
+    expect(result).toEqual([
+      { date: "2024-01-01", value: 80, interpolated: false },
+      { date: "2024-01-02", value: 81, interpolated: false },
+      { date: "2024-01-03", value: 79, interpolated: false },
+    ]);
+  });
+
+  it("fills a 1-day gap with linear interpolation", () => {
+    const input = [
+      { date: "2024-01-01", value: 80 },
+      { date: "2024-01-03", value: 82 },
+    ];
+    const result = interpolateMissingDays(input);
+    expect(result).toEqual([
+      { date: "2024-01-01", value: 80, interpolated: false },
+      { date: "2024-01-02", value: 81, interpolated: true },
+      { date: "2024-01-03", value: 82, interpolated: false },
+    ]);
+  });
+
+  it("fills a multi-day gap with evenly spaced interpolation", () => {
+    const input = [
+      { date: "2024-01-01", value: 80 },
+      { date: "2024-01-05", value: 84 },
+    ];
+    const result = interpolateMissingDays(input);
+    expect(result).toHaveLength(5);
+    expect(result[0]).toEqual({ date: "2024-01-01", value: 80, interpolated: false });
+    expect(result[1]).toEqual({ date: "2024-01-02", value: 81, interpolated: true });
+    expect(result[2]).toEqual({ date: "2024-01-03", value: 82, interpolated: true });
+    expect(result[3]).toEqual({ date: "2024-01-04", value: 83, interpolated: true });
+    expect(result[4]).toEqual({ date: "2024-01-05", value: 84, interpolated: false });
+  });
+
+  it("handles multiple gaps in a single series", () => {
+    const input = [
+      { date: "2024-01-01", value: 80 },
+      { date: "2024-01-03", value: 82 },
+      { date: "2024-01-06", value: 85 },
+    ];
+    const result = interpolateMissingDays(input);
+    expect(result).toHaveLength(6);
+    // First gap: Jan 2 interpolated between 80 and 82
+    expect(result[1]).toEqual({ date: "2024-01-02", value: 81, interpolated: true });
+    // Second gap: Jan 4 and Jan 5 interpolated between 82 and 85
+    expect(result[3]).toEqual({ date: "2024-01-04", value: 83, interpolated: true });
+    expect(result[4]).toEqual({ date: "2024-01-05", value: 84, interpolated: true });
+    // Original points preserved
+    expect(result[0]?.interpolated).toBe(false);
+    expect(result[2]?.interpolated).toBe(false);
+    expect(result[5]?.interpolated).toBe(false);
+  });
+
+  it("preserves original values exactly (no floating-point drift)", () => {
+    const input = [
+      { date: "2024-01-01", value: 80.12 },
+      { date: "2024-01-03", value: 82.34 },
+    ];
+    const result = interpolateMissingDays(input);
+    expect(result[0]?.value).toBe(80.12);
+    expect(result[2]?.value).toBe(82.34);
+  });
+
+  it("does not extrapolate beyond first and last known points", () => {
+    const input = [
+      { date: "2024-01-03", value: 80 },
+      { date: "2024-01-05", value: 82 },
+    ];
+    const result = interpolateMissingDays(input);
+    expect(result[0]?.date).toBe("2024-01-03");
+    expect(result[result.length - 1]?.date).toBe("2024-01-05");
+  });
+});
 
 // ── EWMA helper ─────────────────────────────────────────────────────
 
@@ -117,6 +283,48 @@ describe("BodyAnalyticsRepository", () => {
       expect(result[6]?.weeklyChange).toBeNull();
       // Index 7 (8th entry) should have non-null weeklyChange
       expect(result[7]?.weeklyChange).not.toBeNull();
+    });
+
+    it("marks actual measurements as interpolated=false", async () => {
+      const { repo } = makeRepository([
+        { date: "2024-01-01", weight_kg: "80" },
+        { date: "2024-01-02", weight_kg: "81" },
+      ]);
+      const result = await repo.getSmoothedWeight(90, "2024-06-01");
+      expect(result[0]?.interpolated).toBe(false);
+      expect(result[1]?.interpolated).toBe(false);
+      expect(result[0]?.rawWeight).not.toBeNull();
+      expect(result[1]?.rawWeight).not.toBeNull();
+    });
+
+    it("fills missing days with interpolation and marks them", async () => {
+      const { repo } = makeRepository([
+        { date: "2024-01-01", weight_kg: "80" },
+        { date: "2024-01-03", weight_kg: "82" },
+      ]);
+      const result = await repo.getSmoothedWeight(90, "2024-06-01");
+      // Should have 3 rows: Jan 1 (real), Jan 2 (interpolated), Jan 3 (real)
+      expect(result).toHaveLength(3);
+      expect(result[0]?.interpolated).toBe(false);
+      expect(result[0]?.rawWeight).toBe(80);
+      expect(result[1]?.interpolated).toBe(true);
+      expect(result[1]?.rawWeight).toBeNull();
+      expect(result[2]?.interpolated).toBe(false);
+      expect(result[2]?.rawWeight).toBe(82);
+    });
+
+    it("applies EWMA smoothing across interpolated days", async () => {
+      const { repo } = makeRepository([
+        { date: "2024-01-01", weight_kg: "80" },
+        { date: "2024-01-04", weight_kg: "83" },
+      ]);
+      const result = await repo.getSmoothedWeight(90, "2024-06-01");
+      // 4 days: 80, 81(interp), 82(interp), 83
+      expect(result).toHaveLength(4);
+      // Smoothed values should progress gradually (EWMA with alpha=0.1)
+      expect(result[1]?.smoothedWeight).toBeGreaterThan(result[0]!.smoothedWeight);
+      expect(result[2]?.smoothedWeight).toBeGreaterThan(result[1]!.smoothedWeight);
+      expect(result[3]?.smoothedWeight).toBeGreaterThan(result[2]!.smoothedWeight);
     });
 
     it("rounds values to 2 decimal places", async () => {
@@ -316,25 +524,21 @@ describe("BodyAnalyticsRepository", () => {
       expect(result.current4Week).not.toBeNull();
     });
 
-    it("uses alpha=0.1 in getWeightTrend (verifiable via exact EWMA value)", async () => {
+    it("uses regression-based weekly rate on smoothed values", async () => {
       // 8 data points: [80, 82, 80, 82, 80, 82, 80, 82]
-      // With alpha=0.1:
-      //   s0=80
-      //   s1=0.1*82 + 0.9*80 = 80.2
-      //   s2=0.1*80 + 0.9*80.2 = 80.18
-      //   s3=0.1*82 + 0.9*80.18 = 80.362
-      //   s4=0.1*80 + 0.9*80.362 = 80.3258
-      //   s5=0.1*82 + 0.9*80.3258 = 80.49322
-      //   s6=0.1*80 + 0.9*80.49322 = 80.443898
-      //   s7=0.1*82 + 0.9*80.443898 = 80.5995082
-      // currentWeekly = s7 - s0 = 80.5995082 - 80 = 0.5995... → rounds to 0.6
+      // Smoothed with alpha=0.1, then regression finds the best-fit slope.
+      // For oscillating data, regression slope is positive but smaller than
+      // the delta approach (which was 0.6). Regression is more robust to noise.
       const rows = Array.from({ length: 8 }, (_, index) => ({
         date: `2024-01-${String(index + 1).padStart(2, "0")}`,
         weight_kg: String(index % 2 === 0 ? 80 : 82),
       }));
       const { repo } = makeRepository(rows);
       const result = await repo.getWeightTrend();
-      expect(result.currentWeekly).toBe(0.6);
+      expect(result.currentWeekly).not.toBeNull();
+      // Regression slope * 7 should be positive but moderate for this noisy data
+      expect(result.currentWeekly).toBeGreaterThan(0);
+      expect(result.currentWeekly).toBeLessThan(1);
     });
 
     it("classifies 'gaining' when weekly change is exactly 0.11 (> 0.1 threshold)", async () => {
@@ -629,6 +833,156 @@ describe("BodyAnalyticsRepository", () => {
       expect(result[1]?.smoothedFatMass).toBe(21.5);
       // smoothedLean = 0.15 * 70 + 0.85 * 80 = 10.5 + 68 = 78.5
       expect(result[1]?.smoothedLeanMass).toBe(78.5);
+    });
+  });
+
+  describe("getWeightPrediction", () => {
+    it("returns nulls when insufficient data (fewer than 7 points)", async () => {
+      const rows = Array.from({ length: 5 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: String(80),
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightPrediction(90, "2024-06-01", null);
+
+      expect(result.ratePerWeek).toBeNull();
+      expect(result.rateConfidence).toBeNull();
+      expect(result.impliedDailyCalories).toBeNull();
+      expect(result.goal).toBeNull();
+      expect(result.projectionLine).toEqual([]);
+    });
+
+    it("returns nulls for empty data", async () => {
+      const { repo } = makeRepository([]);
+      const result = await repo.getWeightPrediction(90, "2024-06-01", null);
+
+      expect(result.ratePerWeek).toBeNull();
+      expect(result.periodDeltas.days7).toBeNull();
+      expect(result.periodDeltas.days14).toBeNull();
+      expect(result.periodDeltas.days30).toBeNull();
+    });
+
+    it("computes period deltas for known linear data", async () => {
+      // 30 days of steady -0.1 kg/day loss: 80, 79.9, 79.8, ...
+      const rows = Array.from({ length: 30 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: String(80 - index * 0.1),
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightPrediction(90, "2024-06-01", null);
+
+      // 7-day delta should be approximately -0.7 (smoothed, so not exact)
+      expect(result.periodDeltas.days7).not.toBeNull();
+      expect(result.periodDeltas.days7!).toBeLessThan(0);
+      // 14-day delta should be approximately -1.4
+      expect(result.periodDeltas.days14).not.toBeNull();
+      expect(result.periodDeltas.days14!).toBeLessThan(result.periodDeltas.days7!);
+      // 30-day should be null for exactly 30 points (smoothed[0] vs smoothed[29] requires 30 entries)
+      // Actually days30 = smoothed[last] - smoothed[last-30], which needs >= 31 entries
+    });
+
+    it("computes ratePerWeek from regression", async () => {
+      // Steady -0.1 kg/day for 20 days
+      const rows = Array.from({ length: 20 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: String(80 - index * 0.1),
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightPrediction(90, "2024-06-01", null);
+
+      expect(result.ratePerWeek).not.toBeNull();
+      // slope ≈ -0.1 kg/day → -0.7 kg/week (smoothed, so close but not exact)
+      expect(result.ratePerWeek!).toBeLessThan(-0.5);
+      expect(result.ratePerWeek!).toBeGreaterThan(-1);
+      expect(result.rateConfidence).not.toBeNull();
+      expect(result.rateConfidence!).toBeGreaterThan(0.9);
+    });
+
+    it("computes implied daily calories from rate", async () => {
+      // Steady loss
+      const rows = Array.from({ length: 20 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: String(80 - index * 0.1),
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightPrediction(90, "2024-06-01", null);
+
+      // 7700 kcal/kg: if losing ~0.7 kg/week → ~0.1 kg/day → ~770 kcal/day deficit
+      expect(result.impliedDailyCalories).not.toBeNull();
+      expect(result.impliedDailyCalories!).toBeLessThan(-500);
+    });
+
+    it("returns goal projection when losing toward lower goal", async () => {
+      // Steady -0.5 kg/week (~0.0714 kg/day) for 20 days
+      const rows = Array.from({ length: 20 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: String(80 - index * (0.5 / 7)),
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightPrediction(90, "2024-06-01", 75);
+
+      expect(result.goal).not.toBeNull();
+      expect(result.goal!.goalWeightKg).toBe(75);
+      expect(result.goal!.remainingKg).toBeLessThan(0); // need to lose weight
+      expect(result.goal!.estimatedDate).not.toBeNull();
+      expect(result.goal!.daysRemaining).not.toBeNull();
+      expect(result.goal!.daysRemaining!).toBeGreaterThan(0);
+    });
+
+    it("returns null estimatedDate when trending away from goal", async () => {
+      // Gaining weight but goal is lower
+      const rows = Array.from({ length: 20 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: String(80 + index * 0.1),
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightPrediction(90, "2024-06-01", 75);
+
+      expect(result.goal).not.toBeNull();
+      expect(result.goal!.estimatedDate).toBeNull();
+      expect(result.goal!.daysRemaining).toBeNull();
+    });
+
+    it("returns goal=null when no goalWeightKg provided", async () => {
+      const rows = Array.from({ length: 20 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: String(80),
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightPrediction(90, "2024-06-01", null);
+
+      expect(result.goal).toBeNull();
+    });
+
+    it("generates projection line up to 30 days forward", async () => {
+      const rows = Array.from({ length: 20 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: String(80 - index * 0.1),
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightPrediction(90, "2024-06-01", null);
+
+      expect(result.projectionLine.length).toBeGreaterThan(0);
+      expect(result.projectionLine.length).toBeLessThanOrEqual(30);
+      // Projection should extend from the last data point
+      for (const point of result.projectionLine) {
+        expect(point.date).toBeDefined();
+        expect(typeof point.projectedWeight).toBe("number");
+      }
+    });
+
+    it("period deltas are null when data window is too short", async () => {
+      // Only 5 days of data
+      const rows = Array.from({ length: 5 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: String(80 + index),
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightPrediction(90, "2024-06-01", null);
+
+      expect(result.periodDeltas.days7).toBeNull();
+      expect(result.periodDeltas.days14).toBeNull();
+      expect(result.periodDeltas.days30).toBeNull();
     });
   });
 });
