@@ -31,33 +31,26 @@ export function reorderDashboardSections(
   sectionId: string,
   direction: "up" | "down",
 ): string[] {
-  if (!order.includes(sectionId)) {
+  const sectionIndex = order.indexOf(sectionId);
+  if (sectionIndex === -1) {
     return order;
   }
 
   const sectionsToMove = getDashboardGridGroupIds(sectionId).filter((id) => order.includes(id));
-  if (sectionsToMove.length === 0) {
-    return order;
-  }
-
   const sectionsToMoveSet = new Set(sectionsToMove);
-  const sectionIndices = sectionsToMove
-    .map((id) => order.indexOf(id))
-    .filter((index) => index !== -1)
-    .sort((leftIndex, rightIndex) => leftIndex - rightIndex);
 
-  if (sectionIndices.length === 0) {
-    return order;
-  }
+  // Find the boundary index of the group in the current order
+  const groupIndices = sectionsToMove.map((id) => order.indexOf(id));
+  const firstGroupIndex = Math.min(...groupIndices);
+  const lastGroupIndex = Math.max(...groupIndices);
 
   if (direction === "up") {
-    const firstIndex = sectionIndices[0] ?? 0;
-    if (firstIndex <= 0) {
+    if (firstGroupIndex <= 0) {
       return order;
     }
 
-    const targetSectionId = order[firstIndex - 1];
-    if (targetSectionId == null) {
+    const targetSectionId = order[firstGroupIndex - 1];
+    if (targetSectionId === undefined) {
       return order;
     }
 
@@ -67,21 +60,17 @@ export function reorderDashboardSections(
     const filteredOrder = order.filter((id) => !sectionsToMoveSet.has(id));
     const insertBeforeId = targetGroupIds[0] ?? targetSectionId;
     const insertAt = filteredOrder.indexOf(insertBeforeId);
-    if (insertAt === -1) {
-      return order;
-    }
-
     filteredOrder.splice(insertAt, 0, ...sectionsToMove);
     return filteredOrder;
   }
 
-  const lastIndex = sectionIndices[sectionIndices.length - 1] ?? order.length - 1;
-  if (lastIndex >= order.length - 1) {
+  // direction === "down"
+  if (lastGroupIndex >= order.length - 1) {
     return order;
   }
 
-  const targetSectionId = order[lastIndex + 1];
-  if (targetSectionId == null) {
+  const targetSectionId = order[lastGroupIndex + 1];
+  if (targetSectionId === undefined) {
     return order;
   }
 
@@ -91,10 +80,6 @@ export function reorderDashboardSections(
   const filteredOrder = order.filter((id) => !sectionsToMoveSet.has(id));
   const insertAfterId = targetGroupIds[targetGroupIds.length - 1] ?? targetSectionId;
   const insertAt = filteredOrder.indexOf(insertAfterId);
-  if (insertAt === -1) {
-    return order;
-  }
-
   filteredOrder.splice(insertAt + 1, 0, ...sectionsToMove);
   return filteredOrder;
 }
