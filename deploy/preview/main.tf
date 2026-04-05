@@ -29,13 +29,14 @@ terraform {
   backend "s3" {
     bucket = "dofek-training-data"
     key    = "terraform/preview/terraform.tfstate"
-    region = "auto"
+    region = "us-east-1" # R2 ignores region; use a valid value so Terraform doesn't reject it
 
     # R2 doesn't support these S3 features
     skip_credentials_validation = true
     skip_metadata_api_check     = true
     skip_requesting_account_id  = true
     skip_s3_checksum            = true
+    skip_region_validation      = true
   }
 }
 
