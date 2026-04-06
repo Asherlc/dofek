@@ -23,6 +23,7 @@ import {
 import { handleSlackCallback } from "./slack-oauth.ts";
 
 export async function handleOAuth2Callback(req: Request, res: Response): Promise<void> {
+  let resolvedProviderName: string | undefined;
   try {
     const code = typeof req.query.code === "string" ? req.query.code : undefined;
     const state = typeof req.query.state === "string" ? req.query.state : undefined;
@@ -133,6 +134,8 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
       userId: stateUserId,
       returnTo,
     } = stateEntry;
+    // Use providerId immediately so errors before provider lookup still carry context.
+    resolvedProviderName = providerId;
 
     const { getAllProviders } = await import("dofek/providers/registry");
     const { ensureProvidersRegistered } = await import("../../routers/sync.ts");
@@ -143,6 +146,7 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
       res.status(404).send("Unknown provider");
       return;
     }
+    resolvedProviderName = provider.name;
 
     const setup = provider.authSetup?.({ host: req.get("host") });
     if (!setup?.oauthConfig || !setup.exchangeCode) {
@@ -285,7 +289,11 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
   } catch (err: unknown) {
     Sentry.captureException(err);
     const message = err instanceof Error ? err.message : String(err);
-    logger.error(`[auth] OAuth callback failed: ${message}`, { err });
-    res.status(500).send("Token exchange failed — please try again");
+    logger.error(
+      `[auth] OAuth callback failed for ${resolvedProviderName ?? "unknown provider"}: ${message}`,
+      { err },
+    );
+    const providerLabel = resolvedProviderName ? ` from ${resolvedProviderName}` : "";
+    res.status(500).send(`Token exchange failed — please try again${providerLabel}`);
   }
 }

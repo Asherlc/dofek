@@ -252,6 +252,12 @@ describe("rideWithGpsOAuthConfig", () => {
     expect(rideWithGpsOAuthConfig()).toBeNull();
   });
 
+  it("returns null when RWGPS_CLIENT_SECRET is not set", () => {
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    delete process.env.RWGPS_CLIENT_SECRET;
+    expect(rideWithGpsOAuthConfig()).toBeNull();
+  });
+
   it("returns config with client secret (confidential client, no PKCE)", () => {
     process.env.RWGPS_CLIENT_ID = "test-id";
     process.env.RWGPS_CLIENT_SECRET = "test-secret";
@@ -263,6 +269,13 @@ describe("rideWithGpsOAuthConfig", () => {
     expect(config?.scopes).toContain("user");
     expect(config?.authorizeUrl).toContain("ridewithgps.com");
     expect(config?.tokenUrl).toContain("ridewithgps.com");
+  });
+
+  it("includes revokeUrl for Doorkeeper token revocation", () => {
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    process.env.RWGPS_CLIENT_SECRET = "test-secret";
+    const config = rideWithGpsOAuthConfig();
+    expect(config?.revokeUrl).toBe("https://ridewithgps.com/oauth/revoke");
   });
 });
 
@@ -285,10 +298,18 @@ describe("RideWithGpsProvider — validate and properties", () => {
     expect(provider.validate()).toContain("RWGPS_CLIENT_ID");
   });
 
-  it("returns null when RWGPS_CLIENT_ID is set", () => {
+  it("returns null when both RWGPS_CLIENT_ID and RWGPS_CLIENT_SECRET are set", () => {
     process.env.RWGPS_CLIENT_ID = "test-id";
+    process.env.RWGPS_CLIENT_SECRET = "test-secret";
     const provider = new RideWithGpsProvider();
     expect(provider.validate()).toBeNull();
+  });
+
+  it("returns error when RWGPS_CLIENT_SECRET is not set", () => {
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    delete process.env.RWGPS_CLIENT_SECRET;
+    const provider = new RideWithGpsProvider();
+    expect(provider.validate()).toContain("RWGPS_CLIENT_SECRET");
   });
 });
 
@@ -394,6 +415,7 @@ describe("RideWithGpsProvider — constructor stores fetchFn", () => {
     const customFetch = vi.fn().mockResolvedValue(Response.json({}));
     const provider = new RideWithGpsProvider(customFetch);
     process.env.RWGPS_CLIENT_ID = "test-id";
+    process.env.RWGPS_CLIENT_SECRET = "test-secret";
     const setup = provider.authSetup();
     const getUserIdentity = setup.getUserIdentity;
     expect(getUserIdentity).toBeDefined();
@@ -453,6 +475,7 @@ describe("RideWithGpsProvider — getUserIdentity", () => {
 
   it("returns user identity from RWGPS API", async () => {
     process.env.RWGPS_CLIENT_ID = "test-id";
+    process.env.RWGPS_CLIENT_SECRET = "test-secret";
 
     const mockFetch: typeof globalThis.fetch = async () => {
       return Response.json({ user: { id: 42, email: "test@example.com", name: "Test User" } });
@@ -471,6 +494,7 @@ describe("RideWithGpsProvider — getUserIdentity", () => {
 
   it("handles null email and name", async () => {
     process.env.RWGPS_CLIENT_ID = "test-id";
+    process.env.RWGPS_CLIENT_SECRET = "test-secret";
     const mockFetch: typeof globalThis.fetch = async () => {
       return Response.json({ user: { id: 99, email: null, name: null } });
     };
@@ -488,6 +512,7 @@ describe("RideWithGpsProvider — getUserIdentity", () => {
 
   it("throws on non-OK response", async () => {
     process.env.RWGPS_CLIENT_ID = "test-id";
+    process.env.RWGPS_CLIENT_SECRET = "test-secret";
     const mockFetch: typeof globalThis.fetch = async () => {
       return new Response("Forbidden", { status: 403 });
     };
@@ -611,6 +636,7 @@ describe("RideWithGpsProvider — sync", () => {
 
   it("refreshes expired token", async () => {
     process.env.RWGPS_CLIENT_ID = "test-id";
+    process.env.RWGPS_CLIENT_SECRET = "test-secret";
     const { loadTokens, saveTokens, ensureProvider } = await import("../db/tokens.ts");
     vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "expired-token",
@@ -640,6 +666,7 @@ describe("RideWithGpsProvider — sync", () => {
 
   it("returns error when token expired and no refresh token", async () => {
     process.env.RWGPS_CLIENT_ID = "test-id";
+    process.env.RWGPS_CLIENT_SECRET = "test-secret";
     const { loadTokens, ensureProvider } = await import("../db/tokens.ts");
     vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "expired",
