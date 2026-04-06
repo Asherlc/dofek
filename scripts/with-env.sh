@@ -23,4 +23,13 @@ if [ -f "$REPO_ROOT/.env.local" ]; then
   set +a
 fi
 
-exec infisical run --env=prod -- "$@"
+# Fetch secrets from Infisical and export them
+eval "$(infisical export --env=prod --format=dotenv-export)"
+
+# Construct OTEL auth headers from Axiom API token (config concern, not a secret)
+if [ -n "$AXIOM_API_TOKEN" ]; then
+  export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer $AXIOM_API_TOKEN,X-Axiom-Dataset=dofek-logs"
+  export OTEL_EXPORTER_OTLP_LOGS_HEADERS="Authorization=Bearer $AXIOM_API_TOKEN,X-Axiom-Dataset=dofek-logs"
+fi
+
+exec "$@"
