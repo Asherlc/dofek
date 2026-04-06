@@ -238,24 +238,29 @@ def build_metric_windows(
     return windows, np.array(labels), start_times
 
 
+MIN_DEVICE_SAMPLE_RATE_HZ = 1
+MAX_DEVICE_SAMPLE_RATE_HZ = 1000
+
+
 def detect_device_sample_rate(device_df: pd.DataFrame, device_type: str) -> int:
     """Detect the sample rate (Hz) for a device type from its timestamp intervals.
 
-    Uses the median inter-sample interval from the first 10,000 samples to
+    Uses the median inter-sample interval from the earliest 10,000 samples to
     determine the native rate. Falls back to DEFAULT_DEVICE_SAMPLE_RATE_HZ if
-    there are fewer than 2 samples.
+    there are fewer than 2 samples or the detected rate is outside [1, 1000] Hz.
 
     Returns:
         Detected sample rate rounded to the nearest integer Hz.
     """
     dev_data: pd.DataFrame = device_df[device_df["device_type"] == device_type]
-    timestamps: pd.Series = dev_data["timestamp"].sort_values()
+    timestamps: pd.Series = dev_data["timestamp"]
 
     if len(timestamps) < 2:
         return DEFAULT_DEVICE_SAMPLE_RATE_HZ
 
-    # Use a representative sample to avoid O(N) computation on millions of rows
-    sample_timestamps: pd.Series = timestamps.head(10_000)
+    # Use a representative sample — nsmallest avoids sorting millions of rows
+    # when only the earliest 10,000 timestamps are needed for interval estimation.
+    sample_timestamps: pd.Series = timestamps.nsmallest(10_000)
     deltas: pd.Series = sample_timestamps.diff().dropna().dt.total_seconds()
     deltas = deltas[deltas > 0]
 
@@ -266,7 +271,11 @@ def detect_device_sample_rate(device_df: pd.DataFrame, device_type: str) -> int:
     if median_interval <= 0:
         return DEFAULT_DEVICE_SAMPLE_RATE_HZ
 
-    return round(1.0 / median_interval)
+    detected: int = round(1.0 / median_interval)
+    if detected < MIN_DEVICE_SAMPLE_RATE_HZ or detected > MAX_DEVICE_SAMPLE_RATE_HZ:
+        return DEFAULT_DEVICE_SAMPLE_RATE_HZ
+
+    return detected
 
 
 def detect_device_sample_rates(

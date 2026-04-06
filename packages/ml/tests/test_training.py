@@ -472,6 +472,14 @@ class TestDetectDeviceSampleRate:
         rate: int = detect_device_sample_rate(df, "nonexistent")
         assert rate == DEFAULT_DEVICE_SAMPLE_RATE_HZ
 
+    def test_falls_back_for_very_slow_rate(self) -> None:
+        """Samples 2 seconds apart would give 0.5 Hz, which rounds to 0 — should fall back."""
+        df: pd.DataFrame = _make_device_df(
+            num_samples=10, device_type="slow", channels=["accel_x"], freq="2s"
+        )
+        rate: int = detect_device_sample_rate(df, "slow")
+        assert rate == DEFAULT_DEVICE_SAMPLE_RATE_HZ
+
 
 class TestComputeDeviceGridSizes:
     """Tests for compute_device_grid_sizes()."""
