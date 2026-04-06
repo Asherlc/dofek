@@ -30,10 +30,12 @@ install_infisical() {
 cd "$(dirname "$0")"
 install_infisical
 
-# Source .env for INFISICAL_TOKEN (and other non-secret config)
-set -a
-. ./.env
-set +a
+# Load INFISICAL_TOKEN from .env for the infisical CLI.
+# Only export what we need — sourcing the entire .env with set -a would
+# export empty values (e.g. EXPO_APP_ID=) that override secrets.env via
+# process environment precedence in Docker Compose.
+INFISICAL_TOKEN=$(grep '^INFISICAL_TOKEN=' .env | cut -d= -f2-)
+export INFISICAL_TOKEN
 
 # Fetch secrets from Infisical into secrets.env
 # This file provides both compose-level variable substitution (--env-file)
