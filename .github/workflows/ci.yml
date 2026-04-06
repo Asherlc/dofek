@@ -498,21 +498,24 @@ jobs:
           path: ~/Library/Caches/ccache
           key: ccache-ios-${{ github.sha }}
           restore-keys: ccache-ios-
+      - name: Generate native project
+        working-directory: packages/mobile
+        run: npx expo prebuild --clean --platform ios
       - name: Download Sentry XCFramework
         run: packages/mobile/scripts/download-sentry-xcframework.sh
       - name: Cache CocoaPods
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: packages/mobile/ios/Pods
-          key: pods-v6-${{ hashFiles('packages/mobile/ios/Podfile', 'packages/mobile/ios/Podfile.lock', 'packages/mobile/scripts/download-sentry-xcframework.sh') }}
-          restore-keys: pods-v6-
+          key: pods-v7-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/scripts/download-sentry-xcframework.sh') }}
+          restore-keys: pods-v7-
       - name: Cache DerivedData
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ env.DERIVED_DATA_PATH }}
-          key: deriveddata-v1-${{ hashFiles('packages/mobile/ios/Podfile.lock', 'packages/mobile/modules/*/ios/**/*.swift', 'packages/mobile/modules/*/ios/**/*.m', 'packages/mobile/modules/*/ios/**/*.h') }}-${{ github.sha }}
+          key: deriveddata-v1-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/*/ios/**/*.swift', 'packages/mobile/modules/*/ios/**/*.m', 'packages/mobile/modules/*/ios/**/*.h') }}-${{ github.sha }}
           restore-keys: |
-            deriveddata-v1-${{ hashFiles('packages/mobile/ios/Podfile.lock', 'packages/mobile/modules/*/ios/**/*.swift', 'packages/mobile/modules/*/ios/**/*.m', 'packages/mobile/modules/*/ios/**/*.h') }}-
+            deriveddata-v1-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/*/ios/**/*.swift', 'packages/mobile/modules/*/ios/**/*.m', 'packages/mobile/modules/*/ios/**/*.h') }}-
             deriveddata-v1-
       - name: Install CocoaPods dependencies
         run: cd packages/mobile/ios && pod install
@@ -551,17 +554,66 @@ jobs:
     runs-on: macos-26
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Generate native project
+        working-directory: packages/mobile
+        run: npx expo prebuild --clean --platform ios
+      - name: Download Sentry XCFramework
+        run: packages/mobile/scripts/download-sentry-xcframework.sh
+      - name: Cache CocoaPods
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: packages/mobile/ios/Pods
+          key: pods-watchos-v7-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/scripts/download-sentry-xcframework.sh') }}
+          restore-keys: pods-watchos-v7-
+      - name: Install CocoaPods dependencies
+        run: cd packages/mobile/ios && pod install
       - name: Build Watch target for simulator
         run: |
+          set -o pipefail
+          BUILD_DIR="$(pwd)/packages/mobile/ios/build"
+          # Build CocoaPods dependencies for DofekWatch first. This produces
+          # libPods-DofekWatch.a and runs "[CP] Copy XCFrameworks" to extract
+          # the watchOS Sentry slice. Building from Pods.xcodeproj (not the
+          # workspace) avoids the Sentry-iOS/Sentry-watchOS duplicate output
+          # conflict that occurs with -workspace -scheme DofekWatch.
+          xcodebuild build \
+            -project packages/mobile/ios/Pods/Pods.xcodeproj \
+            -target Pods-DofekWatch \
+            -sdk watchsimulator \
+            -configuration Debug \
+            SYMROOT="$BUILD_DIR" \
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tail -20
+          # Build the watch app against the pre-built pods.
           xcodebuild build \
             -project packages/mobile/ios/Dofek.xcodeproj \
             -target DofekWatch \
             -sdk watchsimulator \
             -configuration Debug \
-            -destination 'generic/platform=watchOS Simulator' \
+            SYMROOT="$BUILD_DIR" \
             CODE_SIGNING_ALLOWED=NO \
-            | tail -20
-        timeout-minutes: 5
+            2>&1 | tee /tmp/watchos-build.log | tail -80
+      - name: Show watchOS build errors
+        if: failure()
+        run: |
+          echo "=== Errors and warnings ==="
+          ERRORS=$(grep -E '(error:|fatal error|BUILD FAILED|ld:|clang:)' /tmp/watchos-build.log | head -30 || true)
+          echo "$ERRORS"
+          echo ""
+          echo "=== Last 20 lines ==="
+          tail -20 /tmp/watchos-build.log || true
+          # Surface errors as GitHub annotations so they're visible in the checks summary
+          echo "$ERRORS" | while IFS= read -r line; do
+            [ -n "$line" ] && echo "::error::$line"
+          done
+      - name: Upload watchOS build log
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: watchos-build-log
+          path: /tmp/watchos-build.log
+          retention-days: 3
 
   test-swift:
     name: Swift Tests
@@ -989,10 +1041,13 @@ jobs:
             echo "Manual dispatch — forcing TestFlight upload"
           else
             CHANGED=$(git diff --name-only HEAD~1...HEAD -- \
-              'packages/mobile/ios/**' \
+              'packages/mobile/app.json' \
+              'packages/mobile/app.config.ts' \
+              'packages/mobile/plugins/**' \
+              'packages/mobile/targets/**' \
+              'packages/mobile/native/**' \
               'packages/mobile/modules/*/ios/**' \
               'packages/mobile/modules/*/Package.swift' \
-              'packages/mobile/app.json' \
               'packages/mobile/modules/*/expo-module.config.json')
             if [ -n "$CHANGED" ]; then
               echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -1029,6 +1084,9 @@ jobs:
           path: ~/Library/Caches/ccache
           key: ccache-ios-release-${{ github.sha }}
           restore-keys: ccache-ios-release-
+      - name: Generate native project
+        working-directory: packages/mobile
+        run: npx expo prebuild --clean --platform ios
 
       - name: Download Sentry XCFramework
         run: packages/mobile/scripts/download-sentry-xcframework.sh
@@ -1037,15 +1095,15 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: packages/mobile/ios/Pods
-          key: pods-v6-${{ hashFiles('packages/mobile/ios/Podfile', 'packages/mobile/ios/Podfile.lock', 'packages/mobile/scripts/download-sentry-xcframework.sh') }}
+          key: pods-v7-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/scripts/download-sentry-xcframework.sh') }}
 
       - name: Cache DerivedData
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ env.DERIVED_DATA_PATH }}
-          key: deriveddata-release-v1-${{ hashFiles('packages/mobile/ios/Podfile.lock', 'packages/mobile/modules/*/ios/**/*.swift', 'packages/mobile/modules/*/ios/**/*.m', 'packages/mobile/modules/*/ios/**/*.h') }}-${{ github.sha }}
+          key: deriveddata-release-v1-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/*/ios/**/*.swift', 'packages/mobile/modules/*/ios/**/*.m', 'packages/mobile/modules/*/ios/**/*.h') }}-${{ github.sha }}
           restore-keys: |
-            deriveddata-release-v1-${{ hashFiles('packages/mobile/ios/Podfile.lock', 'packages/mobile/modules/*/ios/**/*.swift', 'packages/mobile/modules/*/ios/**/*.m', 'packages/mobile/modules/*/ios/**/*.h') }}-
+            deriveddata-release-v1-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/*/ios/**/*.swift', 'packages/mobile/modules/*/ios/**/*.m', 'packages/mobile/modules/*/ios/**/*.h') }}-
             deriveddata-release-v1-
 
       - name: Install CocoaPods
@@ -1154,7 +1212,7 @@ jobs:
         run: |
           xcodebuild -exportArchive \
             -archivePath $RUNNER_TEMP/Dofek.xcarchive \
-            -exportOptionsPlist packages/mobile/ios/ExportOptions.plist \
+            -exportOptionsPlist packages/mobile/build/ExportOptions.plist \
             -exportPath $RUNNER_TEMP/export \
             -allowProvisioningUpdates \
             -authenticationKeyPath ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8 \
