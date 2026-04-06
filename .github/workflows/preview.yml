@@ -217,7 +217,6 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           PR_NUMBER: ${{ github.event.number }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
           npx eoas@2.3.16 publish \
             --branch "pr-$PR_NUMBER" \
@@ -228,14 +227,15 @@ jobs:
       - name: Create channel for PR
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          PR_NUMBER: ${{ github.event.number }}
         run: |
           # Create a dynamic channel for this PR and point it at the PR branch.
           # Channel is created on first push, updated on subsequent pushes.
-          npx eas-cli@latest channel:edit "pr-${{ github.event.number }}" \
-            --branch "pr-${{ github.event.number }}" \
+          npx eas-cli@latest channel:edit "pr-$PR_NUMBER" \
+            --branch "pr-$PR_NUMBER" \
             --non-interactive 2>/dev/null || \
-          npx eas-cli@latest channel:create "pr-${{ github.event.number }}" \
-            --branch "pr-${{ github.event.number }}" \
+          npx eas-cli@latest channel:create "pr-$PR_NUMBER" \
+            --branch "pr-$PR_NUMBER" \
             --non-interactive 2>/dev/null || true
 
       - name: Comment PR with Mobile Preview Info
