@@ -1,43 +1,32 @@
 #!/bin/sh
 set -e
 
-# ── Helper: set env var only if not already set ───────────────────────
-# Uses printenv (no eval) to safely check and export.
-set_if_unset() {
-  key="$1"
-  value="$2"
-  # Validate key is a shell identifier (letters, digits, underscores)
-  case "$key" in
-    *[!A-Za-z0-9_]*|"") return ;;
-  esac
-  # Strip surrounding single quotes (Infisical dotenv format wraps values)
-  case "$value" in
-    \'*\') value="${value#\'}"; value="${value%\'}" ;;
-  esac
-  if ! printenv "$key" >/dev/null 2>&1; then
-    export "$key=$value"
-  fi
-}
-
 # ── Fetch secrets from Infisical (if configured) ──────────────────────
 # Secrets from Infisical override baked-in .env defaults but NOT
 # Docker/Compose environment vars (which are already in the process env).
+# Uses JSON format to handle multi-line values (e.g. SSH keys, PEM certs).
 if [ -n "${INFISICAL_TOKEN:-}" ] && command -v infisical >/dev/null 2>&1; then
-  if INFISICAL_SECRETS=$(infisical export \
+  if INFISICAL_JSON=$(infisical export \
     --env="${INFISICAL_ENV:-prod}" \
-    --format=dotenv \
+    --format=json \
     --projectId="${INFISICAL_PROJECT_ID:-54712f56-98a9-4531-9e97-0b588d2e5a88}" \
     2>&1); then
     echo "[entrypoint] Loaded secrets from Infisical" >&2
-    while IFS='=' read -r key value; do
-      case "$key" in ''|\#*) continue ;; esac
-      set_if_unset "$key" "$value"
-    done <<EOF
-$INFISICAL_SECRETS
-EOF
+    # Parse JSON array and export each key=value, skipping keys already set.
+    # Node.js is available in the image — no extra dependencies needed.
+    eval "$(echo "$INFISICAL_JSON" | node -e "
+      const secrets = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+      for (const { key, value } of secrets) {
+        if (!process.env[key]) {
+          // Shell-escape the value: wrap in single quotes, escape embedded single quotes
+          const escaped = value.replace(/'/g, \"'\\\\''\" );
+          console.log('export ' + key + \"='\" + escaped + \"'\");
+        }
+      }
+    ")"
   else
     echo "[entrypoint] WARNING: Failed to fetch secrets from Infisical, continuing with existing env" >&2
-    echo "[entrypoint] Infisical output: $INFISICAL_SECRETS" >&2
+    echo "[entrypoint] Infisical output: $INFISICAL_JSON" >&2
   fi
 fi
 
@@ -46,7 +35,13 @@ fi
 if [ -f .env ]; then
   while IFS='=' read -r key value; do
     case "$key" in ''|\#*) continue ;; esac
-    set_if_unset "$key" "$value"
+    # Skip lines without valid variable names (continuation lines, etc.)
+    case "$key" in [!A-Za-z_]*|*[!A-Za-z0-9_]*) continue ;; esac
+    # Strip surrounding single quotes
+    case "$value" in \'*\') value="${value#\'}"; value="${value%\'}" ;; esac
+    if ! printenv "$key" >/dev/null 2>&1; then
+      export "$key=$value"
+    fi
   done < .env
 fi
 
