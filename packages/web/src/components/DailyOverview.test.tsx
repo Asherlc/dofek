@@ -129,6 +129,25 @@ describe("DailyOverview", () => {
     expect(screen.getAllByText("Sleep").length).toBeGreaterThanOrEqual(1);
   });
 
+  it("renders contextual descriptions below each score ring", () => {
+    render(
+      <DailyOverview
+        readiness={mockReadiness}
+        workloadRatio={mockWorkloadRatio}
+        sleepPerformance={mockSleepPerformance}
+        readinessLoading={false}
+        workloadLoading={false}
+        sleepLoading={false}
+      />,
+    );
+    // Recovery description
+    expect(screen.getByText(/ready for high-intensity/)).toBeTruthy();
+    // Strain description (moderate strain = productive)
+    expect(screen.getByText(/productive training day/)).toBeTruthy();
+    // Sleep description (Good tier)
+    expect(screen.getByText(/most of what your body needed/)).toBeTruthy();
+  });
+
   it("shows placeholder for missing readiness data", () => {
     render(
       <DailyOverview

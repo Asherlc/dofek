@@ -27,6 +27,13 @@ export class StrainScore {
     return "Light";
   }
 
+  get description(): string {
+    if (this.value > 17) return "Maximum effort reached. Prioritize recovery tonight.";
+    if (this.value >= 14) return "Significant training load. Monitor fatigue closely.";
+    if (this.value >= 10) return "A productive training day with manageable load.";
+    return "Low load day. You have room for more intensity.";
+  }
+
   static fromRawLoad(rawLoad: number): StrainScore {
     if (rawLoad <= 0) return new StrainScore(0);
     const strain = StrainScore.#SCALE_FACTOR * Math.log(1 + rawLoad);
@@ -65,6 +72,15 @@ export function scoreLabel(score: number): string {
   if (score > SCORE_RECOVERED_THRESHOLD) return "Recovered";
   if (score >= SCORE_WARNING_THRESHOLD) return "Moderate";
   return "Poor";
+}
+
+/** Get a contextual description for a recovery score explaining what it means */
+export function scoreDescription(score: number): string {
+  if (score > SCORE_RECOVERED_THRESHOLD)
+    return "You're well recovered and ready for high-intensity training.";
+  if (score >= SCORE_WARNING_THRESHOLD)
+    return "Your body is at a moderate recovery level. Steady effort is recommended.";
+  return "Recovery is low. Focus on rest and keep today's effort light.";
 }
 
 /** Strain zone classification with display properties. */
@@ -213,6 +229,14 @@ export function sleepTierColor(tier: "Excellent" | "Good" | "Fair" | "Poor"): st
   if (tier === "Good") return statusColors.info;
   if (tier === "Fair") return statusColors.warning;
   return statusColors.danger;
+}
+
+/** Get a contextual description for a sleep performance tier */
+export function sleepTierDescription(tier: "Excellent" | "Good" | "Fair" | "Poor"): string {
+  if (tier === "Excellent") return "Exceptional sleep that fully supports recovery.";
+  if (tier === "Good") return "Solid sleep. You got most of what your body needed.";
+  if (tier === "Fair") return "Below your sleep need. Recovery may be impacted.";
+  return "Significantly short on sleep. Prioritize rest tonight.";
 }
 
 /** Get the color for sleep debt in minutes */
