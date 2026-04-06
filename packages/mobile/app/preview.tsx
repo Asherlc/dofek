@@ -25,7 +25,7 @@ export default function PreviewScreen() {
       {state === "checking" || state === "reloading" ? (
         <>
           <ActivityIndicator color={colors.accent} size="large" />
-          <Text style={styles.title}>Loading PR #{pr} Preview</Text>
+          <Text style={styles.title}>Loading {pr ? `PR #${pr} ` : ""}Preview</Text>
           <Text style={styles.subtitle}>
             {state === "reloading" ? "Applying update..." : "Checking for update..."}
           </Text>
