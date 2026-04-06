@@ -222,7 +222,8 @@ jobs:
           npx eoas@2.3.16 publish \
             --branch "pr-$PR_NUMBER" \
             --platform ios \
-            --nonInteractive
+            --nonInteractive \
+            --packageRunner "pnpm exec"
 
       - name: Create channel for PR
         env:
