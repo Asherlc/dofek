@@ -1199,6 +1199,7 @@ jobs:
         working-directory: deploy/deploy-config
         env:
           TF_VAR_server_ip: ${{ secrets.SERVER_HOST }}
+          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
         run: |
           terraform init
           terraform apply -auto-approve

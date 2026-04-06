@@ -3,6 +3,12 @@ variable "server_ip" {
   type        = string
 }
 
+variable "ssh_public_key" {
+  description = "SSH public key to ensure is in authorized_keys"
+  type        = string
+  default     = ""
+}
+
 resource "null_resource" "deploy_config" {
   triggers = {
     compose_hash   = filemd5("${path.module}/../docker-compose.yml")
@@ -46,6 +52,7 @@ resource "null_resource" "deploy_config" {
 
   provisioner "remote-exec" {
     inline = [
+      "if [ -n '${var.ssh_public_key}' ]; then mkdir -p ~/.ssh && grep -qxF '${var.ssh_public_key}' ~/.ssh/authorized_keys 2>/dev/null || echo '${var.ssh_public_key}' >> ~/.ssh/authorized_keys; fi",
       "chmod +x /opt/dofek/deploy.sh",
       "chmod 600 /opt/dofek/config.env",
       "cd /opt/dofek && ./deploy.sh"
