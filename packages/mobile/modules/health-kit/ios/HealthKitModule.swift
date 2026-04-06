@@ -447,7 +447,8 @@ public class HealthKitModule: Module {
                         return
                     }
 
-                    // Collect all locations from all routes
+                    // Collect all locations from all routes using a serial queue for thread safety
+                    let collectQueue = DispatchQueue(label: "com.dofek.routeCollect")
                     var allLocations: [[String: Any]] = []
                     let group = DispatchGroup()
 
@@ -456,41 +457,44 @@ public class HealthKitModule: Module {
                         var routeLocations: [[String: Any]] = []
 
                         let locationQuery = HKWorkoutRouteQuery(route: route) { _, locations, done, locationError in
-                            if locationError != nil {
-                                if done { group.leave() }
-                                return
-                            }
-                            guard let locations = locations else {
-                                if done { group.leave() }
-                                return
-                            }
-                            for location in locations {
-                                var dict: [String: Any] = [
-                                    "date": HealthKitQueries.formatDate(location.timestamp),
-                                    "lat": location.coordinate.latitude,
-                                    "lng": location.coordinate.longitude,
-                                ]
-                                if location.altitude >= 0 || location.verticalAccuracy >= 0 {
-                                    dict["altitude"] = location.altitude
+                            // Process locations if available (even when there's an error on this batch)
+                            if let locations = locations {
+                                for location in locations {
+                                    var dict: [String: Any] = [
+                                        "date": HealthKitQueries.formatDate(location.timestamp),
+                                        "lat": location.coordinate.latitude,
+                                        "lng": location.coordinate.longitude,
+                                    ]
+                                    if location.verticalAccuracy >= 0 {
+                                        dict["altitude"] = location.altitude
+                                    }
+                                    if location.speed >= 0 {
+                                        dict["speed"] = location.speed
+                                    }
+                                    if location.horizontalAccuracy >= 0 {
+                                        dict["horizontalAccuracy"] = location.horizontalAccuracy
+                                    }
+                                    routeLocations.append(dict)
                                 }
-                                if location.speed >= 0 {
-                                    dict["speed"] = location.speed
-                                }
-                                if location.horizontalAccuracy >= 0 {
-                                    dict["horizontalAccuracy"] = location.horizontalAccuracy
-                                }
-                                routeLocations.append(dict)
                             }
+
+                            // Always leave the group exactly once when done
                             if done {
-                                allLocations.append(contentsOf: routeLocations)
-                                group.leave()
+                                collectQueue.async {
+                                    allLocations.append(contentsOf: routeLocations)
+                                    group.leave()
+                                }
                             }
                         }
                         self.healthStore.execute(locationQuery)
                     }
 
                     group.notify(queue: .main) {
-                        promise.resolve(allLocations)
+                        // Sort by timestamp for deterministic polyline order
+                        let sorted = allLocations.sorted {
+                            ($0["date"] as? String ?? "") < ($1["date"] as? String ?? "")
+                        }
+                        promise.resolve(sorted)
                     }
                 }
                 self.healthStore.execute(routeQuery)

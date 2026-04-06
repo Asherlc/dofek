@@ -209,6 +209,42 @@ describe("syncHealthKitToServer", () => {
     expect(client.healthKitSync.pushWorkoutRoutes.mutate).not.toHaveBeenCalled();
   });
 
+  it("records route query errors as non-fatal without aborting sync", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    healthKit.queryWorkoutRoutes.mockRejectedValue(new Error("Route permission denied"));
+
+    const result = await syncHealthKitToServer({
+      trpcClient: client,
+      healthKit,
+      syncRangeDays: 1,
+    });
+
+    // Sync should complete successfully despite route error
+    expect(result.inserted).toBeGreaterThan(0);
+    expect(result.errors.some((error) => error.includes("Route query"))).toBe(true);
+    // Route push should not have been attempted
+    expect(client.healthKitSync.pushWorkoutRoutes.mutate).not.toHaveBeenCalled();
+  });
+
+  it("records route push errors as non-fatal", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    healthKit.queryWorkoutRoutes.mockResolvedValue([
+      { date: "2026-03-21T07:00:00Z", lat: 40.7128, lng: -74.006 },
+    ]);
+    client.healthKitSync.pushWorkoutRoutes.mutate.mockRejectedValue(new Error("Server error"));
+
+    const result = await syncHealthKitToServer({
+      trpcClient: client,
+      healthKit,
+      syncRangeDays: 1,
+    });
+
+    expect(result.inserted).toBeGreaterThan(0);
+    expect(result.errors.some((error) => error.includes("Push workout routes"))).toBe(true);
+  });
+
   it("does not query routes when there are no workouts", async () => {
     const client = createMockClient();
     const healthKit = createMockHealthKit();

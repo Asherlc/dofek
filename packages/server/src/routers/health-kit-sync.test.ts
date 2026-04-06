@@ -1307,7 +1307,13 @@ describe("healthKitSyncRouter", () => {
 
   describe("pushWorkoutRoutes", () => {
     it("inserts sensor_sample rows for each GPS channel in route locations", async () => {
-      const execute = vi.fn().mockResolvedValue([{ id: "activity-123" }]);
+      const execute = vi.fn().mockImplementation((query: unknown) => {
+        const serialized = JSON.stringify(query);
+        if (serialized.includes("SELECT id, external_id")) {
+          return [{ id: "activity-123", external_id: "hk:workout:w-route-1" }];
+        }
+        return [];
+      });
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
@@ -1335,21 +1341,20 @@ describe("healthKitSyncRouter", () => {
 
       expect(result.inserted).toBeGreaterThan(0);
 
-      // Should have looked up the activity by external_id
+      // Should have resolved all activity IDs in one bulk query
       const lookupCall = execute.mock.calls.find((call: unknown[]) => {
         const serialized = JSON.stringify(call[0]);
-        return (
-          serialized.includes("fitness.activity") && serialized.includes("hk:workout:w-route-1")
-        );
+        return serialized.includes("SELECT id, external_id") && serialized.includes("IN");
       });
       expect(lookupCall).toBeDefined();
 
-      // Should have inserted sensor_sample rows for lat, lng, altitude, speed, gps_accuracy
-      const insertCalls = execute.mock.calls.filter((call: unknown[]) => {
+      // Should have inserted all 5 channels (lat, lng, altitude, speed, gps_accuracy) in a batched INSERT
+      expect(result.inserted).toBe(5);
+      const insertCall = execute.mock.calls.find((call: unknown[]) => {
         const serialized = JSON.stringify(call[0]);
         return serialized.includes("INSERT INTO fitness.sensor_sample");
       });
-      expect(insertCalls.length).toBe(5); // lat, lng, altitude, speed, gps_accuracy
+      expect(insertCall).toBeDefined();
     });
 
     it("skips routes when no matching activity exists", async () => {
@@ -1373,7 +1378,13 @@ describe("healthKitSyncRouter", () => {
     });
 
     it("skips null optional channels (altitude, speed, horizontalAccuracy)", async () => {
-      const execute = vi.fn().mockResolvedValue([{ id: "activity-456" }]);
+      const execute = vi.fn().mockImplementation((query: unknown) => {
+        const serialized = JSON.stringify(query);
+        if (serialized.includes("SELECT id, external_id")) {
+          return [{ id: "activity-456", external_id: "hk:workout:w-minimal" }];
+        }
+        return [];
+      });
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
@@ -1390,12 +1401,17 @@ describe("healthKitSyncRouter", () => {
       });
 
       // Only lat and lng should be inserted (no altitude, speed, or gps_accuracy)
-      const insertCalls = execute.mock.calls.filter((call: unknown[]) => {
+      expect(result.inserted).toBe(2);
+      const insertCall = execute.mock.calls.find((call: unknown[]) => {
         const serialized = JSON.stringify(call[0]);
         return serialized.includes("INSERT INTO fitness.sensor_sample");
       });
-      expect(insertCalls.length).toBe(2);
-      expect(result.inserted).toBe(2);
+      expect(insertCall).toBeDefined();
+      const serialized = JSON.stringify(insertCall);
+      expect(serialized).toContain('"lat"');
+      expect(serialized).toContain('"lng"');
+      expect(serialized).not.toContain('"altitude"');
+      expect(serialized).not.toContain('"gps_accuracy"');
     });
 
     it("skips routes with empty locations array", async () => {
@@ -1414,7 +1430,13 @@ describe("healthKitSyncRouter", () => {
     });
 
     it("rounds gps_accuracy to integer", async () => {
-      const execute = vi.fn().mockResolvedValue([{ id: "activity-round" }]);
+      const execute = vi.fn().mockImplementation((query: unknown) => {
+        const serialized = JSON.stringify(query);
+        if (serialized.includes("SELECT id, external_id")) {
+          return [{ id: "activity-round", external_id: "hk:workout:w-round" }];
+        }
+        return [];
+      });
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
@@ -1437,15 +1459,20 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      // Find the gps_accuracy insert and verify the value is rounded
-      const gpsAccuracyCall = execute.mock.calls.find((call: unknown[]) => {
+      // Find the batched insert and verify gps_accuracy value is rounded (5, not 4.7)
+      const insertCall = execute.mock.calls.find((call: unknown[]) => {
         const serialized = JSON.stringify(call[0]);
         return (
           serialized.includes("INSERT INTO fitness.sensor_sample") &&
           serialized.includes("gps_accuracy")
         );
       });
-      expect(gpsAccuracyCall).toBeDefined();
+      expect(insertCall).toBeDefined();
+      // The SQL template bindings include the rounded scalar value
+      const serialized = JSON.stringify(insertCall);
+      expect(serialized).toContain('"gps_accuracy"');
+      // 4.7 rounded to 5 — verify the rounded value appears and the original doesn't
+      expect(serialized).not.toContain("4.7");
     });
   });
 

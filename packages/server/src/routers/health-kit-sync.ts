@@ -805,23 +805,41 @@ export async function processWorkoutRoutes(
 ): Promise<number> {
   let inserted = 0;
 
+  // Resolve all workoutUuid → activityId mappings in one query to avoid N+1
+  const externalIds = Array.from(
+    new Set(
+      routes
+        .filter((route) => route.locations.length > 0)
+        .map((route) => `hk:workout:${route.workoutUuid}`),
+    ),
+  );
+
+  const activityIdByExternalId = new Map<string, string>();
+
+  if (externalIds.length > 0) {
+    const activityRowSchema = z.object({ id: z.string(), external_id: z.string() });
+    const activityRows = await executeWithSchema(
+      db,
+      activityRowSchema,
+      sql`SELECT id, external_id FROM fitness.activity
+          WHERE user_id = ${userId}
+            AND provider_id = ${PROVIDER_ID}
+            AND external_id IN (${sql.join(
+              externalIds.map((externalId) => sql`${externalId}`),
+              sql`, `,
+            )})`,
+    );
+
+    for (const activityRow of activityRows) {
+      activityIdByExternalId.set(activityRow.external_id, activityRow.id);
+    }
+  }
+
   for (const route of routes) {
     if (route.locations.length === 0) continue;
 
-    // Look up the activity by external_id
     const externalId = `hk:workout:${route.workoutUuid}`;
-    const activityIdSchema = z.object({ id: z.string() });
-    const activityRows = await executeWithSchema(
-      db,
-      activityIdSchema,
-      sql`SELECT id FROM fitness.activity
-          WHERE user_id = ${userId}
-            AND provider_id = ${PROVIDER_ID}
-            AND external_id = ${externalId}
-          LIMIT 1`,
-    );
-
-    const activityId = activityRows[0]?.id ?? null;
+    const activityId = activityIdByExternalId.get(externalId) ?? null;
 
     if (!activityId) {
       logger.warn(
@@ -830,30 +848,45 @@ export async function processWorkoutRoutes(
       continue;
     }
 
-    // Insert each location as sensor_sample rows (one per channel)
+    // Batch sensor_sample inserts to reduce DB round-trips
+    const pendingValues: ReturnType<typeof sql>[] = [];
+    const flushPendingValues = async () => {
+      if (pendingValues.length === 0) return;
+      await db.execute(
+        sql`INSERT INTO fitness.sensor_sample
+              (recorded_at, user_id, provider_id, activity_id, device_id, source_type, channel, scalar)
+            VALUES ${sql.join(pendingValues, sql`, `)}`,
+      );
+      inserted += pendingValues.length;
+      pendingValues.length = 0;
+    };
+
     for (const location of route.locations) {
       for (const { channel, getValue, round } of ROUTE_CHANNELS) {
         const value = getValue(location);
         if (value == null) continue;
 
         const scalar = round ? Math.round(value) : value;
-        await db.execute(
-          sql`INSERT INTO fitness.sensor_sample
-                (recorded_at, user_id, provider_id, activity_id, device_id, source_type, channel, scalar)
-              VALUES (
-                ${location.date}::timestamptz,
-                ${userId},
-                ${PROVIDER_ID},
-                ${activityId}::uuid,
-                ${route.sourceName ?? null},
-                ${"api"},
-                ${channel},
-                ${scalar}::real
-              )`,
+        pendingValues.push(
+          sql`(
+            ${location.date}::timestamptz,
+            ${userId},
+            ${PROVIDER_ID},
+            ${activityId}::uuid,
+            ${route.sourceName ?? null},
+            ${"api"},
+            ${channel},
+            ${scalar}::real
+          )`,
         );
-        inserted++;
+
+        if (pendingValues.length >= BATCH_SIZE) {
+          await flushPendingValues();
+        }
       }
     }
+
+    await flushPendingValues();
   }
 
   return inserted;
