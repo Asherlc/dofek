@@ -1,13 +1,18 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { CanonicalActivityType } from "@dofek/training/training";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { activity } from "../db/schema.ts";
+import { activity, sensorSample } from "../db/schema.ts";
+import { SOURCE_TYPE_FILE } from "../db/sensor-channels.ts";
+import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
+import { parseFitFile } from "../fit/parser.ts";
+import { logger } from "../logger.ts";
 import type {
   ProviderAuthSetup,
   SyncError,
@@ -16,6 +21,7 @@ import type {
   WebhookEvent,
   WebhookProvider,
 } from "./types.ts";
+import { fitRecordsToMetricStream } from "./wahoo/parsers.ts";
 
 // ============================================================
 // Suunto API types
@@ -371,7 +377,7 @@ export class SuuntoProvider implements WebhookProvider {
           for (const raw of data.payload ?? []) {
             const parsed = parseSuuntoWorkout(raw);
             try {
-              await db
+              const [row] = await db
                 .insert(activity)
                 .values({
                   providerId: this.id,
@@ -391,7 +397,49 @@ export class SuuntoProvider implements WebhookProvider {
                     endedAt: parsed.endedAt,
                     raw: parsed.raw,
                   },
-                });
+                })
+                .returning({ id: activity.id });
+
+              const activityId = row?.id;
+
+              // Download FIT file for GPS + time-series data
+              if (activityId) {
+                try {
+                  const fitUrl = `${SUUNTO_API_BASE}/v2/workout/exportFit/${raw.workoutKey}`;
+                  const fitResponse = await this.#fetchFn(fitUrl, {
+                    headers: {
+                      Authorization: `Bearer ${accessToken}`,
+                      "Ocp-Apim-Subscription-Key": subscriptionKey,
+                    },
+                  });
+
+                  if (fitResponse.ok) {
+                    const fitBuffer = Buffer.from(await fitResponse.arrayBuffer());
+                    const fitData = await parseFitFile(fitBuffer);
+                    const metricRows = fitRecordsToMetricStream(
+                      fitData.records,
+                      this.id,
+                      activityId,
+                      parsed.activityType,
+                    );
+
+                    if (metricRows.length > 0) {
+                      await db.delete(sensorSample).where(eq(sensorSample.activityId, activityId));
+                      await dualWriteToSensorSample(db, metricRows, SOURCE_TYPE_FILE);
+                      logger.info(
+                        `[suunto] Inserted ${metricRows.length} sensor sample rows for workout ${parsed.externalId}`,
+                      );
+                    }
+                  }
+                } catch (fitError) {
+                  errors.push({
+                    message: `FIT file for ${parsed.externalId}: ${fitError instanceof Error ? fitError.message : String(fitError)}`,
+                    externalId: parsed.externalId,
+                    cause: fitError,
+                  });
+                }
+              }
+
               count++;
             } catch (err) {
               errors.push({
