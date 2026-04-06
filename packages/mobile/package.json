@@ -15,7 +15,6 @@
   },
   "dependencies": {
     "@bacons/apple-targets": "4.0.6",
-    "@expo/config-plugins": "55.0.7",
     "@dofek/auth": "workspace:*",
     "@dofek/format": "workspace:*",
     "@dofek/nutrition": "workspace:*",
@@ -24,6 +23,7 @@
     "@dofek/scoring": "workspace:*",
     "@dofek/training": "workspace:*",
     "@dofek/zones": "workspace:*",
+    "@expo/config-plugins": "55.0.7",
     "@opentelemetry/api-logs": "0.214.0",
     "@opentelemetry/exporter-logs-otlp-http": "0.214.0",
     "@opentelemetry/resources": "2.6.1",
