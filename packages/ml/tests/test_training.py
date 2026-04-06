@@ -11,17 +11,19 @@ import pytest
 import torch
 
 from dofek_ml.training import (
+    DEFAULT_DEVICE_SAMPLE_RATE_HZ,
     DEFAULT_LABEL,
-    DEVICE_GRID_SIZE,
-    DEVICE_SAMPLE_RATE_HZ,
     LABEL_MAP,
     METRIC_GRID_SIZE,
     REST_LABEL,
+    WINDOW_DURATION_SECONDS,
     DeviceBranch,
     FusedActivityModel,
     MetricBranch,
     build_device_windows,
     build_metric_windows,
+    compute_device_grid_sizes,
+    detect_device_sample_rate,
     discover_device_channels,
     discover_metric_channels,
     encode_labels,
@@ -208,11 +210,20 @@ class TestMetricBranch:
 class TestDeviceBranch:
     """Tests for DeviceBranch nn.Module."""
 
-    def test_output_shape(self) -> None:
+    def test_output_shape_50hz(self) -> None:
         branch: DeviceBranch = DeviceBranch(in_channels=6)
-        x: torch.Tensor = torch.randn(8, 6, DEVICE_GRID_SIZE)
+        grid_size: int = 50 * WINDOW_DURATION_SECONDS  # 3000
+        x: torch.Tensor = torch.randn(8, 6, grid_size)
         out: torch.Tensor = branch(x)
         assert out.shape == (8, 128)
+
+    def test_output_shape_100hz(self) -> None:
+        """DeviceBranch should handle 100 Hz input (6000 slots) via AdaptiveAvgPool."""
+        branch: DeviceBranch = DeviceBranch(in_channels=6)
+        grid_size: int = 100 * WINDOW_DURATION_SECONDS  # 6000
+        x: torch.Tensor = torch.randn(4, 6, grid_size)
+        out: torch.Tensor = branch(x)
+        assert out.shape == (4, 128)
 
 
 class TestFusedActivityModel:
@@ -225,10 +236,12 @@ class TestFusedActivityModel:
             num_classes=5,
         )
         batch_size: int = 4
+        watch_grid: int = 50 * WINDOW_DURATION_SECONDS
+        pm_grid: int = 50 * WINDOW_DURATION_SECONDS
         metric_input: torch.Tensor = torch.randn(batch_size, 4, METRIC_GRID_SIZE)
         device_inputs: dict[str, torch.Tensor] = {
-            "watch": torch.randn(batch_size, 6, DEVICE_GRID_SIZE),
-            "power_meter": torch.randn(batch_size, 3, DEVICE_GRID_SIZE),
+            "watch": torch.randn(batch_size, 6, watch_grid),
+            "power_meter": torch.randn(batch_size, 3, pm_grid),
         }
         logits: torch.Tensor = model(metric_input, device_inputs)
         assert logits.shape == (batch_size, 5)
@@ -241,10 +254,26 @@ class TestFusedActivityModel:
         )
         metric_input: torch.Tensor = torch.randn(2, 2, METRIC_GRID_SIZE)
         device_inputs: dict[str, torch.Tensor] = {
-            "watch": torch.randn(2, 3, DEVICE_GRID_SIZE),
+            "watch": torch.randn(2, 3, 50 * WINDOW_DURATION_SECONDS),
         }
         logits: torch.Tensor = model(metric_input, device_inputs)
         assert logits.shape == (2, 3)
+
+    def test_mixed_sample_rates(self) -> None:
+        """Devices with different sample rates should produce valid logits."""
+        model: FusedActivityModel = FusedActivityModel(
+            metric_channels=2,
+            device_channel_counts={"apple_watch": 6, "whoop": 6},
+            num_classes=3,
+        )
+        batch_size: int = 4
+        metric_input: torch.Tensor = torch.randn(batch_size, 2, METRIC_GRID_SIZE)
+        device_inputs: dict[str, torch.Tensor] = {
+            "apple_watch": torch.randn(batch_size, 6, 50 * WINDOW_DURATION_SECONDS),
+            "whoop": torch.randn(batch_size, 6, 100 * WINDOW_DURATION_SECONDS),
+        }
+        logits: torch.Tensor = model(metric_input, device_inputs)
+        assert logits.shape == (batch_size, 3)
 
 
 # ---------------------------------------------------------------------------
@@ -414,31 +443,72 @@ class TestBuildMetricWindows:
 # ---------------------------------------------------------------------------
 
 
+class TestDetectDeviceSampleRate:
+    """Tests for detect_device_sample_rate()."""
+
+    def test_detects_50hz(self) -> None:
+        df: pd.DataFrame = _make_device_df(
+            num_samples=500, device_type="watch", channels=["accel_x"], freq="20ms"
+        )
+        rate: int = detect_device_sample_rate(df, "watch")
+        assert rate == 50
+
+    def test_detects_100hz(self) -> None:
+        df: pd.DataFrame = _make_device_df(
+            num_samples=500, device_type="whoop", channels=["accel_x"], freq="10ms"
+        )
+        rate: int = detect_device_sample_rate(df, "whoop")
+        assert rate == 100
+
+    def test_falls_back_for_single_sample(self) -> None:
+        df: pd.DataFrame = _make_device_df(
+            num_samples=1, device_type="watch", channels=["accel_x"]
+        )
+        rate: int = detect_device_sample_rate(df, "watch")
+        assert rate == DEFAULT_DEVICE_SAMPLE_RATE_HZ
+
+    def test_falls_back_for_missing_device(self) -> None:
+        df: pd.DataFrame = _make_device_df(
+            num_samples=100, device_type="watch", channels=["accel_x"]
+        )
+        rate: int = detect_device_sample_rate(df, "nonexistent")
+        assert rate == DEFAULT_DEVICE_SAMPLE_RATE_HZ
+
+
+class TestComputeDeviceGridSizes:
+    """Tests for compute_device_grid_sizes()."""
+
+    def test_computes_from_rates(self) -> None:
+        rates: dict[str, int] = {"watch": 50, "whoop": 100}
+        sizes: dict[str, int] = compute_device_grid_sizes(rates)
+        assert sizes == {"watch": 3000, "whoop": 6000}
+
+
 class TestBuildDeviceWindows:
-    """Tests for build_device_windows() -- slicing device stream into 50 Hz grids."""
+    """Tests for build_device_windows() -- slicing device stream into per-device-rate grids."""
 
     def test_output_shape(self) -> None:
-        """Output should be (num_windows, num_channels, DEVICE_GRID_SIZE) per device."""
+        """Output should be (num_windows, num_channels, grid_size) per device."""
         channels: list[str] = ["accel_x", "accel_y"]
         device_channels: dict[str, list[str]] = {"watch": channels}
         # 3000 samples at 50 Hz = 60 seconds = 1 window
         df: pd.DataFrame = _make_device_df(num_samples=3000, device_type="watch", channels=channels)
         window_starts: list[pd.Timestamp] = [pd.Timestamp("2024-01-01T00:00:00")]
 
-        result: dict[str, np.ndarray] = build_device_windows(df, device_channels, window_starts)
+        result, rates = build_device_windows(df, device_channels, window_starts)
 
         assert "watch" in result
-        assert result["watch"].shape == (1, 2, DEVICE_GRID_SIZE)
+        expected_grid: int = rates["watch"] * WINDOW_DURATION_SECONDS
+        assert result["watch"].shape == (1, 2, expected_grid)
 
     def test_values_placed_at_correct_slots(self) -> None:
-        """A sample at second S should land at slot S * 50."""
+        """A sample at second S should land at slot S * detected_rate."""
         channels: list[str] = ["accel_x"]
         device_channels: dict[str, list[str]] = {"watch": channels}
-        # Create just a few samples at known times
         timestamps: list[pd.Timestamp] = [
             pd.Timestamp("2024-01-01T00:00:00"),  # slot 0
-            pd.Timestamp("2024-01-01T00:00:01"),  # slot 50
-            pd.Timestamp("2024-01-01T00:00:02"),  # slot 100
+            pd.Timestamp("2024-01-01T00:00:01"),  # slot = rate
+            pd.Timestamp("2024-01-01T00:00:02"),  # slot = 2 * rate
         ]
         df: pd.DataFrame = pd.DataFrame(
             {
@@ -448,19 +518,22 @@ class TestBuildDeviceWindows:
             }
         )
         window_starts: list[pd.Timestamp] = [pd.Timestamp("2024-01-01T00:00:00")]
+        # Explicitly set the rate since 3 samples isn't enough for detection
+        explicit_rates: dict[str, int] = {"watch": 50}
 
-        result: dict[str, np.ndarray] = build_device_windows(df, device_channels, window_starts)
+        result, rates = build_device_windows(
+            df, device_channels, window_starts, device_sample_rates=explicit_rates
+        )
         grid: np.ndarray = result["watch"]
 
         assert grid[0, 0, 0] == pytest.approx(10.0)
-        assert grid[0, 0, DEVICE_SAMPLE_RATE_HZ] == pytest.approx(20.0)
-        assert grid[0, 0, 2 * DEVICE_SAMPLE_RATE_HZ] == pytest.approx(30.0)
+        assert grid[0, 0, rates["watch"]] == pytest.approx(20.0)
+        assert grid[0, 0, 2 * rates["watch"]] == pytest.approx(30.0)
 
     def test_gaps_remain_as_zeros(self) -> None:
         """Slots without data should stay at zero."""
         channels: list[str] = ["accel_x"]
         device_channels: dict[str, list[str]] = {"watch": channels}
-        # Single sample at time 0
         df: pd.DataFrame = pd.DataFrame(
             {
                 "timestamp": [pd.Timestamp("2024-01-01T00:00:00")],
@@ -469,58 +542,62 @@ class TestBuildDeviceWindows:
             }
         )
         window_starts: list[pd.Timestamp] = [pd.Timestamp("2024-01-01T00:00:00")]
+        explicit_rates: dict[str, int] = {"watch": 50}
 
-        result: dict[str, np.ndarray] = build_device_windows(df, device_channels, window_starts)
+        result, _rates = build_device_windows(
+            df, device_channels, window_starts, device_sample_rates=explicit_rates
+        )
         grid: np.ndarray = result["watch"]
 
-        # Slot 0 has data
         assert grid[0, 0, 0] == pytest.approx(42.0)
-        # All other slots should be zero
         assert grid[0, 0, 1] == pytest.approx(0.0)
         assert grid[0, 0, 100] == pytest.approx(0.0)
 
-    def test_multiple_device_types(self) -> None:
-        """Each device type should produce a separate grid."""
+    def test_multiple_device_types_with_different_rates(self) -> None:
+        """Each device type should get its own grid sized to its sample rate."""
         watch_channels: list[str] = ["accel_x", "accel_y", "accel_z"]
-        pm_channels: list[str] = ["accel_x"]
+        whoop_channels: list[str] = ["accel_x", "accel_y", "accel_z"]
         device_channels: dict[str, list[str]] = {
             "watch": watch_channels,
-            "power_meter": pm_channels,
+            "whoop": whoop_channels,
         }
         watch_df: pd.DataFrame = _make_device_df(
-            num_samples=100, device_type="watch", channels=watch_channels
+            num_samples=100, device_type="watch", channels=watch_channels, freq="20ms"
         )
-        pm_df: pd.DataFrame = _make_device_df(
-            num_samples=100, device_type="power_meter", channels=pm_channels
+        whoop_df: pd.DataFrame = _make_device_df(
+            num_samples=100, device_type="whoop", channels=whoop_channels, freq="10ms"
         )
-        df: pd.DataFrame = pd.concat([watch_df, pm_df], ignore_index=True)
+        df: pd.DataFrame = pd.concat([watch_df, whoop_df], ignore_index=True)
         window_starts: list[pd.Timestamp] = [pd.Timestamp("2024-01-01T00:00:00")]
 
-        result: dict[str, np.ndarray] = build_device_windows(df, device_channels, window_starts)
+        result, rates = build_device_windows(df, device_channels, window_starts)
 
-        assert result["watch"].shape == (1, 3, DEVICE_GRID_SIZE)
-        assert result["power_meter"].shape == (1, 1, DEVICE_GRID_SIZE)
+        assert rates["watch"] == 50
+        assert rates["whoop"] == 100
+        assert result["watch"].shape == (1, 3, 50 * WINDOW_DURATION_SECONDS)
+        assert result["whoop"].shape == (1, 3, 100 * WINDOW_DURATION_SECONDS)
 
     def test_empty_window_stays_zero(self) -> None:
         """A window with no device data should be all zeros."""
         channels: list[str] = ["accel_x"]
         device_channels: dict[str, list[str]] = {"watch": channels}
-        # Device data only in the first window, second window is empty
         df: pd.DataFrame = _make_device_df(num_samples=100, device_type="watch", channels=channels)
         window_starts: list[pd.Timestamp] = [
             pd.Timestamp("2024-01-01T00:00:00"),
             pd.Timestamp("2024-01-01T00:01:00"),  # no data here
         ]
 
-        result: dict[str, np.ndarray] = build_device_windows(df, device_channels, window_starts)
+        result, _rates = build_device_windows(df, device_channels, window_starts)
 
-        # Second window should be all zeros
         assert np.all(result["watch"][1] == 0.0)
 
 
 # ---------------------------------------------------------------------------
 # Helpers for tiny model / tensor creation
 # ---------------------------------------------------------------------------
+
+
+WATCH_GRID_SIZE: int = DEFAULT_DEVICE_SAMPLE_RATE_HZ * WINDOW_DURATION_SECONDS
 
 
 def _make_tiny_model(num_classes: int = 2) -> FusedActivityModel:
@@ -546,7 +623,7 @@ def _make_tiny_tensors(
     """
     metric: torch.Tensor = torch.randn(num_samples, 2, METRIC_GRID_SIZE)
     devices: dict[str, torch.Tensor] = {
-        "watch": torch.randn(num_samples, 2, DEVICE_GRID_SIZE),
+        "watch": torch.randn(num_samples, 2, WATCH_GRID_SIZE),
     }
     labels: torch.Tensor = torch.randint(0, num_classes, (num_samples,))
     return metric, devices, labels
@@ -754,8 +831,8 @@ class TestRunAblation:
         num_samples: int = 8
         metric_test: torch.Tensor = torch.randn(num_samples, 2, METRIC_GRID_SIZE)
         device_tests: dict[str, torch.Tensor] = {
-            "watch": torch.randn(num_samples, 2, DEVICE_GRID_SIZE),
-            "chest_strap": torch.randn(num_samples, 2, DEVICE_GRID_SIZE),
+            "watch": torch.randn(num_samples, 2, WATCH_GRID_SIZE),
+            "chest_strap": torch.randn(num_samples, 2, WATCH_GRID_SIZE),
         }
         labels_test: torch.Tensor = torch.randint(0, num_classes, (num_samples,))
 

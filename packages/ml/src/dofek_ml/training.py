@@ -52,11 +52,12 @@ from dofek_ml.data_loading import load_training_data
 # fixed-size chunks that the CNN can process.
 WINDOW_DURATION_SECONDS = 60  # Each training sample covers 60 seconds
 METRIC_SAMPLE_RATE_HZ = 1  # Metric stream is recorded at 1 Hz
-DEVICE_SAMPLE_RATE_HZ = 50  # Device stream is recorded at 50 Hz
 
 # Derived grid sizes (number of time slots per window)
 METRIC_GRID_SIZE = WINDOW_DURATION_SECONDS * METRIC_SAMPLE_RATE_HZ  # 60 slots
-DEVICE_GRID_SIZE = WINDOW_DURATION_SECONDS * DEVICE_SAMPLE_RATE_HZ  # 3000 slots
+
+# Default device sample rate used when no data is available to detect rate.
+DEFAULT_DEVICE_SAMPLE_RATE_HZ = 50
 
 
 # ---------------------------------------------------------------------------
@@ -237,37 +238,106 @@ def build_metric_windows(
     return windows, np.array(labels), start_times
 
 
+def detect_device_sample_rate(device_df: pd.DataFrame, device_type: str) -> int:
+    """Detect the sample rate (Hz) for a device type from its timestamp intervals.
+
+    Uses the median inter-sample interval from the first 10,000 samples to
+    determine the native rate. Falls back to DEFAULT_DEVICE_SAMPLE_RATE_HZ if
+    there are fewer than 2 samples.
+
+    Returns:
+        Detected sample rate rounded to the nearest integer Hz.
+    """
+    dev_data: pd.DataFrame = device_df[device_df["device_type"] == device_type]
+    timestamps: pd.Series = dev_data["timestamp"].sort_values()
+
+    if len(timestamps) < 2:
+        return DEFAULT_DEVICE_SAMPLE_RATE_HZ
+
+    # Use a representative sample to avoid O(N) computation on millions of rows
+    sample_timestamps: pd.Series = timestamps.head(10_000)
+    deltas: pd.Series = sample_timestamps.diff().dropna().dt.total_seconds()
+    deltas = deltas[deltas > 0]
+
+    if deltas.empty:
+        return DEFAULT_DEVICE_SAMPLE_RATE_HZ
+
+    median_interval: float = float(deltas.median())
+    if median_interval <= 0:
+        return DEFAULT_DEVICE_SAMPLE_RATE_HZ
+
+    return round(1.0 / median_interval)
+
+
+def detect_device_sample_rates(
+    device_df: pd.DataFrame,
+    device_channels: dict[str, list[str]],
+) -> dict[str, int]:
+    """Detect sample rates for all device types.
+
+    Returns:
+        Dict mapping device_type -> sample rate in Hz.
+    """
+    return {
+        device_type: detect_device_sample_rate(device_df, device_type)
+        for device_type in device_channels
+    }
+
+
+def compute_device_grid_sizes(device_sample_rates: dict[str, int]) -> dict[str, int]:
+    """Compute the grid size (time slots per window) for each device type.
+
+    Grid size = sample_rate_hz * WINDOW_DURATION_SECONDS.
+    """
+    return {
+        device_type: rate * WINDOW_DURATION_SECONDS
+        for device_type, rate in device_sample_rates.items()
+    }
+
+
 def build_device_windows(
     device_df: pd.DataFrame,
     device_channels: dict[str, list[str]],
     window_start_times: list[pd.Timestamp],
-) -> dict[str, np.ndarray]:
-    """Slice the device stream into fixed-duration windows on a 50 Hz grid.
+    device_sample_rates: dict[str, int] | None = None,
+) -> tuple[dict[str, np.ndarray], dict[str, int]]:
+    """Slice the device stream into fixed-duration windows at each device's native rate.
 
     Each device type gets its own array of shape:
-        (num_windows, num_channels_for_device, DEVICE_GRID_SIZE)
+        (num_windows, num_channels_for_device, grid_size)
+    where grid_size = sample_rate * WINDOW_DURATION_SECONDS varies per device.
 
     The windows are aligned with the metric windows using the same start times.
-    Samples are placed at their correct time slot (offset_seconds * 50 Hz),
+    Samples are placed at their correct time slot (offset_seconds * sample_rate),
     so temporal gaps remain as zeros rather than being collapsed.
 
     Args:
-        device_df:          Raw device stream DataFrame.
-        device_channels:    Dict from discover_device_channels().
-        window_start_times: Start times from build_metric_windows() for alignment.
+        device_df:            Raw device stream DataFrame.
+        device_channels:      Dict from discover_device_channels().
+        window_start_times:   Start times from build_metric_windows() for alignment.
+        device_sample_rates:  Optional per-device sample rates (Hz). If None,
+                              auto-detected from timestamp intervals in the data.
 
     Returns:
-        Dict mapping device_type -> np.ndarray of shape (N, C, 3000)
+        Tuple of:
+          - Dict mapping device_type -> np.ndarray of shape (N, C, grid_size)
+          - Dict mapping device_type -> detected sample rate in Hz
     """
     device_df = device_df.sort_values("timestamp").copy()
 
+    if device_sample_rates is None:
+        device_sample_rates = detect_device_sample_rates(device_df, device_channels)
+
+    device_grid_sizes: dict[str, int] = compute_device_grid_sizes(device_sample_rates)
     num_windows: int = len(window_start_times)
     device_windows: dict[str, np.ndarray] = {}
 
     for device_type, channels in device_channels.items():
+        sample_rate: int = device_sample_rates[device_type]
+        grid_size: int = device_grid_sizes[device_type]
         num_channels: int = len(channels)
         grids: np.ndarray = np.zeros(
-            (num_windows, num_channels, DEVICE_GRID_SIZE),
+            (num_windows, num_channels, grid_size),
             dtype=np.float32,
         )
 
@@ -283,13 +353,11 @@ def build_device_windows(
             window_data: pd.DataFrame = dev_data.loc[mask]
 
             if len(window_data) > 0:
-                # Compute each sample's position in the 3000-slot grid.
-                # At 50 Hz, offset_seconds * 50 gives the slot index.
                 offsets_seconds: pd.Series = (
                     window_data["timestamp"] - window_start
                 ).dt.total_seconds()
-                slot_indices: pd.Series = (offsets_seconds * DEVICE_SAMPLE_RATE_HZ).astype(int)
-                slot_indices = slot_indices.clip(0, DEVICE_GRID_SIZE - 1)
+                slot_indices: pd.Series = (offsets_seconds * sample_rate).astype(int)
+                slot_indices = slot_indices.clip(0, grid_size - 1)
 
                 for ch_idx, ch_name in enumerate(channels):
                     values = np.asarray(window_data[ch_name].values)
@@ -297,9 +365,10 @@ def build_device_windows(
                         grids[i, ch_idx, slot] = val
 
         device_windows[device_type] = grids
-        print(f"  Device '{device_type}': {num_channels} channels, {num_windows} windows")
+        print(f"  Device '{device_type}': {num_channels} channels, {sample_rate} Hz, "
+              f"{grid_size} slots/window, {num_windows} windows")
 
-    return device_windows
+    return device_windows, device_sample_rates
 
 
 # ---------------------------------------------------------------------------
@@ -404,8 +473,12 @@ class FusedActivityModel(nn.Module):
 
     Structure:
         metric_branch  (1 Hz, 60 slots)  -> 64-dim features
-        device branches (50 Hz, 3000 slots each) -> 128-dim features each
+        device branches (native Hz, variable slots each) -> 128-dim features each
         Classifier: concat all features -> FC -> ReLU -> Dropout -> FC -> classes
+
+    Each device branch uses AdaptiveAvgPool1d(1) so it accepts any input length,
+    allowing different devices to stream at different sample rates (e.g., 50 Hz
+    for Apple Watch, 100 Hz for WHOOP).
 
     The device branches are stored in an nn.ModuleDict keyed by device_type,
     so the model automatically adapts to however many device types are present
@@ -788,8 +861,10 @@ def main() -> None:
     print(f"  Metric windows shape: {metric_windows.shape}")
 
     # Build device windows aligned to the same start times
-    print("  Building device windows (50 Hz, 60-second windows)...")
-    device_windows: dict[str, np.ndarray] = build_device_windows(
+    print("  Building device windows (per-device sample rate, 60-second windows)...")
+    device_windows: dict[str, np.ndarray]
+    device_sample_rates: dict[str, int]
+    device_windows, device_sample_rates = build_device_windows(
         device_df,
         device_channels,
         window_start_times,
@@ -890,7 +965,7 @@ def main() -> None:
         "device_channel_counts": device_channel_counts,
         "window_duration_seconds": WINDOW_DURATION_SECONDS,
         "metric_sample_rate_hz": METRIC_SAMPLE_RATE_HZ,
-        "device_sample_rate_hz": DEVICE_SAMPLE_RATE_HZ,
+        "device_sample_rates_hz": device_sample_rates,
     }
     torch.save(save_payload, output_path)
     print(f"\n  Model saved to {output_path}")
