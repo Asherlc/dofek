@@ -198,6 +198,64 @@ jobs:
             > Use the login URL above to mint the seeded `dev-session` cookie for the preview database.
             > _(Email+password login for previews is on the [roadmap](../blob/main/README.md#authentication-follow-ups))_
 
+  # ── Publish mobile OTA update for PR ──────────────────────────────────
+
+  publish-mobile-ota:
+    name: Publish Mobile OTA
+    if: github.event_name == 'pull_request' && github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: ./.github/actions/setup-node-pnpm
+
+      - name: Publish OTA to PR branch
+        working-directory: packages/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          npx eoas@2.3.16 publish \
+            --branch "pr-${{ github.event.number }}" \
+            --platform ios \
+            --nonInteractive \
+            --message "PR #${{ github.event.number }}: ${{ github.event.pull_request.title }}"
+
+      - name: Map preview channel to PR branch
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          # Point the "preview" channel at this PR's branch so the preview
+          # dev client picks up the update on next check.
+          npx eas-cli@latest channel:edit preview \
+            --branch "pr-${{ github.event.number }}" \
+            --non-interactive 2>/dev/null || \
+          npx eas-cli@latest channel:create preview \
+            --branch "pr-${{ github.event.number }}" \
+            --non-interactive 2>/dev/null || true
+
+      - name: Comment PR with Mobile Preview Info
+        uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043 # v4
+        with:
+          issue-number: ${{ github.event.number }}
+          body: |
+            ## Mobile Preview
+
+            | | |
+            |---|---|
+            | **OTA Branch** | `pr-${{ github.event.number }}` |
+            | **Channel** | `preview` |
+            | **Deep Link** | `dofek://preview/pr-${{ github.event.number }}` |
+            | **Commit** | ${{ github.sha }} |
+
+            **To test on device:**
+            1. Open the Dofek preview build on your iOS device
+            2. Scan or tap: `dofek://preview/pr-${{ github.event.number }}`
+            3. The app will check for and apply the PR update automatically
+
+            > Requires the preview development build (channel: `preview`) installed on the device.
+
   # ── Teardown on PR close ───────────────────────────────────────────────
 
   teardown:
@@ -275,6 +333,24 @@ jobs:
                 console.log(`Skipping ${packageName} cleanup: ${error.message}`);
               }
             }
+
+  # ── Clean up OTA branch on PR close ────────────────────────────────────
+
+  cleanup-mobile-ota:
+    name: Cleanup Mobile OTA
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: ./.github/actions/setup-node-pnpm
+
+      - name: Delete OTA branch
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          # Best-effort cleanup — branch may not exist if OTA was never published
+          npx eas-cli@latest branch:delete "pr-${{ github.event.number }}" \
+            --non-interactive 2>/dev/null || true
 
   # ── Scheduled cleanup (safety net for orphaned servers) ────────────────
 

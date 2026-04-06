@@ -17,4 +17,28 @@ describe("redirectSystemPath", () => {
     });
     expect(result).toBe("/providers");
   });
+
+  it("routes preview deep link to preview screen with PR number", () => {
+    const result = redirectSystemPath({
+      path: "/preview/pr-42",
+      initial: false,
+    });
+    expect(result).toBe("/preview?pr=42");
+  });
+
+  it("routes preview deep link with just a number", () => {
+    const result = redirectSystemPath({
+      path: "/preview/pr-123",
+      initial: true,
+    });
+    expect(result).toBe("/preview?pr=123");
+  });
+
+  it("keeps preview path without PR number unchanged", () => {
+    const result = redirectSystemPath({
+      path: "/preview",
+      initial: false,
+    });
+    expect(result).toBe("/preview");
+  });
 });
