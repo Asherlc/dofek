@@ -547,6 +547,15 @@ jobs:
           restore-keys: pods-watchos-v7-
       - name: Install CocoaPods dependencies
         run: cd packages/mobile/ios && pod install
+      - name: Extract Sentry XCFramework watchOS slice
+        run: |
+          # CocoaPods' "[CP] Copy XCFrameworks" phase extracts the right slice
+          # from the XCFramework, but it only runs in workspace builds. When
+          # building with -project (to avoid Sentry-iOS/watchOS output conflict),
+          # we need to extract the slice manually.
+          DEST="packages/mobile/ios/build/Debug-watchsimulator/XCFrameworkIntermediates/Sentry/Core"
+          mkdir -p "$DEST"
+          cp -R packages/mobile/native/sentry-pod/Sentry.xcframework/watchos-arm64_x86_64-simulator/Sentry.framework "$DEST/"
       - name: Build Watch target for simulator
         run: |
           set -o pipefail
@@ -556,7 +565,6 @@ jobs:
             -sdk watchsimulator \
             -configuration Debug \
             CODE_SIGNING_ALLOWED=NO \
-            FRAMEWORK_SEARCH_PATHS='$(inherited) "$(SRCROOT)/../native/sentry-pod"' \
             2>&1 | tee /tmp/watchos-build.log | tail -80
       - name: Show watchOS build errors
         if: failure()
