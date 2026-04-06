@@ -223,7 +223,7 @@ jobs:
             --branch "pr-$PR_NUMBER" \
             --platform ios \
             --nonInteractive \
-            --packageRunner "pnpm exec"
+            --packageRunner pnpx
 
       - name: Create channel for PR
         env:

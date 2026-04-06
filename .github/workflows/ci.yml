@@ -551,12 +551,12 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild build \
-            -workspace packages/mobile/ios/Dofek.xcworkspace \
-            -scheme DofekWatch \
+            -project packages/mobile/ios/Dofek.xcodeproj \
+            -target DofekWatch \
             -sdk watchsimulator \
             -configuration Debug \
-            -destination 'generic/platform=watchOS Simulator' \
             CODE_SIGNING_ALLOWED=NO \
+            FRAMEWORK_SEARCH_PATHS='$(inherited) "$(SRCROOT)/../native/sentry-pod"' \
             2>&1 | tee /tmp/watchos-build.log | tail -80
       - name: Show watchOS build errors
         if: failure()
