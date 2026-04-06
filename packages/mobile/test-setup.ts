@@ -159,6 +159,19 @@ vi.mock("react-native", () => {
     removeEventListener: vi.fn(),
   };
 
+  const LayoutAnimation = {
+    configureNext: vi.fn(),
+    Presets: {
+      easeInEaseOut: {},
+      linear: {},
+      spring: {},
+    },
+  };
+
+  const UIManager = {
+    setLayoutAnimationEnabledExperimental: vi.fn(),
+  };
+
   return {
     __esModule: true,
     View,
@@ -176,6 +189,8 @@ vi.mock("react-native", () => {
     Platform,
     Alert,
     AppState,
+    LayoutAnimation,
+    UIManager,
     useWindowDimensions: () => ({ width: 390, height: 844 }),
   };
 });

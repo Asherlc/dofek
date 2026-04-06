@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { DailyOverview } from "./DailyOverview.tsx";
 
@@ -45,6 +45,13 @@ const mockSleepPerformance = {
   recommendedBedtime: "22:30",
   sleepDate: today,
 };
+
+/** Find the closest <button> ancestor of an element. */
+function findButton(element: HTMLElement): HTMLElement {
+  const button = element.closest("button");
+  if (!button) throw new Error("No button ancestor found");
+  return button;
+}
 
 describe("DailyOverview", () => {
   it("renders loading skeletons when loading", () => {
@@ -153,6 +160,130 @@ describe("DailyOverview", () => {
     // Strain ring should show a skeleton pulse
     const skeletons = document.querySelectorAll(".shimmer");
     expect(skeletons.length).toBe(2); // circle + label skeleton
+  });
+
+  it("expands recovery breakdown when recovery ring is clicked", () => {
+    render(
+      <DailyOverview
+        readiness={mockReadiness}
+        workloadRatio={mockWorkloadRatio}
+        sleepPerformance={mockSleepPerformance}
+        readinessLoading={false}
+        workloadLoading={false}
+        sleepLoading={false}
+      />,
+    );
+
+    // Breakdown should not be visible initially
+    expect(screen.queryByText("Heart Rate Variability")).toBeNull();
+
+    // Click the recovery ring button
+    fireEvent.click(findButton(screen.getByText("75")));
+
+    // Breakdown should now be visible with component labels and weight percentages
+    expect(screen.getByText("Heart Rate Variability")).toBeTruthy();
+    expect(screen.getByText("Resting Heart Rate")).toBeTruthy();
+    expect(screen.getByText("(50%)")).toBeTruthy(); // HRV weight
+    expect(screen.getByText("Respiratory Rate")).toBeTruthy();
+  });
+
+  it("expands strain breakdown when strain ring is clicked", () => {
+    const mockStrainTarget = {
+      targetStrain: 14,
+      currentStrain: 12.5,
+      progressPercent: 89,
+      zone: "Push" as const,
+      explanation: "Recovery is strong (75). Push for a high-strain day to build fitness.",
+    };
+
+    render(
+      <DailyOverview
+        readiness={mockReadiness}
+        workloadRatio={mockWorkloadRatio}
+        sleepPerformance={mockSleepPerformance}
+        strainTarget={mockStrainTarget}
+        readinessLoading={false}
+        workloadLoading={false}
+        sleepLoading={false}
+      />,
+    );
+
+    // Breakdown should not be visible initially
+    expect(screen.queryByText("Daily target:")).toBeNull();
+
+    // Click the strain ring
+    fireEvent.click(findButton(screen.getByText("Strain")));
+
+    // Breakdown should show target and load stats
+    expect(screen.getByText("14")).toBeTruthy(); // target strain value
+    expect(screen.getByText("Push")).toBeTruthy();
+    expect(screen.getByText("Acute (7d)")).toBeTruthy();
+    expect(screen.getByText("Chronic (28d)")).toBeTruthy();
+    expect(screen.getByText("Workload Ratio")).toBeTruthy();
+  });
+
+  it("expands sleep breakdown when sleep ring is clicked", () => {
+    render(
+      <DailyOverview
+        readiness={mockReadiness}
+        workloadRatio={mockWorkloadRatio}
+        sleepPerformance={mockSleepPerformance}
+        readinessLoading={false}
+        workloadLoading={false}
+        sleepLoading={false}
+      />,
+    );
+
+    // Click the sleep ring
+    fireEvent.click(findButton(screen.getByText("Sleep", { selector: "span" })));
+
+    // Breakdown should show sufficiency and efficiency labels
+    expect(screen.getByText("Sufficiency")).toBeTruthy();
+    expect(screen.getByText("Efficiency")).toBeTruthy();
+    expect(screen.getByText(/Bedtime: 22:30/)).toBeTruthy();
+  });
+
+  it("collapses breakdown when same ring is clicked again", () => {
+    render(
+      <DailyOverview
+        readiness={mockReadiness}
+        workloadRatio={mockWorkloadRatio}
+        sleepPerformance={mockSleepPerformance}
+        readinessLoading={false}
+        workloadLoading={false}
+        sleepLoading={false}
+      />,
+    );
+
+    const recoveryButton = findButton(screen.getByText("75"));
+    fireEvent.click(recoveryButton);
+    expect(screen.getByText("Heart Rate Variability")).toBeTruthy();
+
+    // Click again to collapse
+    fireEvent.click(recoveryButton);
+    expect(screen.queryByText("Heart Rate Variability")).toBeNull();
+  });
+
+  it("switches breakdown when a different ring is clicked", () => {
+    render(
+      <DailyOverview
+        readiness={mockReadiness}
+        workloadRatio={mockWorkloadRatio}
+        sleepPerformance={mockSleepPerformance}
+        readinessLoading={false}
+        workloadLoading={false}
+        sleepLoading={false}
+      />,
+    );
+
+    // Expand recovery
+    fireEvent.click(findButton(screen.getByText("75")));
+    expect(screen.getByText("Heart Rate Variability")).toBeTruthy();
+
+    // Click strain — recovery breakdown should disappear, strain should appear
+    fireEvent.click(findButton(screen.getByText("Strain")));
+    expect(screen.queryByText("Heart Rate Variability")).toBeNull();
+    expect(screen.getByText("Acute (7d)")).toBeTruthy();
   });
 
   it("shows yesterday's readiness as fresh (recovery reflects last night)", () => {

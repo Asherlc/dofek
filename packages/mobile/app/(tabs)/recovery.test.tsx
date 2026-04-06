@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 let mockTrendsData: Record<string, unknown> | undefined;
@@ -130,6 +130,47 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     render(<RecoveryScreen />);
 
     expect(screen.queryByText("Skin Temperature")).toBeNull();
+  });
+
+  it("expands recovery breakdown when recovery card is tapped", async () => {
+    mockReadinessData = [
+      {
+        date: "2026-04-05",
+        readinessScore: 72,
+        components: {
+          hrvScore: 80,
+          restingHrScore: 65,
+          sleepScore: 70,
+          respiratoryRateScore: 60,
+        },
+      },
+      {
+        date: "2026-04-06",
+        readinessScore: 75,
+        components: {
+          hrvScore: 82,
+          restingHrScore: 68,
+          sleepScore: 72,
+          respiratoryRateScore: 63,
+        },
+      },
+    ];
+
+    const { default: RecoveryScreen } = await import("./recovery");
+    render(<RecoveryScreen />);
+
+    // Breakdown weight labels should not be visible initially
+    expect(screen.queryByText("50%")).toBeNull();
+    expect(screen.queryByText("Resting Heart Rate")).toBeNull();
+
+    // Tap the recovery score to expand
+    fireEvent.click(screen.getByText("75"));
+
+    // Component breakdown with weight percentages should now be visible
+    expect(screen.getByText("50%")).toBeTruthy(); // HRV weight
+    expect(screen.getByText("20%")).toBeTruthy(); // RHR weight
+    expect(screen.getByText("Resting Heart Rate")).toBeTruthy();
+    expect(screen.getByText("Respiratory Rate")).toBeTruthy();
   });
 
   it("renders recovery score trend with neutral line and threshold bands", async () => {

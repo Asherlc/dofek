@@ -589,6 +589,7 @@ export function Dashboard() {
         readiness={readinessData.data}
         workloadRatio={workloadRatio.data}
         sleepPerformance={sleepPerformance.data}
+        strainTarget={strainTarget.data}
         readinessLoading={readinessData.isLoading}
         workloadLoading={workloadRatio.isLoading}
         sleepLoading={sleepPerformance.isLoading}

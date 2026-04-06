@@ -19,6 +19,7 @@
     "@dofek/nutrition": "workspace:*",
     "@dofek/onboarding": "workspace:*",
     "@dofek/providers": "workspace:*",
+    "@dofek/recovery": "workspace:*",
     "@dofek/scoring": "workspace:*",
     "@dofek/training": "workspace:*",
     "@dofek/zones": "workspace:*",
