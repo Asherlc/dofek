@@ -400,6 +400,105 @@ public class HealthKitModule: Module {
         }
 
         // ============================================================
+        // Workout Route (GPS) queries
+        // ============================================================
+
+        AsyncFunction("queryWorkoutRoutes") { (workoutUuid: String, promise: Promise) in
+            guard let uuid = UUID(uuidString: workoutUuid) else {
+                promise.reject("INVALID_UUID", "Invalid workout UUID: \(workoutUuid)")
+                return
+            }
+
+            // Find the workout by UUID
+            let workoutPredicate = HKQuery.predicateForObject(with: uuid)
+            let workoutQuery = HKSampleQuery(
+                sampleType: HKWorkoutType.workoutType(),
+                predicate: workoutPredicate,
+                limit: 1,
+                sortDescriptors: nil
+            ) { [weak self] _, results, error in
+                guard let self = self else {
+                    promise.resolve([])
+                    return
+                }
+                if let error = error {
+                    promise.reject("QUERY_ERROR", error.localizedDescription)
+                    return
+                }
+                guard let workout = results?.first as? HKWorkout else {
+                    promise.resolve([])
+                    return
+                }
+
+                // Query routes associated with this workout
+                let routePredicate = HKQuery.predicateForObjects(from: workout)
+                let routeQuery = HKSampleQuery(
+                    sampleType: HKSeriesType.workoutRoute(),
+                    predicate: routePredicate,
+                    limit: HKObjectQueryNoLimit,
+                    sortDescriptors: nil
+                ) { _, routeResults, routeError in
+                    if let routeError = routeError {
+                        promise.reject("ROUTE_QUERY_ERROR", routeError.localizedDescription)
+                        return
+                    }
+                    guard let routes = routeResults as? [HKWorkoutRoute], !routes.isEmpty else {
+                        promise.resolve([])
+                        return
+                    }
+
+                    // Collect all locations from all routes
+                    var allLocations: [[String: Any]] = []
+                    let group = DispatchGroup()
+
+                    for route in routes {
+                        group.enter()
+                        var routeLocations: [[String: Any]] = []
+
+                        let locationQuery = HKWorkoutRouteQuery(route: route) { _, locations, done, locationError in
+                            if locationError != nil {
+                                if done { group.leave() }
+                                return
+                            }
+                            guard let locations = locations else {
+                                if done { group.leave() }
+                                return
+                            }
+                            for location in locations {
+                                var dict: [String: Any] = [
+                                    "date": HealthKitQueries.formatDate(location.timestamp),
+                                    "lat": location.coordinate.latitude,
+                                    "lng": location.coordinate.longitude,
+                                ]
+                                if location.altitude >= 0 || location.verticalAccuracy >= 0 {
+                                    dict["altitude"] = location.altitude
+                                }
+                                if location.speed >= 0 {
+                                    dict["speed"] = location.speed
+                                }
+                                if location.horizontalAccuracy >= 0 {
+                                    dict["horizontalAccuracy"] = location.horizontalAccuracy
+                                }
+                                routeLocations.append(dict)
+                            }
+                            if done {
+                                allLocations.append(contentsOf: routeLocations)
+                                group.leave()
+                            }
+                        }
+                        self.healthStore.execute(locationQuery)
+                    }
+
+                    group.notify(queue: .main) {
+                        promise.resolve(allLocations)
+                    }
+                }
+                self.healthStore.execute(routeQuery)
+            }
+            self.healthStore.execute(workoutQuery)
+        }
+
+        // ============================================================
         // iOS 26+ Medications API
         // ============================================================
 

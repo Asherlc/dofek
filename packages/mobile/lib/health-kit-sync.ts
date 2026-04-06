@@ -1,6 +1,7 @@
 import type {
   DailyStatistic,
   HealthKitSample,
+  RouteLocation,
   SleepSample,
   WorkoutSample,
 } from "../modules/health-kit";
@@ -63,6 +64,14 @@ export interface HealthKitAdapter {
   ): Promise<HealthKitSample[]>;
   queryWorkouts(startDate: string, endDate: string): Promise<WorkoutSample[]>;
   querySleepSamples(startDate: string, endDate: string): Promise<SleepSample[]>;
+  queryWorkoutRoutes(workoutUuid: string): Promise<RouteLocation[]>;
+}
+
+/** Route data to push for a single workout */
+interface WorkoutRoutePayload {
+  workoutUuid: string;
+  sourceName?: string | null;
+  locations: RouteLocation[];
 }
 
 /** Abstraction over tRPC client for testability */
@@ -75,6 +84,9 @@ export interface SyncTrpcClient {
     };
     pushWorkouts: {
       mutate(input: { workouts: WorkoutSample[] }): Promise<{ inserted: number }>;
+    };
+    pushWorkoutRoutes: {
+      mutate(input: { routes: WorkoutRoutePayload[] }): Promise<{ inserted: number }>;
     };
     pushSleepSamples: {
       mutate(input: { samples: SleepSample[] }): Promise<{ inserted: number }>;
@@ -160,6 +172,26 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
   if (workouts.length > 0) {
     const result = await trpcClient.healthKitSync.pushWorkouts.mutate({ workouts });
     totalInserted += result.inserted;
+
+    // Fetch GPS routes for each workout
+    onProgress?.("Querying workout routes...");
+    const routes: WorkoutRoutePayload[] = [];
+    for (const workout of workouts) {
+      const locations = await healthKit.queryWorkoutRoutes(workout.uuid);
+      if (locations.length > 0) {
+        routes.push({
+          workoutUuid: workout.uuid,
+          sourceName: workout.sourceName,
+          locations,
+        });
+      }
+    }
+
+    if (routes.length > 0) {
+      onProgress?.(`Pushing ${routes.length} workout routes...`);
+      const routeResult = await trpcClient.healthKitSync.pushWorkoutRoutes.mutate({ routes });
+      totalInserted += routeResult.inserted;
+    }
   }
 
   // Sync sleep

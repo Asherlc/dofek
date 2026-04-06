@@ -66,6 +66,21 @@ const workoutSampleSchema = z.object({
   sourceBundle: z.string(),
 });
 
+const routeLocationSchema = z.object({
+  date: z.string(),
+  lat: z.number(),
+  lng: z.number(),
+  altitude: z.number().nullish(),
+  speed: z.number().nullish(),
+  horizontalAccuracy: z.number().nullish(),
+});
+
+const workoutRouteSchema = z.object({
+  workoutUuid: z.string(),
+  sourceName: z.string().nullish(),
+  locations: z.array(routeLocationSchema),
+});
+
 const sleepSampleSchema = z.object({
   uuid: z.string(),
   startDate: z.string(),
@@ -762,6 +777,88 @@ async function processWorkouts(
   return inserted;
 }
 
+type WorkoutRoute = z.infer<typeof workoutRouteSchema>;
+type RouteLocation = z.infer<typeof routeLocationSchema>;
+
+/** GPS channel names for route data */
+const ROUTE_CHANNELS: Array<{
+  channel: string;
+  getValue: (location: RouteLocation) => number | null | undefined;
+  round?: boolean;
+}> = [
+  { channel: "lat", getValue: (location) => location.lat },
+  { channel: "lng", getValue: (location) => location.lng },
+  { channel: "altitude", getValue: (location) => location.altitude },
+  { channel: "speed", getValue: (location) => location.speed },
+  {
+    channel: "gps_accuracy",
+    getValue: (location) => location.horizontalAccuracy,
+    round: true,
+  },
+];
+
+/** Process workout route locations — insert GPS data as sensor_sample rows */
+export async function processWorkoutRoutes(
+  db: Database,
+  userId: string,
+  routes: WorkoutRoute[],
+): Promise<number> {
+  let inserted = 0;
+
+  for (const route of routes) {
+    if (route.locations.length === 0) continue;
+
+    // Look up the activity by external_id
+    const externalId = `hk:workout:${route.workoutUuid}`;
+    const activityIdSchema = z.object({ id: z.string() });
+    const activityRows = await executeWithSchema(
+      db,
+      activityIdSchema,
+      sql`SELECT id FROM fitness.activity
+          WHERE user_id = ${userId}
+            AND provider_id = ${PROVIDER_ID}
+            AND external_id = ${externalId}
+          LIMIT 1`,
+    );
+
+    const activityId = activityRows[0]?.id ?? null;
+
+    if (!activityId) {
+      logger.warn(
+        `[apple_health] No activity found for workout route ${route.workoutUuid}, skipping`,
+      );
+      continue;
+    }
+
+    // Insert each location as sensor_sample rows (one per channel)
+    for (const location of route.locations) {
+      for (const { channel, getValue, round } of ROUTE_CHANNELS) {
+        const value = getValue(location);
+        if (value == null) continue;
+
+        const scalar = round ? Math.round(value) : value;
+        await db.execute(
+          sql`INSERT INTO fitness.sensor_sample
+                (recorded_at, user_id, provider_id, activity_id, device_id, source_type, channel, scalar)
+              VALUES (
+                ${location.date}::timestamptz,
+                ${userId},
+                ${PROVIDER_ID},
+                ${activityId}::uuid,
+                ${route.sourceName ?? null},
+                ${"api"},
+                ${channel},
+                ${scalar}::real
+              )`,
+        );
+        inserted++;
+      }
+    }
+  }
+
+  return inserted;
+}
+
 /** Process sleep samples, grouping by inBed boundaries */
 async function processSleepSamples(
   db: Database,
@@ -1132,6 +1229,24 @@ export const healthKitSyncRouter = router({
         endpoint: "pushWorkouts",
         category: "workout",
       });
+      return { inserted };
+    }),
+
+  pushWorkoutRoutes: protectedProcedure
+    .input(z.object({ routes: z.array(workoutRouteSchema) }))
+    .mutation(async ({ ctx, input }) => {
+      await ensureProvider(ctx.db, ctx.userId);
+      const inserted = await processWorkoutRoutes(ctx.db, ctx.userId, input.routes);
+
+      if (inserted > 0) {
+        await queryCache.invalidateByPrefix(`${ctx.userId}:`);
+      }
+
+      healthKitPushTotal.add(1, { endpoint: "pushWorkoutRoutes", status: "success" });
+      healthKitRecordsTotal.add(
+        input.routes.reduce((sum, route) => sum + route.locations.length, 0),
+        { endpoint: "pushWorkoutRoutes", category: "workoutRoute" },
+      );
       return { inserted };
     }),
 

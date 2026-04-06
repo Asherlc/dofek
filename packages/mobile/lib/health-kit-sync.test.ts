@@ -15,6 +15,9 @@ describe("syncHealthKitToServer", () => {
         pushWorkouts: {
           mutate: vi.fn().mockResolvedValue({ inserted: 2 }),
         },
+        pushWorkoutRoutes: {
+          mutate: vi.fn().mockResolvedValue({ inserted: 10 }),
+        },
         pushSleepSamples: {
           mutate: vi.fn().mockResolvedValue({ inserted: 1 }),
         },
@@ -59,6 +62,7 @@ describe("syncHealthKitToServer", () => {
           sourceName: "Apple Watch",
         },
       ]),
+      queryWorkoutRoutes: vi.fn().mockResolvedValue([]),
     };
   }
 
@@ -159,6 +163,65 @@ describe("syncHealthKitToServer", () => {
     });
 
     expect(result.errors.length).toBeGreaterThan(0);
+  });
+
+  it("queries routes for each workout and pushes to server", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    healthKit.queryWorkoutRoutes.mockResolvedValue([
+      { date: "2026-03-21T07:00:00Z", lat: 40.7128, lng: -74.006, altitude: 10 },
+      { date: "2026-03-21T07:00:01Z", lat: 40.7129, lng: -74.0061 },
+    ]);
+
+    await syncHealthKitToServer({
+      trpcClient: client,
+      healthKit,
+      syncRangeDays: 1,
+    });
+
+    expect(healthKit.queryWorkoutRoutes).toHaveBeenCalledWith("workout-1");
+    expect(client.healthKitSync.pushWorkoutRoutes.mutate).toHaveBeenCalledWith({
+      routes: [
+        {
+          workoutUuid: "workout-1",
+          sourceName: "Apple Watch",
+          locations: [
+            { date: "2026-03-21T07:00:00Z", lat: 40.7128, lng: -74.006, altitude: 10 },
+            { date: "2026-03-21T07:00:01Z", lat: 40.7129, lng: -74.0061 },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("skips route push when no workouts have GPS data", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    healthKit.queryWorkoutRoutes.mockResolvedValue([]);
+
+    await syncHealthKitToServer({
+      trpcClient: client,
+      healthKit,
+      syncRangeDays: 1,
+    });
+
+    expect(healthKit.queryWorkoutRoutes).toHaveBeenCalledTimes(1);
+    expect(client.healthKitSync.pushWorkoutRoutes.mutate).not.toHaveBeenCalled();
+  });
+
+  it("does not query routes when there are no workouts", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    healthKit.queryWorkouts.mockResolvedValue([]);
+
+    await syncHealthKitToServer({
+      trpcClient: client,
+      healthKit,
+      syncRangeDays: 1,
+    });
+
+    expect(healthKit.queryWorkoutRoutes).not.toHaveBeenCalled();
+    expect(client.healthKitSync.pushWorkoutRoutes.mutate).not.toHaveBeenCalled();
   });
 
   it("normalizes workout fields with null defaults", async () => {

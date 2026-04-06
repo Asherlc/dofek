@@ -1305,6 +1305,150 @@ describe("healthKitSyncRouter", () => {
     });
   });
 
+  describe("pushWorkoutRoutes", () => {
+    it("inserts sensor_sample rows for each GPS channel in route locations", async () => {
+      const execute = vi.fn().mockResolvedValue([{ id: "activity-123" }]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.pushWorkoutRoutes({
+        routes: [
+          {
+            workoutUuid: "w-route-1",
+            sourceName: "Apple Watch",
+            locations: [
+              {
+                date: "2024-01-15T10:00:00Z",
+                lat: 40.7128,
+                lng: -74.006,
+                altitude: 10.5,
+                speed: 3.2,
+                horizontalAccuracy: 5,
+              },
+            ],
+          },
+        ],
+      });
+
+      expect(result.inserted).toBeGreaterThan(0);
+
+      // Should have looked up the activity by external_id
+      const lookupCall = execute.mock.calls.find((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return (
+          serialized.includes("fitness.activity") && serialized.includes("hk:workout:w-route-1")
+        );
+      });
+      expect(lookupCall).toBeDefined();
+
+      // Should have inserted sensor_sample rows for lat, lng, altitude, speed, gps_accuracy
+      const insertCalls = execute.mock.calls.filter((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return serialized.includes("INSERT INTO fitness.sensor_sample");
+      });
+      expect(insertCalls.length).toBe(5); // lat, lng, altitude, speed, gps_accuracy
+    });
+
+    it("skips routes when no matching activity exists", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.pushWorkoutRoutes({
+        routes: [
+          {
+            workoutUuid: "nonexistent-workout",
+            locations: [{ date: "2024-01-15T10:00:00Z", lat: 40.7128, lng: -74.006 }],
+          },
+        ],
+      });
+
+      expect(result.inserted).toBe(0);
+    });
+
+    it("skips null optional channels (altitude, speed, horizontalAccuracy)", async () => {
+      const execute = vi.fn().mockResolvedValue([{ id: "activity-456" }]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.pushWorkoutRoutes({
+        routes: [
+          {
+            workoutUuid: "w-minimal",
+            locations: [{ date: "2024-01-15T10:00:00Z", lat: 51.5074, lng: -0.1278 }],
+          },
+        ],
+      });
+
+      // Only lat and lng should be inserted (no altitude, speed, or gps_accuracy)
+      const insertCalls = execute.mock.calls.filter((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return serialized.includes("INSERT INTO fitness.sensor_sample");
+      });
+      expect(insertCalls.length).toBe(2);
+      expect(result.inserted).toBe(2);
+    });
+
+    it("skips routes with empty locations array", async () => {
+      const execute = vi.fn().mockResolvedValue([{ id: "activity-789" }]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.pushWorkoutRoutes({
+        routes: [{ workoutUuid: "w-empty", locations: [] }],
+      });
+
+      expect(result.inserted).toBe(0);
+    });
+
+    it("rounds gps_accuracy to integer", async () => {
+      const execute = vi.fn().mockResolvedValue([{ id: "activity-round" }]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.pushWorkoutRoutes({
+        routes: [
+          {
+            workoutUuid: "w-round",
+            locations: [
+              {
+                date: "2024-01-15T10:00:00Z",
+                lat: 40.0,
+                lng: -74.0,
+                horizontalAccuracy: 4.7,
+              },
+            ],
+          },
+        ],
+      });
+
+      // Find the gps_accuracy insert and verify the value is rounded
+      const gpsAccuracyCall = execute.mock.calls.find((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return (
+          serialized.includes("INSERT INTO fitness.sensor_sample") &&
+          serialized.includes("gps_accuracy")
+        );
+      });
+      expect(gpsAccuracyCall).toBeDefined();
+    });
+  });
+
   describe("computeBoundsFromIsoTimestamps", () => {
     it("returns null for empty array", () => {
       expect(computeBoundsFromIsoTimestamps([])).toBeNull();

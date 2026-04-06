@@ -17,6 +17,7 @@ vi.mock("../modules/health-kit", () => ({
   queryDailyStatistics: vi.fn().mockResolvedValue([]),
   queryQuantitySamples: vi.fn().mockResolvedValue([]),
   queryWorkouts: vi.fn().mockResolvedValue([]),
+  queryWorkoutRoutes: vi.fn().mockResolvedValue([]),
   querySleepSamples: vi.fn().mockResolvedValue([]),
 }));
 
@@ -42,6 +43,9 @@ function createMockClient() {
         mutate: vi.fn().mockResolvedValue({ inserted: 0, errors: [] }),
       },
       pushWorkouts: {
+        mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
+      },
+      pushWorkoutRoutes: {
         mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
       },
       pushSleepSamples: {
