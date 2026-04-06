@@ -461,9 +461,7 @@ class TestDetectDeviceSampleRate:
         assert rate == 100
 
     def test_falls_back_for_single_sample(self) -> None:
-        df: pd.DataFrame = _make_device_df(
-            num_samples=1, device_type="watch", channels=["accel_x"]
-        )
+        df: pd.DataFrame = _make_device_df(num_samples=1, device_type="watch", channels=["accel_x"])
         rate: int = detect_device_sample_rate(df, "watch")
         assert rate == DEFAULT_DEVICE_SAMPLE_RATE_HZ
 

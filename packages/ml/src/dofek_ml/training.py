@@ -365,8 +365,10 @@ def build_device_windows(
                         grids[i, ch_idx, slot] = val
 
         device_windows[device_type] = grids
-        print(f"  Device '{device_type}': {num_channels} channels, {sample_rate} Hz, "
-              f"{grid_size} slots/window, {num_windows} windows")
+        print(
+            f"  Device '{device_type}': {num_channels} channels, {sample_rate} Hz, "
+            f"{grid_size} slots/window, {num_windows} windows"
+        )
 
     return device_windows, device_sample_rates
 
