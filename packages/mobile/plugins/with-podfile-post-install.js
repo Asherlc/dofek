@@ -1,17 +1,13 @@
 /**
  * Expo config plugin that modifies the generated Podfile.
  *
- * Handles three modifications that cannot be expressed via expo-build-properties:
+ * Handles two workarounds that cannot be expressed via expo-build-properties:
  *
- * 1. Platform scoping — moves the global `platform :ios` declaration inside the
- *    main app target block so it doesn't conflict with watchOS targets added by
- *    @bacons/apple-targets (CocoaPods issues #4201, #4703, #4856).
- *
- * 2. RNSentry header search path — the prebuilt Sentry XCFramework places
+ * 1. RNSentry header search path — the prebuilt Sentry XCFramework places
  *    private headers at native/sentry-pod/Sources/Sentry/include/ instead of
  *    the PODS_ROOT/Sentry/Sources/Sentry/include/ that RNSentry expects.
  *
- * 3. ExpoModulesCore -Wreturn-type — Xcode 26+ triggers -Werror,-Wreturn-type
+ * 2. ExpoModulesCore -Wreturn-type — Xcode 26+ triggers -Werror,-Wreturn-type
  *    in ExpoModulesCore Worklets code when react-native-reanimated is installed.
  *    Downgrade the warning to non-fatal until the upstream fix lands.
  */
@@ -51,31 +47,6 @@ const POST_INSTALL_SNIPPET = [
   "    end",
 ].join("\n");
 
-/**
- * Move the global `platform :ios` declaration inside the main target block.
- *
- * Expo prebuild generates `platform :ios, '...'` at the top level of the
- * Podfile. When a watchOS target is added as a sibling (by @bacons/apple-targets),
- * CocoaPods inherits the global iOS platform for that target, causing resolution
- * failures. Moving the platform declaration inside the target block scopes it
- * correctly.
- */
-function movePlatformInsideTarget(podfile) {
-  // Match the global platform declaration (outside any target block)
-  const platformMatch = podfile.match(/^(platform :ios, .+)$/m);
-  if (!platformMatch) return podfile;
-
-  const platformLine = platformMatch[1];
-
-  // Remove it from the global scope
-  podfile = podfile.replace(platformLine + "\n", "");
-
-  // Insert it right after the main target's `do` line
-  podfile = podfile.replace(/(target ['"]Dofek['"] do\n)/, "$1  " + platformLine + "\n");
-
-  return podfile;
-}
-
 /** @type {import('@expo/config-plugins').ConfigPlugin} */
 function withPodfilePostInstall(config) {
   return withDangerousMod(config, [
@@ -88,10 +59,6 @@ function withPodfilePostInstall(config) {
       if (podfile.includes(MARKER)) {
         return modConfig;
       }
-
-      // Move platform :ios inside the main target to avoid conflicting with
-      // watchOS targets.
-      podfile = movePlatformInsideTarget(podfile);
 
       // Insert our hooks inside the existing post_install block, just before
       // the closing `end` of the block.
