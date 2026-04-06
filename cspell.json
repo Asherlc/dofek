@@ -421,7 +421,9 @@
     "otelcol",
     "WEUR",
     "asherlc",
-    "apikey"
+    "apikey",
+    "trackpoint",
+    "trackpoints"
   ],
   "flagWords": [],
   "useGitignore": false,

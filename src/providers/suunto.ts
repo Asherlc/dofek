@@ -12,6 +12,7 @@ import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { parseFitFile } from "../fit/parser.ts";
+import { fitRecordsToSensorSamples } from "../fit/records.ts";
 import { logger } from "../logger.ts";
 import type {
   ProviderAuthSetup,
@@ -21,7 +22,6 @@ import type {
   WebhookEvent,
   WebhookProvider,
 } from "./types.ts";
-import { fitRecordsToMetricStream } from "./wahoo/parsers.ts";
 
 // ============================================================
 // Suunto API types
@@ -416,7 +416,7 @@ export class SuuntoProvider implements WebhookProvider {
                   if (fitResponse.ok) {
                     const fitBuffer = Buffer.from(await fitResponse.arrayBuffer());
                     const fitData = await parseFitFile(fitBuffer);
-                    const metricRows = fitRecordsToMetricStream(
+                    const metricRows = fitRecordsToSensorSamples(
                       fitData.records,
                       this.id,
                       activityId,

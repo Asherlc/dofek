@@ -11,6 +11,7 @@ import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { parseFitFile } from "../fit/parser.ts";
+import { fitRecordsToSensorSamples } from "../fit/records.ts";
 import { logger } from "../logger.ts";
 import { ProviderHttpClient } from "./http-client.ts";
 import type {
@@ -21,7 +22,6 @@ import type {
   WebhookEvent,
   WebhookProvider,
 } from "./types.ts";
-import { fitRecordsToMetricStream } from "./wahoo/parsers.ts";
 
 // ============================================================
 // COROS API Zod schemas
@@ -383,7 +383,7 @@ export class CorosProvider implements WebhookProvider {
                 try {
                   const fitBuffer = await client.downloadFitFile(raw.fitUrl);
                   const fitData = await parseFitFile(fitBuffer);
-                  const metricRows = fitRecordsToMetricStream(
+                  const metricRows = fitRecordsToSensorSamples(
                     fitData.records,
                     this.id,
                     activityId,
