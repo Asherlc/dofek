@@ -11,19 +11,9 @@
  *    in ExpoModulesCore Worklets code when react-native-reanimated is installed.
  *    Downgrade the warning to non-fatal until the upstream fix lands.
  */
+const { withDangerousMod } = require("@expo/config-plugins");
 const fs = require("node:fs");
 const path = require("node:path");
-
-let withDangerousMod;
-try {
-  ({ withDangerousMod } = require("@expo/config-plugins"));
-} catch {
-  // Outside expo prebuild (e.g. eoas OTA publishing), @expo/config-plugins
-  // may not be resolvable due to pnpm strict module resolution. This plugin
-  // only modifies the Podfile during prebuild, so export a no-op.
-  module.exports = (config) => config;
-  withDangerousMod = null;
-}
 
 // Marker comment used to detect if the snippet has already been inserted.
 const MARKER = "[with-podfile-post-install]";
@@ -57,34 +47,34 @@ const POST_INSTALL_SNIPPET = [
   "    end",
 ].join("\n");
 
-if (withDangerousMod) {
-  /** @type {import('@expo/config-plugins').ConfigPlugin} */
-  module.exports = function withPodfilePostInstall(config) {
-    return withDangerousMod(config, [
-      "ios",
-      (modConfig) => {
-        const podfilePath = path.join(modConfig.modRequest.platformProjectRoot, "Podfile");
-        let podfile = fs.readFileSync(podfilePath, "utf-8");
+/** @type {import('@expo/config-plugins').ConfigPlugin} */
+function withPodfilePostInstall(config) {
+  return withDangerousMod(config, [
+    "ios",
+    (modConfig) => {
+      const podfilePath = path.join(modConfig.modRequest.platformProjectRoot, "Podfile");
+      let podfile = fs.readFileSync(podfilePath, "utf-8");
 
-        // Skip if already injected (idempotent for non-clean prebuilds).
-        if (podfile.includes(MARKER)) {
-          return modConfig;
-        }
-
-        // Insert our hooks inside the existing post_install block, just before
-        // the closing `end` of the block.
-        const postInstallEndPattern = /(post_install\s+do\s+\|installer\|[\s\S]*?)(^\s*end\s*$)/m;
-        const match = podfile.match(postInstallEndPattern);
-        if (match) {
-          podfile = podfile.replace(postInstallEndPattern, "$1\n" + POST_INSTALL_SNIPPET + "\n$2");
-        } else {
-          // Fallback: append a standalone post_install block
-          podfile += "\n\npost_install do |installer|\n" + POST_INSTALL_SNIPPET + "\nend\n";
-        }
-
-        fs.writeFileSync(podfilePath, podfile);
+      // Skip if already injected (idempotent for non-clean prebuilds).
+      if (podfile.includes(MARKER)) {
         return modConfig;
-      },
-    ]);
-  };
+      }
+
+      // Insert our hooks inside the existing post_install block, just before
+      // the closing `end` of the block.
+      const postInstallEndPattern = /(post_install\s+do\s+\|installer\|[\s\S]*?)(^\s*end\s*$)/m;
+      const match = podfile.match(postInstallEndPattern);
+      if (match) {
+        podfile = podfile.replace(postInstallEndPattern, "$1\n" + POST_INSTALL_SNIPPET + "\n$2");
+      } else {
+        // Fallback: append a standalone post_install block
+        podfile += "\n\npost_install do |installer|\n" + POST_INSTALL_SNIPPET + "\nend\n";
+      }
+
+      fs.writeFileSync(podfilePath, podfile);
+      return modConfig;
+    },
+  ]);
 }
+
+module.exports = withPodfilePostInstall;
