@@ -557,7 +557,15 @@ jobs:
             -configuration Debug \
             -destination 'generic/platform=watchOS Simulator' \
             CODE_SIGNING_ALLOWED=NO \
-            2>&1 | tail -40
+            2>&1 | tee /tmp/watchos-build.log | tail -80
+      - name: Show watchOS build errors
+        if: failure()
+        run: |
+          echo "=== Errors and warnings ==="
+          grep -E '(error:|warning:|fatal error|BUILD FAILED|ld:|clang:)' /tmp/watchos-build.log | head -60 || true
+          echo ""
+          echo "=== Last 20 lines ==="
+          tail -20 /tmp/watchos-build.log || true
         timeout-minutes: 25
 
   test-swift:
