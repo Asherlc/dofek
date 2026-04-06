@@ -547,23 +547,30 @@ jobs:
           restore-keys: pods-watchos-v7-
       - name: Install CocoaPods dependencies
         run: cd packages/mobile/ios && pod install
-      - name: Extract Sentry XCFramework watchOS slice
-        run: |
-          # CocoaPods' "[CP] Copy XCFrameworks" phase extracts the right slice
-          # from the XCFramework, but it only runs in workspace builds. When
-          # building with -project (to avoid Sentry-iOS/watchOS output conflict),
-          # we need to extract the slice manually.
-          DEST="packages/mobile/ios/build/Debug-watchsimulator/XCFrameworkIntermediates/Sentry/Core"
-          mkdir -p "$DEST"
-          cp -R packages/mobile/native/sentry-pod/Sentry.xcframework/watchos-arm64_x86_64-simulator/Sentry.framework "$DEST/"
       - name: Build Watch target for simulator
         run: |
           set -o pipefail
+          BUILD_DIR="$(pwd)/packages/mobile/ios/build"
+          # Build CocoaPods dependencies for DofekWatch first. This produces
+          # libPods-DofekWatch.a and runs "[CP] Copy XCFrameworks" to extract
+          # the watchOS Sentry slice. Building from Pods.xcodeproj (not the
+          # workspace) avoids the Sentry-iOS/Sentry-watchOS duplicate output
+          # conflict that occurs with -workspace -scheme DofekWatch.
+          xcodebuild build \
+            -project packages/mobile/ios/Pods/Pods.xcodeproj \
+            -target Pods-DofekWatch \
+            -sdk watchsimulator \
+            -configuration Debug \
+            SYMROOT="$BUILD_DIR" \
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tail -20
+          # Build the watch app against the pre-built pods.
           xcodebuild build \
             -project packages/mobile/ios/Dofek.xcodeproj \
             -target DofekWatch \
             -sdk watchsimulator \
             -configuration Debug \
+            SYMROOT="$BUILD_DIR" \
             CODE_SIGNING_ALLOWED=NO \
             2>&1 | tee /tmp/watchos-build.log | tail -80
       - name: Show watchOS build errors
