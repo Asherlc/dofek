@@ -483,11 +483,21 @@ jobs:
     needs: check-mobile-changes
     if: needs.check-mobile-changes.outputs.changed == 'true'
     runs-on: macos-26
+    env:
+      DERIVED_DATA_PATH: ${{ github.workspace }}/DerivedData
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup-node-pnpm
+      - name: Install ccache
+        run: brew install ccache
+      - name: Cache ccache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/Library/Caches/ccache
+          key: ccache-ios-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**') }}
+          restore-keys: ccache-ios-
       - name: Generate native project
         working-directory: packages/mobile
         run: npx expo prebuild --clean --platform ios
@@ -499,6 +509,12 @@ jobs:
           path: packages/mobile/ios/Pods
           key: pods-v7-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/scripts/download-sentry-xcframework.sh') }}
           restore-keys: pods-v7-
+      - name: Cache DerivedData
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ env.DERIVED_DATA_PATH }}
+          key: deriveddata-v1-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/*/ios/**/*.swift', 'packages/mobile/modules/*/ios/**/*.m', 'packages/mobile/modules/*/ios/**/*.h') }}
+          restore-keys: deriveddata-v1-
       - name: Install CocoaPods dependencies
         run: cd packages/mobile/ios && pod install
       - name: Set build number
@@ -513,6 +529,7 @@ jobs:
       - name: Archive (Release, no signing)
         env:
           SENTRY_DISABLE_AUTO_UPLOAD: "true"
+          USE_CCACHE: "1"
         run: |
           set -o pipefail
           xcodebuild archive \
@@ -520,9 +537,11 @@ jobs:
             -scheme Dofek \
             -configuration Release \
             -archivePath $RUNNER_TEMP/Dofek.xcarchive \
+            -derivedDataPath "$DERIVED_DATA_PATH" \
             -destination 'generic/platform=iOS' \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGN_IDENTITY="" \
+            COMPILER_INDEX_STORE_ENABLE=NO \
             2>&1 | tail -40
         timeout-minutes: 25
 
@@ -1048,12 +1067,21 @@ jobs:
       APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
       APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      DERIVED_DATA_PATH: ${{ github.workspace }}/DerivedData
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           fetch-depth: 0 # Full history needed for git rev-list build number
       - uses: ./.github/actions/setup-node-pnpm
 
+      - name: Install ccache
+        run: brew install ccache
+      - name: Cache ccache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/Library/Caches/ccache
+          key: ccache-ios-release-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**') }}
+          restore-keys: ccache-ios-release-
       - name: Generate native project
         working-directory: packages/mobile
         run: npx expo prebuild --clean --platform ios
@@ -1066,6 +1094,13 @@ jobs:
         with:
           path: packages/mobile/ios/Pods
           key: pods-v7-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/scripts/download-sentry-xcframework.sh') }}
+
+      - name: Cache DerivedData
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ env.DERIVED_DATA_PATH }}
+          key: deriveddata-release-v1-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/*/ios/**/*.swift', 'packages/mobile/modules/*/ios/**/*.m', 'packages/mobile/modules/*/ios/**/*.h') }}
+          restore-keys: deriveddata-release-v1-
 
       - name: Install CocoaPods
         run: cd packages/mobile/ios && pod install
@@ -1106,6 +1141,8 @@ jobs:
           agvtool new-version -all "$BUILD_NUMBER"
 
       - name: Build archive
+        env:
+          USE_CCACHE: "1"
         run: |
           cd packages/mobile/ios
           xcodebuild archive \
@@ -1113,12 +1150,14 @@ jobs:
             -scheme Dofek \
             -configuration Release \
             -archivePath $RUNNER_TEMP/Dofek.xcarchive \
+            -derivedDataPath "$DERIVED_DATA_PATH" \
             -destination 'generic/platform=iOS' \
             -allowProvisioningUpdates \
             -authenticationKeyPath ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8 \
             -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
             -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
-            DEVELOPMENT_TEAM=68LEL35DQ9
+            DEVELOPMENT_TEAM=68LEL35DQ9 \
+            COMPILER_INDEX_STORE_ENABLE=NO
 
       - name: Diagnose archive signing
         if: always()
