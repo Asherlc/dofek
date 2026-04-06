@@ -116,6 +116,7 @@
       ],
       "@bacons/apple-targets",
       "./plugins/with-watch-target-exclusions",
+      "./plugins/with-watch-scheme",
       "./plugins/with-podfile-post-install"
     ]
   }
