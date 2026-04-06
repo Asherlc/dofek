@@ -1,5 +1,6 @@
 import { createHmac } from "node:crypto";
 import type { CanonicalActivityType } from "@dofek/training/training";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import {
@@ -11,9 +12,19 @@ import {
 } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { activity, bodyMeasurement, dailyMetrics, sleepSession } from "../db/schema.ts";
+import {
+  activity,
+  bodyMeasurement,
+  dailyMetrics,
+  sensorSample,
+  sleepSession,
+} from "../db/schema.ts";
+import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
+import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
+import { logger } from "../logger.ts";
+import { parseTcx, tcxToSensorSamples } from "../tcx/parser.ts";
 import { ProviderHttpClient } from "./http-client.ts";
 import type {
   ProviderAuthSetup,
@@ -316,6 +327,17 @@ export class FitbitClient extends ProviderHttpClient {
       fitbitWeightListResponseSchema,
     );
   }
+
+  async downloadTcx(tcxLink: string): Promise<string> {
+    const url = tcxLink.startsWith("http") ? tcxLink : `${FITBIT_API_BASE}${tcxLink}`;
+    const response = await this.fetchFn(url, {
+      headers: this.getHeaders(),
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to download TCX (${response.status})`);
+    }
+    return response.text();
+  }
 }
 
 // ============================================================
@@ -522,7 +544,7 @@ export class FitbitProvider implements WebhookProvider {
             for (const raw of response.activities) {
               const parsed = parseFitbitActivity(raw);
               try {
-                await db
+                const [row] = await db
                   .insert(activity)
                   .values({
                     providerId: this.id,
@@ -542,7 +564,34 @@ export class FitbitProvider implements WebhookProvider {
                       name: parsed.name,
                       raw: raw,
                     },
-                  });
+                  })
+                  .returning({ id: activity.id });
+
+                const activityId = row?.id;
+
+                // Download TCX for GPS + time-series data
+                if (activityId && raw.tcxLink) {
+                  try {
+                    const tcxData = await client.downloadTcx(raw.tcxLink);
+                    const trackpoints = parseTcx(tcxData);
+                    const sampleRows = tcxToSensorSamples(trackpoints, this.id, activityId);
+
+                    if (sampleRows.length > 0) {
+                      await db.delete(sensorSample).where(eq(sensorSample.activityId, activityId));
+                      await dualWriteToSensorSample(db, sampleRows, SOURCE_TYPE_API);
+                      logger.info(
+                        `[fitbit] Inserted ${sampleRows.length} sensor sample rows for activity ${parsed.externalId}`,
+                      );
+                    }
+                  } catch (tcxError) {
+                    errors.push({
+                      message: `TCX for ${parsed.externalId}: ${tcxError instanceof Error ? tcxError.message : String(tcxError)}`,
+                      externalId: parsed.externalId,
+                      cause: tcxError,
+                    });
+                  }
+                }
+
                 count++;
               } catch (err) {
                 errors.push({
