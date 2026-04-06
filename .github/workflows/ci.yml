@@ -570,11 +570,22 @@ jobs:
         if: failure()
         run: |
           echo "=== Errors and warnings ==="
-          grep -E '(error:|warning:|fatal error|BUILD FAILED|ld:|clang:)' /tmp/watchos-build.log | head -60 || true
+          ERRORS=$(grep -E '(error:|fatal error|BUILD FAILED|ld:|clang:)' /tmp/watchos-build.log | head -30 || true)
+          echo "$ERRORS"
           echo ""
           echo "=== Last 20 lines ==="
           tail -20 /tmp/watchos-build.log || true
-        timeout-minutes: 25
+          # Surface errors as GitHub annotations so they're visible in the checks summary
+          echo "$ERRORS" | while IFS= read -r line; do
+            [ -n "$line" ] && echo "::error::$line"
+          done
+      - name: Upload watchOS build log
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: watchos-build-log
+          path: /tmp/watchos-build.log
+          retention-days: 3
 
   test-swift:
     name: Swift Tests
