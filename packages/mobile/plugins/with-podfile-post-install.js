@@ -24,7 +24,9 @@ const PODS_ROOT_REF = "${PODS_ROOT}";
 const POST_INSTALL_SNIPPET = [
   "",
   "    # " + MARKER + " RNSentry header search path for prebuilt XCFramework",
-  "    local_sentry_headers = '\"" + PODS_ROOT_REF + "/../native/sentry-pod/Sources/Sentry/include\"'",
+  "    local_sentry_headers = '\"" +
+    PODS_ROOT_REF +
+    "/../native/sentry-pod/Sources/Sentry/include\"'",
   "    installer.pods_project.targets.each do |target|",
   "      if target.name == 'RNSentry'",
   "        target.build_configurations.each do |config|",
