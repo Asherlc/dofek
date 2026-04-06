@@ -10,6 +10,10 @@ set_if_unset() {
   case "$key" in
     *[!A-Za-z0-9_]*|"") return ;;
   esac
+  # Strip surrounding single quotes (Infisical dotenv format wraps values)
+  case "$value" in
+    \'*\') value="${value#\'}"; value="${value%\'}" ;;
+  esac
   if ! printenv "$key" >/dev/null 2>&1; then
     export "$key=$value"
   fi
