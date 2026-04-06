@@ -318,6 +318,12 @@ function AuthGate() {
               title: "BLE Probe",
             }}
           />
+          <Stack.Screen
+            name="preview"
+            options={{
+              title: "Preview Update",
+            }}
+          />
         </Stack>
       </QueryClientProvider>
     </trpc.Provider>

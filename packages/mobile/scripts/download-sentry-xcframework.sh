@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Downloads Sentry.xcframework (prebuilt static binary) from GitHub releases.
-# Run this before `pod install` — the local podspec at ios/LocalPods/Sentry
+# Run this before `pod install` — the local podspec at native/sentry-pod
 # wraps this XCFramework so CocoaPods doesn't build Sentry from source.
 #
 # Why: Sentry 9.7.0 uses @_implementationOnly Swift imports without library
@@ -12,8 +12,7 @@ set -euo pipefail
 SENTRY_VERSION="${1:-9.7.0}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-IOS_DIR="$SCRIPT_DIR/../ios"
-LOCAL_POD_DIR="$IOS_DIR/LocalPods/Sentry"
+LOCAL_POD_DIR="$SCRIPT_DIR/../native/sentry-pod"
 XCFRAMEWORK_DIR="$LOCAL_POD_DIR/Sentry.xcframework"
 
 # Idempotent — skip if already present

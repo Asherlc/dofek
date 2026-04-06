@@ -14,6 +14,7 @@
     "lint:fix": "biome check --write ."
   },
   "dependencies": {
+    "@bacons/apple-targets": "4.0.6",
     "@dofek/auth": "workspace:*",
     "@dofek/format": "workspace:*",
     "@dofek/nutrition": "workspace:*",
@@ -22,6 +23,7 @@
     "@dofek/scoring": "workspace:*",
     "@dofek/training": "workspace:*",
     "@dofek/zones": "workspace:*",
+    "@expo/config-plugins": "55.0.7",
     "@opentelemetry/api-logs": "0.214.0",
     "@opentelemetry/exporter-logs-otlp-http": "0.214.0",
     "@opentelemetry/resources": "2.6.1",
@@ -35,6 +37,7 @@
     "dofek-server": "workspace:*",
     "expo": "55.0.6",
     "expo-apple-authentication": "55.0.10-canary-20260328-bdc6273",
+    "expo-build-properties": "55.0.11",
     "expo-camera": "55.0.9",
     "expo-file-system": "55.0.11",
     "expo-haptics": "55.0.9",
