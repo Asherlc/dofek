@@ -38,10 +38,13 @@ set +a
 # Fetch secrets from Infisical into secrets.env
 # This file provides both compose-level variable substitution (--env-file)
 # and container-level env vars (env_file: in services).
+# Strip single quotes from values — Infisical's dotenv format wraps values
+# in single quotes (KEY='value') but Docker Compose treats quotes as literal.
 infisical export \
   --env=prod \
   --format=dotenv \
   --projectId="54712f56-98a9-4531-9e97-0b588d2e5a88" \
+  | sed "s/='\\(.*\\)'$/=\\1/" \
   > secrets.env
 
 # Start services with config (config.env + .env) and secrets (secrets.env)
