@@ -488,14 +488,17 @@ jobs:
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup-node-pnpm
+      - name: Generate native project
+        working-directory: packages/mobile
+        run: npx expo prebuild --clean --platform ios
       - name: Download Sentry XCFramework
         run: packages/mobile/scripts/download-sentry-xcframework.sh
       - name: Cache CocoaPods
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: packages/mobile/ios/Pods
-          key: pods-v6-${{ hashFiles('packages/mobile/ios/Podfile', 'packages/mobile/ios/Podfile.lock', 'packages/mobile/scripts/download-sentry-xcframework.sh') }}
-          restore-keys: pods-v6-
+          key: pods-v7-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/scripts/download-sentry-xcframework.sh') }}
+          restore-keys: pods-v7-
       - name: Install CocoaPods dependencies
         run: cd packages/mobile/ios && pod install
       - name: Set build number
@@ -530,6 +533,14 @@ jobs:
     runs-on: macos-26
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Generate native project
+        working-directory: packages/mobile
+        run: npx expo prebuild --clean --platform ios
+      - name: Download Sentry XCFramework
+        run: packages/mobile/scripts/download-sentry-xcframework.sh
+      - name: Install CocoaPods dependencies
+        run: cd packages/mobile/ios && pod install
       - name: Build Watch target for simulator
         run: |
           xcodebuild build \
@@ -540,7 +551,7 @@ jobs:
             -destination 'generic/platform=watchOS Simulator' \
             CODE_SIGNING_ALLOWED=NO \
             | tail -20
-        timeout-minutes: 5
+        timeout-minutes: 10
 
   test-swift:
     name: Swift Tests
@@ -968,10 +979,13 @@ jobs:
             echo "Manual dispatch — forcing TestFlight upload"
           else
             CHANGED=$(git diff --name-only HEAD~1...HEAD -- \
-              'packages/mobile/ios/**' \
+              'packages/mobile/app.json' \
+              'packages/mobile/app.config.ts' \
+              'packages/mobile/plugins/**' \
+              'packages/mobile/targets/**' \
+              'packages/mobile/native/**' \
               'packages/mobile/modules/*/ios/**' \
               'packages/mobile/modules/*/Package.swift' \
-              'packages/mobile/app.json' \
               'packages/mobile/modules/*/expo-module.config.json')
             if [ -n "$CHANGED" ]; then
               echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -999,6 +1013,10 @@ jobs:
           fetch-depth: 0 # Full history needed for git rev-list build number
       - uses: ./.github/actions/setup-node-pnpm
 
+      - name: Generate native project
+        working-directory: packages/mobile
+        run: npx expo prebuild --clean --platform ios
+
       - name: Download Sentry XCFramework
         run: packages/mobile/scripts/download-sentry-xcframework.sh
 
@@ -1006,7 +1024,7 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: packages/mobile/ios/Pods
-          key: pods-v6-${{ hashFiles('packages/mobile/ios/Podfile', 'packages/mobile/ios/Podfile.lock', 'packages/mobile/scripts/download-sentry-xcframework.sh') }}
+          key: pods-v7-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/scripts/download-sentry-xcframework.sh') }}
 
       - name: Install CocoaPods
         run: cd packages/mobile/ios && pod install
@@ -1110,7 +1128,7 @@ jobs:
         run: |
           xcodebuild -exportArchive \
             -archivePath $RUNNER_TEMP/Dofek.xcarchive \
-            -exportOptionsPlist packages/mobile/ios/ExportOptions.plist \
+            -exportOptionsPlist packages/mobile/build/ExportOptions.plist \
             -exportPath $RUNNER_TEMP/export \
             -allowProvisioningUpdates \
             -authenticationKeyPath ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8 \

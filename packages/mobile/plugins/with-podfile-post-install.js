@@ -1,0 +1,65 @@
+/**
+ * Expo config plugin that adds post_install hooks to the Podfile.
+ *
+ * Handles two workarounds that cannot be expressed via expo-build-properties:
+ *
+ * 1. RNSentry header search path — the prebuilt Sentry XCFramework places
+ *    private headers at native/sentry-pod/Sources/Sentry/include/ instead of
+ *    the ${PODS_ROOT}/Sentry/Sources/Sentry/include/ that RNSentry expects.
+ *
+ * 2. ExpoModulesCore -Wreturn-type — Xcode 26+ triggers -Werror,-Wreturn-type
+ *    in ExpoModulesCore Worklets code when react-native-reanimated is installed.
+ *    Downgrade the warning to non-fatal until the upstream fix lands.
+ */
+const { withDangerousMod } = require("@expo/config-plugins");
+const fs = require("node:fs");
+const path = require("node:path");
+
+const POST_INSTALL_SNIPPET = `
+    # [with-podfile-post-install] RNSentry header search path for prebuilt XCFramework
+    local_sentry_headers = '"${PODS_ROOT}/../native/sentry-pod/Sources/Sentry/include"'
+    installer.pods_project.targets.each do |target|
+      if target.name == 'RNSentry'
+        target.build_configurations.each do |config|
+          paths = config.build_settings['HEADER_SEARCH_PATHS'] || '$(inherited)'
+          config.build_settings['HEADER_SEARCH_PATHS'] = paths + ' ' + local_sentry_headers
+        end
+      end
+
+      # [with-podfile-post-install] ExpoModulesCore Xcode 26+ warning workaround
+      if target.name == 'ExpoModulesCore'
+        target.build_configurations.each do |config|
+          flags = config.build_settings['OTHER_CPLUSPLUSFLAGS'] || ['$(inherited)']
+          flags << '-Wno-error=return-type'
+          config.build_settings['OTHER_CPLUSPLUSFLAGS'] = flags
+        end
+      end
+    end`;
+
+/** @type {import('@expo/config-plugins').ConfigPlugin} */
+function withPodfilePostInstall(config) {
+  return withDangerousMod(config, [
+    "ios",
+    (modConfig) => {
+      const podfilePath = path.join(modConfig.modRequest.platformProjectRoot, "Podfile");
+      let podfile = fs.readFileSync(podfilePath, "utf-8");
+
+      // Insert our hooks inside the existing post_install block, right after
+      // the react_native_post_install call.
+      if (podfile.includes("react_native_post_install")) {
+        podfile = podfile.replace(
+          /(react_native_post_install\([^)]*\))/,
+          `$1\n${POST_INSTALL_SNIPPET}`,
+        );
+      } else {
+        // Fallback: append a standalone post_install block
+        podfile += `\n\npost_install do |installer|\n${POST_INSTALL_SNIPPET}\nend\n`;
+      }
+
+      fs.writeFileSync(podfilePath, podfile);
+      return modConfig;
+    },
+  ]);
+}
+
+module.exports = withPodfilePostInstall;

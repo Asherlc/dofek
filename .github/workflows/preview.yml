@@ -207,21 +207,9 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-    env:
-      # 5 preview slots: each PR gets a deterministic slot so multiple PRs
-      # can be tested in parallel on different preview build variants.
-      PREVIEW_SLOTS: 5
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - uses: ./.github/actions/setup-node-pnpm
-
-      - name: Assign preview slot
-        id: slot
-        run: |
-          SLOT=$(( (${{ github.event.number }} % $PREVIEW_SLOTS) + 1 ))
-          echo "number=$SLOT" >> "$GITHUB_OUTPUT"
-          echo "channel=preview-$SLOT" >> "$GITHUB_OUTPUT"
-          echo "PR #${{ github.event.number }} → preview slot $SLOT (channel: preview-$SLOT)"
 
       - name: Publish OTA to PR branch
         working-directory: packages/mobile
@@ -234,17 +222,16 @@ jobs:
             --nonInteractive \
             --message "PR #${{ github.event.number }}: ${{ github.event.pull_request.title }}"
 
-      - name: Map preview channel to PR branch
+      - name: Create channel for PR
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          CHANNEL: ${{ steps.slot.outputs.channel }}
         run: |
-          # Point this slot's channel at the PR branch so the matching
-          # preview build variant picks up the update.
-          npx eas-cli@latest channel:edit "$CHANNEL" \
+          # Create a dynamic channel for this PR and point it at the PR branch.
+          # Channel is created on first push, updated on subsequent pushes.
+          npx eas-cli@latest channel:edit "pr-${{ github.event.number }}" \
             --branch "pr-${{ github.event.number }}" \
             --non-interactive 2>/dev/null || \
-          npx eas-cli@latest channel:create "$CHANNEL" \
+          npx eas-cli@latest channel:create "pr-${{ github.event.number }}" \
             --branch "pr-${{ github.event.number }}" \
             --non-interactive 2>/dev/null || true
 
@@ -257,19 +244,15 @@ jobs:
 
             | | |
             |---|---|
-            | **Preview Slot** | `${{ steps.slot.outputs.number }}` of ${{ env.PREVIEW_SLOTS }} |
-            | **Channel** | `${{ steps.slot.outputs.channel }}` |
-            | **OTA Branch** | `pr-${{ github.event.number }}` |
+            | **Channel** | `pr-${{ github.event.number }}` |
             | **Deep Link** | `dofek://preview/pr-${{ github.event.number }}` |
             | **Commit** | ${{ github.sha }} |
 
             **To test on device:**
-            1. Install **Dofek Preview ${{ steps.slot.outputs.number }}** on your iOS device (if not already installed)
-            2. Tap deep link: `dofek://preview/pr-${{ github.event.number }}`
-            3. The app checks for the PR update and reloads automatically
+            1. Build and install the preview client: `PREVIEW_CHANNEL=pr-${{ github.event.number }} npx expo prebuild --clean -p ios`
+            2. Or tap deep link on an existing preview build: `dofek://preview/pr-${{ github.event.number }}`
 
-            > Each preview slot is a separate app (`com.dofek.preview-${{ steps.slot.outputs.number }}`).
-            > Multiple PRs can be tested in parallel using different slots.
+            > Each PR gets its own channel. Build a preview client with `PREVIEW_CHANNEL=pr-{N}` to test.
 
   # ── Teardown on PR close ───────────────────────────────────────────────
 
@@ -359,11 +342,13 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - uses: ./.github/actions/setup-node-pnpm
 
-      - name: Delete OTA branch
+      - name: Delete OTA channel and branch
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
-          # Best-effort cleanup — branch may not exist if OTA was never published
+          # Best-effort cleanup — channel/branch may not exist if OTA was never published
+          npx eas-cli@latest channel:delete "pr-${{ github.event.number }}" \
+            --non-interactive 2>/dev/null || true
           npx eas-cli@latest branch:delete "pr-${{ github.event.number }}" \
             --non-interactive 2>/dev/null || true
 

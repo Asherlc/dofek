@@ -6,8 +6,8 @@ describe("app.config", () => {
     vi.resetModules();
   });
 
-  it("uses production config when PREVIEW_SLOT is not set", async () => {
-    vi.stubEnv("PREVIEW_SLOT", "");
+  it("uses production config when PREVIEW_CHANNEL is not set", async () => {
+    vi.stubEnv("PREVIEW_CHANNEL", "");
 
     const config = (await import("./app.config")).default;
 
@@ -16,28 +16,18 @@ describe("app.config", () => {
     expect(config.updates?.requestHeaders?.["expo-channel-name"]).toBe("production");
   });
 
-  it("overrides channel and bundle ID for preview slot 1", async () => {
-    vi.stubEnv("PREVIEW_SLOT", "1");
+  it("overrides channel and bundle ID for preview", async () => {
+    vi.stubEnv("PREVIEW_CHANNEL", "pr-42");
 
     const config = (await import("./app.config")).default;
 
-    expect(config.name).toBe("Dofek Preview 1");
-    expect(config.ios?.bundleIdentifier).toBe("com.dofek.preview-1");
-    expect(config.updates?.requestHeaders?.["expo-channel-name"]).toBe("preview-1");
-  });
-
-  it("overrides channel and bundle ID for preview slot 3", async () => {
-    vi.stubEnv("PREVIEW_SLOT", "3");
-
-    const config = (await import("./app.config")).default;
-
-    expect(config.name).toBe("Dofek Preview 3");
-    expect(config.ios?.bundleIdentifier).toBe("com.dofek.preview-3");
-    expect(config.updates?.requestHeaders?.["expo-channel-name"]).toBe("preview-3");
+    expect(config.name).toBe("Dofek Preview");
+    expect(config.ios?.bundleIdentifier).toBe("com.dofek.preview");
+    expect(config.updates?.requestHeaders?.["expo-channel-name"]).toBe("pr-42");
   });
 
   it("preserves OTA server URL in preview mode", async () => {
-    vi.stubEnv("PREVIEW_SLOT", "2");
+    vi.stubEnv("PREVIEW_CHANNEL", "pr-99");
 
     const config = (await import("./app.config")).default;
 
@@ -46,7 +36,7 @@ describe("app.config", () => {
   });
 
   it("preserves iOS entitlements in preview mode", async () => {
-    vi.stubEnv("PREVIEW_SLOT", "1");
+    vi.stubEnv("PREVIEW_CHANNEL", "pr-1");
 
     const config = (await import("./app.config")).default;
 

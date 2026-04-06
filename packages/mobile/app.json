@@ -39,6 +39,7 @@
         "NSBluetoothAlwaysUsageDescription": "Dofek connects to your WHOOP strap via Bluetooth to record accelerometer data during workouts.",
         "BGTaskSchedulerPermittedIdentifiers": ["com.dofek.accelerometer-refresh"],
         "LSSupportsOpeningDocumentsInPlace": true,
+        "CADisableMinimumFrameDurationOnPhone": true,
         "CFBundleDocumentTypes": [
           {
             "CFBundleTypeName": "Dofek Import File",
@@ -74,7 +75,46 @@
           "isIosBackgroundLocationEnabled": true
         }
       ],
-      "@sentry/react-native/expo"
+      [
+        "@sentry/react-native/expo",
+        {
+          "useNativeInit": true,
+          "options": {
+            "dsn": "https://971f1d756067049f70cdf4a04e8771a4@o4511073249067008.ingest.us.sentry.io/4511073386627073"
+          }
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "extraPods": [
+              {
+                "name": "Sentry",
+                "path": "../native/sentry-pod"
+              },
+              {
+                "name": "ExpoHealthKit",
+                "path": "../modules/health-kit/ios"
+              },
+              {
+                "name": "ExpoCoreMotion",
+                "path": "../modules/core-motion/ios"
+              },
+              {
+                "name": "ExpoWatchMotion",
+                "path": "../modules/watch-motion/ios"
+              },
+              {
+                "name": "ExpoWhoopBle",
+                "path": "../modules/whoop-ble/ios"
+              }
+            ]
+          }
+        }
+      ],
+      "@bacons/apple-targets",
+      "./plugins/with-podfile-post-install"
     ]
   }
 }

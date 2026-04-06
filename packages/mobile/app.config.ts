@@ -1,23 +1,23 @@
 import type { ExpoConfig } from "expo/config";
 import baseConfig from "./app.json";
 
-const PREVIEW_SLOT = process.env.PREVIEW_SLOT;
+const PREVIEW_CHANNEL = process.env.PREVIEW_CHANNEL;
 
 const config: ExpoConfig = {
   ...baseConfig.expo,
-  ...(PREVIEW_SLOT
+  ...(PREVIEW_CHANNEL
     ? {
-        name: `Dofek Preview ${PREVIEW_SLOT}`,
+        name: `Dofek Preview`,
         slug: baseConfig.expo.slug,
         updates: {
           ...baseConfig.expo.updates,
           requestHeaders: {
-            "expo-channel-name": `preview-${PREVIEW_SLOT}`,
+            "expo-channel-name": PREVIEW_CHANNEL,
           },
         },
         ios: {
           ...baseConfig.expo.ios,
-          bundleIdentifier: `com.dofek.preview-${PREVIEW_SLOT}`,
+          bundleIdentifier: `com.dofek.preview`,
         },
       }
     : {}),
