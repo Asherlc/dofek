@@ -204,7 +204,9 @@ const EXPORT_TABLES: ExportTableConfig[] = [
  * directly to the next page via the (recorded_at, provider_id, channel) tuple.
  */
 function createBatchedJsonStream(db: SyncDatabase, userId: string): Readable {
-  let cursor: { recordedAt: string; providerId: string; channel: string } | undefined;
+  let cursor:
+    | { recordedAt: string; providerId: string; sourceType: string; channel: string }
+    | undefined;
   let started = false;
   let done = false;
   let totalEmitted = 0;
@@ -218,7 +220,7 @@ function createBatchedJsonStream(db: SyncDatabase, userId: string): Readable {
 
       try {
         const cursorCondition = cursor
-          ? sql`AND (recorded_at, provider_id, channel) > (${cursor.recordedAt}::timestamptz, ${cursor.providerId}, ${cursor.channel})`
+          ? sql`AND (recorded_at, provider_id, source_type, channel) > (${cursor.recordedAt}::timestamptz, ${cursor.providerId}, ${cursor.sourceType}, ${cursor.channel})`
           : sql``;
 
         const rows = await executeWithSchema(
@@ -227,7 +229,7 @@ function createBatchedJsonStream(db: SyncDatabase, userId: string): Readable {
           sql`SELECT * FROM fitness.sensor_sample
               WHERE user_id = ${userId}
               ${cursorCondition}
-              ORDER BY recorded_at, provider_id, channel
+              ORDER BY recorded_at, provider_id, source_type, channel
               LIMIT ${BATCH_SIZE}`,
         );
 
@@ -258,6 +260,7 @@ function createBatchedJsonStream(db: SyncDatabase, userId: string): Readable {
               recordedAt:
                 rawRecordedAt instanceof Date ? rawRecordedAt.toISOString() : String(rawRecordedAt),
               providerId: String(lastRow.provider_id),
+              sourceType: String(lastRow.source_type),
               channel: String(lastRow.channel),
             };
           }

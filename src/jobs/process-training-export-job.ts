@@ -75,6 +75,7 @@ export type SensorSampleRow = z.infer<typeof sensorSampleRowSchema>;
 
 interface Cursor {
   recordedAt: string;
+  userId: string;
   providerId: string;
   channel: string;
 }
@@ -91,7 +92,7 @@ function buildConditions(since?: string, until?: string, cursor?: Cursor): SQL[]
   if (until) conditions.push(sql`ss.recorded_at < ${until}::timestamptz`);
   if (cursor) {
     conditions.push(
-      sql`(ss.recorded_at, ss.provider_id, ss.channel) > (${cursor.recordedAt}::timestamptz, ${cursor.providerId}, ${cursor.channel})`,
+      sql`(ss.recorded_at, ss.user_id, ss.provider_id, ss.channel) > (${cursor.recordedAt}::timestamptz, ${cursor.userId}::uuid, ${cursor.providerId}, ${cursor.channel})`,
     );
   }
   return conditions;
@@ -354,7 +355,7 @@ async function fetchBatch(
           ss.vector
         FROM fitness.sensor_sample ss
         ${whereClause}
-        ORDER BY ss.recorded_at, ss.provider_id, ss.channel
+        ORDER BY ss.recorded_at, ss.user_id, ss.provider_id, ss.channel
         LIMIT ${BATCH_SIZE}`,
   );
 }
@@ -400,17 +401,18 @@ async function exportSensorSamples(
   let exported = 0;
   let cursor: Cursor | undefined;
 
-  // Cursor-based pagination with double-buffered fetching:
-  // Start the next Postgres query while appending the current batch to DuckDB.
-  let currentBatch = await fetchBatch(db, since, until, undefined);
-
   try {
+    // Cursor-based pagination with double-buffered fetching:
+    // Start the next Postgres query while appending the current batch to DuckDB.
+    let currentBatch = await fetchBatch(db, since, until, undefined);
+
     while (currentBatch.length > 0) {
       // Update cursor from last row of current batch
       const lastRow = currentBatch[currentBatch.length - 1];
       if (!lastRow) break;
       cursor = {
         recordedAt: lastRow.recorded_at,
+        userId: lastRow.user_id,
         providerId: lastRow.provider_id,
         channel: lastRow.channel,
       };
