@@ -207,9 +207,21 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+    env:
+      # 5 preview slots: each PR gets a deterministic slot so multiple PRs
+      # can be tested in parallel on different preview build variants.
+      PREVIEW_SLOTS: 5
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - uses: ./.github/actions/setup-node-pnpm
+
+      - name: Assign preview slot
+        id: slot
+        run: |
+          SLOT=$(( (${{ github.event.number }} % $PREVIEW_SLOTS) + 1 ))
+          echo "number=$SLOT" >> "$GITHUB_OUTPUT"
+          echo "channel=preview-$SLOT" >> "$GITHUB_OUTPUT"
+          echo "PR #${{ github.event.number }} → preview slot $SLOT (channel: preview-$SLOT)"
 
       - name: Publish OTA to PR branch
         working-directory: packages/mobile
@@ -225,13 +237,14 @@ jobs:
       - name: Map preview channel to PR branch
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          CHANNEL: ${{ steps.slot.outputs.channel }}
         run: |
-          # Point the "preview" channel at this PR's branch so the preview
-          # dev client picks up the update on next check.
-          npx eas-cli@latest channel:edit preview \
+          # Point this slot's channel at the PR branch so the matching
+          # preview build variant picks up the update.
+          npx eas-cli@latest channel:edit "$CHANNEL" \
             --branch "pr-${{ github.event.number }}" \
             --non-interactive 2>/dev/null || \
-          npx eas-cli@latest channel:create preview \
+          npx eas-cli@latest channel:create "$CHANNEL" \
             --branch "pr-${{ github.event.number }}" \
             --non-interactive 2>/dev/null || true
 
@@ -244,17 +257,19 @@ jobs:
 
             | | |
             |---|---|
+            | **Preview Slot** | `${{ steps.slot.outputs.number }}` of ${{ env.PREVIEW_SLOTS }} |
+            | **Channel** | `${{ steps.slot.outputs.channel }}` |
             | **OTA Branch** | `pr-${{ github.event.number }}` |
-            | **Channel** | `preview` |
             | **Deep Link** | `dofek://preview/pr-${{ github.event.number }}` |
             | **Commit** | ${{ github.sha }} |
 
             **To test on device:**
-            1. Open the Dofek preview build on your iOS device
-            2. Scan or tap: `dofek://preview/pr-${{ github.event.number }}`
-            3. The app will check for and apply the PR update automatically
+            1. Install **Dofek Preview ${{ steps.slot.outputs.number }}** on your iOS device (if not already installed)
+            2. Tap deep link: `dofek://preview/pr-${{ github.event.number }}`
+            3. The app checks for the PR update and reloads automatically
 
-            > Requires the preview development build (channel: `preview`) installed on the device.
+            > Each preview slot is a separate app (`com.dofek.preview-${{ steps.slot.outputs.number }}`).
+            > Multiple PRs can be tested in parallel using different slots.
 
   # ── Teardown on PR close ───────────────────────────────────────────────
 
