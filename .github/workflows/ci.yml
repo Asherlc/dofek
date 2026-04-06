@@ -545,9 +545,8 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild build \
-            -project packages/mobile/ios/Dofek.xcodeproj \
-            -target DofekWatch \
-            -sdk watchsimulator \
+            -workspace packages/mobile/ios/Dofek.xcworkspace \
+            -scheme DofekWatch \
             -configuration Debug \
             -destination 'generic/platform=watchOS Simulator' \
             CODE_SIGNING_ALLOWED=NO \

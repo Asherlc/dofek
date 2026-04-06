@@ -222,8 +222,7 @@ jobs:
           npx eoas@2.3.16 publish \
             --branch "pr-$PR_NUMBER" \
             --platform ios \
-            --nonInteractive \
-            --message "PR #$PR_NUMBER: $PR_TITLE"
+            --nonInteractive
 
       - name: Create channel for PR
         env:
