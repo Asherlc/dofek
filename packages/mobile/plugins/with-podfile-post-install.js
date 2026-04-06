@@ -60,13 +60,12 @@ function withPodfilePostInstall(config) {
         return modConfig;
       }
 
-      // Insert our hooks inside the existing post_install block, right after
-      // the react_native_post_install call.
-      if (podfile.includes("react_native_post_install")) {
-        podfile = podfile.replace(
-          /(react_native_post_install\([^)]*\))/,
-          "$1\n" + POST_INSTALL_SNIPPET,
-        );
+      // Insert our hooks inside the existing post_install block, just before
+      // the closing `end` of the block.
+      const postInstallEndPattern = /(post_install\s+do\s+\|installer\|[\s\S]*?)(^\s*end\s*$)/m;
+      const match = podfile.match(postInstallEndPattern);
+      if (match) {
+        podfile = podfile.replace(postInstallEndPattern, "$1\n" + POST_INSTALL_SNIPPET + "\n$2");
       } else {
         // Fallback: append a standalone post_install block
         podfile += "\n\npost_install do |installer|\n" + POST_INSTALL_SNIPPET + "\nend\n";
