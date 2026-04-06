@@ -1,3 +1,8 @@
+// @bacons/apple-targets includes all Swift files in the target directory as app
+// target sources. XCTest is only available on the framework search path for test
+// targets, so guard the entire file to prevent "no such module" errors during
+// app builds (both device and simulator).
+#if canImport(XCTest)
 import Foundation
 import XCTest
 
@@ -156,3 +161,4 @@ final class AccelerometerRecorderStreamingTests: XCTestCase {
         XCTAssertEqual(parsedZ, 0.000001, accuracy: 1e-15)
     }
 }
+#endif

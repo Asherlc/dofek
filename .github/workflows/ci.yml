@@ -543,6 +543,7 @@ jobs:
         run: cd packages/mobile/ios && pod install
       - name: Build Watch target for simulator
         run: |
+          set -o pipefail
           xcodebuild build \
             -project packages/mobile/ios/Dofek.xcodeproj \
             -target DofekWatch \
@@ -550,7 +551,7 @@ jobs:
             -configuration Debug \
             -destination 'generic/platform=watchOS Simulator' \
             CODE_SIGNING_ALLOWED=NO \
-            | tail -20
+            2>&1 | tail -40
         timeout-minutes: 10
 
   test-swift:
