@@ -5,7 +5,7 @@ import {
   FitbitProvider,
   fitbitOAuthConfig,
   mapFitbitActivityType,
-} from "./fitbit.ts";
+} from "./fitbit/index.ts";
 
 // ============================================================
 // Extended Fitbit tests covering:

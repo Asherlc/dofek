@@ -24,7 +24,7 @@ import {
   parseFitbitDailySummary,
   parseFitbitSleep,
   parseFitbitWeightLog,
-} from "./fitbit.ts";
+} from "./fitbit/index.ts";
 import type { WebhookEvent } from "./types.ts";
 
 // ============================================================

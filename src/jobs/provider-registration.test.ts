@@ -63,7 +63,7 @@ vi.mock("../providers/strong-csv.ts", () => ({
 vi.mock("../providers/polar.ts", () => ({
   PolarProvider: vi.fn(() => mockProviders.polar),
 }));
-vi.mock("../providers/fitbit.ts", () => ({
+vi.mock("../providers/fitbit/index.ts", () => ({
   FitbitProvider: vi.fn(() => mockProviders.fitbit),
 }));
 vi.mock("../providers/garmin.ts", () => ({

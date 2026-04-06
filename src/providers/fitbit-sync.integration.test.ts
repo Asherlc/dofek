@@ -20,7 +20,7 @@ import {
   parseFitbitDailySummary,
   parseFitbitSleep,
   parseFitbitWeightLog,
-} from "./fitbit.ts";
+} from "./fitbit/index.ts";
 
 function fakeActivity(overrides: Partial<FitbitActivity> = {}): FitbitActivity {
   return {
