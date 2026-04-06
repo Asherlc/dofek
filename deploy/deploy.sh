@@ -3,6 +3,7 @@
 # Called by Terraform deploy-config and cloud-init.
 set -e
 
+# Keep in sync with INFISICAL_CLI_VERSION ARG in Dockerfile
 INFISICAL_CLI_VERSION=0.43.69
 
 install_infisical() {
@@ -17,8 +18,12 @@ install_infisical() {
     *) INF_ARCH=$ARCH ;;
   esac
 
-  curl -fsSL "https://github.com/Infisical/cli/releases/download/v${INFISICAL_CLI_VERSION}/cli_${INFISICAL_CLI_VERSION}_linux_${INF_ARCH}.tar.gz" \
-    | tar xz -C /usr/local/bin infisical
+  INF_TAR="cli_${INFISICAL_CLI_VERSION}_linux_${INF_ARCH}.tar.gz"
+  curl -fsSL "https://github.com/Infisical/cli/releases/download/v${INFISICAL_CLI_VERSION}/${INF_TAR}" -o "/tmp/${INF_TAR}"
+  curl -fsSL "https://github.com/Infisical/cli/releases/download/v${INFISICAL_CLI_VERSION}/checksums.txt" -o /tmp/checksums.txt
+  cd /tmp && grep "${INF_TAR}" checksums.txt | sha256sum -c
+  tar xzf "/tmp/${INF_TAR}" -C /usr/local/bin infisical
+  rm -f "/tmp/${INF_TAR}" /tmp/checksums.txt
   chmod +x /usr/local/bin/infisical
 }
 
