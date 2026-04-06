@@ -247,9 +247,6 @@ importers:
       '@dofek/providers':
         specifier: workspace:*
         version: link:../providers-meta
-      '@dofek/recovery':
-        specifier: workspace:*
-        version: link:../recovery
       '@dofek/scoring':
         specifier: workspace:*
         version: link:../scoring
@@ -542,9 +539,6 @@ importers:
       '@dofek/providers':
         specifier: workspace:*
         version: link:../providers-meta
-      '@dofek/recovery':
-        specifier: workspace:*
-        version: link:../recovery
       '@dofek/scoring':
         specifier: workspace:*
         version: link:../scoring

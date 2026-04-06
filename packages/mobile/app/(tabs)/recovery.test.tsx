@@ -143,6 +143,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
           sleepScore: 70,
           respiratoryRateScore: 60,
         },
+        weights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
       },
       {
         date: "2026-04-06",
@@ -153,6 +154,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
           sleepScore: 72,
           respiratoryRateScore: 63,
         },
+        weights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
       },
     ];
 
@@ -184,6 +186,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
           sleepScore: 62,
           respiratoryRateScore: 57,
         },
+        weights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
       },
       {
         date: "2026-03-30",
@@ -194,6 +197,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
           sleepScore: 77,
           respiratoryRateScore: 79,
         },
+        weights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
       },
     ];
 
