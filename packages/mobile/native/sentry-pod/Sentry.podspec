@@ -6,6 +6,7 @@
 #
 # SentrySessionReplayHybridSDK.m is compiled separately because the prebuilt
 # XCFramework from GitHub releases is missing it (sentry-cocoa build bug).
+# It is iOS-only (guarded by SENTRY_TARGET_REPLAY_SUPPORTED).
 #
 # Version must match what RNSentry expects (s.dependency 'Sentry', '9.7.0').
 Pod::Spec.new do |s|
@@ -25,6 +26,7 @@ Pod::Spec.new do |s|
 
   s.subspec "Core" do |sp|
     sp.vendored_frameworks = "Sentry.xcframework"
-    sp.source_files = "SentrySessionReplayHybridSDK.m"
+    # SentrySessionReplayHybridSDK is iOS-only (Session Replay not supported on watchOS)
+    sp.ios.source_files = "SentrySessionReplayHybridSDK.m"
   end
 end
