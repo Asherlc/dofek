@@ -252,12 +252,22 @@ async function exportSensorSamples(
             ss.device_id,
             ss.source_type,
             ss.channel,
-            ss.activity_id::text AS activity_id,
-            a.activity_type,
+            COALESCE(ss.activity_id, a_time.id)::text AS activity_id,
+            COALESCE(a_direct.activity_type, a_time.activity_type) AS activity_type,
             ss.scalar,
             ss.vector
           FROM fitness.sensor_sample ss
-          LEFT JOIN fitness.activity a ON a.id = ss.activity_id
+          LEFT JOIN fitness.activity a_direct ON a_direct.id = ss.activity_id
+          LEFT JOIN LATERAL (
+            SELECT a.id, a.activity_type
+            FROM fitness.activity a
+            WHERE ss.activity_id IS NULL
+              AND a.user_id = ss.user_id
+              AND ss.recorded_at >= a.started_at
+              AND ss.recorded_at <= a.ended_at
+            ORDER BY a.started_at DESC
+            LIMIT 1
+          ) a_time ON TRUE
           ${timeFilter}
           ORDER BY ss.recorded_at
           LIMIT ${BATCH_SIZE} OFFSET ${offset}`,
