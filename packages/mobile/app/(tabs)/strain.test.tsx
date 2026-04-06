@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mockRouterPush = vi.fn();
 
 let mockWorkloadRatioData: unknown;
+let mockStrainTargetData: unknown;
 let mockActivities: unknown[] = [];
 let mockWeeklyVolume: unknown[] = [];
 
@@ -18,6 +19,9 @@ vi.mock("../../lib/trpc", () => ({
     recovery: {
       workloadRatio: {
         useQuery: () => ({ data: mockWorkloadRatioData, isLoading: false }),
+      },
+      strainTarget: {
+        useQuery: () => ({ data: mockStrainTargetData, isLoading: false }),
       },
     },
     training: {
@@ -48,6 +52,7 @@ describe("StrainScreen recent activity navigation", () => {
     mockRouterPush.mockReset();
     mockWeeklyVolume = [];
     mockActivities = [];
+    mockStrainTargetData = undefined;
     mockWorkloadRatioData = {
       displayedStrain: 16,
       displayedDate: "2026-03-28",
@@ -85,6 +90,33 @@ describe("StrainScreen recent activity navigation", () => {
     fireEvent.click(screen.getByText("Morning Ride"));
 
     expect(mockRouterPush).toHaveBeenCalledWith("/activity/42");
+  });
+
+  it("renders strain target card when target data is available", async () => {
+    mockStrainTargetData = {
+      targetStrain: 14,
+      currentStrain: 10,
+      progressPercent: 71,
+      zone: "Push",
+      explanation: "Recovery is strong (78). Push for a high-strain day to build fitness.",
+    };
+
+    const { default: StrainScreen } = await import("./strain");
+    render(<StrainScreen />);
+
+    expect(screen.getByText("Daily Strain Target")).toBeTruthy();
+    expect(screen.getByText("14")).toBeTruthy();
+    expect(screen.getByText("Push")).toBeTruthy();
+    expect(screen.getByText("71% reached")).toBeTruthy();
+  });
+
+  it("does not render strain target card when no target data", async () => {
+    mockStrainTargetData = undefined;
+
+    const { default: StrainScreen } = await import("./strain");
+    render(<StrainScreen />);
+
+    expect(screen.queryByText("Daily Strain Target")).toBeNull();
   });
 
   it("navigates to activities list when tapping View all", async () => {

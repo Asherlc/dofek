@@ -4,14 +4,14 @@ import {
   formatActivityTypeLabel,
 } from "@dofek/training/training";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ActivityCard } from "../../components/ActivityCard";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { SparkLine } from "../../components/charts/SparkLine";
 import { StrainGauge } from "../../components/charts/StrainGauge";
 import { DaySelector } from "../../components/DaySelector";
-import { aggregateWeeklyVolume, WorkloadRatio } from "../../lib/scoring";
+import { aggregateWeeklyVolume, StrainScore, WorkloadRatio } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useRefresh } from "../../lib/useRefresh";
@@ -22,10 +22,14 @@ export default function StrainScreen() {
   const router = useRouter();
   const [days, setDays] = useState(30);
   const units = useUnitConverter();
+  const endDate = useMemo(() => new Date().toLocaleDateString("en-CA"), []);
   const workloadQuery = trpc.recovery.workloadRatio.useQuery({ days });
   const workloadResult = workloadQuery.data;
   const workloadData = workloadResult?.timeSeries ?? [];
   const todayWorkload = workloadData[workloadData.length - 1];
+
+  const strainTargetQuery = trpc.recovery.strainTarget.useQuery({ days, endDate });
+  const strainTarget = strainTargetQuery.data;
 
   const activitiesQuery = trpc.training.activityStats.useQuery({ days });
   const activities = ActivityRowSchema.array()
@@ -94,6 +98,52 @@ export default function StrainScreen() {
             <StrainGauge strain={dailyStrain} size={160} />
             <Text style={styles.gaugeCaption}>{strainDateLabel}</Text>
           </View>
+
+          {/* Strain Target */}
+          {strainTarget && (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Daily Strain Target</Text>
+              <View style={styles.targetHeader}>
+                <View style={styles.targetValueRow}>
+                  <Text style={styles.targetValue}>{strainTarget.targetStrain}</Text>
+                  <Text
+                    style={[
+                      styles.zoneBadge,
+                      {
+                        backgroundColor:
+                          strainTarget.zone === "Push"
+                            ? `${colors.positive}20`
+                            : strainTarget.zone === "Recovery"
+                              ? `${colors.danger}20`
+                              : `${colors.warning}20`,
+                        color:
+                          strainTarget.zone === "Push"
+                            ? colors.positive
+                            : strainTarget.zone === "Recovery"
+                              ? colors.danger
+                              : colors.warning,
+                      },
+                    ]}
+                  >
+                    {strainTarget.zone}
+                  </Text>
+                </View>
+                <Text style={styles.targetProgress}>{strainTarget.progressPercent}% reached</Text>
+              </View>
+              <View style={styles.targetBarTrack}>
+                <View
+                  style={[
+                    styles.targetBarFill,
+                    {
+                      width: `${Math.min(strainTarget.progressPercent, 100)}%`,
+                      backgroundColor: new StrainScore(strainTarget.currentStrain).color,
+                    },
+                  ]}
+                />
+              </View>
+              <Text style={styles.targetExplanation}>{strainTarget.explanation}</Text>
+            </View>
+          )}
 
           {/* Workload breakdown */}
           <View style={styles.card}>
@@ -288,6 +338,52 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     textAlign: "center",
+  },
+  targetHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  targetValueRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  targetValue: {
+    fontSize: 28,
+    fontWeight: "700",
+    color: colors.text,
+    fontVariant: ["tabular-nums"],
+  },
+  zoneBadge: {
+    fontSize: 11,
+    fontWeight: "700",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    overflow: "hidden",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  targetProgress: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    fontVariant: ["tabular-nums"],
+  },
+  targetBarTrack: {
+    height: 8,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: 4,
+    overflow: "hidden",
+  },
+  targetBarFill: {
+    height: "100%",
+    borderRadius: 4,
+  },
+  targetExplanation: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    lineHeight: 18,
   },
   sparkContainer: {
     alignItems: "center",
