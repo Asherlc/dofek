@@ -25,6 +25,7 @@ const readinessRows: ReadinessRow[] = [
       sleepScore: 66,
       respiratoryRateScore: 61,
     },
+    weights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
   },
   {
     date: "2026-03-30",
@@ -35,6 +36,7 @@ const readinessRows: ReadinessRow[] = [
       sleepScore: 79,
       respiratoryRateScore: 76,
     },
+    weights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
   },
 ];
 

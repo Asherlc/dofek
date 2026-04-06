@@ -47,6 +47,7 @@ export type {
   HrvVariabilityRow,
   ReadinessComponents,
   ReadinessRow,
+  ReadinessWeights,
   SleepAnalyticsResult,
   SleepConsistencyRow,
   SleepNightlyRow,

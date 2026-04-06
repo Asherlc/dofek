@@ -17,7 +17,8 @@ const mockReadiness = [
   {
     date: today,
     readinessScore: 75,
-    components: { hrvScore: 80, restingHrScore: 70, sleepScore: 75, respiratoryRateScore: 65 },
+    components: { hrvScore: 80, restingHrScore: 70, sleepScore: 72, respiratoryRateScore: 65 },
+    weights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
   },
 ];
 
@@ -124,7 +125,8 @@ describe("DailyOverview", () => {
         sleepLoading={false}
       />,
     );
-    expect(screen.getByText("Sleep")).toBeTruthy();
+    // "Sleep" appears both in the ring label and the always-mounted recovery breakdown
+    expect(screen.getAllByText("Sleep").length).toBeGreaterThanOrEqual(1);
   });
 
   it("shows placeholder for missing readiness data", () => {
@@ -173,8 +175,8 @@ describe("DailyOverview", () => {
       />,
     );
 
-    // Click the empty sleep ring
-    fireEvent.click(findButton(screen.getByText("Sleep")));
+    // Click the empty sleep ring (use aria-label since "Sleep" appears in breakdown too)
+    fireEvent.click(screen.getByRole("button", { name: "Sleep score breakdown" }));
 
     // Should show an explanation
     expect(screen.getByText(/Sleep score combines/)).toBeTruthy();
@@ -193,8 +195,8 @@ describe("DailyOverview", () => {
     );
     // Recovery ring should render its score
     expect(screen.getByText("75")).toBeTruthy();
-    // Sleep ring should render
-    expect(screen.getByText("Sleep")).toBeTruthy();
+    // Sleep ring should render (use getAllByText since "Sleep" appears in recovery breakdown too)
+    expect(screen.getAllByText("Sleep").length).toBeGreaterThanOrEqual(1);
     // Strain ring should show a skeleton pulse
     const skeletons = document.querySelectorAll(".shimmer");
     expect(skeletons.length).toBe(2); // circle + label skeleton
@@ -212,13 +214,17 @@ describe("DailyOverview", () => {
       />,
     );
 
-    // Breakdown should not be visible initially
-    expect(screen.queryByText("Heart Rate Variability")).toBeNull();
+    const recoveryButton = screen.getByRole("button", { name: "Recovery score breakdown" });
+
+    // Recovery ring should not be expanded initially
+    expect(recoveryButton.getAttribute("aria-expanded")).toBe("false");
 
     // Click the recovery ring button
-    fireEvent.click(findButton(screen.getByText("75")));
+    fireEvent.click(recoveryButton);
 
-    // Breakdown should now be visible with component labels and weight percentages
+    // Recovery ring should now be expanded
+    expect(recoveryButton.getAttribute("aria-expanded")).toBe("true");
+    // Breakdown content should be in the DOM with component labels and weight percentages
     expect(screen.getByText("Heart Rate Variability")).toBeTruthy();
     expect(screen.getByText("Resting Heart Rate")).toBeTruthy();
     expect(screen.getByText("(50%)")).toBeTruthy(); // HRV weight
@@ -246,11 +252,13 @@ describe("DailyOverview", () => {
       />,
     );
 
-    // Breakdown should not be visible initially
-    expect(screen.queryByText("Daily target:")).toBeNull();
+    const strainButton = screen.getByRole("button", { name: "Strain score breakdown" });
+
+    // Strain ring should not be expanded initially
+    expect(strainButton.getAttribute("aria-expanded")).toBe("false");
 
     // Click the strain ring
-    fireEvent.click(findButton(screen.getByText("Strain")));
+    fireEvent.click(strainButton);
 
     // Breakdown should show target and load stats
     expect(screen.getByText("14")).toBeTruthy(); // target strain value
@@ -272,8 +280,8 @@ describe("DailyOverview", () => {
       />,
     );
 
-    // Click the sleep ring
-    fireEvent.click(findButton(screen.getByText("Sleep", { selector: "span" })));
+    // Click the sleep ring (use aria-label since "Sleep" appears in recovery breakdown too)
+    fireEvent.click(screen.getByRole("button", { name: "Sleep score breakdown" }));
 
     // Breakdown should show sufficiency and efficiency labels
     expect(screen.getByText("Sufficiency")).toBeTruthy();
@@ -293,13 +301,13 @@ describe("DailyOverview", () => {
       />,
     );
 
-    const recoveryButton = findButton(screen.getByText("75"));
+    const recoveryButton = screen.getByRole("button", { name: "Recovery score breakdown" });
     fireEvent.click(recoveryButton);
-    expect(screen.getByText("Heart Rate Variability")).toBeTruthy();
+    expect(recoveryButton.getAttribute("aria-expanded")).toBe("true");
 
     // Click again to collapse
     fireEvent.click(recoveryButton);
-    expect(screen.queryByText("Heart Rate Variability")).toBeNull();
+    expect(recoveryButton.getAttribute("aria-expanded")).toBe("false");
   });
 
   it("switches breakdown when a different ring is clicked", () => {
@@ -314,14 +322,17 @@ describe("DailyOverview", () => {
       />,
     );
 
-    // Expand recovery
-    fireEvent.click(findButton(screen.getByText("75")));
-    expect(screen.getByText("Heart Rate Variability")).toBeTruthy();
+    const recoveryButton = screen.getByRole("button", { name: "Recovery score breakdown" });
+    const strainButton = screen.getByRole("button", { name: "Strain score breakdown" });
 
-    // Click strain — recovery breakdown should disappear, strain should appear
-    fireEvent.click(findButton(screen.getByText("Strain")));
-    expect(screen.queryByText("Heart Rate Variability")).toBeNull();
-    expect(screen.getByText("Acute (7d)")).toBeTruthy();
+    // Expand recovery
+    fireEvent.click(recoveryButton);
+    expect(recoveryButton.getAttribute("aria-expanded")).toBe("true");
+
+    // Click strain — recovery should collapse, strain should expand
+    fireEvent.click(strainButton);
+    expect(recoveryButton.getAttribute("aria-expanded")).toBe("false");
+    expect(strainButton.getAttribute("aria-expanded")).toBe("true");
   });
 
   it("shows yesterday's readiness as fresh (recovery reflects last night)", () => {
@@ -338,9 +349,10 @@ describe("DailyOverview", () => {
             components: {
               hrvScore: 80,
               restingHrScore: 70,
-              sleepScore: 75,
+              sleepScore: 72,
               respiratoryRateScore: 65,
             },
+            weights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
           },
         ]}
         workloadRatio={{
@@ -390,9 +402,10 @@ describe("DailyOverview", () => {
             components: {
               hrvScore: 80,
               restingHrScore: 70,
-              sleepScore: 75,
+              sleepScore: 72,
               respiratoryRateScore: 65,
             },
+            weights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
           },
         ]}
         workloadRatio={{

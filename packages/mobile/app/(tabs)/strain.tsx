@@ -136,7 +136,7 @@ export default function StrainScreen() {
                     styles.targetBarFill,
                     {
                       width: `${Math.min(strainTarget.progressPercent, 100)}%`,
-                      backgroundColor: new StrainScore(dailyStrain).color,
+                      backgroundColor: new StrainScore(strainTarget.currentStrain).color,
                     },
                   ]}
                 />

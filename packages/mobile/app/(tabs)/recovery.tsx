@@ -1,5 +1,4 @@
 import { formatDateYmd, formatNumber } from "@dofek/format/format";
-import { defaultReadinessWeights } from "@dofek/recovery/readiness";
 import { SCORE_ZONES, scoreColor, scoreLabel } from "@dofek/scoring/scoring";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
@@ -67,6 +66,7 @@ function ComponentBar({ label, value, weight }: { label: string; value: number; 
 
 function RecoveryBreakdown({
   components,
+  weights,
 }: {
   components: {
     hrvScore: number;
@@ -74,8 +74,13 @@ function RecoveryBreakdown({
     sleepScore: number;
     respiratoryRateScore: number;
   };
+  weights: {
+    hrv: number;
+    restingHr: number;
+    sleep: number;
+    respiratoryRate: number;
+  };
 }) {
-  const weights = defaultReadinessWeights();
   return (
     <View style={breakdownStyles.container}>
       <ComponentBar
@@ -291,7 +296,10 @@ export default function RecoveryScreen() {
                   <Text style={styles.expandHint}>{recoveryExpanded ? "▲" : "▼"}</Text>
                 </View>
                 {recoveryExpanded && latestReadiness && (
-                  <RecoveryBreakdown components={latestReadiness.components} />
+                  <RecoveryBreakdown
+                    components={latestReadiness.components}
+                    weights={latestReadiness.weights}
+                  />
                 )}
               </Card>
             </TouchableOpacity>

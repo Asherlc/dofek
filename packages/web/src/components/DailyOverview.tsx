@@ -1,4 +1,3 @@
-import { defaultReadinessWeights } from "@dofek/recovery/readiness";
 import { statusColors } from "@dofek/scoring/colors";
 import {
   StrainScore,
@@ -34,6 +33,7 @@ function ScoreRing({
   color,
   size = 140,
   strokeWidth = 10,
+  label,
   children,
   onClick,
   expanded,
@@ -44,6 +44,8 @@ function ScoreRing({
   color: string;
   size?: number;
   strokeWidth?: number;
+  /** Accessible label identifying which ring (e.g. "Recovery", "Strain") */
+  label?: string;
   children: React.ReactNode;
   onClick?: () => void;
   expanded?: boolean;
@@ -70,9 +72,10 @@ function ScoreRing({
       className={`relative bg-transparent border-none p-0 ${onClick ? "cursor-pointer" : ""}`}
       style={{ width: size, height: size }}
       onClick={onClick}
+      aria-expanded={onClick ? (expanded ?? false) : undefined}
+      aria-label={onClick && label ? `${label} score breakdown` : undefined}
     >
-      <svg width={size} height={size} role="img" aria-label="Score ring">
-        <title>Score ring</title>
+      <svg width={size} height={size} aria-hidden="true">
         <circle
           cx={center}
           cy={center}
@@ -169,8 +172,7 @@ function ComponentBar({ label, value, weight }: { label: string; value: number; 
 }
 
 function RecoveryBreakdown({ readiness }: { readiness: ReadinessRow }) {
-  const weights = defaultReadinessWeights();
-  const { components } = readiness;
+  const { components, weights } = readiness;
 
   return (
     <div className="space-y-2">
@@ -241,7 +243,7 @@ function StrainBreakdown({
               className="h-full rounded-full transition-all duration-500"
               style={{
                 width: `${Math.min(strainTarget.progressPercent, 100)}%`,
-                backgroundColor: new StrainScore(workloadRatio.displayedStrain).color,
+                backgroundColor: new StrainScore(strainTarget.currentStrain).color,
               }}
             />
           </div>
@@ -354,12 +356,19 @@ function ReadinessRing({
   expanded: boolean;
 }) {
   const color = scoreColor(score);
-  const label = scoreLabel(score);
+  const ringLabel = scoreLabel(score);
   const displayScore = useCountUp(score, 800);
 
   return (
     <div className="flex flex-col items-center gap-2">
-      <ScoreRing value={score} maxValue={100} color={color} onClick={onClick} expanded={expanded}>
+      <ScoreRing
+        value={score}
+        maxValue={100}
+        color={color}
+        onClick={onClick}
+        expanded={expanded}
+        label="Recovery"
+      >
         <span className="text-3xl font-bold font-mono tabular-nums" style={{ color }}>
           {displayScore}
         </span>
@@ -371,7 +380,7 @@ function ReadinessRing({
         className="text-xs font-semibold px-2 py-0.5 rounded-full"
         style={{ backgroundColor: `${color}20`, color }}
       >
-        {label}
+        {ringLabel}
       </span>
     </div>
   );
@@ -390,7 +399,7 @@ function StrainRing({
 }) {
   const strainScore = new StrainScore(strain);
   const color = strainScore.color;
-  const label = strainScore.label;
+  const ringLabel = strainScore.label;
   const displayValue = useCountUp(strain, 1200, 1);
 
   return (
@@ -402,6 +411,7 @@ function StrainRing({
         onClick={onClick}
         expanded={expanded}
         targetFraction={targetFraction}
+        label="Strain"
       >
         <span className="text-3xl font-bold font-mono tabular-nums" style={{ color }}>
           {displayValue}
@@ -414,7 +424,7 @@ function StrainRing({
         className="text-xs font-semibold px-2 py-0.5 rounded-full"
         style={{ backgroundColor: `${color}20`, color }}
       >
-        {label}
+        {ringLabel}
       </span>
     </div>
   );
@@ -446,6 +456,7 @@ function SleepRing({
         color={color}
         onClick={onClick}
         expanded={expanded}
+        label="Sleep"
       >
         <span className="text-3xl font-bold font-mono tabular-nums" style={{ color }}>
           {displayScore}
@@ -541,6 +552,7 @@ export function DailyOverview({
               color={chartThemeColors.gridLine}
               onClick={() => toggle("recovery")}
               expanded={expandedRing === "recovery"}
+              label="Recovery"
             >
               <span className="text-2xl font-bold text-subtle">--</span>
               <span className="text-[10px] font-semibold uppercase tracking-widest text-subtle">
@@ -568,6 +580,7 @@ export function DailyOverview({
               color={chartThemeColors.gridLine}
               onClick={() => toggle("strain")}
               expanded={expandedRing === "strain"}
+              label="Strain"
             >
               <span className="text-2xl font-bold text-subtle">--</span>
               <span className="text-[10px] font-semibold uppercase tracking-widest text-subtle">
@@ -594,6 +607,7 @@ export function DailyOverview({
               color={chartThemeColors.gridLine}
               onClick={() => toggle("sleep")}
               expanded={expandedRing === "sleep"}
+              label="Sleep"
             >
               <span className="text-2xl font-bold text-subtle">--</span>
               <span className="text-[10px] font-semibold uppercase tracking-widest text-subtle">
@@ -605,36 +619,30 @@ export function DailyOverview({
         )}
       </div>
 
-      {/* Expandable breakdown panels */}
-      {expandedRing === "recovery" && (
-        <ExpandableBreakdown expanded>
-          {latestReadiness && readinessIsFresh ? (
-            <RecoveryBreakdown readiness={latestReadiness} />
-          ) : (
-            <EmptyBreakdown message="Recovery score needs HRV, resting heart rate, and sleep data from a connected wearable." />
-          )}
-        </ExpandableBreakdown>
-      )}
+      {/* Expandable breakdown panels — kept mounted for open/close animation */}
+      <ExpandableBreakdown expanded={expandedRing === "recovery"}>
+        {latestReadiness && readinessIsFresh ? (
+          <RecoveryBreakdown readiness={latestReadiness} />
+        ) : (
+          <EmptyBreakdown message="Recovery score needs HRV, resting heart rate, and sleep data from a connected wearable." />
+        )}
+      </ExpandableBreakdown>
 
-      {expandedRing === "strain" && (
-        <ExpandableBreakdown expanded>
-          {workloadRatio && workloadRatio.timeSeries.length > 0 ? (
-            <StrainBreakdown workloadRatio={workloadRatio} strainTarget={strainTarget} />
-          ) : (
-            <EmptyBreakdown message="Strain is calculated from workout duration and heart rate. Log an activity with a heart rate monitor to see your strain." />
-          )}
-        </ExpandableBreakdown>
-      )}
+      <ExpandableBreakdown expanded={expandedRing === "strain"}>
+        {workloadRatio && workloadRatio.timeSeries.length > 0 ? (
+          <StrainBreakdown workloadRatio={workloadRatio} strainTarget={strainTarget} />
+        ) : (
+          <EmptyBreakdown message="Strain is calculated from workout duration and heart rate. Log an activity with a heart rate monitor to see your strain." />
+        )}
+      </ExpandableBreakdown>
 
-      {expandedRing === "sleep" && (
-        <ExpandableBreakdown expanded>
-          {freshSleepPerformance ? (
-            <SleepBreakdown performance={freshSleepPerformance} />
-          ) : (
-            <EmptyBreakdown message="Sleep score combines how long you slept vs. how much you need (70%) and sleep efficiency (30%). Connect a sleep tracker to see your breakdown." />
-          )}
-        </ExpandableBreakdown>
-      )}
+      <ExpandableBreakdown expanded={expandedRing === "sleep"}>
+        {freshSleepPerformance ? (
+          <SleepBreakdown performance={freshSleepPerformance} />
+        ) : (
+          <EmptyBreakdown message="Sleep score combines how long you slept vs. how much you need (70%) and sleep efficiency (30%). Connect a sleep tracker to see your breakdown." />
+        )}
+      </ExpandableBreakdown>
     </div>
   );
 }

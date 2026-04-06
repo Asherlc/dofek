@@ -16,6 +16,7 @@ const meta = {
           sleepScore: 65,
           respiratoryRateScore: 80,
         },
+        weights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
       },
       {
         date: "2026-03-31",
@@ -26,6 +27,7 @@ const meta = {
           sleepScore: 92,
           respiratoryRateScore: 94,
         },
+        weights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
       },
     ],
   },

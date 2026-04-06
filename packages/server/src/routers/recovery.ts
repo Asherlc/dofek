@@ -1,4 +1,8 @@
-import { type ReadinessComponents, ReadinessScore } from "@dofek/recovery/readiness";
+import {
+  type ReadinessComponents,
+  ReadinessScore,
+  type ReadinessWeights,
+} from "@dofek/recovery/readiness";
 import { computeSleepConsistencyScore } from "@dofek/recovery/sleep-consistency";
 import { StrainScore, zScoreToRecoveryScore } from "@dofek/scoring/scoring";
 import { computeStrainTarget } from "@dofek/scoring/strain-target";
@@ -17,7 +21,7 @@ import { sleepNightDate } from "../lib/sql-fragments.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
-export type { ReadinessComponents };
+export type { ReadinessComponents, ReadinessWeights };
 
 export interface HrvVariabilityRow {
   date: string;
@@ -73,6 +77,7 @@ export interface ReadinessRow {
   date: string;
   readinessScore: number;
   components: ReadinessComponents;
+  weights: ReadinessWeights;
 }
 
 export interface StrainTargetResult {
@@ -550,6 +555,7 @@ export const recoveryRouter = router({
           date: metrics.date,
           readinessScore: readiness.score,
           components: readiness.components,
+          weights,
         });
       }
 
