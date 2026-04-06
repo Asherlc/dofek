@@ -198,13 +198,18 @@ const EXPORT_TABLES: ExportTableConfig[] = [
 ];
 
 /**
- * Query metric_stream in batches and return a Readable stream of JSON array content.
- * This avoids loading the entire table into memory.
+ * Query sensor_sample in batches using cursor-based (keyset) pagination and
+ * return a Readable stream of JSON array content. Unlike OFFSET pagination
+ * which re-scans all preceding rows on each page, cursor pagination jumps
+ * directly to the next page via the (recorded_at, provider_id, channel) tuple.
  */
 function createBatchedJsonStream(db: SyncDatabase, userId: string): Readable {
-  let offset = 0;
+  let cursor:
+    | { recordedAt: string; providerId: string; sourceType: string; channel: string }
+    | undefined;
   let started = false;
   let done = false;
+  let totalEmitted = 0;
 
   return new Readable({
     async read() {
@@ -214,13 +219,18 @@ function createBatchedJsonStream(db: SyncDatabase, userId: string): Readable {
       }
 
       try {
+        const cursorCondition = cursor
+          ? sql`AND (recorded_at, provider_id, source_type, channel) > (${cursor.recordedAt}::timestamptz, ${cursor.providerId}, ${cursor.sourceType}, ${cursor.channel})`
+          : sql``;
+
         const rows = await executeWithSchema(
           db,
           exportRowSchema,
           sql`SELECT * FROM fitness.sensor_sample
               WHERE user_id = ${userId}
-              ORDER BY recorded_at
-              LIMIT ${BATCH_SIZE} OFFSET ${offset}`,
+              ${cursorCondition}
+              ORDER BY recorded_at, provider_id, source_type, channel
+              LIMIT ${BATCH_SIZE}`,
         );
 
         if (!started) {
@@ -235,11 +245,26 @@ function createBatchedJsonStream(db: SyncDatabase, userId: string): Readable {
         }
 
         for (let i = 0; i < rows.length; i++) {
-          const prefix = offset === 0 && i === 0 ? "" : ",\n";
+          const prefix = totalEmitted === 0 && i === 0 ? "" : ",\n";
           this.push(prefix + JSON.stringify(rows[i]));
         }
 
-        offset += rows.length;
+        totalEmitted += rows.length;
+
+        // Update cursor from last row for next page
+        if (rows.length > 0) {
+          const lastRow = rows[rows.length - 1];
+          if (lastRow) {
+            const rawRecordedAt = lastRow.recorded_at;
+            cursor = {
+              recordedAt:
+                rawRecordedAt instanceof Date ? rawRecordedAt.toISOString() : String(rawRecordedAt),
+              providerId: String(lastRow.provider_id),
+              sourceType: String(lastRow.source_type),
+              channel: String(lastRow.channel),
+            };
+          }
+        }
 
         if (rows.length < BATCH_SIZE) {
           this.push("\n]");

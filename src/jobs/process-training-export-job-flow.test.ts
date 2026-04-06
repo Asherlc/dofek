@@ -74,7 +74,7 @@ describe("processTrainingExportJob", () => {
 
     // Call sequence:
     // 1. sensor_sample COUNT
-    // 2. sensor_sample rows batch 1
+    // 2. sensor_sample rows batch (cursor-based, with LATERAL JOIN for activity matching)
     mockExecuteWithSchema.mockResolvedValueOnce([{ count: "3" }]).mockResolvedValueOnce([
       {
         recorded_at: "2026-03-30T15:00:00Z",
@@ -84,7 +84,7 @@ describe("processTrainingExportJob", () => {
         source_type: "ble",
         channel: "heart_rate",
         activity_id: null,
-        activity_type: "cycling",
+        activity_type: null,
         scalar: 142,
         vector: null,
       },
@@ -128,9 +128,10 @@ describe("processTrainingExportJob", () => {
 
     // Should write manifest (Parquet is written by DuckDB, not writeFileSync)
     expect(mockWriteFileSync).toHaveBeenCalledTimes(1); // manifest only
+    // 2 calls: COUNT + 1 batch (cursor-based, JOINs provide activity_type)
     expect(mockExecuteWithSchema).toHaveBeenCalledTimes(2);
 
-    // DuckDB appender receives scalar and vector payloads, then closes connection in finally
+    // DuckDB appender receives activity_type from LATERAL JOIN (row 3 has cycling)
     expect(mockDuckDb.append_varchar).toHaveBeenCalledWith(expect.anything(), "cycling");
     expect(mockDuckDb.create_varchar).toHaveBeenCalledWith("[0.012,0.138,-0.987]");
     expect(mockDuckDb.append_value).toHaveBeenCalledTimes(1);
