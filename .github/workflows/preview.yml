@@ -113,8 +113,9 @@ jobs:
           SERVER_IP: ${{ steps.apply.outputs.server_ip }}
           HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
           SERVER_NAME: dofek-preview-pr-${{ github.event.number }}
+          PREVIEW_URL: ${{ steps.apply.outputs.preview_url }}
         run: |
-          URL="${{ steps.apply.outputs.preview_url }}"
+          URL="$PREVIEW_URL"
           echo "=== Preview Health Check ==="
           echo "Server: $SERVER_NAME ($SERVER_IP)"
           echo "URL:    $URL"
@@ -215,12 +216,14 @@ jobs:
         working-directory: packages/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          PR_NUMBER: ${{ github.event.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
           npx eoas@2.3.16 publish \
-            --branch "pr-${{ github.event.number }}" \
+            --branch "pr-$PR_NUMBER" \
             --platform ios \
             --nonInteractive \
-            --message "PR #${{ github.event.number }}: ${{ github.event.pull_request.title }}"
+            --message "PR #$PR_NUMBER: $PR_TITLE"
 
       - name: Create channel for PR
         env:
