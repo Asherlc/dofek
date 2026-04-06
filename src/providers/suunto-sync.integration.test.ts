@@ -63,6 +63,13 @@ function suuntoHandlers(workouts: Array<ReturnType<typeof fakeWorkout>>) {
     http.get("https://cloudapi.suunto.com/v2/workouts", () => {
       return HttpResponse.json({ payload: workouts });
     }),
+
+    // FIT file export for GPS + time-series data
+    http.get("https://cloudapi.suunto.com/v2/workout/exportFit/:workoutKey", () => {
+      // Return a minimal valid FIT file header (14 bytes) that parseFitFile will accept
+      // In practice the FIT download may fail gracefully — non-fatal error
+      return new HttpResponse(null, { status: 404 });
+    }),
   ];
 }
 
