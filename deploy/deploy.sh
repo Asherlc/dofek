@@ -44,16 +44,24 @@ fi
 # Generate secrets.env for compose-level variable substitution
 # (needed by non-dofek services: postgres, ota, collector, watchtower).
 # Dofek containers fetch their own secrets via entrypoint.sh.
-# Strip single quotes — Infisical dotenv format uses KEY='value'.
-# Write to temp file first so a failed export doesn't leave a partial secrets.env.
+# Use JSON format to handle multi-line values (SSH keys, PEM certs).
+# Skip secrets containing newlines — Docker Compose env files don't support them.
 INFISICAL_TOKEN="$INFISICAL_TOKEN" infisical export \
   --env=prod \
-  --format=dotenv \
+  --format=json \
   --projectId="54712f56-98a9-4531-9e97-0b588d2e5a88" \
-  > secrets.env.tmp
-sed "s/='\(.*\)'$/=\1/" secrets.env.tmp > secrets.env
-rm -f secrets.env.tmp
+  | python3 -c "
+import json, sys
+for s in json.load(sys.stdin):
+    if '\n' not in s['value']:
+        print(f\"{s['key']}={s['value']}\")
+# Clear INFISICAL_TOKEN inside containers — the entrypoint self-healing
+# fetches from Infisical directly; the token in .env is only for deploy.sh.
+print('INFISICAL_TOKEN=')
+" > secrets.env
 
-# Start services. config.env has non-secret config (client IDs),
-# secrets.env has secrets from Infisical.
-docker compose --env-file config.env --env-file secrets.env up -d --scale web=2
+# Start services. Env-file precedence (last wins):
+#   .env         — server-local config (POSTGRES_PASSWORD, CADDY_DOMAIN, etc.)
+#   config.env   — committed non-secret config (OAuth client IDs)
+#   secrets.env  — secrets from Infisical (overrides any stale .env values)
+docker compose --env-file .env --env-file config.env --env-file secrets.env up -d --scale web=2
