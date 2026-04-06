@@ -2,8 +2,10 @@ import { statusColors } from "@dofek/scoring/colors";
 import {
   StrainScore,
   scoreColor,
+  scoreDescription,
   scoreLabel,
   sleepTierColor,
+  sleepTierDescription,
   WorkloadRatio,
 } from "@dofek/scoring/scoring";
 import type {
@@ -360,7 +362,7 @@ function ReadinessRing({
   const displayScore = useCountUp(score, 800);
 
   return (
-    <div className="flex flex-col items-center gap-2">
+    <div className="flex flex-col items-center gap-2 max-w-[180px]">
       <ScoreRing
         value={score}
         maxValue={100}
@@ -382,6 +384,7 @@ function ReadinessRing({
       >
         {ringLabel}
       </span>
+      <p className="text-[11px] text-subtle text-center leading-tight">{scoreDescription(score)}</p>
     </div>
   );
 }
@@ -403,7 +406,7 @@ function StrainRing({
   const displayValue = useCountUp(strain, 1200, 1);
 
   return (
-    <div className="flex flex-col items-center gap-2">
+    <div className="flex flex-col items-center gap-2 max-w-[180px]">
       <ScoreRing
         value={strain}
         maxValue={21}
@@ -426,6 +429,7 @@ function StrainRing({
       >
         {ringLabel}
       </span>
+      <p className="text-[11px] text-subtle text-center leading-tight">{strainScore.description}</p>
     </div>
   );
 }
@@ -449,7 +453,7 @@ function SleepRing({
   const displayScore = useCountUp(clampedScore, 800);
 
   return (
-    <div className="flex flex-col items-center gap-2">
+    <div className="flex flex-col items-center gap-2 max-w-[180px]">
       <ScoreRing
         value={clampedScore}
         maxValue={100}
@@ -472,6 +476,9 @@ function SleepRing({
       >
         {tier} &middot; {actualHours}h {actualMins}m
       </span>
+      <p className="text-[11px] text-subtle text-center leading-tight">
+        {sleepTierDescription(tier)}
+      </p>
     </div>
   );
 }

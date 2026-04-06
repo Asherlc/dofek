@@ -74,48 +74,45 @@ describe("processTrainingExportJob", () => {
 
     // Call sequence:
     // 1. sensor_sample COUNT
-    // 2. activity_type map pre-fetch
-    // 3. sensor_sample rows batch (cursor-based, no LEFT JOIN)
-    mockExecuteWithSchema
-      .mockResolvedValueOnce([{ count: "3" }])
-      .mockResolvedValueOnce([
-        { activity_id: "b2c3d4e5-f6a7-8901-bcde-f12345678901", activity_type: "cycling" },
-      ])
-      .mockResolvedValueOnce([
-        {
-          recorded_at: "2026-03-30T15:00:00Z",
-          user_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-          provider_id: "wahoo",
-          device_id: null,
-          source_type: "ble",
-          channel: "heart_rate",
-          activity_id: null,
-          scalar: 142,
-          vector: null,
-        },
-        {
-          recorded_at: "2026-03-30T15:00:00.020Z",
-          user_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-          provider_id: "apple_health",
-          device_id: "Apple Watch",
-          source_type: "ble",
-          channel: "imu",
-          activity_id: null,
-          scalar: null,
-          vector: [0.012, 0.138, -0.987],
-        },
-        {
-          recorded_at: "2026-03-30T15:00:00.040Z",
-          user_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-          provider_id: "wahoo",
-          device_id: null,
-          source_type: "ble",
-          channel: "power",
-          activity_id: "b2c3d4e5-f6a7-8901-bcde-f12345678901",
-          scalar: 250,
-          vector: null,
-        },
-      ]);
+    // 2. sensor_sample rows batch (cursor-based, with LATERAL JOIN for activity matching)
+    mockExecuteWithSchema.mockResolvedValueOnce([{ count: "3" }]).mockResolvedValueOnce([
+      {
+        recorded_at: "2026-03-30T15:00:00Z",
+        user_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        provider_id: "wahoo",
+        device_id: null,
+        source_type: "ble",
+        channel: "heart_rate",
+        activity_id: null,
+        activity_type: null,
+        scalar: 142,
+        vector: null,
+      },
+      {
+        recorded_at: "2026-03-30T15:00:00.020Z",
+        user_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        provider_id: "apple_health",
+        device_id: "Apple Watch",
+        source_type: "ble",
+        channel: "imu",
+        activity_id: null,
+        activity_type: null,
+        scalar: null,
+        vector: [0.012, 0.138, -0.987],
+      },
+      {
+        recorded_at: "2026-03-30T15:00:00.040Z",
+        user_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        provider_id: "wahoo",
+        device_id: null,
+        source_type: "ble",
+        channel: "power",
+        activity_id: "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+        activity_type: "cycling",
+        scalar: 250,
+        vector: null,
+      },
+    ]);
 
     await processTrainingExportJob(job, db);
 
@@ -131,10 +128,10 @@ describe("processTrainingExportJob", () => {
 
     // Should write manifest (Parquet is written by DuckDB, not writeFileSync)
     expect(mockWriteFileSync).toHaveBeenCalledTimes(1); // manifest only
-    // 3 calls: COUNT + activity type map + 1 batch (cursor-based)
-    expect(mockExecuteWithSchema).toHaveBeenCalledTimes(3);
+    // 2 calls: COUNT + 1 batch (cursor-based, JOINs provide activity_type)
+    expect(mockExecuteWithSchema).toHaveBeenCalledTimes(2);
 
-    // DuckDB appender receives activity_type from pre-fetched map (only row 3 has an activity_id)
+    // DuckDB appender receives activity_type from LATERAL JOIN (row 3 has cycling)
     expect(mockDuckDb.append_varchar).toHaveBeenCalledWith(expect.anything(), "cycling");
     expect(mockDuckDb.create_varchar).toHaveBeenCalledWith("[0.012,0.138,-0.987]");
     expect(mockDuckDb.append_value).toHaveBeenCalledTimes(1);

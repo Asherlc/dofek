@@ -9,6 +9,11 @@ interface Series {
   yAxisIndex?: number;
 }
 
+/** Returns true when every value across all series is null or data is empty. */
+export function isSeriesEmpty(series: Pick<Series, "data">[]): boolean {
+  return series.every((s) => s.data.every(([, value]) => value == null));
+}
+
 interface TimeSeriesChartProps {
   series: Series[];
   height?: number;
@@ -44,5 +49,7 @@ export function TimeSeriesChart({ series, height = 200, yAxis, loading }: TimeSe
     ),
   };
 
-  return <DofekChart option={option} loading={loading} height={height} />;
+  return (
+    <DofekChart option={option} loading={loading} empty={isSeriesEmpty(series)} height={height} />
+  );
 }

@@ -35,20 +35,6 @@ const yieldToEventLoop = (): Promise<void> => new Promise((resolve) => setImmedi
 
 // ── Zod schemas ──
 
-/** DB query result — no activity_type (fetched separately via pre-loaded map). */
-const sensorSampleDbRowSchema = z.object({
-  recorded_at: z.string(),
-  user_id: z.string(),
-  provider_id: z.string(),
-  device_id: z.string().nullable(),
-  source_type: z.string(),
-  channel: z.string(),
-  activity_id: z.string().nullable(),
-  scalar: z.number().nullable(),
-  vector: z.array(z.number()).nullable(),
-});
-
-/** Full Parquet row including activity_type from lookup. */
 const sensorSampleRowSchema = z.object({
   recorded_at: z.string(),
   user_id: z.string(),
@@ -63,11 +49,6 @@ const sensorSampleRowSchema = z.object({
 });
 
 const countRowSchema = z.object({ count: z.string() });
-
-const activityTypeRowSchema = z.object({
-  activity_id: z.string(),
-  activity_type: z.string(),
-});
 
 export type SensorSampleRow = z.infer<typeof sensorSampleRowSchema>;
 
@@ -120,38 +101,6 @@ export function buildTimeFilter(since?: string, until?: string): ReturnType<type
     return sql`WHERE ss.recorded_at < ${until}::timestamptz`;
   }
   return sql``;
-}
-
-// ── Activity type pre-fetch ──
-
-/**
- * Pre-fetch the activity_id → activity_type mapping for all activities
- * referenced by sensor samples in the export range. This avoids a LEFT JOIN
- * on every paginated batch query.
- */
-async function fetchActivityTypeMap(
-  db: SyncDatabase,
-  since?: string,
-  until?: string,
-): Promise<Map<string, string>> {
-  const conditions: SQL[] = [sql`ss.activity_id IS NOT NULL`];
-  if (since) conditions.push(sql`ss.recorded_at >= ${since}::timestamptz`);
-  if (until) conditions.push(sql`ss.recorded_at < ${until}::timestamptz`);
-  const subqueryWhere = buildWhereClause(conditions);
-
-  const rows = await executeWithSchema(
-    db,
-    activityTypeRowSchema,
-    sql`SELECT a.id::text AS activity_id, a.activity_type
-        FROM fitness.activity a
-        WHERE a.id IN (
-          SELECT DISTINCT ss.activity_id
-          FROM fitness.sensor_sample ss
-          ${subqueryWhere}
-        )`,
-  );
-
-  return new Map(rows.map((row) => [row.activity_id, row.activity_type]));
 }
 
 // ── Streaming Parquet writer ──
@@ -329,20 +278,23 @@ export function computeProgress(
 /**
  * Fetch a batch of sensor samples using keyset (cursor-based) pagination.
  * Unlike OFFSET which re-scans all preceding rows, cursor pagination jumps
- * directly to the next page via the (recorded_at, provider_id, channel) tuple.
+ * directly to the next page via the (recorded_at, user_id, provider_id, channel) tuple.
+ *
+ * Joins activities both by direct FK and by time overlap (LATERAL) so unlinked
+ * BLE sensor data (e.g., WHOOP IMU) gets correct activity labels for ML training.
  */
 async function fetchBatch(
   db: SyncDatabase,
   since: string | undefined,
   until: string | undefined,
   cursor: Cursor | undefined,
-): Promise<z.infer<typeof sensorSampleDbRowSchema>[]> {
+): Promise<SensorSampleRow[]> {
   const conditions = buildConditions(since, until, cursor);
   const whereClause = buildWhereClause(conditions);
 
   return executeWithSchema(
     db,
-    sensorSampleDbRowSchema,
+    sensorSampleRowSchema,
     sql`SELECT
           ss.recorded_at::text AS recorded_at,
           ss.user_id::text AS user_id,
@@ -350,10 +302,22 @@ async function fetchBatch(
           ss.device_id,
           ss.source_type,
           ss.channel,
-          ss.activity_id::text AS activity_id,
+          COALESCE(ss.activity_id, a_time.id)::text AS activity_id,
+          COALESCE(a_direct.activity_type, a_time.activity_type) AS activity_type,
           ss.scalar,
           ss.vector
         FROM fitness.sensor_sample ss
+        LEFT JOIN fitness.activity a_direct ON a_direct.id = ss.activity_id
+        LEFT JOIN LATERAL (
+          SELECT a.id, a.activity_type
+          FROM fitness.activity a
+          WHERE ss.activity_id IS NULL
+            AND a.user_id = ss.user_id
+            AND ss.recorded_at >= a.started_at
+            AND ss.recorded_at <= a.ended_at
+          ORDER BY a.started_at DESC
+          LIMIT 1
+        ) a_time ON TRUE
         ${whereClause}
         ORDER BY ss.recorded_at, ss.user_id, ss.provider_id, ss.channel
         LIMIT ${BATCH_SIZE}`,
@@ -388,9 +352,6 @@ async function exportSensorSamples(
 
   logger.info(`[training-export] Exporting ${totalRows} sensor_sample rows`);
 
-  // Pre-fetch activity_type mapping (avoids LEFT JOIN per batch)
-  const activityTypeMap = await fetchActivityTypeMap(db, since, until);
-
   const parquetDir = join(outputDir, "sensor_sample");
   mkdirSync(parquetDir, { recursive: true });
   const parquetPath = join(parquetDir, `${timestamp}.parquet`);
@@ -423,14 +384,8 @@ async function exportSensorSamples(
           ? fetchBatch(db, since, until, cursor)
           : Promise.resolve([]);
 
-      // Enrich rows with activity_type from pre-fetched map
-      const enrichedRows: SensorSampleRow[] = currentBatch.map((row) => ({
-        ...row,
-        activity_type: row.activity_id ? (activityTypeMap.get(row.activity_id) ?? null) : null,
-      }));
-
       // Append to Parquet writer (streams directly to DuckDB, no JS array accumulation)
-      await writer.appendRows(enrichedRows);
+      await writer.appendRows(currentBatch);
 
       exported += currentBatch.length;
       const percentage = computeProgress(exported, totalRows, 0, 90);
@@ -476,7 +431,7 @@ export async function processTrainingExportJob(
 
   updateProgress({ percentage: 0, message: "Starting training data export..." });
 
-  // Export sensor_sample with pre-fetched activity_type enrichment
+  // Export sensor_sample joined with activity (direct FK + time-overlap LATERAL)
   const rowCount = await exportSensorSamples(
     db,
     outputDir,

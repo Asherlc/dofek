@@ -18,10 +18,12 @@ import {
   StrainZone,
   StressScore,
   scoreColor,
+  scoreDescription,
   scoreLabel,
   sleepDebtColor,
   sleepPerformanceColor,
   sleepTierColor,
+  sleepTierDescription,
   trendColor,
   trendDirection,
   WorkloadRatio,
@@ -110,6 +112,28 @@ describe("scoreLabel", () => {
 
   it("returns Poor for low scores", () => {
     expect(scoreLabel(0)).toBe("Poor");
+  });
+});
+
+describe("scoreDescription", () => {
+  it("returns high-recovery context for scores > 70", () => {
+    const desc = scoreDescription(85);
+    expect(desc).toContain("ready");
+  });
+
+  it("returns moderate context for scores 50-70", () => {
+    const desc = scoreDescription(60);
+    expect(desc).toContain("moderate");
+  });
+
+  it("returns low-recovery context for scores < 50", () => {
+    const desc = scoreDescription(30);
+    expect(desc).toContain("rest");
+  });
+
+  it("returns a non-empty string for boundary values", () => {
+    expect(scoreDescription(70).length).toBeGreaterThan(0);
+    expect(scoreDescription(50).length).toBeGreaterThan(0);
   });
 });
 
@@ -411,6 +435,28 @@ describe("sleepTierColor", () => {
   });
 });
 
+describe("sleepTierDescription", () => {
+  it("returns excellent context", () => {
+    const desc = sleepTierDescription("Excellent");
+    expect(desc).toContain("recovery");
+  });
+
+  it("returns good context", () => {
+    const desc = sleepTierDescription("Good");
+    expect(desc).toContain("most");
+  });
+
+  it("returns fair context", () => {
+    const desc = sleepTierDescription("Fair");
+    expect(desc).toContain("Below");
+  });
+
+  it("returns poor context", () => {
+    const desc = sleepTierDescription("Poor");
+    expect(desc).toContain("rest");
+  });
+});
+
 describe("sleepStageColors", () => {
   it("has all four sleep stages", () => {
     expect(sleepStageColors.deep).toBe("#5E35B1");
@@ -702,6 +748,28 @@ describe("StrainScore", () => {
     it("returns All Out for strain > 17", () => {
       expect(new StrainScore(17.1).label).toBe("All Out");
       expect(new StrainScore(21).label).toBe("All Out");
+    });
+  });
+
+  describe("description", () => {
+    it("returns low-load context for light strain (< 10)", () => {
+      const desc = new StrainScore(5).description;
+      expect(desc).toContain("room");
+    });
+
+    it("returns productive context for moderate strain (10-13)", () => {
+      const desc = new StrainScore(12).description;
+      expect(desc).toContain("productive");
+    });
+
+    it("returns significant context for high strain (14-17)", () => {
+      const desc = new StrainScore(15).description;
+      expect(desc).toContain("Significant");
+    });
+
+    it("returns max-effort context for all-out strain (> 17)", () => {
+      const desc = new StrainScore(19).description;
+      expect(desc).toContain("recovery");
     });
   });
 });

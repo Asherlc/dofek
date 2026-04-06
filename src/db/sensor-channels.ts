@@ -80,6 +80,8 @@ export const AUDIO_EXPOSURE = "audio_exposure";
 export const SKIN_TEMPERATURE = "skin_temperature";
 /** Electrodermal activity in microsiemens */
 export const ELECTRODERMAL_ACTIVITY = "electrodermal_activity";
+/** R-R interval in milliseconds (beat-to-beat timing from PPG) */
+export const RR_INTERVAL_MS = "rr_interval_ms";
 
 // ── Source types (informational, not used for dedup priority) ─
 

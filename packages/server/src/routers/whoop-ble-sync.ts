@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { HEART_RATE, RR_INTERVAL_MS } from "../../../../src/db/sensor-channels.ts";
 import { logger } from "../logger.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 
@@ -61,7 +62,7 @@ async function insertRealtimeDataBatch(
     if (heartRateSamples.length > 0) {
       const hrSensorValues = heartRateSamples.map(
         (sample) =>
-          sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${deviceId}, ${"ble"}, ${"heart_rate"}, ${sample.heartRate}::real)`,
+          sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${deviceId}, ${"ble"}, ${HEART_RATE}, ${sample.heartRate}::real)`,
       );
 
       await database.execute(
@@ -74,7 +75,7 @@ async function insertRealtimeDataBatch(
       if (rrSamples.length > 0) {
         const rrValues = rrSamples.map(
           (sample) =>
-            sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${deviceId}, ${"ble"}, ${"rr_interval_ms"}, ${sample.rrIntervalMs}::real)`,
+            sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${deviceId}, ${"ble"}, ${RR_INTERVAL_MS}, ${sample.rrIntervalMs}::real)`,
         );
         await database.execute(
           sql`INSERT INTO fitness.sensor_sample
