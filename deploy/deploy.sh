@@ -30,21 +30,30 @@ install_infisical() {
 cd "$(dirname "$0")"
 install_infisical
 
-# Export INFISICAL_TOKEN for the CLI
-export INFISICAL_TOKEN=$(grep '^INFISICAL_TOKEN=' .env | cut -d= -f2-)
+# Load INFISICAL_TOKEN from .env
+if [ ! -f .env ]; then
+  echo "Error: .env not found; cannot load INFISICAL_TOKEN." >&2
+  exit 1
+fi
+INFISICAL_TOKEN=$(grep '^INFISICAL_TOKEN=' .env | head -n 1 | cut -d= -f2-)
+if [ -z "$INFISICAL_TOKEN" ]; then
+  echo "Error: INFISICAL_TOKEN is missing or empty in .env." >&2
+  exit 1
+fi
 
 # Generate secrets.env for compose-level variable substitution
 # (needed by non-dofek services: postgres, ota, collector, watchtower).
 # Dofek containers fetch their own secrets via entrypoint.sh.
 # Strip single quotes — Infisical dotenv format uses KEY='value'.
-infisical export \
+# Write to temp file first so a failed export doesn't leave a partial secrets.env.
+INFISICAL_TOKEN="$INFISICAL_TOKEN" infisical export \
   --env=prod \
   --format=dotenv \
   --projectId="54712f56-98a9-4531-9e97-0b588d2e5a88" \
-  | sed "s/='\(.*\)'$/=\1/" \
-  > secrets.env
+  > secrets.env.tmp
+sed "s/='\(.*\)'$/=\1/" secrets.env.tmp > secrets.env
+rm -f secrets.env.tmp
 
 # Start services. config.env has non-secret config (client IDs),
-# secrets.env has secrets from Infisical. No .env needed — it only
-# has INFISICAL_TOKEN which compose doesn't use.
+# secrets.env has secrets from Infisical.
 docker compose --env-file config.env --env-file secrets.env up -d --scale web=2
