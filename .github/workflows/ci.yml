@@ -1173,7 +1173,7 @@ jobs:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
         run: |
           mkdir -p ~/.ssh
-          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_PRIVATE_KEY" | sed 's/\\n/\n/g' | tr -d '\r' > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           rm -f ~/.ssh/known_hosts
           for attempt in 1 2 3; do
