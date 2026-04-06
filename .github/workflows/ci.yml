@@ -553,6 +553,7 @@ jobs:
           xcodebuild build \
             -workspace packages/mobile/ios/Dofek.xcworkspace \
             -scheme DofekWatch \
+            -sdk watchsimulator \
             -configuration Debug \
             -destination 'generic/platform=watchOS Simulator' \
             CODE_SIGNING_ALLOWED=NO \
