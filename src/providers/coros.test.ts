@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CorosProvider, corosOAuthConfig, mapCorosSportType, parseCorosWorkout } from "./coros.ts";
+import {
+  CorosClient,
+  CorosProvider,
+  corosOAuthConfig,
+  mapCorosSportType,
+  parseCorosWorkout,
+} from "./coros.ts";
 
 // ============================================================
 // Mock external dependencies
@@ -279,5 +285,35 @@ describe("corosOAuthConfig", () => {
     expect(config?.clientId).toBe("test-id");
     expect(config?.authorizeUrl).toContain("coros.com");
     expect(config?.tokenUrl).toContain("coros.com");
+  });
+});
+
+// ============================================================
+// CorosClient.downloadFitFile tests
+// ============================================================
+
+describe("CorosClient.downloadFitFile", () => {
+  it("downloads a FIT file and returns a Buffer", async () => {
+    const fitBytes = new Uint8Array([0x2e, 0x46, 0x49, 0x54]);
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: () => Promise.resolve(fitBytes.buffer),
+    });
+    const client = new CorosClient("token", mockFetch);
+    const result = await client.downloadFitFile("https://cdn.coros.com/fit/123.fit");
+
+    expect(result).toBeInstanceOf(Buffer);
+    expect(result.length).toBe(4);
+    // FIT file URLs are pre-signed — no auth headers sent
+    expect(mockFetch).toHaveBeenCalledWith("https://cdn.coros.com/fit/123.fit");
+  });
+
+  it("throws on download failure", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: false, status: 404 });
+    const client = new CorosClient("token", mockFetch);
+
+    await expect(client.downloadFitFile("https://cdn.coros.com/bad.fit")).rejects.toThrow(
+      "Failed to download FIT file (404)",
+    );
   });
 });
