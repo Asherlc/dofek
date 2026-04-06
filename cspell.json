@@ -423,7 +423,14 @@
     "asherlc",
     "apikey",
     "trackpoint",
-    "trackpoints"
+    "trackpoints",
+    "onopentag",
+    "onclosetag",
+    "ontext",
+    "heartratebpm",
+    "latitudedegrees",
+    "longitudedegrees",
+    "altitudemeters"
   ],
   "flagWords": [],
   "useGitignore": false,

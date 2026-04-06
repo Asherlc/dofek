@@ -125,6 +125,27 @@ function polarHandlers(opts?: {
     http.get("https://www.polaraccesslink.com/v3/activity", () => {
       return HttpResponse.json(dailyActivity);
     }),
+
+    // TCX export for exercises with GPS routes
+    http.get("https://www.polaraccesslink.com/v3/exercises/:exerciseId/tcx", () => {
+      return new HttpResponse(
+        `<?xml version="1.0" encoding="UTF-8"?>
+        <TrainingCenterDatabase>
+          <Activities><Activity><Lap><Track>
+            <Trackpoint>
+              <Time>2026-03-01T10:00:00Z</Time>
+              <Position>
+                <LatitudeDegrees>60.1699</LatitudeDegrees>
+                <LongitudeDegrees>24.9384</LongitudeDegrees>
+              </Position>
+              <AltitudeMeters>15.0</AltitudeMeters>
+              <HeartRateBpm><Value>152</Value></HeartRateBpm>
+            </Trackpoint>
+          </Track></Lap></Activity></Activities>
+        </TrainingCenterDatabase>`,
+        { headers: { "Content-Type": "application/vnd.garmin.tcx+xml" } },
+      );
+    }),
   ];
 }
 
