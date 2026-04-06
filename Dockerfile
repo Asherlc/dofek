@@ -76,10 +76,14 @@ ENV NODE_ENV=production
 WORKDIR /app
 
 # Docker CLI for worker container management (startWorker)
+# Infisical CLI for fetching secrets at container startup
 RUN apk add --no-cache curl ca-certificates && \
     ARCH=$(uname -m) && \
     curl -fsSL "https://download.docker.com/linux/static/stable/${ARCH}/docker-27.5.1.tgz" | \
       tar xz --strip-components=1 -C /usr/local/bin docker/docker && \
+    INF_ARCH=$(case "$ARCH" in x86_64) echo amd64;; aarch64) echo arm64;; *) echo "$ARCH";; esac) && \
+    curl -fsSL "https://github.com/Infisical/cli/releases/download/v0.43.69/cli_0.43.69_linux_${INF_ARCH}.tar.gz" | \
+      tar xz -C /usr/local/bin infisical && \
     apk del curl
 
 COPY --from=source --chown=node:node /app/src ./src
