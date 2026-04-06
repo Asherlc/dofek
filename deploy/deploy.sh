@@ -30,28 +30,21 @@ install_infisical() {
 cd "$(dirname "$0")"
 install_infisical
 
-# Load INFISICAL_TOKEN from .env for the infisical CLI.
-# Only export what we need — sourcing the entire .env with set -a would
-# export empty values (e.g. EXPO_APP_ID=) that override secrets.env via
-# process environment precedence in Docker Compose.
-INFISICAL_TOKEN=$(grep '^INFISICAL_TOKEN=' .env | cut -d= -f2-)
-export INFISICAL_TOKEN
+# Export INFISICAL_TOKEN for the CLI
+export INFISICAL_TOKEN=$(grep '^INFISICAL_TOKEN=' .env | cut -d= -f2-)
 
-# Fetch secrets from Infisical into secrets.env
-# This file provides both compose-level variable substitution (--env-file)
-# and container-level env vars (env_file: in services).
-# Strip single quotes from values — Infisical's dotenv format wraps values
-# in single quotes (KEY='value') but Docker Compose treats quotes as literal.
+# Generate secrets.env for compose-level variable substitution
+# (needed by non-dofek services: postgres, ota, collector, watchtower).
+# Dofek containers fetch their own secrets via entrypoint.sh.
+# Strip single quotes — Infisical dotenv format uses KEY='value'.
 infisical export \
   --env=prod \
   --format=dotenv \
   --projectId="54712f56-98a9-4531-9e97-0b588d2e5a88" \
-  | sed "s/='\\(.*\\)'$/=\\1/" \
+  | sed "s/='\(.*\)'$/=\1/" \
   > secrets.env
 
-# Start services with config (config.env + .env) and secrets (secrets.env)
-compose_args="--env-file .env --env-file secrets.env"
-if [ -f config.env ]; then
-  compose_args="--env-file config.env $compose_args"
-fi
-docker compose $compose_args up -d --scale web=2
+# Start services. config.env has non-secret config (client IDs),
+# secrets.env has secrets from Infisical. No .env needed — it only
+# has INFISICAL_TOKEN which compose doesn't use.
+docker compose --env-file config.env --env-file secrets.env up -d --scale web=2
