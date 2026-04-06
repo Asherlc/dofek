@@ -142,6 +142,44 @@ describe("DailyOverview", () => {
     expect(noDatas.length).toBeGreaterThanOrEqual(1);
   });
 
+  it("shows explanation when empty recovery ring is clicked", () => {
+    render(
+      <DailyOverview
+        readiness={[]}
+        workloadRatio={mockWorkloadRatio}
+        sleepPerformance={mockSleepPerformance}
+        readinessLoading={false}
+        workloadLoading={false}
+        sleepLoading={false}
+      />,
+    );
+
+    // Click the empty recovery ring
+    fireEvent.click(findButton(screen.getByText("Recovery")));
+
+    // Should show an explanation of what data is needed
+    expect(screen.getByText(/Recovery score needs HRV/)).toBeTruthy();
+  });
+
+  it("shows explanation when empty sleep ring is clicked", () => {
+    render(
+      <DailyOverview
+        readiness={mockReadiness}
+        workloadRatio={mockWorkloadRatio}
+        sleepPerformance={null}
+        readinessLoading={false}
+        workloadLoading={false}
+        sleepLoading={false}
+      />,
+    );
+
+    // Click the empty sleep ring
+    fireEvent.click(findButton(screen.getByText("Sleep")));
+
+    // Should show an explanation
+    expect(screen.getByText(/Sleep score combines/)).toBeTruthy();
+  });
+
   it("renders data for ready rings while still-loading rings show skeleton", () => {
     render(
       <DailyOverview

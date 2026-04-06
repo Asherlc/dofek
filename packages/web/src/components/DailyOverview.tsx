@@ -315,6 +315,10 @@ function SleepBreakdown({ performance }: { performance: SleepPerformanceInfo }) 
   );
 }
 
+function EmptyBreakdown({ message }: { message: string }) {
+  return <p className="text-subtle text-xs leading-relaxed">{message}</p>;
+}
+
 // ── Expandable wrapper ────────────────────────────────────────────
 
 function ExpandableBreakdown({
@@ -531,7 +535,13 @@ export function DailyOverview({
           />
         ) : (
           <div className="flex flex-col items-center gap-2">
-            <ScoreRing value={0} maxValue={100} color={chartThemeColors.gridLine}>
+            <ScoreRing
+              value={0}
+              maxValue={100}
+              color={chartThemeColors.gridLine}
+              onClick={() => toggle("recovery")}
+              expanded={expandedRing === "recovery"}
+            >
               <span className="text-2xl font-bold text-subtle">--</span>
               <span className="text-[10px] font-semibold uppercase tracking-widest text-subtle">
                 Recovery
@@ -552,7 +562,13 @@ export function DailyOverview({
           />
         ) : (
           <div className="flex flex-col items-center gap-2">
-            <ScoreRing value={0} maxValue={21} color={chartThemeColors.gridLine}>
+            <ScoreRing
+              value={0}
+              maxValue={21}
+              color={chartThemeColors.gridLine}
+              onClick={() => toggle("strain")}
+              expanded={expandedRing === "strain"}
+            >
               <span className="text-2xl font-bold text-subtle">--</span>
               <span className="text-[10px] font-semibold uppercase tracking-widest text-subtle">
                 Strain
@@ -572,7 +588,13 @@ export function DailyOverview({
           />
         ) : (
           <div className="flex flex-col items-center gap-2">
-            <ScoreRing value={0} maxValue={100} color={chartThemeColors.gridLine}>
+            <ScoreRing
+              value={0}
+              maxValue={100}
+              color={chartThemeColors.gridLine}
+              onClick={() => toggle("sleep")}
+              expanded={expandedRing === "sleep"}
+            >
               <span className="text-2xl font-bold text-subtle">--</span>
               <span className="text-[10px] font-semibold uppercase tracking-widest text-subtle">
                 Sleep
@@ -584,21 +606,33 @@ export function DailyOverview({
       </div>
 
       {/* Expandable breakdown panels */}
-      {expandedRing === "recovery" && latestReadiness && readinessIsFresh && (
+      {expandedRing === "recovery" && (
         <ExpandableBreakdown expanded>
-          <RecoveryBreakdown readiness={latestReadiness} />
+          {latestReadiness && readinessIsFresh ? (
+            <RecoveryBreakdown readiness={latestReadiness} />
+          ) : (
+            <EmptyBreakdown message="Recovery score needs HRV, resting heart rate, and sleep data from a connected wearable." />
+          )}
         </ExpandableBreakdown>
       )}
 
-      {expandedRing === "strain" && workloadRatio && (workloadRatio.timeSeries.length ?? 0) > 0 && (
+      {expandedRing === "strain" && (
         <ExpandableBreakdown expanded>
-          <StrainBreakdown workloadRatio={workloadRatio} strainTarget={strainTarget} />
+          {workloadRatio && workloadRatio.timeSeries.length > 0 ? (
+            <StrainBreakdown workloadRatio={workloadRatio} strainTarget={strainTarget} />
+          ) : (
+            <EmptyBreakdown message="Strain is calculated from workout duration and heart rate. Log an activity with a heart rate monitor to see your strain." />
+          )}
         </ExpandableBreakdown>
       )}
 
-      {expandedRing === "sleep" && freshSleepPerformance && (
+      {expandedRing === "sleep" && (
         <ExpandableBreakdown expanded>
-          <SleepBreakdown performance={freshSleepPerformance} />
+          {freshSleepPerformance ? (
+            <SleepBreakdown performance={freshSleepPerformance} />
+          ) : (
+            <EmptyBreakdown message="Sleep score combines how long you slept vs. how much you need (70%) and sleep efficiency (30%). Connect a sleep tracker to see your breakdown." />
+          )}
         </ExpandableBreakdown>
       )}
     </div>
