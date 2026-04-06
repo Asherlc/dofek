@@ -188,7 +188,14 @@ resource "hcloud_server" "preview" {
 
 resource "null_resource" "update_containers" {
   triggers = {
-    commit_sha = var.commit_sha
+    commit_sha   = var.commit_sha
+    compose_hash = md5(templatefile("${path.module}/docker-compose.yml", {
+      server_image = local.server_image
+      domain       = local.preview_domain
+    }))
+    caddy_hash = md5(templatefile("${path.module}/Caddyfile", {
+      domain = local.preview_domain
+    }))
   }
 
   connection {
@@ -196,6 +203,22 @@ resource "null_resource" "update_containers" {
     host  = hcloud_server.preview.ipv4_address
     user  = "root"
     agent = true
+  }
+
+  # Upload latest config files (compose, Caddyfile may have changed in the PR)
+  provisioner "file" {
+    content = templatefile("${path.module}/docker-compose.yml", {
+      server_image = local.server_image
+      domain       = local.preview_domain
+    })
+    destination = "/opt/dofek/docker-compose.yml"
+  }
+
+  provisioner "file" {
+    content = templatefile("${path.module}/Caddyfile", {
+      domain = local.preview_domain
+    })
+    destination = "/opt/dofek/Caddyfile"
   }
 
   provisioner "remote-exec" {
