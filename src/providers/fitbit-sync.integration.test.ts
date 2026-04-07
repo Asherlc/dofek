@@ -10,17 +10,18 @@ import {
   type FitbitActivityListResponse,
   FitbitClient,
   type FitbitDailySummary,
-  FitbitProvider,
   type FitbitSleepListResponse,
   type FitbitSleepLog,
   type FitbitWeightLog,
-  fitbitOAuthConfig,
+} from "./fitbit/client.ts";
+import {
   mapFitbitActivityType,
   parseFitbitActivity,
   parseFitbitDailySummary,
   parseFitbitSleep,
   parseFitbitWeightLog,
-} from "./fitbit/index.ts";
+} from "./fitbit/parsers.ts";
+import { FitbitProvider, fitbitOAuthConfig } from "./fitbit/provider.ts";
 
 function fakeActivity(overrides: Partial<FitbitActivity> = {}): FitbitActivity {
   return {

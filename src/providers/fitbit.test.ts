@@ -12,19 +12,21 @@ import {
   type FitbitActivity,
   FitbitClient,
   type FitbitDailySummary,
-  FitbitProvider,
   type FitbitSleepLog,
   type FitbitWeightLog,
   fitbitActivitySchema,
   fitbitDailySummarySchema,
   fitbitSleepLogSchema,
   fitbitWeightLogSchema,
+} from "./fitbit/client.ts";
+import {
   mapFitbitActivityType,
   parseFitbitActivity,
   parseFitbitDailySummary,
   parseFitbitSleep,
   parseFitbitWeightLog,
-} from "./fitbit/index.ts";
+} from "./fitbit/parsers.ts";
+import { FitbitProvider } from "./fitbit/provider.ts";
 import type { WebhookEvent } from "./types.ts";
 
 // ============================================================

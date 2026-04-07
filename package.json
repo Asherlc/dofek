@@ -22,7 +22,7 @@
     "./providers/ride-with-gps": "./src/providers/ride-with-gps.ts",
     "./providers/strong-csv": "./src/providers/strong-csv.ts",
     "./providers/polar": "./src/providers/polar.ts",
-    "./providers/fitbit": "./src/providers/fitbit/index.ts",
+    "./providers/fitbit": "./src/providers/fitbit/provider.ts",
     "./providers/garmin": "./src/providers/garmin.ts",
     "./providers/strava": "./src/providers/strava.ts",
     "./providers/cronometer-csv": "./src/providers/cronometer-csv.ts",
