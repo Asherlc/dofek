@@ -14,7 +14,7 @@ import {
   ouraHeartRateSchema,
   ouraSleepDocumentSchema,
   ouraWorkoutSchema,
-} from "./oura.ts";
+} from "./oura/schemas.ts";
 
 // ============================================================
 // Helpers

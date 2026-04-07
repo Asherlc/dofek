@@ -44,6 +44,14 @@
       },
       "style": {
         "noNonNullAssertion": "error"
+      },
+      "nursery": {
+        "noExcessiveLinesPerFile": {
+          "level": "error",
+          "options": {
+            "maxLines": 1000
+          }
+        }
       }
     }
   },
@@ -69,6 +77,33 @@
         "rules": {
           "suspicious": {
             "noConsole": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["**/*.test.ts", "**/*.test.tsx", "**/*.integration.test.ts"],
+      "linter": {
+        "rules": {
+          "nursery": {
+            "noExcessiveLinesPerFile": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": [
+        "src/db/schema.ts",
+        "src/providers/oura/provider.ts",
+        "packages/server/src/routers/health-kit-sync.ts",
+        "packages/web/src/components/DataSourcesPanel.tsx",
+        "packages/mobile/app/food/add.tsx",
+        "packages/mobile/app/providers/index.tsx"
+      ],
+      "linter": {
+        "rules": {
+          "nursery": {
+            "noExcessiveLinesPerFile": "off"
           }
         }
       }

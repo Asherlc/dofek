@@ -15,7 +15,7 @@
 import { describe, expect, it } from "vitest";
 import { WhoopClient } from "whoop-whoop/client";
 import { z } from "zod";
-import { inlineSleepSchema, parseInlineSleep } from "./whoop.ts";
+import { inlineSleepSchema, parseInlineSleep } from "./whoop/parsing.ts";
 
 const REFRESH_TOKEN = process.env.WHOOP_REFRESH_TOKEN ?? "";
 const USER_ID = Number(process.env.WHOOP_USER_ID ?? "0");

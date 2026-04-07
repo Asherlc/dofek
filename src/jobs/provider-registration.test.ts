@@ -51,7 +51,7 @@ vi.mock("../providers/peloton.ts", () => ({
 vi.mock("../providers/fatsecret.ts", () => ({
   FatSecretProvider: vi.fn(() => mockProviders.fatsecret),
 }));
-vi.mock("../providers/whoop.ts", () => ({
+vi.mock("../providers/whoop/provider.ts", () => ({
   WhoopProvider: vi.fn(() => mockProviders.whoop),
 }));
 vi.mock("../providers/ride-with-gps.ts", () => ({
@@ -75,7 +75,7 @@ vi.mock("../providers/strava.ts", () => ({
 vi.mock("../providers/cronometer-csv.ts", () => ({
   CronometerCsvProvider: vi.fn(() => mockProviders["cronometer-csv"]),
 }));
-vi.mock("../providers/oura.ts", () => ({
+vi.mock("../providers/oura/provider.ts", () => ({
   OuraProvider: vi.fn(() => mockProviders.oura),
 }));
 vi.mock("../providers/bodyspec.ts", () => ({
