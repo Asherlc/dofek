@@ -490,14 +490,9 @@ jobs:
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup-node-pnpm
-      - name: Install ccache
-        run: brew install ccache
-      - name: Cache ccache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      - uses: ./.github/actions/setup-ccache
         with:
-          path: ~/Library/Caches/ccache
-          key: ccache-ios-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**') }}
-          restore-keys: ccache-ios-
+          cache-key-prefix: ccache-ios
       - name: Generate native project
         working-directory: packages/mobile
         run: npx expo prebuild --clean --platform ios
@@ -529,7 +524,6 @@ jobs:
       - name: Archive (Release, no signing)
         env:
           SENTRY_DISABLE_AUTO_UPLOAD: "true"
-          USE_CCACHE: "1"
         run: |
           set -o pipefail
           xcodebuild archive \
@@ -542,8 +536,13 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGN_IDENTITY="" \
             COMPILER_INDEX_STORE_ENABLE=NO \
+            CC=$RUNNER_TEMP/ccache-wrappers/ccache-clang \
+            CPLUSPLUS=$RUNNER_TEMP/ccache-wrappers/ccache-clang++ \
             2>&1 | tail -40
         timeout-minutes: 25
+      - name: Show ccache stats
+        if: always()
+        run: ccache --show-stats
 
   build-watchos:
     name: watchOS Build
@@ -1095,14 +1094,9 @@ jobs:
           fetch-depth: 0 # Full history needed for git rev-list build number
       - uses: ./.github/actions/setup-node-pnpm
 
-      - name: Install ccache
-        run: brew install ccache
-      - name: Cache ccache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      - uses: ./.github/actions/setup-ccache
         with:
-          path: ~/Library/Caches/ccache
-          key: ccache-ios-release-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**') }}
-          restore-keys: ccache-ios-release-
+          cache-key-prefix: ccache-ios-release
       - name: Generate native project
         working-directory: packages/mobile
         run: npx expo prebuild --clean --platform ios
@@ -1162,8 +1156,6 @@ jobs:
           agvtool new-version -all "$BUILD_NUMBER"
 
       - name: Build archive
-        env:
-          USE_CCACHE: "1"
         run: |
           cd packages/mobile/ios
           xcodebuild archive \
@@ -1178,7 +1170,12 @@ jobs:
             -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
             -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
             DEVELOPMENT_TEAM=68LEL35DQ9 \
-            COMPILER_INDEX_STORE_ENABLE=NO
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            CC=$RUNNER_TEMP/ccache-wrappers/ccache-clang \
+            CPLUSPLUS=$RUNNER_TEMP/ccache-wrappers/ccache-clang++
+      - name: Show ccache stats
+        if: always()
+        run: ccache --show-stats
 
       - name: Diagnose archive signing
         if: always()
