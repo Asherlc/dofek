@@ -1,7 +1,18 @@
 # Hetzner server provisioned with Dokploy pre-installed.
 # Replaces the old main.tf which installed raw Docker + Compose.
+#
+# Dokploy service configuration (project, apps, domains, etc.) is managed
+# by setup.sh via the Dokploy tRPC API — not Terraform — because the
+# community Dokploy TF provider is incompatible with Dokploy v0.28.8.
 
-# The terraform block with required_providers is in providers.tf
+terraform {
+  required_providers {
+    hcloud = {
+      source  = "hetznercloud/hcloud"
+      version = "~> 1.49"
+    }
+  }
+}
 
 variable "hcloud_token" {
   sensitive = true
@@ -12,7 +23,10 @@ variable "ssh_public_key" {
   type        = string
 }
 
-## variable "domain" is defined in dokploy.tf
+variable "domain" {
+  description = "Primary domain (e.g. dofek.asherlc.com)"
+  type        = string
+}
 
 variable "ssh_allowed_ips" {
   description = "CIDR blocks allowed to SSH"

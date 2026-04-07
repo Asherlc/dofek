@@ -1,25 +1,43 @@
 #!/bin/bash
 # Set up Dokploy project, apps, compose stack, and domains via the tRPC API.
 # Replaces the broken Terraform Dokploy provider.
+#
+# Reads all config from terraform.tfvars (gitignored) or environment variables.
 # Usage: ./setup.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# --- Config ---
-DOKPLOY_HOST="http://157.90.25.125:3000"
-API_KEY="dofekrAzqQxNMelPNLzLFzQvldIoNffLXZDhrLkclrACTPSfsbcyVURgiINkugiYITlHQ"
+# --- Read config from terraform.tfvars or environment ---
+get_var() {
+  local key="$1"
+  local tfvars_file="$SCRIPT_DIR/terraform.tfvars"
+  if [ ! -f "$tfvars_file" ]; then
+    echo ""
+    return 0
+  fi
+  grep "^${key} " "$tfvars_file" | head -1 | sed 's/.*= "//;s/"$//'
+}
+
+DOKPLOY_HOST="${DOKPLOY_HOST:-$(get_var dokploy_host)}"
+API_KEY="${DOKPLOY_API_KEY:-$(get_var dokploy_api_key)}"
 DOMAIN="dofek.asherlc.com"
 OTA_DOMAIN="ota.dofek.asherlc.com"
 GHCR_IMAGE="ghcr.io/asherlc/dofek:latest"
 
-# Read secrets from terraform.tfvars
-get_var() {
-  grep "^${1} " "$SCRIPT_DIR/terraform.tfvars" | head -1 | sed 's/.*= "//;s/"$//'
-}
+if [ -z "${DOKPLOY_HOST}" ]; then
+  echo "Error: DOKPLOY_HOST is not set. Export DOKPLOY_HOST or define dokploy_host in $SCRIPT_DIR/terraform.tfvars." >&2
+  exit 1
+fi
+
+if [ -z "${API_KEY}" ]; then
+  echo "Error: DOKPLOY_API_KEY is not set. Export DOKPLOY_API_KEY or define dokploy_api_key in $SCRIPT_DIR/terraform.tfvars." >&2
+  exit 1
+fi
 
 POSTGRES_PASSWORD="$(get_var postgres_password)"
 AXIOM_API_TOKEN="$(get_var axiom_api_token)"
+SENTRY_OTLP_LOGS_ENDPOINT="$(get_var sentry_otlp_logs_endpoint)"
 GHCR_TOKEN="$(get_var ghcr_token)"
 R2_ENDPOINT="$(get_var r2_endpoint)"
 R2_ACCESS_KEY_ID="$(get_var r2_access_key_id)"
@@ -40,18 +58,6 @@ dokploy() {
     "$@"
 }
 
-dokploy_mutation() {
-  local endpoint="$1"
-  local payload="$2"
-  local result
-  result=$(dokploy "$endpoint" -d "$payload")
-  echo "$result" | python3 -c "import json,sys; print(json.load(sys.stdin)['result']['data']['json'])" 2>/dev/null || echo "$result"
-}
-
-extract_id() {
-  python3 -c "import json,sys; d=json.load(sys.stdin)['result']['data']['json']; print(d.get('projectId','') or d.get('environmentId','') or d.get('applicationId','') or d.get('composeId','') or d.get('domainId','') or d.get('registryId','') or d.get('project',{}).get('projectId',''))"
-}
-
 echo "=== Dokploy Setup ==="
 
 # --- 1. Create project ---
@@ -69,33 +75,28 @@ REG_ID=$(echo "$REG_RESULT" | python3 -c "import json,sys; print(json.load(sys.s
 echo "  Registry: $REG_ID"
 
 # --- 3. Build shared env vars ---
-# Read all app_env from tfvars (lines between app_env = { and })
-APP_ENV_LINES=$(sed -n '/^app_env = {$/,/^}$/p' "$SCRIPT_DIR/terraform.tfvars" | grep '=' | grep -v '^app_env' | grep -v '^}' | sed 's/^  //;s/ = /=/;s/^"//;s/"$//')
+APP_ENV_LINES=$(sed -n '/^app_env = {$/,/^}$/p' "$SCRIPT_DIR/terraform.tfvars" | grep '=' | grep -v '^app_env' | grep -v '^}' | sed 's/^  //;s/ = /=/;s/^"//;s/"$//' || true)
 
 build_env() {
   local service_name="$1"
   local extra_env="$2"
   local env_str=""
 
-  # Core env
-  env_str+="DATABASE_URL=postgres://health:${POSTGRES_PASSWORD}@dofek-infra-db:5432/health\n"
-  env_str+="REDIS_URL=redis://dofek-infra-redis:6379\n"
+  env_str+="DATABASE_URL=postgres://health:${POSTGRES_PASSWORD}@db:5432/health\n"
+  env_str+="REDIS_URL=redis://redis:6379\n"
   env_str+="NODE_ENV=production\n"
   env_str+="PUBLIC_URL=https://${DOMAIN}\n"
   env_str+="OTEL_SERVICE_NAME=${service_name}\n"
-  env_str+="OTEL_EXPORTER_OTLP_ENDPOINT=http://dofek-infra-collector:4318\n"
-  env_str+="OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://dofek-infra-collector:4318/v1/logs\n"
+  env_str+="OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318\n"
+  env_str+="OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://collector:4318/v1/logs\n"
 
-  # App env from tfvars
   while IFS='=' read -r key value; do
     [ -z "$key" ] && continue
-    # Strip quotes
     value="${value#\"}"
     value="${value%\"}"
     env_str+="${key}=${value}\n"
   done <<< "$APP_ENV_LINES"
 
-  # Extra service-specific env
   if [ -n "$extra_env" ]; then
     env_str+="$extra_env"
   fi
@@ -106,18 +107,15 @@ build_env() {
 # --- 4. Create web application ---
 echo "Creating web application..."
 WEB_ENV=$(build_env "dofek-web" "PORT=3000\nJOB_FILES_DIR=/app/job-files\n")
-WEB_ENV_ESCAPED=$(echo "$WEB_ENV" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))" | sed 's/^"//;s/"$//')
 
 WEB_RESULT=$(dokploy "application.create" -d "{\"json\":{\"name\":\"dofek-web\",\"environmentId\":\"${ENV_ID}\"}}")
 WEB_ID=$(echo "$WEB_RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['result']['data']['json']['applicationId'])")
 echo "  Web app: $WEB_ID"
 
-# Update web app with docker source, image, command, env (separate calls to avoid payload issues)
 echo "  Configuring web app..."
 dokploy "application.update" -d "{\"json\":{\"applicationId\":\"${WEB_ID}\",\"sourceType\":\"docker\",\"dockerImage\":\"${GHCR_IMAGE}\"}}" > /dev/null
 dokploy "application.update" -d "{\"json\":{\"applicationId\":\"${WEB_ID}\",\"command\":\"./entrypoint.sh web\"}}" > /dev/null
 dokploy "application.update" -d "{\"json\":{\"applicationId\":\"${WEB_ID}\",\"registryId\":\"${REG_ID}\"}}" > /dev/null
-# Set env via saveBuildType which handles large payloads better
 python3 -c "
 import json, sys
 env = sys.stdin.read()
@@ -128,7 +126,6 @@ sys.stdout.write(payload)
 # --- 5. Create worker application ---
 echo "Creating worker application..."
 WORKER_ENV=$(build_env "dofek-worker" "")
-WORKER_ENV_ESCAPED=$(echo "$WORKER_ENV" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))" | sed 's/^"//;s/"$//')
 
 WORKER_RESULT=$(dokploy "application.create" -d "{\"json\":{\"name\":\"dofek-worker\",\"environmentId\":\"${ENV_ID}\"}}")
 WORKER_ID=$(echo "$WORKER_RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['result']['data']['json']['applicationId'])")
@@ -148,11 +145,10 @@ sys.stdout.write(payload)
 # --- 6. Create infra compose stack ---
 echo "Creating infra compose stack..."
 
-# Render infra-compose.yml with actual values (replace Terraform template vars)
 COMPOSE_CONTENT=$(cat "$SCRIPT_DIR/infra-compose.yml" \
   | sed "s/\${postgres_password}/${POSTGRES_PASSWORD}/g" \
   | sed "s/\${axiom_api_token}/${AXIOM_API_TOKEN}/g" \
-  | sed "s|\${sentry_otlp_logs_endpoint}||g" \
+  | sed "s|\${sentry_otlp_logs_endpoint}|${SENTRY_OTLP_LOGS_ENDPOINT}|g" \
   | sed "s|\${r2_endpoint}|${R2_ENDPOINT}|g" \
   | sed "s/\${r2_access_key_id}/${R2_ACCESS_KEY_ID}/g" \
   | sed "s|\${r2_secret_access_key}|${R2_SECRET_ACCESS_KEY}|g" \
@@ -166,7 +162,6 @@ COMPOSE_CONTENT=$(cat "$SCRIPT_DIR/infra-compose.yml" \
   | grep -v '^$' \
 )
 # Remove lines with empty volume specs (Terraform conditionals leave empty paths)
-# The template has lines like "- :/var/lib/..." when db_data_path is empty — remove those
 COMPOSE_CONTENT=$(echo "$COMPOSE_CONTENT" | grep -v '^\s*- :/')
 
 COMPOSE_ESCAPED=$(echo "$COMPOSE_CONTENT" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")
@@ -216,6 +211,6 @@ echo "  REGISTRY_ID=$REG_ID"
 echo ""
 echo "Next steps:"
 echo "  1. Check deployment status at ${DOKPLOY_HOST}/dashboard/projects"
-echo "  2. Update DNS to point at 157.90.25.125"
-echo "  3. Set GitHub secrets: DOKPLOY_HOST, DOKPLOY_API_KEY, DOKPLOY_WEB_APP_ID, DOKPLOY_WORKER_APP_ID"
+echo "  2. Update DNS to point at new server IP"
+echo "  3. Add DOKPLOY_HOST, DOKPLOY_API_KEY, DOKPLOY_WEB_APP_ID, DOKPLOY_WORKER_APP_ID to Infisical"
 echo "  4. Migrate database from old server"
