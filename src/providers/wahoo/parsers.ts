@@ -1,12 +1,11 @@
-import { isIndoorCycling } from "@dofek/training/endurance-types";
 import {
   type CanonicalActivityType,
   createActivityTypeMapper,
   WAHOO_WORKOUT_TYPE_MAP,
 } from "@dofek/training/training";
-import type { SensorSampleSourceRow } from "../../db/sensor-sample-writer.ts";
-import type { ParsedFitRecord } from "../../fit/parser.ts";
 import type { WahooWorkout, WahooWorkoutListResponse } from "./client.ts";
+
+export { fitRecordsToSensorSamples as fitRecordsToMetricStream } from "../../fit/records.ts";
 
 // ============================================================
 // Activity type mapping
@@ -67,42 +66,3 @@ export function parseWorkoutList(response: WahooWorkoutListResponse): ParsedWork
 // ============================================================
 // FIT record → metric_stream mapping
 // ============================================================
-
-export function fitRecordsToMetricStream(
-  records: ParsedFitRecord[],
-  providerId: string,
-  activityId: string,
-  activityType?: string,
-): SensorSampleSourceRow[] {
-  const indoor = activityType ? isIndoorCycling(activityType) : false;
-  return records.map((r) => ({
-    providerId,
-    activityId,
-    recordedAt: r.recordedAt,
-    heartRate: r.heartRate,
-    power: r.power,
-    cadence: r.cadence,
-    speed: indoor ? undefined : r.speed,
-    lat: r.lat,
-    lng: r.lng,
-    altitude: r.altitude,
-    temperature: r.temperature,
-    grade: r.grade,
-    verticalSpeed: r.verticalSpeed,
-    gpsAccuracy: r.gpsAccuracy,
-    accumulatedPower: r.accumulatedPower,
-    leftRightBalance: r.leftRightBalance,
-    verticalOscillation: r.verticalOscillation,
-    stanceTime: r.stanceTime,
-    stanceTimePercent: r.stanceTimePercent,
-    stepLength: r.stepLength,
-    verticalRatio: r.verticalRatio,
-    stanceTimeBalance: r.stanceTimeBalance,
-    leftTorqueEffectiveness: r.leftTorqueEffectiveness,
-    rightTorqueEffectiveness: r.rightTorqueEffectiveness,
-    leftPedalSmoothness: r.leftPedalSmoothness,
-    rightPedalSmoothness: r.rightPedalSmoothness,
-    combinedPedalSmoothness: r.combinedPedalSmoothness,
-    raw: r.raw,
-  }));
-}

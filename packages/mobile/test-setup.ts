@@ -354,6 +354,7 @@ vi.mock("./modules/health-kit", () => ({
   isBackgroundDeliveryEnabled: vi.fn(() => false),
   requestAuthorization: vi.fn(() => Promise.resolve(true)),
   queryWorkouts: vi.fn(() => Promise.resolve([])),
+  queryWorkoutRoutes: vi.fn(() => Promise.resolve([])),
   querySleepSamples: vi.fn(() => Promise.resolve([])),
   queryHeartRateSamples: vi.fn(() => Promise.resolve([])),
 }));

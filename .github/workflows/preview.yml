@@ -90,6 +90,18 @@ jobs:
         working-directory: deploy/preview
         run: terraform workspace select -or-create pr-${{ github.event.number }}
 
+      - name: Setup SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" | sed 's/\\n/\n/g' | tr -d '\r' > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -T 10 -H "$(terraform -chdir=deploy/preview output -raw server_ip 2>/dev/null || echo '0.0.0.0')" >> ~/.ssh/known_hosts 2>/dev/null || true
+          eval "$(ssh-agent -s)"
+          ssh-add ~/.ssh/id_ed25519
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> "$GITHUB_ENV"
+
       - name: Terraform Apply
         id: apply
         working-directory: deploy/preview
@@ -107,6 +119,9 @@ jobs:
 
           echo "preview_url=$(terraform output -raw preview_url)" >> "$GITHUB_OUTPUT"
           echo "server_ip=$(terraform output -raw server_ip)" >> "$GITHUB_OUTPUT"
+
+          # Add the server's host key now that we know its IP
+          ssh-keyscan -T 10 -H "$(terraform output -raw server_ip)" >> ~/.ssh/known_hosts 2>/dev/null || true
 
       - name: Wait for Server Ready
         env:

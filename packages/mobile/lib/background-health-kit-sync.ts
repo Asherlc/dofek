@@ -6,6 +6,7 @@ import {
   queryDailyStatistics,
   queryQuantitySamples,
   querySleepSamples,
+  queryWorkoutRoutes,
   queryWorkouts,
   setupBackgroundObservers,
 } from "../modules/health-kit";
@@ -70,6 +71,7 @@ export async function initBackgroundHealthKitSync(
           queryQuantitySamples,
           queryWorkouts,
           querySleepSamples,
+          queryWorkoutRoutes,
         },
         syncRangeDays: 1,
       })

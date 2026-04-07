@@ -88,14 +88,14 @@ describe("StravaProvider webhook methods", () => {
 // ── Fitbit webhook tests ──
 describe("FitbitProvider webhook methods", () => {
   it("is detected as a WebhookProvider", async () => {
-    const { FitbitProvider } = await import("./fitbit.ts");
+    const { FitbitProvider } = await import("./fitbit/provider.ts");
     const provider = new FitbitProvider(async () => new Response());
     expect(isWebhookProvider(provider)).toBe(true);
     expect(provider.webhookScope).toBe("app");
   });
 
   it("parseWebhookPayload extracts notifications array", async () => {
-    const { FitbitProvider } = await import("./fitbit.ts");
+    const { FitbitProvider } = await import("./fitbit/provider.ts");
     const provider = new FitbitProvider(async () => new Response());
 
     const events = provider.parseWebhookPayload([
@@ -115,13 +115,13 @@ describe("FitbitProvider webhook methods", () => {
   });
 
   it("parseWebhookPayload returns empty for non-array", async () => {
-    const { FitbitProvider } = await import("./fitbit.ts");
+    const { FitbitProvider } = await import("./fitbit/provider.ts");
     const provider = new FitbitProvider(async () => new Response());
     expect(provider.parseWebhookPayload({})).toHaveLength(0);
   });
 
   it("parseWebhookPayload filters out invalid items", async () => {
-    const { FitbitProvider } = await import("./fitbit.ts");
+    const { FitbitProvider } = await import("./fitbit/provider.ts");
     const provider = new FitbitProvider(async () => new Response());
 
     const events = provider.parseWebhookPayload([
@@ -134,7 +134,7 @@ describe("FitbitProvider webhook methods", () => {
   });
 
   it("verifyWebhookSignature validates HMAC-SHA1", async () => {
-    const { FitbitProvider } = await import("./fitbit.ts");
+    const { FitbitProvider } = await import("./fitbit/provider.ts");
     const { createHmac } = await import("node:crypto");
     const provider = new FitbitProvider(async () => new Response());
 
@@ -154,7 +154,7 @@ describe("FitbitProvider webhook methods", () => {
   });
 
   it("handleValidationChallenge accepts matching verify code", async () => {
-    const { FitbitProvider } = await import("./fitbit.ts");
+    const { FitbitProvider } = await import("./fitbit/provider.ts");
     const provider = new FitbitProvider(async () => new Response());
 
     expect(provider.handleValidationChallenge({ verify: "mycode" }, "mycode")).toBe("");
@@ -629,7 +629,7 @@ describe("StravaProvider register/unregister", () => {
 
 describe("FitbitProvider register/unregister", () => {
   it("registerWebhook returns portal subscription with signing secret", async () => {
-    const { FitbitProvider } = await import("./fitbit.ts");
+    const { FitbitProvider } = await import("./fitbit/provider.ts");
     const provider = new FitbitProvider(async () => new Response());
     const result = await provider.registerWebhook("https://example.com/cb", "verify-tok");
     expect(result.subscriptionId).toBe("fitbit-app-subscription");
@@ -637,13 +637,13 @@ describe("FitbitProvider register/unregister", () => {
   });
 
   it("unregisterWebhook is a no-op", async () => {
-    const { FitbitProvider } = await import("./fitbit.ts");
+    const { FitbitProvider } = await import("./fitbit/provider.ts");
     const provider = new FitbitProvider(async () => new Response());
     await expect(provider.unregisterWebhook("sub-1")).resolves.toBeUndefined();
   });
 
   it("parseWebhookPayload handles missing fields gracefully", async () => {
-    const { FitbitProvider } = await import("./fitbit.ts");
+    const { FitbitProvider } = await import("./fitbit/provider.ts");
     const provider = new FitbitProvider(async () => new Response());
     // Items missing ownerId get filtered out
     const events = provider.parseWebhookPayload([

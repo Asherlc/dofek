@@ -12,19 +12,21 @@ import {
   type FitbitActivity,
   FitbitClient,
   type FitbitDailySummary,
-  FitbitProvider,
   type FitbitSleepLog,
   type FitbitWeightLog,
   fitbitActivitySchema,
   fitbitDailySummarySchema,
   fitbitSleepLogSchema,
   fitbitWeightLogSchema,
+} from "./fitbit/client.ts";
+import {
   mapFitbitActivityType,
   parseFitbitActivity,
   parseFitbitDailySummary,
   parseFitbitSleep,
   parseFitbitWeightLog,
-} from "./fitbit.ts";
+} from "./fitbit/parsers.ts";
+import { FitbitProvider } from "./fitbit/provider.ts";
 import type { WebhookEvent } from "./types.ts";
 
 // ============================================================
@@ -86,18 +88,22 @@ function createMockDb() {
     values: vi.fn(),
     onConflictDoUpdate: vi.fn(),
     onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+    returning: vi.fn().mockResolvedValue([{ id: "mock-activity-id" }]),
+    where: vi.fn().mockResolvedValue(undefined),
   };
 
   for (const fn of Object.values(chain)) {
+    if (!vi.isMockFunction(fn) || fn.getMockImplementation()) continue;
     fn.mockReturnValue(chain);
   }
 
   const insertFn = vi.fn().mockReturnValue(chain);
+  const deleteFn = vi.fn().mockReturnValue(chain);
 
   const db: SyncDatabase = {
     select: vi.fn(),
     insert: insertFn,
-    delete: vi.fn(),
+    delete: deleteFn,
     execute: vi.fn(),
   };
 
@@ -222,6 +228,12 @@ function createMockApiFetch(data: MockFitbitApiData = {}): typeof globalThis.fet
     }
     if (urlStr.includes("/body/log/weight/date/")) {
       return Response.json({ weight: data.weight ?? [] });
+    }
+    if (urlStr.endsWith(".tcx")) {
+      return new Response("<TrainingCenterDatabase></TrainingCenterDatabase>", {
+        status: 200,
+        headers: { "Content-Type": "application/xml" },
+      });
     }
 
     return new Response("Not found", { status: 404 });
@@ -966,6 +978,11 @@ describe("FitbitProvider", () => {
         }
         if (url.includes("/body/log/weight/date/")) {
           return Response.json({ weight: [] });
+        }
+        if (url.endsWith(".tcx")) {
+          return new Response("<TrainingCenterDatabase></TrainingCenterDatabase>", {
+            status: 200,
+          });
         }
         return new Response("Not found", { status: 404 });
       };

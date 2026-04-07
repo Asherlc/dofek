@@ -39,6 +39,7 @@ vi.mock("../modules/health-kit", () => ({
   queryQuantitySamples: vi.fn(),
   queryWorkouts: vi.fn(),
   querySleepSamples: vi.fn(),
+  queryWorkoutRoutes: vi.fn(),
 }));
 
 const mockCaptureException = vi.fn();
