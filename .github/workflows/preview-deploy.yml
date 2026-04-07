@@ -96,24 +96,13 @@ jobs:
 
           # Check if app already exists by listing all apps in the preview environment
           EXISTING=$(dokploy "application.byEnvironment?input=$(printf '%s' "{\"json\":\"${DOKPLOY_PREVIEW_ENV_ID}\"}" | jq -sRr @uri)" 2>/dev/null || echo "[]")
-          APP_ID=$(echo "$EXISTING" | python3 -c "
-import json, sys
-try:
-    data = json.load(sys.stdin)
-    apps = data.get('result', {}).get('data', {}).get('json', [])
-    for app in apps:
-        if app.get('appName') == '${APP_NAME}':
-            print(app['applicationId'])
-            break
-except Exception:
-    pass
-" 2>/dev/null || true)
+          APP_ID=$(echo "$EXISTING" | jq -r --arg name "$APP_NAME" '.result.data.json[] | select(.appName == $name) | .applicationId' 2>/dev/null || true)
 
           if [ -z "$APP_ID" ]; then
             echo "Creating new preview app: ${APP_NAME}"
             CREATE_RESULT=$(dokploy "application.create" \
               -d "{\"json\":{\"name\":\"PR #${PR_NUMBER} Preview\",\"appName\":\"${APP_NAME}\",\"environmentId\":\"${DOKPLOY_PREVIEW_ENV_ID}\"}}")
-            APP_ID=$(echo "$CREATE_RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['result']['data']['json']['applicationId'])")
+            APP_ID=$(echo "$CREATE_RESULT" | jq -r '.result.data.json.applicationId')
             echo "Created app: $APP_ID"
 
             # Configure as Docker source with image
@@ -131,11 +120,8 @@ except Exception:
             fi
 
             # Set env vars
-            python3 -c "
-import json, sys
-payload = json.dumps({'json': {'applicationId': '${APP_ID}', 'env': 'PORT=3000'}})
-sys.stdout.write(payload)
-" | dokploy "application.update" -d @- > /dev/null
+            dokploy "application.update" \
+              -d "$(jq -n --arg id "$APP_ID" '{json: {applicationId: $id, env: "PORT=3000"}}')" > /dev/null
 
             # Create domain
             dokploy "domain.create" \
@@ -199,18 +185,7 @@ sys.stdout.write(payload)
 
           # Find the app
           EXISTING=$(dokploy "application.byEnvironment?input=$(printf '%s' "{\"json\":\"${DOKPLOY_PREVIEW_ENV_ID}\"}" | jq -sRr @uri)" 2>/dev/null || echo "[]")
-          APP_ID=$(echo "$EXISTING" | python3 -c "
-import json, sys
-try:
-    data = json.load(sys.stdin)
-    apps = data.get('result', {}).get('data', {}).get('json', [])
-    for app in apps:
-        if app.get('appName') == '${APP_NAME}':
-            print(app['applicationId'])
-            break
-except Exception:
-    pass
-" 2>/dev/null || true)
+          APP_ID=$(echo "$EXISTING" | jq -r --arg name "$APP_NAME" '.result.data.json[] | select(.appName == $name) | .applicationId' 2>/dev/null || true)
 
           if [ -n "$APP_ID" ]; then
             echo "Deleting preview app: ${APP_NAME} (${APP_ID})"
@@ -255,15 +230,7 @@ except Exception:
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H "Accept: application/vnd.github.v3+json" \
             "https://api.github.com/users/${OWNER}/packages/container/${PACKAGE}/versions" \
-            | python3 -c "
-import json, sys
-versions = json.load(sys.stdin)
-for version in versions:
-    tags = version.get('metadata', {}).get('container', {}).get('tags', [])
-    if '${TAG}' in tags:
-        print(version['id'])
-        break
-" 2>/dev/null || true)
+            | jq -r --arg tag "$TAG" '.[] | select(.metadata.container.tags | index($tag)) | .id' 2>/dev/null || true)
 
           if [ -n "$VERSION_ID" ]; then
             echo "Deleting GHCR image version ${VERSION_ID} (tag: ${TAG})"
