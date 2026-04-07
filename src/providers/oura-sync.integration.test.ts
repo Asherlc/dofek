@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { activity, dailyMetrics, healthEvent, sensorSample, sleepSession } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
+import { OuraProvider } from "./oura/provider.ts";
 import type {
   OuraDailyActivity,
   OuraDailyCardiovascularAge,
@@ -21,8 +22,7 @@ import type {
   OuraTag,
   OuraVO2Max,
   OuraWorkout,
-} from "./oura.ts";
-import { OuraProvider } from "./oura.ts";
+} from "./oura/schemas.ts";
 
 function fakeSleepDoc(overrides: Partial<OuraSleepDocument> = {}): OuraSleepDocument {
   return {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { JoinedDay } from "../insights/engine.ts";
+import type { JoinedDay } from "../insights/data-join.ts";
 import {
   computeCorrelation,
   computeStats,

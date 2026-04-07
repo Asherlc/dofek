@@ -166,14 +166,14 @@ describe("FitbitProvider webhook methods", () => {
 // ── Oura webhook tests ──
 describe("OuraProvider webhook methods", () => {
   it("is detected as a WebhookProvider", async () => {
-    const { OuraProvider } = await import("./oura.ts");
+    const { OuraProvider } = await import("./oura/provider.ts");
     const provider = new OuraProvider(async () => new Response());
     expect(isWebhookProvider(provider)).toBe(true);
     expect(provider.webhookScope).toBe("app");
   });
 
   it("parseWebhookPayload extracts data event", async () => {
-    const { OuraProvider } = await import("./oura.ts");
+    const { OuraProvider } = await import("./oura/provider.ts");
     const provider = new OuraProvider(async () => new Response());
 
     const events = provider.parseWebhookPayload({
@@ -191,7 +191,7 @@ describe("OuraProvider webhook methods", () => {
   });
 
   it("parseWebhookPayload ignores verification challenge", async () => {
-    const { OuraProvider } = await import("./oura.ts");
+    const { OuraProvider } = await import("./oura/provider.ts");
     const provider = new OuraProvider(async () => new Response());
 
     const events = provider.parseWebhookPayload({
@@ -202,7 +202,7 @@ describe("OuraProvider webhook methods", () => {
   });
 
   it("parseWebhookPayload returns empty for invalid payload", async () => {
-    const { OuraProvider } = await import("./oura.ts");
+    const { OuraProvider } = await import("./oura/provider.ts");
     const provider = new OuraProvider(async () => new Response());
     expect(provider.parseWebhookPayload({})).toHaveLength(0);
     expect(provider.parseWebhookPayload(null)).toHaveLength(0);
@@ -658,7 +658,7 @@ describe("OuraProvider register/unregister", () => {
     const mockFetch = vi.fn(
       async () => new Response(JSON.stringify({ id: "oura-sub-1" }), { status: 200 }),
     );
-    const { OuraProvider } = await import("./oura.ts");
+    const { OuraProvider } = await import("./oura/provider.ts");
     const provider = new OuraProvider(mockFetch);
 
     const original = { ...process.env };
@@ -677,7 +677,7 @@ describe("OuraProvider register/unregister", () => {
 
   it("registerWebhook handles 409 conflict gracefully", async () => {
     const mockFetch = vi.fn(async () => new Response("Already exists", { status: 409 }));
-    const { OuraProvider } = await import("./oura.ts");
+    const { OuraProvider } = await import("./oura/provider.ts");
     const provider = new OuraProvider(mockFetch);
 
     const original = { ...process.env };
@@ -693,7 +693,7 @@ describe("OuraProvider register/unregister", () => {
   });
 
   it("registerWebhook throws without credentials", async () => {
-    const { OuraProvider } = await import("./oura.ts");
+    const { OuraProvider } = await import("./oura/provider.ts");
     const provider = new OuraProvider(async () => new Response());
 
     const original = { ...process.env };
@@ -710,7 +710,7 @@ describe("OuraProvider register/unregister", () => {
 
   it("unregisterWebhook sends DELETE to Oura API", async () => {
     const mockFetch = vi.fn(async () => new Response(null, { status: 200 }));
-    const { OuraProvider } = await import("./oura.ts");
+    const { OuraProvider } = await import("./oura/provider.ts");
     const provider = new OuraProvider(mockFetch);
 
     const original = { ...process.env };
@@ -729,7 +729,7 @@ describe("OuraProvider register/unregister", () => {
 
   it("unregisterWebhook is a no-op without credentials", async () => {
     const mockFetch = vi.fn(async () => new Response());
-    const { OuraProvider } = await import("./oura.ts");
+    const { OuraProvider } = await import("./oura/provider.ts");
     const provider = new OuraProvider(mockFetch);
 
     const original = { ...process.env };
@@ -744,13 +744,13 @@ describe("OuraProvider register/unregister", () => {
   });
 
   it("verifyWebhookSignature always returns true (uses challenge verification)", async () => {
-    const { OuraProvider } = await import("./oura.ts");
+    const { OuraProvider } = await import("./oura/provider.ts");
     const provider = new OuraProvider(async () => new Response());
     expect(provider.verifyWebhookSignature(Buffer.from("body"), {}, "secret")).toBe(true);
   });
 
   it("parseWebhookPayload extracts sleep event", async () => {
-    const { OuraProvider } = await import("./oura.ts");
+    const { OuraProvider } = await import("./oura/provider.ts");
     const provider = new OuraProvider(async () => new Response());
 
     const events = provider.parseWebhookPayload({

@@ -16,7 +16,7 @@ async function doRegisterProviders() {
     ["withings", () => import("../providers/withings.ts").then((m) => new m.WithingsProvider())],
     ["peloton", () => import("../providers/peloton.ts").then((m) => new m.PelotonProvider())],
     ["fatsecret", () => import("../providers/fatsecret.ts").then((m) => new m.FatSecretProvider())],
-    ["whoop", () => import("../providers/whoop.ts").then((m) => new m.WhoopProvider())],
+    ["whoop", () => import("../providers/whoop/provider.ts").then((m) => new m.WhoopProvider())],
     [
       "ride-with-gps",
       () => import("../providers/ride-with-gps.ts").then((m) => new m.RideWithGpsProvider()),
@@ -33,7 +33,7 @@ async function doRegisterProviders() {
       "cronometer-csv",
       () => import("../providers/cronometer-csv.ts").then((m) => new m.CronometerCsvProvider()),
     ],
-    ["oura", () => import("../providers/oura.ts").then((m) => new m.OuraProvider())],
+    ["oura", () => import("../providers/oura/provider.ts").then((m) => new m.OuraProvider())],
     ["bodyspec", () => import("../providers/bodyspec.ts").then((m) => new m.BodySpecProvider())],
     [
       "eight-sleep",

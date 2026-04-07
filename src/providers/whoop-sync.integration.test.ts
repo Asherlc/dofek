@@ -13,14 +13,14 @@ import {
 } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
+import { WhoopProvider } from "./whoop/provider.ts";
 import {
   WhoopClient,
   type WhoopHrValue,
-  WhoopProvider,
   type WhoopRecoveryRecord,
   type WhoopSleepRecord,
   type WhoopWorkoutRecord,
-} from "./whoop.ts";
+} from "./whoop/re-exports.ts";
 
 // ============================================================
 // Fake WHOOP internal API cycle response

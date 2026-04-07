@@ -1,20 +1,22 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
+import { parseJournalResponse } from "./whoop/journal-parsing.ts";
 import {
   parseHeartRateValues,
-  parseJournalResponse,
   parseRecovery,
   parseSleep,
   parseWeightliftingWorkout,
   parseWorkout,
+} from "./whoop/parsing.ts";
+import { WhoopProvider } from "./whoop/provider.ts";
+import {
   WhoopClient,
   type WhoopHrValue,
-  WhoopProvider,
   type WhoopRecoveryRecord,
   type WhoopSleepRecord,
   type WhoopWeightliftingWorkoutResponse,
   type WhoopWorkoutRecord,
-} from "./whoop.ts";
+} from "./whoop/re-exports.ts";
 
 // ============================================================
 // Mocks for sync tests

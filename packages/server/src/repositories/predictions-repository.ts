@@ -1,8 +1,8 @@
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import type { BodyCompRow, DailyRow, NutritionRow, SleepRow } from "../insights/engine.ts";
-import { joinByDate } from "../insights/engine.ts";
+import { joinByDate } from "../insights/data-join.ts";
+import type { BodyCompRow, DailyRow, NutritionRow, SleepRow } from "../insights/types.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import {
   ACTIVITY_PREDICTION_TARGETS,

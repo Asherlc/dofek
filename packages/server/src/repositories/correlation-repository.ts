@@ -6,8 +6,8 @@ import {
 } from "@dofek/stats/correlation";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
-import type { JoinedDay } from "../insights/engine.ts";
-import { joinByDate } from "../insights/engine.ts";
+import type { JoinedDay } from "../insights/data-join.ts";
+import { joinByDate } from "../insights/data-join.ts";
 import {
   activityRowSchema,
   bodyCompRowSchema,

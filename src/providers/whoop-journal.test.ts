@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { parseWorkout, type WhoopWorkoutRecord } from "./whoop.ts";
+import { parseWorkout } from "./whoop/parsing.ts";
+import type { WhoopWorkoutRecord } from "./whoop/re-exports.ts";
 
 // ============================================================
 // Tests for parseJournalResponse (internal function, tested
@@ -125,14 +126,14 @@ describe("parseWorkout — fallback paths (no `during` field)", () => {
 describe("WhoopProvider basic properties", () => {
   // Import the provider to test its basic properties
   it("has correct id and name", async () => {
-    const { WhoopProvider } = await import("./whoop.ts");
+    const { WhoopProvider } = await import("./whoop/provider.ts");
     const provider = new WhoopProvider();
     expect(provider.id).toBe("whoop");
     expect(provider.name).toBe("WHOOP");
   });
 
   it("validate returns null (always enabled)", async () => {
-    const { WhoopProvider } = await import("./whoop.ts");
+    const { WhoopProvider } = await import("./whoop/provider.ts");
     const provider = new WhoopProvider();
     expect(provider.validate()).toBeNull();
   });
