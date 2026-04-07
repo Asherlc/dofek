@@ -15,6 +15,13 @@
       "when": 1773118577701,
       "tag": "0001_seed_journal_questions",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1775582000000,
+      "tag": "0002_drop_user_id_defaults",
+      "breakpoints": true
     }
   ]
 }
