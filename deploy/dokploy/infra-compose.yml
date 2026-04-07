@@ -1,0 +1,110 @@
+# Infrastructure services managed as a Dokploy Compose stack.
+# App services (web, worker) are Dokploy-native — see dokploy.tf.
+#
+# This file is templated by Terraform.
+
+services:
+  db:
+    image: timescale/timescaledb:latest-pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: health
+      POSTGRES_USER: health
+      POSTGRES_PASSWORD: ${postgres_password}
+    volumes:
+%{ if db_data_path != "" ~}
+      - ${db_data_path}:/var/lib/postgresql/data
+%{ else ~}
+      - db_data:/var/lib/postgresql/data
+%{ endif ~}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U health -d health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  db-backup:
+    image: prodrigestivill/postgres-backup-local
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_DB: health
+      POSTGRES_USER: health
+      POSTGRES_PASSWORD: ${postgres_password}
+      SCHEDULE: "@daily"
+      BACKUP_KEEP_DAYS: 7
+      BACKUP_KEEP_WEEKS: 4
+      BACKUP_KEEP_MONTHS: 6
+    volumes:
+%{ if db_backup_path != "" ~}
+      - ${db_backup_path}:/backups
+%{ else ~}
+      - db_backups:/backups
+%{ endif ~}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  collector:
+    image: otel/opentelemetry-collector-contrib:0.149.0
+    restart: unless-stopped
+    user: "0:0"
+    environment:
+      AXIOM_API_TOKEN: ${axiom_api_token}
+      SENTRY_OTLP_LOGS_ENDPOINT: ${sentry_otlp_logs_endpoint}
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /opt/dofek/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:13133/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  ota:
+    image: ghcr.io/axelmarciano/expo-open-ota:latest
+    restart: unless-stopped
+    environment:
+      BASE_URL: https://${ota_domain}
+      STORAGE_MODE: s3
+      S3_BUCKET_NAME: dofek-ota
+      AWS_REGION: auto
+      AWS_BASE_ENDPOINT: ${r2_endpoint}
+      AWS_ACCESS_KEY_ID: ${r2_access_key_id}
+      AWS_SECRET_ACCESS_KEY: ${r2_secret_access_key}
+      EXPO_APP_ID: ${expo_app_id}
+      EXPO_ACCESS_TOKEN: ${expo_access_token}
+      JWT_SECRET: ${ota_jwt_secret}
+      KEYS_STORAGE_TYPE: environment
+      PUBLIC_EXPO_KEY_B64: ${ota_public_key_b64}
+      PRIVATE_EXPO_KEY_B64: ${ota_private_key_b64}
+      CACHE_MODE: redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      PORT: 3000
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/manifest 2>&1 | grep -q 'channel'"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  db_data:
+  db_backups:
+  redis_data:
+
