@@ -16,6 +16,7 @@ import {
   saveSessionToken,
 } from "./auth";
 import { SERVER_URL } from "./server";
+import { captureException } from "./telemetry";
 
 interface AuthState {
   /** The authenticated user, or null if not logged in. */
@@ -74,13 +75,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
-    if (sessionToken) {
-      await authLogout(SERVER_URL, sessionToken);
-    } else {
-      await clearSessionToken();
-    }
+    // Clear React state immediately so the UI shows the login screen
     setSessionToken(null);
     setUser(null);
+
+    // Async cleanup: notify server and clear secure storage
+    try {
+      if (sessionToken) {
+        await authLogout(SERVER_URL, sessionToken);
+      } else {
+        await clearSessionToken();
+      }
+    } catch (error: unknown) {
+      captureException(error, { source: "logout" });
+    }
   }, [sessionToken]);
 
   const value = useMemo(
