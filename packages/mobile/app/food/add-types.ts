@@ -1,5 +1,5 @@
+import type { FoodDatabaseResult } from "@dofek/nutrition/open-food-facts";
 import { z } from "zod";
-import type { FoodDatabaseResult } from "../../lib/food-database";
 
 export type LoggerTab = "search" | "scan" | "quickadd";
 

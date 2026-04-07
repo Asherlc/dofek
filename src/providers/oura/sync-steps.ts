@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import type { SyncDatabase } from "../../db/index.ts";
 import { activity, dailyMetrics, healthEvent, sleepSession } from "../../db/schema.ts";
 import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
@@ -303,8 +304,8 @@ export async function syncDailyStress(context: SyncStepContext): Promise<number>
             .onConflictDoUpdate({
               target: [healthEvent.userId, healthEvent.providerId, healthEvent.externalId],
               set: {
-                value: rows[i]?.value,
-                valueText: rows[i]?.valueText,
+                value: sql`excluded.value`,
+                valueText: sql`excluded.value_text`,
               },
             });
         }
@@ -351,8 +352,8 @@ export async function syncDailyStressWebhook(context: SyncStepContext): Promise<
             .onConflictDoUpdate({
               target: [healthEvent.userId, healthEvent.providerId, healthEvent.externalId],
               set: {
-                value: rows[i]?.value,
-                valueText: rows[i]?.valueText,
+                value: sql`excluded.value`,
+                valueText: sql`excluded.value_text`,
               },
             });
         }

@@ -2723,10 +2723,13 @@ describe("OuraProvider.syncWebhookEvent()", () => {
       if (typeof set !== "object" || set === null) {
         throw new Error("expected conflict set object");
       }
-      const firstRow = healthEventBatches[i]?.[0];
-      if (!firstRow) throw new Error("missing first row in stress batch");
-      expect(Reflect.get(set, "value")).toBe(firstRow.value);
-      expect(Reflect.get(set, "valueText")).toBe(firstRow.valueText);
+      // Verify upsert uses SQL EXCLUDED references (not static row values)
+      const valueField = Reflect.get(set, "value");
+      const valueTextField = Reflect.get(set, "valueText");
+      expect(valueField).toHaveProperty("queryChunks");
+      expect(valueTextField).toHaveProperty("queryChunks");
+      expect(valueField.queryChunks[0].value[0]).toBe("excluded.value");
+      expect(valueTextField.queryChunks[0].value[0]).toBe("excluded.value_text");
     }
   });
 
