@@ -30,6 +30,7 @@ import {
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
 import { withSyncLog } from "../db/sync-log.ts";
+import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
 import type {
@@ -1329,7 +1330,10 @@ export class WhoopProvider implements SyncProvider {
                 })
                 .onConflictDoNothing();
 
-              const userId = options?.userId ?? "00000000-0000-0000-0000-000000000001";
+              const userId = options?.userId ?? getTokenUserId();
+              if (!userId) {
+                throw new Error("WHOOP journal sync requires user context");
+              }
               await db
                 .insert(journalEntry)
                 .values({

@@ -32,6 +32,10 @@ export function computeContentHash(content: string): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
+function isBaselineMigration(file: string): boolean {
+  return /^\d+_baseline(?:_.*)?\.sql$/.test(file);
+}
+
 /** Parse SQL file into individual statements, split on `--> statement-breakpoint`. */
 function parseStatements(content: string): Array<string> {
   return content
@@ -95,7 +99,23 @@ export async function runMigrations(databaseUrl: string, migrationsDir?: string)
       }
     }
 
-    const pendingFiles = files.filter((f) => !appliedSet.has(f));
+    let pendingFiles = files.filter((f) => !appliedSet.has(f));
+
+    // Baseline migrations are for fresh databases only. If any migration has
+    // already been applied, mark baseline files as applied without executing.
+    if (appliedSet.size > 0) {
+      const pendingBaselines = pendingFiles.filter(isBaselineMigration);
+      for (const file of pendingBaselines) {
+        const content = readFileSync(join(dir, file), "utf-8");
+        const contentHash = computeContentHash(content);
+        logger.info(
+          `[migrate] Marking baseline migration as applied on existing database: ${file}`,
+        );
+        await sql`INSERT INTO drizzle.__drizzle_migrations (hash, created_at, content_hash) VALUES (${file}, ${Date.now()}, ${contentHash})`;
+        appliedSet.add(file);
+      }
+      pendingFiles = files.filter((f) => !appliedSet.has(f));
+    }
 
     // Detect duplicate prefixes among pending migrations — two migrations
     // sharing a number means concurrent PRs created conflicting migrations.

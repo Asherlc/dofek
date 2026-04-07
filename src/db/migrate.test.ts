@@ -311,6 +311,46 @@ describe("runMigrations", () => {
     expect(dropCalls).toHaveLength(0);
     expect(createCalls).toHaveLength(0);
   });
+
+  it("applies baseline migrations on fresh databases", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+
+    mockReaddirSync.mockReturnValue(["0000_baseline.sql", "0001_additional.sql"]);
+    mockSql.mockResolvedValue([]);
+    mockReadFileSync.mockImplementation((path: string) => {
+      if (path.endsWith("0000_baseline.sql")) return "CREATE TABLE baseline_table (id INT)";
+      if (path.endsWith("0001_additional.sql")) return "CREATE TABLE additional_table (id INT)";
+      return "";
+    });
+
+    const count = await runMigrations("postgres://localhost/test", "/tmp/migrations");
+
+    expect(count).toBe(2);
+    expect(mockSqlUnsafe).toHaveBeenCalledWith("CREATE TABLE baseline_table (id INT)");
+    expect(mockSqlUnsafe).toHaveBeenCalledWith("CREATE TABLE additional_table (id INT)");
+  });
+
+  it("marks baseline migrations as applied on existing databases", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+
+    mockReaddirSync.mockReturnValue(["0000_baseline.sql", "0001_additional.sql"]);
+    mockSql.mockResolvedValue([{ hash: "0059_previous.sql", content_hash: null }]);
+    mockReadFileSync.mockImplementation((path: string) => {
+      if (path.endsWith("0000_baseline.sql")) return "CREATE TABLE baseline_table (id INT)";
+      if (path.endsWith("0001_additional.sql")) return "CREATE TABLE additional_table (id INT)";
+      return "";
+    });
+
+    const count = await runMigrations("postgres://localhost/test", "/tmp/migrations");
+
+    expect(count).toBe(1);
+    const unsafeStatements = mockSqlUnsafe.mock.calls.map((call) => String(call[0]));
+    expect(unsafeStatements).not.toContain("CREATE TABLE baseline_table (id INT)");
+    expect(unsafeStatements).toContain("CREATE TABLE additional_table (id INT)");
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      expect.stringContaining("Marking baseline migration as applied"),
+    );
+  });
 });
 
 describe("detectDuplicatePrefixes", () => {

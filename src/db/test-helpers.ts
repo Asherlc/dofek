@@ -115,6 +115,14 @@ export async function setupTestDatabase(): Promise<TestContext> {
     }
   }
 
+  // Seed the canonical integration-test user.
+  // Many integration tests use TEST_USER_ID fixtures and expect this row to exist.
+  await migrationClient`
+    INSERT INTO fitness.user_profile (id, name)
+    VALUES (${schema.TEST_USER_ID}, 'Test User')
+    ON CONFLICT (id) DO NOTHING
+  `;
+
   await migrationClient.end();
 
   const client = postgres(connectionString);
