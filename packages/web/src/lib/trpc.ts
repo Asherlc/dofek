@@ -1,4 +1,4 @@
-import { httpBatchStreamLink } from "@trpc/client";
+import { httpBatchLink } from "@trpc/client";
 import type { CreateTRPCReact } from "@trpc/react-query";
 import { createTRPCReact } from "@trpc/react-query";
 import type { AppRouter } from "dofek-server/router";
@@ -10,7 +10,7 @@ const clientTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 export function createTRPCClient() {
   return trpc.createClient({
     links: [
-      httpBatchStreamLink({
+      httpBatchLink({
         url: "/api/trpc",
         methodOverride: "POST",
         headers: () => ({ "x-timezone": clientTimezone }),

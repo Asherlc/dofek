@@ -414,4 +414,71 @@ export const syncRouter = router({
     const repo = new SyncRepository(ctx.db, ctx.userId);
     return repo.getProviderStats();
   }),
+
+  /** Diagnostic: compare materialized view row counts vs base table row counts.
+   *  Helps identify when views are empty/stale but base tables have data. */
+  dataHealth: protectedProcedure.query(async ({ ctx }) => {
+    const { sql: sqlTag } = await import("drizzle-orm");
+    const { executeWithSchema } = await import("../lib/typed-sql.ts");
+
+    const countSchema = z.object({ count: z.coerce.number() });
+
+    const [baseMetrics, viewMetrics, baseSleep, viewSleep, baseActivity, viewActivity] =
+      await Promise.all([
+        executeWithSchema(
+          ctx.db,
+          countSchema,
+          sqlTag`SELECT count(*)::int AS count FROM fitness.daily_metrics WHERE user_id = ${ctx.userId}`,
+        ),
+        executeWithSchema(
+          ctx.db,
+          countSchema,
+          sqlTag`SELECT count(*)::int AS count FROM fitness.v_daily_metrics WHERE user_id = ${ctx.userId}`,
+        ),
+        executeWithSchema(
+          ctx.db,
+          countSchema,
+          sqlTag`SELECT count(*)::int AS count FROM fitness.sleep_session WHERE user_id = ${ctx.userId}`,
+        ),
+        executeWithSchema(
+          ctx.db,
+          countSchema,
+          sqlTag`SELECT count(*)::int AS count FROM fitness.v_sleep WHERE user_id = ${ctx.userId}`,
+        ),
+        executeWithSchema(
+          ctx.db,
+          countSchema,
+          sqlTag`SELECT count(*)::int AS count FROM fitness.activity WHERE user_id = ${ctx.userId}`,
+        ),
+        executeWithSchema(
+          ctx.db,
+          countSchema,
+          sqlTag`SELECT count(*)::int AS count FROM fitness.v_activity WHERE user_id = ${ctx.userId}`,
+        ),
+      ]);
+
+    const health = {
+      dailyMetrics: {
+        baseTable: baseMetrics[0]?.count ?? 0,
+        materializedView: viewMetrics[0]?.count ?? 0,
+      },
+      sleep: { baseTable: baseSleep[0]?.count ?? 0, materializedView: viewSleep[0]?.count ?? 0 },
+      activity: {
+        baseTable: baseActivity[0]?.count ?? 0,
+        materializedView: viewActivity[0]?.count ?? 0,
+      },
+    };
+
+    const hasStaleViews = Object.values(health).some(
+      (table) => table.baseTable > 0 && table.materializedView === 0,
+    );
+
+    if (hasStaleViews) {
+      logger.warn(
+        `[data-health] User ${ctx.userId} has stale materialized views: ${JSON.stringify(health)}`,
+      );
+    }
+
+    return { ...health, hasStaleViews };
+  }),
 });

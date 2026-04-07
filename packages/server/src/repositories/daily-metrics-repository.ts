@@ -3,6 +3,7 @@ import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { dateWindowEnd, dateWindowStart } from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
+import { logger } from "../logger.ts";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -159,6 +160,13 @@ export class DailyMetricsRepository extends BaseRepository {
             today.date AS latest_date
           FROM stats LEFT JOIN today ON true`,
     );
-    return rows[0] ?? null;
+    const result = rows[0] ?? null;
+    if (result && result.latest_date === null && result.avg_resting_hr === null) {
+      logger.warn(
+        `[daily-metrics] Trends query returned all nulls for user ${this.userId} (days=${days}, endDate=${endDate}). ` +
+          "Materialized view fitness.v_daily_metrics may be empty — check sync.dataHealth.",
+      );
+    }
+    return result;
   }
 }

@@ -43,11 +43,7 @@ export async function handleGetMe(req: Request, res: Response): Promise<void> {
     res.status(401).json({ error: "User not found" });
     return;
   }
-  const userAgent = req.headers["user-agent"] ?? "unknown";
-  const isMobile = userAgent.includes("Darwin") || userAgent.includes("CFNetwork");
-  if (isMobile) {
-    logger.info(`[auth] /me resolved userId=${session.userId} (mobile)`);
-  }
+  logger.info(`[auth] /me resolved userId=${session.userId}`);
   const row = rows[0];
   if (!row) {
     res.status(401).json({ error: "User not found" });
