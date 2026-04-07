@@ -141,8 +141,8 @@ export async function logout(serverUrl: string, token: string): Promise<void> {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
     });
-  } catch {
-    // Best-effort — clear local state regardless
+  } catch (error: unknown) {
+    captureException(error, { source: "logout" });
   }
   await clearSessionToken();
 }
