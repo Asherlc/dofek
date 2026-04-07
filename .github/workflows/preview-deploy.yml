@@ -6,7 +6,7 @@ on:
 
 concurrency:
   group: preview-${{ github.event.pull_request.number }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event.action != 'closed' }}
 
 env:
   REGISTRY: ghcr.io
@@ -15,7 +15,9 @@ env:
 jobs:
   build-preview:
     name: Build Preview Image
-    if: github.event.action != 'closed'
+    if: >-
+      github.event.action != 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
@@ -58,6 +60,8 @@ jobs:
     needs: [build-preview]
     if: github.event.action != 'closed'
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
     env:
       DOKPLOY_HOST: ${{ secrets.DOKPLOY_HOST }}
       DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
@@ -70,12 +74,15 @@ jobs:
       - name: Check required secrets
         run: |
           if [ -z "$DOKPLOY_HOST" ] || [ -z "$DOKPLOY_API_KEY" ] || [ -z "$DOKPLOY_PREVIEW_ENV_ID" ]; then
-            echo "::error::Missing required secrets (DOKPLOY_HOST, DOKPLOY_API_KEY, DOKPLOY_PREVIEW_ENV_ID)"
-            exit 1
+            echo "::warning::Dokploy secrets not configured, skipping preview deploy"
+            echo "SKIP_DEPLOY=true" >> "$GITHUB_ENV"
           fi
 
       - name: Create or update preview app
+        if: env.SKIP_DEPLOY != 'true'
         run: |
+          set -euo pipefail
+
           dokploy() {
             local endpoint="$1"
             shift
@@ -90,17 +97,17 @@ jobs:
           # Check if app already exists by listing all apps in the preview environment
           EXISTING=$(dokploy "application.byEnvironment?input=$(printf '%s' "{\"json\":\"${DOKPLOY_PREVIEW_ENV_ID}\"}" | jq -sRr @uri)" 2>/dev/null || echo "[]")
           APP_ID=$(echo "$EXISTING" | python3 -c "
-          import json, sys
-          try:
-              data = json.load(sys.stdin)
-              apps = data.get('result', {}).get('data', {}).get('json', [])
-              for app in apps:
-                  if app.get('appName') == '${APP_NAME}':
-                      print(app['applicationId'])
-                      break
-          except Exception:
-              pass
-          " 2>/dev/null || true)
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    apps = data.get('result', {}).get('data', {}).get('json', [])
+    for app in apps:
+        if app.get('appName') == '${APP_NAME}':
+            print(app['applicationId'])
+            break
+except Exception:
+    pass
+" 2>/dev/null || true)
 
           if [ -z "$APP_ID" ]; then
             echo "Creating new preview app: ${APP_NAME}"
@@ -123,13 +130,12 @@ jobs:
                 -d "{\"json\":{\"applicationId\":\"${APP_ID}\",\"registryId\":\"${DOKPLOY_REGISTRY_ID}\"}}" > /dev/null
             fi
 
-            # Set env vars — preview uses the shared prod DB (read-only safe for previews)
-            ENV_VARS="PORT=3000"
+            # Set env vars
             python3 -c "
-          import json, sys
-          payload = json.dumps({'json': {'applicationId': '${APP_ID}', 'env': '${ENV_VARS}'}})
-          sys.stdout.write(payload)
-          " | dokploy "application.update" -d @- > /dev/null
+import json, sys
+payload = json.dumps({'json': {'applicationId': '${APP_ID}', 'env': 'PORT=3000'}})
+sys.stdout.write(payload)
+" | dokploy "application.update" -d @- > /dev/null
 
             # Create domain
             dokploy "domain.create" \
@@ -150,6 +156,7 @@ jobs:
           echo "APP_ID=${APP_ID}" >> "$GITHUB_ENV"
 
       - name: Comment preview URL
+        if: env.SKIP_DEPLOY != 'true'
         uses: marocchino/sticky-pull-request-comment@52423e01640425a022ef5fd42c6fb5f633a02728 # v2
         with:
           header: preview-deploy
@@ -162,6 +169,8 @@ jobs:
     name: Teardown Preview
     if: github.event.action == 'closed'
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
     env:
       DOKPLOY_HOST: ${{ secrets.DOKPLOY_HOST }}
       DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
@@ -170,6 +179,8 @@ jobs:
     steps:
       - name: Delete preview app
         run: |
+          set -euo pipefail
+
           if [ -z "$DOKPLOY_HOST" ] || [ -z "$DOKPLOY_API_KEY" ] || [ -z "$DOKPLOY_PREVIEW_ENV_ID" ]; then
             echo "Secrets not configured, skipping teardown"
             exit 0
@@ -189,17 +200,17 @@ jobs:
           # Find the app
           EXISTING=$(dokploy "application.byEnvironment?input=$(printf '%s' "{\"json\":\"${DOKPLOY_PREVIEW_ENV_ID}\"}" | jq -sRr @uri)" 2>/dev/null || echo "[]")
           APP_ID=$(echo "$EXISTING" | python3 -c "
-          import json, sys
-          try:
-              data = json.load(sys.stdin)
-              apps = data.get('result', {}).get('data', {}).get('json', [])
-              for app in apps:
-                  if app.get('appName') == '${APP_NAME}':
-                      print(app['applicationId'])
-                      break
-          except Exception:
-              pass
-          " 2>/dev/null || true)
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    apps = data.get('result', {}).get('data', {}).get('json', [])
+    for app in apps:
+        if app.get('appName') == '${APP_NAME}':
+            print(app['applicationId'])
+            break
+except Exception:
+    pass
+" 2>/dev/null || true)
 
           if [ -n "$APP_ID" ]; then
             echo "Deleting preview app: ${APP_NAME} (${APP_ID})"
@@ -219,20 +230,48 @@ jobs:
             **Preview torn down** :wastebasket:
             _PR closed/merged_
 
-  # Clean up stale preview images from GHCR
+  # Clean up the specific preview image tag from GHCR
   cleanup-image:
     name: Cleanup Preview Image
     if: github.event.action == 'closed'
     runs-on: ubuntu-latest
     permissions:
       packages: write
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
     steps:
       - name: Delete preview image tag
-        uses: actions/delete-package-versions@e5bc658cc4c965c472bbe7f4a6c2aae0f8c79fe0 # v5
-        with:
-          package-name: dofek
-          package-type: container
-          min-versions-to-keep: 0
-          delete-only-pre-release-versions: false
-          token: ${{ secrets.GITHUB_TOKEN }}
-        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          TAG="pr-${PR_NUMBER}"
+          PACKAGE="dofek"
+          OWNER="asherlc"
+
+          # Find the specific version ID for this PR tag
+          VERSION_ID=$(curl -fsSL \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/users/${OWNER}/packages/container/${PACKAGE}/versions" \
+            | python3 -c "
+import json, sys
+versions = json.load(sys.stdin)
+for version in versions:
+    tags = version.get('metadata', {}).get('container', {}).get('tags', [])
+    if '${TAG}' in tags:
+        print(version['id'])
+        break
+" 2>/dev/null || true)
+
+          if [ -n "$VERSION_ID" ]; then
+            echo "Deleting GHCR image version ${VERSION_ID} (tag: ${TAG})"
+            curl -fsSL -X DELETE \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github.v3+json" \
+              "https://api.github.com/users/${OWNER}/packages/container/${PACKAGE}/versions/${VERSION_ID}" \
+              || echo "::warning::Failed to delete image version, may need manual cleanup"
+          else
+            echo "No GHCR image found with tag ${TAG}, nothing to clean up"
+          fi
