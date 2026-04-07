@@ -21,6 +21,7 @@ import {
 import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
 import { dualWriteToSensorSample } from "../../db/sensor-sample-writer.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
+import { getTokenUserId } from "../../db/token-user-context.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../../db/tokens.ts";
 import { logger } from "../../logger.ts";
 import type {
@@ -727,6 +728,12 @@ export class WhoopProvider implements SyncProvider {
             logger.info(`[whoop] Journal response shape: ${JSON.stringify(raw).slice(0, 500)}`);
 
             const entries = parseJournalResponse(raw);
+
+            const userId = options?.userId ?? getTokenUserId();
+            if (!userId) {
+              throw new Error("WHOOP journal sync requires user context");
+            }
+
             let count = 0;
             for (const entry of entries) {
               // Ensure the question exists in the reference table
@@ -742,7 +749,6 @@ export class WhoopProvider implements SyncProvider {
                 })
                 .onConflictDoNothing();
 
-              const userId = options?.userId ?? "00000000-0000-0000-0000-000000000001";
               await db
                 .insert(journalEntry)
                 .values({

@@ -907,7 +907,9 @@ jobs:
           fetch-depth: 0
       - name: Lint new migration SQL
         run: |
-          NEW_MIGRATIONS=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- 'drizzle/*.sql' || true)
+          NEW_MIGRATIONS=$(git diff --diff-filter=A --name-only origin/${{ github.base_ref }}...HEAD -- 'drizzle/*.sql' \
+            | grep -v '_baseline' \
+            || true)
           if [ -z "$NEW_MIGRATIONS" ]; then
             echo "No new migrations to lint"
             exit 0

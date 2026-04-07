@@ -90,7 +90,8 @@ dofek/
 │   ├── garmin-connect/            # RE'd Garmin Connect SSO + API client
 │   └── trainingpeaks-connect/     # RE'd TrainingPeaks internal API client
 ├── cypress/                       # E2E tests (Cypress)
-├── drizzle/                       # SQL migrations
+├── drizzle/                       # SQL migrations (0000_baseline.sql + forward migrations)
+│   └── _views/                    # Canonical materialized view definitions
 ├── deploy/                        # Terraform + Docker Compose + Caddy
 └── Dockerfile                     # Multi-stage: server image with built web assets
 ```
@@ -118,6 +119,13 @@ pnpm storybook:mobile
 Pull requests can publish a web Storybook preview automatically on every PR event. The preview is uploaded to R2 and served from `https://storybook.dofek.fit/storybook/pr-<PR number>/`. Configure `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_BUCKET` in GitHub Actions secrets, then apply `deploy/cloudflare` Terraform to provision the public R2 custom domain.
 
 Tests use [Vitest](https://vitest.dev/). TDD is the standard workflow — write tests first, then implement. Test files are colocated with source files (e.g. `index.test.ts` next to `index.ts`). E2E tests use [Cypress](https://www.cypress.io/) and run against a Docker Compose stack in CI. [Stryker](https://stryker-mutator.io/) mutation testing runs on PRs to verify test quality.
+
+### Migration Baseline (Squashed History)
+
+- `drizzle/0000_baseline.sql` is the canonical baseline for fresh databases.
+- `drizzle/0001_seed_journal_questions.sql` seeds canonical journal questions on fresh installs and is idempotent for existing environments.
+- For existing environments that already have rows in `drizzle.__drizzle_migrations`, `runMigrations()` auto-marks pending `*_baseline.sql` files as applied without executing them.
+- Add all new migrations as forward-only files in `drizzle/` (for example, `0003_add_...sql`, `0004_add_...sql`).
 
 ## Docker
 

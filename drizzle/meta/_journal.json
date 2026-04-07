@@ -6,77 +6,21 @@
       "idx": 0,
       "version": "7",
       "when": 1773118304010,
-      "tag": "0000_nifty_ares",
+      "tag": "0000_baseline",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "7",
       "when": 1773118577701,
-      "tag": "0001_sharp_starbolt",
+      "tag": "0001_seed_journal_questions",
       "breakpoints": true
     },
     {
       "idx": 2,
       "version": "7",
-      "when": 1773119526168,
-      "tag": "0002_watery_molecule_man",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1773158137254,
-      "tag": "0003_nappy_kree",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1773163066072,
-      "tag": "0004_conscious_richard_fisk",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1773165490072,
-      "tag": "0005_wise_silver_centurion",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1773165774460,
-      "tag": "0006_sharp_black_tarantula",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1773170000000,
-      "tag": "0007_slim_cardio_activity",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "7",
-      "when": 1773180000000,
-      "tag": "0008_expand_health_types",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "7",
-      "when": 1773190000000,
-      "tag": "0009_add_skin_temp",
-      "breakpoints": true
-    },
-    {
-      "idx": 10,
-      "version": "7",
-      "when": 1773200000000,
-      "tag": "0010_dedup_materialized_views",
+      "when": 1775582000000,
+      "tag": "0002_drop_user_id_defaults",
       "breakpoints": true
     }
   ]
