@@ -506,14 +506,15 @@ describe("parseWorkout — edge cases", () => {
     };
 
     const parsed = parseWorkout(record);
-    expect(parsed.externalId).toBe("uuid-400");
-    expect(parsed.activityType).toBe("running");
-    expect(parsed.durationSeconds).toBe(3600);
-    expect(parsed.distanceMeters).toBeUndefined();
-    expect(parsed.calories).toBeUndefined();
-    expect(parsed.avgHeartRate).toBeUndefined();
-    expect(parsed.maxHeartRate).toBeUndefined();
-    expect(parsed.totalElevationGain).toBeUndefined();
+    expect(parsed).not.toBeNull();
+    expect(parsed?.externalId).toBe("uuid-400");
+    expect(parsed?.activityType).toBe("running");
+    expect(parsed?.durationSeconds).toBe(3600);
+    expect(parsed?.distanceMeters).toBeUndefined();
+    expect(parsed?.calories).toBeUndefined();
+    expect(parsed?.avgHeartRate).toBeUndefined();
+    expect(parsed?.maxHeartRate).toBeUndefined();
+    expect(parsed?.totalElevationGain).toBeUndefined();
   });
 
   it("maps unknown sport ID to other", () => {
@@ -529,7 +530,8 @@ describe("parseWorkout — edge cases", () => {
     };
 
     const parsed = parseWorkout(record);
-    expect(parsed.activityType).toBe("other");
+    expect(parsed).not.toBeNull();
+    expect(parsed?.activityType).toBe("other");
   });
 
   it("converts kilojoules to calories", () => {
@@ -545,8 +547,9 @@ describe("parseWorkout — edge cases", () => {
     };
 
     const parsed = parseWorkout(record);
-    expect(parsed.calories).toBe(100); // 418.4 / 4.184 = ~100
-    expect(parsed.activityType).toBe("yoga");
+    expect(parsed).not.toBeNull();
+    expect(parsed?.calories).toBe(100); // 418.4 / 4.184 = ~100
+    expect(parsed?.activityType).toBe("yoga");
   });
 
   it("handles score with zero kilojoule", () => {
@@ -562,8 +565,9 @@ describe("parseWorkout — edge cases", () => {
     };
 
     const parsed = parseWorkout(record);
-    expect(parsed.calories).toBeUndefined(); // 0 is falsy
-    expect(parsed.activityType).toBe("meditation");
+    expect(parsed).not.toBeNull();
+    expect(parsed?.calories).toBeUndefined(); // 0 is falsy
+    expect(parsed?.activityType).toBe("meditation");
   });
 
   it("maps various sport IDs correctly", () => {
@@ -578,14 +582,14 @@ describe("parseWorkout — edge cases", () => {
       kilojoules: 1000,
     });
 
-    expect(parseWorkout(makeRecord(1)).activityType).toBe("cycling");
-    expect(parseWorkout(makeRecord(33)).activityType).toBe("swimming");
-    expect(parseWorkout(makeRecord(52)).activityType).toBe("hiking");
-    expect(parseWorkout(makeRecord(63)).activityType).toBe("walking");
-    expect(parseWorkout(makeRecord(45)).activityType).toBe("strength");
-    expect(parseWorkout(makeRecord(18)).activityType).toBe("rowing");
-    expect(parseWorkout(makeRecord(65)).activityType).toBe("elliptical");
-    expect(parseWorkout(makeRecord(29)).activityType).toBe("skiing");
+    expect(parseWorkout(makeRecord(1))?.activityType).toBe("cycling");
+    expect(parseWorkout(makeRecord(33))?.activityType).toBe("swimming");
+    expect(parseWorkout(makeRecord(52))?.activityType).toBe("hiking");
+    expect(parseWorkout(makeRecord(63))?.activityType).toBe("walking");
+    expect(parseWorkout(makeRecord(45))?.activityType).toBe("strength");
+    expect(parseWorkout(makeRecord(18))?.activityType).toBe("rowing");
+    expect(parseWorkout(makeRecord(65))?.activityType).toBe("elliptical");
+    expect(parseWorkout(makeRecord(29))?.activityType).toBe("skiing");
   });
 
   it("falls back to v2_activity type name when sport_id maps to other", () => {
@@ -601,10 +605,10 @@ describe("parseWorkout — edge cases", () => {
     };
 
     // Without v2 type name → "other"
-    expect(parseWorkout(record).activityType).toBe("other");
+    expect(parseWorkout(record)?.activityType).toBe("other");
 
     // With v2 type name "walk" → "walking"
-    expect(parseWorkout(record, "walk").activityType).toBe("walking");
+    expect(parseWorkout(record, "walk")?.activityType).toBe("walking");
   });
 
   it("prefers sport_id mapping over v2_activity type when sport_id is known", () => {
@@ -620,7 +624,7 @@ describe("parseWorkout — edge cases", () => {
     };
 
     // sport_id 63 → "walking" even if v2 type says something else
-    expect(parseWorkout(record, "run").activityType).toBe("walking");
+    expect(parseWorkout(record, "run")?.activityType).toBe("walking");
   });
 });
 
@@ -884,9 +888,10 @@ describe("parseWorkout — legacy fallback without during", () => {
     };
 
     const parsed = parseWorkout(record);
-    expect(parsed.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
-    expect(parsed.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
-    expect(parsed.durationSeconds).toBe(3600);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
+    expect(parsed?.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
+    expect(parsed?.durationSeconds).toBe(3600);
   });
 
   it("falls back to created_at/updated_at when during and start/end are missing", () => {
@@ -899,9 +904,10 @@ describe("parseWorkout — legacy fallback without during", () => {
     };
 
     const parsed = parseWorkout(record);
-    expect(parsed.startedAt).toEqual(new Date("2026-03-01T09:00:00Z"));
-    expect(parsed.endedAt).toEqual(new Date("2026-03-01T10:30:00Z"));
-    expect(parsed.durationSeconds).toBe(5400);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.startedAt).toEqual(new Date("2026-03-01T09:00:00Z"));
+    expect(parsed?.endedAt).toEqual(new Date("2026-03-01T10:30:00Z"));
+    expect(parsed?.durationSeconds).toBe(5400);
   });
 
   it("uses id as externalId when activity_id is missing", () => {
@@ -913,7 +919,8 @@ describe("parseWorkout — legacy fallback without during", () => {
     };
 
     const parsed = parseWorkout(record);
-    expect(parsed.externalId).toBe("12345");
+    expect(parsed).not.toBeNull();
+    expect(parsed?.externalId).toBe("12345");
   });
 });
 
@@ -1314,7 +1321,8 @@ describe("parseWorkout — percent recorded", () => {
     };
 
     const parsed = parseWorkout(record);
-    expect(parsed.percentRecorded).toBe(95);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.percentRecorded).toBe(95);
   });
 
   it("returns undefined when percent_recorded is missing", () => {
@@ -1326,7 +1334,8 @@ describe("parseWorkout — percent recorded", () => {
     };
 
     const parsed = parseWorkout(record);
-    expect(parsed.percentRecorded).toBeUndefined();
+    expect(parsed).not.toBeNull();
+    expect(parsed?.percentRecorded).toBeUndefined();
   });
 });
 

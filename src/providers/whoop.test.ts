@@ -595,14 +595,15 @@ describe("WHOOP Provider — parsing", () => {
   describe("parseWorkout", () => {
     it("maps workout fields to cardio activity", () => {
       const result = parseWorkout(sampleWorkout);
-      expect(result.externalId).toBe("abc12345-6789-0def-1234-567890abcdef");
-      expect(result.activityType).toBe("running");
-      expect(result.avgHeartRate).toBe(155);
-      expect(result.maxHeartRate).toBe(185);
-      expect(result.calories).toBe(598); // 2500.5 kJ / 4.184
-      expect(result.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
-      expect(result.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
-      expect(result.durationSeconds).toBe(3600);
+      expect(result).not.toBeNull();
+      expect(result?.externalId).toBe("abc12345-6789-0def-1234-567890abcdef");
+      expect(result?.activityType).toBe("running");
+      expect(result?.avgHeartRate).toBe(155);
+      expect(result?.maxHeartRate).toBe(185);
+      expect(result?.calories).toBe(598); // 2500.5 kJ / 4.184
+      expect(result?.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
+      expect(result?.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
+      expect(result?.durationSeconds).toBe(3600);
     });
   });
 

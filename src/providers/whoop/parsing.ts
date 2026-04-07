@@ -277,7 +277,7 @@ export function resolveActivityType(
 export function parseWorkout(
   record: WhoopWorkoutRecord,
   v2ActivityTypeName?: string,
-): ParsedWorkout {
+): ParsedWorkout | null {
   // BFF v0 uses `during` range; fall back to legacy `start`/`end`
   let startedAt: Date;
   let endedAt: Date;
@@ -288,6 +288,10 @@ export function parseWorkout(
   } else {
     startedAt = new Date(record.start ?? record.created_at ?? "");
     endedAt = new Date(record.end ?? record.updated_at ?? "");
+  }
+
+  if (Number.isNaN(startedAt.getTime()) || Number.isNaN(endedAt.getTime())) {
+    return null;
   }
 
   return {

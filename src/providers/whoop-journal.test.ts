@@ -27,12 +27,13 @@ describe("parseWorkout — fallback paths (no `during` field)", () => {
     };
 
     const parsed = parseWorkout(record);
-    expect(parsed.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
-    expect(parsed.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
-    expect(parsed.durationSeconds).toBe(3600);
-    expect(parsed.avgHeartRate).toBe(140);
-    expect(parsed.maxHeartRate).toBe(175);
-    expect(parsed.calories).toBe(478); // 2000 / 4.184 ≈ 478
+    expect(parsed).not.toBeNull();
+    expect(parsed?.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
+    expect(parsed?.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
+    expect(parsed?.durationSeconds).toBe(3600);
+    expect(parsed?.avgHeartRate).toBe(140);
+    expect(parsed?.maxHeartRate).toBe(175);
+    expect(parsed?.calories).toBe(478); // 2000 / 4.184 ≈ 478
   });
 
   it("falls back to created_at/updated_at when start/end are missing", () => {
@@ -46,10 +47,11 @@ describe("parseWorkout — fallback paths (no `during` field)", () => {
     };
 
     const parsed = parseWorkout(record);
-    expect(parsed.startedAt).toEqual(new Date("2026-03-01T09:00:00Z"));
-    expect(parsed.endedAt).toEqual(new Date("2026-03-01T10:30:00Z"));
-    expect(parsed.durationSeconds).toBe(5400);
-    expect(parsed.activityType).toBe("cycling");
+    expect(parsed).not.toBeNull();
+    expect(parsed?.startedAt).toEqual(new Date("2026-03-01T09:00:00Z"));
+    expect(parsed?.endedAt).toEqual(new Date("2026-03-01T10:30:00Z"));
+    expect(parsed?.durationSeconds).toBe(5400);
+    expect(parsed?.activityType).toBe("cycling");
   });
 
   it("uses record.id when activity_id is missing", () => {
@@ -62,8 +64,9 @@ describe("parseWorkout — fallback paths (no `during` field)", () => {
     };
 
     const parsed = parseWorkout(record);
-    expect(parsed.externalId).toBe("98765");
-    expect(parsed.activityType).toBe("yoga");
+    expect(parsed).not.toBeNull();
+    expect(parsed?.externalId).toBe("98765");
+    expect(parsed?.activityType).toBe("yoga");
   });
 
   it("uses empty string when both activity_id and id are missing", () => {
@@ -75,7 +78,8 @@ describe("parseWorkout — fallback paths (no `during` field)", () => {
     };
 
     const parsed = parseWorkout(record);
-    expect(parsed.externalId).toBe("");
+    expect(parsed).not.toBeNull();
+    expect(parsed?.externalId).toBe("");
   });
 
   it("returns undefined calories when kilojoules is 0", () => {
@@ -89,7 +93,8 @@ describe("parseWorkout — fallback paths (no `during` field)", () => {
     };
 
     const parsed = parseWorkout(record);
-    expect(parsed.calories).toBeUndefined();
+    expect(parsed).not.toBeNull();
+    expect(parsed?.calories).toBeUndefined();
   });
 
   it("returns undefined calories when kilojoules is not present", () => {
@@ -102,7 +107,8 @@ describe("parseWorkout — fallback paths (no `during` field)", () => {
     };
 
     const parsed = parseWorkout(record);
-    expect(parsed.calories).toBeUndefined();
+    expect(parsed).not.toBeNull();
+    expect(parsed?.calories).toBeUndefined();
   });
 
   it("always returns undefined for distanceMeters and totalElevationGain", () => {
@@ -118,8 +124,9 @@ describe("parseWorkout — fallback paths (no `during` field)", () => {
     };
 
     const parsed = parseWorkout(record);
-    expect(parsed.distanceMeters).toBeUndefined();
-    expect(parsed.totalElevationGain).toBeUndefined();
+    expect(parsed).not.toBeNull();
+    expect(parsed?.distanceMeters).toBeUndefined();
+    expect(parsed?.totalElevationGain).toBeUndefined();
   });
 });
 

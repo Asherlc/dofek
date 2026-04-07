@@ -451,6 +451,7 @@ export class WhoopProvider implements SyncProvider {
                 ? v2ActivityTypeByActivityId.get(workoutRecord.activity_id)
                 : undefined;
               const parsed = parseWorkout(workoutRecord, v2TypeName);
+              if (!parsed) continue;
 
               await db
                 .insert(activity)
