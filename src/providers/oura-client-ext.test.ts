@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ZodError } from "zod";
-import { OuraClient } from "./oura.ts";
+import { OuraClient } from "./oura/client.ts";
 
 // ============================================================
 // Extended OuraClient tests covering the remaining API endpoints

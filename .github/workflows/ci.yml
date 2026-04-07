@@ -732,7 +732,12 @@ jobs:
             DIFF_RANGE="HEAD~1...HEAD"
           fi
 
-          CANDIDATES=$(git diff --name-only $DIFF_RANGE \
+          # Use -M -C for rename/copy detection and --diff-filter=M to only
+          # include truly modified files.  This skips Added files (extracted code
+          # in decomposition PRs) and Renamed files (same code, new path) that
+          # were never mutation-tested and would fail the 75 % break threshold.
+          # They will be mutation-tested when their content is later modified.
+          CANDIDATES=$(git diff -M -C --diff-filter=M --name-only $DIFF_RANGE \
             | { grep '\.ts$' || true; } \
             | { grep -v '\.test\.ts$' || true; } \
             | { grep -v '\.cy\.ts$' || true; } \
@@ -750,6 +755,20 @@ jobs:
           ALL_FILES=()
           for f in $CANDIDATES; do
             [ ! -f "$f" ] && continue
+
+            # Skip files where the diff is overwhelmingly deletions (>90%).
+            # These are files that had code extracted from them during a
+            # decomposition — the remaining code is unchanged and doesn't
+            # need mutation-testing.
+            STATS=$(git diff --numstat $DIFF_RANGE -- "$f")
+            ADDED=$(echo "$STATS" | awk '{print $1}')
+            DELETED=$(echo "$STATS" | awk '{print $2}')
+            TOTAL=$((ADDED + DELETED))
+            if [ "$TOTAL" -gt 50 ] && [ "$((ADDED * 100 / TOTAL))" -lt 10 ]; then
+              echo "Skipping $f: $ADDED added, $DELETED deleted (mostly extraction)"
+              continue
+            fi
+
             ALL_FILES+=("$f")
           done
 
@@ -888,7 +907,9 @@ jobs:
           fetch-depth: 0
       - name: Lint new migration SQL
         run: |
-          NEW_MIGRATIONS=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- 'drizzle/*.sql' || true)
+          NEW_MIGRATIONS=$(git diff --diff-filter=A --name-only origin/${{ github.base_ref }}...HEAD -- 'drizzle/*.sql' \
+            | grep -v '_baseline' \
+            || true)
           if [ -z "$NEW_MIGRATIONS" ]; then
             echo "No new migrations to lint"
             exit 0

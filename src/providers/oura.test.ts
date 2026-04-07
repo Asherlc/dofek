@@ -8,10 +8,12 @@ import {
   sleepSession as sleepSessionTable,
 } from "../db/schema.ts";
 import { logger } from "../logger.ts";
+import { OuraClient } from "./oura/client.ts";
+import { ouraOAuthConfig } from "./oura/oauth.ts";
+import { fetchAllPagesOptional } from "./oura/pagination.ts";
+import { mapOuraActivityType, parseOuraDailyMetrics, parseOuraSleep } from "./oura/parsing.ts";
+import { OuraProvider } from "./oura/provider.ts";
 import {
-  fetchAllPagesOptional,
-  mapOuraActivityType,
-  OuraClient,
   type OuraDailyActivity,
   type OuraDailyCardiovascularAge,
   type OuraDailyReadiness,
@@ -20,7 +22,6 @@ import {
   type OuraDailyStress,
   type OuraEnhancedTag,
   type OuraHeartRate,
-  OuraProvider,
   type OuraRestModePeriod,
   type OuraSession,
   type OuraSleepDocument,
@@ -36,7 +37,6 @@ import {
   ouraDailyStressSchema,
   ouraEnhancedTagSchema,
   ouraHeartRateSchema,
-  ouraOAuthConfig,
   ouraRestModePeriodSchema,
   ouraSessionSchema,
   ouraSleepDocumentSchema,
@@ -44,9 +44,7 @@ import {
   ouraTagSchema,
   ouraVO2MaxSchema,
   ouraWorkoutSchema,
-  parseOuraDailyMetrics,
-  parseOuraSleep,
-} from "./oura.ts";
+} from "./oura/schemas.ts";
 
 // ============================================================
 // Mock external dependencies (for sync tests)

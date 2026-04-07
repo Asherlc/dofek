@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { WhoopWeightliftingWorkoutResponse } from "whoop-whoop/types";
-import { parseWeightliftingWorkout } from "./whoop.ts";
+import { parseWeightliftingWorkout } from "./whoop/parsing.ts";
 
 // ============================================================
 // Sample WHOOP weightlifting-service response

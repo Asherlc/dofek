@@ -18,15 +18,10 @@ const path = require("node:path");
 // Marker comment used to detect if the snippet has already been inserted.
 const MARKER = "[with-podfile-post-install]";
 
-// Use concatenation to avoid JS interpreting Ruby's ${PODS_ROOT} as a template expression.
-const PODS_ROOT_REF = "${PODS_ROOT}";
-
 const POST_INSTALL_SNIPPET = [
   "",
-  "    # " + MARKER + " RNSentry header search path for prebuilt XCFramework",
-  "    local_sentry_headers = '\"" +
-    PODS_ROOT_REF +
-    "/../../native/sentry-pod/Sources/Sentry/include\"'",
+  `    # ${MARKER} RNSentry header search path for prebuilt XCFramework`,
+  `    local_sentry_headers = '"\${PODS_ROOT}/../../native/sentry-pod/Sources/Sentry/include"'`,
   "    installer.pods_project.targets.each do |target|",
   "      if target.name == 'RNSentry'",
   "        target.build_configurations.each do |config|",
@@ -35,7 +30,7 @@ const POST_INSTALL_SNIPPET = [
   "        end",
   "      end",
   "",
-  "      # " + MARKER + " ExpoModulesCore Xcode 26+ warning workaround",
+  `      # ${MARKER} ExpoModulesCore Xcode 26+ warning workaround`,
   "      if target.name == 'ExpoModulesCore'",
   "        target.build_configurations.each do |config|",
   "          flags = config.build_settings['OTHER_CPLUSPLUSFLAGS'] || ['$(inherited)']",

@@ -5,6 +5,7 @@ import {
   fetchConfiguredProviders,
   fetchCurrentUser,
   isNativeAppleSignInAvailable,
+  logout,
   startNativeAppleSignIn,
 } from "./auth";
 
@@ -276,5 +277,55 @@ describe("startNativeAppleSignIn", () => {
     vi.mocked(fetch).mockResolvedValueOnce(new Response("Apple Sign In failed", { status: 500 }));
 
     await expect(startNativeAppleSignIn("https://srv")).rejects.toThrow("Apple Sign In failed");
+  });
+});
+
+describe("logout", () => {
+  let SecureStore: typeof import("expo-secure-store");
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    vi.stubGlobal("fetch", vi.fn());
+    SecureStore = await import("expo-secure-store");
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("sends POST to /auth/logout with Bearer token", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ ok: true })));
+
+    await logout("https://srv", "my-token");
+
+    expect(fetch).toHaveBeenCalledWith("https://srv/auth/logout", {
+      method: "POST",
+      headers: { Authorization: "Bearer my-token" },
+    });
+  });
+
+  it("clears the session token from storage", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ ok: true })));
+
+    await logout("https://srv", "my-token");
+
+    expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("dofek_session_token");
+  });
+
+  it("clears the session token even when fetch fails", async () => {
+    vi.mocked(fetch).mockRejectedValueOnce(new Error("network error"));
+
+    await logout("https://srv", "my-token");
+
+    expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("dofek_session_token");
+  });
+
+  it("reports fetch errors to Sentry", async () => {
+    const Sentry = await import("@sentry/react-native");
+    vi.mocked(fetch).mockRejectedValueOnce(new Error("network error"));
+
+    await logout("https://srv", "my-token");
+
+    expect(Sentry.captureException).toHaveBeenCalled();
   });
 });

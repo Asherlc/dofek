@@ -20,7 +20,7 @@ import {
 } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
-import { WhoopProvider } from "./whoop.ts";
+import { WhoopProvider } from "./whoop/provider.ts";
 
 // ============================================================
 // Fake WHOOP internal API cycle response

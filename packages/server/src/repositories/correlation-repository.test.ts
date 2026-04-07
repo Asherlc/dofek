@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { JoinedDay } from "../insights/engine.ts";
+import type { JoinedDay } from "../insights/data-join.ts";
 import {
   CorrelationRepository,
   computeCorrelation,
@@ -9,7 +9,7 @@ import {
   extractMetricValue,
 } from "./correlation-repository.ts";
 
-vi.mock("../insights/engine.ts", () => ({
+vi.mock("../insights/data-join.ts", () => ({
   joinByDate: vi.fn().mockReturnValue([]),
 }));
 
