@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { ENDURANCE_ACTIVITY_TYPES } from "./endurance-types";
 import {
   CANONICAL_ACTIVITY_TYPES,
   CYCLING_ACTIVITY_TYPES,
   collapseWeeklyVolumeActivityTypes,
   createActivityTypeMapper,
-  ENDURANCE_ACTIVITY_TYPES,
   formatActivityTypeLabel,
   GARMIN_ACTIVITY_TYPE_MAP,
   isCyclingActivity,

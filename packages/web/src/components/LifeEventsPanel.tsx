@@ -1,6 +1,6 @@
+import { formatNumber } from "@dofek/format/format";
 import { useState } from "react";
 import { z } from "zod";
-import { formatNumber } from "../lib/format.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 

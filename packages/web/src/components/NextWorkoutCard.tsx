@@ -1,8 +1,8 @@
+import { isToday } from "@dofek/format/format";
 import { chartColors, statusColors } from "@dofek/scoring/colors";
 import { readinessLevelColor } from "@dofek/scoring/scoring";
 import type { NextWorkoutRecommendation } from "dofek-server/types";
 import { useEffect, useState } from "react";
-import { isToday } from "../lib/format.ts";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface NextWorkoutCardProps {

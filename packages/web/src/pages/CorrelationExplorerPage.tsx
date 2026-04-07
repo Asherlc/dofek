@@ -1,3 +1,4 @@
+import { formatNumber } from "@dofek/format/format";
 import { useState } from "react";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { CorrelationStrengthBar } from "../components/CorrelationStrengthBar.tsx";
@@ -5,7 +6,6 @@ import { DofekChart } from "../components/DofekChart.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { chartThemeColors, dofekAxis, dofekGrid, dofekTooltip } from "../lib/chartTheme.ts";
-import { formatNumber } from "../lib/format.ts";
 import { trpc } from "../lib/trpc.ts";
 
 const LAG_OPTIONS = [

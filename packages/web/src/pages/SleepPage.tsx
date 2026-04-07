@@ -1,3 +1,4 @@
+import { formatDateYmd as formatDateForQuery } from "@dofek/format/format";
 import { useMemo, useState } from "react";
 import { z } from "zod";
 import {
@@ -12,7 +13,6 @@ import { SleepChart } from "../components/SleepChart.tsx";
 import { SleepNeedCard } from "../components/SleepNeedCard.tsx";
 import { SleepPerformanceCard } from "../components/SleepPerformanceCard.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
-import { formatDateForQuery } from "../lib/dates.ts";
 import { trpc } from "../lib/trpc.ts";
 import { assertRows } from "../lib/utils.ts";
 

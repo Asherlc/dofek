@@ -1,6 +1,6 @@
+import { UnitConverter } from "@dofek/format/units";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { UnitConverter } from "../lib/units";
 import { ActivityCard } from "./ActivityCard";
 
 describe("ActivityCard", () => {

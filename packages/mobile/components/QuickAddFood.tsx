@@ -1,3 +1,5 @@
+import { formatDateYmd } from "@dofek/format/format";
+import { autoMealType, type MealType, parseQuickAddForm } from "@dofek/nutrition/meal";
 import { useState } from "react";
 import {
   Alert,
@@ -11,7 +13,6 @@ import {
   TouchableWithoutFeedback,
   View,
 } from "react-native";
-import { autoMealType, formatDateYmd, type MealType, parseQuickAddForm } from "../lib/meal";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
 

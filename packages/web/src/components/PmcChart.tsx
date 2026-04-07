@@ -1,3 +1,4 @@
+import { formatNumber } from "@dofek/format/format";
 import {
   FORM_ZONE_COLORS,
   FORM_ZONE_FRESH,
@@ -8,7 +9,6 @@ import {
 } from "@dofek/scoring/scoring";
 import type { PmcDataPoint, TssModelInfo } from "dofek-server/types";
 import { chartColors, chartThemeColors, dofekTooltip } from "../lib/chartTheme.ts";
-import { formatNumber } from "../lib/format.ts";
 import { DofekChart } from "./DofekChart.tsx";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 

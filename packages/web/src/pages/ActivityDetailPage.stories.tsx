@@ -1,6 +1,6 @@
 import { UnitConverter } from "@dofek/format/units";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import type { ActivityDetail } from "../../../server/src/routers/activity.ts";
+import type { ActivityDetail } from "../../../server/src/models/activity.ts";
 import { ActivityHeader } from "./ActivityDetailPage.tsx";
 
 // ── ActivityHeader ──────────────────────────────────────────

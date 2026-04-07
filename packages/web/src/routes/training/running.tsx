@@ -1,3 +1,4 @@
+import type { UnitConverter } from "@dofek/format/units";
 import { createFileRoute } from "@tanstack/react-router";
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
 import { DofekChart } from "../../components/DofekChart.tsx";
@@ -13,13 +14,12 @@ import {
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
 import { trpc } from "../../lib/trpc.ts";
 import { useUnitConverter } from "../../lib/unitContext.ts";
-import type { UnitConverter } from "../../lib/units.ts";
 
 export const Route = createFileRoute("/training/running")({
   component: RunningTab,
 });
 
-import { formatNumber, formatPace } from "../../lib/format.ts";
+import { formatNumber, formatPace } from "@dofek/format/format";
 
 export function RunningTab() {
   const { days } = useTrainingDays();

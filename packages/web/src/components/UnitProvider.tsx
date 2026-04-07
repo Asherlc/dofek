@@ -1,7 +1,7 @@
+import { detectUnitSystem, type UnitSystem } from "@dofek/format/units";
 import { useCallback, useEffect, useState } from "react";
 import { trpc } from "../lib/trpc.ts";
 import { UnitContext } from "../lib/unitContext.ts";
-import { detectUnitSystem, type UnitSystem } from "../lib/units.ts";
 
 const SETTINGS_KEY = "unitSystem";
 

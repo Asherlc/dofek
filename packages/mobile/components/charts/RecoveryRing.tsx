@@ -1,3 +1,4 @@
+import { scoreColor, scoreLabel } from "@dofek/scoring/scoring";
 import { useEffect } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import {
@@ -8,7 +9,6 @@ import {
   withTiming,
 } from "react-native-reanimated";
 import Svg, { Circle } from "react-native-svg";
-import { scoreColor, scoreLabel } from "../../lib/scoring";
 import { colors, duration } from "../../theme";
 
 const AnimatedCircle = createAnimatedComponent(Circle);

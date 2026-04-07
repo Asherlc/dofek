@@ -1,3 +1,4 @@
+import { formatNumber } from "@dofek/format/format";
 import {
   chartColors,
   chartThemeColors,
@@ -6,7 +7,6 @@ import {
   dofekSeries,
   dofekTooltip,
 } from "../lib/chartTheme.ts";
-import { formatNumber } from "../lib/format.ts";
 import { CorrelationStrengthBar } from "./CorrelationStrengthBar.tsx";
 import { DofekChart } from "./DofekChart.tsx";
 

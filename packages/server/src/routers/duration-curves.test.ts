@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { fitCriticalHeartRate } from "./duration-curves.ts";
+import { fitCriticalHeartRate } from "../repositories/duration-curves-repository.ts";
 
 describe("fitCriticalHeartRate", () => {
   it("returns null with fewer than 3 points", () => {

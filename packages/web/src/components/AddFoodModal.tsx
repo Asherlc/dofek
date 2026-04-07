@@ -1,6 +1,6 @@
 import { MEAL_OPTIONS, type MealType } from "@dofek/nutrition/meal";
+import { type FoodDatabaseResult, OpenFoodFactsClient } from "@dofek/nutrition/open-food-facts";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { type FoodDatabaseResult, OpenFoodFactsClient } from "../lib/food-database.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 

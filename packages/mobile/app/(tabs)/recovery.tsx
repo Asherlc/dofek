@@ -1,5 +1,11 @@
 import { formatDateYmd, formatNumber } from "@dofek/format/format";
-import { SCORE_ZONES, scoreColor, scoreLabel } from "@dofek/scoring/scoring";
+import {
+  trendDirection as computeTrend,
+  SCORE_ZONES,
+  scoreColor,
+  scoreLabel,
+  trendColor,
+} from "@dofek/scoring/scoring";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
@@ -17,7 +23,6 @@ import { Card } from "../../components/Card";
 import { SparkLine } from "../../components/charts/SparkLine";
 import { DaySelector } from "../../components/DaySelector";
 import { MetricCard } from "../../components/MetricCard";
-import { trendDirection as computeTrend, trendColor } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useRefresh } from "../../lib/useRefresh";

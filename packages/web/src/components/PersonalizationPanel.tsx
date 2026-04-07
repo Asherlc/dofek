@@ -1,4 +1,4 @@
-import { formatNumber } from "../lib/format.ts";
+import { formatNumber } from "@dofek/format/format";
 import { trpc } from "../lib/trpc.ts";
 
 const PARAM_LABELS: Record<string, { label: string; description: string }> = {

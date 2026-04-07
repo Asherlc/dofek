@@ -1,8 +1,8 @@
+import { mapHrZones } from "@dofek/zones/zones";
 import { TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
-
 import { Activity } from "../models/activity.ts";
-import { mapHrZones, mapStreamPoint } from "./activity.ts";
+import { mapStreamPoint } from "./activity.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 // Mock tRPC infrastructure

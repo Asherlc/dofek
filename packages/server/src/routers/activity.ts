@@ -11,9 +11,6 @@ import { StrengthRepository } from "../repositories/strength-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 import { ensureProvidersRegistered } from "./sync.ts";
 
-export type { ActivityDetail, SourceLink } from "../models/activity.ts";
-export type { SetDetail as StrengthSetDetail } from "../repositories/strength-repository.ts";
-
 export interface StrengthExerciseDetail {
   exerciseIndex: number;
   exerciseName: string;
@@ -34,7 +31,6 @@ export interface StreamPoint {
   lng: number | null;
 }
 
-export type { ActivityHrZone } from "@dofek/zones/zones";
 export type ActivityHrZones = import("@dofek/zones/zones").ActivityHrZone[];
 
 export const activityRouter = router({
@@ -116,6 +112,3 @@ export function mapStreamPoint(row: {
 }): StreamPoint {
   return new StreamPointModel(row).toDetail();
 }
-
-// Re-export mapHrZones for backward compatibility with consumers
-export { mapHrZones } from "@dofek/zones/zones";

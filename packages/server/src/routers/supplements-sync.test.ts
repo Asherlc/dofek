@@ -50,7 +50,8 @@ vi.mock("../lib/typed-sql.ts", () => ({
 }));
 
 import { executeWithSchema } from "../lib/typed-sql.ts";
-import { supplementsRouter, toApiSupplement } from "./supplements.ts";
+import { toApiSupplement } from "../repositories/supplements-repository.ts";
+import { supplementsRouter } from "./supplements.ts";
 
 /** Build a view row (snake_case nutrients) with all fields populated. */
 const NUTRIENT_SNAKE_VALUES: Record<string, number> = {

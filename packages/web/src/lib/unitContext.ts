@@ -1,6 +1,6 @@
+import type { UnitSystem } from "@dofek/format/units";
+import { UnitConverter } from "@dofek/format/units";
 import { createContext, useContext, useMemo } from "react";
-import type { UnitSystem } from "./units.ts";
-import { UnitConverter } from "./units.ts";
 
 interface UnitContextValue {
   unitSystem: UnitSystem;
