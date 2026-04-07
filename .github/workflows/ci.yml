@@ -1225,7 +1225,7 @@ jobs:
           echo "=== Archive Info.plist ==="
           cat "$RUNNER_TEMP/Dofek.xcarchive/Info.plist" 2>/dev/null | head -60 || true
 
-      - name: Export IPA
+      - name: Export IPA & Upload to TestFlight
         run: |
           xcodebuild -exportArchive \
             -archivePath $RUNNER_TEMP/Dofek.xcarchive \
@@ -1235,20 +1235,6 @@ jobs:
             -authenticationKeyPath ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8 \
             -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
             -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
-
-      - name: Upload to TestFlight
-        if: success()
-        run: |
-          OUTPUT=$(xcrun altool --upload-app \
-            --type ios \
-            --file $RUNNER_TEMP/export/Dofek.ipa \
-            --apiKey "$APP_STORE_CONNECT_KEY_ID" \
-            --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID" 2>&1) || true
-          echo "$OUTPUT"
-          if echo "$OUTPUT" | grep -q "UPLOAD FAILED"; then
-            echo "::error::altool upload failed"
-            exit 1
-          fi
 
       - name: Dump distribution logs
         if: failure()
