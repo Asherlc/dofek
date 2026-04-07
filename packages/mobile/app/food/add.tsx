@@ -1,6 +1,6 @@
 import { formatDateYmd } from "@dofek/format/format";
 import { autoMealType, MEAL_OPTIONS, type MealType } from "@dofek/nutrition/meal";
-import { type FoodDatabaseResult, OpenFoodFactsClient } from "@dofek/nutrition/open-food-facts";
+import { OpenFoodFactsClient } from "@dofek/nutrition/open-food-facts";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -9,60 +9,29 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   useWindowDimensions,
   View,
 } from "react-native";
-import { z } from "zod";
 import { BarcodeScanner } from "../../components/BarcodeScanner";
 import { useAuth } from "../../lib/auth-context";
 import { getTrpcUrl, SERVER_URL } from "../../lib/server";
 import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { colors } from "../../theme";
-
-type LoggerTab = "search" | "scan" | "quickadd";
-
-/** Schema for food entries returned from the API */
-const FoodEntrySchema = z.object({
-  food_name: z.string(),
-  calories: z.number().nullable().optional(),
-  protein_g: z.number().nullable().optional(),
-  carbs_g: z.number().nullable().optional(),
-  fat_g: z.number().nullable().optional(),
-  food_description: z.string().nullable().optional(),
-});
-
-const TABS: { key: LoggerTab; label: string }[] = [
-  { key: "search", label: "Search" },
-  { key: "scan", label: "Scan" },
-  { key: "quickadd", label: "Quick Add" },
-];
-
-/** Parse a numeric string, returning null for empty/invalid input instead of NaN. */
-function safeParseFloat(value: string): number | null {
-  if (!value) return null;
-  const parsed = Number.parseFloat(value);
-  return Number.isNaN(parsed) ? null : parsed;
-}
-
-// Merged search result from our DB + Open Food Facts
-interface SearchResult {
-  source: "history" | "openfoodfacts";
-  name: string;
-  brand: string | null;
-  calories: number | null;
-  proteinG: number | null;
-  carbsG: number | null;
-  fatG: number | null;
-  servingDescription: string | null;
-  barcode: string | null;
-  /** Original Open Food Facts result with full micronutrient data */
-  openFoodFactsData?: FoodDatabaseResult;
-}
+import { styles } from "./add-styles.ts";
+import {
+  FoodEntrySchema,
+  type LoggerTab,
+  type SearchResult,
+  safeParseFloat,
+  TABS,
+} from "./add-types.ts";
+import { FoodDetailForm } from "./FoodDetailForm.tsx";
+import { FoodResultCard } from "./FoodResultCard.tsx";
+import { QuickAddTab } from "./QuickAddTab.tsx";
 
 export default function AddFoodScreen() {
   const router = useRouter();
@@ -415,122 +384,29 @@ export default function AddFoodScreen() {
 
   // ── Detail form (after selecting a search result or scan result) ──
   if (showForm) {
-    const isSaving = createMutation.isPending || quickAddMutation.isPending;
     return (
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-      >
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={[styles.formContent, isWide && styles.contentWide]}
-        >
-          {/* Food name (editable) */}
-          <Text style={styles.label}>Name</Text>
-          <TextInput
-            style={styles.input}
-            value={foodName}
-            onChangeText={setFoodName}
-            placeholder="Food name"
-            placeholderTextColor="#999"
-          />
-
-          {/* Meal selector */}
-          <Text style={styles.label}>Meal</Text>
-          <View style={styles.mealSelector}>
-            {MEAL_OPTIONS.map(({ value, label }) => (
-              <TouchableOpacity
-                key={value}
-                style={[styles.mealChip, selectedMeal === value && styles.mealChipSelected]}
-                onPress={() => setSelectedMeal(value)}
-                activeOpacity={0.7}
-              >
-                <Text
-                  style={[
-                    styles.mealChipText,
-                    selectedMeal === value && styles.mealChipTextSelected,
-                  ]}
-                >
-                  {label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* Calories — large prominent field */}
-          <Text style={styles.label}>Calories *</Text>
-          <TextInput
-            style={[styles.input, styles.calorieInput]}
-            value={calories}
-            onChangeText={setCalories}
-            placeholder="0"
-            placeholderTextColor="#999"
-            keyboardType="numeric"
-          />
-
-          {/* Serving description */}
-          {servingDescription ? <Text style={styles.servingHint}>{servingDescription}</Text> : null}
-
-          {/* Macros — compact row */}
-          <View style={styles.macroRow}>
-            <View style={styles.macroField}>
-              <Text style={styles.macroLabel}>Protein</Text>
-              <TextInput
-                style={styles.macroInput}
-                value={proteinGrams}
-                onChangeText={setProteinGrams}
-                placeholder="g"
-                placeholderTextColor="#bbb"
-                keyboardType="numeric"
-              />
-            </View>
-            <View style={styles.macroField}>
-              <Text style={styles.macroLabel}>Carbs</Text>
-              <TextInput
-                style={styles.macroInput}
-                value={carbsGrams}
-                onChangeText={setCarbsGrams}
-                placeholder="g"
-                placeholderTextColor="#bbb"
-                keyboardType="numeric"
-              />
-            </View>
-            <View style={styles.macroField}>
-              <Text style={styles.macroLabel}>Fat</Text>
-              <TextInput
-                style={styles.macroInput}
-                value={fatGrams}
-                onChangeText={setFatGrams}
-                placeholder="g"
-                placeholderTextColor="#bbb"
-                keyboardType="numeric"
-              />
-            </View>
-          </View>
-
-          {/* Action buttons */}
-          <View style={styles.formButtons}>
-            <TouchableOpacity
-              style={styles.backButton}
-              onPress={() => {
-                selectedFoodNutrients.current = {};
-                setShowForm(false);
-              }}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.backButtonText}>Back</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.saveButton, { flex: 2 }, isSaving && styles.saveButtonDisabled]}
-              onPress={handleSave}
-              activeOpacity={0.8}
-              disabled={isSaving}
-            >
-              <Text style={styles.saveButtonText}>{isSaving ? "Saving..." : "Log Food"}</Text>
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      <FoodDetailForm
+        foodName={foodName}
+        onFoodNameChange={setFoodName}
+        selectedMeal={selectedMeal}
+        onMealChange={setSelectedMeal}
+        calories={calories}
+        onCaloriesChange={setCalories}
+        proteinGrams={proteinGrams}
+        onProteinChange={setProteinGrams}
+        carbsGrams={carbsGrams}
+        onCarbsChange={setCarbsGrams}
+        fatGrams={fatGrams}
+        onFatChange={setFatGrams}
+        servingDescription={servingDescription}
+        isWide={isWide}
+        isSaving={createMutation.isPending || quickAddMutation.isPending}
+        onBack={() => {
+          selectedFoodNutrients.current = {};
+          setShowForm(false);
+        }}
+        onSave={handleSave}
+      />
     );
   }
 
@@ -597,52 +473,13 @@ export default function AddFoodScreen() {
               </View>
             )}
 
-            {displayResults.map((result) => {
-              const macroTags = [
-                result.proteinG != null ? `Protein ${result.proteinG}g` : null,
-                result.carbsG != null ? `Carbs ${result.carbsG}g` : null,
-                result.fatG != null ? `Fat ${result.fatG}g` : null,
-              ].filter((tag): tag is string => tag !== null);
-
-              return (
-                <TouchableOpacity
-                  key={`${result.source}-${result.name}`}
-                  style={styles.resultCard}
-                  onPress={() => handleSelectResult(result)}
-                  activeOpacity={0.75}
-                >
-                  <View style={styles.resultHeaderRow}>
-                    <Text style={styles.resultName} numberOfLines={2}>
-                      {result.name}
-                    </Text>
-                    {result.calories != null && (
-                      <View style={styles.resultCaloriesBadge}>
-                        <Text style={styles.resultCaloriesText}>{result.calories} cal</Text>
-                      </View>
-                    )}
-                  </View>
-
-                  {result.servingDescription && (
-                    <Text style={styles.resultServing} numberOfLines={2}>
-                      {result.servingDescription}
-                    </Text>
-                  )}
-
-                  <View style={styles.resultMetaRow}>
-                    <View style={styles.resultMacroTags}>
-                      {macroTags.map((macro) => (
-                        <View key={`${result.name}-${macro}`} style={styles.resultMacroTag}>
-                          <Text style={styles.resultMacroTagText}>{macro}</Text>
-                        </View>
-                      ))}
-                    </View>
-                    <Text style={styles.resultSource}>
-                      {result.source === "history" ? "History" : "Open Food Facts"}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
+            {displayResults.map((result) => (
+              <FoodResultCard
+                key={`${result.source}-${result.name}`}
+                result={result}
+                onSelect={handleSelectResult}
+              />
+            ))}
 
             {!searching && displayResults.length === 0 && searchQuery.length >= 2 && (
               <Text style={styles.emptyText}>No results found</Text>
@@ -672,50 +509,14 @@ export default function AddFoodScreen() {
             {openFoodFactsResults.length > 0 && (
               <>
                 <Text style={styles.sectionHeader}>Food Database</Text>
-                {openFoodFactsResults.map((result) => {
-                  const macroTags = [
-                    result.proteinG != null ? `Protein ${result.proteinG}g` : null,
-                    result.carbsG != null ? `Carbs ${result.carbsG}g` : null,
-                    result.fatG != null ? `Fat ${result.fatG}g` : null,
-                  ].filter((tag): tag is string => tag !== null);
-
-                  return (
-                    <TouchableOpacity
-                      key={`off-${result.name}`}
-                      style={styles.resultCard}
-                      onPress={() => handleSelectResult(result)}
-                      activeOpacity={0.75}
-                    >
-                      <View style={styles.resultHeaderRow}>
-                        <Text style={styles.resultName} numberOfLines={2}>
-                          {result.name}
-                        </Text>
-                        {result.calories != null && (
-                          <View style={styles.resultCaloriesBadge}>
-                            <Text style={styles.resultCaloriesText}>{result.calories} cal</Text>
-                          </View>
-                        )}
-                      </View>
-
-                      {result.servingDescription && (
-                        <Text style={styles.resultServing} numberOfLines={2}>
-                          {result.servingDescription}
-                        </Text>
-                      )}
-
-                      <View style={styles.resultMetaRow}>
-                        <View style={styles.resultMacroTags}>
-                          {macroTags.map((macro) => (
-                            <View key={`${result.name}-${macro}`} style={styles.resultMacroTag}>
-                              <Text style={styles.resultMacroTagText}>{macro}</Text>
-                            </View>
-                          ))}
-                        </View>
-                        <Text style={styles.resultSource}>Open Food Facts</Text>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
+                {openFoodFactsResults.map((result) => (
+                  <FoodResultCard
+                    key={`off-${result.name}`}
+                    result={result}
+                    onSelect={handleSelectResult}
+                    sourceLabel="Open Food Facts"
+                  />
+                ))}
               </>
             )}
 
@@ -746,473 +547,24 @@ export default function AddFoodScreen() {
 
       {/* Quick Add tab */}
       {activeTab === "quickadd" && (
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={[styles.formContent, isWide && styles.contentWide]}
-          keyboardShouldPersistTaps="handled"
-        >
-          {/* Food name */}
-          <TextInput
-            style={styles.quickAddNameInput}
-            value={foodName}
-            onChangeText={setFoodName}
-            placeholder="Food name (optional)"
-            placeholderTextColor={colors.textTertiary}
-            selectTextOnFocus
-          />
-
-          {/* Meal selector */}
-          <View style={styles.mealSelector}>
-            {MEAL_OPTIONS.map(({ value, label }) => (
-              <TouchableOpacity
-                key={value}
-                style={[styles.mealChip, selectedMeal === value && styles.mealChipSelected]}
-                onPress={() => setSelectedMeal(value)}
-                activeOpacity={0.7}
-              >
-                <Text
-                  style={[
-                    styles.mealChipText,
-                    selectedMeal === value && styles.mealChipTextSelected,
-                  ]}
-                >
-                  {label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* Calories — big centered input */}
-          <View style={styles.quickAddCalorieSection}>
-            <TextInput
-              style={styles.quickAddCalorieInput}
-              value={calories}
-              onChangeText={setCalories}
-              placeholder="0"
-              placeholderTextColor={colors.textTertiary}
-              keyboardType="number-pad"
-              autoFocus
-            />
-            <Text style={styles.quickAddCalorieUnit}>cal</Text>
-          </View>
-
-          {/* Macros — optional row */}
-          <View style={styles.macroRow}>
-            <View style={styles.macroField}>
-              <View style={styles.macroLabelRow}>
-                <View style={[styles.macroDot, { backgroundColor: colors.positive }]} />
-                <Text style={styles.macroLabel}>Protein</Text>
-              </View>
-              <TextInput
-                style={styles.macroInput}
-                value={proteinGrams}
-                onChangeText={setProteinGrams}
-                placeholder="g"
-                placeholderTextColor={colors.textTertiary}
-                keyboardType="numeric"
-              />
-            </View>
-            <View style={styles.macroField}>
-              <View style={styles.macroLabelRow}>
-                <View style={[styles.macroDot, { backgroundColor: colors.warning }]} />
-                <Text style={styles.macroLabel}>Carbs</Text>
-              </View>
-              <TextInput
-                style={styles.macroInput}
-                value={carbsGrams}
-                onChangeText={setCarbsGrams}
-                placeholder="g"
-                placeholderTextColor={colors.textTertiary}
-                keyboardType="numeric"
-              />
-            </View>
-            <View style={styles.macroField}>
-              <View style={styles.macroLabelRow}>
-                <View style={[styles.macroDot, { backgroundColor: colors.danger }]} />
-                <Text style={styles.macroLabel}>Fat</Text>
-              </View>
-              <TextInput
-                style={styles.macroInput}
-                value={fatGrams}
-                onChangeText={setFatGrams}
-                placeholder="g"
-                placeholderTextColor={colors.textTertiary}
-                keyboardType="numeric"
-              />
-            </View>
-          </View>
-
-          {/* Log button */}
-          <TouchableOpacity
-            style={[
-              styles.saveButton,
-              { marginTop: 16 },
-              quickAddMutation.isPending && styles.saveButtonDisabled,
-            ]}
-            onPress={handleQuickAddSave}
-            activeOpacity={0.8}
-            disabled={quickAddMutation.isPending}
-          >
-            <Text style={styles.saveButtonText}>
-              {quickAddMutation.isPending ? "Saving..." : "Log"}
-            </Text>
-          </TouchableOpacity>
-        </ScrollView>
+        <QuickAddTab
+          foodName={foodName}
+          onFoodNameChange={setFoodName}
+          selectedMeal={selectedMeal}
+          onMealChange={setSelectedMeal}
+          calories={calories}
+          onCaloriesChange={setCalories}
+          proteinGrams={proteinGrams}
+          onProteinChange={setProteinGrams}
+          carbsGrams={carbsGrams}
+          onCarbsChange={setCarbsGrams}
+          fatGrams={fatGrams}
+          onFatChange={setFatGrams}
+          isWide={isWide}
+          isSaving={quickAddMutation.isPending}
+          onSave={handleQuickAddSave}
+        />
       )}
     </KeyboardAvoidingView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  resultsContent: {
-    paddingBottom: 24,
-  },
-  formContent: {
-    padding: 16,
-    paddingBottom: 40,
-  },
-  contentWide: {
-    maxWidth: 600,
-    alignSelf: "center",
-    width: "100%",
-  },
-
-  // ── Tab ribbon ──
-  ribbon: {
-    flexDirection: "row",
-    backgroundColor: colors.surface,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.surfaceSecondary,
-    paddingHorizontal: 8,
-  },
-  ribbonTab: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: "center",
-    borderBottomWidth: 2,
-    borderBottomColor: "transparent",
-  },
-  ribbonTabActive: {
-    borderBottomColor: colors.accent,
-  },
-  ribbonTabText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: colors.textSecondary,
-  },
-  ribbonTabTextActive: {
-    color: colors.accent,
-  },
-
-  // ── Search bar ──
-  searchBar: {
-    paddingHorizontal: 14,
-    paddingTop: 12,
-    paddingBottom: 10,
-    backgroundColor: colors.surface,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.surfaceSecondary,
-  },
-  searchInput: {
-    backgroundColor: colors.background,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: colors.text,
-    borderWidth: 1,
-    borderColor: colors.surfaceSecondary,
-  },
-
-  // ── Search results ──
-  sectionHeader: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: colors.textSecondary,
-    textTransform: "uppercase",
-    letterSpacing: 0.7,
-    paddingHorizontal: 14,
-    paddingTop: 14,
-    paddingBottom: 10,
-  },
-  loadingRow: {
-    paddingVertical: 20,
-    alignItems: "center",
-  },
-  resultCard: {
-    marginHorizontal: 14,
-    marginBottom: 10,
-    padding: 14,
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.surfaceSecondary,
-  },
-  resultHeaderRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 10,
-  },
-  resultName: {
-    flex: 1,
-    fontSize: 16,
-    lineHeight: 22,
-    color: colors.text,
-    fontWeight: "600",
-  },
-  resultCaloriesBadge: {
-    backgroundColor: colors.background,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.surfaceSecondary,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  resultCaloriesText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: colors.text,
-  },
-  resultServing: {
-    fontSize: 13,
-    color: colors.textTertiary,
-    marginTop: 6,
-    lineHeight: 18,
-  },
-  resultMetaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: 12,
-    gap: 10,
-  },
-  resultMacroTags: {
-    flex: 1,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-  },
-  resultMacroTag: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 999,
-    backgroundColor: colors.background,
-  },
-  resultMacroTagText: {
-    fontSize: 11,
-    color: colors.textSecondary,
-    fontWeight: "600",
-  },
-  resultSource: {
-    fontSize: 11,
-    color: colors.textTertiary,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
-  },
-  emptyText: {
-    textAlign: "center",
-    color: colors.textTertiary,
-    paddingVertical: 28,
-    paddingHorizontal: 18,
-  },
-  manualEntry: {
-    marginHorizontal: 14,
-    marginTop: 6,
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    alignItems: "center",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.accent,
-    backgroundColor: colors.surface,
-  },
-  manualEntryText: {
-    fontSize: 15,
-    color: colors.accent,
-    fontWeight: "500",
-  },
-  searchDatabaseButton: {
-    marginHorizontal: 14,
-    marginTop: 10,
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    alignItems: "center",
-    borderRadius: 12,
-    backgroundColor: colors.accent,
-  },
-  searchDatabaseButtonText: {
-    fontSize: 15,
-    color: colors.text,
-    fontWeight: "600",
-  },
-
-  // ── Scanning overlay ──
-  scanningOverlay: {
-    paddingVertical: 24,
-    alignItems: "center",
-    gap: 8,
-  },
-  scanningText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-
-  // ── Form (after selection) ──
-  label: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.textSecondary,
-    marginBottom: 4,
-    marginTop: 14,
-  },
-  input: {
-    backgroundColor: colors.surface,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.surfaceSecondary,
-    padding: 12,
-    fontSize: 16,
-    color: colors.text,
-  },
-  calorieInput: {
-    fontSize: 24,
-    fontWeight: "700",
-    textAlign: "center",
-    paddingVertical: 16,
-  },
-  servingHint: {
-    fontSize: 13,
-    color: colors.textTertiary,
-    marginTop: 4,
-    textAlign: "center",
-  },
-  mealSelector: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    marginTop: 4,
-  },
-  mealChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 18,
-    backgroundColor: colors.surfaceSecondary,
-  },
-  mealChipSelected: {
-    backgroundColor: colors.accent,
-  },
-  mealChipText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    fontWeight: "500",
-  },
-  mealChipTextSelected: {
-    color: colors.text,
-  },
-  macroRow: {
-    flexDirection: "row",
-    gap: 10,
-    marginTop: 16,
-  },
-  macroField: {
-    flex: 1,
-    alignItems: "center",
-    gap: 4,
-  },
-  macroLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: colors.textSecondary,
-  },
-  macroInput: {
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: 8,
-    padding: 10,
-    fontSize: 16,
-    color: colors.text,
-    textAlign: "center",
-    width: "100%",
-  },
-  macroLabelRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  macroDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  formButtons: {
-    flexDirection: "row",
-    gap: 12,
-    marginTop: 28,
-  },
-  backButton: {
-    flex: 1,
-    borderRadius: 12,
-    padding: 16,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: colors.surfaceSecondary,
-  },
-  backButtonText: {
-    color: colors.textSecondary,
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  saveButton: {
-    backgroundColor: colors.accent,
-    borderRadius: 12,
-    padding: 16,
-    alignItems: "center",
-  },
-  saveButtonDisabled: {
-    opacity: 0.5,
-  },
-  saveButtonText: {
-    color: colors.text,
-    fontSize: 17,
-    fontWeight: "700",
-  },
-
-  // ── Quick-add tab ──
-  quickAddNameInput: {
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 16,
-    color: colors.text,
-    marginBottom: 12,
-  },
-  quickAddCalorieSection: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    justifyContent: "center",
-    gap: 4,
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  quickAddCalorieInput: {
-    fontSize: 48,
-    fontWeight: "700",
-    color: colors.text,
-    textAlign: "center",
-    minWidth: 120,
-    fontVariant: ["tabular-nums"],
-  },
-  quickAddCalorieUnit: {
-    fontSize: 20,
-    color: colors.textSecondary,
-    fontWeight: "500",
-  },
-});
