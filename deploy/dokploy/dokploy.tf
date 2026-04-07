@@ -7,14 +7,7 @@
 #   2. Dokploy admin account created at http://<ip>:3000
 #   3. API token generated in Dokploy Settings → API
 
-terraform {
-  required_providers {
-    dokploy = {
-      source  = "ahmedali6/dokploy"
-      version = "~> 0.5"
-    }
-  }
-}
+# The terraform block with required_providers is in providers.tf
 
 # ---------------------------------------------------------------------------
 # Variables

@@ -1,7 +1,7 @@
 # Infrastructure services managed as a Dokploy Compose stack.
 # App services (web, worker) are Dokploy-native — see dokploy.tf.
 #
-# This file is templated by Terraform (variables use ${} syntax).
+# This file is templated by Terraform.
 
 services:
   db:
