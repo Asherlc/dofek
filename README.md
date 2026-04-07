@@ -125,7 +125,7 @@ Tests use [Vitest](https://vitest.dev/). TDD is the standard workflow — write 
 - `drizzle/0000_baseline.sql` is the canonical baseline for fresh databases.
 - `drizzle/0001_seed_journal_questions.sql` seeds canonical journal questions on fresh installs and is idempotent for existing environments.
 - For existing environments that already have rows in `drizzle.__drizzle_migrations`, `runMigrations()` auto-marks pending `*_baseline.sql` files as applied without executing them.
-- Add all new migrations as forward-only files in `drizzle/` (for example, `0001_add_...sql`, `0002_add_...sql`).
+- Add all new migrations as forward-only files in `drizzle/` (for example, `0003_add_...sql`, `0004_add_...sql`).
 
 ## Docker
 
