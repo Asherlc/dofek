@@ -1,5 +1,5 @@
+import { formatNumber, formatPace } from "@dofek/format/format";
 import type { GradeAdjustedPaceRow } from "dofek-server/types";
-import { formatNumber, formatPace } from "../lib/format.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 
 interface GradeAdjustedPaceTableProps {

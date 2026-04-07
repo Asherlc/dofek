@@ -4,7 +4,9 @@
   "description": "Unofficial Garmin Connect API client using the internal SSO + OAuth authentication flow",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    "./client": "./src/client.ts",
+    "./parsing": "./src/parsing.ts",
+    "./types": "./src/types.ts"
   },
   "scripts": {
     "test": "vitest run",

@@ -1,3 +1,4 @@
+import { formatNumber } from "@dofek/format/format";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { ActivityVariabilityTable } from "../../components/ActivityVariabilityTable.tsx";
@@ -8,7 +9,6 @@ import { PmcChart } from "../../components/PmcChart.tsx";
 import { PowerCurveChart } from "../../components/PowerCurveChart.tsx";
 import { VerticalAscentChart } from "../../components/VerticalAscentChart.tsx";
 import { chartColors, chartThemeColors } from "../../lib/chartTheme.ts";
-import { formatNumber } from "../../lib/format.ts";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
 import { trpc } from "../../lib/trpc.ts";
 

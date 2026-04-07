@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { WhoopCycle } from "whoop-whoop";
+import { WhoopClient } from "whoop-whoop/client";
+import type {
+  WhoopCycle,
+  WhoopRecoveryRecord,
+  WhoopSleepRecord,
+  WhoopWeightliftingWorkoutResponse,
+  WhoopWorkoutRecord,
+} from "whoop-whoop/types";
 import {
   buildV2ActivityTypeLookup,
   type InlineSleepRecord,
@@ -12,11 +19,6 @@ import {
   parseWeightliftingWorkout,
   parseWorkout,
   resolveActivityType,
-  WhoopClient,
-  type WhoopRecoveryRecord,
-  type WhoopSleepRecord,
-  type WhoopWeightliftingWorkoutResponse,
-  type WhoopWorkoutRecord,
 } from "./whoop.ts";
 
 // ============================================================

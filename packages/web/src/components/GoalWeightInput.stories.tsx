@@ -1,6 +1,6 @@
+import { formatNumber } from "@dofek/format/format";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
-import { formatNumber } from "../lib/format.ts";
 
 /**
  * Storybook-only presentational stand-in for GoalWeightInput.

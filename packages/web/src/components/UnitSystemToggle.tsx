@@ -1,5 +1,5 @@
+import type { UnitSystem } from "@dofek/format/units";
 import { useUnitSystem } from "../lib/unitContext.ts";
-import type { UnitSystem } from "../lib/units.ts";
 
 const OPTIONS: { value: UnitSystem; label: string; description: string }[] = [
   { value: "metric", label: "Metric", description: "kg, km, °C" },

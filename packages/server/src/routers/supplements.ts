@@ -1,9 +1,6 @@
 import { z } from "zod";
 import { SupplementsRepository, supplementSchema } from "../repositories/supplements-repository.ts";
 
-export type { Supplement } from "../repositories/supplements-repository.ts";
-export { toApiSupplement } from "../repositories/supplements-repository.ts";
-
 import { protectedProcedure, router } from "../trpc.ts";
 
 export const supplementsRouter = router({

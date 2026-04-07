@@ -1,3 +1,4 @@
+import { formatNumber } from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
 import {
   collapseWeeklyVolumeActivityTypes,
@@ -14,7 +15,6 @@ import {
   dofekLegend,
   dofekTooltip,
 } from "../lib/chartTheme.ts";
-import { formatNumber } from "../lib/format.ts";
 import { trpc } from "../lib/trpc.ts";
 import { ChartDescriptionTooltip } from "./ChartDescriptionTooltip.tsx";
 import { DofekChart } from "./DofekChart.tsx";

@@ -1,3 +1,4 @@
+import { formatNumber } from "@dofek/format/format";
 import type { BodyRecompositionRow } from "../../../server/src/routers/body-analytics.ts";
 import {
   chartColors,
@@ -7,7 +8,6 @@ import {
   dofekSeries,
   dofekTooltip,
 } from "../lib/chartTheme.ts";
-import { formatNumber } from "../lib/format.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import { DofekChart } from "./DofekChart.tsx";
 

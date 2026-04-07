@@ -2,10 +2,6 @@ import { z } from "zod";
 import { DurationCurvesRepository } from "../repositories/duration-curves-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
-// Re-export for backward compatibility
-export type { CriticalHeartRateModel } from "../repositories/duration-curves-repository.ts";
-export { fitCriticalHeartRate } from "../repositories/duration-curves-repository.ts";
-
 const daysInput = z.object({ days: z.number().default(90) });
 
 export const durationCurvesRouter = router({

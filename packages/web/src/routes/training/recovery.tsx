@@ -1,3 +1,4 @@
+import { formatDateYmd as formatDateForQuery } from "@dofek/format/format";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
@@ -5,7 +6,6 @@ import { HrvVariabilityChart } from "../../components/HrvVariabilityChart.tsx";
 import { ReadinessScoreCard } from "../../components/ReadinessScoreCard.tsx";
 import { SleepAnalyticsChart } from "../../components/SleepAnalyticsChart.tsx";
 import { WorkloadRatioChart } from "../../components/WorkloadRatioChart.tsx";
-import { formatDateForQuery } from "../../lib/dates.ts";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
 import { trpc } from "../../lib/trpc.ts";
 

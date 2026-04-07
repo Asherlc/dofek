@@ -52,10 +52,11 @@ vi.mock("expo-router", () => ({
 }));
 
 vi.mock("../../lib/units", async () => {
+  const { UnitConverter } = await import("@dofek/format/units");
   const actual = await vi.importActual<typeof import("../../lib/units")>("../../lib/units");
   return {
     ...actual,
-    useUnitConverter: () => new actual.UnitConverter("metric"),
+    useUnitConverter: () => new UnitConverter("metric"),
   };
 });
 

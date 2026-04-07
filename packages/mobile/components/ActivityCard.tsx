@@ -1,7 +1,7 @@
 import { formatDurationRange, formatNumber, parseValidDate } from "@dofek/format/format";
+import type { UnitConverter } from "@dofek/format/units";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { StyleSheet, Text, View } from "react-native";
-import type { UnitConverter } from "../lib/units";
 import { colors } from "../theme";
 
 interface ActivityCardProps {

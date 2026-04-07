@@ -63,7 +63,7 @@ vi.mock("./logger.ts", () => ({
 vi.mock("./router.ts", () => ({
   appRouter: {},
 }));
-vi.mock("./routes/auth.ts", () => ({
+vi.mock("./routes/auth/index.ts", () => ({
   createAuthRouter: vi.fn(() => {
     const { Router } = require("express");
     return Router();
@@ -108,7 +108,7 @@ import { createApp, main, runStartupTasks } from "./index.ts";
 import { httpRequestDuration, registry } from "./lib/metrics.ts";
 import { warmCache } from "./lib/warm-cache.ts";
 import { logger } from "./logger.ts";
-import { createAuthRouter } from "./routes/auth.ts";
+import { createAuthRouter } from "./routes/auth/index.ts";
 import { createUploadRouter } from "./routes/upload.ts";
 import { createWebhookRouter } from "./routes/webhooks.ts";
 import { startSlackBot } from "./slack/bot.ts";

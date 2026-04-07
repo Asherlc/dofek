@@ -5,8 +5,6 @@ import {
 } from "@dofek/training/training";
 import type { WahooWorkout, WahooWorkoutListResponse } from "./client.ts";
 
-export { fitRecordsToSensorSamples as fitRecordsToMetricStream } from "../../fit/records.ts";
-
 // ============================================================
 // Activity type mapping
 // ============================================================

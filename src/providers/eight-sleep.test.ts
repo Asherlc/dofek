@@ -2,7 +2,7 @@ import {
   parseEightSleepDailyMetrics,
   parseEightSleepHeartRateSamples,
   parseEightSleepTrendDay,
-} from "eight-sleep-client";
+} from "eight-sleep-client/parsing";
 import { describe, expect, it } from "vitest";
 
 // ============================================================

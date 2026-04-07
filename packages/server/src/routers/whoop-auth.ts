@@ -1,7 +1,7 @@
 import * as Sentry from "@sentry/node";
 import { TRPCError } from "@trpc/server";
 import { ensureProvider, saveTokens } from "dofek/db/tokens";
-import { WhoopClient } from "whoop-whoop";
+import { WhoopClient } from "whoop-whoop/client";
 import { z } from "zod";
 import { queryCache } from "../lib/cache.ts";
 import {

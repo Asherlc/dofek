@@ -1,4 +1,5 @@
-import { GarminApiError, type GarminTokens } from "garmin-connect";
+import { GarminApiError } from "garmin-connect/client";
+import type { GarminTokens } from "garmin-connect/types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TokenSet } from "../auth/oauth.ts";
 import {
@@ -56,25 +57,28 @@ vi.mock("@sentry/node", () => ({
   captureException: vi.fn(),
 }));
 
-vi.mock("garmin-connect", async (importOriginal) => {
-  const original = await importOriginal<typeof import("garmin-connect")>();
+vi.mock("garmin-connect/client", async (importOriginal) => {
+  const original = await importOriginal<typeof import("garmin-connect/client")>();
   return {
     GarminApiError: original.GarminApiError,
     GarminConnectClient: {
       signIn: mocks.signIn,
       fromTokens: mocks.fromTokens,
     },
-    parseConnectActivity: mocks.parseConnectActivity,
-    parseConnectSleep: mocks.parseConnectSleep,
-    parseConnectSleepStages: mocks.parseConnectSleepStages,
-    parseConnectDailySummary: mocks.parseConnectDailySummary,
-    parseHrvSummary: mocks.parseHrvSummary,
-    parseTrainingStatus: mocks.parseTrainingStatus,
-    parseStressTimeSeries: mocks.parseStressTimeSeries,
-    parseHeartRateTimeSeries: mocks.parseHeartRateTimeSeries,
-    parseActivityDetail: mocks.parseActivityDetail,
   };
 });
+
+vi.mock("garmin-connect/parsing", () => ({
+  parseConnectActivity: mocks.parseConnectActivity,
+  parseConnectSleep: mocks.parseConnectSleep,
+  parseConnectSleepStages: mocks.parseConnectSleepStages,
+  parseConnectDailySummary: mocks.parseConnectDailySummary,
+  parseHrvSummary: mocks.parseHrvSummary,
+  parseTrainingStatus: mocks.parseTrainingStatus,
+  parseStressTimeSeries: mocks.parseStressTimeSeries,
+  parseHeartRateTimeSeries: mocks.parseHeartRateTimeSeries,
+  parseActivityDetail: mocks.parseActivityDetail,
+}));
 
 vi.mock("../db/tokens.ts", () => ({
   loadTokens: mocks.loadTokens,

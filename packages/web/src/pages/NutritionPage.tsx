@@ -1,3 +1,8 @@
+import {
+  formatDateForDisplay,
+  formatDateYmd as formatDateForQuery,
+  isToday,
+} from "@dofek/format/format";
 import { useMemo, useState } from "react";
 import { z } from "zod";
 import { AddFoodModal, type FoodFormData, type MealType } from "../components/AddFoodModal.tsx";
@@ -5,7 +10,6 @@ import { FoodEntryRow } from "../components/FoodEntryRow.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
 import { MacroBar } from "../components/MacroBar.tsx";
 import { SlackInstallBanner } from "../components/SlackInstallBanner.tsx";
-import { formatDateForDisplay, formatDateForQuery, isToday } from "../lib/dates.ts";
 import { trpc } from "../lib/trpc.ts";
 
 const CALORIES_PER_GRAM = { protein: 4, carbs: 4, fat: 9 } as const;

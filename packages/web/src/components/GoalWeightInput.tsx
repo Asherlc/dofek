@@ -1,5 +1,5 @@
+import { formatNumber } from "@dofek/format/format";
 import { useEffect, useRef, useState } from "react";
-import { formatNumber } from "../lib/format.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 

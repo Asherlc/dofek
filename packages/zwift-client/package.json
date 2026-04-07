@@ -4,7 +4,9 @@
   "description": "Unofficial Zwift API client using reverse-engineered Keycloak authentication",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    "./client": "./src/client.ts",
+    "./parsing": "./src/parsing.ts",
+    "./types": "./src/types.ts"
   },
   "scripts": {
     "test": "vitest run",

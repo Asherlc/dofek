@@ -1,3 +1,4 @@
+import { formatNumber } from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
 import { sleepDebtColor } from "@dofek/scoring/scoring";
 import type { SleepNeedResult } from "dofek-server/types";
@@ -8,7 +9,6 @@ import {
   dofekSeries,
   dofekTooltip,
 } from "../lib/chartTheme.ts";
-import { formatNumber } from "../lib/format.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface SleepNeedCardProps {

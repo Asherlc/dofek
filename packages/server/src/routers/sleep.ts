@@ -2,8 +2,6 @@ import { z } from "zod";
 import { dateWindowInput } from "../lib/date-window.ts";
 import { SleepRepository } from "../repositories/sleep-repository.ts";
 
-export { sleepListRowSchema } from "../repositories/sleep-repository.ts";
-
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export const sleepRouter = router({

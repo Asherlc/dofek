@@ -4,7 +4,9 @@
   "description": "Unofficial Eight Sleep API client using reverse-engineered authentication",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    "./client": "./src/client.ts",
+    "./parsing": "./src/parsing.ts",
+    "./types": "./src/types.ts"
   },
   "scripts": {
     "test": "vitest run",

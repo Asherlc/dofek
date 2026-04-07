@@ -15,8 +15,6 @@ import { handleGetMe, handleLogout } from "./session.ts";
 import { authRateLimiter, initAuthStores } from "./shared.ts";
 import { handleSlackOAuthStart } from "./slack-oauth.ts";
 
-export { oauthSuccessHtml } from "./shared.ts";
-
 export function createAuthRouter(database: import("dofek/db").Database): Router {
   initAuthStores(database);
   const router = Router();

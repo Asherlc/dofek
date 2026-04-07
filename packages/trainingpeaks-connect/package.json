@@ -4,7 +4,10 @@
   "description": "Unofficial TrainingPeaks internal API client using cookie-based authentication",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    "./client": "./src/client.ts",
+    "./parsing": "./src/parsing.ts",
+    "./sports": "./src/sports.ts",
+    "./types": "./src/types.ts"
   },
   "scripts": {
     "test": "vitest run",
