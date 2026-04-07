@@ -105,11 +105,7 @@ export function getIdentityFlowStoreRef(): IdentityFlowStore {
 }
 
 export async function storeIdentityFlow(state: string, entry: IdentityFlowEntry): Promise<void> {
-  try {
-    await identityFlowStore.save(state, entry);
-  } catch (error: unknown) {
-    logger.warn(`[auth] Failed to persist identity flow state: ${error}`);
-  }
+  await identityFlowStore.save(state, entry);
 }
 
 export function storePendingEmailSignup(entry: PendingEmailSignupEntry): string {

@@ -513,6 +513,42 @@ describe("createAuthRouter", () => {
       expect(res.body).toContain("Missing code or state");
       vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "google");
     });
+
+    it("passes Apple user JSON name to resolveOrCreateUser on first sign-in", async () => {
+      const mockValidate = vi.fn(() =>
+        Promise.resolve({
+          tokens: {},
+          user: { sub: "apple-new", email: "new@icloud.com", name: null, groups: null },
+        }),
+      );
+      vi.mocked(getIdentityProvider).mockReturnValue({
+        createAuthorizationUrl: vi.fn(() => new URL("https://appleid.apple.com/auth/authorize")),
+        validateCallback: mockValidate,
+      });
+      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "apple");
+      vi.mocked(getOAuthFlowCookies).mockReturnValue({
+        state: "apple:state-name",
+        codeVerifier: "verifier",
+      });
+      const { app } = createTestApp();
+      // Apple sends user JSON with name on first authorization
+      const userJson = JSON.stringify({
+        name: { firstName: "Jane", lastName: "Doe" },
+        email: "jane@icloud.com",
+      });
+      const res = await request(app, "post", "/auth/callback/apple", {
+        formBody: { code: "apple-code", state: "apple:state-name", user: userJson },
+      });
+      expect(res.status).toBe(302);
+      // The name from user JSON should be passed to resolveOrCreateUser
+      expect(resolveOrCreateUser).toHaveBeenCalledWith(
+        expect.anything(),
+        "apple",
+        expect.objectContaining({ name: "Jane Doe" }),
+        null,
+      );
+      vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "google");
+    });
   });
 
   describe("GET /auth/link/:provider", () => {

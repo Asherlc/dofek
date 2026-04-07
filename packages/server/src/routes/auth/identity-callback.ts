@@ -1,5 +1,6 @@
 import * as Sentry from "@sentry/node";
 import type { Request, Response } from "express";
+import { z } from "zod";
 import { resolveOrCreateUser } from "../../auth/account-linking.ts";
 import {
   clearOAuthFlowCookies,
@@ -19,6 +20,31 @@ import {
   isIdentityProviderName,
   sanitizeReturnTo,
 } from "./shared.ts";
+
+/**
+ * Apple sends a `user` JSON field in the form_post body on first authorization only.
+ * This is the only chance to capture the user's real name — it's never included in the ID token.
+ */
+const appleUserSchema = z.object({
+  name: z
+    .object({
+      firstName: z.string().optional(),
+      lastName: z.string().optional(),
+    })
+    .optional(),
+});
+
+function parseAppleFormPostName(rawUser: unknown): string | null {
+  if (typeof rawUser !== "string") return null;
+  try {
+    const parsed = appleUserSchema.safeParse(JSON.parse(rawUser));
+    if (!parsed.success) return null;
+    const parts = [parsed.data.name?.firstName, parsed.data.name?.lastName].filter(Boolean);
+    return parts.length > 0 ? parts.join(" ") : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Shared handler for identity provider OAuth callbacks.
@@ -95,6 +121,14 @@ export async function handleIdentityCallback(
     const provider = getIdentityProvider(providerName);
     const { user: identityUser } = await provider.validateCallback(code, codeVerifier);
 
+    // Apple only sends the user's name in the form_post body on first authorization —
+    // it's never included in the ID token. Parse it here as a fallback.
+    const appleFormPostName =
+      providerName === "apple" && req.method === "POST"
+        ? parseAppleFormPostName(rawParams.user)
+        : null;
+    const userName = identityUser.name ?? appleFormPostName;
+
     const db = getDb();
 
     // Resolve or create user (with email-based auto-linking and optional logged-in linking)
@@ -104,7 +138,7 @@ export async function handleIdentityCallback(
       {
         providerAccountId: identityUser.sub,
         email: identityUser.email,
-        name: identityUser.name,
+        name: userName,
         groups: identityUser.groups,
       },
       linkUserId,
@@ -131,9 +165,18 @@ export async function handleIdentityCallback(
     const message = err instanceof Error ? err.message : String(err);
     const oauthCode =
       err instanceof Error && "code" in err && typeof err.code === "string" ? err.code : undefined;
-    const errorDetail = oauthCode ? ` (code=${oauthCode})` : "";
+    const oauthDescription =
+      err instanceof Error && "description" in err && typeof err.description === "string"
+        ? err.description
+        : undefined;
+    const details = [
+      oauthCode && `code=${oauthCode}`,
+      oauthDescription && `desc=${oauthDescription}`,
+    ]
+      .filter(Boolean)
+      .join(", ");
     logger.error(
-      `[auth] Identity callback failed for ${req.params.provider}: ${message}${errorDetail}`,
+      `[auth] Identity callback failed for ${req.params.provider}: ${message}${details ? ` (${details})` : ""}`,
     );
     res.status(500).send("Login failed — please try again");
   }
