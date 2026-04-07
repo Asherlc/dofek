@@ -9,9 +9,13 @@ import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { activity, dailyMetrics, sleepSession, sleepStage } from "../db/schema.ts";
+import { activity, dailyMetrics, sensorSample, sleepSession, sleepStage } from "../db/schema.ts";
+import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
+import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
+import { logger } from "../logger.ts";
+import { parseTcx, tcxToSensorSamples } from "../tcx/parser.ts";
 import type {
   ProviderAuthSetup,
   SyncError,
@@ -365,6 +369,19 @@ export class PolarClient {
   async getNightlyRecharge(): Promise<PolarNightlyRecharge[]> {
     return this.#get<PolarNightlyRecharge[]>("/nightly-recharge");
   }
+
+  async downloadTcx(exerciseId: string): Promise<string> {
+    const response = await this.#fetchFn(`${POLAR_API_BASE}/exercises/${exerciseId}/tcx`, {
+      headers: {
+        Authorization: `Bearer ${this.#accessToken}`,
+        Accept: "application/vnd.garmin.tcx+xml",
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to download Polar TCX (${response.status})`);
+    }
+    return response.text();
+  }
 }
 
 // ============================================================
@@ -543,7 +560,7 @@ export class PolarProvider implements WebhookProvider {
             const parsed = parsePolarExercise(exercise);
 
             try {
-              await db
+              const [row] = await db
                 .insert(activity)
                 .values({
                   providerId: this.id,
@@ -575,7 +592,34 @@ export class PolarProvider implements WebhookProvider {
                       maxHeartRate: parsed.maxHeartRate,
                     },
                   },
-                });
+                })
+                .returning({ id: activity.id });
+
+              const activityId = row?.id;
+
+              // Download TCX for GPS + HR time-series when route data exists
+              if (activityId && exercise.has_route) {
+                try {
+                  const tcxData = await client.downloadTcx(exercise.id);
+                  const trackpoints = parseTcx(tcxData);
+                  const sampleRows = tcxToSensorSamples(trackpoints, this.id, activityId);
+
+                  if (sampleRows.length > 0) {
+                    await db.delete(sensorSample).where(eq(sensorSample.activityId, activityId));
+                    await dualWriteToSensorSample(db, sampleRows, SOURCE_TYPE_API);
+                    logger.info(
+                      `[polar] Inserted ${sampleRows.length} sensor sample rows for exercise ${exercise.id}`,
+                    );
+                  }
+                } catch (tcxError) {
+                  errors.push({
+                    message: `TCX for ${exercise.id}: ${tcxError instanceof Error ? tcxError.message : String(tcxError)}`,
+                    externalId: exercise.id,
+                    cause: tcxError,
+                  });
+                }
+              }
+
               count++;
             } catch (err) {
               errors.push({

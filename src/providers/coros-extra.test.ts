@@ -313,15 +313,19 @@ describe("CorosProvider", () => {
       values: vi.fn(),
       onConflictDoUpdate: vi.fn(),
       onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+      returning: vi.fn().mockResolvedValue([{ id: "mock-activity-id" }]),
+      where: vi.fn().mockResolvedValue(undefined),
     };
     chain.values.mockReturnValue(chain);
     chain.onConflictDoUpdate.mockReturnValue(chain);
     chain.onConflictDoNothing.mockReturnValue(chain);
 
+    const deleteFn = vi.fn().mockReturnValue(chain);
+
     const mockDb: SyncDatabase = {
       select: vi.fn(),
       insert: vi.fn().mockReturnValue(chain),
-      delete: vi.fn(),
+      delete: deleteFn,
       execute: vi.fn(),
     };
 

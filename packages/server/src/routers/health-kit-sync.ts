@@ -66,6 +66,21 @@ const workoutSampleSchema = z.object({
   sourceBundle: z.string(),
 });
 
+const routeLocationSchema = z.object({
+  date: z.string(),
+  lat: z.number(),
+  lng: z.number(),
+  altitude: z.number().nullish(),
+  speed: z.number().nullish(),
+  horizontalAccuracy: z.number().nullish(),
+});
+
+const workoutRouteSchema = z.object({
+  workoutUuid: z.string(),
+  sourceName: z.string().nullish(),
+  locations: z.array(routeLocationSchema),
+});
+
 const sleepSampleSchema = z.object({
   uuid: z.string(),
   startDate: z.string(),
@@ -762,6 +777,121 @@ async function processWorkouts(
   return inserted;
 }
 
+type WorkoutRoute = z.infer<typeof workoutRouteSchema>;
+type RouteLocation = z.infer<typeof routeLocationSchema>;
+
+/** GPS channel names for route data */
+const ROUTE_CHANNELS: Array<{
+  channel: string;
+  getValue: (location: RouteLocation) => number | null | undefined;
+  round?: boolean;
+}> = [
+  { channel: "lat", getValue: (location) => location.lat },
+  { channel: "lng", getValue: (location) => location.lng },
+  { channel: "altitude", getValue: (location) => location.altitude },
+  { channel: "speed", getValue: (location) => location.speed },
+  {
+    channel: "gps_accuracy",
+    getValue: (location) => location.horizontalAccuracy,
+    round: true,
+  },
+];
+
+/** Process workout route locations — insert GPS data as sensor_sample rows */
+export async function processWorkoutRoutes(
+  db: Database,
+  userId: string,
+  routes: WorkoutRoute[],
+): Promise<number> {
+  let inserted = 0;
+
+  // Resolve all workoutUuid → activityId mappings in one query to avoid N+1
+  const externalIds = Array.from(
+    new Set(
+      routes
+        .filter((route) => route.locations.length > 0)
+        .map((route) => `hk:workout:${route.workoutUuid}`),
+    ),
+  );
+
+  const activityIdByExternalId = new Map<string, string>();
+
+  if (externalIds.length > 0) {
+    const activityRowSchema = z.object({ id: z.string(), external_id: z.string() });
+    const activityRows = await executeWithSchema(
+      db,
+      activityRowSchema,
+      sql`SELECT id, external_id FROM fitness.activity
+          WHERE user_id = ${userId}
+            AND provider_id = ${PROVIDER_ID}
+            AND external_id IN (${sql.join(
+              externalIds.map((externalId) => sql`${externalId}`),
+              sql`, `,
+            )})`,
+    );
+
+    for (const activityRow of activityRows) {
+      activityIdByExternalId.set(activityRow.external_id, activityRow.id);
+    }
+  }
+
+  for (const route of routes) {
+    if (route.locations.length === 0) continue;
+
+    const externalId = `hk:workout:${route.workoutUuid}`;
+    const activityId = activityIdByExternalId.get(externalId) ?? null;
+
+    if (!activityId) {
+      logger.warn(
+        `[apple_health] No activity found for workout route ${route.workoutUuid}, skipping`,
+      );
+      continue;
+    }
+
+    // Batch sensor_sample inserts to reduce DB round-trips
+    const pendingValues: ReturnType<typeof sql>[] = [];
+    const flushPendingValues = async () => {
+      if (pendingValues.length === 0) return;
+      await db.execute(
+        sql`INSERT INTO fitness.sensor_sample
+              (recorded_at, user_id, provider_id, activity_id, device_id, source_type, channel, scalar)
+            VALUES ${sql.join(pendingValues, sql`, `)}`,
+      );
+      inserted += pendingValues.length;
+      pendingValues.length = 0;
+    };
+
+    for (const location of route.locations) {
+      for (const { channel, getValue, round } of ROUTE_CHANNELS) {
+        const value = getValue(location);
+        if (value == null) continue;
+
+        const scalar = round ? Math.round(value) : value;
+        pendingValues.push(
+          sql`(
+            ${location.date}::timestamptz,
+            ${userId},
+            ${PROVIDER_ID},
+            ${activityId}::uuid,
+            ${route.sourceName ?? null},
+            ${"api"},
+            ${channel},
+            ${scalar}::real
+          )`,
+        );
+
+        if (pendingValues.length >= BATCH_SIZE) {
+          await flushPendingValues();
+        }
+      }
+    }
+
+    await flushPendingValues();
+  }
+
+  return inserted;
+}
+
 /** Process sleep samples, grouping by inBed boundaries */
 async function processSleepSamples(
   db: Database,
@@ -1132,6 +1262,24 @@ export const healthKitSyncRouter = router({
         endpoint: "pushWorkouts",
         category: "workout",
       });
+      return { inserted };
+    }),
+
+  pushWorkoutRoutes: protectedProcedure
+    .input(z.object({ routes: z.array(workoutRouteSchema) }))
+    .mutation(async ({ ctx, input }) => {
+      await ensureProvider(ctx.db, ctx.userId);
+      const inserted = await processWorkoutRoutes(ctx.db, ctx.userId, input.routes);
+
+      if (inserted > 0) {
+        await queryCache.invalidateByPrefix(`${ctx.userId}:`);
+      }
+
+      healthKitPushTotal.add(1, { endpoint: "pushWorkoutRoutes", status: "success" });
+      healthKitRecordsTotal.add(
+        input.routes.reduce((sum, route) => sum + route.locations.length, 0),
+        { endpoint: "pushWorkoutRoutes", category: "workoutRoute" },
+      );
       return { inserted };
     }),
 

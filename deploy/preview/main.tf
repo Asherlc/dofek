@@ -64,7 +64,7 @@ variable "server_image_tag" {
 }
 
 variable "commit_sha" {
-  description = "Git commit SHA — forces server replacement on every push"
+  description = "Git commit SHA — triggers container update on every push (without recreating the server)"
   type        = string
   default     = ""
 }
@@ -144,6 +144,10 @@ resource "hcloud_firewall" "preview" {
 }
 
 # ── Server ───────────────────────────────────────────────────────────────
+# The server is created once per PR and reused across pushes.
+# Container updates happen via the null_resource below (SSH pull+restart),
+# matching the production deploy-config pattern. This preserves Docker
+# volumes (including Caddy's ACME certificates) across deploys.
 
 resource "hcloud_server" "preview" {
   name         = local.server_name
@@ -154,7 +158,7 @@ resource "hcloud_server" "preview" {
   firewall_ids = [hcloud_firewall.preview.id]
 
   user_data = templatefile("${path.module}/cloud-init.yml", {
-    commit_sha    = var.commit_sha
+    commit_sha    = "initial"
     domain        = local.preview_domain
     ghcr_token    = var.ghcr_token
     ghcr_username = var.ghcr_username
@@ -175,6 +179,59 @@ resource "hcloud_server" "preview" {
     pr_number  = tostring(var.pr_number)
     managed_by = "terraform"
   }
+}
+
+# ── Container Update ─────────────────────────────────────────────────────
+# On every push, SSH into the existing server, pull the latest image, and
+# restart containers. This avoids destroying the server (and its Caddy
+# ACME certificates) on each push — matching the prod deploy-config pattern.
+
+resource "null_resource" "update_containers" {
+  triggers = {
+    commit_sha   = var.commit_sha
+    compose_hash = md5(templatefile("${path.module}/docker-compose.yml", {
+      server_image = local.server_image
+      domain       = local.preview_domain
+    }))
+    caddy_hash = md5(templatefile("${path.module}/Caddyfile", {
+      domain = local.preview_domain
+    }))
+  }
+
+  connection {
+    type  = "ssh"
+    host  = hcloud_server.preview.ipv4_address
+    user  = "root"
+    agent = true
+  }
+
+  # Upload latest config files (compose, Caddyfile may have changed in the PR)
+  provisioner "file" {
+    content = templatefile("${path.module}/docker-compose.yml", {
+      server_image = local.server_image
+      domain       = local.preview_domain
+    })
+    destination = "/opt/dofek/docker-compose.yml"
+  }
+
+  provisioner "file" {
+    content = templatefile("${path.module}/Caddyfile", {
+      domain = local.preview_domain
+    })
+    destination = "/opt/dofek/Caddyfile"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "set -e",
+      "cd /opt/dofek",
+      "echo '${var.ghcr_token}' | docker login ghcr.io -u ${var.ghcr_username} --password-stdin",
+      "docker compose pull --quiet",
+      "docker compose up -d",
+    ]
+  }
+
+  depends_on = [hcloud_server.preview]
 }
 
 # ── DNS ──────────────────────────────────────────────────────────────────

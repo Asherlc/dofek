@@ -421,7 +421,16 @@
     "otelcol",
     "WEUR",
     "asherlc",
-    "apikey"
+    "apikey",
+    "trackpoint",
+    "trackpoints",
+    "onopentag",
+    "onclosetag",
+    "ontext",
+    "heartratebpm",
+    "latitudedegrees",
+    "longitudedegrees",
+    "altitudemeters"
   ],
   "flagWords": [],
   "useGitignore": false,

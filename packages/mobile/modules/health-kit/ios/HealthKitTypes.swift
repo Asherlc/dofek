@@ -82,6 +82,8 @@ let readTypes: Set<HKObjectType> = {
     }
     // Workout type
     types.insert(HKWorkoutType.workoutType())
+    // Workout route (GPS data associated with workouts)
+    types.insert(HKSeriesType.workoutRoute())
     return types
 }()
 

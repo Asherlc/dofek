@@ -5,6 +5,7 @@ import {
   queryDailyStatistics,
   queryQuantitySamples,
   querySleepSamples,
+  queryWorkoutRoutes,
   queryWorkouts,
 } from "../modules/health-kit";
 import { syncHealthKitToServer } from "./health-kit-sync";
@@ -76,6 +77,7 @@ export function useAutoSync(latestDate: string | null | undefined) {
               queryQuantitySamples,
               queryWorkouts,
               querySleepSamples,
+              queryWorkoutRoutes,
             },
             syncRangeDays: 1,
           });
