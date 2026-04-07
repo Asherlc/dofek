@@ -1,4 +1,4 @@
-import { type ConditionalTest, getConditionalTests } from "./conditional-tests.ts";
+import { getConditionalTests } from "./conditional-tests.ts";
 import {
   classifyConfidence,
   classifyCorrelationConfidence,
@@ -7,23 +7,11 @@ import {
   MONTHLY_WINDOW_SIZE,
 } from "./confidence.ts";
 import { findConfounders, findCorrelationConfounders } from "./confounders.ts";
-import type { CorrelationPair } from "./correlation-pairs.ts";
 import { getCorrelationPairs } from "./correlation-pairs.ts";
-import { classifyActivity, type JoinedDay, joinByDate, rollingAvg } from "./data-join.ts";
-import {
-  type CausalRole,
-  exhaustiveSweep,
-  getAllMetrics,
-  isValidCausalDirection,
-  type MetricDef,
-} from "./discovery.ts";
+import { joinByDate } from "./data-join.ts";
+import { exhaustiveSweep } from "./discovery.ts";
 import { explainInsight, metricUnits } from "./explanation.ts";
-import {
-  aggregateMonthly,
-  computeMonthlyInsights,
-  getMonthlyCorrelations,
-  type MonthlyAgg,
-} from "./monthly.ts";
+import { computeMonthlyInsights } from "./monthly.ts";
 import { benjaminiHochberg, cohensD, describe, spearmanCorrelation, welchTTest } from "./stats.ts";
 import {
   type ActivityRow,
@@ -36,43 +24,6 @@ import {
   type NutritionRow,
   type SleepRow,
 } from "./types.ts";
-
-// Re-export everything that was previously exported from this file
-export type {
-  ActivityRow,
-  BodyCompRow,
-  CausalRole,
-  ConfidenceLevel,
-  ConditionalTest,
-  CorrelationPair,
-  DailyRow,
-  Insight,
-  InsightsConfig,
-  JoinedDay,
-  MetricDef,
-  MonthlyAgg,
-  NutritionRow,
-  SleepRow,
-};
-export {
-  aggregateMonthly,
-  classifyActivity,
-  classifyConfidence,
-  classifyCorrelationConfidence,
-  computeMonthlyInsights,
-  downsample,
-  exhaustiveSweep,
-  explainInsight,
-  findConfounders,
-  findCorrelationConfounders,
-  getAllMetrics,
-  getConditionalTests,
-  getCorrelationPairs,
-  getMonthlyCorrelations,
-  isValidCausalDirection,
-  joinByDate,
-  rollingAvg,
-};
 
 // ── Main engine ───────────────────────────────────────────────────────────
 

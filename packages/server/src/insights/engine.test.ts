@@ -1,34 +1,27 @@
 import { describe, expect, it } from "vitest";
+import { type ConditionalTest, getConditionalTests } from "./conditional-tests.ts";
+import { classifyConfidence, classifyCorrelationConfidence, downsample } from "./confidence.ts";
+import { findConfounders, findCorrelationConfounders } from "./confounders.ts";
+import { getCorrelationPairs } from "./correlation-pairs.ts";
+import { classifyActivity, type JoinedDay, joinByDate, rollingAvg } from "./data-join.ts";
+import { exhaustiveSweep, getAllMetrics, isValidCausalDirection } from "./discovery.ts";
+import { computeInsights } from "./engine.ts";
+import { explainInsight } from "./explanation.ts";
+import {
+  aggregateMonthly,
+  computeMonthlyInsights,
+  getMonthlyCorrelations,
+  type MonthlyAgg,
+} from "./monthly.ts";
 import {
   type ActivityRow,
-  aggregateMonthly,
   type BodyCompRow,
-  type ConditionalTest,
-  classifyActivity,
-  classifyConfidence,
-  classifyCorrelationConfidence,
-  computeInsights,
-  computeMonthlyInsights,
   type DailyRow,
-  downsample,
-  exhaustiveSweep,
-  explainInsight,
-  findConfounders,
-  findCorrelationConfounders,
-  getAllMetrics,
-  getConditionalTests,
-  getCorrelationPairs,
-  getMonthlyCorrelations,
   type Insight,
   type InsightsConfig,
-  isValidCausalDirection,
-  type JoinedDay,
-  joinByDate,
-  type MonthlyAgg,
   type NutritionRow,
-  rollingAvg,
   type SleepRow,
-} from "./engine.ts";
+} from "./types.ts";
 
 const DEFAULT_CONFIG: InsightsConfig = { minDailyCalories: 1200 };
 
