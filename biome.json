@@ -41,6 +41,14 @@
       },
       "style": {
         "noNonNullAssertion": "error"
+      },
+      "nursery": {
+        "noExcessiveLinesPerFile": {
+          "level": "warn",
+          "options": {
+            "maxLines": 1000
+          }
+        }
       }
     }
   },
