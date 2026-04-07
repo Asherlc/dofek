@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { WhoopCycle } from "whoop-whoop";
+import type { WhoopCycle } from "whoop-whoop/types";
 import {
   buildV2ActivityTypeLookup,
   type InlineSleepRecord,

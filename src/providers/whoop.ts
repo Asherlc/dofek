@@ -1,18 +1,16 @@
 import type { CanonicalActivityType } from "@dofek/training/training";
 import { and, eq } from "drizzle-orm";
-import {
-  mapSportId,
-  mapV2ActivityType,
-  parseDuringRange,
-  WhoopClient,
-  type WhoopCycle,
-  type WhoopHrValue,
-  WhoopRateLimitError,
-  type WhoopRecoveryRecord,
-  type WhoopSleepRecord,
-  type WhoopWeightliftingWorkoutResponse,
-  type WhoopWorkoutRecord,
-} from "whoop-whoop";
+import { WhoopClient, WhoopRateLimitError } from "whoop-whoop/client";
+import { mapSportId, mapV2ActivityType } from "whoop-whoop/sports";
+import type {
+  WhoopCycle,
+  WhoopHrValue,
+  WhoopRecoveryRecord,
+  WhoopSleepRecord,
+  WhoopWeightliftingWorkoutResponse,
+  WhoopWorkoutRecord,
+} from "whoop-whoop/types";
+import { parseDuringRange } from "whoop-whoop/utils";
 import { z } from "zod";
 import type { OAuthConfig } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
@@ -43,6 +41,8 @@ import type {
   SyncResult,
 } from "./types.ts";
 
+// Re-export whoop-whoop types and client for dofek consumers
+export { WhoopClient, WhoopRateLimitError } from "whoop-whoop/client";
 export type {
   WhoopAuthToken,
   WhoopCycle,
@@ -61,9 +61,8 @@ export type {
   WhoopWorkoutRecord,
   WhoopWorkoutScore,
   WhoopZoneDuration,
-} from "whoop-whoop";
-// Re-export whoop-whoop types and client for dofek consumers
-export { parseDuringRange, WhoopClient, WhoopRateLimitError } from "whoop-whoop";
+} from "whoop-whoop/types";
+export { parseDuringRange } from "whoop-whoop/utils";
 
 // ============================================================
 // Parsing — pure functions (dofek-specific shapes)

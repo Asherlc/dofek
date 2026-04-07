@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { createDatabaseFromEnv } from "./db/index.ts";
 import { logger } from "./logger.ts";
-import { importAppleHealthFile } from "./providers/apple-health/index.ts";
+import { importAppleHealthFile } from "./providers/apple-health/import.ts";
 import { createUploadHandler } from "./upload-server.ts";
 
 const PORT = parseInt(process.env.UPLOAD_PORT ?? "9877", 10);

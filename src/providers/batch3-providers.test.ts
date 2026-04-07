@@ -1,4 +1,5 @@
-import { mapVeloHeroSport, parseDurationToSeconds, parseVeloHeroWorkout } from "velohero-client";
+import { parseDurationToSeconds, parseVeloHeroWorkout } from "velohero-client/parsing";
+import { mapVeloHeroSport } from "velohero-client/sports";
 import { describe, expect, it } from "vitest";
 import { parseCyclingAnalyticsRide } from "./cycling-analytics.ts";
 import { mapDecathlonSport, parseDecathlonActivity } from "./decathlon.ts";

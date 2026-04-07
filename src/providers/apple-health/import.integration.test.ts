@@ -6,18 +6,15 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as schema from "../../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../db/test-helpers.ts";
 import {
-  AppleHealthProvider,
   buildPanelMap,
-  enrichWorkoutFromStats,
-  extractExportXml,
   type FhirDiagnosticReport,
   type FhirObservation,
-  type HealthWorkout,
-  importAppleHealthFile,
-  importClinicalRecords,
   parseFhirObservation,
-  streamHealthExport,
-} from "./index.ts";
+} from "./fhir.ts";
+import { extractExportXml, importAppleHealthFile, importClinicalRecords } from "./import.ts";
+import { AppleHealthProvider } from "./provider.ts";
+import { streamHealthExport } from "./streaming.ts";
+import { enrichWorkoutFromStats, type HealthWorkout } from "./workouts.ts";
 
 // ============================================================
 // streamHealthExport — tests with minimal XML files

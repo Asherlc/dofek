@@ -7,7 +7,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { activity, sensorSample } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
-import { WahooProvider, type WahooWorkout } from "./wahoo/index.ts";
+import type { WahooWorkout } from "./wahoo/client.ts";
+import { WahooProvider } from "./wahoo/provider.ts";
 
 // Fake Wahoo API responses
 function fakeWorkout(overrides: Partial<WahooWorkout> = {}): WahooWorkout {

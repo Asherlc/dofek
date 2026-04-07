@@ -19,7 +19,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
   try {
     await runWithTokenUser(userId, async () => {
       if (importType === "apple-health") {
-        const { importAppleHealthFile } = await import("../providers/apple-health/index.ts");
+        const { importAppleHealthFile } = await import("../providers/apple-health/import.ts");
         let lastLoggedPercentage = 0;
         // Scale streaming progress to 0-90% — remaining 10% is for post-import steps
         const result = await importAppleHealthFile(db, filePath, sinceDate, (info) => {

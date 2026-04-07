@@ -13,7 +13,7 @@ import { StravaProvider } from "./strava.ts";
 import { SuuntoProvider } from "./suunto.ts";
 import { TrainerRoadProvider } from "./trainerroad.ts";
 import { VeloHeroProvider } from "./velohero.ts";
-import { WahooProvider } from "./wahoo/index.ts";
+import { WahooProvider } from "./wahoo/provider.ts";
 import { XertProvider } from "./xert.ts";
 import { ZwiftProvider } from "./zwift.ts";
 

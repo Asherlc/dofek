@@ -1,6 +1,6 @@
 import { getOAuthRedirectUri } from "dofek/auth/oauth";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { oauthSuccessHtml } from "./auth.ts";
+import { oauthSuccessHtml } from "./auth/shared.ts";
 
 // Mock all heavy dependencies
 vi.mock("../auth/cookies.ts", () => ({
@@ -129,7 +129,7 @@ import {
 } from "../auth/providers.ts";
 import { createSession, deleteSession, validateSession } from "../auth/session.ts";
 import { logger } from "../logger.ts";
-import { createAuthRouter } from "./auth.ts";
+import { createAuthRouter } from "./auth/index.ts";
 import { registerWebhookForProvider } from "./webhooks.ts";
 
 function createTestApp() {
