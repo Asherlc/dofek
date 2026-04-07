@@ -1,32 +1,90 @@
 services:
   db:
     image: timescale/timescaledb:latest-pg16
-    container_name: health-data-db
+    restart: unless-stopped
     environment:
       POSTGRES_DB: health
       POSTGRES_USER: health
-      POSTGRES_PASSWORD: health
-    ports:
-      - "5435:5432"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
-      - health-db-data:/var/lib/postgresql/data
-    restart: unless-stopped
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U health -d health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - dokploy-network
+      - default
 
   redis:
     image: redis:7-alpine
-    container_name: health-data-redis
-    ports:
-      - "6379:6379"
     restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - dokploy-network
+      - default
 
-  sync:
-    build: .
-    container_name: health-data-sync
-    env_file: .env
+  collector:
+    image: otel/opentelemetry-collector-contrib:0.149.0
+    restart: unless-stopped
+    user: "0:0"
+    environment:
+      AXIOM_API_TOKEN: ${AXIOM_API_TOKEN}
+      SENTRY_OTLP_LOGS_ENDPOINT: ${SENTRY_OTLP_LOGS_ENDPOINT:-}
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /opt/dofek/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:13133/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    networks:
+      - dokploy-network
+      - default
+
+  ota:
+    image: ghcr.io/axelmarciano/expo-open-ota:latest
+    restart: unless-stopped
+    environment:
+      BASE_URL: https://ota.dofek.asherlc.com
+      STORAGE_MODE: s3
+      S3_BUCKET_NAME: dofek-ota
+      AWS_REGION: auto
+      AWS_BASE_ENDPOINT: ${R2_ENDPOINT}
+      AWS_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
+      EXPO_APP_ID: ${EXPO_APP_ID}
+      EXPO_ACCESS_TOKEN: ${EXPO_ACCESS_TOKEN}
+      JWT_SECRET: ${OTA_JWT_SECRET}
+      KEYS_STORAGE_TYPE: environment
+      PUBLIC_EXPO_KEY_B64: ${OTA_PUBLIC_KEY_B64}
+      PRIVATE_EXPO_KEY_B64: ${OTA_PRIVATE_KEY_B64}
+      CACHE_MODE: redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      PORT: 3000
     depends_on:
-      - db
-    profiles:
-      - sync
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/manifest 2>&1 | grep -q channel"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 volumes:
-  health-db-data:
+  db_data:
+  redis_data:
+
+networks:
+  dokploy-network:
+    external: true
