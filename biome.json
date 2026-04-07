@@ -44,7 +44,7 @@
       },
       "nursery": {
         "noExcessiveLinesPerFile": {
-          "level": "warn",
+          "level": "error",
           "options": {
             "maxLines": 1000
           }
@@ -74,6 +74,28 @@
         "rules": {
           "suspicious": {
             "noConsole": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["**/*.test.ts", "**/*.test.tsx", "**/*.integration.test.ts"],
+      "linter": {
+        "rules": {
+          "nursery": {
+            "noExcessiveLinesPerFile": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": [
+        "src/db/schema.ts"
+      ],
+      "linter": {
+        "rules": {
+          "nursery": {
+            "noExcessiveLinesPerFile": "off"
           }
         }
       }
