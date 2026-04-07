@@ -284,6 +284,7 @@ describe("logout", () => {
   let SecureStore: typeof import("expo-secure-store");
 
   beforeEach(async () => {
+    vi.clearAllMocks();
     vi.stubGlobal("fetch", vi.fn());
     SecureStore = await import("expo-secure-store");
   });

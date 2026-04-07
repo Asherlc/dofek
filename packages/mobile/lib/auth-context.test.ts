@@ -1,4 +1,4 @@
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { createElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -59,15 +59,13 @@ describe("auth-context", () => {
 
       const { result } = renderHook(() => useAuth(), { wrapper });
 
-      // Wait for initial auth restore
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      });
-
-      expect(result.current.user).toEqual({
-        id: "user-1",
-        name: "Test User",
-        email: "test@example.com",
+      // Wait for initial auth restore to complete
+      await waitFor(() => {
+        expect(result.current.user).toEqual({
+          id: "user-1",
+          name: "Test User",
+          email: "test@example.com",
+        });
       });
 
       // Call logout — should clear user state immediately
@@ -99,12 +97,10 @@ describe("auth-context", () => {
 
       const { result } = renderHook(() => useAuth(), { wrapper });
 
-      // Wait for initial auth restore
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 50));
+      // Wait for initial auth restore to complete
+      await waitFor(() => {
+        expect(result.current.user).not.toBeNull();
       });
-
-      expect(result.current.user).not.toBeNull();
 
       // Call logout — should clear user state despite the error
       await act(async () => {
