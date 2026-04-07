@@ -201,8 +201,10 @@ jobs:
         uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043 # v4
         with:
           issue-number: ${{ github.event.number }}
+          body-includes: '<!-- preview-environment -->'
           body: |
             ## Preview Environment
+            <!-- preview-environment -->
 
             | | |
             |---|---|
@@ -257,8 +259,10 @@ jobs:
         uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043 # v4
         with:
           issue-number: ${{ github.event.number }}
+          body-includes: '<!-- mobile-preview -->'
           body: |
             ## Mobile Preview
+            <!-- mobile-preview -->
 
             | | |
             |---|---|
@@ -266,7 +270,11 @@ jobs:
             | **Deep Link** | `dofek://preview/pr-${{ github.event.number }}` |
             | **Commit** | ${{ github.sha }} |
 
-            **To test on device:**
+            **Scan to open on device:**
+
+            ![QR Code](https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=dofek%3A%2F%2Fpreview%2Fpr-${{ github.event.number }})
+
+            **Or manually:**
             1. Build and install the preview client: `PREVIEW_CHANNEL=pr-${{ github.event.number }} npx expo prebuild --clean -p ios`
             2. Or tap deep link on an existing preview build: `dofek://preview/pr-${{ github.event.number }}`
 
