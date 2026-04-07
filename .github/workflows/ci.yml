@@ -197,8 +197,8 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
-      - run: cd deploy/deploy-config && terraform init -backend=false && terraform validate
       - run: cd deploy/cloudflare && terraform init -backend=false && terraform validate
+      - run: cd deploy/dokploy && terraform init -backend=false && terraform validate
 
   quality-gate:
     name: Lint & Static Analysis
@@ -1243,8 +1243,8 @@ jobs:
 
   ota-deploy:
     name: OTA Deploy
-    needs: [ci-gate, deploy-config]
-    if: always() && needs.ci-gate.result == 'success' && needs.deploy-config.result == 'success' && github.ref == 'refs/heads/main'
+    needs: [ci-gate]
+    if: always() && needs.ci-gate.result == 'success' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
@@ -1269,52 +1269,6 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: npx eoas@2.3.16 publish --branch main --platform ios --nonInteractive
-
-  deploy-config:
-    name: Deploy Config
-    needs: [ci-gate]
-    if: always() && needs.ci-gate.result == 'success' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
-      - name: Setup SSH
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "$SSH_PRIVATE_KEY" | sed 's/\\n/\n/g' | tr -d '\r' > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          rm -f ~/.ssh/known_hosts
-          for attempt in 1 2 3; do
-            tmp_known_hosts="$(mktemp)"
-            if ssh-keyscan -T 10 -H "$SERVER_HOST" > "$tmp_known_hosts" 2>/dev/null && [ -s "$tmp_known_hosts" ]; then
-              mv "$tmp_known_hosts" ~/.ssh/known_hosts
-              break
-            fi
-            rm -f "$tmp_known_hosts"
-            if [ "$attempt" -lt 3 ]; then
-              echo "ssh-keyscan attempt $attempt failed, retrying..."
-              sleep 2
-            fi
-          done
-          if [ ! -s ~/.ssh/known_hosts ]; then
-            echo "::error::ssh-keyscan failed after 3 attempts"
-            exit 1
-          fi
-          eval "$(ssh-agent -s)"
-          ssh-add ~/.ssh/id_ed25519
-          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> "$GITHUB_ENV"
-      - name: Terraform Apply
-        working-directory: deploy/deploy-config
-        env:
-          TF_VAR_server_ip: ${{ secrets.SERVER_HOST }}
-          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
-        run: |
-          terraform init
-          terraform apply -auto-approve
 
   deploy-cloudflare:
     name: Deploy Cloudflare

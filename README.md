@@ -177,27 +177,26 @@ Deployed on a Hetzner Cloud CAX11 (ARM) server at `dofek.asherlc.com`.
 
 ### Infrastructure
 
-The `deploy/` directory contains everything needed to provision and run the production stack:
+The `deploy/` directory contains Terraform and Dokploy configuration:
 
 ```
 deploy/
-├── main.tf                       # Terraform — Hetzner server, firewall, SSH key
-├── cloud-init.yml                # First-boot bootstrap: Docker, GHCR login, base compose files
-├── docker-compose.yml            # Production stack (all services)
-├── otel-collector-config.yaml    # OTel Collector — receives app logs/traces + tails Docker logs → Axiom
-├── Caddyfile                     # Auto-HTTPS via Let's Encrypt (multiple domains)
-├── deploy.sh                     # Fetches secrets from Infisical + starts Docker Compose
-├── deploy-config/main.tf         # Terraform — pushes config updates to server via SSH
-├── dns/main.tf                   # Terraform — Cloudflare DNS for dofek.fit + dofek.live
-├── terraform.tfvars.example      # Example config
-└── .gitignore                    # Excludes secrets and state
+├── dokploy/
+│   ├── main.tf                   # Terraform — Hetzner server with Dokploy pre-installed
+│   ├── infra-compose.yml         # Docker Compose for infra services (DB, Redis, OTA, OTel, etc.)
+│   ├── setup.sh                  # One-time Dokploy setup via tRPC API
+│   └── otel-collector-config.yaml
+├── cloudflare/main.tf            # Terraform — DNS, R2 buckets (Terraform Cloud: dofek-cloudflare)
+└── .gitignore
 ```
+
+**Dokploy** manages application deployments (web, worker) and infra services. Traefik handles TLS termination and reverse proxy. The Dokploy dashboard is at `dokploy.asherlc.com`.
 
 ### Production architecture
 
 ```
-Internet → Caddy (auto-HTTPS :443, serves dofek.asherlc.com + dofek.fit + dofek.live)
-             └── dofek-web (Express :3000, 2 replicas)
+Internet → Traefik (auto-HTTPS :443, serves dofek.asherlc.com + dofek.fit + dofek.live)
+             └── dofek-web (Express :3000)
                    ├── /assets/*    → static files (1yr immutable cache)
                    ├── /api/*       → tRPC + REST API
                    ├── /auth/*      → OAuth flows
@@ -209,19 +208,23 @@ Internet → Caddy (auto-HTTPS :443, serves dofek.asherlc.com + dofek.fit + dofe
 
 ### Services
 
-| Container | Image | Purpose |
-|-----------|-------|---------|
-| `caddy` | caddy:2-alpine | TLS termination + reverse proxy to Express |
-| `migrate` | ghcr.io/asherlc/dofek | Runs pending DB migrations (one-shot, exits on completion) |
-| `web` | ghcr.io/asherlc/dofek | Express + tRPC API + static file serving (port 3000, 2 replicas) |
-| `worker` | ghcr.io/asherlc/dofek | BullMQ job worker (processes sync jobs, file imports) |
-| `sync` | ghcr.io/asherlc/dofek | Sync runner (provider data sync, one-shot) |
-| `redis` | redis:7-alpine | Job queue backend for BullMQ |
+Dokploy manages two application services and an infra compose stack:
+
+**Applications** (deployed via GHCR image updates):
+
+| Service | Image | Purpose |
+|---------|-------|---------|
+| `dofek-web` | ghcr.io/asherlc/dofek | Express + tRPC API + static file serving (port 3000) |
+| `dofek-worker` | ghcr.io/asherlc/dofek | BullMQ job worker (processes sync jobs, file imports) |
+
+**Infra compose stack** (`deploy/dokploy/infra-compose.yml`):
+
+| Service | Image | Purpose |
+|---------|-------|---------|
 | `db` | timescale/timescaledb:latest-pg16 | TimescaleDB (persistent volume) |
-| `db-backup` | prodrigestivill/postgres-backup-local | Daily pg_dump (7 daily, 4 weekly, 6 monthly) |
-| `collector` | otel/opentelemetry-collector-contrib | OTel Collector — receives app logs/traces + tails Docker container logs → Axiom |
-| `portainer` | portainer/portainer-ce:lts | Container management UI (portainer.dofek.asherlc.com) |
-| `watchtower` | containrrr/watchtower | Auto-pulls new images from GHCR every 5min with rolling restart |
+| `redis` | redis:7-alpine | Job queue backend for BullMQ + OTA cache |
+| `ota` | ghcr.io/axelmarciano/expo-open-ota | Self-hosted Expo OTA server (ota.dofek.asherlc.com) |
+| `collector` | otel/opentelemetry-collector-contrib | OTel Collector — logs/traces → Axiom |
 
 ### Checking mobile OTA update status
 
@@ -252,121 +255,17 @@ git push → GHA builds ARM Docker images + exports Expo OTA bundle → signs ma
 
 Migrations run at two levels for reliability: a dedicated one-shot `migrate` container runs first during `docker compose up` (via `depends_on: { condition: service_completed_successfully }`), and each service's entrypoint also runs migrations before starting. A Postgres advisory lock serializes concurrent runs so only one container applies migrations at a time. With replicated `web` instances and rolling restarts, at least one healthy API instance remains available while another instance migrates and boots. In local dev, run `pnpm migrate` manually.
 
-### Preview environments (ephemeral per-PR)
-
-Every pull request gets its own isolated preview environment — a dedicated Hetzner CAX11 server with its own database, Redis, and full application stack.
-
-**How it works:**
-
-```
-PR opened/updated → GHA builds PR-tagged Docker images (ghcr.io/asherlc/dofek:pr-{N})
-  → Terraform provisions a Hetzner server + Cloudflare DNS record (pr-{N}.preview.dofek.fit)
-  → Cloud-init installs Docker, pulls images, starts the preview stack
-  → PR comment posted with preview URL
-
-PR closed/merged → Terraform destroys server + DNS record
-  → Docker images cleaned up from GHCR
-  → Daily cron deletes any stale previews older than 72h once their PR is no longer open
-```
-
-**Preview stack** (`deploy/preview/docker-compose.yml`): Caddy, client (nginx), web (API), migrate, seed, Redis, TimescaleDB. No worker, sync, watchtower, OTel collector, backups, or portainer.
-
-**Login:** The preview database is seeded with a dev user and session via `scripts/seed-dev-db.ts`. Visit `https://pr-{N}.preview.dofek.fit/auth/dev-login` to mint the seeded `dev-session` cookie, then you'll be redirected to the dashboard. OAuth callbacks don't work on preview subdomains — email+password auth is planned (see [Authentication Follow-ups](#authentication-follow-ups)).
-
-**Required GitHub secrets:**
-
-| Secret | Purpose |
-|--------|---------|
-| `HCLOUD_TOKEN` | Hetzner Cloud API token for provisioning preview servers |
-| `CLOUDFLARE_API_TOKEN` | Cloudflare API token with DNS:Edit on dofek.fit zone |
-| `CLOUDFLARE_ZONE_ID` | Cloudflare zone ID for dofek.fit |
-| `GHCR_TOKEN` | GitHub PAT with `read:packages` for pulling images on preview servers |
-| `SSH_PUBLIC_KEY` | SSH public key for accessing preview servers |
-| `R2_ACCESS_KEY_ID` | R2 credentials for Terraform state backend |
-| `R2_SECRET_ACCESS_KEY` | R2 credentials for Terraform state backend |
-| `R2_ENDPOINT` | R2 S3-compatible endpoint URL |
-**Terraform state** is stored in the existing R2 bucket (`dofek-training-data`) under `terraform/preview/`, using one workspace per PR.
-
-**Cost:** ~€0.006/hr per preview server (CAX11). A PR open for 24h costs ~€0.14.
-
 ### Deploying from scratch
 
-`deploy/main.tf` provisions the Hetzner server and uses cloud-init to install Docker, log into GHCR, write `/opt/dofek/docker-compose.yml`, `/opt/dofek/Caddyfile`, and a minimal `/opt/dofek/.env`, then start the stack.
+1. Provision the server: `cd deploy/dokploy && terraform apply`
+2. Run the one-time Dokploy setup: `cd deploy/dokploy && ./setup.sh`
+3. Apply DNS/R2: `cd deploy/cloudflare && terraform apply`
 
-```bash
-cd deploy
-# Fetch deploy secrets from 1Password and pass as TF_VAR_ env vars
-TOKEN=$(op signin --account my.1password.com --raw)
-export TF_VAR_hcloud_token=$(OP_SESSION_my_1password_com="$TOKEN" op item get "Hetzner Cloud API Token" --field password)
-export TF_VAR_infisical_token=$(OP_SESSION_my_1password_com="$TOKEN" op item get "Infisical Machine Identity Token" --field password)
-# Set remaining non-secret vars
-export TF_VAR_ssh_public_key="ssh-ed25519 AAAA..."
-export TF_VAR_domain="dofek.asherlc.com"
-export TF_VAR_ghcr_username="asherlc"
-export TF_VAR_ghcr_token="ghp_..."
-terraform init
-terraform apply
-```
+See `deploy/dokploy/terraform.tfvars.example` for required variables.
 
-After the server exists:
+### Updating server config
 
-1. Add host-specific vars to `/opt/dofek/.env`: `INFISICAL_TOKEN`, `POSTGRES_PASSWORD`, `CADDY_DOMAIN`, and optionally `DOCKER_GID` and storage paths. `deploy.sh` uses `INFISICAL_TOKEN` to export the production secrets into `/opt/dofek/secrets.env` before `docker compose up`.
-2. Run the deploy-config module once to push `otel-collector-config.yaml` and the current base config.
-3. Point DNS at the Hetzner IP (`terraform output -raw server_ip`). Caddy will provision TLS automatically.
-
-```bash
-cd deploy/deploy-config
-terraform init
-terraform apply -var="server_ip=$(cd .. && terraform output -raw server_ip)"
-```
-
-### Updating server config files
-
-**Never SSH into the server to edit compose or proxy config directly.** All config-file changes go through the `deploy/deploy-config` module.
-
-`deploy-config` currently syncs:
-- `deploy/docker-compose.yml`
-- `deploy/Caddyfile`
-- `deploy/otel-collector-config.yaml`
-- `deploy/deploy.sh`
-
-After copying those files, it runs:
-
-```bash
-cd /opt/dofek && ./deploy.sh
-```
-
-```bash
-cd deploy/deploy-config
-terraform init                              # first time only
-terraform apply -var="server_ip=<SERVER_IP>" # copies changed files and restarts containers
-```
-
-`deploy-config` uses Terraform's default local backend (`deploy/deploy-config/terraform.tfstate`), so no Terraform Cloud account or `terraform login` is required.
-
-The `deploy-config` module is intentionally separate from the main `deploy/main.tf` (which provisions the Hetzner server). This lets you push config updates without needing the Hetzner API token or other provisioning secrets. The main module uses `user_data` (cloud-init) to place files at provisioning time, but changing `user_data` forces a server rebuild — `deploy-config` avoids that by using SSH provisioners instead.
-
-**SSH agent requirement:** Terraform's Go SSH client does **not** read `~/.ssh/config` — it only uses the standard `SSH_AUTH_SOCK` agent. If your SSH keys are in 1Password, you must point `SSH_AUTH_SOCK` at the 1Password agent socket:
-
-```bash
-export SSH_AUTH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
-cd deploy/deploy-config
-terraform apply -var="server_ip=159.69.3.40"
-```
-
-Note: Terraform's SSH client also cannot use passphrase-protected keys from `~/.ssh/` without the agent, and `private_key` in the connection block doesn't work with keys stored in 1Password. The `agent = true` approach is the only reliable option.
-
-`deploy-config` no longer writes secrets into `/opt/dofek/.env`. The host keeps only deploy-time configuration there (`INFISICAL_TOKEN`, `POSTGRES_PASSWORD`, `CADDY_DOMAIN`, optional storage paths). `deploy.sh` bootstraps the Infisical CLI if needed, exports the production secrets to `/opt/dofek/secrets.env`, and then runs Docker Compose with both env files.
-
-**Finding the server IP:** The domain is behind Cloudflare so you need the direct Hetzner IP:
-- `~/.ssh/known_hosts` — grep for Hetzner ranges (`159.69.*`, `116.203.*`, `49.12.*`)
-- Hetzner Cloud console → Servers → `dofek`
-
-Cloud-init handles the initial provisioning; `deploy-config` handles all subsequent config updates.
-
-### Updating the domain
-
-Edit `deploy/Caddyfile` with the new domain, then run `terraform apply` to push the change.
+**Never SSH into the server to edit config files directly.** Use the Dokploy dashboard or API for application and infra compose changes. Use Terraform for DNS and R2 bucket changes.
 
 ### SSH access
 
@@ -383,23 +282,17 @@ ssh root@<SERVER_IP>
 
 **In-browser (easiest):** The Data Sources page has a "System Logs" panel that shows the most recent server log entries from the in-memory ring buffer (currently queried at `limit=100`). This is the fastest way to check OAuth errors, sync failures, and recent provider activity.
 
-**Docker container logs (SSH):** The compose project is at `/opt/dofek`. Container names are prefixed with `dofek-`:
+**Docker container logs (SSH):** Use `docker ps` to find container names (Dokploy uses its own naming convention):
 
 ```bash
 ssh root@<SERVER_IP>
 
 docker ps                                         # container status
-docker logs dofek-web-1 --tail 100                # API server logs (OAuth, tRPC, sync)
-docker logs dofek-web-1 --tail 100 | grep error   # filter for errors
-docker logs dofek-sync-1 --tail 100               # sync runner logs (one-shot container)
-docker logs dofek-caddy-1 --tail 50               # TLS/reverse proxy logs
-
-# Follow logs in real-time
-docker logs dofek-web-1 -f
-
-# Recreate a container
-cd /opt/dofek && docker compose up -d web
+docker logs <container> --tail 100                # container logs
+docker logs <container> -f                        # follow logs in real-time
 ```
+
+Container management (restart, redeploy) should be done through the Dokploy dashboard at `dokploy.asherlc.com`.
 
 **Axiom (centralized):** Application logs, traces, and Docker container logs are shipped to [Axiom](https://axiom.co) via the OpenTelemetry Collector sidecar. In the current collector config, logs and traces both land in `dofek-logs`, and metrics land in `dofek-metrics`. This is the most complete log source because it survives container restarts and preserves structured metadata.
 
@@ -425,17 +318,13 @@ OTEL_EXPORTER_OTLP_TRACES_HEADERS=Authorization=Bearer <SENTRY_AUTH_TOKEN>
 
 ### Production secrets
 
-**All secrets are managed in [Infisical](https://infisical.com/).** Infisical is the single source of truth for credentials — if a secret isn't in Infisical, it's untracked.
+**All secrets are managed in [Infisical](https://infisical.com/).** Infisical is the single source of truth for credentials — if a secret isn't in Infisical, it's untracked. Infisical syncs secrets to GitHub Actions automatically.
 
-The production containers get environment variables from three places:
+The production containers get environment variables from two places:
 
 1. **Committed `.env` (this repo)** — non-secret config: client IDs, redirect URIs, endpoints, DSNs. Baked into the Docker image. Loaded by the entrypoint on startup.
 
-2. **Infisical (prod environment)** — actual secrets: client secrets, API keys/tokens, private keys. Fetched by `/opt/dofek/deploy.sh` on the host and written to `/opt/dofek/secrets.env` before containers are started or updated.
-
-3. **`.env` on server (`/opt/dofek/.env`)** — host-specific config for Docker Compose interpolation and secret export: `INFISICAL_TOKEN`, `CADDY_DOMAIN`, `POSTGRES_PASSWORD`, optional storage paths.
-
-The container entrypoint now reads the committed repo `.env` for non-secret defaults only. Production secrets come from Docker Compose via `/opt/dofek/secrets.env`, which is refreshed by `deploy.sh` before each deploy.
+2. **Dokploy environment variables** — secrets are configured via the Dokploy dashboard or `setup.sh` and injected into containers at runtime. Infra compose services get secrets baked into `infra-compose.yml` during setup.
 
 **Adding or updating secrets:**
 
