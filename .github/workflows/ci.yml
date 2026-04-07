@@ -490,8 +490,23 @@ jobs:
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup-node-pnpm
-      - name: Install ccache
-        run: brew install ccache
+      - name: Install and configure ccache
+        run: |
+          brew install ccache
+          ccache --set-config=max_size=1G
+          ccache --set-config=sloppiness=clang_index_store,file_stat_matches,include_file_ctime,include_file_mtime,ivfsoverlay,pch_defines,modules,system_headers,time_macros
+          ccache --set-config=depend_mode=true
+          ccache --set-config=compiler_check=content
+          CCACHE_BIN=$(which ccache)
+          cat > /usr/local/bin/ccache-clang <<WRAPPER
+          #!/bin/bash
+          exec "$CCACHE_BIN" clang "\$@"
+          WRAPPER
+          cat > /usr/local/bin/ccache-clang++ <<WRAPPER
+          #!/bin/bash
+          exec "$CCACHE_BIN" clang++ "\$@"
+          WRAPPER
+          chmod +x /usr/local/bin/ccache-clang /usr/local/bin/ccache-clang++
       - name: Cache ccache
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
@@ -529,7 +544,6 @@ jobs:
       - name: Archive (Release, no signing)
         env:
           SENTRY_DISABLE_AUTO_UPLOAD: "true"
-          USE_CCACHE: "1"
         run: |
           set -o pipefail
           xcodebuild archive \
@@ -542,8 +556,13 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGN_IDENTITY="" \
             COMPILER_INDEX_STORE_ENABLE=NO \
+            CC=/usr/local/bin/ccache-clang \
+            CPLUSPLUS=/usr/local/bin/ccache-clang++ \
             2>&1 | tail -40
         timeout-minutes: 25
+      - name: Show ccache stats
+        if: always()
+        run: ccache --show-stats
 
   build-watchos:
     name: watchOS Build
@@ -1095,8 +1114,23 @@ jobs:
           fetch-depth: 0 # Full history needed for git rev-list build number
       - uses: ./.github/actions/setup-node-pnpm
 
-      - name: Install ccache
-        run: brew install ccache
+      - name: Install and configure ccache
+        run: |
+          brew install ccache
+          ccache --set-config=max_size=1G
+          ccache --set-config=sloppiness=clang_index_store,file_stat_matches,include_file_ctime,include_file_mtime,ivfsoverlay,pch_defines,modules,system_headers,time_macros
+          ccache --set-config=depend_mode=true
+          ccache --set-config=compiler_check=content
+          CCACHE_BIN=$(which ccache)
+          cat > /usr/local/bin/ccache-clang <<WRAPPER
+          #!/bin/bash
+          exec "$CCACHE_BIN" clang "\$@"
+          WRAPPER
+          cat > /usr/local/bin/ccache-clang++ <<WRAPPER
+          #!/bin/bash
+          exec "$CCACHE_BIN" clang++ "\$@"
+          WRAPPER
+          chmod +x /usr/local/bin/ccache-clang /usr/local/bin/ccache-clang++
       - name: Cache ccache
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
@@ -1162,8 +1196,6 @@ jobs:
           agvtool new-version -all "$BUILD_NUMBER"
 
       - name: Build archive
-        env:
-          USE_CCACHE: "1"
         run: |
           cd packages/mobile/ios
           xcodebuild archive \
@@ -1178,7 +1210,12 @@ jobs:
             -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
             -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
             DEVELOPMENT_TEAM=68LEL35DQ9 \
-            COMPILER_INDEX_STORE_ENABLE=NO
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            CC=/usr/local/bin/ccache-clang \
+            CPLUSPLUS=/usr/local/bin/ccache-clang++
+      - name: Show ccache stats
+        if: always()
+        run: ccache --show-stats
 
       - name: Diagnose archive signing
         if: always()
