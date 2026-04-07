@@ -3,7 +3,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { providerActionLabel } from "./index";
+import { providerActionLabel } from "./provider-card.tsx";
 
 const mockPush = vi.fn();
 const mockReplace = vi.fn();

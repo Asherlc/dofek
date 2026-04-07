@@ -89,9 +89,7 @@
       }
     },
     {
-      "includes": [
-        "src/db/schema.ts"
-      ],
+      "includes": ["src/db/schema.ts"],
       "linter": {
         "rules": {
           "nursery": {
