@@ -7,6 +7,9 @@ services:
   db:
     image: timescale/timescaledb:latest-pg16
     restart: unless-stopped
+    networks:
+      - default
+      - dokploy-network
     environment:
       POSTGRES_DB: health
       POSTGRES_USER: health
@@ -48,6 +51,9 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    networks:
+      - default
+      - dokploy-network
     volumes:
       - redis_data:/data
     healthcheck:
@@ -60,6 +66,9 @@ services:
     image: otel/opentelemetry-collector-contrib:0.149.0
     restart: unless-stopped
     user: "0:0"
+    networks:
+      - default
+      - dokploy-network
     environment:
       AXIOM_API_TOKEN: ${axiom_api_token}
       SENTRY_OTLP_LOGS_ENDPOINT: ${sentry_otlp_logs_endpoint}
@@ -102,6 +111,10 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+networks:
+  dokploy-network:
+    external: true
 
 volumes:
   db_data:
