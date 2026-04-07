@@ -32,6 +32,15 @@ export interface SleepSample {
   sourceName: string;
 }
 
+export interface RouteLocation {
+  date: string; // ISO 8601
+  lat: number;
+  lng: number;
+  altitude?: number;
+  speed?: number;
+  horizontalAccuracy?: number;
+}
+
 export interface DailyStatistic {
   date: string; // YYYY-MM-DD (local timezone)
   value: number;
@@ -95,6 +104,11 @@ export async function queryDailyStatistics(
   endDate: string,
 ): Promise<DailyStatistic[]> {
   return HealthKitModule.queryDailyStatistics(typeIdentifier, startDate, endDate);
+}
+
+/** Query GPS route locations for a workout by its UUID */
+export async function queryWorkoutRoutes(workoutUuid: string): Promise<RouteLocation[]> {
+  return HealthKitModule.queryWorkoutRoutes(workoutUuid);
 }
 
 /** Write dietary energy consumed sample to HealthKit */

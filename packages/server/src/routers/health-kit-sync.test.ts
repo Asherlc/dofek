@@ -1305,6 +1305,177 @@ describe("healthKitSyncRouter", () => {
     });
   });
 
+  describe("pushWorkoutRoutes", () => {
+    it("inserts sensor_sample rows for each GPS channel in route locations", async () => {
+      const execute = vi.fn().mockImplementation((query: unknown) => {
+        const serialized = JSON.stringify(query);
+        if (serialized.includes("SELECT id, external_id")) {
+          return [{ id: "activity-123", external_id: "hk:workout:w-route-1" }];
+        }
+        return [];
+      });
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.pushWorkoutRoutes({
+        routes: [
+          {
+            workoutUuid: "w-route-1",
+            sourceName: "Apple Watch",
+            locations: [
+              {
+                date: "2024-01-15T10:00:00Z",
+                lat: 40.7128,
+                lng: -74.006,
+                altitude: 10.5,
+                speed: 3.2,
+                horizontalAccuracy: 5,
+              },
+            ],
+          },
+        ],
+      });
+
+      expect(result.inserted).toBeGreaterThan(0);
+
+      // Should have resolved all activity IDs in one bulk query
+      const lookupCall = execute.mock.calls.find((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return serialized.includes("SELECT id, external_id") && serialized.includes("IN");
+      });
+      expect(lookupCall).toBeDefined();
+
+      // Should have inserted all 5 channels (lat, lng, altitude, speed, gps_accuracy) in a batched INSERT
+      expect(result.inserted).toBe(5);
+      const insertCall = execute.mock.calls.find((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return serialized.includes("INSERT INTO fitness.sensor_sample");
+      });
+      expect(insertCall).toBeDefined();
+    });
+
+    it("skips routes when no matching activity exists", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.pushWorkoutRoutes({
+        routes: [
+          {
+            workoutUuid: "nonexistent-workout",
+            locations: [{ date: "2024-01-15T10:00:00Z", lat: 40.7128, lng: -74.006 }],
+          },
+        ],
+      });
+
+      expect(result.inserted).toBe(0);
+    });
+
+    it("skips null optional channels (altitude, speed, horizontalAccuracy)", async () => {
+      const execute = vi.fn().mockImplementation((query: unknown) => {
+        const serialized = JSON.stringify(query);
+        if (serialized.includes("SELECT id, external_id")) {
+          return [{ id: "activity-456", external_id: "hk:workout:w-minimal" }];
+        }
+        return [];
+      });
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.pushWorkoutRoutes({
+        routes: [
+          {
+            workoutUuid: "w-minimal",
+            locations: [{ date: "2024-01-15T10:00:00Z", lat: 51.5074, lng: -0.1278 }],
+          },
+        ],
+      });
+
+      // Only lat and lng should be inserted (no altitude, speed, or gps_accuracy)
+      expect(result.inserted).toBe(2);
+      const insertCall = execute.mock.calls.find((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return serialized.includes("INSERT INTO fitness.sensor_sample");
+      });
+      expect(insertCall).toBeDefined();
+      const serialized = JSON.stringify(insertCall);
+      expect(serialized).toContain('"lat"');
+      expect(serialized).toContain('"lng"');
+      expect(serialized).not.toContain('"altitude"');
+      expect(serialized).not.toContain('"gps_accuracy"');
+    });
+
+    it("skips routes with empty locations array", async () => {
+      const execute = vi.fn().mockResolvedValue([{ id: "activity-789" }]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.pushWorkoutRoutes({
+        routes: [{ workoutUuid: "w-empty", locations: [] }],
+      });
+
+      expect(result.inserted).toBe(0);
+    });
+
+    it("rounds gps_accuracy to integer", async () => {
+      const execute = vi.fn().mockImplementation((query: unknown) => {
+        const serialized = JSON.stringify(query);
+        if (serialized.includes("SELECT id, external_id")) {
+          return [{ id: "activity-round", external_id: "hk:workout:w-round" }];
+        }
+        return [];
+      });
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.pushWorkoutRoutes({
+        routes: [
+          {
+            workoutUuid: "w-round",
+            locations: [
+              {
+                date: "2024-01-15T10:00:00Z",
+                lat: 40.0,
+                lng: -74.0,
+                horizontalAccuracy: 4.7,
+              },
+            ],
+          },
+        ],
+      });
+
+      // Find the batched insert and verify gps_accuracy value is rounded (5, not 4.7)
+      const insertCall = execute.mock.calls.find((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return (
+          serialized.includes("INSERT INTO fitness.sensor_sample") &&
+          serialized.includes("gps_accuracy")
+        );
+      });
+      expect(insertCall).toBeDefined();
+      // The SQL template bindings include the rounded scalar value
+      const serialized = JSON.stringify(insertCall);
+      expect(serialized).toContain('"gps_accuracy"');
+      // 4.7 rounded to 5 — verify the rounded value appears and the original doesn't
+      expect(serialized).not.toContain("4.7");
+    });
+  });
+
   describe("computeBoundsFromIsoTimestamps", () => {
     it("returns null for empty array", () => {
       expect(computeBoundsFromIsoTimestamps([])).toBeNull();

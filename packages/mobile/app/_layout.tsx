@@ -126,6 +126,9 @@ function AuthGate() {
         pushWorkouts: {
           mutate: (input) => trpcClient.healthKitSync.pushWorkouts.mutate(input),
         },
+        pushWorkoutRoutes: {
+          mutate: (input) => trpcClient.healthKitSync.pushWorkoutRoutes.mutate(input),
+        },
         pushSleepSamples: {
           mutate: (input) => trpcClient.healthKitSync.pushSleepSamples.mutate(input),
         },

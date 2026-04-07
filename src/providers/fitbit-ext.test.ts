@@ -1,11 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { ZodError } from "zod";
-import {
-  FitbitClient,
-  FitbitProvider,
-  fitbitOAuthConfig,
-  mapFitbitActivityType,
-} from "./fitbit.ts";
+import { FitbitClient } from "./fitbit/client.ts";
+import { mapFitbitActivityType } from "./fitbit/parsers.ts";
+import { FitbitProvider, fitbitOAuthConfig } from "./fitbit/provider.ts";
 
 // ============================================================
 // Extended Fitbit tests covering:

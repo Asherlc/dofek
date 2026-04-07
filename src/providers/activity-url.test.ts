@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { Concept2Provider } from "./concept2.ts";
 import { CyclingAnalyticsProvider } from "./cycling-analytics.ts";
 import { DecathlonProvider } from "./decathlon.ts";
-import { FitbitProvider } from "./fitbit.ts";
+import { FitbitProvider } from "./fitbit/provider.ts";
 import { GarminProvider } from "./garmin.ts";
 import { KomootProvider } from "./komoot.ts";
 import { PelotonProvider } from "./peloton.ts";

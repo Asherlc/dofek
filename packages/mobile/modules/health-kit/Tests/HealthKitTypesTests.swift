@@ -77,9 +77,13 @@ final class HealthKitTypesTests: XCTestCase {
         XCTAssertTrue(readTypes.contains(HKWorkoutType.workoutType()))
     }
 
+    func testReadTypesContainsWorkoutRoute() {
+        XCTAssertTrue(readTypes.contains(HKSeriesType.workoutRoute()))
+    }
+
     func testReadTypesTotalCount() {
-        // 51 quantity types + 5 category types + 1 workout type = 57
-        XCTAssertEqual(readTypes.count, 57)
+        // 51 quantity types + 5 category types + 1 workout type + 1 workout route = 58
+        XCTAssertEqual(readTypes.count, 58)
     }
 
     // MARK: - writeTypes
