@@ -1,5 +1,5 @@
+import { OpenFoodFactsClient } from "@dofek/nutrition/open-food-facts";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { OpenFoodFactsClient } from "./food-database";
 
 function createFetchResponse(payload: unknown) {
   return {

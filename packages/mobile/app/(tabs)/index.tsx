@@ -5,6 +5,7 @@ import {
   isToday,
   isYesterday,
 } from "@dofek/format/format";
+import { readinessLevelColor } from "@dofek/scoring/scoring";
 import type { NextWorkoutRecommendation } from "dofek-server/types";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo } from "react";
@@ -24,7 +25,6 @@ import { SleepBar } from "../../components/charts/SleepBar";
 import { StrainGauge } from "../../components/charts/StrainGauge";
 import { OnboardingWelcome } from "../../components/OnboardingWelcome";
 import { SkeletonCircle } from "../../components/Skeleton";
-import { readinessLevelColor } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
 import { useAutoSync } from "../../lib/useAutoSync";
 import { useOnboarding } from "../../lib/useOnboarding";

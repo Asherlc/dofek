@@ -4,17 +4,11 @@ import * as resolveTokensModule from "../auth/resolve-tokens.ts";
 import * as sensorSampleWriterModule from "../db/sensor-sample-writer.ts";
 import type { ParsedFitRecord, ParsedFitSession } from "../fit/parser.ts";
 import * as fitParserModule from "../fit/parser.ts";
+import { fitRecordsToSensorSamples as fitRecordsToMetricStream } from "../fit/records.ts";
 import * as loggerModule from "../logger.ts";
-import {
-  fitRecordsToMetricStream,
-  parseWorkoutList,
-  parseWorkoutSummary,
-  WahooClient,
-  WahooProvider,
-  type WahooWorkout,
-  type WahooWorkoutSummary,
-  wahooOAuthConfig,
-} from "./wahoo/index.ts";
+import { WahooClient, type WahooWorkout, type WahooWorkoutSummary } from "./wahoo/client.ts";
+import { parseWorkoutList, parseWorkoutSummary } from "./wahoo/parsers.ts";
+import { WahooProvider, wahooOAuthConfig } from "./wahoo/provider.ts";
 
 const sampleWorkoutSummary: WahooWorkoutSummary = {
   id: 101,

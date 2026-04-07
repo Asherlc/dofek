@@ -2,9 +2,6 @@ import { z } from "zod";
 import { IntervalsRepository } from "../repositories/intervals-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
-// Re-export utility functions for backward compatibility
-export { average, maxVal, summarizeSegment } from "../repositories/intervals-repository.ts";
-
 export const intervalsRouter = router({
   /**
    * Get intervals/laps for a specific activity.

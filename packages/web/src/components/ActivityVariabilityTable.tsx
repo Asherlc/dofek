@@ -1,5 +1,5 @@
+import { formatNumber } from "@dofek/format/format";
 import type { ActivityVariabilityRow } from "dofek-server/types";
-import { formatNumber } from "../lib/format.ts";
 
 interface ActivityVariabilityTableProps {
   data: ActivityVariabilityRow[];

@@ -83,7 +83,7 @@ vi.mock("./auth/callback-server.ts", () => ({
 }));
 
 const mockBuildAuthorizationUrl = vi.fn(() => "https://auth.example.com/authorize");
-vi.mock("./auth/index.ts", () => ({
+vi.mock("./auth/oauth.ts", () => ({
   buildAuthorizationUrl: mockBuildAuthorizationUrl,
 }));
 
@@ -95,7 +95,7 @@ vi.mock("./db/tokens.ts", () => ({
 }));
 
 const mockImportAppleHealthFile = vi.fn();
-vi.mock("./providers/apple-health/index.ts", () => ({
+vi.mock("./providers/apple-health/import.ts", () => ({
   importAppleHealthFile: mockImportAppleHealthFile,
 }));
 

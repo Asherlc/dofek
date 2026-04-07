@@ -1,4 +1,5 @@
 import { formatNumber } from "@dofek/format/format";
+import { aggregateWeeklyVolume, StrainScore, WorkloadRatio } from "@dofek/scoring/scoring";
 import {
   collapseWeeklyVolumeActivityTypes,
   formatActivityTypeLabel,
@@ -11,7 +12,6 @@ import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { SparkLine } from "../../components/charts/SparkLine";
 import { StrainGauge } from "../../components/charts/StrainGauge";
 import { DaySelector } from "../../components/DaySelector";
-import { aggregateWeeklyVolume, StrainScore, WorkloadRatio } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useRefresh } from "../../lib/useRefresh";

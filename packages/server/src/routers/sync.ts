@@ -83,7 +83,7 @@ export function ensureProvidersRegistered(): Promise<void> {
 
 async function doRegisterProviders() {
   const providers = [
-    ["wahoo", () => import("dofek/providers/wahoo").then((m) => new m.WahooProvider())],
+    ["wahoo", () => import("dofek/providers/wahoo/provider").then((m) => new m.WahooProvider())],
     ["withings", () => import("dofek/providers/withings").then((m) => new m.WithingsProvider())],
     ["peloton", () => import("dofek/providers/peloton").then((m) => new m.PelotonProvider())],
     ["fatsecret", () => import("dofek/providers/fatsecret").then((m) => new m.FatSecretProvider())],

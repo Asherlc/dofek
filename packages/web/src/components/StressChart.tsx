@@ -1,8 +1,8 @@
+import { formatNumber, isToday } from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
 import { StressScore, trendColor } from "@dofek/scoring/scoring";
 import type { StressResult } from "dofek-server/types";
 import { dofekAxis, dofekGrid, dofekLegend, dofekSeries, dofekTooltip } from "../lib/chartTheme.ts";
-import { formatNumber, isToday } from "../lib/format.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface StressChartProps {

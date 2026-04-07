@@ -1,5 +1,5 @@
 import { ensureProvider, saveTokens } from "dofek/db/tokens";
-import { GarminConnectClient } from "garmin-connect";
+import { GarminConnectClient } from "garmin-connect/client";
 import { z } from "zod";
 import { queryCache } from "../lib/cache.ts";
 import { protectedProcedure, router } from "../trpc.ts";

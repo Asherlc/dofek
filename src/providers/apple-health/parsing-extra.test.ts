@@ -1,16 +1,14 @@
 import { describe, expect, it } from "vitest";
+import { parseHealthDate } from "./dates.ts";
+import { parseCategoryRecord, parseRecord, parseRouteLocation } from "./records.ts";
+import { parseSleepAnalysis } from "./sleep.ts";
 import {
   enrichWorkoutFromStats,
   parseActivitySummary,
-  parseCategoryRecord,
-  parseHealthDate,
-  parseRecord,
-  parseRouteLocation,
-  parseSleepAnalysis,
   parseWorkout,
   parseWorkoutStatistics,
   type WorkoutStatistics,
-} from "./index.ts";
+} from "./workouts.ts";
 
 // ============================================================
 // Tests targeting uncovered parsing functions in apple-health.ts

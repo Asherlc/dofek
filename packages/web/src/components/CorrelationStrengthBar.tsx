@@ -1,4 +1,4 @@
-import { formatSigned } from "../lib/format.ts";
+import { formatSigned } from "@dofek/format/format";
 
 interface CorrelationStrengthBarProps {
   rho: number;

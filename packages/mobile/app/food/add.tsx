@@ -1,5 +1,6 @@
 import { formatDateYmd } from "@dofek/format/format";
 import { autoMealType, MEAL_OPTIONS, type MealType } from "@dofek/nutrition/meal";
+import { type FoodDatabaseResult, OpenFoodFactsClient } from "@dofek/nutrition/open-food-facts";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -18,7 +19,6 @@ import {
 import { z } from "zod";
 import { BarcodeScanner } from "../../components/BarcodeScanner";
 import { useAuth } from "../../lib/auth-context";
-import { type FoodDatabaseResult, OpenFoodFactsClient } from "../../lib/food-database";
 import { getTrpcUrl, SERVER_URL } from "../../lib/server";
 import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";

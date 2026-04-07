@@ -117,7 +117,7 @@ describe("supplementsRouter", () => {
 // toApiSupplement utility tests
 // ---------------------------------------------------------------------------
 
-import { toApiSupplement } from "./supplements.ts";
+import { toApiSupplement } from "../repositories/supplements-repository.ts";
 
 describe("toApiSupplement()", () => {
   it("maps name from row", () => {

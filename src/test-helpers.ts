@@ -8,14 +8,6 @@
  */
 import { vi } from "vitest";
 
-export type {
-  MockDatabaseOptions,
-  MockDatabaseResult,
-  MockDatabaseSpies,
-} from "./providers/test-helpers.ts";
-// Re-export database mock helpers
-export { createMockDatabase } from "./providers/test-helpers.ts";
-
 /**
  * A fetch function created by `vi.fn()` with proper type parameters.
  * This gives `.mock.calls` the correct tuple types automatically,

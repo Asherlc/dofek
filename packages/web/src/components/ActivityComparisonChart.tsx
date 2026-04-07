@@ -1,3 +1,4 @@
+import { formatPace } from "@dofek/format/format";
 import type { ActivityComparisonRow } from "dofek-server/types";
 import {
   dofekAxis,
@@ -7,7 +8,6 @@ import {
   dofekTooltip,
   seriesColor,
 } from "../lib/chartTheme.ts";
-import { formatPace } from "../lib/format.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import { DofekChart } from "./DofekChart.tsx";
 

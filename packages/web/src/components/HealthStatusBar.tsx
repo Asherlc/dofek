@@ -1,5 +1,5 @@
+import { formatNumber } from "@dofek/format/format";
 import { useCountUp } from "../hooks/useCountUp.ts";
-import { formatNumber } from "../lib/format.ts";
 
 interface HealthMetric {
   label: string;

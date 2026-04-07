@@ -2,6 +2,13 @@ import { and, eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { WhoopClient } from "whoop-whoop/client";
+import type {
+  WhoopHrValue,
+  WhoopRecoveryRecord,
+  WhoopSleepRecord,
+  WhoopWorkoutRecord,
+} from "whoop-whoop/types";
 import {
   activity,
   dailyMetrics,
@@ -13,14 +20,7 @@ import {
 } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
-import {
-  WhoopClient,
-  type WhoopHrValue,
-  WhoopProvider,
-  type WhoopRecoveryRecord,
-  type WhoopSleepRecord,
-  type WhoopWorkoutRecord,
-} from "./whoop.ts";
+import { WhoopProvider } from "./whoop.ts";
 
 // ============================================================
 // Fake WHOOP internal API cycle response

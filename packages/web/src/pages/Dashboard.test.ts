@@ -1,10 +1,10 @@
+import { UnitConverter } from "@dofek/format/units";
 import { describe, expect, it } from "vitest";
 import {
   DASHBOARD_GRID_PAIR_SECONDARIES,
   DASHBOARD_GRID_PAIRS,
 } from "../lib/dashboardGridPairs.ts";
 import { DEFAULT_LAYOUT } from "../lib/dashboardLayoutContext.ts";
-import { UnitConverter } from "../lib/units.ts";
 import {
   buildSkinTempSeries,
   DASHBOARD_SECTION_IDS,

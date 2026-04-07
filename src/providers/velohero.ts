@@ -1,4 +1,5 @@
-import { parseVeloHeroWorkout, VeloHeroClient } from "velohero-client";
+import { VeloHeroClient } from "velohero-client/client";
+import { parseVeloHeroWorkout } from "velohero-client/parsing";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";

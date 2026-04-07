@@ -1,3 +1,4 @@
+import { isToday, isYesterday } from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
 import {
   StrainScore,
@@ -17,7 +18,6 @@ import type {
 import { useEffect, useState } from "react";
 import { useCountUp } from "../hooks/useCountUp.ts";
 import { chartThemeColors } from "../lib/chartTheme.ts";
-import { isToday, isYesterday } from "../lib/dates.ts";
 
 interface DailyOverviewProps {
   readiness: ReadinessRow[] | undefined;

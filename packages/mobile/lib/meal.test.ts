@@ -1,5 +1,6 @@
+import { formatDateYmd } from "@dofek/format/format";
+import { autoMealType, parseQuickAddForm, type QuickAddFormInput } from "@dofek/nutrition/meal";
 import { describe, expect, it } from "vitest";
-import { autoMealType, formatDateYmd, parseQuickAddForm, type QuickAddFormInput } from "./meal";
 
 describe("autoMealType", () => {
   it("returns breakfast before 10am", () => {

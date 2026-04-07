@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { average, maxVal, summarizeSegment } from "./intervals.ts";
+import { average, maxVal, summarizeSegment } from "../repositories/intervals-repository.ts";
 
 describe("average", () => {
   it("computes average of positive values", () => {

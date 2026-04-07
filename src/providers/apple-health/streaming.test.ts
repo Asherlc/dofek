@@ -3,14 +3,11 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import {
-  type CategoryRecord,
-  extractExportXml,
-  type HealthRecord,
-  type HealthWorkout,
-  type SleepAnalysisRecord,
-  streamHealthExport,
-} from "./index.ts";
+import { extractExportXml } from "./import.ts";
+import type { CategoryRecord, HealthRecord } from "./records.ts";
+import type { SleepAnalysisRecord } from "./sleep.ts";
+import { streamHealthExport } from "./streaming.ts";
+import type { HealthWorkout } from "./workouts.ts";
 
 // ============================================================
 // Tests for streaming parser edge cases and backpressure

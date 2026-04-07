@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sleepListRowSchema } from "./sleep.ts";
+import { sleepListRowSchema } from "../repositories/sleep-repository.ts";
 
 describe("sleepListRowSchema", () => {
   it("parses a row with ISO-formatted started_at", () => {

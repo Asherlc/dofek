@@ -1,10 +1,8 @@
 import { isIndoorCycling } from "@dofek/training/endurance-types";
 import { captureException } from "@sentry/node";
 import { and, eq } from "drizzle-orm";
+import { GarminApiError, GarminConnectClient } from "garmin-connect/client";
 import {
-  GarminApiError,
-  GarminConnectClient,
-  type GarminTokens,
   parseActivityDetail,
   parseConnectActivity,
   parseConnectDailySummary,
@@ -14,7 +12,8 @@ import {
   parseHrvSummary,
   parseStressTimeSeries,
   parseTrainingStatus,
-} from "garmin-connect";
+} from "garmin-connect/parsing";
+import type { GarminTokens } from "garmin-connect/types";
 import { z } from "zod";
 import type { TokenSet } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";

@@ -39,6 +39,9 @@
         "noTsIgnore": "error",
         "noConsole": "error"
       },
+      "performance": {
+        "noBarrelFile": "error"
+      },
       "style": {
         "noNonNullAssertion": "error"
       }

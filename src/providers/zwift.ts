@@ -1,11 +1,6 @@
 import { z } from "zod";
-import {
-  parseZwiftActivity,
-  parseZwiftFitnessData,
-  ZWIFT_API_BASE,
-  ZWIFT_AUTH_URL,
-  ZwiftClient,
-} from "zwift-client";
+import { ZWIFT_API_BASE, ZWIFT_AUTH_URL, ZwiftClient } from "zwift-client/client";
+import { parseZwiftActivity, parseZwiftFitnessData } from "zwift-client/parsing";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity, dailyMetrics } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";

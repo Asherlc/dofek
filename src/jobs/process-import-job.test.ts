@@ -51,7 +51,7 @@ const mockImportAppleHealthFile = vi.fn().mockResolvedValue({
   recordsSynced: 42,
   errors: [],
 });
-vi.mock("../providers/apple-health/index.ts", () => ({
+vi.mock("../providers/apple-health/import.ts", () => ({
   importAppleHealthFile: (...args: unknown[]) => mockImportAppleHealthFile(...args),
 }));
 

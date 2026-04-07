@@ -1,3 +1,4 @@
+import { formatNumber, formatRelativeTime, formatTime } from "@dofek/format/format";
 import { DATA_TYPE_LABELS, type ProviderStats } from "@dofek/providers/provider-stats";
 import {
   parseWhoopWearLocation,
@@ -12,8 +13,6 @@ import { PageLayout } from "../components/PageLayout.tsx";
 import { ProviderDisconnectControl } from "../components/ProviderDisconnectControl.tsx";
 import { ProviderLogo } from "../components/ProviderLogo.tsx";
 import { ProviderStatsBreakdown } from "../components/ProviderStatsBreakdown.tsx";
-import { formatRelativeTime, formatTime } from "../lib/dates.ts";
-import { formatNumber } from "../lib/format.ts";
 import { pollSyncJob } from "../lib/poll-sync-job.ts";
 import { trpc } from "../lib/trpc.ts";
 

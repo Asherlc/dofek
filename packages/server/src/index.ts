@@ -27,7 +27,7 @@ import { initSentry, sentryErrorHandler } from "./lib/sentry.ts";
 import { warmCache } from "./lib/warm-cache.ts";
 import { logger } from "./logger.ts";
 import { appRouter } from "./router.ts";
-import { createAuthRouter } from "./routes/auth.ts";
+import { createAuthRouter } from "./routes/auth/index.ts";
 import { createExportRouter } from "./routes/export.ts";
 import { createUploadRouter } from "./routes/upload.ts";
 import { createWebhookRouter } from "./routes/webhooks.ts";

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { parseWorkout, type WhoopWorkoutRecord } from "./whoop.ts";
+import type { WhoopWorkoutRecord } from "whoop-whoop/types";
+import { parseWorkout } from "./whoop.ts";
 
 // ============================================================
 // Tests for parseJournalResponse (internal function, tested
