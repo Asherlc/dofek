@@ -1,7 +1,7 @@
+import { formatNumber } from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
 import type { ProgressiveOverloadRow } from "dofek-server/types";
 import { chartColors, dofekAxis, dofekGrid, dofekSeries } from "../lib/chartTheme.ts";
-import { formatNumber } from "../lib/format.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface ProgressiveOverloadCardsProps {

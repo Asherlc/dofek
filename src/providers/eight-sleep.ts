@@ -1,12 +1,14 @@
-import type { EightSleepTrendDay } from "eight-sleep-client";
 import {
   EIGHT_SLEEP_CLIENT_ID,
   EIGHT_SLEEP_CLIENT_SECRET,
   EightSleepClient,
+} from "eight-sleep-client/client";
+import {
   parseEightSleepDailyMetrics,
   parseEightSleepHeartRateSamples,
   parseEightSleepTrendDay,
-} from "eight-sleep-client";
+} from "eight-sleep-client/parsing";
+import type { EightSleepTrendDay } from "eight-sleep-client/types";
 import type { SyncDatabase } from "../db/index.ts";
 import { bodyMeasurement, dailyMetrics, sleepSession } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";

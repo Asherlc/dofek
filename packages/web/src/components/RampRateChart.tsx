@@ -1,8 +1,8 @@
+import { formatNumber } from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
 import { rampRateColor } from "@dofek/scoring/scoring";
 import type { RampRateWeek } from "dofek-server/types";
 import { dofekAxis, dofekGrid, dofekTooltip } from "../lib/chartTheme.ts";
-import { formatNumber } from "../lib/format.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface RampRateChartProps {

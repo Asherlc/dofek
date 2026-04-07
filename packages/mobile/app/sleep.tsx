@@ -1,4 +1,5 @@
 import { formatHour, formatSleepDebt, isToday, isYesterday } from "@dofek/format/format";
+import { sleepDebtColor } from "@dofek/scoring/scoring";
 import { useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
@@ -7,7 +8,6 @@ import { SleepBar } from "../components/charts/SleepBar";
 import { SparkLine } from "../components/charts/SparkLine";
 import { DaySelector } from "../components/DaySelector";
 import { MetricCard } from "../components/MetricCard";
-import { sleepDebtColor } from "../lib/scoring";
 import { trpc } from "../lib/trpc";
 import { useRefresh } from "../lib/useRefresh";
 import { colors } from "../theme";

@@ -4,7 +4,10 @@
   "description": "Unofficial WHOOP API client using the internal Cognito-based authentication",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    "./client": "./src/client.ts",
+    "./sports": "./src/sports.ts",
+    "./types": "./src/types.ts",
+    "./utils": "./src/utils.ts"
   },
   "scripts": {
     "test": "vitest run",

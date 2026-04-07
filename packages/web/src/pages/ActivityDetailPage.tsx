@@ -1,3 +1,5 @@
+import { formatNumber } from "@dofek/format/format";
+import type { UnitConverter } from "@dofek/format/units";
 import { providerLabel } from "@dofek/providers/providers";
 import { activityMetricColors, statusColors } from "@dofek/scoring/colors";
 import {
@@ -13,11 +15,8 @@ import type { ActivityHrZone } from "@dofek/zones/zones";
 import { HEART_RATE_ZONE_COLORS } from "@dofek/zones/zones";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import type {
-  ActivityDetail,
-  StreamPoint,
-  StrengthExerciseDetail,
-} from "../../../server/src/routers/activity.ts";
+import type { ActivityDetail } from "../../../server/src/models/activity.ts";
+import type { StreamPoint, StrengthExerciseDetail } from "../../../server/src/routers/activity.ts";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { DofekChart } from "../components/DofekChart.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
@@ -29,10 +28,8 @@ import {
   dofekLegend,
   dofekTooltip,
 } from "../lib/chartTheme.ts";
-import { formatNumber } from "../lib/format.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
-import type { UnitConverter } from "../lib/units.ts";
 
 const CHART_COLORS = {
   heartRate: activityMetricColors.heartRate,

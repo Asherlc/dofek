@@ -1,7 +1,6 @@
-import { parseValidDate } from "@dofek/format/format";
+import { formatNumber, parseValidDate } from "@dofek/format/format";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { useNavigate } from "@tanstack/react-router";
-import { formatNumber } from "../lib/format.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 

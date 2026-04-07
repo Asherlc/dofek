@@ -1,5 +1,6 @@
+import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/endurance-types";
 import { describe, expect, it } from "vitest";
-import { ENDURANCE_ACTIVITY_TYPES, enduranceTypeFilter } from "./endurance-types.ts";
+import { enduranceTypeFilter } from "./endurance-types.ts";
 
 describe("ENDURANCE_ACTIVITY_TYPES", () => {
   it("contains expected endurance activities", () => {

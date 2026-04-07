@@ -3,7 +3,11 @@
   "version": "0.1.0",
   "description": "Unofficial TrainerRoad API client using reverse-engineered cookie-based authentication",
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
+  "exports": {
+    "./client": "./src/client.ts",
+    "./parsing": "./src/parsing.ts",
+    "./types": "./src/types.ts"
+  },
   "scripts": { "test": "vitest run", "test:watch": "vitest --watch", "build": "tsc", "lint": "biome check ." },
   "devDependencies": { "typescript": "5.9.3", "vitest": "3.2.4" }
 }

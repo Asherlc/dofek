@@ -1,4 +1,5 @@
-import { parseTrainerRoadActivity, TrainerRoadClient } from "trainerroad-client";
+import { TrainerRoadClient } from "trainerroad-client/client";
+import { parseTrainerRoadActivity } from "trainerroad-client/parsing";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";

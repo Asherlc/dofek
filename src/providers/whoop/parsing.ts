@@ -1,15 +1,14 @@
 import type { CanonicalActivityType } from "@dofek/training/training";
-import {
-  mapSportId,
-  mapV2ActivityType,
-  parseDuringRange,
-  type WhoopCycle,
-  type WhoopHrValue,
-  type WhoopRecoveryRecord,
-  type WhoopSleepRecord,
-  type WhoopWeightliftingWorkoutResponse,
-  type WhoopWorkoutRecord,
-} from "whoop-whoop";
+import { mapSportId, mapV2ActivityType } from "whoop-whoop/sports";
+import type {
+  WhoopCycle,
+  WhoopHrValue,
+  WhoopRecoveryRecord,
+  WhoopSleepRecord,
+  WhoopWeightliftingWorkoutResponse,
+  WhoopWorkoutRecord,
+} from "whoop-whoop/types";
+import { parseDuringRange } from "whoop-whoop/utils";
 import { z } from "zod";
 
 // ============================================================

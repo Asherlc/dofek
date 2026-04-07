@@ -1,4 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { WhoopClient } from "whoop-whoop/client";
+import type {
+  WhoopHrValue,
+  WhoopRecoveryRecord,
+  WhoopSleepRecord,
+  WhoopWeightliftingWorkoutResponse,
+  WhoopWorkoutRecord,
+} from "whoop-whoop/types";
 import type { SyncDatabase } from "../db/index.ts";
 import { parseJournalResponse } from "./whoop/journal-parsing.ts";
 import {
@@ -9,14 +17,6 @@ import {
   parseWorkout,
 } from "./whoop/parsing.ts";
 import { WhoopProvider } from "./whoop/provider.ts";
-import {
-  WhoopClient,
-  type WhoopHrValue,
-  type WhoopRecoveryRecord,
-  type WhoopSleepRecord,
-  type WhoopWeightliftingWorkoutResponse,
-  type WhoopWorkoutRecord,
-} from "./whoop/re-exports.ts";
 
 // ============================================================
 // Mocks for sync tests

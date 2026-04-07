@@ -9,7 +9,7 @@ const { mockSignIn, mockEnsureProvider, mockSaveTokens, mockInvalidateByPrefix }
   }),
 );
 
-vi.mock("garmin-connect", () => ({
+vi.mock("garmin-connect/client", () => ({
   GarminConnectClient: { signIn: mockSignIn },
 }));
 

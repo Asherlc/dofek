@@ -174,9 +174,6 @@ export function isCyclingActivity(activityType: string): activityType is Cycling
 // Endurance activity types
 // ============================================================
 
-// Re-export from dedicated module for backward compatibility
-export { ENDURANCE_ACTIVITY_TYPES, isEnduranceActivity } from "./endurance-types.ts";
-
 // ============================================================
 // Activity type mapper factory
 // ============================================================

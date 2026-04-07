@@ -1,6 +1,6 @@
+import { formatNumber } from "@dofek/format/format";
 import type { VolumeOverTimeRow } from "dofek-server/types";
 import { chartColors, dofekAxis, dofekGrid, dofekSeries, dofekTooltip } from "../lib/chartTheme.ts";
-import { formatNumber } from "../lib/format.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface StrengthVolumeChartProps {

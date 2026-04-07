@@ -1,3 +1,4 @@
+import { formatNumber } from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
 import type { AerobicEfficiencyActivity } from "dofek-server/types";
 import {
@@ -9,7 +10,6 @@ import {
   dofekSeries,
   dofekTooltip,
 } from "../lib/chartTheme.ts";
-import { formatNumber } from "../lib/format.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 const ACTIVITY_COLORS: Record<string, string> = {

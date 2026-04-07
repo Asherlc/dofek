@@ -1,5 +1,5 @@
+import { formatNumber } from "@dofek/format/format";
 import type { WeightPrediction } from "../../../server/src/routers/body-analytics.ts";
-import { formatNumber } from "../lib/format.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 
 interface WeightPredictionSummaryProps {

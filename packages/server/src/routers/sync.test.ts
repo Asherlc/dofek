@@ -89,7 +89,7 @@ vi.mock("../logger.ts", () => ({
 }));
 
 // Mock the dynamic provider imports used in doRegisterProviders
-vi.mock("dofek/providers/wahoo", () => ({ WahooProvider: vi.fn() }));
+vi.mock("dofek/providers/wahoo/provider", () => ({ WahooProvider: vi.fn() }));
 vi.mock("dofek/providers/withings", () => ({ WithingsProvider: vi.fn() }));
 vi.mock("dofek/providers/peloton", () => ({ PelotonProvider: vi.fn() }));
 vi.mock("dofek/providers/fatsecret", () => ({ FatSecretProvider: vi.fn() }));

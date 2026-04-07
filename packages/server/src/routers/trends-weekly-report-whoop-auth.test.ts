@@ -34,7 +34,7 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   };
 });
 
-vi.mock("whoop-whoop", () => ({
+vi.mock("whoop-whoop/client", () => ({
   WhoopClient: {
     signIn: vi.fn(),
     verifyCode: vi.fn(),
@@ -219,7 +219,7 @@ describe("whoopAuthRouter", () => {
   const createCaller = createTestCallerFactory(whoopAuthRouter);
 
   it("logs and reports signIn failures", async () => {
-    const { WhoopClient } = await import("whoop-whoop");
+    const { WhoopClient } = await import("whoop-whoop/client");
     const error = new Error("bad sms code request");
     vi.mocked(WhoopClient.signIn).mockRejectedValueOnce(error);
 
@@ -244,7 +244,7 @@ describe("whoopAuthRouter", () => {
 
   describe("signIn", () => {
     it("returns verification_required when MFA needed", async () => {
-      const { WhoopClient } = await import("whoop-whoop");
+      const { WhoopClient } = await import("whoop-whoop/client");
       vi.mocked(WhoopClient.signIn).mockResolvedValueOnce({
         type: "verification_required",
         session: "cognito-session-123",
@@ -272,7 +272,7 @@ describe("whoopAuthRouter", () => {
     });
 
     it("returns success when no MFA required", async () => {
-      const { WhoopClient } = await import("whoop-whoop");
+      const { WhoopClient } = await import("whoop-whoop/client");
       vi.mocked(WhoopClient.signIn).mockResolvedValueOnce({
         type: "success",
         token: { accessToken: "at", refreshToken: "rt", userId: 123 },
@@ -307,7 +307,7 @@ describe("whoopAuthRouter", () => {
     });
 
     it("verifies code successfully after signIn", async () => {
-      const { WhoopClient } = await import("whoop-whoop");
+      const { WhoopClient } = await import("whoop-whoop/client");
       vi.mocked(WhoopClient.signIn).mockResolvedValueOnce({
         type: "verification_required",
         session: "session-xyz",
@@ -356,7 +356,7 @@ describe("whoopAuthRouter", () => {
     });
 
     it("logs and reports verifyCode failures", async () => {
-      const { WhoopClient } = await import("whoop-whoop");
+      const { WhoopClient } = await import("whoop-whoop/client");
       vi.mocked(WhoopClient.signIn).mockResolvedValueOnce({
         type: "verification_required",
         session: "session-xyz",

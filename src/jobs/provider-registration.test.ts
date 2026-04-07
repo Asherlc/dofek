@@ -39,7 +39,7 @@ const mockProviders = {
   "auto-supplements": { id: "auto-supplements" },
 };
 
-vi.mock("../providers/wahoo/index.ts", () => ({
+vi.mock("../providers/wahoo/provider.ts", () => ({
   WahooProvider: vi.fn(() => mockProviders.wahoo),
 }));
 vi.mock("../providers/withings.ts", () => ({

@@ -1,12 +1,12 @@
-import { describe, expect, it } from "vitest";
-import { colors } from "../theme";
 import {
   aggregateWeeklyVolume,
   scoreColor,
   scoreLabel,
   trendDirection,
   WorkloadRatio,
-} from "./scoring";
+} from "@dofek/scoring/scoring";
+import { describe, expect, it } from "vitest";
+import { colors } from "../theme";
 
 describe("scoreColor", () => {
   it("returns positive for scores > 70", () => {

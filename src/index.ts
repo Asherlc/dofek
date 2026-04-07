@@ -3,7 +3,7 @@ import { QueueEvents, Worker } from "bullmq";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { waitForAuthCode } from "./auth/callback-server.ts";
-import { buildAuthorizationUrl } from "./auth/index.ts";
+import { buildAuthorizationUrl } from "./auth/oauth.ts";
 import { parseSinceDays } from "./cli.ts";
 import { createDatabaseFromEnv } from "./db/index.ts";
 import { runWithTokenUser } from "./db/token-user-context.ts";
@@ -213,7 +213,7 @@ export async function handleImportCommand(args: string[]): Promise<number> {
     const days = parseSinceDays(args);
     const since = fullSync ? new Date(0) : new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
-    const { importAppleHealthFile } = await import("./providers/apple-health/index.ts");
+    const { importAppleHealthFile } = await import("./providers/apple-health/import.ts");
     const db = createDatabaseFromEnv();
     const userId = await resolveCliUserId(db);
     const result = await runWithTokenUser(userId, () => importAppleHealthFile(db, filePath, since));

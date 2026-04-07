@@ -1,16 +1,14 @@
 import { describe, expect, it } from "vitest";
+import { parseHealthDate } from "./dates.ts";
+import { parseCategoryRecord, parseRecord, parseRouteLocation } from "./records.ts";
+import { parseSleepAnalysis } from "./sleep.ts";
 import {
   enrichWorkoutFromStats,
   type HealthWorkout,
   parseActivitySummary,
-  parseCategoryRecord,
-  parseHealthDate,
-  parseRecord,
-  parseRouteLocation,
-  parseSleepAnalysis,
   parseWorkout,
   parseWorkoutStatistics,
-} from "./index.ts";
+} from "./workouts.ts";
 
 // ============================================================
 // Pure parsing unit tests -- Apple Health XML element attributes

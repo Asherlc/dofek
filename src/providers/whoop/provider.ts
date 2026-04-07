@@ -1,11 +1,7 @@
 import { and, eq } from "drizzle-orm";
-import {
-  parseDuringRange,
-  WhoopClient,
-  type WhoopCycle,
-  WhoopRateLimitError,
-  type WhoopWorkoutRecord,
-} from "whoop-whoop";
+import { WhoopClient, WhoopRateLimitError } from "whoop-whoop/client";
+import type { WhoopCycle, WhoopWorkoutRecord } from "whoop-whoop/types";
+import { parseDuringRange } from "whoop-whoop/utils";
 import { z } from "zod";
 import type { OAuthConfig } from "../../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../../auth/oauth.ts";

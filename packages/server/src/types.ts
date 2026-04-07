@@ -1,10 +1,8 @@
 // Activity router types
-export type {
-  ActivityDetail,
-  ActivityHrZone,
-  ActivityHrZones,
-  StreamPoint,
-} from "./routers/activity.ts";
+
+export type { ActivityHrZone } from "@dofek/zones/zones";
+export type { ActivityDetail } from "./models/activity.ts";
+export type { ActivityHrZones, StreamPoint } from "./routers/activity.ts";
 // Recovery router types
 
 // Calendar router types

@@ -1,3 +1,5 @@
+import { formatDateYmd as formatDateForQuery } from "@dofek/format/format";
+import type { UnitConverter } from "@dofek/format/units";
 import { useMemo, useState } from "react";
 import { z } from "zod";
 import { BodyRecompositionChart } from "../components/BodyRecompositionChart.tsx";
@@ -18,10 +20,8 @@ import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { TimeSeriesChart } from "../components/TimeSeriesChart.tsx";
 import { WeightPredictionSummary } from "../components/WeightPredictionSummary.tsx";
 import { chartColors } from "../lib/chartTheme.ts";
-import { formatDateForQuery } from "../lib/dates.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
-import type { UnitConverter } from "../lib/units.ts";
 import { assertRows } from "../lib/utils.ts";
 
 const trendRowSchema = z.object({
