@@ -4,11 +4,11 @@ import { activity, sensorSample } from "../../db/schema.ts";
 import { SOURCE_TYPE_FILE } from "../../db/sensor-channels.ts";
 import { dualWriteToSensorSample } from "../../db/sensor-sample-writer.ts";
 import { parseFitFile } from "../../fit/parser.ts";
+import { fitRecordsToSensorSamples as fitRecordsToMetricStream } from "../../fit/records.ts";
 import { logger } from "../../logger.ts";
 import type { SyncError } from "../types.ts";
 import type { WahooClient } from "./client.ts";
 import type { ParsedCardioActivity } from "./parsers.ts";
-import { fitRecordsToMetricStream } from "./parsers.ts";
 
 interface PersistResult {
   synced: boolean;

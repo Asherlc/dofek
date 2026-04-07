@@ -5,12 +5,9 @@ vi.mock("../db/token-user-context.ts", () => ({
   runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
 }));
 
+import { fitRecordsToSensorSamples as fitRecordsToMetricStream } from "../fit/records.ts";
 import { WahooClient, type WahooWorkout } from "./wahoo/client.ts";
-import {
-  fitRecordsToMetricStream,
-  parseWorkoutList,
-  parseWorkoutSummary,
-} from "./wahoo/parsers.ts";
+import { parseWorkoutList, parseWorkoutSummary } from "./wahoo/parsers.ts";
 import { WahooProvider } from "./wahoo/provider.ts";
 
 // ============================================================
