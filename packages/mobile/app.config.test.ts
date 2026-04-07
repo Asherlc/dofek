@@ -63,4 +63,23 @@ describe("app.config", () => {
     expect(config.ios?.entitlements?.["com.apple.developer.healthkit"]).toBe(true);
     expect(config.ios?.deploymentTarget).toBe("16.0");
   });
+
+  it("configures Sentry organization and project for native prebuild", async () => {
+    const config = (await import("./app.config")).default;
+
+    const sentryPlugin = config.plugins?.find(
+      (plugin) => Array.isArray(plugin) && plugin[0] === "@sentry/react-native/expo",
+    );
+
+    expect(Array.isArray(sentryPlugin)).toBe(true);
+    if (!Array.isArray(sentryPlugin)) {
+      return;
+    }
+
+    const pluginConfig = sentryPlugin[1];
+    expect(pluginConfig).toMatchObject({
+      organization: "east-bay-software",
+      project: "dofek-mobile",
+    });
+  });
 });
