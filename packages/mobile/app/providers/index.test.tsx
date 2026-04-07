@@ -3,7 +3,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { providerActionLabel } from "./index";
+import { providerActionLabel } from "./provider-card.tsx";
 
 const mockPush = vi.fn();
 const mockReplace = vi.fn();
@@ -295,7 +295,7 @@ describe("providerActionLabel", () => {
 describe("ProviderCard", () => {
   describe("sync progress", () => {
     it("renders progress bar when syncing with percentage", async () => {
-      const { ProviderCard } = await import("./index");
+      const { ProviderCard } = await import("./provider-card.tsx");
       render(
         <ProviderCard
           provider={makeProvider()}
@@ -315,7 +315,7 @@ describe("ProviderCard", () => {
     });
 
     it("renders progress message without percentage", async () => {
-      const { ProviderCard } = await import("./index");
+      const { ProviderCard } = await import("./provider-card.tsx");
       render(
         <ProviderCard
           provider={makeProvider()}
@@ -333,7 +333,7 @@ describe("ProviderCard", () => {
     });
 
     it("renders progress bar without message when only percentage is provided", async () => {
-      const { ProviderCard } = await import("./index");
+      const { ProviderCard } = await import("./provider-card.tsx");
       render(
         <ProviderCard
           provider={makeProvider()}
@@ -354,7 +354,7 @@ describe("ProviderCard", () => {
 
   describe("normal metadata when not syncing", () => {
     it("renders auth status and last sync time when not syncing", async () => {
-      const { ProviderCard } = await import("./index");
+      const { ProviderCard } = await import("./provider-card.tsx");
       render(
         <ProviderCard
           provider={makeProvider({ lastSyncAt: "2026-03-19T12:00:00Z" })}
@@ -373,7 +373,7 @@ describe("ProviderCard", () => {
     });
 
     it("renders 'Never synced' when provider has no lastSyncAt", async () => {
-      const { ProviderCard } = await import("./index");
+      const { ProviderCard } = await import("./provider-card.tsx");
       render(
         <ProviderCard
           provider={makeProvider({ lastSyncAt: null })}
@@ -392,7 +392,7 @@ describe("ProviderCard", () => {
     });
 
     it("renders normal metadata when syncing but syncProgress is undefined", async () => {
-      const { ProviderCard } = await import("./index");
+      const { ProviderCard } = await import("./provider-card.tsx");
       render(
         <ProviderCard
           provider={makeProvider()}
@@ -411,7 +411,7 @@ describe("ProviderCard", () => {
     });
 
     it("renders 'Not connected' status for disconnected providers", async () => {
-      const { ProviderCard } = await import("./index");
+      const { ProviderCard } = await import("./provider-card.tsx");
       render(
         <ProviderCard
           provider={makeProvider({ authStatus: "not_connected" })}
@@ -429,7 +429,7 @@ describe("ProviderCard", () => {
     });
 
     it("renders 'Expired' status for expired providers", async () => {
-      const { ProviderCard } = await import("./index");
+      const { ProviderCard } = await import("./provider-card.tsx");
       render(
         <ProviderCard
           provider={makeProvider({ authStatus: "expired" })}
@@ -449,7 +449,7 @@ describe("ProviderCard", () => {
 
   describe("progress percentage clamping", () => {
     it("renders without error when percentage is negative", async () => {
-      const { ProviderCard } = await import("./index");
+      const { ProviderCard } = await import("./provider-card.tsx");
       render(
         <ProviderCard
           provider={makeProvider()}
@@ -468,7 +468,7 @@ describe("ProviderCard", () => {
     });
 
     it("renders without error when percentage exceeds 100", async () => {
-      const { ProviderCard } = await import("./index");
+      const { ProviderCard } = await import("./provider-card.tsx");
       render(
         <ProviderCard
           provider={makeProvider()}
@@ -487,7 +487,7 @@ describe("ProviderCard", () => {
   });
 
   it("renders provider label", async () => {
-    const { ProviderCard } = await import("./index");
+    const { ProviderCard } = await import("./provider-card.tsx");
     render(
       <ProviderCard
         provider={makeProvider({ label: "Wahoo" })}
@@ -505,7 +505,7 @@ describe("ProviderCard", () => {
 
   describe("import-only providers", () => {
     it("does not render Sync button for import-only providers", async () => {
-      const { ProviderCard } = await import("./index");
+      const { ProviderCard } = await import("./provider-card.tsx");
       render(
         <ProviderCard
           provider={makeProvider({ importOnly: true, authStatus: "connected" })}
@@ -524,7 +524,7 @@ describe("ProviderCard", () => {
     });
 
     it("does not render Full sync link for import-only providers", async () => {
-      const { ProviderCard } = await import("./index");
+      const { ProviderCard } = await import("./provider-card.tsx");
       render(
         <ProviderCard
           provider={makeProvider({ importOnly: true, authStatus: "connected" })}
@@ -542,7 +542,7 @@ describe("ProviderCard", () => {
     });
 
     it("shows 'Import only' instead of connection status", async () => {
-      const { ProviderCard } = await import("./index");
+      const { ProviderCard } = await import("./provider-card.tsx");
       render(
         <ProviderCard
           provider={makeProvider({ importOnly: true, authStatus: "connected" })}

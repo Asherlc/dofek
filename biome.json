@@ -92,14 +92,7 @@
       }
     },
     {
-      "includes": [
-        "src/db/schema.ts",
-        "src/providers/oura/provider.ts",
-        "packages/server/src/routers/health-kit-sync.ts",
-        "packages/web/src/components/DataSourcesPanel.tsx",
-        "packages/mobile/app/food/add.tsx",
-        "packages/mobile/app/providers/index.tsx"
-      ],
+      "includes": ["src/db/schema.ts"],
       "linter": {
         "rules": {
           "nursery": {
