@@ -1250,6 +1250,20 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - uses: ./.github/actions/setup-node-pnpm
 
+      - name: Wait for OTA server to be healthy
+        run: |
+          for i in $(seq 1 30); do
+            status=$(curl -s -o /dev/null -w "%{http_code}" https://ota.dofek.asherlc.com/manifest)
+            if [ "$status" -ge 200 ] && [ "$status" -lt 500 ]; then
+              echo "OTA server is healthy"
+              exit 0
+            fi
+            echo "Waiting for OTA server... (attempt $i/30)"
+            sleep 2
+          done
+          echo "OTA server did not become healthy in time"
+          exit 1
+
       - name: Publish OTA update
         working-directory: packages/mobile
         env:
