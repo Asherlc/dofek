@@ -2,7 +2,7 @@ terraform {
   cloud {
     organization = "asherlc-org"
     workspaces {
-      name = "dofek-dns"
+      name = "dofek-cloudflare"
     }
   }
   required_providers {
@@ -126,6 +126,12 @@ resource "cloudflare_r2_bucket" "storybook" {
   location   = "WEUR"
 }
 
+resource "cloudflare_r2_bucket" "db_backups" {
+  account_id = var.cloudflare_account_id
+  name       = "dofek-db-backups"
+  location   = "WEUR"
+}
+
 resource "cloudflare_r2_custom_domain" "storybook_preview" {
   account_id  = var.cloudflare_account_id
   bucket_name = cloudflare_r2_bucket.storybook.name
@@ -138,8 +144,13 @@ resource "cloudflare_r2_custom_domain" "storybook_preview" {
 # cannot be created via Terraform — they must be created manually in the
 # Cloudflare dashboard: R2 → Manage R2 API Tokens → Create API Token.
 # The existing token scoped to dofek-training-data must be updated to also
-# cover dofek-ota and dofek-storybook (or create separate tokens per bucket).
-# Then add R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY to Infisical (prod environment).
+# cover dofek-ota, dofek-storybook, and dofek-db-backups (or create separate
+# tokens per bucket). Then add R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY to
+# Infisical (prod environment).
+#
+# After applying, configure Dokploy backups:
+# 1. Dokploy → Settings → S3 Destinations → add R2 endpoint + credentials
+# 2. Database service → Backups → add schedule pointing to dofek-db-backups
 
 # --- Outputs ---
 
@@ -166,6 +177,11 @@ output "r2_ota_bucket_name" {
 output "r2_storybook_bucket_name" {
   description = "R2 bucket name for Storybook previews"
   value       = cloudflare_r2_bucket.storybook.name
+}
+
+output "r2_db_backups_bucket_name" {
+  description = "R2 bucket name for database backups (configure in Dokploy)"
+  value       = cloudflare_r2_bucket.db_backups.name
 }
 
 output "r2_endpoint" {
