@@ -188,7 +188,11 @@ done
 echo "  Domain: $OTA_DOMAIN -> ota:3000"
 dokploy "domain.create" -d "{\"json\":{\"composeId\":\"${COMPOSE_ID}\",\"host\":\"${OTA_DOMAIN}\",\"port\":3000,\"https\":true,\"certificateType\":\"letsencrypt\",\"serviceName\":\"ota\"}}" > /dev/null || echo "    (may already exist)"
 
-# --- 8. Deploy ---
+# --- 8. Configure Dokploy dashboard domain ---
+echo "Setting Dokploy dashboard domain..."
+dokploy "settings.assignDomainServer" -d "{\"json\":{\"host\":\"dokploy.asherlc.com\",\"certificateType\":\"letsencrypt\",\"letsEncryptEmail\":\"asherlc@asherlc.com\",\"https\":true}}" > /dev/null
+
+# --- 9. Deploy ---
 echo ""
 echo "Deploying infra compose stack..."
 dokploy "compose.deploy" -d "{\"json\":{\"composeId\":\"${COMPOSE_ID}\"}}" > /dev/null &
