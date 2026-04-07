@@ -1,9 +1,29 @@
+import { spawnSync } from "node:child_process";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+const currentFilePath = fileURLToPath(import.meta.url);
+const currentDirectoryPath = dirname(currentFilePath);
+const appConfigPath = resolve(currentDirectoryPath, "app.config.ts");
 
 describe("app.config", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.resetModules();
+  });
+
+  it("loads with Node TypeScript stripping enabled", () => {
+    const executionResult = spawnSync(
+      process.execPath,
+      ["--experimental-strip-types", appConfigPath],
+      {
+        encoding: "utf8",
+      },
+    );
+
+    expect(executionResult.status).toBe(0);
+    expect(executionResult.stderr).not.toContain("ERR_IMPORT_ATTRIBUTE_MISSING");
   });
 
   it("uses production config when PREVIEW_CHANNEL is not set", async () => {
