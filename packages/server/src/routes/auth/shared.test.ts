@@ -15,12 +15,13 @@ vi.mock("../../lib/oauth-state-store.ts", () => ({
   })),
 }));
 
+const mockIdentityFlowStore = {
+  save: vi.fn(),
+  get: vi.fn(),
+  delete: vi.fn(),
+};
 vi.mock("../../lib/identity-flow-store.ts", () => ({
-  getIdentityFlowStore: vi.fn(() => ({
-    save: vi.fn(),
-    get: vi.fn(),
-    delete: vi.fn(),
-  })),
+  getIdentityFlowStore: vi.fn(() => mockIdentityFlowStore),
 }));
 
 vi.mock("../../lib/cache.ts", () => ({
@@ -29,6 +30,10 @@ vi.mock("../../lib/cache.ts", () => ({
 
 vi.mock("../../logger.ts", () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
+}));
+
+vi.mock("dofek/db", () => ({
+  createDatabaseFromEnv: vi.fn(() => ({ execute: vi.fn() })),
 }));
 
 vi.mock("dofek/db/tokens", () => ({
@@ -44,11 +49,14 @@ vi.mock("../webhooks.ts", () => ({
   registerWebhookForProvider: vi.fn(() => Promise.resolve()),
 }));
 
+import { createDatabaseFromEnv } from "dofek/db";
 import {
   deletePendingEmailSignup,
   getPendingEmailSignup,
+  initAuthStores,
   type PendingEmailSignupEntry,
   sanitizeReturnTo,
+  storeIdentityFlow,
   storePendingEmailSignup,
 } from "./shared.ts";
 
@@ -119,6 +127,28 @@ describe("shared auth helpers", () => {
       const token = storePendingEmailSignup(entry);
       vi.advanceTimersByTime(10 * 60 * 1000 + 1);
       expect(getPendingEmailSignup(token)).toBeUndefined();
+    });
+  });
+
+  describe("storeIdentityFlow", () => {
+    beforeEach(() => {
+      initAuthStores(createDatabaseFromEnv());
+    });
+
+    it("propagates errors from the identity flow store", async () => {
+      mockIdentityFlowStore.save.mockRejectedValueOnce(new Error("Redis connection refused"));
+
+      await expect(
+        storeIdentityFlow("apple:state-123", { codeVerifier: "verifier" }),
+      ).rejects.toThrow("Redis connection refused");
+    });
+
+    it("succeeds when the store saves successfully", async () => {
+      mockIdentityFlowStore.save.mockResolvedValueOnce(undefined);
+
+      await expect(
+        storeIdentityFlow("apple:state-456", { codeVerifier: "verifier" }),
+      ).resolves.toBeUndefined();
     });
   });
 });

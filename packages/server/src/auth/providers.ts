@@ -87,9 +87,15 @@ function initGoogle(): IdentityProvider {
 /** Strip PEM headers/footers and base64-decode to raw PKCS#8 DER bytes. */
 export function decodePemToDer(pem: string): Uint8Array {
   const base64 = pem
-    .replace(/-----BEGIN PRIVATE KEY-----/g, "")
-    .replace(/-----END PRIVATE KEY-----/g, "")
+    // Strip surrounding quotes that Dokploy or shell escaping may add
+    .replace(/^["']|["']$/g, "")
+    // Strip PEM headers (PKCS#8 and SEC1/EC formats)
+    .replace(/-----BEGIN (?:EC )?PRIVATE KEY-----/g, "")
+    .replace(/-----END (?:EC )?PRIVATE KEY-----/g, "")
+    // Remove literal escape sequences from secret managers (\r\n, \r, \n)
+    .replace(/\\r/g, "")
     .replace(/\\n/g, "")
+    // Remove real whitespace (newlines, spaces, tabs)
     .replace(/\s/g, "");
   return new Uint8Array(Buffer.from(base64, "base64"));
 }
@@ -97,6 +103,11 @@ export function decodePemToDer(pem: string): Uint8Array {
 function initApple(): IdentityProvider {
   const privateKeyPem = getEnvRequired("APPLE_PRIVATE_KEY");
   const derBytes = decodePemToDer(privateKeyPem);
+  if (derBytes.length === 0) {
+    throw new Error(
+      "APPLE_PRIVATE_KEY decoded to 0 bytes — check the PEM format in your secret manager",
+    );
+  }
   const client = new Apple(
     getEnvRequired("APPLE_CLIENT_ID"),
     getEnvRequired("APPLE_TEAM_ID"),
