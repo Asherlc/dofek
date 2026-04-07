@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { WhoopCycle } from "whoop-whoop";
+import {
+  WhoopClient,
+  type WhoopRecoveryRecord,
+  type WhoopSleepRecord,
+  type WhoopWeightliftingWorkoutResponse,
+  type WhoopWorkoutRecord,
+} from "whoop-whoop";
 import { parseJournalResponse } from "./whoop/journal-parsing.ts";
 import {
   buildV2ActivityTypeLookup,
@@ -13,13 +20,6 @@ import {
   parseWorkout,
   resolveActivityType,
 } from "./whoop/parsing.ts";
-import {
-  WhoopClient,
-  type WhoopRecoveryRecord,
-  type WhoopSleepRecord,
-  type WhoopWeightliftingWorkoutResponse,
-  type WhoopWorkoutRecord,
-} from "./whoop/re-exports.ts";
 
 // ============================================================
 // Coverage tests for WHOOP pure parsing functions:
