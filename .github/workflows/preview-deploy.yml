@@ -1,0 +1,238 @@
+name: Preview Deploy
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+concurrency:
+  group: preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-preview:
+    name: Build Preview Image
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image-tag: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+        with:
+          config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        id: meta
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: type=raw,value=pr-${{ github.event.pull_request.number }}
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          target: server
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: COMMIT_HASH=${{ github.sha }}
+          secrets: |
+            SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
+          cache-from: type=gha,scope=preview-${{ github.event.pull_request.number }}
+          cache-to: type=gha,mode=max,scope=preview-${{ github.event.pull_request.number }}
+
+  deploy-preview:
+    name: Deploy Preview
+    needs: [build-preview]
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    env:
+      DOKPLOY_HOST: ${{ secrets.DOKPLOY_HOST }}
+      DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+      DOKPLOY_PREVIEW_ENV_ID: ${{ secrets.DOKPLOY_PREVIEW_ENV_ID }}
+      DOKPLOY_REGISTRY_ID: ${{ secrets.DOKPLOY_REGISTRY_ID }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      PREVIEW_DOMAIN: pr-${{ github.event.pull_request.number }}.preview.dofek.fit
+      DOCKER_IMAGE: ghcr.io/${{ github.repository }}:pr-${{ github.event.pull_request.number }}
+    steps:
+      - name: Check required secrets
+        run: |
+          if [ -z "$DOKPLOY_HOST" ] || [ -z "$DOKPLOY_API_KEY" ] || [ -z "$DOKPLOY_PREVIEW_ENV_ID" ]; then
+            echo "::error::Missing required secrets (DOKPLOY_HOST, DOKPLOY_API_KEY, DOKPLOY_PREVIEW_ENV_ID)"
+            exit 1
+          fi
+
+      - name: Create or update preview app
+        run: |
+          dokploy() {
+            local endpoint="$1"
+            shift
+            curl -fsSL "${DOKPLOY_HOST}/api/trpc/${endpoint}" \
+              -H "x-api-key: ${DOKPLOY_API_KEY}" \
+              -H "Content-Type: application/json" \
+              "$@"
+          }
+
+          APP_NAME="pr-${PR_NUMBER}-preview"
+
+          # Check if app already exists by listing all apps in the preview environment
+          EXISTING=$(dokploy "application.byEnvironment?input=$(printf '%s' "{\"json\":\"${DOKPLOY_PREVIEW_ENV_ID}\"}" | jq -sRr @uri)" 2>/dev/null || echo "[]")
+          APP_ID=$(echo "$EXISTING" | python3 -c "
+          import json, sys
+          try:
+              data = json.load(sys.stdin)
+              apps = data.get('result', {}).get('data', {}).get('json', [])
+              for app in apps:
+                  if app.get('appName') == '${APP_NAME}':
+                      print(app['applicationId'])
+                      break
+          except Exception:
+              pass
+          " 2>/dev/null || true)
+
+          if [ -z "$APP_ID" ]; then
+            echo "Creating new preview app: ${APP_NAME}"
+            CREATE_RESULT=$(dokploy "application.create" \
+              -d "{\"json\":{\"name\":\"PR #${PR_NUMBER} Preview\",\"appName\":\"${APP_NAME}\",\"environmentId\":\"${DOKPLOY_PREVIEW_ENV_ID}\"}}")
+            APP_ID=$(echo "$CREATE_RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['result']['data']['json']['applicationId'])")
+            echo "Created app: $APP_ID"
+
+            # Configure as Docker source with image
+            dokploy "application.update" \
+              -d "{\"json\":{\"applicationId\":\"${APP_ID}\",\"sourceType\":\"docker\",\"dockerImage\":\"${DOCKER_IMAGE}\"}}" > /dev/null
+
+            # Set command
+            dokploy "application.update" \
+              -d "{\"json\":{\"applicationId\":\"${APP_ID}\",\"command\":\"./entrypoint.sh web\"}}" > /dev/null
+
+            # Set registry if configured
+            if [ -n "$DOKPLOY_REGISTRY_ID" ]; then
+              dokploy "application.update" \
+                -d "{\"json\":{\"applicationId\":\"${APP_ID}\",\"registryId\":\"${DOKPLOY_REGISTRY_ID}\"}}" > /dev/null
+            fi
+
+            # Set env vars — preview uses the shared prod DB (read-only safe for previews)
+            ENV_VARS="PORT=3000"
+            python3 -c "
+          import json, sys
+          payload = json.dumps({'json': {'applicationId': '${APP_ID}', 'env': '${ENV_VARS}'}})
+          sys.stdout.write(payload)
+          " | dokploy "application.update" -d @- > /dev/null
+
+            # Create domain
+            dokploy "domain.create" \
+              -d "{\"json\":{\"applicationId\":\"${APP_ID}\",\"host\":\"${PREVIEW_DOMAIN}\",\"port\":3000,\"https\":true,\"certificateType\":\"letsencrypt\"}}" > /dev/null
+            echo "Domain configured: https://${PREVIEW_DOMAIN}"
+          else
+            echo "Updating existing preview app: $APP_ID"
+            # Update the Docker image tag
+            dokploy "application.update" \
+              -d "{\"json\":{\"applicationId\":\"${APP_ID}\",\"sourceType\":\"docker\",\"dockerImage\":\"${DOCKER_IMAGE}\"}}" > /dev/null
+          fi
+
+          # Deploy
+          echo "Deploying..."
+          dokploy "application.deploy" \
+            -d "{\"json\":{\"applicationId\":\"${APP_ID}\",\"title\":\"PR #${PR_NUMBER} @ ${GITHUB_SHA:0:7}\"}}" > /dev/null
+
+          echo "APP_ID=${APP_ID}" >> "$GITHUB_ENV"
+
+      - name: Comment preview URL
+        uses: marocchino/sticky-pull-request-comment@52423e01640425a022ef5fd42c6fb5f633a02728 # v2
+        with:
+          header: preview-deploy
+          message: |
+            **Preview deployed!** :rocket:
+            https://${{ env.PREVIEW_DOMAIN }}
+            _Built from ${{ github.sha }}_
+
+  teardown-preview:
+    name: Teardown Preview
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    env:
+      DOKPLOY_HOST: ${{ secrets.DOKPLOY_HOST }}
+      DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+      DOKPLOY_PREVIEW_ENV_ID: ${{ secrets.DOKPLOY_PREVIEW_ENV_ID }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Delete preview app
+        run: |
+          if [ -z "$DOKPLOY_HOST" ] || [ -z "$DOKPLOY_API_KEY" ] || [ -z "$DOKPLOY_PREVIEW_ENV_ID" ]; then
+            echo "Secrets not configured, skipping teardown"
+            exit 0
+          fi
+
+          dokploy() {
+            local endpoint="$1"
+            shift
+            curl -fsSL "${DOKPLOY_HOST}/api/trpc/${endpoint}" \
+              -H "x-api-key: ${DOKPLOY_API_KEY}" \
+              -H "Content-Type: application/json" \
+              "$@"
+          }
+
+          APP_NAME="pr-${PR_NUMBER}-preview"
+
+          # Find the app
+          EXISTING=$(dokploy "application.byEnvironment?input=$(printf '%s' "{\"json\":\"${DOKPLOY_PREVIEW_ENV_ID}\"}" | jq -sRr @uri)" 2>/dev/null || echo "[]")
+          APP_ID=$(echo "$EXISTING" | python3 -c "
+          import json, sys
+          try:
+              data = json.load(sys.stdin)
+              apps = data.get('result', {}).get('data', {}).get('json', [])
+              for app in apps:
+                  if app.get('appName') == '${APP_NAME}':
+                      print(app['applicationId'])
+                      break
+          except Exception:
+              pass
+          " 2>/dev/null || true)
+
+          if [ -n "$APP_ID" ]; then
+            echo "Deleting preview app: ${APP_NAME} (${APP_ID})"
+            dokploy "application.delete" \
+              -d "{\"json\":{\"applicationId\":\"${APP_ID}\"}}" > /dev/null
+            echo "Preview app deleted"
+          else
+            echo "No preview app found for PR #${PR_NUMBER}, nothing to clean up"
+          fi
+
+      - name: Update PR comment
+        if: always()
+        uses: marocchino/sticky-pull-request-comment@52423e01640425a022ef5fd42c6fb5f633a02728 # v2
+        with:
+          header: preview-deploy
+          message: |
+            **Preview torn down** :wastebasket:
+            _PR closed/merged_
+
+  # Clean up stale preview images from GHCR
+  cleanup-image:
+    name: Cleanup Preview Image
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Delete preview image tag
+        uses: actions/delete-package-versions@e5bc658cc4c965c472bbe7f4a6c2aae0f8c79fe0 # v5
+        with:
+          package-name: dofek
+          package-type: container
+          min-versions-to-keep: 0
+          delete-only-pre-release-versions: false
+          token: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
