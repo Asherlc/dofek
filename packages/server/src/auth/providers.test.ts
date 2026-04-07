@@ -417,6 +417,31 @@ describe("auth/providers", () => {
       const result = decodePemToDer(pem);
       expect(Array.from(result)).toEqual([1, 2, 3, 4, 5, 6]);
     });
+
+    it("handles literal backslash-r-backslash-n from Windows-style secret managers", () => {
+      // Some secret managers store \r\n as literal characters (4 chars: \, r, \, n)
+      const pem = "-----BEGIN PRIVATE KEY-----\\r\\nAQID\\r\\n-----END PRIVATE KEY-----";
+      const result = decodePemToDer(pem);
+      expect(Array.from(result)).toEqual([1, 2, 3]);
+    });
+
+    it("handles EC PRIVATE KEY headers (SEC1/PKCS#1 format)", () => {
+      const pem = "-----BEGIN EC PRIVATE KEY-----\nAQID\n-----END EC PRIVATE KEY-----";
+      const result = decodePemToDer(pem);
+      expect(Array.from(result)).toEqual([1, 2, 3]);
+    });
+
+    it("strips surrounding double quotes from Dokploy env vars", () => {
+      const pem = '"-----BEGIN PRIVATE KEY-----\\nAQID\\n-----END PRIVATE KEY-----"';
+      const result = decodePemToDer(pem);
+      expect(Array.from(result)).toEqual([1, 2, 3]);
+    });
+
+    it("strips surrounding single quotes from env vars", () => {
+      const pem = "'-----BEGIN PRIVATE KEY-----\\nAQID\\n-----END PRIVATE KEY-----'";
+      const result = decodePemToDer(pem);
+      expect(Array.from(result)).toEqual([1, 2, 3]);
+    });
   });
 
   describe("generateCodeVerifier and generateState", () => {
