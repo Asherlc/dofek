@@ -335,11 +335,13 @@ export class ActivityRepository extends BaseRepository {
     return mapHrZones(rows);
   }
 
-  /** Count activities in the base table (not the materialized view) for this user. */
-  async baseTableCount(): Promise<number> {
+  /** Count activities in the base table (not the materialized view) for this user within a time window. */
+  async baseTableCount(endDate: string, days: number): Promise<number> {
     const rows = await this.query(
       z.object({ count: z.coerce.number() }),
-      sql`SELECT count(*)::int AS count FROM fitness.activity WHERE user_id = ${this.userId}`,
+      sql`SELECT count(*)::int AS count FROM fitness.activity
+          WHERE user_id = ${this.userId}
+            AND started_at > ${timestampWindowStart(endDate, days)}`,
     );
     return rows[0]?.count ?? 0;
   }

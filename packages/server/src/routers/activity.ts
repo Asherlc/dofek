@@ -49,11 +49,13 @@ export const activityRouter = router({
       const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone);
       const result = await repo.list(input);
 
-      // Self-healing: if the materialized view returns no results but the base
-      // table has data, the views are stale (e.g. after a crash recovery or
-      // failed view refresh). Refresh them and retry the query.
-      if (result.totalCount === 0) {
-        const baseCount = await repo.baseTableCount();
+      // Self-healing: if the materialized view returns no results on the first
+      // page but the base table has data in the same time window, the views are
+      // stale (e.g. after a crash recovery or failed view refresh). Refresh
+      // them and retry the query. Only check on the first page to avoid
+      // expensive refreshes on legitimate empty later pages.
+      if (input.offset === 0 && result.items.length === 0) {
+        const baseCount = await repo.baseTableCount(input.endDate, input.days);
         if (baseCount > 0) {
           logger.warn(
             `[activity] Stale views detected for user ${ctx.userId}: ` +
@@ -68,7 +70,11 @@ export const activityRouter = router({
             await repo.refreshActivityViews();
             return repo.list(input);
           } catch (refreshError) {
-            logger.error(`[activity] Failed to refresh stale views: ${refreshError}`);
+            const errorDetail =
+              refreshError instanceof Error
+                ? (refreshError.stack ?? refreshError.message)
+                : String(refreshError);
+            logger.error(`[activity] Failed to refresh stale views: ${errorDetail}`);
             Sentry.captureException(refreshError, {
               tags: { userId: ctx.userId, context: "staleViewRefresh" },
             });

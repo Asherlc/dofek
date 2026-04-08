@@ -207,6 +207,19 @@ describe("activityRouter", () => {
       expect(execute).toHaveBeenCalledTimes(2); // no refresh or retry
     });
 
+    it("skips stale view check on non-first pages", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+      const result = await caller.list({ days: 30, limit: 20, offset: 20 });
+      expect(result).toEqual({ items: [], totalCount: 0 });
+      // Only the list query — no base table check on offset > 0
+      expect(execute).toHaveBeenCalledTimes(1);
+    });
+
     it("uses default limit of 20 and offset of 0", async () => {
       const execute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
