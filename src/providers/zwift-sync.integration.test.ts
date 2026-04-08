@@ -107,6 +107,7 @@ interface ZwiftMockOptions {
   activityDetailError?: boolean;
   activitiesUnauthorizedOnce?: boolean;
   paginateActivities?: boolean;
+  omitRefreshTokenInRefresh?: boolean;
 }
 
 function zwiftHandlers(opts: ZwiftMockOptions = {}) {
@@ -120,12 +121,15 @@ function zwiftHandlers(opts: ZwiftMockOptions = {}) {
       if (opts.tokenRefreshError) {
         return new HttpResponse("Unauthorized", { status: 401 });
       }
-      return HttpResponse.json({
+      const body: Record<string, unknown> = {
         access_token: "refreshed-zwift-token",
-        refresh_token: "new-zwift-refresh",
         expires_in: 7200,
         token_type: "Bearer",
-      });
+      };
+      if (!opts.omitRefreshTokenInRefresh) {
+        body.refresh_token = "new-zwift-refresh";
+      }
+      return HttpResponse.json(body);
     }),
 
     // Power curve
@@ -528,5 +532,30 @@ describe("ZwiftProvider.sync() (integration)", () => {
     const { loadTokens } = await import("../db/tokens.ts");
     const tokens = await loadTokens(ctx.db, "zwift");
     expect(tokens?.accessToken).toBe("refreshed-zwift-token");
+  });
+
+  it("preserves existing refresh token when refresh response omits refresh_token", async () => {
+    await saveTokens(ctx.db, "zwift", {
+      accessToken: FAKE_ACCESS_TOKEN,
+      refreshToken: "original-refresh-token",
+      expiresAt: new Date("2025-01-01T00:00:00Z"), // expired — forces refresh
+      scopes: "athleteId:42",
+    });
+
+    server.use(
+      ...zwiftHandlers({
+        activities: [],
+        paginateActivities: true,
+        omitRefreshTokenInRefresh: true,
+      }),
+    );
+
+    const provider = new ZwiftProvider();
+    await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
+
+    const { loadTokens } = await import("../db/tokens.ts");
+    const tokens = await loadTokens(ctx.db, "zwift");
+    expect(tokens?.accessToken).toBe("refreshed-zwift-token");
+    expect(tokens?.refreshToken).toBe("original-refresh-token");
   });
 });

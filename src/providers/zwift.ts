@@ -89,7 +89,9 @@ export class ZwiftProvider implements SyncProvider {
     const shouldRefresh = forceRefresh || stored.expiresAt <= new Date();
     if (shouldRefresh) {
       if (!stored.refreshToken) {
-        throw new Error("Zwift token expired and no refresh token — re-authenticate");
+        throw new Error(
+          "Zwift authentication failed and no refresh token available — re-authenticate",
+        );
       }
       logger.info(
         forceRefresh
@@ -201,9 +203,10 @@ export class ZwiftProvider implements SyncProvider {
                   const detail = await runWithAuthRetry((activeClient) =>
                     activeClient.getActivityDetail(raw.id),
                   );
-                  if (detail.fitnessData?.fullDataUrl) {
+                  const fullDataUrl = detail.fitnessData?.fullDataUrl;
+                  if (fullDataUrl) {
                     const fitnessData = await runWithAuthRetry((activeClient) =>
-                      activeClient.getFitnessData(detail.fitnessData.fullDataUrl),
+                      activeClient.getFitnessData(fullDataUrl),
                     );
                     const samples = parseZwiftFitnessData(fitnessData, parsed.startedAt);
                     const metricRows = samples.map((s) => ({
