@@ -1369,13 +1369,16 @@ jobs:
           DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
           DOKPLOY_WEB_APP_ID: ${{ secrets.DOKPLOY_WEB_APP_ID }}
           DOKPLOY_WORKER_APP_ID: ${{ secrets.DOKPLOY_WORKER_APP_ID }}
-          SHA_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+          FULL_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           if [ -z "$DOKPLOY_HOST" ] || [ -z "$DOKPLOY_API_KEY" ]; then
             echo "Dokploy secrets not configured, skipping deploy trigger"
             exit 0
           fi
+          # docker/metadata-action type=sha uses first 7 chars by default
+          SHORT_SHA="${FULL_SHA:0:7}"
+          SHA_IMAGE="${REGISTRY}/${IMAGE_NAME}:sha-${SHORT_SHA}"
           for APP_ID in "$DOKPLOY_WEB_APP_ID" "$DOKPLOY_WORKER_APP_ID"; do
             [ -z "$APP_ID" ] && continue
             echo "Updating app $APP_ID image to $SHA_IMAGE..."
