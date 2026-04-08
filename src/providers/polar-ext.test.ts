@@ -1,16 +1,18 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   mapPolarSport,
-  type PolarDailyActivity,
-  type PolarExercise,
-  type PolarNightlyRecharge,
-  PolarProvider,
-  type PolarSleep,
   parsePolarDailyActivity,
   parsePolarDuration,
   parsePolarExercise,
   parsePolarSleep,
-} from "./polar.ts";
+} from "./polar/parsers.ts";
+import { PolarProvider } from "./polar/provider.ts";
+import type {
+  PolarDailyActivity,
+  PolarExercise,
+  PolarNightlyRecharge,
+  PolarSleep,
+} from "./polar/types.ts";
 
 // ============================================================
 // Extended Polar tests covering uncovered sport mappings,

@@ -6,22 +6,22 @@ vi.mock("../db/token-user-context.ts", () => ({
 }));
 
 import type { SyncDatabase } from "../db/index.ts";
+import { PolarClient, PolarNotFoundError, PolarUnauthorizedError } from "./polar/client.ts";
 import {
   mapPolarSport,
-  PolarClient,
-  type PolarDailyActivity,
-  type PolarExercise,
-  type PolarNightlyRecharge,
-  PolarNotFoundError,
-  PolarProvider,
-  type PolarSleep,
-  PolarUnauthorizedError,
   parsePolarDailyActivity,
   parsePolarDuration,
   parsePolarExercise,
   parsePolarSleep,
   parsePolarSleepStages,
-} from "./polar.ts";
+} from "./polar/parsers.ts";
+import { PolarProvider } from "./polar/provider.ts";
+import type {
+  PolarDailyActivity,
+  PolarExercise,
+  PolarNightlyRecharge,
+  PolarSleep,
+} from "./polar/types.ts";
 
 // ============================================================
 // Pure parsing unit tests (no DB, no network)
