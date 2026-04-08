@@ -1359,9 +1359,9 @@ jobs:
             SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
           cache-from: type=gha,scope=${{ matrix.target }}
           cache-to: type=gha,mode=max,scope=${{ matrix.target }}
-      # Trigger Dokploy redeploy for web + worker after image push.
-      # Calls the tRPC API directly using DOKPLOY_HOST, DOKPLOY_API_KEY,
-      # and per-application IDs from repo secrets (synced from Infisical).
+      # Deploy new image to Dokploy for web + worker after image push.
+      # Updates the dockerImage to the SHA-tagged image (forces a pull since
+      # the server won't have this specific tag cached), then triggers deploy.
       - name: Deploy via Dokploy
         if: matrix.target == 'server'
         env:
@@ -1369,15 +1369,30 @@ jobs:
           DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
           DOKPLOY_WEB_APP_ID: ${{ secrets.DOKPLOY_WEB_APP_ID }}
           DOKPLOY_WORKER_APP_ID: ${{ secrets.DOKPLOY_WORKER_APP_ID }}
+          META_TAGS: ${{ steps.meta.outputs.tags }}
         run: |
+          set -euo pipefail
           if [ -z "$DOKPLOY_HOST" ] || [ -z "$DOKPLOY_API_KEY" ]; then
             echo "Dokploy secrets not configured, skipping deploy trigger"
             exit 0
           fi
+          # Extract the SHA-tagged image from metadata-action output (avoids
+          # hardcoding the tag format/length — always matches what was pushed).
+          SHA_IMAGE=$(echo "$META_TAGS" | grep ':sha-' | head -1)
+          if [ -z "$SHA_IMAGE" ]; then
+            echo "::error::No sha-tagged image found in metadata output"
+            exit 1
+          fi
           for APP_ID in "$DOKPLOY_WEB_APP_ID" "$DOKPLOY_WORKER_APP_ID"; do
             [ -z "$APP_ID" ] && continue
-            echo "Triggering redeploy for app $APP_ID..."
-            curl -fsSL -X POST "${DOKPLOY_HOST}/api/trpc/application.redeploy" \
+            echo "Updating app $APP_ID image to $SHA_IMAGE..."
+            curl -fsSL -X POST "${DOKPLOY_HOST}/api/trpc/application.update" \
+              -H "x-api-key: ${DOKPLOY_API_KEY}" \
+              -H "Content-Type: application/json" \
+              -d "{\"json\":{\"applicationId\":\"${APP_ID}\",\"sourceType\":\"docker\",\"dockerImage\":\"${SHA_IMAGE}\"}}"
+            echo ""
+            echo "Triggering deploy for app $APP_ID..."
+            curl -fsSL -X POST "${DOKPLOY_HOST}/api/trpc/application.deploy" \
               -H "x-api-key: ${DOKPLOY_API_KEY}" \
               -H "Content-Type: application/json" \
               -d "{\"json\":{\"applicationId\":\"${APP_ID}\"}}"

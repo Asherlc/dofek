@@ -258,7 +258,7 @@ The API serves `/api/updates/*` directly from R2. The runtime version must match
 
 ```
 git push → GHA builds ARM Docker images + exports Expo OTA bundle → signs manifest → uploads to R2
-→ Docker image pushed to GHCR → Watchtower polls (5min) → rolling-restarts replicated `web` containers
+→ Docker image pushed to GHCR (sha-tagged) → CI calls Dokploy API (update image + deploy) → Dokploy pulls new image + restarts containers
 ```
 
 Migrations run at two levels for reliability: a dedicated one-shot `migrate` container runs first during `docker compose up` (via `depends_on: { condition: service_completed_successfully }`), and each service's entrypoint also runs migrations before starting. A Postgres advisory lock serializes concurrent runs so only one container applies migrations at a time. With replicated `web` instances and rolling restarts, at least one healthy API instance remains available while another instance migrates and boots. In local dev, run `pnpm migrate` manually.
