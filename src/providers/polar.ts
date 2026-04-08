@@ -8,12 +8,13 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
+import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity, dailyMetrics, sensorSample, sleepSession, sleepStage } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
 import { withSyncLog } from "../db/sync-log.ts";
-import { ensureProvider, loadTokens } from "../db/tokens.ts";
+import { ensureProvider } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
 import { parseTcx, tcxToSensorSamples } from "../tcx/parser.ts";
 import type {
@@ -518,12 +519,13 @@ export class PolarProvider implements WebhookProvider {
   }
 
   async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
-    const tokens = await loadTokens(db, this.id);
-    if (!tokens) {
-      throw new Error("No OAuth tokens found for Polar. Run: health-data auth polar");
-    }
-    // Polar tokens don't expire unless revoked, but we still return them
-    return tokens;
+    return resolveOAuthTokens({
+      db,
+      providerId: this.id,
+      providerName: this.name,
+      getOAuthConfig: () => polarOAuthConfig(),
+      fetchFn: this.#fetchFn,
+    });
   }
 
   async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {

@@ -555,6 +555,29 @@ function createPolarFetchWithEndpointStatus(
   };
 }
 
+function getAuthorizationHeader(init?: RequestInit): string {
+  const headers = init?.headers;
+  if (!headers) return "";
+
+  if (headers instanceof Headers) {
+    return headers.get("Authorization") ?? "";
+  }
+
+  if (Array.isArray(headers)) {
+    const match = headers.find(([headerName]) => headerName.toLowerCase() === "authorization");
+    return match?.[1] ?? "";
+  }
+
+  if (typeof headers === "object") {
+    const upperCaseKey = Reflect.get(headers, "Authorization");
+    if (typeof upperCaseKey === "string") return upperCaseKey;
+    const lowerCaseKey = Reflect.get(headers, "authorization");
+    if (typeof lowerCaseKey === "string") return lowerCaseKey;
+  }
+
+  return "";
+}
+
 function getPayloadProviderId(value: unknown): string | undefined {
   if (typeof value !== "object" || value === null || !("providerId" in value)) return undefined;
   const providerId = Reflect.get(value, "providerId");
@@ -564,6 +587,57 @@ function getPayloadProviderId(value: unknown): string | undefined {
 describe("PolarProvider.sync — error handling", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("refreshes expired Polar tokens before calling API endpoints", async () => {
+    process.env.POLAR_CLIENT_ID = "polar-client-id";
+    process.env.POLAR_CLIENT_SECRET = "polar-client-secret";
+
+    const tokenEndpointCalls: string[] = [];
+    const activityEndpointAuthorizations: string[] = [];
+    const mockFetch: typeof globalThis.fetch = async (
+      url: string | URL | Request,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      const urlString = String(url);
+      if (urlString === "https://polarremote.com/v2/oauth2/token") {
+        tokenEndpointCalls.push(urlString);
+        return Response.json({
+          access_token: "refreshed-polar-token",
+          refresh_token: "refreshed-polar-refresh",
+          expires_in: 3600,
+          scope: "accesslink.read_all",
+        });
+      }
+      if (urlString.endsWith("/exercises")) {
+        const authorization = getAuthorizationHeader(init);
+        activityEndpointAuthorizations.push(authorization);
+        if (authorization !== "Bearer refreshed-polar-token") {
+          return new Response("Unauthorized", { status: 401 });
+        }
+        return Response.json([]);
+      }
+      if (urlString.endsWith("/sleep")) return Response.json([]);
+      if (urlString.endsWith("/activity")) return Response.json([]);
+      if (urlString.endsWith("/nightly-recharge")) return Response.json([]);
+      return Response.json([]);
+    };
+
+    const expiredTokenRows = [
+      {
+        ...POLAR_VALID_TOKEN,
+        accessToken: "expired-polar-token",
+        refreshToken: "expired-polar-refresh",
+        expiresAt: new Date("2000-01-01T00:00:00Z"),
+      },
+    ];
+
+    const provider = new PolarProvider(mockFetch);
+    const result = await provider.sync(createPolarMockDb(expiredTokenRows), new Date("2026-01-01"));
+
+    expect(tokenEndpointCalls).toHaveLength(1);
+    expect(activityEndpointAuthorizations).toContain("Bearer refreshed-polar-token");
+    expect(result.errors).toHaveLength(0);
   });
 
   it("captures unauthorized exercises endpoint errors with auth guidance", async () => {
