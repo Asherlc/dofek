@@ -1,7 +1,6 @@
 import { logger } from "../logger.ts";
 import { runMigrations } from "./migrate.ts";
 import { syncMaterializedViews } from "./sync-views.ts";
-import { upgradeTimescaleDb } from "./upgrade-timescaledb.ts";
 
 export async function main(): Promise<void> {
   const databaseUrl = process.env.DATABASE_URL;
@@ -11,9 +10,6 @@ export async function main(): Promise<void> {
 
   const count = await runMigrations(databaseUrl);
   logger.info(`[migrate] Done — ${count} migration(s) applied`);
-
-  // Upgrade TimescaleDB extension to match the installed image version
-  await upgradeTimescaleDb(databaseUrl);
 
   // Sync materialized view definitions (only recreates views whose SQL changed)
   const { synced, skipped, refreshed } = await syncMaterializedViews(databaseUrl);

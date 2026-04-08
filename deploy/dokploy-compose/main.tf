@@ -1,6 +1,16 @@
-# Renders the infra-compose.yml template with secrets.
-# CI runs `terraform apply` then reads the rendered output to push to Dokploy.
-# No persistent state needed — this config has no resources, only an output.
+# Renders the infra-compose.yml template with secrets and manages the
+# TimescaleDB extension version. CI connects to the DB via SSH tunnel.
+
+terraform {
+  required_providers {
+    postgresql = {
+      source  = "cyrilgdn/postgresql"
+      version = "~> 1.25"
+    }
+  }
+}
+
+# ── Variables ──
 
 variable "postgres_password" {
   type      = string
@@ -66,8 +76,10 @@ variable "db_backup_path" {
   default     = ""
 }
 
+# ── Compose template rendering ──
+
 output "compose_rendered" {
-  value     = templatefile("${path.module}/../dokploy/infra-compose.yml", {
+  value = templatefile("${path.module}/../dokploy/infra-compose.yml", {
     postgres_password         = var.postgres_password
     axiom_api_token           = var.axiom_api_token
     sentry_otlp_logs_endpoint = var.sentry_otlp_logs_endpoint
@@ -84,4 +96,20 @@ output "compose_rendered" {
     db_backup_path            = var.db_backup_path
   })
   sensitive = true
+}
+
+# ── PostgreSQL extension management ──
+# CI opens an SSH tunnel (localhost:5432 → server:5432) before apply.
+
+provider "postgresql" {
+  host     = "127.0.0.1"
+  port     = 5432
+  database = "health"
+  username = "health"
+  password = var.postgres_password
+  sslmode  = "disable"
+}
+
+resource "postgresql_extension" "timescaledb" {
+  name = "timescaledb"
 }
