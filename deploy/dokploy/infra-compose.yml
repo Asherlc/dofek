@@ -5,7 +5,7 @@
 
 services:
   db:
-    image: timescale/timescaledb:latest-pg16@sha256:7ffc75f17e15108ccae2994ef82caf4476d9d27d8b58a1fc09d589342e8fe004
+    image: timescale/timescaledb:2.26.2-pg16
     restart: unless-stopped
     networks:
       - default
