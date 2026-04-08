@@ -183,9 +183,12 @@ done
 echo "  Domain: $OTA_DOMAIN -> ota:3000"
 dokploy "domain.create" -d "{\"json\":{\"composeId\":\"${COMPOSE_ID}\",\"host\":\"${OTA_DOMAIN}\",\"port\":3000,\"https\":true,\"certificateType\":\"letsencrypt\",\"serviceName\":\"ota\"}}" > /dev/null || echo "    (may already exist)"
 
-# --- 8. Configure Dokploy dashboard domain ---
+# --- 8. Configure Dokploy settings ---
 echo "Setting Dokploy dashboard domain..."
 dokploy "settings.assignDomainServer" -d "{\"json\":{\"host\":\"dokploy.asherlc.com\",\"certificateType\":\"letsencrypt\",\"letsEncryptEmail\":\"asherlc@asherlc.com\",\"https\":true}}" > /dev/null
+
+echo "Enabling daily Docker cleanup..."
+dokploy "settings.updateDockerCleanup" -d "{\"json\":{\"enableDockerCleanup\":true}}" > /dev/null
 
 # --- 9. Deploy ---
 echo ""
