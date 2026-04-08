@@ -8,9 +8,11 @@ import {
 } from "dofek/jobs/queues";
 import { ProviderModel } from "dofek/providers/provider-model";
 import { getAllProviders, registerProvider } from "dofek/providers/registry";
+import { sql as sqlTag } from "drizzle-orm";
 import { z } from "zod";
 import { queryCache } from "../lib/cache.ts";
 import { startWorker } from "../lib/start-worker.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import { SyncRepository } from "../repositories/sync-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
@@ -418,56 +420,34 @@ export const syncRouter = router({
   /** Diagnostic: compare materialized view row counts vs base table row counts.
    *  Helps identify when views are empty/stale but base tables have data. */
   dataHealth: protectedProcedure.query(async ({ ctx }) => {
-    const { sql: sqlTag } = await import("drizzle-orm");
-    const { executeWithSchema } = await import("../lib/typed-sql.ts");
-
     const countSchema = z.object({ count: z.coerce.number() });
 
-    const [baseMetrics, viewMetrics, baseSleep, viewSleep, baseActivity, viewActivity] =
-      await Promise.all([
-        executeWithSchema(
-          ctx.db,
-          countSchema,
-          sqlTag`SELECT count(*)::int AS count FROM fitness.daily_metrics WHERE user_id = ${ctx.userId}`,
-        ),
-        executeWithSchema(
-          ctx.db,
-          countSchema,
-          sqlTag`SELECT count(*)::int AS count FROM fitness.v_daily_metrics WHERE user_id = ${ctx.userId}`,
-        ),
-        executeWithSchema(
-          ctx.db,
-          countSchema,
-          sqlTag`SELECT count(*)::int AS count FROM fitness.sleep_session WHERE user_id = ${ctx.userId}`,
-        ),
-        executeWithSchema(
-          ctx.db,
-          countSchema,
-          sqlTag`SELECT count(*)::int AS count FROM fitness.v_sleep WHERE user_id = ${ctx.userId}`,
-        ),
-        executeWithSchema(
-          ctx.db,
-          countSchema,
-          sqlTag`SELECT count(*)::int AS count FROM fitness.activity WHERE user_id = ${ctx.userId}`,
-        ),
-        executeWithSchema(
-          ctx.db,
-          countSchema,
-          sqlTag`SELECT count(*)::int AS count FROM fitness.v_activity WHERE user_id = ${ctx.userId}`,
-        ),
-      ]);
+    const healthChecks = [
+      { key: "dailyMetrics", baseTable: "fitness.daily_metrics", view: "fitness.v_daily_metrics" },
+      { key: "sleep", baseTable: "fitness.sleep_session", view: "fitness.v_sleep" },
+      { key: "activity", baseTable: "fitness.activity", view: "fitness.v_activity" },
+    ] as const;
 
-    const health = {
-      dailyMetrics: {
-        baseTable: baseMetrics[0]?.count ?? 0,
-        materializedView: viewMetrics[0]?.count ?? 0,
-      },
-      sleep: { baseTable: baseSleep[0]?.count ?? 0, materializedView: viewSleep[0]?.count ?? 0 },
-      activity: {
-        baseTable: baseActivity[0]?.count ?? 0,
-        materializedView: viewActivity[0]?.count ?? 0,
-      },
-    };
+    const countTargets = healthChecks.flatMap(({ key, baseTable, view }) => [
+      { key, target: "baseTable" as const, table: baseTable },
+      { key, target: "materializedView" as const, table: view },
+    ]);
+
+    const counts = await Promise.all(
+      countTargets.map(({ table }) =>
+        executeWithSchema(
+          ctx.db,
+          countSchema,
+          sqlTag`SELECT count(*)::int AS count FROM ${sqlTag.raw(table)} WHERE user_id = ${ctx.userId}`,
+        ),
+      ),
+    );
+
+    const health: Record<string, { baseTable: number; materializedView: number }> = {};
+    for (const [index, { key, target }] of countTargets.entries()) {
+      if (!health[key]) health[key] = { baseTable: 0, materializedView: 0 };
+      health[key][target] = counts[index]?.[0]?.count ?? 0;
+    }
 
     const hasStaleViews = Object.values(health).some(
       (table) => table.baseTable > 0 && table.materializedView === 0,

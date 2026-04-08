@@ -162,10 +162,19 @@ export class DailyMetricsRepository extends BaseRepository {
     );
     const result = rows[0] ?? null;
     if (result && result.latest_date === null && result.avg_resting_hr === null) {
-      logger.warn(
-        `[daily-metrics] Trends query returned all nulls for user ${this.userId} (days=${days}, endDate=${endDate}). ` +
-          "Materialized view fitness.v_daily_metrics may be empty — check sync.dataHealth.",
+      // Only warn if the base table actually has data (stale view),
+      // not for new/inactive users who legitimately have no rows.
+      const baseCount = await this.query(
+        z.object({ count: z.coerce.number() }),
+        sql`SELECT count(*)::int AS count FROM fitness.daily_metrics
+            WHERE user_id = ${this.userId} LIMIT 1`,
       );
+      if ((baseCount[0]?.count ?? 0) > 0) {
+        logger.warn(
+          `[daily-metrics] Trends query returned all nulls for user ${this.userId} but base table has data (days=${days}, endDate=${endDate}). ` +
+            "Materialized view fitness.v_daily_metrics is stale — check sync.dataHealth.",
+        );
+      }
     }
     return result;
   }
