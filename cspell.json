@@ -401,6 +401,7 @@
     "stddevs",
     "matviews",
     "matviewname",
+    "ispopulated",
     "schemaname",
     "rxnorm",
     "snomed",
