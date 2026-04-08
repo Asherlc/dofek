@@ -65,6 +65,12 @@ describe("ActivityList", () => {
     expect(screen.getByText("No recent activities")).toBeDefined();
   });
 
+  it("shows error state when error prop is true", () => {
+    renderWithUnits(<ActivityList activities={[]} error={true} />);
+    expect(screen.getByText("Failed to load activities.")).toBeDefined();
+    expect(screen.queryByText("No recent activities")).toBeNull();
+  });
+
   it("renders loading state", () => {
     renderWithUnits(<ActivityList activities={[]} loading={true} />);
     // ChartLoadingSkeleton should be visible

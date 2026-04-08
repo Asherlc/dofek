@@ -84,6 +84,8 @@ export default function ActivitiesScreen() {
         ListEmptyComponent={
           query.isLoading ? (
             <ActivityIndicator color={colors.accent} style={styles.loader} />
+          ) : query.isError ? (
+            <Text style={styles.error}>Failed to load activities.</Text>
           ) : (
             <Text style={styles.empty}>No activities found</Text>
           )
@@ -152,6 +154,12 @@ const styles = StyleSheet.create({
   },
   empty: {
     color: colors.textSecondary,
+    textAlign: "center",
+    marginTop: 40,
+    fontSize: 14,
+  },
+  error: {
+    color: "#f87171",
     textAlign: "center",
     marginTop: 40,
     fontSize: 14,
