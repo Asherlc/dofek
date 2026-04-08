@@ -10,34 +10,10 @@ services:
     networks:
       - default
       - dokploy-network
-    shm_size: 256mb
-    deploy:
-      resources:
-        limits:
-          memory: 1536m
     environment:
       POSTGRES_DB: health
       POSTGRES_USER: health
       POSTGRES_PASSWORD: ${postgres_password}
-    # Tune Postgres for a 4 GB shared server (DB gets ~1.5 GB)
-    command:
-      - postgres
-      - -c
-      - shared_buffers=384MB
-      - -c
-      - effective_cache_size=768MB
-      - -c
-      - work_mem=8MB
-      - -c
-      - maintenance_work_mem=128MB
-      - -c
-      - max_connections=30
-      - -c
-      - wal_buffers=16MB
-      - -c
-      - checkpoint_completion_target=0.9
-      - -c
-      - random_page_cost=1.1
     volumes:
 %{ if db_data_path != "" ~}
       - ${db_data_path}:/var/lib/postgresql/data
@@ -78,10 +54,6 @@ services:
     networks:
       - default
       - dokploy-network
-    deploy:
-      resources:
-        limits:
-          memory: 256m
     volumes:
       - redis_data:/data
     healthcheck:
@@ -97,10 +69,6 @@ services:
     networks:
       - default
       - dokploy-network
-    deploy:
-      resources:
-        limits:
-          memory: 256m
     environment:
       AXIOM_API_TOKEN: ${axiom_api_token}
       SENTRY_OTLP_LOGS_ENDPOINT: ${sentry_otlp_logs_endpoint}
@@ -116,10 +84,6 @@ services:
   ota:
     image: ghcr.io/axelmarciano/expo-open-ota:latest
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 256m
     environment:
       BASE_URL: https://${ota_domain}
       STORAGE_MODE: s3
