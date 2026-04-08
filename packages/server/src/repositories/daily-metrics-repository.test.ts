@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { DailyMetricsRepository } from "./daily-metrics-repository.ts";
 
+const mockLoggerWarn = vi.hoisted(() => vi.fn());
+
+vi.mock("../logger.ts", () => ({
+  logger: { warn: mockLoggerWarn, info: vi.fn(), error: vi.fn() },
+}));
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -166,6 +172,27 @@ describe("DailyMetricsRepository", () => {
       expect(result?.avg_hrv).toBe(43.8);
       expect(result?.latest_hrv).toBe(48);
       expect(result?.latest_date).toBe("2025-03-15");
+    });
+
+    it("logs warning when trends returns all nulls (stale view)", async () => {
+      mockLoggerWarn.mockClear();
+      const { repo } = makeRepository([
+        makeTrendsRow({
+          avg_resting_hr: null,
+          latest_date: null,
+        }),
+      ]);
+      await repo.getTrends(30, "2025-03-15");
+      expect(mockLoggerWarn).toHaveBeenCalledWith(
+        expect.stringContaining("Trends query returned all nulls"),
+      );
+    });
+
+    it("does not log warning when trends has data", async () => {
+      mockLoggerWarn.mockClear();
+      const { repo } = makeRepository([makeTrendsRow()]);
+      await repo.getTrends(30, "2025-03-15");
+      expect(mockLoggerWarn).not.toHaveBeenCalled();
     });
 
     it("handles all-null trends row", async () => {

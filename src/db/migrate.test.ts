@@ -341,9 +341,7 @@ describe("runMigrations", () => {
     });
 
     // No applied migrations, but schema has tables (e.g., migration tracking reset)
-    let callIndex = 0;
     mockSql.mockImplementation((...args: unknown[]) => {
-      callIndex++;
       const first = args[0];
       if (Array.isArray(first) && first.join("").includes("information_schema")) {
         return Promise.resolve([{ has_tables: true }]);
