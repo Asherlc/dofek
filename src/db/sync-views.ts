@@ -30,7 +30,7 @@ export function hashViewContent(sqlContent: string): string {
 /**
  * Check whether a materialized view has been populated (has data loaded).
  * A view created with WITH NO DATA, or one whose population was interrupted
- * by a crash, will report ispopulated = false in pg_matviews.
+ * by a crash, will report `ispopulated = false` in pg_matviews. // cspell:disable-line
  */
 export async function isViewPopulated(
   sql: ReturnType<typeof postgres>,
@@ -40,6 +40,7 @@ export async function isViewPopulated(
   const schema = dotIndex >= 0 ? viewName.slice(0, dotIndex) : "public";
   const name = dotIndex >= 0 ? viewName.slice(dotIndex + 1) : viewName;
   const rows =
+    // cspell:disable-next-line -- Postgres system catalog column name
     await sql`SELECT ispopulated AS populated FROM pg_matviews WHERE schemaname = ${schema} AND matviewname = ${name}`;
   // If the view doesn't exist in pg_matviews, treat as not populated
   return rows[0]?.populated === true;
@@ -129,7 +130,7 @@ export async function syncMaterializedViews(
     }
 
     // Refresh any views that exist but are unpopulated (e.g., after a Postgres crash
-    // that interrupted view population, leaving ispopulated = false in pg_matviews).
+    // that interrupted view population, leaving them marked as not populated in pg_matviews).
     let refreshed = 0;
     for (const viewName of allViewNames) {
       const populated = await isViewPopulated(sql, viewName);
