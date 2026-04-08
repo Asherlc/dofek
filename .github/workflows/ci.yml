@@ -199,6 +199,7 @@ jobs:
       - uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
       - run: cd deploy/cloudflare && terraform init -backend=false && terraform validate
       - run: cd deploy/dokploy && terraform init -backend=false && terraform validate
+      - run: cd deploy/dokploy-compose && terraform init -backend=false && terraform validate
 
   quality-gate:
     name: Lint & Static Analysis
@@ -1310,6 +1311,73 @@ jobs:
         run: |
           terraform init
           terraform apply -auto-approve
+
+  deploy-infra-compose:
+    name: Deploy Infra Compose
+    needs: [ci-gate]
+    if: always() && needs.ci-gate.result == 'success' && github.ref == 'refs/heads/main'
+    concurrency:
+      group: deploy-infra-compose
+      cancel-in-progress: true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          fetch-depth: 2
+      - name: Check for infra compose changes
+        id: changes
+        run: |
+          CHANGED=$(git diff --name-only HEAD~1...HEAD -- deploy/dokploy/infra-compose.yml deploy/dokploy-compose/)
+          if [ -n "$CHANGED" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Infra compose changed, will deploy"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No infra compose changes, skipping deploy"
+          fi
+      - name: Setup Terraform
+        if: steps.changes.outputs.changed == 'true'
+        uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
+        with:
+          terraform_wrapper: false
+      - name: Render and deploy
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          DOKPLOY_HOST: ${{ secrets.DOKPLOY_HOST }}
+          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+          TF_VAR_postgres_password: ${{ secrets.POSTGRES_PASSWORD }}
+          TF_VAR_axiom_api_token: ${{ secrets.AXIOM_API_TOKEN }}
+          TF_VAR_sentry_otlp_logs_endpoint: ${{ secrets.SENTRY_OTLP_LOGS_ENDPOINT }}
+          TF_VAR_r2_endpoint: ${{ secrets.R2_ENDPOINT }}
+          TF_VAR_r2_access_key_id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          TF_VAR_r2_secret_access_key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          TF_VAR_expo_app_id: ${{ secrets.EXPO_APP_ID }}
+          TF_VAR_expo_access_token: ${{ secrets.EXPO_ACCESS_TOKEN }}
+          TF_VAR_ota_jwt_secret: ${{ secrets.OTA_JWT_SECRET }}
+          TF_VAR_ota_public_key_b64: ${{ secrets.OTA_PUBLIC_KEY_B64 }}
+          TF_VAR_ota_private_key_b64: ${{ secrets.OTA_PRIVATE_KEY_B64 }}
+        run: |
+          set -euo pipefail
+          cd deploy/dokploy-compose
+          terraform init
+          terraform apply -auto-approve
+
+          COMPOSE_CONTENT=$(terraform output -raw compose_rendered)
+          COMPOSE_JSON=$(printf '%s' "$COMPOSE_CONTENT" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")
+          COMPOSE_ID="RMk3hATYEIKherZ2QEud_"
+
+          echo "Updating infra compose in Dokploy..."
+          curl -fsSL -X POST "${DOKPLOY_HOST}/api/trpc/compose.update" \
+            -H "x-api-key: ${DOKPLOY_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{\"json\":{\"composeId\":\"${COMPOSE_ID}\",\"sourceType\":\"raw\",\"composeFile\":${COMPOSE_JSON}}}"
+
+          echo ""
+          echo "Deploying infra compose stack..."
+          curl -fsSL -X POST "${DOKPLOY_HOST}/api/trpc/compose.deploy" \
+            -H "x-api-key: ${DOKPLOY_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{\"json\":{\"composeId\":\"${COMPOSE_ID}\"}}"
 
   docker:
     name: Docker (${{ matrix.target }})
