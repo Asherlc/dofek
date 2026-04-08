@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { constants as zlibConstants } from "node:zlib";
 import { createBullBoard } from "@bull-board/api";
 import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
 import { ExpressAdapter } from "@bull-board/express";
@@ -64,7 +65,11 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
   });
 
   // ── Compression + Cookies ──
-  app.use(compression());
+  // Z_SYNC_FLUSH ensures compressed chunks are flushed to the client immediately,
+  // which is required for tRPC's httpBatchStreamLink to deliver results incrementally.
+  // Without this, the default Z_NO_FLUSH buffers data until the internal zlib buffer
+  // fills (~16KB), making streamed responses appear to hang until all queries complete.
+  app.use(compression({ flush: zlibConstants.Z_SYNC_FLUSH }));
   app.use(cookieParser());
 
   // ── Prometheus metrics endpoint ──
