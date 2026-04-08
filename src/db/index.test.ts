@@ -26,8 +26,10 @@ describe("db/index", () => {
 
       expect(mockPostgres).toHaveBeenCalledWith("postgres://localhost:5432/test", {
         max: 5,
-        idle_timeout: 30,
+        idle_timeout: 300,
         connect_timeout: 10,
+        max_lifetime: 600,
+        keep_alive: 60,
       });
     });
 
