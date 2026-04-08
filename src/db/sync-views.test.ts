@@ -133,26 +133,41 @@ describe("syncMaterializedViews", () => {
 
     const result = await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
 
-    expect(result).toEqual({ synced: 0, skipped: 0 });
+    expect(result).toEqual({ synced: 0, skipped: 0, refreshed: 0 });
   });
 
-  it("skips views whose hash matches the stored hash", async () => {
+  it("skips views whose hash matches and are populated", async () => {
     const { syncMaterializedViews, hashViewContent: hash } = await import("./sync-views.ts");
     const viewSql = "CREATE MATERIALIZED VIEW fitness.v_test AS SELECT 1";
     const expectedHash = hash(viewSql);
 
     mockReaddirSync.mockReturnValue(["01_v_test.sql"]);
     mockReadFileSync.mockReturnValue(viewSql);
-    // First call: CREATE TABLE (tracking table) — returns []
-    // Second call: SELECT hash — returns matching hash
     mockSql.mockResolvedValueOnce([]); // CREATE TABLE
     mockSql.mockResolvedValueOnce([{ hash: expectedHash }]); // SELECT hash
+    mockSql.mockResolvedValueOnce([{ populated: true }]); // pg_matviews check
 
     const result = await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
 
-    expect(result).toEqual({ synced: 0, skipped: 1 });
-    // Should NOT call sql.unsafe (no DROP/CREATE)
+    expect(result).toEqual({ synced: 0, skipped: 1, refreshed: 0 });
     expect(mockSqlUnsafe).not.toHaveBeenCalled();
+  });
+
+  it("refreshes views that are unchanged but unpopulated", async () => {
+    const { syncMaterializedViews, hashViewContent: hash } = await import("./sync-views.ts");
+    const viewSql = "CREATE MATERIALIZED VIEW fitness.v_test AS SELECT 1";
+    const expectedHash = hash(viewSql);
+
+    mockReaddirSync.mockReturnValue(["01_v_test.sql"]);
+    mockReadFileSync.mockReturnValue(viewSql);
+    mockSql.mockResolvedValueOnce([]); // CREATE TABLE
+    mockSql.mockResolvedValueOnce([{ hash: expectedHash }]); // SELECT hash — matches
+    mockSql.mockResolvedValueOnce([{ populated: false }]); // pg_matviews — not populated
+
+    const result = await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
+
+    expect(result).toEqual({ synced: 0, skipped: 1, refreshed: 1 });
+    expect(mockSqlUnsafe).toHaveBeenCalledWith("REFRESH MATERIALIZED VIEW fitness.v_test");
   });
 
   it("recreates views whose hash has changed", async () => {
@@ -163,11 +178,12 @@ describe("syncMaterializedViews", () => {
     mockReadFileSync.mockReturnValue(viewSql);
     mockSql.mockResolvedValueOnce([]); // CREATE TABLE
     mockSql.mockResolvedValueOnce([{ hash: "old-hash-that-does-not-match" }]); // SELECT hash
+    mockSql.mockResolvedValueOnce([]); // INSERT hash
+    mockSql.mockResolvedValueOnce([{ populated: true }]); // pg_matviews check
 
     const result = await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
 
-    expect(result).toEqual({ synced: 1, skipped: 0 });
-    // Should call sql.unsafe for DROP and CREATE
+    expect(result).toEqual({ synced: 1, skipped: 0, refreshed: 0 });
     expect(mockSqlUnsafe).toHaveBeenCalledWith(
       "DROP MATERIALIZED VIEW IF EXISTS fitness.v_test CASCADE",
     );
@@ -182,10 +198,12 @@ describe("syncMaterializedViews", () => {
     mockReadFileSync.mockReturnValue(viewSql);
     mockSql.mockResolvedValueOnce([]); // CREATE TABLE
     mockSql.mockResolvedValueOnce([]); // SELECT hash — no rows
+    mockSql.mockResolvedValueOnce([]); // INSERT hash
+    mockSql.mockResolvedValueOnce([{ populated: true }]); // pg_matviews check
 
     const result = await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
 
-    expect(result).toEqual({ synced: 1, skipped: 0 });
+    expect(result).toEqual({ synced: 1, skipped: 0, refreshed: 0 });
     expect(mockSqlUnsafe).toHaveBeenCalledWith(
       "DROP MATERIALIZED VIEW IF EXISTS fitness.v_new CASCADE",
     );
@@ -220,8 +238,7 @@ describe("syncMaterializedViews", () => {
 
     await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
 
-    // DROP + 2 statements (CREATE VIEW + CREATE INDEX)
-    expect(mockSqlUnsafe).toHaveBeenCalledTimes(3);
+    // Should have DROP + 2 statements (CREATE VIEW + CREATE INDEX) + possibly REFRESH
     expect(mockSqlUnsafe).toHaveBeenCalledWith(
       "DROP MATERIALIZED VIEW IF EXISTS fitness.v_test CASCADE",
     );
@@ -240,8 +257,7 @@ describe("syncMaterializedViews", () => {
 
     const result = await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
 
-    expect(result).toEqual({ synced: 0, skipped: 0 });
-    // Should NOT call sql.unsafe (no DROP/CREATE for unrecognized files)
+    expect(result).toEqual({ synced: 0, skipped: 0, refreshed: 0 });
     expect(mockSqlUnsafe).not.toHaveBeenCalled();
   });
 

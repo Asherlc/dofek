@@ -28,12 +28,33 @@ export function hashViewContent(sqlContent: string): string {
 }
 
 /**
+ * Check whether a materialized view has been populated (has data loaded).
+ * A view created with WITH NO DATA, or one whose population was interrupted
+ * by a crash, will report `ispopulated = false` in pg_matviews. // cspell:disable-line
+ */
+export async function isViewPopulated(
+  sql: ReturnType<typeof postgres>,
+  viewName: string,
+): Promise<boolean> {
+  const dotIndex = viewName.indexOf(".");
+  const schema = dotIndex >= 0 ? viewName.slice(0, dotIndex) : "public";
+  const name = dotIndex >= 0 ? viewName.slice(dotIndex + 1) : viewName;
+  const rows =
+    // cspell:disable-next-line -- Postgres system catalog column name
+    await sql`SELECT ispopulated AS populated FROM pg_matviews WHERE schemaname = ${schema} AND matviewname = ${name}`;
+  // If the view doesn't exist in pg_matviews, treat as not populated
+  return rows[0]?.populated === true;
+}
+
+/**
  * Synchronize materialized view definitions from drizzle/_views/ SQL files.
  *
  * For each view file:
  * 1. Compute a SHA-256 hash of the SQL content
  * 2. Compare against the stored hash in drizzle.__view_hashes
  * 3. Only drop and recreate the view if the hash has changed
+ * 4. After processing all views, refresh any that exist but are unpopulated
+ *    (can happen after a Postgres crash during recovery)
  *
  * This avoids the 2+ minute downtime caused by unconditionally
  * dropping and recreating all materialized views on every deploy.
@@ -41,14 +62,14 @@ export function hashViewContent(sqlContent: string): string {
 export async function syncMaterializedViews(
   databaseUrl: string,
   viewsDir?: string,
-): Promise<{ synced: number; skipped: number }> {
+): Promise<{ synced: number; skipped: number; refreshed: number }> {
   const dir = viewsDir ?? resolve(import.meta.dirname, "../../drizzle/_views");
   const files = readdirSync(dir)
     .filter((fileName) => fileName.endsWith(".sql"))
     .sort();
 
   if (files.length === 0) {
-    return { synced: 0, skipped: 0 };
+    return { synced: 0, skipped: 0, refreshed: 0 };
   }
 
   const sql = postgres(databaseUrl);
@@ -63,6 +84,7 @@ export async function syncMaterializedViews(
 
     let synced = 0;
     let skipped = 0;
+    const allViewNames: string[] = [];
 
     for (const file of files) {
       const content = readFileSync(join(dir, file), "utf-8");
@@ -73,6 +95,8 @@ export async function syncMaterializedViews(
         logger.warn(`[views] Could not extract view name from ${file}, skipping`);
         continue;
       }
+
+      allViewNames.push(viewName);
 
       // Check if this view's definition has changed
       const existing =
@@ -105,7 +129,19 @@ export async function syncMaterializedViews(
       synced++;
     }
 
-    return { synced, skipped };
+    // Refresh any views that exist but are unpopulated (e.g., after a Postgres crash
+    // that interrupted view population, leaving them marked as not populated in pg_matviews).
+    let refreshed = 0;
+    for (const viewName of allViewNames) {
+      const populated = await isViewPopulated(sql, viewName);
+      if (!populated) {
+        logger.warn(`[views] ${viewName} exists but is not populated, refreshing`);
+        await sql.unsafe(`REFRESH MATERIALIZED VIEW ${viewName}`);
+        refreshed++;
+      }
+    }
+
+    return { synced, skipped, refreshed };
   } finally {
     await sql.end();
   }
