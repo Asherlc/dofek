@@ -106,12 +106,15 @@ interface ZwiftMockOptions {
   tokenRefreshError?: boolean;
   fitnessDataError?: boolean;
   activityDetailError?: boolean;
+  activitiesUnauthorizedOnce?: boolean;
   paginateActivities?: boolean;
+  omitRefreshTokenInRefresh?: boolean;
 }
 
 function zwiftHandlers(opts: ZwiftMockOptions = {}) {
   const activities = opts.activities ?? [];
   let pageRequestCount = 0;
+  let activityListRequestCount = 0;
 
   return [
     // Token refresh (Zwift auth endpoint)
@@ -119,12 +122,15 @@ function zwiftHandlers(opts: ZwiftMockOptions = {}) {
       if (opts.tokenRefreshError) {
         return new HttpResponse("Unauthorized", { status: 401 });
       }
-      return HttpResponse.json({
+      const body: Record<string, unknown> = {
         access_token: "refreshed-zwift-token",
-        refresh_token: "new-zwift-refresh",
         expires_in: 7200,
         token_type: "Bearer",
-      });
+      };
+      if (!opts.omitRefreshTokenInRefresh) {
+        body.refresh_token = "new-zwift-refresh";
+      }
+      return HttpResponse.json(body);
     }),
 
     // Power curve
@@ -155,6 +161,10 @@ function zwiftHandlers(opts: ZwiftMockOptions = {}) {
 
     // Activity list (paginated)
     http.get("https://us-or-rly101.zwift.com/api/profiles/:profileId/activities", () => {
+      activityListRequestCount++;
+      if (opts.activitiesUnauthorizedOnce && activityListRequestCount === 1) {
+        return new HttpResponse("Unauthorized", { status: 401 });
+      }
       pageRequestCount++;
       if (opts.paginateActivities && pageRequestCount > 1) {
         return HttpResponse.json([]);
@@ -487,5 +497,66 @@ describe("ZwiftProvider.sync() (integration)", () => {
       .from(dailyMetrics)
       .where(eq(dailyMetrics.providerId, "zwift"));
     expect(dailyRows).toHaveLength(0);
+  });
+
+  it("refreshes token and retries when activities endpoint returns 401", async () => {
+    await saveTokens(ctx.db, "zwift", {
+      accessToken: FAKE_ACCESS_TOKEN,
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "athleteId:42",
+    });
+
+    const zwiftActivities = [
+      fakeZwiftActivitySummary({
+        id: 400001,
+        id_str: "400001",
+        startDate: "2026-04-02T10:00:00Z",
+      }),
+    ];
+
+    server.use(
+      ...zwiftHandlers({
+        activities: zwiftActivities,
+        activitiesUnauthorizedOnce: true,
+        paginateActivities: true,
+      }),
+    );
+
+    const provider = new ZwiftProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
+
+    expect(result.errors).toHaveLength(0);
+    // 1 activity + 1 power-curve metrics row
+    expect(result.recordsSynced).toBe(2);
+
+    const { loadTokens } = await import("../db/tokens.ts");
+    const tokens = await loadTokens(ctx.db, "zwift");
+    expect(tokens?.accessToken).toBe("refreshed-zwift-token");
+  });
+
+  it("preserves existing refresh token when refresh response omits refresh_token", async () => {
+    await saveTokens(ctx.db, "zwift", {
+      accessToken: FAKE_ACCESS_TOKEN,
+      refreshToken: "original-refresh-token",
+      expiresAt: new Date("2025-01-01T00:00:00Z"), // expired — forces refresh
+      scopes: "athleteId:42",
+    });
+
+    server.use(
+      ...zwiftHandlers({
+        activities: [],
+        paginateActivities: true,
+        omitRefreshTokenInRefresh: true,
+      }),
+    );
+
+    const provider = new ZwiftProvider();
+    await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
+
+    const { loadTokens } = await import("../db/tokens.ts");
+    const tokens = await loadTokens(ctx.db, "zwift");
+    expect(tokens?.accessToken).toBe("refreshed-zwift-token");
+    expect(tokens?.refreshToken).toBe("original-refresh-token");
   });
 });

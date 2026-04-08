@@ -70,7 +70,10 @@ export class ZwiftProvider implements SyncProvider {
     };
   }
 
-  async #resolveTokens(db: SyncDatabase): Promise<{ accessToken: string; athleteId: number }> {
+  async #resolveTokens(
+    db: SyncDatabase,
+    forceRefresh = false,
+  ): Promise<{ accessToken: string; athleteId: number }> {
     const stored = await loadTokens(db, this.id);
     if (!stored) {
       throw new Error("Zwift not connected — authenticate via the web UI");
@@ -83,15 +86,22 @@ export class ZwiftProvider implements SyncProvider {
     }
 
     // Refresh if expired
-    if (stored.expiresAt <= new Date()) {
+    const shouldRefresh = forceRefresh || stored.expiresAt <= new Date();
+    if (shouldRefresh) {
       if (!stored.refreshToken) {
-        throw new Error("Zwift token expired and no refresh token — re-authenticate");
+        throw new Error(
+          "Zwift authentication failed and no refresh token available — re-authenticate",
+        );
       }
-      logger.info("[zwift] Token expired, refreshing...");
+      logger.info(
+        forceRefresh
+          ? "[zwift] Authentication failed, forcing token refresh..."
+          : "[zwift] Token expired, refreshing...",
+      );
       const refreshed = await ZwiftClient.refreshToken(stored.refreshToken, this.#fetchFn);
       const tokens = {
         accessToken: refreshed.accessToken,
-        refreshToken: refreshed.refreshToken,
+        refreshToken: refreshed.refreshToken || stored.refreshToken,
         expiresAt: new Date(Date.now() + refreshed.expiresIn * 1000),
         scopes: `athleteId:${athleteId}`,
       };
@@ -100,6 +110,11 @@ export class ZwiftProvider implements SyncProvider {
     }
 
     return { accessToken: stored.accessToken, athleteId };
+  }
+
+  #isAuthenticationError(error: unknown): boolean {
+    if (!(error instanceof Error)) return false;
+    return /\(401\)|\b401\b|\(403\)|\b403\b|unauthorized|invalid_token/i.test(error.message);
   }
 
   async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
@@ -118,6 +133,21 @@ export class ZwiftProvider implements SyncProvider {
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
+    const runWithAuthRetry = async <T>(
+      operation: (activeClient: ZwiftClient) => Promise<T>,
+    ): Promise<T> => {
+      try {
+        return await operation(client);
+      } catch (error) {
+        if (!this.#isAuthenticationError(error)) {
+          throw error;
+        }
+        const { accessToken, athleteId } = await this.#resolveTokens(db, true);
+        client = new ZwiftClient(accessToken, athleteId, this.#fetchFn);
+        return operation(client);
+      }
+    };
+
     // 1. Sync activities (paginated)
     try {
       const activityCount = await withSyncLog(
@@ -131,7 +161,9 @@ export class ZwiftProvider implements SyncProvider {
           let done = false;
 
           while (!done) {
-            const activities = await client.getActivities(offset, PAGE_SIZE);
+            const activities = await runWithAuthRetry((activeClient) =>
+              activeClient.getActivities(offset, PAGE_SIZE),
+            );
             if (activities.length === 0) break;
 
             for (const raw of activities) {
@@ -168,9 +200,14 @@ export class ZwiftProvider implements SyncProvider {
 
                 // Fetch detailed streams
                 try {
-                  const detail = await client.getActivityDetail(raw.id);
-                  if (detail.fitnessData?.fullDataUrl) {
-                    const fitnessData = await client.getFitnessData(detail.fitnessData.fullDataUrl);
+                  const detail = await runWithAuthRetry((activeClient) =>
+                    activeClient.getActivityDetail(raw.id),
+                  );
+                  const fullDataUrl = detail.fitnessData?.fullDataUrl;
+                  if (fullDataUrl) {
+                    const fitnessData = await runWithAuthRetry((activeClient) =>
+                      activeClient.getFitnessData(fullDataUrl),
+                    );
                     const samples = parseZwiftFitnessData(fitnessData, parsed.startedAt);
                     const metricRows = samples.map((s) => ({
                       providerId: this.id,
@@ -223,7 +260,7 @@ export class ZwiftProvider implements SyncProvider {
         this.id,
         "power_curve",
         async () => {
-          const curve = await client.getPowerCurve();
+          const curve = await runWithAuthRetry((activeClient) => activeClient.getPowerCurve());
           if (!curve.zFtp && !curve.vo2Max) return { recordCount: 0, result: 0 };
 
           const today = new Date().toISOString().slice(0, 10);
