@@ -29,6 +29,11 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   };
 });
 
+vi.mock("../lib/cache.ts", () => ({
+  queryCache: { invalidateByPrefix: vi.fn().mockResolvedValue(undefined) },
+}));
+
+import { queryCache } from "../lib/cache.ts";
 import { authRouter } from "./auth.ts";
 
 const createCaller = createTestCallerFactory(authRouter);
@@ -108,6 +113,7 @@ describe("authRouter", () => {
         accountId: "00000000-0000-0000-0000-000000000001",
       });
       expect(result).toEqual({ ok: true });
+      expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:auth.linkedAccounts");
     });
   });
 });

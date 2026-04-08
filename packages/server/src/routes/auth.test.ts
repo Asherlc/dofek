@@ -128,6 +128,7 @@ import {
   validateNativeAppleCallback,
 } from "../auth/providers.ts";
 import { createSession, deleteSession, validateSession } from "../auth/session.ts";
+import { queryCache } from "../lib/cache.ts";
 import { logger } from "../logger.ts";
 import { createAuthRouter } from "./auth/index.ts";
 import { registerWebhookForProvider } from "./webhooks.ts";
@@ -462,6 +463,36 @@ describe("createAuthRouter", () => {
       );
       expect(res.status).toBe(302);
       expect(res.headers.location).toBe("/dashboard?onboarding=true");
+    });
+
+    it("invalidates linked accounts cache after successful identity linking", async () => {
+      const mockValidate = vi.fn(() =>
+        Promise.resolve({
+          tokens: {},
+          user: { sub: "goog-1", email: "alice@test.com", name: "Alice" },
+        }),
+      );
+      vi.mocked(getIdentityProvider).mockReturnValue({
+        createAuthorizationUrl: vi.fn(() => new URL("https://accounts.google.com/authorize")),
+        validateCallback: mockValidate,
+      });
+      vi.mocked(getOAuthFlowCookies).mockReturnValue({
+        state: "google:state123",
+        codeVerifier: "verifier123",
+      });
+      vi.mocked(getLinkUserCookie).mockReturnValueOnce("user-1");
+      vi.mocked(resolveOrCreateUser).mockResolvedValueOnce({ userId: "user-1" });
+
+      const { app } = createTestApp();
+      const res = await request(
+        app,
+        "get",
+        "/auth/callback/google?code=authcode&state=google:state123",
+      );
+
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe("/settings");
+      expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:auth.linkedAccounts");
     });
   });
 
