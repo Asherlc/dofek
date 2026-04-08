@@ -13,6 +13,7 @@ import {
 } from "../../auth/cookies.ts";
 import { getIdentityProvider } from "../../auth/providers.ts";
 import { createSession } from "../../auth/session.ts";
+import { queryCache } from "../../lib/cache.ts";
 import { logger } from "../../logger.ts";
 import {
   getDb,
@@ -143,6 +144,17 @@ export async function handleIdentityCallback(
       },
       linkUserId,
     );
+
+    if (linkUserId) {
+      try {
+        await queryCache.invalidateByPrefix(`${userId}:auth.linkedAccounts`);
+      } catch (cacheError: unknown) {
+        Sentry.captureException(cacheError);
+        logger.warn(
+          `[auth] Failed to invalidate linked-accounts cache for user ${userId}: ${cacheError}`,
+        );
+      }
+    }
 
     // Create session (or keep existing if linking)
     if (!linkUserId) {

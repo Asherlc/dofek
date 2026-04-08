@@ -55,6 +55,10 @@ vi.mock("../lib/cache.ts", () => ({
   queryCache: { invalidateByPrefix: vi.fn(() => Promise.resolve()) },
 }));
 
+vi.mock("@sentry/node", () => ({
+  captureException: vi.fn(),
+}));
+
 vi.mock("../logger.ts", () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
 }));
@@ -102,6 +106,7 @@ vi.mock("dofek/db", () => ({
 }));
 
 import type { AddressInfo } from "node:net";
+import * as Sentry from "@sentry/node";
 import cookieParser from "cookie-parser";
 import { revokeToken } from "dofek/auth/oauth";
 import { createDatabaseFromEnv } from "dofek/db";
@@ -128,6 +133,7 @@ import {
   validateNativeAppleCallback,
 } from "../auth/providers.ts";
 import { createSession, deleteSession, validateSession } from "../auth/session.ts";
+import { queryCache } from "../lib/cache.ts";
 import { logger } from "../logger.ts";
 import { createAuthRouter } from "./auth/index.ts";
 import { registerWebhookForProvider } from "./webhooks.ts";
@@ -462,6 +468,72 @@ describe("createAuthRouter", () => {
       );
       expect(res.status).toBe(302);
       expect(res.headers.location).toBe("/dashboard?onboarding=true");
+    });
+
+    it("invalidates linked accounts cache after successful identity linking", async () => {
+      const mockValidate = vi.fn(() =>
+        Promise.resolve({
+          tokens: {},
+          user: { sub: "goog-1", email: "alice@test.com", name: "Alice" },
+        }),
+      );
+      vi.mocked(getIdentityProvider).mockReturnValue({
+        createAuthorizationUrl: vi.fn(() => new URL("https://accounts.google.com/authorize")),
+        validateCallback: mockValidate,
+      });
+      vi.mocked(getOAuthFlowCookies).mockReturnValue({
+        state: "google:state123",
+        codeVerifier: "verifier123",
+      });
+      vi.mocked(getLinkUserCookie).mockReturnValueOnce("user-1");
+      vi.mocked(resolveOrCreateUser).mockResolvedValueOnce({ userId: "user-1" });
+
+      const { app } = createTestApp();
+      const res = await request(
+        app,
+        "get",
+        "/auth/callback/google?code=authcode&state=google:state123",
+      );
+
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe("/settings");
+      expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:auth.linkedAccounts");
+    });
+
+    it("reports to Sentry and continues when cache invalidation fails during identity linking", async () => {
+      const cacheError = new Error("Redis connection refused");
+      vi.mocked(queryCache.invalidateByPrefix).mockRejectedValueOnce(cacheError);
+
+      const mockValidate = vi.fn(() =>
+        Promise.resolve({
+          tokens: {},
+          user: { sub: "goog-2", email: "bob@test.com", name: "Bob" },
+        }),
+      );
+      vi.mocked(getIdentityProvider).mockReturnValue({
+        createAuthorizationUrl: vi.fn(() => new URL("https://accounts.google.com/authorize")),
+        validateCallback: mockValidate,
+      });
+      vi.mocked(getOAuthFlowCookies).mockReturnValue({
+        state: "google:state456",
+        codeVerifier: "verifier456",
+      });
+      vi.mocked(getLinkUserCookie).mockReturnValueOnce("user-2");
+      vi.mocked(resolveOrCreateUser).mockResolvedValueOnce({ userId: "user-2" });
+
+      const { app } = createTestApp();
+      const res = await request(
+        app,
+        "get",
+        "/auth/callback/google?code=authcode&state=google:state456",
+      );
+
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe("/settings");
+      expect(Sentry.captureException).toHaveBeenCalledWith(cacheError);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining("Failed to invalidate linked-accounts cache"),
+      );
     });
   });
 

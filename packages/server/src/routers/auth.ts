@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { queryCache } from "../lib/cache.ts";
 import { AuthRepository } from "../repositories/auth-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
@@ -28,6 +29,8 @@ export const authRouter = router({
       if (!deletedId) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Account not found" });
       }
+
+      await queryCache.invalidateByPrefix(`${ctx.userId}:auth.linkedAccounts`);
       return { ok: true };
     }),
 });
