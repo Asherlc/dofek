@@ -145,7 +145,7 @@ describe("syncMaterializedViews", () => {
     mockReadFileSync.mockReturnValue(viewSql);
     mockSql.mockResolvedValueOnce([]); // CREATE TABLE
     mockSql.mockResolvedValueOnce([{ hash: expectedHash }]); // SELECT hash
-    mockSql.mockResolvedValueOnce([{ ispopulated: true }]); // pg_matviews check
+    mockSql.mockResolvedValueOnce([{ populated: true }]); // pg_matviews check
 
     const result = await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
 
@@ -162,7 +162,7 @@ describe("syncMaterializedViews", () => {
     mockReadFileSync.mockReturnValue(viewSql);
     mockSql.mockResolvedValueOnce([]); // CREATE TABLE
     mockSql.mockResolvedValueOnce([{ hash: expectedHash }]); // SELECT hash — matches
-    mockSql.mockResolvedValueOnce([{ ispopulated: false }]); // pg_matviews — not populated
+    mockSql.mockResolvedValueOnce([{ populated: false }]); // pg_matviews — not populated
 
     const result = await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
 
@@ -179,7 +179,7 @@ describe("syncMaterializedViews", () => {
     mockSql.mockResolvedValueOnce([]); // CREATE TABLE
     mockSql.mockResolvedValueOnce([{ hash: "old-hash-that-does-not-match" }]); // SELECT hash
     mockSql.mockResolvedValueOnce([]); // INSERT hash
-    mockSql.mockResolvedValueOnce([{ ispopulated: true }]); // pg_matviews check
+    mockSql.mockResolvedValueOnce([{ populated: true }]); // pg_matviews check
 
     const result = await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
 
@@ -199,7 +199,7 @@ describe("syncMaterializedViews", () => {
     mockSql.mockResolvedValueOnce([]); // CREATE TABLE
     mockSql.mockResolvedValueOnce([]); // SELECT hash — no rows
     mockSql.mockResolvedValueOnce([]); // INSERT hash
-    mockSql.mockResolvedValueOnce([{ ispopulated: true }]); // pg_matviews check
+    mockSql.mockResolvedValueOnce([{ populated: true }]); // pg_matviews check
 
     const result = await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
 

@@ -40,9 +40,9 @@ export async function isViewPopulated(
   const schema = dotIndex >= 0 ? viewName.slice(0, dotIndex) : "public";
   const name = dotIndex >= 0 ? viewName.slice(dotIndex + 1) : viewName;
   const rows =
-    await sql`SELECT ispopulated FROM pg_matviews WHERE schemaname = ${schema} AND matviewname = ${name}`;
+    await sql`SELECT ispopulated AS populated FROM pg_matviews WHERE schemaname = ${schema} AND matviewname = ${name}`;
   // If the view doesn't exist in pg_matviews, treat as not populated
-  return rows[0]?.ispopulated === true;
+  return rows[0]?.populated === true;
 }
 
 /**
