@@ -55,6 +55,10 @@ vi.mock("../lib/cache.ts", () => ({
   queryCache: { invalidateByPrefix: vi.fn(() => Promise.resolve()) },
 }));
 
+vi.mock("@sentry/node", () => ({
+  captureException: vi.fn(),
+}));
+
 vi.mock("../logger.ts", () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
 }));
@@ -102,6 +106,7 @@ vi.mock("dofek/db", () => ({
 }));
 
 import type { AddressInfo } from "node:net";
+import * as Sentry from "@sentry/node";
 import cookieParser from "cookie-parser";
 import { revokeToken } from "dofek/auth/oauth";
 import { createDatabaseFromEnv } from "dofek/db";
@@ -493,6 +498,42 @@ describe("createAuthRouter", () => {
       expect(res.status).toBe(302);
       expect(res.headers.location).toBe("/settings");
       expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:auth.linkedAccounts");
+    });
+
+    it("reports to Sentry and continues when cache invalidation fails during identity linking", async () => {
+      const cacheError = new Error("Redis connection refused");
+      vi.mocked(queryCache.invalidateByPrefix).mockRejectedValueOnce(cacheError);
+
+      const mockValidate = vi.fn(() =>
+        Promise.resolve({
+          tokens: {},
+          user: { sub: "goog-2", email: "bob@test.com", name: "Bob" },
+        }),
+      );
+      vi.mocked(getIdentityProvider).mockReturnValue({
+        createAuthorizationUrl: vi.fn(() => new URL("https://accounts.google.com/authorize")),
+        validateCallback: mockValidate,
+      });
+      vi.mocked(getOAuthFlowCookies).mockReturnValue({
+        state: "google:state456",
+        codeVerifier: "verifier456",
+      });
+      vi.mocked(getLinkUserCookie).mockReturnValueOnce("user-2");
+      vi.mocked(resolveOrCreateUser).mockResolvedValueOnce({ userId: "user-2" });
+
+      const { app } = createTestApp();
+      const res = await request(
+        app,
+        "get",
+        "/auth/callback/google?code=authcode&state=google:state456",
+      );
+
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe("/settings");
+      expect(Sentry.captureException).toHaveBeenCalledWith(cacheError);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining("Failed to invalidate linked-accounts cache"),
+      );
     });
   });
 
