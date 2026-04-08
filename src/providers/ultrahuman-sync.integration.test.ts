@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { dailyMetrics, sleepSession } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
+import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { UltrahumanProvider } from "./ultrahuman.ts";
 
 // ============================================================
@@ -116,7 +117,7 @@ describe("UltrahumanProvider.sync() (integration)", () => {
     process.env.ULTRAHUMAN_API_TOKEN = "test-ultrahuman-token";
     process.env.ULTRAHUMAN_EMAIL = "test@example.com";
     ctx = await setupTestDatabase();
-    server.listen({ onUnhandledRequest: "error" });
+    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(
       ctx.db,
       "ultrahuman",

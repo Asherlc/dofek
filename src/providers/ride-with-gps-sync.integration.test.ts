@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { activity, oauthToken, sensorSample } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
+import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import {
   type RideWithGpsApiTrackPoint,
   type RideWithGpsApiTripDetail,
@@ -113,7 +114,7 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     process.env.RWGPS_CLIENT_ID = "test-client-id";
     process.env.RWGPS_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
-    server.listen({ onUnhandledRequest: "error" });
+    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "ride-with-gps", "RideWithGPS", "https://ridewithgps.com");
   }, 60_000);
 
@@ -514,7 +515,7 @@ describe("RideWithGpsProvider.getUserIdentity()", () => {
   const identityServer = setupServer();
 
   beforeAll(() => {
-    identityServer.listen({ onUnhandledRequest: "error" });
+    identityServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => {

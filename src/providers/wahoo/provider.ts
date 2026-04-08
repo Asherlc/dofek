@@ -30,7 +30,6 @@ export function wahooOAuthConfig(host?: string): OAuthConfig | null {
     clientSecret,
     authorizeUrl: `${WAHOO_API_BASE}/oauth/authorize`,
     tokenUrl: `${WAHOO_API_BASE}/oauth/token`,
-    revokeUrl: `${WAHOO_API_BASE}/oauth/token/revoke`,
     redirectUri: getOAuthRedirectUri(host),
     scopes: ["email", "user_read", "workouts_read", "offline_data"],
   };
@@ -188,6 +187,10 @@ export class WahooProvider implements WebhookProvider {
     return {
       oauthConfig: config,
       exchangeCode: (code) => exchangeCodeForTokens(config, code),
+      revokeExistingTokens: async (tokens) => {
+        const client = new WahooClient(tokens.accessToken, this.#fetchFn);
+        await client.revokeAuthorization();
+      },
       apiBaseUrl: WAHOO_API_BASE,
       identityCapabilities: { providesEmail: false },
       getUserIdentity: async (accessToken: string): Promise<ProviderIdentity> => {

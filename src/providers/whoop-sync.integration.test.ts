@@ -20,6 +20,7 @@ import {
 } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
+import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { WhoopProvider } from "./whoop/provider.ts";
 
 // ============================================================
@@ -213,7 +214,7 @@ describe("WhoopProvider.sync() (integration)", () => {
 
   beforeAll(async () => {
     ctx = await setupTestDatabase();
-    server.listen({ onUnhandledRequest: "error" });
+    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "whoop", "WHOOP");
     // Store a fake refresh token so the provider can authenticate
     await saveTokens(ctx.db, "whoop", {
@@ -740,7 +741,7 @@ describe("WhoopClient — verifyCode", () => {
   const clientServer = setupServer();
 
   beforeAll(() => {
-    clientServer.listen({ onUnhandledRequest: "error" });
+    clientServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => {
@@ -839,7 +840,7 @@ describe("WhoopClient — cognitoCall error paths", () => {
   const cognitoServer = setupServer();
 
   beforeAll(() => {
-    cognitoServer.listen({ onUnhandledRequest: "error" });
+    cognitoServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => {
@@ -903,7 +904,7 @@ describe("WhoopClient — signIn SOFTWARE_TOKEN_MFA", () => {
   const mfaServer = setupServer();
 
   beforeAll(() => {
-    mfaServer.listen({ onUnhandledRequest: "error" });
+    mfaServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => {
@@ -937,7 +938,7 @@ describe("WhoopClient._fetchUserId — bootstrap HTTP failure", () => {
   const bootstrapServer = setupServer();
 
   beforeAll(() => {
-    bootstrapServer.listen({ onUnhandledRequest: "error" });
+    bootstrapServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => {
@@ -964,7 +965,7 @@ describe("WhoopClient — getCycles response shapes", () => {
   const cyclesServer = setupServer();
 
   beforeAll(() => {
-    cyclesServer.listen({ onUnhandledRequest: "error" });
+    cyclesServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => {
@@ -1040,7 +1041,7 @@ describe("WhoopClient — API error handling", () => {
   const apiServer = setupServer();
 
   beforeAll(() => {
-    apiServer.listen({ onUnhandledRequest: "error" });
+    apiServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => {

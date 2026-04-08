@@ -6,6 +6,7 @@ import { activity, dailyMetrics, sleepSession } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { PolarProvider } from "./polar/provider.ts";
+import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import type {
   PolarDailyActivity,
   PolarExercise,
@@ -158,7 +159,7 @@ describe("PolarProvider.sync() (integration)", () => {
     process.env.POLAR_CLIENT_ID = "test-polar-client";
     process.env.POLAR_CLIENT_SECRET = "test-polar-secret";
     ctx = await setupTestDatabase();
-    server.listen({ onUnhandledRequest: "error" });
+    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "polar", "Polar", "https://www.polaraccesslink.com/v3");
   }, 60_000);
 
@@ -413,7 +414,7 @@ describe("PolarProvider.sync() — daily_activity error paths (integration)", ()
     process.env.POLAR_CLIENT_ID = "test-polar-client";
     process.env.POLAR_CLIENT_SECRET = "test-polar-secret";
     ctx = await setupTestDatabase();
-    errorServer.listen({ onUnhandledRequest: "error" });
+    errorServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "polar", "Polar", "https://www.polaraccesslink.com/v3");
   }, 60_000);
 

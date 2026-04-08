@@ -38,6 +38,8 @@ export interface ProviderAuthSetup {
   /** Override the authorization URL (e.g. with PKCE challenge baked in) */
   authUrl?: string;
   exchangeCode: (code: string, codeVerifier?: string) => Promise<TokenSet>;
+  /** Provider-specific cleanup before exchanging a new auth code. */
+  revokeExistingTokens?: (tokens: TokenSet) => Promise<void>;
   apiBaseUrl?: string;
   /** Automated login that drives the OAuth flow with credentials (no browser needed) */
   automatedLogin?: (email: string, password: string) => Promise<TokenSet>;

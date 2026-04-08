@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { activity, bodyMeasurement, dailyMetrics, sleepSession } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
+import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import {
   type FitbitActivity,
   type FitbitActivityListResponse,
@@ -165,7 +166,7 @@ describe("FitbitProvider.sync() (integration)", () => {
     process.env.FITBIT_CLIENT_ID = "test-fitbit-client";
     process.env.FITBIT_CLIENT_SECRET = "test-fitbit-secret";
     ctx = await setupTestDatabase();
-    server.listen({ onUnhandledRequest: "error" });
+    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "fitbit", "Fitbit", "https://api.fitbit.com");
   }, 60_000);
 
@@ -641,7 +642,7 @@ describe("parseFitbitActivity — edge cases", () => {
 
 describe("FitbitClient — error handling", () => {
   beforeAll(() => {
-    server.listen({ onUnhandledRequest: "error" });
+    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => {
@@ -768,8 +769,8 @@ describe("FitbitProvider.sync() — weight error paths (integration)", () => {
     process.env.FITBIT_CLIENT_ID = "test-fitbit-client";
     process.env.FITBIT_CLIENT_SECRET = "test-fitbit-secret";
     ctx = await setupTestDatabase();
-    weightServer.listen({ onUnhandledRequest: "error" });
-    server.listen({ onUnhandledRequest: "error" });
+    weightServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "fitbit", "Fitbit", "https://api.fitbit.com");
   }, 60_000);
 
@@ -810,7 +811,7 @@ describe("FitbitProvider.getUserIdentity()", () => {
   const identityServer = setupServer();
 
   beforeAll(() => {
-    identityServer.listen({ onUnhandledRequest: "error" });
+    identityServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => {
