@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { activity, dailyMetrics, oauthToken, sleepSession } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { CorosProvider } from "./coros.ts";
 
 // ============================================================
@@ -135,7 +136,7 @@ describe("CorosProvider.sync() (integration)", () => {
     process.env.COROS_CLIENT_ID = "test-client-id";
     process.env.COROS_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
-    server.listen({ onUnhandledRequest: "error" });
+    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "coros", "COROS", "https://open.coros.com");
   }, 60_000);
 

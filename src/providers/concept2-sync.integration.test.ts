@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { activity, oauthToken } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { Concept2Provider } from "./concept2.ts";
 
 // ============================================================
@@ -103,7 +104,7 @@ describe("Concept2Provider.sync() (integration)", () => {
     process.env.CONCEPT2_CLIENT_ID = "test-client-id";
     process.env.CONCEPT2_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
-    server.listen({ onUnhandledRequest: "error" });
+    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "concept2", "Concept2", "https://log.concept2.com");
   }, 60_000);
 

@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { dexaScan, dexaScanRegion } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
+import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { BodySpecProvider } from "./bodyspec.ts";
 
 // ============================================================
@@ -214,7 +215,7 @@ describe("BodySpecProvider.sync() (integration)", () => {
 
   beforeAll(() => {
     server = setupServer(...bodyspecHandlers());
-    server.listen();
+    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => {

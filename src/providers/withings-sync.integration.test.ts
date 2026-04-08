@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { bodyMeasurement } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
+import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import type { WithingsMeasureGroup } from "./withings.ts";
 import { WithingsProvider } from "./withings.ts";
 
@@ -94,7 +95,7 @@ describe("WithingsProvider.sync() (integration)", () => {
     process.env.WITHINGS_CLIENT_ID = "test-withings-client";
     process.env.WITHINGS_CLIENT_SECRET = "test-withings-secret";
     ctx = await setupTestDatabase();
-    server.listen({ onUnhandledRequest: "error" });
+    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "withings", "Withings", "https://wbsapi.withings.net");
   }, 60_000);
 

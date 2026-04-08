@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { activity, oauthToken } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
+import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { SuuntoProvider } from "./suunto.ts";
 
 // ============================================================
@@ -83,7 +84,7 @@ describe("SuuntoProvider.sync() (integration)", () => {
     process.env.SUUNTO_CLIENT_SECRET = "test-client-secret";
     process.env.SUUNTO_SUBSCRIPTION_KEY = "test-subscription-key";
     ctx = await setupTestDatabase();
-    server.listen({ onUnhandledRequest: "error" });
+    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "suunto", "Suunto", "https://cloudapi.suunto.com");
   }, 60_000);
 

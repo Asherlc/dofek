@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { activity, sensorSample } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
+import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import {
   type PelotonPerformanceGraph,
   PelotonProvider,
@@ -88,7 +89,7 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
 
   beforeAll(async () => {
     ctx = await setupTestDatabase();
-    server.listen({ onUnhandledRequest: "error" });
+    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "peloton", "Peloton", "https://api.onepeloton.com");
   }, 60_000);
 
@@ -524,7 +525,7 @@ const loginServer = setupServer();
 
 describe("pelotonAutomatedLogin", () => {
   beforeAll(() => {
-    loginServer.listen({ onUnhandledRequest: "error" });
+    loginServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => {
