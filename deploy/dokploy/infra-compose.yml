@@ -5,7 +5,7 @@
 
 services:
   db:
-    image: timescale/timescaledb:latest-pg16
+    image: timescale/timescaledb:2.26.2-pg16
     restart: unless-stopped
     networks:
       - default

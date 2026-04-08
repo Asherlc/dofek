@@ -23,8 +23,10 @@ export interface SyncDatabase {
 export function createDatabase(connectionString: string) {
   const client = postgres(connectionString, {
     max: 5, // conservative for small homelab server
-    idle_timeout: 30,
+    idle_timeout: 300, // 5 min — long-running export jobs need connections to survive between queries
     connect_timeout: 10,
+    max_lifetime: 600, // 10 min — recycle connections to avoid stale server-side state
+    keep_alive: 60, // TCP keep-alive every 60s — detects dead connections from network/server drops
   });
   return drizzle(client, { schema });
 }
