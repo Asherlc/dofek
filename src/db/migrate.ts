@@ -101,9 +101,19 @@ export async function runMigrations(databaseUrl: string, migrationsDir?: string)
 
     let pendingFiles = files.filter((f) => !appliedSet.has(f));
 
-    // Baseline migrations are for fresh databases only. If any migration has
-    // already been applied, mark baseline files as applied without executing.
-    if (appliedSet.size > 0) {
+    // Baseline migrations are for fresh databases only. Skip them if any
+    // migration has already been applied OR if the target schema already has
+    // tables (handles the case where migration tracking was reset but the
+    // DB still has data — e.g., after a migration squash rollout).
+    const schemaHasTables =
+      (
+        await sql`SELECT EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'fitness' AND table_type = 'BASE TABLE'
+      ) AS has_tables`
+      )[0]?.has_tables === true;
+
+    if (appliedSet.size > 0 || schemaHasTables) {
       const pendingBaselines = pendingFiles.filter(isBaselineMigration);
       for (const file of pendingBaselines) {
         const content = readFileSync(join(dir, file), "utf-8");

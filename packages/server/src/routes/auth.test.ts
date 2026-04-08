@@ -3059,8 +3059,8 @@ describe("createAuthRouter", () => {
     });
   });
 
-  // ── Cluster 3: /api/auth/me mobile detection (lines 455-460) ──
-  describe("GET /api/auth/me (mobile user-agent logging)", () => {
+  // ── Cluster 3: /api/auth/me session resolution logging ──
+  describe("GET /api/auth/me (session resolution logging)", () => {
     function setupValidSession(fakeDb: ReturnType<typeof createDatabaseFromEnv>) {
       vi.mocked(getSessionIdFromRequest).mockReturnValue("good-session");
       vi.mocked(validateSession).mockResolvedValue({
@@ -3072,45 +3072,14 @@ describe("createAuthRouter", () => {
       ]);
     }
 
-    it("logs mobile info when user-agent contains Darwin", async () => {
+    it("logs userId for all requests", async () => {
       const { app, fakeDb } = createTestApp();
       setupValidSession(fakeDb);
-      const res = await request(app, "get", "/api/auth/me", {
-        headers: { "User-Agent": "dofek/1.0 Darwin/23.1.0 CFNetwork/1494.0.7" },
-      });
-      expect(res.status).toBe(200);
-      expect(logger.info).toHaveBeenCalledWith(expect.stringContaining("(mobile)"));
-    });
-
-    it("logs mobile info when user-agent contains CFNetwork", async () => {
-      const { app, fakeDb } = createTestApp();
-      setupValidSession(fakeDb);
-      const res = await request(app, "get", "/api/auth/me", {
-        headers: { "User-Agent": "CFNetwork/1494.0.7 something" },
-      });
-      expect(res.status).toBe(200);
-      expect(logger.info).toHaveBeenCalledWith(expect.stringContaining("(mobile)"));
-    });
-
-    it("does not log mobile info for desktop user-agent", async () => {
-      const { app, fakeDb } = createTestApp();
-      setupValidSession(fakeDb);
-      const res = await request(app, "get", "/api/auth/me", {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/120.0",
-        },
-      });
-      expect(res.status).toBe(200);
-      expect(logger.info).not.toHaveBeenCalled();
-    });
-
-    it("does not log mobile info when user-agent is absent (defaults to unknown)", async () => {
-      const { app, fakeDb } = createTestApp();
-      setupValidSession(fakeDb);
-      // No User-Agent header — the code uses ?? "unknown"
       const res = await request(app, "get", "/api/auth/me");
       expect(res.status).toBe(200);
-      expect(logger.info).not.toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.stringContaining("/me resolved userId=user-1"),
+      );
     });
   });
 

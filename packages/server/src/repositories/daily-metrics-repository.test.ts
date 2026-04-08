@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { DailyMetricsRepository } from "./daily-metrics-repository.ts";
 
+const mockLoggerWarn = vi.hoisted(() => vi.fn());
+
+vi.mock("../logger.ts", () => ({
+  logger: { warn: mockLoggerWarn, info: vi.fn(), error: vi.fn() },
+}));
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -168,28 +174,60 @@ describe("DailyMetricsRepository", () => {
       expect(result?.latest_date).toBe("2025-03-15");
     });
 
+    it("logs warning when trends returns all nulls but base table has data (stale view)", async () => {
+      mockLoggerWarn.mockClear();
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([makeTrendsRow({ avg_resting_hr: null, latest_date: null })])
+        .mockResolvedValueOnce([{ count: 50 }]); // base table has data
+      const repo = new DailyMetricsRepository({ execute }, "user-1");
+      await repo.getTrends(30, "2025-03-15");
+      expect(mockLoggerWarn).toHaveBeenCalledWith(expect.stringContaining("base table has data"));
+    });
+
+    it("does not log warning when trends returns all nulls and base table is empty (new user)", async () => {
+      mockLoggerWarn.mockClear();
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([makeTrendsRow({ avg_resting_hr: null, latest_date: null })])
+        .mockResolvedValueOnce([{ count: 0 }]); // no base data either
+      const repo = new DailyMetricsRepository({ execute }, "user-1");
+      await repo.getTrends(30, "2025-03-15");
+      expect(mockLoggerWarn).not.toHaveBeenCalled();
+    });
+
+    it("does not log warning when trends has data", async () => {
+      mockLoggerWarn.mockClear();
+      const { repo } = makeRepository([makeTrendsRow()]);
+      await repo.getTrends(30, "2025-03-15");
+      expect(mockLoggerWarn).not.toHaveBeenCalled();
+    });
+
     it("handles all-null trends row", async () => {
-      const { repo } = makeRepository([
-        makeTrendsRow({
-          avg_resting_hr: null,
-          avg_hrv: null,
-          avg_spo2: null,
-          avg_steps: null,
-          avg_active_energy: null,
-          avg_skin_temp: null,
-          stddev_resting_hr: null,
-          stddev_hrv: null,
-          stddev_spo2: null,
-          stddev_skin_temp: null,
-          latest_resting_hr: null,
-          latest_hrv: null,
-          latest_spo2: null,
-          latest_steps: null,
-          latest_active_energy: null,
-          latest_skin_temp: null,
-          latest_date: null,
-        }),
-      ]);
+      const allNullTrends = makeTrendsRow({
+        avg_resting_hr: null,
+        avg_hrv: null,
+        avg_spo2: null,
+        avg_steps: null,
+        avg_active_energy: null,
+        avg_skin_temp: null,
+        stddev_resting_hr: null,
+        stddev_hrv: null,
+        stddev_spo2: null,
+        stddev_skin_temp: null,
+        latest_resting_hr: null,
+        latest_hrv: null,
+        latest_spo2: null,
+        latest_steps: null,
+        latest_active_energy: null,
+        latest_skin_temp: null,
+        latest_date: null,
+      });
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([allNullTrends])
+        .mockResolvedValueOnce([{ count: 0 }]); // base table check (new user)
+      const repo = new DailyMetricsRepository({ execute }, "user-1");
       const result = await repo.getTrends(30, "2025-03-15");
       expect(result).not.toBeNull();
       expect(result?.avg_hrv).toBeNull();

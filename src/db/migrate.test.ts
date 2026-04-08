@@ -330,6 +330,37 @@ describe("runMigrations", () => {
     expect(mockSqlUnsafe).toHaveBeenCalledWith("CREATE TABLE additional_table (id INT)");
   });
 
+  it("skips baseline when migration tracking is empty but schema has tables", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+
+    mockReaddirSync.mockReturnValue(["0000_baseline.sql", "0001_additional.sql"]);
+    mockReadFileSync.mockImplementation((path: string) => {
+      if (path.endsWith("0000_baseline.sql")) return "CREATE TABLE baseline_table (id INT)";
+      if (path.endsWith("0001_additional.sql")) return "CREATE TABLE additional_table (id INT)";
+      return "";
+    });
+
+    // No applied migrations, but schema has tables (e.g., migration tracking reset)
+    mockSql.mockImplementation((...args: unknown[]) => {
+      const first = args[0];
+      if (Array.isArray(first) && first.join("").includes("information_schema")) {
+        return Promise.resolve([{ has_tables: true }]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const count = await runMigrations("postgres://localhost/test", "/tmp/migrations");
+
+    // Baseline should be skipped (marked as applied), only 0001 should execute
+    expect(count).toBe(1);
+    const unsafeStatements = mockSqlUnsafe.mock.calls.map((call) => String(call[0]));
+    expect(unsafeStatements).not.toContain("CREATE TABLE baseline_table (id INT)");
+    expect(unsafeStatements).toContain("CREATE TABLE additional_table (id INT)");
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      expect.stringContaining("Marking baseline migration as applied"),
+    );
+  });
+
   it("marks baseline migrations as applied on existing databases", async () => {
     const { runMigrations } = await import("./migrate.ts");
 
