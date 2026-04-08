@@ -5,8 +5,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { activity, dailyMetrics, sleepSession } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
-import { PolarProvider } from "./polar/provider.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
+import { PolarProvider } from "./polar/provider.ts";
 import type {
   PolarDailyActivity,
   PolarExercise,
