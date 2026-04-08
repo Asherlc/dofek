@@ -119,7 +119,7 @@ export class WahooClient extends ProviderHttpClient {
     return this.get(`/v1/workouts/${id}`, wahooSingleWorkoutResponseSchema);
   }
 
-  async deauthorize(): Promise<void> {
+  async revokeAuthorization(): Promise<void> {
     const url = new URL("/v1/permissions", this.apiBase);
     const response = await this.fetchFn(url.toString(), {
       method: "DELETE",

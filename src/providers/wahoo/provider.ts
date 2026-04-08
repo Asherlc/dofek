@@ -189,7 +189,7 @@ export class WahooProvider implements WebhookProvider {
       exchangeCode: (code) => exchangeCodeForTokens(config, code),
       revokeExistingTokens: async (tokens) => {
         const client = new WahooClient(tokens.accessToken, this.#fetchFn);
-        await client.deauthorize();
+        await client.revokeAuthorization();
       },
       apiBaseUrl: WAHOO_API_BASE,
       identityCapabilities: { providesEmail: false },

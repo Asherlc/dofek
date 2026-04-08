@@ -362,7 +362,7 @@ describe("WahooProvider.authSetup()", () => {
     expect(setup.identityCapabilities?.providesEmail).toBe(false);
   });
 
-  it("deauthorizes existing Wahoo authorization via DELETE /v1/permissions", async () => {
+  it("revokes existing Wahoo authorization via DELETE /v1/permissions", async () => {
     process.env.WAHOO_CLIENT_ID = "test-id";
     process.env.WAHOO_CLIENT_SECRET = "test-secret";
 
