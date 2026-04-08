@@ -475,6 +475,7 @@ export function Dashboard() {
           <ActivityList
             activities={assertRows(activities.data?.items, activityRowSchema)}
             loading={activities.isLoading}
+            error={activities.isError}
             totalCount={activities.data?.totalCount}
             page={activityPage}
             pageSize={activityPageSize}

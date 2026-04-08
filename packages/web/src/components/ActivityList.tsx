@@ -19,6 +19,7 @@ export interface Activity {
 interface ActivityListProps {
   activities: Activity[];
   loading?: boolean;
+  error?: boolean;
   totalCount?: number;
   page?: number;
   pageSize?: number;
@@ -42,6 +43,7 @@ function formatActivityDuration(startedAt: string, endedAt: string | null): stri
 export function ActivityList({
   activities,
   loading,
+  error,
   totalCount,
   page,
   pageSize,
@@ -52,6 +54,10 @@ export function ActivityList({
 
   if (loading) {
     return <ChartLoadingSkeleton height={100} />;
+  }
+
+  if (error) {
+    return <p className="text-sm text-red-400 py-4">Failed to load activities.</p>;
   }
 
   if (activities.length === 0) {
