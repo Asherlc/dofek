@@ -1477,3 +1477,9 @@ jobs:
               -d "{\"json\":{\"applicationId\":\"${APP_ID}\"}}"
             echo ""
           done
+          # Clean up old images after deploy so they don't accumulate on disk
+          echo "Pruning unused Docker images..."
+          curl -fsSL -X POST "${DOKPLOY_HOST}/api/trpc/settings.cleanUnusedImages" \
+            -H "x-api-key: ${DOKPLOY_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d '{"json":{}}' || echo "Image cleanup failed (non-fatal)"
