@@ -12,6 +12,10 @@ vi.mock("../lib/start-worker.ts", () => ({
   startWorker: vi.fn(),
 }));
 
+vi.mock("../logger.ts", () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
@@ -433,6 +437,36 @@ describe("adminRouter", () => {
         since: "2024-01-01",
         until: "2024-02-01",
       });
+    });
+  });
+
+  describe("refreshViews", () => {
+    it("refreshes all materialized views and returns view names", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = makeCaller(execute);
+      const result = await caller.refreshViews();
+      expect(result.refreshed).toEqual([
+        "fitness.v_activity",
+        "fitness.v_sleep",
+        "fitness.v_body_measurement",
+        "fitness.v_daily_metrics",
+        "fitness.activity_summary",
+      ]);
+      // 5 views × REFRESH MATERIALIZED VIEW CONCURRENTLY
+      expect(execute).toHaveBeenCalledTimes(5);
+    });
+
+    it("falls back to non-concurrent refresh on error", async () => {
+      const execute = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("has not been populated"))
+        .mockResolvedValueOnce([]) // fallback non-concurrent
+        .mockResolvedValue([]); // remaining views
+      const caller = makeCaller(execute);
+      const result = await caller.refreshViews();
+      expect(result.refreshed).toHaveLength(5);
+      // 1 failed concurrent + 1 fallback + 4 remaining = 6
+      expect(execute).toHaveBeenCalledTimes(6);
     });
   });
 

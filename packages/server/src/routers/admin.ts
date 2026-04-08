@@ -3,7 +3,16 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { startWorker } from "../lib/start-worker.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
+import { logger } from "../logger.ts";
 import { adminProcedure, router } from "../trpc.ts";
+
+const ALL_MATERIALIZED_VIEWS = [
+  "fitness.v_activity",
+  "fitness.v_sleep",
+  "fitness.v_body_measurement",
+  "fitness.v_daily_metrics",
+  "fitness.activity_summary",
+] as const;
 
 const trainingExportQueue = createTrainingExportQueue();
 
@@ -442,6 +451,22 @@ export const adminRouter = router({
       startWorker();
       return { jobId: String(job.id) };
     }),
+
+  /** Force-refresh all materialized views (dedup + rollup). */
+  refreshViews: adminProcedure.mutation(async ({ ctx }) => {
+    logger.info("[admin] Refreshing all materialized views");
+    const refreshed: string[] = [];
+    for (const view of ALL_MATERIALIZED_VIEWS) {
+      try {
+        await ctx.db.execute(sql.raw(`REFRESH MATERIALIZED VIEW CONCURRENTLY ${view}`));
+      } catch {
+        await ctx.db.execute(sql.raw(`REFRESH MATERIALIZED VIEW ${view}`));
+      }
+      refreshed.push(view);
+    }
+    logger.info(`[admin] Refreshed ${refreshed.length} materialized views`);
+    return { refreshed };
+  }),
 
   /** Get training export watermark status */
   trainingExportStatus: adminProcedure.query(async ({ ctx }) => {
