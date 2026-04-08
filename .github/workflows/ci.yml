@@ -200,6 +200,7 @@ jobs:
       - run: cd deploy/cloudflare && terraform init -backend=false && terraform validate
       - run: cd deploy/dokploy && terraform init -backend=false && terraform validate
       - run: cd deploy/dokploy-compose && terraform init -backend=false && terraform validate
+      - run: cd deploy/dokploy-app && terraform init -backend=false && terraform validate
 
   quality-gate:
     name: Lint & Static Analysis
@@ -1340,6 +1341,17 @@ jobs:
         uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
         with:
           terraform_wrapper: false
+      - name: Setup SSH tunnel
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh -f -N -L 5432:127.0.0.1:5432 "root@${SERVER_HOST}"
       - name: Render and deploy
         if: steps.changes.outputs.changed == 'true'
         env:
@@ -1427,42 +1439,31 @@ jobs:
             SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
           cache-from: type=gha,scope=${{ matrix.target }}
           cache-to: type=gha,mode=max,scope=${{ matrix.target }}
-      # Deploy new image to Dokploy for web + worker after image push.
-      # Updates the dockerImage to the SHA-tagged image (forces a pull since
-      # the server won't have this specific tag cached), then triggers deploy.
-      - name: Deploy via Dokploy
+      # Deploy new image to Dokploy via Terraform.
+      - name: Setup Terraform
+        if: matrix.target == 'server'
+        uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
+        with:
+          terraform_wrapper: false
+      - name: Deploy via Terraform
         if: matrix.target == 'server'
         env:
-          DOKPLOY_HOST: ${{ secrets.DOKPLOY_HOST }}
-          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
-          DOKPLOY_WEB_APP_ID: ${{ secrets.DOKPLOY_WEB_APP_ID }}
-          DOKPLOY_WORKER_APP_ID: ${{ secrets.DOKPLOY_WORKER_APP_ID }}
+          TF_VAR_dokploy_host: ${{ secrets.DOKPLOY_HOST }}
+          TF_VAR_dokploy_api_key: ${{ secrets.DOKPLOY_API_KEY }}
+          TF_VAR_web_app_id: ${{ secrets.DOKPLOY_WEB_APP_ID }}
+          TF_VAR_worker_app_id: ${{ secrets.DOKPLOY_WORKER_APP_ID }}
           META_TAGS: ${{ steps.meta.outputs.tags }}
         run: |
           set -euo pipefail
-          if [ -z "$DOKPLOY_HOST" ] || [ -z "$DOKPLOY_API_KEY" ]; then
-            echo "Dokploy secrets not configured, skipping deploy trigger"
+          if [ -z "$TF_VAR_dokploy_host" ] || [ -z "$TF_VAR_dokploy_api_key" ]; then
+            echo "Dokploy secrets not configured, skipping deploy"
             exit 0
           fi
-          # Extract the SHA-tagged image from metadata-action output (avoids
-          # hardcoding the tag format/length — always matches what was pushed).
-          SHA_IMAGE=$(echo "$META_TAGS" | grep ':sha-' | head -1)
-          if [ -z "$SHA_IMAGE" ]; then
+          SHA_TAG=$(echo "$META_TAGS" | grep -oP 'sha-\w+' | head -1)
+          if [ -z "$SHA_TAG" ]; then
             echo "::error::No sha-tagged image found in metadata output"
             exit 1
           fi
-          for APP_ID in "$DOKPLOY_WEB_APP_ID" "$DOKPLOY_WORKER_APP_ID"; do
-            [ -z "$APP_ID" ] && continue
-            echo "Updating app $APP_ID image to $SHA_IMAGE..."
-            curl -fsSL -X POST "${DOKPLOY_HOST}/api/trpc/application.update" \
-              -H "x-api-key: ${DOKPLOY_API_KEY}" \
-              -H "Content-Type: application/json" \
-              -d "{\"json\":{\"applicationId\":\"${APP_ID}\",\"sourceType\":\"docker\",\"dockerImage\":\"${SHA_IMAGE}\"}}"
-            echo ""
-            echo "Triggering deploy for app $APP_ID..."
-            curl -fsSL -X POST "${DOKPLOY_HOST}/api/trpc/application.deploy" \
-              -H "x-api-key: ${DOKPLOY_API_KEY}" \
-              -H "Content-Type: application/json" \
-              -d "{\"json\":{\"applicationId\":\"${APP_ID}\"}}"
-            echo ""
-          done
+          cd deploy/dokploy-app
+          terraform init
+          terraform apply -auto-approve -var="image_tag=${SHA_TAG}"
