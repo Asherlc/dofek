@@ -3461,6 +3461,58 @@ describe("createAuthRouter", () => {
   });
 
   describe("GET /callback (pre-exchange token revocation)", () => {
+    it("uses provider-specific revocation when available", async () => {
+      vi.mocked(loadTokens).mockResolvedValueOnce({
+        accessToken: "old-access",
+        refreshToken: "old-refresh",
+        expiresAt: new Date("2027-01-01"),
+        scopes: "read",
+      });
+
+      const mockRevokeExistingTokens = vi.fn(() => Promise.resolve());
+      const mockExchangeCode = vi.fn(() =>
+        Promise.resolve({
+          accessToken: "new-access",
+          refreshToken: "new-refresh",
+          expiresAt: new Date("2027-06-01"),
+          scopes: "read",
+        }),
+      );
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          authSetup: () => ({
+            oauthConfig: {
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["user_read"],
+            },
+            revokeExistingTokens: mockRevokeExistingTokens,
+            exchangeCode: mockExchangeCode,
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+      const startRes = await request(app, "get", "/auth/provider/wahoo");
+      const location = startRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const state = new URL(location).searchParams.get("state");
+
+      const callbackRes = await request(app, "get", `/callback?code=code&state=${state}`);
+      expect(callbackRes.status).toBe(200);
+
+      expect(mockRevokeExistingTokens).toHaveBeenCalledWith({
+        accessToken: "old-access",
+        refreshToken: "old-refresh",
+        expiresAt: new Date("2027-01-01"),
+        scopes: "read",
+      });
+      expect(revokeToken).not.toHaveBeenCalled();
+      expect(mockExchangeCode).toHaveBeenCalledWith("code", undefined);
+    });
+
     it("revokes existing access and refresh tokens when revokeUrl is configured", async () => {
       vi.mocked(loadTokens).mockResolvedValueOnce({
         accessToken: "old-access",

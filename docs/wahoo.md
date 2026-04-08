@@ -6,10 +6,17 @@ Standard OAuth2 with client credentials (not PKCE — Wahoo requires a client se
 
 - **Authorize URL**: `https://api.wahooligan.com/oauth/authorize`
 - **Token URL**: `https://api.wahooligan.com/oauth/token`
+- **Deauthorize URL**: `DELETE https://api.wahooligan.com/v1/permissions`
 - **Redirect URI**: Must be HTTPS (Wahoo rejects HTTP localhost)
-- **Scopes**: `user_read workouts_read`
+- **Scopes**: `email user_read workouts_read offline_data`
 
 We generate a self-signed cert for `https://localhost:9876/callback` to satisfy the HTTPS requirement.
+
+### Token lifecycle notes
+
+- Since January 1, 2026, Wahoo limits each app+user pair to 10 unrevoked access tokens.
+- Wahoo does not use an RFC 7009-style `/oauth/token/revoke` endpoint in the Cloud API docs.
+- To revoke existing app authorization before a new code exchange, call `DELETE /v1/permissions` with the current bearer token.
 
 ## Environment Variables
 

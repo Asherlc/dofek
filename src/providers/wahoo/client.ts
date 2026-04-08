@@ -119,6 +119,17 @@ export class WahooClient extends ProviderHttpClient {
     return this.get(`/v1/workouts/${id}`, wahooSingleWorkoutResponseSchema);
   }
 
+  async deauthorize(): Promise<void> {
+    const url = new URL("/v1/permissions", this.apiBase);
+    const response = await this.fetchFn(url.toString(), {
+      method: "DELETE",
+      headers: this.getHeaders(),
+    });
+    if (!response.ok) {
+      await this.handleErrorResponse(response, "/v1/permissions");
+    }
+  }
+
   async downloadFitFile(url: string): Promise<Buffer> {
     // FIT file URLs are pre-signed CDN/S3 URLs — do not send auth headers,
     // as it causes 403 errors and leaks the OAuth token to a third party.

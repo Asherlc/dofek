@@ -357,8 +357,46 @@ describe("WahooProvider.authSetup()", () => {
     const setup = provider.authSetup();
     expect(setup.oauthConfig.clientId).toBe("test-id");
     expect(setup.exchangeCode).toBeTypeOf("function");
+    expect(setup.revokeExistingTokens).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toBe("https://api.wahooligan.com");
     expect(setup.identityCapabilities?.providesEmail).toBe(false);
+  });
+
+  it("deauthorizes existing Wahoo authorization via DELETE /v1/permissions", async () => {
+    process.env.WAHOO_CLIENT_ID = "test-id";
+    process.env.WAHOO_CLIENT_SECRET = "test-secret";
+
+    let capturedUrl = "";
+    let capturedMethod = "";
+    let capturedHeaders: HeadersInit | undefined;
+    const mockFetch: typeof globalThis.fetch = async (
+      input: string | URL | Request,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      capturedUrl = String(input);
+      capturedMethod = init?.method ?? "GET";
+      capturedHeaders = init?.headers;
+      return new Response(null, { status: 204 });
+    };
+
+    const provider = new WahooProvider(mockFetch);
+    const setup = provider.authSetup();
+    if (!setup.revokeExistingTokens) {
+      throw new Error("Expected revokeExistingTokens to be defined");
+    }
+
+    await setup.revokeExistingTokens({
+      accessToken: "old-access-token",
+      refreshToken: "old-refresh-token",
+      expiresAt: new Date("2027-01-01"),
+      scopes: "user_read workouts_read",
+    });
+
+    expect(capturedUrl).toBe("https://api.wahooligan.com/v1/permissions");
+    expect(capturedMethod).toBe("DELETE");
+    expect(capturedHeaders).toEqual(
+      expect.objectContaining({ Authorization: "Bearer old-access-token" }),
+    );
   });
 
   it("throws when env vars are missing", () => {

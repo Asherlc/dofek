@@ -157,17 +157,26 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
     // Revoke existing tokens before exchange — some providers (e.g. Wahoo) limit
     // the number of active tokens per app+user and reject new token creation until
     // old tokens are revoked.
-    if (setup.oauthConfig.revokeUrl) {
+    if (setup.revokeExistingTokens || setup.oauthConfig.revokeUrl) {
       try {
         const { loadTokens } = await import("dofek/db/tokens");
         const existingTokens = await loadTokens(db, providerId, stateUserId);
-        if (existingTokens?.accessToken) {
-          logger.info(`[auth] Revoking existing ${providerId} access token before exchange...`);
-          await revokeToken(setup.oauthConfig, existingTokens.accessToken);
-        }
-        if (existingTokens?.refreshToken) {
-          logger.info(`[auth] Revoking existing ${providerId} refresh token before exchange...`);
-          await revokeToken(setup.oauthConfig, existingTokens.refreshToken);
+        if (existingTokens) {
+          if (setup.revokeExistingTokens) {
+            logger.info(`[auth] Revoking existing ${providerId} authorization before exchange...`);
+            await setup.revokeExistingTokens(existingTokens);
+          } else {
+            if (existingTokens.accessToken) {
+              logger.info(`[auth] Revoking existing ${providerId} access token before exchange...`);
+              await revokeToken(setup.oauthConfig, existingTokens.accessToken);
+            }
+            if (existingTokens.refreshToken) {
+              logger.info(
+                `[auth] Revoking existing ${providerId} refresh token before exchange...`,
+              );
+              await revokeToken(setup.oauthConfig, existingTokens.refreshToken);
+            }
+          }
         }
       } catch (revokeError) {
         logger.warn(

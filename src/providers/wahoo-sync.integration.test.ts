@@ -7,6 +7,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { activity, sensorSample } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
+import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import type { WahooWorkout } from "./wahoo/client.ts";
 import { WahooProvider } from "./wahoo/provider.ts";
 
@@ -86,7 +87,7 @@ describe("WahooProvider.sync() (integration)", () => {
     process.env.WAHOO_CLIENT_ID = "test-client-id";
     process.env.WAHOO_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
-    server.listen({ onUnhandledRequest: "error" });
+    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "wahoo", "Wahoo", "https://api.wahooligan.com");
   }, 60_000);
 

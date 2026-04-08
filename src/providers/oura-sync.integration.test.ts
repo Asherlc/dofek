@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { activity, dailyMetrics, healthEvent, sensorSample, sleepSession } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
+import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { OuraProvider } from "./oura/provider.ts";
 import type {
   OuraDailyActivity,
@@ -313,7 +314,7 @@ describe("OuraProvider.sync() (integration)", () => {
     process.env.OURA_CLIENT_ID = "test-oura-client";
     process.env.OURA_CLIENT_SECRET = "test-oura-secret";
     ctx = await setupTestDatabase();
-    server.listen({ onUnhandledRequest: "error" });
+    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "oura", "Oura", "https://api.ouraring.com");
   }, 60_000);
 
@@ -617,7 +618,7 @@ describe("OuraProvider.sync() — error paths (integration)", () => {
     process.env.OURA_CLIENT_ID = "test-oura-client";
     process.env.OURA_CLIENT_SECRET = "test-oura-secret";
     ctx = await setupTestDatabase();
-    errorServer.listen({ onUnhandledRequest: "error" });
+    errorServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "oura", "Oura", "https://api.ouraring.com");
   }, 60_000);
 

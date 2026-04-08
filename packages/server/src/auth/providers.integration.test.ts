@@ -1,6 +1,7 @@
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { failOnUnhandledExternalRequest } from "../../../../src/test/msw.ts";
 import { validateNativeAppleCallback } from "./providers.ts";
 
 // Generate a real ES256 (P-256) key pair for testing
@@ -31,7 +32,7 @@ describe("validateNativeAppleCallback (integration)", () => {
   const originalEnv = { ...process.env };
 
   beforeAll(async () => {
-    mswServer.listen({ onUnhandledRequest: "error" });
+    mswServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
 
     const { pem, keyId } = await generateTestKeyPem();
     process.env.APPLE_BUNDLE_ID = "com.dofek.app";
