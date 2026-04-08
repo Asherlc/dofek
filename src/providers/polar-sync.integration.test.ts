@@ -6,13 +6,13 @@ import { activity, dailyMetrics, sleepSession } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
+import { PolarProvider } from "./polar/provider.ts";
 import type {
   PolarDailyActivity,
   PolarExercise,
   PolarNightlyRecharge,
   PolarSleep,
-} from "./polar.ts";
-import { PolarProvider } from "./polar.ts";
+} from "./polar/types.ts";
 
 function fakePolarExercise(overrides: Partial<PolarExercise> = {}): PolarExercise {
   return {

@@ -31,7 +31,7 @@
     "./providers/apple-health/dates": "./src/providers/apple-health/dates.ts",
     "./providers/ride-with-gps": "./src/providers/ride-with-gps.ts",
     "./providers/strong-csv": "./src/providers/strong-csv.ts",
-    "./providers/polar": "./src/providers/polar.ts",
+    "./providers/polar": "./src/providers/polar/provider.ts",
     "./providers/fitbit": "./src/providers/fitbit/provider.ts",
     "./providers/garmin": "./src/providers/garmin.ts",
     "./providers/strava": "./src/providers/strava.ts",

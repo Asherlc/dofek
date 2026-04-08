@@ -7,7 +7,7 @@ import { FitbitProvider } from "./fitbit/provider.ts";
 import { GarminProvider } from "./garmin.ts";
 import { KomootProvider } from "./komoot.ts";
 import { PelotonProvider } from "./peloton.ts";
-import { PolarProvider } from "./polar.ts";
+import { PolarProvider } from "./polar/provider.ts";
 import { RideWithGpsProvider } from "./ride-with-gps.ts";
 import { StravaProvider } from "./strava.ts";
 import { SuuntoProvider } from "./suunto.ts";

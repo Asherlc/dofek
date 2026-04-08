@@ -212,13 +212,13 @@ describe("OuraProvider webhook methods", () => {
 // ── Polar webhook tests ──
 describe("PolarProvider webhook methods", () => {
   it("is detected as a WebhookProvider", async () => {
-    const { PolarProvider } = await import("./polar.ts");
+    const { PolarProvider } = await import("./polar/provider.ts");
     const provider = new PolarProvider(async () => new Response());
     expect(isWebhookProvider(provider)).toBe(true);
   });
 
   it("parseWebhookPayload extracts exercise event", async () => {
-    const { PolarProvider } = await import("./polar.ts");
+    const { PolarProvider } = await import("./polar/provider.ts");
     const provider = new PolarProvider(async () => new Response());
 
     const events = provider.parseWebhookPayload({
@@ -238,7 +238,7 @@ describe("PolarProvider webhook methods", () => {
   });
 
   it("verifyWebhookSignature validates HMAC-SHA256", async () => {
-    const { PolarProvider } = await import("./polar.ts");
+    const { PolarProvider } = await import("./polar/provider.ts");
     const { createHmac } = await import("node:crypto");
     const provider = new PolarProvider(async () => new Response());
 
@@ -817,7 +817,7 @@ describe("WithingsProvider register/unregister", () => {
 
 describe("PolarProvider register/unregister", () => {
   it("parseWebhookPayload handles sleep event", async () => {
-    const { PolarProvider } = await import("./polar.ts");
+    const { PolarProvider } = await import("./polar/provider.ts");
     const provider = new PolarProvider(async () => new Response());
 
     const events = provider.parseWebhookPayload({
@@ -831,14 +831,14 @@ describe("PolarProvider register/unregister", () => {
   });
 
   it("parseWebhookPayload returns empty for invalid payload", async () => {
-    const { PolarProvider } = await import("./polar.ts");
+    const { PolarProvider } = await import("./polar/provider.ts");
     const provider = new PolarProvider(async () => new Response());
     expect(provider.parseWebhookPayload({})).toHaveLength(0);
     expect(provider.parseWebhookPayload(null)).toHaveLength(0);
   });
 
   it("verifyWebhookSignature rejects missing header", async () => {
-    const { PolarProvider } = await import("./polar.ts");
+    const { PolarProvider } = await import("./polar/provider.ts");
     const provider = new PolarProvider(async () => new Response());
     expect(provider.verifyWebhookSignature(Buffer.from("body"), {}, "secret")).toBe(false);
   });

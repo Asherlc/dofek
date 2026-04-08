@@ -25,7 +25,7 @@ async function doRegisterProviders() {
       "strong-csv",
       () => import("../providers/strong-csv.ts").then((m) => new m.StrongCsvProvider()),
     ],
-    ["polar", () => import("../providers/polar.ts").then((m) => new m.PolarProvider())],
+    ["polar", () => import("../providers/polar/provider.ts").then((m) => new m.PolarProvider())],
     ["fitbit", () => import("../providers/fitbit/provider.ts").then((m) => new m.FitbitProvider())],
     ["garmin", () => import("../providers/garmin.ts").then((m) => new m.GarminProvider())],
     ["strava", () => import("../providers/strava.ts").then((m) => new m.StravaProvider())],
