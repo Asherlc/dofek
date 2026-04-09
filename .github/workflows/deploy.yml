@@ -1,0 +1,309 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "What to deploy"
+        type: choice
+        options:
+          - all
+          - web
+          - worker
+          - ios
+          - ota
+          - infra-compose
+          - cloudflare
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ── Web (Dokploy app deploy) ───────────────────────────────────────────
+  web:
+    name: Deploy Web
+    if: inputs.target == 'web' || inputs.target == 'all'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
+        with:
+          terraform_wrapper: false
+      - name: Deploy web to Dokploy
+        env:
+          TF_VAR_dokploy_host: ${{ secrets.DOKPLOY_HOST }}
+          TF_VAR_dokploy_api_key: ${{ secrets.DOKPLOY_API_KEY }}
+          TF_VAR_web_app_id: ${{ secrets.DOKPLOY_WEB_APP_ID }}
+          TF_VAR_worker_app_id: ${{ secrets.DOKPLOY_WORKER_APP_ID }}
+        run: |
+          SHA_TAG="sha-$(git rev-parse --short HEAD)"
+          cd deploy/dokploy-app
+          terraform init
+          terraform apply -auto-approve \
+            -var="image_tag=${SHA_TAG}" \
+            -target=terraform_data.deploy[\"$TF_VAR_web_app_id\"]
+
+  # ── Worker (Dokploy app deploy) ────────────────────────────────────────
+  worker:
+    name: Deploy Worker
+    if: inputs.target == 'worker' || inputs.target == 'all'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
+        with:
+          terraform_wrapper: false
+      - name: Deploy worker to Dokploy
+        env:
+          TF_VAR_dokploy_host: ${{ secrets.DOKPLOY_HOST }}
+          TF_VAR_dokploy_api_key: ${{ secrets.DOKPLOY_API_KEY }}
+          TF_VAR_web_app_id: ${{ secrets.DOKPLOY_WEB_APP_ID }}
+          TF_VAR_worker_app_id: ${{ secrets.DOKPLOY_WORKER_APP_ID }}
+        run: |
+          SHA_TAG="sha-$(git rev-parse --short HEAD)"
+          cd deploy/dokploy-app
+          terraform init
+          terraform apply -auto-approve \
+            -var="image_tag=${SHA_TAG}" \
+            -target=terraform_data.deploy[\"$TF_VAR_worker_app_id\"]
+
+  # ── iOS (build + TestFlight upload) ────────────────────────────────────
+  ios:
+    name: Deploy iOS
+    if: inputs.target == 'ios' || inputs.target == 'all'
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      DERIVED_DATA_PATH: ${{ github.workspace }}/DerivedData
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-node-pnpm
+      - uses: ./.github/actions/setup-ccache
+        with:
+          cache-key-prefix: ccache-ios-release
+      - name: Generate native project
+        working-directory: packages/mobile
+        run: npx expo prebuild --clean --platform ios
+      - name: Download Sentry XCFramework
+        run: packages/mobile/scripts/download-sentry-xcframework.sh
+      - name: Cache CocoaPods
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: packages/mobile/ios/Pods
+          key: pods-v7-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/scripts/download-sentry-xcframework.sh') }}
+      - name: Cache DerivedData
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ env.DERIVED_DATA_PATH }}
+          key: deriveddata-release-v1-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/*/ios/**/*.swift', 'packages/mobile/modules/*/ios/**/*.m', 'packages/mobile/modules/*/ios/**/*.h') }}
+          restore-keys: deriveddata-release-v1-
+      - name: Install CocoaPods
+        run: cd packages/mobile/ios && pod install
+      - name: Setup code signing
+        env:
+          DEV_CERT_BASE64: ${{ secrets.IOS_DEVELOPMENT_CERT_BASE64 }}
+          DEV_CERT_PASSWORD: ${{ secrets.IOS_DEVELOPMENT_CERT_PASSWORD }}
+          DIST_CERT_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERT_BASE64 }}
+          DIST_CERT_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(uuidgen)
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          echo -n "$DEV_CERT_BASE64" | base64 --decode > $RUNNER_TEMP/dev-cert.p12
+          security import $RUNNER_TEMP/dev-cert.p12 -P "$DEV_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          echo -n "$DIST_CERT_BASE64" | base64 --decode > $RUNNER_TEMP/dist-cert.p12
+          security import $RUNNER_TEMP/dist-cert.p12 -P "$DIST_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+      - name: Setup App Store Connect API key
+        env:
+          API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_KEY_BASE64 }}
+        run: |
+          mkdir -p ~/private_keys
+          echo -n "$API_KEY_BASE64" | base64 --decode > ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8
+      - name: Set build number
+        run: |
+          cd packages/mobile/ios
+          BUILD_NUMBER=$(( $(git rev-list --count HEAD) + 1200 ))
+          echo "Setting build number to $BUILD_NUMBER"
+          agvtool new-version -all "$BUILD_NUMBER"
+      - name: Build archive
+        run: |
+          cd packages/mobile/ios
+          xcodebuild archive \
+            -workspace Dofek.xcworkspace \
+            -scheme Dofek \
+            -configuration Release \
+            -archivePath $RUNNER_TEMP/Dofek.xcarchive \
+            -derivedDataPath "$DERIVED_DATA_PATH" \
+            -destination 'generic/platform=iOS' \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8 \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
+            DEVELOPMENT_TEAM=68LEL35DQ9 \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            CC=$RUNNER_TEMP/ccache-wrappers/ccache-clang \
+            CPLUSPLUS=$RUNNER_TEMP/ccache-wrappers/ccache-clang++
+      - name: Export IPA & Upload to TestFlight
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath $RUNNER_TEMP/Dofek.xcarchive \
+            -exportOptionsPlist packages/mobile/build/ExportOptions.plist \
+            -exportPath $RUNNER_TEMP/export \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8 \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
+      - name: Cleanup keychain
+        if: always()
+        run: security delete-keychain $RUNNER_TEMP/app-signing.keychain-db || true
+
+  # ── OTA (Expo Over-the-Air update) ─────────────────────────────────────
+  ota:
+    name: Deploy OTA
+    if: inputs.target == 'ota' || inputs.target == 'all'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Wait for OTA server
+        run: |
+          for attempt in $(seq 1 30); do
+            status=$(curl -s -o /dev/null -w "%{http_code}" https://ota.dofek.asherlc.com/manifest)
+            if [ "$status" -ge 200 ] && [ "$status" -lt 500 ]; then
+              echo "OTA server is healthy"
+              exit 0
+            fi
+            echo "Waiting for OTA server... (attempt $attempt/30)"
+            sleep 2
+          done
+          echo "OTA server did not become healthy in time"
+          exit 1
+      - name: Publish OTA update
+        working-directory: packages/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: npx eoas@2.3.16 publish --branch main --platform ios --nonInteractive
+
+  # ── Infra Compose (DB + infra services) ─────────────────────────────────
+  infra-compose:
+    name: Deploy Infra Compose
+    if: inputs.target == 'infra-compose' || inputs.target == 'all'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
+        with:
+          terraform_wrapper: false
+      - name: Setup SSH tunnel
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh -f -N -L 5432:127.0.0.1:5432 "root@${SERVER_HOST}"
+      - name: Render and deploy
+        env:
+          DOKPLOY_HOST: ${{ secrets.DOKPLOY_HOST }}
+          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+          TF_VAR_postgres_password: ${{ secrets.POSTGRES_PASSWORD }}
+          TF_VAR_axiom_api_token: ${{ secrets.AXIOM_API_TOKEN }}
+          TF_VAR_sentry_otlp_logs_endpoint: ${{ secrets.SENTRY_OTLP_LOGS_ENDPOINT }}
+          TF_VAR_r2_endpoint: ${{ secrets.R2_ENDPOINT }}
+          TF_VAR_r2_access_key_id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          TF_VAR_r2_secret_access_key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          TF_VAR_expo_app_id: ${{ secrets.EXPO_APP_ID }}
+          TF_VAR_expo_access_token: ${{ secrets.EXPO_ACCESS_TOKEN }}
+          TF_VAR_ota_jwt_secret: ${{ secrets.OTA_JWT_SECRET }}
+          TF_VAR_ota_public_key_b64: ${{ secrets.OTA_PUBLIC_KEY_B64 }}
+          TF_VAR_ota_private_key_b64: ${{ secrets.OTA_PRIVATE_KEY_B64 }}
+        run: |
+          set -euo pipefail
+          cd deploy/dokploy-compose
+          terraform init
+
+          terraform apply -auto-approve -target=output.compose_rendered
+
+          COMPOSE_CONTENT=$(terraform output -raw compose_rendered)
+          COMPOSE_JSON=$(printf '%s' "$COMPOSE_CONTENT" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")
+          COMPOSE_ID="RMk3hATYEIKherZ2QEud_"
+
+          echo "Updating infra compose in Dokploy..."
+          curl -fsSL -X POST "${DOKPLOY_HOST}/api/trpc/compose.update" \
+            -H "x-api-key: ${DOKPLOY_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{\"json\":{\"composeId\":\"${COMPOSE_ID}\",\"sourceType\":\"raw\",\"composeFile\":${COMPOSE_JSON}}}"
+
+          echo "Deploying infra compose stack..."
+          curl -fsSL -X POST "${DOKPLOY_HOST}/api/trpc/compose.deploy" \
+            -H "x-api-key: ${DOKPLOY_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{\"json\":{\"composeId\":\"${COMPOSE_ID}\"}}"
+
+          echo "Waiting for DB to accept connections..."
+          for attempt in $(seq 1 30); do
+            if bash -c 'echo > /dev/tcp/127.0.0.1/5432' 2>/dev/null; then
+              echo "DB is ready"
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              echo "::error::DB not ready after 60s"
+              exit 1
+            fi
+            sleep 2
+          done
+
+          terraform apply -auto-approve
+
+  # ── Cloudflare (DNS + R2) ──────────────────────────────────────────────
+  cloudflare:
+    name: Deploy Cloudflare
+    if: inputs.target == 'cloudflare' || inputs.target == 'all'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+      - name: Terraform Apply
+        working-directory: deploy/cloudflare
+        env:
+          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TF_VAR_server_ip: ${{ secrets.SERVER_HOST }}
+        run: |
+          terraform init
+          terraform apply -auto-approve
+
+  # ── Image cleanup (runs after app deploys) ──────────────────────────────
+  cleanup:
+    name: Cleanup Images
+    needs: [web, worker]
+    if: always() && (needs.web.result == 'success' || needs.worker.result == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prune unused images
+        env:
+          DOKPLOY_HOST: ${{ secrets.DOKPLOY_HOST }}
+          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+        run: |
+          curl -fsSL -X POST "${DOKPLOY_HOST}/api/trpc/settings.cleanUnusedImages" \
+            -H "x-api-key: ${DOKPLOY_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d '{"json":{}}' || echo "Image cleanup failed (non-fatal)"
