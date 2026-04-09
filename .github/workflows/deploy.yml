@@ -259,11 +259,12 @@ jobs:
       - name: Wait for DB and upgrade extension
         env:
           TF_VAR_postgres_password: ${{ secrets.POSTGRES_PASSWORD }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
         run: |
           set -euo pipefail
           echo "Waiting for DB to accept connections..."
           for attempt in $(seq 1 30); do
-            if bash -c 'echo > /dev/tcp/127.0.0.1/5432' 2>/dev/null; then
+            if ssh "root@${SERVER_HOST}" "docker exec \$(docker ps -q --filter name=db-1) pg_isready -U health -d health" 2>/dev/null; then
               echo "DB is ready"
               break
             fi
@@ -271,6 +272,7 @@ jobs:
               echo "::error::DB not ready after 60s"
               exit 1
             fi
+            echo "Attempt $attempt/30 — waiting..."
             sleep 2
           done
 
