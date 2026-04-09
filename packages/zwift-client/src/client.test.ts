@@ -110,6 +110,38 @@ describe("ZwiftClient.refreshToken", () => {
   });
 });
 
+describe("ZwiftClient required headers", () => {
+  it("sends Platform, Source, and User-Agent headers on API requests", async () => {
+    const fetchFn = mockFetch({ status: 200, ok: true, body: [] });
+    const client = new ZwiftClient("test-token", "100", fetchFn);
+
+    await client.getActivities();
+
+    const [, options]: [string, RequestInit] = fetchFn.mock.calls[0];
+    const headers: Record<string, string> = Object.fromEntries(
+      Object.entries(options.headers ?? {}),
+    );
+    expect(headers.Platform).toBe("OSX");
+    expect(headers.Source).toBe("Game Client");
+    expect(headers["User-Agent"]).toMatch(/zwift/);
+  });
+
+  it("sends required headers on fitness data requests", async () => {
+    const fetchFn = mockFetch({ status: 200, ok: true, body: {} });
+    const client = new ZwiftClient("test-token", "100", fetchFn);
+
+    await client.getFitnessData("https://cdn.zwift.com/fitness/123.json");
+
+    const [, options]: [string, RequestInit] = fetchFn.mock.calls[0];
+    const headers: Record<string, string> = Object.fromEntries(
+      Object.entries(options.headers ?? {}),
+    );
+    expect(headers.Platform).toBe("OSX");
+    expect(headers.Source).toBe("Game Client");
+    expect(headers["User-Agent"]).toMatch(/zwift/);
+  });
+});
+
 describe("ZwiftClient.getActivities", () => {
   it("returns activities on success", async () => {
     const activities: ZwiftActivitySummary[] = [
@@ -137,7 +169,7 @@ describe("ZwiftClient.getActivities", () => {
     ];
 
     const fetchFn = mockFetch({ status: 200, ok: true, body: activities });
-    const client = new ZwiftClient("test-token", 100, fetchFn);
+    const client = new ZwiftClient("test-token", "100", fetchFn);
 
     const result = await client.getActivities(0, 10);
 
@@ -150,7 +182,7 @@ describe("ZwiftClient.getActivities", () => {
 
   it("uses default start and limit", async () => {
     const fetchFn = mockFetch({ status: 200, ok: true, body: [] });
-    const client = new ZwiftClient("test-token", 100, fetchFn);
+    const client = new ZwiftClient("test-token", "100", fetchFn);
 
     await client.getActivities();
 
@@ -161,7 +193,7 @@ describe("ZwiftClient.getActivities", () => {
 
   it("throws on non-200 response", async () => {
     const fetchFn = mockFetch({ status: 500, ok: false, body: "Server Error" });
-    const client = new ZwiftClient("test-token", 100, fetchFn);
+    const client = new ZwiftClient("test-token", "100", fetchFn);
 
     await expect(client.getActivities()).rejects.toThrow("Zwift API error (500)");
   });
@@ -191,7 +223,7 @@ describe("ZwiftClient.getActivityDetail", () => {
     };
 
     const fetchFn = mockFetch({ status: 200, ok: true, body: detail });
-    const client = new ZwiftClient("test-token", 100, fetchFn);
+    const client = new ZwiftClient("test-token", "100", fetchFn);
 
     const result = await client.getActivityDetail(1);
 
@@ -203,7 +235,7 @@ describe("ZwiftClient.getActivityDetail", () => {
 
   it("throws on non-200 response", async () => {
     const fetchFn = mockFetch({ status: 404, ok: false, body: "Not Found" });
-    const client = new ZwiftClient("test-token", 100, fetchFn);
+    const client = new ZwiftClient("test-token", "100", fetchFn);
 
     await expect(client.getActivityDetail(999)).rejects.toThrow("Zwift API error (404)");
   });
@@ -222,7 +254,7 @@ describe("ZwiftClient.getFitnessData", () => {
     };
 
     const fetchFn = mockFetch({ status: 200, ok: true, body: fitnessData });
-    const client = new ZwiftClient("test-token", 100, fetchFn);
+    const client = new ZwiftClient("test-token", "100", fetchFn);
 
     const result = await client.getFitnessData("https://example.com/fitness-data");
 
@@ -235,7 +267,7 @@ describe("ZwiftClient.getFitnessData", () => {
 
   it("throws on non-200 response", async () => {
     const fetchFn = mockFetch({ status: 403, ok: false, body: "Forbidden" });
-    const client = new ZwiftClient("test-token", 100, fetchFn);
+    const client = new ZwiftClient("test-token", "100", fetchFn);
 
     await expect(client.getFitnessData("https://example.com/fitness-data")).rejects.toThrow(
       "Zwift fitness data fetch failed (403)",
@@ -257,7 +289,7 @@ describe("ZwiftClient.getPowerCurve", () => {
     };
 
     const fetchFn = mockFetch({ status: 200, ok: true, body: powerCurve });
-    const client = new ZwiftClient("test-token", 100, fetchFn);
+    const client = new ZwiftClient("test-token", "100", fetchFn);
 
     const result = await client.getPowerCurve();
 
@@ -268,7 +300,7 @@ describe("ZwiftClient.getPowerCurve", () => {
 
   it("throws on non-200 response", async () => {
     const fetchFn = mockFetch({ status: 500, ok: false, body: "Server Error" });
-    const client = new ZwiftClient("test-token", 100, fetchFn);
+    const client = new ZwiftClient("test-token", "100", fetchFn);
 
     await expect(client.getPowerCurve()).rejects.toThrow("Zwift API error (500)");
   });
@@ -286,7 +318,7 @@ describe("ZwiftClient.getProfile", () => {
     };
 
     const fetchFn = mockFetch({ status: 200, ok: true, body: profile });
-    const client = new ZwiftClient("test-token", 100, fetchFn);
+    const client = new ZwiftClient("test-token", "100", fetchFn);
 
     const result = await client.getProfile();
 

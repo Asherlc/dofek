@@ -12,14 +12,24 @@ const ZWIFT_API_BASE = "https://us-or-rly101.zwift.com";
 
 export { ZWIFT_AUTH_URL, ZWIFT_API_BASE };
 
+/**
+ * Required default headers for all Zwift API requests.
+ * Without these, Zwift rejects requests from non-game-client user agents.
+ */
+const ZWIFT_DEFAULT_HEADERS = {
+  Platform: "OSX",
+  Source: "Game Client",
+  "User-Agent": "CNL/3.30.8 (macOS 13 Ventura; Darwin Kernel 22.4.0) zwift/1.0.110983 curl/7.78.0",
+} as const;
+
 export class ZwiftClient {
   #accessToken: string;
-  #athleteId: number;
+  #athleteId: string;
   #fetchFn: typeof globalThis.fetch;
 
   constructor(
     accessToken: string,
-    athleteId: number,
+    athleteId: string,
     fetchFn: typeof globalThis.fetch = globalThis.fetch,
   ) {
     this.#accessToken = accessToken;
@@ -31,6 +41,7 @@ export class ZwiftClient {
     const url = `${ZWIFT_API_BASE}${path}`;
     const response = await this.#fetchFn(url, {
       headers: {
+        ...ZWIFT_DEFAULT_HEADERS,
         Authorization: `Bearer ${this.#accessToken}`,
         Accept: "application/json",
       },
@@ -61,6 +72,7 @@ export class ZwiftClient {
   async getFitnessData(url: string): Promise<ZwiftFitnessData> {
     const response = await this.#fetchFn(url, {
       headers: {
+        ...ZWIFT_DEFAULT_HEADERS,
         Authorization: `Bearer ${this.#accessToken}`,
         Accept: "application/json",
       },

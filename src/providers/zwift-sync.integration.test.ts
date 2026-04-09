@@ -91,7 +91,7 @@ function fakeZwiftPowerCurve(overrides: Record<string, unknown> = {}) {
 }
 
 // JWT with sub claim for athleteId 42
-const FAKE_JWT_PAYLOAD = Buffer.from(JSON.stringify({ sub: "42" })).toString("base64");
+const FAKE_JWT_PAYLOAD = Buffer.from(JSON.stringify({ sub: "42" })).toString("base64url");
 const FAKE_ACCESS_TOKEN = `header.${FAKE_JWT_PAYLOAD}.signature`;
 
 // ============================================================
