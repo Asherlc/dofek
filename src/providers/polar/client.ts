@@ -78,6 +78,58 @@ export class PolarClient {
     return this.#get<PolarNightlyRecharge[]>("/nightly-recharge");
   }
 
+  /**
+   * Register the user with Polar AccessLink. Required after OAuth before
+   * data endpoints will work. Uses the x_user_id from the token response
+   * as both the Polar user ID and the member-id.
+   *
+   * @see https://www.polar.com/accesslink-api/#register-user
+   */
+  async registerUser(polarUserId: string): Promise<void> {
+    const response = await this.#fetchFn(`${POLAR_API_BASE}/users`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.#accessToken}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({ "member-id": polarUserId }),
+    });
+
+    // 409 Conflict = user already registered — not an error
+    if (response.status === 409) return;
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Polar user registration failed (${response.status}): ${text}`);
+    }
+  }
+
+  /**
+   * Deregister the user from Polar AccessLink. This revokes the access token
+   * and is required before a new token can be issued (Polar limits active
+   * tokens per app+user).
+   *
+   * @see https://www.polar.com/accesslink-api/#delete-user
+   */
+  async deregisterUser(polarUserId: string): Promise<void> {
+    const response = await this.#fetchFn(`${POLAR_API_BASE}/users/${polarUserId}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${this.#accessToken}`,
+        Accept: "application/json",
+      },
+    });
+
+    // 204 = success, 404 = already deregistered — both are fine
+    if (response.status === 204 || response.status === 404) return;
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Polar user deregistration failed (${response.status}): ${text}`);
+    }
+  }
+
   async downloadTcx(exerciseId: string): Promise<string> {
     const response = await this.#fetchFn(`${POLAR_API_BASE}/exercises/${exerciseId}/tcx`, {
       headers: {
