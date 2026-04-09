@@ -1,12 +1,12 @@
 import { eq } from "drizzle-orm";
 import type { TokenSet } from "../../auth/oauth.ts";
-import { resolveOAuthTokens } from "../../auth/resolve-tokens.ts";
+import { refreshAccessToken } from "../../auth/oauth.ts";
 import type { SyncDatabase } from "../../db/index.ts";
 import { activity, dailyMetrics, sensorSample, sleepSession, sleepStage } from "../../db/schema.ts";
 import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
 import { dualWriteToSensorSample } from "../../db/sensor-sample-writer.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
-import { ensureProvider } from "../../db/tokens.ts";
+import { deleteTokens, ensureProvider, loadTokens, saveTokens } from "../../db/tokens.ts";
 import { logger } from "../../logger.ts";
 import { parseTcx, tcxToSensorSamples } from "../../tcx/parser.ts";
 import type { SyncError } from "../types.ts";
@@ -74,13 +74,52 @@ export class PolarSyncService {
   }
 
   async #resolveTokens(): Promise<TokenSet> {
-    return resolveOAuthTokens({
-      db: this.#db,
-      providerId: this.#providerId,
-      providerName: this.#providerName,
-      getOAuthConfig: () => polarOAuthConfig(),
-      fetchFn: this.#fetchFn,
-    });
+    const tokens = await loadTokens(this.#db, this.#providerId);
+    if (!tokens) {
+      throw new Error(
+        `No OAuth tokens found for ${this.#providerName}. Run: health-data auth ${this.#providerId}`,
+      );
+    }
+
+    if (tokens.expiresAt > new Date()) {
+      return tokens;
+    }
+
+    // Token past stored expiry — try to refresh if we have a refresh token.
+    if (tokens.refreshToken) {
+      logger.info(`[${this.#providerId}] Access token expired, refreshing...`);
+      const config = polarOAuthConfig();
+      if (!config) {
+        throw new Error(`OAuth config required to refresh ${this.#providerName} tokens`);
+      }
+      try {
+        const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.#fetchFn);
+        await saveTokens(this.#db, this.#providerId, refreshed);
+        return refreshed;
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.includes("invalid_grant") || message.includes("Too many unrevoked")) {
+          logger.warn(
+            `[${this.#providerId}] Refresh token revoked, deleting stored tokens. ` +
+              `User must re-authorize ${this.#providerName}.`,
+          );
+          await deleteTokens(this.#db, this.#providerId);
+          throw new Error(
+            `${this.#providerName} authorization revoked — re-connect the provider to resume syncing.`,
+          );
+        }
+        throw error;
+      }
+    }
+
+    // Polar tokens are long-lived and may still be valid even past the stored
+    // expiry (which uses a conservative 1-year default when the API omits
+    // expires_in). Use the existing token and let the API call determine
+    // if it's truly expired.
+    logger.info(
+      `[${this.#providerId}] Token past stored expiry with no refresh token — using existing token`,
+    );
+    return tokens;
   }
 
   async #syncExercises(client: PolarClient, since: Date): Promise<void> {
@@ -270,10 +309,19 @@ export class PolarSyncService {
         this.#providerId,
         "daily_activity",
         async () => {
-          const [dailyActivities, nightlyRecharges] = await Promise.all([
-            client.getDailyActivity(),
-            client.getNightlyRecharge(),
-          ]);
+          const dailyActivities = await client.getDailyActivity();
+
+          // Fetch nightly recharge independently — some devices/accounts
+          // don't support it, and a failure here should not prevent daily
+          // activity from syncing.
+          let nightlyRecharges: PolarNightlyRecharge[] = [];
+          try {
+            nightlyRecharges = await client.getNightlyRecharge();
+          } catch (rechargeError) {
+            logger.warn(
+              `[${this.#providerId}] Nightly recharge fetch failed, continuing without it: ${rechargeError instanceof Error ? rechargeError.message : String(rechargeError)}`,
+            );
+          }
 
           const rechargeByDate = this.#createRechargeIndex(nightlyRecharges);
           let count = 0;

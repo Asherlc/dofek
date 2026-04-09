@@ -15,7 +15,7 @@ import { ZwiftProvider } from "./zwift.ts";
 const { MockZwiftClient } = vi.hoisted(() => {
   class MockZwiftClient {
     static signInResult = {
-      accessToken: "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiI5OTk5OSJ9.fake",
+      accessToken: "fake-header.eyJzdWIiOiI5OTk5OSJ9.fake",
       refreshToken: "refresh-token",
       expiresIn: 3600,
     };
@@ -307,6 +307,25 @@ describe("ZwiftProvider.sync() — token resolution", () => {
     // Should proceed (no "token expired" error, just possibly empty results)
     expect(result.provider).toBe("zwift");
   });
+
+  it("handles UUID-based athlete ID in scopes (non-numeric sub claim)", async () => {
+    MockZwiftClient.activities = [];
+    MockZwiftClient.powerCurve = {};
+
+    const db = makeMockDb({
+      tokens: {
+        accessToken: "valid-token",
+        refreshToken: "refresh",
+        expiresAt: new Date("2099-01-01"),
+        scopes: "athleteId:a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      },
+    });
+
+    const provider = new ZwiftProvider();
+    const result = await provider.sync(db, new Date("2026-01-01"));
+    expect(result.provider).toBe("zwift");
+    expect(result.errors).toHaveLength(0);
+  });
 });
 
 describe("ZwiftProvider.sync() — activity sync", () => {
@@ -423,7 +442,7 @@ describe("ZwiftProvider.sync() — power curve sync", () => {
 describe("ZwiftProvider.authSetup() — automatedLogin", () => {
   it("calls signIn and returns token set with athleteId in scopes", async () => {
     MockZwiftClient.signIn.mockResolvedValueOnce({
-      accessToken: "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiI1NTU1NSJ9.fake",
+      accessToken: "fake-header.eyJzdWIiOiI1NTU1NSJ9.fake",
       refreshToken: "refresh-123",
       expiresIn: 3600,
     });
@@ -435,5 +454,39 @@ describe("ZwiftProvider.authSetup() — automatedLogin", () => {
     expect(result?.accessToken).toContain("eyJ");
     expect(result?.refreshToken).toBe("refresh-123");
     expect(result?.scopes).toContain("athleteId:");
+  });
+
+  it("handles UUID sub claim in JWT", async () => {
+    const uuidPayload = Buffer.from(
+      JSON.stringify({ sub: "a1b2c3d4-e5f6-7890-abcd-ef1234567890" }),
+    ).toString("base64url");
+
+    MockZwiftClient.signIn.mockResolvedValueOnce({
+      accessToken: `fake-header.${uuidPayload}.fake`,
+      refreshToken: "refresh-uuid",
+      expiresIn: 3600,
+    });
+
+    const provider = new ZwiftProvider();
+    const setup = provider.authSetup();
+    const result = await setup.automatedLogin?.("rider@example.com", "fake-test-pw");
+
+    expect(result?.scopes).toBe("athleteId:a1b2c3d4-e5f6-7890-abcd-ef1234567890");
+  });
+
+  it("throws when JWT has no sub claim", async () => {
+    const noSubPayload = Buffer.from(JSON.stringify({})).toString("base64url");
+
+    MockZwiftClient.signIn.mockResolvedValueOnce({
+      accessToken: `fake-header.${noSubPayload}.fake`,
+      refreshToken: "refresh-no-sub",
+      expiresIn: 3600,
+    });
+
+    const provider = new ZwiftProvider();
+    const setup = provider.authSetup();
+    await expect(setup.automatedLogin?.("rider@example.com", "fake-test-pw")).rejects.toThrow(
+      "athlete ID",
+    );
   });
 });

@@ -437,7 +437,8 @@
     "heartratebpm",
     "latitudedegrees",
     "longitudedegrees",
-    "altitudemeters"
+    "altitudemeters",
+    "strongapp"
   ],
   "flagWords": [],
   "useGitignore": false,

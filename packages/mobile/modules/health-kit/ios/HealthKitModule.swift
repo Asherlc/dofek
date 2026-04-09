@@ -120,6 +120,56 @@ public class HealthKitModule: Module {
                     if let distance = workout.totalDistance {
                         dict["totalDistance"] = distance.doubleValue(for: .meter())
                     }
+
+                    // Include workout-level metadata (arbitrary key-value pairs set by the recording app)
+                    if let metadata = workout.metadata, !metadata.isEmpty {
+                        var metadataDict: [String: Any] = [:]
+                        for (key, value) in metadata {
+                            // Only bridge JSON-safe types: String, NSNumber (Int/Double/Bool), Date→ISO string
+                            if let stringValue = value as? String {
+                                metadataDict[key] = stringValue
+                            } else if let numberValue = value as? NSNumber {
+                                metadataDict[key] = numberValue.doubleValue
+                            } else if let dateValue = value as? Date {
+                                metadataDict[key] = HealthKitQueries.formatDate(dateValue)
+                            }
+                        }
+                        if !metadataDict.isEmpty {
+                            dict["metadata"] = metadataDict
+                        }
+                    }
+
+                    // Include sub-activities (iOS 16+): each HKWorkoutActivity within the workout
+                    let activities = workout.workoutActivities
+                    if !activities.isEmpty {
+                        dict["workoutActivities"] = activities.map { activity -> [String: Any] in
+                            var activityDict: [String: Any] = [
+                                "uuid": activity.uuid.uuidString,
+                                "activityType": activity.workoutConfiguration.activityType.rawValue,
+                                "startDate": HealthKitQueries.formatDate(activity.startDate),
+                            ]
+                            if let endDate = activity.endDate {
+                                activityDict["endDate"] = HealthKitQueries.formatDate(endDate)
+                            }
+                            if let activityMetadata = activity.metadata, !activityMetadata.isEmpty {
+                                var activityMetaDict: [String: Any] = [:]
+                                for (key, value) in activityMetadata {
+                                    if let stringValue = value as? String {
+                                        activityMetaDict[key] = stringValue
+                                    } else if let numberValue = value as? NSNumber {
+                                        activityMetaDict[key] = numberValue.doubleValue
+                                    } else if let dateValue = value as? Date {
+                                        activityMetaDict[key] = HealthKitQueries.formatDate(dateValue)
+                                    }
+                                }
+                                if !activityMetaDict.isEmpty {
+                                    activityDict["metadata"] = activityMetaDict
+                                }
+                            }
+                            return activityDict
+                        }
+                    }
+
                     return dict
                 } ?? []
                 promise.resolve(workouts)

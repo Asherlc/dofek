@@ -347,6 +347,8 @@ export async function processWorkouts(
         totalDistance: workout.totalDistance,
         sourceName: workout.sourceName,
         workoutType: workout.workoutType,
+        metadata: workout.metadata,
+        workoutActivities: workout.workoutActivities,
       });
 
       await db.execute(
@@ -363,7 +365,8 @@ export async function processWorkouts(
             ON CONFLICT (user_id, provider_id, external_id) DO UPDATE SET
               activity_type = ${activityType},
               started_at = ${workout.startDate}::timestamptz,
-              ended_at = ${workout.endDate}::timestamptz`,
+              ended_at = ${workout.endDate}::timestamptz,
+              raw = ${rawData}::jsonb`,
       );
       inserted++;
     }

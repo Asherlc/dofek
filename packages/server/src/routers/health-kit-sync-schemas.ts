@@ -42,6 +42,14 @@ export const healthKitSampleSchema = z.object({
   uuid: z.string(),
 });
 
+export const workoutActivitySchema = z.object({
+  uuid: z.string(),
+  activityType: z.number(),
+  startDate: z.string(),
+  endDate: z.string().optional(),
+  metadata: z.record(z.union([z.string(), z.number()])).optional(),
+});
+
 export const workoutSampleSchema = z.object({
   uuid: z.string(),
   workoutType: z.string(),
@@ -52,6 +60,8 @@ export const workoutSampleSchema = z.object({
   totalDistance: z.number().nullish(),
   sourceName: z.string(),
   sourceBundle: z.string(),
+  metadata: z.record(z.union([z.string(), z.number()])).optional(),
+  workoutActivities: z.array(workoutActivitySchema).optional(),
 });
 
 export const routeLocationSchema = z.object({

@@ -261,6 +261,8 @@ git push → GHA builds ARM Docker images + exports Expo OTA bundle → signs ma
 → Docker image pushed to GHCR (sha-tagged) → CI calls Dokploy API (update image + deploy) → Dokploy pulls new image + restarts containers
 ```
 
+Deploy automation now runs through reusable GitHub workflows (`deploy-*.yml`) called directly from `ci.yml` (same workflow DAG, no cross-workflow dispatch). Each deploy receives the exact CI commit SHA, and deploy jobs run only when that SHA is still the current `main` head.
+
 Migrations run at two levels for reliability: a dedicated one-shot `migrate` container runs first during `docker compose up` (via `depends_on: { condition: service_completed_successfully }`), and each service's entrypoint also runs migrations before starting. A Postgres advisory lock serializes concurrent runs so only one container applies migrations at a time. With replicated `web` instances and rolling restarts, at least one healthy API instance remains available while another instance migrates and boots. In local dev, run `pnpm migrate` manually.
 
 ### Deploying from scratch
@@ -332,16 +334,19 @@ The production containers get environment variables from two places:
 
 1. **Committed `.env` (this repo)** — non-secret config: client IDs, redirect URIs, endpoints, DSNs. Baked into the Docker image. Loaded by the entrypoint on startup.
 
-2. **Dokploy environment variables** — secrets are configured via the Dokploy dashboard or `setup.sh` and injected into containers at runtime. Infra compose services get secrets baked into `infra-compose.yml` during setup.
+2. **Dokploy environment variables** — runtime app secrets are synced from Infisical to Dokploy app env by the `secret-sync.yml` workflow, then containers are redeployed. Infra compose services get secrets baked into `infra-compose.yml` during setup.
 
 **Adding or updating secrets:**
 
 ```bash
 infisical secrets set --env prod KEY=value
-# Containers pick up changes on next restart (Watchtower rolling restart)
+# Triggers Infisical webhook -> GitHub repository_dispatch -> secret-sync workflow
+# Workflow updates Dokploy app env and redeploys only changed apps
 ```
 
-No SSH to the server needed. No image rebuild needed — secrets are fetched at startup.
+No SSH to the server needed. No image rebuild needed.
+
+**Managed sync scope:** `deploy/dokploy/managed-secret-keys.json` is the allowlist for keys owned by automated sync. Only those keys are updated; unmanaged Dokploy env vars are preserved.
 
 **Adding or updating non-secret config:** Edit `.env` in this repo, commit, push. CI builds a new image; Watchtower deploys it.
 
@@ -353,8 +358,12 @@ No SSH to the server needed. No image rebuild needed — secrets are fetched at 
 
 **If a provider is missing from the Data Sources page** it usually means `validate()` is failing, so the provider is being filtered out entirely rather than shown disabled. Check:
 1. Are the vars in Infisical? → `infisical secrets get <VAR_NAME> --env=prod`
-2. Is the Infisical token set on the server? → check `/opt/dofek/.env`
-3. Is the container running the latest image? → `docker logs dofek-web-1` to check for Infisical errors
+2. Is the key in `deploy/dokploy/managed-secret-keys.json` for the target app (`web` or `worker`)?
+3. Did `secret-sync.yml` run successfully? → `gh run list --workflow secret-sync.yml`
+4. Force sync (dry-run first, then real run):
+   - `gh workflow run secret-sync.yml -f dry_run=true`
+   - `gh workflow run secret-sync.yml -f dry_run=false`
+5. If the app still shows stale config after sync, check deploy logs in Dokploy and refresh app caches.
 
 ## Supplements
 
@@ -497,7 +506,7 @@ Environment variables are split into two tiers:
 | Tier | Where | Examples | Needs rebuild? |
 |------|-------|----------|----------------|
 | **Non-secret config** | Committed `.env` in this repo | Client IDs, redirect URIs, endpoints, DSNs | Yes (baked into image) |
-| **Secrets** | [Infisical](https://infisical.com/) (prod environment) | Client secrets, API keys, tokens, private keys | No (fetched at startup) |
+| **Secrets** | [Infisical](https://infisical.com/) (prod environment) → synced to Dokploy app env | Client secrets, API keys, tokens, private keys | No (sync + app redeploy) |
 
 ### Setup (new machine)
 
@@ -543,10 +552,36 @@ infisical secrets get KEY --env=prod
 infisical secrets delete KEY --env=prod --type shared
 ```
 
+### Automatic production sync
+
+Production secret propagation to Dokploy is automated by `.github/workflows/secret-sync.yml`.
+
+- Primary trigger: `repository_dispatch` type `infisical-secrets-updated` (from Infisical webhook)
+- Recovery trigger: nightly schedule
+- Manual trigger: `workflow_dispatch` (supports dry-run)
+
+Required GitHub secrets for this workflow:
+- `INFISICAL_TOKEN`
+- `DOKPLOY_HOST`
+- `DOKPLOY_API_KEY`
+- `DOKPLOY_WEB_APP_ID`
+- `DOKPLOY_WORKER_APP_ID`
+
+To force a manual sync:
+
+```bash
+# Validate diff only
+gh workflow run secret-sync.yml -f dry_run=true
+
+# Apply changes + redeploy changed apps
+gh workflow run secret-sync.yml -f dry_run=false
+```
+
 ### Adding a new env var
 
 - **Is it a secret?** (API key, token, password, private key, client secret) → Add to Infisical: `infisical secrets set --env=prod KEY=value`
 - **Is it non-secret config?** (client ID, redirect URI, endpoint, DSN) → Add to the committed `.env` at the repo root
+- **If it is an app secret that must auto-sync to Dokploy:** add it to `deploy/dokploy/managed-secret-keys.json` under `apps.web` and/or `apps.worker`.
 
 ### Production machine identity
 
