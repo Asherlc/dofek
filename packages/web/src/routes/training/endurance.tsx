@@ -1,7 +1,9 @@
+import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/endurance-types";
 import { createFileRoute } from "@tanstack/react-router";
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
 import { PolarizationTrendChart } from "../../components/PolarizationTrendChart.tsx";
 import { RampRateChart } from "../../components/RampRateChart.tsx";
+import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
 import { TrainingMonotonyChart } from "../../components/TrainingMonotonyChart.tsx";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
 import { trpc } from "../../lib/trpc.ts";
@@ -44,6 +46,10 @@ function EnduranceTab() {
 
       <Section title="Training Monotony & Strain" subtitle="Weekly training load variability">
         <TrainingMonotonyChart data={monotony.data ?? []} loading={monotony.isLoading} />
+      </Section>
+
+      <Section title="Recent Endurance Activities" subtitle="Recent cardio and endurance workouts">
+        <RecentActivitiesSection activityTypes={[...ENDURANCE_ACTIVITY_TYPES]} />
       </Section>
     </>
   );

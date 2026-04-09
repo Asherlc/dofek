@@ -49,7 +49,7 @@ describe("reorderDashboardSections", () => {
   });
 
   it("returns the same array when moving the last section down", () => {
-    const result = reorderDashboardSections(order, "activities", "down");
+    const result = reorderDashboardSections(order, "bodyComp", "down");
     expect(result).toBe(order);
   });
 
@@ -64,8 +64,8 @@ describe("reorderDashboardSections", () => {
 
   it("returns the same reference when moving the last section down (index === length-1)", () => {
     // Kills: lastIndex >= order.length - 1 → lastIndex > order.length - 1 (EqualityOperator)
-    // activities is at index length-1 — exactly at the boundary
-    const result = reorderDashboardSections(order, "activities", "down");
+    // bodyComp is at index length-1 — exactly at the boundary
+    const result = reorderDashboardSections(order, "bodyComp", "down");
     expect(result).toBe(order);
     expect(result).toEqual(order);
   });
@@ -121,7 +121,6 @@ describe("reorderDashboardSections", () => {
       "sleep",
       "nutrition",
       "bodyComp",
-      "activities",
     ]);
   });
 
@@ -161,7 +160,6 @@ describe("reorderDashboardSections", () => {
       "sleep",
       "nutrition",
       "bodyComp",
-      "activities",
     ]);
   });
 
@@ -182,7 +180,6 @@ describe("reorderDashboardSections", () => {
       "sleep",
       "nutrition",
       "bodyComp",
-      "activities",
     ]);
   });
 
@@ -246,7 +243,7 @@ describe("reorderDashboardSections", () => {
   });
 
   it("filters target group to exclude sections not in order when jumping down", () => {
-    const withoutHealthspan = ["stress", "weeklyReport", "sleepNeed", "activities"];
+    const withoutHealthspan = ["stress", "weeklyReport", "sleepNeed", "bodyComp"];
     const result = reorderDashboardSections(withoutHealthspan, "stress", "down");
     expect(result.indexOf("stress")).toBeGreaterThan(result.indexOf("weeklyReport"));
   });

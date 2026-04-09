@@ -1,9 +1,8 @@
 import { formatDateYmd as formatDateForQuery } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { Link } from "@tanstack/react-router";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useMemo } from "react";
 import { z } from "zod";
-import { ActivityList } from "../components/ActivityList.tsx";
 import { AnomalyAlertBanner } from "../components/AnomalyAlertBanner.tsx";
 import { BodyRecompositionChart } from "../components/BodyRecompositionChart.tsx";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
@@ -95,18 +94,6 @@ const nutritionDailyRowSchema = z.object({
   fiber_g: z.number().nullable(),
 });
 
-const activityRowSchema = z.object({
-  id: z.string(),
-  started_at: z.string(),
-  ended_at: z.string().nullable(),
-  activity_type: z.string(),
-  name: z.string().nullable(),
-  provider_id: z.string(),
-  source_providers: z.array(z.string()).nullable(),
-  distance_meters: z.number().nullable().optional(),
-  calories: z.number().nullable().optional(),
-});
-
 export function healthMonitorSubtitle(): string {
   return "Latest values vs. rolling average";
 }
@@ -166,26 +153,17 @@ export const DASHBOARD_SECTION_IDS = new Set([
   "sleep",
   "nutrition",
   "bodyComp",
-  "activities",
 ]);
 
 export function Dashboard() {
   const units = useUnitConverter();
   const { layout, toggleCollapsed, toggleHidden, moveSection } = useDashboardLayout();
   const days = 30;
-  const [activityPage, setActivityPage] = useState(0);
-  const activityPageSize = 20;
   const onboarding = useOnboarding();
   const endDate = useMemo(() => formatDateForQuery(), []);
 
   const trends = trpc.dailyMetrics.trends.useQuery({ days, endDate });
   const dailyMetrics = trpc.dailyMetrics.list.useQuery({ days, endDate });
-  const activities = trpc.activity.list.useQuery({
-    days,
-    endDate,
-    limit: activityPageSize,
-    offset: activityPage * activityPageSize,
-  });
   const sleepData = trpc.sleep.list.useQuery({ days, endDate });
   const hrvBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({ days, endDate });
   const nutritionData = trpc.nutrition.daily.useQuery({ days, endDate });
@@ -468,23 +446,6 @@ export function Dashboard() {
             </div>
             <BodyRecompositionChart data={bodyRecomp.data ?? []} loading={bodyRecomp.isLoading} />
           </div>
-        </div>
-      ),
-    },
-    activities: {
-      title: "Recent Activities",
-      subtitle: `Last ${days} days`,
-      content: (
-        <div className="card p-2 sm:p-4">
-          <ActivityList
-            activities={assertRows(activities.data?.items, activityRowSchema)}
-            loading={activities.isLoading}
-            error={activities.isError}
-            totalCount={activities.data?.totalCount}
-            page={activityPage}
-            pageSize={activityPageSize}
-            onPageChange={setActivityPage}
-          />
         </div>
       ),
     },

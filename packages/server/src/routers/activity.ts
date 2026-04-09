@@ -43,6 +43,7 @@ export const activityRouter = router({
         endDate: endDateSchema,
         limit: z.number().min(1).max(100).default(20),
         offset: z.number().min(0).default(0),
+        activityTypes: z.array(z.string()).optional(),
       }),
     )
     .query(async ({ ctx, input }) => {
