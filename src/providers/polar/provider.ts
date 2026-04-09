@@ -1,5 +1,6 @@
 import { exchangeCodeForTokens } from "../../auth/oauth.ts";
 import type { SyncDatabase } from "../../db/index.ts";
+import { logger } from "../../logger.ts";
 import type {
   ProviderAuthSetup,
   SyncOptions,
@@ -7,6 +8,7 @@ import type {
   WebhookEvent,
   WebhookProvider,
 } from "../types.ts";
+import { PolarClient } from "./client.ts";
 import { POLAR_API_BASE, polarOAuthConfig } from "./oauth.ts";
 import { PolarSyncService } from "./sync-service.ts";
 import { PolarWebhookService } from "./webhook-service.ts";
@@ -60,10 +62,58 @@ export class PolarProvider implements WebhookProvider {
   authSetup(options?: { host?: string }): ProviderAuthSetup {
     const config = polarOAuthConfig(options?.host);
     if (!config) throw new Error("POLAR_CLIENT_ID and POLAR_CLIENT_SECRET are required");
+    const fetchFn = this.#fetchFn;
 
     return {
       oauthConfig: config,
-      exchangeCode: (code) => exchangeCodeForTokens(config, code),
+      exchangeCode: async (code) => {
+        const tokens = await exchangeCodeForTokens(config, code, fetchFn);
+
+        // Polar AccessLink requires user registration (POST /v3/users)
+        // after OAuth before data endpoints will work. Discover the Polar
+        // user ID via GET /v3/users, then register.
+        try {
+          const client = new PolarClient(tokens.accessToken, fetchFn);
+          const polarUserId = await client.getCurrentUserId();
+          if (polarUserId) {
+            await client.registerUser(polarUserId);
+            logger.info(`[polar] Registered user ${polarUserId} with Polar AccessLink`);
+          } else {
+            logger.warn("[polar] Could not discover Polar user ID for post-auth registration");
+          }
+        } catch (registrationError) {
+          // Registration is best-effort — log but don't fail the auth flow.
+          // The user may already be registered from a previous authorization.
+          logger.warn(
+            `[polar] Post-auth user registration failed: ${registrationError instanceof Error ? registrationError.message : String(registrationError)}`,
+          );
+        }
+
+        return tokens;
+      },
+      revokeExistingTokens: async (tokens) => {
+        // Polar limits the number of active tokens per app+user. Before
+        // exchanging a new code, deregister the old user to revoke the
+        // existing token. This mirrors what Wahoo does.
+        try {
+          const client = new PolarClient(tokens.accessToken, fetchFn);
+          const polarUserId = await client.getCurrentUserId();
+          if (polarUserId) {
+            await client.deregisterUser(polarUserId);
+            logger.info(`[polar] Deregistered user ${polarUserId} to revoke old token`);
+          } else {
+            logger.warn(
+              "[polar] Could not discover Polar user ID for deregistration — old token may be expired",
+            );
+          }
+        } catch (revokeError) {
+          // Best-effort — if the old token is completely dead, we can't revoke.
+          // The user may need to contact Polar support.
+          logger.warn(
+            `[polar] Token revocation failed: ${revokeError instanceof Error ? revokeError.message : String(revokeError)}`,
+          );
+        }
+      },
       apiBaseUrl: POLAR_API_BASE,
     };
   }
