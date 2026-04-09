@@ -38,7 +38,6 @@
         "NSMotionUsageDescription": "Dofek records accelerometer data to analyze movement patterns, detect activities, and provide fitness insights.",
         "NSBluetoothAlwaysUsageDescription": "Dofek connects to your WHOOP strap via Bluetooth to record accelerometer data during workouts.",
         "BGTaskSchedulerPermittedIdentifiers": ["com.dofek.accelerometer-refresh"],
-        "LSSupportsOpeningDocumentsInPlace": true,
         "CADisableMinimumFrameDurationOnPhone": true,
         "CFBundleDocumentTypes": [
           {
