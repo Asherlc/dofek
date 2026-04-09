@@ -1158,7 +1158,7 @@ jobs:
   deploy-web:
     name: Deploy Web
     needs: [deploy-ready]
-    if: needs.deploy-ready.outputs.latest == 'true'
+    if: always() && needs.deploy-ready.result == 'success' && needs.deploy-ready.outputs.latest == 'true'
     uses: ./.github/workflows/deploy-web.yml
     with:
       commit_sha: ${{ github.sha }}
@@ -1167,7 +1167,7 @@ jobs:
   deploy-worker:
     name: Deploy Worker
     needs: [deploy-ready]
-    if: needs.deploy-ready.outputs.latest == 'true'
+    if: always() && needs.deploy-ready.result == 'success' && needs.deploy-ready.outputs.latest == 'true'
     uses: ./.github/workflows/deploy-worker.yml
     with:
       commit_sha: ${{ github.sha }}
@@ -1176,7 +1176,7 @@ jobs:
   deploy-ota:
     name: Deploy OTA
     needs: [deploy-ready]
-    if: needs.deploy-ready.outputs.latest == 'true'
+    if: always() && needs.deploy-ready.result == 'success' && needs.deploy-ready.outputs.latest == 'true'
     uses: ./.github/workflows/deploy-ota.yml
     with:
       commit_sha: ${{ github.sha }}
@@ -1185,7 +1185,7 @@ jobs:
   deploy-ios:
     name: Deploy iOS
     needs: [deploy-ready, detect-deploy-targets]
-    if: needs.deploy-ready.outputs.latest == 'true' && needs.detect-deploy-targets.outputs.ios == 'true'
+    if: always() && needs.deploy-ready.result == 'success' && needs.detect-deploy-targets.result == 'success' && needs.deploy-ready.outputs.latest == 'true' && needs.detect-deploy-targets.outputs.ios == 'true'
     uses: ./.github/workflows/deploy-ios.yml
     with:
       commit_sha: ${{ github.sha }}
@@ -1194,7 +1194,7 @@ jobs:
   deploy-infra-compose:
     name: Deploy Infra Compose
     needs: [deploy-ready, detect-deploy-targets]
-    if: needs.deploy-ready.outputs.latest == 'true' && needs.detect-deploy-targets.outputs.infra_compose == 'true'
+    if: always() && needs.deploy-ready.result == 'success' && needs.detect-deploy-targets.result == 'success' && needs.deploy-ready.outputs.latest == 'true' && needs.detect-deploy-targets.outputs.infra_compose == 'true'
     uses: ./.github/workflows/deploy-infra-compose.yml
     with:
       commit_sha: ${{ github.sha }}
@@ -1203,7 +1203,7 @@ jobs:
   deploy-cloudflare:
     name: Deploy Cloudflare
     needs: [deploy-ready, detect-deploy-targets]
-    if: needs.deploy-ready.outputs.latest == 'true' && needs.detect-deploy-targets.outputs.cloudflare == 'true'
+    if: always() && needs.deploy-ready.result == 'success' && needs.detect-deploy-targets.result == 'success' && needs.deploy-ready.outputs.latest == 'true' && needs.detect-deploy-targets.outputs.cloudflare == 'true'
     uses: ./.github/workflows/deploy-cloudflare.yml
     with:
       commit_sha: ${{ github.sha }}
