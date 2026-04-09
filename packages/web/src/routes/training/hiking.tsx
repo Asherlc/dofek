@@ -55,8 +55,8 @@ function HikingTab() {
         />
       </Section>
 
-      <Section title="Recent Hikes & Walks" subtitle="Recent hiking and walking activities">
-        <RecentActivitiesSection activityTypes={["hiking", "walking"]} />
+      <Section title="Recent Hikes" subtitle="Recent hiking activities">
+        <RecentActivitiesSection activityTypes={["hiking"]} />
       </Section>
     </>
   );
