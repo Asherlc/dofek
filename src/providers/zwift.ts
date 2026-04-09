@@ -53,9 +53,13 @@ export class ZwiftProvider implements SyncProvider {
         // Decode JWT to get athleteId
         const jwtPayloadSchema = z.object({ sub: z.string().optional() });
         const payload = jwtPayloadSchema.parse(
-          JSON.parse(Buffer.from(result.accessToken.split(".")[1] ?? "", "base64").toString()),
+          JSON.parse(Buffer.from(result.accessToken.split(".")[1] ?? "", "base64url").toString()),
         );
-        const athleteId = payload.sub ?? "";
+        const athleteId = payload.sub;
+        if (!athleteId) {
+          throw new Error("Zwift JWT missing athlete ID (sub claim) — cannot authenticate");
+        }
+        logger.info(`[zwift] Authenticated athlete ${athleteId}`);
 
         return {
           accessToken: result.accessToken,
@@ -73,16 +77,19 @@ export class ZwiftProvider implements SyncProvider {
   async #resolveTokens(
     db: SyncDatabase,
     forceRefresh = false,
-  ): Promise<{ accessToken: string; athleteId: number }> {
+  ): Promise<{ accessToken: string; athleteId: string }> {
     const stored = await loadTokens(db, this.id);
     if (!stored) {
       throw new Error("Zwift not connected — authenticate via the web UI");
     }
 
     const athleteIdMatch = stored.scopes?.match(/athleteId:(\S+)/);
-    const athleteId = athleteIdMatch ? Number(athleteIdMatch[1]) : 0;
+    const athleteId = athleteIdMatch?.[1];
     if (!athleteId) {
-      throw new Error("Zwift athlete ID not found — re-authenticate");
+      logger.error(`[zwift] Stored scopes missing athlete ID: ${JSON.stringify(stored.scopes)}`);
+      throw new Error(
+        `Zwift athlete ID not found in scopes (${stored.scopes ?? "null"}) — re-authenticate`,
+      );
     }
 
     // Refresh if expired
