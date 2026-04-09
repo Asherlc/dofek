@@ -11,7 +11,11 @@ vi.mock("../lib/typed-sql.ts", () => ({
 }));
 
 vi.mock("../logger.ts", () => ({
-  logger: { info: vi.fn(), warn: vi.fn() },
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}));
+
+vi.mock("@sentry/node", () => ({
+  captureException: vi.fn(),
 }));
 
 // Mock the DuckDB writeParquet function
@@ -184,7 +188,7 @@ describe("processTrainingExportJob", () => {
       "[training-export] Starting training data export (since=all, until=now)",
     );
     expect(mockLoggerInfo).toHaveBeenCalledWith(
-      "[training-export] Export complete: 3 total rows, 1 files",
+      expect.stringContaining("[training-export] Export complete: 3 total rows, 1 files"),
     );
   });
 

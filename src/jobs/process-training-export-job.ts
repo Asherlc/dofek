@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import * as Sentry from "@sentry/node";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
@@ -39,6 +40,14 @@ const LOCK_EXTENSION_MS = 600_000;
  * Called periodically during long synchronous DuckDB appender loops.
  */
 const yieldToEventLoop = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
+/** Log heap usage in MB for OOM diagnosis. */
+function logMemory(phase: string): void {
+  const usage = process.memoryUsage();
+  logger.info(
+    `[training-export] memory phase=${phase} heapUsedMb=${(usage.heapUsed / 1024 / 1024).toFixed(1)} heapTotalMb=${(usage.heapTotal / 1024 / 1024).toFixed(1)} rssMb=${(usage.rss / 1024 / 1024).toFixed(1)}`,
+  );
+}
 
 // ── Zod schemas ──
 
@@ -342,16 +351,23 @@ async function exportSensorSamples(
   onProgress?: (info: { percentage: number; message: string }) => void,
   extendLock?: (duration: number) => Promise<void>,
 ): Promise<number> {
+  const exportStart = Date.now();
   const timeConditions = buildConditions(since, until);
   const timeWhere = buildWhereClause(timeConditions);
 
+  logMemory("count-start");
+
   // Count total rows for progress reporting
+  const countStart = Date.now();
   const countResult = await executeWithSchema(
     db,
     countRowSchema,
     sql`SELECT COUNT(*)::text AS count FROM fitness.sensor_sample ss ${timeWhere}`,
   );
   const totalRows = parseInt(countResult[0]?.count ?? "0", 10);
+  logger.info(
+    `[training-export] COUNT query completed in ${Date.now() - countStart}ms, totalRows=${totalRows}`,
+  );
 
   // Extend lock after the potentially slow COUNT query
   await extendLock?.(LOCK_EXTENSION_MS);
@@ -368,17 +384,26 @@ async function exportSensorSamples(
   const parquetPath = join(parquetDir, `${timestamp}.parquet`);
 
   // Open streaming Parquet writer (avoids accumulating all rows in memory)
+  const duckdbStart = Date.now();
   const writer = await createParquetWriter();
+  logger.info(`[training-export] DuckDB writer initialized in ${Date.now() - duckdbStart}ms`);
 
   let exported = 0;
   let cursor: Cursor | undefined;
+  let batchNumber = 0;
 
   try {
     // Cursor-based pagination with double-buffered fetching:
     // Start the next Postgres query while appending the current batch to DuckDB.
+    const firstFetchStart = Date.now();
     let currentBatch = await fetchBatch(db, since, until, undefined);
+    logger.info(
+      `[training-export] batch=1 fetchMs=${Date.now() - firstFetchStart} rows=${currentBatch.length}`,
+    );
 
     while (currentBatch.length > 0) {
+      batchNumber++;
+
       // Update cursor from last row of current batch
       const lastRow = currentBatch[currentBatch.length - 1];
       if (!lastRow) break;
@@ -390,13 +415,16 @@ async function exportSensorSamples(
       };
 
       // Start fetching next batch while we append current (double-buffer)
+      const fetchStart = Date.now();
       const nextBatchPromise =
         currentBatch.length === BATCH_SIZE
           ? fetchBatch(db, since, until, cursor)
           : Promise.resolve([]);
 
       // Append to Parquet writer (streams directly to DuckDB, no JS array accumulation)
+      const appendStart = Date.now();
       await writer.appendRows(currentBatch);
+      const appendMs = Date.now() - appendStart;
 
       exported += currentBatch.length;
 
@@ -410,15 +438,36 @@ async function exportSensorSamples(
       });
 
       currentBatch = await nextBatchPromise;
+      const fetchMs = Date.now() - fetchStart;
+
+      logger.info(
+        `[training-export] batch=${batchNumber} exported=${exported}/${totalRows} appendMs=${appendMs} fetchMs=${fetchMs} nextRows=${currentBatch.length}`,
+      );
+
+      // Log memory every 5 batches to track OOM trajectory
+      if (batchNumber % 5 === 0) {
+        logMemory(`batch-${batchNumber}`);
+      }
     }
 
+    logMemory("finalize-start");
+    const finalizeStart = Date.now();
     await writer.finalize(parquetPath);
+    logger.info(`[training-export] Parquet finalize completed in ${Date.now() - finalizeStart}ms`);
   } catch (error) {
     writer.close();
+    logMemory("error");
+    logger.error(
+      `[training-export] Failed at batch=${batchNumber} exported=${exported}/${totalRows} elapsedMs=${Date.now() - exportStart}`,
+    );
     throw error;
   }
 
-  logger.info(`[training-export] Wrote ${exported} sensor_sample rows to ${parquetPath}`);
+  const totalMs = Date.now() - exportStart;
+  logger.info(
+    `[training-export] Wrote ${exported} sensor_sample rows to ${parquetPath} in ${totalMs}ms (${batchNumber} batches)`,
+  );
+  logMemory("complete");
   return exported;
 }
 
@@ -427,11 +476,13 @@ export async function processTrainingExportJob(
   db: SyncDatabase,
 ): Promise<void> {
   const { since, until } = job.data;
+  const jobStart = Date.now();
   const timestamp = new Date().toISOString().replace(/\.\d+Z$/, "Z");
 
   logger.info(
     `[training-export] Starting training data export (since=${since ?? "all"}, until=${until ?? "now"})`,
   );
+  logMemory("job-start");
 
   const outputDir = TRAINING_EXPORT_DIR;
   mkdirSync(outputDir, { recursive: true });
@@ -440,33 +491,49 @@ export async function processTrainingExportJob(
     job
       .updateProgress({ percentage: info.percentage, message: info.message })
       .catch((error: unknown) => {
-        logger.warn("Failed to update training export progress: %s", error);
+        logger.warn("[training-export] Failed to update progress: %s", error);
       });
+  };
+
+  const extendLock = async (duration: number) => {
+    try {
+      await job.extendLock(duration);
+    } catch (error: unknown) {
+      logger.warn(`[training-export] Failed to extend lock: ${error}`);
+    }
   };
 
   updateProgress({ percentage: 0, message: "Starting training data export..." });
 
-  // Export sensor_sample joined with activity (direct FK + time-overlap LATERAL)
-  const rowCount = await exportSensorSamples(
-    db,
-    outputDir,
-    timestamp,
-    since,
-    until,
-    updateProgress,
-    (duration) => job.extendLock(duration),
-  );
+  try {
+    // Export sensor_sample joined with activity (direct FK + time-overlap LATERAL)
+    const rowCount = await exportSensorSamples(
+      db,
+      outputDir,
+      timestamp,
+      since,
+      until,
+      updateProgress,
+      extendLock,
+    );
 
-  // Write manifest
-  updateProgress({ percentage: 95, message: "Writing manifest..." });
+    // Write manifest
+    updateProgress({ percentage: 95, message: "Writing manifest..." });
 
-  const manifest = buildManifest(timestamp, since, until, rowCount);
-  const manifestPath = join(outputDir, "manifest.json");
-  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), "utf-8");
+    const manifest = buildManifest(timestamp, since, until, rowCount);
+    const manifestPath = join(outputDir, "manifest.json");
+    writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), "utf-8");
 
-  updateProgress({ percentage: 100, message: "Training export complete" });
+    updateProgress({ percentage: 100, message: "Training export complete" });
 
-  logger.info(
-    `[training-export] Export complete: ${manifest.totalRows} total rows, ${manifest.files.length} files`,
-  );
+    const totalMs = Date.now() - jobStart;
+    logger.info(
+      `[training-export] Export complete: ${manifest.totalRows} total rows, ${manifest.files.length} files, totalMs=${totalMs}`,
+    );
+  } catch (error) {
+    const totalMs = Date.now() - jobStart;
+    logger.error(`[training-export] Job failed after ${totalMs}ms`);
+    Sentry.captureException(error, { tags: { job: "training-export" } });
+    throw error;
+  }
 }
