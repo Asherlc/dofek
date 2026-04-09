@@ -182,6 +182,9 @@
     ]
   },
   "pnpm": {
+    "overrides": {
+      "axios": ">=1.15.0"
+    },
     "onlyBuiltDependencies": [
       "@sentry/cli",
       "core-js",
