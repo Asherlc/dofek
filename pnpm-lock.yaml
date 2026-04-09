@@ -431,8 +431,8 @@ importers:
         specifier: 10.45.0
         version: 10.45.0
       '@slack/bolt':
-        specifier: 4.6.0
-        version: 4.6.0(@types/express@5.0.6)
+        specifier: 4.7.0
+        version: 4.7.0(@types/express@5.0.6)
       '@slack/socket-mode':
         specifier: 2.0.6
         version: 2.0.6
@@ -4121,8 +4121,8 @@ packages:
     peerDependencies:
       size-limit: 12.0.1
 
-  '@slack/bolt@4.6.0':
-    resolution: {integrity: sha512-xPgfUs2+OXSugz54Ky07pA890+Qydk22SYToi8uGpXeHSt1JWwFJkRyd/9Vlg5I1AdfdpGXExDpwnbuN9Q/2dQ==}
+  '@slack/bolt@4.7.0':
+    resolution: {integrity: sha512-Xpf+gKegNvkHpft1z4YiuqZdciJ3tUp1bIRQxylW30Ovf+hzjb0M1zTHVtJsRw9jsjPxHTPoyanEXVvG6qVE1g==}
     engines: {node: '>=18', npm: '>=8.6.0'}
     peerDependencies:
       '@types/express': ^5.0.0
@@ -4131,8 +4131,8 @@ packages:
     resolution: {integrity: sha512-6cmdPrV/RYfd2U0mDGiMK8S7OJqpCTm7enMLRR3edccsPX8j7zXTLnaEF4fhxxJJTAIOil6+qZrnUPTuaLvwrQ==}
     engines: {node: '>= 18', npm: '>= 8.6.0'}
 
-  '@slack/oauth@3.0.4':
-    resolution: {integrity: sha512-+8H0g7mbrHndEUbYCP7uYyBCbwqmm3E6Mo3nfsDvZZW74zKk1ochfH/fWSvGInYNCVvaBUbg3RZBbTp0j8yJCg==}
+  '@slack/oauth@3.0.5':
+    resolution: {integrity: sha512-exqFQySKhNDptWYSWhvRUJ4/+ndu2gayIy7vg/JfmJq3wGtGdHk531P96fAZyBm5c1Le3yaPYqv92rL4COlU3A==}
     engines: {node: '>=18', npm: '>=8.6.0'}
 
   '@slack/socket-mode@2.0.6':
@@ -14715,10 +14715,10 @@ snapshots:
     dependencies:
       size-limit: 12.0.1(jiti@2.6.1)
 
-  '@slack/bolt@4.6.0(@types/express@5.0.6)':
+  '@slack/bolt@4.7.0(@types/express@5.0.6)':
     dependencies:
       '@slack/logger': 4.0.1
-      '@slack/oauth': 3.0.4
+      '@slack/oauth': 3.0.5
       '@slack/socket-mode': 2.0.6
       '@slack/types': 2.20.1
       '@slack/web-api': 7.15.0
@@ -14738,7 +14738,7 @@ snapshots:
     dependencies:
       '@types/node': 22.19.15
 
-  '@slack/oauth@3.0.4':
+  '@slack/oauth@3.0.5':
     dependencies:
       '@slack/logger': 4.0.1
       '@slack/web-api': 7.15.0

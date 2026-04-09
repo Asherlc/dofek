@@ -128,6 +128,7 @@ export class DailyMetricsRepository extends BaseRepository {
             SELECT * FROM fitness.v_daily_metrics
             WHERE user_id = ${this.userId}
               AND date > ${dateWindowStart(endDate, days)}
+              AND date <= ${dateWindowEnd(endDate)}
           ),
           stats AS (
             SELECT
@@ -143,22 +144,22 @@ export class DailyMetricsRepository extends BaseRepository {
               STDDEV(skin_temp_c) AS stddev_skin_temp
             FROM current
           ),
-          today AS (
+          latest AS (
             SELECT resting_hr, hrv, spo2_avg, steps, active_energy_kcal, skin_temp_c, date
-            FROM fitness.v_daily_metrics
-            WHERE user_id = ${this.userId}
-              AND date = ${dateWindowEnd(endDate)}
+            FROM current
+            ORDER BY date DESC
+            LIMIT 1
           )
           SELECT
             stats.*,
-            today.resting_hr AS latest_resting_hr,
-            today.hrv AS latest_hrv,
-            today.spo2_avg AS latest_spo2,
-            today.steps AS latest_steps,
-            today.active_energy_kcal AS latest_active_energy,
-            today.skin_temp_c AS latest_skin_temp,
-            today.date AS latest_date
-          FROM stats LEFT JOIN today ON true`,
+            latest.resting_hr AS latest_resting_hr,
+            latest.hrv AS latest_hrv,
+            latest.spo2_avg AS latest_spo2,
+            latest.steps AS latest_steps,
+            latest.active_energy_kcal AS latest_active_energy,
+            latest.skin_temp_c AS latest_skin_temp,
+            latest.date AS latest_date
+          FROM stats LEFT JOIN latest ON true`,
     );
     const result = rows[0] ?? null;
     if (result && result.latest_date === null && result.avg_resting_hr === null) {

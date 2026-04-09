@@ -103,8 +103,8 @@ describe("spo2TempSectionConfig", () => {
 });
 
 describe("healthMonitorSubtitle", () => {
-  it("always returns today's label", () => {
-    expect(healthMonitorSubtitle()).toBe("Today's values vs. rolling average");
+  it("returns latest values label", () => {
+    expect(healthMonitorSubtitle()).toBe("Latest values vs. rolling average");
   });
 });
 
@@ -131,6 +131,15 @@ describe("DASHBOARD_SECTION_IDS", () => {
 
   it("includes strain section", () => {
     expect(DASHBOARD_SECTION_IDS.has("strain")).toBe(true);
+  });
+
+  it("includes every section from DEFAULT_LAYOUT.order", () => {
+    for (const sectionId of DEFAULT_LAYOUT.order) {
+      expect(
+        DASHBOARD_SECTION_IDS.has(sectionId),
+        `"${sectionId}" is in DEFAULT_LAYOUT.order but missing from DASHBOARD_SECTION_IDS — section will never render`,
+      ).toBe(true);
+    }
   });
 });
 
