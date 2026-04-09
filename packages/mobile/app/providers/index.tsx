@@ -30,14 +30,8 @@ import { styles } from "./styles.ts";
 async function readBlobFromFileUri(fileUri: string): Promise<Blob> {
   const file = new ExpoFile(fileUri);
   if (!file.exists) {
-    // Capture diagnostic context before throwing
-    captureException(new Error("Shared file does not exist"), {
-      context: "readBlobFromFileUri",
-      fileUri,
-      fileUriLength: fileUri.length,
-      resolvedUri: file.uri,
-    });
-    throw new Error(`Shared file does not exist: ${fileUri}`);
+    const error = new Error(`Shared file does not exist: ${fileUri} (resolved: ${file.uri})`);
+    throw error;
   }
   const bytes = await file.bytes();
   return new Blob([bytes], { type: file.type || "application/octet-stream" });
