@@ -133,11 +133,11 @@ describe("DASHBOARD_SECTION_IDS", () => {
     expect(DASHBOARD_SECTION_IDS.has("strain")).toBe(true);
   });
 
-  it("includes every section from DEFAULT_ORDER", () => {
+  it("includes every section from DEFAULT_LAYOUT.order", () => {
     for (const sectionId of DEFAULT_LAYOUT.order) {
       expect(
         DASHBOARD_SECTION_IDS.has(sectionId),
-        `"${sectionId}" is in DEFAULT_ORDER but missing from DASHBOARD_SECTION_IDS — section will never render`,
+        `"${sectionId}" is in DEFAULT_LAYOUT.order but missing from DASHBOARD_SECTION_IDS — section will never render`,
       ).toBe(true);
     }
   });
