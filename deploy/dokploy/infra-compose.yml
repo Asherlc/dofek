@@ -6,6 +6,7 @@
 services:
   db:
     image: timescale/timescaledb:2.26.2-pg16
+    container_name: dofek-db
     restart: unless-stopped
     networks:
       - default
