@@ -1085,7 +1085,7 @@ jobs:
     if: always() && needs.ci-gate.result == 'success' && github.ref == 'refs/heads/main'
     concurrency:
       group: docker
-      cancel-in-progress: false
+      cancel-in-progress: true
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
