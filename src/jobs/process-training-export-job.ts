@@ -31,9 +31,9 @@ const YIELD_INTERVAL = 10_000;
 
 /**
  * Duration (ms) to extend the job lock by when explicitly renewing.
- * Matches the lockDuration configured on the training export worker.
+ * Also used as the lockDuration on the training export worker in worker.ts.
  */
-const LOCK_EXTENSION_MS = 600_000;
+export const TRAINING_EXPORT_LOCK_MS = 600_000;
 
 /**
  * Yield to the event loop so BullMQ can renew the job lock.
@@ -370,7 +370,7 @@ async function exportSensorSamples(
   );
 
   // Extend lock after the potentially slow COUNT query
-  await extendLock?.(LOCK_EXTENSION_MS);
+  await extendLock?.(TRAINING_EXPORT_LOCK_MS);
 
   if (totalRows === 0) {
     logger.info("[training-export] No sensor_sample rows to export");
@@ -429,7 +429,7 @@ async function exportSensorSamples(
       exported += currentBatch.length;
 
       // Extend lock after each batch to prevent stalling during long exports
-      await extendLock?.(LOCK_EXTENSION_MS);
+      await extendLock?.(TRAINING_EXPORT_LOCK_MS);
 
       const percentage = computeProgress(exported, totalRows, 0, 90);
       onProgress?.({
@@ -451,6 +451,7 @@ async function exportSensorSamples(
     }
 
     logMemory("finalize-start");
+    await extendLock?.(TRAINING_EXPORT_LOCK_MS);
     const finalizeStart = Date.now();
     await writer.finalize(parquetPath);
     logger.info(`[training-export] Parquet finalize completed in ${Date.now() - finalizeStart}ms`);
@@ -491,7 +492,7 @@ export async function processTrainingExportJob(
     job
       .updateProgress({ percentage: info.percentage, message: info.message })
       .catch((error: unknown) => {
-        logger.warn("[training-export] Failed to update progress: %s", error);
+        logger.warn(`[training-export] Failed to update progress: ${error}`);
       });
   };
 
@@ -532,7 +533,8 @@ export async function processTrainingExportJob(
     );
   } catch (error) {
     const totalMs = Date.now() - jobStart;
-    logger.error(`[training-export] Job failed after ${totalMs}ms`);
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error(`[training-export] Job failed after ${totalMs}ms: ${message}`);
     Sentry.captureException(error, { tags: { job: "training-export" } });
     throw error;
   }

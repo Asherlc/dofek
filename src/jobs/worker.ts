@@ -7,7 +7,10 @@ import { processImportJob } from "./process-import-job.ts";
 import { processPostSyncJob } from "./process-post-sync-job.ts";
 import { processScheduledSyncJob } from "./process-scheduled-sync-job.ts";
 import { processSyncJob } from "./process-sync-job.ts";
-import { processTrainingExportJob } from "./process-training-export-job.ts";
+import {
+  processTrainingExportJob,
+  TRAINING_EXPORT_LOCK_MS,
+} from "./process-training-export-job.ts";
 import { getConfiguredProviderIds, getProviderQueueConfig } from "./provider-queue-config.ts";
 import {
   EXPORT_QUEUE,
@@ -93,7 +96,6 @@ const postSyncWorker = new Worker<PostSyncJobData>(
   (job) => jobContext.run(job, () => processPostSyncJob(job, db)),
   { connection, concurrency: 1 },
 );
-const TRAINING_EXPORT_LOCK_MS = 600_000;
 const trainingExportWorker = new Worker<TrainingExportJobData>(
   TRAINING_EXPORT_QUEUE,
   (job, token) =>
@@ -111,7 +113,6 @@ const trainingExportWorker = new Worker<TrainingExportJobData>(
   {
     connection,
     lockDuration: TRAINING_EXPORT_LOCK_MS,
-    stalledInterval: TRAINING_EXPORT_LOCK_MS,
     maxStalledCount: 3,
   },
 );
