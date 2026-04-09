@@ -1382,8 +1382,11 @@ jobs:
           set -euo pipefail
           cd deploy/dokploy-compose
           terraform init
-          terraform apply -auto-approve
 
+          # Phase 1: Render compose template (no DB connection needed)
+          terraform apply -auto-approve -target=output.compose_rendered
+
+          # Phase 2: Deploy compose to Dokploy (binds DB port to localhost)
           COMPOSE_CONTENT=$(terraform output -raw compose_rendered)
           COMPOSE_JSON=$(printf '%s' "$COMPOSE_CONTENT" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")
           COMPOSE_ID="RMk3hATYEIKherZ2QEud_"
@@ -1394,12 +1397,28 @@ jobs:
             -H "Content-Type: application/json" \
             -d "{\"json\":{\"composeId\":\"${COMPOSE_ID}\",\"sourceType\":\"raw\",\"composeFile\":${COMPOSE_JSON}}}"
 
-          echo ""
           echo "Deploying infra compose stack..."
           curl -fsSL -X POST "${DOKPLOY_HOST}/api/trpc/compose.deploy" \
             -H "x-api-key: ${DOKPLOY_API_KEY}" \
             -H "Content-Type: application/json" \
             -d "{\"json\":{\"composeId\":\"${COMPOSE_ID}\"}}"
+
+          # Phase 3: Wait for DB to be ready after compose redeploy
+          echo "Waiting for DB to accept connections..."
+          for attempt in $(seq 1 30); do
+            if pg_isready -h 127.0.0.1 -p 5432 -U health 2>/dev/null; then
+              echo "DB is ready"
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              echo "::error::DB not ready after 60s"
+              exit 1
+            fi
+            sleep 2
+          done
+
+          # Phase 4: Manage DB extension via Terraform
+          terraform apply -auto-approve
 
   docker:
     name: Docker (${{ matrix.target }})
