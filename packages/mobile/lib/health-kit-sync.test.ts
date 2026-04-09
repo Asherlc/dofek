@@ -287,6 +287,53 @@ describe("syncHealthKitToServer", () => {
     expect(workoutCall[0].workouts[0].totalEnergyBurned).toBeNull();
     expect(workoutCall[0].workouts[0].totalDistance).toBeNull();
   });
+
+  it("passes through workout metadata and workoutActivities to server", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    healthKit.queryWorkouts.mockResolvedValue([
+      {
+        uuid: "w-strength",
+        workoutType: "49",
+        startDate: "2026-03-21T10:00:00Z",
+        endDate: "2026-03-21T11:00:00Z",
+        duration: 3600,
+        totalEnergyBurned: 350,
+        totalDistance: null,
+        sourceName: "Strong",
+        sourceBundle: "io.strongapp.strong",
+        metadata: { HKIndoorWorkout: 1, customKey: "some-value" },
+        workoutActivities: [
+          {
+            uuid: "act-1",
+            activityType: 49,
+            startDate: "2026-03-21T10:00:00Z",
+            endDate: "2026-03-21T10:15:00Z",
+            metadata: { exerciseName: "Squat" },
+          },
+        ],
+      },
+    ]);
+
+    await syncHealthKitToServer({
+      trpcClient: client,
+      healthKit,
+      syncRangeDays: 1,
+    });
+
+    const workoutCall = client.healthKitSync.pushWorkouts.mutate.mock.calls[0];
+    const workout = workoutCall[0].workouts[0];
+    expect(workout.metadata).toEqual({ HKIndoorWorkout: 1, customKey: "some-value" });
+    expect(workout.workoutActivities).toEqual([
+      {
+        uuid: "act-1",
+        activityType: 49,
+        startDate: "2026-03-21T10:00:00Z",
+        endDate: "2026-03-21T10:15:00Z",
+        metadata: { exerciseName: "Squat" },
+      },
+    ]);
+  });
 });
 
 describe("quantity type constants", () => {

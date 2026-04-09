@@ -2542,6 +2542,58 @@ describe("healthKitSyncRouter", () => {
       expect(serialized).toContain("10000"); // totalDistance
     });
 
+    it("stores workout metadata and workoutActivities in raw JSON column", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.pushWorkouts({
+        workouts: [
+          {
+            uuid: "w-metadata",
+            workoutType: "49", // traditionalStrengthTraining
+            startDate: "2024-01-15T10:00:00Z",
+            endDate: "2024-01-15T11:00:00Z",
+            duration: 3600,
+            totalEnergyBurned: 350,
+            totalDistance: null,
+            sourceName: "Strong",
+            sourceBundle: "io.strongapp.strong",
+            metadata: {
+              HKIndoorWorkout: 1,
+              "some-custom-key": "Bench Press",
+            },
+            workoutActivities: [
+              {
+                uuid: "activity-1",
+                activityType: 49,
+                startDate: "2024-01-15T10:00:00Z",
+                endDate: "2024-01-15T10:20:00Z",
+                metadata: { exerciseName: "Barbell Bench Press" },
+              },
+            ],
+          },
+        ],
+      });
+
+      const insertCall = execute.mock.calls.find((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return serialized.includes("fitness.activity") && serialized.includes("INSERT");
+      });
+      expect(insertCall).toBeDefined();
+      const serialized = JSON.stringify(insertCall?.[0]);
+      // Workout metadata should be preserved in raw JSON
+      expect(serialized).toContain("Bench Press");
+      expect(serialized).toContain("HKIndoorWorkout");
+      // Workout activities should be preserved in raw JSON
+      expect(serialized).toContain("activity-1");
+      expect(serialized).toContain("Barbell Bench Press");
+      expect(serialized).toContain("exerciseName");
+    });
+
     it("calls linkUnassignedHeartRateToWorkouts after processing workouts (kills if(true)/if(>=0) mutations on workouts.length > 0)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
