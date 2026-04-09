@@ -31,6 +31,7 @@ services:
 
   db-backup:
     image: prodrigestivill/postgres-backup-local
+    container_name: dofek-db-backup
     restart: unless-stopped
     environment:
       POSTGRES_HOST: db
@@ -53,6 +54,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    container_name: dofek-redis
     restart: unless-stopped
     networks:
       - default
@@ -67,6 +69,7 @@ services:
 
   collector:
     image: otel/opentelemetry-collector-contrib:0.149.0
+    container_name: dofek-collector
     restart: unless-stopped
     user: "0:0"
     networks:
@@ -86,6 +89,7 @@ services:
 
   ota:
     image: ghcr.io/axelmarciano/expo-open-ota:latest
+    container_name: dofek-ota
     restart: unless-stopped
     environment:
       BASE_URL: https://${ota_domain}
