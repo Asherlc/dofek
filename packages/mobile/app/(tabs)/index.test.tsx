@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 let mockReadinessLoading = false;
 let mockWorkloadLoading = false;
 let mockSleepLoading = false;
+let mockSleepData: unknown = undefined;
 
 function q(getData: () => unknown = () => undefined) {
   return { useQuery: () => ({ data: getData(), isLoading: false }) };
@@ -25,7 +26,7 @@ vi.mock("../../lib/trpc", () => ({
         () => mockReadinessLoading,
       ),
       sleepAnalytics: loadableQuery(
-        () => undefined,
+        () => mockSleepData,
         () => mockSleepLoading,
       ),
       workloadRatio: loadableQuery(
@@ -95,6 +96,7 @@ describe("TodayScreen independent loading states", () => {
     mockReadinessLoading = false;
     mockWorkloadLoading = false;
     mockSleepLoading = false;
+    mockSleepData = undefined;
   });
 
   afterEach(() => {
@@ -138,6 +140,33 @@ describe("TodayScreen independent loading states", () => {
     // Recovery and Strain should still render (not loading)
     expect(screen.getAllByText("Recovery").length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText("Strain").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("shows last night summary when sleep data has yesterday's date", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-21T10:00:00"));
+
+    mockSleepData = {
+      nightly: [
+        {
+          date: "2026-03-20",
+          durationMinutes: 480,
+          sleepMinutes: 450,
+          deepPct: 20,
+          remPct: 25,
+          lightPct: 45,
+          awakePct: 10,
+          efficiency: 90,
+          rollingAvgDuration: 440,
+        },
+      ],
+      sleepDebt: -30,
+    };
+
+    const { default: TodayScreen } = await import("./index");
+    render(<TodayScreen />);
+
+    expect(screen.getByText("LAST NIGHT")).toBeTruthy();
   });
 
   it("renders all rings when no queries are loading", async () => {

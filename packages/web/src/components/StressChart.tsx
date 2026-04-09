@@ -26,7 +26,7 @@ export function StressChart({ data, loading }: StressChartProps) {
   }
 
   const latestDaily = data.daily[data.daily.length - 1];
-  const hasToday = latestDaily != null && isToday(new Date(latestDaily.date));
+  const hasToday = latestDaily != null && isToday(new Date(`${latestDaily.date}T00:00:00`));
   const latest = hasToday ? (data.latestScore ?? 0) : 0;
   const latestStress = new StressScore(latest);
   const latestColor = latestStress.color;

@@ -73,7 +73,7 @@ export default function TodayScreen() {
   const mostRecentNight = nightly[nightly.length - 1];
   const lastNight = (() => {
     if (!mostRecentNight) return undefined;
-    const date = new Date(mostRecentNight.date);
+    const date = new Date(`${mostRecentNight.date}T00:00:00`);
     return isToday(date) || isYesterday(date) ? mostRecentNight : undefined;
   })();
   const sleepDebt = sleepResult?.sleepDebt ?? 0;
