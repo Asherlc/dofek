@@ -203,6 +203,18 @@ describe("DailyMetricsRepository", () => {
       expect(mockLoggerWarn).not.toHaveBeenCalled();
     });
 
+    it("returns latest values from most recent day in window when endDate has no data", async () => {
+      // Simulates: stats are populated (data in 30-day window) but latest comes
+      // from yesterday, not today — the query should use the most recent row
+      // in the window rather than requiring an exact endDate match.
+      const { repo } = makeRepository([makeTrendsRow({ latest_date: "2025-03-14" })]);
+      const result = await repo.getTrends(30, "2025-03-15");
+      expect(result).not.toBeNull();
+      expect(result?.latest_date).toBe("2025-03-14");
+      expect(result?.latest_hrv).toBe(48);
+      expect(result?.avg_hrv).toBe(43.8);
+    });
+
     it("handles all-null trends row", async () => {
       const allNullTrends = makeTrendsRow({
         avg_resting_hr: null,
