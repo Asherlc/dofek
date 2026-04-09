@@ -1102,10 +1102,10 @@ describe("PolarProvider.sync — error handling", () => {
     ): Promise<Response> => {
       const urlString = String(url);
       if (urlString.startsWith("https://polarremote.com/")) {
-        return new Response(
-          JSON.stringify({ error: "invalid_grant" }),
-          { status: 400, headers: { "content-type": "application/json" } },
-        );
+        return new Response(JSON.stringify({ error: "invalid_grant" }), {
+          status: 400,
+          headers: { "content-type": "application/json" },
+        });
       }
       return Response.json([]);
     };
