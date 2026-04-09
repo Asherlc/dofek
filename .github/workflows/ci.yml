@@ -1047,378 +1047,78 @@ jobs:
             This comment updates automatically on each PR push.
 
   # ── Deploy (main only) ────────────────────────────────────────────────
+  # Deploy logic lives in .github/workflows/deploy.yml (also manually triggerable).
+  # CI detects what changed and triggers the appropriate deploy targets.
 
-  check-native-changes:
-    name: Check Native iOS Changes
+  deploy:
+    name: Deploy
     needs: [ci-gate]
     if: always() && needs.ci-gate.result == 'success' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    outputs:
-      changed: ${{ steps.check.outputs.changed }}
+    permissions:
+      actions: write
+      contents: read
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           fetch-depth: 2
-      - id: check
+      - name: Detect changed deploy targets
+        id: detect
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "Manual dispatch — forcing TestFlight upload"
-          else
-            CHANGED=$(git diff --name-only HEAD~1...HEAD -- \
-              'packages/mobile/app.json' \
-              'packages/mobile/app.config.ts' \
-              'packages/mobile/plugins/**' \
-              'packages/mobile/targets/**' \
-              'packages/mobile/native/**' \
-              'packages/mobile/modules/*/ios/**' \
-              'packages/mobile/modules/*/Package.swift' \
-              'packages/mobile/modules/*/expo-module.config.json')
-            if [ -n "$CHANGED" ]; then
-              echo "changed=true" >> "$GITHUB_OUTPUT"
-              echo "Native iOS files changed:"
-              echo "$CHANGED"
-            else
-              echo "changed=false" >> "$GITHUB_OUTPUT"
-              echo "No native iOS changes, skipping TestFlight upload"
-            fi
-          fi
+          DIFF=$(git diff --name-only HEAD~1...HEAD)
 
-  ios-release:
-    name: iOS TestFlight
-    needs: check-native-changes
-    if: always() && needs.check-native-changes.result == 'success' && needs.check-native-changes.outputs.changed == 'true'
-    runs-on: macos-26
-    timeout-minutes: 60
-    env:
-      APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-      DERIVED_DATA_PATH: ${{ github.workspace }}/DerivedData
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+          # iOS native changes → ios deploy
+          echo "$DIFF" | grep -qE '^packages/mobile/(app\.json|app\.config\.ts|plugins/|targets/|native/|modules/.*/ios/)' \
+            && echo "ios=true" >> "$GITHUB_OUTPUT" || echo "ios=false" >> "$GITHUB_OUTPUT"
+
+          # Infra compose changes → infra-compose deploy
+          echo "$DIFF" | grep -qE '^deploy/(dokploy/infra-compose\.yml|dokploy-compose/)' \
+            && echo "infra_compose=true" >> "$GITHUB_OUTPUT" || echo "infra_compose=false" >> "$GITHUB_OUTPUT"
+
+          # Cloudflare changes → cloudflare deploy
+          echo "$DIFF" | grep -qE '^deploy/cloudflare/' \
+            && echo "cloudflare=true" >> "$GITHUB_OUTPUT" || echo "cloudflare=false" >> "$GITHUB_OUTPUT"
+
+          # App code always deploys web + worker + OTA
+          echo "web=true" >> "$GITHUB_OUTPUT"
+          echo "worker=true" >> "$GITHUB_OUTPUT"
+          echo "ota=true" >> "$GITHUB_OUTPUT"
+      - name: Trigger deploys
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
         with:
-          fetch-depth: 0 # Full history needed for git rev-list build number
-      - uses: ./.github/actions/setup-node-pnpm
+          script: |
+            const targets = [];
+            if ('${{ steps.detect.outputs.ios }}' === 'true') targets.push('ios');
+            if ('${{ steps.detect.outputs.infra_compose }}' === 'true') targets.push('infra-compose');
+            if ('${{ steps.detect.outputs.cloudflare }}' === 'true') targets.push('cloudflare');
+            // Web, worker, OTA always deploy on main push
+            targets.push('web', 'worker', 'ota');
 
-      - uses: ./.github/actions/setup-ccache
-        with:
-          cache-key-prefix: ccache-ios-release
-      - name: Generate native project
-        working-directory: packages/mobile
-        run: npx expo prebuild --clean --platform ios
+            // Deduplicate — if all individual targets are selected, use 'all'
+            const allTargets = ['web', 'worker', 'ios', 'ota', 'infra-compose', 'cloudflare'];
+            const target = allTargets.every(t => targets.includes(t)) ? 'all' : null;
 
-      - name: Download Sentry XCFramework
-        run: packages/mobile/scripts/download-sentry-xcframework.sh
-
-      - name: Cache CocoaPods
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: packages/mobile/ios/Pods
-          key: pods-v7-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/scripts/download-sentry-xcframework.sh') }}
-
-      - name: Cache DerivedData
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: ${{ env.DERIVED_DATA_PATH }}
-          key: deriveddata-release-v1-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/*/ios/**/*.swift', 'packages/mobile/modules/*/ios/**/*.m', 'packages/mobile/modules/*/ios/**/*.h') }}
-          restore-keys: deriveddata-release-v1-
-
-      - name: Install CocoaPods
-        run: cd packages/mobile/ios && pod install
-
-      - name: Setup code signing
-        env:
-          DEV_CERT_BASE64: ${{ secrets.IOS_DEVELOPMENT_CERT_BASE64 }}
-          DEV_CERT_PASSWORD: ${{ secrets.IOS_DEVELOPMENT_CERT_PASSWORD }}
-          DIST_CERT_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERT_BASE64 }}
-          DIST_CERT_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERT_PASSWORD }}
-        run: |
-          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-          KEYCHAIN_PASSWORD=$(uuidgen)
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          echo -n "$DEV_CERT_BASE64" | base64 --decode > $RUNNER_TEMP/dev-cert.p12
-          security import $RUNNER_TEMP/dev-cert.p12 -P "$DEV_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
-          echo -n "$DIST_CERT_BASE64" | base64 --decode > $RUNNER_TEMP/dist-cert.p12
-          security import $RUNNER_TEMP/dist-cert.p12 -P "$DIST_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
-          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security list-keychain -d user -s "$KEYCHAIN_PATH"
-
-      - name: Setup App Store Connect API key
-        env:
-          API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_KEY_BASE64 }}
-        run: |
-          mkdir -p ~/private_keys
-          echo -n "$API_KEY_BASE64" | base64 --decode > ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8
-
-      - name: Set build number
-        run: |
-          cd packages/mobile/ios
-          # Offset ensures continuity with builds uploaded before the workflow
-          # split (highest previously uploaded build was ~1816).
-          BUILD_NUMBER=$(( $(git rev-list --count HEAD) + 1200 ))
-          echo "Setting build number to $BUILD_NUMBER"
-          agvtool new-version -all "$BUILD_NUMBER"
-
-      - name: Build archive
-        run: |
-          cd packages/mobile/ios
-          xcodebuild archive \
-            -workspace Dofek.xcworkspace \
-            -scheme Dofek \
-            -configuration Release \
-            -archivePath $RUNNER_TEMP/Dofek.xcarchive \
-            -derivedDataPath "$DERIVED_DATA_PATH" \
-            -destination 'generic/platform=iOS' \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8 \
-            -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
-            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
-            DEVELOPMENT_TEAM=68LEL35DQ9 \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            CC=$RUNNER_TEMP/ccache-wrappers/ccache-clang \
-            CPLUSPLUS=$RUNNER_TEMP/ccache-wrappers/ccache-clang++
-      - name: Show ccache stats
-        if: always()
-        run: ccache --show-stats
-
-      - name: Diagnose archive signing
-        if: always()
-        run: |
-          echo "=== Keychain identities ==="
-          security find-identity -v -p codesigning
-          echo ""
-
-          echo "=== Archive structure ==="
-          find "$RUNNER_TEMP/Dofek.xcarchive/Products" -maxdepth 3 -type d 2>/dev/null || true
-          echo ""
-
-          echo "=== Archive top-level products ==="
-          ls -la "$RUNNER_TEMP/Dofek.xcarchive/Products/Applications/" 2>/dev/null || true
-          echo ""
-
-          echo "=== Main app codesign ==="
-          codesign -dvv "$RUNNER_TEMP/Dofek.xcarchive/Products/Applications/Dofek.app" 2>&1 || true
-          echo ""
-
-          echo "=== Main app entitlements ==="
-          codesign -d --entitlements - "$RUNNER_TEMP/Dofek.xcarchive/Products/Applications/Dofek.app" 2>&1 || true
-          echo ""
-
-          echo "=== Watch app codesign ==="
-          find "$RUNNER_TEMP/Dofek.xcarchive" -name "DofekWatch.app" -exec sh -c 'echo "--- $1 ---"; codesign -dvv "$1" 2>&1' _ {} \; || true
-          echo ""
-
-          echo "=== Watch app entitlements ==="
-          find "$RUNNER_TEMP/Dofek.xcarchive" -name "DofekWatch.app" -exec sh -c 'echo "--- $1 ---"; codesign -d --entitlements - "$1" 2>&1' _ {} \; || true
-          echo ""
-
-          echo "=== Embedded provisioning profiles ==="
-          find "$RUNNER_TEMP/Dofek.xcarchive" -name "embedded.mobileprovision" -exec sh -c '
-            echo "--- $1 ---"
-            security cms -D -i "$1" 2>/dev/null | grep -E "AppIDName|Name|TeamIdentifier|TeamName|ProvisionsAllDevices|ProvisionedDevices|ExpirationDate|com\.apple\.developer" | head -30
-          ' _ {} \; || true
-          echo ""
-
-          echo "=== Provisioning profiles dir ==="
-          ls -la ~/Library/MobileDevice/Provisioning\ Profiles/ 2>/dev/null || echo "No profiles dir"
-          echo ""
-
-          echo "=== Archive Info.plist ==="
-          cat "$RUNNER_TEMP/Dofek.xcarchive/Info.plist" 2>/dev/null | head -60 || true
-
-      - name: Export IPA & Upload to TestFlight
-        run: |
-          xcodebuild -exportArchive \
-            -archivePath $RUNNER_TEMP/Dofek.xcarchive \
-            -exportOptionsPlist packages/mobile/build/ExportOptions.plist \
-            -exportPath $RUNNER_TEMP/export \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8 \
-            -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
-            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
-
-      - name: Dump distribution logs
-        if: failure()
-        run: |
-          find /var/folders -name "*.xcdistributionlogs" -print 2>/dev/null | while read logdir; do
-            echo "--- $logdir ---"
-            find "$logdir" -type f -exec sh -c 'echo "== $1 =="; cat "$1"' _ {} \;
-          done
-
-      - name: Cleanup keychain
-        if: always()
-        run: security delete-keychain $RUNNER_TEMP/app-signing.keychain-db || true
-
-  ota-deploy:
-    name: OTA Deploy
-    needs: [ci-gate]
-    if: always() && needs.ci-gate.result == 'success' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: ./.github/actions/setup-node-pnpm
-
-      - name: Wait for OTA server to be healthy
-        run: |
-          for i in $(seq 1 30); do
-            status=$(curl -s -o /dev/null -w "%{http_code}" https://ota.dofek.asherlc.com/manifest)
-            if [ "$status" -ge 200 ] && [ "$status" -lt 500 ]; then
-              echo "OTA server is healthy"
-              exit 0
-            fi
-            echo "Waiting for OTA server... (attempt $i/30)"
-            sleep 2
-          done
-          echo "OTA server did not become healthy in time"
-          exit 1
-
-      - name: Publish OTA update
-        working-directory: packages/mobile
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: npx eoas@2.3.16 publish --branch main --platform ios --nonInteractive
-
-  deploy-cloudflare:
-    name: Deploy Cloudflare
-    needs: [ci-gate]
-    if: always() && needs.ci-gate.result == 'success' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-        with:
-          fetch-depth: 2
-      - name: Check for Cloudflare changes
-        id: changes
-        run: |
-          CHANGED=$(git diff --name-only HEAD~1...HEAD -- deploy/cloudflare/)
-          if [ -n "$CHANGED" ]; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "Cloudflare config changed:"
-            echo "$CHANGED"
-          else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "No Cloudflare changes, skipping deploy"
-          fi
-      - name: Setup Terraform
-        if: steps.changes.outputs.changed == 'true'
-        uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
-        with:
-          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
-      - name: Terraform Apply
-        if: steps.changes.outputs.changed == 'true'
-        working-directory: deploy/cloudflare
-        env:
-          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          TF_VAR_server_ip: ${{ secrets.SERVER_HOST }}
-        run: |
-          terraform init
-          terraform apply -auto-approve
-
-  deploy-infra-compose:
-    name: Deploy Infra Compose
-    needs: [ci-gate]
-    if: always() && needs.ci-gate.result == 'success' && github.ref == 'refs/heads/main'
-    concurrency:
-      group: deploy-infra-compose
-      cancel-in-progress: true
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-        with:
-          fetch-depth: 2
-      - name: Check for infra compose changes
-        id: changes
-        run: |
-          if [ "${{ inputs.force_deploy }}" = "true" ]; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "Force deploy requested"
-          else
-            CHANGED=$(git diff --name-only HEAD~1...HEAD -- deploy/dokploy/infra-compose.yml deploy/dokploy-compose/)
-            if [ -n "$CHANGED" ]; then
-              echo "changed=true" >> "$GITHUB_OUTPUT"
-              echo "Infra compose changed, will deploy"
-            else
-              echo "changed=false" >> "$GITHUB_OUTPUT"
-              echo "No infra compose changes, skipping deploy"
-            fi
-          fi
-      - name: Setup Terraform
-        if: steps.changes.outputs.changed == 'true'
-        uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
-        with:
-          terraform_wrapper: false
-      - name: Setup SSH tunnel
-        if: steps.changes.outputs.changed == 'true'
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
-        run: |
-          mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-          ssh -f -N -L 5432:127.0.0.1:5432 "root@${SERVER_HOST}"
-      - name: Render and deploy
-        if: steps.changes.outputs.changed == 'true'
-        env:
-          DOKPLOY_HOST: ${{ secrets.DOKPLOY_HOST }}
-          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
-          TF_VAR_postgres_password: ${{ secrets.POSTGRES_PASSWORD }}
-          TF_VAR_axiom_api_token: ${{ secrets.AXIOM_API_TOKEN }}
-          TF_VAR_sentry_otlp_logs_endpoint: ${{ secrets.SENTRY_OTLP_LOGS_ENDPOINT }}
-          TF_VAR_r2_endpoint: ${{ secrets.R2_ENDPOINT }}
-          TF_VAR_r2_access_key_id: ${{ secrets.R2_ACCESS_KEY_ID }}
-          TF_VAR_r2_secret_access_key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          TF_VAR_expo_app_id: ${{ secrets.EXPO_APP_ID }}
-          TF_VAR_expo_access_token: ${{ secrets.EXPO_ACCESS_TOKEN }}
-          TF_VAR_ota_jwt_secret: ${{ secrets.OTA_JWT_SECRET }}
-          TF_VAR_ota_public_key_b64: ${{ secrets.OTA_PUBLIC_KEY_B64 }}
-          TF_VAR_ota_private_key_b64: ${{ secrets.OTA_PRIVATE_KEY_B64 }}
-        run: |
-          set -euo pipefail
-          cd deploy/dokploy-compose
-          terraform init
-
-          # Phase 1: Render compose template (no DB connection needed)
-          terraform apply -auto-approve -target=output.compose_rendered
-
-          # Phase 2: Deploy compose to Dokploy (binds DB port to localhost)
-          COMPOSE_CONTENT=$(terraform output -raw compose_rendered)
-          COMPOSE_JSON=$(printf '%s' "$COMPOSE_CONTENT" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")
-          COMPOSE_ID="RMk3hATYEIKherZ2QEud_"
-
-          echo "Updating infra compose in Dokploy..."
-          curl -fsSL -X POST "${DOKPLOY_HOST}/api/trpc/compose.update" \
-            -H "x-api-key: ${DOKPLOY_API_KEY}" \
-            -H "Content-Type: application/json" \
-            -d "{\"json\":{\"composeId\":\"${COMPOSE_ID}\",\"sourceType\":\"raw\",\"composeFile\":${COMPOSE_JSON}}}"
-
-          echo "Deploying infra compose stack..."
-          curl -fsSL -X POST "${DOKPLOY_HOST}/api/trpc/compose.deploy" \
-            -H "x-api-key: ${DOKPLOY_API_KEY}" \
-            -H "Content-Type: application/json" \
-            -d "{\"json\":{\"composeId\":\"${COMPOSE_ID}\"}}"
-
-          # Phase 3: Wait for DB to be ready after compose redeploy
-          echo "Waiting for DB to accept connections..."
-          for attempt in $(seq 1 30); do
-            if bash -c 'echo > /dev/tcp/127.0.0.1/5432' 2>/dev/null; then
-              echo "DB is ready"
-              break
-            fi
-            if [ "$attempt" -eq 30 ]; then
-              echo "::error::DB not ready after 60s"
-              exit 1
-            fi
-            sleep 2
-          done
-
-          # Phase 4: Manage DB extension via Terraform
-          terraform apply -auto-approve
+            if (target === 'all') {
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'deploy.yml',
+                ref: 'main',
+                inputs: { target: 'all' },
+              });
+              console.log('Triggered deploy: all');
+            } else {
+              for (const t of [...new Set(targets)]) {
+                await github.rest.actions.createWorkflowDispatch({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  workflow_id: 'deploy.yml',
+                  ref: 'main',
+                  inputs: { target: t },
+                });
+                console.log(`Triggered deploy: ${t}`);
+              }
+            }
 
   docker:
     name: Docker (${{ matrix.target }})
@@ -1468,31 +1168,3 @@ jobs:
             SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
           cache-from: type=gha,scope=${{ matrix.target }}
           cache-to: type=gha,mode=max,scope=${{ matrix.target }}
-      # Deploy new image to Dokploy via Terraform.
-      - name: Setup Terraform
-        if: matrix.target == 'server'
-        uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
-        with:
-          terraform_wrapper: false
-      - name: Deploy via Terraform
-        if: matrix.target == 'server'
-        env:
-          TF_VAR_dokploy_host: ${{ secrets.DOKPLOY_HOST }}
-          TF_VAR_dokploy_api_key: ${{ secrets.DOKPLOY_API_KEY }}
-          TF_VAR_web_app_id: ${{ secrets.DOKPLOY_WEB_APP_ID }}
-          TF_VAR_worker_app_id: ${{ secrets.DOKPLOY_WORKER_APP_ID }}
-          META_TAGS: ${{ steps.meta.outputs.tags }}
-        run: |
-          set -euo pipefail
-          if [ -z "$TF_VAR_dokploy_host" ] || [ -z "$TF_VAR_dokploy_api_key" ]; then
-            echo "Dokploy secrets not configured, skipping deploy"
-            exit 0
-          fi
-          SHA_TAG=$(echo "$META_TAGS" | grep -oP 'sha-\w+' | head -1)
-          if [ -z "$SHA_TAG" ]; then
-            echo "::error::No sha-tagged image found in metadata output"
-            exit 1
-          fi
-          cd deploy/dokploy-app
-          terraform init
-          terraform apply -auto-approve -var="image_tag=${SHA_TAG}"
