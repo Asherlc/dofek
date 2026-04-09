@@ -485,6 +485,31 @@ describe("PolarClient.deregisterUser", () => {
     // Should not throw
     await client.deregisterUser("12345");
   });
+
+  it("throws with truncated body on non-success responses", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response("Bad Request: missing field", { status: 400 });
+    };
+
+    const client = new PolarClient("token", mockFetch);
+    await expect(client.deregisterUser("12345")).rejects.toThrow(
+      "Polar user deregistration failed (400): Bad Request: missing field",
+    );
+  });
+
+  it("truncates HTML error bodies", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response("<html><body>Error</body></html>", {
+        status: 500,
+        headers: { "content-type": "text/html" },
+      });
+    };
+
+    const client = new PolarClient("token", mockFetch);
+    await expect(client.deregisterUser("12345")).rejects.toThrow(
+      "Polar user deregistration failed (500): (HTML error page)",
+    );
+  });
 });
 
 describe("PolarClient.getCurrentUserId", () => {
@@ -1066,5 +1091,40 @@ describe("PolarProvider.sync — error handling", () => {
     expect(
       result.errors.some((e) => e.message.includes("daily activity endpoint returned 404")),
     ).toBe(false);
+  });
+
+  it("deletes tokens and reports revocation when refresh returns invalid_grant", async () => {
+    process.env.POLAR_CLIENT_ID = "polar-client-id";
+    process.env.POLAR_CLIENT_SECRET = "polar-client-secret";
+
+    const mockFetch: typeof globalThis.fetch = async (
+      url: string | URL | Request,
+    ): Promise<Response> => {
+      const urlString = String(url);
+      if (urlString.startsWith("https://polarremote.com/")) {
+        return new Response(
+          JSON.stringify({ error: "invalid_grant" }),
+          { status: 400, headers: { "content-type": "application/json" } },
+        );
+      }
+      return Response.json([]);
+    };
+
+    const expiredWithRefresh = [
+      {
+        providerId: "polar",
+        accessToken: "expired-token",
+        refreshToken: "revoked-refresh-token",
+        expiresAt: new Date("2020-01-01T00:00:00Z"),
+        scopes: null,
+      },
+    ];
+
+    const mockDb = createPolarMockDb(expiredWithRefresh);
+    const provider = new PolarProvider(mockFetch);
+    const result = await provider.sync(mockDb, new Date("2026-01-01"));
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("authorization revoked");
   });
 });
