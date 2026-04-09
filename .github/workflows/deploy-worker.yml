@@ -1,0 +1,40 @@
+name: Deploy Worker
+
+on:
+  workflow_call:
+    inputs:
+      commit_sha:
+        description: "Commit SHA to deploy"
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: "Commit SHA to deploy (defaults to workflow ref HEAD)"
+        required: false
+        type: string
+
+jobs:
+  worker:
+    name: Deploy Worker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          ref: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
+      - uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
+        with:
+          terraform_wrapper: false
+      - name: Deploy worker to Dokploy
+        env:
+          TF_VAR_dokploy_host: ${{ secrets.DOKPLOY_HOST }}
+          TF_VAR_dokploy_api_key: ${{ secrets.DOKPLOY_API_KEY }}
+          TF_VAR_web_app_id: ${{ secrets.DOKPLOY_WEB_APP_ID }}
+          TF_VAR_worker_app_id: ${{ secrets.DOKPLOY_WORKER_APP_ID }}
+        run: |
+          SHA_TAG="sha-$(git rev-parse --short HEAD)"
+          cd deploy/dokploy-app
+          terraform init
+          terraform apply -auto-approve \
+            -var="image_tag=${SHA_TAG}" \
+            -target=terraform_data.deploy[\"$TF_VAR_worker_app_id\"]

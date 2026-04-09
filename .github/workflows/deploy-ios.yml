@@ -1,0 +1,114 @@
+name: Deploy iOS
+
+on:
+  workflow_call:
+    inputs:
+      commit_sha:
+        description: "Commit SHA to deploy"
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: "Commit SHA to deploy (defaults to workflow ref HEAD)"
+        required: false
+        type: string
+
+jobs:
+  ios:
+    name: Deploy iOS
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      DERIVED_DATA_PATH: ${{ github.workspace }}/DerivedData
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
+      - uses: ./.github/actions/setup-node-pnpm
+      - uses: ./.github/actions/setup-ccache
+        with:
+          cache-key-prefix: ccache-ios-release
+      - name: Generate native project
+        working-directory: packages/mobile
+        run: npx expo prebuild --clean --platform ios
+      - name: Download Sentry XCFramework
+        run: packages/mobile/scripts/download-sentry-xcframework.sh
+      - name: Cache CocoaPods
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: packages/mobile/ios/Pods
+          key: pods-v7-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/scripts/download-sentry-xcframework.sh') }}
+      - name: Cache DerivedData
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ env.DERIVED_DATA_PATH }}
+          key: deriveddata-release-v1-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/*/ios/**/*.swift', 'packages/mobile/modules/*/ios/**/*.m', 'packages/mobile/modules/*/ios/**/*.h') }}
+          restore-keys: deriveddata-release-v1-
+      - name: Install CocoaPods
+        run: cd packages/mobile/ios && pod install
+      - name: Setup code signing
+        env:
+          DEV_CERT_BASE64: ${{ secrets.IOS_DEVELOPMENT_CERT_BASE64 }}
+          DEV_CERT_PASSWORD: ${{ secrets.IOS_DEVELOPMENT_CERT_PASSWORD }}
+          DIST_CERT_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERT_BASE64 }}
+          DIST_CERT_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(uuidgen)
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          echo -n "$DEV_CERT_BASE64" | base64 --decode > $RUNNER_TEMP/dev-cert.p12
+          security import $RUNNER_TEMP/dev-cert.p12 -P "$DEV_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          echo -n "$DIST_CERT_BASE64" | base64 --decode > $RUNNER_TEMP/dist-cert.p12
+          security import $RUNNER_TEMP/dist-cert.p12 -P "$DIST_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+      - name: Setup App Store Connect API key
+        env:
+          API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_KEY_BASE64 }}
+        run: |
+          mkdir -p ~/private_keys
+          echo -n "$API_KEY_BASE64" | base64 --decode > ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8
+      - name: Set build number
+        run: |
+          cd packages/mobile/ios
+          BUILD_NUMBER=$(( $(git rev-list --count HEAD) + 1200 ))
+          echo "Setting build number to $BUILD_NUMBER"
+          agvtool new-version -all "$BUILD_NUMBER"
+      - name: Build archive
+        run: |
+          cd packages/mobile/ios
+          xcodebuild archive \
+            -workspace Dofek.xcworkspace \
+            -scheme Dofek \
+            -configuration Release \
+            -archivePath $RUNNER_TEMP/Dofek.xcarchive \
+            -derivedDataPath "$DERIVED_DATA_PATH" \
+            -destination 'generic/platform=iOS' \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8 \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
+            DEVELOPMENT_TEAM=68LEL35DQ9 \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            CC=$RUNNER_TEMP/ccache-wrappers/ccache-clang \
+            CPLUSPLUS=$RUNNER_TEMP/ccache-wrappers/ccache-clang++
+      - name: Export IPA & Upload to TestFlight
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath $RUNNER_TEMP/Dofek.xcarchive \
+            -exportOptionsPlist packages/mobile/build/ExportOptions.plist \
+            -exportPath $RUNNER_TEMP/export \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8 \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
+      - name: Cleanup keychain
+        if: always()
+        run: security delete-keychain $RUNNER_TEMP/app-signing.keychain-db || true
