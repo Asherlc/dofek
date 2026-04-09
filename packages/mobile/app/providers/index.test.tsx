@@ -142,6 +142,9 @@ vi.mock("expo-file-system", () => ({
     constructor(uri: string) {
       this.uri = uri;
     }
+    get exists() {
+      return true;
+    }
     async text() {
       return "Date,Workout Name,Duration,Exercise Name\n2026-03-10,Leg Day,00:45:00,Squat";
     }
