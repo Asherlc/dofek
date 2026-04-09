@@ -37,6 +37,7 @@ vi.mock("./process-post-sync-job.ts", () => ({
 
 vi.mock("./process-training-export-job.ts", () => ({
   processTrainingExportJob: vi.fn(),
+  TRAINING_EXPORT_LOCK_MS: 600_000,
 }));
 
 vi.mock("./scheduled-sync.ts", () => ({
