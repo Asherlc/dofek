@@ -206,6 +206,7 @@ jobs:
       - run: cd deploy/dokploy && terraform init -backend=false && terraform validate
       - run: cd deploy/dokploy-compose && terraform init -backend=false && terraform validate
       - run: cd deploy/dokploy-app && terraform init -backend=false && terraform validate
+      - run: cd deploy/dokploy-db && terraform init -backend=false && terraform validate
 
   quality-gate:
     name: Lint & Static Analysis
