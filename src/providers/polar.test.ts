@@ -487,6 +487,35 @@ describe("PolarClient.deregisterUser", () => {
   });
 });
 
+describe("PolarClient.getCurrentUserId", () => {
+  it("returns polar_user_id from GET /v3/users", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return Response.json({ polar_user_id: 12345 });
+    };
+
+    const client = new PolarClient("token", mockFetch);
+    expect(await client.getCurrentUserId()).toBe("12345");
+  });
+
+  it("returns null when request fails", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response("Unauthorized", { status: 401 });
+    };
+
+    const client = new PolarClient("token", mockFetch);
+    expect(await client.getCurrentUserId()).toBeNull();
+  });
+
+  it("returns null when polar_user_id is missing from response", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return Response.json({});
+    };
+
+    const client = new PolarClient("token", mockFetch);
+    expect(await client.getCurrentUserId()).toBeNull();
+  });
+});
+
 describe("PolarNotFoundError", () => {
   it("has correct name and message", () => {
     const error = new PolarNotFoundError("Not found");

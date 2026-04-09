@@ -79,9 +79,27 @@ export class PolarClient {
   }
 
   /**
+   * Discover the current user's Polar user ID via GET /v3/users.
+   * Returns null if the request fails (e.g. token is expired/revoked).
+   */
+  async getCurrentUserId(): Promise<string | null> {
+    const response = await this.#fetchFn(`${POLAR_API_BASE}/users`, {
+      headers: {
+        Authorization: `Bearer ${this.#accessToken}`,
+        Accept: "application/json",
+      },
+    });
+
+    if (!response.ok) return null;
+
+    const userData: { polar_user_id?: string | number } = await response.json();
+    return userData.polar_user_id != null ? String(userData.polar_user_id) : null;
+  }
+
+  /**
    * Register the user with Polar AccessLink. Required after OAuth before
-   * data endpoints will work. Uses the x_user_id from the token response
-   * as both the Polar user ID and the member-id.
+   * data endpoints will work. The caller discovers the Polar user ID
+   * (e.g. via {@link getCurrentUserId}) and passes it as `polarUserId`.
    *
    * @see https://www.polar.com/accesslink-api/#register-user
    */
@@ -100,8 +118,9 @@ export class PolarClient {
     if (response.status === 409) return;
 
     if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Polar user registration failed (${response.status}): ${text}`);
+      throw new Error(
+        `Polar user registration failed (${response.status}): ${await this.#readErrorBody(response)}`,
+      );
     }
   }
 
@@ -125,9 +144,17 @@ export class PolarClient {
     if (response.status === 204 || response.status === 404) return;
 
     if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Polar user deregistration failed (${response.status}): ${text}`);
+      throw new Error(
+        `Polar user deregistration failed (${response.status}): ${await this.#readErrorBody(response)}`,
+      );
     }
+  }
+
+  async #readErrorBody(response: Response): Promise<string> {
+    const contentType = response.headers.get("content-type") ?? "";
+    if (contentType.includes("text/html")) return "(HTML error page)";
+    const text = await response.text();
+    return text.length > 200 ? `${text.slice(0, 200)}…` : text;
   }
 
   async downloadTcx(exerciseId: string): Promise<string> {

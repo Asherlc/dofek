@@ -70,27 +70,16 @@ export class PolarProvider implements WebhookProvider {
         const tokens = await exchangeCodeForTokens(config, code, fetchFn);
 
         // Polar AccessLink requires user registration (POST /v3/users)
-        // after OAuth before data endpoints will work. The token response
-        // includes x_user_id which we need for registration.
-        // exchangeCodeForTokens uses the generic parseTokenResponse which
-        // discards x_user_id, so we make a separate call to get the user info.
+        // after OAuth before data endpoints will work. Discover the Polar
+        // user ID via GET /v3/users, then register.
         try {
           const client = new PolarClient(tokens.accessToken, fetchFn);
-          // Discover the Polar user ID and register
-          const userInfo = await fetchFn(`${POLAR_API_BASE}/users`, {
-            headers: {
-              Authorization: `Bearer ${tokens.accessToken}`,
-              Accept: "application/json",
-            },
-          });
-          if (userInfo.ok) {
-            const userData: { polar_user_id?: string | number } = await userInfo.json();
-            if (userData.polar_user_id) {
-              await client.registerUser(String(userData.polar_user_id));
-              logger.info(
-                `[polar] Registered user ${userData.polar_user_id} with Polar AccessLink`,
-              );
-            }
+          const polarUserId = await client.getCurrentUserId();
+          if (polarUserId) {
+            await client.registerUser(polarUserId);
+            logger.info(`[polar] Registered user ${polarUserId} with Polar AccessLink`);
+          } else {
+            logger.warn("[polar] Could not discover Polar user ID for post-auth registration");
           }
         } catch (registrationError) {
           // Registration is best-effort — log but don't fail the auth flow.
@@ -108,24 +97,13 @@ export class PolarProvider implements WebhookProvider {
         // existing token. This mirrors what Wahoo does.
         try {
           const client = new PolarClient(tokens.accessToken, fetchFn);
-          // Discover the Polar user ID via GET /v3/users
-          const userInfo = await fetchFn(`${POLAR_API_BASE}/users`, {
-            headers: {
-              Authorization: `Bearer ${tokens.accessToken}`,
-              Accept: "application/json",
-            },
-          });
-          if (userInfo.ok) {
-            const userData: { polar_user_id?: string | number } = await userInfo.json();
-            if (userData.polar_user_id) {
-              await client.deregisterUser(String(userData.polar_user_id));
-              logger.info(
-                `[polar] Deregistered user ${userData.polar_user_id} to revoke old token`,
-              );
-            }
+          const polarUserId = await client.getCurrentUserId();
+          if (polarUserId) {
+            await client.deregisterUser(polarUserId);
+            logger.info(`[polar] Deregistered user ${polarUserId} to revoke old token`);
           } else {
             logger.warn(
-              `[polar] Could not discover Polar user ID for deregistration (${userInfo.status})`,
+              "[polar] Could not discover Polar user ID for deregistration — old token may be expired",
             );
           }
         } catch (revokeError) {
