@@ -218,10 +218,8 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
           ssh -f -N -L 5432:127.0.0.1:5432 "root@${SERVER_HOST}"
-      - name: Render and deploy
+      - name: Render compose template
         env:
-          DOKPLOY_HOST: ${{ secrets.DOKPLOY_HOST }}
-          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
           TF_VAR_postgres_password: ${{ secrets.POSTGRES_PASSWORD }}
           TF_VAR_axiom_api_token: ${{ secrets.AXIOM_API_TOKEN }}
           TF_VAR_sentry_otlp_logs_endpoint: ${{ secrets.SENTRY_OTLP_LOGS_ENDPOINT }}
@@ -234,13 +232,16 @@ jobs:
           TF_VAR_ota_public_key_b64: ${{ secrets.OTA_PUBLIC_KEY_B64 }}
           TF_VAR_ota_private_key_b64: ${{ secrets.OTA_PRIVATE_KEY_B64 }}
         run: |
-          set -euo pipefail
           cd deploy/dokploy-compose
           terraform init
-
-          terraform apply -auto-approve -target=output.compose_rendered
-
-          COMPOSE_CONTENT=$(terraform output -raw compose_rendered)
+          terraform apply -auto-approve
+      - name: Deploy compose to Dokploy
+        env:
+          DOKPLOY_HOST: ${{ secrets.DOKPLOY_HOST }}
+          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+        run: |
+          set -euo pipefail
+          COMPOSE_CONTENT=$(cd deploy/dokploy-compose && terraform output -raw compose_rendered)
           COMPOSE_JSON=$(printf '%s' "$COMPOSE_CONTENT" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")
           COMPOSE_ID="RMk3hATYEIKherZ2QEud_"
 
@@ -255,7 +256,11 @@ jobs:
             -H "x-api-key: ${DOKPLOY_API_KEY}" \
             -H "Content-Type: application/json" \
             -d "{\"json\":{\"composeId\":\"${COMPOSE_ID}\"}}"
-
+      - name: Wait for DB and upgrade extension
+        env:
+          TF_VAR_postgres_password: ${{ secrets.POSTGRES_PASSWORD }}
+        run: |
+          set -euo pipefail
           echo "Waiting for DB to accept connections..."
           for attempt in $(seq 1 30); do
             if bash -c 'echo > /dev/tcp/127.0.0.1/5432' 2>/dev/null; then
@@ -269,6 +274,8 @@ jobs:
             sleep 2
           done
 
+          cd deploy/dokploy-db
+          terraform init
           terraform apply -auto-approve
 
   # ── Cloudflare (DNS + R2) ──────────────────────────────────────────────
