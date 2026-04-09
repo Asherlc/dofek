@@ -138,15 +138,23 @@ vi.mock("../../lib/auth-context", () => ({
 
 vi.mock("expo-file-system", () => ({
   File: class MockFile {
-    constructor(public uri: string) {}
+    uri: string;
+    constructor(uri: string) {
+      this.uri = uri;
+    }
     async text() {
-      return "";
+      return "Date,Workout Name,Duration,Exercise Name\n2026-03-10,Leg Day,00:45:00,Squat";
+    }
+    async bytes() {
+      return new TextEncoder().encode(
+        "Date,Workout Name,Duration,Exercise Name\n2026-03-10,Leg Day,00:45:00,Squat",
+      );
     }
     get type() {
-      return "";
+      return "text/csv";
     }
     get size() {
-      return 0;
+      return 78;
     }
   },
 }));
@@ -157,6 +165,10 @@ vi.mock("expo-web-browser", () => ({
 
 vi.mock("../../lib/share-import", () => ({
   importSharedFile: (...args: unknown[]) => mockImportSharedFile(...args),
+}));
+
+vi.mock("../../lib/telemetry", () => ({
+  captureException: vi.fn(),
 }));
 
 vi.mock("@dofek/format/format", () => ({
@@ -808,6 +820,32 @@ describe("ProvidersScreen", () => {
 
     // Sync All button should not appear when only import-only providers exist
     expect(screen.queryByText("Sync All")).toBeNull();
+  });
+
+  it("passes readBlob that returns a standard Blob with file data", async () => {
+    mockImportSharedFile.mockResolvedValue({ providerId: "strong-csv", jobId: "job-share" });
+    mockUseLocalSearchParams.mockReturnValue({
+      sharedFile: "file:///tmp/strong.csv",
+    });
+
+    const { default: ProvidersScreen } = await import("./index");
+    render(<ProvidersScreen />);
+
+    await waitFor(() => {
+      expect(mockImportSharedFile).toHaveBeenCalled();
+    });
+
+    const callArgs = mockImportSharedFile.mock.calls[0];
+    expect(callArgs).toBeDefined();
+    expect(callArgs?.[1]).toHaveProperty("readBlob");
+    const readBlob: (uri: string) => Promise<Blob> = callArgs[1].readBlob;
+    const blob = await readBlob("file:///tmp/strong.csv");
+
+    // Must be a real Blob, not a raw ExpoFile reference
+    expect(blob).toBeInstanceOf(Blob);
+    expect(blob.size).toBeGreaterThan(0);
+    const text = await blob.text();
+    expect(text).toContain("Workout Name");
   });
 
   it("shows Expired status when provider needsReauth", async () => {
