@@ -12,6 +12,7 @@ import type { TrainingExportJobData } from "./queues.ts";
 interface TrainingExportJob {
   data: TrainingExportJobData;
   updateProgress: (data: object) => Promise<void>;
+  extendLock: (duration: number) => Promise<void>;
 }
 
 /**
@@ -26,6 +27,12 @@ const TRAINING_EXPORT_DIR = join(JOB_FILES_DIR, "training-export");
 const BATCH_SIZE = 100_000;
 
 const YIELD_INTERVAL = 10_000;
+
+/**
+ * Duration (ms) to extend the job lock by when explicitly renewing.
+ * Matches the lockDuration configured on the training export worker.
+ */
+const LOCK_EXTENSION_MS = 600_000;
 
 /**
  * Yield to the event loop so BullMQ can renew the job lock.
@@ -333,6 +340,7 @@ async function exportSensorSamples(
   since?: string,
   until?: string,
   onProgress?: (info: { percentage: number; message: string }) => void,
+  extendLock?: (duration: number) => Promise<void>,
 ): Promise<number> {
   const timeConditions = buildConditions(since, until);
   const timeWhere = buildWhereClause(timeConditions);
@@ -344,6 +352,9 @@ async function exportSensorSamples(
     sql`SELECT COUNT(*)::text AS count FROM fitness.sensor_sample ss ${timeWhere}`,
   );
   const totalRows = parseInt(countResult[0]?.count ?? "0", 10);
+
+  // Extend lock after the potentially slow COUNT query
+  await extendLock?.(LOCK_EXTENSION_MS);
 
   if (totalRows === 0) {
     logger.info("[training-export] No sensor_sample rows to export");
@@ -388,6 +399,10 @@ async function exportSensorSamples(
       await writer.appendRows(currentBatch);
 
       exported += currentBatch.length;
+
+      // Extend lock after each batch to prevent stalling during long exports
+      await extendLock?.(LOCK_EXTENSION_MS);
+
       const percentage = computeProgress(exported, totalRows, 0, 90);
       onProgress?.({
         percentage,
@@ -439,6 +454,7 @@ export async function processTrainingExportJob(
     since,
     until,
     updateProgress,
+    (duration) => job.extendLock(duration),
   );
 
   // Write manifest

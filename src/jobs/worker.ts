@@ -93,10 +93,27 @@ const postSyncWorker = new Worker<PostSyncJobData>(
   (job) => jobContext.run(job, () => processPostSyncJob(job, db)),
   { connection, concurrency: 1 },
 );
+const TRAINING_EXPORT_LOCK_MS = 600_000;
 const trainingExportWorker = new Worker<TrainingExportJobData>(
   TRAINING_EXPORT_QUEUE,
-  (job) => jobContext.run(job, () => processTrainingExportJob(job, db)),
-  { connection, lockDuration: 300_000 },
+  (job, token) =>
+    jobContext.run(job, () =>
+      processTrainingExportJob(
+        {
+          data: job.data,
+          updateProgress: (data) => job.updateProgress(data),
+          extendLock: (duration) =>
+            token ? job.extendLock(token, duration).then(() => {}) : Promise.resolve(),
+        },
+        db,
+      ),
+    ),
+  {
+    connection,
+    lockDuration: TRAINING_EXPORT_LOCK_MS,
+    stalledInterval: TRAINING_EXPORT_LOCK_MS,
+    maxStalledCount: 3,
+  },
 );
 
 // ── Idle spin-down ──

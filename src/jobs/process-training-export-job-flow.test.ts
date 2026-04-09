@@ -48,6 +48,7 @@ function createMockJob(data: { since?: string; until?: string } = {}) {
   return {
     data,
     updateProgress: vi.fn().mockResolvedValue(undefined),
+    extendLock: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -185,6 +186,49 @@ describe("processTrainingExportJob", () => {
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       "[training-export] Export complete: 3 total rows, 1 files",
     );
+  });
+
+  it("extends the job lock after COUNT query and each batch to prevent stalling", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-30T15:00:00.123Z"));
+
+    const job = createMockJob();
+    const db = createMockDb();
+
+    // 1 batch of 2 rows (below BATCH_SIZE, so only 1 fetch after COUNT)
+    mockExecuteWithSchema.mockResolvedValueOnce([{ count: "2" }]).mockResolvedValueOnce([
+      {
+        recorded_at: "2026-03-30T15:00:00Z",
+        user_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        provider_id: "wahoo",
+        device_id: null,
+        source_type: "ble",
+        channel: "heart_rate",
+        activity_id: null,
+        activity_type: null,
+        scalar: 142,
+        vector: null,
+      },
+      {
+        recorded_at: "2026-03-30T15:00:01Z",
+        user_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        provider_id: "wahoo",
+        device_id: null,
+        source_type: "ble",
+        channel: "power",
+        activity_id: null,
+        activity_type: null,
+        scalar: 250,
+        vector: null,
+      },
+    ]);
+
+    await processTrainingExportJob(job, db);
+
+    // extendLock should be called at least twice:
+    // 1) after COUNT query, 2) after the batch
+    expect(job.extendLock).toHaveBeenCalledTimes(2);
+    expect(job.extendLock).toHaveBeenCalledWith(600_000);
   });
 
   it("handles zero rows gracefully", async () => {
