@@ -13,6 +13,11 @@ on:
       - '.gitignore'
       - 'docs/**'
   workflow_dispatch:
+    inputs:
+      force_deploy:
+        description: "Force deploy (infra-compose + app) even if no files changed"
+        type: boolean
+        default: false
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -1328,13 +1333,18 @@ jobs:
       - name: Check for infra compose changes
         id: changes
         run: |
-          CHANGED=$(git diff --name-only HEAD~1...HEAD -- deploy/dokploy/infra-compose.yml deploy/dokploy-compose/)
-          if [ -n "$CHANGED" ]; then
+          if [ "${{ inputs.force_deploy }}" = "true" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "Infra compose changed, will deploy"
+            echo "Force deploy requested"
           else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "No infra compose changes, skipping deploy"
+            CHANGED=$(git diff --name-only HEAD~1...HEAD -- deploy/dokploy/infra-compose.yml deploy/dokploy-compose/)
+            if [ -n "$CHANGED" ]; then
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              echo "Infra compose changed, will deploy"
+            else
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+              echo "No infra compose changes, skipping deploy"
+            fi
           fi
       - name: Setup Terraform
         if: steps.changes.outputs.changed == 'true'
