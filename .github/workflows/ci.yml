@@ -1406,7 +1406,7 @@ jobs:
           # Phase 3: Wait for DB to be ready after compose redeploy
           echo "Waiting for DB to accept connections..."
           for attempt in $(seq 1 30); do
-            if pg_isready -h 127.0.0.1 -p 5432 -U health 2>/dev/null; then
+            if bash -c 'echo > /dev/tcp/127.0.0.1/5432' 2>/dev/null; then
               echo "DB is ready"
               break
             fi
