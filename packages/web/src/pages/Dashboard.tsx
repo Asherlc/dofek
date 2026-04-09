@@ -108,7 +108,7 @@ const activityRowSchema = z.object({
 });
 
 export function healthMonitorSubtitle(): string {
-  return "Today's values vs. rolling average";
+  return "Latest values vs. rolling average";
 }
 
 type DailyMetricRow = z.infer<typeof dailyMetricRowSchema>;
@@ -153,15 +153,19 @@ export function buildSkinTempSeries(metrics: DailyMetricRow[], units: UnitConver
 
 export const DASHBOARD_SECTION_IDS = new Set([
   "healthMonitor",
+  "topInsights",
   "strain",
   "nextWorkout",
   "weeklyReport",
   "sleepNeed",
   "stress",
   "healthspan",
+  "hrvRhr",
   "spo2Temp",
   "steps",
   "sleep",
+  "nutrition",
+  "bodyComp",
   "activities",
 ]);
 
