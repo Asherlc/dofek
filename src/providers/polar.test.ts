@@ -560,7 +560,7 @@ describe("PolarProvider.authSetup", () => {
       calledUrls.push(`${init?.method ?? "GET"} ${urlString}`);
 
       // Token exchange
-      if (urlString.includes("polarremote.com")) {
+      if (urlString.startsWith("https://polarremote.com/")) {
         return Response.json({
           access_token: "new-access-token",
           refresh_token: "new-refresh-token",
@@ -598,7 +598,7 @@ describe("PolarProvider.authSetup", () => {
       url: string | URL | Request,
     ): Promise<Response> => {
       const urlString = String(url);
-      if (urlString.includes("polarremote.com")) {
+      if (urlString.startsWith("https://polarremote.com/")) {
         return Response.json({
           access_token: "new-access-token",
           expires_in: 3600,
@@ -986,7 +986,7 @@ describe("PolarProvider.sync — error handling", () => {
     ): Promise<Response> => {
       const urlString = String(url);
       // Should NOT call the token refresh endpoint
-      if (urlString.includes("polarremote.com")) {
+      if (urlString.startsWith("https://polarremote.com/")) {
         throw new Error("Should not attempt token refresh when no refresh token exists");
       }
       const authorization = getAuthorizationHeader(init);
