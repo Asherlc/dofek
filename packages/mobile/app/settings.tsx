@@ -20,6 +20,7 @@ import { PersonalizationPanel } from "../components/PersonalizationPanel";
 import { ProviderLogo } from "../components/ProviderLogo";
 import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel";
 import { useAuth } from "../lib/auth-context";
+import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import { useRefresh } from "../lib/useRefresh";
 import { colors } from "../theme";
@@ -188,7 +189,8 @@ export default function SettingsScreen() {
 
       setExportState("error");
       setExportMessage("Export timed out");
-    } catch {
+    } catch (error: unknown) {
+      captureException(error, { context: "data-export" });
       setExportState("error");
       setExportMessage("Network error during export");
     }
