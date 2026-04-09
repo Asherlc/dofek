@@ -101,7 +101,8 @@ export default function ProvidersScreen() {
         let status: Awaited<ReturnType<typeof trpcUtils.sync.syncStatus.fetch>>;
         try {
           status = await trpcUtils.sync.syncStatus.fetch({ jobId }, { staleTime: 0 });
-        } catch {
+        } catch (error: unknown) {
+          captureException(error, { context: "sync-status-poll" });
           cleanup();
           return;
         }
@@ -226,7 +227,8 @@ export default function ProvidersScreen() {
           sinceDays: fullSync ? undefined : 7,
         });
         await pollJob(jobId, [providerId]);
-      } catch {
+      } catch (error: unknown) {
+        captureException(error, { context: "sync-provider" });
         setSyncingProviders((prev) => {
           const next = new Set(prev);
           next.delete(providerId);
@@ -270,7 +272,8 @@ export default function ProvidersScreen() {
         } else {
           await pollJob(result.jobId, ids);
         }
-      } catch {
+      } catch (error: unknown) {
+        captureException(error, { context: "sync-all" });
         setSyncingProviders(new Set());
         setAnySyncing(false);
       }
