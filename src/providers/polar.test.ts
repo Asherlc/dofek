@@ -502,7 +502,13 @@ describe("PolarProvider.authSetup", () => {
 // PolarProvider.sync error handling
 // ============================================================
 
-const POLAR_VALID_TOKEN = {
+const POLAR_VALID_TOKEN: {
+  providerId: string;
+  accessToken: string;
+  refreshToken: string | null;
+  expiresAt: Date;
+  scopes: null;
+} = {
   providerId: "polar",
   accessToken: "polar-access-token",
   refreshToken: "polar-refresh-token",
@@ -781,5 +787,69 @@ describe("PolarProvider.sync — error handling", () => {
     expect(result.errors.some((e) => e.message.startsWith("Exercise "))).toBe(true);
     expect(result.errors.some((e) => e.message.startsWith("Sleep "))).toBe(true);
     expect(result.errors.some((e) => e.message.startsWith("Daily "))).toBe(true);
+  });
+
+  it("uses existing token when expired with no refresh token (Polar tokens are long-lived)", async () => {
+    process.env.POLAR_CLIENT_ID = "polar-client-id";
+    process.env.POLAR_CLIENT_SECRET = "polar-client-secret";
+
+    const apiCallAuthorizations: string[] = [];
+    const mockFetch: typeof globalThis.fetch = async (
+      url: string | URL | Request,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      const urlString = String(url);
+      // Should NOT call the token refresh endpoint
+      if (urlString.includes("polarremote.com")) {
+        throw new Error("Should not attempt token refresh when no refresh token exists");
+      }
+      const authorization = getAuthorizationHeader(init);
+      apiCallAuthorizations.push(authorization);
+      return Response.json([]);
+    };
+
+    const expiredNoRefreshToken = [
+      {
+        providerId: "polar",
+        accessToken: "polar-long-lived-token",
+        refreshToken: null, // No refresh token — Polar tokens are long-lived
+        expiresAt: new Date("2020-01-01T00:00:00Z"), // Past expiry
+        scopes: null,
+      },
+    ];
+
+    const provider = new PolarProvider(mockFetch);
+    const result = await provider.sync(
+      createPolarMockDb(expiredNoRefreshToken),
+      new Date("2026-01-01"),
+    );
+
+    // Should succeed using the existing token, not fail with "No refresh token"
+    expect(result.errors).toHaveLength(0);
+    expect(apiCallAuthorizations).toContain("Bearer polar-long-lived-token");
+  });
+
+  it("syncs daily activity even when nightly recharge endpoint fails", async () => {
+    const mockFetch: typeof globalThis.fetch = async (
+      url: string | URL | Request,
+    ): Promise<Response> => {
+      const urlString = String(url);
+      if (urlString.endsWith("/exercises")) return Response.json([]);
+      if (urlString.endsWith("/sleep")) return Response.json([]);
+      if (urlString.endsWith("/activity")) return Response.json([sampleDailyActivity]);
+      if (urlString.endsWith("/nightly-recharge"))
+        return new Response("Not Found", { status: 404 });
+      return Response.json([]);
+    };
+
+    const provider = new PolarProvider(mockFetch);
+    const result = await provider.sync(createPolarMockDb(), new Date("2024-01-01"));
+
+    // Daily activity should still be synced even though nightly recharge failed
+    expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
+    // Should not have a fatal error for daily_activity
+    expect(
+      result.errors.some((e) => e.message.includes("daily activity endpoint returned 404")),
+    ).toBe(false);
   });
 });
