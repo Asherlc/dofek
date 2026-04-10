@@ -1,6 +1,5 @@
 import { formatDateYmd as formatDateForQuery } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
-import { Link } from "@tanstack/react-router";
 import { type ReactNode, useMemo } from "react";
 import { z } from "zod";
 import { AnomalyAlertBanner } from "../components/AnomalyAlertBanner.tsx";
@@ -561,34 +560,8 @@ export function Dashboard() {
         sleepLoading={sleepPerformance.isLoading}
       />
 
-      <section>
-        <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-1">
-          Detailed Views
-        </h2>
-        <p className="text-xs text-dim mb-3">
-          Deep dives are available in dedicated pages, not on the dashboard.
-        </p>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-          <DashboardLink to="/training" label="Training" />
-          <DashboardLink to="/sleep" label="Sleep" />
-          <DashboardLink to="/nutrition" label="Nutrition" />
-          <DashboardLink to="/body" label="Body" />
-        </div>
-      </section>
-
       {orderedElements}
     </PageLayout>
-  );
-}
-
-function DashboardLink({ to, label }: { to: string; label: string }) {
-  return (
-    <Link
-      to={to}
-      className="card px-3 py-2 text-sm text-foreground hover:text-foreground hover:border-border-strong transition-colors"
-    >
-      {label}
-    </Link>
   );
 }
 
