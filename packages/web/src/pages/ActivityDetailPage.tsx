@@ -14,7 +14,7 @@ import { formatActivityTypeLabel } from "@dofek/training/training";
 import type { ActivityHrZone } from "@dofek/zones/zones";
 import { HEART_RATE_ZONE_COLORS } from "@dofek/zones/zones";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
 import type { StreamPoint, StrengthExerciseDetail } from "../../../server/src/routers/activity.ts";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
@@ -39,6 +39,34 @@ const CHART_COLORS = {
   altitude: "#6b7280",
 };
 
+/**
+ * Builds ECharts event handlers that translate axis pointer hover into a GPS position callback.
+ * Used by MetricsChart and ElevationChart to sync hover with the RouteMap.
+ */
+function buildAxisPointerEvents(
+  dataPoints: StreamPoint[],
+  onHoverPosition?: (position: { lat: number; lng: number } | null) => void,
+) {
+  if (!onHoverPosition) return undefined;
+  return {
+    updateAxisPointer: (params: Record<string, unknown>) => {
+      const axesInfo = params.axesInfo;
+      if (Array.isArray(axesInfo) && axesInfo.length > 0) {
+        const rawValue: unknown = axesInfo[0]?.value;
+        if (typeof rawValue === "number" && rawValue >= 0 && rawValue < dataPoints.length) {
+          const point = dataPoints[Math.round(rawValue)];
+          if (point?.lat != null && point?.lng != null) {
+            onHoverPosition({ lat: point.lat, lng: point.lng });
+            return;
+          }
+        }
+      }
+      onHoverPosition(null);
+    },
+    globalout: () => onHoverPosition(null),
+  };
+}
+
 const STRENGTH_ACTIVITY_TYPES = new Set(["strength", "strength_training", "functional_strength"]);
 
 function isStrengthActivityType(activityType: string): boolean {
@@ -58,6 +86,13 @@ export function ActivityDetailPage() {
     { id },
     { enabled: isStrengthActivity },
   );
+
+  // Ref-based hover callback avoids re-rendering the entire page on every mouse move.
+  // RouteMap registers its marker-update function here; charts call it directly.
+  const mapHoverRef = useRef<(position: { lat: number; lng: number } | null) => void>(() => {});
+  const handleChartHover = useCallback((position: { lat: number; lng: number } | null) => {
+    mapHoverRef.current(position);
+  }, []);
 
   if (detail.isLoading) {
     return (
@@ -110,7 +145,7 @@ export function ActivityDetailPage() {
           title="Route Map"
           description="This map shows your recorded route, including start and finish locations."
         >
-          <RouteMap points={points} />
+          <RouteMap points={points} onRegisterHoverCallback={mapHoverRef} />
         </Section>
       )}
 
@@ -127,6 +162,7 @@ export function ActivityDetailPage() {
             hasCadence={hasCadence}
             loading={stream.isLoading}
             units={units}
+            onHoverPosition={hasGps ? handleChartHover : undefined}
           />
         </Section>
       )}
@@ -147,7 +183,12 @@ export function ActivityDetailPage() {
             title="Elevation Profile"
             description="This chart shows how your elevation changed over time during the activity."
           >
-            <ElevationChart points={points} loading={stream.isLoading} units={units} />
+            <ElevationChart
+              points={points}
+              loading={stream.isLoading}
+              units={units}
+              onHoverPosition={hasGps ? handleChartHover : undefined}
+            />
           </Section>
         )}
 
@@ -331,7 +372,15 @@ function SourceLinks({ activity }: { activity: ActivityDetail }) {
   );
 }
 
-function RouteMap({ points }: { points: StreamPoint[] }) {
+function RouteMap({
+  points,
+  onRegisterHoverCallback,
+}: {
+  points: StreamPoint[];
+  onRegisterHoverCallback?: React.MutableRefObject<
+    (position: { lat: number; lng: number } | null) => void
+  >;
+}) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<ReturnType<typeof import("leaflet")["map"]> | null>(null);
 
@@ -392,16 +441,45 @@ function RouteMap({ points }: { points: StreamPoint[] }) {
 
       const bounds = L.latLngBounds(latLngs);
       map.fitBounds(bounds, { padding: [30, 30] });
+
+      // Register hover marker callback so charts can update the map without React re-renders
+      if (onRegisterHoverCallback) {
+        let hoverMarker: ReturnType<typeof L.circleMarker> | null = null;
+
+        onRegisterHoverCallback.current = (position) => {
+          if (position) {
+            if (hoverMarker) {
+              hoverMarker.setLatLng([position.lat, position.lng]);
+            } else {
+              hoverMarker = L.circleMarker([position.lat, position.lng], {
+                radius: 7,
+                color: statusColors.positive,
+                fillColor: "#ffffff",
+                fillOpacity: 1,
+                weight: 3,
+              }).addTo(map);
+            }
+          } else {
+            if (hoverMarker) {
+              hoverMarker.remove();
+              hoverMarker = null;
+            }
+          }
+        };
+      }
     });
 
     return () => {
       cancelled = true;
+      if (onRegisterHoverCallback) {
+        onRegisterHoverCallback.current = () => {};
+      }
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
       }
     };
-  }, [points]);
+  }, [points, onRegisterHoverCallback]);
 
   return <div ref={mapRef} className="w-full h-[400px] rounded-lg" />;
 }
@@ -414,6 +492,7 @@ function MetricsChart({
   hasCadence,
   loading,
   units,
+  onHoverPosition,
 }: {
   points: StreamPoint[];
   hasHr: boolean;
@@ -422,7 +501,13 @@ function MetricsChart({
   hasCadence: boolean;
   loading: boolean;
   units: UnitConverter;
+  onHoverPosition?: (position: { lat: number; lng: number } | null) => void;
 }) {
+  const chartEvents = useMemo(
+    () => buildAxisPointerEvents(points, onHoverPosition),
+    [points, onHoverPosition],
+  );
+
   if (loading) return <ChartLoadingSkeleton height={300} />;
   if (points.length === 0) return null;
 
@@ -558,21 +643,27 @@ function MetricsChart({
     series,
   };
 
-  return <DofekChart option={option} height={350} />;
+  return <DofekChart option={option} height={350} onEvents={chartEvents} />;
 }
 
 function ElevationChart({
   points,
   loading,
   units,
+  onHoverPosition,
 }: {
   points: StreamPoint[];
   loading: boolean;
   units: UnitConverter;
+  onHoverPosition?: (position: { lat: number; lng: number } | null) => void;
 }) {
-  if (loading) return <ChartLoadingSkeleton height={200} />;
-
   const elevPoints = points.filter((p) => p.altitude != null);
+  const chartEvents = useMemo(
+    () => buildAxisPointerEvents(elevPoints, onHoverPosition),
+    [elevPoints, onHoverPosition],
+  );
+
+  if (loading) return <ChartLoadingSkeleton height={200} />;
   if (elevPoints.length === 0) return null;
 
   const option = {
@@ -619,7 +710,7 @@ function ElevationChart({
     ],
   };
 
-  return <DofekChart option={option} height={200} />;
+  return <DofekChart option={option} height={200} onEvents={chartEvents} />;
 }
 
 export function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: boolean }) {

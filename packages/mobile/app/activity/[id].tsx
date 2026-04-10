@@ -6,6 +6,7 @@ import type { MuscleGroupInput } from "@dofek/training/muscle-groups";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { HEART_RATE_ZONE_COLORS } from "@dofek/zones/zones";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -17,6 +18,7 @@ import {
   View,
 } from "react-native";
 import Svg, {
+  Circle,
   Defs,
   G,
   Line,
@@ -33,6 +35,7 @@ import { RouteMap } from "../../components/RouteMap";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { colors } from "../../theme";
+import { useChartScrub } from "./useChartScrub";
 
 const CHART_WIDTH = 340;
 const CHART_HEIGHT = 180;
@@ -88,29 +91,46 @@ interface LineChartProps {
   color: string;
   label: string;
   unit: string;
+  onHoverIndex?: (index: number | null) => void;
+  onScrubStart?: () => void;
+  onScrubEnd?: () => void;
 }
 
-function LineChart({ data, color, label, unit }: LineChartProps) {
+function LineChart({
+  data,
+  color,
+  label,
+  unit,
+  onHoverIndex,
+  onScrubStart,
+  onScrubEnd,
+}: LineChartProps) {
+  const plotWidth = CHART_WIDTH - CHART_PADDING.left - CHART_PADDING.right;
+  const { touchIndex, panResponder } = useChartScrub({
+    plotWidth,
+    totalPoints: data.length,
+    onHoverIndex,
+    onScrubStart,
+    onScrubEnd,
+  });
+
   const values = data
     .map((d, i) => (d.value != null ? { index: i, value: d.value } : null))
     .filter((d): d is { index: number; value: number } => d !== null);
 
   if (values.length < 2) return null;
 
-  const plotWidth = CHART_WIDTH - CHART_PADDING.left - CHART_PADDING.right;
   const plotHeight = CHART_HEIGHT - CHART_PADDING.top - CHART_PADDING.bottom;
-
   const minVal = Math.min(...values.map((v) => v.value));
   const maxVal = Math.max(...values.map((v) => v.value));
   const range = maxVal - minVal || 1;
-  const totalPoints = data.length;
 
   const toX = (index: number) =>
     CHART_PADDING.left + (index / Math.max(totalPoints - 1, 1)) * plotWidth;
   const toY = (value: number) =>
     CHART_PADDING.top + plotHeight - ((value - minVal) / range) * plotHeight;
 
-  const points = values
+  const chartPoints = values
     .map((v) => `${toX(v.index).toFixed(1)},${toY(v.value).toFixed(1)}`)
     .join(" ");
 
@@ -120,6 +140,9 @@ function LineChart({ data, color, label, unit }: LineChartProps) {
     return { value, y: toY(value) };
   });
 
+  // Find value at the touched index for the crosshair dot
+  const touchedValue = touchIndex != null ? values.find((v) => v.index === touchIndex) : null;
+
   return (
     <View style={chartStyles.container}>
       <ChartTitleWithTooltip
@@ -127,52 +150,76 @@ function LineChart({ data, color, label, unit }: LineChartProps) {
         description={`This chart shows how your ${label.toLowerCase()} changed over the activity timeline.`}
         textStyle={chartStyles.title}
       />
-      <Svg width={CHART_WIDTH} height={CHART_HEIGHT}>
-        {/* Grid lines */}
-        {yTicks.map((tick) => (
-          <Line
-            key={tick.value}
-            x1={CHART_PADDING.left}
-            y1={tick.y}
-            x2={CHART_WIDTH - CHART_PADDING.right}
-            y2={tick.y}
-            stroke={colors.surfaceSecondary}
-            strokeWidth={0.5}
-          />
-        ))}
-        {/* Y-axis labels */}
-        {yTicks.map((tick) => (
+      <View {...panResponder.panHandlers}>
+        <Svg width={CHART_WIDTH} height={CHART_HEIGHT}>
+          {/* Grid lines */}
+          {yTicks.map((tick) => (
+            <Line
+              key={tick.value}
+              x1={CHART_PADDING.left}
+              y1={tick.y}
+              x2={CHART_WIDTH - CHART_PADDING.right}
+              y2={tick.y}
+              stroke={colors.surfaceSecondary}
+              strokeWidth={0.5}
+            />
+          ))}
+          {/* Y-axis labels */}
+          {yTicks.map((tick) => (
+            <SvgText
+              key={`label-${tick.value}`}
+              x={CHART_PADDING.left - 6}
+              y={tick.y + 4}
+              fill={colors.textTertiary}
+              fontSize={10}
+              textAnchor="end"
+            >
+              {Math.round(tick.value)}
+            </SvgText>
+          ))}
+          {/* Unit label */}
           <SvgText
-            key={`label-${tick.value}`}
             x={CHART_PADDING.left - 6}
-            y={tick.y + 4}
+            y={CHART_PADDING.top - 8}
             fill={colors.textTertiary}
-            fontSize={10}
+            fontSize={9}
             textAnchor="end"
           >
-            {Math.round(tick.value)}
+            {unit}
           </SvgText>
-        ))}
-        {/* Unit label */}
-        <SvgText
-          x={CHART_PADDING.left - 6}
-          y={CHART_PADDING.top - 8}
-          fill={colors.textTertiary}
-          fontSize={9}
-          textAnchor="end"
-        >
-          {unit}
-        </SvgText>
-        {/* Data line */}
-        <Polyline
-          points={points}
-          fill="none"
-          stroke={color}
-          strokeWidth={1.5}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </Svg>
+          {/* Data line */}
+          <Polyline
+            points={chartPoints}
+            fill="none"
+            stroke={color}
+            strokeWidth={1.5}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          {/* Touch crosshair */}
+          {touchIndex != null && (
+            <Line
+              x1={toX(touchIndex)}
+              y1={CHART_PADDING.top}
+              x2={toX(touchIndex)}
+              y2={CHART_PADDING.top + plotHeight}
+              stroke={colors.textTertiary}
+              strokeWidth={1}
+              strokeDasharray="4,4"
+            />
+          )}
+          {touchedValue != null && (
+            <Circle
+              cx={toX(touchedValue.index)}
+              cy={toY(touchedValue.value)}
+              r={4}
+              fill={color}
+              stroke="#ffffff"
+              strokeWidth={2}
+            />
+          )}
+        </Svg>
+      </View>
     </View>
   );
 }
@@ -182,22 +229,39 @@ interface AreaChartProps {
   color: string;
   label: string;
   unit: string;
+  onHoverIndex?: (index: number | null) => void;
+  onScrubStart?: () => void;
+  onScrubEnd?: () => void;
 }
 
-function AreaChart({ data, color, label, unit }: AreaChartProps) {
+function AreaChart({
+  data,
+  color,
+  label,
+  unit,
+  onHoverIndex,
+  onScrubStart,
+  onScrubEnd,
+}: AreaChartProps) {
+  const plotWidth = CHART_WIDTH - CHART_PADDING.left - CHART_PADDING.right;
+  const { touchIndex, panResponder } = useChartScrub({
+    plotWidth,
+    totalPoints: data.length,
+    onHoverIndex,
+    onScrubStart,
+    onScrubEnd,
+  });
+
   const values = data
     .map((d, i) => (d.value != null ? { index: i, value: d.value } : null))
     .filter((d): d is { index: number; value: number } => d !== null);
 
   if (values.length < 2) return null;
 
-  const plotWidth = CHART_WIDTH - CHART_PADDING.left - CHART_PADDING.right;
   const plotHeight = CHART_HEIGHT - CHART_PADDING.top - CHART_PADDING.bottom;
-
   const minVal = Math.min(...values.map((v) => v.value));
   const maxVal = Math.max(...values.map((v) => v.value));
   const range = maxVal - minVal || 1;
-  const totalPoints = data.length;
 
   const toX = (index: number) =>
     CHART_PADDING.left + (index / Math.max(totalPoints - 1, 1)) * plotWidth;
@@ -228,6 +292,9 @@ function AreaChart({ data, color, label, unit }: AreaChartProps) {
     return { value, y: toY(value) };
   });
 
+  // Find value at the touched index for the crosshair dot
+  const touchedValue = touchIndex != null ? values.find((v) => v.index === touchIndex) : null;
+
   return (
     <View style={chartStyles.container}>
       <ChartTitleWithTooltip
@@ -235,60 +302,84 @@ function AreaChart({ data, color, label, unit }: AreaChartProps) {
         description={`This chart shows how your ${label.toLowerCase()} changed over the activity timeline.`}
         textStyle={chartStyles.title}
       />
-      <Svg width={CHART_WIDTH} height={CHART_HEIGHT}>
-        <Defs>
-          <LinearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0" stopColor={color} stopOpacity={0.3} />
-            <Stop offset="1" stopColor={color} stopOpacity={0.05} />
-          </LinearGradient>
-        </Defs>
-        {/* Grid lines */}
-        {yTicks.map((tick) => (
-          <Line
-            key={tick.value}
-            x1={CHART_PADDING.left}
-            y1={tick.y}
-            x2={CHART_WIDTH - CHART_PADDING.right}
-            y2={tick.y}
-            stroke={colors.surfaceSecondary}
-            strokeWidth={0.5}
-          />
-        ))}
-        {/* Y-axis labels */}
-        {yTicks.map((tick) => (
+      <View {...panResponder.panHandlers}>
+        <Svg width={CHART_WIDTH} height={CHART_HEIGHT}>
+          <Defs>
+            <LinearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor={color} stopOpacity={0.3} />
+              <Stop offset="1" stopColor={color} stopOpacity={0.05} />
+            </LinearGradient>
+          </Defs>
+          {/* Grid lines */}
+          {yTicks.map((tick) => (
+            <Line
+              key={tick.value}
+              x1={CHART_PADDING.left}
+              y1={tick.y}
+              x2={CHART_WIDTH - CHART_PADDING.right}
+              y2={tick.y}
+              stroke={colors.surfaceSecondary}
+              strokeWidth={0.5}
+            />
+          ))}
+          {/* Y-axis labels */}
+          {yTicks.map((tick) => (
+            <SvgText
+              key={`label-${tick.value}`}
+              x={CHART_PADDING.left - 6}
+              y={tick.y + 4}
+              fill={colors.textTertiary}
+              fontSize={10}
+              textAnchor="end"
+            >
+              {Math.round(tick.value)}
+            </SvgText>
+          ))}
+          {/* Unit label */}
           <SvgText
-            key={`label-${tick.value}`}
             x={CHART_PADDING.left - 6}
-            y={tick.y + 4}
+            y={CHART_PADDING.top - 8}
             fill={colors.textTertiary}
-            fontSize={10}
+            fontSize={9}
             textAnchor="end"
           >
-            {Math.round(tick.value)}
+            {unit}
           </SvgText>
-        ))}
-        {/* Unit label */}
-        <SvgText
-          x={CHART_PADDING.left - 6}
-          y={CHART_PADDING.top - 8}
-          fill={colors.textTertiary}
-          fontSize={9}
-          textAnchor="end"
-        >
-          {unit}
-        </SvgText>
-        {/* Area fill */}
-        <Path d={areaPath} fill="url(#areaGrad)" />
-        {/* Data line */}
-        <Path
-          d={linePath}
-          fill="none"
-          stroke={color}
-          strokeWidth={1.5}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </Svg>
+          {/* Area fill */}
+          <Path d={areaPath} fill="url(#areaGrad)" />
+          {/* Data line */}
+          <Path
+            d={linePath}
+            fill="none"
+            stroke={color}
+            strokeWidth={1.5}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          {/* Touch crosshair */}
+          {touchIndex != null && (
+            <Line
+              x1={toX(touchIndex)}
+              y1={CHART_PADDING.top}
+              x2={toX(touchIndex)}
+              y2={CHART_PADDING.top + plotHeight}
+              stroke={colors.textTertiary}
+              strokeWidth={1}
+              strokeDasharray="4,4"
+            />
+          )}
+          {touchedValue != null && (
+            <Circle
+              cx={toX(touchedValue.index)}
+              cy={toY(touchedValue.value)}
+              r={4}
+              fill={color}
+              stroke="#ffffff"
+              strokeWidth={2}
+            />
+          )}
+        </Svg>
+      </View>
     </View>
   );
 }
@@ -645,6 +736,27 @@ export default function ActivityDetailScreen() {
     { enabled: !!id && isStrengthActivity },
   );
 
+  const points = stream.data ?? [];
+  const [hoveredPosition, setHoveredPosition] = useState<{ lat: number; lng: number } | null>(null);
+  const [scrollEnabled, setScrollEnabled] = useState(true);
+
+  const handleHoverIndex = useCallback(
+    (index: number | null) => {
+      if (index != null) {
+        const point = points[index];
+        if (point?.lat != null && point?.lng != null) {
+          setHoveredPosition({ lat: point.lat, lng: point.lng });
+          return;
+        }
+      }
+      setHoveredPosition(null);
+    },
+    [points],
+  );
+
+  const handleScrubStart = useCallback(() => setScrollEnabled(false), []);
+  const handleScrubEnd = useCallback(() => setScrollEnabled(true), []);
+
   if (detail.isLoading) {
     return (
       <View style={styles.loadingContainer}>
@@ -663,7 +775,6 @@ export default function ActivityDetailScreen() {
   }
 
   const activity = detail.data;
-  const points = stream.data ?? [];
   const zones = hrZones.data ?? [];
 
   const hasGps = points.some((p) => p.lat != null && p.lng != null);
@@ -730,7 +841,11 @@ export default function ActivityDetailScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      scrollEnabled={scrollEnabled}
+    >
       {/* Activity Header */}
       <View style={styles.header}>
         <View style={styles.headerRow}>
@@ -787,7 +902,7 @@ export default function ActivityDetailScreen() {
       {stats.length > 0 && <StatsGrid stats={stats} />}
 
       {/* Route Map */}
-      {hasGps && <RouteMap points={points} />}
+      {hasGps && <RouteMap points={points} hoveredPosition={hoveredPosition} />}
 
       {/* Strength Exercises */}
       {(strengthExercises.data?.length ?? 0) > 0 && (
@@ -809,6 +924,9 @@ export default function ActivityDetailScreen() {
               color={CHART_COLORS.heartRate}
               label="Heart Rate"
               unit="bpm"
+              onHoverIndex={hasGps ? handleHoverIndex : undefined}
+              onScrubStart={hasGps ? handleScrubStart : undefined}
+              onScrubEnd={hasGps ? handleScrubEnd : undefined}
             />
           )}
 
@@ -819,6 +937,9 @@ export default function ActivityDetailScreen() {
               color={CHART_COLORS.power}
               label="Power"
               unit="W"
+              onHoverIndex={hasGps ? handleHoverIndex : undefined}
+              onScrubStart={hasGps ? handleScrubStart : undefined}
+              onScrubEnd={hasGps ? handleScrubEnd : undefined}
             />
           )}
 
@@ -831,6 +952,9 @@ export default function ActivityDetailScreen() {
               color={CHART_COLORS.altitude}
               label="Elevation Profile"
               unit={units.elevationLabel}
+              onHoverIndex={hasGps ? handleHoverIndex : undefined}
+              onScrubStart={hasGps ? handleScrubStart : undefined}
+              onScrubEnd={hasGps ? handleScrubEnd : undefined}
             />
           )}
 

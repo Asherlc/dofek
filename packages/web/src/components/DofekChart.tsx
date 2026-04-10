@@ -27,6 +27,8 @@ interface DofekChartProps {
   emptyMessage?: string;
   /** Pass ECharts opts like { renderer: "svg" } */
   opts?: Record<string, unknown>;
+  /** ECharts event handlers passed to ReactECharts */
+  onEvents?: Record<string, (...params: Array<Record<string, unknown>>) => void>;
 }
 
 export function DofekChart({
@@ -36,6 +38,7 @@ export function DofekChart({
   height = 250,
   emptyMessage = "No data available",
   opts,
+  onEvents,
 }: DofekChartProps) {
   const fetchingCount = useFetchingCount();
 
@@ -67,6 +70,7 @@ export function DofekChart({
         style={{ height, width: "100%" }}
         notMerge={true}
         opts={opts}
+        onEvents={onEvents}
       />
     </div>
   );
