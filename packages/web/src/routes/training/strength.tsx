@@ -3,6 +3,7 @@ import { ChartDescriptionTooltip } from "../../components/ChartDescriptionToolti
 import { EstimatedMaxChart } from "../../components/EstimatedMaxChart.tsx";
 import { MuscleGroupVolumeChart } from "../../components/MuscleGroupVolumeChart.tsx";
 import { ProgressiveOverloadCards } from "../../components/ProgressiveOverloadCards.tsx";
+import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
 import { StrengthVolumeChart } from "../../components/StrengthVolumeChart.tsx";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
 import { trpc } from "../../lib/trpc.ts";
@@ -10,6 +11,13 @@ import { trpc } from "../../lib/trpc.ts";
 export const Route = createFileRoute("/training/strength")({
   component: StrengthTab,
 });
+
+const STRENGTH_ACTIVITY_TYPES = [
+  "strength",
+  "strength_training",
+  "functional_strength",
+  "functional_fitness",
+] as const;
 
 function StrengthTab() {
   const { days } = useTrainingDays();
@@ -46,6 +54,10 @@ function StrengthTab() {
           <ProgressiveOverloadCards exercises={overload.data ?? []} loading={overload.isLoading} />
         </Section>
       </div>
+
+      <Section title="Recent Strength Workouts" subtitle="Recent strength training sessions">
+        <RecentActivitiesSection activityTypes={STRENGTH_ACTIVITY_TYPES} />
+      </Section>
     </>
   );
 }

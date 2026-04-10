@@ -21,7 +21,6 @@ const DEFAULT_ORDER = [
   "sleep",
   "nutrition",
   "bodyComp",
-  "activities",
 ] as const;
 
 export const DEFAULT_LAYOUT: DashboardLayout = {
@@ -45,7 +44,6 @@ export const SECTION_LABELS: Record<string, string> = {
   sleep: "Sleep",
   nutrition: "Nutrition",
   bodyComp: "Body Composition",
-  activities: "Recent Activities",
 };
 
 interface DashboardLayoutContextValue {

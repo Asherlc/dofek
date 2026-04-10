@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
 import { ChartLoadingSkeleton } from "../../components/LoadingSkeleton.tsx";
 import { PmcChart } from "../../components/PmcChart.tsx";
+import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
 import { TrainingCalendar } from "../../components/TrainingCalendar.tsx";
 import { TrainingInsightsPanel } from "../../components/TrainingInsightsPanel.tsx";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
@@ -43,6 +44,10 @@ function TrainingOverview() {
         subtitle="Weekly volume, HR zone distribution, intensity split"
       >
         <TrainingInsightsPanel days={days} />
+      </Section>
+
+      <Section title="Recent Activities" subtitle="All recent training activities">
+        <RecentActivitiesSection />
       </Section>
     </>
   );

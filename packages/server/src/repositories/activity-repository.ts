@@ -119,6 +119,7 @@ export interface ListInput {
   endDate: string;
   limit: number;
   offset: number;
+  activityTypes?: string[];
 }
 
 /** Data access for activity queries. */
@@ -127,6 +128,10 @@ export class ActivityRepository extends BaseRepository {
   async list(
     input: ListInput,
   ): Promise<{ items: Array<Record<string, unknown>>; totalCount: number }> {
+    const typeFilter =
+      input.activityTypes && input.activityTypes.length > 0
+        ? sql`AND a.activity_type = ANY(${input.activityTypes})`
+        : sql``;
     const rows = await this.query(
       activityListRowSchema,
       sql`SELECT
@@ -146,6 +151,7 @@ export class ActivityRepository extends BaseRepository {
           LEFT JOIN fitness.activity_summary s ON s.activity_id = a.id
           WHERE a.user_id = ${this.userId}
             AND a.started_at > ${timestampWindowStart(input.endDate, input.days)}
+            ${typeFilter}
           ORDER BY a.started_at DESC
           LIMIT ${input.limit} OFFSET ${input.offset}`,
     );

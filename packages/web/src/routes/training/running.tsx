@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
 import { DofekChart } from "../../components/DofekChart.tsx";
 import { ChartLoadingSkeleton } from "../../components/LoadingSkeleton.tsx";
+import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
 import {
   chartColors,
   dofekAxis,
@@ -20,6 +21,8 @@ export const Route = createFileRoute("/training/running")({
 });
 
 import { formatNumber, formatPace } from "@dofek/format/format";
+
+const RUNNING_ACTIVITY_TYPES = ["running", "trail_running"] as const;
 
 export function RunningTab() {
   const { days } = useTrainingDays();
@@ -58,6 +61,10 @@ export function RunningTab() {
           loading={dynamics.isLoading}
           units={units}
         />
+      </Section>
+
+      <Section title="Recent Runs" subtitle="Recent running activities">
+        <RecentActivitiesSection activityTypes={RUNNING_ACTIVITY_TYPES} />
       </Section>
     </>
   );
