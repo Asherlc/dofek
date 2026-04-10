@@ -121,11 +121,7 @@ jobs:
             fi
 
             # Set env vars
-            PREVIEW_ENV="PORT=3000
-DATABASE_URL=${PREVIEW_DATABASE_URL}
-REDIS_URL=redis://dofek-redis:6379
-NODE_ENV=production
-PUBLIC_URL=https://${PREVIEW_DOMAIN}"
+            PREVIEW_ENV=$(printf 'PORT=3000\nDATABASE_URL=%s\nREDIS_URL=redis://dofek-redis:6379\nNODE_ENV=production\nPUBLIC_URL=https://%s' "$PREVIEW_DATABASE_URL" "$PREVIEW_DOMAIN")
             dokploy "application.update" \
               -d "$(jq -n --arg id "$APP_ID" --arg env "$PREVIEW_ENV" '{json: {applicationId: $id, env: $env}}')" > /dev/null
 
