@@ -43,7 +43,7 @@ export function registerSocketModeDiagnostics(client: SocketModeClient): void {
     "slack_event",
     (args: { type?: string; body?: { event?: { type?: string; channel_type?: string } } }) => {
       const eventType = args.body?.event?.type ?? args.type ?? "unknown";
-      logger.debug(`[slack] Socket Mode received raw event: ${eventType}`);
+      logger.info(`[slack] Socket Mode received raw event: ${eventType}`);
       if (eventType === "message" && args.body?.event?.channel_type === "im") {
         lastImMessageAt = Date.now();
       } else if (eventType !== "message") {

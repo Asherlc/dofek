@@ -3,6 +3,7 @@ import bolt from "@slack/bolt";
 
 const { App, ExpressReceiver, SocketModeReceiver } = bolt;
 
+import * as Sentry from "@sentry/node";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import type express from "express";
@@ -80,6 +81,7 @@ export function createSlackBot(db: Database): SlackBotResult | null {
     });
     app.error(async (error) => {
       logger.error(`[slack] Unhandled Bolt error: ${error.message ?? error}`);
+      Sentry.captureException(error);
     });
     registerHandlers(app, repository);
 
@@ -94,7 +96,18 @@ export function createSlackBot(db: Database): SlackBotResult | null {
   const appToken = process.env.SLACK_APP_TOKEN;
 
   if (botToken && appToken) {
-    const receiver = new SocketModeReceiver({ appToken });
+    const receiver = new SocketModeReceiver({
+      appToken,
+      // Bolt's default processEventErrorHandler logs to Bolt's internal ConsoleLogger
+      // which isn't captured by our Axiom pipeline. Override to log to our logger + Sentry
+      // so we can see when event processing fails.
+      processEventErrorHandler: async ({ error }) => {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logger.error(`[slack] Bolt processEvent error: ${errorMessage}`);
+        Sentry.captureException(error instanceof Error ? error : new Error(errorMessage));
+        return true; // ack the event so Slack doesn't retry indefinitely
+      },
+    });
     // Increase pong timeout from default 5s — small servers can't always
     // respond in time, causing frequent disconnects and lost action events.
     // SocketModeReceiver doesn't expose clientPingTimeout, and the property
@@ -109,6 +122,7 @@ export function createSlackBot(db: Database): SlackBotResult | null {
 
     app.error(async (error) => {
       logger.error(`[slack] Unhandled Bolt error: ${error.message ?? error}`);
+      Sentry.captureException(error);
     });
 
     registerHandlers(app, repository);
