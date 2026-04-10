@@ -259,6 +259,7 @@ describe("Router coverage", () => {
     await testCtx.db.execute(
       sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_body_measurement`,
     );
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`);
 
     // Start server

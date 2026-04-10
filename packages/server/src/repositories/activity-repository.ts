@@ -197,56 +197,20 @@ export class ActivityRepository extends BaseRepository {
   async getStream(activityId: string, maxPoints: number): Promise<StreamPoint[]> {
     const rows = await this.query(
       streamPointRowSchema,
-      sql`WITH member_ids AS (
-            SELECT unnest(a.member_activity_ids) AS activity_id
-            FROM fitness.v_activity a
-            WHERE a.id = ${activityId} AND a.user_id = ${this.userId}
-          ),
-          best_source AS (
-            SELECT DISTINCT ON (channel)
-              channel, provider_id
-            FROM (
-              SELECT ss.channel, ss.provider_id, COUNT(*) AS sample_count
-              FROM fitness.sensor_sample ss
-              JOIN member_ids m ON ss.activity_id = m.activity_id
-              WHERE ss.channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude', 'lat', 'lng')
-              GROUP BY ss.channel, ss.provider_id
-            ) counts
-            ORDER BY channel, sample_count DESC
-          ),
-          sensor_pivoted AS (
+      sql`WITH pivoted AS (
             SELECT
-              ss.recorded_at,
-              MAX(ss.scalar) FILTER (WHERE ss.channel = 'heart_rate')::SMALLINT AS heart_rate,
-              MAX(ss.scalar) FILTER (WHERE ss.channel = 'power')::SMALLINT AS power,
-              MAX(ss.scalar) FILTER (WHERE ss.channel = 'speed') AS speed,
-              MAX(ss.scalar) FILTER (WHERE ss.channel = 'cadence')::SMALLINT AS cadence,
-              MAX(ss.scalar) FILTER (WHERE ss.channel = 'altitude') AS altitude,
-              MAX(ss.scalar) FILTER (WHERE ss.channel = 'lat') AS lat,
-              MAX(ss.scalar) FILTER (WHERE ss.channel = 'lng') AS lng
-            FROM fitness.sensor_sample ss
-            JOIN member_ids m ON ss.activity_id = m.activity_id
-            JOIN best_source bs ON ss.channel = bs.channel AND ss.provider_id = bs.provider_id
-            GROUP BY ss.recorded_at
-          ),
-          legacy_pivoted AS (
-            SELECT
-              ms.recorded_at,
-              ms.heart_rate,
-              ms.power,
-              ms.speed,
-              ms.cadence,
-              ms.altitude,
-              ms.lat,
-              ms.lng
-            FROM fitness.metric_stream ms
-            JOIN member_ids m ON ms.activity_id = m.activity_id
-          ),
-          pivoted AS (
-            SELECT * FROM sensor_pivoted
-            UNION ALL
-            SELECT * FROM legacy_pivoted
-            WHERE NOT EXISTS (SELECT 1 FROM sensor_pivoted)
+              ds.recorded_at,
+              MAX(ds.scalar) FILTER (WHERE ds.channel = 'heart_rate')::SMALLINT AS heart_rate,
+              MAX(ds.scalar) FILTER (WHERE ds.channel = 'power')::SMALLINT AS power,
+              MAX(ds.scalar) FILTER (WHERE ds.channel = 'speed') AS speed,
+              MAX(ds.scalar) FILTER (WHERE ds.channel = 'cadence')::SMALLINT AS cadence,
+              MAX(ds.scalar) FILTER (WHERE ds.channel = 'altitude') AS altitude,
+              MAX(ds.scalar) FILTER (WHERE ds.channel = 'lat') AS lat,
+              MAX(ds.scalar) FILTER (WHERE ds.channel = 'lng') AS lng
+            FROM fitness.deduped_sensor ds
+            WHERE ds.activity_id = ${activityId}
+              AND ds.channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude', 'lat', 'lng')
+            GROUP BY ds.recorded_at
           ),
           numbered AS (
             SELECT p.*, ROW_NUMBER() OVER (ORDER BY p.recorded_at) AS rn,
@@ -279,43 +243,11 @@ export class ActivityRepository extends BaseRepository {
             WHERE up.id = ${this.userId}
               AND up.max_hr IS NOT NULL
           ),
-          member_ids AS (
-            SELECT unnest(a.member_activity_ids) AS activity_id
-            FROM fitness.v_activity a
-            WHERE a.id = ${activityId} AND a.user_id = ${this.userId}
-          ),
-          hr_best_source AS (
-            SELECT provider_id
-            FROM (
-              SELECT ss.provider_id, COUNT(*) AS sample_count
-              FROM fitness.sensor_sample ss
-              JOIN member_ids m ON ss.activity_id = m.activity_id
-              WHERE ss.channel = 'heart_rate'
-              GROUP BY ss.provider_id
-            ) counts
-            ORDER BY sample_count DESC
-            LIMIT 1
-          ),
           hr_samples AS (
-            WITH sensor_hr_samples AS (
-              SELECT ms.scalar AS heart_rate
-              FROM fitness.sensor_sample ms
-              JOIN member_ids m ON ms.activity_id = m.activity_id
-              JOIN hr_best_source bs ON ms.provider_id = bs.provider_id
-              WHERE ms.channel = 'heart_rate'
-            ),
-            legacy_hr_samples AS (
-              SELECT ms.heart_rate::REAL AS heart_rate
-              FROM fitness.metric_stream ms
-              JOIN member_ids m ON ms.activity_id = m.activity_id
-              WHERE ms.heart_rate IS NOT NULL
-            )
-            SELECT heart_rate
-            FROM sensor_hr_samples
-            UNION ALL
-            SELECT heart_rate
-            FROM legacy_hr_samples
-            WHERE NOT EXISTS (SELECT 1 FROM sensor_hr_samples)
+            SELECT ds.scalar AS heart_rate
+            FROM fitness.deduped_sensor ds
+            WHERE ds.activity_id = ${activityId}
+              AND ds.channel = 'heart_rate'
           )
           SELECT
             z.zone,
@@ -354,7 +286,11 @@ export class ActivityRepository extends BaseRepository {
 
   /** Refresh the activity-related materialized views. */
   async refreshActivityViews(): Promise<void> {
-    for (const view of ["fitness.v_activity", "fitness.activity_summary"]) {
+    for (const view of [
+      "fitness.v_activity",
+      "fitness.deduped_sensor",
+      "fitness.activity_summary",
+    ]) {
       try {
         await this.db.execute(sql.raw(`REFRESH MATERIALIZED VIEW CONCURRENTLY ${view}`));
       } catch {
