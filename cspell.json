@@ -437,7 +437,8 @@
     "latitudedegrees",
     "longitudedegrees",
     "altitudemeters",
-    "strongapp"
+    "strongapp",
+    "legendselectchanged"
   ],
   "flagWords": [],
   "useGitignore": false,
