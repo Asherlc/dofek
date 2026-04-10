@@ -4,6 +4,9 @@ import { join, resolve } from "node:path";
 import postgres from "postgres";
 import { logger } from "../logger.ts";
 
+/** Postgres advisory lock key — serializes concurrent view sync runs across containers */
+export const VIEW_SYNC_LOCK_KEY = 728370292;
+
 /**
  * Extract the view name from a CREATE MATERIALIZED VIEW statement.
  * Handles both "CREATE MATERIALIZED VIEW" and "CREATE MATERIALIZED VIEW IF NOT EXISTS".
@@ -72,9 +75,18 @@ export async function syncMaterializedViews(
     return { synced: 0, skipped: 0, refreshed: 0 };
   }
 
-  const sql = postgres(databaseUrl);
+  // Single connection — advisory locks are session-scoped, so the lock, all DDL,
+  // and the unlock must run on the same connection. A pool would scatter queries
+  // across connections, making the lock ineffective.
+  const sql = postgres(databaseUrl, { max: 1 });
+  let lockAcquired = false;
 
   try {
+    // Serialize view sync across containers — prevents two containers from
+    // racing to DROP/CREATE the same materialized view simultaneously.
+    await sql`SELECT pg_advisory_lock(${VIEW_SYNC_LOCK_KEY})`;
+    lockAcquired = true;
+
     // Ensure tracking table exists
     await sql`CREATE TABLE IF NOT EXISTS drizzle.__view_hashes (
       view_name TEXT PRIMARY KEY,
@@ -143,6 +155,11 @@ export async function syncMaterializedViews(
 
     return { synced, skipped, refreshed };
   } finally {
+    if (lockAcquired) {
+      await sql`SELECT pg_advisory_unlock(${VIEW_SYNC_LOCK_KEY})`.catch((error: unknown) => {
+        logger.warn("View sync advisory unlock failed: %s", error);
+      });
+    }
     await sql.end();
   }
 }
