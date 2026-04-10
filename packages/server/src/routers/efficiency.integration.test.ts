@@ -53,6 +53,7 @@ describe("efficiency.polarizationTrend integration", () => {
     await insertActivity("easy-ride", "cycling", 21, [{ hr: 120, samples: 1000 }]);
 
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
 
     const app = createApp(testCtx.db);
     await new Promise<void>((resolve) => {
