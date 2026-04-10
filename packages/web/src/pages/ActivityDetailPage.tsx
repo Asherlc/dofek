@@ -484,6 +484,13 @@ function RouteMap({
   return <div ref={mapRef} className="w-full h-[400px] rounded-lg" />;
 }
 
+interface MetricDefinition {
+  name: string;
+  axisName: string;
+  color: string;
+  data: Array<number | null | undefined>;
+}
+
 function MetricsChart({
   points,
   hasHr,
@@ -503,121 +510,108 @@ function MetricsChart({
   units: UnitConverter;
   onHoverPosition?: (position: { lat: number; lng: number } | null) => void;
 }) {
+  const [legendSelected, setLegendSelected] = useState<Record<string, boolean>>({});
+
+  const handleLegendChange = useCallback((params: Record<string, unknown>) => {
+    const raw = params.selected;
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+      const selected: Record<string, boolean> = {};
+      for (const [key, value] of Object.entries(raw)) {
+        if (typeof value === "boolean") {
+          selected[key] = value;
+        }
+      }
+      setLegendSelected(selected);
+    }
+  }, []);
+
   const chartEvents = useMemo(
-    () => buildAxisPointerEvents(points, onHoverPosition),
-    [points, onHoverPosition],
+    () => ({
+      ...(buildAxisPointerEvents(points, onHoverPosition) ?? {}),
+      legendselectchanged: handleLegendChange,
+    }),
+    [points, onHoverPosition, handleLegendChange],
   );
 
   if (loading) return <ChartLoadingSkeleton height={300} />;
   if (points.length === 0) return null;
 
-  const times = points.map((p) => p.recordedAt);
-  const yAxes: Array<Record<string, unknown>> = [];
-  const series: Array<Record<string, unknown>> = [];
-  let axisIndex = 0;
-
-  if (hasHr) {
-    yAxes.push(
-      dofekAxis.value({
-        name: "Heart Rate (bpm)",
-        min: "dataMin",
-        max: "dataMax",
-        position: "left",
-        showSplitLine: axisIndex === 0,
-        axisLabel: { color: CHART_COLORS.heartRate },
-      }),
-    );
-    series.push({
+  const metrics: MetricDefinition[] = [];
+  if (hasHr)
+    metrics.push({
       name: "Heart Rate",
-      type: "line",
-      yAxisIndex: axisIndex,
+      axisName: "Heart Rate (bpm)",
+      color: CHART_COLORS.heartRate,
       data: points.map((p) => p.heartRate),
-      showSymbol: false,
-      lineStyle: { width: 1.5, color: CHART_COLORS.heartRate },
-      itemStyle: { color: CHART_COLORS.heartRate },
     });
-    axisIndex++;
-  }
-
-  if (hasPower) {
-    yAxes.push(
-      dofekAxis.value({
-        name: "Power (W)",
-        min: "dataMin",
-        max: "dataMax",
-        position: axisIndex === 0 ? "left" : "right",
-        showSplitLine: axisIndex === 0,
-        axisLabel: { color: CHART_COLORS.power },
-      }),
-    );
-    series.push({
+  if (hasPower)
+    metrics.push({
       name: "Power",
-      type: "line",
-      yAxisIndex: axisIndex,
+      axisName: "Power (W)",
+      color: CHART_COLORS.power,
       data: points.map((p) => p.power),
-      showSymbol: false,
-      lineStyle: { width: 1.5, color: CHART_COLORS.power },
-      itemStyle: { color: CHART_COLORS.power },
     });
-    axisIndex++;
-  }
-
-  if (hasSpeed) {
-    yAxes.push({
-      ...dofekAxis.value({
-        name: `Speed (${units.speedLabel})`,
-        min: "dataMin",
-        max: "dataMax",
-        position: axisIndex === 0 ? "left" : "right",
-        showSplitLine: axisIndex === 0,
-        axisLabel: { color: CHART_COLORS.speed },
-      }),
-      offset: axisIndex > 1 ? (axisIndex - 1) * 60 : 0,
-    });
-    series.push({
+  if (hasSpeed)
+    metrics.push({
       name: "Speed",
-      type: "line",
-      yAxisIndex: axisIndex,
+      axisName: `Speed (${units.speedLabel})`,
+      color: CHART_COLORS.speed,
       data: points.map((p) =>
         p.speed != null ? +formatNumber(units.convertSpeed(p.speed * 3.6)) : null,
       ),
-      showSymbol: false,
-      lineStyle: { width: 1.5, color: CHART_COLORS.speed },
-      itemStyle: { color: CHART_COLORS.speed },
     });
-    axisIndex++;
-  }
+  if (hasCadence)
+    metrics.push({
+      name: "Cadence",
+      axisName: "Cadence (rpm)",
+      color: CHART_COLORS.cadence,
+      data: points.map((p) => p.cadence),
+    });
 
-  if (hasCadence) {
-    yAxes.push({
+  const isVisible = (name: string) => legendSelected[name] !== false;
+
+  const times = points.map((p) => p.recordedAt);
+  const yAxes = metrics.map((metric, index) => {
+    const visible = isVisible(metric.name);
+    const isFirst = index === 0;
+    const position = isFirst ? "left" : "right";
+    const visibleRightBefore = metrics.slice(1, index).filter((m) => isVisible(m.name)).length;
+
+    return {
       ...dofekAxis.value({
-        name: "Cadence (rpm)",
+        name: metric.axisName,
         min: "dataMin",
         max: "dataMax",
-        position: axisIndex === 0 ? "left" : "right",
-        showSplitLine: axisIndex === 0,
-        axisLabel: { color: CHART_COLORS.cadence },
+        position,
+        showSplitLine: isFirst && visible,
+        axisLabel: { color: metric.color },
       }),
-      offset: axisIndex > 1 ? (axisIndex - 1) * 60 : 0,
-    });
-    series.push({
-      name: "Cadence",
-      type: "line",
-      yAxisIndex: axisIndex,
-      data: points.map((p) => p.cadence),
-      showSymbol: false,
-      lineStyle: { width: 1.5, color: CHART_COLORS.cadence },
-      itemStyle: { color: CHART_COLORS.cadence },
-    });
-    axisIndex++;
-  }
+      show: visible,
+      offset: !isFirst && visibleRightBefore > 0 ? visibleRightBefore * 60 : 0,
+    };
+  });
 
-  const rightAxisCount = yAxes.filter((_, i) => i > 0).length;
+  const series = metrics.map((metric, index) => ({
+    name: metric.name,
+    type: "line" as const,
+    yAxisIndex: index,
+    data: metric.data,
+    showSymbol: false,
+    lineStyle: { width: 1.5, color: metric.color },
+    itemStyle: { color: metric.color },
+  }));
+
+  const visibleRightAxisCount = metrics.slice(1).filter((m) => isVisible(m.name)).length;
 
   const option = {
-    grid: { top: 40, right: 60 + Math.max(0, rightAxisCount - 1) * 60, bottom: 60, left: 60 },
+    grid: {
+      top: 40,
+      right: 60 + Math.max(0, visibleRightAxisCount - 1) * 60,
+      bottom: 60,
+      left: 60,
+    },
     tooltip: dofekTooltip(),
-    legend: dofekLegend(true),
+    legend: { ...dofekLegend(true), selected: legendSelected },
     dataZoom: [
       { type: "inside", xAxisIndex: 0, start: 0, end: 100 },
       {
