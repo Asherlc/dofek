@@ -75,7 +75,10 @@ export async function syncMaterializedViews(
     return { synced: 0, skipped: 0, refreshed: 0 };
   }
 
-  const sql = postgres(databaseUrl);
+  // Single connection — advisory locks are session-scoped, so the lock, all DDL,
+  // and the unlock must run on the same connection. A pool would scatter queries
+  // across connections, making the lock ineffective.
+  const sql = postgres(databaseUrl, { max: 1 });
   let lockAcquired = false;
 
   try {
