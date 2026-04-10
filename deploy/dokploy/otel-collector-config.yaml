@@ -77,6 +77,8 @@ exporters:
       queue_size: 5000
   otlphttp/sentry-logs:
     logs_endpoint: ${env:SENTRY_OTLP_LOGS_ENDPOINT}
+    headers:
+      x-sentry-auth: "${env:SENTRY_OTLP_LOGS_AUTH}"
     retry_on_failure:
       enabled: true
       max_elapsed_time: 300s
