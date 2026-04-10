@@ -1,7 +1,6 @@
 import { activityRouter } from "./routers/activity.ts";
 import { activityRecordingRouter } from "./routers/activity-recording.ts";
 import { adminRouter } from "./routers/admin.ts";
-import { aiCoachRouter } from "./routers/ai-coach.ts";
 import { anomalyDetectionRouter } from "./routers/anomaly-detection.ts";
 import { authRouter } from "./routers/auth.ts";
 import { behaviorImpactRouter } from "./routers/behavior-impact.ts";
@@ -59,7 +58,6 @@ export const appRouter = router({
   inertialMeasurementUnitSync: inertialMeasurementUnitSyncRouter,
   activity: activityRouter,
   activityRecording: activityRecordingRouter,
-  aiCoach: aiCoachRouter,
   anomalyDetection: anomalyDetectionRouter,
   behaviorImpact: behaviorImpactRouter,
   breathwork: breathworkRouter,

@@ -13,7 +13,6 @@ vi.mock("./routers/inertial-measurement-unit-sync.ts", () => ({
 }));
 vi.mock("./routers/activity.ts", () => ({ activityRouter: mockRouter }));
 vi.mock("./routers/activity-recording.ts", () => ({ activityRecordingRouter: mockRouter }));
-vi.mock("./routers/ai-coach.ts", () => ({ aiCoachRouter: mockRouter }));
 vi.mock("./routers/anomaly-detection.ts", () => ({ anomalyDetectionRouter: mockRouter }));
 vi.mock("./routers/auth.ts", () => ({ authRouter: mockRouter }));
 vi.mock("./routers/behavior-impact.ts", () => ({ behaviorImpactRouter: mockRouter }));
@@ -106,7 +105,6 @@ describe("appRouter", () => {
       "inertialMeasurementUnitSync",
       "activity",
       "activityRecording",
-      "aiCoach",
       "anomalyDetection",
       "auth",
       "behaviorImpact",
