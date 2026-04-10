@@ -5,7 +5,7 @@
 
 services:
   db:
-    image: timescale/timescaledb:2.26.2-pg16
+    image: timescale/timescaledb:2.26.2-pg18
     container_name: dofek-db
     restart: unless-stopped
     networks:
@@ -30,7 +30,7 @@ services:
       retries: 10
 
   db-backup:
-    image: prodrigestivill/postgres-backup-local
+    image: prodrigestivill/postgres-backup-local:18
     container_name: dofek-db-backup
     restart: unless-stopped
     environment:
@@ -78,6 +78,7 @@ services:
     environment:
       AXIOM_API_TOKEN: ${axiom_api_token}
       SENTRY_OTLP_LOGS_ENDPOINT: ${sentry_otlp_logs_endpoint}
+      SENTRY_OTLP_LOGS_AUTH: ${sentry_otlp_logs_auth}
     volumes:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - /opt/dofek/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro

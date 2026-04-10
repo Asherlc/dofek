@@ -38,6 +38,7 @@ fi
 POSTGRES_PASSWORD="$(get_var postgres_password)"
 AXIOM_API_TOKEN="$(get_var axiom_api_token)"
 SENTRY_OTLP_LOGS_ENDPOINT="$(get_var sentry_otlp_logs_endpoint)"
+SENTRY_OTLP_LOGS_AUTH="$(get_var sentry_otlp_logs_auth)"
 GHCR_TOKEN="$(get_var ghcr_token)"
 R2_ENDPOINT="$(get_var r2_endpoint)"
 R2_ACCESS_KEY_ID="$(get_var r2_access_key_id)"
@@ -149,6 +150,7 @@ COMPOSE_CONTENT=$(cat "$SCRIPT_DIR/infra-compose.yml" \
   | sed "s/\${postgres_password}/${POSTGRES_PASSWORD}/g" \
   | sed "s/\${axiom_api_token}/${AXIOM_API_TOKEN}/g" \
   | sed "s|\${sentry_otlp_logs_endpoint}|${SENTRY_OTLP_LOGS_ENDPOINT}|g" \
+  | sed "s|\${sentry_otlp_logs_auth}|${SENTRY_OTLP_LOGS_AUTH}|g" \
   | sed "s|\${r2_endpoint}|${R2_ENDPOINT}|g" \
   | sed "s/\${r2_access_key_id}/${R2_ACCESS_KEY_ID}/g" \
   | sed "s|\${r2_secret_access_key}|${R2_SECRET_ACCESS_KEY}|g" \
