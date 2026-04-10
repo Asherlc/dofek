@@ -60,6 +60,15 @@ resource "cloudflare_dns_record" "dofek_fit_www" {
   ttl     = 1
 }
 
+resource "cloudflare_dns_record" "dofek_fit_preview_wildcard" {
+  zone_id = cloudflare_zone.dofek_fit.id
+  type    = "A"
+  name    = "*.preview.dofek.fit"
+  content = var.server_ip
+  proxied = false
+  ttl     = 1
+}
+
 # --- dofek.live ---
 
 resource "cloudflare_zone" "dofek_live" {
