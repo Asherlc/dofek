@@ -326,6 +326,63 @@ OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://o<ORG_ID>.ingest.sentry.io/api/<PROJE
 OTEL_EXPORTER_OTLP_TRACES_HEADERS=Authorization=Bearer <SENTRY_AUTH_TOKEN>
 ```
 
+### Performance instrumentation
+
+The API server has three layers of performance instrumentation:
+
+**1. tRPC procedure metrics (Prometheus)**
+
+Every tRPC query/mutation records duration via `prom-client` histograms, exposed at `/metrics`:
+
+- `trpc_procedure_duration_seconds{procedure, type, cache_hit}` — total wall clock time per procedure
+- `trpc_db_query_duration_seconds{procedure}` — database portion only (excludes cache lookup)
+- `trpc_cache_lookup_duration_seconds{procedure, hit}` — cache lookup time
+- `trpc_cache_hits_total{procedure}` / `trpc_cache_misses_total{procedure}` — hit/miss counters
+
+Queries exceeding 500ms emit a warning log: `Slow query: activity.stream took 842ms`.
+
+Defined in `packages/server/src/lib/metrics.ts`, recorded in `packages/server/src/trpc.ts`.
+
+**2. Per-query OTel spans**
+
+Every `executeWithSchema()` call (the funnel point for all repository DB reads) emits an OpenTelemetry `db.query` span with:
+
+- `db.system` — `postgresql`
+- `db.statement` — first 120 chars of the parameterized SQL
+- `db.row_count` — number of rows returned
+- Span duration — wall clock time of the Postgres round-trip
+
+These spans nest under the HTTP request trace, so in Axiom you see the full waterfall:
+
+```
+HTTP GET /api/trpc/activity.stream  145ms
+  └─ db.query "WITH pivoted AS ( SELECT ds.recorded_at..."  98ms  rows=500
+```
+
+Defined in `packages/server/src/lib/typed-sql.ts`.
+
+**3. Sentry browser tracing**
+
+The web client (`packages/web/src/lib/telemetry.ts`) uses `browserTracingIntegration()` to capture page navigation timing and propagate trace headers to the API.
+
+**Analyzing performance**
+
+To check API latency for a specific procedure (e.g., before/after a query optimization):
+
+```bash
+# Axiom: query db.query spans for a specific procedure
+axiom query 'dofek-logs' --filter 'span.name == "db.query" AND attributes.db.statement contains "deduped_sensor"'
+
+# Axiom: find slow queries (>200ms)
+axiom query 'dofek-logs' --filter 'span.name == "db.query" AND duration > 200ms'
+
+# Prometheus: check p95 latency for activity.stream (via /metrics endpoint or Grafana)
+# trpc_db_query_duration_seconds{procedure="activity.stream"}
+
+# Slow query warnings in logs
+axiom query 'dofek-logs' --filter 'message contains "Slow query"'
+```
+
 ### Production secrets
 
 **All secrets are managed in [Infisical](https://infisical.com/).** Infisical is the single source of truth for credentials — if a secret isn't in Infisical, it's untracked. Infisical syncs secrets to GitHub Actions automatically.
