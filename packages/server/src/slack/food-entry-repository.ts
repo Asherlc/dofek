@@ -346,9 +346,10 @@ export class FoodEntryRepository {
     return executeWithSchema(
       this.#db,
       z.object({ food_name: z.string(), calories: z.coerce.number().nullable() }),
-      sql`SELECT food_name, calories
-          FROM fitness.food_entry
-          WHERE id IN (${sqlIdList(entryIds)})`,
+      sql`SELECT fe.food_name, nd.calories
+          FROM fitness.food_entry fe
+          LEFT JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id
+          WHERE fe.id IN (${sqlIdList(entryIds)})`,
     );
   }
 
@@ -370,11 +371,12 @@ export class FoodEntryRepository {
         sodium_mg: z.coerce.number().nullable(),
         meal: z.string().nullable(),
       }),
-      sql`SELECT food_name, food_description, category, calories,
-                 protein_g, carbs_g, fat_g, fiber_g,
-                 saturated_fat_g, sugar_g, sodium_mg, meal
-          FROM fitness.food_entry
-          WHERE id IN (${sqlIdList(entryIds)})`,
+      sql`SELECT fe.food_name, fe.food_description, fe.category,
+                 nd.calories, nd.protein_g, nd.carbs_g, nd.fat_g, nd.fiber_g,
+                 nd.saturated_fat_g, nd.sugar_g, nd.sodium_mg, fe.meal
+          FROM fitness.food_entry fe
+          LEFT JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id
+          WHERE fe.id IN (${sqlIdList(entryIds)})`,
     );
 
     return rows.map((row) => ({

@@ -37,25 +37,31 @@ export function registerSocketModeDiagnostics(client: SocketModeClient): void {
 
   // Log all incoming Slack events at the WebSocket level — helps diagnose
   // when Slack stops delivering events despite showing "connected".
-  let lastMessageEventAt: number | null = null;
-  let hasLoggedNoMessageWarning = false;
-  client.on("slack_event", (args: { type?: string; body?: { event?: { type?: string } } }) => {
-    const eventType = args.body?.event?.type ?? args.type ?? "unknown";
-    logger.info(`[slack] Socket Mode received raw event: ${eventType}`);
-    if (eventType === "message") {
-      lastMessageEventAt = Date.now();
-      hasLoggedNoMessageWarning = false;
-    }
-  });
+  let lastImMessageAt: number | null = null;
+  let hasReceivedNonMessageEvent = false;
+  client.on(
+    "slack_event",
+    (args: { type?: string; body?: { event?: { type?: string; channel_type?: string } } }) => {
+      const eventType = args.body?.event?.type ?? args.type ?? "unknown";
+      logger.debug(`[slack] Socket Mode received raw event: ${eventType}`);
+      if (eventType === "message" && args.body?.event?.channel_type === "im") {
+        lastImMessageAt = Date.now();
+      } else if (eventType !== "message") {
+        hasReceivedNonMessageEvent = true;
+      }
+    },
+  );
 
-  // Periodically check if we're receiving non-message events but no message events.
+  // Periodically check if we're receiving non-message events but no IM message events.
   // This detects the case where Socket Mode is connected but message.im subscription is missing.
   const MESSAGE_LIVENESS_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+  let hasLoggedNoImWarning = false;
   const livenessInterval = setInterval(() => {
-    if (lastMessageEventAt === null && !hasLoggedNoMessageWarning) {
-      hasLoggedNoMessageWarning = true;
+    // Warn if other events arrive (proving the connection works) but no IM messages
+    if (hasReceivedNonMessageEvent && lastImMessageAt === null && !hasLoggedNoImWarning) {
+      hasLoggedNoImWarning = true;
       logger.warn(
-        "[slack] No message events received since bot started. " +
+        "[slack] No IM message events received since bot started, but other events are arriving. " +
           "Check that 'message.im' is listed under Event Subscriptions → Subscribe to bot events " +
           "in the Slack app settings at https://api.slack.com/apps",
       );
@@ -75,29 +81,21 @@ export async function verifyBotConfiguration(botToken: string): Promise<void> {
         "Content-Type": "application/json",
       },
     });
-    const data: { ok: boolean; error?: string; user_id?: string; team?: string } =
-      await response.json();
+    const data: {
+      ok: boolean;
+      error?: string;
+      user_id?: string;
+      bot_id?: string;
+      team?: string;
+    } = await response.json();
     if (!data.ok) {
       logger.error(`[slack] auth.test failed: ${data.error} — bot token may be invalid or revoked`);
       return;
     }
     logger.info(`[slack] Bot authenticated as ${data.user_id} in team ${data.team}`);
 
-    const botInfoResponse = await fetch("https://slack.com/api/bots.info", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${botToken}`,
-        "Content-Type": "application/json",
-      },
-    });
-    const botInfo: {
-      ok: boolean;
-      bot?: { app_id?: string };
-      response_metadata?: { scopes?: string[] };
-    } = await botInfoResponse.json();
-
-    // Log the scopes from the response headers (Slack returns x-oauth-scopes)
-    const installedScopes = botInfoResponse.headers.get("x-oauth-scopes");
+    // Slack returns installed scopes in the x-oauth-scopes response header
+    const installedScopes = response.headers.get("x-oauth-scopes");
     if (installedScopes) {
       const scopeList = installedScopes.split(",").map((scope) => scope.trim());
       const requiredScopes = ["im:history", "chat:write", "users:read", "users:read.email"];
@@ -110,10 +108,6 @@ export async function verifyBotConfiguration(botToken: string): Promise<void> {
       } else {
         logger.info(`[slack] Bot scopes verified: ${installedScopes}`);
       }
-    }
-
-    if (botInfo.ok && botInfo.bot?.app_id) {
-      logger.info(`[slack] Bot app_id: ${botInfo.bot.app_id}`);
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);

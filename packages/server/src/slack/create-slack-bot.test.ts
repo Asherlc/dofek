@@ -58,23 +58,13 @@ vi.mock("../lib/cache.ts", () => ({
 import bolt from "@slack/bolt";
 import { createSlackBot, startSlackBot } from "./bot.ts";
 
-/** Mock fetch for verifyBotConfiguration — returns successful auth.test and bots.info responses */
+/** Mock fetch for verifyBotConfiguration — returns successful auth.test response with scopes in headers */
 function mockFetchForSlackVerification() {
-  const mockFetch = vi.fn().mockImplementation((url: string) => {
-    if (url.includes("auth.test")) {
-      return Promise.resolve({
-        json: () => Promise.resolve({ ok: true, user_id: "U-BOT", team: "test-team" }),
-      });
-    }
-    if (url.includes("bots.info")) {
-      return Promise.resolve({
-        json: () => Promise.resolve({ ok: true, bot: { app_id: "A-TEST" } }),
-        headers: new Headers({
-          "x-oauth-scopes": "chat:write,im:history,im:read,im:write,users:read,users:read.email",
-        }),
-      });
-    }
-    return Promise.resolve({ json: () => Promise.resolve({ ok: false }) });
+  const mockFetch = vi.fn().mockResolvedValue({
+    json: () => Promise.resolve({ ok: true, user_id: "U-BOT", team: "test-team" }),
+    headers: new Headers({
+      "x-oauth-scopes": "chat:write,im:history,im:read,im:write,users:read,users:read.email",
+    }),
   });
   vi.stubGlobal("fetch", mockFetch);
   return mockFetch;
@@ -355,19 +345,12 @@ describe("startSlackBot", () => {
     const db = createMockDb();
     const { logger } = await import("../logger.ts");
 
-    // Return scopes missing im:history
+    // Return auth.test with scopes missing im:history
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockImplementation((url: string) => {
-        if (url.includes("auth.test")) {
-          return Promise.resolve({
-            json: () => Promise.resolve({ ok: true, user_id: "U-BOT", team: "test-team" }),
-          });
-        }
-        return Promise.resolve({
-          json: () => Promise.resolve({ ok: true, bot: { app_id: "A-TEST" } }),
-          headers: new Headers({ "x-oauth-scopes": "chat:write" }),
-        });
+      vi.fn().mockResolvedValue({
+        json: () => Promise.resolve({ ok: true, user_id: "U-BOT", team: "test-team" }),
+        headers: new Headers({ "x-oauth-scopes": "chat:write" }),
       }),
     );
 
