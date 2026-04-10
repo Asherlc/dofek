@@ -521,6 +521,7 @@ function MetricsChart({
       dofekAxis.value({
         name: "Heart Rate (bpm)",
         min: "dataMin",
+        max: "dataMax",
         position: "left",
         showSplitLine: axisIndex === 0,
         axisLabel: { color: CHART_COLORS.heartRate },
@@ -543,6 +544,7 @@ function MetricsChart({
       dofekAxis.value({
         name: "Power (W)",
         min: "dataMin",
+        max: "dataMax",
         position: axisIndex === 0 ? "left" : "right",
         showSplitLine: axisIndex === 0,
         axisLabel: { color: CHART_COLORS.power },
@@ -565,6 +567,7 @@ function MetricsChart({
       ...dofekAxis.value({
         name: `Speed (${units.speedLabel})`,
         min: "dataMin",
+        max: "dataMax",
         position: axisIndex === 0 ? "left" : "right",
         showSplitLine: axisIndex === 0,
         axisLabel: { color: CHART_COLORS.speed },
@@ -590,6 +593,7 @@ function MetricsChart({
       ...dofekAxis.value({
         name: "Cadence (rpm)",
         min: "dataMin",
+        max: "dataMax",
         position: axisIndex === 0 ? "left" : "right",
         showSplitLine: axisIndex === 0,
         axisLabel: { color: CHART_COLORS.cadence },
