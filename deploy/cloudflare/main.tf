@@ -1,6 +1,6 @@
 terraform {
   cloud {
-    organization = "asherlc-org"
+    organization = "dofek"
     workspaces {
       name = "dofek-cloudflare"
     }
