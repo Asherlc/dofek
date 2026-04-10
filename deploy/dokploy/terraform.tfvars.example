@@ -20,6 +20,7 @@ postgres_password = ""
 axiom_api_token             = ""
 sentry_otlp_traces_endpoint = ""
 sentry_otlp_logs_endpoint   = ""
+sentry_otlp_logs_auth       = ""
 
 # Slack notifications (optional)
 slack_bot_token = ""
