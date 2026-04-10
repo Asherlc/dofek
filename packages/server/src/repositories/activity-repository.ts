@@ -209,6 +209,7 @@ export class ActivityRepository extends BaseRepository {
               MAX(ds.scalar) FILTER (WHERE ds.channel = 'lng') AS lng
             FROM fitness.deduped_sensor ds
             WHERE ds.activity_id = ${activityId}
+              AND ds.user_id = ${this.userId}
               AND ds.channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude', 'lat', 'lng')
             GROUP BY ds.recorded_at
           ),
@@ -247,6 +248,7 @@ export class ActivityRepository extends BaseRepository {
             SELECT ds.scalar AS heart_rate
             FROM fitness.deduped_sensor ds
             WHERE ds.activity_id = ${activityId}
+              AND ds.user_id = ${this.userId}
               AND ds.channel = 'heart_rate'
           )
           SELECT

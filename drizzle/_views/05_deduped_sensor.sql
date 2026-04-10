@@ -31,9 +31,16 @@ best_source AS (
   ORDER BY canonical_id, channel, sample_count DESC
 ),
 
--- Step 2: Deduplicated scalar samples (only the winning provider per channel)
+-- Step 2: Deduplicated scalar samples (only the winning provider per channel).
+-- GROUP BY collapses any duplicate timestamps that can arise when a merge group
+-- has multiple member activities from the same winning provider.
 sensor_deduped AS (
-  SELECT am.canonical_id AS activity_id, am.user_id, ss.recorded_at, ss.channel, ss.scalar
+  SELECT
+    am.canonical_id AS activity_id,
+    am.user_id,
+    ss.recorded_at,
+    ss.channel,
+    MAX(ss.scalar) AS scalar
   FROM fitness.sensor_sample ss
   JOIN activity_members am ON ss.activity_id = am.member_id
   JOIN best_source bs
@@ -42,6 +49,7 @@ sensor_deduped AS (
     AND ss.provider_id = bs.provider_id
   WHERE ss.activity_id IS NOT NULL
     AND ss.scalar IS NOT NULL
+  GROUP BY am.canonical_id, am.user_id, ss.recorded_at, ss.channel
 ),
 
 -- Step 3: During sensor backfill/cutover, keep data populated by falling back
@@ -53,7 +61,7 @@ legacy_fallback AS (
     am.user_id,
     ms.recorded_at,
     expanded.channel,
-    expanded.scalar
+    MAX(expanded.scalar) AS scalar
   FROM fitness.metric_stream ms
   JOIN activity_members am ON ms.activity_id = am.member_id
   CROSS JOIN LATERAL (
@@ -83,6 +91,7 @@ legacy_fallback AS (
       JOIN activity_members am2 ON ss.activity_id = am2.member_id
       WHERE am2.canonical_id = am.canonical_id
     )
+  GROUP BY am.canonical_id, am.user_id, ms.recorded_at, expanded.channel
 )
 
 SELECT * FROM sensor_deduped

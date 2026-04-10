@@ -11,28 +11,45 @@ const tracer = trace.getTracer("dofek-server");
  */
 type ExecutableDatabase = Pick<Database, "execute">;
 
+/** Type guard for Drizzle StringChunk (has a `value` string array). */
+function isStringChunk(chunk: unknown): chunk is { value: string[] } {
+  if (chunk == null || typeof chunk !== "object" || !("value" in chunk)) return false;
+  const record: Record<string, unknown> = chunk;
+  return Array.isArray(record.value);
+}
+
+/** Type guard for nested Drizzle SQL fragments (has a `queryChunks` array). */
+function isSqlFragment(chunk: unknown): chunk is { queryChunks: unknown[] } {
+  if (chunk == null || typeof chunk !== "object" || !("queryChunks" in chunk)) return false;
+  const record: Record<string, unknown> = chunk;
+  return Array.isArray(record.queryChunks);
+}
+
 /**
  * Extract a short summary from a Drizzle SQL object for span naming.
- * Returns the first ~120 chars of the SQL template (parameters replaced with $N).
+ * Recursively flattens nested SQL fragments (e.g. from sql`...${innerSql}...`)
+ * so the full SQL template is visible. Parameters are replaced with $N.
+ * Returns the first ~120 chars.
  */
 function summarizeSql(query: SQL): string {
-  const chunks = query.queryChunks;
   const parts: string[] = [];
   let paramIndex = 1;
-  for (const chunk of chunks) {
-    if (typeof chunk === "string") {
-      parts.push(chunk);
-    } else if (
-      chunk &&
-      typeof chunk === "object" &&
-      "value" in chunk &&
-      Array.isArray(chunk.value)
-    ) {
-      parts.push(...chunk.value);
-    } else {
-      parts.push(`$${paramIndex++}`);
+
+  function flatten(chunks: unknown[]): void {
+    for (const chunk of chunks) {
+      if (typeof chunk === "string") {
+        parts.push(chunk);
+      } else if (isStringChunk(chunk)) {
+        parts.push(...chunk.value);
+      } else if (isSqlFragment(chunk)) {
+        flatten(chunk.queryChunks);
+      } else {
+        parts.push(`$${paramIndex++}`);
+      }
     }
   }
+
+  flatten(query.queryChunks);
   const full = parts.join("").replace(/\s+/g, " ").trim();
   return full.length > 120 ? `${full.slice(0, 117)}...` : full;
 }
