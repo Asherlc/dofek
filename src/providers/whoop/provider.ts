@@ -458,7 +458,6 @@ export class WhoopProvider implements SyncProvider {
                   activityType: parsed.activityType,
                   startedAt: parsed.startedAt,
                   endedAt: parsed.endedAt,
-                  percentRecorded: parsed.percentRecorded,
                   raw: {
                     strain: workoutRecord.score,
                     avgHeartRate: parsed.avgHeartRate,
@@ -473,7 +472,6 @@ export class WhoopProvider implements SyncProvider {
                     activityType: parsed.activityType,
                     startedAt: parsed.startedAt,
                     endedAt: parsed.endedAt,
-                    percentRecorded: parsed.percentRecorded,
                     raw: {
                       strain: workoutRecord.score,
                       avgHeartRate: parsed.avgHeartRate,

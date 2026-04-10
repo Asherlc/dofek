@@ -1307,39 +1307,6 @@ describe("parseSleep — sleep need breakdown", () => {
 });
 
 // ============================================================
-// parseWorkout — percent recorded
-// ============================================================
-
-describe("parseWorkout — percent recorded", () => {
-  it("extracts percent_recorded from workout record", () => {
-    const record: WhoopWorkoutRecord = {
-      activity_id: "uuid-pct-1",
-      during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
-      timezone_offset: "-05:00",
-      sport_id: 0,
-      percent_recorded: 95,
-    };
-
-    const parsed = parseWorkout(record);
-    expect(parsed).not.toBeNull();
-    expect(parsed?.percentRecorded).toBe(95);
-  });
-
-  it("returns undefined when percent_recorded is missing", () => {
-    const record: WhoopWorkoutRecord = {
-      activity_id: "uuid-pct-2",
-      during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
-      timezone_offset: "-05:00",
-      sport_id: 0,
-    };
-
-    const parsed = parseWorkout(record);
-    expect(parsed).not.toBeNull();
-    expect(parsed?.percentRecorded).toBeUndefined();
-  });
-});
-
-// ============================================================
 // parseWeightliftingWorkout — MSK strain and strap location
 // ============================================================
 

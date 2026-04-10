@@ -189,7 +189,6 @@ table fitness.activity {
   name text
   notes text
   perceived_exertion real
-  percent_recorded real
   source_name text
   timezone text
   strava_id text

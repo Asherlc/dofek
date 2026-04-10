@@ -250,7 +250,6 @@ export interface ParsedWorkout {
   avgHeartRate?: number;
   maxHeartRate?: number;
   totalElevationGain?: number;
-  percentRecorded?: number;
 }
 
 /**
@@ -304,7 +303,6 @@ export function parseWorkout(
     avgHeartRate: record.average_heart_rate,
     maxHeartRate: record.max_heart_rate,
     totalElevationGain: undefined,
-    percentRecorded: record.percent_recorded,
   };
 }
 

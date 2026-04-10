@@ -279,7 +279,6 @@ const sampleWorkout: WhoopWorkoutRecord = {
   average_heart_rate: 155,
   max_heart_rate: 185,
   kilojoules: 2500.5,
-  percent_recorded: 100,
   score: 12.5,
 };
 
@@ -1017,7 +1016,6 @@ describe("WhoopProvider.sync() — workout collection from cycles", () => {
     expect(activityInsert?.activityType).toBe("running"); // sport_id 0 = running
     expect(activityInsert?.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
     expect(activityInsert?.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
-    expect(activityInsert?.percentRecorded).toBeUndefined(); // no percent_recorded in test data
     // Verify raw data contains strain, HR, calories, duration
     expect(activityInsert?.raw).toBeDefined();
     expect(isRecord(activityInsert?.raw)).toBe(true);
@@ -1033,7 +1031,7 @@ describe("WhoopProvider.sync() — workout collection from cycles", () => {
     const conflictArgs = getOnConflictArgs(db);
     expect(conflictArgs.length).toBeGreaterThanOrEqual(1);
     const activityConflict = findOnConflictRecord(conflictArgs, (rec) => {
-      return isRecord(rec.set) && "activityType" in rec.set && "percentRecorded" in rec.set;
+      return isRecord(rec.set) && "activityType" in rec.set && "endedAt" in rec.set;
     });
     expect(activityConflict).toBeDefined();
     // target should be an array (providerId + externalId columns)
