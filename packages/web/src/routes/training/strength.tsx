@@ -56,7 +56,7 @@ function StrengthTab() {
       </div>
 
       <Section title="Recent Strength Workouts" subtitle="Recent strength training sessions">
-        <RecentActivitiesSection activityTypes={[...STRENGTH_ACTIVITY_TYPES]} />
+        <RecentActivitiesSection activityTypes={STRENGTH_ACTIVITY_TYPES} />
       </Section>
     </>
   );

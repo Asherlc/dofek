@@ -130,9 +130,7 @@ export class ActivityRepository extends BaseRepository {
   ): Promise<{ items: Array<Record<string, unknown>>; totalCount: number }> {
     const typeFilter =
       input.activityTypes && input.activityTypes.length > 0
-        ? sql.raw(
-            `AND a.activity_type IN (${input.activityTypes.map((t) => `'${t.replace(/'/g, "''")}'`).join(", ")})`,
-          )
+        ? sql`AND a.activity_type = ANY(${input.activityTypes})`
         : sql``;
     const rows = await this.query(
       activityListRowSchema,

@@ -64,7 +64,7 @@ export function RunningTab() {
       </Section>
 
       <Section title="Recent Runs" subtitle="Recent running activities">
-        <RecentActivitiesSection activityTypes={[...RUNNING_ACTIVITY_TYPES]} />
+        <RecentActivitiesSection activityTypes={RUNNING_ACTIVITY_TYPES} />
       </Section>
     </>
   );

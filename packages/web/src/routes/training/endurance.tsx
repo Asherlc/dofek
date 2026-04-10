@@ -49,7 +49,7 @@ function EnduranceTab() {
       </Section>
 
       <Section title="Recent Endurance Activities" subtitle="Recent cardio and endurance workouts">
-        <RecentActivitiesSection activityTypes={[...ENDURANCE_ACTIVITY_TYPES]} />
+        <RecentActivitiesSection activityTypes={ENDURANCE_ACTIVITY_TYPES} />
       </Section>
     </>
   );

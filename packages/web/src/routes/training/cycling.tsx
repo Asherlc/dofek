@@ -192,7 +192,7 @@ function CyclingTab() {
       </Section>
 
       <Section title="Recent Cycling Activities" subtitle="Recent rides and cycling workouts">
-        <RecentActivitiesSection activityTypes={[...CYCLING_ACTIVITY_TYPES]} />
+        <RecentActivitiesSection activityTypes={CYCLING_ACTIVITY_TYPES} />
       </Section>
     </>
   );

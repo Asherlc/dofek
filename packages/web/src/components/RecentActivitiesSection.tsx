@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { formatDateYmd as formatDateForQuery } from "@dofek/format/format";
+import { useMemo, useState } from "react";
 import { z } from "zod";
 import { useTrainingDays } from "../lib/trainingDaysContext.ts";
 import { trpc } from "../lib/trpc.ts";
@@ -20,18 +21,20 @@ const activityRowSchema = z.object({
 const PAGE_SIZE = 20;
 
 interface RecentActivitiesSectionProps {
-  activityTypes?: string[];
+  activityTypes?: readonly string[];
 }
 
 export function RecentActivitiesSection({ activityTypes }: RecentActivitiesSectionProps) {
   const { days } = useTrainingDays();
   const [page, setPage] = useState(0);
+  const endDate = useMemo(() => formatDateForQuery(), []);
 
   const activities = trpc.activity.list.useQuery({
     days,
+    endDate,
     limit: PAGE_SIZE,
     offset: page * PAGE_SIZE,
-    activityTypes,
+    activityTypes: activityTypes ? [...activityTypes] : undefined,
   });
 
   return (
