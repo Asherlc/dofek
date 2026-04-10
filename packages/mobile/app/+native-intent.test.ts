@@ -34,6 +34,22 @@ describe("redirectSystemPath", () => {
     expect(result).toBe("/preview?pr=123");
   });
 
+  it("routes full deep-link URL to preview screen", () => {
+    const result = redirectSystemPath({
+      path: "dofek://preview/pr-831",
+      initial: true,
+    });
+    expect(result).toBe("/preview?pr=831");
+  });
+
+  it("strips scheme from non-preview deep links", () => {
+    const result = redirectSystemPath({
+      path: "dofek://settings",
+      initial: false,
+    });
+    expect(result).toBe("/settings");
+  });
+
   it("keeps preview path without PR number unchanged", () => {
     const result = redirectSystemPath({
       path: "/preview",
