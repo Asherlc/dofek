@@ -9,6 +9,15 @@ const infisicalSecretListSchema = z.array(infisicalSecretSchema);
 
 const environmentAssignmentPattern = /^([A-Z0-9_]+)=(.*)$/;
 
+/** Quote a value for KEY=value format if it contains newlines or carriage returns. */
+function formatEnvValue(key: string, value: string): string {
+  if (value.includes("\n") || value.includes("\r")) {
+    const escaped = value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    return `${key}="${escaped}"`;
+  }
+  return `${key}=${value}`;
+}
+
 interface EnvironmentLine {
   line: string;
   key: string | null;
@@ -130,7 +139,7 @@ export function buildMergedEnvironment(
     const existingIndex = existingIndexes[0];
     if (existingIndex === undefined) {
       parsedEnvironment.lines.push({
-        line: `${managedKey}=${infisicalValue}`,
+        line: formatEnvValue(managedKey, infisicalValue),
         key: managedKey,
         value: infisicalValue,
       });
@@ -144,7 +153,7 @@ export function buildMergedEnvironment(
     }
 
     if (existingLine.value !== infisicalValue) {
-      existingLine.line = `${managedKey}=${infisicalValue}`;
+      existingLine.line = formatEnvValue(managedKey, infisicalValue);
       existingLine.value = infisicalValue;
       updatedKeys.push(managedKey);
     }

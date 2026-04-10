@@ -89,6 +89,20 @@ describe("buildMergedEnvironment", () => {
     ).toThrow('Refusing to manage protected destination key "DATABASE_URL"');
   });
 
+  it("quotes values containing newlines", () => {
+    const pemValue = "-----BEGIN RSA PRIVATE KEY-----\nMIIE...\n-----END RSA PRIVATE KEY-----";
+    const merged = buildMergedEnvironment({
+      existingEnvironmentText: "DATABASE_URL=postgres://example\n",
+      infisicalSecrets: new Map([["PEM_KEY", pemValue]]),
+      keysToSync: ["PEM_KEY"],
+    });
+
+    expect(merged.changed).toBe(true);
+    expect(merged.addedKeys).toEqual(["PEM_KEY"]);
+    expect(merged.environmentText).toContain('PEM_KEY="-----BEGIN RSA PRIVATE KEY-----');
+    expect(merged.environmentText).not.toContain("PEM_KEY=-----BEGIN");
+  });
+
   it("supports wildcard protected key patterns", () => {
     expect(() =>
       buildMergedEnvironment({
