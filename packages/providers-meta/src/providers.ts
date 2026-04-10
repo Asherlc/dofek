@@ -4,7 +4,6 @@ export const PROVIDER_LABELS: Record<string, string> = {
   apple: "Apple",
   github: "GitHub",
   slack: "Slack",
-  authentik: "Homelab",
   strava: "Strava",
   wahoo: "Wahoo",
   fitbit: "Fitbit",
@@ -59,7 +58,6 @@ export const SVG_LOGOS: ReadonlySet<string> = new Set([
   "trainerroad",
   "komoot",
   "eight-sleep",
-  "authentik",
 ]);
 
 /**

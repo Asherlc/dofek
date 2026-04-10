@@ -72,8 +72,8 @@ describe("resolveOrCreateUser (integration)", () => {
       name: "User",
     });
 
-    const second = await resolveOrCreateUser(ctx.db, "authentik", {
-      providerAccountId: "authentik-456",
+    const second = await resolveOrCreateUser(ctx.db, "apple", {
+      providerAccountId: "apple-456",
       email: "shared@example.com",
       name: "User",
     });
@@ -85,7 +85,7 @@ describe("resolveOrCreateUser (integration)", () => {
       sql`SELECT auth_provider FROM fitness.auth_account WHERE user_id = ${first.userId} ORDER BY auth_provider`,
     );
     expect(accounts).toHaveLength(2);
-    expect(accounts.map((a) => a.auth_provider)).toEqual(["authentik", "google"]);
+    expect(accounts.map((a) => a.auth_provider)).toEqual(["apple", "google"]);
   });
 
   it("creates a new user when email does not match any existing user", async () => {
@@ -95,8 +95,8 @@ describe("resolveOrCreateUser (integration)", () => {
       name: "First",
     });
 
-    const second = await resolveOrCreateUser(ctx.db, "authentik", {
-      providerAccountId: "authentik-456",
+    const second = await resolveOrCreateUser(ctx.db, "apple", {
+      providerAccountId: "apple-456",
       email: "different@example.com",
       name: "Second",
     });

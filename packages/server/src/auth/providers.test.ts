@@ -12,12 +12,6 @@ vi.mock("arctic", () => {
       createAuthorizationURL: vi.fn().mockReturnValue(new URL("https://appleid.apple.com/auth")),
       validateAuthorizationCode: vi.fn().mockResolvedValue(mockTokens),
     })),
-    Authentik: vi.fn().mockImplementation(() => ({
-      createAuthorizationURL: vi
-        .fn()
-        .mockReturnValue(new URL("https://auth.example.com/authorize")),
-      validateAuthorizationCode: vi.fn().mockResolvedValue(mockTokens),
-    })),
     decodeIdToken: vi.fn().mockReturnValue({
       sub: "user-123",
       email: "test@example.com",
@@ -54,10 +48,6 @@ describe("auth/providers", () => {
       "APPLE_PRIVATE_KEY",
       "APPLE_REDIRECT_URI",
       "APPLE_BUNDLE_ID",
-      "AUTHENTIK_BASE_URL",
-      "AUTHENTIK_CLIENT_ID",
-      "AUTHENTIK_CLIENT_SECRET",
-      "AUTHENTIK_REDIRECT_URI",
     ]) {
       delete process.env[key];
     }
@@ -103,24 +93,6 @@ describe("auth/providers", () => {
         "-----BEGIN PRIVATE KEY-----\nAQID\n-----END PRIVATE KEY-----";
       process.env.APPLE_REDIRECT_URI = "http://localhost/callback";
       expect(isProviderConfigured("apple")).toBe(true);
-    });
-
-    it("returns false when no Authentik env vars are set", () => {
-      expect(isProviderConfigured("authentik")).toBe(false);
-    });
-
-    it("returns false when only some Authentik env vars are set", () => {
-      process.env.AUTHENTIK_BASE_URL = "https://auth.example.com";
-      // Missing AUTHENTIK_CLIENT_ID, AUTHENTIK_CLIENT_SECRET, AUTHENTIK_REDIRECT_URI
-      expect(isProviderConfigured("authentik")).toBe(false);
-    });
-
-    it("returns true when all Authentik env vars are set", () => {
-      process.env.AUTHENTIK_BASE_URL = "https://auth.example.com";
-      process.env.AUTHENTIK_CLIENT_ID = "id";
-      process.env.AUTHENTIK_CLIENT_SECRET = "secret";
-      process.env.AUTHENTIK_REDIRECT_URI = "http://localhost/callback";
-      expect(isProviderConfigured("authentik")).toBe(true);
     });
   });
 
@@ -184,22 +156,6 @@ describe("auth/providers", () => {
       const result = getConfiguredProviders();
       expect(result).toContain("google");
       expect(result).not.toContain("apple");
-      expect(result).not.toContain("authentik");
-    });
-
-    it("returns multiple configured providers", () => {
-      process.env.GOOGLE_CLIENT_ID = "id";
-      process.env.GOOGLE_CLIENT_SECRET = "secret";
-      process.env.GOOGLE_REDIRECT_URI = "http://localhost/callback";
-      process.env.AUTHENTIK_BASE_URL = "https://auth.example.com";
-      process.env.AUTHENTIK_CLIENT_ID = "id";
-      process.env.AUTHENTIK_CLIENT_SECRET = "secret";
-      process.env.AUTHENTIK_REDIRECT_URI = "http://localhost/callback";
-
-      const result = getConfiguredProviders();
-      expect(result).toContain("google");
-      expect(result).toContain("authentik");
-      expect(result).not.toContain("apple");
     });
   });
 
@@ -260,16 +216,6 @@ describe("auth/providers", () => {
       expect(Array.from(keyArg)).toEqual([1, 2, 3]);
     });
 
-    it("creates Authentik provider when env vars are set", () => {
-      process.env.AUTHENTIK_BASE_URL = "https://auth.example.com";
-      process.env.AUTHENTIK_CLIENT_ID = "id";
-      process.env.AUTHENTIK_CLIENT_SECRET = "secret";
-      process.env.AUTHENTIK_REDIRECT_URI = "http://localhost/callback";
-
-      const provider = getIdentityProvider("authentik");
-      expect(provider).toBeDefined();
-    });
-
     it("creates Apple authorization URL with correct scopes (no PKCE)", async () => {
       process.env.APPLE_CLIENT_ID = "id";
       process.env.APPLE_TEAM_ID = "team";
@@ -288,23 +234,6 @@ describe("auth/providers", () => {
       const appleInstance = vi.mocked(AppleMock).mock.results[0].value;
       const callArgs = appleInstance.createAuthorizationURL.mock.calls[0];
       expect(callArgs[1]).toEqual(["name", "email"]);
-    });
-
-    it("creates Authentik authorization URL with correct scopes", async () => {
-      process.env.AUTHENTIK_BASE_URL = "https://auth.example.com";
-      process.env.AUTHENTIK_CLIENT_ID = "id";
-      process.env.AUTHENTIK_CLIENT_SECRET = "secret";
-      process.env.AUTHENTIK_REDIRECT_URI = "http://localhost/callback";
-
-      const provider = getIdentityProvider("authentik");
-      const url = provider.createAuthorizationUrl("state-xyz", "verifier-xyz");
-      expect(url).toBeInstanceOf(URL);
-
-      // Verify scopes passed to Authentik mock
-      const { Authentik: AuthentikMock } = await import("arctic");
-      const authentikInstance = vi.mocked(AuthentikMock).mock.results[0].value;
-      const callArgs = authentikInstance.createAuthorizationURL.mock.calls[0];
-      expect(callArgs[2]).toEqual(["openid", "email", "profile", "groups"]);
     });
 
     it("validates Google callback and returns user from claims schema", async () => {
@@ -343,22 +272,6 @@ describe("auth/providers", () => {
       expect(result.tokens).toBeDefined();
     });
 
-    it("validates Authentik callback and parses claims schema", async () => {
-      process.env.AUTHENTIK_BASE_URL = "https://auth.example.com";
-      process.env.AUTHENTIK_CLIENT_ID = "id";
-      process.env.AUTHENTIK_CLIENT_SECRET = "secret";
-      process.env.AUTHENTIK_REDIRECT_URI = "http://localhost/callback";
-
-      const provider = getIdentityProvider("authentik");
-      const result = await provider.validateCallback("authentik-code", "authentik-verifier");
-
-      // Authentik claims schema must parse sub, email, name from decoded ID token
-      expect(result.user.sub).toBe("user-123");
-      expect(result.user.email).toBe("test@example.com");
-      expect(result.user.name).toBe("Test User");
-      expect(result.tokens).toBeDefined();
-    });
-
     it("initializers map covers all identity providers", () => {
       // Set env vars for all providers to ensure all initializers work
       process.env.GOOGLE_CLIENT_ID = "id";
@@ -370,13 +283,9 @@ describe("auth/providers", () => {
       process.env.APPLE_PRIVATE_KEY =
         "-----BEGIN PRIVATE KEY-----\nAQID\n-----END PRIVATE KEY-----";
       process.env.APPLE_REDIRECT_URI = "http://localhost/callback";
-      process.env.AUTHENTIK_BASE_URL = "https://auth.example.com";
-      process.env.AUTHENTIK_CLIENT_ID = "id";
-      process.env.AUTHENTIK_CLIENT_SECRET = "secret";
-      process.env.AUTHENTIK_REDIRECT_URI = "http://localhost/callback";
 
       // Every provider name must produce a valid provider (initializers map is not empty)
-      for (const name of ["google", "apple", "authentik"] as const) {
+      for (const name of ["google", "apple"] as const) {
         const provider = getIdentityProvider(name);
         expect(provider.createAuthorizationUrl).toBeTypeOf("function");
         expect(provider.validateCallback).toBeTypeOf("function");
@@ -542,93 +451,6 @@ describe("auth/providers", () => {
       const result = await provider.validateCallback("code", "verifier");
       expect(result.user.email).toBe("test@example.com");
     });
-
-    it("Authentik callback returns groups from claims when present", async () => {
-      // Override decodeIdToken to return groups
-      const { decodeIdToken } = await import("arctic");
-      vi.mocked(decodeIdToken).mockReturnValueOnce({
-        sub: "user-456",
-        email: "admin@example.com",
-        name: "Admin User",
-        groups: ["admins", "users"],
-      });
-
-      process.env.AUTHENTIK_BASE_URL = "https://auth.example.com";
-      process.env.AUTHENTIK_CLIENT_ID = "id";
-      process.env.AUTHENTIK_CLIENT_SECRET = "secret";
-      process.env.AUTHENTIK_REDIRECT_URI = "http://localhost/callback";
-
-      const provider = getIdentityProvider("authentik");
-      const result = await provider.validateCallback("code", "verifier");
-      expect(result.user.groups).toEqual(["admins", "users"]);
-    });
-
-    it("Authentik callback falls back to preferred_username when name is absent", async () => {
-      const { decodeIdToken } = await import("arctic");
-      vi.mocked(decodeIdToken).mockReturnValueOnce({
-        sub: "user-789",
-        email: "user@example.com",
-        preferred_username: "jdoe",
-        // name is absent
-      });
-
-      process.env.AUTHENTIK_BASE_URL = "https://auth.example.com";
-      process.env.AUTHENTIK_CLIENT_ID = "id";
-      process.env.AUTHENTIK_CLIENT_SECRET = "secret";
-      process.env.AUTHENTIK_REDIRECT_URI = "http://localhost/callback";
-
-      const provider = getIdentityProvider("authentik");
-      const result = await provider.validateCallback("code", "verifier");
-      expect(result.user.name).toBe("jdoe");
-    });
-
-    it("Authentik callback returns null name when both name and preferred_username are absent", async () => {
-      const { decodeIdToken } = await import("arctic");
-      vi.mocked(decodeIdToken).mockReturnValueOnce({
-        sub: "user-000",
-        email: "noname@example.com",
-        // no name, no preferred_username
-      });
-
-      process.env.AUTHENTIK_BASE_URL = "https://auth.example.com";
-      process.env.AUTHENTIK_CLIENT_ID = "id";
-      process.env.AUTHENTIK_CLIENT_SECRET = "secret";
-      process.env.AUTHENTIK_REDIRECT_URI = "http://localhost/callback";
-
-      const provider = getIdentityProvider("authentik");
-      const result = await provider.validateCallback("code", "verifier");
-      expect(result.user.name).toBeNull();
-    });
-
-    it("Authentik callback returns null groups when groups claim is absent", async () => {
-      const { decodeIdToken } = await import("arctic");
-      vi.mocked(decodeIdToken).mockReturnValueOnce({
-        sub: "user-111",
-        email: "nogroups@example.com",
-        name: "No Groups User",
-        // no groups
-      });
-
-      process.env.AUTHENTIK_BASE_URL = "https://auth.example.com";
-      process.env.AUTHENTIK_CLIENT_ID = "id";
-      process.env.AUTHENTIK_CLIENT_SECRET = "secret";
-      process.env.AUTHENTIK_REDIRECT_URI = "http://localhost/callback";
-
-      const provider = getIdentityProvider("authentik");
-      const result = await provider.validateCallback("code", "verifier");
-      expect(result.user.groups).toBeNull();
-    });
-
-    it("Authentik callback returns email from claims", async () => {
-      process.env.AUTHENTIK_BASE_URL = "https://auth.example.com";
-      process.env.AUTHENTIK_CLIENT_ID = "id";
-      process.env.AUTHENTIK_CLIENT_SECRET = "secret";
-      process.env.AUTHENTIK_REDIRECT_URI = "http://localhost/callback";
-
-      const provider = getIdentityProvider("authentik");
-      const result = await provider.validateCallback("code", "verifier");
-      expect(result.user.email).toBe("test@example.com");
-    });
   });
 
   describe("isProviderConfigured - mutation killers", () => {
@@ -654,18 +476,10 @@ describe("auth/providers", () => {
       // APPLE_REDIRECT_URI not set
       expect(isProviderConfigured("apple")).toBe(false);
     });
-
-    it("returns false when only 3 of 4 Authentik vars are set", () => {
-      process.env.AUTHENTIK_BASE_URL = "https://auth.example.com";
-      process.env.AUTHENTIK_CLIENT_ID = "id";
-      process.env.AUTHENTIK_CLIENT_SECRET = "secret";
-      // AUTHENTIK_REDIRECT_URI not set
-      expect(isProviderConfigured("authentik")).toBe(false);
-    });
   });
 
   describe("getConfiguredProviders - mutation killers", () => {
-    it("returns all three providers when all are configured", () => {
+    it("returns all providers when all are configured", () => {
       process.env.GOOGLE_CLIENT_ID = "id";
       process.env.GOOGLE_CLIENT_SECRET = "secret";
       process.env.GOOGLE_REDIRECT_URI = "http://localhost/callback";
@@ -676,16 +490,10 @@ describe("auth/providers", () => {
       process.env.APPLE_PRIVATE_KEY = "key-content";
       process.env.APPLE_REDIRECT_URI = "http://localhost/callback";
 
-      process.env.AUTHENTIK_BASE_URL = "https://auth.example.com";
-      process.env.AUTHENTIK_CLIENT_ID = "id";
-      process.env.AUTHENTIK_CLIENT_SECRET = "secret";
-      process.env.AUTHENTIK_REDIRECT_URI = "http://localhost/callback";
-
       const result = getConfiguredProviders();
-      expect(result).toHaveLength(3);
+      expect(result).toHaveLength(2);
       expect(result).toContain("google");
       expect(result).toContain("apple");
-      expect(result).toContain("authentik");
     });
 
     it("returns an array (not something else)", () => {
@@ -702,7 +510,6 @@ describe("auth/providers", () => {
       // isProviderConfigured should return false, matching the throw behavior.
       expect(isProviderConfigured("google")).toBe(false);
       expect(isProviderConfigured("apple")).toBe(false);
-      expect(isProviderConfigured("authentik")).toBe(false);
     });
   });
 });

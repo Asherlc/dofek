@@ -3,13 +3,13 @@ import { AuthUserSchema, ConfiguredProvidersSchema, IDENTITY_PROVIDER_NAMES } fr
 
 describe("IDENTITY_PROVIDER_NAMES", () => {
   it("contains the expected providers", () => {
-    expect(IDENTITY_PROVIDER_NAMES).toEqual(["google", "apple", "authentik"]);
+    expect(IDENTITY_PROVIDER_NAMES).toEqual(["google", "apple"]);
   });
 
   it("is readonly", () => {
     // Type check: should be readonly tuple
     const names: readonly string[] = IDENTITY_PROVIDER_NAMES;
-    expect(names).toHaveLength(3);
+    expect(names).toHaveLength(2);
   });
 });
 
