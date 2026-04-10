@@ -15,6 +15,11 @@ variable "sentry_otlp_logs_endpoint" {
   type = string
 }
 
+variable "sentry_otlp_logs_auth" {
+  type      = string
+  sensitive = true
+}
+
 variable "r2_endpoint" {
   type = string
 }
@@ -70,6 +75,7 @@ output "compose_rendered" {
     postgres_password         = var.postgres_password
     axiom_api_token           = var.axiom_api_token
     sentry_otlp_logs_endpoint = var.sentry_otlp_logs_endpoint
+    sentry_otlp_logs_auth     = var.sentry_otlp_logs_auth
     r2_endpoint               = var.r2_endpoint
     r2_access_key_id          = var.r2_access_key_id
     r2_secret_access_key      = var.r2_secret_access_key

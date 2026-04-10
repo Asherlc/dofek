@@ -40,6 +40,7 @@ jobs:
           TF_VAR_postgres_password: ${{ secrets.POSTGRES_PASSWORD }}
           TF_VAR_axiom_api_token: ${{ secrets.AXIOM_API_TOKEN }}
           TF_VAR_sentry_otlp_logs_endpoint: ${{ secrets.SENTRY_OTLP_LOGS_ENDPOINT }}
+          TF_VAR_sentry_otlp_logs_auth: ${{ secrets.SENTRY_OTLP_LOGS_AUTH }}
           TF_VAR_r2_endpoint: ${{ secrets.R2_ENDPOINT }}
           TF_VAR_r2_access_key_id: ${{ secrets.R2_ACCESS_KEY_ID }}
           TF_VAR_r2_secret_access_key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
