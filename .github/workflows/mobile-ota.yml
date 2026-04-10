@@ -50,41 +50,39 @@ jobs:
             --branch "pr-$PR_NUMBER" \
             --non-interactive 2>/dev/null || true
 
-      - name: Generate QR code and comment body
+      - name: Generate comment body
         env:
           PR_NUMBER: ${{ github.event.number }}
           COMMIT_SHA: ${{ github.sha }}
         run: |
-          sudo apt-get install -y qrencode > /dev/null 2>&1
-          QR=$(qrencode -t UTF8 "dofek://preview/pr-$PR_NUMBER")
+          DEEP_LINK="dofek://preview/pr-$PR_NUMBER"
+          ENCODED_LINK=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$DEEP_LINK', safe=''))")
+          QR_IMAGE_URL="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=$ENCODED_LINK"
           cat > /tmp/mobile-preview-comment.md <<COMMENT_BODY
-          <!-- mobile-preview-comment -->
           ## Mobile Preview
 
           **Scan to open on device:**
-          \`\`\`
-          $QR
-          \`\`\`
+
+          ![QR code for $DEEP_LINK]($QR_IMAGE_URL)
 
           | | |
           |---|---|
           | **Channel** | \`pr-$PR_NUMBER\` |
-          | **Deep Link** | \`dofek://preview/pr-$PR_NUMBER\` |
+          | **Deep Link** | \`$DEEP_LINK\` |
           | **Commit** | $COMMIT_SHA |
 
           **To test on device:**
           1. Build and install the preview client: \`PREVIEW_CHANNEL=pr-$PR_NUMBER npx expo prebuild --clean -p ios\`
-          2. Or tap deep link on an existing preview build: \`dofek://preview/pr-$PR_NUMBER\`
+          2. Or tap deep link on an existing preview build: \`$DEEP_LINK\`
 
           > Each PR gets its own channel. Build a preview client with \`PREVIEW_CHANNEL=pr-{N}\` to test.
           COMMENT_BODY
 
       - name: Comment PR with Mobile Preview Info
-        uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043 # v4
+        uses: marocchino/sticky-pull-request-comment@52423e01640425a022ef5fd42c6fb5f633a02728 # v2
         with:
-          issue-number: ${{ github.event.number }}
-          body-includes: <!-- mobile-preview-comment -->
-          body-path: /tmp/mobile-preview-comment.md
+          header: mobile-preview
+          path: /tmp/mobile-preview-comment.md
 
   cleanup:
     name: Cleanup Mobile OTA
