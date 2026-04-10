@@ -52,7 +52,15 @@ sensor_deduped AS (
   GROUP BY am.canonical_id, am.user_id, ss.recorded_at, ss.channel
 ),
 
--- Step 3: During sensor backfill/cutover, keep data populated by falling back
+-- Step 3: Pre-compute the set of canonical activities that already have sensor data.
+-- This avoids re-scanning sensor_sample for every metric_stream row.
+activities_with_sensors AS (
+  SELECT DISTINCT am.canonical_id
+  FROM fitness.sensor_sample ss
+  JOIN activity_members am ON ss.activity_id = am.member_id
+),
+
+-- Step 4: During sensor backfill/cutover, keep data populated by falling back
 -- to legacy metric_stream rows for activities that have not yet produced any
 -- sensor_sample rows.
 legacy_fallback AS (
@@ -64,6 +72,7 @@ legacy_fallback AS (
     MAX(expanded.scalar) AS scalar
   FROM fitness.metric_stream ms
   JOIN activity_members am ON ms.activity_id = am.member_id
+  LEFT JOIN activities_with_sensors aws ON am.canonical_id = aws.canonical_id
   CROSS JOIN LATERAL (
     VALUES
       ('heart_rate', ms.heart_rate::REAL),
@@ -85,12 +94,7 @@ legacy_fallback AS (
   ) AS expanded(channel, scalar)
   WHERE ms.activity_id IS NOT NULL
     AND expanded.scalar IS NOT NULL
-    AND NOT EXISTS (
-      SELECT 1
-      FROM fitness.sensor_sample ss
-      JOIN activity_members am2 ON ss.activity_id = am2.member_id
-      WHERE am2.canonical_id = am.canonical_id
-    )
+    AND aws.canonical_id IS NULL
   GROUP BY am.canonical_id, am.user_id, ms.recorded_at, expanded.channel
 )
 

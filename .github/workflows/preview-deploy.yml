@@ -67,19 +67,19 @@ jobs:
       DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
       DOKPLOY_PREVIEW_ENV_ID: ${{ secrets.DOKPLOY_PREVIEW_ENV_ID }}
       DOKPLOY_REGISTRY_ID: ${{ secrets.DOKPLOY_REGISTRY_ID }}
+      PREVIEW_DATABASE_URL: ${{ secrets.PREVIEW_DATABASE_URL }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
       PREVIEW_DOMAIN: pr-${{ github.event.pull_request.number }}.preview.dofek.fit
-      DOCKER_IMAGE: ghcr.io/${{ github.repository }}:pr-${{ github.event.pull_request.number }}
+      DOCKER_IMAGE: ghcr.io/asherlc/dofek:pr-${{ github.event.pull_request.number }}
     steps:
       - name: Check required secrets
         run: |
           if [ -z "$DOKPLOY_HOST" ] || [ -z "$DOKPLOY_API_KEY" ] || [ -z "$DOKPLOY_PREVIEW_ENV_ID" ]; then
-            echo "::warning::Dokploy secrets not configured, skipping preview deploy"
-            echo "SKIP_DEPLOY=true" >> "$GITHUB_ENV"
+            echo "::error::Required secrets not configured: DOKPLOY_HOST, DOKPLOY_API_KEY, DOKPLOY_PREVIEW_ENV_ID"
+            exit 1
           fi
 
       - name: Create or update preview app
-        if: env.SKIP_DEPLOY != 'true'
         run: |
           set -euo pipefail
 
@@ -113,15 +113,10 @@ jobs:
             dokploy "application.update" \
               -d "{\"json\":{\"applicationId\":\"${APP_ID}\",\"command\":\"./entrypoint.sh web\"}}" > /dev/null
 
-            # Set registry if configured
-            if [ -n "$DOKPLOY_REGISTRY_ID" ]; then
-              dokploy "application.update" \
-                -d "{\"json\":{\"applicationId\":\"${APP_ID}\",\"registryId\":\"${DOKPLOY_REGISTRY_ID}\"}}" > /dev/null
-            fi
-
             # Set env vars
+            PREVIEW_ENV=$(printf 'PORT=3000\nDATABASE_URL=%s\nREDIS_URL=redis://dofek-redis:6379\nNODE_ENV=production\nPUBLIC_URL=https://%s\nSKIP_VIEW_SYNC=true' "$PREVIEW_DATABASE_URL" "$PREVIEW_DOMAIN")
             dokploy "application.update" \
-              -d "$(jq -n --arg id "$APP_ID" '{json: {applicationId: $id, env: "PORT=3000"}}')" > /dev/null
+              -d "$(jq -n --arg id "$APP_ID" --arg env "$PREVIEW_ENV" '{json: {applicationId: $id, env: $env}}')" > /dev/null
 
             # Create domain
             dokploy "domain.create" \
@@ -168,8 +163,8 @@ jobs:
           set -euo pipefail
 
           if [ -z "$DOKPLOY_HOST" ] || [ -z "$DOKPLOY_API_KEY" ] || [ -z "$DOKPLOY_PREVIEW_ENV_ID" ]; then
-            echo "Secrets not configured, skipping teardown"
-            exit 0
+            echo "::error::Required secrets not configured: DOKPLOY_HOST, DOKPLOY_API_KEY, DOKPLOY_PREVIEW_ENV_ID"
+            exit 1
           fi
 
           dokploy() {

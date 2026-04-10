@@ -11,12 +11,17 @@ export async function main(): Promise<void> {
   const count = await runMigrations(databaseUrl);
   logger.info(`[migrate] Done — ${count} migration(s) applied`);
 
-  // Sync materialized view definitions (only recreates views whose SQL changed)
-  const { synced, skipped, refreshed } = await syncMaterializedViews(databaseUrl);
-  logger.info(
-    `[views] Done — ${synced} recreated, ${skipped} unchanged` +
-      (refreshed > 0 ? `, ${refreshed} refreshed (were unpopulated)` : ""),
-  );
+  // Sync materialized view definitions (only recreates views whose SQL changed).
+  // Preview apps share the production database — they should not recreate views.
+  if (process.env.SKIP_VIEW_SYNC === "true") {
+    logger.info("[views] Skipped — SKIP_VIEW_SYNC is set");
+  } else {
+    const { synced, skipped, refreshed } = await syncMaterializedViews(databaseUrl);
+    logger.info(
+      `[views] Done — ${synced} recreated, ${skipped} unchanged` +
+        (refreshed > 0 ? `, ${refreshed} refreshed (were unpopulated)` : ""),
+    );
+  }
 }
 
 // Only run when executed directly (not imported for testing)
