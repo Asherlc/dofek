@@ -488,7 +488,7 @@ interface MetricDefinition {
   name: string;
   axisName: string;
   color: string;
-  data: Array<number | null | undefined>;
+  data: Array<number | null>;
 }
 
 function MetricsChart({
@@ -576,6 +576,8 @@ function MetricsChart({
     const isFirst = index === 0;
     const position = isFirst ? "left" : "right";
     const visibleRightBefore = metrics.slice(1, index).filter((m) => isVisible(m.name)).length;
+    const firstVisibleIndex = metrics.findIndex((m) => isVisible(m.name));
+    const showSplitLine = visible && index === firstVisibleIndex;
 
     return {
       ...dofekAxis.value({
@@ -583,7 +585,7 @@ function MetricsChart({
         min: "dataMin",
         max: "dataMax",
         position,
-        showSplitLine: isFirst && visible,
+        showSplitLine,
         axisLabel: { color: metric.color },
       }),
       show: visible,
