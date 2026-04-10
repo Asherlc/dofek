@@ -15,6 +15,7 @@ vi.mock("@slack/bolt", () => {
     error: vi.fn(),
     use: vi.fn(),
     start: vi.fn().mockResolvedValue(undefined),
+    processEvent: vi.fn().mockResolvedValue(undefined),
   };
   const mockRouter = { get: vi.fn(), post: vi.fn() };
   return {
@@ -279,6 +280,7 @@ describe("startSlackBot", () => {
       error: vi.fn(),
       use: vi.fn(),
       start: vi.fn().mockRejectedValue(new Error("WebSocket connection failed")),
+      processEvent: vi.fn().mockResolvedValue(undefined),
     };
     vi.mocked(bolt.App).mockImplementationOnce(() => mockAs(mockAppInstance));
 

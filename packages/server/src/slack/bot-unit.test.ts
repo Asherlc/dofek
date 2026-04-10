@@ -12,6 +12,7 @@ vi.mock("@slack/bolt", () => {
         error: vi.fn(),
         use: vi.fn(),
         start: vi.fn().mockResolvedValue(undefined),
+        processEvent: vi.fn().mockResolvedValue(undefined),
       })),
       ExpressReceiver: vi.fn().mockImplementation(() => ({
         router: { get: vi.fn(), post: vi.fn() },

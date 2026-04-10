@@ -120,6 +120,23 @@ export function createSlackBot(db: Database): SlackBotResult | null {
       receiver,
     });
 
+    // Bolt logs authorization failures and type-detection warnings via its own
+    // internal ConsoleLogger, which our Axiom pipeline doesn't capture. Wrap
+    // processEvent to surface these in our application logger.
+    const originalProcessEvent = app.processEvent.bind(app);
+    app.processEvent = async (event) => {
+      const eventType =
+        event.body?.event?.type ?? event.body?.type ?? event.body?.command ?? "unknown";
+      logger.info(`[slack] processEvent called: eventType=${eventType}`);
+      try {
+        await originalProcessEvent(event);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logger.error(`[slack] processEvent threw: ${errorMessage}`);
+        throw error; // re-throw so the receiver's error handler also fires
+      }
+    };
+
     app.error(async (error) => {
       logger.error(`[slack] Unhandled Bolt error: ${error.message ?? error}`);
       Sentry.captureException(error);
