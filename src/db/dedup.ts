@@ -6,6 +6,7 @@ const DEDUP_VIEWS = [
   "fitness.v_sleep",
   "fitness.v_body_measurement",
   "fitness.v_daily_metrics",
+  "fitness.deduped_sensor",
 ] as const;
 
 const ROLLUP_VIEWS = ["fitness.activity_summary"] as const;

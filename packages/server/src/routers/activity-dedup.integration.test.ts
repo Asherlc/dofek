@@ -109,6 +109,7 @@ describe("Activity summary deduplication", () => {
 
     // Refresh materialized views (v_activity first, then activity_summary)
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_activity`);
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`);
 
     const app = createApp(testCtx.db);

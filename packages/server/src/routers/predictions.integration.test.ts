@@ -166,6 +166,7 @@ describe("Predictions router (integration)", () => {
     // Refresh materialized views
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_daily_metrics`);
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`);
 
     const app = createApp(testCtx.db);

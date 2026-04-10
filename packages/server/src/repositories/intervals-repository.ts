@@ -183,8 +183,8 @@ export class IntervalsRepository {
                 MAX(ss.scalar) FILTER (WHERE ss.channel = 'lat') AS lat,
                 MAX(ss.scalar) FILTER (WHERE ss.channel = 'lng') AS lng,
                 MAX(ss.scalar) FILTER (WHERE ss.channel = 'altitude') AS altitude
-              FROM fitness.sensor_sample ss
-              WHERE ss.activity_id = ai.activity_id
+              FROM fitness.deduped_sensor ss
+              WHERE ss.activity_id = ${activityId}::uuid
                 AND ss.recorded_at >= ai.started_at
                 AND (ai.ended_at IS NULL OR ss.recorded_at <= ai.ended_at)
                 AND ss.channel IN ('heart_rate', 'power', 'speed', 'cadence', 'lat', 'lng', 'altitude')
@@ -220,10 +220,9 @@ export class IntervalsRepository {
             MAX(ss.scalar) FILTER (WHERE ss.channel = 'heart_rate') AS heart_rate,
             MAX(ss.scalar) FILTER (WHERE ss.channel = 'speed') AS speed,
             MAX(ss.scalar) FILTER (WHERE ss.channel = 'cadence') AS cadence
-          FROM fitness.sensor_sample ss
-          JOIN fitness.activity a ON a.id = ss.activity_id
+          FROM fitness.deduped_sensor ss
           WHERE ss.activity_id = ${activityId}::uuid
-            AND a.user_id = ${this.#userId}
+            AND ss.user_id = ${this.#userId}
             AND ss.channel IN ('power', 'heart_rate', 'speed', 'cadence')
           GROUP BY ss.recorded_at
         )

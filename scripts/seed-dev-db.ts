@@ -328,9 +328,14 @@ async function refreshViews() {
     // v_activity may fail if activity_summary depends on it
   }
   try {
+    await sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`;
+  } catch {
+    // deduped_sensor depends on v_activity + sensor_sample
+  }
+  try {
     await sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`;
   } catch {
-    // activity_summary depends on v_activity + metric_stream
+    // activity_summary depends on deduped_sensor
   }
   console.log("Views refreshed");
 }

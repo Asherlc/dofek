@@ -109,6 +109,7 @@ describe("healthspan zone time with variable-interval HR data", () => {
     await testCtx.db.execute(
       sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_body_measurement`,
     );
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`);
 
     const app = createApp(testCtx.db);
