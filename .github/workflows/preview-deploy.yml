@@ -114,12 +114,6 @@ jobs:
             dokploy "application.update" \
               -d "{\"json\":{\"applicationId\":\"${APP_ID}\",\"command\":\"./entrypoint.sh web\"}}" > /dev/null
 
-            # Set registry if configured
-            if [ -n "$DOKPLOY_REGISTRY_ID" ]; then
-              dokploy "application.update" \
-                -d "{\"json\":{\"applicationId\":\"${APP_ID}\",\"registryId\":\"${DOKPLOY_REGISTRY_ID}\"}}" > /dev/null
-            fi
-
             # Set env vars
             PREVIEW_ENV=$(printf 'PORT=3000\nDATABASE_URL=%s\nREDIS_URL=redis://dofek-redis:6379\nNODE_ENV=production\nPUBLIC_URL=https://%s' "$PREVIEW_DATABASE_URL" "$PREVIEW_DOMAIN")
             dokploy "application.update" \
