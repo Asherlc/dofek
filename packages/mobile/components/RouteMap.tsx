@@ -12,11 +12,12 @@ interface GpsPoint {
 
 interface RouteMapProps {
   points: GpsPoint[];
+  hoveredPosition?: { lat: number; lng: number } | null;
 }
 
 const MAP_HEIGHT = 280;
 
-export function RouteMap({ points }: RouteMapProps) {
+export function RouteMap({ points, hoveredPosition }: RouteMapProps) {
   const [mapWidth, setMapWidth] = useState<number | null>(null);
 
   const handleLayout = useCallback((event: LayoutChangeEvent) => {
@@ -98,6 +99,17 @@ export function RouteMap({ points }: RouteMapProps) {
             {endCoordinate != null && (
               <Marker coordinate={endCoordinate} pinColor={statusColors.danger} title="Finish" />
             )}
+            {hoveredPosition != null && (
+              <Marker
+                coordinate={{
+                  latitude: hoveredPosition.lat,
+                  longitude: hoveredPosition.lng,
+                }}
+                anchor={{ x: 0.5, y: 0.5 }}
+              >
+                <View style={styles.hoverMarker} />
+              </Marker>
+            )}
           </MapView>
         )}
       </View>
@@ -122,5 +134,13 @@ const styles = StyleSheet.create({
   mapWrapper: {
     borderRadius: radius.lg,
     overflow: "hidden",
+  },
+  hoverMarker: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: "#ffffff",
+    borderWidth: 3,
+    borderColor: statusColors.positive,
   },
 });
