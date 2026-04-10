@@ -10,19 +10,16 @@ const gpsPoints = [
 ];
 
 describe("RouteMap", () => {
-  it("renders the map when given GPS points", () => {
+  it("renders the title when given GPS points", () => {
     render(<RouteMap points={gpsPoints} />);
     expect(screen.getByText("Route Map")).toBeTruthy();
   });
 
-  it("sets explicit pixel width on the map", () => {
+  it("defers MapView until the wrapper is measured via onLayout", () => {
     const { container } = render(<RouteMap points={gpsPoints} />);
-    const mapView = container.querySelector("MapView");
-    expect(mapView).not.toBeNull();
-    // MapView should have explicit numeric width, not percentage
-    const style = mapView?.getAttribute("style");
-    expect(style).toContain("width");
-    expect(style).not.toContain("%");
+    // MapView should not render until onLayout fires and provides pixel width.
+    // In jsdom the native layout event never fires, so MapView stays unmounted.
+    expect(container.querySelector("MapView")).toBeNull();
   });
 
   it("renders nothing when given an empty array", () => {

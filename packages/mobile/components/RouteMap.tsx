@@ -1,6 +1,6 @@
 import { statusColors } from "@dofek/scoring/colors";
-import { useMemo } from "react";
-import { StyleSheet, useWindowDimensions, View } from "react-native";
+import { useCallback, useMemo, useState } from "react";
+import { type LayoutChangeEvent, StyleSheet, View } from "react-native";
 import MapView, { Marker, Polyline } from "react-native-maps";
 import { colors, radius, spacing } from "../theme";
 import { ChartTitleWithTooltip } from "./ChartTitleWithTooltip";
@@ -16,12 +16,12 @@ interface RouteMapProps {
 
 const MAP_HEIGHT = 280;
 
-/** Horizontal padding surrounding the map: ScrollView content (16) + container (spacing.md). */
-const HORIZONTAL_PADDING = 16 + spacing.md;
-
 export function RouteMap({ points }: RouteMapProps) {
-  const { width: screenWidth } = useWindowDimensions();
-  const mapWidth = screenWidth - HORIZONTAL_PADDING * 2;
+  const [mapWidth, setMapWidth] = useState<number | null>(null);
+
+  const handleLayout = useCallback((event: LayoutChangeEvent) => {
+    setMapWidth(event.nativeEvent.layout.width);
+  }, []);
 
   const gpsPoints = useMemo(
     () =>
@@ -74,26 +74,32 @@ export function RouteMap({ points }: RouteMapProps) {
         description="This map shows your recorded route, including start and finish locations."
         textStyle={styles.title}
       />
-      <View style={styles.mapWrapper}>
-        <MapView
-          style={{ width: mapWidth, height: MAP_HEIGHT }}
-          initialRegion={region}
-          scrollEnabled={false}
-          zoomEnabled={false}
-          rotateEnabled={false}
-          pitchEnabled={false}
-          toolbarEnabled={false}
-          showsUserLocation={false}
-          showsPointsOfInterest={false}
-        >
-          <Polyline coordinates={coordinates} strokeColor={statusColors.positive} strokeWidth={3} />
-          {startCoordinate != null && (
-            <Marker coordinate={startCoordinate} pinColor={statusColors.positive} title="Start" />
-          )}
-          {endCoordinate != null && (
-            <Marker coordinate={endCoordinate} pinColor={statusColors.danger} title="Finish" />
-          )}
-        </MapView>
+      <View style={styles.mapWrapper} onLayout={handleLayout}>
+        {mapWidth != null && (
+          <MapView
+            style={{ width: mapWidth, height: MAP_HEIGHT }}
+            initialRegion={region}
+            scrollEnabled={false}
+            zoomEnabled={false}
+            rotateEnabled={false}
+            pitchEnabled={false}
+            toolbarEnabled={false}
+            showsUserLocation={false}
+            showsPointsOfInterest={false}
+          >
+            <Polyline
+              coordinates={coordinates}
+              strokeColor={statusColors.positive}
+              strokeWidth={3}
+            />
+            {startCoordinate != null && (
+              <Marker coordinate={startCoordinate} pinColor={statusColors.positive} title="Start" />
+            )}
+            {endCoordinate != null && (
+              <Marker coordinate={endCoordinate} pinColor={statusColors.danger} title="Finish" />
+            )}
+          </MapView>
+        )}
       </View>
     </View>
   );
