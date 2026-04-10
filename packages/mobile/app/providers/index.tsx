@@ -26,6 +26,7 @@ import {
   querySleepSamples,
   queryWorkoutRoutes,
   queryWorkouts,
+  requestPermissions,
 } from "../../modules/health-kit";
 import { colors } from "../../theme";
 import { CredentialAuthModal, GarminAuthModal, WhoopAuthModal } from "./auth-modals.tsx";
@@ -83,19 +84,33 @@ export default function ProvidersScreen() {
   // HealthKit sync state
   const [healthKitSyncing, setHealthKitSyncing] = useState(false);
   const [healthKitProgress, setHealthKitProgress] = useState<string | undefined>();
+  const [healthKitPermissionStatus, setHealthKitPermissionStatus] = useState<
+    "unnecessary" | "shouldRequest" | "unavailable" | "unknown"
+  >("unknown");
   const trpcClient = trpcUtils.client;
+
+  // Check HealthKit permission status on mount
+  useEffect(() => {
+    if (!isHealthKitAvailable()) return;
+    getRequestStatus()
+      .then(setHealthKitPermissionStatus)
+      .catch((error: unknown) => {
+        captureException(error, { context: "healthkit-permission-check" });
+      });
+  }, []);
+
+  const handleHealthKitConnect = useCallback(async () => {
+    await requestPermissions();
+    const status = await getRequestStatus();
+    setHealthKitPermissionStatus(status);
+  }, []);
 
   const handleHealthKitSync = useCallback(
     async (fullSync = false) => {
       setHealthKitSyncing(true);
+      setAnySyncing(true);
       setHealthKitProgress("Starting HealthKit sync...");
       try {
-        const status = await getRequestStatus();
-        if (status !== "unnecessary") {
-          setHealthKitProgress("HealthKit permissions not granted");
-          setHealthKitSyncing(false);
-          return;
-        }
         const syncClient: SyncTrpcClient = {
           healthKitSync: {
             pushQuantitySamples: {
@@ -131,6 +146,7 @@ export default function ProvidersScreen() {
         setHealthKitProgress(error instanceof Error ? error.message : "Sync failed");
       } finally {
         setHealthKitSyncing(false);
+        setAnySyncing(false);
       }
     },
     [trpcClient, trpcUtils],
@@ -481,18 +497,20 @@ export default function ProvidersScreen() {
           provider={{
             id: "apple_health",
             label: "Apple Health",
-            enabled: true,
-            authStatus: "connected",
+            enabled: healthKitPermissionStatus === "unnecessary",
+            authStatus: healthKitPermissionStatus === "unnecessary" ? "connected" : "not_connected",
             authType: "none",
             lastSyncAt: null,
             importOnly: false,
           }}
           stats={statsMap.apple_health}
           syncing={healthKitSyncing}
-          syncProgress={healthKitSyncing ? { message: healthKitProgress } : undefined}
+          syncProgress={
+            healthKitSyncing || healthKitProgress ? { message: healthKitProgress } : undefined
+          }
           onSync={() => handleHealthKitSync()}
           onFullSync={() => handleHealthKitSync(true)}
-          onConnect={() => {}}
+          onConnect={handleHealthKitConnect}
           onPress={() => router.push("/providers/apple_health")}
         />
       )}
