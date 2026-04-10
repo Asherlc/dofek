@@ -162,7 +162,7 @@ describe("Upload & Auth - extended coverage", () => {
     });
 
     it("GET /auth/callback/:provider with valid provider but error query param", async () => {
-      const res = await fetch(`${baseUrl}/auth/callback/authentik?error=consent_required`);
+      const res = await fetch(`${baseUrl}/auth/callback/google?error=consent_required`);
       expect(res.status).toBe(400);
       const body = await res.text();
       expect(body).toContain("Authorization denied");
@@ -194,18 +194,6 @@ describe("Upload & Auth - extended coverage", () => {
       } else {
         const body = await res.text();
         expect(body).toContain("not configured");
-      }
-    });
-
-    it("GET /auth/login/authentik returns 400 or redirects to Authentik", async () => {
-      const res = await fetch(`${baseUrl}/auth/login/authentik`, {
-        redirect: "manual",
-      });
-      // Authentik init might throw 500 if env vars are partially set/invalid.
-      // We accept 400, 302 or 500 here to handle CI environments.
-      expect([302, 400, 500]).toContain(res.status);
-      if (res.status === 302) {
-        expect(res.headers.get("location")).toBeDefined();
       }
     });
   });

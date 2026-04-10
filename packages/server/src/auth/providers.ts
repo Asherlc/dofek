@@ -1,12 +1,5 @@
 import type { OAuth2Tokens } from "arctic";
-import {
-  Apple,
-  Authentik,
-  decodeIdToken,
-  Google,
-  generateCodeVerifier,
-  generateState,
-} from "arctic";
+import { Apple, decodeIdToken, Google, generateCodeVerifier, generateState } from "arctic";
 import { z } from "zod";
 
 const googleClaimsSchema = z.object({
@@ -18,14 +11,6 @@ const googleClaimsSchema = z.object({
 const appleClaimsSchema = z.object({
   sub: z.string(),
   email: z.string().optional(),
-});
-
-const authentikClaimsSchema = z.object({
-  sub: z.string(),
-  email: z.string().optional(),
-  preferred_username: z.string().optional(),
-  name: z.string().optional(),
-  groups: z.array(z.string()).optional(),
 });
 
 import { IDENTITY_PROVIDER_NAMES, type IdentityProviderName } from "@dofek/auth/auth";
@@ -138,42 +123,9 @@ function initApple(): IdentityProvider {
   };
 }
 
-function initAuthentik(): IdentityProvider {
-  const client = new Authentik(
-    getEnvRequired("AUTHENTIK_BASE_URL"),
-    getEnvRequired("AUTHENTIK_CLIENT_ID"),
-    getEnvRequired("AUTHENTIK_CLIENT_SECRET"),
-    getEnvRequired("AUTHENTIK_REDIRECT_URI"),
-  );
-  return {
-    createAuthorizationUrl(state, codeVerifier) {
-      return client.createAuthorizationURL(state, codeVerifier, [
-        "openid",
-        "email",
-        "profile",
-        "groups",
-      ]);
-    },
-    async validateCallback(code, codeVerifier) {
-      const tokens = await client.validateAuthorizationCode(code, codeVerifier);
-      const claims = authentikClaimsSchema.parse(decodeIdToken(tokens.idToken()));
-      return {
-        tokens,
-        user: {
-          sub: claims.sub,
-          email: claims.email ?? null,
-          name: claims.name ?? claims.preferred_username ?? null,
-          groups: claims.groups ?? null,
-        },
-      };
-    },
-  };
-}
-
 const initializers: Record<IdentityProviderName, () => IdentityProvider> = {
   google: initGoogle,
   apple: initApple,
-  authentik: initAuthentik,
 };
 
 /** Required env var prefixes per provider (used to check which are configured). */
@@ -185,12 +137,6 @@ const requiredEnvKeys: Record<IdentityProviderName, string[]> = {
     "APPLE_KEY_ID",
     "APPLE_PRIVATE_KEY",
     "APPLE_REDIRECT_URI",
-  ],
-  authentik: [
-    "AUTHENTIK_BASE_URL",
-    "AUTHENTIK_CLIENT_ID",
-    "AUTHENTIK_CLIENT_SECRET",
-    "AUTHENTIK_REDIRECT_URI",
   ],
 };
 

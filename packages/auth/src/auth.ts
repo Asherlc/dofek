@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-/** The three identity providers supported for login. */
-export const IDENTITY_PROVIDER_NAMES = ["google", "apple", "authentik"] as const;
+/** The identity providers supported for login. */
+export const IDENTITY_PROVIDER_NAMES = ["google", "apple"] as const;
 
 export type IdentityProviderName = (typeof IDENTITY_PROVIDER_NAMES)[number];
 

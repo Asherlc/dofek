@@ -80,7 +80,7 @@ export async function handleIdentityCallback(
       return;
     }
 
-    // Try cookies first (works for GET redirects from Google/Authentik)
+    // Try cookies first (works for GET redirects from Google)
     const cookieFlow = getOAuthFlowCookies(req);
     let storedState = cookieFlow.state;
     let codeVerifier = cookieFlow.codeVerifier;
