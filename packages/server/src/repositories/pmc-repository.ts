@@ -86,23 +86,23 @@ export class PmcRepository extends BaseRepository {
 
     const restingHr = activityRows.length > 0 ? Number(activityRows[0]?.resting_hr) : 60;
 
-    // QUERY 2: Normalized Power per activity from metric_stream
+    // QUERY 2: Normalized Power per activity from deduped sensor data
     const npRows = await this.query(
       normalizedPowerRowSchema,
       sql`WITH rolling AS (
             SELECT
-              ms.activity_id,
-              AVG(ms.scalar) OVER (
-                PARTITION BY ms.activity_id
-                ORDER BY ms.recorded_at
+              ds.activity_id,
+              AVG(ds.scalar) OVER (
+                PARTITION BY ds.activity_id
+                ORDER BY ds.recorded_at
                 RANGE BETWEEN INTERVAL '29 seconds' PRECEDING AND CURRENT ROW
               ) AS rolling_30s_power
-            FROM fitness.sensor_sample ms
-            JOIN fitness.v_activity a ON a.id = ms.activity_id
-            WHERE a.user_id = ${this.userId}
+            FROM fitness.deduped_sensor ds
+            JOIN fitness.v_activity a ON a.id = ds.activity_id
+            WHERE ds.user_id = ${this.userId}
               AND a.started_at > NOW() - ${queryDays}::int * INTERVAL '1 day'
-              AND ms.channel = 'power'
-              AND ms.scalar > 0
+              AND ds.channel = 'power'
+              AND ds.scalar > 0
           )
           SELECT
             r.activity_id,

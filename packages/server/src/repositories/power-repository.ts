@@ -38,31 +38,29 @@ const normalizedPowerSampleSchema = z.object({
 function powerCurveSamplesQuery(days: number, userId: string, timezone: string) {
   return sql`
     WITH activity_info AS (
-      SELECT a.id AS activity_id,
+      SELECT ds.activity_id,
              (a.started_at AT TIME ZONE ${timezone})::date::text AS activity_date,
              GREATEST(ROUND(
-               EXTRACT(EPOCH FROM MAX(ms.recorded_at) - MIN(ms.recorded_at))::numeric
+               EXTRACT(EPOCH FROM MAX(ds.recorded_at) - MIN(ds.recorded_at))::numeric
                / NULLIF(COUNT(*) - 1, 0)
              )::int, 1) AS interval_s
-      FROM fitness.sensor_sample ms
-      JOIN fitness.v_activity a ON a.id = ms.activity_id
-      WHERE a.user_id = ${userId}
-        AND ms.channel = 'power'
+      FROM fitness.deduped_sensor ds
+      JOIN fitness.v_activity a ON a.id = ds.activity_id
+      WHERE ds.user_id = ${userId}
+        AND ds.channel = 'power'
         AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-        AND ms.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
         AND ${enduranceTypeFilter("a")}
-      GROUP BY a.id, a.started_at
+      GROUP BY ds.activity_id, a.started_at
       HAVING COUNT(*) > 1
     )
-    SELECT ms.activity_id,
+    SELECT ds.activity_id,
            ai.activity_date,
-           COALESCE(ms.scalar, 0) AS power,
+           COALESCE(ds.scalar, 0) AS power,
            ai.interval_s
-    FROM fitness.sensor_sample ms
-    JOIN activity_info ai ON ai.activity_id = ms.activity_id
-    WHERE ms.channel = 'power'
-      AND ms.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
-    ORDER BY ms.activity_id, ms.recorded_at
+    FROM fitness.deduped_sensor ds
+    JOIN activity_info ai ON ai.activity_id = ds.activity_id
+    WHERE ds.channel = 'power'
+    ORDER BY ds.activity_id, ds.recorded_at
   `;
 }
 
@@ -75,35 +73,33 @@ function powerCurveSamplesQuery(days: number, userId: string, timezone: string) 
 function normalizedPowerSamplesQuery(days: number, userId: string, timezone: string) {
   return sql`
     WITH activity_info AS (
-      SELECT a.id AS activity_id,
+      SELECT ds.activity_id,
              (a.started_at AT TIME ZONE ${timezone})::date::text AS activity_date,
              a.name AS activity_name,
              GREATEST(ROUND(
-               EXTRACT(EPOCH FROM MAX(ms.recorded_at) - MIN(ms.recorded_at))::numeric
+               EXTRACT(EPOCH FROM MAX(ds.recorded_at) - MIN(ds.recorded_at))::numeric
                / NULLIF(COUNT(*) - 1, 0)
              )::int, 1) AS interval_s
-      FROM fitness.sensor_sample ms
-      JOIN fitness.v_activity a ON a.id = ms.activity_id
-      WHERE a.user_id = ${userId}
-        AND ms.channel = 'power'
-        AND ms.scalar > 0
+      FROM fitness.deduped_sensor ds
+      JOIN fitness.v_activity a ON a.id = ds.activity_id
+      WHERE ds.user_id = ${userId}
+        AND ds.channel = 'power'
+        AND ds.scalar > 0
         AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-        AND ms.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
         AND ${enduranceTypeFilter("a")}
-      GROUP BY a.id, a.started_at, a.name
+      GROUP BY ds.activity_id, a.started_at, a.name
       HAVING COUNT(*) >= 240
     )
-    SELECT ms.activity_id,
+    SELECT ds.activity_id,
            ai.activity_date,
            ai.activity_name,
-           ms.scalar AS power,
+           ds.scalar AS power,
            ai.interval_s
-    FROM fitness.sensor_sample ms
-    JOIN activity_info ai ON ai.activity_id = ms.activity_id
-    WHERE ms.channel = 'power'
-      AND ms.scalar > 0
-      AND ms.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
-    ORDER BY ms.activity_id, ms.recorded_at
+    FROM fitness.deduped_sensor ds
+    JOIN activity_info ai ON ai.activity_id = ds.activity_id
+    WHERE ds.channel = 'power'
+      AND ds.scalar > 0
+    ORDER BY ds.activity_id, ds.recorded_at
   `;
 }
 

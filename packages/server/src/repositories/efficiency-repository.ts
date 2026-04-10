@@ -111,13 +111,12 @@ export class EfficiencyRepository extends BaseRepository {
             COUNT(*)::int AS z2_samples
           FROM fitness.user_profile up
           JOIN fitness.v_activity a ON a.user_id = up.id
-          JOIN fitness.sensor_sample hr ON hr.activity_id = a.id AND hr.channel = 'heart_rate'
-          JOIN fitness.sensor_sample pwr ON pwr.activity_id = a.id AND pwr.channel = 'power'
+          JOIN fitness.deduped_sensor hr ON hr.activity_id = a.id AND hr.channel = 'heart_rate'
+          JOIN fitness.deduped_sensor pwr ON pwr.activity_id = a.id AND pwr.channel = 'power'
             AND pwr.recorded_at = hr.recorded_at
           JOIN ${restingHeartRateLateral(sql`up.id`, sql`(a.started_at AT TIME ZONE ${this.timezone})::date`)}
           WHERE up.id = ${this.userId}
             AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-            AND hr.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
             AND ${enduranceTypeFilter("a")}
             AND up.max_hr IS NOT NULL
             AND hr.scalar >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[0]}::numeric
@@ -177,29 +176,29 @@ export class EfficiencyRepository extends BaseRepository {
                AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
                AND ${enduranceTypeFilter("a")}
             )::int AS endurance_activities,
-            (SELECT COUNT(DISTINCT ms.activity_id)
-             FROM fitness.sensor_sample ms
-             JOIN fitness.v_activity a ON a.id = ms.activity_id
+            (SELECT COUNT(DISTINCT ds.activity_id)
+             FROM fitness.deduped_sensor ds
+             JOIN fitness.v_activity a ON a.id = ds.activity_id
              WHERE a.user_id = up.id
                AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
                AND ${enduranceTypeFilter("a")}
-               AND ms.channel = 'power'
-               AND ms.scalar > 0
+               AND ds.channel = 'power'
+               AND ds.scalar > 0
             )::int AS activities_with_power,
-            (SELECT COUNT(DISTINCT ms.activity_id)
-             FROM fitness.sensor_sample ms
-             JOIN fitness.v_activity a ON a.id = ms.activity_id
+            (SELECT COUNT(DISTINCT ds.activity_id)
+             FROM fitness.deduped_sensor ds
+             JOIN fitness.v_activity a ON a.id = ds.activity_id
              WHERE a.user_id = up.id
                AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
                AND ${enduranceTypeFilter("a")}
-               AND ms.channel = 'heart_rate'
-               AND ms.scalar IS NOT NULL
+               AND ds.channel = 'heart_rate'
+               AND ds.scalar IS NOT NULL
             )::int AS activities_with_hr,
             (SELECT COUNT(*)
              FROM (
                SELECT DISTINCT pwr.activity_id
-               FROM fitness.sensor_sample pwr
-               JOIN fitness.sensor_sample hr
+               FROM fitness.deduped_sensor pwr
+               JOIN fitness.deduped_sensor hr
                  ON hr.activity_id = pwr.activity_id
                 AND hr.recorded_at = pwr.recorded_at
                 AND hr.channel = 'heart_rate'
@@ -216,7 +215,7 @@ export class EfficiencyRepository extends BaseRepository {
               SELECT MAX(z2_count)
               FROM (
                 SELECT COUNT(DISTINCT hr.recorded_at)::int AS z2_count
-                FROM fitness.sensor_sample hr
+                FROM fitness.deduped_sensor hr
                 JOIN fitness.v_activity a ON a.id = hr.activity_id
                 JOIN LATERAL (
                   SELECT dm.resting_hr
@@ -237,7 +236,7 @@ export class EfficiencyRepository extends BaseRepository {
                   AND hr.scalar <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[1]}::numeric
                   AND EXISTS (
                     SELECT 1
-                    FROM fitness.sensor_sample pwr
+                    FROM fitness.deduped_sensor pwr
                     WHERE pwr.activity_id = hr.activity_id
                       AND pwr.recorded_at = hr.recorded_at
                       AND pwr.channel = 'power'
@@ -276,15 +275,14 @@ export class EfficiencyRepository extends BaseRepository {
               pwr.scalar AS power,
               hr.scalar AS heart_rate,
               NTILE(2) OVER (PARTITION BY pwr.activity_id ORDER BY pwr.recorded_at) AS half
-            FROM fitness.sensor_sample pwr
-            JOIN fitness.sensor_sample hr
+            FROM fitness.deduped_sensor pwr
+            JOIN fitness.deduped_sensor hr
               ON hr.activity_id = pwr.activity_id
               AND hr.recorded_at = pwr.recorded_at
               AND hr.channel = 'heart_rate'
             JOIN fitness.v_activity a ON a.id = pwr.activity_id
             WHERE a.user_id = ${this.userId}
               AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-              AND pwr.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
               AND ${enduranceTypeFilter("a")}
               AND pwr.channel = 'power'
               AND pwr.scalar > 0
@@ -344,16 +342,15 @@ export class EfficiencyRepository extends BaseRepository {
       sql`SELECT
             up.max_hr,
             date_trunc('week', (a.started_at AT TIME ZONE ${this.timezone})::date)::date AS week,
-            COUNT(*) FILTER (WHERE ms.scalar < up.max_hr * ${POLARIZATION_ZONES[1]?.minPctHrmax}::numeric)::int AS z1_seconds,
-            COUNT(*) FILTER (WHERE ms.scalar >= up.max_hr * ${POLARIZATION_ZONES[1]?.minPctHrmax}::numeric
-                              AND ms.scalar <  up.max_hr * ${POLARIZATION_ZONES[2]?.minPctHrmax}::numeric)::int AS z2_seconds,
-            COUNT(*) FILTER (WHERE ms.scalar >= up.max_hr * ${POLARIZATION_ZONES[2]?.minPctHrmax}::numeric)::int AS z3_seconds
+            COUNT(*) FILTER (WHERE ds.scalar < up.max_hr * ${POLARIZATION_ZONES[1]?.minPctHrmax}::numeric)::int AS z1_seconds,
+            COUNT(*) FILTER (WHERE ds.scalar >= up.max_hr * ${POLARIZATION_ZONES[1]?.minPctHrmax}::numeric
+                              AND ds.scalar <  up.max_hr * ${POLARIZATION_ZONES[2]?.minPctHrmax}::numeric)::int AS z2_seconds,
+            COUNT(*) FILTER (WHERE ds.scalar >= up.max_hr * ${POLARIZATION_ZONES[2]?.minPctHrmax}::numeric)::int AS z3_seconds
           FROM fitness.user_profile up
           JOIN fitness.v_activity a ON a.user_id = up.id
-          JOIN fitness.sensor_sample ms ON ms.activity_id = a.id AND ms.channel = 'heart_rate'
+          JOIN fitness.deduped_sensor ds ON ds.activity_id = a.id AND ds.channel = 'heart_rate'
           WHERE up.id = ${this.userId}
             AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-            AND ms.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
             AND ${enduranceTypeFilter("a")}
             AND up.max_hr IS NOT NULL
           GROUP BY up.max_hr, 2

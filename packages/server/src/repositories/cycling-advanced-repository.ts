@@ -467,22 +467,21 @@ export class CyclingAdvancedRepository {
       ftpSchema,
       sql`WITH activity_power AS (
             SELECT
-              ms.activity_id,
-              ms.recorded_at,
+              ds.activity_id,
+              ds.recorded_at,
               ROW_NUMBER() OVER (
-                PARTITION BY ms.activity_id ORDER BY ms.recorded_at
+                PARTITION BY ds.activity_id ORDER BY ds.recorded_at
               ) AS rn,
-              SUM(COALESCE(ms.scalar, 0)) OVER (
-                PARTITION BY ms.activity_id ORDER BY ms.recorded_at
+              SUM(COALESCE(ds.scalar, 0)) OVER (
+                PARTITION BY ds.activity_id ORDER BY ds.recorded_at
                 ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
               ) AS cumsum
-            FROM fitness.sensor_sample ms
-            JOIN fitness.v_activity a ON a.id = ms.activity_id
-            WHERE a.user_id = ${this.#userId}
+            FROM fitness.deduped_sensor ds
+            JOIN fitness.v_activity a ON a.id = ds.activity_id
+            WHERE ds.user_id = ${this.#userId}
               AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-              AND ms.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
               AND ${enduranceTypeFilter("a")}
-              AND ms.channel = 'power'
+              AND ds.channel = 'power'
           ),
           sample_rate AS (
             SELECT activity_id,
@@ -519,20 +518,19 @@ export class CyclingAdvancedRepository {
       variabilityRowSchema,
       sql`WITH rolling AS (
             SELECT
-              ms.activity_id,
-              AVG(ms.scalar) OVER (
-                PARTITION BY ms.activity_id
-                ORDER BY ms.recorded_at
+              ds.activity_id,
+              AVG(ds.scalar) OVER (
+                PARTITION BY ds.activity_id
+                ORDER BY ds.recorded_at
                 RANGE BETWEEN INTERVAL '29 seconds' PRECEDING AND CURRENT ROW
               ) AS rolling_30s_power
-            FROM fitness.sensor_sample ms
-            JOIN fitness.v_activity a ON a.id = ms.activity_id
-            WHERE a.user_id = ${this.#userId}
+            FROM fitness.deduped_sensor ds
+            JOIN fitness.v_activity a ON a.id = ds.activity_id
+            WHERE ds.user_id = ${this.#userId}
               AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-              AND ms.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
               AND ${enduranceTypeFilter("a")}
-              AND ms.channel = 'power'
-              AND ms.scalar > 0
+              AND ds.channel = 'power'
+              AND ds.scalar > 0
           ),
           grouped AS (
             SELECT
@@ -590,15 +588,14 @@ export class CyclingAdvancedRepository {
               LAG(alt.recorded_at) OVER (
                 PARTITION BY alt.activity_id ORDER BY alt.recorded_at
               ) AS prev_recorded_at
-            FROM fitness.sensor_sample alt
-            JOIN fitness.sensor_sample grd
+            FROM fitness.deduped_sensor alt
+            JOIN fitness.deduped_sensor grd
               ON grd.activity_id = alt.activity_id
               AND grd.recorded_at = alt.recorded_at
               AND grd.channel = 'grade'
             JOIN fitness.v_activity a ON a.id = alt.activity_id
             WHERE a.user_id = ${this.#userId}
               AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-              AND alt.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
               AND ${enduranceTypeFilter("a")}
               AND alt.channel = 'altitude'
               AND grd.scalar > 3

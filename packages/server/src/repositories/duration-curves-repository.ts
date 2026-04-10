@@ -97,22 +97,21 @@ export class DurationCurvesRepository {
       hrCurveRowSchema,
       sql`
 			WITH activity_hr AS (
-			  SELECT ms.activity_id, ms.recorded_at, ms.scalar AS heart_rate,
+			  SELECT ds.activity_id, ds.recorded_at, ds.scalar AS heart_rate,
 			         (a.started_at AT TIME ZONE ${this.#timezone})::date AS activity_date,
 			         ROW_NUMBER() OVER (
-			           PARTITION BY ms.activity_id ORDER BY ms.recorded_at
+			           PARTITION BY ds.activity_id ORDER BY ds.recorded_at
 			         ) AS rn,
-			         SUM(ms.scalar) OVER (
-			           PARTITION BY ms.activity_id ORDER BY ms.recorded_at
+			         SUM(ds.scalar) OVER (
+			           PARTITION BY ds.activity_id ORDER BY ds.recorded_at
 			           ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
 			         ) AS cumsum
-			  FROM fitness.sensor_sample ms
-			  JOIN fitness.v_activity a ON a.id = ms.activity_id
-			  WHERE a.user_id = ${this.#userId}
-			    AND ms.channel = 'heart_rate'
-			    AND ms.scalar > 0
+			  FROM fitness.deduped_sensor ds
+			  JOIN fitness.v_activity a ON a.id = ds.activity_id
+			  WHERE ds.user_id = ${this.#userId}
+			    AND ds.channel = 'heart_rate'
+			    AND ds.scalar > 0
 			    AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-			    AND ms.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
 			    AND ${enduranceTypeFilter("a")}
 			),
 			sample_rate AS (
@@ -178,22 +177,21 @@ export class DurationCurvesRepository {
       paceCurveRowSchema,
       sql`
 			WITH activity_speed AS (
-			  SELECT ms.activity_id, ms.recorded_at, ms.scalar AS speed,
+			  SELECT ds.activity_id, ds.recorded_at, ds.scalar AS speed,
 			         (a.started_at AT TIME ZONE ${this.#timezone})::date AS activity_date,
 			         ROW_NUMBER() OVER (
-			           PARTITION BY ms.activity_id ORDER BY ms.recorded_at
+			           PARTITION BY ds.activity_id ORDER BY ds.recorded_at
 			         ) AS rn,
-			         SUM(ms.scalar) OVER (
-			           PARTITION BY ms.activity_id ORDER BY ms.recorded_at
+			         SUM(ds.scalar) OVER (
+			           PARTITION BY ds.activity_id ORDER BY ds.recorded_at
 			           ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
 			         ) AS cumsum
-			  FROM fitness.sensor_sample ms
-			  JOIN fitness.v_activity a ON a.id = ms.activity_id
-			  WHERE a.user_id = ${this.#userId}
-			    AND ms.channel = 'speed'
-			    AND ms.scalar > 0
+			  FROM fitness.deduped_sensor ds
+			  JOIN fitness.v_activity a ON a.id = ds.activity_id
+			  WHERE ds.user_id = ${this.#userId}
+			    AND ds.channel = 'speed'
+			    AND ds.scalar > 0
 			    AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-			    AND ms.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
 			    AND ${enduranceTypeFilter("a")}
 			),
 			sample_rate AS (
