@@ -30,7 +30,7 @@ services:
       retries: 10
 
   db-backup:
-    image: prodrigestivill/postgres-backup-local
+    image: prodrigestivill/postgres-backup-local:16
     container_name: dofek-db-backup
     restart: unless-stopped
     environment:
