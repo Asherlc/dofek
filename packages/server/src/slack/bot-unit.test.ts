@@ -2366,7 +2366,7 @@ describe("bot.ts — registerHandlers", () => {
         next,
       });
 
-      expect(logger.info).toHaveBeenCalledWith("[slack] Received event type=message");
+      expect(logger.debug).toHaveBeenCalledWith("[slack] Received event type=message");
       expect(next).toHaveBeenCalled();
     });
 
@@ -2384,7 +2384,7 @@ describe("bot.ts — registerHandlers", () => {
         next,
       });
 
-      expect(logger.info).toHaveBeenCalledWith(
+      expect(logger.debug).toHaveBeenCalledWith(
         "[slack] Received non-event payload (action/shortcut/command)",
       );
       expect(next).toHaveBeenCalled();
@@ -2402,7 +2402,7 @@ describe("bot.ts — registerHandlers", () => {
         next,
       });
 
-      expect(logger.info).toHaveBeenCalledWith(
+      expect(logger.debug).toHaveBeenCalledWith(
         "[slack] Received non-event payload (action/shortcut/command)",
       );
       expect(next).toHaveBeenCalled();
@@ -2420,7 +2420,7 @@ describe("bot.ts — registerHandlers", () => {
         next,
       });
 
-      expect(logger.info).toHaveBeenCalledWith(
+      expect(logger.debug).toHaveBeenCalledWith(
         "[slack] Received non-event payload (action/shortcut/command)",
       );
       expect(next).toHaveBeenCalled();
@@ -2438,7 +2438,7 @@ describe("bot.ts — registerHandlers", () => {
         next,
       });
 
-      expect(logger.info).toHaveBeenCalledWith(
+      expect(logger.debug).toHaveBeenCalledWith(
         "[slack] Received non-event payload (action/shortcut/command)",
       );
       expect(next).toHaveBeenCalled();
