@@ -15,6 +15,16 @@ describe("RouteMap", () => {
     expect(screen.getByText("Route Map")).toBeTruthy();
   });
 
+  it("sets explicit pixel width on the map", () => {
+    const { container } = render(<RouteMap points={gpsPoints} />);
+    const mapView = container.querySelector("MapView");
+    expect(mapView).not.toBeNull();
+    // MapView should have explicit numeric width, not percentage
+    const style = mapView?.getAttribute("style");
+    expect(style).toContain("width");
+    expect(style).not.toContain("%");
+  });
+
   it("renders nothing when given an empty array", () => {
     const { container } = render(<RouteMap points={[]} />);
     expect(container.innerHTML).toBe("");

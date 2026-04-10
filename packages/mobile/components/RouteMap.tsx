@@ -1,6 +1,6 @@
 import { statusColors } from "@dofek/scoring/colors";
 import { useMemo } from "react";
-import { StyleSheet, View } from "react-native";
+import { StyleSheet, useWindowDimensions, View } from "react-native";
 import MapView, { Marker, Polyline } from "react-native-maps";
 import { colors, radius, spacing } from "../theme";
 import { ChartTitleWithTooltip } from "./ChartTitleWithTooltip";
@@ -16,7 +16,13 @@ interface RouteMapProps {
 
 const MAP_HEIGHT = 280;
 
+/** Horizontal padding surrounding the map: ScrollView content (16) + container (spacing.md). */
+const HORIZONTAL_PADDING = 16 + spacing.md;
+
 export function RouteMap({ points }: RouteMapProps) {
+  const { width: screenWidth } = useWindowDimensions();
+  const mapWidth = screenWidth - HORIZONTAL_PADDING * 2;
+
   const gpsPoints = useMemo(
     () =>
       points.filter(
@@ -70,7 +76,7 @@ export function RouteMap({ points }: RouteMapProps) {
       />
       <View style={styles.mapWrapper}>
         <MapView
-          style={styles.map}
+          style={{ width: mapWidth, height: MAP_HEIGHT }}
           initialRegion={region}
           scrollEnabled={false}
           zoomEnabled={false}
@@ -110,9 +116,5 @@ const styles = StyleSheet.create({
   mapWrapper: {
     borderRadius: radius.lg,
     overflow: "hidden",
-  },
-  map: {
-    width: "100%",
-    height: MAP_HEIGHT,
   },
 });
