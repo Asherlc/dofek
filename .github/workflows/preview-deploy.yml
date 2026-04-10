@@ -67,9 +67,10 @@ jobs:
       DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
       DOKPLOY_PREVIEW_ENV_ID: ${{ secrets.DOKPLOY_PREVIEW_ENV_ID }}
       DOKPLOY_REGISTRY_ID: ${{ secrets.DOKPLOY_REGISTRY_ID }}
+      PREVIEW_DATABASE_URL: ${{ secrets.PREVIEW_DATABASE_URL }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
       PREVIEW_DOMAIN: pr-${{ github.event.pull_request.number }}.preview.dofek.fit
-      DOCKER_IMAGE: ghcr.io/${{ github.repository }}:pr-${{ github.event.pull_request.number }}
+      DOCKER_IMAGE: ghcr.io/asherlc/dofek:pr-${{ github.event.pull_request.number }}
     steps:
       - name: Check required secrets
         run: |
@@ -120,8 +121,13 @@ jobs:
             fi
 
             # Set env vars
+            PREVIEW_ENV="PORT=3000
+DATABASE_URL=${PREVIEW_DATABASE_URL}
+REDIS_URL=redis://dofek-redis:6379
+NODE_ENV=production
+PUBLIC_URL=https://${PREVIEW_DOMAIN}"
             dokploy "application.update" \
-              -d "$(jq -n --arg id "$APP_ID" '{json: {applicationId: $id, env: "PORT=3000"}}')" > /dev/null
+              -d "$(jq -n --arg id "$APP_ID" --arg env "$PREVIEW_ENV" '{json: {applicationId: $id, env: $env}}')" > /dev/null
 
             # Create domain
             dokploy "domain.create" \
