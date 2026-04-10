@@ -143,6 +143,7 @@ describe("syncMaterializedViews", () => {
 
     mockReaddirSync.mockReturnValue(["01_v_test.sql"]);
     mockReadFileSync.mockReturnValue(viewSql);
+    mockSql.mockResolvedValueOnce([]); // pg_advisory_lock
     mockSql.mockResolvedValueOnce([]); // CREATE TABLE
     mockSql.mockResolvedValueOnce([{ hash: expectedHash }]); // SELECT hash
     mockSql.mockResolvedValueOnce([{ populated: true }]); // pg_matviews check
@@ -160,6 +161,7 @@ describe("syncMaterializedViews", () => {
 
     mockReaddirSync.mockReturnValue(["01_v_test.sql"]);
     mockReadFileSync.mockReturnValue(viewSql);
+    mockSql.mockResolvedValueOnce([]); // pg_advisory_lock
     mockSql.mockResolvedValueOnce([]); // CREATE TABLE
     mockSql.mockResolvedValueOnce([{ hash: expectedHash }]); // SELECT hash — matches
     mockSql.mockResolvedValueOnce([{ populated: false }]); // pg_matviews — not populated
@@ -176,6 +178,7 @@ describe("syncMaterializedViews", () => {
 
     mockReaddirSync.mockReturnValue(["01_v_test.sql"]);
     mockReadFileSync.mockReturnValue(viewSql);
+    mockSql.mockResolvedValueOnce([]); // pg_advisory_lock
     mockSql.mockResolvedValueOnce([]); // CREATE TABLE
     mockSql.mockResolvedValueOnce([{ hash: "old-hash-that-does-not-match" }]); // SELECT hash
     mockSql.mockResolvedValueOnce([]); // INSERT hash
@@ -196,6 +199,7 @@ describe("syncMaterializedViews", () => {
 
     mockReaddirSync.mockReturnValue(["01_v_new.sql"]);
     mockReadFileSync.mockReturnValue(viewSql);
+    mockSql.mockResolvedValueOnce([]); // pg_advisory_lock
     mockSql.mockResolvedValueOnce([]); // CREATE TABLE
     mockSql.mockResolvedValueOnce([]); // SELECT hash — no rows
     mockSql.mockResolvedValueOnce([]); // INSERT hash
@@ -318,7 +322,8 @@ describe("syncMaterializedViews", () => {
     // So test with files that cause an error after connection is created
     mockReaddirSync.mockReturnValue(["01_test.sql"]);
     mockReadFileSync.mockReturnValue("CREATE MATERIALIZED VIEW fitness.v_test AS SELECT 1");
-    mockSql.mockRejectedValueOnce(new Error("db error"));
+    mockSql.mockResolvedValueOnce([]); // pg_advisory_lock
+    mockSql.mockRejectedValueOnce(new Error("db error")); // CREATE TABLE fails
 
     await expect(syncMaterializedViews("postgres://localhost/test", "/tmp/views")).rejects.toThrow(
       "db error",
