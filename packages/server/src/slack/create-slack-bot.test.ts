@@ -58,6 +58,28 @@ vi.mock("../lib/cache.ts", () => ({
 import bolt from "@slack/bolt";
 import { createSlackBot, startSlackBot } from "./bot.ts";
 
+/** Mock fetch for verifyBotConfiguration — returns successful auth.test and bots.info responses */
+function mockFetchForSlackVerification() {
+  const mockFetch = vi.fn().mockImplementation((url: string) => {
+    if (url.includes("auth.test")) {
+      return Promise.resolve({
+        json: () => Promise.resolve({ ok: true, user_id: "U-BOT", team: "test-team" }),
+      });
+    }
+    if (url.includes("bots.info")) {
+      return Promise.resolve({
+        json: () => Promise.resolve({ ok: true, bot: { app_id: "A-TEST" } }),
+        headers: new Headers({
+          "x-oauth-scopes": "chat:write,im:history,im:read,im:write,users:read,users:read.email",
+        }),
+      });
+    }
+    return Promise.resolve({ json: () => Promise.resolve({ ok: false }) });
+  });
+  vi.stubGlobal("fetch", mockFetch);
+  return mockFetch;
+}
+
 /**
  * Type-narrowing helper for test mocks: accepts a partial object and returns it
  * typed as `T`. Uses `Partial<T>` so the single `as T` assertion is valid.
@@ -186,9 +208,11 @@ describe("startSlackBot", () => {
     delete process.env.SLACK_BOT_TOKEN;
     delete process.env.SLACK_APP_TOKEN;
     delete process.env.SLACK_SIGNING_SECRET;
+    mockFetchForSlackVerification();
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     process.env = { ...originalEnv };
   });
 
@@ -301,6 +325,57 @@ describe("startSlackBot", () => {
     expect(logger.info).toHaveBeenCalledWith(
       expect.stringContaining("No Slack credentials configured"),
     );
+  });
+
+  it("verifies bot configuration on socket mode startup", async () => {
+    process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
+    process.env.SLACK_APP_TOKEN = "xapp-test-token";
+
+    const db = createMockDb();
+    const { logger } = await import("../logger.ts");
+    const mockFetch = mockFetchForSlackVerification();
+
+    await startSlackBot(db);
+
+    // Wait for background verification to complete
+    await vi.waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://slack.com/api/auth.test",
+        expect.objectContaining({ method: "POST" }),
+      );
+    });
+
+    expect(logger.info).toHaveBeenCalledWith(expect.stringContaining("Bot authenticated as U-BOT"));
+  });
+
+  it("logs warning when bot verification detects missing scopes", async () => {
+    process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
+    process.env.SLACK_APP_TOKEN = "xapp-test-token";
+
+    const db = createMockDb();
+    const { logger } = await import("../logger.ts");
+
+    // Return scopes missing im:history
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((url: string) => {
+        if (url.includes("auth.test")) {
+          return Promise.resolve({
+            json: () => Promise.resolve({ ok: true, user_id: "U-BOT", team: "test-team" }),
+          });
+        }
+        return Promise.resolve({
+          json: () => Promise.resolve({ ok: true, bot: { app_id: "A-TEST" } }),
+          headers: new Headers({ "x-oauth-scopes": "chat:write" }),
+        });
+      }),
+    );
+
+    await startSlackBot(db);
+
+    await vi.waitFor(() => {
+      expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("missing required scopes"));
+    });
   });
 
   it("registers SIGTERM handler that stops the app in socket mode", async () => {
