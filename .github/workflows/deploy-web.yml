@@ -29,12 +29,9 @@ jobs:
         env:
           TF_VAR_dokploy_host: ${{ secrets.DOKPLOY_HOST }}
           TF_VAR_dokploy_api_key: ${{ secrets.DOKPLOY_API_KEY }}
-          TF_VAR_web_app_id: ${{ secrets.DOKPLOY_WEB_APP_ID }}
-          TF_VAR_worker_app_id: ${{ secrets.DOKPLOY_WORKER_APP_ID }}
+          TF_VAR_app_id: ${{ secrets.DOKPLOY_WEB_APP_ID }}
         run: |
           SHA_TAG="sha-$(git rev-parse --short HEAD)"
           cd deploy/dokploy-app
           terraform init
-          terraform apply -auto-approve \
-            -var="image_tag=${SHA_TAG}" \
-            -target=terraform_data.deploy[\"$TF_VAR_web_app_id\"]
+          terraform apply -auto-approve -var="image_tag=${SHA_TAG}"
