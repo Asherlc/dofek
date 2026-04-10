@@ -54,7 +54,7 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
   docker network create dofek-test
   docker run -d --name dofek-test-db --network dofek-test \
     -e POSTGRES_DB=health -e POSTGRES_USER=health -e POSTGRES_PASSWORD=test \
-    timescale/timescaledb:latest-pg16
+    timescale/timescaledb:latest-pg18
   sleep 5
   docker run -d --name dofek-test-web --network dofek-test -p 3000:3000 \
     -e DATABASE_URL=postgres://health:test@dofek-test-db:5432/health -e PORT=3000 \
