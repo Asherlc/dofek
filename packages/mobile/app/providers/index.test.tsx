@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { providerActionLabel } from "./provider-card.tsx";
@@ -44,10 +44,16 @@ vi.mock("react-native", () => ({
     onPress?: () => void;
     disabled?: boolean;
   } & Record<string, unknown>) => {
-    const { style: _s, activeOpacity: _ao, ...rest } = props;
+    const { style: _s, activeOpacity: _ao, testID, ...rest } = props;
     return React.createElement(
       "button",
-      { type: "button", onClick: onPress, disabled, ...rest },
+      {
+        type: "button",
+        onClick: onPress,
+        disabled,
+        ...(testID ? { "data-testid": testID } : {}),
+        ...rest,
+      },
       children,
     );
   },
@@ -174,6 +180,26 @@ vi.mock("../../lib/telemetry", () => ({
   captureException: vi.fn(),
 }));
 
+const mockGetRequestStatus = vi.fn().mockResolvedValue("unnecessary");
+const mockRequestPermissions = vi.fn().mockResolvedValue(true);
+
+vi.mock("../../modules/health-kit", () => ({
+  isAvailable: () => true,
+  getRequestStatus: (...args: unknown[]) => mockGetRequestStatus(...args),
+  requestPermissions: (...args: unknown[]) => mockRequestPermissions(...args),
+  queryDailyStatistics: vi.fn().mockResolvedValue([]),
+  queryQuantitySamples: vi.fn().mockResolvedValue([]),
+  queryWorkouts: vi.fn().mockResolvedValue([]),
+  querySleepSamples: vi.fn().mockResolvedValue([]),
+  queryWorkoutRoutes: vi.fn().mockResolvedValue([]),
+}));
+
+const mockSyncHealthKit = vi.fn().mockResolvedValue({ inserted: 0, errors: [] });
+
+vi.mock("../../lib/health-kit-sync", () => ({
+  syncHealthKitToServer: (...args: unknown[]) => mockSyncHealthKit(...args),
+}));
+
 vi.mock("@dofek/format/format", () => ({
   formatRelativeTime: (date: string) => `${date} ago`,
 }));
@@ -212,6 +238,14 @@ vi.mock("../../lib/trpc", () => ({
     },
     useUtils: () => ({
       invalidate: mockInvalidate,
+      client: {
+        healthKitSync: {
+          pushQuantitySamples: { mutate: vi.fn().mockResolvedValue({ inserted: 0, errors: [] }) },
+          pushWorkouts: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
+          pushWorkoutRoutes: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
+          pushSleepSamples: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
+        },
+      },
       sync: {
         providers: { invalidate: mockInvalidate },
         providerStats: { invalidate: mockInvalidate },
@@ -596,6 +630,9 @@ describe("ProvidersScreen", () => {
     mockWhoopSignIn.mockReset();
     mockWhoopVerifyCode.mockReset();
     mockWhoopSaveTokens.mockReset();
+    mockGetRequestStatus.mockReset().mockResolvedValue("unnecessary");
+    mockRequestPermissions.mockReset().mockResolvedValue(true);
+    mockSyncHealthKit.mockReset().mockResolvedValue({ inserted: 0, errors: [] });
     setupDefaultMocks();
   });
 
@@ -603,7 +640,10 @@ describe("ProvidersScreen", () => {
     const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
-    expect(screen.getByText("Full sync")).toBeTruthy();
+    await waitFor(() => {
+      const wahooCard = within(screen.getByTestId("provider-card-wahoo"));
+      expect(wahooCard.getByText("Full sync")).toBeTruthy();
+    });
   });
 
   it("does not render Full sync link for disconnected providers", async () => {
@@ -615,7 +655,8 @@ describe("ProvidersScreen", () => {
     const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
-    expect(screen.queryByText("Full sync")).toBeNull();
+    const stravaCard = within(screen.getByTestId("provider-card-strava"));
+    expect(stravaCard.queryByText("Full sync")).toBeNull();
   });
 
   it("renders Full Sync All button alongside Sync All", async () => {
@@ -636,7 +677,8 @@ describe("ProvidersScreen", () => {
     const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
-    fireEvent.click(screen.getByText("Sync"));
+    const wahooCard = within(screen.getByTestId("provider-card-wahoo"));
+    fireEvent.click(wahooCard.getByText("Sync"));
 
     await waitFor(() => {
       expect(mockSyncMutateAsync).toHaveBeenCalledWith({
@@ -656,7 +698,8 @@ describe("ProvidersScreen", () => {
     const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
-    fireEvent.click(screen.getByText("Full sync"));
+    const wahooCard = within(screen.getByTestId("provider-card-wahoo"));
+    fireEvent.click(wahooCard.getByText("Full sync"));
 
     await waitFor(() => {
       expect(mockSyncMutateAsync).toHaveBeenCalledWith({
@@ -709,7 +752,8 @@ describe("ProvidersScreen", () => {
     const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
-    fireEvent.click(screen.getByText("Connect"));
+    const eightSleepCard = within(screen.getByTestId("provider-card-eight-sleep"));
+    fireEvent.click(eightSleepCard.getByText("Connect"));
 
     await waitFor(() => {
       expect(screen.getByText("Connect Eight Sleep")).toBeTruthy();
@@ -727,7 +771,8 @@ describe("ProvidersScreen", () => {
     render(<ProvidersScreen />);
 
     // Open the modal
-    fireEvent.click(screen.getByText("Connect"));
+    const eightSleepCard = within(screen.getByTestId("provider-card-eight-sleep"));
+    fireEvent.click(eightSleepCard.getByText("Connect"));
     await waitFor(() => {
       expect(screen.getByText("Connect Eight Sleep")).toBeTruthy();
     });
@@ -806,10 +851,11 @@ describe("ProvidersScreen", () => {
     const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
-    expect(screen.getByText("Strong")).toBeTruthy();
-    expect(screen.queryByText("Sync")).toBeNull();
-    expect(screen.queryByText("Full sync")).toBeNull();
-    expect(screen.getByText("Import only")).toBeTruthy();
+    const strongCard = within(screen.getByTestId("provider-card-strong-csv"));
+    expect(strongCard.getByText("Strong")).toBeTruthy();
+    expect(strongCard.getByText("Import only")).toBeTruthy();
+    expect(strongCard.queryByText("Sync")).toBeNull();
+    expect(strongCard.queryByText("Full sync")).toBeNull();
   });
 
   it("excludes import-only providers from Sync All", async () => {
@@ -866,8 +912,9 @@ describe("ProvidersScreen", () => {
     const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
-    expect(screen.getByText("Expired")).toBeTruthy();
-    expect(screen.getByText("Connect")).toBeTruthy();
+    const polarCard = within(screen.getByTestId("provider-card-polar"));
+    expect(polarCard.getByText("Expired")).toBeTruthy();
+    expect(polarCard.getByText("Connect")).toBeTruthy();
   });
 
   it("opens browser for OAuth provider connect", async () => {
@@ -880,7 +927,8 @@ describe("ProvidersScreen", () => {
     const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
-    fireEvent.click(screen.getByText("Connect"));
+    const stravaCard = within(screen.getByTestId("provider-card-strava"));
+    fireEvent.click(stravaCard.getByText("Connect"));
 
     await waitFor(() => {
       expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith(
@@ -906,7 +954,8 @@ describe("ProvidersScreen", () => {
     const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
-    fireEvent.click(screen.getByText("Connect"));
+    const garminCard = within(screen.getByTestId("provider-card-garmin"));
+    fireEvent.click(garminCard.getByText("Connect"));
 
     await waitFor(() => {
       expect(screen.getByText("Connect Garmin")).toBeTruthy();
@@ -931,7 +980,8 @@ describe("ProvidersScreen", () => {
     const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
-    fireEvent.click(screen.getByText("Connect"));
+    const garminCard = within(screen.getByTestId("provider-card-garmin"));
+    fireEvent.click(garminCard.getByText("Connect"));
     await waitFor(() => {
       expect(screen.getByText("Connect Garmin")).toBeTruthy();
     });
@@ -967,7 +1017,8 @@ describe("ProvidersScreen", () => {
     const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
-    fireEvent.click(screen.getByText("Connect"));
+    const whoopCard = within(screen.getByTestId("provider-card-whoop"));
+    fireEvent.click(whoopCard.getByText("Connect"));
 
     await waitFor(() => {
       expect(screen.getByText("Connect WHOOP")).toBeTruthy();
@@ -996,7 +1047,8 @@ describe("ProvidersScreen", () => {
     const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
-    fireEvent.click(screen.getByText("Connect"));
+    const whoopCard = within(screen.getByTestId("provider-card-whoop"));
+    fireEvent.click(whoopCard.getByText("Connect"));
     await waitFor(() => {
       expect(screen.getByText("Connect WHOOP")).toBeTruthy();
     });
@@ -1046,7 +1098,8 @@ describe("ProvidersScreen", () => {
     render(<ProvidersScreen />);
 
     // Open modal and sign in
-    fireEvent.click(screen.getByText("Connect"));
+    const whoopCard = within(screen.getByTestId("provider-card-whoop"));
+    fireEvent.click(whoopCard.getByText("Connect"));
     await waitFor(() => {
       expect(screen.getByText("Connect WHOOP")).toBeTruthy();
     });
@@ -1077,6 +1130,83 @@ describe("ProvidersScreen", () => {
         refreshToken: "rt2",
         userId: 456,
       });
+    });
+  });
+
+  it("renders Apple Health card when HealthKit is available", async () => {
+    const { default: ProvidersScreen } = await import("./index");
+    render(<ProvidersScreen />);
+
+    expect(screen.getByTestId("provider-card-apple_health")).toBeTruthy();
+    expect(screen.getByText("Apple Health")).toBeTruthy();
+  });
+
+  it("triggers HealthKit sync with syncRangeDays: 7 when Sync is clicked", async () => {
+    const { default: ProvidersScreen } = await import("./index");
+    render(<ProvidersScreen />);
+
+    // Wait for async permission check to resolve (connected state)
+    await waitFor(() => {
+      const appleCard = within(screen.getByTestId("provider-card-apple_health"));
+      expect(appleCard.getByText("Sync")).toBeTruthy();
+    });
+
+    const appleCard = within(screen.getByTestId("provider-card-apple_health"));
+    fireEvent.click(appleCard.getByText("Sync"));
+
+    await waitFor(() => {
+      expect(mockSyncHealthKit).toHaveBeenCalledWith(expect.objectContaining({ syncRangeDays: 7 }));
+    });
+  });
+
+  it("triggers HealthKit sync with syncRangeDays: null when Full sync is clicked", async () => {
+    const { default: ProvidersScreen } = await import("./index");
+    render(<ProvidersScreen />);
+
+    // Wait for async permission check to resolve (connected state)
+    await waitFor(() => {
+      const appleCard = within(screen.getByTestId("provider-card-apple_health"));
+      expect(appleCard.getByText("Full sync")).toBeTruthy();
+    });
+
+    const appleCard = within(screen.getByTestId("provider-card-apple_health"));
+    fireEvent.click(appleCard.getByText("Full sync"));
+
+    await waitFor(() => {
+      expect(mockSyncHealthKit).toHaveBeenCalledWith(
+        expect.objectContaining({ syncRangeDays: null }),
+      );
+    });
+  });
+
+  it("shows Connect button when HealthKit permissions not granted", async () => {
+    mockGetRequestStatus.mockResolvedValue("shouldRequest");
+
+    const { default: ProvidersScreen } = await import("./index");
+    render(<ProvidersScreen />);
+
+    await waitFor(() => {
+      const appleCard = within(screen.getByTestId("provider-card-apple_health"));
+      expect(appleCard.getByText("Connect")).toBeTruthy();
+    });
+  });
+
+  it("calls requestPermissions when Connect is clicked on Apple Health", async () => {
+    mockGetRequestStatus.mockResolvedValue("shouldRequest");
+
+    const { default: ProvidersScreen } = await import("./index");
+    render(<ProvidersScreen />);
+
+    await waitFor(() => {
+      const appleCard = within(screen.getByTestId("provider-card-apple_health"));
+      expect(appleCard.getByText("Connect")).toBeTruthy();
+    });
+
+    const appleCard = within(screen.getByTestId("provider-card-apple_health"));
+    fireEvent.click(appleCard.getByText("Connect"));
+
+    await waitFor(() => {
+      expect(mockRequestPermissions).toHaveBeenCalled();
     });
   });
 });

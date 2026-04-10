@@ -98,7 +98,12 @@ export function ProviderCard({
   const lastSyncRelative = provider.lastSyncAt ? formatRelativeTime(provider.lastSyncAt) : null;
 
   return (
-    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.7}>
+    <TouchableOpacity
+      style={styles.card}
+      onPress={onPress}
+      activeOpacity={0.7}
+      testID={`provider-card-${provider.id}`}
+    >
       <View style={styles.cardHeader}>
         <View style={styles.cardTitleRow}>
           <ProviderLogo provider={provider.id} serverUrl={serverUrl} size={24} />
@@ -141,9 +146,13 @@ export function ProviderCard({
         </View>
       ) : (
         <View style={styles.cardMeta}>
-          <Text style={styles.cardMetaText}>
-            {provider.importOnly ? "Import only" : statusLabel(provider.authStatus)}
-          </Text>
+          {!syncing && syncProgress?.message ? (
+            <Text style={styles.cardMetaText}>{syncProgress.message}</Text>
+          ) : (
+            <Text style={styles.cardMetaText}>
+              {provider.importOnly ? "Import only" : statusLabel(provider.authStatus)}
+            </Text>
+          )}
           {!provider.importOnly &&
             (lastSyncRelative ? (
               <Text style={styles.cardMetaText}>Last sync: {lastSyncRelative}</Text>
