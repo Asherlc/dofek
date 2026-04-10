@@ -229,7 +229,7 @@ Dokploy manages two application services and an infra compose stack:
 
 | Service | Image | Purpose |
 |---------|-------|---------|
-| `db` | timescale/timescaledb:latest-pg18 | TimescaleDB (persistent volume) |
+| `db` | timescale/timescaledb:latest-pg16 | TimescaleDB (persistent volume) |
 | `redis` | redis:7-alpine | Job queue backend for BullMQ + OTA cache |
 | `ota` | ghcr.io/axelmarciano/expo-open-ota | Self-hosted Expo OTA server (ota.dofek.asherlc.com) |
 | `collector` | otel/opentelemetry-collector-contrib | OTel Collector — logs/traces → Axiom |

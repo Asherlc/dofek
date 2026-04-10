@@ -38,7 +38,7 @@ export async function setupTestDatabase(): Promise<TestContext> {
     connectionString = url.toString();
   } else {
     // Local: spin up a testcontainer
-    container = await new GenericContainer("timescale/timescaledb:latest-pg18")
+    container = await new GenericContainer("timescale/timescaledb:latest-pg16")
       .withEnvironment({
         POSTGRES_DB: "test",
         POSTGRES_USER: "test",
