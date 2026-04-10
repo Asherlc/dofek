@@ -75,12 +75,11 @@ jobs:
       - name: Check required secrets
         run: |
           if [ -z "$DOKPLOY_HOST" ] || [ -z "$DOKPLOY_API_KEY" ] || [ -z "$DOKPLOY_PREVIEW_ENV_ID" ]; then
-            echo "::warning::Dokploy secrets not configured, skipping preview deploy"
-            echo "SKIP_DEPLOY=true" >> "$GITHUB_ENV"
+            echo "::error::Required secrets not configured: DOKPLOY_HOST, DOKPLOY_API_KEY, DOKPLOY_PREVIEW_ENV_ID"
+            exit 1
           fi
 
       - name: Create or update preview app
-        if: env.SKIP_DEPLOY != 'true'
         run: |
           set -euo pipefail
 
@@ -164,8 +163,8 @@ jobs:
           set -euo pipefail
 
           if [ -z "$DOKPLOY_HOST" ] || [ -z "$DOKPLOY_API_KEY" ] || [ -z "$DOKPLOY_PREVIEW_ENV_ID" ]; then
-            echo "Secrets not configured, skipping teardown"
-            exit 0
+            echo "::error::Required secrets not configured: DOKPLOY_HOST, DOKPLOY_API_KEY, DOKPLOY_PREVIEW_ENV_ID"
+            exit 1
           fi
 
           dokploy() {

@@ -41,7 +41,7 @@ locals {
 }
 
 resource "terraform_data" "deploy" {
-  triggers_replace = [var.image_tag]
+  triggers_replace = [var.app_id, local.full_image]
 
   provisioner "local-exec" {
     interpreter = ["bash", "-c"]
