@@ -4,8 +4,8 @@ import { describe, expect, it } from "vitest";
 
 const repoRoot = join(import.meta.dirname, "..");
 const dockerComposePath = join(repoRoot, "docker-compose.yml");
-const ciWorkflowPath = join(repoRoot, ".github", "workflows", "ci.yml");
 const deployWorkflowPath = join(repoRoot, ".github", "workflows", "deploy.yml");
+const deployOtaWorkflowPath = join(repoRoot, ".github", "workflows", "deploy-ota.yml");
 const appJsonPath = join(repoRoot, "packages", "mobile", "app.json");
 
 describe("OTA deployment config (expo-open-ota)", () => {
@@ -21,10 +21,12 @@ describe("OTA deployment config (expo-open-ota)", () => {
     expect(dockerCompose).not.toContain("grep -q 'channel' || exit 0");
   });
 
-  it("uses eoas publish in deploy workflow", () => {
+  it("uses eoas publish in OTA deploy workflow", () => {
     const deployWorkflow = readFileSync(deployWorkflowPath, "utf-8");
-    expect(deployWorkflow).toMatch(/eoas.*publish/);
-    expect(deployWorkflow).toContain("EXPO_TOKEN");
+    const otaDeployWorkflow = readFileSync(deployOtaWorkflowPath, "utf-8");
+    expect(deployWorkflow).toContain("./.github/workflows/deploy-ota.yml");
+    expect(otaDeployWorkflow).toMatch(/eoas.*publish/);
+    expect(otaDeployWorkflow).toContain("EXPO_TOKEN");
   });
 
   it("points mobile app at the expo-open-ota server", () => {

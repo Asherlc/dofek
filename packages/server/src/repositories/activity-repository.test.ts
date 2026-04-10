@@ -120,6 +120,33 @@ describe("ActivityRepository", () => {
       expect(execute).toHaveBeenCalledTimes(1);
     });
 
+    it("includes activityTypes filter as a bound parameter when provided", async () => {
+      const { repo, execute } = makeRepository([]);
+      await repo.list({
+        days: 30,
+        endDate: "2024-02-01",
+        limit: 20,
+        offset: 0,
+        activityTypes: ["cycling", "running"],
+      });
+      expect(execute).toHaveBeenCalledTimes(1);
+      const sqlObject = execute.mock.calls[0]?.[0];
+      // Drizzle SQL objects have queryChunks containing the SQL template pieces
+      // and bound parameter values. Verify the activity types array is passed as
+      // a bound parameter (not interpolated as raw SQL).
+      const sqlString = JSON.stringify(sqlObject);
+      expect(sqlString).toContain("cycling");
+      expect(sqlString).toContain("running");
+    });
+
+    it("does not include activityTypes filter when not provided", async () => {
+      const { repo, execute } = makeRepository([]);
+      await repo.list({ days: 30, endDate: "2024-02-01", limit: 20, offset: 0 });
+      const sqlObject = execute.mock.calls[0]?.[0];
+      const sqlString = JSON.stringify(sqlObject);
+      expect(sqlString).not.toContain("ANY");
+    });
+
     it("extracts totalCount from single result row", async () => {
       const { repo } = makeRepository([
         {

@@ -12,6 +12,17 @@ export interface HealthKitSample {
   uuid: string;
 }
 
+/** A sub-activity within a workout (iOS 16+). Each represents a distinct
+ *  segment — e.g. a different exercise or interval within a single workout. */
+export interface WorkoutActivity {
+  uuid: string;
+  activityType: number; // HKWorkoutActivityType raw value
+  startDate: string;
+  endDate?: string;
+  /** Arbitrary metadata set by the recording app on this activity */
+  metadata?: Record<string, string | number>;
+}
+
 export interface WorkoutSample {
   uuid: string;
   workoutType: string;
@@ -22,6 +33,10 @@ export interface WorkoutSample {
   totalDistance: number | null; // meters
   sourceName: string;
   sourceBundle: string;
+  /** Arbitrary metadata set by the recording app on the workout */
+  metadata?: Record<string, string | number>;
+  /** Sub-activities within the workout (iOS 16+) */
+  workoutActivities?: WorkoutActivity[];
 }
 
 export interface SleepSample {

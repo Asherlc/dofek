@@ -18,6 +18,7 @@ vi.mock("echarts-for-react", () => ({
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => () => null,
+  useNavigate: () => vi.fn(),
 }));
 
 const mockPaceCurveData = {
@@ -67,6 +68,9 @@ vi.mock("../../lib/trpc.ts", () => ({
     running: {
       paceTrend: { useQuery: () => ({ data: mockPaceTrendData, isLoading: false }) },
       dynamics: { useQuery: () => ({ data: mockDynamicsData, isLoading: false }) },
+    },
+    activity: {
+      list: { useQuery: () => ({ data: { items: [], totalCount: 0 }, isLoading: false }) },
     },
   },
 }));

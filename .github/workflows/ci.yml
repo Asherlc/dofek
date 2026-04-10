@@ -1047,18 +1047,17 @@ jobs:
 
             This comment updates automatically on each PR push.
 
-  # ── Deploy (main only) ────────────────────────────────────────────────
-  # Deploy logic lives in .github/workflows/deploy.yml (also manually triggerable).
-  # CI detects what changed and triggers the appropriate deploy targets.
+  # ── Deploy Target Detection (main only) ───────────────────────────────
 
-  deploy:
-    name: Deploy
+  detect-deploy-targets:
+    name: Detect Deploy Targets
     needs: [ci-gate]
     if: always() && needs.ci-gate.result == 'success' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    permissions:
-      actions: write
-      contents: read
+    outputs:
+      ios: ${{ steps.detect.outputs.ios }}
+      infra_compose: ${{ steps.detect.outputs.infra_compose }}
+      cloudflare: ${{ steps.detect.outputs.cloudflare }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
@@ -1068,7 +1067,7 @@ jobs:
         run: |
           DIFF=$(git diff --name-only HEAD~1...HEAD)
 
-          # iOS native changes → ios deploy
+          # iOS native changes → iOS deploy
           echo "$DIFF" | grep -qE '^packages/mobile/(app\.json|app\.config\.ts|plugins/|targets/|native/|modules/.*/ios/)' \
             && echo "ios=true" >> "$GITHUB_OUTPUT" || echo "ios=false" >> "$GITHUB_OUTPUT"
 
@@ -1080,54 +1079,13 @@ jobs:
           echo "$DIFF" | grep -qE '^deploy/cloudflare/' \
             && echo "cloudflare=true" >> "$GITHUB_OUTPUT" || echo "cloudflare=false" >> "$GITHUB_OUTPUT"
 
-          # App code always deploys web + worker + OTA
-          echo "web=true" >> "$GITHUB_OUTPUT"
-          echo "worker=true" >> "$GITHUB_OUTPUT"
-          echo "ota=true" >> "$GITHUB_OUTPUT"
-      - name: Trigger deploys
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
-        with:
-          script: |
-            const targets = [];
-            if ('${{ steps.detect.outputs.ios }}' === 'true') targets.push('ios');
-            if ('${{ steps.detect.outputs.infra_compose }}' === 'true') targets.push('infra-compose');
-            if ('${{ steps.detect.outputs.cloudflare }}' === 'true') targets.push('cloudflare');
-            // Web, worker, OTA always deploy on main push
-            targets.push('web', 'worker', 'ota');
-
-            // Deduplicate — if all individual targets are selected, use 'all'
-            const allTargets = ['web', 'worker', 'ios', 'ota', 'infra-compose', 'cloudflare'];
-            const target = allTargets.every(t => targets.includes(t)) ? 'all' : null;
-
-            if (target === 'all') {
-              await github.rest.actions.createWorkflowDispatch({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                workflow_id: 'deploy.yml',
-                ref: 'main',
-                inputs: { target: 'all' },
-              });
-              console.log('Triggered deploy: all');
-            } else {
-              for (const t of [...new Set(targets)]) {
-                await github.rest.actions.createWorkflowDispatch({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  workflow_id: 'deploy.yml',
-                  ref: 'main',
-                  inputs: { target: t },
-                });
-                console.log(`Triggered deploy: ${t}`);
-              }
-            }
-
   docker:
     name: Docker (${{ matrix.target }})
     needs: [ci-gate]
     if: always() && needs.ci-gate.result == 'success' && github.ref == 'refs/heads/main'
     concurrency:
       group: docker
-      cancel-in-progress: false
+      cancel-in-progress: true
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
@@ -1169,3 +1127,100 @@ jobs:
             SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
           cache-from: type=gha,scope=${{ matrix.target }}
           cache-to: type=gha,mode=max,scope=${{ matrix.target }}
+
+  # ── Deploy (main only) ────────────────────────────────────────────────
+  # Deploy uses reusable workflows so CI and deploy run in one DAG.
+
+  deploy-ready:
+    name: Deploy Readiness
+    needs: [ci-gate, docker]
+    if: always() && needs.ci-gate.result == 'success' && needs.docker.result == 'success' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      latest: ${{ steps.latest.outputs.latest }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          fetch-depth: 1
+      - name: Verify commit is current main HEAD
+        id: latest
+        run: |
+          MAIN_HEAD_SHA=$(git ls-remote origin refs/heads/main | awk '{ print $1 }')
+          echo "main_head_sha=$MAIN_HEAD_SHA"
+          if [ "$MAIN_HEAD_SHA" = "$GITHUB_SHA" ]; then
+            echo "latest=true" >> "$GITHUB_OUTPUT"
+            echo "Deploying latest main commit: $GITHUB_SHA"
+          else
+            echo "latest=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping deploy for non-latest main commit: $GITHUB_SHA"
+          fi
+
+  deploy-web:
+    name: Deploy Web
+    needs: [deploy-ready]
+    if: always() && needs.deploy-ready.result == 'success' && needs.deploy-ready.outputs.latest == 'true'
+    uses: ./.github/workflows/deploy-web.yml
+    with:
+      commit_sha: ${{ github.sha }}
+    secrets: inherit
+
+  deploy-worker:
+    name: Deploy Worker
+    needs: [deploy-ready]
+    if: always() && needs.deploy-ready.result == 'success' && needs.deploy-ready.outputs.latest == 'true'
+    uses: ./.github/workflows/deploy-worker.yml
+    with:
+      commit_sha: ${{ github.sha }}
+    secrets: inherit
+
+  deploy-ota:
+    name: Deploy OTA
+    needs: [deploy-ready]
+    if: always() && needs.deploy-ready.result == 'success' && needs.deploy-ready.outputs.latest == 'true'
+    uses: ./.github/workflows/deploy-ota.yml
+    with:
+      commit_sha: ${{ github.sha }}
+    secrets: inherit
+
+  deploy-ios:
+    name: Deploy iOS
+    needs: [deploy-ready, detect-deploy-targets]
+    if: always() && needs.deploy-ready.result == 'success' && needs.detect-deploy-targets.result == 'success' && needs.deploy-ready.outputs.latest == 'true' && needs.detect-deploy-targets.outputs.ios == 'true'
+    uses: ./.github/workflows/deploy-ios.yml
+    with:
+      commit_sha: ${{ github.sha }}
+    secrets: inherit
+
+  deploy-infra-compose:
+    name: Deploy Infra Compose
+    needs: [deploy-ready, detect-deploy-targets]
+    if: always() && needs.deploy-ready.result == 'success' && needs.detect-deploy-targets.result == 'success' && needs.deploy-ready.outputs.latest == 'true' && needs.detect-deploy-targets.outputs.infra_compose == 'true'
+    uses: ./.github/workflows/deploy-infra-compose.yml
+    with:
+      commit_sha: ${{ github.sha }}
+    secrets: inherit
+
+  deploy-cloudflare:
+    name: Deploy Cloudflare
+    needs: [deploy-ready, detect-deploy-targets]
+    if: always() && needs.deploy-ready.result == 'success' && needs.detect-deploy-targets.result == 'success' && needs.deploy-ready.outputs.latest == 'true' && needs.detect-deploy-targets.outputs.cloudflare == 'true'
+    uses: ./.github/workflows/deploy-cloudflare.yml
+    with:
+      commit_sha: ${{ github.sha }}
+    secrets: inherit
+
+  cleanup-images:
+    name: Cleanup Images
+    needs: [deploy-ready, deploy-web, deploy-worker]
+    if: always() && needs.deploy-ready.outputs.latest == 'true' && (needs.deploy-web.result == 'success' || needs.deploy-worker.result == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prune unused images
+        env:
+          DOKPLOY_HOST: ${{ secrets.DOKPLOY_HOST }}
+          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+        run: |
+          curl -fsSL -X POST "${DOKPLOY_HOST}/api/trpc/settings.cleanUnusedImages" \
+            -H "x-api-key: ${DOKPLOY_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d '{"json":{}}' || echo "Image cleanup failed (non-fatal)"

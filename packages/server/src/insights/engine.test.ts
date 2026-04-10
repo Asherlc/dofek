@@ -13,14 +13,14 @@ import {
   getMonthlyCorrelations,
   type MonthlyAgg,
 } from "./monthly.ts";
-import {
-  type ActivityRow,
-  type BodyCompRow,
-  type DailyRow,
-  type Insight,
-  type InsightsConfig,
-  type NutritionRow,
-  type SleepRow,
+import type {
+  ActivityRow,
+  BodyCompRow,
+  DailyRow,
+  Insight,
+  InsightsConfig,
+  NutritionRow,
+  SleepRow,
 } from "./types.ts";
 
 const DEFAULT_CONFIG: InsightsConfig = { minDailyCalories: 1200 };

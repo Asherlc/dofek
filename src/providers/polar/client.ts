@@ -78,6 +78,85 @@ export class PolarClient {
     return this.#get<PolarNightlyRecharge[]>("/nightly-recharge");
   }
 
+  /**
+   * Discover the current user's Polar user ID via GET /v3/users.
+   * Returns null if the request fails (e.g. token is expired/revoked).
+   */
+  async getCurrentUserId(): Promise<string | null> {
+    const response = await this.#fetchFn(`${POLAR_API_BASE}/users`, {
+      headers: {
+        Authorization: `Bearer ${this.#accessToken}`,
+        Accept: "application/json",
+      },
+    });
+
+    if (!response.ok) return null;
+
+    const userData: { polar_user_id?: string | number } = await response.json();
+    return userData.polar_user_id != null ? String(userData.polar_user_id) : null;
+  }
+
+  /**
+   * Register the user with Polar AccessLink. Required after OAuth before
+   * data endpoints will work. The caller discovers the Polar user ID
+   * (e.g. via {@link getCurrentUserId}) and passes it as `polarUserId`.
+   *
+   * @see https://www.polar.com/accesslink-api/#register-user
+   */
+  async registerUser(polarUserId: string): Promise<void> {
+    const response = await this.#fetchFn(`${POLAR_API_BASE}/users`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.#accessToken}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({ "member-id": polarUserId }),
+    });
+
+    // 409 Conflict = user already registered — not an error
+    if (response.status === 409) return;
+
+    if (!response.ok) {
+      throw new Error(
+        `Polar user registration failed (${response.status}): ${await this.#readErrorBody(response)}`,
+      );
+    }
+  }
+
+  /**
+   * Deregister the user from Polar AccessLink. This revokes the access token
+   * and is required before a new token can be issued (Polar limits active
+   * tokens per app+user).
+   *
+   * @see https://www.polar.com/accesslink-api/#delete-user
+   */
+  async deregisterUser(polarUserId: string): Promise<void> {
+    const response = await this.#fetchFn(`${POLAR_API_BASE}/users/${polarUserId}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${this.#accessToken}`,
+        Accept: "application/json",
+      },
+    });
+
+    // 204 = success, 404 = already deregistered — both are fine
+    if (response.status === 204 || response.status === 404) return;
+
+    if (!response.ok) {
+      throw new Error(
+        `Polar user deregistration failed (${response.status}): ${await this.#readErrorBody(response)}`,
+      );
+    }
+  }
+
+  async #readErrorBody(response: Response): Promise<string> {
+    const contentType = response.headers.get("content-type") ?? "";
+    if (contentType.includes("text/html")) return "(HTML error page)";
+    const text = await response.text();
+    return text.length > 200 ? `${text.slice(0, 200)}…` : text;
+  }
+
   async downloadTcx(exerciseId: string): Promise<string> {
     const response = await this.#fetchFn(`${POLAR_API_BASE}/exercises/${exerciseId}/tcx`, {
       headers: {

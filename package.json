@@ -109,8 +109,8 @@
     "check:mobile-update": "./scripts/check-mobile-update.sh"
   },
   "dependencies": {
-    "@bull-board/api": "6.20.5",
-    "@bull-board/express": "6.20.5",
+    "@bull-board/api": "6.21.0",
+    "@bull-board/express": "6.21.0",
     "@dofek/heart-rate-variability": "workspace:*",
     "@dofek/scoring": "workspace:*",
     "@dofek/stats": "workspace:*",
@@ -130,7 +130,7 @@
     "@sentry/node": "10.45.0",
     "archiver": "7.0.1",
     "bullmq": "5.71.0",
-    "drizzle-orm": "0.38.4",
+    "drizzle-orm": "0.45.2",
     "eight-sleep-client": "workspace:*",
     "fit-file-parser": "2.3.3",
     "garmin-connect": "workspace:*",
@@ -141,7 +141,7 @@
     "whoop-whoop": "workspace:*",
     "winston": "3.19.0",
     "winston-transport": "4.9.0",
-    "yauzl": "3.2.0",
+    "yauzl": "3.3.0",
     "zod": "3.25.76",
     "zwift-client": "workspace:*"
   },
@@ -189,7 +189,10 @@
       "msgpackr-extract",
       "msw",
       "sharp"
-    ]
+    ],
+    "overrides": {
+      "axios": ">=1.15.0"
+    }
   },
   "packageManager": "pnpm@10.28.0+sha512.05df71d1421f21399e053fde567cea34d446fa02c76571441bfc1c7956e98e363088982d940465fd34480d4d90a0668bc12362f8aa88000a64e83d0b0e47be48"
 }

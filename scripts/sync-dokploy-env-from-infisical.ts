@@ -114,15 +114,14 @@ function getRequiredEnvironmentVariable(name: string): string {
 }
 
 async function loadInfisicalSecrets(environment: string): Promise<Map<string, string>> {
-  const infisicalToken = process.env.INFISICAL_TOKEN;
-  const infisicalCommandArguments = ["secrets", "--env", environment, "-o", "json", "--silent"];
-  if (infisicalToken && infisicalToken.length > 0) {
-    infisicalCommandArguments.push("--token", infisicalToken);
-  }
-
-  const { stdout } = await execFileAsync("infisical", infisicalCommandArguments, {
-    maxBuffer: 8 * 1024 * 1024,
-  });
+  // Use npx with a pinned version to avoid curl|bash supply-chain risk.
+  // INFISICAL_TOKEN is passed via env (inherited by the child process) rather than
+  // --token CLI arg, so it won't leak in error messages or /proc/cmdline.
+  const { stdout } = await execFileAsync(
+    "npx",
+    ["@infisical/cli@0.43.72", "secrets", "--env", environment, "-o", "json", "--silent"],
+    { maxBuffer: 8 * 1024 * 1024 },
+  );
 
   return parseInfisicalSecretsJson(stdout);
 }

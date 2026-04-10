@@ -1,4 +1,5 @@
 import { formatNumber } from "@dofek/format/format";
+import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { ActivityVariabilityTable } from "../../components/ActivityVariabilityTable.tsx";
@@ -7,6 +8,7 @@ import { ChartDescriptionTooltip } from "../../components/ChartDescriptionToolti
 import { EftpTrendChart } from "../../components/EftpTrendChart.tsx";
 import { PmcChart } from "../../components/PmcChart.tsx";
 import { PowerCurveChart } from "../../components/PowerCurveChart.tsx";
+import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
 import { VerticalAscentChart } from "../../components/VerticalAscentChart.tsx";
 import { chartColors, chartThemeColors } from "../../lib/chartTheme.ts";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
@@ -187,6 +189,10 @@ function CyclingTab() {
           onPageChange={setVariabilityOffset}
           loading={variability.isLoading}
         />
+      </Section>
+
+      <Section title="Recent Cycling Activities" subtitle="Recent rides and cycling workouts">
+        <RecentActivitiesSection activityTypes={CYCLING_ACTIVITY_TYPES} />
       </Section>
     </>
   );

@@ -2,6 +2,7 @@ import { Stack } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { WristModel } from "../components/WristModel";
+import { captureException } from "../lib/telemetry";
 import type { OrientationEvent } from "../modules/whoop-ble";
 import {
   addOrientationListener,
@@ -109,8 +110,8 @@ export default function ImuVisualizationScreen() {
       setStatus("disconnected");
       setUpdateRate(0);
       updateCountRef.current = 0;
-    } catch {
-      // Ignore stop errors — we're tearing down anyway
+    } catch (error: unknown) {
+      captureException(error, { context: "imu-visualization-stop" });
       setStatus("disconnected");
     }
   };

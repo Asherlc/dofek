@@ -11,7 +11,11 @@ vi.mock("../lib/typed-sql.ts", () => ({
 }));
 
 vi.mock("../logger.ts", () => ({
-  logger: { info: vi.fn(), warn: vi.fn() },
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}));
+
+vi.mock("@sentry/node", () => ({
+  captureException: vi.fn(),
 }));
 
 // Mock the DuckDB writeParquet function
@@ -34,6 +38,7 @@ vi.mock("@duckdb/node-bindings", () => ({
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import * as duckdb from "@duckdb/node-bindings";
+import * as Sentry from "@sentry/node";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import { processTrainingExportJob } from "./process-training-export-job.ts";
@@ -42,12 +47,16 @@ const mockExecuteWithSchema = vi.mocked(executeWithSchema);
 const mockWriteFileSync = vi.mocked(writeFileSync);
 const mockMkdirSync = vi.mocked(mkdirSync);
 const mockLoggerInfo = vi.mocked(logger.info);
+const mockLoggerError = vi.mocked(logger.error);
+const mockLoggerWarn = vi.mocked(logger.warn);
 const mockDuckDb = vi.mocked(duckdb);
+const mockCaptureException = vi.mocked(Sentry.captureException);
 
 function createMockJob(data: { since?: string; until?: string } = {}) {
   return {
     data,
     updateProgress: vi.fn().mockResolvedValue(undefined),
+    extendLock: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -183,8 +192,52 @@ describe("processTrainingExportJob", () => {
       "[training-export] Starting training data export (since=all, until=now)",
     );
     expect(mockLoggerInfo).toHaveBeenCalledWith(
-      "[training-export] Export complete: 3 total rows, 1 files",
+      expect.stringContaining(
+        "[training-export] Export complete: 3 total rows, 1 files, totalMs=0",
+      ),
     );
+  });
+
+  it("extends the job lock after COUNT query and each batch to prevent stalling", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-30T15:00:00.123Z"));
+
+    const job = createMockJob();
+    const db = createMockDb();
+
+    // 1 batch of 2 rows (below BATCH_SIZE, so only 1 fetch after COUNT)
+    mockExecuteWithSchema.mockResolvedValueOnce([{ count: "2" }]).mockResolvedValueOnce([
+      {
+        recorded_at: "2026-03-30T15:00:00Z",
+        user_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        provider_id: "wahoo",
+        device_id: null,
+        source_type: "ble",
+        channel: "heart_rate",
+        activity_id: null,
+        activity_type: null,
+        scalar: 142,
+        vector: null,
+      },
+      {
+        recorded_at: "2026-03-30T15:00:01Z",
+        user_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        provider_id: "wahoo",
+        device_id: null,
+        source_type: "ble",
+        channel: "power",
+        activity_id: null,
+        activity_type: null,
+        scalar: 250,
+        vector: null,
+      },
+    ]);
+
+    await processTrainingExportJob(job, db);
+
+    // extendLock called 3 times: after COUNT, after batch, before finalize
+    expect(job.extendLock).toHaveBeenCalledTimes(3);
+    expect(job.extendLock).toHaveBeenCalledWith(600_000);
   });
 
   it("handles zero rows gracefully", async () => {
@@ -239,6 +292,143 @@ describe("processTrainingExportJob", () => {
     // Should report start and completion
     expect(job.updateProgress).toHaveBeenCalledWith(expect.objectContaining({ percentage: 0 }));
     expect(job.updateProgress).toHaveBeenCalledWith(expect.objectContaining({ percentage: 100 }));
+  });
+
+  it("logs memory at key phases during export", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-30T15:00:00.123Z"));
+
+    const job = createMockJob();
+    const db = createMockDb();
+
+    mockExecuteWithSchema.mockResolvedValueOnce([{ count: "1" }]).mockResolvedValueOnce([
+      {
+        recorded_at: "2026-03-30T15:00:00Z",
+        user_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        provider_id: "wahoo",
+        device_id: null,
+        source_type: "ble",
+        channel: "heart_rate",
+        activity_id: null,
+        activity_type: null,
+        scalar: 142,
+        vector: null,
+      },
+    ]);
+
+    await processTrainingExportJob(job, db);
+
+    const infoCalls = mockLoggerInfo.mock.calls.map((call) => String(call[0]));
+
+    // Memory logged at: job-start, count-start, finalize-start, complete
+    expect(infoCalls.filter((msg) => msg.includes("memory phase="))).toHaveLength(4);
+    expect(infoCalls).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("memory phase=job-start"),
+        expect.stringContaining("memory phase=count-start"),
+        expect.stringContaining("memory phase=finalize-start"),
+        expect.stringContaining("memory phase=complete"),
+        expect.stringContaining("heapUsedMb="),
+        expect.stringContaining("rssMb="),
+      ]),
+    );
+  });
+
+  it("logs per-batch timing and row counts", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-30T15:00:00.123Z"));
+
+    const job = createMockJob();
+    const db = createMockDb();
+
+    mockExecuteWithSchema.mockResolvedValueOnce([{ count: "1" }]).mockResolvedValueOnce([
+      {
+        recorded_at: "2026-03-30T15:00:00Z",
+        user_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        provider_id: "wahoo",
+        device_id: null,
+        source_type: "ble",
+        channel: "heart_rate",
+        activity_id: null,
+        activity_type: null,
+        scalar: 142,
+        vector: null,
+      },
+    ]);
+
+    await processTrainingExportJob(job, db);
+
+    const infoCalls = mockLoggerInfo.mock.calls.map((call) => String(call[0]));
+
+    // With fake timers (no advancement), all durations are 0ms.
+    // This kills ArithmeticOperator mutants (Date.now() - start → Date.now() + start)
+    // because the mutant would produce a huge number instead of 0.
+    expect(infoCalls).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("COUNT query completed in 0ms"),
+        expect.stringContaining("totalRows=1"),
+        expect.stringContaining("DuckDB writer initialized in 0ms"),
+        expect.stringContaining("batch=1 fetchMs=0 rows=1"),
+        expect.stringContaining("exported=1/1 appendMs=0 fetchMs=0"),
+        expect.stringContaining("Parquet finalize completed in 0ms"),
+        expect.stringContaining("in 0ms (1 batches)"),
+      ]),
+    );
+  });
+
+  it("captures exception to Sentry and logs error on failure", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-30T15:00:00.123Z"));
+
+    const job = createMockJob();
+    const db = createMockDb();
+    const testError = new Error("DB connection lost");
+
+    mockExecuteWithSchema.mockRejectedValueOnce(testError);
+
+    await expect(processTrainingExportJob(job, db)).rejects.toThrow("DB connection lost");
+
+    expect(mockCaptureException).toHaveBeenCalledWith(testError, {
+      tags: { job: "training-export" },
+    });
+
+    const errorCalls = mockLoggerError.mock.calls.map((call) => String(call[0]));
+    // With fake timers, duration is 0ms — kills ArithmeticOperator mutants
+    expect(errorCalls).toEqual(
+      expect.arrayContaining([expect.stringContaining("Job failed after 0ms: DB connection lost")]),
+    );
+  });
+
+  it("warns but does not throw when extendLock fails", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-30T15:00:00.123Z"));
+
+    const job = createMockJob();
+    job.extendLock.mockRejectedValue(new Error("Redis connection lost"));
+    const db = createMockDb();
+
+    mockExecuteWithSchema.mockResolvedValueOnce([{ count: "1" }]).mockResolvedValueOnce([
+      {
+        recorded_at: "2026-03-30T15:00:00Z",
+        user_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        provider_id: "wahoo",
+        device_id: null,
+        source_type: "ble",
+        channel: "heart_rate",
+        activity_id: null,
+        activity_type: null,
+        scalar: 142,
+        vector: null,
+      },
+    ]);
+
+    // Should complete without throwing despite extendLock failure
+    await processTrainingExportJob(job, db);
+
+    const warnCalls = mockLoggerWarn.mock.calls.map((call) => String(call[0]));
+    expect(warnCalls).toEqual(
+      expect.arrayContaining([expect.stringContaining("Failed to extend lock")]),
+    );
   });
 
   it("defaults count to zero when count query returns no rows", async () => {

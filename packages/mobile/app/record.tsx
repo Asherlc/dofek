@@ -18,6 +18,7 @@ import {
 } from "../lib/activity-recording";
 import { createInertialMeasurementUnitService } from "../lib/inertial-measurement-unit-service";
 import { createLocationAdapter } from "../lib/location-service";
+import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import {
   isAccelerometerRecordingAvailable,
@@ -189,8 +190,8 @@ export default function RecordScreen() {
         activityNotes.trim() || null,
       );
       router.replace(`/activity/${activityId}`);
-    } catch {
-      // Error state handled by recorder
+    } catch (error: unknown) {
+      captureException(error, { context: "record-stop" });
     }
   }, [recorder, activityName, activityNotes, router]);
 

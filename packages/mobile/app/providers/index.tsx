@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { useAuth } from "../../lib/auth-context";
 import { importSharedFile, type ShareImportProgress } from "../../lib/share-import";
+import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { useRefresh } from "../../lib/useRefresh";
 import { colors } from "../../theme";
@@ -26,8 +27,14 @@ import {
 } from "./provider-card.tsx";
 import { styles } from "./styles.ts";
 
-function readBlobFromFileUri(fileUri: string): Promise<Blob> {
-  return Promise.resolve(new ExpoFile(fileUri));
+async function readBlobFromFileUri(fileUri: string): Promise<Blob> {
+  const file = new ExpoFile(fileUri);
+  if (!file.exists) {
+    const error = new Error(`Shared file does not exist: ${fileUri} (resolved: ${file.uri})`);
+    throw error;
+  }
+  const bytes = await file.bytes();
+  return new Blob([bytes], { type: file.type || "application/octet-stream" });
 }
 
 export default function ProvidersScreen() {
@@ -88,7 +95,8 @@ export default function ProvidersScreen() {
         let status: Awaited<ReturnType<typeof trpcUtils.sync.syncStatus.fetch>>;
         try {
           status = await trpcUtils.sync.syncStatus.fetch({ jobId }, { staleTime: 0 });
-        } catch {
+        } catch (error: unknown) {
+          captureException(error, { context: "sync-status-poll" });
           cleanup();
           return;
         }
@@ -193,6 +201,7 @@ export default function ProvidersScreen() {
         );
         trpcUtils.invalidate();
       } catch (error: unknown) {
+        captureException(error, { context: "share-import", fileUri: sharedFileUri });
         setSharedImportState({
           status: "error",
           progress: 0,
@@ -212,7 +221,8 @@ export default function ProvidersScreen() {
           sinceDays: fullSync ? undefined : 7,
         });
         await pollJob(jobId, [providerId]);
-      } catch {
+      } catch (error: unknown) {
+        captureException(error, { context: "sync-provider" });
         setSyncingProviders((prev) => {
           const next = new Set(prev);
           next.delete(providerId);
@@ -256,7 +266,8 @@ export default function ProvidersScreen() {
         } else {
           await pollJob(result.jobId, ids);
         }
-      } catch {
+      } catch (error: unknown) {
+        captureException(error, { context: "sync-all" });
         setSyncingProviders(new Set());
         setAnySyncing(false);
       }

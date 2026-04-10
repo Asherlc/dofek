@@ -26,6 +26,7 @@ import {
 import { ProviderLogo } from "../../components/ProviderLogo";
 import { ProviderStatsBreakdown } from "../../components/ProviderStatsBreakdown";
 import { useAuth } from "../../lib/auth-context";
+import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { useRefresh } from "../../lib/useRefresh";
 import { colors } from "../../theme";
@@ -694,7 +695,8 @@ export default function ProviderDetailScreen() {
         let status: Awaited<ReturnType<typeof trpcUtils.sync.syncStatus.fetch>>;
         try {
           status = await trpcUtils.sync.syncStatus.fetch({ jobId }, { staleTime: 0 });
-        } catch {
+        } catch (error: unknown) {
+          captureException(error, { context: "provider-sync-poll" });
           pollingRef.current = false;
           setIsSyncing(false);
           setSyncMessage("Sync failed");
@@ -744,7 +746,8 @@ export default function ProviderDetailScreen() {
           sinceDays,
         });
         await pollSyncJob(jobId);
-      } catch {
+      } catch (error: unknown) {
+        captureException(error, { context: "provider-sync-start" });
         setIsSyncing(false);
         setSyncMessage("Failed to start sync");
       }
@@ -768,7 +771,8 @@ export default function ProviderDetailScreen() {
               trpcUtils.sync.providers.invalidate();
               trpcUtils.sync.providerStats.invalidate();
               router.back();
-            } catch {
+            } catch (error: unknown) {
+              captureException(error, { context: "provider-disconnect" });
               Alert.alert("Error", "Failed to disconnect provider");
             }
           },

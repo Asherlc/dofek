@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { captureException } from "../lib/telemetry";
 import {
   addNotificationListener,
   type BleNotification,
@@ -138,13 +139,15 @@ export default function BleProbeScreen() {
               try {
                 await subscribe("0003");
                 addLog("  0003 subscribed");
-              } catch {
+              } catch (error: unknown) {
+                captureException(error, { context: "ble-probe-subscribe" });
                 addLog("  0003 failed");
               }
               try {
                 await subscribe("0005");
                 addLog("  0005 subscribed");
-              } catch {
+              } catch (error: unknown) {
+                captureException(error, { context: "ble-probe-subscribe" });
                 addLog("  0005 failed");
               }
               addLog("Ready!");
@@ -248,7 +251,8 @@ export default function BleProbeScreen() {
               addLog(`whoop-ble frames: ${stats.totalFramesParsed}`);
               addLog(`whoop-ble isNotifying: ${stats.isNotifying}`);
               addLog(`whoop-ble buffered: ${whoopBle.getBufferedSampleCount()}`);
-            } catch {
+            } catch (error: unknown) {
+              captureException(error, { context: "ble-probe-whoop" });
               addLog("whoop-ble module not available", "error");
             }
             break;

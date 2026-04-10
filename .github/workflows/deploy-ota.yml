@@ -1,0 +1,43 @@
+name: Deploy OTA
+
+on:
+  workflow_call:
+    inputs:
+      commit_sha:
+        description: "Commit SHA to deploy"
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: "Commit SHA to deploy (defaults to workflow ref HEAD)"
+        required: false
+        type: string
+
+jobs:
+  ota:
+    name: Deploy OTA
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          ref: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Wait for OTA server
+        run: |
+          for attempt in $(seq 1 30); do
+            status=$(curl -s -o /dev/null -w "%{http_code}" https://ota.dofek.asherlc.com/manifest)
+            if [ "$status" -ge 200 ] && [ "$status" -lt 500 ]; then
+              echo "OTA server is healthy"
+              exit 0
+            fi
+            echo "Waiting for OTA server... (attempt $attempt/30)"
+            sleep 2
+          done
+          echo "OTA server did not become healthy in time"
+          exit 1
+      - name: Publish OTA update
+        working-directory: packages/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: npx eoas@2.3.16 publish --branch main --platform ios --nonInteractive
