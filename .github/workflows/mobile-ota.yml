@@ -50,24 +50,41 @@ jobs:
             --branch "pr-$PR_NUMBER" \
             --non-interactive 2>/dev/null || true
 
+      - name: Generate QR code and comment body
+        env:
+          PR_NUMBER: ${{ github.event.number }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          sudo apt-get install -y qrencode > /dev/null 2>&1
+          QR=$(qrencode -t UTF8 "dofek://preview/pr-$PR_NUMBER")
+          cat > /tmp/mobile-preview-comment.md <<COMMENT_BODY
+          <!-- mobile-preview-comment -->
+          ## Mobile Preview
+
+          **Scan to open on device:**
+          \`\`\`
+          $QR
+          \`\`\`
+
+          | | |
+          |---|---|
+          | **Channel** | \`pr-$PR_NUMBER\` |
+          | **Deep Link** | \`dofek://preview/pr-$PR_NUMBER\` |
+          | **Commit** | $COMMIT_SHA |
+
+          **To test on device:**
+          1. Build and install the preview client: \`PREVIEW_CHANNEL=pr-$PR_NUMBER npx expo prebuild --clean -p ios\`
+          2. Or tap deep link on an existing preview build: \`dofek://preview/pr-$PR_NUMBER\`
+
+          > Each PR gets its own channel. Build a preview client with \`PREVIEW_CHANNEL=pr-{N}\` to test.
+          COMMENT_BODY
+
       - name: Comment PR with Mobile Preview Info
         uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043 # v4
         with:
           issue-number: ${{ github.event.number }}
-          body: |
-            ## Mobile Preview
-
-            | | |
-            |---|---|
-            | **Channel** | `pr-${{ github.event.number }}` |
-            | **Deep Link** | `dofek://preview/pr-${{ github.event.number }}` |
-            | **Commit** | ${{ github.sha }} |
-
-            **To test on device:**
-            1. Build and install the preview client: `PREVIEW_CHANNEL=pr-${{ github.event.number }} npx expo prebuild --clean -p ios`
-            2. Or tap deep link on an existing preview build: `dofek://preview/pr-${{ github.event.number }}`
-
-            > Each PR gets its own channel. Build a preview client with `PREVIEW_CHANNEL=pr-{N}` to test.
+          body-includes: <!-- mobile-preview-comment -->
+          body-path: /tmp/mobile-preview-comment.md
 
   cleanup:
     name: Cleanup Mobile OTA
