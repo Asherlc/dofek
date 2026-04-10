@@ -174,6 +174,20 @@ vi.mock("../../lib/telemetry", () => ({
   captureException: vi.fn(),
 }));
 
+vi.mock("../../modules/health-kit", () => ({
+  isAvailable: () => true,
+  getRequestStatus: vi.fn().mockResolvedValue("unnecessary"),
+  queryDailyStatistics: vi.fn().mockResolvedValue([]),
+  queryQuantitySamples: vi.fn().mockResolvedValue([]),
+  queryWorkouts: vi.fn().mockResolvedValue([]),
+  querySleepSamples: vi.fn().mockResolvedValue([]),
+  queryWorkoutRoutes: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock("../../lib/health-kit-sync", () => ({
+  syncHealthKitToServer: vi.fn().mockResolvedValue({ inserted: 0, errors: [] }),
+}));
+
 vi.mock("@dofek/format/format", () => ({
   formatRelativeTime: (date: string) => `${date} ago`,
 }));
@@ -212,6 +226,14 @@ vi.mock("../../lib/trpc", () => ({
     },
     useUtils: () => ({
       invalidate: mockInvalidate,
+      client: {
+        healthKitSync: {
+          pushQuantitySamples: { mutate: vi.fn().mockResolvedValue({ inserted: 0, errors: [] }) },
+          pushWorkouts: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
+          pushWorkoutRoutes: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
+          pushSleepSamples: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
+        },
+      },
       sync: {
         providers: { invalidate: mockInvalidate },
         providerStats: { invalidate: mockInvalidate },
@@ -603,7 +625,8 @@ describe("ProvidersScreen", () => {
     const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
-    expect(screen.getByText("Full sync")).toBeTruthy();
+    // Apple Health + connected provider both have Full sync
+    expect(screen.getAllByText("Full sync").length).toBeGreaterThanOrEqual(2);
   });
 
   it("does not render Full sync link for disconnected providers", async () => {
@@ -615,7 +638,9 @@ describe("ProvidersScreen", () => {
     const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
-    expect(screen.queryByText("Full sync")).toBeNull();
+    // Only Apple Health should have a Full sync link, not the disconnected provider
+    const fullSyncLinks = screen.queryAllByText("Full sync");
+    expect(fullSyncLinks.length).toBeLessThanOrEqual(1);
   });
 
   it("renders Full Sync All button alongside Sync All", async () => {
@@ -636,7 +661,9 @@ describe("ProvidersScreen", () => {
     const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
-    fireEvent.click(screen.getByText("Sync"));
+    // Apple Health card also has a "Sync" button; pick the Wahoo one (second)
+    const syncButtons = screen.getAllByText("Sync");
+    fireEvent.click(syncButtons[syncButtons.length - 1]);
 
     await waitFor(() => {
       expect(mockSyncMutateAsync).toHaveBeenCalledWith({
@@ -656,7 +683,9 @@ describe("ProvidersScreen", () => {
     const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
-    fireEvent.click(screen.getByText("Full sync"));
+    // Apple Health card also has a "Full sync" link; pick the Wahoo one (second)
+    const fullSyncLinks = screen.getAllByText("Full sync");
+    fireEvent.click(fullSyncLinks[fullSyncLinks.length - 1]);
 
     await waitFor(() => {
       expect(mockSyncMutateAsync).toHaveBeenCalledWith({
@@ -807,9 +836,14 @@ describe("ProvidersScreen", () => {
     render(<ProvidersScreen />);
 
     expect(screen.getByText("Strong")).toBeTruthy();
-    expect(screen.queryByText("Sync")).toBeNull();
-    expect(screen.queryByText("Full sync")).toBeNull();
     expect(screen.getByText("Import only")).toBeTruthy();
+    // Only Apple Health should have Sync/Full sync buttons, not the import-only provider
+    // Apple Health is always shown when HealthKit is available (mocked to true)
+    const syncButtons = screen.queryAllByText("Sync");
+    const fullSyncLinks = screen.queryAllByText("Full sync");
+    // At most 1 of each from the Apple Health card
+    expect(syncButtons.length).toBeLessThanOrEqual(1);
+    expect(fullSyncLinks.length).toBeLessThanOrEqual(1);
   });
 
   it("excludes import-only providers from Sync All", async () => {

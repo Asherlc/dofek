@@ -12,10 +12,21 @@ import {
   View,
 } from "react-native";
 import { useAuth } from "../../lib/auth-context";
+import type { SyncTrpcClient } from "../../lib/health-kit-sync";
+import { syncHealthKitToServer } from "../../lib/health-kit-sync";
 import { importSharedFile, type ShareImportProgress } from "../../lib/share-import";
 import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { useRefresh } from "../../lib/useRefresh";
+import {
+  getRequestStatus,
+  isAvailable as isHealthKitAvailable,
+  queryDailyStatistics,
+  queryQuantitySamples,
+  querySleepSamples,
+  queryWorkoutRoutes,
+  queryWorkouts,
+} from "../../modules/health-kit";
 import { colors } from "../../theme";
 import { CredentialAuthModal, GarminAuthModal, WhoopAuthModal } from "./auth-modals.tsx";
 import {
@@ -68,6 +79,62 @@ export default function ProvidersScreen() {
   const importedSharedUris = useRef(new Set<string>());
 
   const sharedFileUri = Array.isArray(params.sharedFile) ? params.sharedFile[0] : params.sharedFile;
+
+  // HealthKit sync state
+  const [healthKitSyncing, setHealthKitSyncing] = useState(false);
+  const [healthKitProgress, setHealthKitProgress] = useState<string | undefined>();
+  const trpcClient = trpcUtils.client;
+
+  const handleHealthKitSync = useCallback(
+    async (fullSync = false) => {
+      setHealthKitSyncing(true);
+      setHealthKitProgress("Starting HealthKit sync...");
+      try {
+        const status = await getRequestStatus();
+        if (status !== "unnecessary") {
+          setHealthKitProgress("HealthKit permissions not granted");
+          setHealthKitSyncing(false);
+          return;
+        }
+        const syncClient: SyncTrpcClient = {
+          healthKitSync: {
+            pushQuantitySamples: {
+              mutate: (input) => trpcClient.healthKitSync.pushQuantitySamples.mutate(input),
+            },
+            pushWorkouts: {
+              mutate: (input) => trpcClient.healthKitSync.pushWorkouts.mutate(input),
+            },
+            pushWorkoutRoutes: {
+              mutate: (input) => trpcClient.healthKitSync.pushWorkoutRoutes.mutate(input),
+            },
+            pushSleepSamples: {
+              mutate: (input) => trpcClient.healthKitSync.pushSleepSamples.mutate(input),
+            },
+          },
+        };
+        const result = await syncHealthKitToServer({
+          trpcClient: syncClient,
+          healthKit: {
+            queryDailyStatistics,
+            queryQuantitySamples,
+            queryWorkouts,
+            querySleepSamples,
+            queryWorkoutRoutes,
+          },
+          syncRangeDays: fullSync ? null : 7,
+          onProgress: setHealthKitProgress,
+        });
+        setHealthKitProgress(`Done — ${result.inserted} records synced`);
+        trpcUtils.invalidate();
+      } catch (error: unknown) {
+        captureException(error, { context: "healthkit-manual-sync" });
+        setHealthKitProgress(error instanceof Error ? error.message : "Sync failed");
+      } finally {
+        setHealthKitSyncing(false);
+      }
+    },
+    [trpcClient, trpcUtils],
+  );
 
   const pollJob = useCallback(
     async (jobId: string, providerIds: string[]) => {
@@ -300,6 +367,8 @@ export default function ProvidersScreen() {
     [serverUrl, sessionToken, trpcUtils],
   );
 
+  const healthKitAvailable = isHealthKitAvailable();
+
   const providerList: Provider[] = (providers.data ?? []).map((p) => ({
     id: p.id,
     label: p.name,
@@ -407,7 +476,27 @@ export default function ProvidersScreen() {
 
       {/* Data Sources */}
       <Text style={styles.sectionTitle}>Data Sources</Text>
-      {providerList.length === 0 ? (
+      {healthKitAvailable && (
+        <ProviderCard
+          provider={{
+            id: "apple_health",
+            label: "Apple Health",
+            enabled: true,
+            authStatus: "connected",
+            authType: "none",
+            lastSyncAt: null,
+            importOnly: false,
+          }}
+          stats={statsMap.apple_health}
+          syncing={healthKitSyncing}
+          syncProgress={healthKitSyncing ? { message: healthKitProgress } : undefined}
+          onSync={() => handleHealthKitSync()}
+          onFullSync={() => handleHealthKitSync(true)}
+          onConnect={() => {}}
+          onPress={() => router.push("/providers/apple_health")}
+        />
+      )}
+      {providerList.length === 0 && !healthKitAvailable ? (
         <View style={styles.card}>
           <Text style={styles.emptyText}>No data sources configured.</Text>
         </View>
