@@ -180,6 +180,161 @@ export function parseStrongCsv(csvText: string): StrongWorkoutGroup[] {
 }
 
 // ============================================================
+// Single-workout text format parsing
+// ============================================================
+
+const MONTH_NAMES: Record<string, number> = {
+  January: 0,
+  February: 1,
+  March: 2,
+  April: 3,
+  May: 4,
+  June: 5,
+  July: 6,
+  August: 7,
+  September: 8,
+  October: 9,
+  November: 10,
+  December: 11,
+};
+
+const STRONG_CSV_HEADER_PREFIX = "Date,Workout Name,Duration,Exercise Name,Set Order";
+
+/**
+ * Detect whether the input is Strong's CSV export (vs the single-workout text share format).
+ */
+export function isStrongCsvFormat(text: string): boolean {
+  const cleaned = text.replace(/^\uFEFF/, "");
+  return cleaned.startsWith(STRONG_CSV_HEADER_PREFIX);
+}
+
+/**
+ * Parse the natural-language date from Strong's text share format.
+ * Example: "Friday, April 10, 2026 at 16:39"
+ */
+export function parseStrongTextDate(dateStr: string): Date {
+  const match = dateStr.match(/^\w+,\s+(\w+)\s+(\d{1,2}),\s+(\d{4})\s+at\s+(\d{1,2}):(\d{2})$/);
+  if (!match) return new Date(Number.NaN);
+
+  const [, monthName = "", dayStr = "0", yearStr = "0", hourStr = "0", minuteStr = "0"] = match;
+  const month = MONTH_NAMES[monthName];
+  if (month === undefined) return new Date(Number.NaN);
+
+  return new Date(
+    Number.parseInt(yearStr, 10),
+    month,
+    Number.parseInt(dayStr, 10),
+    Number.parseInt(hourStr, 10),
+    Number.parseInt(minuteStr, 10),
+  );
+}
+
+// Set line with weight: "Set 1: 50 lb × 13" or "Set 1: 50 lb × 13 [Failure]"
+const WEIGHTED_SET_RE = /^Set\s+(\d+):\s+([\d.]+)\s+(lb|kg)\s+×\s+(\d+)(?:\s+\[.*\])?$/;
+// Bodyweight set: "Set 1: 8 reps" or "Set 1: 8 reps [Failure]"
+const BODYWEIGHT_SET_RE = /^Set\s+(\d+):\s+(\d+)\s+reps(?:\s+\[.*\])?$/;
+
+export interface StrongTextParseResult {
+  groups: StrongWorkoutGroup[];
+  weightUnit: "kg" | "lbs";
+}
+
+/**
+ * Parse Strong's single-workout text share format into the same StrongWorkoutGroup structure
+ * used by the CSV parser, enabling a unified import pipeline.
+ */
+export function parseStrongText(text: string): StrongTextParseResult {
+  const lines = text.split(/\r?\n/);
+  if (lines.length < 2) return { groups: [], weightUnit: "kg" };
+
+  const workoutName = lines[0]?.trim() ?? "";
+  const dateLine = lines[1]?.trim() ?? "";
+  const parsedDate = parseStrongTextDate(dateLine);
+
+  if (Number.isNaN(parsedDate.getTime())) return { groups: [], weightUnit: "kg" };
+
+  // Format date to match CSV parser output: "YYYY-MM-DD HH:MM:SS"
+  const year = parsedDate.getFullYear();
+  const month = String(parsedDate.getMonth() + 1).padStart(2, "0");
+  const day = String(parsedDate.getDate()).padStart(2, "0");
+  const hours = String(parsedDate.getHours()).padStart(2, "0");
+  const minutes = String(parsedDate.getMinutes()).padStart(2, "0");
+  const dateString = `${year}-${month}-${day} ${hours}:${minutes}:00`;
+
+  const sets: StrongCsvRow[] = [];
+  let currentExercise = "";
+  let detectedUnit: "kg" | "lbs" | null = null;
+
+  for (let index = 2; index < lines.length; index++) {
+    const line = lines[index]?.trim() ?? "";
+    if (line === "") continue;
+
+    // Skip share URLs
+    if (line.startsWith("http://") || line.startsWith("https://")) continue;
+
+    // Try to match a weighted set line
+    const weightedMatch = line.match(WEIGHTED_SET_RE);
+    if (weightedMatch) {
+      const [, setOrderStr = "0", weightStr = "0", unit = "lb", repsStr = "0"] = weightedMatch;
+      if (unit === "lb" && detectedUnit === null) detectedUnit = "lbs";
+      if (unit === "kg" && detectedUnit === null) detectedUnit = "kg";
+
+      sets.push({
+        date: dateString,
+        workoutName,
+        duration: "",
+        exerciseName: currentExercise,
+        setOrder: Number.parseInt(setOrderStr, 10),
+        weight: Number.parseFloat(weightStr),
+        reps: Number.parseInt(repsStr, 10),
+        distance: null,
+        seconds: null,
+        notes: null,
+        workoutNotes: null,
+        rpe: null,
+      });
+      continue;
+    }
+
+    // Try to match a bodyweight set line
+    const bodyweightMatch = line.match(BODYWEIGHT_SET_RE);
+    if (bodyweightMatch) {
+      const [, setOrderStr = "0", repsStr = "0"] = bodyweightMatch;
+      sets.push({
+        date: dateString,
+        workoutName,
+        duration: "",
+        exerciseName: currentExercise,
+        setOrder: Number.parseInt(setOrderStr, 10),
+        weight: null,
+        reps: Number.parseInt(repsStr, 10),
+        distance: null,
+        seconds: null,
+        notes: null,
+        workoutNotes: null,
+        rpe: null,
+      });
+      continue;
+    }
+
+    // Not a set line and not empty/URL — must be an exercise name
+    currentExercise = line;
+  }
+
+  if (sets.length === 0) return { groups: [], weightUnit: "kg" };
+
+  const group: StrongWorkoutGroup = {
+    date: dateString,
+    workoutName,
+    duration: "",
+    workoutNotes: null,
+    sets,
+  };
+
+  return { groups: [group], weightUnit: detectedUnit ?? "kg" };
+}
+
+// ============================================================
 // Import function
 // ============================================================
 
@@ -195,7 +350,16 @@ export async function importStrongCsv(
 
   await ensureProvider(db, STRONG_PROVIDER_ID, "Strong", undefined, userId);
 
-  const groups = parseStrongCsv(csvText);
+  // Auto-detect format: CSV export vs single-workout text share
+  let groups: StrongWorkoutGroup[];
+  let effectiveWeightUnit = weightUnit;
+  if (isStrongCsvFormat(csvText)) {
+    groups = parseStrongCsv(csvText);
+  } else {
+    const textResult = parseStrongText(csvText);
+    groups = textResult.groups;
+    effectiveWeightUnit = textResult.weightUnit;
+  }
   const exerciseCache = new Map<string, string>();
 
   for (const group of groups) {
@@ -290,7 +454,7 @@ export async function importStrongCsv(
 
         // Convert weight
         let weightKg = csvRow.weight;
-        if (weightKg !== null && weightUnit === "lbs") {
+        if (weightKg !== null && effectiveWeightUnit === "lbs") {
           weightKg = Math.round(weightKg * 0.453592 * 1000) / 1000;
         }
 
