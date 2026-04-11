@@ -36,8 +36,3 @@ variable "cloudflare_account_id" {
   description = "Cloudflare account ID"
   type        = string
 }
-
-variable "postgres_password" {
-  type      = string
-  sensitive = true
-}
