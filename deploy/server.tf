@@ -40,9 +40,9 @@ resource "hcloud_server" "dofek" {
     otel_collector_content = file("${path.module}/otel-collector-config.yaml")
   })
 
-  # ssh_keys and user_data are immutable (ForceNew). Ignore changes to
-  # prevent Terraform from destroying the running server when cloud-init
-  # or key config drifts. To reprovision, taint the resource explicitly.
+  # ssh_keys, user_data, and image are immutable (ForceNew). Ignore changes
+  # to prevent Terraform from destroying the running server when cloud-init,
+  # key config, or base image drifts. To reprovision, taint the resource.
   lifecycle {
     ignore_changes = [ssh_keys, user_data, image]
   }
