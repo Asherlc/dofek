@@ -601,11 +601,12 @@ describe("PolarProvider.authSetup", () => {
     expect(setup.oauthConfig.tokenAuthMethod).toBe("basic");
   });
 
-  it("exchangeCode exchanges code and registers user with Polar AccessLink", async () => {
+  it("exchangeCode uses x_user_id from token response to register with AccessLink", async () => {
     process.env.POLAR_CLIENT_ID = "polar-id";
     process.env.POLAR_CLIENT_SECRET = "polar-secret";
 
     const calledUrls: string[] = [];
+    const registrationBodies: unknown[] = [];
     const mockFetch: typeof globalThis.fetch = async (
       url: string | URL | Request,
       init?: RequestInit,
@@ -613,7 +614,7 @@ describe("PolarProvider.authSetup", () => {
       const urlString = String(url);
       calledUrls.push(`${init?.method ?? "GET"} ${urlString}`);
 
-      // Token exchange
+      // Token exchange — includes x_user_id
       if (urlString.startsWith("https://polarremote.com/")) {
         return Response.json({
           access_token: "new-access-token",
@@ -623,13 +624,9 @@ describe("PolarProvider.authSetup", () => {
         });
       }
 
-      // GET /v3/users — discover user ID
-      if (urlString.endsWith("/v3/users") && (!init?.method || init.method === "GET")) {
-        return Response.json({ polar_user_id: 99887766 });
-      }
-
       // POST /v3/users — register user
       if (urlString.endsWith("/v3/users") && init?.method === "POST") {
+        if (init.body) registrationBodies.push(JSON.parse(String(init.body)));
         return new Response(null, { status: 200 });
       }
 
@@ -641,7 +638,10 @@ describe("PolarProvider.authSetup", () => {
     const tokens = await setup.exchangeCode("oauth-code");
 
     expect(tokens.accessToken).toBe("new-access-token");
+    // Should register using x_user_id, not by calling GET /v3/users
     expect(calledUrls).toContain("POST https://www.polaraccesslink.com/v3/users");
+    expect(calledUrls).not.toContain("GET https://www.polaraccesslink.com/v3/users");
+    expect(registrationBodies[0]).toEqual({ "member-id": "99887766" });
   });
 
   it("exchangeCode succeeds even if registration fails", async () => {
@@ -650,17 +650,19 @@ describe("PolarProvider.authSetup", () => {
 
     const mockFetch: typeof globalThis.fetch = async (
       url: string | URL | Request,
+      init?: RequestInit,
     ): Promise<Response> => {
       const urlString = String(url);
       if (urlString.startsWith("https://polarremote.com/")) {
         return Response.json({
           access_token: "new-access-token",
           expires_in: 3600,
+          x_user_id: 12345,
         });
       }
-      // GET /v3/users fails
-      if (urlString.endsWith("/v3/users")) {
-        return new Response("Unauthorized", { status: 401 });
+      // POST /v3/users — registration fails
+      if (urlString.endsWith("/v3/users") && init?.method === "POST") {
+        return new Response("Server Error", { status: 500 });
       }
       return Response.json([]);
     };
@@ -671,6 +673,37 @@ describe("PolarProvider.authSetup", () => {
 
     // Should still return the tokens even if registration fails
     expect(tokens.accessToken).toBe("new-access-token");
+  });
+
+  it("exchangeCode succeeds when token response is missing x_user_id", async () => {
+    process.env.POLAR_CLIENT_ID = "polar-id";
+    process.env.POLAR_CLIENT_SECRET = "polar-secret";
+
+    const calledUrls: string[] = [];
+    const mockFetch: typeof globalThis.fetch = async (
+      url: string | URL | Request,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      const urlString = String(url);
+      calledUrls.push(`${init?.method ?? "GET"} ${urlString}`);
+
+      if (urlString.startsWith("https://polarremote.com/")) {
+        return Response.json({
+          access_token: "new-access-token",
+          expires_in: 3600,
+          // No x_user_id
+        });
+      }
+      return Response.json([]);
+    };
+
+    const provider = new PolarProvider(mockFetch);
+    const setup = provider.authSetup();
+    const tokens = await setup.exchangeCode("oauth-code");
+
+    expect(tokens.accessToken).toBe("new-access-token");
+    // Should not attempt registration without x_user_id
+    expect(calledUrls).not.toContain("POST https://www.polaraccesslink.com/v3/users");
   });
 
   it("revokeExistingTokens deregisters user to free token slot", async () => {

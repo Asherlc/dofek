@@ -1,4 +1,4 @@
-import { exchangeCodeForTokens } from "../../auth/oauth.ts";
+import type { TokenSet } from "../../auth/oauth.ts";
 import type { SyncDatabase } from "../../db/index.ts";
 import { logger } from "../../logger.ts";
 import type {
@@ -9,9 +9,12 @@ import type {
   WebhookProvider,
 } from "../types.ts";
 import { PolarClient } from "./client.ts";
-import { POLAR_API_BASE, polarOAuthConfig } from "./oauth.ts";
+import { POLAR_API_BASE, POLAR_TOKEN_URL, polarOAuthConfig } from "./oauth.ts";
 import { PolarSyncService } from "./sync-service.ts";
 import { PolarWebhookService } from "./webhook-service.ts";
+
+/** Default expiry when Polar omits expires_in — 1 year (conservative). */
+const DEFAULT_EXPIRES_IN_SECONDS = 365 * 24 * 60 * 60;
 
 export class PolarProvider implements WebhookProvider {
   readonly id = "polar";
@@ -67,19 +70,50 @@ export class PolarProvider implements WebhookProvider {
     return {
       oauthConfig: config,
       exchangeCode: async (code) => {
-        const tokens = await exchangeCodeForTokens(config, code, fetchFn);
+        // Inline token exchange to capture Polar's x_user_id (needed for
+        // AccessLink registration). The shared exchangeCodeForTokens drops it.
+        const params = new URLSearchParams({
+          grant_type: "authorization_code",
+          code,
+          redirect_uri: config.redirectUri,
+        });
+        const response = await fetchFn(POLAR_TOKEN_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            Authorization: `Basic ${btoa(`${config.clientId}:${config.clientSecret}`)}`,
+          },
+          body: params.toString(),
+        });
+        if (!response.ok) {
+          throw new Error(
+            `Polar token exchange failed (${response.status}): ${await response.text()}`,
+          );
+        }
+
+        const data: Record<string, unknown> = await response.json();
+        const expiresIn =
+          typeof data.expires_in === "number" ? data.expires_in : DEFAULT_EXPIRES_IN_SECONDS;
+        const tokens: TokenSet = {
+          accessToken: String(data.access_token),
+          refreshToken: typeof data.refresh_token === "string" ? data.refresh_token : null,
+          expiresAt: new Date(Date.now() + expiresIn * 1000),
+          scopes: typeof data.scope === "string" ? data.scope : null,
+        };
 
         // Polar AccessLink requires user registration (POST /v3/users)
-        // after OAuth before data endpoints will work. Discover the Polar
-        // user ID via GET /v3/users, then register.
+        // after OAuth before data endpoints will work. The x_user_id from
+        // the token response identifies the Polar user.
+        const polarUserId = data.x_user_id != null ? String(data.x_user_id) : null;
         try {
           const client = new PolarClient(tokens.accessToken, fetchFn);
-          const polarUserId = await client.getCurrentUserId();
           if (polarUserId) {
             await client.registerUser(polarUserId);
             logger.info(`[polar] Registered user ${polarUserId} with Polar AccessLink`);
           } else {
-            logger.warn("[polar] Could not discover Polar user ID for post-auth registration");
+            logger.warn(
+              "[polar] Token response missing x_user_id — skipping AccessLink registration",
+            );
           }
         } catch (registrationError) {
           // Registration is best-effort — log but don't fail the auth flow.
