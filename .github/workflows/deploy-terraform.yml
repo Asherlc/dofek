@@ -77,8 +77,32 @@ jobs:
               apt-get install -y -qq infisical
             fi
 
-            # Ensure app directory and env files exist
+            # Ensure app directory exists and env files are valid
             mkdir -p /opt/dofek
-            touch /opt/dofek/.env.prod
-            touch /opt/dofek/.env.deploy
+
+            if [ ! -s /opt/dofek/.env.prod ]; then
+              echo "ERROR: /opt/dofek/.env.prod is missing or empty." >&2
+              echo "Run the secret-sync workflow to populate it from Infisical before deploying." >&2
+              exit 1
+            fi
+
+            if [ ! -f /opt/dofek/.env.deploy ]; then
+              printf 'IMAGE_TAG=latest\n' > /opt/dofek/.env.deploy
+            fi
           PROVISION
+      - name: Deploy compose and infra services
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          scp deploy/docker-compose.deploy.yml "root@${SERVER_HOST}:/opt/dofek/"
+          scp deploy/otel-collector-config.yaml "root@${SERVER_HOST}:/opt/dofek/"
+          ssh "root@${SERVER_HOST}" bash -s <<'INFRA'
+            set -euo pipefail
+            cd /opt/dofek
+            docker compose --env-file .env.prod --env-file .env.deploy \
+              -f docker-compose.deploy.yml pull --ignore-pull-failures \
+              db redis collector ota databasus traefik portainer netdata
+            docker compose --env-file .env.prod --env-file .env.deploy \
+              -f docker-compose.deploy.yml up -d \
+              db redis collector ota databasus traefik portainer netdata
+          INFRA

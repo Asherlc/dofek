@@ -1,4 +1,4 @@
-name: Deploy Worker
+name: Deploy App
 
 on:
   workflow_call:
@@ -15,8 +15,8 @@ on:
         type: string
 
 jobs:
-  worker:
-    name: Deploy Worker
+  app:
+    name: Deploy App
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
@@ -31,7 +31,7 @@ jobs:
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-      - name: Deploy worker via docker rollout
+      - name: Deploy web and worker
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
@@ -52,6 +52,12 @@ jobs:
             # Persist the image tag for future compose operations
             echo "IMAGE_TAG=${SHA_TAG}" > .env.deploy
 
-            # Zero-downtime rollout (docker rollout is a CLI plugin, not a compose subcommand)
-            docker rollout -f docker-compose.deploy.yml worker
+            # Zero-downtime rollout for both services
+            docker rollout \
+              --env-file .env.prod --env-file .env.deploy \
+              -f docker-compose.deploy.yml web
+
+            docker rollout \
+              --env-file .env.prod --env-file .env.deploy \
+              -f docker-compose.deploy.yml worker
           DEPLOY

@@ -8,12 +8,10 @@ on:
         type: choice
         options:
           - all
-          - terraform
-          - web
-          - worker
+          - infra
+          - app
           - ios
           - ota
-          - infra-compose
       commit_sha:
         description: "Commit SHA to deploy (defaults to workflow ref HEAD)"
         required: false
@@ -21,27 +19,18 @@ on:
 
 jobs:
   terraform:
-    name: Deploy Terraform
-    if: inputs.target == 'terraform' || inputs.target == 'all'
+    name: Deploy Infra
+    if: inputs.target == 'infra' || inputs.target == 'all'
     uses: ./.github/workflows/deploy-terraform.yml
     with:
       commit_sha: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
     secrets: inherit
 
-  web:
-    name: Deploy Web
+  app:
+    name: Deploy App
     needs: [terraform]
-    if: always() && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (inputs.target == 'web' || inputs.target == 'all')
-    uses: ./.github/workflows/deploy-web.yml
-    with:
-      commit_sha: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
-    secrets: inherit
-
-  worker:
-    name: Deploy Worker
-    needs: [terraform]
-    if: always() && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (inputs.target == 'worker' || inputs.target == 'all')
-    uses: ./.github/workflows/deploy-worker.yml
+    if: always() && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (inputs.target == 'app' || inputs.target == 'all')
+    uses: ./.github/workflows/deploy-app.yml
     with:
       commit_sha: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
     secrets: inherit
@@ -62,19 +51,10 @@ jobs:
       commit_sha: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
     secrets: inherit
 
-  infra-compose:
-    name: Deploy Infra Compose
-    needs: [terraform]
-    if: always() && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (inputs.target == 'infra-compose' || inputs.target == 'all')
-    uses: ./.github/workflows/deploy-infra-compose.yml
-    with:
-      commit_sha: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
-    secrets: inherit
-
   cleanup:
     name: Cleanup Images
-    needs: [web, worker]
-    if: always() && (needs.web.result == 'success' || needs.worker.result == 'success')
+    needs: [app]
+    if: always() && needs.app.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Setup SSH

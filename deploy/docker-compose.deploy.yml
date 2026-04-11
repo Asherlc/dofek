@@ -131,10 +131,10 @@ services:
       timeout: 5s
       retries: 10
 
-  # ── Database Backups ───────────────────────────────────────
-  db-backup:
-    image: databasus/databasus:3.32.0
-    container_name: dofek-db-backup
+  # ── Databasus (DB management + backups) ────────────────────
+  databasus:
+    image: databasus/databasus:v3.32.0
+    container_name: dofek-databasus
     restart: unless-stopped
     volumes:
       - databasus_data:/databasus-data
