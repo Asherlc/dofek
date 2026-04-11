@@ -89,7 +89,7 @@ services:
       retries: 3
 
   ota:
-    image: ghcr.io/axelmarciano/expo-open-ota:latest
+    image: ghcr.io/axelmarciano/expo-open-ota:v2.3.16
     container_name: dofek-ota
     restart: unless-stopped
     environment:

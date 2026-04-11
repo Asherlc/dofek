@@ -29,6 +29,13 @@ describe("OTA deployment config (expo-open-ota)", () => {
     expect(otaDeployWorkflow).toContain("EXPO_TOKEN");
   });
 
+  it("ensures production channel is mapped to main branch", () => {
+    const otaDeployWorkflow = readFileSync(deployOtaWorkflowPath, "utf-8");
+    expect(otaDeployWorkflow).toContain("channel:edit production");
+    expect(otaDeployWorkflow).toContain("channel:create production");
+    expect(otaDeployWorkflow).toContain("--branch main");
+  });
+
   it("points mobile app at the expo-open-ota server", () => {
     const appJson = JSON.parse(readFileSync(appJsonPath, "utf-8"));
     expect(appJson.expo.updates.url).toBe("https://ota.dofek.asherlc.com/manifest");
