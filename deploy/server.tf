@@ -57,3 +57,39 @@ resource "hcloud_volume" "dofek_data" {
   format    = "ext4"
   automount = true
 }
+
+# Copy compose + OTel config and start infra services.
+# Re-runs whenever the compose file or OTel config changes.
+resource "terraform_data" "deploy_compose" {
+  triggers_replace = [
+    filesha256("${path.module}/docker-compose.deploy.yml"),
+    filesha256("${path.module}/otel-collector-config.yaml"),
+  ]
+
+  connection {
+    type        = "ssh"
+    host        = hcloud_server.dofek.ipv4_address
+    user        = "root"
+    private_key = var.ssh_private_key
+  }
+
+  provisioner "file" {
+    source      = "${path.module}/docker-compose.deploy.yml"
+    destination = "/opt/dofek/docker-compose.deploy.yml"
+  }
+
+  provisioner "file" {
+    source      = "${path.module}/otel-collector-config.yaml"
+    destination = "/opt/dofek/otel-collector-config.yaml"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "cd /opt/dofek",
+      "test -f .env.deploy || printf 'IMAGE_TAG=latest\\n' > .env.deploy",
+      "if [ ! -s .env.prod ]; then echo 'WARNING: .env.prod missing — skipping infra start'; exit 0; fi",
+      "docker compose --env-file .env.prod --env-file .env.deploy -f docker-compose.deploy.yml pull --ignore-pull-failures db redis collector ota databasus traefik portainer netdata",
+      "docker compose --env-file .env.prod --env-file .env.deploy -f docker-compose.deploy.yml up -d db redis collector ota databasus traefik portainer netdata",
+    ]
+  }
+}

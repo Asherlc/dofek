@@ -8,6 +8,12 @@ variable "ssh_public_key" {
   type        = string
 }
 
+variable "ssh_private_key" {
+  description = "SSH private key for provisioner connections"
+  type        = string
+  sensitive   = true
+}
+
 variable "ssh_allowed_ips" {
   description = "CIDR blocks allowed to SSH"
   type        = list(string)

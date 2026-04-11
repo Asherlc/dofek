@@ -25,51 +25,14 @@ jobs:
       - uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
         with:
           cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
-      - name: Setup SSH
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
-        run: |
-          mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
       - name: Terraform Apply
         working-directory: deploy
         env:
           TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
           TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+          TF_VAR_ssh_private_key: ${{ secrets.DEPLOY_SSH_KEY }}
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           terraform init
           terraform apply -auto-approve
-      - name: Deploy compose and infra services
-        env:
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
-        run: |
-          scp deploy/docker-compose.deploy.yml "root@${SERVER_HOST}:/opt/dofek/"
-          scp deploy/otel-collector-config.yaml "root@${SERVER_HOST}:/opt/dofek/"
-          ssh "root@${SERVER_HOST}" bash -s <<'DEPLOY'
-            set -euo pipefail
-            cd /opt/dofek
-
-            # Bootstrap .env.deploy if missing
-            if [ ! -f .env.deploy ]; then
-              printf 'IMAGE_TAG=latest\n' > .env.deploy
-            fi
-
-            # .env.prod must exist for services to start with correct config
-            if [ ! -s .env.prod ]; then
-              echo "WARNING: .env.prod is missing or empty — skipping infra service start."
-              echo "Run the secret-sync workflow, then re-deploy."
-              exit 0
-            fi
-
-            docker compose --env-file .env.prod --env-file .env.deploy \
-              -f docker-compose.deploy.yml pull --ignore-pull-failures \
-              db redis collector ota databasus traefik portainer netdata
-            docker compose --env-file .env.prod --env-file .env.deploy \
-              -f docker-compose.deploy.yml up -d \
-              db redis collector ota databasus traefik portainer netdata
-          DEPLOY
