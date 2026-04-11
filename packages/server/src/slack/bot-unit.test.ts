@@ -12,6 +12,7 @@ vi.mock("@slack/bolt", () => {
         error: vi.fn(),
         use: vi.fn(),
         start: vi.fn().mockResolvedValue(undefined),
+        processEvent: vi.fn().mockResolvedValue(undefined),
       })),
       ExpressReceiver: vi.fn().mockImplementation(() => ({
         router: { get: vi.fn(), post: vi.fn() },
@@ -2366,7 +2367,7 @@ describe("bot.ts — registerHandlers", () => {
         next,
       });
 
-      expect(logger.debug).toHaveBeenCalledWith("[slack] Received event type=message");
+      expect(logger.info).toHaveBeenCalledWith("[slack] Received event type=message");
       expect(next).toHaveBeenCalled();
     });
 
@@ -2384,7 +2385,7 @@ describe("bot.ts — registerHandlers", () => {
         next,
       });
 
-      expect(logger.debug).toHaveBeenCalledWith(
+      expect(logger.info).toHaveBeenCalledWith(
         "[slack] Received non-event payload (action/shortcut/command)",
       );
       expect(next).toHaveBeenCalled();
@@ -2402,7 +2403,7 @@ describe("bot.ts — registerHandlers", () => {
         next,
       });
 
-      expect(logger.debug).toHaveBeenCalledWith(
+      expect(logger.info).toHaveBeenCalledWith(
         "[slack] Received non-event payload (action/shortcut/command)",
       );
       expect(next).toHaveBeenCalled();
@@ -2420,7 +2421,7 @@ describe("bot.ts — registerHandlers", () => {
         next,
       });
 
-      expect(logger.debug).toHaveBeenCalledWith(
+      expect(logger.info).toHaveBeenCalledWith(
         "[slack] Received non-event payload (action/shortcut/command)",
       );
       expect(next).toHaveBeenCalled();
@@ -2438,7 +2439,7 @@ describe("bot.ts — registerHandlers", () => {
         next,
       });
 
-      expect(logger.debug).toHaveBeenCalledWith(
+      expect(logger.info).toHaveBeenCalledWith(
         "[slack] Received non-event payload (action/shortcut/command)",
       );
       expect(next).toHaveBeenCalled();
