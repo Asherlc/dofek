@@ -12,7 +12,7 @@ name: dofek
 services:
   # ── Reverse Proxy ──────────────────────────────────────────
   traefik:
-    image: traefik:3.4
+    image: traefik:3.6
     container_name: dofek-traefik
     restart: unless-stopped
     command:
