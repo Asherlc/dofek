@@ -8,7 +8,7 @@ on:
         type: choice
         options:
           - all
-          - terraform
+          - infra
           - app
           - ios
           - ota
@@ -19,8 +19,8 @@ on:
 
 jobs:
   terraform:
-    name: Deploy Terraform
-    if: inputs.target == 'terraform' || inputs.target == 'all'
+    name: Deploy Infra
+    if: inputs.target == 'infra' || inputs.target == 'all'
     uses: ./.github/workflows/deploy-terraform.yml
     with:
       commit_sha: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}

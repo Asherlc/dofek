@@ -81,8 +81,9 @@ jobs:
             mkdir -p /opt/dofek
 
             if [ ! -s /opt/dofek/.env.prod ]; then
-              echo "WARNING: /opt/dofek/.env.prod is missing or empty."
-              echo "Run the secret-sync workflow to populate it from Infisical."
+              echo "ERROR: /opt/dofek/.env.prod is missing or empty." >&2
+              echo "Run the secret-sync workflow to populate it from Infisical before deploying." >&2
+              exit 1
             fi
 
             if [ ! -f /opt/dofek/.env.deploy ]; then
