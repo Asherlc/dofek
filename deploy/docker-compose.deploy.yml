@@ -151,6 +151,25 @@ services:
       db:
         condition: service_healthy
 
+  # ── Databasus (DB management UI) ──────────────────────────
+  databasus:
+    image: databasus/databasus:v3.32.0
+    container_name: dofek-databasus
+    restart: unless-stopped
+    volumes:
+      - databasus_data:/databasus-data
+    depends_on:
+      db:
+        condition: service_healthy
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.databasus.rule=Host(`databasus.dofek.asherlc.com`)
+      - traefik.http.routers.databasus.entrypoints=websecure
+      - traefik.http.routers.databasus.tls=true
+      - traefik.http.routers.databasus.tls.certresolver=le
+      - traefik.http.routers.databasus.middlewares=authentik-auth
+      - traefik.http.services.databasus.loadbalancer.server.port=4005
+
   # ── Redis ──────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
@@ -261,6 +280,7 @@ volumes:
   letsencrypt:
   db_data:
   db_backups:
+  databasus_data:
   redis_data:
   job_files:
   portainer_data:
