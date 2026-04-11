@@ -13,7 +13,6 @@ on:
           - worker
           - ios
           - ota
-          - infra-compose
       commit_sha:
         description: "Commit SHA to deploy (defaults to workflow ref HEAD)"
         required: false
@@ -58,15 +57,6 @@ jobs:
     name: Deploy OTA
     if: inputs.target == 'ota' || inputs.target == 'all'
     uses: ./.github/workflows/deploy-ota.yml
-    with:
-      commit_sha: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
-    secrets: inherit
-
-  infra-compose:
-    name: Deploy Infra Compose
-    needs: [terraform]
-    if: always() && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (inputs.target == 'infra-compose' || inputs.target == 'all')
-    uses: ./.github/workflows/deploy-infra-compose.yml
     with:
       commit_sha: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
     secrets: inherit

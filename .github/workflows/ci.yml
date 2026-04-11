@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       force_deploy:
-        description: "Force deploy (infra-compose + app) even if no files changed"
+        description: "Force deploy even if no files changed"
         type: boolean
         default: false
 
@@ -1052,7 +1052,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       ios: ${{ steps.detect.outputs.ios }}
-      infra_compose: ${{ steps.detect.outputs.infra_compose }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
@@ -1065,10 +1064,6 @@ jobs:
           # iOS native changes → iOS deploy
           echo "$DIFF" | grep -qE '^packages/mobile/(app\.json|app\.config\.ts|plugins/|targets/|native/|modules/.*/ios/)' \
             && echo "ios=true" >> "$GITHUB_OUTPUT" || echo "ios=false" >> "$GITHUB_OUTPUT"
-
-          # Infra compose changes → infra-compose deploy
-          echo "$DIFF" | grep -qE '^deploy/(docker-compose\.deploy\.yml|otel-collector-config\.yaml)' \
-            && echo "infra_compose=true" >> "$GITHUB_OUTPUT" || echo "infra_compose=false" >> "$GITHUB_OUTPUT"
 
   docker:
     name: Docker (${{ matrix.target }})
@@ -1151,15 +1146,6 @@ jobs:
     needs: [deploy-ready]
     if: always() && needs.deploy-ready.result == 'success' && needs.deploy-ready.outputs.latest == 'true'
     uses: ./.github/workflows/deploy-terraform.yml
-    with:
-      commit_sha: ${{ github.sha }}
-    secrets: inherit
-
-  deploy-infra-compose:
-    name: Deploy Infra Compose
-    needs: [deploy-terraform, detect-deploy-targets]
-    if: always() && needs.deploy-terraform.result == 'success' && needs.detect-deploy-targets.result == 'success' && needs.detect-deploy-targets.outputs.infra_compose == 'true'
-    uses: ./.github/workflows/deploy-infra-compose.yml
     with:
       commit_sha: ${{ github.sha }}
     secrets: inherit
