@@ -1,7 +1,3 @@
-locals {
-  data_volume_mountpoint = var.data_volume_size_gb > 0 ? "/mnt/HC_Volume_${var.data_volume_name}" : ""
-}
-
 resource "hcloud_ssh_key" "default" {
   name       = "dofek-deploy"
   public_key = var.ssh_public_key
@@ -43,6 +39,13 @@ resource "hcloud_server" "dofek" {
   user_data = templatefile("${path.module}/server/cloud-init.yml", {
     otel_collector_content = file("${path.module}/otel-collector-config.yaml")
   })
+
+  # ssh_keys and user_data are immutable (ForceNew). Ignore changes to
+  # prevent Terraform from destroying the running server when cloud-init
+  # or key config drifts. To reprovision, taint the resource explicitly.
+  lifecycle {
+    ignore_changes = [ssh_keys, user_data, image]
+  }
 }
 
 resource "hcloud_volume" "dofek_data" {
