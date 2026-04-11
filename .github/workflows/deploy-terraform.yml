@@ -77,8 +77,15 @@ jobs:
               apt-get install -y -qq infisical
             fi
 
-            # Ensure app directory and env files exist
+            # Ensure app directory exists and env files are valid
             mkdir -p /opt/dofek
-            touch /opt/dofek/.env.prod
-            touch /opt/dofek/.env.deploy
+
+            if [ ! -s /opt/dofek/.env.prod ]; then
+              echo "WARNING: /opt/dofek/.env.prod is missing or empty."
+              echo "Run the secret-sync workflow to populate it from Infisical."
+            fi
+
+            if [ ! -f /opt/dofek/.env.deploy ]; then
+              printf 'IMAGE_TAG=latest\n' > /opt/dofek/.env.deploy
+            fi
           PROVISION
