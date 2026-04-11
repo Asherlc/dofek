@@ -1,0 +1,59 @@
+#cloud-config
+# Installs Docker CE, docker-rollout, and Infisical CLI on a fresh Ubuntu 24.04 server.
+# After boot, copy the deploy compose file and .env.prod, then `docker compose up -d`.
+
+package_update: true
+
+packages:
+  - ca-certificates
+  - curl
+  - gnupg
+
+write_files:
+  - path: /opt/dofek/otel-collector-config.yaml
+    permissions: "0644"
+    content: |
+      ${indent(6, otel_collector_content)}
+
+  - path: /etc/docker/daemon.json
+    permissions: "0644"
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+
+  - path: /etc/cron.d/docker-cleanup
+    permissions: "0644"
+    content: |
+      0 3 * * * root docker system prune -f --filter "until=72h" >> /var/log/docker-prune.log 2>&1
+
+runcmd:
+  # Install Docker CE
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  - chmod a+r /etc/apt/keyrings/docker.asc
+  - echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list
+  - apt-get update
+  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+  # Install docker-rollout plugin (shell script, not arch-specific)
+  - mkdir -p /usr/local/lib/docker/cli-plugins
+  - curl -fsSL "https://github.com/Wowu/docker-rollout/releases/download/v0.13/docker-rollout" -o /usr/local/lib/docker/cli-plugins/docker-rollout
+  - chmod +x /usr/local/lib/docker/cli-plugins/docker-rollout
+
+  # Install Infisical CLI (explicit GPG key + apt repo)
+  - curl -fsSL https://artifacts.infisical.com/gpg/infisical-archive-keyring.asc -o /etc/apt/keyrings/infisical.asc
+  - chmod a+r /etc/apt/keyrings/infisical.asc
+  - echo "deb [signed-by=/etc/apt/keyrings/infisical.asc] https://artifacts.infisical.com/repos/apt $(. /etc/os-release && echo $VERSION_CODENAME) main" > /etc/apt/sources.list.d/infisical.list
+  - apt-get update
+  - apt-get install -y infisical
+
+  # Create app directory
+  - mkdir -p /opt/dofek
+
+  # Restart Docker to pick up daemon.json log settings
+  - systemctl restart docker

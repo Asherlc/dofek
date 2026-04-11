@@ -22,16 +22,36 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           ref: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
-      - uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
-        with:
-          terraform_wrapper: false
-      - name: Deploy web to Dokploy
+      - name: Setup SSH
         env:
-          TF_VAR_dokploy_host: ${{ secrets.DOKPLOY_HOST }}
-          TF_VAR_dokploy_api_key: ${{ secrets.DOKPLOY_API_KEY }}
-          TF_VAR_app_id: ${{ secrets.DOKPLOY_WEB_APP_ID }}
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+      - name: Deploy web via docker rollout
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: |
           SHA_TAG="sha-$(git rev-parse --short HEAD)"
-          cd deploy/dokploy-app
-          terraform init
-          terraform apply -auto-approve -var="image_tag=${SHA_TAG}"
+          ssh "root@${SERVER_HOST}" bash -s -- "$GHCR_TOKEN" "$SHA_TAG" <<'DEPLOY'
+            set -euo pipefail
+            GHCR_TOKEN="$1"
+            SHA_TAG="$2"
+            cd /opt/dofek
+
+            # Authenticate with GHCR
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u asherlc --password-stdin
+
+            # Pull the new image
+            docker pull "ghcr.io/asherlc/dofek:${SHA_TAG}"
+
+            # Persist the image tag for future compose operations
+            echo "IMAGE_TAG=${SHA_TAG}" > .env.deploy
+
+            # Zero-downtime rollout (docker rollout is a CLI plugin, not a compose subcommand)
+            docker rollout -f docker-compose.deploy.yml web
+          DEPLOY

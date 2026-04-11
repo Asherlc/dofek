@@ -92,7 +92,7 @@ dofek/
 ├── cypress/                       # E2E tests (Cypress)
 ├── drizzle/                       # SQL migrations (0000_baseline.sql + forward migrations)
 │   └── _views/                    # Canonical materialized view definitions
-├── deploy/                        # Terraform + Docker Compose + Caddy
+├── deploy/                        # Terraform + Docker Compose (production stack)
 └── Dockerfile                     # Multi-stage: server image with built web assets
 ```
 
@@ -185,20 +185,19 @@ Deployed on a Hetzner Cloud CAX11 (ARM) server at `dofek.asherlc.com`.
 
 ### Infrastructure
 
-The `deploy/` directory contains Terraform and Dokploy configuration:
+The `deploy/` directory contains Terraform and Docker Compose configuration:
 
 ```
 deploy/
-├── dokploy/
-│   ├── main.tf                   # Terraform — Hetzner server with Dokploy pre-installed
-│   ├── infra-compose.yml         # Docker Compose for infra services (DB, Redis, OTA, OTel, etc.)
-│   ├── setup.sh                  # One-time Dokploy setup via tRPC API
-│   └── otel-collector-config.yaml
+├── docker-compose.deploy.yml     # Full production stack (all services)
+├── otel-collector-config.yaml    # OTel Collector config
+├── server/main.tf                # Terraform — Hetzner server with Docker + docker-rollout
 ├── cloudflare/main.tf            # Terraform — DNS, R2 buckets (Terraform Cloud: dofek-cloudflare)
+├── db/main.tf                    # Terraform — TimescaleDB extension management
 └── .gitignore
 ```
 
-**Dokploy** manages application deployments (web, worker) and infra services. Traefik handles TLS termination and reverse proxy. The Dokploy dashboard is at `dokploy.asherlc.com`.
+Docker Compose manages all services. Traefik handles TLS termination (Let's Encrypt via Cloudflare DNS challenge) and reverse proxy. Zero-downtime deploys use [docker-rollout](https://github.com/Wowu/docker-rollout). Management UIs: Portainer (`portainer.dofek.asherlc.com`) for Docker, Netdata (`netdata.dofek.asherlc.com`) for server health — both behind Authentik forward auth.
 
 ### Production architecture
 
@@ -216,23 +215,20 @@ Internet → Traefik (auto-HTTPS :443, serves dofek.asherlc.com + dofek.fit + do
 
 ### Services
 
-Dokploy manages two application services and an infra compose stack:
-
-**Applications** (deployed via GHCR image updates):
+All services run in a single Docker Compose stack (`deploy/docker-compose.deploy.yml`):
 
 | Service | Image | Purpose |
 |---------|-------|---------|
-| `dofek-web` | ghcr.io/asherlc/dofek | Express + tRPC API + static file serving (port 3000) |
-| `dofek-worker` | ghcr.io/asherlc/dofek | BullMQ job worker (processes sync jobs, file imports) |
-
-**Infra compose stack** (`deploy/dokploy/infra-compose.yml`):
-
-| Service | Image | Purpose |
-|---------|-------|---------|
+| `traefik` | traefik:3.4 | Reverse proxy, auto-HTTPS via Cloudflare DNS challenge |
+| `web` | ghcr.io/asherlc/dofek | Express + tRPC API + static file serving (port 3000) |
+| `worker` | ghcr.io/asherlc/dofek | BullMQ job worker (processes sync jobs, file imports) |
 | `db` | timescale/timescaledb:2.26.2-pg18 | TimescaleDB (persistent volume) |
 | `redis` | redis:7-alpine | Job queue backend for BullMQ + OTA cache |
 | `ota` | ghcr.io/axelmarciano/expo-open-ota | Self-hosted Expo OTA server (ota.dofek.asherlc.com) |
 | `collector` | otel/opentelemetry-collector-contrib | OTel Collector — logs/traces → Axiom |
+| `db-backup` | prodrigestivill/postgres-backup-local | Daily DB backups (7d/4w/6m retention) |
+| `portainer` | portainer/portainer-ce | Docker management UI (portainer.dofek.asherlc.com) |
+| `netdata` | netdata/netdata | Server health monitoring (netdata.dofek.asherlc.com) |
 
 ### Checking mobile OTA update status
 
@@ -258,7 +254,7 @@ The API serves `/api/updates/*` directly from R2. The runtime version must match
 
 ```
 git push → GHA builds ARM Docker images + exports Expo OTA bundle → signs manifest → uploads to R2
-→ Docker image pushed to GHCR (sha-tagged) → CI calls Dokploy API (update image + deploy) → Dokploy pulls new image + restarts containers
+→ Docker image pushed to GHCR (sha-tagged) → CI SSHs to server → docker rollout (zero-downtime)
 ```
 
 Deploy automation now runs through reusable GitHub workflows (`deploy-*.yml`) called directly from `ci.yml` (same workflow DAG, no cross-workflow dispatch). Each deploy receives the exact CI commit SHA, and deploy jobs run only when that SHA is still the current `main` head.
@@ -267,15 +263,17 @@ Migrations run at two levels for reliability: a dedicated one-shot `migrate` con
 
 ### Deploying from scratch
 
-1. Provision the server: `cd deploy/dokploy && terraform apply`
-2. Run the one-time Dokploy setup: `cd deploy/dokploy && ./setup.sh`
-3. Apply DNS/R2: `cd deploy/cloudflare && terraform apply`
-
-See `deploy/dokploy/terraform.tfvars.example` for required variables.
+1. Provision the server: `cd deploy/server && terraform apply`
+2. Apply DNS/R2: `cd deploy/cloudflare && terraform apply`
+3. Export secrets: SSH to server, run `infisical export --env=prod --format=dotenv --token=<token> > /opt/dofek/.env.prod`
+4. Copy compose file: `scp deploy/docker-compose.deploy.yml root@<SERVER_IP>:/opt/dofek/`
+5. Copy OTel config: `scp deploy/otel-collector-config.yaml root@<SERVER_IP>:/opt/dofek/`
+6. Create initial deploy tag: `echo "IMAGE_TAG=latest" > /opt/dofek/.env.deploy`
+7. Start the stack: `docker compose --env-file .env.prod --env-file .env.deploy -f docker-compose.deploy.yml up -d`
 
 ### Updating server config
 
-**Never SSH into the server to edit config files directly.** Use the Dokploy dashboard or API for application and infra compose changes. Use Terraform for DNS and R2 bucket changes.
+**Never SSH into the server to edit config files directly.** All changes go through the deploy compose file (committed to git) or Terraform. SSH is allowed for debugging only.
 
 ### SSH access
 
@@ -292,7 +290,7 @@ ssh root@<SERVER_IP>
 
 **In-browser (easiest):** The Data Sources page has a "System Logs" panel that shows the most recent server log entries from the in-memory ring buffer (currently queried at `limit=100`). This is the fastest way to check OAuth errors, sync failures, and recent provider activity.
 
-**Docker container logs (SSH):** Use `docker ps` to find container names (Dokploy uses its own naming convention):
+**Docker container logs (SSH):**
 
 ```bash
 ssh root@<SERVER_IP>
@@ -302,7 +300,7 @@ docker logs <container> --tail 100                # container logs
 docker logs <container> -f                        # follow logs in real-time
 ```
 
-Container management (restart, redeploy) should be done through the Dokploy dashboard at `dokploy.asherlc.com`.
+Container management (restart, inspect, exec) can be done through Portainer at `portainer.dofek.asherlc.com` or via SSH. Server health monitoring is at `netdata.dofek.asherlc.com`.
 
 **Axiom (centralized):** Application logs, traces, and Docker container logs are shipped to [Axiom](https://axiom.co) via the OpenTelemetry Collector sidecar. In the current collector config, logs and traces both land in `dofek-logs`, and metrics land in `dofek-metrics`. This is the most complete log source because it survives container restarts and preserves structured metadata.
 
@@ -391,23 +389,21 @@ The production containers get environment variables from two places:
 
 1. **Committed `.env` (this repo)** — non-secret config: client IDs, redirect URIs, endpoints, DSNs. Baked into the Docker image. Loaded by the entrypoint on startup.
 
-2. **Dokploy environment variables** — runtime app secrets are synced from Infisical to Dokploy app env by the `secret-sync.yml` workflow, then containers are redeployed. Infra compose services get secrets baked into `infra-compose.yml` during setup.
+2. **`/opt/dofek/.env.prod` on the server** — runtime secrets exported from Infisical via `secret-sync.yml` workflow. Referenced by compose services via `env_file`. Structural config like `DATABASE_URL` is set in the compose file's `environment:` block.
 
 **Adding or updating secrets:**
 
 ```bash
 infisical secrets set --env prod KEY=value
 # Triggers Infisical webhook -> GitHub repository_dispatch -> secret-sync workflow
-# Workflow updates Dokploy app env and redeploys only changed apps
+# Workflow exports secrets to server and restarts affected services
 ```
 
 No SSH to the server needed. No image rebuild needed.
 
-**Managed sync scope:** `deploy/dokploy/managed-secret-keys.json` is the allowlist for keys owned by automated sync. Only those keys are updated; unmanaged Dokploy env vars are preserved.
+**Adding or updating non-secret config:** Edit `.env` in this repo, commit, push. CI builds a new image and deploys via docker-rollout.
 
-**Adding or updating non-secret config:** Edit `.env` in this repo, commit, push. CI builds a new image; Watchtower deploys it.
-
-**Important:** Infisical-injected vars override Docker/compose env vars. Never put `DATABASE_URL` in Infisical — it must come from the compose file.
+**Important:** Compose `environment:` block values override `env_file` values. Never put `DATABASE_URL` in Infisical — it must come from the compose file.
 
 ### Troubleshooting
 
@@ -415,12 +411,11 @@ No SSH to the server needed. No image rebuild needed.
 
 **If a provider is missing from the Data Sources page** it usually means `validate()` is failing, so the provider is being filtered out entirely rather than shown disabled. Check:
 1. Are the vars in Infisical? → `infisical secrets get <VAR_NAME> --env=prod`
-2. Is the key in `deploy/dokploy/managed-secret-keys.json` for the target app (`web` or `worker`)?
-3. Did `secret-sync.yml` run successfully? → `gh run list --workflow secret-sync.yml`
-4. Force sync (dry-run first, then real run):
+2. Did `secret-sync.yml` run successfully? → `gh run list --workflow secret-sync.yml`
+3. Force sync (dry-run first, then real run):
    - `gh workflow run secret-sync.yml -f dry_run=true`
    - `gh workflow run secret-sync.yml -f dry_run=false`
-5. If the app still shows stale config after sync, check deploy logs in Dokploy and refresh app caches.
+4. If the app still shows stale config after sync, check container logs via Portainer or SSH and refresh app caches.
 
 ## Supplements
 
@@ -562,7 +557,7 @@ Environment variables are split into two tiers:
 | Tier | Where | Examples | Needs rebuild? |
 |------|-------|----------|----------------|
 | **Non-secret config** | Committed `.env` in this repo | Client IDs, redirect URIs, endpoints, DSNs | Yes (baked into image) |
-| **Secrets** | [Infisical](https://infisical.com/) (prod environment) → synced to Dokploy app env | Client secrets, API keys, tokens, private keys | No (sync + app redeploy) |
+| **Secrets** | [Infisical](https://infisical.com/) (prod environment) → exported to `/opt/dofek/.env.prod` on server | Client secrets, API keys, tokens, private keys | No (sync + service restart) |
 
 ### Setup (new machine)
 
@@ -610,7 +605,7 @@ infisical secrets delete KEY --env=prod --type shared
 
 ### Automatic production sync
 
-Production secret propagation to Dokploy is automated by `.github/workflows/secret-sync.yml`.
+Production secret propagation is automated by `.github/workflows/secret-sync.yml`. It SSHs to the server, runs `infisical export` to write `/opt/dofek/.env.prod`, then restarts affected services.
 
 - Primary trigger: `repository_dispatch` type `infisical-secrets-updated` (from Infisical webhook)
 - Recovery trigger: nightly schedule
@@ -618,10 +613,8 @@ Production secret propagation to Dokploy is automated by `.github/workflows/secr
 
 Required GitHub secrets for this workflow:
 - `INFISICAL_TOKEN`
-- `DOKPLOY_HOST`
-- `DOKPLOY_API_KEY`
-- `DOKPLOY_WEB_APP_ID`
-- `DOKPLOY_WORKER_APP_ID`
+- `DEPLOY_SSH_KEY`
+- `SERVER_HOST`
 
 To force a manual sync:
 
@@ -629,15 +622,14 @@ To force a manual sync:
 # Validate diff only
 gh workflow run secret-sync.yml -f dry_run=true
 
-# Apply changes + redeploy changed apps
+# Apply changes + restart services
 gh workflow run secret-sync.yml -f dry_run=false
 ```
 
 ### Adding a new env var
 
-- **Is it a secret?** (API key, token, password, private key, client secret) → Add to Infisical: `infisical secrets set --env=prod KEY=value`
-- **Is it non-secret config?** (client ID, redirect URI, endpoint, DSN) → Add to the committed `.env` at the repo root
-- **If it is an app secret that must auto-sync to Dokploy:** add it to `deploy/dokploy/managed-secret-keys.json` under `apps.web` and/or `apps.worker`.
+- **Is it a secret?** (API key, token, password, private key, client secret) → Add to Infisical: `infisical secrets set --env=prod KEY=value`. The `secret-sync.yml` workflow will export it to the server.
+- **Is it non-secret config?** (client ID, redirect URI, endpoint, DSN) → Add to the committed `.env` at the repo root.
 
 ### Production machine identity
 

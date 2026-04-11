@@ -203,10 +203,8 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
       - run: cd deploy/cloudflare && terraform init -backend=false && terraform validate
-      - run: cd deploy/dokploy && terraform init -backend=false && terraform validate
-      - run: cd deploy/dokploy-compose && terraform init -backend=false && terraform validate
-      - run: cd deploy/dokploy-app && terraform init -backend=false && terraform validate
-      - run: cd deploy/dokploy-db && terraform init -backend=false && terraform validate
+      - run: cd deploy/server && terraform init -backend=false && terraform validate
+      - run: cd deploy/db && terraform init -backend=false && terraform validate
 
   quality-gate:
     name: Lint & Static Analysis
@@ -1072,7 +1070,7 @@ jobs:
             && echo "ios=true" >> "$GITHUB_OUTPUT" || echo "ios=false" >> "$GITHUB_OUTPUT"
 
           # Infra compose changes → infra-compose deploy
-          echo "$DIFF" | grep -qE '^deploy/(dokploy/infra-compose\.yml|dokploy-compose/)' \
+          echo "$DIFF" | grep -qE '^deploy/(docker-compose\.deploy\.yml|otel-collector-config\.yaml)' \
             && echo "infra_compose=true" >> "$GITHUB_OUTPUT" || echo "infra_compose=false" >> "$GITHUB_OUTPUT"
 
           # Cloudflare changes → cloudflare deploy
@@ -1215,12 +1213,19 @@ jobs:
     if: always() && needs.deploy-ready.outputs.latest == 'true' && (needs.deploy-web.result == 'success' || needs.deploy-worker.result == 'success')
     runs-on: ubuntu-latest
     steps:
+      - name: Setup SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
       - name: Prune unused images
         env:
-          DOKPLOY_HOST: ${{ secrets.DOKPLOY_HOST }}
-          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
         run: |
-          curl -fsSL -X POST "${DOKPLOY_HOST}/api/trpc/settings.cleanUnusedImages" \
-            -H "x-api-key: ${DOKPLOY_API_KEY}" \
-            -H "Content-Type: application/json" \
-            -d '{"json":{}}' || echo "Image cleanup failed (non-fatal)"
+          ssh "root@${SERVER_HOST}" \
+            'docker image prune -af --filter "until=72h"' \
+            || echo "Image cleanup failed (non-fatal)"
