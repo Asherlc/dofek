@@ -1,4 +1,7 @@
-hcloud_token   = "your-hetzner-api-token"
-ssh_public_key = "ssh-ed25519 AAAA..."
-# ssh_allowed_ips = ["1.2.3.4/32"]  # Restrict SSH to your IP (recommended)
-# data_volume_size_gb = 50          # Optional extra volume attached/mounted at /mnt/HC_Volume_dofek-data
+hcloud_token          = "your-hetzner-api-token"
+ssh_public_key        = "ssh-ed25519 AAAA..."
+cloudflare_api_token  = "your-cloudflare-api-token"
+cloudflare_account_id = "your-cloudflare-account-id"
+postgres_password     = "your-db-password"
+# ssh_allowed_ips     = ["1.2.3.4/32"]  # Restrict SSH to your IP (recommended)
+# data_volume_size_gb = 50              # Optional Hetzner block storage

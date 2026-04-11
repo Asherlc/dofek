@@ -25,7 +25,7 @@ jobs:
       - uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
         with:
           cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
-      - name: Setup SSH
+      - name: Setup SSH tunnel for DB access
         env:
           SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
@@ -34,37 +34,14 @@ jobs:
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-
-      # ── Server (Hetzner) ───────────────────────────────────
-      - name: Apply deploy/server
-        working-directory: deploy/server
+          ssh -f -N -L 5432:127.0.0.1:5432 "root@${SERVER_HOST}"
+      - name: Terraform Apply
+        working-directory: deploy
         env:
           TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
           TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
-        run: |
-          terraform init
-          terraform apply -auto-approve
-
-      # ── Cloudflare (DNS + R2) ──────────────────────────────
-      - name: Apply deploy/cloudflare
-        working-directory: deploy/cloudflare
-        env:
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          TF_VAR_server_ip: ${{ secrets.SERVER_HOST }}
-        run: |
-          terraform init
-          terraform apply -auto-approve
-
-      # ── Database (TimescaleDB extension) ───────────────────
-      - name: Open SSH tunnel for DB access
-        env:
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
-        run: |
-          ssh -f -N -L 5432:127.0.0.1:5432 "root@${SERVER_HOST}"
-      - name: Apply deploy/db
-        working-directory: deploy/db
-        env:
           TF_VAR_postgres_password: ${{ secrets.POSTGRES_PASSWORD }}
         run: |
           terraform init
