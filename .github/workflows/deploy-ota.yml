@@ -26,7 +26,7 @@ jobs:
       - name: Wait for OTA server
         run: |
           for attempt in $(seq 1 30); do
-            status=$(curl -s -o /dev/null -w "%{http_code}" https://ota.dofek.asherlc.com/manifest)
+            status=$(curl -s -o /dev/null -w "%{http_code}" https://ota.dofek.asherlc.com/manifest || true)
             if [ "$status" -ge 200 ] && [ "$status" -lt 500 ]; then
               echo "OTA server is healthy"
               exit 0
