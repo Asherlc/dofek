@@ -40,23 +40,20 @@ runcmd:
   - apt-get update
   - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
-  # Install docker-rollout plugin
+  # Install docker-rollout plugin (shell script, not arch-specific)
   - mkdir -p /usr/local/lib/docker/cli-plugins
-  - |
-    ARCH=$(uname -m | sed 's/aarch64/arm64/;s/x86_64/amd64/')
-    curl -fsSL "https://github.com/Wowu/docker-rollout/releases/latest/download/docker-rollout-linux-$${ARCH}" \
-      -o /usr/local/lib/docker/cli-plugins/docker-rollout
+  - curl -fsSL "https://github.com/Wowu/docker-rollout/releases/download/v0.13/docker-rollout" -o /usr/local/lib/docker/cli-plugins/docker-rollout
   - chmod +x /usr/local/lib/docker/cli-plugins/docker-rollout
 
-  # Install Infisical CLI
-  - curl -1sLf 'https://artifacts.infisical.com/repos/apt/setup.deb.sh' | bash
+  # Install Infisical CLI (explicit GPG key + apt repo)
+  - curl -fsSL https://artifacts.infisical.com/gpg/infisical-archive-keyring.asc -o /etc/apt/keyrings/infisical.asc
+  - chmod a+r /etc/apt/keyrings/infisical.asc
+  - echo "deb [signed-by=/etc/apt/keyrings/infisical.asc] https://artifacts.infisical.com/repos/apt $(. /etc/os-release && echo $VERSION_CODENAME) main" > /etc/apt/sources.list.d/infisical.list
+  - apt-get update
   - apt-get install -y infisical
 
   # Create app directory
   - mkdir -p /opt/dofek
-
-  # GHCR login for image pulls
-  - echo "${ghcr_token}" | docker login ghcr.io -u "${ghcr_username}" --password-stdin
 
   # Restart Docker to pick up daemon.json log settings
   - systemctl restart docker

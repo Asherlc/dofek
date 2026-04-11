@@ -25,18 +25,6 @@ variable "ssh_allowed_ips" {
   default     = ["0.0.0.0/0", "::/0"]
 }
 
-variable "ghcr_username" {
-  description = "GitHub Container Registry username"
-  type        = string
-  default     = "asherlc"
-}
-
-variable "ghcr_token" {
-  description = "GitHub Container Registry PAT"
-  type        = string
-  sensitive   = true
-}
-
 variable "data_volume_size_gb" {
   description = "Optional Hetzner block storage size in GB (0 = disabled)"
   type        = number
@@ -98,8 +86,6 @@ resource "hcloud_server" "dofek" {
 
   user_data = templatefile("${path.module}/cloud-init.yml", {
     otel_collector_content = file("${path.module}/../otel-collector-config.yaml")
-    ghcr_username          = var.ghcr_username
-    ghcr_token             = var.ghcr_token
   })
 }
 

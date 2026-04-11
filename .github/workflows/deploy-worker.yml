@@ -34,11 +34,17 @@ jobs:
       - name: Deploy worker via docker rollout
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: |
           SHA_TAG="sha-$(git rev-parse --short HEAD)"
-          ssh "root@${SERVER_HOST}" bash -s <<DEPLOY
+          ssh "root@${SERVER_HOST}" bash -s -- "$GHCR_TOKEN" "$SHA_TAG" <<'DEPLOY'
             set -euo pipefail
+            GHCR_TOKEN="$1"
+            SHA_TAG="$2"
             cd /opt/dofek
+
+            # Authenticate with GHCR
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u asherlc --password-stdin
 
             # Pull the new image
             docker pull "ghcr.io/asherlc/dofek:${SHA_TAG}"
@@ -46,7 +52,6 @@ jobs:
             # Persist the image tag for future compose operations
             echo "IMAGE_TAG=${SHA_TAG}" > .env.deploy
 
-            # Zero-downtime rollout
-            docker compose --env-file .env.prod --env-file .env.deploy \
-              -f docker-compose.deploy.yml rollout worker
+            # Zero-downtime rollout (docker rollout is a CLI plugin, not a compose subcommand)
+            docker rollout -f docker-compose.deploy.yml worker
           DEPLOY

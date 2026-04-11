@@ -42,7 +42,7 @@ services:
       SENTRY_OTLP_LOGS_ENDPOINT: ${SENTRY_OTLP_LOGS_ENDPOINT:-}
     volumes:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
-      - /opt/dofek/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+      - ./deploy/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:13133/"]
       interval: 15s
