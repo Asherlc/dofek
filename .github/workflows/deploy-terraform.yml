@@ -77,6 +77,8 @@ jobs:
               apt-get install -y -qq infisical
             fi
 
-            # Ensure app directory exists
+            # Ensure app directory and env files exist
             mkdir -p /opt/dofek
+            touch /opt/dofek/.env.prod
+            touch /opt/dofek/.env.deploy
           PROVISION
