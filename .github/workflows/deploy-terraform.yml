@@ -46,3 +46,37 @@ jobs:
         run: |
           terraform init
           terraform apply -auto-approve
+      - name: Ensure server has required tools
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          ssh "root@${SERVER_HOST}" bash -s <<'PROVISION'
+            set -euo pipefail
+
+            # Install docker-rollout plugin if missing
+            PLUGIN_PATH="/usr/local/lib/docker/cli-plugins/docker-rollout"
+            if [ ! -f "$PLUGIN_PATH" ]; then
+              echo "Installing docker-rollout..."
+              mkdir -p /usr/local/lib/docker/cli-plugins
+              curl -fsSL "https://github.com/Wowu/docker-rollout/releases/download/v0.13/docker-rollout" \
+                -o "$PLUGIN_PATH"
+              chmod +x "$PLUGIN_PATH"
+            fi
+
+            # Install Infisical CLI if missing
+            if ! command -v infisical &>/dev/null; then
+              echo "Installing Infisical CLI..."
+              install -m 0755 -d /etc/apt/keyrings
+              curl -fsSL https://artifacts.infisical.com/gpg/infisical-archive-keyring.asc \
+                -o /etc/apt/keyrings/infisical.asc
+              chmod a+r /etc/apt/keyrings/infisical.asc
+              echo "deb [signed-by=/etc/apt/keyrings/infisical.asc] https://artifacts.infisical.com/repos/apt \
+                $(. /etc/os-release && echo $VERSION_CODENAME) main" \
+                > /etc/apt/sources.list.d/infisical.list
+              apt-get update -qq
+              apt-get install -y -qq infisical
+            fi
+
+            # Ensure app directory exists
+            mkdir -p /opt/dofek
+          PROVISION
