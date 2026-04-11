@@ -1,9 +1,6 @@
+import * as Sentry from "@sentry/node";
 import type { App as AppType } from "@slack/bolt";
 import bolt from "@slack/bolt";
-
-const { App, ExpressReceiver, SocketModeReceiver } = bolt;
-
-import * as Sentry from "@sentry/node";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import type express from "express";
@@ -13,6 +10,8 @@ import { logger } from "../logger.ts";
 import { FoodEntryRepository } from "./food-entry-repository.ts";
 import { registerSocketModeDiagnostics, verifyBotConfiguration } from "./slack-diagnostics.ts";
 import { registerHandlers } from "./slack-handlers.ts";
+
+const { App, ExpressReceiver, SocketModeReceiver } = bolt;
 
 interface SlackBotResult {
   app: AppType;
@@ -123,6 +122,8 @@ export function createSlackBot(db: Database): SlackBotResult | null {
     // Bolt logs authorization failures and type-detection warnings via its own
     // internal ConsoleLogger, which our Axiom pipeline doesn't capture. Wrap
     // processEvent to surface these in our application logger.
+    // NOTE: This overrides an internal Bolt API (validated against @slack/bolt 4.7.0).
+    // If Bolt changes processEvent's signature, this wrapper will need updating.
     const originalProcessEvent = app.processEvent.bind(app);
     app.processEvent = async (event) => {
       const eventType =

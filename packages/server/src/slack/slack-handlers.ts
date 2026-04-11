@@ -177,7 +177,7 @@ async function handleParsedMessage(
 /** Register all Slack Bolt event/action handlers on the given app.
  *  Delegates database operations to the provided repository. */
 export function registerHandlers(app: AppType, repository: FoodEntryRepository): void {
-  // Log all incoming events at debug level for diagnostics
+  // Log all incoming events for diagnostics
   app.use(async (args) => {
     if ("event" in args && args.event && typeof args.event === "object" && "type" in args.event) {
       logger.info(`[slack] Received event type=${String(args.event.type)}`);
