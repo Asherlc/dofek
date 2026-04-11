@@ -43,10 +43,11 @@ runcmd:
   # Wait for DNS to be fully available before downloading from GitHub
   - |
     for i in $(seq 1 30); do
-      nslookup github.com >/dev/null 2>&1 && break
+      getent hosts github.com >/dev/null 2>&1 && break
       echo "Waiting for DNS... attempt $i"
       sleep 2
     done
+    getent hosts github.com >/dev/null 2>&1 || { echo "ERROR: DNS not available after 60s" >&2; exit 1; }
 
   # Install docker-rollout plugin (shell script, not arch-specific)
   - mkdir -p /usr/local/lib/docker/cli-plugins
