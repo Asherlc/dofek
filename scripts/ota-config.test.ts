@@ -3,22 +3,22 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const repoRoot = join(import.meta.dirname, "..");
-const dockerComposePath = join(repoRoot, "docker-compose.yml");
+const deployComposePath = join(repoRoot, "deploy", "docker-compose.deploy.yml");
 const deployWorkflowPath = join(repoRoot, ".github", "workflows", "deploy.yml");
 const deployOtaWorkflowPath = join(repoRoot, ".github", "workflows", "deploy-ota.yml");
 const appJsonPath = join(repoRoot, "packages", "mobile", "app.json");
 
 describe("OTA deployment config (expo-open-ota)", () => {
-  it("defines the ota service in docker-compose", () => {
-    const dockerCompose = readFileSync(dockerComposePath, "utf-8");
-    expect(dockerCompose).toContain("ghcr.io/axelmarciano/expo-open-ota:");
-    expect(dockerCompose).toContain("STORAGE_MODE: s3");
+  it("defines the ota service in deploy compose", () => {
+    const deployCompose = readFileSync(deployComposePath, "utf-8");
+    expect(deployCompose).toContain("ghcr.io/axelmarciano/expo-open-ota:");
+    expect(deployCompose).toContain("STORAGE_MODE: s3");
   });
 
   it("fails the ota healthcheck when the manifest probe fails", () => {
-    const dockerCompose = readFileSync(dockerComposePath, "utf-8");
-    expect(dockerCompose).toContain("wget -qO- http://localhost:3000/manifest");
-    expect(dockerCompose).not.toContain("grep -q 'channel' || exit 0");
+    const deployCompose = readFileSync(deployComposePath, "utf-8");
+    expect(deployCompose).toContain("wget -qO- http://localhost:3000/manifest");
+    expect(deployCompose).not.toContain("grep -q 'channel' || exit 0");
   });
 
   it("uses eoas publish in OTA deploy workflow", () => {
