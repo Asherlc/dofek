@@ -1,7 +1,3 @@
-locals {
-  data_volume_mountpoint = var.data_volume_size_gb > 0 ? "/mnt/HC_Volume_${var.data_volume_name}" : ""
-}
-
 resource "hcloud_ssh_key" "default" {
   name       = "dofek-deploy"
   public_key = var.ssh_public_key
