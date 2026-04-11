@@ -8,5 +8,4 @@ DROP MATERIALIZED VIEW IF EXISTS fitness.v_activity CASCADE;
 -- otherwise match and skip recreation).
 DELETE FROM drizzle.__view_hashes WHERE view_name = 'fitness.v_activity';
 
--- squawk:ignore ban-drop-column
 ALTER TABLE fitness.activity DROP COLUMN IF EXISTS percent_recorded;
