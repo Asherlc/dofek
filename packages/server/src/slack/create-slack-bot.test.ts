@@ -45,6 +45,10 @@ vi.mock("../logger.ts", () => ({
   },
 }));
 
+vi.mock("@sentry/node", () => ({
+  captureException: vi.fn(),
+}));
+
 vi.mock("../lib/ai-nutrition.ts", () => ({
   analyzeNutritionItems: vi.fn(),
   refineNutritionItems: vi.fn(),
@@ -56,6 +60,7 @@ vi.mock("../lib/cache.ts", () => ({
   },
 }));
 
+import * as Sentry from "@sentry/node";
 import bolt from "@slack/bolt";
 import { createSlackBot, startSlackBot } from "./bot.ts";
 
@@ -466,6 +471,151 @@ describe("createSlackBot — logger messages", () => {
     expect(result).not.toBeNull();
     const mockAppInstance = vi.mocked(bolt.App).mock.results[0]?.value;
     expect(mockAppInstance.error).toHaveBeenCalled();
+  });
+
+  it("passes processEventErrorHandler to SocketModeReceiver", () => {
+    process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
+    process.env.SLACK_APP_TOKEN = "xapp-test-token";
+
+    const db = createMockDb();
+    createSlackBot(db);
+
+    expect(vi.mocked(bolt.SocketModeReceiver)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        appToken: "xapp-test-token",
+        processEventErrorHandler: expect.any(Function),
+      }),
+    );
+  });
+
+  it("processEventErrorHandler logs error and reports to Sentry", async () => {
+    process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
+    process.env.SLACK_APP_TOKEN = "xapp-test-token";
+
+    const db = createMockDb();
+    const { logger } = await import("../logger.ts");
+
+    createSlackBot(db);
+
+    const receiverCall = vi.mocked(bolt.SocketModeReceiver).mock.calls[0]?.[0];
+    const errorHandler = receiverCall?.processEventErrorHandler;
+    expect(errorHandler).toBeDefined();
+
+    const testError = new Error("authorization failed");
+    if (!errorHandler) throw new Error("errorHandler not defined");
+    const result = await errorHandler({
+      error: testError,
+      logger: mockAs({}),
+      event: mockAs({}),
+    });
+
+    expect(result).toBe(true);
+    expect(logger.error).toHaveBeenCalledWith(
+      "[slack] Bolt processEvent error: authorization failed",
+    );
+    expect(Sentry.captureException).toHaveBeenCalledWith(testError);
+  });
+
+  it("processEventErrorHandler wraps non-Error values in Error", async () => {
+    process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
+    process.env.SLACK_APP_TOKEN = "xapp-test-token";
+
+    const db = createMockDb();
+    createSlackBot(db);
+
+    const receiverCall = vi.mocked(bolt.SocketModeReceiver).mock.calls[0]?.[0];
+    const errorHandler = receiverCall?.processEventErrorHandler;
+
+    if (!errorHandler) throw new Error("errorHandler not defined");
+    await errorHandler({
+      error: "string error",
+      logger: mockAs({}),
+      event: mockAs({}),
+    });
+
+    expect(Sentry.captureException).toHaveBeenCalledWith(expect.any(Error));
+  });
+
+  it("wraps processEvent with logging", async () => {
+    process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
+    process.env.SLACK_APP_TOKEN = "xapp-test-token";
+
+    const db = createMockDb();
+    const { logger } = await import("../logger.ts");
+
+    createSlackBot(db);
+
+    const mockAppInstance = vi.mocked(bolt.App).mock.results[0]?.value;
+    const wrappedProcessEvent = mockAppInstance.processEvent;
+
+    await wrappedProcessEvent({ body: { event: { type: "message" } }, ack: vi.fn() });
+
+    expect(logger.info).toHaveBeenCalledWith("[slack] processEvent called: eventType=message");
+  });
+
+  it("processEvent wrapper logs and re-throws on error", async () => {
+    process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
+    process.env.SLACK_APP_TOKEN = "xapp-test-token";
+
+    const originalProcessEvent = vi.fn().mockRejectedValue(new Error("bolt internal error"));
+    vi.mocked(bolt.App).mockImplementationOnce(() =>
+      mockAs({
+        message: vi.fn(),
+        action: vi.fn(),
+        event: vi.fn(),
+        error: vi.fn(),
+        use: vi.fn(),
+        start: vi.fn().mockResolvedValue(undefined),
+        processEvent: originalProcessEvent,
+      }),
+    );
+
+    const db = createMockDb();
+    const { logger } = await import("../logger.ts");
+
+    createSlackBot(db);
+    const wrappedProcessEvent = vi.mocked(bolt.App).mock.results[0]?.value.processEvent;
+
+    await expect(
+      wrappedProcessEvent({ body: { event: { type: "message" } }, ack: vi.fn() }),
+    ).rejects.toThrow("bolt internal error");
+
+    expect(logger.error).toHaveBeenCalledWith("[slack] processEvent threw: bolt internal error");
+  });
+
+  it("HTTP mode error handler reports to Sentry", async () => {
+    process.env.SLACK_SIGNING_SECRET = "test-signing-secret";
+
+    const db = createMockDb();
+
+    createSlackBot(db);
+
+    const mockAppInstance = vi.mocked(bolt.App).mock.results[0]?.value;
+    const errorHandlerCall = mockAppInstance.error.mock.calls[0];
+    const errorHandler = errorHandlerCall?.[0];
+
+    const testError = new Error("http mode error");
+    await errorHandler(testError);
+
+    expect(Sentry.captureException).toHaveBeenCalledWith(testError);
+  });
+
+  it("Socket mode error handler reports to Sentry", async () => {
+    process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
+    process.env.SLACK_APP_TOKEN = "xapp-test-token";
+
+    const db = createMockDb();
+
+    createSlackBot(db);
+
+    const mockAppInstance = vi.mocked(bolt.App).mock.results[0]?.value;
+    const errorHandlerCall = mockAppInstance.error.mock.calls[0];
+    const errorHandler = errorHandlerCall?.[0];
+
+    const testError = new Error("socket mode error");
+    await errorHandler(testError);
+
+    expect(Sentry.captureException).toHaveBeenCalledWith(testError);
   });
 
   it("registers slack_event diagnostic listener on socket mode client", () => {
