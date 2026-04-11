@@ -124,7 +124,7 @@ services:
       POSTGRES_USER: health
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
-      - db_data:/var/lib/postgresql
+      - db_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U health -d health"]
       interval: 5s
@@ -279,10 +279,6 @@ services:
 volumes:
   letsencrypt:
   db_data:
-    # Use the existing Dokploy-era volume that has PG18 data
-    # Mounted at /var/lib/postgresql (PG18 uses /var/lib/postgresql/18/docker/ subdirectory)
-    external: true
-    name: d873c9f64d98ad279cdcdd0ffacfcb788a4e23a2c31bc6e1859f50381077adf1
   db_backups:
   databasus_data:
   redis_data:
