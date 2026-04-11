@@ -40,17 +40,19 @@ runcmd:
   - apt-get update
   - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
+  # Wait for DNS to be fully available before downloading from GitHub
+  - |
+    for i in $(seq 1 30); do
+      getent hosts github.com >/dev/null 2>&1 && break
+      echo "Waiting for DNS... attempt $i"
+      sleep 2
+    done
+    getent hosts github.com >/dev/null 2>&1 || { echo "ERROR: DNS not available after 60s" >&2; exit 1; }
+
   # Install docker-rollout plugin (shell script, not arch-specific)
   - mkdir -p /usr/local/lib/docker/cli-plugins
   - curl -fsSL "https://github.com/Wowu/docker-rollout/releases/download/v0.13/docker-rollout" -o /usr/local/lib/docker/cli-plugins/docker-rollout
   - chmod +x /usr/local/lib/docker/cli-plugins/docker-rollout
-
-  # Install Infisical CLI (explicit GPG key + apt repo)
-  - curl -fsSL https://artifacts.infisical.com/gpg/infisical-archive-keyring.asc -o /etc/apt/keyrings/infisical.asc
-  - chmod a+r /etc/apt/keyrings/infisical.asc
-  - echo "deb [signed-by=/etc/apt/keyrings/infisical.asc] https://artifacts.infisical.com/repos/apt $(. /etc/os-release && echo $VERSION_CODENAME) main" > /etc/apt/sources.list.d/infisical.list
-  - apt-get update
-  - apt-get install -y infisical
 
   # Create app directory
   - mkdir -p /opt/dofek
