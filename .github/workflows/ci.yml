@@ -1150,20 +1150,11 @@ jobs:
       commit_sha: ${{ github.sha }}
     secrets: inherit
 
-  deploy-web:
-    name: Deploy Web
+  deploy-app:
+    name: Deploy App
     needs: [deploy-terraform]
     if: always() && needs.deploy-terraform.result == 'success'
-    uses: ./.github/workflows/deploy-web.yml
-    with:
-      commit_sha: ${{ github.sha }}
-    secrets: inherit
-
-  deploy-worker:
-    name: Deploy Worker
-    needs: [deploy-terraform]
-    if: always() && needs.deploy-terraform.result == 'success'
-    uses: ./.github/workflows/deploy-worker.yml
+    uses: ./.github/workflows/deploy-app.yml
     with:
       commit_sha: ${{ github.sha }}
     secrets: inherit
@@ -1188,8 +1179,8 @@ jobs:
 
   cleanup-images:
     name: Cleanup Images
-    needs: [deploy-web, deploy-worker]
-    if: always() && (needs.deploy-web.result == 'success' || needs.deploy-worker.result == 'success')
+    needs: [deploy-app]
+    if: always() && needs.deploy-app.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Setup SSH

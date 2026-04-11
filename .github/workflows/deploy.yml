@@ -9,8 +9,7 @@ on:
         options:
           - all
           - terraform
-          - web
-          - worker
+          - app
           - ios
           - ota
       commit_sha:
@@ -27,20 +26,11 @@ jobs:
       commit_sha: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
     secrets: inherit
 
-  web:
-    name: Deploy Web
+  app:
+    name: Deploy App
     needs: [terraform]
-    if: always() && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (inputs.target == 'web' || inputs.target == 'all')
-    uses: ./.github/workflows/deploy-web.yml
-    with:
-      commit_sha: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
-    secrets: inherit
-
-  worker:
-    name: Deploy Worker
-    needs: [terraform]
-    if: always() && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (inputs.target == 'worker' || inputs.target == 'all')
-    uses: ./.github/workflows/deploy-worker.yml
+    if: always() && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (inputs.target == 'app' || inputs.target == 'all')
+    uses: ./.github/workflows/deploy-app.yml
     with:
       commit_sha: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
     secrets: inherit
@@ -63,8 +53,8 @@ jobs:
 
   cleanup:
     name: Cleanup Images
-    needs: [web, worker]
-    if: always() && (needs.web.result == 'success' || needs.worker.result == 'success')
+    needs: [app]
+    if: always() && needs.app.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Setup SSH
