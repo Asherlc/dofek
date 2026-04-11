@@ -44,63 +44,32 @@ jobs:
         run: |
           terraform init
           terraform apply -auto-approve
-      - name: Ensure server has required tools
-        env:
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
-        run: |
-          ssh "root@${SERVER_HOST}" bash -s <<'PROVISION'
-            set -euo pipefail
-
-            # Install docker-rollout plugin if missing
-            PLUGIN_PATH="/usr/local/lib/docker/cli-plugins/docker-rollout"
-            if [ ! -f "$PLUGIN_PATH" ]; then
-              echo "Installing docker-rollout..."
-              mkdir -p /usr/local/lib/docker/cli-plugins
-              curl -fsSL "https://github.com/Wowu/docker-rollout/releases/download/v0.13/docker-rollout" \
-                -o "$PLUGIN_PATH"
-              chmod +x "$PLUGIN_PATH"
-            fi
-
-            # Install Infisical CLI if missing
-            if ! command -v infisical &>/dev/null; then
-              echo "Installing Infisical CLI..."
-              install -m 0755 -d /etc/apt/keyrings
-              curl -fsSL https://artifacts.infisical.com/gpg/infisical-archive-keyring.asc \
-                -o /etc/apt/keyrings/infisical.asc
-              chmod a+r /etc/apt/keyrings/infisical.asc
-              echo "deb [signed-by=/etc/apt/keyrings/infisical.asc] https://artifacts.infisical.com/repos/apt \
-                $(. /etc/os-release && echo $VERSION_CODENAME) main" \
-                > /etc/apt/sources.list.d/infisical.list
-              apt-get update -qq
-              apt-get install -y -qq infisical
-            fi
-
-            # Ensure app directory exists and env files are valid
-            mkdir -p /opt/dofek
-
-            if [ ! -s /opt/dofek/.env.prod ]; then
-              echo "ERROR: /opt/dofek/.env.prod is missing or empty." >&2
-              echo "Run the secret-sync workflow to populate it from Infisical before deploying." >&2
-              exit 1
-            fi
-
-            if [ ! -f /opt/dofek/.env.deploy ]; then
-              printf 'IMAGE_TAG=latest\n' > /opt/dofek/.env.deploy
-            fi
-          PROVISION
       - name: Deploy compose and infra services
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
         run: |
           scp deploy/docker-compose.deploy.yml "root@${SERVER_HOST}:/opt/dofek/"
           scp deploy/otel-collector-config.yaml "root@${SERVER_HOST}:/opt/dofek/"
-          ssh "root@${SERVER_HOST}" bash -s <<'INFRA'
+          ssh "root@${SERVER_HOST}" bash -s <<'DEPLOY'
             set -euo pipefail
             cd /opt/dofek
+
+            # Bootstrap .env.deploy if missing
+            if [ ! -f .env.deploy ]; then
+              printf 'IMAGE_TAG=latest\n' > .env.deploy
+            fi
+
+            # .env.prod must exist for services to start with correct config
+            if [ ! -s .env.prod ]; then
+              echo "WARNING: .env.prod is missing or empty — skipping infra service start."
+              echo "Run the secret-sync workflow, then re-deploy."
+              exit 0
+            fi
+
             docker compose --env-file .env.prod --env-file .env.deploy \
               -f docker-compose.deploy.yml pull --ignore-pull-failures \
               db redis collector ota databasus traefik portainer netdata
             docker compose --env-file .env.prod --env-file .env.deploy \
               -f docker-compose.deploy.yml up -d \
               db redis collector ota databasus traefik portainer netdata
-          INFRA
+          DEPLOY
