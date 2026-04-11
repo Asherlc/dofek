@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 let mockReadinessLoading = false;
 let mockWorkloadLoading = false;
 let mockSleepLoading = false;
-let mockSleepData: unknown = undefined;
+let mockSleepData: unknown;
 
 function q(getData: () => unknown = () => undefined) {
   return { useQuery: () => ({ data: getData(), isLoading: false }) };
