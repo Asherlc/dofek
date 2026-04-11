@@ -133,6 +133,15 @@ resource "cloudflare_dns_record" "netdata_dofek_asherlc" {
   ttl     = 1
 }
 
+resource "cloudflare_dns_record" "databasus_dofek_asherlc" {
+  zone_id = data.cloudflare_zone.asherlc_com.zone_id
+  type    = "A"
+  name    = "databasus.dofek.asherlc.com"
+  content = var.server_ip
+  proxied = false
+  ttl     = 1
+}
+
 # --- R2 Storage ---
 
 resource "cloudflare_r2_bucket" "training_data" {

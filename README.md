@@ -226,9 +226,11 @@ All services run in a single Docker Compose stack (`deploy/docker-compose.deploy
 | `redis` | redis:7-alpine | Job queue backend for BullMQ + OTA cache |
 | `ota` | ghcr.io/axelmarciano/expo-open-ota | Self-hosted Expo OTA server (ota.dofek.asherlc.com) |
 | `collector` | otel/opentelemetry-collector-contrib | OTel Collector — logs/traces → Axiom |
-| `db-backup` | prodrigestivill/postgres-backup-local | Daily DB backups (7d/4w/6m retention) |
+| `db-backup` | databasus/databasus | DB backups to Cloudflare R2 (databasus.dofek.asherlc.com) |
 | `portainer` | portainer/portainer-ce | Docker management UI (portainer.dofek.asherlc.com) |
 | `netdata` | netdata/netdata | Server health monitoring (netdata.dofek.asherlc.com) |
+
+> **Post-deploy setup required for backups:** After `docker compose up`, open the Databasus dashboard at `databasus.dofek.asherlc.com` and configure the PostgreSQL connection (host: `db`, database: `health`, user: `health`) and the R2 storage destination (`dofek-db-backups` bucket, credentials from Infisical). Backups will not run until this is done.
 
 ### Checking mobile OTA update status
 
