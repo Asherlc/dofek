@@ -133,7 +133,7 @@ services:
 
   # ── Database Backups ───────────────────────────────────────
   db-backup:
-    image: databasus/databasus:latest
+    image: databasus/databasus:3.32.0
     container_name: dofek-db-backup
     restart: unless-stopped
     volumes:

@@ -230,6 +230,8 @@ All services run in a single Docker Compose stack (`deploy/docker-compose.deploy
 | `portainer` | portainer/portainer-ce | Docker management UI (portainer.dofek.asherlc.com) |
 | `netdata` | netdata/netdata | Server health monitoring (netdata.dofek.asherlc.com) |
 
+> **Post-deploy setup required for backups:** After `docker compose up`, open the Databasus dashboard at `databasus.dofek.asherlc.com` and configure the PostgreSQL connection (host: `db`, database: `health`, user: `health`) and the R2 storage destination (`dofek-db-backups` bucket, credentials from Infisical). Backups will not run until this is done.
+
 ### Checking mobile OTA update status
 
 The server hosts a self-hosted Expo Updates endpoint at `/api/updates/manifest`. This implementation follows the **Expo Updates Protocol v1 (Modern Manifest)** with mandatory **RSA-SHA256 code signing** for security.
