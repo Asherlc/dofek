@@ -41,3 +41,14 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: npx eoas@2.3.16 publish --branch main --platform ios --nonInteractive
+
+      - name: Ensure production channel maps to main branch
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          npx eas-cli@latest channel:edit production \
+            --branch main \
+            --non-interactive 2>/dev/null || \
+          npx eas-cli@latest channel:create production \
+            --branch main \
+            --non-interactive
