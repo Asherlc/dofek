@@ -52,6 +52,8 @@ jobs:
             # Persist the image tag for future compose operations
             echo "IMAGE_TAG=${SHA_TAG}" > .env.deploy
 
-            # Zero-downtime rollout (docker rollout is a CLI plugin, not a compose subcommand)
-            docker rollout -f docker-compose.deploy.yml worker
+            # Zero-downtime rollout
+            docker rollout \
+              --env-file .env.prod --env-file .env.deploy \
+              -f docker-compose.deploy.yml worker
           DEPLOY
