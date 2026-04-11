@@ -48,10 +48,10 @@ jobs:
             # Pull updated infra images
             docker compose --env-file .env.prod --env-file .env.deploy \
               -f docker-compose.deploy.yml pull \
-              db redis collector ota db-backup traefik portainer netdata
+              db redis collector ota databasus traefik portainer netdata
 
             # Recreate only changed infra services (web/worker use rollout separately)
             docker compose --env-file .env.prod --env-file .env.deploy \
               -f docker-compose.deploy.yml up -d \
-              db redis collector ota db-backup traefik portainer netdata
+              db redis collector ota databasus traefik portainer netdata
           DEPLOY
