@@ -25,84 +25,14 @@ jobs:
       - uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
         with:
           cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
-      - name: Setup SSH tunnel for DB access
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
-        run: |
-          mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-          ssh -f -N -L 5432:127.0.0.1:5432 "root@${SERVER_HOST}"
       - name: Terraform Apply
         working-directory: deploy
         env:
           TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
           TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+          TF_VAR_ssh_private_key: ${{ secrets.DEPLOY_SSH_KEY }}
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          TF_VAR_postgres_password: ${{ secrets.POSTGRES_PASSWORD }}
         run: |
           terraform init
           terraform apply -auto-approve
-      - name: Ensure server has required tools
-        env:
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
-        run: |
-          ssh "root@${SERVER_HOST}" bash -s <<'PROVISION'
-            set -euo pipefail
-
-            # Install docker-rollout plugin if missing
-            PLUGIN_PATH="/usr/local/lib/docker/cli-plugins/docker-rollout"
-            if [ ! -f "$PLUGIN_PATH" ]; then
-              echo "Installing docker-rollout..."
-              mkdir -p /usr/local/lib/docker/cli-plugins
-              curl -fsSL "https://github.com/Wowu/docker-rollout/releases/download/v0.13/docker-rollout" \
-                -o "$PLUGIN_PATH"
-              chmod +x "$PLUGIN_PATH"
-            fi
-
-            # Install Infisical CLI if missing
-            if ! command -v infisical &>/dev/null; then
-              echo "Installing Infisical CLI..."
-              install -m 0755 -d /etc/apt/keyrings
-              curl -fsSL https://artifacts.infisical.com/gpg/infisical-archive-keyring.asc \
-                -o /etc/apt/keyrings/infisical.asc
-              chmod a+r /etc/apt/keyrings/infisical.asc
-              echo "deb [signed-by=/etc/apt/keyrings/infisical.asc] https://artifacts.infisical.com/repos/apt \
-                $(. /etc/os-release && echo $VERSION_CODENAME) main" \
-                > /etc/apt/sources.list.d/infisical.list
-              apt-get update -qq
-              apt-get install -y -qq infisical
-            fi
-
-            # Ensure app directory exists and env files are valid
-            mkdir -p /opt/dofek
-
-            if [ ! -s /opt/dofek/.env.prod ]; then
-              echo "ERROR: /opt/dofek/.env.prod is missing or empty." >&2
-              echo "Run the secret-sync workflow to populate it from Infisical before deploying." >&2
-              exit 1
-            fi
-
-            if [ ! -f /opt/dofek/.env.deploy ]; then
-              printf 'IMAGE_TAG=latest\n' > /opt/dofek/.env.deploy
-            fi
-          PROVISION
-      - name: Deploy compose and infra services
-        env:
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
-        run: |
-          scp deploy/docker-compose.deploy.yml "root@${SERVER_HOST}:/opt/dofek/"
-          scp deploy/otel-collector-config.yaml "root@${SERVER_HOST}:/opt/dofek/"
-          ssh "root@${SERVER_HOST}" bash -s <<'INFRA'
-            set -euo pipefail
-            cd /opt/dofek
-            docker compose --env-file .env.prod --env-file .env.deploy \
-              -f docker-compose.deploy.yml pull --ignore-pull-failures \
-              db redis collector ota databasus traefik portainer netdata
-            docker compose --env-file .env.prod --env-file .env.deploy \
-              -f docker-compose.deploy.yml up -d \
-              db redis collector ota databasus traefik portainer netdata
-          INFRA

@@ -84,10 +84,3 @@ import {
 # ── Cloudflare R2 Custom Domain ──────────────────────────────────────────
 # cloudflare_r2_custom_domain does not support import and has been removed
 # from configuration (deploy/storage.tf). Managed manually in Cloudflare.
-
-# ── PostgreSQL ───────────────────────────────────────────────────────────
-
-import {
-  to = postgresql_extension.timescaledb
-  id = "health.timescaledb"
-}
