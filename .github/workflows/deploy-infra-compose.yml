@@ -25,7 +25,7 @@ jobs:
       - uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
         with:
           terraform_wrapper: false
-      - name: Setup SSH tunnel
+      - name: Setup SSH
         env:
           SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
@@ -34,45 +34,30 @@ jobs:
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-          ssh -f -N -L 5432:127.0.0.1:5432 "root@${SERVER_HOST}"
-      - name: Render compose template
+      - name: Copy compose and config to server
         env:
-          TF_VAR_postgres_password: ${{ secrets.POSTGRES_PASSWORD }}
-          TF_VAR_axiom_api_token: ${{ secrets.AXIOM_API_TOKEN }}
-          TF_VAR_sentry_otlp_logs_endpoint: ${{ secrets.SENTRY_OTLP_LOGS_ENDPOINT }}
-          TF_VAR_r2_endpoint: ${{ secrets.R2_ENDPOINT }}
-          TF_VAR_r2_access_key_id: ${{ secrets.R2_ACCESS_KEY_ID }}
-          TF_VAR_r2_secret_access_key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          TF_VAR_expo_app_id: ${{ secrets.EXPO_APP_ID }}
-          TF_VAR_expo_access_token: ${{ secrets.EXPO_ACCESS_TOKEN }}
-          TF_VAR_ota_jwt_secret: ${{ secrets.OTA_JWT_SECRET }}
-          TF_VAR_ota_public_key_b64: ${{ secrets.OTA_PUBLIC_KEY_B64 }}
-          TF_VAR_ota_private_key_b64: ${{ secrets.OTA_PRIVATE_KEY_B64 }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
         run: |
-          cd deploy/dokploy-compose
-          terraform init
-          terraform apply -auto-approve
-      - name: Deploy compose to Dokploy
+          scp deploy/docker-compose.deploy.yml "root@${SERVER_HOST}:/opt/dofek/"
+          scp deploy/otel-collector-config.yaml "root@${SERVER_HOST}:/opt/dofek/"
+      - name: Deploy infra services
         env:
-          DOKPLOY_HOST: ${{ secrets.DOKPLOY_HOST }}
-          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
         run: |
-          set -euo pipefail
-          COMPOSE_CONTENT=$(cd deploy/dokploy-compose && terraform output -raw compose_rendered)
-          COMPOSE_JSON=$(printf '%s' "$COMPOSE_CONTENT" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")
-          COMPOSE_ID="RMk3hATYEIKherZ2QEud_"
+          ssh "root@${SERVER_HOST}" bash -s <<'DEPLOY'
+            set -euo pipefail
+            cd /opt/dofek
 
-          echo "Updating infra compose in Dokploy..."
-          curl -fsSL -X POST "${DOKPLOY_HOST}/api/trpc/compose.update" \
-            -H "x-api-key: ${DOKPLOY_API_KEY}" \
-            -H "Content-Type: application/json" \
-            -d "{\"json\":{\"composeId\":\"${COMPOSE_ID}\",\"sourceType\":\"raw\",\"composeFile\":${COMPOSE_JSON}}}"
+            # Pull updated infra images
+            docker compose --env-file .env.prod --env-file .env.deploy \
+              -f docker-compose.deploy.yml pull \
+              db redis collector ota db-backup traefik portainer netdata
 
-          echo "Deploying infra compose stack..."
-          curl -fsSL -X POST "${DOKPLOY_HOST}/api/trpc/compose.deploy" \
-            -H "x-api-key: ${DOKPLOY_API_KEY}" \
-            -H "Content-Type: application/json" \
-            -d "{\"json\":{\"composeId\":\"${COMPOSE_ID}\"}}"
+            # Recreate only changed infra services (web/worker use rollout separately)
+            docker compose --env-file .env.prod --env-file .env.deploy \
+              -f docker-compose.deploy.yml up -d \
+              db redis collector ota db-backup traefik portainer netdata
+          DEPLOY
       - name: Wait for DB and upgrade extension
         env:
           TF_VAR_postgres_password: ${{ secrets.POSTGRES_PASSWORD }}
@@ -81,7 +66,7 @@ jobs:
           set -euo pipefail
           echo "Waiting for DB to accept connections..."
           for attempt in $(seq 1 30); do
-            if ssh "root@${SERVER_HOST}" "docker exec \$(docker ps -q --filter name=db-1) pg_isready -U health -d health" 2>/dev/null; then
+            if ssh "root@${SERVER_HOST}" "docker exec dofek-db pg_isready -U health -d health" 2>/dev/null; then
               echo "DB is ready"
               break
             fi
@@ -93,6 +78,9 @@ jobs:
             sleep 2
           done
 
-          cd deploy/dokploy-db
+          # Open SSH tunnel for Terraform DB access
+          ssh -f -N -L 5432:127.0.0.1:5432 "root@${SERVER_HOST}"
+
+          cd deploy/db
           terraform init
           terraform apply -auto-approve

@@ -1,3 +1,11 @@
+# Dev backing services. Run the app outside Docker for fast iteration.
+#
+# Usage:
+#   docker compose up -d
+#   pnpm dev              # sync runner
+#   cd packages/web && pnpm dev   # Vite dev server
+#   cd packages/server && pnpm dev # Express API server
+
 services:
   db:
     image: timescale/timescaledb:latest-pg18
@@ -13,9 +21,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-    networks:
-      - dokploy-network
-      - default
 
   redis:
     image: redis:7-alpine
@@ -27,9 +32,6 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
-    networks:
-      - dokploy-network
-      - default
 
   collector:
     image: otel/opentelemetry-collector-contrib:0.149.0
@@ -46,45 +48,7 @@ services:
       interval: 15s
       timeout: 5s
       retries: 3
-    networks:
-      - dokploy-network
-      - default
-
-  ota:
-    image: ghcr.io/axelmarciano/expo-open-ota:latest
-    restart: unless-stopped
-    environment:
-      BASE_URL: https://ota.dofek.asherlc.com
-      STORAGE_MODE: s3
-      S3_BUCKET_NAME: dofek-ota
-      AWS_REGION: auto
-      AWS_BASE_ENDPOINT: ${R2_ENDPOINT}
-      AWS_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
-      AWS_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
-      EXPO_APP_ID: ${EXPO_APP_ID}
-      EXPO_ACCESS_TOKEN: ${EXPO_ACCESS_TOKEN}
-      JWT_SECRET: ${OTA_JWT_SECRET}
-      KEYS_STORAGE_TYPE: environment
-      PUBLIC_EXPO_KEY_B64: ${OTA_PUBLIC_KEY_B64}
-      PRIVATE_EXPO_KEY_B64: ${OTA_PRIVATE_KEY_B64}
-      CACHE_MODE: redis
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      PORT: 3000
-    depends_on:
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/manifest 2>&1 | grep -q channel"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
 
 volumes:
   db_data:
   redis_data:
-
-networks:
-  dokploy-network:
-    external: true

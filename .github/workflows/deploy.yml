@@ -74,12 +74,19 @@ jobs:
     if: always() && (needs.web.result == 'success' || needs.worker.result == 'success')
     runs-on: ubuntu-latest
     steps:
+      - name: Setup SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
       - name: Prune unused images
         env:
-          DOKPLOY_HOST: ${{ secrets.DOKPLOY_HOST }}
-          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
         run: |
-          curl -fsSL -X POST "${DOKPLOY_HOST}/api/trpc/settings.cleanUnusedImages" \
-            -H "x-api-key: ${DOKPLOY_API_KEY}" \
-            -H "Content-Type: application/json" \
-            -d '{"json":{}}' || echo "Image cleanup failed (non-fatal)"
+          ssh "root@${SERVER_HOST}" \
+            'docker image prune -af --filter "until=72h"' \
+            || echo "Image cleanup failed (non-fatal)"

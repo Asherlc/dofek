@@ -1,9 +1,5 @@
-# Hetzner server provisioned with Dokploy pre-installed.
-# Replaces the old main.tf which installed raw Docker + Compose.
-#
-# Dokploy service configuration (project, apps, domains, etc.) is managed
-# by setup.sh via the Dokploy tRPC API — not Terraform — because the
-# community Dokploy TF provider is incompatible with Dokploy v0.28.8.
+# Hetzner server provisioned with Docker + docker-rollout.
+# No PaaS layer — just Docker CE, the rollout plugin, and Infisical CLI.
 
 terraform {
   required_providers {
@@ -23,15 +19,22 @@ variable "ssh_public_key" {
   type        = string
 }
 
-variable "domain" {
-  description = "Primary domain (e.g. dofek.asherlc.com)"
-  type        = string
-}
-
 variable "ssh_allowed_ips" {
   description = "CIDR blocks allowed to SSH"
   type        = list(string)
   default     = ["0.0.0.0/0", "::/0"]
+}
+
+variable "ghcr_username" {
+  description = "GitHub Container Registry username"
+  type        = string
+  default     = "asherlc"
+}
+
+variable "ghcr_token" {
+  description = "GitHub Container Registry PAT"
+  type        = string
+  sensitive   = true
 }
 
 variable "data_volume_size_gb" {
@@ -69,7 +72,7 @@ resource "hcloud_firewall" "dofek" {
     source_ips = var.ssh_allowed_ips
   }
 
-  # HTTP/HTTPS for Traefik (Dokploy's reverse proxy)
+  # HTTP/HTTPS for Traefik
   rule {
     direction  = "in"
     protocol   = "tcp"
@@ -83,18 +86,10 @@ resource "hcloud_firewall" "dofek" {
     port       = "443"
     source_ips = ["0.0.0.0/0", "::/0"]
   }
-
-  # Dokploy dashboard (only during initial setup, then behind Traefik)
-  rule {
-    direction  = "in"
-    protocol   = "tcp"
-    port       = "3000"
-    source_ips = var.ssh_allowed_ips
-  }
 }
 
 resource "hcloud_server" "dofek" {
-  name         = "dofek-dokploy"
+  name         = "dofek"
   image        = "ubuntu-24.04"
   server_type  = "cax11"
   location     = "nbg1"
@@ -102,10 +97,9 @@ resource "hcloud_server" "dofek" {
   firewall_ids = [hcloud_firewall.dofek.id]
 
   user_data = templatefile("${path.module}/cloud-init.yml", {
-    domain                 = var.domain
-    otel_collector_content = file("${path.module}/otel-collector-config.yaml")
-    db_data_path           = local.data_volume_mountpoint != "" ? "${local.data_volume_mountpoint}/postgres" : ""
-    db_backup_path         = local.data_volume_mountpoint != "" ? "${local.data_volume_mountpoint}/backups" : ""
+    otel_collector_content = file("${path.module}/../otel-collector-config.yaml")
+    ghcr_username          = var.ghcr_username
+    ghcr_token             = var.ghcr_token
   })
 }
 
@@ -125,9 +119,4 @@ output "server_ip" {
 
 output "server_ipv6" {
   value = hcloud_server.dofek.ipv6_address
-}
-
-output "dokploy_url" {
-  description = "Dokploy dashboard URL (use this for initial setup, then configure a domain)"
-  value       = "http://${hcloud_server.dofek.ipv4_address}:3000"
 }

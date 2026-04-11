@@ -115,6 +115,24 @@ resource "cloudflare_dns_record" "ota_dofek_asherlc" {
   ttl     = 1
 }
 
+resource "cloudflare_dns_record" "portainer_dofek_asherlc" {
+  zone_id = data.cloudflare_zone.asherlc_com.zone_id
+  type    = "A"
+  name    = "portainer.dofek.asherlc.com"
+  content = var.server_ip
+  proxied = false
+  ttl     = 1
+}
+
+resource "cloudflare_dns_record" "netdata_dofek_asherlc" {
+  zone_id = data.cloudflare_zone.asherlc_com.zone_id
+  type    = "A"
+  name    = "netdata.dofek.asherlc.com"
+  content = var.server_ip
+  proxied = false
+  ttl     = 1
+}
+
 # --- R2 Storage ---
 
 resource "cloudflare_r2_bucket" "training_data" {
@@ -157,9 +175,7 @@ resource "cloudflare_r2_custom_domain" "storybook_preview" {
 # tokens per bucket). Then add R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY to
 # Infisical (prod environment).
 #
-# After applying, configure Dokploy backups:
-# 1. Dokploy → Settings → S3 Destinations → add R2 endpoint + credentials
-# 2. Database service → Backups → add schedule pointing to dofek-db-backups
+# After applying, store R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY in Infisical.
 
 # --- Outputs ---
 
@@ -189,7 +205,7 @@ output "r2_storybook_bucket_name" {
 }
 
 output "r2_db_backups_bucket_name" {
-  description = "R2 bucket name for database backups (configure in Dokploy)"
+  description = "R2 bucket name for database backups"
   value       = cloudflare_r2_bucket.db_backups.name
 }
 
