@@ -133,22 +133,23 @@ services:
 
   # ── Database Backups ───────────────────────────────────────
   db-backup:
-    image: databasus/databasus:3.32.0
+    image: prodrigestivill/postgres-backup-local:18
     container_name: dofek-db-backup
     restart: unless-stopped
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_DB: health
+      POSTGRES_USER: health
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      SCHEDULE: "@daily"
+      BACKUP_KEEP_DAYS: 7
+      BACKUP_KEEP_WEEKS: 4
+      BACKUP_KEEP_MONTHS: 6
     volumes:
-      - databasus_data:/databasus-data
+      - db_backups:/backups
     depends_on:
       db:
         condition: service_healthy
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.databasus.rule=Host(`databasus.dofek.asherlc.com`)
-      - traefik.http.routers.databasus.entrypoints=websecure
-      - traefik.http.routers.databasus.tls=true
-      - traefik.http.routers.databasus.tls.certresolver=le
-      - traefik.http.routers.databasus.middlewares=authentik-auth
-      - traefik.http.services.databasus.loadbalancer.server.port=4005
 
   # ── Redis ──────────────────────────────────────────────────
   redis:
@@ -259,7 +260,7 @@ services:
 volumes:
   letsencrypt:
   db_data:
-  databasus_data:
+  db_backups:
   redis_data:
   job_files:
   portainer_data:
