@@ -8,21 +8,30 @@ on:
         type: choice
         options:
           - all
+          - terraform
           - web
           - worker
           - ios
           - ota
           - infra-compose
-          - cloudflare
       commit_sha:
         description: "Commit SHA to deploy (defaults to workflow ref HEAD)"
         required: false
         type: string
 
 jobs:
+  terraform:
+    name: Deploy Terraform
+    if: inputs.target == 'terraform' || inputs.target == 'all'
+    uses: ./.github/workflows/deploy-terraform.yml
+    with:
+      commit_sha: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
+    secrets: inherit
+
   web:
     name: Deploy Web
-    if: inputs.target == 'web' || inputs.target == 'all'
+    needs: [terraform]
+    if: always() && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (inputs.target == 'web' || inputs.target == 'all')
     uses: ./.github/workflows/deploy-web.yml
     with:
       commit_sha: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
@@ -30,7 +39,8 @@ jobs:
 
   worker:
     name: Deploy Worker
-    if: inputs.target == 'worker' || inputs.target == 'all'
+    needs: [terraform]
+    if: always() && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (inputs.target == 'worker' || inputs.target == 'all')
     uses: ./.github/workflows/deploy-worker.yml
     with:
       commit_sha: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
@@ -54,16 +64,9 @@ jobs:
 
   infra-compose:
     name: Deploy Infra Compose
-    if: inputs.target == 'infra-compose' || inputs.target == 'all'
+    needs: [terraform]
+    if: always() && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (inputs.target == 'infra-compose' || inputs.target == 'all')
     uses: ./.github/workflows/deploy-infra-compose.yml
-    with:
-      commit_sha: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
-    secrets: inherit
-
-  cloudflare:
-    name: Deploy Cloudflare
-    if: inputs.target == 'cloudflare' || inputs.target == 'all'
-    uses: ./.github/workflows/deploy-cloudflare.yml
     with:
       commit_sha: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
     secrets: inherit

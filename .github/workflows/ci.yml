@@ -1055,7 +1055,6 @@ jobs:
     outputs:
       ios: ${{ steps.detect.outputs.ios }}
       infra_compose: ${{ steps.detect.outputs.infra_compose }}
-      cloudflare: ${{ steps.detect.outputs.cloudflare }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
@@ -1072,10 +1071,6 @@ jobs:
           # Infra compose changes → infra-compose deploy
           echo "$DIFF" | grep -qE '^deploy/(docker-compose\.deploy\.yml|otel-collector-config\.yaml)' \
             && echo "infra_compose=true" >> "$GITHUB_OUTPUT" || echo "infra_compose=false" >> "$GITHUB_OUTPUT"
-
-          # Cloudflare changes → cloudflare deploy
-          echo "$DIFF" | grep -qE '^deploy/cloudflare/' \
-            && echo "cloudflare=true" >> "$GITHUB_OUTPUT" || echo "cloudflare=false" >> "$GITHUB_OUTPUT"
 
   docker:
     name: Docker (${{ matrix.target }})
@@ -1153,10 +1148,28 @@ jobs:
             echo "Skipping deploy for non-latest main commit: $GITHUB_SHA"
           fi
 
-  deploy-web:
-    name: Deploy Web
+  deploy-terraform:
+    name: Deploy Terraform
     needs: [deploy-ready]
     if: always() && needs.deploy-ready.result == 'success' && needs.deploy-ready.outputs.latest == 'true'
+    uses: ./.github/workflows/deploy-terraform.yml
+    with:
+      commit_sha: ${{ github.sha }}
+    secrets: inherit
+
+  deploy-infra-compose:
+    name: Deploy Infra Compose
+    needs: [deploy-terraform, detect-deploy-targets]
+    if: always() && needs.deploy-terraform.result == 'success' && needs.detect-deploy-targets.result == 'success' && needs.detect-deploy-targets.outputs.infra_compose == 'true'
+    uses: ./.github/workflows/deploy-infra-compose.yml
+    with:
+      commit_sha: ${{ github.sha }}
+    secrets: inherit
+
+  deploy-web:
+    name: Deploy Web
+    needs: [deploy-terraform]
+    if: always() && needs.deploy-terraform.result == 'success'
     uses: ./.github/workflows/deploy-web.yml
     with:
       commit_sha: ${{ github.sha }}
@@ -1164,8 +1177,8 @@ jobs:
 
   deploy-worker:
     name: Deploy Worker
-    needs: [deploy-ready]
-    if: always() && needs.deploy-ready.result == 'success' && needs.deploy-ready.outputs.latest == 'true'
+    needs: [deploy-terraform]
+    if: always() && needs.deploy-terraform.result == 'success'
     uses: ./.github/workflows/deploy-worker.yml
     with:
       commit_sha: ${{ github.sha }}
@@ -1173,8 +1186,8 @@ jobs:
 
   deploy-ota:
     name: Deploy OTA
-    needs: [deploy-ready]
-    if: always() && needs.deploy-ready.result == 'success' && needs.deploy-ready.outputs.latest == 'true'
+    needs: [deploy-terraform]
+    if: always() && needs.deploy-terraform.result == 'success'
     uses: ./.github/workflows/deploy-ota.yml
     with:
       commit_sha: ${{ github.sha }}
@@ -1182,35 +1195,17 @@ jobs:
 
   deploy-ios:
     name: Deploy iOS
-    needs: [deploy-ready, detect-deploy-targets]
-    if: always() && needs.deploy-ready.result == 'success' && needs.detect-deploy-targets.result == 'success' && needs.deploy-ready.outputs.latest == 'true' && needs.detect-deploy-targets.outputs.ios == 'true'
+    needs: [deploy-terraform, detect-deploy-targets]
+    if: always() && needs.deploy-terraform.result == 'success' && needs.detect-deploy-targets.result == 'success' && needs.detect-deploy-targets.outputs.ios == 'true'
     uses: ./.github/workflows/deploy-ios.yml
-    with:
-      commit_sha: ${{ github.sha }}
-    secrets: inherit
-
-  deploy-infra-compose:
-    name: Deploy Infra Compose
-    needs: [deploy-ready, detect-deploy-targets]
-    if: always() && needs.deploy-ready.result == 'success' && needs.detect-deploy-targets.result == 'success' && needs.deploy-ready.outputs.latest == 'true' && needs.detect-deploy-targets.outputs.infra_compose == 'true'
-    uses: ./.github/workflows/deploy-infra-compose.yml
-    with:
-      commit_sha: ${{ github.sha }}
-    secrets: inherit
-
-  deploy-cloudflare:
-    name: Deploy Cloudflare
-    needs: [deploy-ready, detect-deploy-targets]
-    if: always() && needs.deploy-ready.result == 'success' && needs.detect-deploy-targets.result == 'success' && needs.deploy-ready.outputs.latest == 'true' && needs.detect-deploy-targets.outputs.cloudflare == 'true'
-    uses: ./.github/workflows/deploy-cloudflare.yml
     with:
       commit_sha: ${{ github.sha }}
     secrets: inherit
 
   cleanup-images:
     name: Cleanup Images
-    needs: [deploy-ready, deploy-web, deploy-worker]
-    if: always() && needs.deploy-ready.outputs.latest == 'true' && (needs.deploy-web.result == 'success' || needs.deploy-worker.result == 'success')
+    needs: [deploy-web, deploy-worker]
+    if: always() && (needs.deploy-web.result == 'success' || needs.deploy-worker.result == 'success')
     runs-on: ubuntu-latest
     steps:
       - name: Setup SSH

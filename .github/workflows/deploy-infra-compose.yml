@@ -22,9 +22,6 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           ref: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
-      - uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
-        with:
-          terraform_wrapper: false
       - name: Setup SSH
         env:
           SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
@@ -58,29 +55,3 @@ jobs:
               -f docker-compose.deploy.yml up -d \
               db redis collector ota db-backup traefik portainer netdata
           DEPLOY
-      - name: Wait for DB and upgrade extension
-        env:
-          TF_VAR_postgres_password: ${{ secrets.POSTGRES_PASSWORD }}
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
-        run: |
-          set -euo pipefail
-          echo "Waiting for DB to accept connections..."
-          for attempt in $(seq 1 30); do
-            if ssh "root@${SERVER_HOST}" "docker exec dofek-db pg_isready -U health -d health" 2>/dev/null; then
-              echo "DB is ready"
-              break
-            fi
-            if [ "$attempt" -eq 30 ]; then
-              echo "::error::DB not ready after 60s"
-              exit 1
-            fi
-            echo "Attempt $attempt/30 - waiting..."
-            sleep 2
-          done
-
-          # Open SSH tunnel for Terraform DB access
-          ssh -f -N -L 5432:127.0.0.1:5432 "root@${SERVER_HOST}"
-
-          cd deploy/db
-          terraform init
-          terraform apply -auto-approve
