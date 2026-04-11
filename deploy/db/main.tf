@@ -2,6 +2,12 @@
 # CI connects via SSH tunnel (localhost:5432 → server:5432).
 
 terraform {
+  cloud {
+    organization = "dofek"
+    workspaces {
+      name = "dofek-db"
+    }
+  }
   required_providers {
     postgresql = {
       source  = "cyrilgdn/postgresql"

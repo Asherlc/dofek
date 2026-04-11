@@ -2,6 +2,12 @@
 # No PaaS layer — just Docker CE, the rollout plugin, and Infisical CLI.
 
 terraform {
+  cloud {
+    organization = "dofek"
+    workspaces {
+      name = "dofek-server"
+    }
+  }
   required_providers {
     hcloud = {
       source  = "hetznercloud/hcloud"
