@@ -1127,4 +1127,62 @@ describe("PolarProvider.sync — error handling", () => {
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("authorization revoked");
   });
+
+  it("deletes tokens and skips remaining sections when API returns 401", async () => {
+    const calledEndpoints: string[] = [];
+    const mockFetch: typeof globalThis.fetch = async (
+      url: string | URL | Request,
+    ): Promise<Response> => {
+      const urlString = String(url);
+      const endpoints = ["/exercises", "/sleep", "/activity", "/nightly-recharge"] as const;
+      const endpoint = endpoints.find((path) => urlString.endsWith(path));
+      if (endpoint) calledEndpoints.push(endpoint);
+      if (urlString.endsWith("/exercises")) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+      return Response.json([]);
+    };
+
+    const mockDb = createPolarMockDb();
+    const provider = new PolarProvider(mockFetch);
+    const result = await provider.sync(mockDb, new Date("2026-01-01"));
+
+    // Should have only attempted exercises, not sleep or activity
+    expect(calledEndpoints).toEqual(["/exercises"]);
+    // Should report the auth error
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("authorization failed");
+    // Should have deleted the stored tokens
+    expect(mockDb.delete).toHaveBeenCalled();
+  });
+
+  it("deletes tokens when a later section returns 401", async () => {
+    const calledEndpoints: string[] = [];
+    const mockFetch: typeof globalThis.fetch = async (
+      url: string | URL | Request,
+    ): Promise<Response> => {
+      const urlString = String(url);
+      const endpoints = ["/exercises", "/sleep", "/activity", "/nightly-recharge"] as const;
+      const endpoint = endpoints.find((path) => urlString.endsWith(path));
+      if (endpoint) calledEndpoints.push(endpoint);
+      if (urlString.endsWith("/activity")) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+      return Response.json([]);
+    };
+
+    const mockDb = createPolarMockDb();
+    const provider = new PolarProvider(mockFetch);
+    const result = await provider.sync(mockDb, new Date("2026-01-01"));
+
+    // Should have attempted exercises, sleep, and activity (but not nightly-recharge after 401)
+    expect(calledEndpoints).toContain("/exercises");
+    expect(calledEndpoints).toContain("/sleep");
+    expect(calledEndpoints).toContain("/activity");
+    // Should report the auth error and delete tokens
+    expect(result.errors.some((error) => error.message.includes("authorization failed"))).toBe(
+      true,
+    );
+    expect(mockDb.delete).toHaveBeenCalled();
+  });
 });

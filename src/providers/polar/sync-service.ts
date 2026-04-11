@@ -67,8 +67,13 @@ export class PolarSyncService {
     const client = new PolarClient(tokens.accessToken, this.#fetchFn);
 
     await this.#syncExercises(client, since);
+    if (await this.#invalidateTokensIfAuthFailed()) return this.#result();
+
     await this.#syncSleep(client, since);
+    if (await this.#invalidateTokensIfAuthFailed()) return this.#result();
+
     await this.#syncDailyActivity(client, since);
+    await this.#invalidateTokensIfAuthFailed();
 
     return this.#result();
   }
@@ -388,6 +393,24 @@ export class PolarSyncService {
       rechargeByDate.set(recharge.date, recharge);
     }
     return rechargeByDate;
+  }
+
+  /**
+   * If any accumulated error was caused by a 401/403 from Polar's API,
+   * the stored token is dead. Delete it so the provider shows as
+   * disconnected and the scheduler stops retrying every cycle.
+   *
+   * Returns true if tokens were invalidated (caller should short-circuit).
+   */
+  async #invalidateTokensIfAuthFailed(): Promise<boolean> {
+    if (!this.#errors.some((error) => error.cause instanceof PolarUnauthorizedError)) {
+      return false;
+    }
+    logger.warn(
+      `[${this.#providerId}] Authorization failed — deleting stored tokens. Re-connect provider to resume syncing.`,
+    );
+    await deleteTokens(this.#db, this.#providerId);
+    return true;
   }
 
   #buildSectionError(section: "exercises" | "sleep" | "daily_activity", error: unknown): SyncError {
