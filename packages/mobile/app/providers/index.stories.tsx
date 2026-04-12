@@ -5,6 +5,8 @@ import { AuthProvider } from "../../lib/auth-context";
 import { ProviderCard } from "./provider-card.tsx";
 
 // ── ProviderCard ──
+// AuthProvider is resolved to .storybook/mocks/auth-context in web Storybook
+// via the Vite alias in .storybook/main.ts, avoiding heavy native dependencies.
 
 const providerCardMeta = {
   title: "Providers/ProviderCard",
