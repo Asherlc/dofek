@@ -1,7 +1,7 @@
 import { providerLabel } from "@dofek/providers/providers";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 const dateInputSchema = z.object({
@@ -10,7 +10,7 @@ const dateInputSchema = z.object({
 
 const sensorSampleRowSchema = z.object({
   provider_id: z.string(),
-  recorded_at: z.string(),
+  recorded_at: timestampStringSchema,
   heart_rate: z.coerce.number(),
 });
 
@@ -41,8 +41,8 @@ export const heartRateRouter = router({
             FROM fitness.sensor_sample
             WHERE user_id = ${ctx.userId}
               AND channel = 'heart_rate'
-              AND recorded_at >= ${input.date}::date
-              AND recorded_at < (${input.date}::date + interval '1 day')
+              AND recorded_at >= (${input.date}::date::timestamp AT TIME ZONE ${ctx.timezone})
+              AND recorded_at < ((${input.date}::date + interval '1 day')::timestamp AT TIME ZONE ${ctx.timezone})
               AND scalar > 0
             GROUP BY provider_id, date_trunc('minute', recorded_at)
             ORDER BY provider_id, recorded_at`,

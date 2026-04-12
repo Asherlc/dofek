@@ -12,6 +12,14 @@ import {
 } from "../lib/chartTheme.ts";
 import { trpc } from "../lib/trpc.ts";
 
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 export function DailyHeartRatePage() {
   const [date, setDate] = useState(() => formatDateYmd());
 
@@ -70,12 +78,12 @@ function buildChartOption(sources: HeartRateSourceSeries[]) {
           hour: "numeric",
           minute: "2-digit",
         });
-        let html = `<div style="font-weight:600;margin-bottom:4px">${time}</div>`;
+        let html = `<div style="font-weight:600;margin-bottom:4px">${escapeHtml(time)}</div>`;
         for (const param of params) {
           if (param.data[1] == null) continue;
           html += `<div style="display:flex;align-items:center;gap:6px">`;
-          html += `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${param.color}"></span>`;
-          html += `<span>${param.seriesName}: <b>${param.data[1]} bpm</b></span>`;
+          html += `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${escapeHtml(param.color)}"></span>`;
+          html += `<span>${escapeHtml(param.seriesName)}: <b>${param.data[1]} bpm</b></span>`;
           html += `</div>`;
         }
         return html;

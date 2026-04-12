@@ -10,6 +10,12 @@ import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
 import { rootStackScreenOptions } from "./_layout";
 
+/** Parse YYYY-MM-DD as a local date (not UTC) to avoid off-by-one near midnight. */
+function parseLocalDate(dateString: string): Date {
+  const [year, month, day] = dateString.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
 function formatDisplayDate(dateString: string): string {
   const [year, month, day] = dateString.split("-");
   return `${month}/${day}/${year}`;
@@ -22,13 +28,13 @@ export default function DailyHeartRateScreen() {
   const sources = query.data ?? [];
 
   const goBack = () => {
-    const previous = new Date(date);
+    const previous = parseLocalDate(date);
     previous.setDate(previous.getDate() - 1);
     setDate(formatDateYmd(previous));
   };
 
   const goForward = () => {
-    const next = new Date(date);
+    const next = parseLocalDate(date);
     next.setDate(next.getDate() + 1);
     const today = formatDateYmd();
     const nextDate = formatDateYmd(next);
