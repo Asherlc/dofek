@@ -22,8 +22,11 @@ function makeMockDeps(): WhoopBleSyncDeps {
     connect: vi.fn().mockResolvedValue(true),
     startImuStreaming: vi.fn().mockResolvedValue(true),
     stopImuStreaming: vi.fn().mockResolvedValue(true),
-    getBufferedSamples: vi.fn().mockResolvedValue([]),
-    getBufferedRealtimeData: vi.fn().mockResolvedValue([]),
+    peekBufferedSamples: vi.fn().mockResolvedValue([]),
+    confirmSamplesDrain: vi.fn(),
+    peekBufferedRealtimeData: vi.fn().mockResolvedValue([]),
+    confirmRealtimeDataDrain: vi.fn(),
+    addConnectionStateListener: vi.fn().mockReturnValue({ remove: vi.fn() }),
     disconnect: vi.fn(),
   };
 }

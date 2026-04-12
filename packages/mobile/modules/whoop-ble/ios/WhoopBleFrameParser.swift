@@ -26,6 +26,7 @@ struct WhoopImuSample {
     let timestampSeconds: UInt32    // Unix epoch seconds from frame header
     let subSeconds: UInt16          // Millisecond offset within second
     let sampleIndex: Int            // Position within the frame (for per-sample timing)
+    let samplesInFrame: Int         // Total samples in the source frame (for rate derivation)
     let accelerometerX: Float       // acceleration in g
     let accelerometerY: Float       // acceleration in g
     let accelerometerZ: Float       // acceleration in g
@@ -63,6 +64,10 @@ final class WhoopBleFrameParser {
     /// Accumulated bytes from BLE notifications (frames may span multiple notifications)
     private var accumulator = Data()
 
+    /// Number of partial frames discarded when a new SOF arrives before the
+    /// previous frame was complete. Each drop can represent up to 100 IMU samples.
+    private(set) var droppedFrameCount: UInt64 = 0
+
     /// Reset the accumulator (e.g., on disconnect)
     func reset() {
         accumulator = Data()
@@ -78,6 +83,12 @@ final class WhoopBleFrameParser {
         if !data.isEmpty && data[0] == WhoopBleConstants.startOfFrame && !accumulator.isEmpty {
             if let frame = WhoopBleFrameParser.parseFrame(accumulator) {
                 frames.append(frame)
+            } else {
+                // Partial frame discarded — the accumulator had an incomplete frame
+                // that couldn't be parsed before the next SOF arrived.
+                droppedFrameCount += 1
+                NSLog("[WhoopBLE] dropped partial frame (%d bytes, total drops: %llu)",
+                      accumulator.count, droppedFrameCount)
             }
             accumulator = Data()
         }
@@ -203,6 +214,7 @@ final class WhoopBleFrameParser {
                     timestampSeconds: frame.dataTimestamp,
                     subSeconds: frame.subSeconds,
                     sampleIndex: sampleIndex,
+                    samplesInFrame: count,
                     accelerometerX: Float(payload.readInt16LE(at: offset)) * whoopAccelerometerScale,
                     accelerometerY: Float(payload.readInt16LE(at: offset + 2)) * whoopAccelerometerScale,
                     accelerometerZ: Float(payload.readInt16LE(at: offset + 4)) * whoopAccelerometerScale,
@@ -233,6 +245,7 @@ final class WhoopBleFrameParser {
                     timestampSeconds: frame.dataTimestamp,
                     subSeconds: frame.subSeconds,
                     sampleIndex: sampleIndex,
+                    samplesInFrame: countA,
                     accelerometerX: Float(payload.readInt16LE(at: 20 + sampleIndex * 2)) * whoopAccelerometerScale,
                     accelerometerY: Float(payload.readInt16LE(at: 220 + sampleIndex * 2)) * whoopAccelerometerScale,
                     accelerometerZ: Float(payload.readInt16LE(at: 420 + sampleIndex * 2)) * whoopAccelerometerScale,

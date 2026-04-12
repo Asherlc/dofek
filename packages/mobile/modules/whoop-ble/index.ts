@@ -106,10 +106,44 @@ export async function startOpticalMode(): Promise<boolean> {
 }
 
 /**
- * Retrieve and clear the internal realtime data buffer (HR + quaternion).
+ * Peek at buffered IMU samples WITHOUT removing them.
  *
- * Returns all REALTIME_DATA (0x28) samples accumulated since the last call.
- * The buffer is cleared after retrieval.
+ * Call `confirmSamplesDrain(count)` after a successful upload to
+ * actually remove them. If the upload fails, the samples remain
+ * buffered for retry — no data loss.
+ */
+export async function peekBufferedSamples(): Promise<WhoopImuSample[]> {
+  return WhoopBleModule.peekBufferedSamples();
+}
+
+/**
+ * Remove the first `count` IMU samples from the buffer.
+ * Call after a successful upload to commit the drain.
+ */
+export function confirmSamplesDrain(count: number): void {
+  WhoopBleModule.confirmSamplesDrain(count);
+}
+
+/**
+ * Peek at buffered realtime data (HR + quaternion) WITHOUT removing.
+ *
+ * Call `confirmRealtimeDataDrain(count)` after a successful upload.
+ */
+export async function peekBufferedRealtimeData(): Promise<WhoopRealtimeDataSample[]> {
+  return WhoopBleModule.peekBufferedRealtimeData();
+}
+
+/**
+ * Remove the first `count` realtime data samples from the buffer.
+ * Call after a successful upload to commit the drain.
+ */
+export function confirmRealtimeDataDrain(count: number): void {
+  WhoopBleModule.confirmRealtimeDataDrain(count);
+}
+
+/**
+ * Retrieve and clear the internal realtime data buffer (HR + quaternion).
+ * @deprecated Use peekBufferedRealtimeData + confirmRealtimeDataDrain instead.
  */
 export async function getBufferedRealtimeData(): Promise<WhoopRealtimeDataSample[]> {
   return WhoopBleModule.getBufferedRealtimeData();
@@ -117,9 +151,7 @@ export async function getBufferedRealtimeData(): Promise<WhoopRealtimeDataSample
 
 /**
  * Retrieve and clear the internal IMU sample buffer.
- *
- * Returns all samples accumulated since the last call (or since
- * streaming started). The buffer is cleared after retrieval.
+ * @deprecated Use peekBufferedSamples + confirmSamplesDrain instead.
  */
 export async function getBufferedSamples(): Promise<WhoopImuSample[]> {
   return WhoopBleModule.getBufferedSamples();
@@ -146,7 +178,7 @@ export function getDataPathStats(): {
   cmdNotificationCount: number;
   totalFramesParsed: number;
   totalSamplesExtracted: number;
-  droppedForNonStreaming: number;
+
   emptyExtractions: number;
   bufferOverflows: number;
   packetTypes: string;
@@ -157,6 +189,7 @@ export function getDataPathStats(): {
   hasCmdCharacteristic: boolean;
   hasCmdResponseCharacteristic: boolean;
   lastWriteError: string;
+  watchdogRetryCount: number;
 } {
   return WhoopBleModule.getDataPathStats();
 }
@@ -177,6 +210,27 @@ export async function retryConnection(): Promise<boolean> {
 /** Disconnect from the WHOOP strap. */
 export function disconnect(): void {
   WhoopBleModule.disconnect();
+}
+
+/** Connection state change event from the native BLE module. */
+export interface ConnectionStateEvent {
+  state: string;
+  peripheralId?: string;
+  error?: string;
+}
+
+/**
+ * Subscribe to BLE connection state changes (connected/disconnected).
+ *
+ * Use this to detect when the strap disconnects so the sync layer can
+ * re-establish the connection on the next cycle.
+ *
+ * @returns A subscription that can be removed with `.remove()`.
+ */
+export function addConnectionStateListener(
+  callback: (event: ConnectionStateEvent) => void,
+): EventSubscription {
+  return WhoopBleModule.addListener("onConnectionStateChanged", callback);
 }
 
 /** Real-time orientation from the Madgwick AHRS filter (quaternion + Euler angles) */
