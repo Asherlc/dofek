@@ -8,6 +8,7 @@ on:
         type: choice
         options:
           - all
+          - web
           - infra
           - app
           - ios
@@ -17,19 +18,65 @@ on:
         required: false
         type: string
 
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
 jobs:
   terraform:
     name: Deploy Infra
-    if: inputs.target == 'infra' || inputs.target == 'all'
+    if: inputs.target == 'infra' || inputs.target == 'web' || inputs.target == 'all'
     uses: ./.github/workflows/deploy-terraform.yml
     with:
       commit_sha: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
     secrets: inherit
 
+  docker:
+    name: Docker Build & Push
+    if: inputs.target == 'app' || inputs.target == 'web' || inputs.target == 'all'
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          ref: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+        with:
+          config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        id: meta
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,value=${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
+            type=raw,value=latest
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          target: server
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: COMMIT_HASH=${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
+          secrets: |
+            SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
+          cache-from: type=gha,scope=server
+          cache-to: type=gha,mode=max,scope=server
+
   app:
     name: Deploy App
-    needs: [terraform]
-    if: always() && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (inputs.target == 'app' || inputs.target == 'all')
+    needs: [terraform, docker]
+    if: always() && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (needs.docker.result == 'success' || needs.docker.result == 'skipped') && (inputs.target == 'app' || inputs.target == 'web' || inputs.target == 'all')
     uses: ./.github/workflows/deploy-app.yml
     with:
       commit_sha: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}

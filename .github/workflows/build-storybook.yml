@@ -1,0 +1,19 @@
+name: Build Storybook
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    name: Build Storybook
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Build Storybook
+        run: pnpm storybook:web:build
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: storybook-build
+          path: packages/web/storybook-static/
+          retention-days: 7

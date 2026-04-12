@@ -1,0 +1,78 @@
+name: Review App — Storybook
+
+on:
+  workflow_call:
+
+jobs:
+  deploy:
+    name: Deploy Storybook Preview
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: storybook-build
+          path: storybook-static/
+      - name: Prepare preview metadata
+        id: preview
+        env:
+          R2_ENDPOINT: https://8e5b2f62ffe8ebdd48e725d325a6d51e.r2.cloudflarestorage.com
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: dofek-storybook
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping Storybook preview for forked PR (repository secrets are unavailable)."
+            exit 0
+          fi
+
+          missing=()
+          [ -n "${R2_ENDPOINT:-}" ] || missing+=("R2_ENDPOINT")
+          [ -n "${R2_ACCESS_KEY_ID:-}" ] || missing+=("R2_ACCESS_KEY_ID")
+          [ -n "${R2_SECRET_ACCESS_KEY:-}" ] || missing+=("R2_SECRET_ACCESS_KEY")
+          [ -n "${R2_BUCKET:-}" ] || missing+=("R2_BUCKET")
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Storybook preview missing required GitHub secrets: ${missing[*]}"
+            exit 1
+          fi
+
+          BASE_URL="https://storybook.dofek.fit"
+          PREVIEW_PREFIX="pr-${{ github.event.pull_request.number }}"
+          PREVIEW_URL="$BASE_URL/pr-${{ github.event.pull_request.number }}/index.html"
+
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+          echo "preview_prefix=$PREVIEW_PREFIX" >> "$GITHUB_OUTPUT"
+          echo "preview_url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
+          echo "commit_sha=${GITHUB_SHA:0:8}" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy Storybook to R2
+        if: steps.preview.outputs.ready == 'true'
+        env:
+          R2_ENDPOINT: https://8e5b2f62ffe8ebdd48e725d325a6d51e.r2.cloudflarestorage.com
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: dofek-storybook
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          set -euo pipefail
+          aws s3 cp storybook-static/ "s3://$R2_BUCKET/${{ steps.preview.outputs.preview_prefix }}/" \
+            --recursive \
+            --region auto \
+            --endpoint-url "$R2_ENDPOINT" \
+            --cache-control "no-cache"
+
+      - name: Comment preview URL on PR
+        if: steps.preview.outputs.ready == 'true'
+        uses: marocchino/sticky-pull-request-comment@52423e01640425a022ef5fd42c6fb5f633a02728 # v2
+        with:
+          header: storybook-preview
+          message: |
+            Storybook preview for `${{ steps.preview.outputs.commit_sha }}` is ready: [Open Storybook](${{ steps.preview.outputs.preview_url }})
+
+            This comment updates automatically on each PR push.

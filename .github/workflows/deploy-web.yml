@@ -1,0 +1,151 @@
+name: Deploy Web
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: "Commit SHA to deploy (defaults to main HEAD)"
+        required: false
+        type: string
+
+concurrency:
+  group: deploy-web
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  check:
+    name: Deploy Check
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      commit_sha: ${{ steps.resolve.outputs.sha }}
+      should_deploy: ${{ steps.latest.outputs.should_deploy }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          fetch-depth: 1
+      - name: Resolve commit SHA
+        id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_SHA: ${{ inputs.commit_sha }}
+          WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            SHA="$INPUT_SHA"
+            if [ -z "$SHA" ]; then
+              SHA=$(git ls-remote origin refs/heads/main | awk '{ print $1 }')
+            fi
+          else
+            SHA="$WORKFLOW_RUN_SHA"
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "Resolved commit SHA: $SHA"
+      - name: Check if latest main HEAD
+        id: latest
+        env:
+          SHA: ${{ steps.resolve.outputs.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          MAIN_HEAD=$(git ls-remote origin refs/heads/main | awk '{ print $1 }')
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+            echo "Manual deploy requested for $SHA"
+          elif [ "$MAIN_HEAD" = "$SHA" ]; then
+            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+            echo "Deploying latest main commit: $SHA"
+          else
+            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping deploy for non-latest main commit: $SHA (main HEAD is $MAIN_HEAD)"
+          fi
+
+  terraform:
+    name: Terraform Apply
+    needs: [check]
+    if: needs.check.outputs.should_deploy == 'true'
+    uses: ./.github/workflows/deploy-terraform.yml
+    with:
+      commit_sha: ${{ needs.check.outputs.commit_sha }}
+    secrets: inherit
+
+  docker:
+    name: Docker Build & Push
+    needs: [check]
+    if: needs.check.outputs.should_deploy == 'true'
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          ref: ${{ needs.check.outputs.commit_sha }}
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+        with:
+          config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        id: meta
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,value=${{ needs.check.outputs.commit_sha }}
+            type=raw,value=latest
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          target: server
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: COMMIT_HASH=${{ needs.check.outputs.commit_sha }}
+          secrets: |
+            SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
+          cache-from: type=gha,scope=server
+          cache-to: type=gha,mode=max,scope=server
+
+  deploy-app:
+    name: Deploy App
+    needs: [check, terraform, docker]
+    uses: ./.github/workflows/deploy-app.yml
+    with:
+      commit_sha: ${{ needs.check.outputs.commit_sha }}
+    secrets: inherit
+
+  cleanup-images:
+    name: Cleanup Images
+    needs: [deploy-app]
+    if: always() && needs.deploy-app.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+      - name: Prune unused images
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          ssh "root@${SERVER_HOST}" \
+            'docker image prune -af --filter "until=72h"' \
+            || echo "Image cleanup failed (non-fatal)"
