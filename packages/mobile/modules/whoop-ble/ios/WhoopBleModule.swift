@@ -12,7 +12,7 @@ public class WhoopBleModule: Module {
     private let connectionManager = WhoopBleConnectionManager()
     private let sampleBuffer = WhoopBleSampleBuffer()
     private let orientationProcessor = WhoopBleOrientationProcessor()
-    private let watchdog: WhoopBleDataWatchdog
+    private lazy var watchdog = WhoopBleDataWatchdog(queue: connectionManager.bleQueue)
 
     private let frameParser = WhoopBleFrameParser()
     private let cmdFrameParser = WhoopBleFrameParser()
@@ -26,11 +26,6 @@ public class WhoopBleModule: Module {
     private var emptyExtractions: UInt64 = 0
     private var packetTypeCounts: [UInt8: UInt64] = [:]
     private var lastCommandResponse: String = "none"
-
-    override init() {
-        watchdog = WhoopBleDataWatchdog(queue: connectionManager.bleQueue)
-        super.init()
-    }
 
     public func definition() -> ModuleDefinition {
         Name("WhoopBle")
