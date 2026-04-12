@@ -200,6 +200,7 @@ jobs:
         env:
           BUILD_NUMBER: ${{ steps.build-number.outputs.value }}
           COMMIT_SHA: ${{ steps.sha.outputs.ref }}
+          TRIGGERED_BY: ${{ github.event.workflow_run.html_url }}
         run: |
           VERSION=$(python3 -c "import json; print(json.load(open('packages/mobile/app.json'))['expo']['version'])")
           {
@@ -210,6 +211,9 @@ jobs:
             echo "| **Version** | $VERSION |"
             echo "| **Build** | $BUILD_NUMBER |"
             echo "| **Commit** | \`${COMMIT_SHA:0:10}\` |"
+            if [ -n "$TRIGGERED_BY" ]; then
+              echo "| **Triggered by** | [CI run]($TRIGGERED_BY) |"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Cleanup keychain
         if: always()

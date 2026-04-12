@@ -58,6 +58,18 @@ jobs:
               exit 1
             fi
           done
+      - name: Link triggered deploys
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        env:
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          {
+            echo "## Triggered Deploys"
+            echo ""
+            echo "- [Deploy Web](${REPO_URL}/actions/workflows/deploy-web.yml)"
+            echo "- [Deploy iOS](${REPO_URL}/actions/workflows/deploy-ios.yml)"
+            echo "- [Deploy OTA](${REPO_URL}/actions/workflows/deploy-ota.yml)"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # ── Review apps (PR only, depend on builds not tests) ──────────────────
 
