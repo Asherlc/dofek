@@ -10,3 +10,7 @@ jobs:
   build-web:
     uses: ./.github/workflows/build-web.yml
     secrets: inherit
+
+  test:
+    uses: ./.github/workflows/test.yml
+    secrets: inherit
