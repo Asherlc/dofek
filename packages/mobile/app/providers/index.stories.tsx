@@ -97,6 +97,34 @@ export const ImportOnly: ProviderCardStory = {
   },
 };
 
+export const AppleHealthImportOnly: ProviderCardStory = {
+  args: {
+    provider: {
+      id: "apple_health",
+      label: "Apple Health",
+      enabled: false,
+      authStatus: "connected",
+      authType: "none",
+      lastSyncAt: null,
+      importOnly: true,
+    },
+  },
+};
+
+export const AppleHealthConnected: ProviderCardStory = {
+  args: {
+    provider: {
+      id: "apple_health",
+      label: "Apple Health",
+      enabled: true,
+      authStatus: "connected",
+      authType: "none",
+      lastSyncAt: new Date(Date.now() - 600_000).toISOString(),
+      importOnly: false,
+    },
+  },
+};
+
 export const NeverSynced: ProviderCardStory = {
   args: {
     provider: {

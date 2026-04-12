@@ -492,29 +492,31 @@ export default function ProvidersScreen() {
 
       {/* Data Sources */}
       <Text style={styles.sectionTitle}>Data Sources</Text>
-      {healthKitAvailable && (
-        <ProviderCard
-          provider={{
-            id: "apple_health",
-            label: "Apple Health",
-            enabled: healthKitPermissionStatus === "unnecessary",
-            authStatus: healthKitPermissionStatus === "unnecessary" ? "connected" : "not_connected",
-            authType: "none",
-            lastSyncAt: null,
-            importOnly: false,
-          }}
-          stats={statsMap.apple_health}
-          syncing={healthKitSyncing}
-          syncProgress={
-            healthKitSyncing || healthKitProgress ? { message: healthKitProgress } : undefined
-          }
-          onSync={() => handleHealthKitSync()}
-          onFullSync={() => handleHealthKitSync(true)}
-          onConnect={handleHealthKitConnect}
-          onPress={() => router.push("/providers/apple_health")}
-        />
-      )}
-      {providerList.length === 0 && !healthKitAvailable ? (
+      <ProviderCard
+        provider={{
+          id: "apple_health",
+          label: "Apple Health",
+          enabled: healthKitAvailable && healthKitPermissionStatus === "unnecessary",
+          authStatus: healthKitAvailable
+            ? healthKitPermissionStatus === "unnecessary"
+              ? "connected"
+              : "not_connected"
+            : "connected",
+          authType: "none",
+          lastSyncAt: null,
+          importOnly: !healthKitAvailable,
+        }}
+        stats={statsMap.apple_health}
+        syncing={healthKitSyncing}
+        syncProgress={
+          healthKitSyncing || healthKitProgress ? { message: healthKitProgress } : undefined
+        }
+        onSync={() => handleHealthKitSync()}
+        onFullSync={() => handleHealthKitSync(true)}
+        onConnect={handleHealthKitConnect}
+        onPress={() => router.push("/providers/apple_health")}
+      />
+      {providerList.length === 0 ? (
         <View style={styles.card}>
           <Text style={styles.emptyText}>No data sources configured.</Text>
         </View>
