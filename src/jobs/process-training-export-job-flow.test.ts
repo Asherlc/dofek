@@ -85,7 +85,7 @@ describe("processTrainingExportJob", () => {
     }
   });
 
-  it("spawns Python with correct arguments", async () => {
+  it("spawns Python with correct arguments and does not include --since/--until when absent", async () => {
     const job = createMockJob();
     const child = spawnReturningChild();
 
@@ -97,6 +97,9 @@ describe("processTrainingExportJob", () => {
 
     await exportPromise;
 
+    const spawnArgs = mockSpawn.mock.calls[0]?.[1];
+    const spawnOpts = mockSpawn.mock.calls[0]?.[2] as { env?: Record<string, string> };
+
     expect(mockSpawn).toHaveBeenCalledWith(
       "python",
       expect.arrayContaining([
@@ -107,6 +110,13 @@ describe("processTrainingExportJob", () => {
       ]),
       expect.objectContaining({ stdio: ["ignore", "pipe", "pipe"] }),
     );
+
+    // Kill mutant: if (since) → if (true) / if (until) → if (true)
+    expect(spawnArgs).not.toContain("--since");
+    expect(spawnArgs).not.toContain("--until");
+
+    // Kill mutant: env: { ...process.env } → env: {}
+    expect(spawnOpts.env).toHaveProperty("DATABASE_URL");
   });
 
   it("passes since and until as CLI args", async () => {
@@ -160,6 +170,7 @@ describe("processTrainingExportJob", () => {
 
     const exportPromise = processTrainingExportJob(job);
 
+    // stderr has trailing whitespace — kill mutant: stderrOutput.trim() → stderrOutput
     child.stderr?.push("Traceback: some error\n");
     child.stdout?.push(null);
     child.stderr?.push(null);
@@ -168,8 +179,15 @@ describe("processTrainingExportJob", () => {
 
     child.emit("close", 1);
 
+    // The error message should be trimmed (no trailing newline)
     await expect(exportPromise).rejects.toThrow("Traceback: some error");
-    expect(mockCaptureException).toHaveBeenCalledTimes(1);
+    const thrownError = await exportPromise.catch((error: Error) => error);
+    expect(thrownError.message).toBe("Traceback: some error");
+
+    // Kill mutant: Sentry tags { job: "training-export" } → {} or { tags: {} }
+    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { job: "training-export" },
+    });
   });
 
   it("rejects when spawn fails", async () => {
@@ -193,7 +211,7 @@ describe("processTrainingExportJob", () => {
     );
   });
 
-  it("logs start and completion", async () => {
+  it("logs start and completion with duration", async () => {
     const job = createMockJob();
     const child = spawnReturningChild();
 
@@ -208,12 +226,13 @@ describe("processTrainingExportJob", () => {
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       "[training-export] Starting training data export (since=all, until=now)",
     );
-    expect(mockLoggerInfo).toHaveBeenCalledWith(
-      expect.stringContaining("[training-export] Export complete in"),
-    );
+    // Kill mutant: Date.now() - jobStart → Date.now() + jobStart
+    // With fake timers (no advancement), duration must be 0ms.
+    // The mutant would produce a huge number instead of 0.
+    expect(mockLoggerInfo).toHaveBeenCalledWith("[training-export] Export complete in 0ms");
   });
 
-  it("logs error on failure", async () => {
+  it("logs error on failure with duration", async () => {
     const job = createMockJob();
     const child = spawnReturningChild();
 
@@ -225,8 +244,9 @@ describe("processTrainingExportJob", () => {
 
     await expect(exportPromise).rejects.toThrow();
 
+    // Kill mutant: Date.now() - jobStart → Date.now() + jobStart (error path)
     expect(mockLoggerError).toHaveBeenCalledWith(
-      expect.stringContaining("[training-export] Job failed after"),
+      expect.stringContaining("[training-export] Job failed after 0ms"),
     );
   });
 
