@@ -12,13 +12,13 @@ on:
         required: false
         type: string
 
+permissions:
+  contents: read
+  packages: read
+
 concurrency:
   group: deploy-web
   cancel-in-progress: false
-
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   check:
@@ -66,6 +66,21 @@ jobs:
             echo "should_deploy=false" >> "$GITHUB_OUTPUT"
             echo "Skipping deploy for non-latest main commit: $SHA (main HEAD is $MAIN_HEAD)"
           fi
+      - name: Verify Docker image exists
+        if: steps.latest.outputs.should_deploy == 'true'
+        env:
+          SHA: ${{ steps.resolve.outputs.sha }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHORT_SHA=$(echo "$SHA" | head -c 7)
+          IMAGE="ghcr.io/asherlc/dofek:sha-${SHORT_SHA}"
+          echo "Checking for image: $IMAGE"
+          if ! gh api "/users/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/packages/container/dofek/versions" \
+              --jq ".[].metadata.container.tags[]" 2>/dev/null | grep -q "sha-${SHORT_SHA}"; then
+            echo "::error::Docker image $IMAGE not found in GHCR. CI must build and push the image before deploy."
+            exit 1
+          fi
+          echo "Image found: $IMAGE"
 
   terraform:
     name: Terraform Apply
@@ -76,52 +91,9 @@ jobs:
       commit_sha: ${{ needs.check.outputs.commit_sha }}
     secrets: inherit
 
-  docker:
-    name: Docker Build & Push
-    needs: [check]
-    if: needs.check.outputs.should_deploy == 'true'
-    runs-on: ubuntu-24.04-arm
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-        with:
-          ref: ${{ needs.check.outputs.commit_sha }}
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
-        with:
-          config-inline: |
-            [registry."docker.io"]
-              mirrors = ["mirror.gcr.io"]
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
-        id: meta
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=sha,value=${{ needs.check.outputs.commit_sha }}
-            type=raw,value=latest
-      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
-        with:
-          context: .
-          target: server
-          platforms: linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: COMMIT_HASH=${{ needs.check.outputs.commit_sha }}
-          secrets: |
-            SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
-          cache-from: type=gha,scope=server
-          cache-to: type=gha,mode=max,scope=server
-
   deploy-app:
     name: Deploy App
-    needs: [check, terraform, docker]
+    needs: [check, terraform]
     uses: ./.github/workflows/deploy-app.yml
     with:
       commit_sha: ${{ needs.check.outputs.commit_sha }}

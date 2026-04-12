@@ -18,6 +18,10 @@ on:
         required: false
         type: string
 
+permissions:
+  contents: read
+  actions: read
+
 concurrency:
   group: deploy-ios
   cancel-in-progress: false
@@ -30,6 +34,7 @@ jobs:
     outputs:
       commit_sha: ${{ steps.resolve.outputs.sha }}
       should_deploy: ${{ steps.detect.outputs.should_deploy }}
+      ci_run_id: ${{ steps.find-run.outputs.run_id }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
@@ -79,9 +84,39 @@ jobs:
             echo "should_deploy=false" >> "$GITHUB_OUTPUT"
             echo "No iOS native changes — skipping deploy"
           fi
+      - name: Find CI run with archive
+        id: find-run
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          COMMIT_SHA: ${{ steps.resolve.outputs.sha }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            echo "run_id=$WORKFLOW_RUN_ID" >> "$GITHUB_OUTPUT"
+            echo "Using triggering CI run: $WORKFLOW_RUN_ID"
+            exit 0
+          fi
+
+          # For workflow_dispatch and workflow_call, find CI run for the commit
+          RUN_ID=$(gh run list \
+            --workflow=ci.yml \
+            --commit="$COMMIT_SHA" \
+            --status=success \
+            --limit=1 \
+            --json databaseId \
+            --jq '.[0].databaseId')
+
+          if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
+            echo "::error::No successful CI run found for commit $COMMIT_SHA"
+            exit 1
+          fi
+
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "Using CI run for commit ${COMMIT_SHA:0:10}: $RUN_ID"
 
   deploy:
-    name: Build & Upload to TestFlight
+    name: Upload to TestFlight
     needs: [check]
     if: |
       always() && (
@@ -89,12 +124,10 @@ jobs:
         needs.check.outputs.should_deploy == 'true'
       )
     runs-on: macos-26
-    timeout-minutes: 60
+    timeout-minutes: 30
     env:
       APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
       APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-      DERIVED_DATA_PATH: ${{ github.workspace }}/DerivedData
     steps:
       - name: Resolve commit SHA
         id: sha
@@ -111,30 +144,20 @@ jobs:
           fi
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
-          fetch-depth: 0
           ref: ${{ steps.sha.outputs.ref }}
-      - uses: ./.github/actions/setup-node-pnpm
-      - uses: ./.github/actions/setup-ccache
+      - name: Download CI archive
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          cache-key-prefix: ccache-ios-release
-      - name: Generate native project
-        working-directory: packages/mobile
-        run: npx expo prebuild --clean --platform ios
-      - name: Download Sentry XCFramework
-        run: packages/mobile/scripts/download-sentry-xcframework.sh
-      - name: Cache CocoaPods
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: packages/mobile/ios/Pods
-          key: pods-v7-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/scripts/download-sentry-xcframework.sh') }}
-      - name: Cache DerivedData
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: ${{ env.DERIVED_DATA_PATH }}
-          key: deriveddata-release-v1-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/*/ios/**/*.swift', 'packages/mobile/modules/*/ios/**/*.m', 'packages/mobile/modules/*/ios/**/*.h') }}
-          restore-keys: deriveddata-release-v1-
-      - name: Install CocoaPods
-        run: cd packages/mobile/ios && pod install
+          name: ios-xcarchive
+          path: ${{ runner.temp }}/Dofek.xcarchive
+          run-id: ${{ needs.check.outputs.ci_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Read build number from archive
+        id: build-number
+        run: |
+          BUILD_NUMBER=$(/usr/libexec/PlistBuddy -c "Print :ApplicationProperties:CFBundleVersion" "$RUNNER_TEMP/Dofek.xcarchive/Info.plist")
+          echo "value=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "Build number: $BUILD_NUMBER"
       - name: Setup code signing
         env:
           DEV_CERT_BASE64: ${{ secrets.IOS_DEVELOPMENT_CERT_BASE64 }}
@@ -159,30 +182,6 @@ jobs:
         run: |
           mkdir -p ~/private_keys
           echo -n "$API_KEY_BASE64" | base64 --decode > ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8
-      - name: Set build number
-        run: |
-          cd packages/mobile/ios
-          BUILD_NUMBER=$(( $(git rev-list --count HEAD) + 1200 ))
-          echo "Setting build number to $BUILD_NUMBER"
-          agvtool new-version -all "$BUILD_NUMBER"
-      - name: Build archive
-        run: |
-          cd packages/mobile/ios
-          xcodebuild archive \
-            -workspace Dofek.xcworkspace \
-            -scheme Dofek \
-            -configuration Release \
-            -archivePath $RUNNER_TEMP/Dofek.xcarchive \
-            -derivedDataPath "$DERIVED_DATA_PATH" \
-            -destination 'generic/platform=iOS' \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8 \
-            -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
-            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
-            DEVELOPMENT_TEAM=68LEL35DQ9 \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            CC=$RUNNER_TEMP/ccache-wrappers/ccache-clang \
-            CPLUSPLUS=$RUNNER_TEMP/ccache-wrappers/ccache-clang++
       - name: Export IPA & Upload to TestFlight
         run: |
           xcodebuild -exportArchive \
@@ -193,6 +192,29 @@ jobs:
             -authenticationKeyPath ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8 \
             -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
             -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
+      - name: Write job summary
+        if: success()
+        env:
+          BUILD_NUMBER: ${{ steps.build-number.outputs.value }}
+          COMMIT_SHA: ${{ steps.sha.outputs.ref }}
+          TRIGGERED_BY: ${{ github.event.workflow_run.html_url }}
+          CI_RUN_ID: ${{ needs.check.outputs.ci_run_id }}
+        run: |
+          VERSION=$(python3 -c "import json; print(json.load(open('packages/mobile/app.json'))['expo']['version'])")
+          REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+          {
+            echo "## iOS Deploy"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| **Version** | $VERSION |"
+            echo "| **Build** | $BUILD_NUMBER |"
+            echo "| **Commit** | \`${COMMIT_SHA:0:10}\` |"
+            echo "| **Archive from** | [CI run #${CI_RUN_ID}](${REPO_URL}/actions/runs/${CI_RUN_ID}) |"
+            if [ -n "$TRIGGERED_BY" ]; then
+              echo "| **Triggered by** | [CI run]($TRIGGERED_BY) |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Cleanup keychain
         if: always()
         run: security delete-keychain $RUNNER_TEMP/app-signing.keychain-db || true

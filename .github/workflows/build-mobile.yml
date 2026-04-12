@@ -107,6 +107,13 @@ jobs:
             CPLUSPLUS=$RUNNER_TEMP/ccache-wrappers/ccache-clang++ \
             2>&1 | tail -40
         timeout-minutes: 25
+      - name: Upload archive
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ios-xcarchive
+          path: ${{ runner.temp }}/Dofek.xcarchive
+          retention-days: 7
       - name: Show ccache stats
         if: always()
         run: ccache --show-stats
