@@ -6,7 +6,15 @@ import {
 } from "@dofek/training/training";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
-import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  ActivityIndicator,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { ActivityCard } from "../../components/ActivityCard";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { SparkLine } from "../../components/charts/SparkLine";
@@ -233,18 +241,20 @@ export default function StrainScreen() {
           )}
 
           {/* Recent activities */}
-          {activities.length > 0 && (
-            <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Recent Activities</Text>
-                <TouchableOpacity
-                  activeOpacity={0.7}
-                  onPress={() => router.push("/activities")}
-                  style={styles.sectionLinkButton}
-                >
-                  <Text style={styles.sectionLinkButtonText}>View all</Text>
-                </TouchableOpacity>
-              </View>
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Recent Activities</Text>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => router.push("/activities")}
+                style={styles.sectionLinkButton}
+              >
+                <Text style={styles.sectionLinkButtonText}>View all</Text>
+              </TouchableOpacity>
+            </View>
+            {activitiesQuery.isLoading ? (
+              <ActivityIndicator color={colors.accent} style={styles.activitiesLoader} />
+            ) : activities.length > 0 ? (
               <View style={styles.activitiesStack}>
                 {activities.slice(0, 5).map((activity) => (
                   <TouchableOpacity
@@ -266,8 +276,10 @@ export default function StrainScreen() {
                   </TouchableOpacity>
                 ))}
               </View>
-            </View>
-          )}
+            ) : (
+              <Text style={styles.activitiesEmpty}>No recent activities</Text>
+            )}
+          </View>
         </>
       )}
     </ScrollView>
@@ -468,5 +480,14 @@ const styles = StyleSheet.create({
   },
   activitiesStack: {
     gap: 8,
+  },
+  activitiesLoader: {
+    paddingVertical: 24,
+  },
+  activitiesEmpty: {
+    color: colors.textTertiary,
+    fontSize: 13,
+    textAlign: "center",
+    paddingVertical: 24,
   },
 });
