@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { ConnectionOptions } from "bullmq";
 import { Queue, Worker } from "bullmq";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -59,7 +60,7 @@ describe("BullMQ stall detection", () => {
    * Helper: create a queue with a unique name and register it for cleanup.
    */
   function createTestQueue(suffix: string): Queue {
-    const queueName = `test-stall-${suffix}-${Date.now()}`;
+    const queueName = `test-stall-${suffix}-${randomUUID()}`;
     const queue = new Queue(queueName, { connection });
     cleanupFns.push(async () => {
       await queue.obliterate({ force: true }).catch((_error: unknown) => {
@@ -131,13 +132,15 @@ describe("BullMQ stall detection", () => {
     expect(result.token?.length).toBeGreaterThan(0);
   }, 15_000);
 
-  it("silently drops extendLock when wrapper mirrors training export pattern with falsy token", async () => {
-    // This test reproduces the exact pattern from worker.ts:
+  it("keeps extendLock active when wrapper mirrors training export pattern and BullMQ provides a defined token", async () => {
+    // This test mirrors the exact pattern from worker.ts:
     //   extendLock: (duration) =>
     //     token ? job.extendLock(token, duration).then(() => {}) : Promise.resolve()
     //
-    // If token is ever falsy, extendLock becomes a silent no-op and the job WILL stall.
-    const queue = createTestQueue("falsy-token");
+    // If token were ever falsy, extendLock would become a silent no-op and the
+    // job would stall. This test verifies BullMQ provides a defined token here,
+    // so the wrapper remains safe and the job does not stall.
+    const queue = createTestQueue("defined-token-wrapper");
     const { promise, resolve } = deferred<{
       failed: boolean;
       tokenWasFalsy: boolean;
