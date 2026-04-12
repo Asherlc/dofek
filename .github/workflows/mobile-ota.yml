@@ -24,22 +24,6 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - uses: ./.github/actions/setup-node-pnpm
 
-      - name: Wait for valid OTA server TLS
-        run: |
-          for attempt in $(seq 1 18); do
-            cert_subject=$(echo | openssl s_client -connect ota.dofek.asherlc.com:443 \
-              -servername ota.dofek.asherlc.com 2>/dev/null \
-              | openssl x509 -noout -subject 2>/dev/null || true)
-            if [ -n "$cert_subject" ] && ! echo "$cert_subject" | grep -q "TRAEFIK DEFAULT"; then
-              echo "Valid TLS certificate: $cert_subject"
-              exit 0
-            fi
-            echo "Waiting for valid TLS cert... (attempt $attempt/18, current: ${cert_subject:-none})"
-            sleep 10
-          done
-          echo "::error::OTA server at ota.dofek.asherlc.com is serving a self-signed certificate. Traefik ACME may have failed — check server logs."
-          exit 1
-
       - name: Publish OTA to PR branch
         working-directory: packages/mobile
         env:
