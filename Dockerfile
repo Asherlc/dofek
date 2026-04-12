@@ -116,6 +116,8 @@ COPY --from=source --chown=node:node /app/packages/recovery/src ./packages/recov
 COPY --from=source --chown=node:node /app/packages/recovery/package.json ./packages/recovery/
 COPY --from=source --chown=node:node /app/packages/zones/src ./packages/zones/src
 COPY --from=source --chown=node:node /app/packages/zones/package.json ./packages/zones/
+COPY --from=source --chown=node:node /app/packages/providers-meta/src ./packages/providers-meta/src
+COPY --from=source --chown=node:node /app/packages/providers-meta/package.json ./packages/providers-meta/
 COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
 # Link workspace packages so bare-specifier imports resolve
 # Use ln -sf to overwrite any links pnpm's hoisted mode may have created
