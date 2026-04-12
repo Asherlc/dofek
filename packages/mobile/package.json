@@ -7,6 +7,8 @@
     "start": "expo start",
     "storybook": "EXPO_PUBLIC_STORYBOOK_ENABLED=true sb-rn-get-stories && EXPO_PUBLIC_STORYBOOK_ENABLED=true expo start --clear",
     "storybook:ios": "EXPO_PUBLIC_STORYBOOK_ENABLED=true expo run:ios",
+    "storybook:web": "storybook dev -p 6007 --config-dir .storybook",
+    "build-storybook": "storybook build --config-dir .storybook",
     "ios": "expo run:ios",
     "ios:device": "expo run:ios --device",
     "prebuild": "expo prebuild --platform ios --clean",
@@ -62,8 +64,13 @@
     "@storybook/addon-ondevice-actions": "10.3.1",
     "@storybook/addon-ondevice-controls": "10.3.1",
     "@storybook/react-native": "10.3.1",
+    "@storybook/react-native-web-vite": "10.3.5",
     "@testing-library/react": "16.3.2",
     "@types/react": "19.2.14",
-    "typescript": "5.9.3"
+    "react-dom": "19.2.4",
+    "react-native-web": "0.21.2",
+    "storybook": "10.3.5",
+    "typescript": "5.9.3",
+    "vite": "6.4.2"
   }
 }

@@ -20,6 +20,8 @@ packages/mobile/certs/public-key.pem
 *.log
 # Personal supplement stack — differs per user
 src/supplements.config.ts
+# Storybook build output
+**/storybook-static/
 # Stryker mutation testing
 reports/
 .stryker-tmp/
