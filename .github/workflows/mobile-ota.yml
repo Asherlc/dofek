@@ -2,7 +2,7 @@ name: Mobile OTA
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, closed]
+    types: [opened, synchronize, reopened]
     paths-ignore:
       - '**/*.md'
       - '.gitignore'
@@ -10,12 +10,11 @@ on:
 
 concurrency:
   group: mobile-ota-${{ github.event.number }}
-  cancel-in-progress: ${{ github.event.action != 'closed' }}
+  cancel-in-progress: true
 
 jobs:
   publish:
     name: Publish Mobile OTA
-    if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -71,20 +70,3 @@ jobs:
           header: mobile-preview
           path: /tmp/mobile-preview-comment.md
 
-  cleanup:
-    name: Cleanup Mobile OTA
-    if: github.event.action == 'closed'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: ./.github/actions/setup-node-pnpm
-
-      - name: Delete OTA branch
-        working-directory: packages/mobile
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: |
-          # Best-effort cleanup — branch may not exist if OTA was never published.
-          # eoas doesn't have channel/branch deletion; the self-hosted OTA server
-          # manages this via its storage backend. Old PR branches are harmless.
-          echo "PR pr-${{ github.event.number }} closed — OTA branch will be cleaned up by the server."
