@@ -40,3 +40,20 @@ jobs:
               exit 1
             fi
           done
+
+  build-storybook:
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/build-storybook.yml
+    secrets: inherit
+
+  review-app-web:
+    if: github.event_name == 'pull_request'
+    needs: [build-web]
+    uses: ./.github/workflows/review-app-web.yml
+    secrets: inherit
+
+  review-app-storybook:
+    if: github.event_name == 'pull_request'
+    needs: [build-storybook]
+    uses: ./.github/workflows/review-app-storybook.yml
+    secrets: inherit
