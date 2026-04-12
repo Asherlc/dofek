@@ -133,6 +133,7 @@ RUN ln -sf /app node_modules/dofek && \
     ln -sf /app/packages/training node_modules/@dofek/training && \
     ln -sf /app/packages/auth node_modules/@dofek/auth && \
     ln -sf /app/packages/heart-rate-variability node_modules/@dofek/heart-rate-variability && \
+    ln -sf /app/packages/providers-meta node_modules/@dofek/providers && \
     ln -sf /app/packages/recovery node_modules/@dofek/recovery && \
     ln -sf /app/packages/zones node_modules/@dofek/zones
 
