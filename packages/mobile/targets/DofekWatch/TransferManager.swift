@@ -115,7 +115,6 @@ final class TransferManager: ObservableObject {
                 self?.lastTransferStatus = "Sent \(result.count) samples (\(compressedSize / 1024) KB)"
                 self?.isTransferring = false
             }
-
         } catch {
             // Clean up temp files on error
             try? FileManager.default.removeItem(at: result.url)

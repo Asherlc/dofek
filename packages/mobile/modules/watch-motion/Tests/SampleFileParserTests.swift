@@ -38,8 +38,11 @@ final class SampleFileParserTests: XCTestCase {
 
         XCTAssertEqual(parsed.count, 2)
         XCTAssertEqual(parsed[0]["timestamp"] as? String, "2026-03-28T10:00:00.000Z")
+        // swiftlint:disable:next force_cast
         XCTAssertEqual(parsed[0]["x"] as! Double, 0.01, accuracy: 0.001)
+        // swiftlint:disable:next force_cast
         XCTAssertEqual(parsed[0]["y"] as! Double, -0.98, accuracy: 0.001)
+        // swiftlint:disable:next force_cast
         XCTAssertEqual(parsed[0]["z"] as! Double, 0.04, accuracy: 0.001)
         XCTAssertEqual(parsed[1]["timestamp"] as? String, "2026-03-28T10:00:00.020Z")
     }
@@ -87,6 +90,7 @@ final class SampleFileParserTests: XCTestCase {
 
     func testParseNonArrayJsonThrows() {
         let jsonObject: [String: Any] = ["not": "an array"]
+        // swiftlint:disable:next force_try
         let jsonData = try! JSONSerialization.data(withJSONObject: jsonObject)
 
         XCTAssertThrowsError(try SampleFileParser.parse(jsonData)) { error in

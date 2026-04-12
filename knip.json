@@ -10,7 +10,7 @@
       "project": ["src/**/*.ts", "*.config.{ts,js,json}"],
       "ignoreDependencies": ["sharp", "tsx"],
       "ignoreBinaries": [
-        "tsr", "expo", "license-checker", "eoas",
+        "tsr", "expo", "license-checker",
         "GPL-2.0-or-later", "GPL-3.0-only", "GPL-3.0-or-later",
         "AGPL-1.0-only", "AGPL-3.0-only", "AGPL-3.0-or-later"
       ],
@@ -33,7 +33,29 @@
       }
     },
     "packages/mobile": {
-      "ignore": ["**/*"]
+      "entry": [
+        "app/**/*.{ts,tsx}",
+        "modules/*/index.ts",
+        "plugins/*.js",
+        "metro.config.js",
+        "types/api.ts",
+        "theme.ts"
+      ],
+      "project": [
+        "**/*.{ts,tsx,js}",
+        "!**/ios/**",
+        "!**/targets/**",
+        "!modules/*/Tests/**",
+        "!modules/*/.build/**",
+        "!.rnstorybook/**"
+      ],
+      "ignore": [".rnstorybook/**"],
+      "ignoreDependencies": [
+        "@sentry/cli",
+        "expo-modules-core",
+        "@expo/vector-icons",
+        "expo-system-ui"
+      ]
     },
     "packages/whoop-whoop": {
       "vitest": {

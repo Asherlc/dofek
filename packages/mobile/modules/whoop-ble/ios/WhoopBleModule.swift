@@ -27,6 +27,7 @@ public class WhoopBleModule: Module {
     private var packetTypeCounts: [UInt8: UInt64] = [:]
     private var lastCommandResponse: String = "none"
 
+    // swiftlint:disable:next function_body_length
     public func definition() -> ModuleDefinition {
         Name("WhoopBle")
 
@@ -89,7 +90,9 @@ public class WhoopBleModule: Module {
 
                 guard self.connectionManager.startStreaming() else {
                     let state = self.connectionManager.state.rawValue
-                    let detail = "state=\(state) peripheral=\(self.connectionManager.connectedPeripheral == nil ? "nil" : "set") cmdChar=\(self.connectionManager.cmdCharacteristic == nil ? "nil" : "set")"
+                    let peripheralStatus = self.connectionManager.connectedPeripheral == nil ? "nil" : "set"
+                    let cmdCharStatus = self.connectionManager.cmdCharacteristic == nil ? "nil" : "set"
+                    let detail = "state=\(state) peripheral=\(peripheralStatus) cmdChar=\(cmdCharStatus)"
                     NSLog("[WhoopBLE] startImuStreaming: NOT_READY (%@)", detail)
                     promise.reject("NOT_READY", "Not ready: \(detail)")
                     return

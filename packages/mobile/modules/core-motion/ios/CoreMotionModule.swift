@@ -16,6 +16,7 @@ public class CoreMotionModule: Module {
     private let sensorRecorder = CMSensorRecorder()
     private let activityManager = CMMotionActivityManager()
 
+    // swiftlint:disable:next function_body_length
     public func definition() -> ModuleDefinition {
         Name("CoreMotion")
 

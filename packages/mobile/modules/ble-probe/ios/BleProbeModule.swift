@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import CoreBluetooth
 import ExpoModulesCore
 
@@ -27,6 +28,7 @@ public class BleProbeModule: Module {
     private static let maxNotificationLog = 200
     private var notificationCount: UInt64 = 0
 
+    // swiftlint:disable:next cyclomatic_complexity function_body_length
     public func definition() -> ModuleDefinition {
         Name("BleProbe")
 
@@ -43,7 +45,7 @@ public class BleProbeModule: Module {
             return self.describeState(manager.state)
         }
 
-        Function("initialize") { () -> Void in
+        Function("initialize") { () in
             _ = self.ensureCentralManager()
         }
 
@@ -57,7 +59,8 @@ public class BleProbeModule: Module {
                 self.scanPromise = promise
 
                 let uuids = serviceUUIDs?.map { CBUUID(string: $0) }
-                NSLog("[BleProbe] scanning (services=%@, duration=%.1fs)", uuids?.map(\.uuidString).joined(separator: ",") ?? "all", durationSeconds)
+                let serviceList = uuids?.map(\.uuidString).joined(separator: ",") ?? "all"
+                NSLog("[BleProbe] scanning (services=%@, duration=%.1fs)", serviceList, durationSeconds)
                 manager.scanForPeripherals(withServices: uuids, options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
 
                 self.bleQueue.asyncAfter(deadline: .now() + durationSeconds) {
@@ -102,7 +105,8 @@ public class BleProbeModule: Module {
                 var peripheral = manager.retrievePeripherals(withIdentifiers: [uuid]).first
                 if peripheral == nil {
                     for serviceUUID in [CBUUID]() {
-                        if let found = manager.retrieveConnectedPeripherals(withServices: [serviceUUID]).first(where: { $0.identifier == uuid }) {
+                        let connected = manager.retrieveConnectedPeripherals(withServices: [serviceUUID])
+                        if let found = connected.first(where: { $0.identifier == uuid }) {
                             peripheral = found
                             break
                         }
@@ -132,7 +136,7 @@ public class BleProbeModule: Module {
             }
         }
 
-        Function("disconnect") { () -> Void in
+        Function("disconnect") { () in
             if let peripheral = self.connectedPeripheral {
                 self.centralManager?.cancelPeripheralConnection(peripheral)
             }
@@ -256,7 +260,7 @@ public class BleProbeModule: Module {
             return self.notificationLog
         }
 
-        Function("clearNotificationLog") { () -> Void in
+        Function("clearNotificationLog") { () in
             self.notificationLog = []
             self.notificationCount = 0
         }
@@ -429,7 +433,7 @@ private class BleDelegate: NSObject, CBCentralManagerDelegate, CBPeripheralDeleg
     }
 
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
-                         advertisementData: [String: Any], rssi RSSI: NSNumber) {
+                        advertisementData: [String: Any], rssi RSSI: NSNumber) {
         module?.handlePeripheralDiscovered(peripheral, rssi: RSSI)
     }
 

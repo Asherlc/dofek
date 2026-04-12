@@ -2,12 +2,14 @@ import Foundation
 
 /// A quaternion representing 3D orientation.
 struct Quaternion {
+    // swiftlint:disable identifier_name
     var w: Double
     var x: Double
     var y: Double
     var z: Double
+    // swiftlint:enable identifier_name
 
-    static let identity = Quaternion(w: 1, x: 0, y: 0, z: 0)
+    static let identity = Self(w: 1, x: 0, y: 0, z: 0)
 }
 
 /// Euler angles in degrees.
@@ -54,6 +56,7 @@ final class MadgwickFilter {
         quaternion = .identity
     }
 
+    // swiftlint:disable function_parameter_count
     /// Feed a new IMU sample with pre-normalized values.
     /// - accelerometerX/Y/Z: acceleration in g (1g = Earth gravity)
     /// - gyroscopeX/Y/Z: rotation rate in rad/s
@@ -61,18 +64,25 @@ final class MadgwickFilter {
         accelerometerX: Float, accelerometerY: Float, accelerometerZ: Float,
         gyroscopeX: Float, gyroscopeY: Float, gyroscopeZ: Float
     ) {
+    // swiftlint:enable function_parameter_count
+        // swiftlint:disable identifier_name
         var ax = Double(accelerometerX)
         var ay = Double(accelerometerY)
         var az = Double(accelerometerZ)
+        // swiftlint:enable identifier_name
 
+        // swiftlint:disable identifier_name
         let gx = Double(gyroscopeX)
         let gy = Double(gyroscopeY)
         let gz = Double(gyroscopeZ)
+        // swiftlint:enable identifier_name
 
+        // swiftlint:disable identifier_name
         var q0 = quaternion.w
         var q1 = quaternion.x
         var q2 = quaternion.y
         var q3 = quaternion.z
+        // swiftlint:enable identifier_name
 
         // Gyroscope quaternion derivative
         let qDot0 = 0.5 * (-q1 * gx - q2 * gy - q3 * gz)
@@ -89,15 +99,19 @@ final class MadgwickFilter {
             az /= accelNorm
 
             // Gradient descent objective function components
+            // swiftlint:disable identifier_name
             let f0 = 2.0 * (q1 * q3 - q0 * q2) - ax
             let f1 = 2.0 * (q0 * q1 + q2 * q3) - ay
             let f2 = 2.0 * (0.5 - q1 * q1 - q2 * q2) - az
+            // swiftlint:enable identifier_name
 
             // Jacobian transpose times f (gradient step direction)
+            // swiftlint:disable identifier_name
             var s0 = -2.0 * q2 * f0 + 2.0 * q1 * f1
-            var s1 =  2.0 * q3 * f0 + 2.0 * q0 * f1 - 4.0 * q1 * f2
+            var s1 = 2.0 * q3 * f0 + 2.0 * q0 * f1 - 4.0 * q1 * f2
             var s2 = -2.0 * q0 * f0 + 2.0 * q3 * f1 - 4.0 * q2 * f2
-            var s3 =  2.0 * q1 * f0 + 2.0 * q2 * f1
+            var s3 = 2.0 * q1 * f0 + 2.0 * q2 * f1
+            // swiftlint:enable identifier_name
 
             // Normalize step
             let stepNorm = sqrt(s0 * s0 + s1 * s1 + s2 * s2 + s3 * s3)
@@ -140,15 +154,17 @@ final class MadgwickFilter {
     /// - Pitch: rotation around Y axis (-90..90°)
     /// - Yaw: rotation around Z axis (-180..180°)
     var eulerAngles: EulerAngles {
+        // swiftlint:disable identifier_name
         let w = quaternion.w
         let x = quaternion.x
         let y = quaternion.y
         let z = quaternion.z
+        // swiftlint:enable identifier_name
 
         // Roll (X-axis rotation)
         let sinRollCosPitch = 2.0 * (w * x + y * z)
         let cosRollCosPitch = 1.0 - 2.0 * (x * x + y * y)
-        let roll = atan2(sinRollCosPitch, cosRollCosPitch) * MadgwickFilter.radiansToDegrees
+        let roll = atan2(sinRollCosPitch, cosRollCosPitch) * Self.radiansToDegrees
 
         // Pitch (Y-axis rotation) — clamped to avoid NaN at poles
         let sinPitch = 2.0 * (w * y - z * x)
@@ -156,13 +172,13 @@ final class MadgwickFilter {
         if abs(sinPitch) >= 1 {
             pitch = copysign(90.0, sinPitch)
         } else {
-            pitch = asin(sinPitch) * MadgwickFilter.radiansToDegrees
+            pitch = asin(sinPitch) * Self.radiansToDegrees
         }
 
         // Yaw (Z-axis rotation)
         let sinYawCosPitch = 2.0 * (w * z + x * y)
         let cosYawCosPitch = 1.0 - 2.0 * (y * y + z * z)
-        let yaw = atan2(sinYawCosPitch, cosYawCosPitch) * MadgwickFilter.radiansToDegrees
+        let yaw = atan2(sinYawCosPitch, cosYawCosPitch) * Self.radiansToDegrees
 
         return EulerAngles(roll: roll, pitch: pitch, yaw: yaw)
     }

@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import XCTest
 @testable import WhoopBleLib
 
@@ -16,6 +17,7 @@ extension Data {
     }
 }
 
+// swiftlint:disable:next type_body_length
 final class WhoopBleFrameParserTests: XCTestCase {
 
     // MARK: - Helpers
@@ -308,9 +310,11 @@ final class WhoopBleFrameParserTests: XCTestCase {
 
     // MARK: - Realtime data extraction (0x28 packets)
 
+    // swiftlint:disable identifier_name
     /// Build a realistic 0x28 REALTIME_DATA payload with HR and quaternion.
     /// Minimum 57 bytes, typically 116 bytes from the strap.
     private func buildRealtimeDataPayload(heartRate: UInt8, qW: Float, qX: Float, qY: Float, qZ: Float) -> Data {
+    // swiftlint:enable identifier_name
         var payload = Data(count: 116) // typical real-world size
         payload[0] = WhoopBleConstants.packetTypeRealtimeData // 0x28
 
@@ -439,6 +443,7 @@ final class WhoopBleFrameParserTests: XCTestCase {
 
         // Write known pattern into optical bytes (offsets 23-40)
         let opticalStart = WhoopBleConstants.realtimeDataOpticalStartOffset
+        // swiftlint:disable:next identifier_name
         for i in 0..<WhoopBleConstants.realtimeDataOpticalByteCount {
             payload[opticalStart + i] = UInt8(0xA0 + i)
         }

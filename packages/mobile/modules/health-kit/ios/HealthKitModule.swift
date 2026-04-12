@@ -1,10 +1,13 @@
+// swiftlint:disable file_length
 import ExpoModulesCore
 import HealthKit
 
+// swiftlint:disable:next type_body_length
 public class HealthKitModule: Module {
     private let healthStore = HKHealthStore()
     private var observerQueries: [HKObserverQuery] = []
 
+    // swiftlint:disable:next cyclomatic_complexity function_body_length
     public func definition() -> ModuleDefinition {
         Name("HealthKit")
 
@@ -51,6 +54,7 @@ public class HealthKitModule: Module {
             }
         }
 
+        // swiftlint:disable:next line_length
         AsyncFunction("queryQuantitySamples") { (typeIdentifier: String, startDateStr: String, endDateStr: String, limit: Int, promise: Promise) in
             guard let sampleType = HKQuantityType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: typeIdentifier)) else {
                 promise.reject("INVALID_TYPE", "Unknown quantity type: \(typeIdentifier)")
@@ -66,7 +70,10 @@ public class HealthKitModule: Module {
             let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
             let queryLimit = limit > 0 ? limit : HKObjectQueryNoLimit
 
-            let query = HKSampleQuery(sampleType: sampleType, predicate: predicate, limit: queryLimit, sortDescriptors: [sortDescriptor]) { _, results, error in
+            let query = HKSampleQuery(
+                sampleType: sampleType, predicate: predicate,
+                limit: queryLimit, sortDescriptors: [sortDescriptor]
+            ) { _, results, error in
                 if let error = error {
                     promise.reject("QUERY_ERROR", error.localizedDescription)
                     return
@@ -99,7 +106,10 @@ public class HealthKitModule: Module {
             let predicate = HealthKitQueries.datePredicate(start: startDate, end: endDate)
             let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
 
-            let query = HKSampleQuery(sampleType: HKWorkoutType.workoutType(), predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]) { _, results, error in
+            let query = HKSampleQuery(
+                sampleType: HKWorkoutType.workoutType(), predicate: predicate,
+                limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]
+            ) { _, results, error in
                 if let error = error {
                     promise.reject("QUERY_ERROR", error.localizedDescription)
                     return
@@ -191,7 +201,10 @@ public class HealthKitModule: Module {
             let predicate = HealthKitQueries.datePredicate(start: startDate, end: endDate)
             let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
 
-            let query = HKSampleQuery(sampleType: sleepType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]) { _, results, error in
+            let query = HKSampleQuery(
+                sampleType: sleepType, predicate: predicate,
+                limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]
+            ) { _, results, error in
                 if let error = error {
                     promise.reject("QUERY_ERROR", error.localizedDescription)
                     return
@@ -242,7 +255,10 @@ public class HealthKitModule: Module {
             let predicate = HealthKitQueries.datePredicate(start: startDate, end: endDate)
             let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
 
-            let query = HKSampleQuery(sampleType: categoryType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]) { _, results, error in
+            let query = HKSampleQuery(
+                sampleType: categoryType, predicate: predicate,
+                limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]
+            ) { _, results, error in
                 if let error = error {
                     promise.reject("QUERY_ERROR", error.localizedDescription)
                     return
@@ -302,7 +318,10 @@ public class HealthKitModule: Module {
             // Reconstruct anchor from stored integer (simplified - real impl would use HKQueryAnchor)
             let anchor: HKQueryAnchor? = anchorValue > 0 ? HKQueryAnchor(fromValue: anchorValue) : nil
 
-            let query = HKAnchoredObjectQuery(type: sampleType, predicate: nil, anchor: anchor, limit: HKObjectQueryNoLimit) { _, added, deleted, newAnchor, error in
+            let query = HKAnchoredObjectQuery(
+                type: sampleType, predicate: nil, anchor: anchor,
+                limit: HKObjectQueryNoLimit
+            ) { _, added, deleted, newAnchor, error in
                 if let error = error {
                     promise.reject("QUERY_ERROR", error.localizedDescription)
                     return
@@ -506,7 +525,7 @@ public class HealthKitModule: Module {
                         group.enter()
                         var routeLocations: [[String: Any]] = []
 
-                        let locationQuery = HKWorkoutRouteQuery(route: route) { _, locations, done, locationError in
+                        let locationQuery = HKWorkoutRouteQuery(route: route) { _, locations, done, _ in
                             // Process locations if available (even when there's an error on this batch)
                             if let locations = locations {
                                 for location in locations {
@@ -621,7 +640,10 @@ public class HealthKitModule: Module {
                 let predicate = HealthKitQueries.datePredicate(start: startDate, end: endDate)
                 let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
 
-                let query = HKSampleQuery(sampleType: doseEventType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]) { _, results, error in
+                let query = HKSampleQuery(
+                    sampleType: doseEventType, predicate: predicate,
+                    limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]
+                ) { _, results, error in
                     if let error = error {
                         promise.reject("QUERY_ERROR", error.localizedDescription)
                         return
@@ -647,5 +669,4 @@ public class HealthKitModule: Module {
             }
         }
     }
-
 }

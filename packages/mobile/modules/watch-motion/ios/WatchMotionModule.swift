@@ -12,6 +12,7 @@ public class WatchMotionModule: Module {
     private let defaults = UserDefaults.standard
     private let lastSyncKey = "com.dofek.watch-motion.lastSyncTimestamp"
 
+    // swiftlint:disable:next function_body_length
     public func definition() -> ModuleDefinition {
         Name("WatchMotion")
 

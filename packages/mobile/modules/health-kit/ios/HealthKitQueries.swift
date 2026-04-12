@@ -30,6 +30,7 @@ enum HealthKitQueries {
         return formatter.string(from: date)
     }
 
+    // swiftlint:disable cyclomatic_complexity function_body_length
     /// Return the preferred unit for a given quantity type
     static func preferredUnit(for quantityType: HKQuantityType) -> HKUnit {
         switch quantityType.identifier {
@@ -111,4 +112,5 @@ enum HealthKitQueries {
             return .count()
         }
     }
+    // swiftlint:enable cyclomatic_complexity function_body_length
 }

@@ -189,9 +189,51 @@ jobs:
       - uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
       - run: cd deploy && terraform init -backend=false && terraform validate
 
+  swiftlint:
+    name: SwiftLint
+    needs: check-mobile-changes
+    if: needs.check-mobile-changes.outputs.changed == 'true'
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - name: Install SwiftLint
+        run: brew install swiftlint
+      - name: Run SwiftLint
+        working-directory: packages/mobile
+        run: swiftlint lint --strict --reporter github-actions-logging
+
+  periphery:
+    name: Periphery
+    needs: check-mobile-changes
+    if: needs.check-mobile-changes.outputs.changed == 'true'
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            packages/mobile/modules/health-kit/.build
+            packages/mobile/modules/whoop-ble/.build
+            packages/mobile/modules/watch-motion/.build
+          key: periphery-v1-${{ hashFiles('packages/mobile/modules/*/Package.swift') }}
+          restore-keys: periphery-v1-
+      - name: Install Periphery
+        run: brew install peripheryapp/periphery/periphery
+      - name: Scan for unused code
+        run: |
+          fail=0
+          # Only packages with library source files (non-Module .swift files)
+          # core-motion and ble-probe have no library code — only Module bridge files
+          for pkg in health-kit whoop-ble watch-motion; do
+            echo "::group::Scanning $pkg"
+            (cd packages/mobile/modules/$pkg && periphery scan --retain-public --disable-update-check --relative-results --format github-actions) || fail=1
+            echo "::endgroup::"
+          done
+          exit $fail
+
   quality-gate:
     name: Lint & Static Analysis
-    needs: [actionlint, lint, typecheck, sherif, knip, spellcheck, import-boundaries, python-checks, hadolint, terraform-validate]
+    needs: [actionlint, lint, typecheck, sherif, knip, spellcheck, import-boundaries, python-checks, hadolint, terraform-validate, swiftlint, periphery]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -207,7 +249,9 @@ jobs:
             "${{ needs.import-boundaries.result }}" \
             "${{ needs.python-checks.result }}" \
             "${{ needs.hadolint.result }}" \
-            "${{ needs.terraform-validate.result }}"; do
+            "${{ needs.terraform-validate.result }}" \
+            "${{ needs.swiftlint.result }}" \
+            "${{ needs.periphery.result }}"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
               echo "A required job failed or was cancelled"
               exit 1
