@@ -516,25 +516,19 @@ export default function ProvidersScreen() {
         onConnect={handleHealthKitConnect}
         onPress={() => router.push("/providers/apple_health")}
       />
-      {providerList.length === 0 ? (
-        <View style={styles.card}>
-          <Text style={styles.emptyText}>No data sources configured.</Text>
-        </View>
-      ) : (
-        providerList.map((provider) => (
-          <ProviderCard
-            key={provider.id}
-            provider={provider}
-            stats={statsMap[provider.id]}
-            syncing={syncingProviders.has(provider.id)}
-            syncProgress={syncProgress[provider.id]}
-            onSync={() => handleSyncProvider(provider.id)}
-            onFullSync={() => handleSyncProvider(provider.id, true)}
-            onConnect={() => handleConnect(provider)}
-            onPress={() => router.push(`/providers/${provider.id}`)}
-          />
-        ))
-      )}
+      {providerList.map((provider) => (
+        <ProviderCard
+          key={provider.id}
+          provider={provider}
+          stats={statsMap[provider.id]}
+          syncing={syncingProviders.has(provider.id)}
+          syncProgress={syncProgress[provider.id]}
+          onSync={() => handleSyncProvider(provider.id)}
+          onFullSync={() => handleSyncProvider(provider.id, true)}
+          onConnect={() => handleConnect(provider)}
+          onPress={() => router.push(`/providers/${provider.id}`)}
+        />
+      ))}
 
       {/* Sync History */}
       <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Sync History</Text>
