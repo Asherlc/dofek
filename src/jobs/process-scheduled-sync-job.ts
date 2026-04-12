@@ -1,13 +1,14 @@
-import type { Job } from "bullmq";
+import type { Job, Queue } from "bullmq";
 import { sql } from "drizzle-orm";
 import type { SyncDatabase } from "../db/index.ts";
 import { logger } from "../logger.ts";
 import { getProvider, isSyncEligibleProvider } from "../providers/index.ts";
-import { createSyncQueue, type ScheduledSyncJobData } from "./queues.ts";
+import { createProviderSyncQueue, type ScheduledSyncJobData, type SyncJobData } from "./queues.ts";
 
 /**
  * Process a scheduled sync job: query all users with connected providers
- * and enqueue per-user sync jobs.
+ * and enqueue per-user sync jobs into per-provider queues so different
+ * providers sync in parallel (while the same provider stays serialized).
  */
 export async function processScheduledSyncJob(_job: Job<ScheduledSyncJobData>, db: SyncDatabase) {
   // Ensure provider registry is populated so provider metadata (type, auth) is available.
@@ -32,7 +33,8 @@ export async function processScheduledSyncJob(_job: Job<ScheduledSyncJobData>, d
     userProviders.set(userId, providers);
   }
 
-  const syncQueue = createSyncQueue();
+  // Track per-provider queues so we can close them when done
+  const openQueues = new Map<string, Queue<SyncJobData>>();
   let jobCount = 0;
 
   for (const [userId, providerIds] of userProviders) {
@@ -42,7 +44,14 @@ export async function processScheduledSyncJob(_job: Job<ScheduledSyncJobData>, d
         logger.info(`[scheduled-sync] Skipping CSV provider ${providerId}`);
         continue;
       }
-      await syncQueue.add("sync", {
+
+      let queue = openQueues.get(providerId);
+      if (!queue) {
+        queue = createProviderSyncQueue(providerId);
+        openQueues.set(providerId, queue);
+      }
+
+      await queue.add("sync", {
         userId,
         providerId,
         sinceDays: 1,
@@ -51,7 +60,7 @@ export async function processScheduledSyncJob(_job: Job<ScheduledSyncJobData>, d
     }
   }
 
-  await syncQueue.close();
+  await Promise.all([...openQueues.values()].map((queue) => queue.close()));
 
   logger.info(`[scheduled-sync] Enqueued ${jobCount} sync jobs for ${userProviders.size} users`);
 }
