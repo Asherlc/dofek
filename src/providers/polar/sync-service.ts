@@ -73,7 +73,7 @@ export class PolarSyncService {
     if (await this.#invalidateTokensIfAuthFailed()) return this.#result();
 
     await this.#syncDailyActivity(client, since);
-    await this.#invalidateTokensIfAuthFailed();
+    if (await this.#invalidateTokensIfAuthFailed()) return this.#result();
 
     return this.#result();
   }
@@ -409,7 +409,14 @@ export class PolarSyncService {
     logger.warn(
       `[${this.#providerId}] Authorization failed — deleting stored tokens. Re-connect provider to resume syncing.`,
     );
-    await deleteTokens(this.#db, this.#providerId);
+    try {
+      await deleteTokens(this.#db, this.#providerId);
+    } catch (deleteError) {
+      this.#errors.push({
+        message: `Failed to delete dead tokens: ${deleteError instanceof Error ? deleteError.message : String(deleteError)}`,
+        cause: deleteError,
+      });
+    }
     return true;
   }
 
