@@ -214,7 +214,6 @@ jobs:
           path: |
             packages/mobile/modules/health-kit/.build
             packages/mobile/modules/whoop-ble/.build
-            packages/mobile/modules/core-motion/.build
             packages/mobile/modules/watch-motion/.build
           key: periphery-v1-${{ hashFiles('packages/mobile/modules/*/Package.swift') }}
           restore-keys: periphery-v1-

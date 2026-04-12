@@ -3,19 +3,7 @@ included:
   - targets
 
 excluded:
-  - modules/*/Tests
   - modules/*/.build
-  - targets/DofekWatch/*.test.swift
-  # Expo module bridge files are inherently monolithic — a single definition()
-  # method registers the entire API surface. Structural rules (body length,
-  # complexity, file length) don't apply meaningfully. These files are also
-  # excluded from SPM targets in each Package.swift.
-  - modules/background-refresh/ios/BackgroundRefreshModule.swift
-  - modules/ble-probe/ios/BleProbeModule.swift
-  - modules/core-motion/ios/CoreMotionModule.swift
-  - modules/health-kit/ios/HealthKitModule.swift
-  - modules/watch-motion/ios/WatchMotionModule.swift
-  - modules/whoop-ble/ios/WhoopBleModule.swift
 
 opt_in_rules:
   - closure_spacing
@@ -59,30 +47,12 @@ type_body_length:
   error: 600
 
 function_body_length:
-  warning: 80
-  error: 120
+  warning: 60
+  error: 100
 
-# HealthKitQueries.preferredUnit is a type→unit switch (complexity 25) — high
-# cyclomatic count but not actually complex logic
 cyclomatic_complexity:
-  warning: 25
-  error: 40
-
-# IMU update functions take 6 params (ax, ay, az, gx, gy, gz) — standard interface
-function_parameter_count:
-  warning: 6
-  error: 8
-
-# Math-heavy code (Madgwick filter, frame parser) uses short variable names
-identifier_name:
-  min_length:
-    warning: 1
-  max_length:
-    warning: 60
-  allowed_symbols:
-    - _
-  excluded:
-    - id
+  warning: 15
+  error: 25
 
 large_tuple:
   warning: 4

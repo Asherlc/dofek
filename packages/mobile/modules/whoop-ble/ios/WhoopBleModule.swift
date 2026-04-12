@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import CoreBluetooth
 import ExpoModulesCore
 
@@ -11,6 +12,7 @@ private enum ConnectionState: String {
     case streaming
 }
 
+// swiftlint:disable type_body_length
 /// Expo native module that connects to a WHOOP strap via CoreBluetooth
 /// and streams raw IMU (accelerometer + gyroscope) data.
 ///
@@ -19,6 +21,7 @@ private enum ConnectionState: String {
 /// We use `retrieveConnectedPeripherals(withServices:)` to find the
 /// already-connected strap.
 public class WhoopBleModule: Module {
+// swiftlint:enable type_body_length
 
     /// Restore identifier for CoreBluetooth state restoration.
     /// When the app is relaunched by iOS after being killed, the system
@@ -65,6 +68,7 @@ public class WhoopBleModule: Module {
     private var connectPromise: Promise?
     private var startStreamingPromise: Promise?
 
+    // swiftlint:disable:next cyclomatic_complexity function_body_length
     public func definition() -> ModuleDefinition {
         Name("WhoopBle")
 
@@ -163,7 +167,13 @@ public class WhoopBleModule: Module {
                 guard self.state == .ready,
                       let peripheral = self.connectedPeripheral,
                       let cmdChar = self.cmdCharacteristic else {
-                    let detail = "state=\(self.state.rawValue) peripheral=\(self.connectedPeripheral == nil ? "nil" : "set") cmdChar=\(self.cmdCharacteristic == nil ? "nil" : "set") dataChar=\(self.dataCharacteristic == nil ? "nil" : "set")"
+                    let peripheralStatus = self.connectedPeripheral == nil ? "nil" : "set"
+                    let cmdCharStatus = self.cmdCharacteristic == nil ? "nil" : "set"
+                    let dataCharStatus = self.dataCharacteristic == nil ? "nil" : "set"
+                    let detail = "state=\(self.state.rawValue)"
+                        + " peripheral=\(peripheralStatus)"
+                        + " cmdChar=\(cmdCharStatus)"
+                        + " dataChar=\(dataCharStatus)"
                     NSLog("[WhoopBLE] startImuStreaming: NOT_READY (%@)", detail)
                     promise.reject("NOT_READY", "Not ready: \(detail)")
                     return
@@ -511,7 +521,11 @@ public class WhoopBleModule: Module {
                 withServices: [serviceUUID]
             )
             if let peripheral = connected.first {
-                NSLog("[WhoopBLE] performFindWhoop: found connected peripheral %@ (%@)", peripheral.identifier.uuidString, peripheral.name ?? "unnamed")
+                NSLog(
+                    "[WhoopBLE] performFindWhoop: found connected peripheral %@ (%@)",
+                    peripheral.identifier.uuidString,
+                    peripheral.name ?? "unnamed"
+                )
                 let result: [String: Any?] = [
                     "id": peripheral.identifier.uuidString,
                     "name": peripheral.name,
@@ -577,7 +591,11 @@ public class WhoopBleModule: Module {
         // Background auto-connect: if we're not in a findWhoop scan but
         // found a WHOOP strap via background scanning, auto-connect to it.
         if connectedPeripheral == nil && autoReconnect {
-            NSLog("[WhoopBLE] background scan found WHOOP strap %@ (%@), auto-connecting", peripheral.identifier.uuidString, peripheral.name ?? "unnamed")
+            NSLog(
+                "[WhoopBLE] background scan found WHOOP strap %@ (%@), auto-connecting",
+                peripheral.identifier.uuidString,
+                peripheral.name ?? "unnamed"
+            )
             centralManager?.stopScan()
             connectedPeripheral = peripheral
             peripheral.delegate = delegate
@@ -595,7 +613,13 @@ public class WhoopBleModule: Module {
     }
 
     func handlePeripheralDisconnected(_ peripheral: CBPeripheral, error: Error?) {
-        NSLog("[WhoopBLE] peripheral disconnected: %@ (wasState=%@, error=%@, autoReconnect=%@)", peripheral.identifier.uuidString, state.rawValue, error?.localizedDescription ?? "none", autoReconnect ? "true" : "false")
+        NSLog(
+            "[WhoopBLE] peripheral disconnected: %@ (wasState=%@, error=%@, autoReconnect=%@)",
+            peripheral.identifier.uuidString,
+            state.rawValue,
+            error?.localizedDescription ?? "none",
+            autoReconnect ? "true" : "false"
+        )
         wasStreaming = state == .streaming
         let shouldReconnect = autoReconnect
 
@@ -659,7 +683,11 @@ public class WhoopBleModule: Module {
         dataCharacteristic = service.characteristics?.first { $0.uuid == dataUUID }
 
         guard let cmdChar = cmdCharacteristic, let dataChar = dataCharacteristic else {
-            NSLog("[WhoopBLE] missing characteristics: cmd=%@, data=%@", cmdCharacteristic == nil ? "MISSING" : "found", dataCharacteristic == nil ? "MISSING" : "found")
+            NSLog(
+                "[WhoopBLE] missing characteristics: cmd=%@, data=%@",
+                cmdCharacteristic == nil ? "MISSING" : "found",
+                dataCharacteristic == nil ? "MISSING" : "found"
+            )
             connectPromise?.reject("NO_CHARACTERISTICS", "Required characteristics not found")
             connectPromise = nil
             state = .idle
@@ -769,6 +797,7 @@ public class WhoopBleModule: Module {
         }
     }
 
+    // swiftlint:disable:next function_body_length
     func handleDataReceived(_ data: Data) {
         dataNotificationCount += 1
 

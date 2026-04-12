@@ -247,6 +247,7 @@ final class WhoopBleFrameParser {
         return []
     }
 
+    // swiftlint:disable function_body_length
     /// Extract a realtime data sample (HR + orientation quaternion) from a 0x28 packet.
     ///
     /// Two payload sizes observed:
@@ -256,6 +257,7 @@ final class WhoopBleFrameParser {
     /// Both formats are captured. For compact packets, HR and quaternion fields
     /// are zero but the raw payload is preserved in opticalBytes for decoding.
     static func extractRealtimeData(from frame: WhoopFrame) -> WhoopRealtimeDataSample? {
+    // swiftlint:enable function_body_length
         // Handle 0x2F HISTORICAL_DATA record type 18 (116-byte payload)
         // HR at byte 14, R-R at bytes 16-17, quaternion at bytes 33-48
         if frame.packetType == WhoopBleConstants.packetTypeHistoricalData
