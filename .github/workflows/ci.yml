@@ -3,14 +3,75 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - '.gitignore'
+      - 'docs/**'
   pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - '.gitignore'
+      - 'docs/**'
   workflow_dispatch:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  # ── CI ─────────────────────────────────────────────────────────────────
+
+  build-mobile:
+    name: Build Mobile
+    uses: ./.github/workflows/build-mobile.yml
+    secrets: inherit
+
   build-web:
+    name: Build Web
     uses: ./.github/workflows/build-web.yml
     secrets: inherit
 
   test:
+    name: Test
     uses: ./.github/workflows/test.yml
+    secrets: inherit
+
+  ci-gate:
+    name: CI Gate
+    needs: [build-mobile, build-web, test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check all CI results
+        run: |
+          for result in \
+            "${{ needs.build-mobile.result }}" \
+            "${{ needs.build-web.result }}" \
+            "${{ needs.test.result }}"; do
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              echo "CI gate failed"
+              exit 1
+            fi
+          done
+
+  # ── Review apps (PR only, depend on builds not tests) ──────────────────
+
+  build-storybook:
+    name: Build Storybook
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/build-storybook.yml
+    secrets: inherit
+
+  review-app-web:
+    name: Review App — Web
+    if: github.event_name == 'pull_request'
+    needs: [build-web]
+    uses: ./.github/workflows/review-app-web.yml
+    secrets: inherit
+
+  review-app-storybook:
+    name: Review App — Storybook
+    if: github.event_name == 'pull_request'
+    needs: [build-storybook]
+    uses: ./.github/workflows/review-app-storybook.yml
     secrets: inherit
