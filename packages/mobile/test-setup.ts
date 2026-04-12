@@ -394,7 +394,13 @@ vi.mock("./modules/whoop-ble", () => ({
   connect: vi.fn(() => Promise.resolve(false)),
   startImuStreaming: vi.fn(() => Promise.resolve(false)),
   stopImuStreaming: vi.fn(() => Promise.resolve(false)),
+  peekBufferedSamples: vi.fn(() => Promise.resolve([])),
+  confirmSamplesDrain: vi.fn(),
+  peekBufferedRealtimeData: vi.fn(() => Promise.resolve([])),
+  confirmRealtimeDataDrain: vi.fn(),
   getBufferedSamples: vi.fn(() => Promise.resolve([])),
+  getBufferedRealtimeData: vi.fn(() => Promise.resolve([])),
+  addConnectionStateListener: vi.fn(() => ({ remove: vi.fn() })),
   disconnect: vi.fn(),
 }));
 
