@@ -1,0 +1,215 @@
+name: Build Mobile
+
+on:
+  workflow_call:
+
+jobs:
+  check-mobile-changes:
+    name: Check Mobile Changes
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.check.outputs.changed }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          fetch-depth: 0
+      - id: check
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- packages/mobile/)
+            if [ -n "$CHANGED" ]; then
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              echo "iOS files changed:"
+              echo "$CHANGED"
+            else
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+              echo "No iOS changes detected, skipping native build"
+            fi
+          fi
+
+  build-metro-bundle:
+    name: Metro Bundle
+    needs: check-mobile-changes
+    if: needs.check-mobile-changes.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Export iOS bundle
+        run: cd packages/mobile && pnpm expo export --platform ios --clear
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mobile-metro-bundle
+          path: packages/mobile/dist/
+          retention-days: 7
+
+  build-ios-native:
+    name: iOS Native Build
+    needs: check-mobile-changes
+    if: needs.check-mobile-changes.outputs.changed == 'true'
+    runs-on: macos-26
+    env:
+      DERIVED_DATA_PATH: ${{ github.workspace }}/DerivedData
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-node-pnpm
+      - uses: ./.github/actions/setup-ccache
+        with:
+          cache-key-prefix: ccache-ios
+      - name: Generate native project
+        working-directory: packages/mobile
+        run: npx expo prebuild --clean --platform ios
+      - name: Download Sentry XCFramework
+        run: packages/mobile/scripts/download-sentry-xcframework.sh
+      - name: Cache CocoaPods
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: packages/mobile/ios/Pods
+          key: pods-v7-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/scripts/download-sentry-xcframework.sh') }}
+          restore-keys: pods-v7-
+      - name: Cache DerivedData
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ env.DERIVED_DATA_PATH }}
+          key: deriveddata-v1-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/*/ios/**/*.swift', 'packages/mobile/modules/*/ios/**/*.m', 'packages/mobile/modules/*/ios/**/*.h') }}
+          restore-keys: deriveddata-v1-
+      - name: Install CocoaPods dependencies
+        run: cd packages/mobile/ios && pod install
+      - name: Set build number
+        if: github.event_name != 'pull_request'
+        run: |
+          cd packages/mobile/ios
+          # Offset ensures continuity with builds uploaded before the workflow
+          # split (highest previously uploaded build was ~1816).
+          BUILD_NUMBER=$(( $(git rev-list --count HEAD) + 1200 ))
+          echo "Setting build number to $BUILD_NUMBER"
+          agvtool new-version -all "$BUILD_NUMBER"
+      - name: Archive (Release, no signing)
+        env:
+          SENTRY_DISABLE_AUTO_UPLOAD: "true"
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -workspace packages/mobile/ios/Dofek.xcworkspace \
+            -scheme Dofek \
+            -configuration Release \
+            -archivePath $RUNNER_TEMP/Dofek.xcarchive \
+            -derivedDataPath "$DERIVED_DATA_PATH" \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            CC=$RUNNER_TEMP/ccache-wrappers/ccache-clang \
+            CPLUSPLUS=$RUNNER_TEMP/ccache-wrappers/ccache-clang++ \
+            2>&1 | tail -40
+        timeout-minutes: 25
+      - name: Show ccache stats
+        if: always()
+        run: ccache --show-stats
+
+  build-watchos:
+    name: watchOS Build
+    needs: check-mobile-changes
+    if: needs.check-mobile-changes.outputs.changed == 'true'
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Generate native project
+        working-directory: packages/mobile
+        run: npx expo prebuild --clean --platform ios
+      - name: Download Sentry XCFramework
+        run: packages/mobile/scripts/download-sentry-xcframework.sh
+      - name: Cache CocoaPods
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: packages/mobile/ios/Pods
+          key: pods-watchos-v7-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/scripts/download-sentry-xcframework.sh') }}
+          restore-keys: pods-watchos-v7-
+      - name: Install CocoaPods dependencies
+        run: cd packages/mobile/ios && pod install
+      - name: Build Watch target for simulator
+        run: |
+          set -o pipefail
+          BUILD_DIR="$(pwd)/packages/mobile/ios/build"
+          xcodebuild build \
+            -project packages/mobile/ios/Pods/Pods.xcodeproj \
+            -target Pods-DofekWatch \
+            -sdk watchsimulator \
+            -configuration Debug \
+            SYMROOT="$BUILD_DIR" \
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tail -20
+          xcodebuild build \
+            -project packages/mobile/ios/Dofek.xcodeproj \
+            -target DofekWatch \
+            -sdk watchsimulator \
+            -configuration Debug \
+            SYMROOT="$BUILD_DIR" \
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tee /tmp/watchos-build.log | tail -80
+      - name: Show watchOS build errors
+        if: failure()
+        run: |
+          echo "=== Errors and warnings ==="
+          ERRORS=$(grep -E '(error:|fatal error|BUILD FAILED|ld:|clang:)' /tmp/watchos-build.log | head -30 || true)
+          echo "$ERRORS"
+          echo ""
+          echo "=== Last 20 lines ==="
+          tail -20 /tmp/watchos-build.log || true
+          echo "$ERRORS" | while IFS= read -r line; do
+            [ -n "$line" ] && echo "::error::$line"
+          done
+      - name: Upload watchOS build log
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: watchos-build-log
+          path: /tmp/watchos-build.log
+          retention-days: 3
+
+  lint-ios-podspecs:
+    name: iOS Podspec Lint
+    needs: check-mobile-changes
+    if: needs.check-mobile-changes.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - name: Validate podspec deployment targets
+        run: |
+          APP_TARGET=$(python3 -c "import json; print(json.load(open('packages/mobile/app.json'))['expo']['ios']['deploymentTarget'])")
+          echo "App deployment target: iOS $APP_TARGET"
+          FAILED=0
+          for spec in packages/mobile/modules/*/ios/*.podspec; do
+            SPEC_TARGET=$(grep -oP "s\.platform\s*=\s*:ios,\s*'\K[^']+" "$spec")
+            echo "  $(basename "$spec"): iOS $SPEC_TARGET"
+            if [ "$(printf '%s\n' "$APP_TARGET" "$SPEC_TARGET" | sort -V | head -1)" != "$APP_TARGET" ]; then
+              echo "  ERROR: podspec targets iOS $SPEC_TARGET which is below app target iOS $APP_TARGET"
+              FAILED=1
+            fi
+          done
+          exit $FAILED
+
+  mobile-gate:
+    name: Mobile Build Gate
+    needs: [check-mobile-changes, build-metro-bundle, build-ios-native, build-watchos, lint-ios-podspecs]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check results
+        run: |
+          for result in \
+            "${{ needs.check-mobile-changes.result }}" \
+            "${{ needs.build-metro-bundle.result }}" \
+            "${{ needs.build-ios-native.result }}" \
+            "${{ needs.build-watchos.result }}" \
+            "${{ needs.lint-ios-podspecs.result }}"; do
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              echo "Mobile build gate failed"
+              exit 1
+            fi
+          done

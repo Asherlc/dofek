@@ -7,25 +7,75 @@ on:
         description: "Commit SHA to deploy"
         required: true
         type: string
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       commit_sha:
-        description: "Commit SHA to deploy (defaults to workflow ref HEAD)"
+        description: "Commit SHA to deploy (defaults to main HEAD)"
         required: false
         type: string
 
 concurrency:
-  group: deploy
+  group: deploy-ota
   cancel-in-progress: false
 
 jobs:
-  ota:
-    name: Deploy OTA
+  # Only runs for workflow_run triggers — validates CI passed and commit is latest
+  check:
+    name: Deploy Check
+    if: github.event_name == 'workflow_run'
     runs-on: ubuntu-latest
+    outputs:
+      commit_sha: ${{ steps.resolve.outputs.sha }}
+      should_deploy: ${{ steps.latest.outputs.should_deploy }}
     steps:
+      - if: github.event.workflow_run.conclusion != 'success'
+        run: |
+          echo "CI did not succeed — skipping deploy"
+          exit 1
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
-          ref: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
+          fetch-depth: 1
+      - name: Resolve commit SHA
+        id: resolve
+        run: echo "sha=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+      - name: Check if latest main HEAD
+        id: latest
+        run: |
+          MAIN_HEAD=$(git ls-remote origin refs/heads/main | awk '{ print $1 }')
+          if [ "$MAIN_HEAD" = "${{ steps.resolve.outputs.sha }}" ]; then
+            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping deploy for non-latest main commit"
+          fi
+
+  deploy:
+    name: Publish OTA
+    needs: [check]
+    if: |
+      always() && (
+        github.event_name != 'workflow_run' ||
+        needs.check.outputs.should_deploy == 'true'
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve commit SHA
+        id: sha
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo "ref=${{ needs.check.outputs.commit_sha }}" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ inputs.commit_sha }}" ]; then
+            echo "ref=${{ inputs.commit_sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          ref: ${{ steps.sha.outputs.ref }}
       - uses: ./.github/actions/setup-node-pnpm
       - name: Wait for OTA server
         run: |
@@ -45,7 +95,6 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: npx eoas@2.3.16 publish --branch main --platform ios --nonInteractive
-
       - name: Ensure production channel maps to main branch
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}

@@ -1,0 +1,21 @@
+name: Build Web
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    name: Build Web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Build web bundle
+        run: cd packages/web && pnpm run build
+      - name: Check bundle size
+        run: pnpm exec size-limit
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: web-build
+          path: packages/web/dist/
+          retention-days: 7

@@ -15,7 +15,7 @@ on:
         type: string
 
 concurrency:
-  group: deploy
+  group: deploy-terraform
   cancel-in-progress: false
 
 jobs:
