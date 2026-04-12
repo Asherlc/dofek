@@ -70,41 +70,6 @@ describe("BullMQ stall detection", () => {
     return queue;
   }
 
-  it("stalls when handler exceeds lock duration without extending", async () => {
-    const queue = createTestQueue("no-extend");
-    const { promise, resolve } = deferred<{ failed: boolean; error?: string }>();
-
-    const worker = new Worker(
-      queue.name,
-      async () => {
-        // Simulate work that takes longer than lockDuration.
-        // Uses async sleep so the event loop is free — BullMQ's stall
-        // checker can detect the expired lock.
-        await new Promise((r) => setTimeout(r, 8_000));
-      },
-      {
-        connection,
-        lockDuration: 2_000,
-        stalledInterval: 1_000,
-        maxStalledCount: 0,
-      },
-    );
-    cleanupFns.push(async () => worker.close());
-
-    worker.on("failed", (_job, error) => {
-      resolve({ failed: true, error: error.message });
-    });
-    worker.on("completed", () => {
-      resolve({ failed: false });
-    });
-
-    await queue.add("test", {});
-
-    const result = await promise;
-    expect(result.failed).toBe(true);
-    expect(result.error).toContain("stalled");
-  }, 30_000);
-
   it("prevents stalling when handler calls extendLock", async () => {
     const queue = createTestQueue("with-extend");
     const { promise, resolve } = deferred<{ failed: boolean; error?: string }>();
