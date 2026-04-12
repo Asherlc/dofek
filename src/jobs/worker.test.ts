@@ -241,10 +241,13 @@ describe("worker module", () => {
   /**
    * Invoke the processor function registered for a given queue name with mock job data.
    * Uses Reflect.apply to call the BullMQ Processor without needing a full Job instance.
+   * Optionally pass a token (second argument to BullMQ processor).
    */
   async function invokeProcessor(
     queueName: string,
     jobData: Record<string, unknown>,
+    token?: string,
+    jobOverrides?: Record<string, unknown>,
   ): Promise<void> {
     const { Worker } = await import("bullmq");
     const call = vi.mocked(Worker).mock.calls.find((workerCall) => workerCall[0] === queueName);
@@ -252,7 +255,8 @@ describe("worker module", () => {
     if (typeof processor !== "function") {
       throw new Error(`No processor function found for queue "${queueName}"`);
     }
-    await Reflect.apply(processor, undefined, [{ data: jobData }]);
+    const mockJob = { data: jobData, id: "test-job-1", ...jobOverrides };
+    await Reflect.apply(processor, undefined, [mockJob, token]);
   }
 
   it("per-provider sync processor delegates to processSyncJob", async () => {
@@ -317,12 +321,51 @@ describe("worker module", () => {
     expect(processPostSyncJob).toHaveBeenCalled();
   });
 
-  it("training-export processor delegates to processTrainingExportJob", async () => {
+  it("training-export processor delegates to processTrainingExportJob with token", async () => {
     const { processTrainingExportJob } = await import("./process-training-export-job.ts");
     vi.mocked(processTrainingExportJob).mockClear();
 
-    await invokeProcessor("training-export-queue", {});
+    await invokeProcessor("training-export-queue", {}, "test-token-123");
 
     expect(processTrainingExportJob).toHaveBeenCalled();
+  });
+
+  it("training-export extendLock calls job.extendLock when token is present", async () => {
+    const { processTrainingExportJob } = await import("./process-training-export-job.ts");
+    const mockExtendLock = vi.fn().mockResolvedValue(undefined);
+
+    // Make the mock call extendLock on the passed-in job object
+    vi.mocked(processTrainingExportJob).mockImplementationOnce(async (job) => {
+      await job.extendLock(60_000);
+    });
+
+    await invokeProcessor("training-export-queue", {}, "test-token-456", {
+      id: "test-job-2",
+      extendLock: mockExtendLock,
+      updateProgress: vi.fn(),
+    });
+
+    expect(mockExtendLock).toHaveBeenCalledWith("test-token-456", 60_000);
+  });
+
+  it("training-export processor throws when token is missing", async () => {
+    const Sentry = await import("@sentry/node");
+    const { logger } = await import("../logger.ts");
+    vi.mocked(Sentry.captureException).mockClear();
+    vi.mocked(logger.error).mockClear();
+
+    // Invoke without token (undefined) — processor should fail fast
+    await expect(invokeProcessor("training-export-queue", {})).rejects.toThrow(
+      "without BullMQ token",
+    );
+
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("failing fast because extendLock cannot succeed"),
+    );
+    expect(Sentry.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining("without BullMQ token"),
+      }),
+    );
   });
 });
