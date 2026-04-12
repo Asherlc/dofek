@@ -205,7 +205,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/manifest 2>&1 | grep -q channel"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/hc"]
       interval: 10s
       timeout: 5s
       retries: 3
