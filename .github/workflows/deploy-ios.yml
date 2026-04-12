@@ -23,33 +23,46 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Only runs for workflow_run triggers — validates CI passed and iOS native files changed
   check:
     name: Deploy Check
-    if: github.event_name == 'workflow_run'
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     outputs:
       commit_sha: ${{ steps.resolve.outputs.sha }}
       should_deploy: ${{ steps.detect.outputs.should_deploy }}
     steps:
-      - if: github.event.workflow_run.conclusion != 'success'
-        run: |
-          echo "CI did not succeed — skipping deploy"
-          exit 1
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           fetch-depth: 2
       - name: Resolve commit SHA
         id: resolve
         env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_SHA: ${{ inputs.commit_sha }}
           WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
-        run: echo "sha=$WORKFLOW_RUN_SHA" >> "$GITHUB_OUTPUT"
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            SHA="$INPUT_SHA"
+            if [ -z "$SHA" ]; then
+              SHA=$(git ls-remote origin refs/heads/main | awk '{ print $1 }')
+            fi
+          else
+            SHA="$WORKFLOW_RUN_SHA"
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
       - name: Check if latest main HEAD and detect iOS changes
         id: detect
         env:
           SHA: ${{ steps.resolve.outputs.sha }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           MAIN_HEAD=$(git ls-remote origin refs/heads/main | awk '{ print $1 }')
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+            echo "Manual deploy requested for $SHA"
+            exit 0
+          fi
 
           if [ "$MAIN_HEAD" != "$SHA" ]; then
             echo "should_deploy=false" >> "$GITHUB_OUTPUT"
@@ -86,17 +99,15 @@ jobs:
       - name: Resolve commit SHA
         id: sha
         env:
-          EVENT_NAME: ${{ github.event_name }}
           CHECK_SHA: ${{ needs.check.outputs.commit_sha }}
           INPUT_SHA: ${{ inputs.commit_sha }}
-          DEFAULT_SHA: ${{ github.sha }}
         run: |
-          if [ "$EVENT_NAME" = "workflow_run" ]; then
+          if [ -n "$CHECK_SHA" ]; then
             echo "ref=$CHECK_SHA" >> "$GITHUB_OUTPUT"
           elif [ -n "$INPUT_SHA" ]; then
             echo "ref=$INPUT_SHA" >> "$GITHUB_OUTPUT"
           else
-            echo "ref=$DEFAULT_SHA" >> "$GITHUB_OUTPUT"
+            echo "ref=$(git ls-remote origin refs/heads/main | awk '{ print $1 }')" >> "$GITHUB_OUTPUT"
           fi
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
