@@ -26,8 +26,6 @@ function withWatchTargetExclusions(config) {
       const platformRoot = modConfig.modRequest.platformProjectRoot;
       const projectRoot = modConfig.modRequest.projectRoot;
 
-      const origFinalize = modConfig._internal?.modPlugins?.ios?.finalized || [];
-
       // Use a process exit hook to ensure we run after all mods.
       // This is a workaround for the mod ordering limitation.
       const pbxprojPath = path.join(platformRoot, "Dofek.xcodeproj", "project.pbxproj");
