@@ -399,6 +399,47 @@ describe("processTrainingExportJob", () => {
     );
   });
 
+  it(
+    "extends lock during batch append yield points to prevent stalling on large exports",
+    async () => {
+      // No fake timers here — setImmediate (used by yieldToEventLoop) must
+      // actually fire or the appender loop hangs.
+      const job = createMockJob();
+      const db = createMockDb();
+
+      // Generate 10,001 rows to trigger at least one yield in appendRows
+      // (YIELD_INTERVAL is 10,000). This verifies the lock is extended at yield
+      // points inside batch append, not just after the full batch completes.
+      const rows = Array.from({ length: 10_001 }, (_, index) => ({
+        recorded_at: `2026-03-30T15:${String(Math.floor(index / 3600)).padStart(2, "0")}:${String(Math.floor((index % 3600) / 60)).padStart(2, "0")}Z`,
+        user_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        provider_id: "wahoo",
+        device_id: null,
+        source_type: "ble",
+        channel: `ch_${index}`,
+        activity_id: null,
+        activity_type: null,
+        scalar: index,
+        vector: null,
+      }));
+
+      mockExecuteWithSchema
+        .mockResolvedValueOnce([{ count: String(rows.length) }])
+        .mockResolvedValueOnce(rows);
+
+      await processTrainingExportJob(job, db);
+
+      // extendLock should be called 4 times:
+      // 1. after COUNT query
+      // 2. during batch append (at the yield point after 10,000 rows)
+      // 3. after batch completes
+      // 4. before finalize
+      expect(job.extendLock).toHaveBeenCalledTimes(4);
+      expect(job.extendLock).toHaveBeenCalledWith(600_000);
+    },
+    60_000,
+  );
+
   it("warns but does not throw when extendLock fails", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-30T15:00:00.123Z"));

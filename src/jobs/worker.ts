@@ -113,6 +113,7 @@ const trainingExportWorker = new Worker<TrainingExportJobData>(
   {
     connection,
     lockDuration: TRAINING_EXPORT_LOCK_MS,
+    stalledInterval: TRAINING_EXPORT_LOCK_MS / 2,
     maxStalledCount: 3,
   },
 );

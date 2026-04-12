@@ -122,7 +122,7 @@ export function buildTimeFilter(since?: string, until?: string): ReturnType<type
 // ── Streaming Parquet writer ──
 
 interface ParquetWriter {
-  appendRows(rows: SensorSampleRow[]): Promise<void>;
+  appendRows(rows: SensorSampleRow[], onYield?: () => Promise<void>): Promise<void>;
   finalize(outputPath: string): Promise<void>;
   close(): void;
 }
@@ -166,7 +166,7 @@ async function createParquetWriter(): Promise<ParquetWriter> {
   };
 
   return {
-    async appendRows(rows: SensorSampleRow[]) {
+    async appendRows(rows: SensorSampleRow[], onYield?: () => Promise<void>) {
       for (const row of rows) {
         duckdb.append_varchar(appender, row.recorded_at);
         duckdb.append_varchar(appender, row.user_id);
@@ -205,6 +205,7 @@ async function createParquetWriter(): Promise<ParquetWriter> {
         rowIndex++;
         if (rowIndex % YIELD_INTERVAL === 0) {
           await yieldToEventLoop();
+          await onYield?.();
         }
       }
     },
@@ -421,9 +422,13 @@ async function exportSensorSamples(
           ? fetchBatch(db, since, until, cursor)
           : Promise.resolve([]);
 
-      // Append to Parquet writer (streams directly to DuckDB, no JS array accumulation)
+      // Append to Parquet writer (streams directly to DuckDB, no JS array accumulation).
+      // Pass extendLock as onYield so the lock is renewed at every yield point
+      // (every YIELD_INTERVAL rows), preventing BullMQ stall detection during
+      // long-running batch appends.
+      const onYield = extendLock ? () => extendLock(TRAINING_EXPORT_LOCK_MS) : undefined;
       const appendStart = Date.now();
-      await writer.appendRows(currentBatch);
+      await writer.appendRows(currentBatch, onYield);
       const appendMs = Date.now() - appendStart;
 
       exported += currentBatch.length;
