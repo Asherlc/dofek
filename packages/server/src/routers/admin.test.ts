@@ -189,7 +189,7 @@ describe("adminRouter", () => {
             name: "Morning Run",
             started_at: "2024-01-01T08:00:00Z",
             duration_seconds: "1800",
-            source: "garmin",
+            source_name: "garmin",
           },
         ],
         [{ count: "500" }],
@@ -222,7 +222,7 @@ describe("adminRouter", () => {
             started_at: "2024-01-01T22:00:00Z",
             ended_at: "2024-01-02T06:00:00Z",
             sleep_type: "night",
-            source: "whoop",
+            source_name: "whoop",
           },
         ],
         [{ count: "200" }],
@@ -292,12 +292,12 @@ describe("adminRouter", () => {
             id: "food-1",
             user_id: "user-1",
             user_name: "Test",
-            name: "Chicken Breast",
+            food_name: "Chicken Breast",
             calories: "250",
             protein_g: "40",
             meal: "lunch",
-            eaten_at: "2024-01-01T12:00:00Z",
-            source: "slack",
+            logged_at: "2024-01-01T12:00:00Z",
+            provider_id: "fatsecret",
           },
         ],
         [{ count: "1000" }],
@@ -305,7 +305,7 @@ describe("adminRouter", () => {
       const caller = makeCaller(execute);
       const result = await caller.foodEntries({ limit: 50, offset: 0 });
       expect(result.rows).toHaveLength(1);
-      expect(result.rows[0]?.name).toBe("Chicken Breast");
+      expect(result.rows[0]?.food_name).toBe("Chicken Breast");
       expect(result.total).toBe("1000");
     });
 
@@ -326,8 +326,8 @@ describe("adminRouter", () => {
             id: "bm-1",
             user_id: "user-1",
             user_name: "Test",
-            measured_at: "2024-01-01T07:00:00Z",
-            source: "withings",
+            recorded_at: "2024-01-01T07:00:00Z",
+            source_name: "withings",
             provider_id: "withings",
           },
         ],
@@ -359,7 +359,7 @@ describe("adminRouter", () => {
             user_name: "Test",
             date: "2024-01-01",
             provider_id: "whoop",
-            source: "whoop",
+            source_name: "whoop",
           },
         ],
         [{ count: "365" }],

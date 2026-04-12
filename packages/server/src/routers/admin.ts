@@ -76,7 +76,7 @@ const activityRowSchema = z.object({
   name: z.string().nullable(),
   started_at: timestampStringSchema,
   duration_seconds: z.coerce.number().nullable(),
-  source: z.string().nullable(),
+  source_name: z.string().nullable(),
 });
 
 const sleepRowSchema = z.object({
@@ -87,7 +87,7 @@ const sleepRowSchema = z.object({
   started_at: timestampStringSchema,
   ended_at: timestampStringSchema,
   sleep_type: z.string().nullable(),
-  source: z.string().nullable(),
+  source_name: z.string().nullable(),
 });
 
 const sessionRowSchema = z.object({
@@ -103,20 +103,20 @@ const foodEntryRowSchema = z.object({
   id: z.string(),
   user_id: z.string(),
   user_name: z.string().nullable(),
-  name: z.string(),
+  food_name: z.string(),
   calories: z.coerce.number().nullable(),
   protein_g: z.coerce.number().nullable(),
   meal: z.string().nullable(),
-  eaten_at: timestampStringSchema,
-  source: z.string().nullable(),
+  logged_at: timestampStringSchema.nullable(),
+  provider_id: z.string(),
 });
 
 const bodyMeasurementRowSchema = z.object({
   id: z.string(),
   user_id: z.string(),
   user_name: z.string().nullable(),
-  measured_at: timestampStringSchema,
-  source: z.string().nullable(),
+  recorded_at: timestampStringSchema,
+  source_name: z.string().nullable(),
   provider_id: z.string().nullable(),
 });
 
@@ -126,7 +126,7 @@ const dailyMetricRowSchema = z.object({
   user_name: z.string().nullable(),
   date: z.string(),
   provider_id: z.string(),
-  source: z.string().nullable(),
+  source_name: z.string().nullable(),
 });
 
 const oauthTokenRowSchema = z.object({
@@ -261,8 +261,9 @@ export const adminRouter = router({
         ctx.db,
         activityRowSchema,
         sql`SELECT a.id, a.user_id, up.name AS user_name, a.provider_id,
-                   a.activity_type, a.name, a.started_at::text, a.duration_seconds::text,
-                   a.source
+                   a.activity_type, a.name, a.started_at::text,
+                   EXTRACT(EPOCH FROM (a.ended_at - a.started_at))::text AS duration_seconds,
+                   a.source_name
             FROM fitness.activity a
             LEFT JOIN fitness.user_profile up ON up.id = a.user_id
             ORDER BY a.started_at DESC
@@ -284,7 +285,7 @@ export const adminRouter = router({
         ctx.db,
         sleepRowSchema,
         sql`SELECT ss.id, ss.user_id, up.name AS user_name, ss.provider_id,
-                   ss.started_at::text, ss.ended_at::text, ss.sleep_type, ss.source
+                   ss.started_at::text, ss.ended_at::text, ss.sleep_type, ss.source_name
             FROM fitness.sleep_session ss
             LEFT JOIN fitness.user_profile up ON up.id = ss.user_id
             ORDER BY ss.started_at DESC
@@ -337,11 +338,12 @@ export const adminRouter = router({
         ctx.db,
         foodEntryRowSchema,
         sql`SELECT fe.id, fe.user_id, up.name AS user_name,
-                   fe.name, fe.calories::text, fe.protein_g::text, fe.meal,
-                   fe.eaten_at::text, fe.source
+                   fe.food_name, nd.calories::text, nd.protein_g::text, fe.meal,
+                   fe.logged_at::text, fe.provider_id
             FROM fitness.food_entry fe
             LEFT JOIN fitness.user_profile up ON up.id = fe.user_id
-            ORDER BY fe.eaten_at DESC
+            LEFT JOIN fitness.nutrition_data nd ON nd.id = fe.nutrition_data_id
+            ORDER BY fe.logged_at DESC NULLS LAST
             LIMIT ${input.limit} OFFSET ${input.offset}`,
       ),
       executeWithSchema(
@@ -360,10 +362,10 @@ export const adminRouter = router({
         ctx.db,
         bodyMeasurementRowSchema,
         sql`SELECT bm.id, bm.user_id, up.name AS user_name,
-                   bm.measured_at::text, bm.source, bm.provider_id
+                   bm.recorded_at::text, bm.source_name, bm.provider_id
             FROM fitness.body_measurement bm
             LEFT JOIN fitness.user_profile up ON up.id = bm.user_id
-            ORDER BY bm.measured_at DESC
+            ORDER BY bm.recorded_at DESC
             LIMIT ${input.limit} OFFSET ${input.offset}`,
       ),
       executeWithSchema(
@@ -382,7 +384,7 @@ export const adminRouter = router({
         ctx.db,
         dailyMetricRowSchema,
         sql`SELECT dm.id, dm.user_id, up.name AS user_name,
-                   dm.date::text, dm.provider_id, dm.source
+                   dm.date::text, dm.provider_id, dm.source_name
             FROM fitness.daily_metrics dm
             LEFT JOIN fitness.user_profile up ON up.id = dm.user_id
             ORDER BY dm.date DESC
