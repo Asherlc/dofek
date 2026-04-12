@@ -4,6 +4,8 @@ import { captureException } from "../lib/telemetry.ts";
 interface ErrorBoundaryProps {
   children: ReactNode;
   fallback?: ReactNode;
+  /** Called when the user clicks "Try again" — use to reset external state (e.g., React Query cache). */
+  onReset?: () => void;
 }
 
 interface ErrorBoundaryState {
@@ -41,7 +43,10 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           </p>
           <button
             type="button"
-            onClick={() => this.setState({ hasError: false, error: null })}
+            onClick={() => {
+              this.props.onReset?.();
+              this.setState({ hasError: false, error: null });
+            }}
             className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent/10 text-foreground hover:bg-surface-hover transition-colors"
           >
             Try again

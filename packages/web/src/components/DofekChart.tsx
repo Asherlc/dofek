@@ -18,6 +18,7 @@
 import ReactECharts from "echarts-for-react";
 import { useFetchingCount } from "../lib/FetchingContext.tsx";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
+import { QueryErrorBoundary } from "./QueryErrorBoundary.tsx";
 
 interface DofekChartProps {
   option: Record<string, unknown>;
@@ -59,19 +60,21 @@ export function DofekChart({
   }
 
   return (
-    <div className="relative" style={{ height }}>
-      {fetchingCount > 0 && (
-        <div className="absolute top-2 right-2 z-10">
-          <div className="w-3.5 h-3.5 border-2 border-border-strong border-t-muted rounded-full animate-spin" />
-        </div>
-      )}
-      <ReactECharts
-        option={{ backgroundColor: "transparent", ...option }}
-        style={{ height, width: "100%" }}
-        notMerge={true}
-        opts={opts}
-        onEvents={onEvents}
-      />
-    </div>
+    <QueryErrorBoundary>
+      <div className="relative" style={{ height }}>
+        {fetchingCount > 0 && (
+          <div className="absolute top-2 right-2 z-10">
+            <div className="w-3.5 h-3.5 border-2 border-border-strong border-t-muted rounded-full animate-spin" />
+          </div>
+        )}
+        <ReactECharts
+          option={{ backgroundColor: "transparent", ...option }}
+          style={{ height, width: "100%" }}
+          notMerge={true}
+          opts={opts}
+          onEvents={onEvents}
+        />
+      </div>
+    </QueryErrorBoundary>
   );
 }

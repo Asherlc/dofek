@@ -31,6 +31,23 @@ export function hashViewContent(sqlContent: string): string {
 }
 
 /**
+ * Check whether a materialized view exists in the PostgreSQL catalog.
+ * Returns true if the view is present (regardless of whether it's populated).
+ * This catches views that were CASCADE-dropped when a dependency was recreated.
+ */
+export async function viewExistsInCatalog(
+  sql: ReturnType<typeof postgres>,
+  viewName: string,
+): Promise<boolean> {
+  const dotIndex = viewName.indexOf(".");
+  const schema = dotIndex >= 0 ? viewName.slice(0, dotIndex) : "public";
+  const name = dotIndex >= 0 ? viewName.slice(dotIndex + 1) : viewName;
+  const rows =
+    await sql`SELECT 1 FROM pg_matviews WHERE schemaname = ${schema} AND matviewname = ${name}`;
+  return rows.length > 0;
+}
+
+/**
  * Check whether a materialized view has been populated (has data loaded).
  * A view created with WITH NO DATA, or one whose population was interrupted
  * by a crash, will report `ispopulated = false` in pg_matviews. // cspell:disable-line
@@ -115,9 +132,17 @@ export async function syncMaterializedViews(
         await sql`SELECT hash FROM drizzle.__view_hashes WHERE view_name = ${viewName}`;
       const storedHash = existing[0]?.hash;
       if (storedHash === hash) {
-        logger.info(`[views] ${viewName} unchanged, skipping`);
-        skipped++;
-        continue;
+        // Verify the view still exists — it may have been CASCADE-dropped
+        // when a dependency was recreated.
+        const exists = await viewExistsInCatalog(sql, viewName);
+        if (exists) {
+          logger.info(`[views] ${viewName} unchanged, skipping`);
+          skipped++;
+          continue;
+        }
+        logger.warn(
+          `[views] ${viewName} hash matches but view is missing (CASCADE-dropped?), recreating`,
+        );
       }
 
       // View definition changed (or new) — drop and recreate

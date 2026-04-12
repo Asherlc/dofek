@@ -6,6 +6,7 @@ import {
   useNavigate,
 } from "@tanstack/react-router";
 import { useEffect } from "react";
+import { QueryErrorBoundary } from "../components/QueryErrorBoundary.tsx";
 import { AuthProvider, useAuth } from "../lib/auth-context.tsx";
 
 const PUBLIC_PATHS = new Set(["/", "/login", "/privacy"]);
@@ -53,7 +54,9 @@ function AuthGate() {
 
   return (
     <PageTransition>
-      <Outlet />
+      <QueryErrorBoundary>
+        <Outlet />
+      </QueryErrorBoundary>
     </PageTransition>
   );
 }
