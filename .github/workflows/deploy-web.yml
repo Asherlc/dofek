@@ -34,23 +34,29 @@ jobs:
           fetch-depth: 1
       - name: Resolve commit SHA
         id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_SHA: ${{ inputs.commit_sha }}
+          WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            SHA="${{ inputs.commit_sha }}"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            SHA="$INPUT_SHA"
             if [ -z "$SHA" ]; then
               SHA=$(git ls-remote origin refs/heads/main | awk '{ print $1 }')
             fi
           else
-            SHA="${{ github.event.workflow_run.head_sha }}"
+            SHA="$WORKFLOW_RUN_SHA"
           fi
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "Resolved commit SHA: $SHA"
       - name: Check if latest main HEAD
         id: latest
+        env:
+          SHA: ${{ steps.resolve.outputs.sha }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          SHA="${{ steps.resolve.outputs.sha }}"
           MAIN_HEAD=$(git ls-remote origin refs/heads/main | awk '{ print $1 }')
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             echo "should_deploy=true" >> "$GITHUB_OUTPUT"
             echo "Manual deploy requested for $SHA"
           elif [ "$MAIN_HEAD" = "$SHA" ]; then

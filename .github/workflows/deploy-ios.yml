@@ -41,12 +41,15 @@ jobs:
           fetch-depth: 2
       - name: Resolve commit SHA
         id: resolve
-        run: echo "sha=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+        env:
+          WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: echo "sha=$WORKFLOW_RUN_SHA" >> "$GITHUB_OUTPUT"
       - name: Check if latest main HEAD and detect iOS changes
         id: detect
+        env:
+          SHA: ${{ steps.resolve.outputs.sha }}
         run: |
           MAIN_HEAD=$(git ls-remote origin refs/heads/main | awk '{ print $1 }')
-          SHA="${{ steps.resolve.outputs.sha }}"
 
           if [ "$MAIN_HEAD" != "$SHA" ]; then
             echo "should_deploy=false" >> "$GITHUB_OUTPUT"
@@ -82,13 +85,18 @@ jobs:
     steps:
       - name: Resolve commit SHA
         id: sha
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CHECK_SHA: ${{ needs.check.outputs.commit_sha }}
+          INPUT_SHA: ${{ inputs.commit_sha }}
+          DEFAULT_SHA: ${{ github.sha }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_run" ]; then
-            echo "ref=${{ needs.check.outputs.commit_sha }}" >> "$GITHUB_OUTPUT"
-          elif [ -n "${{ inputs.commit_sha }}" ]; then
-            echo "ref=${{ inputs.commit_sha }}" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            echo "ref=$CHECK_SHA" >> "$GITHUB_OUTPUT"
+          elif [ -n "$INPUT_SHA" ]; then
+            echo "ref=$INPUT_SHA" >> "$GITHUB_OUTPUT"
           else
-            echo "ref=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+            echo "ref=$DEFAULT_SHA" >> "$GITHUB_OUTPUT"
           fi
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
