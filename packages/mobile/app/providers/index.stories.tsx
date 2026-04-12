@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import type { ComponentType } from "react";
 import { View } from "react-native";
+import { AuthProvider } from "../../lib/auth-context";
 import { ProviderCard } from "./provider-card.tsx";
 
 // ── ProviderCard ──
@@ -28,9 +29,11 @@ const providerCardMeta = {
   },
   decorators: [
     (Story: ComponentType) => (
-      <View style={{ padding: 16, backgroundColor: "#000" }}>
-        <Story />
-      </View>
+      <AuthProvider>
+        <View style={{ padding: 16, backgroundColor: "#000" }}>
+          <Story />
+        </View>
+      </AuthProvider>
     ),
   ],
 } satisfies Meta<typeof ProviderCard>;
