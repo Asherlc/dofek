@@ -7,13 +7,18 @@ import { DofekChart } from "./DofekChart.tsx";
 interface VerticalAscentChartProps {
   data: VerticalAscentRow[];
   loading?: boolean;
+  error?: boolean;
 }
 
-export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps) {
+export function VerticalAscentChart({ data, loading, error }: VerticalAscentChartProps) {
   const units = useUnitConverter();
 
   if (loading) {
     return <DofekChart option={{}} loading={true} height={300} />;
+  }
+
+  if (error) {
+    return <DofekChart option={{}} error={true} height={300} />;
   }
 
   if (data.length === 0) {

@@ -8,6 +8,7 @@ interface ActivityVariabilityTableProps {
   limit: number;
   onPageChange: (newOffset: number) => void;
   loading?: boolean;
+  error?: boolean;
 }
 
 function getVariabilityColor(variabilityIndex: number): string {
@@ -23,11 +24,20 @@ export function ActivityVariabilityTable({
   limit,
   onPageChange,
   loading,
+  error,
 }: ActivityVariabilityTableProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[200px]">
         <span className="text-dim text-sm">Loading variability data...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-[100px]">
+        <span className="text-sm text-red-400">Failed to load data</span>
       </div>
     );
   }

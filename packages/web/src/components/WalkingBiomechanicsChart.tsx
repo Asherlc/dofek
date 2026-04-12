@@ -7,6 +7,7 @@ import { DofekChart } from "./DofekChart.tsx";
 interface WalkingBiomechanicsChartProps {
   data: WalkingBiomechanicsRow[];
   loading?: boolean;
+  error?: boolean;
 }
 
 function buildLineOption(
@@ -38,11 +39,15 @@ function buildLineOption(
   };
 }
 
-export function WalkingBiomechanicsChart({ data, loading }: WalkingBiomechanicsChartProps) {
+export function WalkingBiomechanicsChart({ data, loading, error }: WalkingBiomechanicsChartProps) {
   const units = useUnitConverter();
 
   if (loading) {
     return <DofekChart option={{}} loading={true} height={400} />;
+  }
+
+  if (error) {
+    return <DofekChart option={{}} error={true} height={400} />;
   }
 
   if (data.length === 0) {

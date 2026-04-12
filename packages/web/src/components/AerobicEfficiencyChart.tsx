@@ -30,6 +30,7 @@ interface AerobicEfficiencyChartProps {
   activities: AerobicEfficiencyActivity[];
   maxHr: number | null;
   loading?: boolean;
+  error?: boolean;
 }
 
 /** Simple linear regression returning slope and intercept. */
@@ -61,6 +62,7 @@ export function AerobicEfficiencyChart({
   activities,
   maxHr,
   loading,
+  error,
 }: AerobicEfficiencyChartProps) {
   if (loading) {
     return (
@@ -71,6 +73,10 @@ export function AerobicEfficiencyChart({
         emptyMessage="No activities with sufficient Zone 2 power + heart rate data"
       />
     );
+  }
+
+  if (error) {
+    return <DofekChart option={{}} error={true} height={280} />;
   }
 
   if (activities.length === 0) {

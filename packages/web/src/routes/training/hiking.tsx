@@ -29,6 +29,7 @@ function HikingTab() {
         <GradeAdjustedPaceTable
           data={gradeAdjustedPace.data ?? []}
           loading={gradeAdjustedPace.isLoading}
+          error={gradeAdjustedPace.isError}
         />
       </Section>
 
@@ -37,13 +38,18 @@ function HikingTab() {
           title="Elevation Gain"
           subtitle="Weekly cumulative elevation from hiking and walking"
         >
-          <ElevationGainChart data={elevation.data ?? []} loading={elevation.isLoading} />
+          <ElevationGainChart
+            data={elevation.data ?? []}
+            loading={elevation.isLoading}
+            error={elevation.isError}
+          />
         </Section>
 
         <Section title="Walking Biomechanics" subtitle="Step length, gait symmetry, double support">
           <WalkingBiomechanicsChart
             data={biomechanics.data ?? []}
             loading={biomechanics.isLoading}
+            error={biomechanics.isError}
           />
         </Section>
       </div>
@@ -52,6 +58,7 @@ function HikingTab() {
         <ActivityComparisonChart
           data={routeComparison.data ?? []}
           loading={routeComparison.isLoading}
+          error={routeComparison.isError}
         />
       </Section>
 

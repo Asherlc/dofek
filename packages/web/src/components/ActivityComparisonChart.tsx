@@ -14,9 +14,10 @@ import { DofekChart } from "./DofekChart.tsx";
 interface ActivityComparisonChartProps {
   data: ActivityComparisonRow[];
   loading?: boolean;
+  error?: boolean;
 }
 
-export function ActivityComparisonChart({ data, loading }: ActivityComparisonChartProps) {
+export function ActivityComparisonChart({ data, loading, error }: ActivityComparisonChartProps) {
   const units = useUnitConverter();
 
   const series = data.map((route, index) => ({
@@ -73,6 +74,7 @@ export function ActivityComparisonChart({ data, loading }: ActivityComparisonCha
       <DofekChart
         option={option}
         loading={loading}
+        error={error}
         empty={data.length === 0}
         height={280}
         emptyMessage="No repeated routes found (need 2+ instances with the same name)"

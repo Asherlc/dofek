@@ -18,9 +18,10 @@ interface EftpTrendChartProps {
   data: EftpPoint[];
   currentEftp: number | null;
   loading?: boolean;
+  error?: boolean;
 }
 
-export function EftpTrendChart({ data, currentEftp, loading }: EftpTrendChartProps) {
+export function EftpTrendChart({ data, currentEftp, loading, error }: EftpTrendChartProps) {
   const markLine =
     currentEftp != null
       ? {
@@ -79,6 +80,7 @@ export function EftpTrendChart({ data, currentEftp, loading }: EftpTrendChartPro
     <DofekChart
       option={option}
       loading={loading}
+      error={error}
       empty={data.length === 0}
       height={240}
       emptyMessage="No threshold power data (need 20+ min activities with power)"

@@ -39,6 +39,7 @@ export function RunningTab() {
         <PaceCurveChart
           data={paceCurve.data?.points ?? []}
           loading={paceCurve.isLoading}
+          error={paceCurve.isError}
           units={units}
         />
       </Section>
@@ -46,11 +47,20 @@ export function RunningTab() {
       {/* Pace Trend + Running Dynamics side by side */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Section title="Pace Trend" subtitle="Average pace per run over time">
-          <PaceTrendChart data={paceTrend.data ?? []} loading={paceTrend.isLoading} units={units} />
+          <PaceTrendChart
+            data={paceTrend.data ?? []}
+            loading={paceTrend.isLoading}
+            error={paceTrend.isError}
+            units={units}
+          />
         </Section>
 
         <Section title="Cadence Trend" subtitle="Steps per minute over time">
-          <CadenceTrendChart data={dynamics.data ?? []} loading={dynamics.isLoading} />
+          <CadenceTrendChart
+            data={dynamics.data ?? []}
+            loading={dynamics.isLoading}
+            error={dynamics.isError}
+          />
         </Section>
       </div>
 
@@ -59,6 +69,7 @@ export function RunningTab() {
         <RunningDynamicsTable
           data={dynamics.data ?? []}
           loading={dynamics.isLoading}
+          error={dynamics.isError}
           units={units}
         />
       </Section>
@@ -82,10 +93,12 @@ interface PaceCurvePoint {
 function PaceCurveChart({
   data,
   loading,
+  error,
   units,
 }: {
   data: PaceCurvePoint[];
   loading: boolean;
+  error?: boolean;
   units: UnitConverter;
 }) {
   const option = {
@@ -152,6 +165,7 @@ function PaceCurveChart({
     <DofekChart
       option={option}
       loading={loading}
+      error={error}
       empty={data.length === 0}
       height={280}
       emptyMessage="No running pace data"
@@ -172,10 +186,12 @@ interface PaceTrendPoint {
 function PaceTrendChart({
   data,
   loading,
+  error,
   units,
 }: {
   data: PaceTrendPoint[];
   loading: boolean;
+  error?: boolean;
   units: UnitConverter;
 }) {
   const option = {
@@ -222,6 +238,7 @@ function PaceTrendChart({
     <DofekChart
       option={option}
       loading={loading}
+      error={error}
       empty={data.length === 0}
       height={250}
       emptyMessage="No running data"
@@ -242,7 +259,15 @@ interface DynamicsRow {
   distanceKm: number;
 }
 
-function CadenceTrendChart({ data, loading }: { data: DynamicsRow[]; loading: boolean }) {
+function CadenceTrendChart({
+  data,
+  loading,
+  error,
+}: {
+  data: DynamicsRow[];
+  loading: boolean;
+  error?: boolean;
+}) {
   const option = {
     grid: { ...dofekGrid("single"), top: 20, bottom: 40, left: 55 },
     tooltip: dofekTooltip({
@@ -274,6 +299,7 @@ function CadenceTrendChart({ data, loading }: { data: DynamicsRow[]; loading: bo
     <DofekChart
       option={option}
       loading={loading}
+      error={error}
       empty={data.length === 0}
       height={250}
       emptyMessage="No cadence data"
@@ -286,13 +312,23 @@ function CadenceTrendChart({ data, loading }: { data: DynamicsRow[]; loading: bo
 function RunningDynamicsTable({
   data,
   loading,
+  error,
   units,
 }: {
   data: DynamicsRow[];
   loading: boolean;
+  error?: boolean;
   units: UnitConverter;
 }) {
   if (loading) return <ChartLoadingSkeleton height={200} />;
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-[100px]">
+        <span className="text-sm text-red-400">Failed to load data</span>
+      </div>
+    );
+  }
 
   if (data.length === 0) {
     return (

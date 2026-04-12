@@ -22,9 +22,11 @@ import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 interface DofekChartProps {
   option: Record<string, unknown>;
   loading?: boolean;
+  error?: boolean;
   empty?: boolean;
   height?: number;
   emptyMessage?: string;
+  errorMessage?: string;
   /** Pass ECharts opts like { renderer: "svg" } */
   opts?: Record<string, unknown>;
   /** ECharts event handlers passed to ReactECharts */
@@ -34,9 +36,11 @@ interface DofekChartProps {
 export function DofekChart({
   option,
   loading,
+  error,
   empty,
   height = 250,
   emptyMessage = "No data available",
+  errorMessage = "Failed to load data",
   opts,
   onEvents,
 }: DofekChartProps) {
@@ -44,6 +48,14 @@ export function DofekChart({
 
   if (loading) {
     return <ChartLoadingSkeleton height={height} />;
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center" style={{ height }}>
+        <span className="text-sm text-red-400">{errorMessage}</span>
+      </div>
+    );
   }
 
   if (empty) {

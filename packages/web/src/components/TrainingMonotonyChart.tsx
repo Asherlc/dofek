@@ -14,9 +14,10 @@ import { DofekChart } from "./DofekChart.tsx";
 interface TrainingMonotonyChartProps {
   data: TrainingMonotonyWeek[];
   loading?: boolean;
+  error?: boolean;
 }
 
-export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartProps) {
+export function TrainingMonotonyChart({ data, loading, error }: TrainingMonotonyChartProps) {
   const option = {
     grid: dofekGrid("dualAxis", { top: 50, bottom: 50 }),
     tooltip: dofekTooltip({
@@ -87,6 +88,7 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
       <DofekChart
         option={option}
         loading={loading}
+        error={error}
         empty={data.length === 0}
         height={300}
         emptyMessage="No training monotony data available"

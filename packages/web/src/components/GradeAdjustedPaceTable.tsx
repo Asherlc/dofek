@@ -5,14 +5,23 @@ import { useUnitConverter } from "../lib/unitContext.ts";
 interface GradeAdjustedPaceTableProps {
   data: GradeAdjustedPaceRow[];
   loading?: boolean;
+  error?: boolean;
 }
 
-export function GradeAdjustedPaceTable({ data, loading }: GradeAdjustedPaceTableProps) {
+export function GradeAdjustedPaceTable({ data, loading, error }: GradeAdjustedPaceTableProps) {
   const units = useUnitConverter();
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[200px]">
         <span className="text-dim text-sm">Loading grade-adjusted pace data...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-[100px]">
+        <span className="text-sm text-red-400">Failed to load data</span>
       </div>
     );
   }

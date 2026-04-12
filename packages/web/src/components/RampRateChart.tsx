@@ -10,6 +10,7 @@ interface RampRateChartProps {
   currentRampRate: number;
   recommendation: string;
   loading?: boolean;
+  error?: boolean;
 }
 
 interface RampRateWeekData {
@@ -78,6 +79,7 @@ export function RampRateChart({
   currentRampRate,
   recommendation,
   loading,
+  error,
 }: RampRateChartProps) {
   const option = data.length > 0 ? buildRampRateOption(data) : {};
   const badgeColor = rampRateColor(currentRampRate);
@@ -100,6 +102,7 @@ export function RampRateChart({
       <DofekChart
         option={option}
         loading={loading}
+        error={error}
         empty={data.length === 0}
         height={300}
         emptyMessage="No ramp rate data available"
