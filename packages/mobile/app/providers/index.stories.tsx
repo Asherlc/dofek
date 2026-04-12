@@ -1,9 +1,12 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import type { ComponentType } from "react";
 import { View } from "react-native";
+import { AuthProvider } from "../../lib/auth-context";
 import { ProviderCard } from "./provider-card.tsx";
 
 // ── ProviderCard ──
+// AuthProvider is resolved to .storybook/mocks/auth-context in web Storybook
+// via the Vite alias in .storybook/main.ts, avoiding heavy native dependencies.
 
 const providerCardMeta = {
   title: "Providers/ProviderCard",
@@ -28,9 +31,11 @@ const providerCardMeta = {
   },
   decorators: [
     (Story: ComponentType) => (
-      <View style={{ padding: 16, backgroundColor: "#000" }}>
-        <Story />
-      </View>
+      <AuthProvider>
+        <View style={{ padding: 16, backgroundColor: "#000" }}>
+          <Story />
+        </View>
+      </AuthProvider>
     ),
   ],
 } satisfies Meta<typeof ProviderCard>;
@@ -93,6 +98,34 @@ export const ImportOnly: ProviderCardStory = {
       authType: "none",
       lastSyncAt: null,
       importOnly: true,
+    },
+  },
+};
+
+export const AppleHealthImportOnly: ProviderCardStory = {
+  args: {
+    provider: {
+      id: "apple_health",
+      label: "Apple Health",
+      enabled: false,
+      authStatus: "connected",
+      authType: "none",
+      lastSyncAt: null,
+      importOnly: true,
+    },
+  },
+};
+
+export const AppleHealthConnected: ProviderCardStory = {
+  args: {
+    provider: {
+      id: "apple_health",
+      label: "Apple Health",
+      enabled: true,
+      authStatus: "connected",
+      authType: "none",
+      lastSyncAt: new Date(Date.now() - 600_000).toISOString(),
+      importOnly: false,
     },
   },
 };

@@ -180,11 +180,12 @@ vi.mock("../../lib/telemetry", () => ({
   captureException: vi.fn(),
 }));
 
+const mockIsHealthKitAvailable = vi.fn().mockReturnValue(true);
 const mockGetRequestStatus = vi.fn().mockResolvedValue("unnecessary");
 const mockRequestPermissions = vi.fn().mockResolvedValue(true);
 
 vi.mock("../../modules/health-kit", () => ({
-  isAvailable: () => true,
+  isAvailable: () => mockIsHealthKitAvailable(),
   getRequestStatus: (...args: unknown[]) => mockGetRequestStatus(...args),
   requestPermissions: (...args: unknown[]) => mockRequestPermissions(...args),
   queryDailyStatistics: vi.fn().mockResolvedValue([]),
@@ -630,6 +631,7 @@ describe("ProvidersScreen", () => {
     mockWhoopSignIn.mockReset();
     mockWhoopVerifyCode.mockReset();
     mockWhoopSaveTokens.mockReset();
+    mockIsHealthKitAvailable.mockReset().mockReturnValue(true);
     mockGetRequestStatus.mockReset().mockResolvedValue("unnecessary");
     mockRequestPermissions.mockReset().mockResolvedValue(true);
     mockSyncHealthKit.mockReset().mockResolvedValue({ inserted: 0, errors: [] });
@@ -1131,6 +1133,19 @@ describe("ProvidersScreen", () => {
         userId: 456,
       });
     });
+  });
+
+  it("renders Apple Health as import-only when HealthKit is not available", async () => {
+    mockIsHealthKitAvailable.mockReturnValue(false);
+
+    const { default: ProvidersScreen } = await import("./index");
+    render(<ProvidersScreen />);
+
+    const appleCard = within(screen.getByTestId("provider-card-apple_health"));
+    expect(appleCard.getByText("Apple Health")).toBeTruthy();
+    expect(appleCard.getByText("Import only")).toBeTruthy();
+    expect(appleCard.queryByText("Sync")).toBeNull();
+    expect(appleCard.queryByText("Connect")).toBeNull();
   });
 
   it("renders Apple Health card when HealthKit is available", async () => {
