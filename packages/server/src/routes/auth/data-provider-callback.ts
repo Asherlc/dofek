@@ -159,8 +159,16 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
     // old tokens are revoked.
     let revocationOutcome: string | undefined;
     if (setup.revokeExistingTokens || setup.oauthConfig.revokeUrl) {
-      const { loadTokens } = await import("dofek/db/tokens");
-      const existingTokens = await loadTokens(db, providerId, stateUserId);
+      let existingTokens: Awaited<ReturnType<typeof import("dofek/db/tokens").loadTokens>> | null =
+        null;
+      try {
+        const { loadTokens } = await import("dofek/db/tokens");
+        existingTokens = await loadTokens(db, providerId, stateUserId);
+      } catch (loadError) {
+        revocationOutcome = `failed to load existing tokens: ${loadError}`;
+        logger.warn(`[auth] Pre-exchange token revocation failed for ${providerId}: ${loadError}`);
+        Sentry.captureException(loadError);
+      }
       if (existingTokens) {
         let customRevocationFailed = false;
         if (setup.revokeExistingTokens) {
