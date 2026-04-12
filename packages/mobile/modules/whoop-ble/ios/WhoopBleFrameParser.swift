@@ -26,6 +26,7 @@ struct WhoopImuSample {
     let timestampSeconds: UInt32    // Unix epoch seconds from frame header
     let subSeconds: UInt16          // Millisecond offset within second
     let sampleIndex: Int            // Position within the frame (for per-sample timing)
+    let samplesInFrame: Int         // Total samples in the source frame (for rate derivation)
     let accelerometerX: Float       // acceleration in g
     let accelerometerY: Float       // acceleration in g
     let accelerometerZ: Float       // acceleration in g
@@ -213,6 +214,7 @@ final class WhoopBleFrameParser {
                     timestampSeconds: frame.dataTimestamp,
                     subSeconds: frame.subSeconds,
                     sampleIndex: sampleIndex,
+                    samplesInFrame: count,
                     accelerometerX: Float(payload.readInt16LE(at: offset)) * whoopAccelerometerScale,
                     accelerometerY: Float(payload.readInt16LE(at: offset + 2)) * whoopAccelerometerScale,
                     accelerometerZ: Float(payload.readInt16LE(at: offset + 4)) * whoopAccelerometerScale,
@@ -243,6 +245,7 @@ final class WhoopBleFrameParser {
                     timestampSeconds: frame.dataTimestamp,
                     subSeconds: frame.subSeconds,
                     sampleIndex: sampleIndex,
+                    samplesInFrame: countA,
                     accelerometerX: Float(payload.readInt16LE(at: 20 + sampleIndex * 2)) * whoopAccelerometerScale,
                     accelerometerY: Float(payload.readInt16LE(at: 220 + sampleIndex * 2)) * whoopAccelerometerScale,
                     accelerometerZ: Float(payload.readInt16LE(at: 420 + sampleIndex * 2)) * whoopAccelerometerScale,

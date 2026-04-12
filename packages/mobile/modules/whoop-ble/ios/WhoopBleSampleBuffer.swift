@@ -8,7 +8,7 @@ final class WhoopBleSampleBuffer {
     private var realtimeDataSamples: [WhoopRealtimeDataSample] = []
     private let lock = NSLock()
 
-    private static let maxImuBufferSize = 500_000   // ~100 minutes at 80 Hz
+    private static let maxImuBufferSize = 500_000   // ~83 minutes at 100 Hz (R21 frames)
     private static let maxRealtimeBufferSize = 86_400 // 24 hours at 1 Hz
 
     private(set) var overflowCount: UInt64 = 0
@@ -148,9 +148,14 @@ final class WhoopBleSampleBuffer {
     private func serializeImuSamples(_ samples: [WhoopImuSample]) -> [[String: Any]] {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let samplingInterval = 1.0 / 50.0
 
         return samples.map { sample in
+            // Derive per-sample interval from the frame's sample count.
+            // Each frame spans ~1 second, so interval = 1.0 / samplesInFrame.
+            // Typical values: 100 (R21 packets) or variable (0x33/0x34 streams).
+            let samplingInterval = sample.samplesInFrame > 0
+                ? 1.0 / Double(sample.samplesInFrame)
+                : 1.0 / 100.0 // fallback for legacy samples without frame count
             let baseTime = TimeInterval(sample.timestampSeconds)
                 + TimeInterval(sample.subSeconds) / 1000.0
             let sampleTime = baseTime + Double(sample.sampleIndex) * samplingInterval

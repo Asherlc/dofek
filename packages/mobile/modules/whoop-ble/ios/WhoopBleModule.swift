@@ -154,7 +154,6 @@ public class WhoopBleModule: Module {
                     "cmdNotificationCount": Int(self.cmdNotificationCount),
                     "totalFramesParsed": Int(self.totalFramesParsed),
                     "totalSamplesExtracted": Int(self.totalSamplesExtracted),
-                    "droppedForNonStreaming": 0,
                     "emptyExtractions": Int(self.emptyExtractions),
                     "bufferOverflows": Int(self.sampleBuffer.overflowCount),
                     "packetTypes": packetTypeSummary,

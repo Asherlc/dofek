@@ -132,9 +132,10 @@ final class WhoopBleConnectionManager {
         peripheralId: String,
         completion: @escaping (Result<Bool, WhoopBleConnectionError>) -> Void
     ) {
+        let centralManager = ensureCentralManager()
+
         bleQueue.async {
-            guard let centralManager = self.centralManager,
-                  let uuid = UUID(uuidString: peripheralId) else {
+            guard let uuid = UUID(uuidString: peripheralId) else {
                 completion(.failure(.invalidPeripheralId(peripheralId)))
                 return
             }

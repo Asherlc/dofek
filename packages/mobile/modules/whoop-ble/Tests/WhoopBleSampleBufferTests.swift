@@ -32,6 +32,7 @@ final class WhoopBleSampleBufferTests: XCTestCase {
             timestampSeconds: 1711000000,
             subSeconds: 500,
             sampleIndex: 0,
+            samplesInFrame: 100,
             accelerometerX: 0.1,
             accelerometerY: -0.2,
             accelerometerZ: 1.0,
@@ -151,7 +152,7 @@ final class WhoopBleSampleBufferTests: XCTestCase {
             appendQueue.async {
                 self.buffer.appendImuSamples([WhoopImuSample(
                     timestampSeconds: UInt32(index),
-                    subSeconds: 0, sampleIndex: 0,
+                    subSeconds: 0, sampleIndex: 0, samplesInFrame: 100,
                     accelerometerX: 0, accelerometerY: 0, accelerometerZ: 0,
                     gyroscopeX: 0, gyroscopeY: 0, gyroscopeZ: 0
                 )])
@@ -286,6 +287,7 @@ final class WhoopBleSampleBufferTests: XCTestCase {
                 timestampSeconds: 1711000000,
                 subSeconds: UInt16(index * 10),
                 sampleIndex: index,
+                samplesInFrame: count,
                 accelerometerX: Float(index) * 0.1,
                 accelerometerY: 0,
                 accelerometerZ: 1.0,

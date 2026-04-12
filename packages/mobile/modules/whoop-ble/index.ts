@@ -178,7 +178,7 @@ export function getDataPathStats(): {
   cmdNotificationCount: number;
   totalFramesParsed: number;
   totalSamplesExtracted: number;
-  droppedForNonStreaming: number;
+
   emptyExtractions: number;
   bufferOverflows: number;
   packetTypes: string;

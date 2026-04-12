@@ -116,6 +116,7 @@ final class WhoopBleOrientationProcessorTests: XCTestCase {
                 timestampSeconds: 1711000000,
                 subSeconds: 0,
                 sampleIndex: index,
+                samplesInFrame: count,
                 accelerometerX: 0,
                 accelerometerY: 0,
                 accelerometerZ: 1.0,  // gravity along Z
