@@ -29,9 +29,6 @@ importers:
       '@dofek/training':
         specifier: workspace:*
         version: link:packages/training
-      '@duckdb/node-bindings':
-        specifier: 1.5.1-r.1
-        version: 1.5.1-r.1
       '@opentelemetry/api':
         specifier: 1.9.0
         version: 1.9.0
@@ -1620,39 +1617,6 @@ packages:
 
   '@drizzle-team/brocli@0.10.2':
     resolution: {integrity: sha512-z33Il7l5dKjUgGULTqBsQBQwckHh5AbIuxhdsIxDDiZAzBOrZO6q9ogcWC65kU382AfynTfgNumVcNIjuIua6w==}
-
-  '@duckdb/node-bindings-darwin-arm64@1.5.1-r.1':
-    resolution: {integrity: sha512-vm0Q/P8/OB/ZDITNTUe80emlg0b7/EcqTPBRu4GmULbt/fFDtkEAjDHDblKZL1yazf7X6JFEabHBGuWL5jmjEw==}
-    cpu: [arm64]
-    os: [darwin]
-
-  '@duckdb/node-bindings-darwin-x64@1.5.1-r.1':
-    resolution: {integrity: sha512-GOKWYbOP1v5jppGjlCaQzvyzVnY8/dGd7UJcnT213uiSMq/mtQk2yvzZCPhq7UdxmqR0TSd+TKttpozd8ANyOQ==}
-    cpu: [x64]
-    os: [darwin]
-
-  '@duckdb/node-bindings-linux-arm64@1.5.1-r.1':
-    resolution: {integrity: sha512-b0tHCtC+GZnD6gJA+ldUwy8FhnugR1Uq0/LjLiusOQOoK5pRXyfiQjgIe/SiKSeE5iEr+FWUXEprSD81HOaaQg==}
-    cpu: [arm64]
-    os: [linux]
-
-  '@duckdb/node-bindings-linux-x64@1.5.1-r.1':
-    resolution: {integrity: sha512-AczM4qyMuMXHIa7w1YacIu6FFPpwzUsQSkPUFKsAJzyuRcxAlGEwt+2GnVZSACGQFpKbL9nAkuu3Icq6ttxwag==}
-    cpu: [x64]
-    os: [linux]
-
-  '@duckdb/node-bindings-win32-arm64@1.5.1-r.1':
-    resolution: {integrity: sha512-SrgAiFttkfFXCCAMrmMBWtnBMtEjVaC38XtG6zEdbvmp2RTEPo/dFcvRP75vS/Hm5Iq8Tgiuoq4tIdovwEw5yg==}
-    cpu: [arm64]
-    os: [win32]
-
-  '@duckdb/node-bindings-win32-x64@1.5.1-r.1':
-    resolution: {integrity: sha512-JkL9xvXx9i8ceU1fGJsb9gqgRn30RFi0HyfpuESK2AZInKx5mJn8fvYcj4AQg/Ip9SZ1S4a2Jh5DOFY81koubw==}
-    cpu: [x64]
-    os: [win32]
-
-  '@duckdb/node-bindings@1.5.1-r.1':
-    resolution: {integrity: sha512-3vmIlY/ACTLutlMup4F+D2Gzo+kiUoMaIL4TvM4x34cMqnKfsZ+4lMjqfSKYmdcgNGXYXwPwIYaJlvMRhU3Tbg==}
 
   '@egjs/hammerjs@2.0.17':
     resolution: {integrity: sha512-XQsZgjm2EcVUiZQf11UBJQfmZeEmOW8DpI1gsFeln6w0ae0ii4dMQEQ0kjl6DspdWX1aGY1/loyXnP0JS06e/A==}
@@ -12192,33 +12156,6 @@ snapshots:
 
   '@drizzle-team/brocli@0.10.2': {}
 
-  '@duckdb/node-bindings-darwin-arm64@1.5.1-r.1':
-    optional: true
-
-  '@duckdb/node-bindings-darwin-x64@1.5.1-r.1':
-    optional: true
-
-  '@duckdb/node-bindings-linux-arm64@1.5.1-r.1':
-    optional: true
-
-  '@duckdb/node-bindings-linux-x64@1.5.1-r.1':
-    optional: true
-
-  '@duckdb/node-bindings-win32-arm64@1.5.1-r.1':
-    optional: true
-
-  '@duckdb/node-bindings-win32-x64@1.5.1-r.1':
-    optional: true
-
-  '@duckdb/node-bindings@1.5.1-r.1':
-    optionalDependencies:
-      '@duckdb/node-bindings-darwin-arm64': 1.5.1-r.1
-      '@duckdb/node-bindings-darwin-x64': 1.5.1-r.1
-      '@duckdb/node-bindings-linux-arm64': 1.5.1-r.1
-      '@duckdb/node-bindings-linux-x64': 1.5.1-r.1
-      '@duckdb/node-bindings-win32-arm64': 1.5.1-r.1
-      '@duckdb/node-bindings-win32-x64': 1.5.1-r.1
-
   '@egjs/hammerjs@2.0.17':
     dependencies:
       '@types/hammerjs': 2.0.46
@@ -14373,9 +14310,7 @@ snapshots:
       metro-runtime: 0.83.3
     transitivePeerDependencies:
       - '@babel/core'
-      - bufferutil
       - supports-color
-      - utf-8-validate
 
   '@react-native/normalize-colors@0.74.89': {}
 

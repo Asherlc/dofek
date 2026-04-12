@@ -73,9 +73,7 @@ class TestBuildWhereClause:
         assert result == "WHERE ss.recorded_at < %s::timestamptz"
 
     def test_both_since_and_until(self) -> None:
-        result = build_where_clause(
-            "2026-03-01T00:00:00Z", "2026-03-31T00:00:00Z"
-        )
+        result = build_where_clause("2026-03-01T00:00:00Z", "2026-03-31T00:00:00Z")
         assert "ss.recorded_at >= %s::timestamptz" in result
         assert "ss.recorded_at < %s::timestamptz" in result
         assert result.startswith("WHERE ")
@@ -318,9 +316,7 @@ class TestExportToParquet:
         progress_calls: list[dict[str, Any]] = []
         conn = _mock_connection()
 
-        export_to_parquet(
-            conn, tmp_path, on_progress=progress_calls.append
-        )
+        export_to_parquet(conn, tmp_path, on_progress=progress_calls.append)
 
         percentages = [entry["percentage"] for entry in progress_calls]
         assert 0 in percentages
@@ -409,9 +405,7 @@ class TestMain:
     """Tests for main() CLI entry point."""
 
     @patch("dofek_ml.export.psycopg")
-    def test_main_connects_and_exports(
-        self, mock_psycopg: MagicMock, tmp_path: Path
-    ) -> None:
+    def test_main_connects_and_exports(self, mock_psycopg: MagicMock, tmp_path: Path) -> None:
         mock_conn = _mock_connection(count_result=0, rows=[])
         ctx = mock_psycopg.connect.return_value
         ctx.__enter__ = MagicMock(return_value=mock_conn)
@@ -427,9 +421,7 @@ class TestMain:
         mock_psycopg.connect.assert_called_once_with(db_url)
 
     @patch("dofek_ml.export.psycopg")
-    def test_main_passes_since_until(
-        self, mock_psycopg: MagicMock, tmp_path: Path
-    ) -> None:
+    def test_main_passes_since_until(self, mock_psycopg: MagicMock, tmp_path: Path) -> None:
         mock_conn = _mock_connection(count_result=0, rows=[])
         ctx = mock_psycopg.connect.return_value
         ctx.__enter__ = MagicMock(return_value=mock_conn)
