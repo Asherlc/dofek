@@ -143,4 +143,26 @@ describe("StrainScreen recent activity navigation", () => {
 
     expect(mockRouterPush).toHaveBeenCalledWith("/activities");
   });
+
+  it("shows empty state and View all link when no activities exist", async () => {
+    mockActivities = [];
+
+    const { default: StrainScreen } = await import("./strain");
+    render(<StrainScreen />);
+
+    expect(screen.getByText("Recent Activities")).toBeTruthy();
+    expect(screen.getByText("No recent activities")).toBeTruthy();
+    expect(screen.getByText("View all")).toBeTruthy();
+  });
+
+  it("navigates to activities list from View all when no activities exist", async () => {
+    mockActivities = [];
+
+    const { default: StrainScreen } = await import("./strain");
+    render(<StrainScreen />);
+
+    fireEvent.click(screen.getByText("View all"));
+
+    expect(mockRouterPush).toHaveBeenCalledWith("/activities");
+  });
 });

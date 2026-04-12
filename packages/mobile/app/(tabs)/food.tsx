@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { MacroSummary } from "../../components/MacroSummary";
 import { MealSection } from "../../components/MealSection";
+import { safeParseRows } from "../../lib/safe-parse";
 import { trpc } from "../../lib/trpc";
 import { useRefresh } from "../../lib/useRefresh";
 import { colors } from "../../theme";
@@ -54,9 +55,8 @@ export default function FoodScreen() {
     onSuccess: () => foodQuery.refetch(),
   });
 
-  const entries = FoodEntrySchema.array()
-    .catch([])
-    .parse(foodQuery.data ?? []);
+  const entriesParsed = safeParseRows(FoodEntrySchema, foodQuery.data, "food:byDate");
+  const entries = entriesParsed.data;
 
   const dailyTotals = useMemo(() => {
     let totalCalories = 0;
@@ -165,6 +165,8 @@ export default function FoodScreen() {
 
         {foodQuery.isLoading ? (
           <Text style={styles.loadingText}>Loading...</Text>
+        ) : foodQuery.isError || entriesParsed.error ? (
+          <Text style={styles.errorText}>Failed to load food entries.</Text>
         ) : (
           MEALS.map(({ key, label }) => (
             <MealSection
@@ -250,6 +252,12 @@ const styles = StyleSheet.create({
   loadingText: {
     textAlign: "center",
     color: colors.textTertiary,
+    paddingVertical: 24,
+  },
+  errorText: {
+    textAlign: "center",
+    color: "#f87171",
+    fontSize: 13,
     paddingVertical: 24,
   },
 });

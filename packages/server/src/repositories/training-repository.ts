@@ -10,7 +10,7 @@ import {
   restingHeartRateLateral,
   vitalsBaselineCte,
 } from "../lib/sql-fragments.ts";
-import { dateStringSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 
 // ---------------------------------------------------------------------------
 // Zod schemas for DB rows
@@ -41,8 +41,8 @@ const activityStatsRowSchema = z.object({
   id: z.string(),
   activity_type: z.string(),
   name: z.string().nullable(),
-  started_at: z.string(),
-  ended_at: z.string().nullable(),
+  started_at: timestampStringSchema,
+  ended_at: timestampStringSchema.nullable(),
   avg_hr: z.coerce.number().nullable(),
   max_hr: z.coerce.number().nullable(),
   avg_power: z.coerce.number().nullable(),

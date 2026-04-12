@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import Animated, { Easing, FadeInUp } from "react-native-reanimated";
 import { ActivityCard } from "../components/ActivityCard";
+import { safeParseRows } from "../lib/safe-parse";
 import { trpc } from "../lib/trpc";
 import { useUnitConverter } from "../lib/units";
 import { useRefresh } from "../lib/useRefresh";
@@ -30,9 +31,8 @@ export default function ActivitiesScreen() {
     offset: page * PAGE_SIZE,
   });
 
-  const parsed = ActivityRowSchema.array()
-    .catch([])
-    .parse(query.data?.items ?? []);
+  const itemsParsed = safeParseRows(ActivityRowSchema, query.data?.items, "activities:list");
+  const parsed = itemsParsed.data;
   const totalCount = query.data && "totalCount" in query.data ? (query.data.totalCount ?? 0) : 0;
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
   const { refreshing, onRefresh } = useRefresh();
@@ -84,7 +84,7 @@ export default function ActivitiesScreen() {
         ListEmptyComponent={
           query.isLoading ? (
             <ActivityIndicator color={colors.accent} style={styles.loader} />
-          ) : query.isError ? (
+          ) : query.isError || itemsParsed.error ? (
             <Text style={styles.error}>Failed to load activities.</Text>
           ) : (
             <Text style={styles.empty}>No activities found</Text>
