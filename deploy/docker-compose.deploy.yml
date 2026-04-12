@@ -26,6 +26,8 @@ services:
       - --entrypoints.web.http.redirections.entrypoint.scheme=https
       - --certificatesresolvers.le.acme.dnschallenge=true
       - --certificatesresolvers.le.acme.dnschallenge.provider=cloudflare
+      - --certificatesresolvers.le.acme.dnschallenge.resolvers=1.1.1.1:53,8.8.8.8:53
+      - --certificatesresolvers.le.acme.dnschallenge.delaybeforecheck=10
       - --certificatesresolvers.le.acme.email=asherlc@asherlc.com
       - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
     environment:
@@ -80,6 +82,7 @@ services:
       - traefik.http.routers.web.tls=true
       - traefik.http.routers.web.tls.certresolver=le
       - traefik.http.routers.web.tls.domains[0].main=dofek.asherlc.com
+      - traefik.http.routers.web.tls.domains[0].sans=*.dofek.asherlc.com
       - traefik.http.routers.web.tls.domains[1].main=dofek.fit
       - traefik.http.routers.web.tls.domains[1].sans=www.dofek.fit
       - traefik.http.routers.web.tls.domains[2].main=dofek.live
