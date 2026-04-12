@@ -38,6 +38,7 @@ import { Route as TrainingStrengthRouteImport } from './routes/training/strength
 import { Route as TrainingRunningRouteImport } from './routes/training/running'
 import { Route as TrainingRecoveryRouteImport } from './routes/training/recovery'
 import { Route as TrainingHikingRouteImport } from './routes/training/hiking'
+import { Route as TrainingHeartRateRouteImport } from './routes/training/heart-rate'
 import { Route as TrainingEnduranceRouteImport } from './routes/training/endurance'
 import { Route as TrainingCyclingRouteImport } from './routes/training/cycling'
 import { Route as ProvidersIdRouteImport } from './routes/providers/$id'
@@ -190,6 +191,11 @@ const TrainingHikingRoute = TrainingHikingRouteImport.update({
   path: '/hiking',
   getParentRoute: () => TrainingRoute,
 } as any)
+const TrainingHeartRateRoute = TrainingHeartRateRouteImport.update({
+  id: '/heart-rate',
+  path: '/heart-rate',
+  getParentRoute: () => TrainingRoute,
+} as any)
 const TrainingEnduranceRoute = TrainingEnduranceRouteImport.update({
   id: '/endurance',
   path: '/endurance',
@@ -250,6 +256,7 @@ export interface FileRoutesByFullPath {
   '/providers/$id': typeof ProvidersIdRoute
   '/training/cycling': typeof TrainingCyclingRoute
   '/training/endurance': typeof TrainingEnduranceRoute
+  '/training/heart-rate': typeof TrainingHeartRateRoute
   '/training/hiking': typeof TrainingHikingRoute
   '/training/recovery': typeof TrainingRecoveryRoute
   '/training/running': typeof TrainingRunningRoute
@@ -284,6 +291,7 @@ export interface FileRoutesByTo {
   '/providers/$id': typeof ProvidersIdRoute
   '/training/cycling': typeof TrainingCyclingRoute
   '/training/endurance': typeof TrainingEnduranceRoute
+  '/training/heart-rate': typeof TrainingHeartRateRoute
   '/training/hiking': typeof TrainingHikingRoute
   '/training/recovery': typeof TrainingRecoveryRoute
   '/training/running': typeof TrainingRunningRoute
@@ -322,6 +330,7 @@ export interface FileRoutesById {
   '/providers/$id': typeof ProvidersIdRoute
   '/training/cycling': typeof TrainingCyclingRoute
   '/training/endurance': typeof TrainingEnduranceRoute
+  '/training/heart-rate': typeof TrainingHeartRateRoute
   '/training/hiking': typeof TrainingHikingRoute
   '/training/recovery': typeof TrainingRecoveryRoute
   '/training/running': typeof TrainingRunningRoute
@@ -361,6 +370,7 @@ export interface FileRouteTypes {
     | '/providers/$id'
     | '/training/cycling'
     | '/training/endurance'
+    | '/training/heart-rate'
     | '/training/hiking'
     | '/training/recovery'
     | '/training/running'
@@ -395,6 +405,7 @@ export interface FileRouteTypes {
     | '/providers/$id'
     | '/training/cycling'
     | '/training/endurance'
+    | '/training/heart-rate'
     | '/training/hiking'
     | '/training/recovery'
     | '/training/running'
@@ -432,6 +443,7 @@ export interface FileRouteTypes {
     | '/providers/$id'
     | '/training/cycling'
     | '/training/endurance'
+    | '/training/heart-rate'
     | '/training/hiking'
     | '/training/recovery'
     | '/training/running'
@@ -672,6 +684,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TrainingHikingRouteImport
       parentRoute: typeof TrainingRoute
     }
+    '/training/heart-rate': {
+      id: '/training/heart-rate'
+      path: '/heart-rate'
+      fullPath: '/training/heart-rate'
+      preLoaderRoute: typeof TrainingHeartRateRouteImport
+      parentRoute: typeof TrainingRoute
+    }
     '/training/endurance': {
       id: '/training/endurance'
       path: '/endurance'
@@ -750,6 +769,7 @@ const ProvidersRouteWithChildren = ProvidersRoute._addFileChildren(
 interface TrainingRouteChildren {
   TrainingCyclingRoute: typeof TrainingCyclingRoute
   TrainingEnduranceRoute: typeof TrainingEnduranceRoute
+  TrainingHeartRateRoute: typeof TrainingHeartRateRoute
   TrainingHikingRoute: typeof TrainingHikingRoute
   TrainingRecoveryRoute: typeof TrainingRecoveryRoute
   TrainingRunningRoute: typeof TrainingRunningRoute
@@ -760,6 +780,7 @@ interface TrainingRouteChildren {
 const TrainingRouteChildren: TrainingRouteChildren = {
   TrainingCyclingRoute: TrainingCyclingRoute,
   TrainingEnduranceRoute: TrainingEnduranceRoute,
+  TrainingHeartRateRoute: TrainingHeartRateRoute,
   TrainingHikingRoute: TrainingHikingRoute,
   TrainingRecoveryRoute: TrainingRecoveryRoute,
   TrainingRunningRoute: TrainingRunningRoute,

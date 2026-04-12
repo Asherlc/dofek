@@ -19,6 +19,7 @@ import { garminAuthRouter } from "./routers/garmin-auth.ts";
 import { healthKitSyncRouter } from "./routers/health-kit-sync.ts";
 import { healthReportRouter } from "./routers/health-report.ts";
 import { healthspanRouter } from "./routers/healthspan.ts";
+import { heartRateRouter } from "./routers/heart-rate.ts";
 import { hikingRouter } from "./routers/hiking.ts";
 import { inertialMeasurementUnitRouter } from "./routers/inertial-measurement-unit.ts";
 import { inertialMeasurementUnitSyncRouter } from "./routers/inertial-measurement-unit-sync.ts";
@@ -87,6 +88,7 @@ export const appRouter = router({
   efficiency: efficiencyRouter,
   food: foodRouter,
   garminAuth: garminAuthRouter,
+  heartRate: heartRateRouter,
   healthKitSync: healthKitSyncRouter,
   whoopAuth: whoopAuthRouter,
   whoopBleSync: whoopBleSyncRouter,

@@ -12,6 +12,7 @@ const subtabs = [
   { to: "/training/strength", label: "Strength", exact: false },
   { to: "/training/hiking", label: "Hiking", exact: false },
   { to: "/training/recovery", label: "Recovery", exact: false },
+  { to: "/training/heart-rate", label: "Heart Rate", exact: false },
 ] as const;
 
 export const Route = createFileRoute("/training")({

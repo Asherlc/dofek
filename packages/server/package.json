@@ -15,6 +15,7 @@
     "@ai-sdk/mistral": "3.0.24",
     "@dofek/auth": "workspace:*",
     "@dofek/heart-rate-variability": "workspace:*",
+    "@dofek/providers": "workspace:*",
     "@dofek/recovery": "workspace:*",
     "@dofek/scoring": "workspace:*",
     "@dofek/stats": "workspace:*",
