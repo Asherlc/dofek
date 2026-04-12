@@ -328,6 +328,55 @@ describe("worker module", () => {
     expect(processTrainingExportJob).toHaveBeenCalled();
   });
 
+  it("training-export extendLock calls job.extendLock when token is present", async () => {
+    const { processTrainingExportJob } = await import("./process-training-export-job.ts");
+    const mockExtendLock = vi.fn().mockResolvedValue(undefined);
+
+    // Make the mock call extendLock on the passed-in job object
+    vi.mocked(processTrainingExportJob).mockImplementationOnce(async (job) => {
+      await job.extendLock(60_000);
+    });
+
+    const { Worker } = await import("bullmq");
+    const call = vi
+      .mocked(Worker)
+      .mock.calls.find((workerCall) => workerCall[0] === "training-export-queue");
+    const processor = call?.[1];
+    expect(processor).toBeDefined();
+    await Reflect.apply(processor, undefined, [
+      { data: {}, id: "test-job-2", extendLock: mockExtendLock, updateProgress: vi.fn() },
+      "test-token-456",
+    ]);
+
+    expect(mockExtendLock).toHaveBeenCalledWith("test-token-456", 60_000);
+  });
+
+  it("training-export extendLock logs error when token is missing", async () => {
+    const { processTrainingExportJob } = await import("./process-training-export-job.ts");
+    const { logger } = await import("../logger.ts");
+    vi.mocked(logger.error).mockClear();
+
+    // Make the mock call extendLock on the passed-in job object
+    vi.mocked(processTrainingExportJob).mockImplementationOnce(async (job) => {
+      await job.extendLock(60_000);
+    });
+
+    const { Worker } = await import("bullmq");
+    const call = vi
+      .mocked(Worker)
+      .mock.calls.find((workerCall) => workerCall[0] === "training-export-queue");
+    const processor = call?.[1];
+    expect(processor).toBeDefined();
+    await Reflect.apply(processor, undefined, [
+      { data: {}, id: "test-job-3", extendLock: vi.fn(), updateProgress: vi.fn() },
+      undefined, // no token
+    ]);
+
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("extendLock called without token"),
+    );
+  });
+
   it("training-export processor logs error when token is missing", async () => {
     const { processTrainingExportJob } = await import("./process-training-export-job.ts");
     const Sentry = await import("@sentry/node");
