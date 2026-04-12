@@ -157,54 +157,79 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
     // Revoke existing tokens before exchange — some providers (e.g. Wahoo) limit
     // the number of active tokens per app+user and reject new token creation until
     // old tokens are revoked.
+    let revocationOutcome: string | undefined;
     if (setup.revokeExistingTokens || setup.oauthConfig.revokeUrl) {
-      try {
-        const { loadTokens } = await import("dofek/db/tokens");
-        const existingTokens = await loadTokens(db, providerId, stateUserId);
-        if (existingTokens) {
-          let customRevocationFailed = false;
-          if (setup.revokeExistingTokens) {
-            try {
-              logger.info(
-                `[auth] Revoking existing ${providerId} authorization before exchange...`,
-              );
-              await setup.revokeExistingTokens(existingTokens);
-            } catch (customRevokeError) {
-              customRevocationFailed = true;
-              logger.warn(
-                `[auth] Custom token revocation failed for ${providerId}, will try standard OAuth revocation: ${customRevokeError}`,
-              );
-            }
+      const { loadTokens } = await import("dofek/db/tokens");
+      const existingTokens = await loadTokens(db, providerId, stateUserId);
+      if (existingTokens) {
+        let customRevocationFailed = false;
+        if (setup.revokeExistingTokens) {
+          try {
+            logger.info(`[auth] Revoking existing ${providerId} authorization before exchange...`);
+            await setup.revokeExistingTokens(existingTokens);
+            revocationOutcome = "custom revocation succeeded";
+            logger.info(`[auth] Custom revocation succeeded for ${providerId}`);
+          } catch (customRevokeError) {
+            customRevocationFailed = true;
+            revocationOutcome = `custom revocation failed: ${customRevokeError}`;
+            logger.warn(
+              `[auth] Custom token revocation failed for ${providerId}, will try standard OAuth revocation: ${customRevokeError}`,
+            );
           }
+        }
 
-          // Standard OAuth revocation: used as primary when no custom handler,
-          // or as fallback when the custom handler fails (e.g. expired bearer token).
-          if (
-            (!setup.revokeExistingTokens || customRevocationFailed) &&
-            setup.oauthConfig.revokeUrl
-          ) {
-            if (existingTokens.accessToken) {
+        // Standard OAuth revocation: used as primary when no custom handler,
+        // or as fallback when the custom handler fails (e.g. expired bearer token).
+        if (
+          (!setup.revokeExistingTokens || customRevocationFailed) &&
+          setup.oauthConfig.revokeUrl
+        ) {
+          const revocationErrors: string[] = [];
+          if (existingTokens.accessToken) {
+            try {
               logger.info(`[auth] Revoking existing ${providerId} access token before exchange...`);
               await revokeToken(setup.oauthConfig, existingTokens.accessToken);
+              logger.info(`[auth] Access token revocation succeeded for ${providerId}`);
+            } catch (accessRevokeError) {
+              const message = `access token revocation failed: ${accessRevokeError}`;
+              revocationErrors.push(message);
+              logger.error(`[auth] ${providerId} ${message}`);
             }
-            if (existingTokens.refreshToken) {
+          }
+          if (existingTokens.refreshToken) {
+            try {
               logger.info(
                 `[auth] Revoking existing ${providerId} refresh token before exchange...`,
               );
               await revokeToken(setup.oauthConfig, existingTokens.refreshToken);
+              logger.info(`[auth] Refresh token revocation succeeded for ${providerId}`);
+            } catch (refreshRevokeError) {
+              const message = `refresh token revocation failed: ${refreshRevokeError}`;
+              revocationErrors.push(message);
+              logger.error(`[auth] ${providerId} ${message}`);
             }
           }
+          if (revocationErrors.length > 0) {
+            revocationOutcome = `standard OAuth revocation: ${revocationErrors.join("; ")}`;
+          } else {
+            revocationOutcome = "standard OAuth revocation succeeded";
+          }
         }
-      } catch (revokeError) {
-        logger.warn(
-          `[auth] Pre-exchange token revocation failed for ${providerId}: ${revokeError}`,
-        );
-        Sentry.captureException(revokeError);
+      } else {
+        revocationOutcome = "no existing tokens found";
       }
     }
 
     logger.info(`[auth] Exchanging code for ${providerId} tokens...`);
-    const tokens = await setup.exchangeCode(code, storedCodeVerifier);
+    const tokens = await setup
+      .exchangeCode(code, storedCodeVerifier)
+      .catch((exchangeError: unknown) => {
+        // Include revocation context so we can diagnose token-limit deadlocks
+        const context = revocationOutcome ? ` (prior revocation: ${revocationOutcome})` : "";
+        const message =
+          exchangeError instanceof Error ? exchangeError.message : String(exchangeError);
+        throw new Error(`${message}${context}`);
+      });
 
     // Auto-link identity when connecting data providers (if getUserIdentity is available)
     if (setup.getUserIdentity && intent !== "data") {
