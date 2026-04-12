@@ -3,6 +3,7 @@
 # Usage: ./scripts/make-admin.sh user@example.com
 #
 # Requires: SSH access to the production server (key must be in ssh-agent)
+# Set SERVER_IP env var to override the default.
 set -euo pipefail
 
 if [ $# -ne 1 ]; then
@@ -11,7 +12,7 @@ if [ $# -ne 1 ]; then
 fi
 
 EMAIL="$1"
-SERVER_IP=$(cd "$(dirname "$0")/../deploy" && terraform output -raw server_ip)
+SERVER_IP="${SERVER_IP:-159.69.3.40}"
 DB_CONTAINER=$(ssh "root@$SERVER_IP" "docker ps -q -f name=dofek-db")
 
 if [ -z "$DB_CONTAINER" ]; then
