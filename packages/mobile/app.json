@@ -76,6 +76,7 @@
           "isIosBackgroundLocationEnabled": true
         }
       ],
+      "./plugins/with-background-modes",
       [
         "@sentry/react-native/expo",
         {
