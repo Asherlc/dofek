@@ -77,7 +77,7 @@ export function ActivityDetailPage() {
   const { id } = useParams({ from: "/activity/$id" });
 
   const units = useUnitConverter();
-  const detail = trpc.activity.byId.useQuery({ id });
+  const detail = trpc.activity.byId.useQuery({ id }, { throwOnError: false });
   const stream = trpc.activity.stream.useQuery({ id, maxPoints: 500 });
   const hrZones = trpc.activity.hrZones.useQuery({ id });
   const isStrengthActivity =
