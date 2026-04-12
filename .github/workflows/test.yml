@@ -61,18 +61,16 @@ jobs:
           fi
           echo "All actions are SHA-pinned"
 
-  workflow-validate:
-    name: Workflow Validation
+  actionlint:
+    name: Actionlint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: mpalmer/action-validator@c994f427b7c42cd5ecb1bc9315cb91c3d7d72e3d # v0.9.0
-        with:
-          glob: .github/workflows/*.yml
+      - uses: rhysd/actionlint@914e7df21a07ef503a81201c76d2b11c789d3fca # v1.7.12
 
   security-gate:
     name: Security & Dependencies
-    needs: [secret-scan, audit, license-check, action-pinning, workflow-validate]
+    needs: [secret-scan, audit, license-check, action-pinning, actionlint]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -83,7 +81,7 @@ jobs:
             "${{ needs.audit.result }}" \
             "${{ needs.license-check.result }}" \
             "${{ needs.action-pinning.result }}" \
-            "${{ needs.workflow-validate.result }}"; do
+            "${{ needs.actionlint.result }}"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
               echo "A required job failed or was cancelled"
               exit 1
