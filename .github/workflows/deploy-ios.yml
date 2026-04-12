@@ -160,10 +160,12 @@ jobs:
           mkdir -p ~/private_keys
           echo -n "$API_KEY_BASE64" | base64 --decode > ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8
       - name: Set build number
+        id: build-number
         run: |
           cd packages/mobile/ios
           BUILD_NUMBER=$(( $(git rev-list --count HEAD) + 1200 ))
           echo "Setting build number to $BUILD_NUMBER"
+          echo "value=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
           agvtool new-version -all "$BUILD_NUMBER"
       - name: Build archive
         run: |
@@ -193,6 +195,22 @@ jobs:
             -authenticationKeyPath ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8 \
             -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
             -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
+      - name: Write job summary
+        if: success()
+        env:
+          BUILD_NUMBER: ${{ steps.build-number.outputs.value }}
+          COMMIT_SHA: ${{ steps.sha.outputs.ref }}
+        run: |
+          VERSION=$(python3 -c "import json; print(json.load(open('packages/mobile/app.json'))['expo']['version'])")
+          {
+            echo "## iOS Deploy"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| **Version** | $VERSION |"
+            echo "| **Build** | $BUILD_NUMBER |"
+            echo "| **Commit** | \`${COMMIT_SHA:0:10}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Cleanup keychain
         if: always()
         run: security delete-keychain $RUNNER_TEMP/app-signing.keychain-db || true
