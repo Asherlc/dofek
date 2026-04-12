@@ -32,10 +32,6 @@ export function App() {
             staleTime: 5 * 60 * 1000, // 5 min — health data only changes on sync
             gcTime: 10 * 60 * 1000,
             refetchOnWindowFocus: false,
-            // Throw query errors during render so they're caught by the nearest
-            // QueryErrorBoundary. Queries that need custom error handling (e.g.,
-            // NOT_FOUND) can override this per-query with throwOnError: false.
-            throwOnError: true,
           },
         },
       }),
