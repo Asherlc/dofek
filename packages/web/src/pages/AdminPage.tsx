@@ -543,7 +543,11 @@ function ActivitiesTab() {
       header: "Started",
       cell: ({ row }) => formatTimestamp(row.original.started_at),
     },
-    { id: "source", header: "Source", cell: ({ row }) => row.original.source ?? "\u2014" },
+    {
+      id: "source_name",
+      header: "Source",
+      cell: ({ row }) => row.original.source_name ?? "\u2014",
+    },
   ];
 
   if (isLoading) return <LoadingState />;
@@ -579,7 +583,11 @@ function SleepTab() {
       cell: ({ row }) => formatTimestamp(row.original.started_at),
     },
     { id: "ended_at", header: "End", cell: ({ row }) => formatTimestamp(row.original.ended_at) },
-    { id: "source", header: "Source", cell: ({ row }) => row.original.source ?? "\u2014" },
+    {
+      id: "source_name",
+      header: "Source",
+      cell: ({ row }) => row.original.source_name ?? "\u2014",
+    },
   ];
 
   if (isLoading) return <LoadingState />;
@@ -607,7 +615,7 @@ function FoodTab() {
   const columns: ColumnDef<NonNullable<typeof data>["rows"][number], unknown>[] = [
     { id: "id", header: "ID", cell: ({ row }) => <ShortId id={row.original.id} /> },
     { id: "user_name", header: "User", cell: ({ row }) => row.original.user_name ?? "\u2014" },
-    { accessorKey: "name", header: "Food" },
+    { accessorKey: "food_name", header: "Food" },
     {
       id: "calories",
       header: "Calories",
@@ -626,11 +634,11 @@ function FoodTab() {
     },
     { id: "meal", header: "Meal", cell: ({ row }) => row.original.meal ?? "\u2014" },
     {
-      id: "eaten_at",
-      header: "Eaten At",
-      cell: ({ row }) => formatTimestamp(row.original.eaten_at),
+      id: "logged_at",
+      header: "Logged At",
+      cell: ({ row }) => formatTimestamp(row.original.logged_at),
     },
-    { id: "source", header: "Source", cell: ({ row }) => row.original.source ?? "\u2014" },
+    { accessorKey: "provider_id", header: "Provider" },
   ];
 
   if (isLoading) return <LoadingState />;
@@ -702,7 +710,11 @@ function DailyMetricsTab() {
     { id: "user_name", header: "User", cell: ({ row }) => row.original.user_name ?? "\u2014" },
     { accessorKey: "date", header: "Date" },
     { accessorKey: "provider_id", header: "Provider" },
-    { id: "source", header: "Source", cell: ({ row }) => row.original.source ?? "\u2014" },
+    {
+      id: "source_name",
+      header: "Source",
+      cell: ({ row }) => row.original.source_name ?? "\u2014",
+    },
   ];
 
   if (isLoading) return <LoadingState />;
