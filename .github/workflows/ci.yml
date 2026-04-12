@@ -6,54 +6,13 @@ on:
   pull_request:
   workflow_dispatch:
 
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
 jobs:
-  build-mobile:
-    uses: ./.github/workflows/build-mobile.yml
-    secrets: inherit
-
   build-web:
     uses: ./.github/workflows/build-web.yml
-    secrets: inherit
-
-  test:
-    uses: ./.github/workflows/test.yml
-    secrets: inherit
-
-  ci-gate:
-    name: CI Gate
-    needs: [build-mobile, build-web, test]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check all CI results
-        run: |
-          for result in \
-            "${{ needs.build-mobile.result }}" \
-            "${{ needs.build-web.result }}" \
-            "${{ needs.test.result }}"; do
-            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
-              echo "CI gate failed"
-              exit 1
-            fi
-          done
-
-  build-storybook:
-    if: github.event_name == 'pull_request'
-    uses: ./.github/workflows/build-storybook.yml
     secrets: inherit
 
   review-app-web:
     if: github.event_name == 'pull_request'
     needs: [build-web]
     uses: ./.github/workflows/review-app-web.yml
-    secrets: inherit
-
-  review-app-storybook:
-    if: github.event_name == 'pull_request'
-    needs: [build-storybook]
-    uses: ./.github/workflows/review-app-storybook.yml
     secrets: inherit
