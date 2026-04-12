@@ -16,8 +16,11 @@ function makeMockDeps(): WhoopBleSyncDeps {
     connect: vi.fn().mockResolvedValue(true),
     startImuStreaming: vi.fn().mockResolvedValue(true),
     stopImuStreaming: vi.fn().mockResolvedValue(true),
-    getBufferedSamples: vi.fn().mockResolvedValue([]),
-    getBufferedRealtimeData: vi.fn().mockResolvedValue([]),
+    peekBufferedSamples: vi.fn().mockResolvedValue([]),
+    confirmSamplesDrain: vi.fn(),
+    peekBufferedRealtimeData: vi.fn().mockResolvedValue([]),
+    confirmRealtimeDataDrain: vi.fn(),
+    addConnectionStateListener: vi.fn().mockReturnValue({ remove: vi.fn() }),
     disconnect: vi.fn(),
   };
 }
@@ -113,7 +116,7 @@ describe("background-whoop-ble-sync", () => {
         gyroscopeZ: 30,
       },
     ];
-    vi.mocked(whoopDeps.getBufferedSamples).mockResolvedValueOnce(samples);
+    vi.mocked(whoopDeps.peekBufferedSamples).mockResolvedValueOnce(samples);
 
     await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
 
@@ -157,7 +160,7 @@ describe("background-whoop-ble-sync", () => {
         gyroscopeZ: 30,
       },
     ];
-    vi.mocked(whoopDeps.getBufferedSamples).mockResolvedValueOnce(samples);
+    vi.mocked(whoopDeps.peekBufferedSamples).mockResolvedValueOnce(samples);
 
     await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
     appStateCallback?.("active");
@@ -203,13 +206,13 @@ describe("background-whoop-ble-sync", () => {
   it("ignores non-active state changes", async () => {
     await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
     // Init does an initial sync, so clear call counts before testing state changes
-    vi.mocked(whoopDeps.getBufferedSamples).mockClear();
+    vi.mocked(whoopDeps.peekBufferedSamples).mockClear();
 
     await appStateCallback?.("background");
     await appStateCallback?.("inactive");
 
     // No additional sync calls from non-active state changes
-    expect(whoopDeps.getBufferedSamples).not.toHaveBeenCalled();
+    expect(whoopDeps.peekBufferedSamples).not.toHaveBeenCalled();
   });
 
   it("prevents concurrent syncs on foreground events", async () => {
@@ -217,11 +220,11 @@ describe("background-whoop-ble-sync", () => {
     await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
 
     // Clear counts from the initial sync
-    vi.mocked(whoopDeps.getBufferedSamples).mockClear();
+    vi.mocked(whoopDeps.peekBufferedSamples).mockClear();
 
     // Now make getBufferedSamples slow to simulate a long sync
     let resolveBuffered: (() => void) | null = null;
-    vi.mocked(whoopDeps.getBufferedSamples).mockImplementation(
+    vi.mocked(whoopDeps.peekBufferedSamples).mockImplementation(
       () =>
         new Promise((resolve) => {
           resolveBuffered = () => resolve([]);
@@ -235,7 +238,7 @@ describe("background-whoop-ble-sync", () => {
 
     // getBufferedSamples should only be called once for the foreground events
     // (the second call was skipped due to the syncing guard)
-    expect(whoopDeps.getBufferedSamples).toHaveBeenCalledTimes(1);
+    expect(whoopDeps.peekBufferedSamples).toHaveBeenCalledTimes(1);
 
     // Resolve so cleanup doesn't hang
     resolveBuffered?.();
@@ -264,13 +267,13 @@ describe("background-whoop-ble-sync", () => {
     await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
 
     // Clear call counts from initial sync
-    vi.mocked(whoopDeps.getBufferedSamples).mockClear();
+    vi.mocked(whoopDeps.peekBufferedSamples).mockClear();
 
     teardownBackgroundWhoopBleSync();
 
     // Advance past the drain interval — should NOT trigger a drain
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(whoopDeps.getBufferedSamples).not.toHaveBeenCalled();
+    expect(whoopDeps.peekBufferedSamples).not.toHaveBeenCalled();
 
     vi.useRealTimers();
   });
@@ -292,16 +295,16 @@ describe("background-whoop-ble-sync", () => {
     await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
 
     // Clear call counts from initial sync
-    vi.mocked(whoopDeps.getBufferedSamples).mockClear();
+    vi.mocked(whoopDeps.peekBufferedSamples).mockClear();
     vi.mocked(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).mockClear();
 
     // Set up a one-shot mock for the periodic drain
-    vi.mocked(whoopDeps.getBufferedSamples).mockResolvedValueOnce(samples);
+    vi.mocked(whoopDeps.peekBufferedSamples).mockResolvedValueOnce(samples);
 
     // Advance 30s to trigger the periodic drain
     await vi.advanceTimersByTimeAsync(30_000);
 
-    expect(whoopDeps.getBufferedSamples).toHaveBeenCalled();
+    expect(whoopDeps.peekBufferedSamples).toHaveBeenCalled();
     expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith({
       deviceId: "WHOOP Strap",
       deviceType: "whoop",
@@ -338,7 +341,7 @@ describe("background-whoop-ble-sync", () => {
     ];
 
     // Return batch1 on first call, batch2 on second, then empty
-    vi.mocked(whoopDeps.getBufferedSamples)
+    vi.mocked(whoopDeps.peekBufferedSamples)
       .mockResolvedValueOnce(batch1)
       .mockResolvedValueOnce(batch2)
       .mockResolvedValueOnce([]);
@@ -363,6 +366,69 @@ describe("background-whoop-ble-sync", () => {
     );
   });
 
+  it("confirms drain after successful upload", async () => {
+    const samples = [
+      {
+        timestamp: "2026-03-27T10:00:00.000Z",
+        accelerometerX: 1,
+        accelerometerY: 2,
+        accelerometerZ: 3,
+        gyroscopeX: 10,
+        gyroscopeY: -20,
+        gyroscopeZ: 30,
+      },
+    ];
+    vi.mocked(whoopDeps.peekBufferedSamples).mockResolvedValueOnce(samples);
+
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+
+    expect(whoopDeps.confirmSamplesDrain).toHaveBeenCalledWith(1);
+  });
+
+  it("does not confirm drain when upload fails", async () => {
+    const samples = [
+      {
+        timestamp: "2026-03-27T10:00:00.000Z",
+        accelerometerX: 1,
+        accelerometerY: 2,
+        accelerometerZ: 3,
+        gyroscopeX: 10,
+        gyroscopeY: -20,
+        gyroscopeZ: 30,
+      },
+    ];
+    vi.mocked(whoopDeps.peekBufferedSamples).mockResolvedValue(samples);
+    vi.mocked(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).mockRejectedValue(
+      new Error("network error"),
+    );
+
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+
+    expect(whoopDeps.confirmSamplesDrain).not.toHaveBeenCalled();
+  });
+
+  it("resets connected on BLE disconnect event", async () => {
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+
+    // Get the disconnect listener callback
+    const listenerCall = vi.mocked(whoopDeps.addConnectionStateListener).mock.calls[0];
+    const connectionCallback = listenerCall[0];
+
+    // Clear mocks from init
+    vi.mocked(whoopDeps.findWhoop).mockClear();
+    vi.mocked(whoopDeps.connect).mockClear();
+
+    // Simulate disconnect
+    connectionCallback({ state: "disconnected", error: "BLE link loss" });
+
+    // On next foreground, should attempt reconnection
+    appStateCallback?.("active");
+    await vi.waitFor(() => {
+      expect(whoopDeps.findWhoop).toHaveBeenCalled();
+    });
+    expect(whoopDeps.connect).toHaveBeenCalled();
+  });
+
   it("does not throw when connection fails", async () => {
     vi.mocked(whoopDeps.connect).mockRejectedValue(new Error("BLE error"));
 
@@ -380,7 +446,7 @@ describe("background-whoop-ble-sync", () => {
 
     // Make the next sync fail (getBufferedSamples is called after connection)
     const syncError = new Error("upload failed");
-    vi.mocked(whoopDeps.getBufferedSamples).mockRejectedValue(syncError);
+    vi.mocked(whoopDeps.peekBufferedSamples).mockRejectedValue(syncError);
 
     // Trigger foreground event
     appStateCallback?.("active");
@@ -432,7 +498,7 @@ describe("syncWhoopBle", () => {
         gyroscopeZ: 30,
       },
     ];
-    vi.mocked(whoopDeps.getBufferedSamples).mockResolvedValueOnce(samples);
+    vi.mocked(whoopDeps.peekBufferedSamples).mockResolvedValueOnce(samples);
 
     await syncWhoopBle(trpcClient, whoopDeps);
 
@@ -504,7 +570,7 @@ describe("realtime data (HR + quaternion) sync", () => {
         opticalRawHex: "000000000000000000000000000000000000",
       },
     ];
-    vi.mocked(whoopDeps.getBufferedRealtimeData).mockResolvedValueOnce(realtimeSamples);
+    vi.mocked(whoopDeps.peekBufferedRealtimeData).mockResolvedValueOnce(realtimeSamples);
 
     await initBackgroundWhoopBleSync(trpcClient, whoopDeps, realtimeClient);
 
@@ -527,13 +593,13 @@ describe("realtime data (HR + quaternion) sync", () => {
         opticalRawHex: "000000000000000000000000000000000000",
       },
     ];
-    vi.mocked(whoopDeps.getBufferedRealtimeData).mockResolvedValueOnce(realtimeSamples);
+    vi.mocked(whoopDeps.peekBufferedRealtimeData).mockResolvedValueOnce(realtimeSamples);
 
     // No realtime client provided
     await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
 
     // getBufferedRealtimeData should not be called since there's no client to upload to
-    expect(whoopDeps.getBufferedRealtimeData).not.toHaveBeenCalled();
+    expect(whoopDeps.peekBufferedRealtimeData).not.toHaveBeenCalled();
   });
 
   it("drains both IMU and realtime buffers independently", async () => {
@@ -561,8 +627,8 @@ describe("realtime data (HR + quaternion) sync", () => {
       },
     ];
 
-    vi.mocked(whoopDeps.getBufferedSamples).mockResolvedValueOnce(imuSamples);
-    vi.mocked(whoopDeps.getBufferedRealtimeData).mockResolvedValueOnce(realtimeSamples);
+    vi.mocked(whoopDeps.peekBufferedSamples).mockResolvedValueOnce(imuSamples);
+    vi.mocked(whoopDeps.peekBufferedRealtimeData).mockResolvedValueOnce(realtimeSamples);
 
     await initBackgroundWhoopBleSync(trpcClient, whoopDeps, realtimeClient);
 
@@ -586,8 +652,8 @@ describe("realtime data (HR + quaternion) sync", () => {
         gyroscopeZ: 0,
       },
     ];
-    vi.mocked(whoopDeps.getBufferedSamples).mockResolvedValueOnce(imuSamples);
-    vi.mocked(whoopDeps.getBufferedRealtimeData).mockRejectedValue(
+    vi.mocked(whoopDeps.peekBufferedSamples).mockResolvedValueOnce(imuSamples);
+    vi.mocked(whoopDeps.peekBufferedRealtimeData).mockRejectedValue(
       new Error("realtime buffer error"),
     );
 
@@ -611,7 +677,7 @@ describe("realtime data (HR + quaternion) sync", () => {
         opticalRawHex: "000000000000000000000000000000000000",
       },
     ];
-    vi.mocked(whoopDeps.getBufferedRealtimeData).mockResolvedValueOnce(realtimeSamples);
+    vi.mocked(whoopDeps.peekBufferedRealtimeData).mockResolvedValueOnce(realtimeSamples);
 
     await syncWhoopBle(trpcClient, whoopDeps, realtimeClient);
 

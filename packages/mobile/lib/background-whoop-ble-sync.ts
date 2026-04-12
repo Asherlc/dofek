@@ -13,7 +13,7 @@ export interface WhoopBleSyncDeps {
   connect(peripheralId: string): Promise<boolean>;
   startImuStreaming(): Promise<boolean>;
   stopImuStreaming(): Promise<boolean>;
-  getBufferedSamples(): Promise<
+  peekBufferedSamples(): Promise<
     Array<{
       timestamp: string;
       accelerometerX: number;
@@ -24,7 +24,8 @@ export interface WhoopBleSyncDeps {
       gyroscopeZ: number;
     }>
   >;
-  getBufferedRealtimeData(): Promise<
+  confirmSamplesDrain(count: number): void;
+  peekBufferedRealtimeData(): Promise<
     Array<{
       timestamp: string;
       heartRate: number;
@@ -36,6 +37,10 @@ export interface WhoopBleSyncDeps {
       opticalRawHex: string;
     }>
   >;
+  confirmRealtimeDataDrain(count: number): void;
+  addConnectionStateListener(
+    callback: (event: { state: string; peripheralId?: string; error?: string }) => void,
+  ): { remove(): void };
   disconnect(): void;
 }
 
@@ -61,6 +66,7 @@ export interface WhoopBleRealtimeUploadClient {
 }
 
 let appStateSubscription: ReturnType<typeof AppState.addEventListener> | null = null;
+let connectionStateSubscription: { remove(): void } | null = null;
 let periodicDrainTimer: ReturnType<typeof setInterval> | null = null;
 let syncing = false;
 let connected = false;
@@ -82,11 +88,28 @@ export async function initBackgroundWhoopBleSync(
   currentDeps = whoopDeps;
   currentRealtimeClient = realtimeClient ?? null;
 
-  // Clean up existing listener
+  // Clean up existing listeners
   if (appStateSubscription) {
     appStateSubscription.remove();
     appStateSubscription = null;
   }
+  if (connectionStateSubscription) {
+    connectionStateSubscription.remove();
+    connectionStateSubscription = null;
+  }
+
+  // Listen for native BLE disconnects so we re-establish on next sync cycle.
+  // Without this, the TS `connected` flag stays true after a disconnect
+  // and the sync loop never attempts reconnection.
+  connectionStateSubscription = whoopDeps.addConnectionStateListener((event) => {
+    if (event.state === "disconnected") {
+      logger.info(LOG_CATEGORY, `BLE disconnected (${event.error ?? "no error"}), will reconnect`);
+      connected = false;
+    } else if (event.state === "connected") {
+      logger.info(LOG_CATEGORY, "BLE reconnected");
+      connected = true;
+    }
+  });
 
   // Sync whenever the app comes to foreground
   appStateSubscription = AppState.addEventListener("change", (nextState: AppStateStatus) => {
@@ -260,10 +283,12 @@ async function drainBuffer(
   } catch (error) {
     captureException(error);
   }
-  // Drain IMU buffer
+  // Drain IMU buffer using peek-then-confirm: samples stay in the native
+  // buffer until the server confirms receipt, preventing data loss on
+  // network failures.
   let totalImuUploaded = 0;
   while (true) {
-    const samples = await whoopDeps.getBufferedSamples();
+    const samples = await whoopDeps.peekBufferedSamples();
     if (samples.length === 0) break;
 
     const uploadSamples = samples.map((sample) => ({
@@ -276,16 +301,23 @@ async function drainBuffer(
       gyroscopeZ: sample.gyroscopeZ,
     }));
 
-    const result = await trpcClient.inertialMeasurementUnitSync.pushSamples.mutate({
-      deviceId: "WHOOP Strap",
-      deviceType: "whoop",
-      samples: uploadSamples,
-    });
-    totalImuUploaded += uploadSamples.length;
-    logger.info(
-      LOG_CATEGORY,
-      `uploaded ${uploadSamples.length} IMU samples (server inserted: ${result.inserted})`,
-    );
+    try {
+      const result = await trpcClient.inertialMeasurementUnitSync.pushSamples.mutate({
+        deviceId: "WHOOP Strap",
+        deviceType: "whoop",
+        samples: uploadSamples,
+      });
+      whoopDeps.confirmSamplesDrain(samples.length);
+      totalImuUploaded += uploadSamples.length;
+      logger.info(
+        LOG_CATEGORY,
+        `uploaded ${uploadSamples.length} IMU samples (server inserted: ${result.inserted})`,
+      );
+    } catch (error: unknown) {
+      logger.error(LOG_CATEGORY, `IMU upload failed, ${samples.length} samples retained: ${error}`);
+      captureException(error, { source: "whoop-ble-imu-upload" });
+      break; // Stop draining — samples are still in the buffer for retry
+    }
   }
 
   if (totalImuUploaded > 0) {
@@ -297,19 +329,29 @@ async function drainBuffer(
   if (effectiveRealtimeClient) {
     let totalRealtimeUploaded = 0;
     while (true) {
-      const realtimeSamples = await whoopDeps.getBufferedRealtimeData();
+      const realtimeSamples = await whoopDeps.peekBufferedRealtimeData();
       logger.info(LOG_CATEGORY, `realtime buffer: ${realtimeSamples.length} samples`);
       if (realtimeSamples.length === 0) break;
 
-      const result = await effectiveRealtimeClient.whoopBleSync.pushRealtimeData.mutate({
-        deviceId: "WHOOP Strap",
-        samples: realtimeSamples,
-      });
-      totalRealtimeUploaded += realtimeSamples.length;
-      logger.info(
-        LOG_CATEGORY,
-        `uploaded ${realtimeSamples.length} realtime samples (server inserted: ${result.inserted})`,
-      );
+      try {
+        const result = await effectiveRealtimeClient.whoopBleSync.pushRealtimeData.mutate({
+          deviceId: "WHOOP Strap",
+          samples: realtimeSamples,
+        });
+        whoopDeps.confirmRealtimeDataDrain(realtimeSamples.length);
+        totalRealtimeUploaded += realtimeSamples.length;
+        logger.info(
+          LOG_CATEGORY,
+          `uploaded ${realtimeSamples.length} realtime samples (server inserted: ${result.inserted})`,
+        );
+      } catch (error: unknown) {
+        logger.error(
+          LOG_CATEGORY,
+          `realtime upload failed, ${realtimeSamples.length} samples retained: ${error}`,
+        );
+        captureException(error, { source: "whoop-ble-realtime-upload" });
+        break;
+      }
     }
 
     if (totalRealtimeUploaded > 0) {
@@ -323,6 +365,11 @@ export function teardownBackgroundWhoopBleSync(): void {
   if (appStateSubscription) {
     appStateSubscription.remove();
     appStateSubscription = null;
+  }
+
+  if (connectionStateSubscription) {
+    connectionStateSubscription.remove();
+    connectionStateSubscription = null;
   }
 
   if (periodicDrainTimer) {
