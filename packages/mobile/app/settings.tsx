@@ -450,6 +450,17 @@ export default function SettingsScreen() {
             <Text style={styles.devToolLabel}>IMU Visualization</Text>
             <Text style={styles.devToolChevron}>›</Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.devToolRow}
+            onPress={() => {
+              const { router } = require("expo-router");
+              router.push("/heart-rate-visualization");
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.devToolLabel}>Heart Rate Visualization</Text>
+            <Text style={styles.devToolChevron}>›</Text>
+          </TouchableOpacity>
           <View style={[styles.devToolRow, styles.devToolRowLast]}>
             <View>
               <Text style={styles.devToolLabel}>OTA Update</Text>
