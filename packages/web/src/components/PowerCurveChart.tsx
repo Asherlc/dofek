@@ -27,7 +27,6 @@ interface PowerCurveChartProps {
   comparisonData?: PowerCurvePoint[];
   model?: CriticalPowerModel | null;
   loading?: boolean;
-  error?: boolean;
 }
 
 function formatDuration(seconds: number): string {
@@ -36,13 +35,7 @@ function formatDuration(seconds: number): string {
   return `${Math.round(seconds / 3600)}h`;
 }
 
-export function PowerCurveChart({
-  data,
-  comparisonData,
-  model,
-  loading,
-  error,
-}: PowerCurveChartProps) {
+export function PowerCurveChart({ data, comparisonData, model, loading }: PowerCurveChartProps) {
   // Generate CP model curve points (smooth line from 120s to 7200s)
   const modelCurveData: [number, number][] = [];
   if (model && model.cp > 0) {
@@ -133,7 +126,6 @@ export function PowerCurveChart({
     <DofekChart
       option={option}
       loading={loading}
-      error={error}
       empty={data.length === 0}
       height={280}
       emptyMessage="No power data"

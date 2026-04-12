@@ -29,7 +29,6 @@ function EnduranceTab() {
           weeks={polarization.data?.weeks ?? []}
           maxHr={polarization.data?.maxHr ?? null}
           loading={polarization.isLoading}
-          error={polarization.isError}
         />
       </Section>
 
@@ -42,16 +41,11 @@ function EnduranceTab() {
           currentRampRate={rampRate.data?.currentRampRate ?? 0}
           recommendation={rampRate.data?.recommendation ?? ""}
           loading={rampRate.isLoading}
-          error={rampRate.isError}
         />
       </Section>
 
       <Section title="Training Monotony & Strain" subtitle="Weekly training load variability">
-        <TrainingMonotonyChart
-          data={monotony.data ?? []}
-          loading={monotony.isLoading}
-          error={monotony.isError}
-        />
+        <TrainingMonotonyChart data={monotony.data ?? []} loading={monotony.isLoading} />
       </Section>
 
       <Section title="Recent Endurance Activities" subtitle="Recent cardio and endurance workouts">

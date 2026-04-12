@@ -15,7 +15,6 @@ interface PolarizationTrendChartProps {
   weeks: PolarizationWeek[];
   maxHr: number | null;
   loading?: boolean;
-  error?: boolean;
 }
 
 function formatMinutes(seconds: number): string {
@@ -211,12 +210,7 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
   };
 }
 
-export function PolarizationTrendChart({
-  weeks,
-  maxHr,
-  loading,
-  error,
-}: PolarizationTrendChartProps) {
+export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTrendChartProps) {
   const option = weeks.length > 0 ? buildPolarizationTrendOption(weeks) : {};
 
   return (
@@ -228,7 +222,6 @@ export function PolarizationTrendChart({
       <DofekChart
         option={option}
         loading={loading}
-        error={error}
         empty={weeks.length === 0}
         height={280}
         emptyMessage="Not enough HR data to compute polarization index"

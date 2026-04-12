@@ -36,7 +36,6 @@ function TrainingOverview() {
           data={pmcData.data?.data ?? []}
           model={pmcData.data?.model ?? null}
           loading={pmcData.isLoading}
-          error={pmcData.isError}
         />
       </Section>
 

@@ -112,7 +112,6 @@ function CyclingTab() {
             comparisonData={seasonCurve.data?.points ?? []}
             model={recentModel}
             loading={loading}
-            error={recentCurve.isError || seasonCurve.isError}
           />
           <PowerSummaryTable
             recentByDuration={recentByDuration}
@@ -142,12 +141,7 @@ function CyclingTab() {
         title="Fitness, Fatigue & Form"
         subtitle="42-day fitness (blue), 7-day fatigue (purple), form = fitness − fatigue"
       >
-        <PmcChart
-          data={pmc.data?.data ?? []}
-          model={pmc.data?.model}
-          loading={pmc.isLoading}
-          error={pmc.isError}
-        />
+        <PmcChart data={pmc.data?.data ?? []} model={pmc.data?.model} loading={pmc.isLoading} />
       </Section>
 
       {/* eFTP Trend */}
@@ -159,7 +153,6 @@ function CyclingTab() {
           data={eftpTrend.data?.trend ?? []}
           currentEftp={eftpTrend.data?.currentEftp ?? null}
           loading={eftpTrend.isLoading}
-          error={eftpTrend.isError}
         />
       </Section>
 
@@ -173,7 +166,6 @@ function CyclingTab() {
             activities={efficiency.data?.activities ?? []}
             maxHr={efficiency.data?.maxHr ?? null}
             loading={efficiency.isLoading}
-            error={efficiency.isError}
           />
         </Section>
 
@@ -181,7 +173,6 @@ function CyclingTab() {
           <VerticalAscentChart
             data={verticalAscent.data ?? []}
             loading={verticalAscent.isLoading}
-            error={verticalAscent.isError}
           />
         </Section>
       </div>
@@ -197,7 +188,6 @@ function CyclingTab() {
           limit={VARIABILITY_PAGE_SIZE}
           onPageChange={setVariabilityOffset}
           loading={variability.isLoading}
-          error={variability.isError}
         />
       </Section>
 

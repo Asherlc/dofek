@@ -14,10 +14,9 @@ import { DofekChart } from "./DofekChart.tsx";
 interface ElevationGainChartProps {
   data: ElevationProfileRow[];
   loading?: boolean;
-  error?: boolean;
 }
 
-export function ElevationGainChart({ data, loading, error }: ElevationGainChartProps) {
+export function ElevationGainChart({ data, loading }: ElevationGainChartProps) {
   const units = useUnitConverter();
 
   const option = {
@@ -69,7 +68,6 @@ export function ElevationGainChart({ data, loading, error }: ElevationGainChartP
       <DofekChart
         option={option}
         loading={loading}
-        error={error}
         empty={data.length === 0}
         height={280}
         emptyMessage="No elevation data available"

@@ -16,7 +16,6 @@ interface PmcChartProps {
   data: PmcDataPoint[];
   model?: TssModelInfo | null;
   loading?: boolean;
-  error?: boolean;
 }
 
 /** Colors matching intervals.icu */
@@ -46,17 +45,9 @@ function ModelBadge({ model }: { model: TssModelInfo }) {
   );
 }
 
-export function PmcChart({ data, model, loading, error }: PmcChartProps) {
+export function PmcChart({ data, model, loading }: PmcChartProps) {
   if (loading) {
     return <ChartLoadingSkeleton height={420} />;
-  }
-
-  if (error) {
-    return (
-      <div className="flex items-center justify-center h-[420px]">
-        <span className="text-sm text-red-400">Failed to load training load data</span>
-      </div>
-    );
   }
 
   if (data.length === 0) {
