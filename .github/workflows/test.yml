@@ -61,16 +61,9 @@ jobs:
           fi
           echo "All actions are SHA-pinned"
 
-  actionlint:
-    name: Actionlint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: rhysd/actionlint@914e7df21a07ef503a81201c76d2b11c789d3fca # v1.7.12
-
   security-gate:
     name: Security & Dependencies
-    needs: [secret-scan, audit, license-check, action-pinning, actionlint]
+    needs: [secret-scan, audit, license-check, action-pinning]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -80,8 +73,7 @@ jobs:
             "${{ needs.secret-scan.result }}" \
             "${{ needs.audit.result }}" \
             "${{ needs.license-check.result }}" \
-            "${{ needs.action-pinning.result }}" \
-            "${{ needs.actionlint.result }}"; do
+            "${{ needs.action-pinning.result }}"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
               echo "A required job failed or was cancelled"
               exit 1
@@ -89,6 +81,13 @@ jobs:
           done
 
   # ── Static analysis ────────────────────────────────────────────────────
+
+  actionlint:
+    name: Actionlint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: rhysd/actionlint@914e7df21a07ef503a81201c76d2b11c789d3fca # v1.7.12
 
   lint:
     name: Lint
@@ -189,13 +188,14 @@ jobs:
 
   quality-gate:
     name: Lint & Static Analysis
-    needs: [lint, typecheck, sherif, knip, spellcheck, import-boundaries, python-checks, hadolint, terraform-validate]
+    needs: [actionlint, lint, typecheck, sherif, knip, spellcheck, import-boundaries, python-checks, hadolint, terraform-validate]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Check results
         run: |
           for result in \
+            "${{ needs.actionlint.result }}" \
             "${{ needs.lint.result }}" \
             "${{ needs.typecheck.result }}" \
             "${{ needs.sherif.result }}" \
