@@ -1,5 +1,9 @@
 import type { OAuthConfig, TokenSet } from "../../auth/oauth.ts";
-import { exchangeCodeForTokens, getOAuthRedirectUri } from "../../auth/oauth.ts";
+import {
+  exchangeCodeForTokens,
+  getOAuthRedirectUri,
+  refreshAccessToken,
+} from "../../auth/oauth.ts";
 import { resolveOAuthTokens } from "../../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../../db/index.ts";
 import { logger } from "../../logger.ts";
@@ -189,8 +193,28 @@ export class WahooProvider implements WebhookProvider {
       oauthConfig: config,
       exchangeCode: (code) => exchangeCodeForTokens(config, code),
       revokeExistingTokens: async (tokens) => {
-        const client = new WahooClient(tokens.accessToken, this.#fetchFn);
-        await client.revokeAuthorization();
+        // Try revoking with the stored access token first.
+        try {
+          const client = new WahooClient(tokens.accessToken, this.#fetchFn);
+          await client.revokeAuthorization();
+          return;
+        } catch {
+          // Access token likely expired — fall through to refresh
+        }
+
+        // Refresh the access token, then use it to revoke ALL tokens.
+        // DELETE /v1/permissions revokes every token for this app+user,
+        // including orphaned tokens from previous sessions that we don't
+        // have stored. POST /oauth/revoke can only revoke known tokens.
+        if (tokens.refreshToken) {
+          logger.info("[wahoo] Access token expired, refreshing to revoke all tokens...");
+          const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.#fetchFn);
+          const client = new WahooClient(refreshed.accessToken, this.#fetchFn);
+          await client.revokeAuthorization();
+          return;
+        }
+
+        throw new Error("Cannot revoke Wahoo tokens: access token expired and no refresh token");
       },
       apiBaseUrl: WAHOO_API_BASE,
       identityCapabilities: { providesEmail: false },
