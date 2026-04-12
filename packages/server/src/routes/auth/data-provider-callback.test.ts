@@ -212,4 +212,34 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     // Exchange proceeded
     expect(mockExchangeCode).toHaveBeenCalled();
   });
+
+  it("includes revocation context in logged error when exchange fails", async () => {
+    mockLoadTokens.mockResolvedValue({
+      accessToken: "expired-access",
+      refreshToken: "expired-refresh",
+    });
+
+    // Both revocation methods fail
+    mockRevokeExistingTokens.mockRejectedValue(new Error("401 Unauthorized"));
+    mockRevokeToken.mockRejectedValue(new Error("Token revocation failed (503): Service error"));
+
+    // Exchange also fails
+    mockExchangeCode.mockRejectedValue(new Error("Too many unrevoked access tokens"));
+
+    const { req, res } = createMockReqRes({ code: "auth-code", state: "random-state" });
+    await handleOAuth2Callback(req, res);
+
+    // User gets generic error
+    expect(res.status).toHaveBeenCalledWith(500);
+
+    // The final logged error includes both the exchange error and the revocation context
+    const allErrorMessages: string[] = mockLogger.error.mock.calls.map((call: unknown[]) =>
+      String(call[0]),
+    );
+    const callbackError = allErrorMessages.find((message) =>
+      message.includes("OAuth callback failed"),
+    );
+    expect(callbackError).toContain("Too many unrevoked access tokens");
+    expect(callbackError).toContain("prior revocation");
+  });
 });

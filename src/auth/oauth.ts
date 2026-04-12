@@ -228,8 +228,8 @@ export async function refreshAccessToken(
 
 /**
  * Revoke an OAuth 2.0 token via the provider's revocation endpoint (RFC 7009).
- * No-op if `config.revokeUrl` is not set. Non-fatal — logs but does not throw
- * on failure, since revocation is best-effort before a new token exchange.
+ * No-op if `config.revokeUrl` is not set. Throws on failure — the caller
+ * decides whether to continue or abort.
  */
 export async function revokeToken(
   config: OAuthConfig,
@@ -253,18 +253,14 @@ export async function revokeToken(
     headers.Authorization = `Basic ${Buffer.from(`${config.clientId}:${config.clientSecret}`, "utf8").toString("base64")}`;
   }
 
-  try {
-    const response = await fetchFn(config.revokeUrl, {
-      method: "POST",
-      headers,
-      body: body.toString(),
-    });
+  const response = await fetchFn(config.revokeUrl, {
+    method: "POST",
+    headers,
+    body: body.toString(),
+  });
 
-    if (!response.ok) {
-      const text = await response.text();
-      logger.warn(`Token revocation failed (${response.status}): ${text}`);
-    }
-  } catch (error) {
-    logger.warn(`Token revocation failed: ${error}`);
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Token revocation failed (${response.status}): ${text}`);
   }
 }

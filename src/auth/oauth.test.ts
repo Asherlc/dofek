@@ -482,7 +482,7 @@ describe("OAuth", () => {
       expect(body.has("client_id")).toBe(false);
     });
 
-    it("does not throw on failed revocation", async () => {
+    it("throws on failed revocation", async () => {
       const revokeConfig: OAuthConfig = {
         ...config,
         revokeUrl: "https://api.example.com/oauth/revoke",
@@ -493,17 +493,21 @@ describe("OAuth", () => {
         text: () => Promise.resolve("Service unavailable"),
       });
 
-      await expect(revokeToken(revokeConfig, "old-token", mockFetch)).resolves.toBeUndefined();
+      await expect(revokeToken(revokeConfig, "old-token", mockFetch)).rejects.toThrow(
+        "Token revocation failed (503): Service unavailable",
+      );
     });
 
-    it("does not throw on network error", async () => {
+    it("throws on network error", async () => {
       const revokeConfig: OAuthConfig = {
         ...config,
         revokeUrl: "https://api.example.com/oauth/revoke",
       };
       const mockFetch = vi.fn().mockRejectedValue(new Error("Network error"));
 
-      await expect(revokeToken(revokeConfig, "old-token", mockFetch)).resolves.toBeUndefined();
+      await expect(revokeToken(revokeConfig, "old-token", mockFetch)).rejects.toThrow(
+        "Network error",
+      );
     });
 
     it("is a no-op when revokeUrl is not set", async () => {
