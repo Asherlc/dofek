@@ -7,7 +7,7 @@ struct Quaternion {
     var y: Double
     var z: Double
 
-    static let identity = Quaternion(w: 1, x: 0, y: 0, z: 0)
+    static let identity = Self(w: 1, x: 0, y: 0, z: 0)
 }
 
 /// Euler angles in degrees.
@@ -95,9 +95,9 @@ final class MadgwickFilter {
 
             // Jacobian transpose times f (gradient step direction)
             var s0 = -2.0 * q2 * f0 + 2.0 * q1 * f1
-            var s1 =  2.0 * q3 * f0 + 2.0 * q0 * f1 - 4.0 * q1 * f2
+            var s1 = 2.0 * q3 * f0 + 2.0 * q0 * f1 - 4.0 * q1 * f2
             var s2 = -2.0 * q0 * f0 + 2.0 * q3 * f1 - 4.0 * q2 * f2
-            var s3 =  2.0 * q1 * f0 + 2.0 * q2 * f1
+            var s3 = 2.0 * q1 * f0 + 2.0 * q2 * f1
 
             // Normalize step
             let stepNorm = sqrt(s0 * s0 + s1 * s1 + s2 * s2 + s3 * s3)
@@ -148,7 +148,7 @@ final class MadgwickFilter {
         // Roll (X-axis rotation)
         let sinRollCosPitch = 2.0 * (w * x + y * z)
         let cosRollCosPitch = 1.0 - 2.0 * (x * x + y * y)
-        let roll = atan2(sinRollCosPitch, cosRollCosPitch) * MadgwickFilter.radiansToDegrees
+        let roll = atan2(sinRollCosPitch, cosRollCosPitch) * Self.radiansToDegrees
 
         // Pitch (Y-axis rotation) — clamped to avoid NaN at poles
         let sinPitch = 2.0 * (w * y - z * x)
@@ -156,13 +156,13 @@ final class MadgwickFilter {
         if abs(sinPitch) >= 1 {
             pitch = copysign(90.0, sinPitch)
         } else {
-            pitch = asin(sinPitch) * MadgwickFilter.radiansToDegrees
+            pitch = asin(sinPitch) * Self.radiansToDegrees
         }
 
         // Yaw (Z-axis rotation)
         let sinYawCosPitch = 2.0 * (w * z + x * y)
         let cosYawCosPitch = 1.0 - 2.0 * (y * y + z * z)
-        let yaw = atan2(sinYawCosPitch, cosYawCosPitch) * MadgwickFilter.radiansToDegrees
+        let yaw = atan2(sinYawCosPitch, cosYawCosPitch) * Self.radiansToDegrees
 
         return EulerAngles(roll: roll, pitch: pitch, yaw: yaw)
     }

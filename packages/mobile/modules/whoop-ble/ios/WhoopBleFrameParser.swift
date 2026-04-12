@@ -76,7 +76,7 @@ final class WhoopBleFrameParser {
         // If this notification starts with SOF and we have accumulated data,
         // try to parse the accumulated frame first
         if !data.isEmpty && data[0] == WhoopBleConstants.startOfFrame && !accumulator.isEmpty {
-            if let frame = WhoopBleFrameParser.parseFrame(accumulator) {
+            if let frame = Self.parseFrame(accumulator) {
                 frames.append(frame)
             }
             accumulator = Data()
@@ -85,7 +85,7 @@ final class WhoopBleFrameParser {
         accumulator.append(data)
 
         // Try to parse the current accumulator
-        if let frame = WhoopBleFrameParser.parseFrame(accumulator) {
+        if let frame = Self.parseFrame(accumulator) {
             frames.append(frame)
             let payloadLen = Int(accumulator[2]) | (Int(accumulator[3]) << 8)
             let consumed = min(8 + payloadLen, accumulator.count)

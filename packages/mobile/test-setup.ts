@@ -336,10 +336,6 @@ vi.mock("expo-camera", () => ({
   useCameraPermissions: () => [{ granted: false }, vi.fn()],
 }));
 
-vi.mock("expo-status-bar", () => ({
-  StatusBar: () => null,
-}));
-
 vi.mock("expo-haptics", () => ({
   selectionAsync: vi.fn(() => Promise.resolve()),
   impactAsync: vi.fn(() => Promise.resolve()),

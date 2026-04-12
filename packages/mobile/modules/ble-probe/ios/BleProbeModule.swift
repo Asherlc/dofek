@@ -43,7 +43,7 @@ public class BleProbeModule: Module {
             return self.describeState(manager.state)
         }
 
-        Function("initialize") { () -> Void in
+        Function("initialize") { () in
             _ = self.ensureCentralManager()
         }
 
@@ -132,7 +132,7 @@ public class BleProbeModule: Module {
             }
         }
 
-        Function("disconnect") { () -> Void in
+        Function("disconnect") { () in
             if let peripheral = self.connectedPeripheral {
                 self.centralManager?.cancelPeripheralConnection(peripheral)
             }
@@ -256,7 +256,7 @@ public class BleProbeModule: Module {
             return self.notificationLog
         }
 
-        Function("clearNotificationLog") { () -> Void in
+        Function("clearNotificationLog") { () in
             self.notificationLog = []
             self.notificationCount = 0
         }

@@ -803,8 +803,8 @@ public class WhoopBleModule: Module {
         if !newRealtimeData.isEmpty {
             bufferLock.lock()
             realtimeDataBuffer.append(contentsOf: newRealtimeData)
-            if realtimeDataBuffer.count > WhoopBleModule.maxRealtimeDataBufferSize {
-                let overflow = realtimeDataBuffer.count - WhoopBleModule.maxRealtimeDataBufferSize
+            if realtimeDataBuffer.count > Self.maxRealtimeDataBufferSize {
+                let overflow = realtimeDataBuffer.count - Self.maxRealtimeDataBufferSize
                 realtimeDataBuffer.removeFirst(overflow)
             }
             bufferLock.unlock()
@@ -829,7 +829,7 @@ public class WhoopBleModule: Module {
             )
 
             orientationSampleCounter += 1
-            if orientationSampleCounter >= WhoopBleModule.orientationEmitInterval {
+            if orientationSampleCounter >= Self.orientationEmitInterval {
                 orientationSampleCounter = 0
                 let quaternion = orientationFilter.quaternion
                 let euler = orientationFilter.eulerAngles
@@ -848,8 +848,8 @@ public class WhoopBleModule: Module {
         bufferLock.lock()
         sampleBuffer.append(contentsOf: newSamples)
         // Cap buffer size to prevent memory issues
-        if sampleBuffer.count > WhoopBleModule.maxBufferSize {
-            let overflow = sampleBuffer.count - WhoopBleModule.maxBufferSize
+        if sampleBuffer.count > Self.maxBufferSize {
+            let overflow = sampleBuffer.count - Self.maxBufferSize
             sampleBuffer.removeFirst(overflow)
             bufferOverflows += 1
             NSLog("[WhoopBLE] buffer overflow: dropped %d oldest samples (overflow #%llu)", overflow, bufferOverflows)
@@ -869,7 +869,7 @@ public class WhoopBleModule: Module {
             queue: bleQueue,
             options: [
                 CBCentralManagerOptionShowPowerAlertKey: false,
-                CBCentralManagerOptionRestoreIdentifierKey: WhoopBleModule.restoreIdentifier,
+                CBCentralManagerOptionRestoreIdentifierKey: Self.restoreIdentifier,
             ]
         )
         centralManager = manager
@@ -885,7 +885,6 @@ public class WhoopBleModule: Module {
     var dataCharacteristicUUID: CBUUID? {
         dataCharacteristic?.uuid
     }
-
 
     private func cleanup() {
         state = .idle

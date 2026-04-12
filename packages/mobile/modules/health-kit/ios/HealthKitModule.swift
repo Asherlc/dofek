@@ -506,7 +506,7 @@ public class HealthKitModule: Module {
                         group.enter()
                         var routeLocations: [[String: Any]] = []
 
-                        let locationQuery = HKWorkoutRouteQuery(route: route) { _, locations, done, locationError in
+                        let locationQuery = HKWorkoutRouteQuery(route: route) { _, locations, done, _ in
                             // Process locations if available (even when there's an error on this batch)
                             if let locations = locations {
                                 for location in locations {
@@ -647,5 +647,4 @@ public class HealthKitModule: Module {
             }
         }
     }
-
 }

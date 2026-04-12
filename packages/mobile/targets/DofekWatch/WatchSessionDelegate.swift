@@ -15,7 +15,7 @@ final class WatchSessionDelegate: NSObject, ObservableObject, WCSessionDelegate 
     /// Callback triggered when the iPhone requests recording to start/restart.
     var onRecordingRequested: (() -> Void)?
 
-    private override init() {
+    override private init() {
         super.init()
     }
 
