@@ -1,26 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /** Per-provider mock queues keyed by provider ID */
-const providerQueues = new Map<
-  string,
-  { add: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn> }
->();
+const providerQueues = new Map<string, { add: ReturnType<typeof vi.fn> }>();
 const mockLoggerInfo = vi.fn();
 
 function getMockQueue(providerId: string) {
   const existing = providerQueues.get(providerId);
   if (existing) return existing;
 
-  const queue = {
-    add: vi.fn((..._args: unknown[]) => Promise.resolve()),
-    close: vi.fn(() => Promise.resolve()),
-  };
+  const queue = { add: vi.fn((..._args: unknown[]) => Promise.resolve()) };
   providerQueues.set(providerId, queue);
   return queue;
 }
 
 vi.mock("./queues.ts", () => ({
-  createProviderSyncQueue: vi.fn((providerId: string) => getMockQueue(providerId)),
+  getProviderSyncQueue: vi.fn((providerId: string) => getMockQueue(providerId)),
 }));
 
 vi.mock("../logger.ts", () => ({
@@ -88,9 +82,6 @@ describe("processScheduledSyncJob", () => {
       "[scheduled-sync] Enqueued 2 sync jobs for 2 users",
     );
 
-    // All opened queues should be closed
-    expect(stravaQueue.close).toHaveBeenCalled();
-    expect(wahooQueue.close).toHaveBeenCalled();
   });
 
   it("reuses the same queue instance for multiple users of the same provider", async () => {

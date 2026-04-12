@@ -92,6 +92,19 @@ export function createProviderSyncQueue(
   });
 }
 
+/** Cache of per-provider queue instances to avoid creating new Redis connections. */
+const cachedProviderQueues = new Map<string, Queue<SyncJobData>>();
+
+/** Get or create a cached per-provider sync queue. Reuses the same Queue (and Redis connection) across calls. */
+export function getProviderSyncQueue(providerId: string): Queue<SyncJobData> {
+  let queue = cachedProviderQueues.get(providerId);
+  if (!queue) {
+    queue = createProviderSyncQueue(providerId);
+    cachedProviderQueues.set(providerId, queue);
+  }
+  return queue;
+}
+
 export function createImportQueue(connection?: ConnectionOptions): Queue<ImportJobData> {
   return new Queue(IMPORT_QUEUE, { connection: connection ?? getRedisConnection() });
 }

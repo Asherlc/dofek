@@ -1,9 +1,9 @@
-import type { Job, Queue } from "bullmq";
+import type { Job } from "bullmq";
 import { sql } from "drizzle-orm";
 import type { SyncDatabase } from "../db/index.ts";
 import { logger } from "../logger.ts";
 import { getProvider, isSyncEligibleProvider } from "../providers/index.ts";
-import { createProviderSyncQueue, type ScheduledSyncJobData, type SyncJobData } from "./queues.ts";
+import { getProviderSyncQueue, type ScheduledSyncJobData } from "./queues.ts";
 
 /**
  * Process a scheduled sync job: query all users with connected providers
@@ -33,8 +33,6 @@ export async function processScheduledSyncJob(_job: Job<ScheduledSyncJobData>, d
     userProviders.set(userId, providers);
   }
 
-  // Track per-provider queues so we can close them when done
-  const openQueues = new Map<string, Queue<SyncJobData>>();
   let jobCount = 0;
 
   for (const [userId, providerIds] of userProviders) {
@@ -45,13 +43,7 @@ export async function processScheduledSyncJob(_job: Job<ScheduledSyncJobData>, d
         continue;
       }
 
-      let queue = openQueues.get(providerId);
-      if (!queue) {
-        queue = createProviderSyncQueue(providerId);
-        openQueues.set(providerId, queue);
-      }
-
-      await queue.add("sync", {
+      await getProviderSyncQueue(providerId).add("sync", {
         userId,
         providerId,
         sinceDays: 1,
@@ -59,8 +51,6 @@ export async function processScheduledSyncJob(_job: Job<ScheduledSyncJobData>, d
       jobCount++;
     }
   }
-
-  await Promise.all([...openQueues.values()].map((queue) => queue.close()));
 
   logger.info(`[scheduled-sync] Enqueued ${jobCount} sync jobs for ${userProviders.size} users`);
 }
