@@ -86,6 +86,29 @@ describe("TrainingRepository", () => {
       expect(result[0]?.activity_type).toBe("running");
       expect(result[0]?.avg_hr).toBe(145.5);
     });
+
+    it("handles Date objects for timestamps (postgres-js on Linux/ARM)", async () => {
+      const { repo } = makeRepository([
+        {
+          id: "act-2",
+          activity_type: "cycling",
+          name: "Afternoon Ride",
+          started_at: new Date("2024-01-15T14:00:00Z"),
+          ended_at: new Date("2024-01-15T15:30:00Z"),
+          avg_hr: 152,
+          max_hr: 180,
+          avg_power: 230,
+          max_power: 550,
+          avg_cadence: 90,
+          hr_samples: 5400,
+          power_samples: 5400,
+        },
+      ]);
+      const result = await repo.getActivityStats(90);
+      expect(result).toHaveLength(1);
+      expect(result[0]?.started_at).toBe("2024-01-15T14:00:00.000Z");
+      expect(result[0]?.ended_at).toBe("2024-01-15T15:30:00.000Z");
+    });
   });
 
   describe("getNextWorkoutData", () => {
