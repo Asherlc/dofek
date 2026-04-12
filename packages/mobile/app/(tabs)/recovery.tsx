@@ -547,6 +547,14 @@ export default function RecoveryScreen() {
             <Text style={styles.navLinkText}>Correlation Explorer</Text>
             <Text style={styles.navChevron}>{"\u203A"}</Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.navLink}
+            onPress={() => router.push("/daily-heart-rate")}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.navLinkText}>Heart Rate by Source</Text>
+            <Text style={styles.navChevron}>{"\u203A"}</Text>
+          </TouchableOpacity>
         </>
       )}
     </ScrollView>

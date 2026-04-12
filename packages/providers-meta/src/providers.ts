@@ -37,6 +37,7 @@ export const PROVIDER_LABELS: Record<string, string> = {
   "cronometer-csv": "Cronometer",
   bodyspec: "BodySpec",
   dofek: "Dofek",
+  whoop_ble: "WHOOP BLE",
 };
 
 /** Human-readable label for a provider ID, falls back to the raw ID */

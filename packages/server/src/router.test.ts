@@ -28,6 +28,7 @@ vi.mock("./routers/duration-curves.ts", () => ({ durationCurvesRouter: mockRoute
 vi.mock("./routers/efficiency.ts", () => ({ efficiencyRouter: mockRouter }));
 vi.mock("./routers/food.ts", () => ({ foodRouter: mockRouter }));
 vi.mock("./routers/garmin-auth.ts", () => ({ garminAuthRouter: mockRouter }));
+vi.mock("./routers/heart-rate.ts", () => ({ heartRateRouter: mockRouter }));
 vi.mock("./routers/health-kit-sync.ts", () => ({ healthKitSyncRouter: mockRouter }));
 vi.mock("./routers/health-report.ts", () => ({ healthReportRouter: mockRouter }));
 vi.mock("./routers/healthspan.ts", () => ({ healthspanRouter: mockRouter }));
@@ -133,6 +134,7 @@ describe("appRouter", () => {
       "efficiency",
       "food",
       "garminAuth",
+      "heartRate",
       "healthKitSync",
       "healthReport",
       "whoopAuth",
