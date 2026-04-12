@@ -1046,6 +1046,37 @@ describe("computeInsights()", () => {
     }
   });
 
+  it("no reversed duplicates across correlation and discovery types", () => {
+    const dates = dateRange("2025-01-01", 120);
+    const metrics = dates.map((d, i) =>
+      makeDailyRow(d, {
+        hrv: 30 + i * 0.5,
+        resting_hr: 75 - i * 0.2,
+        steps: 5000 + i * 100,
+      }),
+    );
+    const sleep = dates.map((d, i) => {
+      const dt = new Date(d);
+      dt.setDate(dt.getDate() - 1);
+      dt.setHours(23, 0, 0);
+      return makeSleepRow(dt.toISOString(), {
+        duration_minutes: 360 + i * 2,
+      });
+    });
+
+    const result = computeInsights(metrics, sleep, [], [], []);
+    // Check no unordered pair appears more than once across ALL insight types
+    const pairKeys = new Set<string>();
+    for (const insight of result) {
+      const [sortedA, sortedB] = [insight.action, insight.metric].sort();
+      const key = `${sortedA}::${sortedB}`;
+      expect(pairKeys.has(key), `duplicate pair: ${insight.action} ↔ ${insight.metric}`).toBe(
+        false,
+      );
+      pairKeys.add(key);
+    }
+  });
+
   it("produces monthly insights with 6+ months of data", () => {
     const dates = dateRange("2025-01-01", 210);
     const metrics = dates.map((d) => makeDailyRow(d));
@@ -2159,7 +2190,6 @@ describe("getCorrelationPairs() — systematic extract tests", () => {
     { id: "active-kcal-sleep", xField: "active_energy_kcal" },
     { id: "deep-sleep-hrv", xField: "deep_min" },
     { id: "exercise-dur-sleep-eff", xField: "exercise_minutes" },
-    { id: "rhr-hrv", xField: "resting_hr" },
     { id: "protein-hrv", xField: "protein_g" },
     { id: "calories-sleep", xField: "calories" },
   ];
@@ -2529,6 +2559,56 @@ describe("exhaustiveSweep()", () => {
       const pairKey = `${sortedA}::${sortedB}`;
       expect(pairs.has(pairKey)).toBe(false);
       pairs.add(pairKey);
+    }
+  });
+
+  it("excludes resting HR ↔ HRV pairs (trivially related cardiac metrics)", () => {
+    const days = dateRange("2025-01-01", 40).map((date, idx) =>
+      makeFullJoinedDay(date, {
+        resting_hr: 60 + idx * 0.5,
+        hrv: 50 - idx * 0.3,
+        exercise_minutes: null,
+        cardio_minutes: null,
+        strength_minutes: null,
+        flexibility_minutes: null,
+        calories: null,
+        protein_g: null,
+        carbs_g: null,
+        fat_g: null,
+        fiber_g: null,
+        weight_kg: null,
+        body_fat_pct: null,
+        weight_30d_avg: null,
+        body_fat_30d_avg: null,
+        weight_30d_delta: null,
+        body_fat_30d_delta: null,
+      }),
+    );
+    const result = exhaustiveSweep(days, new Set());
+    for (const discovery of result) {
+      const pair = [discovery.action, discovery.metric].sort().join("::");
+      expect(pair).not.toBe("HRV::resting HR");
+    }
+  });
+
+  it("existingIds check catches reversed direction (A::B blocks B::A)", () => {
+    const days = dateRange("2025-01-01", 40).map((date, idx) =>
+      makeFullJoinedDay(date, {
+        steps: 5000 + idx * 200,
+        sleep_duration_min: 400 + idx * 2,
+      }),
+    );
+    // Get all discoveries
+    const all = exhaustiveSweep(days, new Set());
+    // For each discovery, ensure both directions are blocked
+    for (const discovery of all) {
+      // Mark the reverse direction as existing
+      const reverseId = `${discovery.metric}::${discovery.action}`;
+      const filtered = exhaustiveSweep(days, new Set([reverseId]));
+      const matchesOriginal = filtered.filter(
+        (found) => found.action === discovery.action && found.metric === discovery.metric,
+      );
+      expect(matchesOriginal).toHaveLength(0);
     }
   });
 
@@ -3750,10 +3830,9 @@ describe("getCorrelationPairs() — computed xFn/yFn tests", () => {
     expect(pair?.yFn(days[0] ?? makeFullJoinedDay("2025-01-01"), days, 0)).toBeNull();
   });
 
-  it("rhr-hrv: yFn returns same-day HRV", () => {
+  it("does not include rhr-hrv pair (trivial physiological relationship)", () => {
     const pair = pairs.find((pd) => pd.id === "rhr-hrv");
-    const day = makeFullJoinedDay("2025-01-01", { hrv: 62 });
-    expect(pair?.yFn(day, [day], 0)).toBe(62);
+    expect(pair).toBeUndefined();
   });
 
   it("calories-30d-weight-delta: yFn extracts weight_30d_delta", () => {

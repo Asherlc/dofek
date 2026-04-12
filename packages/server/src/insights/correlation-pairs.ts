@@ -49,13 +49,6 @@ export function getCorrelationPairs(): CorrelationPair[] {
       xFn: (d) => d.exercise_minutes,
       yFn: (_d, all, i) => all[i + 1]?.sleep_efficiency ?? null,
     },
-    {
-      id: "rhr-hrv",
-      xName: "resting HR",
-      yName: "HRV",
-      xFn: (d) => d.resting_hr,
-      yFn: (d) => d.hrv,
-    },
     // ── Nutrition → body comp (30-day rolling, isocaloric: use % of calories) ──
     {
       id: "calories-30d-weight-delta",
