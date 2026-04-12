@@ -12,7 +12,12 @@ if [ $# -ne 1 ]; then
 fi
 
 EMAIL="$1"
-SERVER_IP="${SERVER_IP:-159.69.3.40}"
+SERVER_IP="${SERVER_IP:-$(infisical secrets get SERVER_HOST --env=prod --plain 2>/dev/null)}"
+
+if [ -z "$SERVER_IP" ]; then
+  echo "Error: could not resolve SERVER_IP (set it or log in to Infisical)" >&2
+  exit 1
+fi
 DB_CONTAINER=$(ssh "root@$SERVER_IP" "docker ps -q -f name=dofek-db")
 
 if [ -z "$DB_CONTAINER" ]; then
