@@ -7,5 +7,6 @@
 # Node
 node_modules/
 
-# Storybook generated file
+# Storybook generated files
 .rnstorybook/storybook.requires.ts
+storybook-static/

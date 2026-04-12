@@ -103,6 +103,8 @@
     "storybook:web:build": "pnpm --filter dofek-web build-storybook",
     "storybook:mobile": "pnpm --filter dofek-mobile storybook",
     "storybook:mobile:ios": "pnpm --filter dofek-mobile storybook:ios",
+    "storybook:mobile:web": "pnpm --filter dofek-mobile storybook:web",
+    "storybook:mobile:build": "pnpm --filter dofek-mobile build-storybook",
     "size": "size-limit",
     "depcruise": "depcruise --config .dependency-cruiser.cjs src/ packages/",
     "spellcheck": "cspell --no-progress",
@@ -178,7 +180,8 @@
   },
   "sherif": {
     "ignoreRule": [
-      "root-package-dependencies"
+      "root-package-dependencies",
+      "unsync-similar-dependencies"
     ]
   },
   "pnpm": {

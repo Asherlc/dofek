@@ -67,6 +67,12 @@ jobs:
     uses: ./.github/workflows/build-storybook.yml
     secrets: inherit
 
+  build-storybook-mobile:
+    name: Build Mobile Storybook
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/build-storybook-mobile.yml
+    secrets: inherit
+
   # TODO: enable once dofek-web-previews R2 bucket is created
   # review-app-web:
   #   name: Review App — Web
@@ -78,6 +84,6 @@ jobs:
   review-app-storybook:
     name: Review App — Storybook
     if: github.event_name == 'pull_request'
-    needs: [build-storybook]
+    needs: [build-storybook, build-storybook-mobile]
     uses: ./.github/workflows/review-app-storybook.yml
     secrets: inherit
