@@ -98,18 +98,34 @@ const postSyncWorker = new Worker<PostSyncJobData>(
 );
 const trainingExportWorker = new Worker<TrainingExportJobData>(
   TRAINING_EXPORT_QUEUE,
-  (job, token) =>
-    jobContext.run(job, () =>
+  (job, token) => {
+    if (!token) {
+      logger.error(
+        `[worker] Training export job ${job.id} started with no token — extendLock will be a no-op and the job WILL stall`,
+      );
+      Sentry.captureException(
+        new Error(`Training export job started without BullMQ token (job ${job.id})`),
+      );
+    }
+    return jobContext.run(job, () =>
       processTrainingExportJob(
         {
           data: job.data,
           updateProgress: (data) => job.updateProgress(data),
-          extendLock: (duration) =>
-            token ? job.extendLock(token, duration).then(() => {}) : Promise.resolve(),
+          extendLock: (duration) => {
+            if (!token) {
+              logger.error(
+                `[worker] extendLock called without token for job ${job.id} — lock NOT extended`,
+              );
+              return Promise.resolve();
+            }
+            return job.extendLock(token, duration).then(() => {});
+          },
         },
         db,
       ),
-    ),
+    );
+  },
   {
     connection,
     lockDuration: TRAINING_EXPORT_LOCK_MS,

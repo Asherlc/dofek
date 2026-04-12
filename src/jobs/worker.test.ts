@@ -241,10 +241,12 @@ describe("worker module", () => {
   /**
    * Invoke the processor function registered for a given queue name with mock job data.
    * Uses Reflect.apply to call the BullMQ Processor without needing a full Job instance.
+   * Optionally pass a token (second argument to BullMQ processor).
    */
   async function invokeProcessor(
     queueName: string,
     jobData: Record<string, unknown>,
+    token?: string,
   ): Promise<void> {
     const { Worker } = await import("bullmq");
     const call = vi.mocked(Worker).mock.calls.find((workerCall) => workerCall[0] === queueName);
@@ -252,7 +254,7 @@ describe("worker module", () => {
     if (typeof processor !== "function") {
       throw new Error(`No processor function found for queue "${queueName}"`);
     }
-    await Reflect.apply(processor, undefined, [{ data: jobData }]);
+    await Reflect.apply(processor, undefined, [{ data: jobData, id: "test-job-1" }, token]);
   }
 
   it("per-provider sync processor delegates to processSyncJob", async () => {
@@ -317,12 +319,32 @@ describe("worker module", () => {
     expect(processPostSyncJob).toHaveBeenCalled();
   });
 
-  it("training-export processor delegates to processTrainingExportJob", async () => {
+  it("training-export processor delegates to processTrainingExportJob with token", async () => {
     const { processTrainingExportJob } = await import("./process-training-export-job.ts");
     vi.mocked(processTrainingExportJob).mockClear();
 
+    await invokeProcessor("training-export-queue", {}, "test-token-123");
+
+    expect(processTrainingExportJob).toHaveBeenCalled();
+  });
+
+  it("training-export processor logs error when token is missing", async () => {
+    const { processTrainingExportJob } = await import("./process-training-export-job.ts");
+    const Sentry = await import("@sentry/node");
+    const { logger } = await import("../logger.ts");
+    vi.mocked(processTrainingExportJob).mockClear();
+    vi.mocked(Sentry.captureException).mockClear();
+    vi.mocked(logger.error).mockClear();
+
+    // Invoke without token (undefined) — simulates the suspected production bug
     await invokeProcessor("training-export-queue", {});
 
     expect(processTrainingExportJob).toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("started with no token"));
+    expect(Sentry.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining("without BullMQ token"),
+      }),
+    );
   });
 });
