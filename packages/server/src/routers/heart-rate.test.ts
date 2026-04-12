@@ -7,9 +7,9 @@ const mockExecuteWithSchema = vi.fn();
 vi.mock("../lib/typed-sql.ts", () => ({
   executeWithSchema: (...args: unknown[]) => mockExecuteWithSchema(...args),
   dateStringSchema: z.string(),
-  timestampStringSchema: z.union([z.string(), z.date()]).transform((value) =>
-    value instanceof Date ? value.toISOString() : value,
-  ),
+  timestampStringSchema: z
+    .union([z.string(), z.date()])
+    .transform((value) => (value instanceof Date ? value.toISOString() : value)),
 }));
 
 vi.mock("../trpc.ts", async () => {
