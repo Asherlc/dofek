@@ -591,8 +591,17 @@ jobs:
           path: packages/mobile/modules/health-kit/.build
           key: swift-build-v1-${{ hashFiles('packages/mobile/modules/health-kit/Package.swift') }}
           restore-keys: swift-build-v1-
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        id: muter-cache
+        with:
+          path: /opt/homebrew/Cellar/muter
+          key: muter-v1-${{ runner.os }}-${{ runner.arch }}
       - name: Install Muter
+        if: steps.muter-cache.outputs.cache-hit != 'true'
         run: brew install muter-mutation-testing/formulae/muter
+      - name: Link Muter from cache
+        if: steps.muter-cache.outputs.cache-hit == 'true'
+        run: brew link --overwrite muter 2>/dev/null || ln -sf /opt/homebrew/Cellar/muter/*/bin/muter /opt/homebrew/bin/muter
       - name: Get changed Swift files
         id: changed
         run: |
