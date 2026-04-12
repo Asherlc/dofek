@@ -49,7 +49,7 @@
         "!modules/*/.build/**",
         "!.rnstorybook/**"
       ],
-      "ignore": [".rnstorybook/**"],
+      "ignore": [".rnstorybook/**", ".storybook/mocks/**"],
       "ignoreDependencies": [
         "@sentry/cli",
         "expo-modules-core",

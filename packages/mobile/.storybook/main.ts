@@ -1,5 +1,8 @@
-import path from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { StorybookConfig } from "@storybook/react-native-web-vite";
+
+const currentDir = dirname(fileURLToPath(import.meta.url));
 
 const config: StorybookConfig = {
   stories: ["../components/**/*.stories.@(ts|tsx)", "../app/**/*.stories.@(ts|tsx)"],
@@ -15,10 +18,7 @@ const config: StorybookConfig = {
         : {};
     viteConfig.resolve.alias = {
       ...existingAliases,
-      [path.resolve(__dirname, "../lib/auth-context")]: path.resolve(
-        __dirname,
-        "./mocks/auth-context",
-      ),
+      [resolve(currentDir, "../lib/auth-context")]: resolve(currentDir, "./mocks/auth-context"),
     };
     return viteConfig;
   },
