@@ -193,9 +193,13 @@ services:
       STORAGE_MODE: s3
       S3_BUCKET_NAME: dofek-ota
       AWS_REGION: auto
+      AWS_BASE_ENDPOINT: ${R2_ENDPOINT}
+      AWS_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
       CACHE_MODE: redis
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      JWT_SECRET: ${OTA_JWT_SECRET}
       PORT: 3000
     depends_on:
       redis:

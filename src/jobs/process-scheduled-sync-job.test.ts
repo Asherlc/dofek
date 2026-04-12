@@ -1,14 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mockAdd = vi.fn((..._args: unknown[]) => Promise.resolve());
-const mockClose = vi.fn(() => Promise.resolve());
+/** Per-provider mock queues keyed by provider ID */
+const providerQueues = new Map<string, { add: ReturnType<typeof vi.fn> }>();
 const mockLoggerInfo = vi.fn();
 
+function getMockQueue(providerId: string) {
+  const existing = providerQueues.get(providerId);
+  if (existing) return existing;
+
+  const queue = { add: vi.fn((..._args: unknown[]) => Promise.resolve()) };
+  providerQueues.set(providerId, queue);
+  return queue;
+}
+
 vi.mock("./queues.ts", () => ({
-  createSyncQueue: vi.fn(() => ({
-    add: (...args: unknown[]) => mockAdd(...args),
-    close: () => mockClose(),
-  })),
+  getProviderSyncQueue: vi.fn((providerId: string) => getMockQueue(providerId)),
 }));
 
 vi.mock("../logger.ts", () => ({
@@ -34,9 +40,10 @@ const { processScheduledSyncJob } = await import("./process-scheduled-sync-job.t
 describe("processScheduledSyncJob", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    providerQueues.clear();
   });
 
-  it("enqueues sync jobs for non-CSV providers only", async () => {
+  it("enqueues sync jobs into per-provider queues for non-CSV providers only", async () => {
     const db = {
       execute: vi.fn().mockResolvedValue([
         { user_id: "user-1", provider_id: "strava" },
@@ -47,22 +54,48 @@ describe("processScheduledSyncJob", () => {
 
     await Reflect.apply(processScheduledSyncJob, undefined, [{}, db]);
 
-    expect(mockAdd).toHaveBeenCalledTimes(2);
-    expect(mockAdd).toHaveBeenCalledWith("sync", {
+    // Each provider gets its own queue
+    const stravaQueue = getMockQueue("strava");
+    const wahooQueue = getMockQueue("wahoo");
+
+    expect(stravaQueue.add).toHaveBeenCalledTimes(1);
+    expect(stravaQueue.add).toHaveBeenCalledWith("sync", {
       userId: "user-1",
       providerId: "strava",
       sinceDays: 1,
     });
-    expect(mockAdd).toHaveBeenCalledWith("sync", {
+
+    expect(wahooQueue.add).toHaveBeenCalledTimes(1);
+    expect(wahooQueue.add).toHaveBeenCalledWith("sync", {
       userId: "user-2",
       providerId: "wahoo",
       sinceDays: 1,
     });
+
+    // CSV provider queue should not be created
+    expect(providerQueues.has("strong-csv")).toBe(false);
+
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       "[scheduled-sync] Skipping CSV provider strong-csv",
     );
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       "[scheduled-sync] Enqueued 2 sync jobs for 2 users",
     );
+  });
+
+  it("reuses the same queue instance for multiple users of the same provider", async () => {
+    const db = {
+      execute: vi.fn().mockResolvedValue([
+        { user_id: "user-1", provider_id: "strava" },
+        { user_id: "user-2", provider_id: "strava" },
+      ]),
+    };
+
+    await Reflect.apply(processScheduledSyncJob, undefined, [{}, db]);
+
+    const stravaQueue = getMockQueue("strava");
+    expect(stravaQueue.add).toHaveBeenCalledTimes(2);
+    // Only one queue instance created for strava
+    expect(providerQueues.size).toBe(1);
   });
 });
