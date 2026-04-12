@@ -198,8 +198,13 @@ export class WahooProvider implements WebhookProvider {
           const client = new WahooClient(tokens.accessToken, this.#fetchFn);
           await client.revokeAuthorization();
           return;
-        } catch {
-          // Access token likely expired — fall through to refresh
+        } catch (revokeError) {
+          // Only fall through to refresh on 401 (expired/invalid token).
+          // Rethrow on other failures (429, 5xx, network) so they're visible.
+          const message = revokeError instanceof Error ? revokeError.message : String(revokeError);
+          if (!message.includes("401")) {
+            throw revokeError;
+          }
         }
 
         // Refresh the access token, then use it to revoke ALL tokens.

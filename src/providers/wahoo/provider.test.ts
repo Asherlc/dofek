@@ -138,6 +138,24 @@ describe("WahooProvider.authSetup.revokeExistingTokens", () => {
     expect(deleteCallCount).toBe(2);
   });
 
+  it("rethrows non-auth errors without attempting refresh", async () => {
+    setupEnv();
+    let refreshCalled = false;
+    server.use(
+      http.delete(`${WAHOO_API_BASE}/v1/permissions`, () => {
+        return HttpResponse.json({ error: "Rate limited" }, { status: 429 });
+      }),
+      http.post(`${WAHOO_API_BASE}/oauth/token`, () => {
+        refreshCalled = true;
+        return HttpResponse.json({ access_token: "new", expires_in: 7200 });
+      }),
+    );
+
+    const revokeExistingTokens = getRevokeExistingTokens();
+    await expect(revokeExistingTokens(validTokens)).rejects.toThrow("429");
+    expect(refreshCalled).toBe(false);
+  });
+
   it("throws when access token is expired and no refresh token", async () => {
     setupEnv();
     server.use(
