@@ -146,12 +146,36 @@ describe("syncMaterializedViews", () => {
     mockSql.mockResolvedValueOnce([]); // pg_advisory_lock
     mockSql.mockResolvedValueOnce([]); // CREATE TABLE
     mockSql.mockResolvedValueOnce([{ hash: expectedHash }]); // SELECT hash
-    mockSql.mockResolvedValueOnce([{ populated: true }]); // pg_matviews check
+    mockSql.mockResolvedValueOnce([{ "?column?": 1 }]); // pg_matviews existence check — exists
+    mockSql.mockResolvedValueOnce([{ populated: true }]); // pg_matviews populated check
 
     const result = await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
 
     expect(result).toEqual({ synced: 0, skipped: 1, refreshed: 0 });
     expect(mockSqlUnsafe).not.toHaveBeenCalled();
+  });
+
+  it("recreates views whose hash matches but were CASCADE-dropped", async () => {
+    const { syncMaterializedViews, hashViewContent: hash } = await import("./sync-views.ts");
+    const viewSql = "CREATE MATERIALIZED VIEW fitness.v_test AS SELECT 1";
+    const expectedHash = hash(viewSql);
+
+    mockReaddirSync.mockReturnValue(["01_v_test.sql"]);
+    mockReadFileSync.mockReturnValue(viewSql);
+    mockSql.mockResolvedValueOnce([]); // pg_advisory_lock
+    mockSql.mockResolvedValueOnce([]); // CREATE TABLE
+    mockSql.mockResolvedValueOnce([{ hash: expectedHash }]); // SELECT hash — matches
+    mockSql.mockResolvedValueOnce([]); // pg_matviews existence check — NOT found (CASCADE-dropped)
+    mockSql.mockResolvedValueOnce([]); // INSERT hash (upsert)
+    mockSql.mockResolvedValueOnce([{ populated: true }]); // refresh loop — populated after recreate
+
+    const result = await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
+
+    expect(result).toEqual({ synced: 1, skipped: 0, refreshed: 0 });
+    expect(mockSqlUnsafe).toHaveBeenCalledWith(
+      "DROP MATERIALIZED VIEW IF EXISTS fitness.v_test CASCADE",
+    );
+    expect(mockSqlUnsafe).toHaveBeenCalledWith(viewSql);
   });
 
   it("refreshes views that are unchanged but unpopulated", async () => {
@@ -164,6 +188,7 @@ describe("syncMaterializedViews", () => {
     mockSql.mockResolvedValueOnce([]); // pg_advisory_lock
     mockSql.mockResolvedValueOnce([]); // CREATE TABLE
     mockSql.mockResolvedValueOnce([{ hash: expectedHash }]); // SELECT hash — matches
+    mockSql.mockResolvedValueOnce([{ "?column?": 1 }]); // pg_matviews existence check — exists
     mockSql.mockResolvedValueOnce([{ populated: false }]); // pg_matviews — not populated
 
     const result = await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
