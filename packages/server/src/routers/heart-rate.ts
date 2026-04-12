@@ -22,7 +22,7 @@ export interface HeartRateSourceSeries {
 
 export const heartRateRouter = router({
   /**
-   * Intraday heart rate samples for a single day, grouped by source.
+   * Per-minute heart rate samples for a single day, grouped by source.
    *
    * Queries sensor_sample for channel='heart_rate', downsampled to 1-minute
    * bins (avg per bin) to keep payload size reasonable. Returns one series
