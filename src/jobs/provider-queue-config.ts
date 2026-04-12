@@ -83,6 +83,8 @@ const PROVIDER_QUEUE_CONFIGS: ReadonlyMap<string, ProviderQueueConfig> = new Map
   ["eight-sleep", frequentProvider()],
   ["zwift", frequentProvider()],
   ["wger", frequentProvider()],
+  ["concept2", frequentProvider()],
+  ["auto-supplements", frequentProvider()],
 
   // ── Daily tier ──
   ["fatsecret", { concurrency: 2, syncTier: "daily" }],

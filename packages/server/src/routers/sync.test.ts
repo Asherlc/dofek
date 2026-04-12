@@ -50,6 +50,11 @@ vi.mock("dofek/jobs/queues", () => ({
     getJob: mockGetJob,
     getJobs: mockGetJobs,
   })),
+  getProviderSyncQueue: vi.fn(() => ({
+    add: mockAdd,
+    getJob: mockGetJob,
+    getJobs: mockGetJobs,
+  })),
   providerSyncQueueName: vi.fn((id: string) => `sync-${id}`),
 }));
 

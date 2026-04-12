@@ -1,8 +1,8 @@
 import type { Job, Queue } from "bullmq";
 import { getConfiguredProviderIds } from "dofek/jobs/provider-queue-config";
 import {
-  createProviderSyncQueue,
   createSyncQueue,
+  getProviderSyncQueue,
   providerSyncQueueName,
   type SyncJobData,
 } from "dofek/jobs/queues";
@@ -153,20 +153,6 @@ async function doRegisterProviders() {
   }
 }
 
-// ── BullMQ sync queues (lazy init) ──
-
-/** Cache of per-provider queue instances to avoid creating new connections per request. */
-const providerQueues = new Map<string, Queue<SyncJobData>>();
-
-function getProviderQueue(providerId: string): Queue<SyncJobData> {
-  let queue = providerQueues.get(providerId);
-  if (!queue) {
-    queue = createProviderSyncQueue(providerId);
-    providerQueues.set(providerId, queue);
-  }
-  return queue;
-}
-
 /** @deprecated Legacy queue for syncStatus/activeSyncs backward compat. */
 const legacySyncQueue = createSyncQueue();
 
@@ -256,7 +242,7 @@ export const syncRouter = router({
 
     const providerJobs = await Promise.all(
       providerIds.map(async (providerId) => {
-        const queue = getProviderQueue(providerId);
+        const queue = getProviderSyncQueue(providerId);
         const job = await queue.add("sync", {
           providerId,
           sinceDays: input.sinceDays,
@@ -290,10 +276,10 @@ export const syncRouter = router({
     let job: Awaited<ReturnType<Queue<SyncJobData>["getJob"]>> | undefined;
     try {
       if (hintProviderId && configuredIds.has(hintProviderId)) {
-        job = await getProviderQueue(hintProviderId).getJob(rawId);
+        job = await getProviderSyncQueue(hintProviderId).getJob(rawId);
       } else {
         for (const providerId of configuredIds) {
-          job = await getProviderQueue(providerId).getJob(rawId);
+          job = await getProviderSyncQueue(providerId).getJob(rawId);
           if (job) break;
         }
       }
@@ -351,7 +337,7 @@ export const syncRouter = router({
     try {
       const states: Array<"active" | "waiting" | "delayed"> = ["active", "waiting", "delayed"];
       const jobArrays: Job<SyncJobData>[][] = await Promise.all([
-        ...getConfiguredProviderIds().map((id) => getProviderQueue(id).getJobs(states)),
+        ...getConfiguredProviderIds().map((id) => getProviderSyncQueue(id).getJobs(states)),
         legacySyncQueue.getJobs(states),
       ]);
       jobs = jobArrays.flat();

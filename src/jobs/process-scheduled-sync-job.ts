@@ -3,11 +3,12 @@ import { sql } from "drizzle-orm";
 import type { SyncDatabase } from "../db/index.ts";
 import { logger } from "../logger.ts";
 import { getProvider, isSyncEligibleProvider } from "../providers/index.ts";
-import { createSyncQueue, type ScheduledSyncJobData } from "./queues.ts";
+import { getProviderSyncQueue, type ScheduledSyncJobData } from "./queues.ts";
 
 /**
  * Process a scheduled sync job: query all users with connected providers
- * and enqueue per-user sync jobs.
+ * and enqueue per-user sync jobs into per-provider queues so different
+ * providers sync in parallel (while the same provider stays serialized).
  */
 export async function processScheduledSyncJob(_job: Job<ScheduledSyncJobData>, db: SyncDatabase) {
   // Ensure provider registry is populated so provider metadata (type, auth) is available.
@@ -32,7 +33,6 @@ export async function processScheduledSyncJob(_job: Job<ScheduledSyncJobData>, d
     userProviders.set(userId, providers);
   }
 
-  const syncQueue = createSyncQueue();
   let jobCount = 0;
 
   for (const [userId, providerIds] of userProviders) {
@@ -42,7 +42,8 @@ export async function processScheduledSyncJob(_job: Job<ScheduledSyncJobData>, d
         logger.info(`[scheduled-sync] Skipping CSV provider ${providerId}`);
         continue;
       }
-      await syncQueue.add("sync", {
+
+      await getProviderSyncQueue(providerId).add("sync", {
         userId,
         providerId,
         sinceDays: 1,
@@ -50,8 +51,6 @@ export async function processScheduledSyncJob(_job: Job<ScheduledSyncJobData>, d
       jobCount++;
     }
   }
-
-  await syncQueue.close();
 
   logger.info(`[scheduled-sync] Enqueued ${jobCount} sync jobs for ${userProviders.size} users`);
 }
