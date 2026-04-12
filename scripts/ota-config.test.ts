@@ -30,8 +30,7 @@ describe("OTA deployment config (expo-open-ota)", () => {
 
   it("ensures production channel is mapped to main branch", () => {
     const otaDeployWorkflow = readFileSync(deployOtaWorkflowPath, "utf-8");
-    expect(otaDeployWorkflow).toContain("channel:edit production");
-    expect(otaDeployWorkflow).toContain("channel:create production");
+    expect(otaDeployWorkflow).toContain("--channel production");
     expect(otaDeployWorkflow).toContain("--branch main");
   });
 

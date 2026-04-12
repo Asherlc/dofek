@@ -2,7 +2,7 @@ name: Mobile OTA
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, closed]
+    types: [opened, synchronize, reopened]
     paths-ignore:
       - '**/*.md'
       - '.gitignore'
@@ -10,12 +10,11 @@ on:
 
 concurrency:
   group: mobile-ota-${{ github.event.number }}
-  cancel-in-progress: ${{ github.event.action != 'closed' }}
+  cancel-in-progress: true
 
 jobs:
   publish:
     name: Publish Mobile OTA
-    if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -32,23 +31,10 @@ jobs:
         run: |
           npx eoas@2.3.16 publish \
             --branch "pr-$PR_NUMBER" \
+            --channel "pr-$PR_NUMBER" \
             --platform ios \
             --nonInteractive \
             --packageRunner npx
-
-      - name: Create channel for PR
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          PR_NUMBER: ${{ github.event.number }}
-        run: |
-          # Create a dynamic channel for this PR and point it at the PR branch.
-          # Channel is created on first push, updated on subsequent pushes.
-          npx eas-cli@latest channel:edit "pr-$PR_NUMBER" \
-            --branch "pr-$PR_NUMBER" \
-            --non-interactive 2>/dev/null || \
-          npx eas-cli@latest channel:create "pr-$PR_NUMBER" \
-            --branch "pr-$PR_NUMBER" \
-            --non-interactive 2>/dev/null || true
 
       - name: Generate comment body
         env:
@@ -84,20 +70,3 @@ jobs:
           header: mobile-preview
           path: /tmp/mobile-preview-comment.md
 
-  cleanup:
-    name: Cleanup Mobile OTA
-    if: github.event.action == 'closed'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: ./.github/actions/setup-node-pnpm
-
-      - name: Delete OTA channel and branch
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: |
-          # Best-effort cleanup — channel/branch may not exist if OTA was never published
-          npx eas-cli@latest channel:delete "pr-${{ github.event.number }}" \
-            --non-interactive 2>/dev/null || true
-          npx eas-cli@latest branch:delete "pr-${{ github.event.number }}" \
-            --non-interactive 2>/dev/null || true
