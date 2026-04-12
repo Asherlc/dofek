@@ -34,8 +34,9 @@ fi
 DB_CONTAINER="$DB_CONTAINERS"
 
 RESULT=$(ssh "root@$SERVER_IP" 'sh -s' -- "$DB_CONTAINER" "$EMAIL" <<'QUERY'
-docker exec "$1" psql -U health -d health -v email="$2" -tAc \
-  "UPDATE fitness.user_profile SET is_admin = true, updated_at = NOW() WHERE email = :'email' RETURNING email;"
+docker exec -i "$1" psql -U health -d health -v "email=$2" -tA <<'SQL'
+UPDATE fitness.user_profile SET is_admin = true, updated_at = NOW() WHERE email = :'email' RETURNING email;
+SQL
 QUERY
 )
 
