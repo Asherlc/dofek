@@ -20,6 +20,7 @@ import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { SparkLine } from "../../components/charts/SparkLine";
 import { StrainGauge } from "../../components/charts/StrainGauge";
 import { DaySelector } from "../../components/DaySelector";
+import { safeParseRows } from "../../lib/safe-parse";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useRefresh } from "../../lib/useRefresh";
@@ -40,14 +41,20 @@ export default function StrainScreen() {
   const strainTarget = strainTargetQuery.data;
 
   const activitiesQuery = trpc.training.activityStats.useQuery({ days });
-  const activities = ActivityRowSchema.array()
-    .catch([])
-    .parse(activitiesQuery.data ?? []);
+  const activitiesParsed = safeParseRows(
+    ActivityRowSchema,
+    activitiesQuery.data,
+    "strain:activities",
+  );
+  const activities = activitiesParsed.data;
 
   const weeklyVolumeQuery = trpc.training.weeklyVolume.useQuery({ days });
-  const weeklyVolume = WeeklyVolumeRowSchema.array()
-    .catch([])
-    .parse(weeklyVolumeQuery.data ?? []);
+  const weeklyVolumeParsed = safeParseRows(
+    WeeklyVolumeRowSchema,
+    weeklyVolumeQuery.data,
+    "strain:weeklyVolume",
+  );
+  const weeklyVolume = weeklyVolumeParsed.data;
   const collapsedWeeklyVolume = collapseWeeklyVolumeActivityTypes(weeklyVolume, 6);
   const activityTypeTotalsMap = new Map<string, number>();
   for (const row of collapsedWeeklyVolume) {
@@ -205,6 +212,12 @@ export default function StrainScreen() {
           </View>
 
           {/* Weekly volume summary */}
+          {(weeklyVolumeQuery.isError || weeklyVolumeParsed.error) && (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Weekly Volume</Text>
+              <Text style={styles.errorText}>Failed to load weekly volume.</Text>
+            </View>
+          )}
           {weeklyVolume.length > 0 && (
             <View style={styles.card}>
               <ChartTitleWithTooltip
@@ -254,6 +267,8 @@ export default function StrainScreen() {
             </View>
             {activitiesQuery.isLoading ? (
               <ActivityIndicator color={colors.accent} style={styles.activitiesLoader} />
+            ) : activitiesQuery.isError || activitiesParsed.error ? (
+              <Text style={styles.errorText}>Failed to load activities.</Text>
             ) : activities.length > 0 ? (
               <View style={styles.activitiesStack}>
                 {activities.slice(0, 5).map((activity) => (
@@ -486,6 +501,12 @@ const styles = StyleSheet.create({
   },
   activitiesEmpty: {
     color: colors.textTertiary,
+    fontSize: 13,
+    textAlign: "center",
+    paddingVertical: 24,
+  },
+  errorText: {
+    color: "#f87171",
     fontSize: 13,
     textAlign: "center",
     paddingVertical: 24,
