@@ -162,10 +162,27 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
         const { loadTokens } = await import("dofek/db/tokens");
         const existingTokens = await loadTokens(db, providerId, stateUserId);
         if (existingTokens) {
+          let customRevocationFailed = false;
           if (setup.revokeExistingTokens) {
-            logger.info(`[auth] Revoking existing ${providerId} authorization before exchange...`);
-            await setup.revokeExistingTokens(existingTokens);
-          } else {
+            try {
+              logger.info(
+                `[auth] Revoking existing ${providerId} authorization before exchange...`,
+              );
+              await setup.revokeExistingTokens(existingTokens);
+            } catch (customRevokeError) {
+              customRevocationFailed = true;
+              logger.warn(
+                `[auth] Custom token revocation failed for ${providerId}, will try standard OAuth revocation: ${customRevokeError}`,
+              );
+            }
+          }
+
+          // Standard OAuth revocation: used as primary when no custom handler,
+          // or as fallback when the custom handler fails (e.g. expired bearer token).
+          if (
+            (!setup.revokeExistingTokens || customRevocationFailed) &&
+            setup.oauthConfig.revokeUrl
+          ) {
             if (existingTokens.accessToken) {
               logger.info(`[auth] Revoking existing ${providerId} access token before exchange...`);
               await revokeToken(setup.oauthConfig, existingTokens.accessToken);

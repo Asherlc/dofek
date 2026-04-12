@@ -32,6 +32,7 @@ export function wahooOAuthConfig(host?: string): OAuthConfig | null {
     tokenUrl: `${WAHOO_API_BASE}/oauth/token`,
     redirectUri: getOAuthRedirectUri(host),
     scopes: ["email", "user_read", "workouts_read", "offline_data"],
+    revokeUrl: `${WAHOO_API_BASE}/oauth/revoke`,
   };
 }
 
