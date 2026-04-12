@@ -664,11 +664,15 @@ function BodyTab() {
       cell: ({ row }) => row.original.provider_id ?? "\u2014",
     },
     {
-      id: "measured_at",
-      header: "Measured At",
-      cell: ({ row }) => formatTimestamp(row.original.measured_at),
+      id: "recorded_at",
+      header: "Recorded At",
+      cell: ({ row }) => formatTimestamp(row.original.recorded_at),
     },
-    { id: "source", header: "Source", cell: ({ row }) => row.original.source ?? "\u2014" },
+    {
+      id: "source_name",
+      header: "Source",
+      cell: ({ row }) => row.original.source_name ?? "\u2014",
+    },
   ];
 
   if (isLoading) return <LoadingState />;

@@ -115,8 +115,8 @@ const bodyMeasurementRowSchema = z.object({
   id: z.string(),
   user_id: z.string(),
   user_name: z.string().nullable(),
-  measured_at: timestampStringSchema,
-  source: z.string().nullable(),
+  recorded_at: timestampStringSchema,
+  source_name: z.string().nullable(),
   provider_id: z.string().nullable(),
 });
 
@@ -360,10 +360,10 @@ export const adminRouter = router({
         ctx.db,
         bodyMeasurementRowSchema,
         sql`SELECT bm.id, bm.user_id, up.name AS user_name,
-                   bm.measured_at::text, bm.source, bm.provider_id
+                   bm.recorded_at::text, bm.source_name, bm.provider_id
             FROM fitness.body_measurement bm
             LEFT JOIN fitness.user_profile up ON up.id = bm.user_id
-            ORDER BY bm.measured_at DESC
+            ORDER BY bm.recorded_at DESC
             LIMIT ${input.limit} OFFSET ${input.offset}`,
       ),
       executeWithSchema(
