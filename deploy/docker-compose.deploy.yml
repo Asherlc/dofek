@@ -80,6 +80,7 @@ services:
       - traefik.http.routers.web.tls=true
       - traefik.http.routers.web.tls.certresolver=le
       - traefik.http.routers.web.tls.domains[0].main=dofek.asherlc.com
+      - traefik.http.routers.web.tls.domains[0].sans=*.dofek.asherlc.com
       - traefik.http.routers.web.tls.domains[1].main=dofek.fit
       - traefik.http.routers.web.tls.domains[1].sans=www.dofek.fit
       - traefik.http.routers.web.tls.domains[2].main=dofek.live
