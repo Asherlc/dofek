@@ -15,10 +15,9 @@ describe("OTA deployment config (expo-open-ota)", () => {
     expect(deployCompose).toContain("STORAGE_MODE: s3");
   });
 
-  it("fails the ota healthcheck when the manifest probe fails", () => {
+  it("uses the /hc health endpoint for the ota healthcheck", () => {
     const deployCompose = readFileSync(deployComposePath, "utf-8");
-    expect(deployCompose).toContain("wget -qO- http://localhost:3000/manifest");
-    expect(deployCompose).not.toContain("grep -q 'channel' || exit 0");
+    expect(deployCompose).toContain("wget -qO- http://localhost:3000/hc");
   });
 
   it("uses eoas publish in OTA deploy workflow", () => {
