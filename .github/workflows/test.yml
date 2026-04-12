@@ -226,7 +226,7 @@ jobs:
           # core-motion and ble-probe have no library code — only Module bridge files
           for pkg in health-kit whoop-ble watch-motion; do
             echo "::group::Scanning $pkg"
-            (cd packages/mobile/modules/$pkg && periphery scan --retain-public --disable-update-check --format github-actions) || fail=1
+            (cd packages/mobile/modules/$pkg && periphery scan --retain-public --disable-update-check --relative-results --format github-actions) || fail=1
             echo "::endgroup::"
           done
           exit $fail
