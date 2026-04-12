@@ -1,5 +1,14 @@
 import Foundation
 
+/// A parsed WHOOP BLE frame.
+struct WhoopFrame {
+    let packetType: UInt8
+    let recordType: UInt8
+    let dataTimestamp: UInt32     // Unix epoch seconds
+    let subSeconds: UInt16
+    let payload: Data
+}
+
 // MARK: - WHOOP sensor scale factors
 
 /// WHOOP accelerometer: ±8g range, 4096 LSB/g (confirmed from live capture — gravity vector ≈ 4096)
