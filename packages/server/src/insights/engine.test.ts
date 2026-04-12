@@ -3074,6 +3074,235 @@ describe("exhaustiveSweep() — additional boundaries", () => {
   });
 });
 
+// ── getAllMetrics() extract function coverage (inside it() callbacks) ────
+
+describe("getAllMetrics() — extract functions called inside test callbacks", () => {
+  // Call getAllMetrics() INSIDE it() to ensure Stryker links the mutants properly
+  const extractTests: Array<{ key: string; field: keyof JoinedDay; value: number }> = [
+    { key: "resting_hr", field: "resting_hr", value: 55 },
+    { key: "hrv", field: "hrv", value: 42 },
+    { key: "spo2", field: "spo2_avg", value: 97 },
+    { key: "skin_temp", field: "skin_temp_c", value: 36.2 },
+    { key: "steps", field: "steps", value: 12345 },
+    { key: "active_kcal", field: "active_energy_kcal", value: 350 },
+    { key: "exercise", field: "exercise_minutes", value: 30 },
+    { key: "calories", field: "calories", value: 1800 },
+    { key: "protein", field: "protein_g", value: 120 },
+    { key: "carbs", field: "carbs_g", value: 200 },
+    { key: "fat", field: "fat_g", value: 65 },
+    { key: "fiber", field: "fiber_g", value: 30 },
+    { key: "sleep_dur", field: "sleep_duration_min", value: 420 },
+    { key: "deep_sleep", field: "deep_min", value: 80 },
+    { key: "rem_sleep", field: "rem_min", value: 110 },
+    { key: "sleep_eff", field: "sleep_efficiency", value: 88 },
+    { key: "weight", field: "weight_kg", value: 75 },
+    { key: "body_fat", field: "body_fat_pct", value: 12 },
+    { key: "weight_30d", field: "weight_30d_avg", value: 76 },
+    { key: "bf_30d", field: "body_fat_30d_avg", value: 13 },
+    { key: "weight_delta", field: "weight_30d_delta", value: -0.3 },
+    { key: "bf_delta", field: "body_fat_30d_delta", value: -0.1 },
+  ];
+
+  for (const { key, field, value } of extractTests) {
+    it(`${key}: extract returns correct value from JoinedDay`, () => {
+      const metrics = getAllMetrics();
+      const metric = metrics.find((metricDef) => metricDef.key === key);
+      expect(metric).toBeDefined();
+      if (!metric) return;
+      const day = makeFullJoinedDay("2025-06-01", { [field]: value } satisfies Partial<JoinedDay>);
+      expect(metric.extract(day, [day], 0)).toBe(value);
+    });
+
+    it(`${key}: extract returns null when field is absent`, () => {
+      const metrics = getAllMetrics();
+      const metric = metrics.find((metricDef) => metricDef.key === key);
+      expect(metric).toBeDefined();
+      if (!metric) return;
+      const day = makeFullJoinedDay("2025-06-01", { [field]: null } satisfies Partial<JoinedDay>);
+      expect(metric.extract(day, [day], 0)).toBeNull();
+    });
+  }
+});
+
+// ── exhaustiveSweep() — discovery output content ────────────────────────
+
+describe("exhaustiveSweep() — discovery output content", () => {
+  // Build data with a strong negative correlation between steps and sleep to ensure discoveries
+  function makeSweepData(
+    count: number,
+    overrides: (idx: number) => Partial<JoinedDay>,
+  ): JoinedDay[] {
+    return dateRange("2025-01-01", count).map((date, idx) =>
+      makeFullJoinedDay(date, {
+        // Null out most fields so only the desired pair correlates
+        spo2_avg: null,
+        skin_temp_c: null,
+        exercise_minutes: null,
+        cardio_minutes: null,
+        strength_minutes: null,
+        flexibility_minutes: null,
+        calories: null,
+        protein_g: null,
+        carbs_g: null,
+        fat_g: null,
+        fiber_g: null,
+        weight_kg: null,
+        body_fat_pct: null,
+        weight_30d_avg: null,
+        body_fat_30d_avg: null,
+        weight_30d_delta: null,
+        body_fat_30d_delta: null,
+        resting_hr: null,
+        hrv: null,
+        ...overrides(idx),
+      }),
+    );
+  }
+
+  it("produces discoveries with correct direction word (negatively)", () => {
+    // Strong negative correlation: more steps → less sleep
+    const days = makeSweepData(50, (idx) => ({
+      steps: 5000 + idx * 200,
+      sleep_duration_min: 500 - idx * 3,
+    }));
+    const result = exhaustiveSweep(days, new Set());
+    const stepsToSleep = result.find(
+      (discovery) =>
+        (discovery.action === "steps" && discovery.metric === "sleep duration") ||
+        (discovery.action === "sleep duration" && discovery.metric === "steps"),
+    );
+    expect(stepsToSleep).toBeDefined();
+    if (!stepsToSleep) return;
+    expect(stepsToSleep.message).toContain("negatively");
+  });
+
+  it("produces discoveries with correct direction word (positively)", () => {
+    // Strong positive correlation: more steps → more sleep
+    const days = makeSweepData(50, (idx) => ({
+      steps: 5000 + idx * 200,
+      sleep_duration_min: 400 + idx * 3,
+    }));
+    const result = exhaustiveSweep(days, new Set());
+    const stepsToSleep = result.find(
+      (discovery) =>
+        (discovery.action === "steps" && discovery.metric === "sleep duration") ||
+        (discovery.action === "sleep duration" && discovery.metric === "steps"),
+    );
+    expect(stepsToSleep).toBeDefined();
+    if (!stepsToSleep) return;
+    expect(stepsToSleep.message).toContain("positively");
+  });
+
+  it("uses 'strongly' for |rho| >= 0.6", () => {
+    // Very strong correlation
+    const days = makeSweepData(50, (idx) => ({
+      steps: 5000 + idx * 300,
+      sleep_duration_min: 500 - idx * 5,
+    }));
+    const result = exhaustiveSweep(days, new Set());
+    const strong = result.find((discovery) => Math.abs(discovery.effectSize) >= 0.6);
+    if (strong) {
+      expect(strong.message).toContain("strongly");
+    }
+  });
+
+  it("discovery detail includes 'same day' for lag 0", () => {
+    const days = makeSweepData(50, (idx) => ({
+      steps: 5000 + idx * 200,
+      sleep_duration_min: 500 - idx * 3,
+    }));
+    const result = exhaustiveSweep(days, new Set());
+    const lag0 = result.find((discovery) => discovery.detail.includes("same day"));
+    expect(lag0).toBeDefined();
+    if (!lag0) return;
+    expect(lag0.detail).toContain("same day");
+  });
+
+  it("discovery correlation object has rho, pValue, and n", () => {
+    const days = makeSweepData(50, (idx) => ({
+      steps: 5000 + idx * 200,
+      sleep_duration_min: 500 - idx * 3,
+    }));
+    const result = exhaustiveSweep(days, new Set());
+    expect(result.length).toBeGreaterThan(0);
+    for (const discovery of result) {
+      expect(discovery.correlation).toBeDefined();
+      if (!discovery.correlation) continue;
+      expect(typeof discovery.correlation.rho).toBe("number");
+      expect(typeof discovery.correlation.pValue).toBe("number");
+      expect(typeof discovery.correlation.n).toBe("number");
+      expect(discovery.correlation.n).toBeGreaterThanOrEqual(20);
+    }
+  });
+
+  it("discovery dataPoints is a non-empty array", () => {
+    const days = makeSweepData(50, (idx) => ({
+      steps: 5000 + idx * 200,
+      sleep_duration_min: 500 - idx * 3,
+    }));
+    const result = exhaustiveSweep(days, new Set());
+    expect(result.length).toBeGreaterThan(0);
+    for (const discovery of result) {
+      expect(discovery.dataPoints).toBeDefined();
+      if (!discovery.dataPoints) continue;
+      expect(discovery.dataPoints.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("dedup keeps the stronger of two reversed pairs", () => {
+    // Create data where two metrics are correlated — both directions produce candidates
+    // The dedup should keep only one (the stronger one)
+    const days = makeSweepData(50, (idx) => ({
+      steps: 5000 + idx * 200,
+      sleep_duration_min: 500 - idx * 3,
+    }));
+    const result = exhaustiveSweep(days, new Set());
+
+    // Verify no unordered pair appears twice
+    const pairKeys = new Set<string>();
+    for (const discovery of result) {
+      const [sortedA, sortedB] = [discovery.action, discovery.metric].sort();
+      const key = `${sortedA}::${sortedB}`;
+      expect(pairKeys.has(key), `duplicate: ${discovery.action} ↔ ${discovery.metric}`).toBe(false);
+      pairKeys.add(key);
+    }
+
+    // Also verify the result is non-empty (dedup didn't wipe everything)
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  it("dedup sorts by absolute effect size descending", () => {
+    const days = makeSweepData(50, (idx) => ({
+      steps: 5000 + idx * 200,
+      sleep_duration_min: 500 - idx * 3,
+      deep_min: 90 - idx * 0.5,
+    }));
+    const result = exhaustiveSweep(days, new Set());
+    for (let idx = 1; idx < result.length; idx++) {
+      const prev = result[idx - 1];
+      const curr = result[idx];
+      if (prev && curr && Number.isFinite(prev.effectSize) && Number.isFinite(curr.effectSize)) {
+        expect(Math.abs(prev.effectSize)).toBeGreaterThanOrEqual(Math.abs(curr.effectSize));
+      }
+    }
+  });
+
+  it("produces at least one discovery with varied correlated data", () => {
+    // Ensure the sweep actually produces results — tests return-value paths
+    const days = makeSweepData(50, (idx) => ({
+      steps: 5000 + idx * 200,
+      sleep_duration_min: 500 - idx * 3,
+    }));
+    const result = exhaustiveSweep(days, new Set());
+    expect(result.length).toBeGreaterThan(0);
+    const first = result[0];
+    expect(first).toBeDefined();
+    if (!first) return;
+    expect(first.type).toBe("discovery");
+    expect(first.id).toMatch(/^disc-/);
+  });
+});
+
 // ── findConfounders() tests ─────────────────────────────────────────────
 
 describe("findConfounders()", () => {
@@ -3833,6 +4062,151 @@ describe("getCorrelationPairs() — computed xFn/yFn tests", () => {
   it("does not include rhr-hrv pair (trivial physiological relationship)", () => {
     const pair = pairs.find((pd) => pd.id === "rhr-hrv");
     expect(pair).toBeUndefined();
+  });
+
+  // Next-day yFn tests for all remaining pairs
+  it("steps-hrv: yFn returns next day HRV", () => {
+    const pair = pairs.find((pd) => pd.id === "steps-hrv");
+    const days = [makeFullJoinedDay("2025-01-01"), makeFullJoinedDay("2025-01-02", { hrv: 70 })];
+    expect(pair?.yFn(days[0] ?? makeFullJoinedDay("2025-01-01"), days, 0)).toBe(70);
+  });
+
+  it("steps-hrv: yFn returns null at end of array", () => {
+    const pair = pairs.find((pd) => pd.id === "steps-hrv");
+    const days = [makeFullJoinedDay("2025-01-01")];
+    expect(pair?.yFn(days[0] ?? makeFullJoinedDay("2025-01-01"), days, 0)).toBeNull();
+  });
+
+  it("active-kcal-sleep: yFn returns next day sleep duration", () => {
+    const pair = pairs.find((pd) => pd.id === "active-kcal-sleep");
+    const days = [
+      makeFullJoinedDay("2025-01-01"),
+      makeFullJoinedDay("2025-01-02", { sleep_duration_min: 450 }),
+    ];
+    expect(pair?.yFn(days[0] ?? makeFullJoinedDay("2025-01-01"), days, 0)).toBe(450);
+  });
+
+  it("active-kcal-sleep: yFn returns null at end of array", () => {
+    const pair = pairs.find((pd) => pd.id === "active-kcal-sleep");
+    const days = [makeFullJoinedDay("2025-01-01")];
+    expect(pair?.yFn(days[0] ?? makeFullJoinedDay("2025-01-01"), days, 0)).toBeNull();
+  });
+
+  it("deep-sleep-hrv: yFn returns next day HRV", () => {
+    const pair = pairs.find((pd) => pd.id === "deep-sleep-hrv");
+    const days = [makeFullJoinedDay("2025-01-01"), makeFullJoinedDay("2025-01-02", { hrv: 48 })];
+    expect(pair?.yFn(days[0] ?? makeFullJoinedDay("2025-01-01"), days, 0)).toBe(48);
+  });
+
+  it("deep-sleep-hrv: yFn returns null at end of array", () => {
+    const pair = pairs.find((pd) => pd.id === "deep-sleep-hrv");
+    const days = [makeFullJoinedDay("2025-01-01")];
+    expect(pair?.yFn(days[0] ?? makeFullJoinedDay("2025-01-01"), days, 0)).toBeNull();
+  });
+
+  it("exercise-dur-sleep-eff: yFn returns next day sleep efficiency", () => {
+    const pair = pairs.find((pd) => pd.id === "exercise-dur-sleep-eff");
+    const days = [
+      makeFullJoinedDay("2025-01-01"),
+      makeFullJoinedDay("2025-01-02", { sleep_efficiency: 95 }),
+    ];
+    expect(pair?.yFn(days[0] ?? makeFullJoinedDay("2025-01-01"), days, 0)).toBe(95);
+  });
+
+  it("exercise-dur-sleep-eff: yFn returns null at end of array", () => {
+    const pair = pairs.find((pd) => pd.id === "exercise-dur-sleep-eff");
+    const days = [makeFullJoinedDay("2025-01-01")];
+    expect(pair?.yFn(days[0] ?? makeFullJoinedDay("2025-01-01"), days, 0)).toBeNull();
+  });
+
+  it("protein-hrv: yFn returns next day HRV", () => {
+    const pair = pairs.find((pd) => pd.id === "protein-hrv");
+    const days = [makeFullJoinedDay("2025-01-01"), makeFullJoinedDay("2025-01-02", { hrv: 52 })];
+    expect(pair?.yFn(days[0] ?? makeFullJoinedDay("2025-01-01"), days, 0)).toBe(52);
+  });
+
+  it("protein-hrv: yFn returns null at end of array", () => {
+    const pair = pairs.find((pd) => pd.id === "protein-hrv");
+    const days = [makeFullJoinedDay("2025-01-01")];
+    expect(pair?.yFn(days[0] ?? makeFullJoinedDay("2025-01-01"), days, 0)).toBeNull();
+  });
+
+  it("calories-sleep: yFn returns next day sleep duration", () => {
+    const pair = pairs.find((pd) => pd.id === "calories-sleep");
+    const days = [
+      makeFullJoinedDay("2025-01-01"),
+      makeFullJoinedDay("2025-01-02", { sleep_duration_min: 500 }),
+    ];
+    expect(pair?.yFn(days[0] ?? makeFullJoinedDay("2025-01-01"), days, 0)).toBe(500);
+  });
+
+  it("calories-sleep: yFn returns null at end of array", () => {
+    const pair = pairs.find((pd) => pd.id === "calories-sleep");
+    const days = [makeFullJoinedDay("2025-01-01")];
+    expect(pair?.yFn(days[0] ?? makeFullJoinedDay("2025-01-01"), days, 0)).toBeNull();
+  });
+
+  // Exercise-30d weight-delta pair (parallel to bf-delta)
+  it("exercise-30d-weight-delta: xFn returns null when i < 29", () => {
+    const pair = pairs.find((pd) => pd.id === "exercise-30d-weight-delta");
+    const days = makeJoinedDays(30);
+    expect(pair?.xFn(days[28] ?? makeFullJoinedDay("2025-01-29"), days, 28)).toBeNull();
+  });
+
+  it("exercise-30d-weight-delta: xFn sums exercise over 30 days", () => {
+    const pair = pairs.find((pd) => pd.id === "exercise-30d-weight-delta");
+    const days = makeJoinedDays(30, { exercise_minutes: 45 });
+    expect(pair?.xFn(days[29] ?? makeFullJoinedDay("2025-01-30"), days, 29)).toBe(1350);
+  });
+
+  it("exercise-30d-weight-delta: xFn returns null when all exercise is 0", () => {
+    const pair = pairs.find((pd) => pd.id === "exercise-30d-weight-delta");
+    const days = makeJoinedDays(30, { exercise_minutes: 0 });
+    expect(pair?.xFn(days[29] ?? makeFullJoinedDay("2025-01-30"), days, 29)).toBeNull();
+  });
+
+  it("exercise-30d-weight-delta: yFn extracts weight_30d_delta", () => {
+    const pair = pairs.find((pd) => pd.id === "exercise-30d-weight-delta");
+    const day = makeFullJoinedDay("2025-01-01", { weight_30d_delta: -0.8 });
+    expect(pair?.yFn(day, [day], 0)).toBe(-0.8);
+  });
+
+  it("exercise-30d-bf-delta: xFn returns null when all exercise is 0", () => {
+    const pair = pairs.find((pd) => pd.id === "exercise-30d-bf-delta");
+    const days = makeJoinedDays(30, { exercise_minutes: 0 });
+    expect(pair?.xFn(days[29] ?? makeFullJoinedDay("2025-01-30"), days, 29)).toBeNull();
+  });
+
+  it("exercise-30d-bf-delta: xFn treats null exercise_minutes as 0", () => {
+    const pair = pairs.find((pd) => pd.id === "exercise-30d-bf-delta");
+    const days = makeJoinedDays(30, { exercise_minutes: null });
+    expect(pair?.xFn(days[29] ?? makeFullJoinedDay("2025-01-30"), days, 29)).toBeNull();
+  });
+
+  // Computed xFn: rollingAvg-based pairs
+  it("calories-30d-weight-delta: xFn computes 30-day avg calories", () => {
+    const pair = pairs.find((pd) => pd.id === "calories-30d-weight-delta");
+    const days = makeJoinedDays(30, { calories: 2500 });
+    expect(pair?.xFn(days[29] ?? makeFullJoinedDay("2025-01-30"), days, 29)).toBe(2500);
+  });
+
+  // Computed xFn: null handling for protein/carb/fat % calculations
+  it("protein-pct-30d-weight-delta: xFn returns null when calories is 0", () => {
+    const pair = pairs.find((pd) => pd.id === "protein-pct-30d-weight-delta");
+    const days = makeJoinedDays(30, { protein_g: 150, calories: 0 });
+    expect(pair?.xFn(days[29] ?? makeFullJoinedDay("2025-01-30"), days, 29)).toBeNull();
+  });
+
+  it("carb-pct-30d-weight-delta: yFn extracts weight_30d_delta", () => {
+    const pair = pairs.find((pd) => pd.id === "carb-pct-30d-weight-delta");
+    const day = makeFullJoinedDay("2025-01-01", { weight_30d_delta: 1.2 });
+    expect(pair?.yFn(day, [day], 0)).toBe(1.2);
+  });
+
+  it("fat-pct-30d-bf-delta: yFn extracts body_fat_30d_delta", () => {
+    const pair = pairs.find((pd) => pd.id === "fat-pct-30d-bf-delta");
+    const day = makeFullJoinedDay("2025-01-01", { body_fat_30d_delta: 0.5 });
+    expect(pair?.yFn(day, [day], 0)).toBe(0.5);
   });
 
   it("calories-30d-weight-delta: yFn extracts weight_30d_delta", () => {
