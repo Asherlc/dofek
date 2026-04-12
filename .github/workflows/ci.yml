@@ -517,7 +517,7 @@ jobs:
       - name: Install CocoaPods dependencies
         run: cd packages/mobile/ios && pod install
       - name: Set build number
-        if: github.ref == 'refs/heads/main'
+        if: github.event_name != 'pull_request'
         run: |
           cd packages/mobile/ios
           # Offset ensures continuity with builds uploaded before the workflow
@@ -1043,12 +1043,12 @@ jobs:
 
             This comment updates automatically on each PR push.
 
-  # ── Deploy Target Detection (main only) ───────────────────────────────
+  # ── Deploy Target Detection ───────────────────────────────────────────
 
   detect-deploy-targets:
     name: Detect Deploy Targets
     needs: [ci-gate]
-    if: always() && needs.ci-gate.result == 'success' && github.ref == 'refs/heads/main'
+    if: always() && needs.ci-gate.result == 'success' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     outputs:
       ios: ${{ steps.detect.outputs.ios }}
@@ -1068,7 +1068,7 @@ jobs:
   docker:
     name: Docker (${{ matrix.target }})
     needs: [ci-gate]
-    if: always() && needs.ci-gate.result == 'success' && github.ref == 'refs/heads/main'
+    if: always() && needs.ci-gate.result == 'success' && github.event_name != 'pull_request'
     concurrency:
       group: docker
       cancel-in-progress: true
@@ -1114,13 +1114,14 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.target }}
           cache-to: type=gha,mode=max,scope=${{ matrix.target }}
 
-  # ── Deploy (main only) ────────────────────────────────────────────────
+  # ── Deploy ───────────────────────────────────────────────────────────
   # Deploy uses reusable workflows so CI and deploy run in one DAG.
+  # Concurrency pools on each deploy workflow prevent stomping.
 
   deploy-ready:
     name: Deploy Readiness
     needs: [ci-gate, docker]
-    if: always() && needs.ci-gate.result == 'success' && needs.docker.result == 'success' && github.ref == 'refs/heads/main'
+    if: always() && needs.ci-gate.result == 'success' && needs.docker.result == 'success' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     outputs:
       latest: ${{ steps.latest.outputs.latest }}
