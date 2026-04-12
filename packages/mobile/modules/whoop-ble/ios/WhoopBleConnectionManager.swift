@@ -317,6 +317,16 @@ final class WhoopBleConnectionManager {
             peripheral.delegate = bleDelegate
             state = .connecting
             centralManager?.connect(peripheral, options: nil)
+
+            // Timeout — the normal connect() path has a 10s timeout, but this
+            // auto-connect path had none. Without this, a peripheral that
+            // advertises but can't complete GATT connection stays .connecting forever.
+            bleQueue.asyncAfter(deadline: .now() + 10) { [weak self] in
+                guard let self = self, self.state == .connecting,
+                      self.connectedPeripheral?.identifier == peripheral.identifier else { return }
+                NSLog("[WhoopBLE] auto-connect timeout for %@", peripheral.identifier.uuidString)
+                self.centralManager?.cancelPeripheralConnection(peripheral)
+            }
         }
     }
 

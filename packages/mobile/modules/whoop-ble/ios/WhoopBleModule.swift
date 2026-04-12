@@ -110,9 +110,8 @@ public class WhoopBleModule: Module {
                 self.frameParser.reset()
                 self.cmdFrameParser.reset()
                 self.orientationProcessor.reset()
-                self.sampleBuffer.clearAll()
 
-                NSLog("[WhoopBLE] startImuStreaming: now streaming, buffer cleared")
+                NSLog("[WhoopBLE] startImuStreaming: now streaming")
                 promise.resolve(true)
             }
         }
@@ -173,6 +172,8 @@ public class WhoopBleModule: Module {
                     "lastWriteError": self.connectionManager.lastWriteError ?? "none",
                     "realtimeBufferCount": self.sampleBuffer.realtimeSampleCount,
                     "watchdogRetryCount": Int(self.watchdog.retryCount),
+                    "droppedFrames": Int(self.frameParser.droppedFrameCount),
+                    "droppedCmdFrames": Int(self.cmdFrameParser.droppedFrameCount),
                 ]
             }
         }
