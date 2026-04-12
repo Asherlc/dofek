@@ -12,6 +12,10 @@ on:
         required: false
         type: string
 
+permissions:
+  contents: read
+  packages: read
+
 concurrency:
   group: deploy-web
   cancel-in-progress: false
@@ -71,7 +75,7 @@ jobs:
           SHORT_SHA=$(echo "$SHA" | head -c 7)
           IMAGE="ghcr.io/asherlc/dofek:sha-${SHORT_SHA}"
           echo "Checking for image: $IMAGE"
-          if ! gh api "/orgs/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/packages/container/dofek/versions" \
+          if ! gh api "/users/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/packages/container/dofek/versions" \
               --jq ".[].metadata.container.tags[]" 2>/dev/null | grep -q "sha-${SHORT_SHA}"; then
             echo "::error::Docker image $IMAGE not found in GHCR. CI must build and push the image before deploy."
             exit 1

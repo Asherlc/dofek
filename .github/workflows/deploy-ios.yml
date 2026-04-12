@@ -89,30 +89,31 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          COMMIT_SHA: ${{ steps.resolve.outputs.sha }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ "$EVENT_NAME" != "workflow_dispatch" ]; then
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
             echo "run_id=$WORKFLOW_RUN_ID" >> "$GITHUB_OUTPUT"
             echo "Using triggering CI run: $WORKFLOW_RUN_ID"
             exit 0
           fi
 
-          # For manual dispatch, find the most recent successful CI run on main
+          # For workflow_dispatch and workflow_call, find CI run for the commit
           RUN_ID=$(gh run list \
             --workflow=ci.yml \
-            --branch=main \
+            --commit="$COMMIT_SHA" \
             --status=success \
             --limit=1 \
             --json databaseId \
             --jq '.[0].databaseId')
 
           if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
-            echo "No successful CI run found on main"
+            echo "::error::No successful CI run found for commit $COMMIT_SHA"
             exit 1
           fi
 
           echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
-          echo "Using most recent successful CI run on main: $RUN_ID"
+          echo "Using CI run for commit ${COMMIT_SHA:0:10}: $RUN_ID"
 
   deploy:
     name: Upload to TestFlight
