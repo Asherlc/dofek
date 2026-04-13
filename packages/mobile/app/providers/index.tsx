@@ -20,6 +20,7 @@ import { trpc } from "../../lib/trpc";
 import { useRefresh } from "../../lib/useRefresh";
 import {
   getRequestStatus,
+  hasEverAuthorized,
   isAvailable as isHealthKitAvailable,
   queryDailyStatistics,
   queryQuantitySamples,
@@ -90,11 +91,13 @@ export default function ProvidersScreen() {
   const [healthKitPermissionStatus, setHealthKitPermissionStatus] = useState<
     "unnecessary" | "shouldRequest" | "unavailable" | "unknown"
   >("unknown");
+  const [healthKitEverAuthorized, setHealthKitEverAuthorized] = useState(false);
   const trpcClient = trpcUtils.client;
 
   // Check HealthKit permission status on mount
   useEffect(() => {
     if (!isHealthKitAvailable()) return;
+    setHealthKitEverAuthorized(hasEverAuthorized());
     getRequestStatus()
       .then(setHealthKitPermissionStatus)
       .catch((error: unknown) => {
@@ -107,6 +110,7 @@ export default function ProvidersScreen() {
     setHealthKitProgress("Requesting permissions...");
     try {
       await requestPermissions();
+      setHealthKitEverAuthorized(hasEverAuthorized());
       const status = await getRequestStatus();
       setHealthKitPermissionStatus(status);
       setHealthKitProgress(status === "unnecessary" ? "Connected" : undefined);
@@ -511,9 +515,9 @@ export default function ProvidersScreen() {
         provider={{
           id: "apple_health",
           label: "Apple Health",
-          enabled: healthKitAvailable && healthKitPermissionStatus === "unnecessary",
+          enabled: healthKitAvailable && healthKitEverAuthorized,
           authStatus: healthKitAvailable
-            ? healthKitPermissionStatus === "unnecessary"
+            ? healthKitEverAuthorized
               ? "connected"
               : "not_connected"
             : "connected",
@@ -531,6 +535,15 @@ export default function ProvidersScreen() {
         onConnect={handleHealthKitConnect}
         onPress={() => router.push("/providers/apple_health")}
       />
+      {healthKitAvailable &&
+        healthKitEverAuthorized &&
+        healthKitPermissionStatus === "shouldRequest" && (
+          <TouchableOpacity style={styles.permissionBanner} onPress={handleHealthKitConnect}>
+            <Text style={styles.permissionBannerText}>
+              Apple Health permissions need updating — tap to review
+            </Text>
+          </TouchableOpacity>
+        )}
       {providerList.map((provider) => (
         <ProviderCard
           key={provider.id}

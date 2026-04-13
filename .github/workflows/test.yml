@@ -189,6 +189,13 @@ jobs:
       - uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
       - run: cd deploy && terraform init -backend=false && terraform validate
 
+  check-dns-records:
+    name: DNS Record Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - run: bash scripts/check-dns-records.sh
+
   swiftlint:
     name: SwiftLint
     needs: check-mobile-changes
@@ -233,7 +240,7 @@ jobs:
 
   quality-gate:
     name: Lint & Static Analysis
-    needs: [actionlint, lint, typecheck, sherif, knip, spellcheck, import-boundaries, python-checks, hadolint, terraform-validate, swiftlint, periphery]
+    needs: [actionlint, lint, typecheck, sherif, knip, spellcheck, import-boundaries, python-checks, hadolint, terraform-validate, check-dns-records, swiftlint, periphery]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -250,6 +257,7 @@ jobs:
             "${{ needs.python-checks.result }}" \
             "${{ needs.hadolint.result }}" \
             "${{ needs.terraform-validate.result }}" \
+            "${{ needs.check-dns-records.result }}" \
             "${{ needs.swiftlint.result }}" \
             "${{ needs.periphery.result }}"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then

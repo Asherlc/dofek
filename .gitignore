@@ -43,6 +43,7 @@ muter_logs/
 __pycache__/
 *.pyc
 *.egg-info/
+.coverage
 # Terraform plan/state artifacts (can contain secrets)
 deploy/tfplan*
 deploy/*.tfplan

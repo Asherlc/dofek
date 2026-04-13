@@ -354,7 +354,7 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
     );
 
     // Wahoo-specific: when orphaned tokens on Wahoo's side block new token creation,
-    // the user needs to deauthorize the app from Wahoo's settings page.
+    // the user needs to deauthorize the app from the Wahoo mobile app.
     if (message.includes("Too many unrevoked access tokens")) {
       res
         .status(400)
@@ -364,8 +364,9 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
             "<p>Wahoo limits the number of active tokens per app. Old tokens from a previous session are blocking the new connection.</p>",
             "<p><strong>To fix this:</strong></p>",
             "<ol>",
-            '<li>Go to <a href="https://cloud.wahoo.com/settings">Wahoo Cloud Settings</a></li>',
-            "<li>Find this app under connected applications and remove/deauthorize it</li>",
+            "<li>Open the <strong>Wahoo app</strong> on your phone</li>",
+            "<li>Go to <strong>Today</strong> tab &rarr; <strong>Profile</strong> (top-left) &rarr; <strong>Authorized Apps</strong></li>",
+            "<li>Find this app and tap <strong>Deauthorize</strong></li>",
             '<li>Come back here and <a href="/settings">try connecting Wahoo again</a></li>',
             "</ol>",
           ].join("\n"),

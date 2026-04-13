@@ -1,7 +1,7 @@
 import { createTrainingExportQueue } from "dofek/jobs/queues";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { startWorker } from "../lib/start-worker.ts";
+import { startTrainingExportWorker } from "../lib/start-worker.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import { adminProcedure, router } from "../trpc.ts";
@@ -450,7 +450,7 @@ export const adminRouter = router({
         since: input.since,
         until: input.until,
       });
-      startWorker();
+      startTrainingExportWorker();
       return { jobId: String(job.id) };
     }),
 

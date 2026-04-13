@@ -235,23 +235,61 @@ function formatDuration(seconds: number | null | undefined): string {
 
 function OverviewTab() {
   const { data, isLoading, error } = trpc.admin.overview.useQuery();
+  const refreshViews = trpc.admin.refreshViews.useMutation();
 
   if (isLoading) return <LoadingState />;
   if (error) return <ErrorState message={error.message} />;
 
   return (
-    <AdminCard title="Table Row Counts">
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-px bg-border/30">
-        {data?.map((item) => (
-          <div key={item.table_name} className="bg-card p-3">
-            <div className="text-lg font-semibold text-foreground">
-              {item.row_count.toLocaleString()}
+    <div className="space-y-6">
+      <AdminCard title="Table Row Counts">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-px bg-border/30">
+          {data?.map((item) => (
+            <div key={item.table_name} className="bg-card p-3">
+              <div className="text-lg font-semibold text-foreground">
+                {item.row_count.toLocaleString()}
+              </div>
+              <div className="text-xs text-muted mt-0.5">{item.table_name}</div>
             </div>
-            <div className="text-xs text-muted mt-0.5">{item.table_name}</div>
+          ))}
+        </div>
+      </AdminCard>
+
+      <AdminCard title="Materialized Views">
+        <div className="p-4 space-y-3">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              disabled={refreshViews.isPending}
+              onClick={() => refreshViews.mutate()}
+              className="px-3 py-1.5 rounded text-xs font-medium bg-accent/15 text-foreground hover:bg-accent/25 disabled:opacity-50 transition-colors cursor-pointer disabled:cursor-default"
+            >
+              {refreshViews.isPending ? "Refreshing..." : "Refresh All Views"}
+            </button>
+            {refreshViews.isSuccess && (
+              <span className="text-xs text-green-400">
+                Refreshed {refreshViews.data.refreshed.length} views
+              </span>
+            )}
+            {refreshViews.isError && (
+              <span className="text-xs text-red-400">{refreshViews.error.message}</span>
+            )}
           </div>
-        ))}
-      </div>
-    </AdminCard>
+          {refreshViews.isSuccess && (
+            <div className="flex flex-wrap gap-1.5">
+              {refreshViews.data.refreshed.map((view) => (
+                <span
+                  key={view}
+                  className="px-2 py-0.5 rounded bg-green-500/10 text-green-400 text-xs font-mono"
+                >
+                  {view}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </AdminCard>
+    </div>
   );
 }
 

@@ -232,7 +232,7 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     // User gets actionable error with deauthorization instructions
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.send).toHaveBeenCalledWith(expect.stringContaining("orphaned tokens"));
-    expect(res.send).toHaveBeenCalledWith(expect.stringContaining("cloud.wahoo.com/settings"));
+    expect(res.send).toHaveBeenCalledWith(expect.stringContaining("Authorized Apps"));
 
     // The final logged error includes both the exchange error and the revocation context
     const allErrorMessages: string[] = mockLogger.error.mock.calls.map((call: unknown[]) =>
@@ -262,7 +262,7 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     // User gets actionable instructions instead of generic error
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.send).toHaveBeenCalledWith(expect.stringContaining("orphaned tokens"));
-    expect(res.send).toHaveBeenCalledWith(expect.stringContaining("cloud.wahoo.com/settings"));
+    expect(res.send).toHaveBeenCalledWith(expect.stringContaining("Authorized Apps"));
 
     // Revocation was not attempted (no stored tokens)
     expect(mockRevokeExistingTokens).not.toHaveBeenCalled();

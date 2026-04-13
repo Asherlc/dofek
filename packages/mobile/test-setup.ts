@@ -348,6 +348,7 @@ vi.mock("expo-haptics", () => ({
 // ── HealthKit native module mock ─────────────────────────────────────
 vi.mock("./modules/health-kit", () => ({
   getRequestStatus: vi.fn(() => Promise.resolve("shouldRequest")),
+  hasEverAuthorized: vi.fn(() => false),
   isBackgroundDeliveryEnabled: vi.fn(() => false),
   requestAuthorization: vi.fn(() => Promise.resolve(true)),
   queryWorkouts: vi.fn(() => Promise.resolve([])),

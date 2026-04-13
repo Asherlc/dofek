@@ -1,7 +1,7 @@
 import type { EventSubscription } from "expo-modules-core";
 import {
   addSampleUpdateListener,
-  getRequestStatus,
+  hasEverAuthorized,
   isAvailable,
   queryDailyStatistics,
   queryQuantitySamples,
@@ -36,9 +36,8 @@ export async function initBackgroundHealthKitSync(
     return;
   }
 
-  const status = await getRequestStatus();
-  if (status !== "unnecessary") {
-    logger.info(TAG, `HealthKit permission status="${status}", skipping init`);
+  if (!hasEverAuthorized()) {
+    logger.info(TAG, "HealthKit never authorized, skipping init");
     return;
   }
 

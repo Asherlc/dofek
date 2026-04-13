@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import {
-  getRequestStatus,
+  hasEverAuthorized,
   isAvailable,
   queryDailyStatistics,
   queryQuantitySamples,
@@ -62,34 +62,25 @@ export function useAutoSync(latestDate: string | null | undefined) {
       });
 
     // Trigger HealthKit sync (iOS only)
-    if (isAvailable()) {
+    if (isAvailable() && hasEverAuthorized()) {
       logger.info("auto-sync", "Starting HealthKit sync");
-      getRequestStatus()
-        .then((status) => {
-          if (status !== "unnecessary") {
-            logger.info("auto-sync", `HealthKit permission status="${status}", skipping`);
-            return null;
-          }
-          return syncHealthKitToServer({
-            trpcClient: trpcUtils.client,
-            healthKit: {
-              queryDailyStatistics,
-              queryQuantitySamples,
-              queryWorkouts,
-              querySleepSamples,
-              queryWorkoutRoutes,
-            },
-            syncRangeDays: 1,
-          });
-        })
+      syncHealthKitToServer({
+        trpcClient: trpcUtils.client,
+        healthKit: {
+          queryDailyStatistics,
+          queryQuantitySamples,
+          queryWorkouts,
+          querySleepSamples,
+          queryWorkoutRoutes,
+        },
+        syncRangeDays: 1,
+      })
         .then((result) => {
-          if (result) {
-            logger.info(
-              "auto-sync",
-              `HealthKit sync complete: ${result.inserted} inserted, ${result.errors.length} errors`,
-            );
-            trpcUtils.invalidate();
-          }
+          logger.info(
+            "auto-sync",
+            `HealthKit sync complete: ${result.inserted} inserted, ${result.errors.length} errors`,
+          );
+          trpcUtils.invalidate();
         })
         .catch((error: unknown) => {
           logger.warn(

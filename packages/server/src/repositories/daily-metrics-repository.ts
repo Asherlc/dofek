@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/node";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
@@ -72,13 +73,22 @@ export type TrendsRow = z.infer<typeof trendsRowSchema>;
 export class DailyMetricsRepository extends BaseRepository {
   /** Daily metrics within the given date window, ordered by date ascending. */
   async list(days: number, endDate: string): Promise<DailyMetricsViewRow[]> {
-    return this.query(
-      dailyMetricsViewRowSchema,
-      sql`SELECT * FROM fitness.v_daily_metrics
-          WHERE user_id = ${this.userId}
-            AND date > ${dateWindowStart(endDate, days)}
-          ORDER BY date ASC`,
-    );
+    const listQuery = () =>
+      this.query(
+        dailyMetricsViewRowSchema,
+        sql`SELECT * FROM fitness.v_daily_metrics
+            WHERE user_id = ${this.userId}
+              AND date > ${dateWindowStart(endDate, days)}
+            ORDER BY date ASC`,
+      );
+
+    const result = await listQuery();
+    if (result.length > 0) return result;
+
+    // View returned empty — check if base table has data (stale view)
+    const refreshed = await this.#refreshIfStale(days, endDate);
+    if (!refreshed) return result;
+    return listQuery();
   }
 
   /** Most recent single daily metrics row, or null if none exist. */
@@ -120,61 +130,98 @@ export class DailyMetricsRepository extends BaseRepository {
     return rows.filter((row) => row.date >= cutoffStr);
   }
 
+  /**
+   * Check if the base table has data in the window and refresh the view if stale.
+   * Returns true if a refresh was performed, false otherwise.
+   */
+  async #refreshIfStale(days: number, endDate: string): Promise<boolean> {
+    const baseCount = await this.query(
+      z.object({ count: z.coerce.number() }),
+      sql`SELECT count(*)::int AS count FROM fitness.daily_metrics
+          WHERE user_id = ${this.userId}
+            AND date > ${dateWindowStart(endDate, days)}
+            AND date <= ${dateWindowEnd(endDate)}
+          LIMIT 1`,
+    );
+    if ((baseCount[0]?.count ?? 0) === 0) return false;
+
+    Sentry.captureMessage("Stale daily metrics materialized view detected", {
+      level: "warning",
+      tags: { userId: this.userId },
+      extra: { days, endDate, baseCount: baseCount[0]?.count },
+    });
+    logger.warn(
+      `[daily-metrics] View stale for user ${this.userId} (days=${days}, endDate=${endDate}), refreshing`,
+    );
+
+    try {
+      try {
+        await this.db.execute(
+          sql.raw("REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_daily_metrics"),
+        );
+      } catch {
+        await this.db.execute(sql.raw("REFRESH MATERIALIZED VIEW fitness.v_daily_metrics"));
+      }
+    } catch (refreshError) {
+      Sentry.captureException(refreshError, {
+        tags: { userId: this.userId, context: "staleDailyMetricsRefresh" },
+      });
+      return false;
+    }
+    return true;
+  }
+
   /** Aggregate trends (averages, standard deviations) and latest values for the date window. */
   async getTrends(days: number, endDate: string): Promise<TrendsRow | null> {
-    const rows = await this.query(
-      trendsRowSchema,
-      sql`WITH current AS (
-            SELECT * FROM fitness.v_daily_metrics
-            WHERE user_id = ${this.userId}
-              AND date > ${dateWindowStart(endDate, days)}
-              AND date <= ${dateWindowEnd(endDate)}
-          ),
-          stats AS (
+    const trendsQuery = () =>
+      this.query(
+        trendsRowSchema,
+        sql`WITH current AS (
+              SELECT * FROM fitness.v_daily_metrics
+              WHERE user_id = ${this.userId}
+                AND date > ${dateWindowStart(endDate, days)}
+                AND date <= ${dateWindowEnd(endDate)}
+            ),
+            stats AS (
+              SELECT
+                AVG(resting_hr) AS avg_resting_hr,
+                AVG(hrv) AS avg_hrv,
+                AVG(spo2_avg) AS avg_spo2,
+                AVG(steps) AS avg_steps,
+                AVG(active_energy_kcal) AS avg_active_energy,
+                AVG(skin_temp_c) AS avg_skin_temp,
+                STDDEV(resting_hr) AS stddev_resting_hr,
+                STDDEV(hrv) AS stddev_hrv,
+                STDDEV(spo2_avg) AS stddev_spo2,
+                STDDEV(skin_temp_c) AS stddev_skin_temp
+              FROM current
+            ),
+            latest AS (
+              SELECT resting_hr, hrv, spo2_avg, steps, active_energy_kcal, skin_temp_c, date
+              FROM current
+              ORDER BY date DESC
+              LIMIT 1
+            )
             SELECT
-              AVG(resting_hr) AS avg_resting_hr,
-              AVG(hrv) AS avg_hrv,
-              AVG(spo2_avg) AS avg_spo2,
-              AVG(steps) AS avg_steps,
-              AVG(active_energy_kcal) AS avg_active_energy,
-              AVG(skin_temp_c) AS avg_skin_temp,
-              STDDEV(resting_hr) AS stddev_resting_hr,
-              STDDEV(hrv) AS stddev_hrv,
-              STDDEV(spo2_avg) AS stddev_spo2,
-              STDDEV(skin_temp_c) AS stddev_skin_temp
-            FROM current
-          ),
-          latest AS (
-            SELECT resting_hr, hrv, spo2_avg, steps, active_energy_kcal, skin_temp_c, date
-            FROM current
-            ORDER BY date DESC
-            LIMIT 1
-          )
-          SELECT
-            stats.*,
-            latest.resting_hr AS latest_resting_hr,
-            latest.hrv AS latest_hrv,
-            latest.spo2_avg AS latest_spo2,
-            latest.steps AS latest_steps,
-            latest.active_energy_kcal AS latest_active_energy,
-            latest.skin_temp_c AS latest_skin_temp,
-            latest.date AS latest_date
-          FROM stats LEFT JOIN latest ON true`,
-    );
-    const result = rows[0] ?? null;
-    if (result && result.latest_date === null && result.avg_resting_hr === null) {
-      // Only warn if the base table actually has data (stale view),
-      // not for new/inactive users who legitimately have no rows.
-      const baseCount = await this.query(
-        z.object({ count: z.coerce.number() }),
-        sql`SELECT count(*)::int AS count FROM fitness.daily_metrics
-            WHERE user_id = ${this.userId} LIMIT 1`,
+              stats.*,
+              latest.resting_hr AS latest_resting_hr,
+              latest.hrv AS latest_hrv,
+              latest.spo2_avg AS latest_spo2,
+              latest.steps AS latest_steps,
+              latest.active_energy_kcal AS latest_active_energy,
+              latest.skin_temp_c AS latest_skin_temp,
+              latest.date AS latest_date
+            FROM stats LEFT JOIN latest ON true`,
       );
-      if ((baseCount[0]?.count ?? 0) > 0) {
-        logger.warn(
-          `[daily-metrics] Trends query returned all nulls for user ${this.userId} but base table has data (days=${days}, endDate=${endDate}). ` +
-            "Materialized view fitness.v_daily_metrics is stale — check sync.dataHealth.",
-        );
+
+    const rows = await trendsQuery();
+    let result = rows[0] ?? null;
+    if (result && result.latest_date === null && result.avg_resting_hr === null) {
+      // View returned all nulls — check if base table has data (stale view)
+      const refreshed = await this.#refreshIfStale(days, endDate);
+      if (refreshed) {
+        const retryRows = await trendsQuery();
+        result = retryRows[0] ?? null;
       }
     }
     return result;

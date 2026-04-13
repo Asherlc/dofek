@@ -52,17 +52,25 @@ export abstract class BaseRepository<TDb extends ExecutableDatabase = Executable
    *
    * If the query returns no rows but the base `fitness.activity` table has data
    * in the same time window, the views are stale. Refreshes them and retries.
+   *
+   * @param baseCountSql Optional custom SQL to check for base data. When the
+   *   materialized view query filters more narrowly than "all activities" (e.g.,
+   *   only activities with HR data), pass a matching base count query to avoid
+   *   false-positive stale-view refreshes. Must return `{ count: number }`.
    */
   protected async queryWithViewRefresh<TResult>(
     queryFn: () => Promise<TResult[]>,
     days: number,
     label: string,
+    baseCountSql?: SQL,
   ): Promise<TResult[]> {
     const result = await queryFn();
     if (result.length > 0) return result;
 
     const today = new Date().toLocaleDateString("en-CA");
-    const baseCount = await this.#baseActivityCount(today, days);
+    const baseCount = baseCountSql
+      ? ((await this.query(z.object({ count: z.coerce.number() }), baseCountSql))[0]?.count ?? 0)
+      : await this.#baseActivityCount(today, days);
     if (baseCount === 0) return result;
 
     Sentry.captureMessage(`Stale activity materialized views detected (${label})`, {

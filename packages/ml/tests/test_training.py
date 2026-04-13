@@ -8,6 +8,9 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 import pytest
+
+pytest.importorskip("torch")
+
 import torch
 
 from dofek_ml.training import (
