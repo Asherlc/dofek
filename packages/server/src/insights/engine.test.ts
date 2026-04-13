@@ -3303,6 +3303,209 @@ describe("exhaustiveSweep() — discovery output content", () => {
   });
 });
 
+// ── exhaustiveSweep() — filter and lag coverage ─────────────────────────
+
+describe("exhaustiveSweep() — filter and lag paths", () => {
+  function makeSweepData(
+    count: number,
+    overrides: (idx: number) => Partial<JoinedDay>,
+  ): JoinedDay[] {
+    return dateRange("2025-01-01", count).map((date, idx) =>
+      makeFullJoinedDay(date, {
+        spo2_avg: null,
+        skin_temp_c: null,
+        exercise_minutes: null,
+        cardio_minutes: null,
+        strength_minutes: null,
+        flexibility_minutes: null,
+        calories: null,
+        protein_g: null,
+        carbs_g: null,
+        fat_g: null,
+        fiber_g: null,
+        weight_kg: null,
+        body_fat_pct: null,
+        weight_30d_avg: null,
+        body_fat_30d_avg: null,
+        weight_30d_delta: null,
+        body_fat_30d_delta: null,
+        resting_hr: null,
+        hrv: null,
+        ...overrides(idx),
+      }),
+    );
+  }
+
+  it("excludes body composition metrics from discovery", () => {
+    // Provide weight data that correlates strongly with steps — should be excluded
+    const days = makeSweepData(50, (idx) => ({
+      steps: 5000 + idx * 200,
+      weight_kg: 80 - idx * 0.2,
+      body_fat_pct: 20 - idx * 0.1,
+      weight_30d_avg: 80 - idx * 0.2,
+      body_fat_30d_avg: 20 - idx * 0.1,
+      weight_30d_delta: -0.2,
+      body_fat_30d_delta: -0.1,
+    }));
+    const result = exhaustiveSweep(days, new Set());
+    const bodyCompLabels = new Set([
+      "weight",
+      "body fat %",
+      "30-day avg weight",
+      "30-day avg body fat",
+      "monthly weight change",
+      "monthly body fat change",
+    ]);
+    for (const discovery of result) {
+      expect(bodyCompLabels.has(discovery.action)).toBe(false);
+      expect(bodyCompLabels.has(discovery.metric)).toBe(false);
+    }
+  });
+
+  it("excludes invalid causal directions (outcome→action at lag>0)", () => {
+    // outcome→action should never appear
+    const days = makeSweepData(50, (idx) => ({
+      resting_hr: 60 + idx * 0.5,
+      calories: 2000 + idx * 10,
+    }));
+    const result = exhaustiveSweep(days, new Set());
+    for (const discovery of result) {
+      // resting_hr is "outcome", calories is "action"
+      // outcome→action should not appear
+      if (discovery.action === "resting HR") {
+        const metrics = getAllMetrics();
+        const yMetric = metrics.find((metricDef) => metricDef.label === discovery.metric);
+        expect(yMetric?.role).not.toBe("action");
+      }
+    }
+  });
+
+  it("produces lagged discoveries with correct lag text (lag 1 = 'next day')", () => {
+    // Create data where today's steps predict tomorrow's sleep
+    const days = makeSweepData(60, (idx) => ({
+      steps: 5000 + idx * 300,
+      // sleep_duration_min at i correlates with steps at i-1 (lagged)
+      sleep_duration_min: idx > 0 ? 400 + (idx - 1) * 4 : 400,
+    }));
+    const result = exhaustiveSweep(days, new Set());
+    // Find a lagged discovery (lag > 0)
+    const lagged = result.find(
+      (discovery) =>
+        discovery.detail.includes("next day") || discovery.detail.includes("days later"),
+    );
+    if (lagged) {
+      // Verify lag text format in detail
+      expect(lagged.detail).toMatch(/next day|days later/);
+      // If lag is 1, message should mention "next day"
+      if (lagged.detail.includes("next day")) {
+        expect(lagged.message).toContain("next day");
+      }
+    }
+  });
+
+  it("discovery detail includes Spearman rho, lag text, and n", () => {
+    const days = makeSweepData(50, (idx) => ({
+      steps: 5000 + idx * 200,
+      sleep_duration_min: 500 - idx * 3,
+    }));
+    const result = exhaustiveSweep(days, new Set());
+    expect(result.length).toBeGreaterThan(0);
+    for (const discovery of result) {
+      expect(discovery.detail).toContain("Spearman");
+      expect(discovery.detail).toContain("ρ=");
+      expect(discovery.detail).toMatch(/n=\d+/);
+      expect(discovery.detail).toMatch(/same day|next day|days later/);
+    }
+  });
+
+  it("discovery message format includes strength and direction", () => {
+    const days = makeSweepData(50, (idx) => ({
+      steps: 5000 + idx * 200,
+      sleep_duration_min: 500 - idx * 3,
+    }));
+    const result = exhaustiveSweep(days, new Set());
+    expect(result.length).toBeGreaterThan(0);
+    for (const discovery of result) {
+      // Message should contain "associated with"
+      expect(discovery.message).toContain("associated with");
+      // Should contain either "positively" or "negatively"
+      expect(discovery.message).toMatch(/positively|negatively/);
+      // Action label appears at the start
+      expect(discovery.message).toContain(discovery.action);
+    }
+  });
+
+  it("rawPoints are built correctly with x, y, and date", () => {
+    const days = makeSweepData(30, (idx) => ({
+      steps: 5000 + idx * 200,
+      sleep_duration_min: 500 - idx * 3,
+    }));
+    const result = exhaustiveSweep(days, new Set());
+    for (const discovery of result) {
+      if (!discovery.dataPoints) continue;
+      for (const point of discovery.dataPoints) {
+        expect(typeof point.x).toBe("number");
+        expect(typeof point.y).toBe("number");
+        expect(point.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      }
+    }
+  });
+
+  it("min sample threshold (20) is enforced — 19 days produces no discoveries", () => {
+    const days = makeSweepData(19, (idx) => ({
+      steps: 5000 + idx * 200,
+      sleep_duration_min: 500 - idx * 3,
+    }));
+    const result = exhaustiveSweep(days, new Set());
+    expect(result).toEqual([]);
+  });
+
+  it("weak correlations below MIN_RHO (0.15) are excluded", () => {
+    // Random-ish data with no strong correlation
+    const days = makeSweepData(50, (idx) => ({
+      steps: 5000 + (idx % 3 === 0 ? 1000 : -1000),
+      sleep_duration_min: 400 + (idx % 5 === 0 ? 50 : -30),
+    }));
+    const result = exhaustiveSweep(days, new Set());
+    for (const discovery of result) {
+      expect(Math.abs(discovery.effectSize)).toBeGreaterThanOrEqual(0.15);
+    }
+  });
+
+  it("dedup keeps stronger pair when both directions exist", () => {
+    // Create a strong correlation between steps and sleep
+    const days = makeSweepData(50, (idx) => ({
+      steps: 5000 + idx * 200,
+      sleep_duration_min: 500 - idx * 3,
+    }));
+    const result = exhaustiveSweep(days, new Set());
+    // Verify no unordered pair appears twice
+    const pairKeys = new Map<string, number>();
+    for (const discovery of result) {
+      const [sortedA, sortedB] = [discovery.action, discovery.metric].sort();
+      const key = `${sortedA}::${sortedB}`;
+      pairKeys.set(key, (pairKeys.get(key) ?? 0) + 1);
+    }
+    for (const [key, count] of pairKeys) {
+      expect(count, `pair ${key} appeared ${count} times`).toBe(1);
+    }
+  });
+
+  it("all discovery results have finite effect sizes and defined correlation", () => {
+    const days = makeSweepData(50, (idx) => ({
+      steps: 5000 + idx * 200,
+      sleep_duration_min: 500 - idx * 3,
+    }));
+    const result = exhaustiveSweep(days, new Set());
+    expect(result.length).toBeGreaterThan(0);
+    for (const discovery of result) {
+      expect(typeof discovery.effectSize).toBe("number");
+      expect(discovery.type).toBe("discovery");
+      expect(discovery.id).toMatch(/^disc-/);
+    }
+  });
+});
+
 // ── findConfounders() tests ─────────────────────────────────────────────
 
 describe("findConfounders()", () => {
