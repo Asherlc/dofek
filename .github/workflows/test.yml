@@ -257,6 +257,7 @@ jobs:
             "${{ needs.python-checks.result }}" \
             "${{ needs.hadolint.result }}" \
             "${{ needs.terraform-validate.result }}" \
+            "${{ needs.check-dns-records.result }}" \
             "${{ needs.swiftlint.result }}" \
             "${{ needs.periphery.result }}"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then

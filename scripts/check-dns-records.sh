@@ -6,9 +6,7 @@ set -euo pipefail
 COMPOSE="deploy/docker-compose.deploy.yml"
 DNS_TF="deploy/dns.tf"
 
-# Extract all hostnames from Traefik Host(`...`) labels (portable, no -P flag)
-hosts=$(sed -n 's/.*Host(`\([^`]*\)`).*/\1/p' "$COMPOSE" | tr '|' '\n' | sed -n 's/.*Host(`\([^`]*\)`).*/\1/p; s/^[[:space:]]*//p' | sort -u)
-# The compose file uses || between Host() rules on a single line, so also split those
+# Extract all hostnames from Traefik Host(`...`) labels and deduplicate them
 hosts=$(grep -o 'Host(`[^`]*`)' "$COMPOSE" | sed 's/Host(`//;s/`)//' | sort -u)
 
 missing=()
@@ -16,7 +14,7 @@ for host in $hosts; do
   # Check dns.tf has a record whose name matches this host (literal string or via zone reference)
   # For bare domains like "dofek.fit", the name field is just "dofek.fit"
   # For subdomains like "dofek.asherlc.com", the name field is "dofek.asherlc.com"
-  if ! grep -q "\"$host\"" "$DNS_TF"; then
+  if ! grep -Fq "\"$host\"" "$DNS_TF"; then
     missing+=("$host")
   fi
 done
