@@ -1,9 +1,7 @@
-import * as Sentry from "@sentry/node";
 import { TRPCError } from "@trpc/server";
 import { getProvider } from "dofek/providers/registry";
 import { z } from "zod";
 import { endDateSchema } from "../lib/date-window.ts";
-import { logger } from "../logger.ts";
 import { Activity, type ActivityDetail } from "../models/activity.ts";
 import {
   ActivityRepository,
@@ -48,42 +46,7 @@ export const activityRouter = router({
     )
     .query(async ({ ctx, input }) => {
       const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone);
-      const result = await repo.list(input);
-
-      // Self-healing: if the materialized view returns no results on the first
-      // page but the base table has data in the same time window, the views are
-      // stale (e.g. after a crash recovery or failed view refresh). Refresh
-      // them and retry the query. Only check on the first page to avoid
-      // expensive refreshes on legitimate empty later pages.
-      if (input.offset === 0 && result.items.length === 0) {
-        const baseCount = await repo.baseTableCount(input.endDate, input.days);
-        if (baseCount > 0) {
-          logger.warn(
-            `[activity] Stale views detected for user ${ctx.userId}: ` +
-              `${baseCount} activities in base table but 0 in materialized view. Refreshing.`,
-          );
-          Sentry.captureMessage("Stale activity materialized views detected", {
-            level: "warning",
-            tags: { userId: ctx.userId },
-            extra: { baseCount },
-          });
-          try {
-            await repo.refreshActivityViews();
-            return repo.list(input);
-          } catch (refreshError) {
-            const errorDetail =
-              refreshError instanceof Error
-                ? (refreshError.stack ?? refreshError.message)
-                : String(refreshError);
-            logger.error(`[activity] Failed to refresh stale views: ${errorDetail}`);
-            Sentry.captureException(refreshError, {
-              tags: { userId: ctx.userId, context: "staleViewRefresh" },
-            });
-          }
-        }
-      }
-
-      return result;
+      return repo.list(input);
     }),
 
   byId: cachedProtectedQuery(CacheTTL.MEDIUM)

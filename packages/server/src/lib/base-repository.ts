@@ -1,6 +1,8 @@
+import * as Sentry from "@sentry/node";
 import type { Database } from "dofek/db";
-import type { SQL } from "drizzle-orm";
-import type { z } from "zod";
+import { type SQL, sql } from "drizzle-orm";
+import { z } from "zod";
+import { timestampWindowStart } from "./date-window.ts";
 import { executeWithSchema } from "./typed-sql.ts";
 
 /**
@@ -8,6 +10,12 @@ import { executeWithSchema } from "./typed-sql.ts";
  * Repositories that need `transaction` or `select` widen this via the generic.
  */
 type ExecutableDatabase = Pick<Database, "execute">;
+
+const ACTIVITY_VIEWS = [
+  "fitness.v_activity",
+  "fitness.deduped_sensor",
+  "fitness.activity_summary",
+] as const;
 
 /**
  * Shared base for all data-access repositories.
@@ -37,5 +45,59 @@ export abstract class BaseRepository<TDb extends ExecutableDatabase = Executable
     sqlQuery: SQL,
   ): Promise<z.infer<TSchema>[]> {
     return executeWithSchema(this.db, schema, sqlQuery);
+  }
+
+  /**
+   * Run a query that depends on materialized views with stale-view self-healing.
+   *
+   * If the query returns no rows but the base `fitness.activity` table has data
+   * in the same time window, the views are stale. Refreshes them and retries.
+   */
+  protected async queryWithViewRefresh<TResult>(
+    queryFn: () => Promise<TResult[]>,
+    days: number,
+    label: string,
+  ): Promise<TResult[]> {
+    const result = await queryFn();
+    if (result.length > 0) return result;
+
+    const today = new Date().toLocaleDateString("en-CA");
+    const baseCount = await this.#baseActivityCount(today, days);
+    if (baseCount === 0) return result;
+
+    Sentry.captureMessage(`Stale activity materialized views detected (${label})`, {
+      level: "warning",
+      tags: { userId: this.userId },
+      extra: { baseCount },
+    });
+    try {
+      await this.#refreshActivityViews();
+      return queryFn();
+    } catch (refreshError) {
+      Sentry.captureException(refreshError, {
+        tags: { userId: this.userId, context: "staleViewRefresh" },
+      });
+      return result;
+    }
+  }
+
+  async #baseActivityCount(endDate: string, days: number): Promise<number> {
+    const rows = await this.query(
+      z.object({ count: z.coerce.number() }),
+      sql`SELECT count(*)::int AS count FROM fitness.activity
+          WHERE user_id = ${this.userId}
+            AND started_at > ${timestampWindowStart(endDate, days)}`,
+    );
+    return rows[0]?.count ?? 0;
+  }
+
+  async #refreshActivityViews(): Promise<void> {
+    for (const view of ACTIVITY_VIEWS) {
+      try {
+        await this.db.execute(sql.raw(`REFRESH MATERIALIZED VIEW CONCURRENTLY ${view}`));
+      } catch {
+        await this.db.execute(sql.raw(`REFRESH MATERIALIZED VIEW ${view}`));
+      }
+    }
   }
 }

@@ -124,15 +124,30 @@ export interface ListInput {
 
 /** Data access for activity queries. */
 export class ActivityRepository extends BaseRepository {
-  /** Paginated activity list with summary metrics. */
+  /** Paginated activity list with summary metrics. Self-heals stale views on the first page. */
   async list(
     input: ListInput,
   ): Promise<{ items: Array<Record<string, unknown>>; totalCount: number }> {
+    const queryFn = () => this.#listRawRows(input);
+
+    // Only check staleness on the first page to avoid expensive refreshes on
+    // legitimate empty later pages.
+    const rows =
+      input.offset === 0
+        ? await this.queryWithViewRefresh(queryFn, input.days, "activityList")
+        : await queryFn();
+
+    const totalCount = rows.length > 0 ? (rows[0]?.total_count ?? 0) : 0;
+    const items = rows.map(({ total_count, ...rest }) => rest);
+    return { items, totalCount };
+  }
+
+  #listRawRows(input: ListInput) {
     const typeFilter =
       input.activityTypes && input.activityTypes.length > 0
         ? sql`AND a.activity_type = ANY(${input.activityTypes})`
         : sql``;
-    const rows = await this.query(
+    return this.query(
       activityListRowSchema,
       sql`SELECT
             a.id,
@@ -155,9 +170,6 @@ export class ActivityRepository extends BaseRepository {
           ORDER BY a.started_at DESC
           LIMIT ${input.limit} OFFSET ${input.offset}`,
     );
-    const totalCount = rows.length > 0 ? (rows[0]?.total_count ?? 0) : 0;
-    const items = rows.map(({ total_count, ...rest }) => rest);
-    return { items, totalCount };
   }
 
   /** Single activity with full detail row. Returns null when not found. */
@@ -273,32 +285,6 @@ export class ActivityRepository extends BaseRepository {
     );
 
     return mapHrZones(rows);
-  }
-
-  /** Count activities in the base table (not the materialized view) for this user within a time window. */
-  async baseTableCount(endDate: string, days: number): Promise<number> {
-    const rows = await this.query(
-      z.object({ count: z.coerce.number() }),
-      sql`SELECT count(*)::int AS count FROM fitness.activity
-          WHERE user_id = ${this.userId}
-            AND started_at > ${timestampWindowStart(endDate, days)}`,
-    );
-    return rows[0]?.count ?? 0;
-  }
-
-  /** Refresh the activity-related materialized views. */
-  async refreshActivityViews(): Promise<void> {
-    for (const view of [
-      "fitness.v_activity",
-      "fitness.deduped_sensor",
-      "fitness.activity_summary",
-    ]) {
-      try {
-        await this.db.execute(sql.raw(`REFRESH MATERIALIZED VIEW CONCURRENTLY ${view}`));
-      } catch {
-        await this.db.execute(sql.raw(`REFRESH MATERIALIZED VIEW ${view}`));
-      }
-    }
   }
 
   /** Delete an activity by ID. */

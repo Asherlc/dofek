@@ -79,12 +79,39 @@ describe("TrainingRepository", () => {
           avg_cadence: 82.3,
           hr_samples: 3600,
           power_samples: null,
+          distance_meters: 10500,
         },
       ]);
       const result = await repo.getActivityStats(90);
       expect(result).toHaveLength(1);
       expect(result[0]?.activity_type).toBe("running");
       expect(result[0]?.avg_hr).toBe(145.5);
+      expect(result[0]?.distance_meters).toBe(10500);
+    });
+
+    it("returns activities without sensor data (null stats from LEFT JOIN)", async () => {
+      const { repo } = makeRepository([
+        {
+          id: "act-no-sensor",
+          activity_type: "strength_training",
+          name: "Gym Session",
+          started_at: "2024-01-15T10:00:00Z",
+          ended_at: "2024-01-15T11:00:00Z",
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          max_power: null,
+          avg_cadence: null,
+          hr_samples: null,
+          power_samples: null,
+          distance_meters: null,
+        },
+      ]);
+      const result = await repo.getActivityStats(90);
+      expect(result).toHaveLength(1);
+      expect(result[0]?.id).toBe("act-no-sensor");
+      expect(result[0]?.avg_hr).toBeNull();
+      expect(result[0]?.distance_meters).toBeNull();
     });
 
     it("handles Date objects for timestamps (postgres-js on Linux/ARM)", async () => {
@@ -102,6 +129,7 @@ describe("TrainingRepository", () => {
           avg_cadence: 90,
           hr_samples: 5400,
           power_samples: 5400,
+          distance_meters: 42000,
         },
       ]);
       const result = await repo.getActivityStats(90);
