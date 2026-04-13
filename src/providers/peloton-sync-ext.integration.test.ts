@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity, sensorSample } from "../db/schema.ts";
+import { activity, metricStream } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
@@ -285,13 +285,13 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]?.activityType).toBe("meditation");
 
-    // No sensor_sample rows for this activity (empty metrics)
+    // No metric_stream rows for this activity (empty metrics)
     const activityId = rows[0]?.id;
     if (activityId) {
       const streams = await ctx.db
         .select()
-        .from(sensorSample)
-        .where(eq(sensorSample.activityId, activityId));
+        .from(metricStream)
+        .where(eq(metricStream.activityId, activityId));
       expect(streams).toHaveLength(0);
     }
   });
@@ -360,7 +360,7 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
 
     expect(result.errors).toHaveLength(0);
 
-    // Each sample has heart_rate and power, so we should store 1200 sensor_sample rows.
+    // Each sample has heart_rate and power, so we should store 1200 metric_stream rows.
     const activityRows = await ctx.db
       .select()
       .from(activity)
@@ -371,8 +371,8 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     if (activityId) {
       const streams = await ctx.db
         .select()
-        .from(sensorSample)
-        .where(eq(sensorSample.activityId, activityId));
+        .from(metricStream)
+        .where(eq(metricStream.activityId, activityId));
       const heartRateSamples = streams.filter((sample) => sample.channel === "heart_rate");
       const powerSamples = streams.filter((sample) => sample.channel === "power");
       expect(heartRateSamples).toHaveLength(largeSampleCount);
@@ -380,7 +380,7 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     }
   });
 
-  it("deletes old sensor_sample rows on re-sync before inserting new ones", async () => {
+  it("deletes old metric_stream rows on re-sync before inserting new ones", async () => {
     await saveTokens(ctx.db, "peloton", {
       accessToken: "valid-token",
       refreshToken: "valid-refresh",
@@ -434,7 +434,7 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     await provider.sync(ctx.db, since);
     await provider.sync(ctx.db, since);
 
-    // Should have exactly 2 heart-rate sensor_sample rows (not 4)
+    // Should have exactly 2 heart-rate metric_stream rows (not 4)
     const activityRows = await ctx.db
       .select()
       .from(activity)
@@ -443,8 +443,8 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     if (activityId) {
       const streams = await ctx.db
         .select()
-        .from(sensorSample)
-        .where(eq(sensorSample.activityId, activityId));
+        .from(metricStream)
+        .where(eq(metricStream.activityId, activityId));
       const heartRateSamples = streams.filter((sample) => sample.channel === "heart_rate");
       expect(heartRateSamples).toHaveLength(2);
     }
@@ -508,7 +508,7 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     expect(result.errors).toHaveLength(0);
 
     // sampleCount uses hrSeries?.values.length ?? powerSeries?.values.length ?? cadenceSeries?.values.length ?? 0
-    // None of those exist, so sampleCount = 0, no sensor_sample rows inserted
+    // None of those exist, so sampleCount = 0, no metric_stream rows inserted
     const activityRows = await ctx.db
       .select()
       .from(activity)

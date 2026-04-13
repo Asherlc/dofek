@@ -1,14 +1,14 @@
 import { eq } from "drizzle-orm";
 import type { SyncDatabase } from "../../db/index.ts";
+import { writeMetricStreamBatch } from "../../db/metric-stream-writer.ts";
 import {
   activity,
   bodyMeasurement,
   dailyMetrics,
-  sensorSample,
+  metricStream,
   sleepSession,
 } from "../../db/schema.ts";
 import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
-import { dualWriteToSensorSample } from "../../db/sensor-sample-writer.ts";
 import { logger } from "../../logger.ts";
 import { parseTcx, tcxToSensorSamples } from "../../tcx/parser.ts";
 import type { SyncError } from "../types.ts";
@@ -62,10 +62,10 @@ export async function persistActivity(
       const sampleRows = tcxToSensorSamples(trackpoints, PROVIDER_ID, activityId);
 
       if (sampleRows.length > 0) {
-        await db.delete(sensorSample).where(eq(sensorSample.activityId, activityId));
-        await dualWriteToSensorSample(db, sampleRows, SOURCE_TYPE_API);
+        await db.delete(metricStream).where(eq(metricStream.activityId, activityId));
+        await writeMetricStreamBatch(db, sampleRows, SOURCE_TYPE_API);
         logger.info(
-          `[fitbit] Inserted ${sampleRows.length} sensor sample rows for activity ${parsed.externalId}`,
+          `[fitbit] Inserted ${sampleRows.length} metric stream rows for activity ${parsed.externalId}`,
         );
       }
     } catch (tcxError) {

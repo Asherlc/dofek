@@ -166,7 +166,7 @@ export class WahooProvider implements WebhookProvider {
     const result = await persister.persist(parsed, {
       deleteExistingSamples: true,
       formatLogMessage: (rowCount, externalId) =>
-        `[wahoo] Webhook: inserted ${rowCount} sensor sample rows for workout ${externalId}`,
+        `[wahoo] Webhook: inserted ${rowCount} metric stream rows for workout ${externalId}`,
     });
 
     if (result.synced) {

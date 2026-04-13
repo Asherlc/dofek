@@ -5,9 +5,9 @@ import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { activity, dailyMetrics, sensorSample, sleepSession } from "../db/schema.ts";
+import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
+import { activity, dailyMetrics, metricStream, sleepSession } from "../db/schema.ts";
 import { SOURCE_TYPE_FILE } from "../db/sensor-channels.ts";
-import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { parseFitFile } from "../fit/parser.ts";
@@ -391,10 +391,10 @@ export class CorosProvider implements WebhookProvider {
                   );
 
                   if (metricRows.length > 0) {
-                    await db.delete(sensorSample).where(eq(sensorSample.activityId, activityId));
-                    await dualWriteToSensorSample(db, metricRows, SOURCE_TYPE_FILE);
+                    await db.delete(metricStream).where(eq(metricStream.activityId, activityId));
+                    await writeMetricStreamBatch(db, metricRows, SOURCE_TYPE_FILE);
                     logger.info(
-                      `[coros] Inserted ${metricRows.length} sensor sample rows for workout ${parsed.externalId}`,
+                      `[coros] Inserted ${metricRows.length} metric stream rows for workout ${parsed.externalId}`,
                     );
                   }
                 } catch (fitError) {

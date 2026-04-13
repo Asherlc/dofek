@@ -77,16 +77,16 @@ describe("ActivityRecordingRepository", () => {
       const { repository, execute } = makeRepository([
         [], // ensureProvider
         [{ id: "activity-456" }], // INSERT RETURNING
-        [], // sensor_sample: lat
-        [], // sensor_sample: lng
-        [], // sensor_sample: gps_accuracy
-        [], // sensor_sample: altitude
-        [], // sensor_sample: speed
+        [], // metric_stream: lat
+        [], // metric_stream: lng
+        [], // metric_stream: gps_accuracy
+        [], // metric_stream: altitude
+        [], // metric_stream: speed
       ]);
 
       const activityId = await repository.saveActivity(makeInput({ samples }));
       expect(activityId).toBe("activity-456");
-      // ensureProvider + INSERT activity + 5 sensor_sample channels
+      // ensureProvider + INSERT activity + 5 metric_stream channels
       expect(execute).toHaveBeenCalledTimes(7);
     });
 
@@ -104,21 +104,21 @@ describe("ActivityRecordingRepository", () => {
       const { repository, execute } = makeRepository([
         [], // ensureProvider
         [{ id: "activity-789" }], // INSERT RETURNING
-        [], // batch 1: sensor_sample lat
-        [], // batch 1: sensor_sample lng
-        [], // batch 1: sensor_sample gps_accuracy
-        [], // batch 1: sensor_sample altitude
-        [], // batch 1: sensor_sample speed
-        [], // batch 2: sensor_sample lat
-        [], // batch 2: sensor_sample lng
-        [], // batch 2: sensor_sample gps_accuracy
-        [], // batch 2: sensor_sample altitude
-        [], // batch 2: sensor_sample speed
+        [], // batch 1: metric_stream lat
+        [], // batch 1: metric_stream lng
+        [], // batch 1: metric_stream gps_accuracy
+        [], // batch 1: metric_stream altitude
+        [], // batch 1: metric_stream speed
+        [], // batch 2: metric_stream lat
+        [], // batch 2: metric_stream lng
+        [], // batch 2: metric_stream gps_accuracy
+        [], // batch 2: metric_stream altitude
+        [], // batch 2: metric_stream speed
       ]);
 
       const activityId = await repository.saveActivity(makeInput({ samples }));
       expect(activityId).toBe("activity-789");
-      // ensureProvider + INSERT activity + 2 batches × 5 sensor_sample channels
+      // ensureProvider + INSERT activity + 2 batches × 5 metric_stream channels
       expect(execute).toHaveBeenCalledTimes(12);
     });
 
@@ -135,15 +135,15 @@ describe("ActivityRecordingRepository", () => {
       const { repository, execute } = makeRepository([
         [], // ensureProvider
         [{ id: "activity-batch" }], // INSERT RETURNING
-        [], // sensor_sample: lat
-        [], // sensor_sample: lng
-        [], // sensor_sample: gps_accuracy
-        [], // sensor_sample: altitude
-        [], // sensor_sample: speed
+        [], // metric_stream: lat
+        [], // metric_stream: lng
+        [], // metric_stream: gps_accuracy
+        [], // metric_stream: altitude
+        [], // metric_stream: speed
       ]);
 
       await repository.saveActivity(makeInput({ samples }));
-      // ensureProvider + INSERT activity + 5 sensor_sample channels
+      // ensureProvider + INSERT activity + 5 metric_stream channels
       expect(execute).toHaveBeenCalledTimes(7);
     });
 
@@ -166,7 +166,7 @@ describe("ActivityRecordingRepository", () => {
 
       const activityId = await repository.saveActivity(makeInput({ samples }));
       expect(activityId).toBe("activity-null");
-      // ensureProvider + INSERT activity (all GPS values null, no sensor_sample inserts)
+      // ensureProvider + INSERT activity (all GPS values null, no metric_stream inserts)
       expect(execute).toHaveBeenCalledTimes(2);
     });
   });

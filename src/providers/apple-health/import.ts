@@ -13,8 +13,8 @@ import {
   labPanel,
   labResult,
   medication,
+  metricStream,
   nutritionDaily,
-  sensorSample,
 } from "../../db/schema.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
 import { ensureProvider } from "../../db/tokens.ts";
@@ -138,16 +138,16 @@ export async function runImport(
 
   try {
     // Delete existing rows for this provider/time range so re-imports don't
-    // create duplicates (sensor_sample has no uniqueness constraint) and additive
+    // create duplicates (metric_stream has no uniqueness constraint) and additive
     // daily metric upserts don't double-count across re-imports.
     const sinceDate = sql`${since.toISOString().slice(0, 10)}::date`;
     await db
-      .delete(sensorSample)
+      .delete(metricStream)
       .where(
         and(
-          eq(sensorSample.userId, scopedUserId),
-          eq(sensorSample.providerId, providerId),
-          gte(sensorSample.recordedAt, since),
+          eq(metricStream.userId, scopedUserId),
+          eq(metricStream.providerId, providerId),
+          gte(metricStream.recordedAt, since),
         ),
       );
     await db
@@ -234,7 +234,7 @@ export async function runImport(
       );
     }
 
-    // Aggregate SpO2 and skin temperature from sensor_sample into daily_metrics
+    // Aggregate SpO2 and skin temperature from metric_stream into daily_metrics
     await aggregateSpO2ToDailyMetrics(db, providerId, since);
     await aggregateSkinTempToDailyMetrics(db, providerId, since);
 

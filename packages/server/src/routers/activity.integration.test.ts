@@ -126,7 +126,7 @@ describe("Activity router", () => {
   });
 
   describe("list", () => {
-    it("falls back to metric_stream-backed summary when sensor_sample rows are not available yet", async () => {
+    it("falls back to metric_stream-backed summary when metric_stream rows are not available yet", async () => {
       const today = new Date().toISOString().slice(0, 10);
       const result = await query("activity.list", {
         days: 30,
@@ -168,7 +168,7 @@ describe("Activity router", () => {
       expect(result.error.data.code).toBe("BAD_REQUEST");
     });
 
-    it("falls back to metric_stream when sensor_sample rows are not available yet", async () => {
+    it("falls back to metric_stream when metric_stream rows are not available yet", async () => {
       const result = await query("activity.stream", {
         id: metricOnlyActivityId,
         maxPoints: 500,
@@ -212,7 +212,7 @@ describe("Activity router", () => {
       }
     });
 
-    it("falls back to metric_stream when sensor_sample rows are not available yet", async () => {
+    it("falls back to metric_stream when metric_stream rows are not available yet", async () => {
       const result = await query("activity.hrZones", {
         id: metricOnlyActivityId,
       });

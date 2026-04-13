@@ -1016,7 +1016,7 @@ describe("StravaProvider.sync — additional coverage", () => {
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
 
     expect(result.recordsSynced).toBe(1);
-    // 1001 HR samples map to 1001 sensor_sample rows in one batch
+    // 1001 HR samples map to 1001 metric_stream rows in one batch
     expect(metricBatchSizes).toEqual([1001]);
     expect(result.errors).toHaveLength(0);
   });

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ZodError } from "zod";
 import * as resolveTokensModule from "../auth/resolve-tokens.ts";
-import * as sensorSampleWriterModule from "../db/sensor-sample-writer.ts";
+import * as metricStreamWriterModule from "../db/metric-stream-writer.ts";
 import type { ParsedFitRecord, ParsedFitSession } from "../fit/parser.ts";
 import * as fitParserModule from "../fit/parser.ts";
 import { fitRecordsToSensorSamples as fitRecordsToMetricStream } from "../fit/records.ts";
@@ -996,7 +996,7 @@ describe("WahooProvider.syncWebhookEvent", () => {
     expect(result.errors[0]?.message).toContain("FIT file");
   });
 
-  it("writes sensor samples for FIT webhook payloads after clearing prior activity rows", async () => {
+  it("writes metric streams for FIT webhook payloads after clearing prior activity rows", async () => {
     vi.spyOn(fitParserModule, "parseFitFile").mockResolvedValue({
       session: sampleParsedFitSession,
       records: [
@@ -1014,7 +1014,7 @@ describe("WahooProvider.syncWebhookEvent", () => {
       events: [],
     });
     const dualWriteSpy = vi
-      .spyOn(sensorSampleWriterModule, "dualWriteToSensorSample")
+      .spyOn(metricStreamWriterModule, "writeMetricStreamBatch")
       .mockResolvedValue(0);
     const loggerInfoSpy = vi
       .spyOn(loggerModule.logger, "info")
@@ -1079,7 +1079,7 @@ describe("WahooProvider.syncWebhookEvent", () => {
     expect(whereSpy).toHaveBeenCalledTimes(1);
     expect(dualWriteSpy).toHaveBeenCalledTimes(1);
     expect(loggerInfoSpy).toHaveBeenCalledWith(
-      "[wahoo] Webhook: inserted 1 sensor sample rows for workout 42",
+      "[wahoo] Webhook: inserted 1 metric stream rows for workout 42",
     );
   });
 
@@ -1171,7 +1171,7 @@ describe("WahooProvider.syncWebhookEvent", () => {
 });
 
 describe("WahooProvider.sync", () => {
-  it("writes sensor sample rows from FIT workouts during sync", async () => {
+  it("writes metric stream rows from FIT workouts during sync", async () => {
     vi.spyOn(resolveTokensModule, "resolveOAuthTokens").mockResolvedValue({
       accessToken: "access-token",
       refreshToken: "refresh-token",
@@ -1195,7 +1195,7 @@ describe("WahooProvider.sync", () => {
       events: [],
     });
     const dualWriteSpy = vi
-      .spyOn(sensorSampleWriterModule, "dualWriteToSensorSample")
+      .spyOn(metricStreamWriterModule, "writeMetricStreamBatch")
       .mockResolvedValue(0);
     const loggerInfoSpy = vi
       .spyOn(loggerModule.logger, "info")
@@ -1244,7 +1244,7 @@ describe("WahooProvider.sync", () => {
     expect(result.errors).toHaveLength(0);
     expect(dualWriteSpy).toHaveBeenCalledTimes(1);
     expect(loggerInfoSpy).toHaveBeenCalledWith(
-      "[wahoo] Inserted 1 sensor sample rows for workout 42",
+      "[wahoo] Inserted 1 metric stream rows for workout 42",
     );
   });
 });

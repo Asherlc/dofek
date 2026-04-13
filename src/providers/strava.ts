@@ -10,9 +10,9 @@ import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { activity, sensorSample } from "../db/schema.ts";
+import { type MetricStreamSourceRow, writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
+import { activity, metricStream } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
-import { dualWriteToSensorSample, type SensorSampleSourceRow } from "../db/sensor-sample-writer.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { logger } from "../logger.ts";
 import type {
@@ -169,7 +169,7 @@ export function stravaStreamsToMetricStream(
   activityId: string,
   startedAt: Date,
   activityType?: string,
-): SensorSampleSourceRow[] {
+): MetricStreamSourceRow[] {
   // Scalar streams contain number[], latlng contains [number, number][]
   function isScalarArray(data: number[] | [number, number][]): data is number[] {
     return data.length === 0 || !Array.isArray(data[0]);
@@ -610,7 +610,7 @@ export class StravaProvider implements WebhookProvider {
         .returning({ id: activity.id });
       const deletedRow = deleted[0];
       if (deletedRow) {
-        await db.delete(sensorSample).where(eq(sensorSample.activityId, deletedRow.id));
+        await db.delete(metricStream).where(eq(metricStream.activityId, deletedRow.id));
         logger.info(
           `[strava] Deleted activity ${event.objectId} via webhook for user ${scopedUserId}`,
         );
@@ -677,10 +677,10 @@ export class StravaProvider implements WebhookProvider {
 
       if (metricRows.length > 0) {
         // Delete existing sensor rows then re-insert.
-        await db.delete(sensorSample).where(eq(sensorSample.activityId, activityId));
-        await dualWriteToSensorSample(db, metricRows, SOURCE_TYPE_API);
+        await db.delete(metricStream).where(eq(metricStream.activityId, activityId));
+        await writeMetricStreamBatch(db, metricRows, SOURCE_TYPE_API);
         logger.info(
-          `[strava] Webhook: inserted ${metricRows.length} sensor sample rows for activity ${event.objectId}`,
+          `[strava] Webhook: inserted ${metricRows.length} metric stream rows for activity ${event.objectId}`,
         );
       }
     } catch (streamErr) {
@@ -850,9 +850,9 @@ export class StravaProvider implements WebhookProvider {
             );
 
             if (metricRows.length > 0) {
-              await dualWriteToSensorSample(db, metricRows, SOURCE_TYPE_API);
+              await writeMetricStreamBatch(db, metricRows, SOURCE_TYPE_API);
               logger.info(
-                `[strava] Inserted ${metricRows.length} sensor sample rows for activity ${act.externalId}`,
+                `[strava] Inserted ${metricRows.length} metric stream rows for activity ${act.externalId}`,
               );
             }
           } catch (streamErr) {

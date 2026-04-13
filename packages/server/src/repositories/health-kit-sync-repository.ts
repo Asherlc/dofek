@@ -603,7 +603,7 @@ export class HealthKitSyncRepository {
     return samples.length;
   }
 
-  /** Process sensor samples */
+  /** Process metric streams */
   async processMetricStream(samples: HealthKitSample[]): Promise<number> {
     let inserted = 0;
     for (let index = 0; index < samples.length; index += BATCH_SIZE) {
@@ -616,7 +616,7 @@ export class HealthKitSyncRepository {
           ? Math.round(sample.value)
           : sample.value;
         await this.#db.execute(
-          sql`INSERT INTO fitness.sensor_sample (recorded_at, user_id, provider_id, device_id, source_type, channel, scalar)
+          sql`INSERT INTO fitness.metric_stream (recorded_at, user_id, provider_id, device_id, source_type, channel, scalar)
               VALUES (
                 ${sample.startDate}::timestamptz,
                 ${this.#userId},
@@ -698,7 +698,7 @@ export class HealthKitSyncRepository {
     return inserted;
   }
 
-  /** Link heart-rate sensor_sample rows to overlapping workouts. */
+  /** Link heart-rate metric_stream rows to overlapping workouts. */
   async linkUnassignedHeartRateToWorkouts(bounds?: {
     startAt?: string;
     endAt?: string;
@@ -714,7 +714,7 @@ export class HealthKitSyncRepository {
     if (bounds?.endAt) filters.push(sql`ss.recorded_at <= ${bounds.endAt}::timestamptz`);
 
     const linked = await this.#db.execute(
-      sql`UPDATE fitness.sensor_sample ss
+      sql`UPDATE fitness.metric_stream ss
           SET activity_id = (
             SELECT a.id
             FROM fitness.activity a
@@ -891,7 +891,7 @@ export class HealthKitSyncRepository {
             user_id,
             device_id AS source_name,
             AVG(scalar) * 100 AS spo2_avg
-          FROM fitness.sensor_sample
+          FROM fitness.metric_stream
           WHERE provider_id = ${PROVIDER_ID}
             AND user_id = ${this.#userId}
             AND channel = 'spo2'
@@ -918,7 +918,7 @@ export class HealthKitSyncRepository {
             user_id,
             device_id AS source_name,
             AVG(scalar) AS skin_temp_c
-          FROM fitness.sensor_sample
+          FROM fitness.metric_stream
           WHERE provider_id = ${PROVIDER_ID}
             AND user_id = ${this.#userId}
             AND channel = 'skin_temperature'

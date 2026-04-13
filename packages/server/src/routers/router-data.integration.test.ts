@@ -141,7 +141,7 @@ describe("Router data coverage", () => {
             ) VALUES ${metricValues.join(",\n")}`),
           );
           await testCtx.db.execute(
-            sql.raw(`INSERT INTO fitness.sensor_sample (
+            sql.raw(`INSERT INTO fitness.metric_stream (
               recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
             ) VALUES ${sensorValues.join(",\n")}`),
           );
@@ -185,7 +185,7 @@ describe("Router data coverage", () => {
           ) VALUES ${metricValues.join(",\n")}`),
         );
         await testCtx.db.execute(
-          sql.raw(`INSERT INTO fitness.sensor_sample (
+          sql.raw(`INSERT INTO fitness.metric_stream (
             recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
           ) VALUES ${sensorValues.join(",\n")}`),
         );

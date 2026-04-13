@@ -2,9 +2,9 @@ import { eq } from "drizzle-orm";
 import type { TokenSet } from "../../auth/oauth.ts";
 import { refreshAccessToken } from "../../auth/oauth.ts";
 import type { SyncDatabase } from "../../db/index.ts";
-import { activity, dailyMetrics, sensorSample, sleepSession, sleepStage } from "../../db/schema.ts";
+import { writeMetricStreamBatch } from "../../db/metric-stream-writer.ts";
+import { activity, dailyMetrics, metricStream, sleepSession, sleepStage } from "../../db/schema.ts";
 import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
-import { dualWriteToSensorSample } from "../../db/sensor-sample-writer.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { deleteTokens, ensureProvider, loadTokens, saveTokens } from "../../db/tokens.ts";
 import { logger } from "../../logger.ts";
@@ -215,10 +215,10 @@ export class PolarSyncService {
 
       if (sampleRows.length === 0) return;
 
-      await this.#db.delete(sensorSample).where(eq(sensorSample.activityId, activityId));
-      await dualWriteToSensorSample(this.#db, sampleRows, SOURCE_TYPE_API);
+      await this.#db.delete(metricStream).where(eq(metricStream.activityId, activityId));
+      await writeMetricStreamBatch(this.#db, sampleRows, SOURCE_TYPE_API);
       logger.info(
-        `[polar] Inserted ${sampleRows.length} sensor sample rows for exercise ${exerciseId}`,
+        `[polar] Inserted ${sampleRows.length} metric stream rows for exercise ${exerciseId}`,
       );
     } catch (error) {
       this.#errors.push({

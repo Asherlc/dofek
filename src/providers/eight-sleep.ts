@@ -10,9 +10,9 @@ import {
 } from "eight-sleep-client/parsing";
 import type { EightSleepTrendDay } from "eight-sleep-client/types";
 import type { SyncDatabase } from "../db/index.ts";
+import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
 import { bodyMeasurement, dailyMetrics, sleepSession } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
-import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import type {
@@ -313,7 +313,7 @@ export class EightSleepProvider implements SyncProvider {
               recordedAt: s.recordedAt,
               heartRate: s.heartRate,
             }));
-            await dualWriteToSensorSample(db, metricRows, SOURCE_TYPE_API);
+            await writeMetricStreamBatch(db, metricRows, SOURCE_TYPE_API);
             totalRecords += samples.length;
           }
 

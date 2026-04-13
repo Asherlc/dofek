@@ -102,11 +102,11 @@ describe("whoopBleSyncRouter", () => {
 
       // First db.execute call is the provider upsert (before any data inserts)
       expect(mockDb.execute).toHaveBeenCalled();
-      // 3 calls: provider upsert + HR sensor_sample + orientation sensor_sample
+      // 3 calls: provider upsert + HR metric_stream + orientation metric_stream
       expect(mockDb.execute.mock.calls.length).toBeGreaterThanOrEqual(3);
     });
 
-    it("inserts HR into sensor_sample for samples with heartRate > 0", async () => {
+    it("inserts HR into metric_stream for samples with heartRate > 0", async () => {
       const trpcCaller = caller(ctx);
       await trpcCaller.pushRealtimeData({
         deviceId: "WHOOP Strap",
@@ -122,7 +122,7 @@ describe("whoopBleSyncRouter", () => {
         ],
       });
 
-      // 3 calls: ensure provider + HR sensor_sample + orientation sensor_sample
+      // 3 calls: ensure provider + HR metric_stream + orientation metric_stream
       expect(mockDb.execute).toHaveBeenCalledTimes(3);
 
       const heartRateInsert = mockDb.execute.mock.calls[1]?.[0];
@@ -149,11 +149,11 @@ describe("whoopBleSyncRouter", () => {
         ],
       });
 
-      // 2 calls: ensure provider + orientation sensor_sample
+      // 2 calls: ensure provider + orientation metric_stream
       expect(mockDb.execute).toHaveBeenCalledTimes(2);
     });
 
-    it("inserts orientation data into sensor_sample", async () => {
+    it("inserts orientation data into metric_stream", async () => {
       const trpcCaller = caller(ctx);
       const result = await trpcCaller.pushRealtimeData({
         deviceId: "WHOOP Strap",
@@ -209,7 +209,7 @@ describe("whoopBleSyncRouter", () => {
         ],
       });
 
-      // 2 calls: ensure provider + HR sensor_sample
+      // 2 calls: ensure provider + HR metric_stream
       expect(mockDb.execute).toHaveBeenCalledTimes(2);
     });
 
@@ -257,7 +257,7 @@ describe("whoopBleSyncRouter", () => {
         ],
       });
 
-      // 3 calls: ensure provider + HR sensor_sample + orientation sensor_sample
+      // 3 calls: ensure provider + HR metric_stream + orientation metric_stream
       expect(mockDb.execute).toHaveBeenCalledTimes(3);
     });
 
@@ -418,7 +418,7 @@ describe("whoopBleSyncRouter", () => {
       });
 
       expect(result).toEqual({ inserted: 2500 });
-      // 1 ensure provider + 2 batches × (HR sensor_sample + orientation sensor_sample) = 5 calls
+      // 1 ensure provider + 2 batches × (HR metric_stream + orientation metric_stream) = 5 calls
       expect(mockDb.execute).toHaveBeenCalledTimes(5);
     });
   });

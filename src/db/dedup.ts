@@ -53,7 +53,7 @@ export async function refreshDedupViews(db: SyncDatabase): Promise<void> {
 /**
  * Update user_profile.max_hr from the highest observed heart rate across all activities.
  * Reads from activity_summary (which derives from deduped_sensor, covering both
- * sensor_sample and legacy metric_stream data).
+ * metric_stream and legacy metric_stream data).
  * Called after syncs that touch activity data.
  */
 export async function updateUserMaxHr(db: SyncDatabase): Promise<void> {

@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity, sensorSample } from "../db/schema.ts";
+import { activity, metricStream } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
@@ -151,7 +151,7 @@ describe("StravaProvider.sync() (integration)", () => {
     if (ctx) await ctx.cleanup();
   });
 
-  it("syncs activities with streams into activity and sensor_sample", async () => {
+  it("syncs activities with streams into activity and metric_stream", async () => {
     await saveTokens(ctx.db, "strava", {
       accessToken: "valid-token",
       refreshToken: "valid-refresh",
@@ -192,11 +192,11 @@ describe("StravaProvider.sync() (integration)", () => {
     if (!run) throw new Error("expected activity 1002");
     expect(run.activityType).toBe("running");
 
-    // Verify sensor_sample rows
+    // Verify metric_stream rows
     const metrics = await ctx.db
       .select()
-      .from(sensorSample)
-      .where(eq(sensorSample.activityId, ride.id));
+      .from(metricStream)
+      .where(eq(metricStream.activityId, ride.id));
     const heartRateSamples = metrics.filter((sample) => sample.channel === "heart_rate");
     const powerSamples = metrics.filter((sample) => sample.channel === "power");
     expect(heartRateSamples).toHaveLength(3);

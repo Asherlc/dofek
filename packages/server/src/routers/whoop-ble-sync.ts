@@ -43,7 +43,7 @@ async function ensureProvider(database: Database, userId: string) {
   );
 }
 
-/** Insert WHOOP BLE realtime samples into sensor_sample. */
+/** Insert WHOOP BLE realtime samples into metric_stream. */
 async function insertRealtimeDataBatch(
   database: Database,
   userId: string,
@@ -66,7 +66,7 @@ async function insertRealtimeDataBatch(
       );
 
       await database.execute(
-        sql`INSERT INTO fitness.sensor_sample
+        sql`INSERT INTO fitness.metric_stream
             (recorded_at, user_id, provider_id, device_id, source_type, channel, scalar)
             VALUES ${sql.join(hrSensorValues, sql`, `)}`,
       );
@@ -78,7 +78,7 @@ async function insertRealtimeDataBatch(
             sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${deviceId}, ${"ble"}, ${RR_INTERVAL_MS}, ${sample.rrIntervalMs}::real)`,
         );
         await database.execute(
-          sql`INSERT INTO fitness.sensor_sample
+          sql`INSERT INTO fitness.metric_stream
               (recorded_at, user_id, provider_id, device_id, source_type, channel, scalar)
               VALUES ${sql.join(rrValues, sql`, `)}`,
         );
@@ -99,7 +99,7 @@ async function insertRealtimeDataBatch(
           sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${deviceId}, ${"ble"}, ${"orientation"}, ARRAY[${sample.quaternionW}, ${sample.quaternionX}, ${sample.quaternionY}, ${sample.quaternionZ}]::real[])`,
       );
       await database.execute(
-        sql`INSERT INTO fitness.sensor_sample
+        sql`INSERT INTO fitness.metric_stream
             (recorded_at, user_id, provider_id, device_id, source_type, channel, vector)
             VALUES ${sql.join(orientationSensorValues, sql`, `)}`,
       );

@@ -151,7 +151,7 @@ describe("Settings router", () => {
               )`,
         ),
         testCtx.db.execute(
-          sql`INSERT INTO fitness.sensor_sample (recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector)
+          sql`INSERT INTO fitness.metric_stream (recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector)
               VALUES (
                 '2024-01-15T10:00:00Z',
                 ${TEST_USER_ID},

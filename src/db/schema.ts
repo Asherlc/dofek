@@ -582,9 +582,8 @@ export const activityInterval = fitness.table(
 );
 
 // ============================================================
-// Sensor sample (TimescaleDB hypertable — DDL managed by SQL migration, not Drizzle)
-// Unified time-series table for ALL sensor data using a "medium" layout.
-// Replaces metric_stream, inertial_measurement_unit_sample, and orientation_sample.
+// Metric stream (TimescaleDB hypertable — DDL managed by SQL migration, not Drizzle)
+// Unified time-series table for ALL metric data using a per-channel layout.
 // This Drizzle definition exists for type-safe queries/inserts only.
 //
 // Design:
@@ -595,8 +594,8 @@ export const activityInterval = fitness.table(
 //   - `source_type` is informational only (debugging/auditing), not used for priority
 // ============================================================
 
-export const sensorSample = fitness.table(
-  "sensor_sample",
+export const metricStream = fitness.table(
+  "metric_stream",
   {
     recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
     userId: uuid("user_id")
@@ -614,88 +613,17 @@ export const sensorSample = fitness.table(
     vector: real("vector").array(), // multi-axis data (e.g., [x, y, z] for accel)
   },
   (table) => [
-    index("sensor_sample_activity_channel_time_idx").on(
+    index("metric_stream_activity_channel_time_idx").on(
       table.activityId,
       table.channel,
       table.recordedAt,
     ),
-    index("sensor_sample_user_channel_time_idx").on(table.userId, table.channel, table.recordedAt),
-    index("sensor_sample_provider_time_idx").on(table.providerId, table.recordedAt),
-  ],
-);
-
-// ============================================================
-// Legacy tables — retained during migration, will be dropped in a future migration.
-// All new code should use sensorSample instead.
-// ============================================================
-
-/** @deprecated Use sensorSample instead */
-export const metricStream = fitness.table(
-  "metric_stream",
-  {
-    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
-    userId: uuid("user_id")
-      .notNull()
-      .$defaultFn(resolveImplicitUserId)
-      .references(() => userProfile.id),
-    activityId: uuid("activity_id").references(() => activity.id, { onDelete: "cascade" }),
-    providerId: text("provider_id")
-      .notNull()
-      .references(() => provider.id),
-    // Core fields — typed columns for fast queries
-    heartRate: smallint("heart_rate"),
-    power: smallint("power"),
-    cadence: smallint("cadence"),
-    speed: real("speed"), // m/s
-    lat: real("lat"), // degrees
-    lng: real("lng"), // degrees
-    altitude: real("altitude"), // meters
-    temperature: real("temperature"), // celsius
-    grade: real("grade"), // percent
-    verticalSpeed: real("vertical_speed"), // m/s
-    spo2: real("spo2"), // percent (0-1)
-    respiratoryRate: real("respiratory_rate"), // breaths/min
-    gpsAccuracy: smallint("gps_accuracy"), // meters
-    accumulatedPower: integer("accumulated_power"), // cumulative watts
-    stress: smallint("stress"),
-    // Running dynamics
-    leftRightBalance: real("left_right_balance"), // percent
-    verticalOscillation: real("vertical_oscillation"), // mm (running)
-    stanceTime: real("stance_time"), // ms (running)
-    stanceTimePercent: real("stance_time_percent"), // percent (running)
-    stepLength: real("step_length"), // mm (running)
-    verticalRatio: real("vertical_ratio"), // percent (running)
-    stanceTimeBalance: real("stance_time_balance"), // percent (running)
-    groundContactTime: real("ground_contact_time"), // ms
-    strideLength: real("stride_length"), // meters
-    formPower: real("form_power"), // watts
-    legSpringStiff: real("leg_spring_stiff"),
-    airPower: real("air_power"), // watts
-    // Power pedaling dynamics
-    leftTorqueEffectiveness: real("left_torque_effectiveness"), // percent
-    rightTorqueEffectiveness: real("right_torque_effectiveness"), // percent
-    leftPedalSmoothness: real("left_pedal_smoothness"), // percent
-    rightPedalSmoothness: real("right_pedal_smoothness"), // percent
-    combinedPedalSmoothness: real("combined_pedal_smoothness"), // percent
-    // Apple Health / medical
-    bloodGlucose: real("blood_glucose"), // mmol/L
-    audioExposure: real("audio_exposure"), // dBASPL
-    skinTemperature: real("skin_temperature"), // celsius
-    electrodermalActivity: real("electrodermal_activity"), // microsiemens
-    rrIntervalMs: smallint("rr_interval_ms"), // milliseconds (beat-to-beat R-R interval from PPG)
-    // Source device/app name (e.g., "Apple Watch", "Wahoo TICKR")
-    sourceName: text("source_name"),
-    // Complete raw record — every field, no data loss
-    raw: jsonb("raw"),
-  },
-  (table) => [
+    index("metric_stream_user_channel_time_idx").on(table.userId, table.channel, table.recordedAt),
     index("metric_stream_provider_time_idx").on(table.providerId, table.recordedAt),
-    index("metric_stream_activity_time_idx").on(table.activityId, table.recordedAt),
-    index("metric_stream_user_provider_idx").on(table.userId, table.providerId),
   ],
 );
 
-/** @deprecated Use sensorSample instead */
+/** @deprecated Legacy table — retained for reference only, dropped in production. */
 export const inertialMeasurementUnitSample = fitness.table(
   "inertial_measurement_unit_sample",
   {
@@ -719,7 +647,7 @@ export const inertialMeasurementUnitSample = fitness.table(
   (table) => [index("inertial_measurement_unit_user_time_idx").on(table.userId, table.recordedAt)],
 );
 
-/** @deprecated Use sensorSample instead */
+/** @deprecated Legacy table — retained for reference only, dropped in production. */
 export const orientationSample = fitness.table(
   "orientation_sample",
   {

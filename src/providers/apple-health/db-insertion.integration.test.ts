@@ -246,9 +246,9 @@ describe("db-insertion deduplication (integration)", () => {
   });
 
   describe("aggregateSpO2ToDailyMetrics", () => {
-    it("aggregates SpO2 fractions from sensor_sample into daily_metrics as percentage", async () => {
-      // Insert SpO2 readings as fractions (0-1) into sensor_sample
-      await ctx.db.insert(schema.sensorSample).values([
+    it("aggregates SpO2 fractions from metric_stream into daily_metrics as percentage", async () => {
+      // Insert SpO2 readings as fractions (0-1) into metric_stream
+      await ctx.db.insert(schema.metricStream).values([
         {
           providerId: PROVIDER_ID,
           userId: schema.TEST_USER_ID,
@@ -292,9 +292,9 @@ describe("db-insertion deduplication (integration)", () => {
   });
 
   describe("aggregateSkinTempToDailyMetrics", () => {
-    it("aggregates wrist temperature from sensor_sample into daily_metrics", async () => {
-      // Insert skin temperature readings into sensor_sample
-      await ctx.db.insert(schema.sensorSample).values([
+    it("aggregates wrist temperature from metric_stream into daily_metrics", async () => {
+      // Insert skin temperature readings into metric_stream
+      await ctx.db.insert(schema.metricStream).values([
         {
           providerId: PROVIDER_ID,
           userId: schema.TEST_USER_ID,

@@ -242,7 +242,7 @@ export const healthspanRouter = router({
                 SELECT
                   COUNT(*) FILTER (WHERE ms2.scalar < rhr2.resting_hr + (up3.max_hr - rhr2.resting_hr) * 0.8) AS aerobic_count,
                   COUNT(*) FILTER (WHERE ms2.scalar >= rhr2.resting_hr + (up3.max_hr - rhr2.resting_hr) * 0.8) AS hi_count
-                FROM fitness.sensor_sample ms2
+                FROM fitness.metric_stream ms2
                 WHERE ms2.activity_id = asum.activity_id
                   AND ms2.channel = 'heart_rate'
               ) cnt ON true

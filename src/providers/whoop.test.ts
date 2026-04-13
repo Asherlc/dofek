@@ -1793,7 +1793,7 @@ describe("WhoopProvider.sync() — HR stream sync", () => {
     expect(result.provider).toBe("whoop");
     expect(result.recordsSynced).toBeGreaterThanOrEqual(3);
 
-    // Verify sensor_sample batch insert with correct HR values
+    // Verify metric_stream batch insert with correct HR values
     const valuesCallArgs = getValuesCallArgs(db);
     const hrBatch = findValuesBatch(
       valuesCallArgs,

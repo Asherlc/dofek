@@ -268,7 +268,7 @@ describe("upsertMetricStreamBatch", () => {
 
     const count = await upsertMetricStreamBatch(db, "p1", records);
     expect(count).toBe(1500);
-    // single sensor_sample batch (default batch size is 5000)
+    // single metric_stream batch (default batch size is 5000)
     expect(capture.values).toHaveLength(1);
     expect(capture.values[0]).toHaveLength(1500);
   });
@@ -1124,7 +1124,7 @@ describe("upsertWorkoutBatch", () => {
 
     await upsertWorkoutBatch(db, "p1", [makeWorkout({ routeLocations: [loc] })]);
 
-    // First insert is the activity, second is sensor_sample rows.
+    // First insert is the activity, second is metric_stream rows.
     expect(capture.values).toHaveLength(2);
     expect(capture.values[1]).toContainEqual(
       expect.objectContaining({

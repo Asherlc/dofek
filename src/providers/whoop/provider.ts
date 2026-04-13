@@ -6,6 +6,7 @@ import { z } from "zod";
 import type { OAuthConfig } from "../../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../../auth/oauth.ts";
 import type { SyncDatabase } from "../../db/index.ts";
+import { writeMetricStreamBatch } from "../../db/metric-stream-writer.ts";
 import {
   activity,
   dailyMetrics,
@@ -19,7 +20,6 @@ import {
   strengthWorkout,
 } from "../../db/schema.ts";
 import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
-import { dualWriteToSensorSample } from "../../db/sensor-sample-writer.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../../db/tokens.ts";
@@ -692,7 +692,7 @@ export class WhoopProvider implements SyncProvider {
                 recordedAt: r.recordedAt,
                 heartRate: r.heartRate,
               }));
-              await dualWriteToSensorSample(db, metricRows, SOURCE_TYPE_API);
+              await writeMetricStreamBatch(db, metricRows, SOURCE_TYPE_API);
 
               totalRecords += parsed.length;
               windowStart = windowEnd;

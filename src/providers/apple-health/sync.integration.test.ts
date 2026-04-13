@@ -243,7 +243,9 @@ describe("Apple Health streaming import (integration)", () => {
             await ctx.db.insert(schema.metricStream).values({
               providerId: "apple_health",
               recordedAt: r.startDate,
-              heartRate: Math.round(r.value),
+              sourceType: "api",
+              channel: "heart_rate",
+              scalar: Math.round(r.value),
             });
             metricCount++;
           }
@@ -258,10 +260,10 @@ describe("Apple Health streaming import (integration)", () => {
     expect(metricCount).toBeGreaterThanOrEqual(2);
 
     const rows = await ctx.db.select().from(schema.metricStream);
-    const hrRows = rows.filter((r) => r.heartRate !== null);
+    const hrRows = rows.filter((r) => r.channel === "heart_rate");
     expect(hrRows.length).toBeGreaterThanOrEqual(2);
-    expect(hrRows.some((r) => r.heartRate === 72)).toBe(true);
-    expect(hrRows.some((r) => r.heartRate === 74)).toBe(true);
+    expect(hrRows.some((r) => r.scalar === 72)).toBe(true);
+    expect(hrRows.some((r) => r.scalar === 74)).toBe(true);
   }, 30_000);
 
   it("filters records older than since date", async () => {

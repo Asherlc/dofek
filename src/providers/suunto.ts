@@ -6,9 +6,9 @@ import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { activity, sensorSample } from "../db/schema.ts";
+import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
+import { activity, metricStream } from "../db/schema.ts";
 import { SOURCE_TYPE_FILE } from "../db/sensor-channels.ts";
-import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { parseFitFile } from "../fit/parser.ts";
@@ -424,10 +424,10 @@ export class SuuntoProvider implements WebhookProvider {
                     );
 
                     if (metricRows.length > 0) {
-                      await db.delete(sensorSample).where(eq(sensorSample.activityId, activityId));
-                      await dualWriteToSensorSample(db, metricRows, SOURCE_TYPE_FILE);
+                      await db.delete(metricStream).where(eq(metricStream.activityId, activityId));
+                      await writeMetricStreamBatch(db, metricRows, SOURCE_TYPE_FILE);
                       logger.info(
-                        `[suunto] Inserted ${metricRows.length} sensor sample rows for workout ${parsed.externalId}`,
+                        `[suunto] Inserted ${metricRows.length} metric stream rows for workout ${parsed.externalId}`,
                       );
                     }
                   }

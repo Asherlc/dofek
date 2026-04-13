@@ -1,9 +1,9 @@
 import { isIndoorCycling } from "@dofek/training/endurance-types";
-import type { SensorSampleSourceRow } from "../db/sensor-sample-writer.ts";
+import type { MetricStreamSourceRow } from "../db/metric-stream-writer.ts";
 import type { ParsedFitRecord } from "./parser.ts";
 
 /**
- * Convert parsed FIT records into sensor sample source rows.
+ * Convert parsed FIT records into metric stream source rows.
  * Used by any provider that downloads FIT files (Wahoo, Coros, Suunto, etc.).
  */
 export function fitRecordsToSensorSamples(
@@ -11,7 +11,7 @@ export function fitRecordsToSensorSamples(
   providerId: string,
   activityId: string,
   activityType?: string,
-): SensorSampleSourceRow[] {
+): MetricStreamSourceRow[] {
   const indoor = activityType ? isIndoorCycling(activityType) : false;
   return records.map((record) => ({
     providerId,

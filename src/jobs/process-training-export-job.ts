@@ -44,11 +44,11 @@ const MAX_STDERR_BYTES = 64 * 1024;
  * Process a training data export job by spawning the Python export script.
  *
  * The Python script (`dofek_ml.export`) connects directly to Postgres, streams
- * sensor_sample rows via a server-side cursor, and writes Parquet using PyArrow.
+ * metric_stream rows via a server-side cursor, and writes Parquet using PyArrow.
  * This eliminates the previous Postgres → Node.js → DuckDB → Parquet data hop.
  *
  * Progress is communicated via JSON lines on stdout:
- *   {"percentage": 50, "message": "Exporting sensor_sample: 500000/1000000 rows"}
+ *   {"percentage": 50, "message": "Exporting metric_stream: 500000/1000000 rows"}
  */
 export async function processTrainingExportJob(job: TrainingExportJob): Promise<void> {
   const { since, until } = job.data;

@@ -2,7 +2,7 @@
  * Sensor sample channel constants.
  *
  * Each channel name identifies a type of measurement stored in the
- * sensor_sample table. Scalar channels use the `scalar` column;
+ * metric_stream table. Scalar channels use the `scalar` column;
  * vector channels use the `vector` (real[]) column.
  */
 
@@ -89,50 +89,7 @@ export const SOURCE_TYPE_FILE = "file" as const;
 export const SOURCE_TYPE_API = "api" as const;
 
 /**
- * Mapping from legacy metric_stream column names to sensor_sample channel names.
- * Used during the migration period to convert wide-row inserts to per-channel rows.
- */
-export const METRIC_STREAM_COLUMN_TO_CHANNEL: Record<string, string> = {
-  heart_rate: HEART_RATE,
-  power: POWER,
-  cadence: CADENCE,
-  speed: SPEED,
-  lat: LAT,
-  lng: LNG,
-  altitude: ALTITUDE,
-  temperature: TEMPERATURE,
-  grade: GRADE,
-  vertical_speed: VERTICAL_SPEED,
-  spo2: SPO2,
-  respiratory_rate: RESPIRATORY_RATE,
-  gps_accuracy: GPS_ACCURACY,
-  accumulated_power: ACCUMULATED_POWER,
-  stress: STRESS,
-  left_right_balance: LEFT_RIGHT_BALANCE,
-  vertical_oscillation: VERTICAL_OSCILLATION,
-  stance_time: STANCE_TIME,
-  stance_time_percent: STANCE_TIME_PERCENT,
-  step_length: STEP_LENGTH,
-  vertical_ratio: VERTICAL_RATIO,
-  stance_time_balance: STANCE_TIME_BALANCE,
-  ground_contact_time: GROUND_CONTACT_TIME,
-  stride_length: STRIDE_LENGTH,
-  form_power: FORM_POWER,
-  leg_spring_stiff: LEG_SPRING_STIFF,
-  air_power: AIR_POWER,
-  left_torque_effectiveness: LEFT_TORQUE_EFFECTIVENESS,
-  right_torque_effectiveness: RIGHT_TORQUE_EFFECTIVENESS,
-  left_pedal_smoothness: LEFT_PEDAL_SMOOTHNESS,
-  right_pedal_smoothness: RIGHT_PEDAL_SMOOTHNESS,
-  combined_pedal_smoothness: COMBINED_PEDAL_SMOOTHNESS,
-  blood_glucose: BLOOD_GLUCOSE,
-  audio_exposure: AUDIO_EXPOSURE,
-  skin_temperature: SKIN_TEMPERATURE,
-  electrodermal_activity: ELECTRODERMAL_ACTIVITY,
-};
-
-/**
- * Mapping from Drizzle camelCase field names to sensor_sample channel names.
+ * Mapping from Drizzle camelCase field names to metric_stream channel names.
  * Used when converting Drizzle insert objects (e.g., from fitRecordsToMetricStream).
  */
 export const DRIZZLE_FIELD_TO_CHANNEL: Record<string, string> = {

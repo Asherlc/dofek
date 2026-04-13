@@ -143,7 +143,7 @@ describe("providerDetailRouter", () => {
       ["bodyMeasurements", "fitness.body_measurement", "recorded_at", "id"],
       ["foodEntries", "fitness.food_entry", "date", "id"],
       ["healthEvents", "fitness.health_event", "start_date", "id"],
-      ["metricStream", "fitness.sensor_sample", "recorded_at", "recorded_at"],
+      ["metricStream", "fitness.metric_stream", "recorded_at", "recorded_at"],
       ["nutritionDaily", "fitness.nutrition_daily", "date", "date"],
       ["labPanels", "fitness.lab_panel", "recorded_at", "id"],
       ["labResults", "fitness.lab_result", "recorded_at", "id"],
@@ -193,12 +193,11 @@ describe("providerDetailRouter", () => {
   // ── DISCONNECT_CHILD_TABLES ──
 
   describe("DISCONNECT_CHILD_TABLES", () => {
-    it("contains 16 child tables", () => {
-      expect(DISCONNECT_CHILD_TABLES).toHaveLength(16);
+    it("contains 15 child tables", () => {
+      expect(DISCONNECT_CHILD_TABLES).toHaveLength(15);
     });
 
     it("includes all required child tables", () => {
-      expect(DISCONNECT_CHILD_TABLES).toContain("fitness.sensor_sample");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.metric_stream");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.strength_workout");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.body_measurement");
