@@ -62,7 +62,12 @@ jobs:
             echo "IMAGE_TAG=${SHA_TAG}" > .env.deploy
 
             # Ensure db and redis are healthy before deploying
-            $COMPOSE up -d --wait db redis
+            if ! $COMPOSE up -d --wait --wait-timeout 120 db redis; then
+              echo "::error::Timed out waiting for db/redis to become healthy"
+              $COMPOSE ps
+              $COMPOSE logs --tail=100 db redis || true
+              exit 1
+            fi
 
             $COMPOSE up -d --force-recreate training-export-worker
           DEPLOY
