@@ -110,10 +110,23 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
     });
   }
 
-  // Post-import: refresh views
+  // Post-import: refresh views first, then update max HR (reads from activity_summary)
   try {
     job
-      .updateProgress({ percentage: 92, message: "Updating max heart rate..." })
+      .updateProgress({ percentage: 92, message: "Refreshing views..." })
+      .catch((error: unknown) => {
+        logger.warn("Failed to update progress: %s", error);
+      });
+    const { refreshDedupViews } = await import("../db/dedup.ts");
+    await refreshDedupViews(db);
+  } catch (err) {
+    logger.error(`[worker] Failed to refresh views: ${err}`);
+    Sentry.captureException(err, { tags: { phase: "post-import-refresh-views" } });
+  }
+
+  try {
+    job
+      .updateProgress({ percentage: 95, message: "Updating max heart rate..." })
       .catch((error: unknown) => {
         logger.warn("Failed to update progress: %s", error);
       });
@@ -126,7 +139,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
 
   try {
     job
-      .updateProgress({ percentage: 95, message: "Syncing provider priorities..." })
+      .updateProgress({ percentage: 97, message: "Syncing provider priorities..." })
       .catch((error: unknown) => {
         logger.warn("Failed to update progress: %s", error);
       });
@@ -140,18 +153,5 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
   } catch (err) {
     logger.error(`[worker] Failed to sync provider priorities: ${err}`);
     Sentry.captureException(err, { tags: { phase: "post-import-provider-priorities" } });
-  }
-
-  try {
-    job
-      .updateProgress({ percentage: 97, message: "Refreshing views..." })
-      .catch((error: unknown) => {
-        logger.warn("Failed to update progress: %s", error);
-      });
-    const { refreshDedupViews } = await import("../db/dedup.ts");
-    await refreshDedupViews(db);
-  } catch (err) {
-    logger.error(`[worker] Failed to refresh views: ${err}`);
-    Sentry.captureException(err, { tags: { phase: "post-import-refresh-views" } });
   }
 }

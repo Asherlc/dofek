@@ -180,7 +180,14 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
     }
   }
 
-  // Post-sync: update max HR + refresh views
+  // Post-sync: refresh views first, then update max HR (reads from activity_summary)
+  try {
+    const { refreshDedupViews } = await import("../db/dedup.ts");
+    await refreshDedupViews(db);
+  } catch (err) {
+    logger.error(`[worker] Failed to refresh views: ${err}`);
+  }
+
   try {
     const { updateUserMaxHr } = await import("../db/dedup.ts");
     await updateUserMaxHr(db);
@@ -198,13 +205,6 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
     }
   } catch (err) {
     logger.error(`[worker] Failed to sync provider priorities: ${err}`);
-  }
-
-  try {
-    const { refreshDedupViews } = await import("../db/dedup.ts");
-    await refreshDedupViews(db);
-  } catch (err) {
-    logger.error(`[worker] Failed to refresh views: ${err}`);
   }
 
   // Refit personalized algorithm parameters from updated data
