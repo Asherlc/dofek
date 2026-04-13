@@ -50,6 +50,7 @@ const activityStatsRowSchema = z.object({
   avg_cadence: z.coerce.number().nullable(),
   hr_samples: z.coerce.number().nullable(),
   power_samples: z.coerce.number().nullable(),
+  distance_meters: z.coerce.number().nullable(),
 });
 
 export type ActivityStatsRow = z.infer<typeof activityStatsRowSchema>;
@@ -194,22 +195,24 @@ export class TrainingRepository extends BaseRepository {
     return this.query(
       activityStatsRowSchema,
       sql`SELECT
-            asum.activity_id AS id,
-            asum.activity_type,
-            asum.name,
-            asum.started_at,
-            asum.ended_at,
-            ROUND(asum.avg_hr::numeric, 1) AS avg_hr,
-            asum.max_hr,
-            ROUND(asum.avg_power::numeric, 1) AS avg_power,
-            asum.max_power,
-            ROUND(asum.avg_cadence::numeric, 1) AS avg_cadence,
-            asum.hr_sample_count AS hr_samples,
-            asum.power_sample_count AS power_samples
-          FROM fitness.activity_summary asum
-          WHERE asum.user_id = ${this.userId}
-            AND asum.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-          ORDER BY asum.started_at DESC`,
+            a.id,
+            a.activity_type,
+            a.name,
+            a.started_at,
+            a.ended_at,
+            ROUND(s.avg_hr::numeric, 1) AS avg_hr,
+            s.max_hr,
+            ROUND(s.avg_power::numeric, 1) AS avg_power,
+            s.max_power,
+            ROUND(s.avg_cadence::numeric, 1) AS avg_cadence,
+            s.hr_sample_count AS hr_samples,
+            s.power_sample_count AS power_samples,
+            s.total_distance AS distance_meters
+          FROM fitness.v_activity a
+          LEFT JOIN fitness.activity_summary s ON s.activity_id = a.id
+          WHERE a.user_id = ${this.userId}
+            AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+          ORDER BY a.started_at DESC`,
     );
   }
 

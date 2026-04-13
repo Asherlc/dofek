@@ -32,6 +32,7 @@ const mockActivities = [
     avg_cadence: 88,
     hr_samples: 5400,
     power_samples: 5400,
+    distance_meters: 42000,
   },
   {
     id: "a2",
@@ -46,6 +47,7 @@ const mockActivities = [
     avg_cadence: null,
     hr_samples: 2700,
     power_samples: null,
+    distance_meters: 7500,
   },
 ];
 
