@@ -1,0 +1,66 @@
+name: Deploy ML
+
+on:
+  workflow_call:
+    inputs:
+      image_tag:
+        description: "Docker image tag to deploy (e.g. sha-abc1234)"
+        required: false
+        type: string
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Docker image tag (e.g. sha-abc1234). Defaults to latest."
+        required: false
+        default: "latest"
+        type: string
+
+concurrency:
+  group: deploy-ml
+  cancel-in-progress: false
+
+jobs:
+  ml:
+    name: Deploy ML Worker
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve image tag
+        id: resolve
+        env:
+          INPUT_TAG: ${{ inputs.image_tag }}
+        run: |
+          TAG="${INPUT_TAG:-latest}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Deploying dofek-ml image: $TAG"
+      - name: Setup SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+      - name: Deploy training-export-worker
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          SHA_TAG: ${{ steps.resolve.outputs.tag }}
+        run: |
+          ssh "root@${SERVER_HOST}" bash -s -- "$GHCR_TOKEN" "$SHA_TAG" <<'DEPLOY'
+            set -euo pipefail
+            GHCR_TOKEN="$1"
+            SHA_TAG="$2"
+            cd /opt/dofek
+
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u asherlc --password-stdin
+
+            docker pull "ghcr.io/asherlc/dofek-ml:${SHA_TAG}"
+
+            echo "IMAGE_TAG=${SHA_TAG}" > .env.deploy
+
+            docker compose \
+              --env-file .env.prod --env-file .env.deploy \
+              -f docker-compose.deploy.yml \
+              up -d --force-recreate training-export-worker
+          DEPLOY

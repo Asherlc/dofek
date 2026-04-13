@@ -95,6 +95,15 @@ jobs:
       image_tag: ${{ inputs.image_tag != '' && inputs.image_tag || needs.docker.outputs.image_tag }}
     secrets: inherit
 
+  ml:
+    name: Deploy ML
+    needs: [terraform, docker]
+    if: always() && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (needs.docker.result == 'success' || needs.docker.result == 'skipped') && (inputs.target == 'app' || inputs.target == 'web' || inputs.target == 'all')
+    uses: ./.github/workflows/deploy-ml.yml
+    with:
+      image_tag: ${{ inputs.image_tag != '' && inputs.image_tag || needs.docker.outputs.image_tag }}
+    secrets: inherit
+
   ios:
     name: Deploy iOS
     if: inputs.target == 'ios' || inputs.target == 'all'
@@ -113,8 +122,8 @@ jobs:
 
   cleanup:
     name: Cleanup Images
-    needs: [app]
-    if: always() && needs.app.result == 'success'
+    needs: [app, ml]
+    if: always() && (needs.app.result == 'success' || needs.ml.result == 'success')
     runs-on: ubuntu-latest
     steps:
       - name: Setup SSH

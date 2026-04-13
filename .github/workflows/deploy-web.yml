@@ -80,9 +80,18 @@ jobs:
       image_tag: ${{ needs.check.outputs.image_tag }}
     secrets: inherit
 
+  deploy-ml:
+    name: Deploy ML
+    needs: [check]
+    if: needs.check.outputs.should_deploy == 'true'
+    uses: ./.github/workflows/deploy-ml.yml
+    with:
+      image_tag: ${{ needs.check.outputs.image_tag }}
+    secrets: inherit
+
   cleanup-images:
     name: Cleanup Images
-    needs: [deploy-app]
+    needs: [deploy-app, deploy-ml]
     if: always() && needs.deploy-app.result == 'success'
     runs-on: ubuntu-latest
     steps:
