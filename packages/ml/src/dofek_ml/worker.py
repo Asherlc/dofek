@@ -159,9 +159,9 @@ async def run_worker() -> None:
     )
 
     # Reset idle timer when jobs start/complete
-    worker.on("active", lambda _job, _prev: (cancel_idle_timer()))
-    worker.on("completed", lambda _job, _result, _prev: (schedule_idle_shutdown()))
-    worker.on("failed", lambda _job, _error, _prev: (schedule_idle_shutdown()))
+    worker.on("active", lambda _job, _prev: cancel_idle_timer())
+    worker.on("completed", lambda _job, _result, _prev: schedule_idle_shutdown())
+    worker.on("failed", lambda _job, _error, _prev: schedule_idle_shutdown())
 
     # Start idle timer immediately
     schedule_idle_shutdown()
