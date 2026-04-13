@@ -89,22 +89,25 @@ describe("refreshDedupViews", () => {
     expect(mockExecute).toHaveBeenCalledTimes(7);
   });
 
-  it("re-throws non-recoverable errors", async () => {
+  it("throws AggregateError with all failures after attempting all views", async () => {
     const { refreshDedupViews } = await import("./dedup.ts");
     const mockDb = createMockDb();
 
     mockExecute.mockRejectedValue(new Error("connection refused"));
 
-    await expect(refreshDedupViews(mockDb)).rejects.toThrow("connection refused");
+    const result = refreshDedupViews(mockDb);
+    await expect(result).rejects.toBeInstanceOf(AggregateError);
+    await expect(refreshDedupViews(mockDb)).rejects.toThrow("Failed to refresh");
   });
 
-  it("re-throws non-Error exceptions", async () => {
+  it("wraps non-Error exceptions into AggregateError after attempting all views", async () => {
     const { refreshDedupViews } = await import("./dedup.ts");
     const mockDb = createMockDb();
 
     mockExecute.mockRejectedValue("string error");
 
-    await expect(refreshDedupViews(mockDb)).rejects.toBe("string error");
+    await expect(refreshDedupViews(mockDb)).rejects.toBeInstanceOf(AggregateError);
+    await expect(refreshDedupViews(mockDb)).rejects.toThrow("Failed to refresh");
   });
 
   it("uses CONCURRENTLY in initial refresh attempt", async () => {

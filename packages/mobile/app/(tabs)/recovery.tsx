@@ -185,10 +185,9 @@ export default function RecoveryScreen() {
   const stressTrend = stressResult?.trend;
 
   // Daily metrics for SpO2 and skin temp
-  const today = new Date().toLocaleDateString("en-CA");
-  const trendsQuery = trpc.dailyMetrics.trends.useQuery({ days, today });
+  const trendsQuery = trpc.dailyMetrics.trends.useQuery({ days, endDate });
   const trendsData = trendsQuery.data;
-  const dailyMetricsQuery = trpc.dailyMetrics.list.useQuery({ days, today });
+  const dailyMetricsQuery = trpc.dailyMetrics.list.useQuery({ days, endDate });
   const dailyMetricsData = dailyMetricsQuery.data ?? [];
 
   const spo2Trend = dailyMetricsData

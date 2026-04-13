@@ -17,16 +17,36 @@ const ROLLUP_VIEWS = ["fitness.activity_summary"] as const;
  *
  * CONCURRENTLY allows reads during refresh (requires unique index).
  * Falls back to regular refresh if the view has never been populated.
+ *
+ * Each view is refreshed independently — a failure in one view (e.g.
+ * v_activity) must not prevent other views (e.g. v_daily_metrics) from
+ * being refreshed. Collected errors are thrown as an AggregateError
+ * after all views have been attempted.
  */
 export async function refreshDedupViews(db: SyncDatabase): Promise<void> {
-  // Refresh dedup views first (rollup views may depend on v_activity)
+  const errors: unknown[] = [];
+
+  // Refresh dedup views first (activity_summary depends on base tables
+  // but is refreshed after dedup views as a convention)
   for (const view of DEDUP_VIEWS) {
-    await refreshView(db, view);
+    try {
+      await refreshView(db, view);
+    } catch (error) {
+      errors.push(error);
+    }
   }
 
-  // Refresh rollup views (depend on base tables, not dedup views)
+  // Refresh rollup views
   for (const view of ROLLUP_VIEWS) {
-    await refreshView(db, view);
+    try {
+      await refreshView(db, view);
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+
+  if (errors.length > 0) {
+    throw new AggregateError(errors, `Failed to refresh ${errors.length} view(s)`);
   }
 }
 
@@ -55,18 +75,17 @@ export async function updateUserMaxHr(db: SyncDatabase): Promise<void> {
 async function refreshView(db: SyncDatabase, view: string): Promise<void> {
   try {
     await db.execute(sql.raw(`REFRESH MATERIALIZED VIEW CONCURRENTLY ${view}`));
-  } catch (err) {
-    // CONCURRENTLY fails when:
-    // 1. View has not been populated yet (first refresh)
-    // 2. View has no unique index (e.g., some views)
-    // Fall back to non-concurrent refresh in both cases
-    if (
-      err instanceof Error &&
-      (err.message.includes("has not been populated") || err.message.includes("concurrently"))
-    ) {
+  } catch (concurrentError) {
+    // CONCURRENTLY can fail for many reasons: view not populated, no unique
+    // index, lock conflicts, resource limits, or Drizzle-wrapped errors where
+    // the original Postgres message is obscured. Always fall back to a
+    // blocking refresh rather than giving up entirely.
+    try {
       await db.execute(sql.raw(`REFRESH MATERIALIZED VIEW ${view}`));
-    } else {
-      throw err;
+    } catch (fallbackError) {
+      throw new Error(`Failed to refresh ${view} (both CONCURRENT and blocking)`, {
+        cause: concurrentError,
+      });
     }
   }
 }

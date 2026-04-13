@@ -24,11 +24,19 @@ export async function ensureProvider(
   apiBaseUrl?: string,
   userId?: string,
 ): Promise<string> {
-  const values = { id, name, apiBaseUrl, userId: resolveUserId(userId) };
-  await db.insert(provider).values(values).onConflictDoUpdate({
-    target: provider.id,
-    set: { name, apiBaseUrl },
-  });
+  const resolvedUserId = resolveUserId(userId);
+  const values = { id, name, apiBaseUrl, userId: resolvedUserId };
+  try {
+    await db.insert(provider).values(values).onConflictDoUpdate({
+      target: provider.id,
+      set: { name, apiBaseUrl },
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`ensureProvider(${id}) failed for user ${resolvedUserId}: ${message}`, {
+      cause: error,
+    });
+  }
   return id;
 }
 
