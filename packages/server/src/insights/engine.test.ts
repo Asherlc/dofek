@@ -1567,6 +1567,15 @@ describe("isValidCausalDirection()", () => {
     expect(isValidCausalDirection("action", "action", 0)).toBe(true);
     expect(isValidCausalDirection("action", "action", 1)).toBe(true);
   });
+
+  it("outcome→bidirectional at lag>0 is valid", () => {
+    expect(isValidCausalDirection("outcome", "bidirectional", 1)).toBe(true);
+    expect(isValidCausalDirection("outcome", "bidirectional", 2)).toBe(true);
+  });
+
+  it("outcome→bidirectional at lag=0 is valid", () => {
+    expect(isValidCausalDirection("outcome", "bidirectional", 0)).toBe(true);
+  });
 });
 
 // ── rollingAvg() direct tests ──────────────────────────────────────────
@@ -3502,6 +3511,93 @@ describe("exhaustiveSweep() — filter and lag paths", () => {
       expect(typeof discovery.effectSize).toBe("number");
       expect(discovery.type).toBe("discovery");
       expect(discovery.id).toMatch(/^disc-/);
+    }
+  });
+});
+
+// ── exhaustiveSweep() — filter exclusion unit tests ─────────────────────
+
+describe("exhaustiveSweep() — filter exclusion logic", () => {
+  function makeSweepData(
+    count: number,
+    overrides: (idx: number) => Partial<JoinedDay>,
+  ): JoinedDay[] {
+    return dateRange("2025-01-01", count).map((date, idx) =>
+      makeFullJoinedDay(date, {
+        spo2_avg: null,
+        skin_temp_c: null,
+        exercise_minutes: null,
+        cardio_minutes: null,
+        strength_minutes: null,
+        flexibility_minutes: null,
+        calories: null,
+        protein_g: null,
+        carbs_g: null,
+        fat_g: null,
+        fiber_g: null,
+        weight_kg: null,
+        body_fat_pct: null,
+        weight_30d_avg: null,
+        body_fat_30d_avg: null,
+        weight_30d_delta: null,
+        body_fat_30d_delta: null,
+        resting_hr: null,
+        hrv: null,
+        ...overrides(idx),
+      }),
+    );
+  }
+
+  it("never pairs a metric with itself (same key exclusion)", () => {
+    const days = makeSweepData(50, (idx) => ({
+      steps: 5000 + idx * 200,
+      sleep_duration_min: 500 - idx * 3,
+    }));
+    const result = exhaustiveSweep(days, new Set());
+    for (const discovery of result) {
+      // action and metric should never be the same label
+      expect(discovery.action).not.toBe(discovery.metric);
+    }
+  });
+
+  it("excludes derived metric from pairing with its base (derivedGroups)", () => {
+    // Provide weight + weight_30d with strong correlation — should NOT produce a discovery
+    const days = makeSweepData(50, (idx) => ({
+      weight_kg: 80 + idx * 0.1,
+      weight_30d_avg: 80 + idx * 0.1,
+    }));
+    const result = exhaustiveSweep(days, new Set());
+    // No pair should include both weight and 30-day avg weight
+    for (const discovery of result) {
+      const labels = [discovery.action, discovery.metric].sort();
+      expect(labels.join("::")).not.toBe("30-day avg weight::weight");
+    }
+  });
+
+  it("excludes intra-category pairs (e.g., nutrition↔nutrition)", () => {
+    // Provide two nutrition metrics that correlate — should be excluded
+    const days = makeSweepData(50, (idx) => ({
+      calories: 2000 + idx * 20,
+      protein_g: 100 + idx * 2,
+    }));
+    const result = exhaustiveSweep(days, new Set());
+    const nutritionLabels = new Set(["calories", "protein", "carbs", "dietary fat", "fiber"]);
+    for (const discovery of result) {
+      const bothNutrition =
+        nutritionLabels.has(discovery.action) && nutritionLabels.has(discovery.metric);
+      expect(bothNutrition, `${discovery.action} ↔ ${discovery.metric}`).toBe(false);
+    }
+  });
+
+  it("discovery IDs include lag value", () => {
+    const days = makeSweepData(50, (idx) => ({
+      steps: 5000 + idx * 200,
+      sleep_duration_min: 500 - idx * 3,
+    }));
+    const result = exhaustiveSweep(days, new Set());
+    expect(result.length).toBeGreaterThan(0);
+    for (const discovery of result) {
+      expect(discovery.id).toMatch(/lag\d+$/);
     }
   });
 });
