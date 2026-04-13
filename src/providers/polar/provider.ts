@@ -104,24 +104,20 @@ export class PolarProvider implements WebhookProvider {
         // Polar AccessLink requires user registration (POST /v3/users)
         // after OAuth before data endpoints will work. The x_user_id from
         // the token response identifies the Polar user.
+        //
+        // Note: deregistration of the OLD user (to free the token slot) is
+        // handled by revokeExistingTokens, which runs before exchangeCode
+        // in the callback handler. We must NOT deregister with the NEW token
+        // here — DELETE /v3/users/{id} revokes the calling token.
         const polarUserId = data.x_user_id != null ? String(data.x_user_id) : null;
-        try {
-          const client = new PolarClient(tokens.accessToken, fetchFn);
-          if (polarUserId) {
-            await client.registerUser(polarUserId);
-            logger.info(`[polar] Registered user ${polarUserId} with Polar AccessLink`);
-          } else {
-            logger.warn(
-              "[polar] Token response missing x_user_id — skipping AccessLink registration",
-            );
-          }
-        } catch (registrationError) {
-          // Registration is best-effort — log but don't fail the auth flow.
-          // The user may already be registered from a previous authorization.
-          logger.warn(
-            `[polar] Post-auth user registration failed: ${registrationError instanceof Error ? registrationError.message : String(registrationError)}`,
+        if (!polarUserId) {
+          throw new Error(
+            "Polar token response missing x_user_id — cannot complete AccessLink registration",
           );
         }
+        const client = new PolarClient(tokens.accessToken, fetchFn);
+        await client.registerUser(polarUserId);
+        logger.info(`[polar] Registered user ${polarUserId} with Polar AccessLink`);
 
         return tokens;
       },

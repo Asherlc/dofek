@@ -84,7 +84,42 @@ export class ZwiftProvider implements SyncProvider {
     }
 
     const athleteIdMatch = stored.scopes?.match(/athleteId:(\S+)/);
-    const athleteId = athleteIdMatch?.[1];
+    let athleteId = athleteIdMatch?.[1];
+
+    // Self-heal: if scopes are missing the athleteId, try to extract it from the JWT
+    if (!athleteId) {
+      try {
+        const jwtParts = stored.accessToken.split(".");
+        if (jwtParts.length === 3 && jwtParts[1]) {
+          const jwtPayload = JSON.parse(Buffer.from(jwtParts[1], "base64url").toString());
+          const jwtPayloadSchema = z.object({ sub: z.string().optional() });
+          const parsed = jwtPayloadSchema.parse(jwtPayload);
+          if (parsed.sub) {
+            athleteId = parsed.sub;
+          }
+        }
+      } catch {
+        // JWT decode failed — fall through to the error below
+      }
+
+      if (athleteId) {
+        const correctedScopes = `athleteId:${athleteId}`;
+        logger.info(`[zwift] Self-healed missing athleteId from JWT sub claim: ${athleteId}`);
+        try {
+          await saveTokens(db, this.id, {
+            accessToken: stored.accessToken,
+            refreshToken: stored.refreshToken,
+            expiresAt: stored.expiresAt,
+            scopes: correctedScopes,
+          });
+        } catch (saveError) {
+          logger.error(
+            `[zwift] Failed to persist self-healed scopes: ${saveError instanceof Error ? saveError.message : String(saveError)}`,
+          );
+        }
+      }
+    }
+
     if (!athleteId) {
       logger.error(`[zwift] Stored scopes missing athlete ID: ${JSON.stringify(stored.scopes)}`);
       throw new Error(

@@ -644,7 +644,7 @@ describe("PolarProvider.authSetup", () => {
     expect(registrationBodies[0]).toEqual({ "member-id": "99887766" });
   });
 
-  it("exchangeCode succeeds even if registration fails", async () => {
+  it("exchangeCode throws when registration fails", async () => {
     process.env.POLAR_CLIENT_ID = "polar-id";
     process.env.POLAR_CLIENT_SECRET = "polar-secret";
 
@@ -669,24 +669,17 @@ describe("PolarProvider.authSetup", () => {
 
     const provider = new PolarProvider(mockFetch);
     const setup = provider.authSetup();
-    const tokens = await setup.exchangeCode("oauth-code");
-
-    // Should still return the tokens even if registration fails
-    expect(tokens.accessToken).toBe("new-access-token");
+    await expect(setup.exchangeCode("oauth-code")).rejects.toThrow("registration failed");
   });
 
-  it("exchangeCode succeeds when token response is missing x_user_id", async () => {
+  it("exchangeCode throws when token response is missing x_user_id", async () => {
     process.env.POLAR_CLIENT_ID = "polar-id";
     process.env.POLAR_CLIENT_SECRET = "polar-secret";
 
-    const calledUrls: string[] = [];
     const mockFetch: typeof globalThis.fetch = async (
       url: string | URL | Request,
-      init?: RequestInit,
     ): Promise<Response> => {
       const urlString = String(url);
-      calledUrls.push(`${init?.method ?? "GET"} ${urlString}`);
-
       if (urlString.startsWith("https://polarremote.com/")) {
         return Response.json({
           access_token: "new-access-token",
@@ -699,11 +692,7 @@ describe("PolarProvider.authSetup", () => {
 
     const provider = new PolarProvider(mockFetch);
     const setup = provider.authSetup();
-    const tokens = await setup.exchangeCode("oauth-code");
-
-    expect(tokens.accessToken).toBe("new-access-token");
-    // Should not attempt registration without x_user_id
-    expect(calledUrls).not.toContain("POST https://www.polaraccesslink.com/v3/users");
+    await expect(setup.exchangeCode("oauth-code")).rejects.toThrow("missing x_user_id");
   });
 
   it("revokeExistingTokens deregisters user to free token slot", async () => {
