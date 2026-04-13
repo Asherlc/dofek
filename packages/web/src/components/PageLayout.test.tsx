@@ -52,17 +52,28 @@ describe("PageLayout", () => {
     expect(screen.getByText("Filter")).toBeTruthy();
   });
 
-  it("renders nav between header and main when provided", () => {
+  it("renders tabs between header and main when provided", () => {
+    const tabs = [
+      { to: "/foo", label: "Foo", exact: true },
+      { to: "/bar", label: "Bar", exact: false },
+    ];
     render(
-      <PageLayout nav={<nav data-testid="subnav">Tabs</nav>}>
+      <PageLayout tabs={tabs}>
         <p>Content</p>
       </PageLayout>,
     );
-    const subnav = screen.getByTestId("subnav");
-    expect(subnav).toBeTruthy();
-    // Nav should come before main in DOM order
-    const main = screen.getByRole("main");
-    expect(subnav.compareDocumentPosition(main) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const fooLink = screen.getByText("Foo");
+    const barLink = screen.getByText("Bar");
+    expect(fooLink).toBeTruthy();
+    expect(barLink).toBeTruthy();
+    // Tab nav should come before main in DOM order
+    const tabNav = fooLink.closest("nav");
+    expect(tabNav).toBeTruthy();
+    expect(tabNav instanceof HTMLElement).toBe(true);
+    if (tabNav instanceof HTMLElement) {
+      const main = screen.getByRole("main");
+      expect(tabNav.compareDocumentPosition(main) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
   });
 
   it("renders page intro when title is provided", () => {

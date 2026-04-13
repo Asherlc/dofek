@@ -1,6 +1,5 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { PageLayout } from "../components/PageLayout.tsx";
-import { SubtabNav } from "../components/SubtabNav.tsx";
 
 const subtabs = [
   { to: "/nutrition", label: "Daily Log", exact: true },
@@ -14,7 +13,7 @@ export const Route = createFileRoute("/nutrition")({
 
 function NutritionLayout() {
   return (
-    <PageLayout nav={<SubtabNav tabs={subtabs} />}>
+    <PageLayout tabs={subtabs}>
       <Outlet />
     </PageLayout>
   );

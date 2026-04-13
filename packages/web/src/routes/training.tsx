@@ -1,7 +1,6 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { useState } from "react";
 import { PageLayout } from "../components/PageLayout.tsx";
-import { SubtabNav } from "../components/SubtabNav.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { TrainingDaysContext } from "../lib/trainingDaysContext.ts";
 
@@ -26,7 +25,7 @@ function TrainingLayout() {
     <TrainingDaysContext.Provider value={{ days, setDays }}>
       <PageLayout
         headerChildren={<TimeRangeSelector days={days} onChange={setDays} />}
-        nav={<SubtabNav tabs={subtabs} />}
+        tabs={subtabs}
       >
         <Outlet />
       </PageLayout>

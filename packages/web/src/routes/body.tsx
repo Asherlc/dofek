@@ -1,7 +1,6 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { useState } from "react";
 import { PageLayout } from "../components/PageLayout.tsx";
-import { SubtabNav } from "../components/SubtabNav.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { BodyDaysContext } from "../lib/bodyDaysContext.ts";
 
@@ -23,7 +22,7 @@ function BodyLayout() {
         title="Body"
         subtitle="Recovery metrics, vitals, and body composition"
         headerChildren={<TimeRangeSelector days={days} onChange={setDays} />}
-        nav={<SubtabNav tabs={subtabs} />}
+        tabs={subtabs}
       >
         <Outlet />
       </PageLayout>
