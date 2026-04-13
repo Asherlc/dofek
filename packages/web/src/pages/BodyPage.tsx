@@ -1,6 +1,6 @@
 import { formatDateYmd as formatDateForQuery } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { z } from "zod";
 import { BodyRecompositionChart } from "../components/BodyRecompositionChart.tsx";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
@@ -12,13 +12,12 @@ import {
 import { GoalWeightInput } from "../components/GoalWeightInput.tsx";
 import { HealthStatusBar } from "../components/HealthStatusBar.tsx";
 import { HrvBaselineChart } from "../components/HrvBaselineChart.tsx";
-import { PageLayout } from "../components/PageLayout.tsx";
 import { PageSection } from "../components/PageSection.tsx";
 import { SmoothedWeightChart } from "../components/SmoothedWeightChart.tsx";
 import { StressChart } from "../components/StressChart.tsx";
-import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { TimeSeriesChart } from "../components/TimeSeriesChart.tsx";
 import { WeightPredictionSummary } from "../components/WeightPredictionSummary.tsx";
+import { useBodyDays } from "../lib/bodyDaysContext.ts";
 import { chartColors } from "../lib/chartTheme.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
@@ -84,7 +83,7 @@ function buildSkinTempSeries(
 
 export function BodyPage() {
   const units = useUnitConverter();
-  const [days, setDays] = useState(30);
+  const { days } = useBodyDays();
   const endDate = useMemo(() => formatDateForQuery(), []);
 
   const trends = trpc.dailyMetrics.trends.useQuery({ days, endDate });
@@ -189,11 +188,7 @@ export function BodyPage() {
         : [{ name: units.temperatureLabel }];
 
   return (
-    <PageLayout
-      headerChildren={<TimeRangeSelector days={days} onChange={setDays} />}
-      title="Body"
-      subtitle="Recovery metrics, vitals, and body composition"
-    >
+    <>
       {/* Health Status Bar */}
       <HealthStatusBar metrics={healthMetrics} loading={trends.isLoading} />
 
@@ -277,6 +272,6 @@ export function BodyPage() {
           </div>
         </PageSection>
       )}
-    </PageLayout>
+    </>
   );
 }
