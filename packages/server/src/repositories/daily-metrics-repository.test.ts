@@ -201,8 +201,16 @@ describe("DailyMetricsRepository", () => {
       // Scenario: Garmin synced HRV for today, so view has recent dates,
       // but Apple Health steps arrived after the last view refresh.
       // Steps are null in the view but non-null in the base table.
-      const rowWithoutSteps = makeDailyMetricsRow({ date: "2025-03-15", steps: null, active_energy_kcal: null });
-      const rowWithSteps = makeDailyMetricsRow({ date: "2025-03-15", steps: 9200, active_energy_kcal: 420 });
+      const rowWithoutSteps = makeDailyMetricsRow({
+        date: "2025-03-15",
+        steps: null,
+        active_energy_kcal: null,
+      });
+      const rowWithSteps = makeDailyMetricsRow({
+        date: "2025-03-15",
+        steps: 9200,
+        active_energy_kcal: 420,
+      });
       const execute = vi
         .fn()
         // First call: list query — returns data but steps are null
@@ -239,7 +247,11 @@ describe("DailyMetricsRepository", () => {
 
     it("does not refresh when key metrics are null in both view and base table", async () => {
       // User has no step data at all — no false positive
-      const rowNoSteps = makeDailyMetricsRow({ date: "2025-03-15", steps: null, active_energy_kcal: null });
+      const rowNoSteps = makeDailyMetricsRow({
+        date: "2025-03-15",
+        steps: null,
+        active_energy_kcal: null,
+      });
       const execute = vi
         .fn()
         // First call: list query — steps null
