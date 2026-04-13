@@ -8,7 +8,6 @@ import {
   connect,
   findWhoop,
   getConnectionState,
-  isBluetoothAvailable,
   peekBufferedRealtimeData,
   startRealtimeHr,
 } from "../modules/whoop-ble";
@@ -23,18 +22,18 @@ const MAX_SAMPLES = 120;
 const POLL_INTERVAL_MS = 1000;
 
 /**
- * Check whether the native BLE module is already connected and streaming.
+ * Check whether the native BLE module is already connected.
  * Background WHOOP BLE sync may have established the connection before
  * this screen opened — no need to connect again.
  */
-function isAlreadyStreaming(): boolean {
+function isAlreadyConnected(): boolean {
   const state = getConnectionState();
   return state === "streaming" || state === "ready";
 }
 
 export default function HeartRateVisualizationScreen() {
   const [status, setStatus] = useState<ConnectionStatus>(() =>
-    isAlreadyStreaming() ? "streaming" : "disconnected",
+    isAlreadyConnected() ? "streaming" : "disconnected",
   );
   const [error, setError] = useState<string | null>(null);
   const [heartRateHistory, setHeartRateHistory] = useState<number[]>([]);
@@ -42,6 +41,7 @@ export default function HeartRateVisualizationScreen() {
   const [currentRrInterval, setCurrentRrInterval] = useState<number | null>(null);
   const [sampleCount, setSampleCount] = useState(0);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSeenTimestampRef = useRef<string | null>(null);
 
   const stopPolling = useCallback(() => {
@@ -88,7 +88,7 @@ export default function HeartRateVisualizationScreen() {
 
   const ensureConnected = useCallback(async () => {
     // Already connected via background sync — just ensure HR streaming is on
-    if (isAlreadyStreaming()) {
+    if (isAlreadyConnected()) {
       try {
         await startRealtimeHr();
       } catch {
@@ -101,13 +101,6 @@ export default function HeartRateVisualizationScreen() {
 
     try {
       setError(null);
-
-      if (!isBluetoothAvailable()) {
-        setError("Bluetooth is not available");
-        setStatus("error");
-        return;
-      }
-
       setStatus("searching");
       const device = await findWhoop();
       if (!device) {
@@ -135,7 +128,7 @@ export default function HeartRateVisualizationScreen() {
 
     // If background sync reconnects while this screen is open, resume polling
     const subscription = addConnectionStateListener((event) => {
-      if (event.state === "connected" || event.state === "streaming") {
+      if (event.state === "connected") {
         if (!pollIntervalRef.current) {
           setStatus("streaming");
           startPolling();
@@ -143,14 +136,24 @@ export default function HeartRateVisualizationScreen() {
       } else if (event.state === "disconnected") {
         setStatus("disconnected");
         stopPolling();
-        // Try to reconnect after a short delay
-        setTimeout(() => ensureConnected(), 2000);
+        // Clear any pending reconnect before scheduling a new one
+        if (reconnectTimerRef.current) {
+          clearTimeout(reconnectTimerRef.current);
+        }
+        reconnectTimerRef.current = setTimeout(() => {
+          reconnectTimerRef.current = null;
+          ensureConnected();
+        }, 2000);
       }
     });
 
     return () => {
       subscription.remove();
       stopPolling();
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
     };
   }, [ensureConnected, startPolling, stopPolling]);
 

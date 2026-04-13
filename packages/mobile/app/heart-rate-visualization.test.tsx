@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
 
@@ -47,7 +47,6 @@ vi.mock("expo-router", () => ({
 }));
 
 vi.mock("../modules/whoop-ble", () => ({
-  isBluetoothAvailable: () => false,
   findWhoop: () => Promise.resolve(null),
   connect: () => Promise.resolve(true),
   startRealtimeHr: () => Promise.resolve(true),
@@ -109,5 +108,69 @@ describe("HeartRateVisualizationScreen", () => {
 
     expect(screen.getByText("streaming")).toBeTruthy();
     expect(screen.getByText("Waiting for data...")).toBeTruthy();
+  });
+
+  it("does not double-count samples when peek returns the same buffer", async () => {
+    vi.useFakeTimers();
+    const whoopBle = await import("../modules/whoop-ble");
+    vi.spyOn(whoopBle, "getConnectionState").mockReturnValue("streaming");
+
+    const samples = [
+      {
+        timestamp: "2026-04-12T00:00:01Z",
+        heartRate: 72,
+        rrIntervalMs: 830,
+        quaternionW: 1,
+        quaternionX: 0,
+        quaternionY: 0,
+        quaternionZ: 0,
+        opticalRawHex: "",
+      },
+      {
+        timestamp: "2026-04-12T00:00:02Z",
+        heartRate: 74,
+        rrIntervalMs: 810,
+        quaternionW: 1,
+        quaternionX: 0,
+        quaternionY: 0,
+        quaternionZ: 0,
+        opticalRawHex: "",
+      },
+    ];
+    const peekSpy = vi.spyOn(whoopBle, "peekBufferedRealtimeData").mockResolvedValue(samples);
+
+    const { default: HeartRateVisualizationScreen } = await import("./heart-rate-visualization");
+    await act(() => render(<HeartRateVisualizationScreen />));
+
+    // Flush the async ensureConnected() so startPolling() runs
+    await act(() => vi.advanceTimersByTimeAsync(0));
+
+    // First poll picks up both samples
+    await act(() => vi.advanceTimersByTimeAsync(1000));
+    expect(screen.getByText("2")).toBeTruthy(); // sampleCount = 2
+
+    // Second poll returns the same buffer — should not double-count
+    await act(() => vi.advanceTimersByTimeAsync(1000));
+    expect(screen.getByText("2")).toBeTruthy(); // sampleCount still 2
+
+    // Third poll with one new sample appended
+    const extendedSamples = [
+      ...samples,
+      {
+        timestamp: "2026-04-12T00:00:03Z",
+        heartRate: 76,
+        rrIntervalMs: 790,
+        quaternionW: 1,
+        quaternionX: 0,
+        quaternionY: 0,
+        quaternionZ: 0,
+        opticalRawHex: "",
+      },
+    ];
+    peekSpy.mockResolvedValue(extendedSamples);
+    await act(() => vi.advanceTimersByTimeAsync(1000));
+    expect(screen.getByText("3")).toBeTruthy(); // sampleCount = 3
+
+    vi.useRealTimers();
   });
 });

@@ -2,7 +2,6 @@ import { Stack } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { WristModel } from "../components/WristModel";
-import { captureException } from "../lib/telemetry";
 import type { OrientationEvent } from "../modules/whoop-ble";
 import {
   addConnectionStateListener,
@@ -10,7 +9,6 @@ import {
   connect,
   findWhoop,
   getConnectionState,
-  isBluetoothAvailable,
   startImuStreaming,
 } from "../modules/whoop-ble";
 import { colors } from "../theme";
@@ -23,18 +21,18 @@ function formatDegrees(degrees: number): string {
 }
 
 /**
- * Check whether the native BLE module is already connected and streaming.
+ * Check whether the native BLE module is already connected.
  * Background WHOOP BLE sync may have established the connection before
  * this screen opened — no need to connect again.
  */
-function isAlreadyStreaming(): boolean {
+function isAlreadyConnected(): boolean {
   const state = getConnectionState();
   return state === "streaming" || state === "ready";
 }
 
 export default function ImuVisualizationScreen() {
   const [status, setStatus] = useState<ConnectionStatus>(() =>
-    isAlreadyStreaming() ? "streaming" : "disconnected",
+    isAlreadyConnected() ? "streaming" : "disconnected",
   );
   const [error, setError] = useState<string | null>(null);
   const [orientation, setOrientation] = useState<OrientationEvent>({
@@ -49,6 +47,7 @@ export default function ImuVisualizationScreen() {
   const [updateRate, setUpdateRate] = useState(0);
   const updateCountRef = useRef(0);
   const rateIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Track update rate
   useEffect(() => {
@@ -77,7 +76,7 @@ export default function ImuVisualizationScreen() {
 
   const ensureConnected = useCallback(async () => {
     // Already connected via background sync — IMU should already be streaming
-    if (isAlreadyStreaming()) {
+    if (isAlreadyConnected()) {
       // Best-effort: ensure IMU mode is on (background sync should have done this)
       try {
         await startImuStreaming();
@@ -90,13 +89,6 @@ export default function ImuVisualizationScreen() {
 
     try {
       setError(null);
-
-      if (!isBluetoothAvailable()) {
-        setError("Bluetooth is not available");
-        setStatus("error");
-        return;
-      }
-
       setStatus("searching");
       const device = await findWhoop();
       if (!device) {
@@ -122,17 +114,27 @@ export default function ImuVisualizationScreen() {
     ensureConnected();
 
     const subscription = addConnectionStateListener((event) => {
-      if (event.state === "connected" || event.state === "streaming") {
+      if (event.state === "connected") {
         setStatus("streaming");
       } else if (event.state === "disconnected") {
         setStatus("disconnected");
-        // Try to reconnect after a short delay
-        setTimeout(() => ensureConnected(), 2000);
+        // Clear any pending reconnect before scheduling a new one
+        if (reconnectTimerRef.current) {
+          clearTimeout(reconnectTimerRef.current);
+        }
+        reconnectTimerRef.current = setTimeout(() => {
+          reconnectTimerRef.current = null;
+          ensureConnected();
+        }, 2000);
       }
     });
 
     return () => {
       subscription.remove();
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
     };
   }, [ensureConnected]);
 
