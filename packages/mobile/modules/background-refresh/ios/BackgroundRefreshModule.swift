@@ -11,10 +11,33 @@ public class BackgroundRefreshModule: Module {
 
     static let taskIdentifier = "com.dofek.accelerometer-refresh"
 
+    /// NotificationCenter name used by the app delegate subscriber to
+    /// relay background refresh events to this module instance.
+    static let backgroundRefreshNotification = Notification.Name("BackgroundRefreshModule.onRefresh")
+
+    private var notificationObserver: NSObjectProtocol?
+
     public func definition() -> ModuleDefinition {
         Name("BackgroundRefresh")
 
         Events("onBackgroundRefresh")
+
+        OnStartObserving {
+            self.notificationObserver = NotificationCenter.default.addObserver(
+                forName: Self.backgroundRefreshNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.sendEvent("onBackgroundRefresh", [:])
+            }
+        }
+
+        OnStopObserving {
+            if let observer = self.notificationObserver {
+                NotificationCenter.default.removeObserver(observer)
+                self.notificationObserver = nil
+            }
+        }
 
         /// Schedule the next background refresh.
         /// Call this after each foreground sync to keep the schedule rolling.

@@ -16,29 +16,44 @@ public class BackgroundRefreshAppDelegateSubscriber: ExpoAppDelegateSubscriber {
     ) -> Bool {
         BackgroundRefreshModule.registerBackgroundTask { refreshTask in
             // Schedule the next refresh before doing work
-            let request = BGAppRefreshTaskRequest(identifier: BackgroundRefreshModule.taskIdentifier)
-            request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60)
-            try? BGTaskScheduler.shared.submit(request)
+            Self.scheduleRefresh()
 
-            // Set expiration handler
-            refreshTask.expirationHandler = {
-                refreshTask.setTaskCompleted(success: false)
+            var isCompleted = false
+            let complete = { (success: Bool) in
+                guard !isCompleted else { return }
+                isCompleted = true
+                refreshTask.setTaskCompleted(success: success)
             }
 
-            // Give the app ~10 seconds, then mark complete.
-            // The JS event handler (onBackgroundRefresh) is only active when
-            // the module is loaded, so background wakes without JS just
-            // reschedule and complete.
+            refreshTask.expirationHandler = {
+                complete(false)
+            }
+
+            // Emit event to JS via NotificationCenter so the module can
+            // call sendEvent("onBackgroundRefresh"). The module subscribes
+            // to this notification when it has active listeners.
+            NotificationCenter.default.post(
+                name: BackgroundRefreshModule.backgroundRefreshNotification,
+                object: nil
+            )
+
+            // Give JS ~10 seconds to do its work, then mark complete.
             DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
-                refreshTask.setTaskCompleted(success: true)
+                complete(true)
             }
         }
 
-        // Schedule the first refresh
+        Self.scheduleRefresh()
+        return true
+    }
+
+    private static func scheduleRefresh() {
         let request = BGAppRefreshTaskRequest(identifier: BackgroundRefreshModule.taskIdentifier)
         request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60)
-        try? BGTaskScheduler.shared.submit(request)
-
-        return true
+        do {
+            try BGTaskScheduler.shared.submit(request)
+        } catch {
+            print("[BackgroundRefresh] Failed to schedule: \(error.localizedDescription)")
+        }
     }
 }
