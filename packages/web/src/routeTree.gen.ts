@@ -34,16 +34,17 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as TrainingIndexRouteImport } from './routes/training/index'
 import { Route as ProvidersIndexRouteImport } from './routes/providers/index'
 import { Route as NutritionIndexRouteImport } from './routes/nutrition/index'
+import { Route as BodyIndexRouteImport } from './routes/body/index'
 import { Route as TrainingStrengthRouteImport } from './routes/training/strength'
 import { Route as TrainingRunningRouteImport } from './routes/training/running'
 import { Route as TrainingRecoveryRouteImport } from './routes/training/recovery'
 import { Route as TrainingHikingRouteImport } from './routes/training/hiking'
-import { Route as TrainingHeartRateRouteImport } from './routes/training/heart-rate'
 import { Route as TrainingEnduranceRouteImport } from './routes/training/endurance'
 import { Route as TrainingCyclingRouteImport } from './routes/training/cycling'
 import { Route as ProvidersIdRouteImport } from './routes/providers/$id'
 import { Route as NutritionSupplementsRouteImport } from './routes/nutrition/supplements'
 import { Route as NutritionAnalyticsRouteImport } from './routes/nutrition/analytics'
+import { Route as BodyHeartRateRouteImport } from './routes/body/heart-rate'
 import { Route as ActivityIdRouteImport } from './routes/activity.$id'
 
 const TrainingRoute = TrainingRouteImport.update({
@@ -171,6 +172,11 @@ const NutritionIndexRoute = NutritionIndexRouteImport.update({
   path: '/',
   getParentRoute: () => NutritionRoute,
 } as any)
+const BodyIndexRoute = BodyIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => BodyRoute,
+} as any)
 const TrainingStrengthRoute = TrainingStrengthRouteImport.update({
   id: '/strength',
   path: '/strength',
@@ -189,11 +195,6 @@ const TrainingRecoveryRoute = TrainingRecoveryRouteImport.update({
 const TrainingHikingRoute = TrainingHikingRouteImport.update({
   id: '/hiking',
   path: '/hiking',
-  getParentRoute: () => TrainingRoute,
-} as any)
-const TrainingHeartRateRoute = TrainingHeartRateRouteImport.update({
-  id: '/heart-rate',
-  path: '/heart-rate',
   getParentRoute: () => TrainingRoute,
 } as any)
 const TrainingEnduranceRoute = TrainingEnduranceRouteImport.update({
@@ -221,6 +222,11 @@ const NutritionAnalyticsRoute = NutritionAnalyticsRouteImport.update({
   path: '/analytics',
   getParentRoute: () => NutritionRoute,
 } as any)
+const BodyHeartRateRoute = BodyHeartRateRouteImport.update({
+  id: '/heart-rate',
+  path: '/heart-rate',
+  getParentRoute: () => BodyRoute,
+} as any)
 const ActivityIdRoute = ActivityIdRouteImport.update({
   id: '/activity/$id',
   path: '/activity/$id',
@@ -231,7 +237,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/behavior-impact': typeof BehaviorImpactRoute
-  '/body': typeof BodyRoute
+  '/body': typeof BodyRouteWithChildren
   '/breathwork': typeof BreathworkRoute
   '/correlation': typeof CorrelationRoute
   '/cycle': typeof CycleRoute
@@ -251,16 +257,17 @@ export interface FileRoutesByFullPath {
   '/tracking': typeof TrackingRoute
   '/training': typeof TrainingRouteWithChildren
   '/activity/$id': typeof ActivityIdRoute
+  '/body/heart-rate': typeof BodyHeartRateRoute
   '/nutrition/analytics': typeof NutritionAnalyticsRoute
   '/nutrition/supplements': typeof NutritionSupplementsRoute
   '/providers/$id': typeof ProvidersIdRoute
   '/training/cycling': typeof TrainingCyclingRoute
   '/training/endurance': typeof TrainingEnduranceRoute
-  '/training/heart-rate': typeof TrainingHeartRateRoute
   '/training/hiking': typeof TrainingHikingRoute
   '/training/recovery': typeof TrainingRecoveryRoute
   '/training/running': typeof TrainingRunningRoute
   '/training/strength': typeof TrainingStrengthRoute
+  '/body/': typeof BodyIndexRoute
   '/nutrition/': typeof NutritionIndexRoute
   '/providers/': typeof ProvidersIndexRoute
   '/training/': typeof TrainingIndexRoute
@@ -269,7 +276,6 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/behavior-impact': typeof BehaviorImpactRoute
-  '/body': typeof BodyRoute
   '/breathwork': typeof BreathworkRoute
   '/correlation': typeof CorrelationRoute
   '/cycle': typeof CycleRoute
@@ -286,16 +292,17 @@ export interface FileRoutesByTo {
   '/terms': typeof TermsRoute
   '/tracking': typeof TrackingRoute
   '/activity/$id': typeof ActivityIdRoute
+  '/body/heart-rate': typeof BodyHeartRateRoute
   '/nutrition/analytics': typeof NutritionAnalyticsRoute
   '/nutrition/supplements': typeof NutritionSupplementsRoute
   '/providers/$id': typeof ProvidersIdRoute
   '/training/cycling': typeof TrainingCyclingRoute
   '/training/endurance': typeof TrainingEnduranceRoute
-  '/training/heart-rate': typeof TrainingHeartRateRoute
   '/training/hiking': typeof TrainingHikingRoute
   '/training/recovery': typeof TrainingRecoveryRoute
   '/training/running': typeof TrainingRunningRoute
   '/training/strength': typeof TrainingStrengthRoute
+  '/body': typeof BodyIndexRoute
   '/nutrition': typeof NutritionIndexRoute
   '/providers': typeof ProvidersIndexRoute
   '/training': typeof TrainingIndexRoute
@@ -305,7 +312,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/behavior-impact': typeof BehaviorImpactRoute
-  '/body': typeof BodyRoute
+  '/body': typeof BodyRouteWithChildren
   '/breathwork': typeof BreathworkRoute
   '/correlation': typeof CorrelationRoute
   '/cycle': typeof CycleRoute
@@ -325,16 +332,17 @@ export interface FileRoutesById {
   '/tracking': typeof TrackingRoute
   '/training': typeof TrainingRouteWithChildren
   '/activity/$id': typeof ActivityIdRoute
+  '/body/heart-rate': typeof BodyHeartRateRoute
   '/nutrition/analytics': typeof NutritionAnalyticsRoute
   '/nutrition/supplements': typeof NutritionSupplementsRoute
   '/providers/$id': typeof ProvidersIdRoute
   '/training/cycling': typeof TrainingCyclingRoute
   '/training/endurance': typeof TrainingEnduranceRoute
-  '/training/heart-rate': typeof TrainingHeartRateRoute
   '/training/hiking': typeof TrainingHikingRoute
   '/training/recovery': typeof TrainingRecoveryRoute
   '/training/running': typeof TrainingRunningRoute
   '/training/strength': typeof TrainingStrengthRoute
+  '/body/': typeof BodyIndexRoute
   '/nutrition/': typeof NutritionIndexRoute
   '/providers/': typeof ProvidersIndexRoute
   '/training/': typeof TrainingIndexRoute
@@ -365,16 +373,17 @@ export interface FileRouteTypes {
     | '/tracking'
     | '/training'
     | '/activity/$id'
+    | '/body/heart-rate'
     | '/nutrition/analytics'
     | '/nutrition/supplements'
     | '/providers/$id'
     | '/training/cycling'
     | '/training/endurance'
-    | '/training/heart-rate'
     | '/training/hiking'
     | '/training/recovery'
     | '/training/running'
     | '/training/strength'
+    | '/body/'
     | '/nutrition/'
     | '/providers/'
     | '/training/'
@@ -383,7 +392,6 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/behavior-impact'
-    | '/body'
     | '/breathwork'
     | '/correlation'
     | '/cycle'
@@ -400,16 +408,17 @@ export interface FileRouteTypes {
     | '/terms'
     | '/tracking'
     | '/activity/$id'
+    | '/body/heart-rate'
     | '/nutrition/analytics'
     | '/nutrition/supplements'
     | '/providers/$id'
     | '/training/cycling'
     | '/training/endurance'
-    | '/training/heart-rate'
     | '/training/hiking'
     | '/training/recovery'
     | '/training/running'
     | '/training/strength'
+    | '/body'
     | '/nutrition'
     | '/providers'
     | '/training'
@@ -438,16 +447,17 @@ export interface FileRouteTypes {
     | '/tracking'
     | '/training'
     | '/activity/$id'
+    | '/body/heart-rate'
     | '/nutrition/analytics'
     | '/nutrition/supplements'
     | '/providers/$id'
     | '/training/cycling'
     | '/training/endurance'
-    | '/training/heart-rate'
     | '/training/hiking'
     | '/training/recovery'
     | '/training/running'
     | '/training/strength'
+    | '/body/'
     | '/nutrition/'
     | '/providers/'
     | '/training/'
@@ -457,7 +467,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
   BehaviorImpactRoute: typeof BehaviorImpactRoute
-  BodyRoute: typeof BodyRoute
+  BodyRoute: typeof BodyRouteWithChildren
   BreathworkRoute: typeof BreathworkRoute
   CorrelationRoute: typeof CorrelationRoute
   CycleRoute: typeof CycleRoute
@@ -656,6 +666,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof NutritionIndexRouteImport
       parentRoute: typeof NutritionRoute
     }
+    '/body/': {
+      id: '/body/'
+      path: '/'
+      fullPath: '/body/'
+      preLoaderRoute: typeof BodyIndexRouteImport
+      parentRoute: typeof BodyRoute
+    }
     '/training/strength': {
       id: '/training/strength'
       path: '/strength'
@@ -682,13 +699,6 @@ declare module '@tanstack/react-router' {
       path: '/hiking'
       fullPath: '/training/hiking'
       preLoaderRoute: typeof TrainingHikingRouteImport
-      parentRoute: typeof TrainingRoute
-    }
-    '/training/heart-rate': {
-      id: '/training/heart-rate'
-      path: '/heart-rate'
-      fullPath: '/training/heart-rate'
-      preLoaderRoute: typeof TrainingHeartRateRouteImport
       parentRoute: typeof TrainingRoute
     }
     '/training/endurance': {
@@ -726,6 +736,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof NutritionAnalyticsRouteImport
       parentRoute: typeof NutritionRoute
     }
+    '/body/heart-rate': {
+      id: '/body/heart-rate'
+      path: '/heart-rate'
+      fullPath: '/body/heart-rate'
+      preLoaderRoute: typeof BodyHeartRateRouteImport
+      parentRoute: typeof BodyRoute
+    }
     '/activity/$id': {
       id: '/activity/$id'
       path: '/activity/$id'
@@ -735,6 +752,18 @@ declare module '@tanstack/react-router' {
     }
   }
 }
+
+interface BodyRouteChildren {
+  BodyHeartRateRoute: typeof BodyHeartRateRoute
+  BodyIndexRoute: typeof BodyIndexRoute
+}
+
+const BodyRouteChildren: BodyRouteChildren = {
+  BodyHeartRateRoute: BodyHeartRateRoute,
+  BodyIndexRoute: BodyIndexRoute,
+}
+
+const BodyRouteWithChildren = BodyRoute._addFileChildren(BodyRouteChildren)
 
 interface NutritionRouteChildren {
   NutritionAnalyticsRoute: typeof NutritionAnalyticsRoute
@@ -769,7 +798,6 @@ const ProvidersRouteWithChildren = ProvidersRoute._addFileChildren(
 interface TrainingRouteChildren {
   TrainingCyclingRoute: typeof TrainingCyclingRoute
   TrainingEnduranceRoute: typeof TrainingEnduranceRoute
-  TrainingHeartRateRoute: typeof TrainingHeartRateRoute
   TrainingHikingRoute: typeof TrainingHikingRoute
   TrainingRecoveryRoute: typeof TrainingRecoveryRoute
   TrainingRunningRoute: typeof TrainingRunningRoute
@@ -780,7 +808,6 @@ interface TrainingRouteChildren {
 const TrainingRouteChildren: TrainingRouteChildren = {
   TrainingCyclingRoute: TrainingCyclingRoute,
   TrainingEnduranceRoute: TrainingEnduranceRoute,
-  TrainingHeartRateRoute: TrainingHeartRateRoute,
   TrainingHikingRoute: TrainingHikingRoute,
   TrainingRecoveryRoute: TrainingRecoveryRoute,
   TrainingRunningRoute: TrainingRunningRoute,
@@ -796,7 +823,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
   BehaviorImpactRoute: BehaviorImpactRoute,
-  BodyRoute: BodyRoute,
+  BodyRoute: BodyRouteWithChildren,
   BreathworkRoute: BreathworkRoute,
   CorrelationRoute: CorrelationRoute,
   CycleRoute: CycleRoute,
