@@ -2,18 +2,7 @@ import * as Sentry from "@sentry/node";
 import { sql } from "drizzle-orm";
 import { logger } from "../logger.ts";
 import type { SyncDatabase } from "./index.ts";
-
-const DEDUP_VIEWS = [
-  "fitness.v_activity",
-  "fitness.v_sleep",
-  "fitness.v_body_measurement",
-  "fitness.v_daily_metrics",
-  "fitness.deduped_sensor",
-] as const;
-
-const ROLLUP_VIEWS = ["fitness.activity_summary"] as const;
-
-const ALL_VIEWS = [...DEDUP_VIEWS, ...ROLLUP_VIEWS] as const;
+import { ALL_MATERIALIZED_VIEWS, DEDUP_VIEWS, ROLLUP_VIEWS } from "./materialized-views.ts";
 
 /**
  * Check whether a "relation does not exist" error occurred.
@@ -84,7 +73,7 @@ export async function refreshDedupViews(db: SyncDatabase): Promise<void> {
 
     // Retry refreshes after recreation
     const retryErrors: unknown[] = [];
-    for (const view of ALL_VIEWS) {
+    for (const view of ALL_MATERIALIZED_VIEWS) {
       try {
         await refreshView(db, view);
       } catch (error) {

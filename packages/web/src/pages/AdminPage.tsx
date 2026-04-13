@@ -267,7 +267,9 @@ function OverviewTab() {
               {refreshViews.isPending ? "Refreshing..." : "Refresh All Views"}
             </button>
             {refreshViews.isSuccess && (
-              <span className="text-xs text-green-400">
+              <span
+                className={`text-xs ${refreshViews.data.failed.length > 0 ? "text-amber-400" : "text-green-400"}`}
+              >
                 Refreshed {refreshViews.data.refreshed.length} views
                 {refreshViews.data.failed.length > 0 &&
                   `, ${refreshViews.data.failed.length} failed`}

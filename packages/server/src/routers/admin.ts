@@ -1,3 +1,4 @@
+import { ALL_MATERIALIZED_VIEWS } from "dofek/db/materialized-views";
 import { createTrainingExportQueue } from "dofek/jobs/queues";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -5,16 +6,6 @@ import { startTrainingExportWorker } from "../lib/start-worker.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import { adminProcedure, router } from "../trpc.ts";
-
-/** Ordered by dependency: activity_summary depends on v_activity + deduped_sensor. */
-const ALL_MATERIALIZED_VIEWS = [
-  "fitness.v_activity",
-  "fitness.v_sleep",
-  "fitness.v_body_measurement",
-  "fitness.v_daily_metrics",
-  "fitness.deduped_sensor",
-  "fitness.activity_summary",
-] as const;
 
 const trainingExportQueue = createTrainingExportQueue();
 
