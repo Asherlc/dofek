@@ -85,8 +85,14 @@ function daysBetween(dateA: string, dateB: string): number {
  * Key metric columns to check for column-level staleness.
  * If ALL values for any of these are null in the view result but non-null
  * in the base table, the view is stale and needs a refresh.
+ *
+ * Limited to Apple Health activity metrics — these arrive via HealthKit push
+ * (async from server-side syncs) and are most susceptible to the timing gap
+ * where the view was refreshed before the push arrived. Recovery metrics
+ * (resting_hr, hrv) come from server-side provider syncs that refresh the
+ * view themselves, so they don't need this check.
  */
-const KEY_METRICS = ["steps", "resting_hr", "hrv", "active_energy_kcal"] as const;
+const KEY_METRICS = ["steps", "active_energy_kcal"] as const;
 
 /** Data access for daily health metrics (vitals, activity, body). */
 export class DailyMetricsRepository extends BaseRepository {

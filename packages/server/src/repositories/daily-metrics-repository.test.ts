@@ -197,7 +197,7 @@ describe("DailyMetricsRepository", () => {
       expect(result[0]?.date).toBe("2025-03-10");
     });
 
-    it("refreshes view when key metrics are all null but base table has data (column-level staleness)", async () => {
+    it("refreshes view when steps/energy are null in view but present in base table (column-level staleness)", async () => {
       // Scenario: Garmin synced HRV for today, so view has recent dates,
       // but Apple Health steps arrived after the last view refresh.
       // Steps are null in the view but non-null in the base table.
