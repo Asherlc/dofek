@@ -105,9 +105,10 @@ export class PolarProvider implements WebhookProvider {
         // after OAuth before data endpoints will work. The x_user_id from
         // the token response identifies the Polar user.
         //
-        // Deregister first (with the NEW token) to clear any stale registration
-        // from a previous authorization — Polar limits one active token per
-        // app+user, and stale registrations cause all data endpoints to 401.
+        // Note: deregistration of the OLD user (to free the token slot) is
+        // handled by revokeExistingTokens, which runs before exchangeCode
+        // in the callback handler. We must NOT deregister with the NEW token
+        // here — DELETE /v3/users/{id} revokes the calling token.
         const polarUserId = data.x_user_id != null ? String(data.x_user_id) : null;
         if (!polarUserId) {
           throw new Error(
@@ -115,16 +116,6 @@ export class PolarProvider implements WebhookProvider {
           );
         }
         const client = new PolarClient(tokens.accessToken, fetchFn);
-        try {
-          await client.deregisterUser(polarUserId);
-          logger.info(`[polar] Deregistered user ${polarUserId} to clear stale AccessLink state`);
-        } catch (deregisterError) {
-          // Deregistration failure is non-fatal — the user may not have been
-          // registered yet, or the old registration may already be gone.
-          logger.warn(
-            `[polar] Pre-registration deregister failed (continuing): ${deregisterError instanceof Error ? deregisterError.message : String(deregisterError)}`,
-          );
-        }
         await client.registerUser(polarUserId);
         logger.info(`[polar] Registered user ${polarUserId} with Polar AccessLink`);
 

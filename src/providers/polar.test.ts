@@ -660,10 +660,6 @@ describe("PolarProvider.authSetup", () => {
           x_user_id: 12345,
         });
       }
-      // DELETE /v3/users/{id} — deregister succeeds
-      if (urlString.includes("/v3/users/") && init?.method === "DELETE") {
-        return new Response(null, { status: 204 });
-      }
       // POST /v3/users — registration fails
       if (urlString.endsWith("/v3/users") && init?.method === "POST") {
         return new Response("Server Error", { status: 500 });

@@ -261,7 +261,7 @@ describe("PolarProvider — exchangeCode AccessLink registration", () => {
     process.env = { ...originalEnv };
   });
 
-  it("deregisters old user then registers with new token on exchangeCode", async () => {
+  it("registers user with AccessLink on exchangeCode", async () => {
     process.env.POLAR_CLIENT_ID = "test-id";
     process.env.POLAR_CLIENT_SECRET = "test-secret";
 
@@ -285,11 +285,6 @@ describe("PolarProvider — exchangeCode AccessLink registration", () => {
         );
       }
 
-      // Deregister (DELETE /v3/users/{id})
-      if (urlStr.includes("/v3/users/polar-user-123") && method === "DELETE") {
-        return new Response(null, { status: 204 });
-      }
-
       // Register (POST /v3/users)
       if (urlStr.includes("/v3/users") && method === "POST") {
         return new Response(null, { status: 200 });
@@ -305,16 +300,17 @@ describe("PolarProvider — exchangeCode AccessLink registration", () => {
 
     expect(tokens.accessToken).toBe("new-token");
 
-    // Verify deregister was called before register
-    const deregisterIndex = fetchCalls.findIndex(
-      (call) => call.method === "DELETE" && call.url.includes("/v3/users/"),
-    );
-    const registerIndex = fetchCalls.findIndex(
+    // Verify register was called
+    const registerCall = fetchCalls.find(
       (call) => call.method === "POST" && call.url.includes("/v3/users"),
     );
-    expect(deregisterIndex).toBeGreaterThan(-1);
-    expect(registerIndex).toBeGreaterThan(-1);
-    expect(deregisterIndex).toBeLessThan(registerIndex);
+    expect(registerCall).toBeDefined();
+
+    // Verify no deregister was called (deregistration belongs in revokeExistingTokens)
+    const deregisterCall = fetchCalls.find(
+      (call) => call.method === "DELETE" && call.url.includes("/v3/users/"),
+    );
+    expect(deregisterCall).toBeUndefined();
   });
 
   it("throws when AccessLink registration fails with non-409 error", async () => {
@@ -332,11 +328,6 @@ describe("PolarProvider — exchangeCode AccessLink registration", () => {
           }),
           { status: 200, headers: { "content-type": "application/json" } },
         );
-      }
-
-      // Deregister succeeds
-      if (init?.method === "DELETE") {
-        return new Response(null, { status: 204 });
       }
 
       // Register fails with 500
@@ -368,10 +359,6 @@ describe("PolarProvider — exchangeCode AccessLink registration", () => {
           }),
           { status: 200, headers: { "content-type": "application/json" } },
         );
-      }
-
-      if (init?.method === "DELETE") {
-        return new Response(null, { status: 204 });
       }
 
       // 409 = already registered — should succeed
