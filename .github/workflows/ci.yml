@@ -80,6 +80,12 @@ jobs:
     uses: ./.github/workflows/build-docker.yml
     secrets: inherit
 
+  build-docker-ml:
+    name: Build Docker ML
+    needs: [ci-gate]
+    uses: ./.github/workflows/build-docker-ml.yml
+    secrets: inherit
+
   # ── Review apps (PR only, depend on builds not tests) ──────────────────
 
   build-storybook:

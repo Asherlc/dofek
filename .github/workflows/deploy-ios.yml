@@ -5,7 +5,11 @@ on:
     inputs:
       commit_sha:
         description: "Commit SHA to deploy"
-        required: true
+        required: false
+        type: string
+      ci_run_id:
+        description: "CI run ID with ios-xcarchive artifact"
+        required: false
         type: string
   workflow_run:
     workflows: [CI]
@@ -13,8 +17,8 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
-      commit_sha:
-        description: "Commit SHA to deploy (defaults to main HEAD)"
+      ci_run_id:
+        description: "CI run ID with ios-xcarchive. Defaults to latest successful CI run."
         required: false
         type: string
 
@@ -46,28 +50,25 @@ jobs:
           INPUT_SHA: ${{ inputs.commit_sha }}
           WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            SHA="$INPUT_SHA"
-            if [ -z "$SHA" ]; then
-              SHA=$(git ls-remote origin refs/heads/main | awk '{ print $1 }')
-            fi
-          else
-            SHA="$WORKFLOW_RUN_SHA"
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            echo "sha=$WORKFLOW_RUN_SHA" >> "$GITHUB_OUTPUT"
+          elif [ -n "$INPUT_SHA" ]; then
+            echo "sha=$INPUT_SHA" >> "$GITHUB_OUTPUT"
           fi
-          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          # For manual dispatch without commit_sha, SHA is resolved from CI run later
       - name: Check if latest main HEAD and detect iOS changes
         id: detect
         env:
           SHA: ${{ steps.resolve.outputs.sha }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
-          MAIN_HEAD=$(git ls-remote origin refs/heads/main | awk '{ print $1 }')
-
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             echo "should_deploy=true" >> "$GITHUB_OUTPUT"
-            echo "Manual deploy requested for $SHA"
+            echo "Manual deploy requested"
             exit 0
           fi
+
+          MAIN_HEAD=$(git ls-remote origin refs/heads/main | awk '{ print $1 }')
 
           if [ "$MAIN_HEAD" != "$SHA" ]; then
             echo "should_deploy=false" >> "$GITHUB_OUTPUT"
@@ -86,10 +87,11 @@ jobs:
           fi
       - name: Find CI run with archive
         id: find-run
+        if: steps.detect.outputs.should_deploy == 'true'
         env:
           EVENT_NAME: ${{ github.event_name }}
+          INPUT_RUN_ID: ${{ inputs.ci_run_id }}
           WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
-          COMMIT_SHA: ${{ steps.resolve.outputs.sha }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ "$EVENT_NAME" = "workflow_run" ]; then
@@ -98,22 +100,23 @@ jobs:
             exit 0
           fi
 
-          # For workflow_dispatch and workflow_call, find CI run for the commit
-          RUN_ID=$(gh run list \
-            --workflow=ci.yml \
-            --commit="$COMMIT_SHA" \
-            --status=success \
-            --limit=1 \
-            --json databaseId \
-            --jq '.[0].databaseId')
+          if [ -n "$INPUT_RUN_ID" ]; then
+            echo "run_id=$INPUT_RUN_ID" >> "$GITHUB_OUTPUT"
+            echo "Using provided CI run: $INPUT_RUN_ID"
+            exit 0
+          fi
+
+          # Find the latest ios-xcarchive artifact
+          RUN_ID=$(gh api "repos/${{ github.repository }}/actions/artifacts?name=ios-xcarchive&per_page=1" \
+            --jq '.artifacts[0].workflow_run.id')
 
           if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
-            echo "::error::No successful CI run found for commit $COMMIT_SHA"
+            echo "::error::No ios-xcarchive artifact found"
             exit 1
           fi
 
           echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
-          echo "Using CI run for commit ${COMMIT_SHA:0:10}: $RUN_ID"
+          echo "Using latest ios-xcarchive from CI run: $RUN_ID"
 
   deploy:
     name: Upload to TestFlight
@@ -140,7 +143,7 @@ jobs:
           elif [ -n "$INPUT_SHA" ]; then
             echo "ref=$INPUT_SHA" >> "$GITHUB_OUTPUT"
           else
-            echo "ref=$(git ls-remote origin refs/heads/main | awk '{ print $1 }')" >> "$GITHUB_OUTPUT"
+            echo "ref=main" >> "$GITHUB_OUTPUT"
           fi
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:

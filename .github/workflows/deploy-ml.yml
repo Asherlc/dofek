@@ -1,14 +1,10 @@
-name: Deploy App
+name: Deploy ML
 
 on:
   workflow_call:
     inputs:
-      commit_sha:
-        description: "Commit SHA to deploy (used to compute image tag if image_tag not provided)"
-        required: false
-        type: string
       image_tag:
-        description: "Docker image tag to deploy directly (e.g. sha-abc1234)"
+        description: "Docker image tag to deploy (e.g. sha-abc1234)"
         required: false
         type: string
   workflow_dispatch:
@@ -20,31 +16,22 @@ on:
         type: string
 
 concurrency:
-  group: deploy-app
+  group: deploy-ml
   cancel-in-progress: false
 
 jobs:
-  app:
-    name: Deploy App
+  ml:
+    name: Deploy ML Worker
     runs-on: ubuntu-latest
     steps:
       - name: Resolve image tag
         id: resolve
         env:
           INPUT_TAG: ${{ inputs.image_tag }}
-          INPUT_SHA: ${{ inputs.commit_sha }}
         run: |
-          if [ -n "$INPUT_TAG" ]; then
-            echo "tag=$INPUT_TAG" >> "$GITHUB_OUTPUT"
-            echo "Using provided image tag: $INPUT_TAG"
-          elif [ -n "$INPUT_SHA" ]; then
-            SHORT_SHA=$(echo "$INPUT_SHA" | head -c 7)
-            echo "tag=sha-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-            echo "Computed image tag from commit SHA: sha-${SHORT_SHA}"
-          else
-            echo "::error::Either image_tag or commit_sha must be provided"
-            exit 1
-          fi
+          TAG="${INPUT_TAG:-latest}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Deploying dofek-ml image: $TAG"
       - name: Setup SSH
         env:
           SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
@@ -54,7 +41,7 @@ jobs:
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-      - name: Deploy web and worker
+      - name: Deploy training-export-worker
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
@@ -66,21 +53,14 @@ jobs:
             SHA_TAG="$2"
             cd /opt/dofek
 
-            # Authenticate with GHCR
             echo "$GHCR_TOKEN" | docker login ghcr.io -u asherlc --password-stdin
 
-            # Pull the new image
-            docker pull "ghcr.io/asherlc/dofek:${SHA_TAG}"
+            docker pull "ghcr.io/asherlc/dofek-ml:${SHA_TAG}"
 
-            # Persist the image tag for future compose operations
             echo "IMAGE_TAG=${SHA_TAG}" > .env.deploy
 
-            # Zero-downtime rollout for both services
-            docker rollout \
+            docker compose \
               --env-file .env.prod --env-file .env.deploy \
-              -f docker-compose.deploy.yml web
-
-            docker rollout \
-              --env-file .env.prod --env-file .env.deploy \
-              -f docker-compose.deploy.yml worker
+              -f docker-compose.deploy.yml \
+              up -d --force-recreate training-export-worker
           DEPLOY

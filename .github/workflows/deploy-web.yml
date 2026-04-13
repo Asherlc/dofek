@@ -7,9 +7,10 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
-      commit_sha:
-        description: "Commit SHA to deploy (defaults to main HEAD)"
+      image_tag:
+        description: "Docker image tag (e.g. sha-abc1234). Defaults to latest."
         required: false
+        default: "latest"
         type: string
 
 permissions:
@@ -26,83 +27,73 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     outputs:
-      commit_sha: ${{ steps.resolve.outputs.sha }}
-      should_deploy: ${{ steps.latest.outputs.should_deploy }}
+      image_tag: ${{ steps.resolve.outputs.image_tag }}
+      should_deploy: ${{ steps.resolve.outputs.should_deploy }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           fetch-depth: 1
-      - name: Resolve commit SHA
+      - name: Resolve deploy target
         id: resolve
         env:
           EVENT_NAME: ${{ github.event_name }}
-          INPUT_SHA: ${{ inputs.commit_sha }}
+          INPUT_TAG: ${{ inputs.image_tag }}
           WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
-        run: |
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            SHA="$INPUT_SHA"
-            if [ -z "$SHA" ]; then
-              SHA=$(git ls-remote origin refs/heads/main | awk '{ print $1 }')
-            fi
-          else
-            SHA="$WORKFLOW_RUN_SHA"
-          fi
-          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
-          echo "Resolved commit SHA: $SHA"
-      - name: Check if latest main HEAD
-        id: latest
-        env:
-          SHA: ${{ steps.resolve.outputs.sha }}
-          EVENT_NAME: ${{ github.event_name }}
-        run: |
-          MAIN_HEAD=$(git ls-remote origin refs/heads/main | awk '{ print $1 }')
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
-            echo "Manual deploy requested for $SHA"
-          elif [ "$MAIN_HEAD" = "$SHA" ]; then
-            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
-            echo "Deploying latest main commit: $SHA"
-          else
-            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
-            echo "Skipping deploy for non-latest main commit: $SHA (main HEAD is $MAIN_HEAD)"
-          fi
-      - name: Verify Docker image exists
-        if: steps.latest.outputs.should_deploy == 'true'
-        env:
-          SHA: ${{ steps.resolve.outputs.sha }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          SHORT_SHA=$(echo "$SHA" | head -c 7)
-          IMAGE="ghcr.io/asherlc/dofek:sha-${SHORT_SHA}"
-          echo "Checking for image: $IMAGE"
-          if ! gh api "/users/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/packages/container/dofek/versions" \
-              --jq ".[].metadata.container.tags[]" 2>/dev/null | grep -q "sha-${SHORT_SHA}"; then
-            echo "::error::Docker image $IMAGE not found in GHCR. CI must build and push the image before deploy."
-            exit 1
-          fi
-          echo "Image found: $IMAGE"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            TAG="${INPUT_TAG:-latest}"
+            echo "image_tag=$TAG" >> "$GITHUB_OUTPUT"
+            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+            echo "Deploying image: $TAG"
+          else
+            # Auto-trigger from CI workflow_run
+            SHA="$WORKFLOW_RUN_SHA"
+            MAIN_HEAD=$(git ls-remote origin refs/heads/main | awk '{ print $1 }')
+            SHORT_SHA=$(echo "$SHA" | head -c 7)
+            TAG="sha-${SHORT_SHA}"
 
-  terraform:
-    name: Terraform Apply
-    needs: [check]
-    if: needs.check.outputs.should_deploy == 'true'
-    uses: ./.github/workflows/deploy-terraform.yml
-    with:
-      commit_sha: ${{ needs.check.outputs.commit_sha }}
-    secrets: inherit
+            if [ "$MAIN_HEAD" != "$SHA" ]; then
+              echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+              echo "Skipping deploy — not latest main (CI SHA: $SHA, main HEAD: $MAIN_HEAD)"
+            else
+              # Verify image exists (CI just built it, but confirm)
+              if ! gh api "/users/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/packages/container/dofek/versions" \
+                  --jq ".[].metadata.container.tags[]" 2>/dev/null | grep -q "$TAG"; then
+                echo "::error::Docker image $TAG not found. CI may not have pushed it."
+                exit 1
+              fi
+
+              {
+                echo "image_tag=$TAG"
+                echo "should_deploy=true"
+              } >> "$GITHUB_OUTPUT"
+              echo "Deploying CI image: $TAG"
+            fi
+          fi
 
   deploy-app:
     name: Deploy App
-    needs: [check, terraform]
+    needs: [check]
+    if: needs.check.outputs.should_deploy == 'true'
     uses: ./.github/workflows/deploy-app.yml
     with:
-      commit_sha: ${{ needs.check.outputs.commit_sha }}
+      image_tag: ${{ needs.check.outputs.image_tag }}
+    secrets: inherit
+
+  deploy-ml:
+    name: Deploy ML
+    needs: [check]
+    if: needs.check.outputs.should_deploy == 'true'
+    uses: ./.github/workflows/deploy-ml.yml
+    with:
+      image_tag: ${{ needs.check.outputs.image_tag }}
     secrets: inherit
 
   cleanup-images:
     name: Cleanup Images
-    needs: [deploy-app]
-    if: always() && needs.deploy-app.result == 'success'
+    needs: [deploy-app, deploy-ml]
+    if: always() && (needs.deploy-app.result == 'success' || needs.deploy-ml.result == 'success')
     runs-on: ubuntu-latest
     steps:
       - name: Setup SSH
