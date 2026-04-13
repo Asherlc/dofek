@@ -88,7 +88,7 @@ export interface InertialMeasurementUnitSample {
 /** Maximum time series window in milliseconds (10 minutes). */
 const MAX_WINDOW_MS = 10 * 60 * 1000;
 
-/** Channels that contain IMU data in sensor_sample. */
+/** Channels that contain IMU data in metric_stream. */
 const IMU_CHANNELS = sql`('imu', 'accel')`;
 
 // ---------------------------------------------------------------------------
@@ -114,7 +114,7 @@ export class InertialMeasurementUnitRepository {
           date_trunc('day', recorded_at)::date::text AS date,
           count(*)::int AS sample_count,
           (count(*)::float / (50.0 * 3600))::numeric(6,2)::float AS hours_covered
-        FROM fitness.sensor_sample
+        FROM fitness.metric_stream
         WHERE user_id = ${this.#userId}::uuid
           AND channel IN ${IMU_CHANNELS}
           AND recorded_at > now() - make_interval(days => ${days})
@@ -139,7 +139,7 @@ export class InertialMeasurementUnitRepository {
           extract(hour FROM recorded_at)::int AS hour,
           count(*)::int AS sample_count,
           least(count(*)::float / 180000.0 * 100, 100)::numeric(5,1)::float AS coverage_percent
-        FROM fitness.sensor_sample
+        FROM fitness.metric_stream
         WHERE user_id = ${this.#userId}::uuid
           AND channel IN ${IMU_CHANNELS}
           AND recorded_at > now() - make_interval(days => ${days})
@@ -165,7 +165,7 @@ export class InertialMeasurementUnitRepository {
           count(*)::int AS sample_count,
           to_char(max(recorded_at), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS latest_sample,
           to_char(min(recorded_at), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS earliest_sample
-        FROM fitness.sensor_sample
+        FROM fitness.metric_stream
         WHERE user_id = ${this.#userId}::uuid
           AND channel IN ${IMU_CHANNELS}
         GROUP BY device_id`,
@@ -187,7 +187,7 @@ export class InertialMeasurementUnitRepository {
       sql`SELECT
           to_char(time_bucket('5 minutes', recorded_at), 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS bucket,
           count(*)::int AS sample_count
-        FROM fitness.sensor_sample
+        FROM fitness.metric_stream
         WHERE user_id = ${this.#userId}::uuid
           AND channel IN ${IMU_CHANNELS}
           AND recorded_at >= ${date}::date
@@ -227,7 +227,7 @@ export class InertialMeasurementUnitRepository {
           CASE WHEN channel = 'imu' THEN vector[4] ELSE NULL END AS gyroscope_x,
           CASE WHEN channel = 'imu' THEN vector[5] ELSE NULL END AS gyroscope_y,
           CASE WHEN channel = 'imu' THEN vector[6] ELSE NULL END AS gyroscope_z
-        FROM fitness.sensor_sample
+        FROM fitness.metric_stream
         WHERE user_id = ${this.#userId}::uuid
           AND channel IN ${IMU_CHANNELS}
           AND recorded_at >= ${start.toISOString()}::timestamptz

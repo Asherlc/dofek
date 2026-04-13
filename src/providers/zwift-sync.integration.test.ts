@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity, dailyMetrics, sensorSample } from "../db/schema.ts";
+import { activity, dailyMetrics, metricStream } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
@@ -261,11 +261,11 @@ describe("ZwiftProvider.sync() (integration)", () => {
     if (!run) throw new Error("expected activity 100002");
     expect(run.activityType).toBe("running");
 
-    // Verify sensor_sample rows were inserted from fitness data
+    // Verify metric_stream rows were inserted from fitness data
     const metrics = await ctx.db
       .select()
-      .from(sensorSample)
-      .where(eq(sensorSample.providerId, "zwift"));
+      .from(metricStream)
+      .where(eq(metricStream.providerId, "zwift"));
     // 2 activities x 3 heart-rate samples each = 6
     const heartRateSamples = metrics.filter((sample) => sample.channel === "heart_rate");
     expect(heartRateSamples.length).toBe(6);

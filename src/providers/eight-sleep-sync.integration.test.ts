@@ -5,8 +5,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   bodyMeasurement,
   dailyMetrics,
+  metricStream,
   oauthToken,
-  sensorSample,
   sleepSession,
   userProfile,
 } from "../db/schema.ts";
@@ -203,8 +203,8 @@ describe("EightSleepProvider.sync() (integration)", () => {
     // Verify HR metric stream
     const hrRows = await ctx.db
       .select()
-      .from(sensorSample)
-      .where(eq(sensorSample.providerId, "eight-sleep"));
+      .from(metricStream)
+      .where(eq(metricStream.providerId, "eight-sleep"));
     expect(hrRows).toHaveLength(5); // 3 from day 1 + 2 from day 2
     expect(hrRows.every((r) => r.scalar !== null && r.scalar > 0)).toBe(true);
   });
@@ -221,7 +221,7 @@ describe("EightSleepProvider.sync() (integration)", () => {
     await ctx.db.delete(sleepSession).where(eq(sleepSession.providerId, "eight-sleep"));
     await ctx.db.delete(dailyMetrics).where(eq(dailyMetrics.providerId, "eight-sleep"));
     await ctx.db.delete(bodyMeasurement).where(eq(bodyMeasurement.providerId, "eight-sleep"));
-    await ctx.db.delete(sensorSample).where(eq(sensorSample.providerId, "eight-sleep"));
+    await ctx.db.delete(metricStream).where(eq(metricStream.providerId, "eight-sleep"));
 
     const days = [
       fakeTrendDay({ day: "2026-03-10", processing: true }),
@@ -301,7 +301,7 @@ describe("EightSleepProvider.sync() (integration)", () => {
     await ctx.db.delete(sleepSession).where(eq(sleepSession.providerId, "eight-sleep"));
     await ctx.db.delete(dailyMetrics).where(eq(dailyMetrics.providerId, "eight-sleep"));
     await ctx.db.delete(bodyMeasurement).where(eq(bodyMeasurement.providerId, "eight-sleep"));
-    await ctx.db.delete(sensorSample).where(eq(sensorSample.providerId, "eight-sleep"));
+    await ctx.db.delete(metricStream).where(eq(metricStream.providerId, "eight-sleep"));
 
     const days = [
       fakeTrendDay({

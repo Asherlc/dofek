@@ -244,7 +244,7 @@ export class OuraProvider implements WebhookProvider {
     // 3. Sync sessions (meditation, breathing, etc.) → activity table
     recordsSynced += await syncSessions(context);
 
-    // 4. Sync heart rate → sensor_sample table (batched)
+    // 4. Sync heart rate → metric_stream table (batched)
     recordsSynced += await syncHeartRate(context, since);
 
     // 5. Sync daily stress → healthEvent table

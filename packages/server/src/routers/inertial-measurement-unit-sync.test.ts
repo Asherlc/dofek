@@ -84,7 +84,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       });
 
       expect(result.inserted).toBe(2);
-      // 1 ensureProvider + 1 sensor_sample batch insert
+      // 1 ensureProvider + 1 metric_stream batch insert
       expect(execute).toHaveBeenCalledTimes(2);
     });
 
@@ -152,7 +152,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       });
 
       expect(result.inserted).toBe(7500);
-      // 1 ensureProvider + 2 sensor_sample batch inserts = 3
+      // 1 ensureProvider + 2 metric_stream batch inserts = 3
       expect(execute).toHaveBeenCalledTimes(3);
     });
 

@@ -50,29 +50,20 @@ describe("Activity router", () => {
 
     await testCtx.db.execute(
       sql`INSERT INTO fitness.metric_stream (
-            recorded_at, user_id, activity_id, provider_id, heart_rate, power, speed, cadence
+            recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
           ) VALUES
-          (
-            CURRENT_TIMESTAMP - INTERVAL '2 days',
-            ${TEST_USER_ID},
-            ${metricOnlyActivityId},
-            'test_provider',
-            150, 210, 3.8, 88
-          ),
-          (
-            CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '1 second',
-            ${TEST_USER_ID},
-            ${metricOnlyActivityId},
-            'test_provider',
-            152, 215, 3.9, 89
-          ),
-          (
-            CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '2 seconds',
-            ${TEST_USER_ID},
-            ${metricOnlyActivityId},
-            'test_provider',
-            155, 220, 4.0, 90
-          )`,
+          (CURRENT_TIMESTAMP - INTERVAL '2 days', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'heart_rate', ${metricOnlyActivityId}, 150, NULL),
+          (CURRENT_TIMESTAMP - INTERVAL '2 days', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'power', ${metricOnlyActivityId}, 210, NULL),
+          (CURRENT_TIMESTAMP - INTERVAL '2 days', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'speed', ${metricOnlyActivityId}, 3.8, NULL),
+          (CURRENT_TIMESTAMP - INTERVAL '2 days', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'cadence', ${metricOnlyActivityId}, 88, NULL),
+          (CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '1 second', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'heart_rate', ${metricOnlyActivityId}, 152, NULL),
+          (CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '1 second', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'power', ${metricOnlyActivityId}, 215, NULL),
+          (CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '1 second', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'speed', ${metricOnlyActivityId}, 3.9, NULL),
+          (CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '1 second', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'cadence', ${metricOnlyActivityId}, 89, NULL),
+          (CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '2 seconds', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'heart_rate', ${metricOnlyActivityId}, 155, NULL),
+          (CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '2 seconds', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'power', ${metricOnlyActivityId}, 220, NULL),
+          (CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '2 seconds', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'speed', ${metricOnlyActivityId}, 4.0, NULL),
+          (CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '2 seconds', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'cadence', ${metricOnlyActivityId}, 90, NULL)`,
     );
 
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
@@ -126,7 +117,7 @@ describe("Activity router", () => {
   });
 
   describe("list", () => {
-    it("falls back to metric_stream-backed summary when sensor_sample rows are not available yet", async () => {
+    it("falls back to metric_stream-backed summary when metric_stream rows are not available yet", async () => {
       const today = new Date().toISOString().slice(0, 10);
       const result = await query("activity.list", {
         days: 30,
@@ -168,7 +159,7 @@ describe("Activity router", () => {
       expect(result.error.data.code).toBe("BAD_REQUEST");
     });
 
-    it("falls back to metric_stream when sensor_sample rows are not available yet", async () => {
+    it("falls back to metric_stream when metric_stream rows are not available yet", async () => {
       const result = await query("activity.stream", {
         id: metricOnlyActivityId,
         maxPoints: 500,
@@ -212,7 +203,7 @@ describe("Activity router", () => {
       }
     });
 
-    it("falls back to metric_stream when sensor_sample rows are not available yet", async () => {
+    it("falls back to metric_stream when metric_stream rows are not available yet", async () => {
       const result = await query("activity.hrZones", {
         id: metricOnlyActivityId,
       });

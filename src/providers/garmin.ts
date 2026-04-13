@@ -17,9 +17,9 @@ import type { GarminTokens } from "garmin-connect/types";
 import { z } from "zod";
 import type { TokenSet } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
+import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
 import { activity, dailyMetrics, sleepSession, sleepStage, userSettings } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
-import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
@@ -544,7 +544,7 @@ export class GarminProvider implements SyncProvider {
             temperature:
               sample.directAirTemperature !== null ? sample.directAirTemperature : undefined,
           };
-          await dualWriteToSensorSample(db, [metricRow], SOURCE_TYPE_API);
+          await writeMetricStreamBatch(db, [metricRow], SOURCE_TYPE_API);
         }
       } catch (error) {
         // Activity detail is non-critical — don't fail the sync, but track errors
@@ -729,7 +729,7 @@ export class GarminProvider implements SyncProvider {
           providerId: this.id,
           stress: sample.stressLevel,
         }));
-        await dualWriteToSensorSample(db, stressRows, SOURCE_TYPE_API);
+        await writeMetricStreamBatch(db, stressRows, SOURCE_TYPE_API);
 
         count += stressRows.length;
       } catch (error) {
@@ -759,7 +759,7 @@ export class GarminProvider implements SyncProvider {
           providerId: this.id,
           heartRate: sample.heartRate,
         }));
-        await dualWriteToSensorSample(db, hrRows, SOURCE_TYPE_API);
+        await writeMetricStreamBatch(db, hrRows, SOURCE_TYPE_API);
 
         count += hrRows.length;
       } catch (error) {

@@ -1,5 +1,5 @@
 import sax from "sax";
-import type { SensorSampleSourceRow } from "../db/sensor-sample-writer.ts";
+import type { MetricStreamSourceRow } from "../db/metric-stream-writer.ts";
 
 export interface TcxTrackpoint {
   recordedAt: Date;
@@ -104,13 +104,13 @@ export function parseTcx(buffer: Buffer | string): TcxTrackpoint[] {
 }
 
 /**
- * Convert TCX trackpoints to sensor sample source rows for insertion.
+ * Convert TCX trackpoints to metric stream source rows for insertion.
  */
 export function tcxToSensorSamples(
   trackpoints: TcxTrackpoint[],
   providerId: string,
   activityId: string,
-): SensorSampleSourceRow[] {
+): MetricStreamSourceRow[] {
   return trackpoints.map((point) => ({
     providerId,
     activityId,

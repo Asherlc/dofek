@@ -13,7 +13,7 @@ import {
   activity,
   dailyMetrics,
   journalEntry,
-  sensorSample,
+  metricStream,
   sleepSession,
   sleepStage,
   TEST_USER_ID,
@@ -452,7 +452,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     expect(ride.activityType).toBe("cycling");
   });
 
-  it("syncs HR stream into sensor_sample", async () => {
+  it("syncs HR stream into metric_stream", async () => {
     const hrValues = fakeHrValues(50, new Date("2026-03-01T10:00:00Z").getTime());
     server.use(...whoopHandlers([], { hrValues }));
     const provider = new WhoopProvider();
@@ -462,8 +462,8 @@ describe("WhoopProvider.sync() (integration)", () => {
 
     const rows = await ctx.db
       .select()
-      .from(sensorSample)
-      .where(eq(sensorSample.providerId, "whoop"));
+      .from(metricStream)
+      .where(eq(metricStream.providerId, "whoop"));
 
     const withHr = rows.filter((sample) => sample.channel === "heart_rate");
     expect(withHr.length).toBeGreaterThanOrEqual(50);

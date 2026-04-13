@@ -1483,7 +1483,7 @@ describe("StravaProvider — precise webhook string/object assertions", () => {
     expect(result.provider).toBe("strava");
     expect(result.recordsSynced).toBe(0);
 
-    // Verify delete was called for both activity and sensor_sample tables
+    // Verify delete was called for both activity and metric_stream tables
     expect(mockDelete).toHaveBeenCalledTimes(2);
     const whereCalls = mockDeleteWhere.mock.calls;
     expect(whereCalls).toHaveLength(2);

@@ -5,10 +5,12 @@
 # - renaming-table: We intentionally rename accelerometer_sample → inertial_measurement_unit_sample
 # - prefer-robust-stmts: TimescaleDB compression policies can't run inside transactions
 # - ban-drop-column: We intentionally drop columns when removing derived data
+# - ban-drop-table: We intentionally drop deprecated tables during schema consolidation
 excluded_rules = [
   "renaming-table",
   "prefer-robust-stmts",
   "require-timeout-settings",
   "require-concurrent-index-creation",
   "ban-drop-column",
+  "ban-drop-table",
 ]

@@ -112,7 +112,7 @@ describe("parseTcx", () => {
 });
 
 describe("tcxToSensorSamples", () => {
-  it("converts trackpoints to sensor sample rows", () => {
+  it("converts trackpoints to metric stream rows", () => {
     const points = parseTcx(SAMPLE_TCX);
     const rows = tcxToSensorSamples(points, "fitbit", "activity-123");
 

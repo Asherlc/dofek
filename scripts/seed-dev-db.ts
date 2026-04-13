@@ -269,8 +269,8 @@ async function seedData() {
         `${String(startHour + Math.floor((sample * 5) / 60)).padStart(2, "0")}:${String((sample * 5) % 60).padStart(2, "0")}:00`,
       );
       await sql`
-				INSERT INTO fitness.metric_stream (recorded_at, user_id, activity_id, provider_id, heart_rate)
-				VALUES (${sampleTime}, ${USER_ID}, ${activityId}, 'whoop', ${randInt(baseHr - 15, baseHr + 25)})
+				INSERT INTO fitness.metric_stream (recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar)
+				VALUES (${sampleTime}, ${USER_ID}, 'whoop', NULL, 'api', 'heart_rate', ${activityId}, ${randInt(baseHr - 15, baseHr + 25)})
 			`;
     }
   }
@@ -330,7 +330,7 @@ async function refreshViews() {
   try {
     await sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`;
   } catch {
-    // deduped_sensor depends on v_activity + sensor_sample
+    // deduped_sensor depends on v_activity + metric_stream
   }
   try {
     await sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`;

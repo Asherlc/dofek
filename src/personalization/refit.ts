@@ -382,7 +382,7 @@ async function fitTrimpFromDb(db: Database, userId: string) {
               ORDER BY ms.recorded_at
               RANGE BETWEEN INTERVAL '29 seconds' PRECEDING AND CURRENT ROW
             ) AS rolling_30s_power
-          FROM fitness.sensor_sample ms
+          FROM fitness.metric_stream ms
           JOIN fitness.v_activity a ON a.id = ms.activity_id
           WHERE a.user_id = ${userId}
             AND a.started_at > NOW() - INTERVAL '365 days'

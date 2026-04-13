@@ -1,8 +1,8 @@
 import { sql } from "drizzle-orm";
 import type { SyncDatabase } from "../../db/index.ts";
+import { writeMetricStreamBatch } from "../../db/metric-stream-writer.ts";
 import { activity, dailyMetrics, healthEvent, sleepSession } from "../../db/schema.ts";
 import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
-import { dualWriteToSensorSample } from "../../db/sensor-sample-writer.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import type { SyncError, SyncOptions } from "../types.ts";
 import type { OuraClient } from "./client.ts";
@@ -259,7 +259,7 @@ export async function syncHeartRate(context: SyncStepContext, since: Date): Prom
           heartRate: hr.bpm,
         }));
 
-        await dualWriteToSensorSample(db, rows, SOURCE_TYPE_API);
+        await writeMetricStreamBatch(db, rows, SOURCE_TYPE_API);
 
         return { recordCount: rows.length, result: rows.length };
       },

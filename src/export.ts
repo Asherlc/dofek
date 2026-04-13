@@ -192,13 +192,13 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       executeWithSchema(
         db,
         exportRowSchema,
-        sql`SELECT * FROM fitness.sensor_sample WHERE user_id = ${userId} ORDER BY recorded_at`,
+        sql`SELECT * FROM fitness.metric_stream WHERE user_id = ${userId} ORDER BY recorded_at`,
       ),
   },
 ];
 
 /**
- * Query sensor_sample in batches using cursor-based (keyset) pagination and
+ * Query metric_stream in batches using cursor-based (keyset) pagination and
  * return a Readable stream of JSON array content. Unlike OFFSET pagination
  * which re-scans all preceding rows on each page, cursor pagination jumps
  * directly to the next page via the (recorded_at, provider_id, channel) tuple.
@@ -226,7 +226,7 @@ function createBatchedJsonStream(db: SyncDatabase, userId: string): Readable {
         const rows = await executeWithSchema(
           db,
           exportRowSchema,
-          sql`SELECT * FROM fitness.sensor_sample
+          sql`SELECT * FROM fitness.metric_stream
               WHERE user_id = ${userId}
               ${cursorCondition}
               ORDER BY recorded_at, provider_id, source_type, channel
@@ -311,7 +311,7 @@ export async function generateExport(
       const countResult = await executeWithSchema(
         db,
         countRowSchema,
-        sql`SELECT COUNT(*)::text AS count FROM fitness.sensor_sample WHERE user_id = ${userId}`,
+        sql`SELECT COUNT(*)::text AS count FROM fitness.metric_stream WHERE user_id = ${userId}`,
       );
       const count = parseInt(countResult[0]?.count ?? "0", 10);
       totalRecords += count;

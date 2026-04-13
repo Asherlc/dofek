@@ -32,6 +32,11 @@ vi.mock("../../lib/trpc", () => ({
         useQuery: () => ({ data: mockWeeklyVolume, isLoading: false }),
       },
     },
+    cyclingAdvanced: {
+      verticalAscentRate: {
+        useQuery: () => ({ data: [], isLoading: false }),
+      },
+    },
   },
 }));
 

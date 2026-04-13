@@ -57,7 +57,7 @@ async function insertBatch(
   for (let offset = 0; offset < samples.length; offset += INSERT_BATCH_SIZE) {
     const batch = samples.slice(offset, offset + INSERT_BATCH_SIZE);
 
-    // Write IMU vectors directly to sensor_sample: accel-only as 'accel', 6-axis as 'imu'.
+    // Write IMU vectors directly to metric_stream: accel-only as 'accel', 6-axis as 'imu'.
     const sensorValuesClauses = batch.map((sample) => {
       const sampleHasGyro =
         sample.gyroscopeX != null || sample.gyroscopeY != null || sample.gyroscopeZ != null;
@@ -68,7 +68,7 @@ async function insertBatch(
       return sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${deviceId}, ${SOURCE_TYPE_API}, ${channel}, ${vector})`;
     });
     await db.execute(
-      sql`INSERT INTO fitness.sensor_sample
+      sql`INSERT INTO fitness.metric_stream
           (recorded_at, user_id, provider_id, device_id, source_type, channel, vector)
           VALUES ${sql.join(sensorValuesClauses, sql`, `)}`,
     );

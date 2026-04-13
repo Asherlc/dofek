@@ -19,6 +19,7 @@ import { ActivityCard } from "../../components/ActivityCard";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { SparkLine } from "../../components/charts/SparkLine";
 import { StrainGauge } from "../../components/charts/StrainGauge";
+import { VerticalAscentChart } from "../../components/charts/VerticalAscentChart";
 import { DaySelector } from "../../components/DaySelector";
 import { safeParseRows } from "../../lib/safe-parse";
 import { trpc } from "../../lib/trpc";
@@ -47,6 +48,8 @@ export default function StrainScreen() {
     "strain:activities",
   );
   const activities = activitiesParsed.data;
+
+  const verticalAscentQuery = trpc.cyclingAdvanced.verticalAscentRate.useQuery({ days });
 
   const weeklyVolumeQuery = trpc.training.weeklyVolume.useQuery({ days });
   const weeklyVolumeParsed = safeParseRows(
@@ -210,6 +213,18 @@ export default function StrainScreen() {
               <Text style={styles.emptyChartText}>No training data yet for this period</Text>
             )}
           </View>
+
+          {/* Vertical Ascent Rate */}
+          {(verticalAscentQuery.data ?? []).length > 0 && (
+            <View style={styles.card}>
+              <ChartTitleWithTooltip
+                title="Vertical Ascent Rate"
+                description="Climbing speed on grade >3% segments. Bubble size indicates elevation gain."
+                textStyle={styles.cardTitle}
+              />
+              <VerticalAscentChart data={verticalAscentQuery.data ?? []} units={units} />
+            </View>
+          )}
 
           {/* Weekly volume summary */}
           {(weeklyVolumeQuery.isError || weeklyVolumeParsed.error) && (

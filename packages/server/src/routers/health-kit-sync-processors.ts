@@ -72,7 +72,7 @@ export async function linkUnassignedHeartRateToWorkouts(
   if (bounds?.endAt) filters.push(sql`ss.recorded_at <= ${bounds.endAt}::timestamptz`);
 
   const linked = await db.execute(
-    sql`UPDATE fitness.sensor_sample ss
+    sql`UPDATE fitness.metric_stream ss
         SET activity_id = (
           SELECT a.id
           FROM fitness.activity a
@@ -272,7 +272,7 @@ export async function processDailyMetrics(
   return samples.length;
 }
 
-/** Process sensor samples */
+/** Process metric streams */
 export async function processMetricStream(
   db: Database,
   userId: string,
@@ -289,7 +289,7 @@ export async function processMetricStream(
         ? Math.round(sample.value)
         : sample.value;
       await db.execute(
-        sql`INSERT INTO fitness.sensor_sample (recorded_at, user_id, provider_id, device_id, source_type, channel, scalar)
+        sql`INSERT INTO fitness.metric_stream (recorded_at, user_id, provider_id, device_id, source_type, channel, scalar)
             VALUES (
               ${sample.startDate}::timestamptz,
               ${userId},
@@ -382,7 +382,7 @@ export async function processWorkouts(
   return inserted;
 }
 
-/** Process workout route locations — insert GPS data as sensor_sample rows */
+/** Process workout route locations — insert GPS data as metric_stream rows */
 export async function processWorkoutRoutes(
   db: Database,
   userId: string,
@@ -433,12 +433,12 @@ export async function processWorkoutRoutes(
       continue;
     }
 
-    // Batch sensor_sample inserts to reduce DB round-trips
+    // Batch metric_stream inserts to reduce DB round-trips
     const pendingValues: ReturnType<typeof sql>[] = [];
     const flushPendingValues = async () => {
       if (pendingValues.length === 0) return;
       await db.execute(
-        sql`INSERT INTO fitness.sensor_sample
+        sql`INSERT INTO fitness.metric_stream
               (recorded_at, user_id, provider_id, activity_id, device_id, source_type, channel, scalar)
             VALUES ${sql.join(pendingValues, sql`, `)}`,
       );
@@ -497,7 +497,7 @@ export async function aggregateSpO2ToDailyMetrics(
           user_id,
           device_id AS source_name,
           AVG(scalar) * 100 AS spo2_avg
-        FROM fitness.sensor_sample
+        FROM fitness.metric_stream
         WHERE provider_id = ${PROVIDER_ID}
           AND user_id = ${userId}
           AND channel = 'spo2'
@@ -528,7 +528,7 @@ export async function aggregateSkinTempToDailyMetrics(
           user_id,
           device_id AS source_name,
           AVG(scalar) AS skin_temp_c
-        FROM fitness.sensor_sample
+        FROM fitness.metric_stream
         WHERE provider_id = ${PROVIDER_ID}
           AND user_id = ${userId}
           AND channel = 'skin_temperature'

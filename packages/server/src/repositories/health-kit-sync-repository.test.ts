@@ -1951,7 +1951,7 @@ describe("HealthKitSyncRepository.processMetricStream (mutation: inserted count)
     const result = await repo.processMetricStream(samples);
     // Only 2 have valid metricStream mapping (HR and SpO2), steps is skipped
     expect(result).toBe(2);
-    // 2 sensor_sample inserts (one per mapped sample)
+    // 2 metric_stream inserts (one per mapped sample)
     expect(execute).toHaveBeenCalledTimes(2);
   });
 });

@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity, sensorSample } from "../db/schema.ts";
+import { activity, metricStream } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
@@ -208,11 +208,11 @@ describe("PelotonProvider.sync() (integration)", () => {
     expect(run.activityType).toBe("running");
   });
 
-  it("inserts sensor_sample rows from performance graph", async () => {
+  it("inserts metric_stream rows from performance graph", async () => {
     const rows = await ctx.db
       .select()
-      .from(sensorSample)
-      .where(eq(sensorSample.providerId, "peloton"));
+      .from(metricStream)
+      .where(eq(metricStream.providerId, "peloton"));
 
     // 2 workouts × 3 samples × 3 channels (heart_rate, power, cadence) = 18 rows
     expect(rows).toHaveLength(18);
@@ -222,18 +222,18 @@ describe("PelotonProvider.sync() (integration)", () => {
       (row) => row.channel === "heart_rate" && row.recordedAt.getTime() === workout1Start.getTime(),
     );
     if (!firstHeartRateRow) {
-      throw new Error("expected heart-rate sensor sample at workout start time");
+      throw new Error("expected heart-rate metric stream at workout start time");
     }
     expect(firstHeartRateRow.scalar).toBe(130);
     const firstPowerRow = rows.find(
       (row) => row.channel === "power" && row.recordedAt.getTime() === workout1Start.getTime(),
     );
-    if (!firstPowerRow) throw new Error("expected power sensor sample at workout start time");
+    if (!firstPowerRow) throw new Error("expected power metric stream at workout start time");
     expect(firstPowerRow.scalar).toBe(180);
     const firstCadenceRow = rows.find(
       (row) => row.channel === "cadence" && row.recordedAt.getTime() === workout1Start.getTime(),
     );
-    if (!firstCadenceRow) throw new Error("expected cadence sensor sample at workout start time");
+    if (!firstCadenceRow) throw new Error("expected cadence metric stream at workout start time");
     expect(firstCadenceRow.scalar).toBe(80);
   });
 
@@ -498,8 +498,8 @@ describe("PelotonProvider.sync() (integration)", () => {
 
     const streams = await ctx.db
       .select()
-      .from(sensorSample)
-      .where(eq(sensorSample.activityId, activityId));
+      .from(metricStream)
+      .where(eq(metricStream.activityId, activityId));
 
     expect(streams.length).toBeGreaterThan(0);
     const heartRateSamples = streams.filter((stream) => stream.channel === "heart_rate");
@@ -537,8 +537,8 @@ describe("PelotonProvider.sync() (integration)", () => {
 
     const streams = await ctx.db
       .select()
-      .from(sensorSample)
-      .where(eq(sensorSample.activityId, activityId));
+      .from(metricStream)
+      .where(eq(metricStream.activityId, activityId));
 
     expect(streams.length).toBeGreaterThan(0);
     const heartRateSamples = streams.filter((stream) => stream.channel === "heart_rate");

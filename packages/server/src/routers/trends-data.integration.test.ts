@@ -52,7 +52,6 @@ describe("Trends router — continuous aggregate data tests", () => {
 
       if (actId) {
         // Insert metric_stream samples (1 per minute)
-        const metricValues: string[] = [];
         const sensorValues: string[] = [];
         for (let s = 0; s < durationMin; s++) {
           const hr = avgHr + Math.round(Math.sin(s * 0.1) * 5);
@@ -60,9 +59,6 @@ describe("Trends router — continuous aggregate data tests", () => {
           const cadence = 85 + Math.round(Math.sin(s * 0.05) * 10);
           const speed = 8 + Math.sin(s * 0.08) * 1.5;
           const ts = `CURRENT_TIMESTAMP - ${day} * INTERVAL '1 day' + ${s} * INTERVAL '1 minute'`;
-          metricValues.push(
-            `(${ts}, '${TEST_USER_ID}', '${actId}', 'test_provider', ${hr}, ${power}, ${speed.toFixed(3)}, ${cadence})`,
-          );
           sensorValues.push(
             `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${actId}', ${hr}, NULL)`,
             `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'power', '${actId}', ${power}, NULL)`,
@@ -72,11 +68,6 @@ describe("Trends router — continuous aggregate data tests", () => {
         }
         await testCtx.db.execute(
           sql.raw(`INSERT INTO fitness.metric_stream (
-                recorded_at, user_id, activity_id, provider_id, heart_rate, power, speed, cadence
-              ) VALUES ${metricValues.join(",")}`),
-        );
-        await testCtx.db.execute(
-          sql.raw(`INSERT INTO fitness.sensor_sample (
                 recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
               ) VALUES ${sensorValues.join(",")}`),
         );

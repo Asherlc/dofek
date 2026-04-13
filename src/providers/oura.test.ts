@@ -1709,7 +1709,7 @@ describe("OuraProvider.sync()", () => {
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBeGreaterThanOrEqual(2);
 
-    // Verify HR rows are written to sensor_sample with heart_rate channel.
+    // Verify HR rows are written to metric_stream with heart_rate channel.
     const hrRows = findBatchValuesCall(db, (arr) =>
       arr.some((r) => r.channel === "heart_rate" && r.scalar === 72),
     );

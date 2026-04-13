@@ -238,7 +238,7 @@ describe("HealthKit sync router", () => {
   });
 
   describe("pushQuantitySamples - metric stream", () => {
-    it("routes heart rate samples to sensor_sample table", async () => {
+    it("routes heart rate samples to metric_stream table", async () => {
       const result = await mutate("healthKitSync.pushQuantitySamples", {
         samples: [
           {
@@ -267,7 +267,7 @@ describe("HealthKit sync router", () => {
       expect(result.result.data.inserted).toBe(2);
 
       const rows = await testCtx.db.execute(
-        sql`SELECT channel, scalar FROM fitness.sensor_sample
+        sql`SELECT channel, scalar FROM fitness.metric_stream
             WHERE provider_id = 'apple_health'
             ORDER BY recorded_at`,
       );

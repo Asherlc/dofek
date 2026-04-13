@@ -2,9 +2,9 @@ import { z } from "zod";
 import { ZWIFT_API_BASE, ZWIFT_AUTH_URL, ZwiftClient } from "zwift-client/client";
 import { parseZwiftActivity, parseZwiftFitnessData } from "zwift-client/parsing";
 import type { SyncDatabase } from "../db/index.ts";
+import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
 import { activity, dailyMetrics } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
-import { dualWriteToSensorSample } from "../db/sensor-sample-writer.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
@@ -261,7 +261,7 @@ export class ZwiftProvider implements SyncProvider {
                       lat: s.lat,
                       lng: s.lng,
                     }));
-                    await dualWriteToSensorSample(db, metricRows, SOURCE_TYPE_API);
+                    await writeMetricStreamBatch(db, metricRows, SOURCE_TYPE_API);
                   }
                 } catch (streamErr) {
                   // Non-fatal: log but continue

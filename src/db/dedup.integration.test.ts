@@ -2,14 +2,7 @@ import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { refreshDedupViews } from "./dedup.ts";
 import { loadProviderPriorityConfig, syncProviderPriorities } from "./provider-priority.ts";
-import {
-  activity,
-  bodyMeasurement,
-  dailyMetrics,
-  metricStream,
-  sleepSession,
-  TEST_USER_ID,
-} from "./schema.ts";
+import { activity, bodyMeasurement, dailyMetrics, sleepSession, TEST_USER_ID } from "./schema.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
 import { ensureProvider } from "./tokens.ts";
 
@@ -436,28 +429,8 @@ describe("Deduplication materialized views", () => {
     if (!wahooActivity) throw new Error("Expected wahoo activity row");
 
     // Wahoo stream — has power data
-    await ctx.db.insert(metricStream).values([
-      {
-        userId: TEST_USER_ID,
-        providerId: "wahoo",
-        activityId: wahooActivity.id,
-        recordedAt: new Date("2026-03-05T10:00:00Z"),
-        heartRate: 140,
-        power: 200,
-      },
-      {
-        userId: TEST_USER_ID,
-        providerId: "wahoo",
-        activityId: wahooActivity.id,
-        recordedAt: new Date("2026-03-05T10:00:06Z"),
-        heartRate: 145,
-        power: 210,
-      },
-    ]);
-
-    // Dual-seed sensor_sample (activity_summary reads from here)
     await ctx.db.execute(
-      sql`INSERT INTO fitness.sensor_sample
+      sql`INSERT INTO fitness.metric_stream
           (recorded_at, user_id, provider_id, source_type, channel, activity_id, scalar)
           VALUES
           ('2026-03-05T10:00:00Z', ${TEST_USER_ID}, 'wahoo', 'api', 'heart_rate', ${wahooActivity.id}, 140),

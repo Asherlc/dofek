@@ -3,6 +3,10 @@ import { isIndoorCycling } from "@dofek/training/endurance-types";
 import { eq, sql } from "drizzle-orm";
 import type { SyncDatabase } from "../../db/index.ts";
 import {
+  type MetricStreamSourceRow,
+  writeMetricStreamBatch,
+} from "../../db/metric-stream-writer.ts";
+import {
   activity,
   bodyMeasurement,
   dailyMetrics,
@@ -13,10 +17,6 @@ import {
   sleepStage,
 } from "../../db/schema.ts";
 import { SOURCE_TYPE_FILE } from "../../db/sensor-channels.ts";
-import {
-  dualWriteToSensorSample,
-  type SensorSampleSourceRow,
-} from "../../db/sensor-sample-writer.ts";
 import { logger } from "../../logger.ts";
 import type { HealthRecord } from "./records.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
@@ -162,7 +162,7 @@ export async function upsertMetricStreamBatch(
   providerId: string,
   records: HealthRecord[],
 ): Promise<number> {
-  const rows: SensorSampleSourceRow[] = [];
+  const rows: MetricStreamSourceRow[] = [];
   for (const record of records) {
     const field = METRIC_STREAM_TYPES[record.type];
     if (!field) continue;
@@ -198,8 +198,8 @@ export async function upsertMetricStreamBatch(
     }
   }
 
-  // Metric rows now write directly to sensor_sample.
-  await dualWriteToSensorSample(db, rows, SOURCE_TYPE_FILE);
+  // Metric rows now write directly to metric_stream.
+  await writeMetricStreamBatch(db, rows, SOURCE_TYPE_FILE);
   return rows.length;
 }
 
@@ -485,8 +485,8 @@ export async function upsertDailyMetricsBatch(
 }
 
 /**
- * Aggregate SpO2 readings from sensor_sample into daily_metrics.spo2_avg.
- * Apple Health stores SpO2 as fractions (0-1) in sensor_sample; this converts
+ * Aggregate SpO2 readings from metric_stream into daily_metrics.spo2_avg.
+ * Apple Health stores SpO2 as fractions (0-1) in metric_stream; this converts
  * the daily average to a percentage (0-100) for consistency with other providers
  * (WHOOP, Oura, Garmin) that report SpO2 as a percentage.
  */
@@ -503,7 +503,7 @@ export async function aggregateSpO2ToDailyMetrics(
           user_id,
           device_id AS source_name,
           AVG(scalar) * 100 AS spo2_avg
-        FROM fitness.sensor_sample
+        FROM fitness.metric_stream
         WHERE provider_id = ${providerId}
           AND channel = 'spo2'
           AND scalar IS NOT NULL
@@ -515,7 +515,7 @@ export async function aggregateSpO2ToDailyMetrics(
 }
 
 /**
- * Aggregate wrist temperature readings from sensor_sample into daily_metrics.skin_temp_c.
+ * Aggregate wrist temperature readings from metric_stream into daily_metrics.skin_temp_c.
  * Apple Watch reports sleeping wrist temperature in °C; this computes the daily
  * average and stores it alongside other daily metrics.
  */
@@ -532,7 +532,7 @@ export async function aggregateSkinTempToDailyMetrics(
           user_id,
           device_id AS source_name,
           AVG(scalar) AS skin_temp_c
-        FROM fitness.sensor_sample
+        FROM fitness.metric_stream
         WHERE provider_id = ${providerId}
           AND channel = 'skin_temperature'
           AND scalar IS NOT NULL
@@ -720,7 +720,7 @@ export async function linkUnassignedHeartRateToActivities(
   }
 
   const linkedRows = await db.execute(
-    sql`UPDATE fitness.sensor_sample ss
+    sql`UPDATE fitness.metric_stream ss
         SET activity_id = (
           SELECT a.id
           FROM fitness.activity a
@@ -808,7 +808,7 @@ export async function upsertWorkoutBatch(
   }
 
   // Batch all GPS route locations across all workouts
-  const allGpsRows: SensorSampleSourceRow[] = [];
+  const allGpsRows: MetricStreamSourceRow[] = [];
   for (const { activityId, workout } of activityResults) {
     if (workout.routeLocations && workout.routeLocations.length > 0) {
       for (const loc of workout.routeLocations) {
@@ -828,8 +828,8 @@ export async function upsertWorkoutBatch(
     }
   }
 
-  // GPS route points now write directly to sensor_sample.
-  await dualWriteToSensorSample(db, allGpsRows, SOURCE_TYPE_FILE);
+  // GPS route points now write directly to metric_stream.
+  await writeMetricStreamBatch(db, allGpsRows, SOURCE_TYPE_FILE);
 
   // Link HR rows for this batch's time window. A global reconciliation pass also
   // runs at end-of-import to catch async ordering/race edge cases.

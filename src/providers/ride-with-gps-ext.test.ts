@@ -898,9 +898,9 @@ describe("RideWithGpsProvider — sync", () => {
 
     expect(Array.isArray(sensorInsertArg)).toBe(true);
     if (!Array.isArray(sensorInsertArg)) {
-      throw new Error("Expected sensor_sample insert payload");
+      throw new Error("Expected metric_stream insert payload");
     }
-    // 2 points -> 8 channel rows in sensor_sample (lat/lng/speed/hr/power + lat/lng/speed)
+    // 2 points -> 8 channel rows in metric_stream (lat/lng/speed/hr/power + lat/lng/speed)
     expect(sensorInsertArg).toHaveLength(8);
     expect(sensorInsertArg).toEqual(
       expect.arrayContaining([
@@ -1047,7 +1047,7 @@ describe("RideWithGpsProvider — sync", () => {
       .map((call: unknown[]) => call[0])
       .filter((value: unknown) => Array.isArray(value));
 
-    // 501 points with lat/lng/speed -> 1503 sensor_sample rows in one batch
+    // 501 points with lat/lng/speed -> 1503 metric_stream rows in one batch
     expect(metricInsertCalls).toHaveLength(1);
     expect(metricInsertCalls[0]).toHaveLength(1503);
   });

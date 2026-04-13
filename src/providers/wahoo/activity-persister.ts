@@ -1,8 +1,8 @@
 import { eq } from "drizzle-orm";
 import type { SyncDatabase } from "../../db/index.ts";
-import { activity, sensorSample } from "../../db/schema.ts";
+import { writeMetricStreamBatch } from "../../db/metric-stream-writer.ts";
+import { activity, metricStream } from "../../db/schema.ts";
 import { SOURCE_TYPE_FILE } from "../../db/sensor-channels.ts";
-import { dualWriteToSensorSample } from "../../db/sensor-sample-writer.ts";
 import { parseFitFile } from "../../fit/parser.ts";
 import { fitRecordsToSensorSamples as fitRecordsToMetricStream } from "../../fit/records.ts";
 import { logger } from "../../logger.ts";
@@ -76,13 +76,13 @@ export class WahooActivityPersister {
 
           if (metricRows.length > 0) {
             if (options?.deleteExistingSamples) {
-              await this.#db.delete(sensorSample).where(eq(sensorSample.activityId, activityId));
+              await this.#db.delete(metricStream).where(eq(metricStream.activityId, activityId));
             }
 
-            await dualWriteToSensorSample(this.#db, metricRows, SOURCE_TYPE_FILE);
+            await writeMetricStreamBatch(this.#db, metricRows, SOURCE_TYPE_FILE);
             const logMessage = options?.formatLogMessage
               ? options.formatLogMessage(metricRows.length, parsed.externalId)
-              : `[wahoo] Inserted ${metricRows.length} sensor sample rows for workout ${parsed.externalId}`;
+              : `[wahoo] Inserted ${metricRows.length} metric stream rows for workout ${parsed.externalId}`;
             logger.info(logMessage);
           }
         } catch (fitErr) {
