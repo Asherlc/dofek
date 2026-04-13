@@ -1,35 +1,39 @@
 import { Stack } from "expo-router";
-import { useEffect, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { WristModel } from "../components/WristModel";
-import { captureException } from "../lib/telemetry";
 import type { OrientationEvent } from "../modules/whoop-ble";
 import {
+  addConnectionStateListener,
   addOrientationListener,
   connect,
-  disconnect,
   findWhoop,
-  isBluetoothAvailable,
+  getConnectionState,
   startImuStreaming,
-  stopImuStreaming,
 } from "../modules/whoop-ble";
 import { colors } from "../theme";
 import { rootStackScreenOptions } from "./_layout";
 
-type ConnectionStatus =
-  | "disconnected"
-  | "searching"
-  | "connecting"
-  | "connected"
-  | "streaming"
-  | "error";
+type ConnectionStatus = "disconnected" | "searching" | "connecting" | "streaming" | "error";
 
 function formatDegrees(degrees: number): string {
   return `${degrees >= 0 ? "+" : ""}${degrees.toFixed(1)}°`;
 }
 
+/**
+ * Check whether the native BLE module is already connected.
+ * Background WHOOP BLE sync may have established the connection before
+ * this screen opened — no need to connect again.
+ */
+function isAlreadyConnected(): boolean {
+  const state = getConnectionState();
+  return state === "streaming" || state === "ready";
+}
+
 export default function ImuVisualizationScreen() {
-  const [status, setStatus] = useState<ConnectionStatus>("disconnected");
+  const [status, setStatus] = useState<ConnectionStatus>(() =>
+    isAlreadyConnected() ? "streaming" : "disconnected",
+  );
   const [error, setError] = useState<string | null>(null);
   const [orientation, setOrientation] = useState<OrientationEvent>({
     w: 1,
@@ -41,9 +45,9 @@ export default function ImuVisualizationScreen() {
     yaw: 0,
   });
   const [updateRate, setUpdateRate] = useState(0);
-  const peripheralIdRef = useRef<string | null>(null);
   const updateCountRef = useRef(0);
   const rateIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Track update rate
   useEffect(() => {
@@ -59,7 +63,8 @@ export default function ImuVisualizationScreen() {
     };
   }, []);
 
-  // Subscribe to orientation events
+  // Subscribe to orientation events — fires at ~30 Hz when IMU is streaming,
+  // regardless of whether this screen or background sync started the stream.
   useEffect(() => {
     const subscription = addOrientationListener((event) => {
       setOrientation(event);
@@ -69,29 +74,31 @@ export default function ImuVisualizationScreen() {
     return () => subscription.remove();
   }, []);
 
-  const handleStart = async () => {
+  const ensureConnected = useCallback(async () => {
+    // Already connected via background sync — IMU should already be streaming
+    if (isAlreadyConnected()) {
+      // Best-effort: ensure IMU mode is on (background sync should have done this)
+      try {
+        await startImuStreaming();
+      } catch {
+        // Ignore — background sync likely already started it
+      }
+      setStatus("streaming");
+      return;
+    }
+
     try {
       setError(null);
-
-      if (!isBluetoothAvailable()) {
-        setError("Bluetooth is not available");
-        setStatus("error");
-        return;
-      }
-
       setStatus("searching");
       const device = await findWhoop();
       if (!device) {
-        setError("No WHOOP strap found. Make sure the WHOOP app is connected.");
+        setError("No WHOOP strap found. Make sure BLE sync is enabled in settings.");
         setStatus("error");
         return;
       }
 
       setStatus("connecting");
-      peripheralIdRef.current = device.id;
       await connect(device.id);
-
-      setStatus("connected");
       await startImuStreaming();
       setStatus("streaming");
     } catch (connectionError) {
@@ -100,24 +107,38 @@ export default function ImuVisualizationScreen() {
       );
       setStatus("error");
     }
-  };
+  }, []);
 
-  const handleStop = async () => {
-    try {
-      await stopImuStreaming();
-      disconnect();
-      peripheralIdRef.current = null;
-      setStatus("disconnected");
-      setUpdateRate(0);
-      updateCountRef.current = 0;
-    } catch (error: unknown) {
-      captureException(error, { context: "imu-visualization-stop" });
-      setStatus("disconnected");
-    }
-  };
+  // Auto-connect on mount, listen for BLE state changes
+  useEffect(() => {
+    ensureConnected();
+
+    const subscription = addConnectionStateListener((event) => {
+      if (event.state === "connected") {
+        setStatus("streaming");
+      } else if (event.state === "disconnected") {
+        setStatus("disconnected");
+        // Clear any pending reconnect before scheduling a new one
+        if (reconnectTimerRef.current) {
+          clearTimeout(reconnectTimerRef.current);
+        }
+        reconnectTimerRef.current = setTimeout(() => {
+          reconnectTimerRef.current = null;
+          ensureConnected();
+        }, 2000);
+      }
+    });
+
+    return () => {
+      subscription.remove();
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+    };
+  }, [ensureConnected]);
 
   const isStreaming = status === "streaming";
-  const isBusy = status === "searching" || status === "connecting" || status === "connected";
 
   return (
     <>
@@ -181,23 +202,6 @@ export default function ImuVisualizationScreen() {
           )}
           {error && <Text style={styles.errorText}>{error}</Text>}
         </View>
-
-        {/* Controls */}
-        <View style={styles.controls}>
-          {!isStreaming ? (
-            <Pressable
-              style={[styles.button, isBusy && styles.buttonDisabled]}
-              onPress={handleStart}
-              disabled={isBusy}
-            >
-              <Text style={styles.buttonText}>{isBusy ? "Connecting..." : "Start Streaming"}</Text>
-            </Pressable>
-          ) : (
-            <Pressable style={[styles.button, styles.buttonStop]} onPress={handleStop}>
-              <Text style={styles.buttonText}>Stop</Text>
-            </Pressable>
-          )}
-        </View>
       </ScrollView>
     </>
   );
@@ -259,14 +263,4 @@ const styles = StyleSheet.create({
   statusLabel: { fontSize: 14, color: colors.textSecondary },
   statusValue: { fontSize: 14, fontWeight: "600", color: colors.text },
   errorText: { color: colors.danger, fontSize: 13, marginTop: 8 },
-  controls: { padding: 16 },
-  button: {
-    backgroundColor: colors.accent,
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: "center",
-  },
-  buttonDisabled: { opacity: 0.5 },
-  buttonStop: { backgroundColor: colors.danger },
-  buttonText: { color: "#fff", fontSize: 16, fontWeight: "700" },
 });

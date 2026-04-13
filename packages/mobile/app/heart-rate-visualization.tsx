@@ -1,41 +1,48 @@
 import { Stack } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { HeartRateChart } from "../components/charts/HeartRateChart";
 import { captureException } from "../lib/telemetry";
 import {
+  addConnectionStateListener,
   connect,
-  disconnect,
   findWhoop,
-  getBufferedRealtimeData,
-  isBluetoothAvailable,
+  getConnectionState,
+  peekBufferedRealtimeData,
   startRealtimeHr,
 } from "../modules/whoop-ble";
 import { colors } from "../theme";
 import { rootStackScreenOptions } from "./_layout";
 
-type ConnectionStatus =
-  | "disconnected"
-  | "searching"
-  | "connecting"
-  | "connected"
-  | "streaming"
-  | "error";
+type ConnectionStatus = "disconnected" | "searching" | "connecting" | "streaming" | "error";
 
 /** Maximum number of HR samples to keep in the rolling window */
 const MAX_SAMPLES = 120;
 /** How often to poll the BLE buffer (ms) */
 const POLL_INTERVAL_MS = 1000;
 
+/**
+ * Check whether the native BLE module is already connected.
+ * Background WHOOP BLE sync may have established the connection before
+ * this screen opened — no need to connect again.
+ */
+function isAlreadyConnected(): boolean {
+  const state = getConnectionState();
+  return state === "streaming" || state === "ready";
+}
+
 export default function HeartRateVisualizationScreen() {
-  const [status, setStatus] = useState<ConnectionStatus>("disconnected");
+  const [status, setStatus] = useState<ConnectionStatus>(() =>
+    isAlreadyConnected() ? "streaming" : "disconnected",
+  );
   const [error, setError] = useState<string | null>(null);
   const [heartRateHistory, setHeartRateHistory] = useState<number[]>([]);
   const [currentHeartRate, setCurrentHeartRate] = useState<number | null>(null);
   const [currentRrInterval, setCurrentRrInterval] = useState<number | null>(null);
   const [sampleCount, setSampleCount] = useState(0);
-  const peripheralIdRef = useRef<string | null>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSeenTimestampRef = useRef<string | null>(null);
 
   const stopPolling = useCallback(() => {
     if (pollIntervalRef.current) {
@@ -48,22 +55,30 @@ export default function HeartRateVisualizationScreen() {
     stopPolling();
     pollIntervalRef.current = setInterval(async () => {
       try {
-        const samples = await getBufferedRealtimeData();
+        // Peek without draining — background sync handles the drain cycle.
+        const samples = await peekBufferedRealtimeData();
         if (samples.length === 0) return;
 
-        const newHeartRates = samples
+        // Only process samples we haven't seen yet (by timestamp).
+        const cutoff = lastSeenTimestampRef.current;
+        const newSamples = cutoff ? samples.filter((sample) => sample.timestamp > cutoff) : samples;
+        if (newSamples.length === 0) return;
+
+        lastSeenTimestampRef.current = newSamples[newSamples.length - 1].timestamp;
+
+        const newHeartRates = newSamples
           .map((sample) => sample.heartRate)
           .filter((heartRate) => heartRate > 0);
 
         if (newHeartRates.length === 0) return;
 
-        const latestSample = samples[samples.length - 1];
+        const latestSample = newSamples[newSamples.length - 1];
         setCurrentHeartRate(latestSample.heartRate);
         if (latestSample.rrIntervalMs > 0) {
           setCurrentRrInterval(latestSample.rrIntervalMs);
         }
 
-        setSampleCount((previous) => previous + samples.length);
+        setSampleCount((previous) => previous + newSamples.length);
         setHeartRateHistory((previous) => [...previous, ...newHeartRates].slice(-MAX_SAMPLES));
       } catch (pollError) {
         captureException(pollError, { context: "heart-rate-visualization-poll" });
@@ -71,34 +86,31 @@ export default function HeartRateVisualizationScreen() {
     }, POLL_INTERVAL_MS);
   }, [stopPolling]);
 
-  // Clean up on unmount
-  useEffect(() => {
-    return () => stopPolling();
-  }, [stopPolling]);
+  const ensureConnected = useCallback(async () => {
+    // Already connected via background sync — just ensure HR streaming is on
+    if (isAlreadyConnected()) {
+      try {
+        await startRealtimeHr();
+      } catch {
+        // Best-effort — passive HR data may still flow
+      }
+      setStatus("streaming");
+      startPolling();
+      return;
+    }
 
-  const handleStart = async () => {
     try {
       setError(null);
-
-      if (!isBluetoothAvailable()) {
-        setError("Bluetooth is not available");
-        setStatus("error");
-        return;
-      }
-
       setStatus("searching");
       const device = await findWhoop();
       if (!device) {
-        setError("No WHOOP strap found. Make sure the WHOOP app is connected.");
+        setError("No WHOOP strap found. Make sure BLE sync is enabled in settings.");
         setStatus("error");
         return;
       }
 
       setStatus("connecting");
-      peripheralIdRef.current = device.id;
       await connect(device.id);
-
-      setStatus("connected");
       await startRealtimeHr();
       setStatus("streaming");
       startPolling();
@@ -108,25 +120,44 @@ export default function HeartRateVisualizationScreen() {
       );
       setStatus("error");
     }
-  };
+  }, [startPolling]);
 
-  const handleStop = async () => {
-    try {
+  // Auto-connect on mount, listen for BLE state changes
+  useEffect(() => {
+    ensureConnected();
+
+    // If background sync reconnects while this screen is open, resume polling
+    const subscription = addConnectionStateListener((event) => {
+      if (event.state === "connected") {
+        if (!pollIntervalRef.current) {
+          setStatus("streaming");
+          startPolling();
+        }
+      } else if (event.state === "disconnected") {
+        setStatus("disconnected");
+        stopPolling();
+        // Clear any pending reconnect before scheduling a new one
+        if (reconnectTimerRef.current) {
+          clearTimeout(reconnectTimerRef.current);
+        }
+        reconnectTimerRef.current = setTimeout(() => {
+          reconnectTimerRef.current = null;
+          ensureConnected();
+        }, 2000);
+      }
+    });
+
+    return () => {
+      subscription.remove();
       stopPolling();
-      disconnect();
-      peripheralIdRef.current = null;
-      setStatus("disconnected");
-      setCurrentHeartRate(null);
-      setCurrentRrInterval(null);
-      setSampleCount(0);
-    } catch (stopError: unknown) {
-      captureException(stopError, { context: "heart-rate-visualization-stop" });
-      setStatus("disconnected");
-    }
-  };
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+    };
+  }, [ensureConnected, startPolling, stopPolling]);
 
   const isStreaming = status === "streaming";
-  const isBusy = status === "searching" || status === "connecting" || status === "connected";
 
   return (
     <>
@@ -153,7 +184,7 @@ export default function HeartRateVisualizationScreen() {
           ) : (
             <View style={styles.chartPlaceholder}>
               <Text style={styles.chartPlaceholderText}>
-                {isStreaming ? "Waiting for data..." : "Start streaming to see heart rate"}
+                {isStreaming ? "Waiting for data..." : "Connecting to WHOOP..."}
               </Text>
             </View>
           )}
@@ -205,23 +236,6 @@ export default function HeartRateVisualizationScreen() {
             </Text>
           </View>
           {error && <Text style={styles.errorText}>{error}</Text>}
-        </View>
-
-        {/* Controls */}
-        <View style={styles.controls}>
-          {!isStreaming ? (
-            <Pressable
-              style={[styles.button, isBusy && styles.buttonDisabled]}
-              onPress={handleStart}
-              disabled={isBusy}
-            >
-              <Text style={styles.buttonText}>{isBusy ? "Connecting..." : "Start Streaming"}</Text>
-            </Pressable>
-          ) : (
-            <Pressable style={[styles.button, styles.buttonStop]} onPress={handleStop}>
-              <Text style={styles.buttonText}>Stop</Text>
-            </Pressable>
-          )}
         </View>
       </ScrollView>
     </>
@@ -325,14 +339,4 @@ const styles = StyleSheet.create({
   statusLabel: { fontSize: 14, color: colors.textSecondary },
   statusValue: { fontSize: 14, fontWeight: "600", color: colors.text },
   errorText: { color: colors.danger, fontSize: 13, marginTop: 8 },
-  controls: { padding: 16 },
-  button: {
-    backgroundColor: colors.danger,
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: "center",
-  },
-  buttonDisabled: { opacity: 0.5 },
-  buttonStop: { backgroundColor: colors.textSecondary },
-  buttonText: { color: "#fff", fontSize: 16, fontWeight: "700" },
 });
