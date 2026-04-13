@@ -115,10 +115,6 @@
               {
                 "name": "ExpoWhoopBle",
                 "path": "../modules/whoop-ble/ios"
-              },
-              {
-                "name": "ExpoMetricKitCrash",
-                "path": "../modules/metrickit-crash/ios"
               }
             ]
           }
