@@ -1,4 +1,4 @@
-"""export.py -- Export sensor_sample data from PostgreSQL to Parquet.
+"""export.py -- Export metric_stream data from PostgreSQL to Parquet.
 
 Streams rows via a server-side cursor and writes incrementally using
 PyArrow's ParquetWriter. Progress is reported via an on_progress callback
@@ -76,7 +76,7 @@ SELECT
   COALESCE(a_direct.activity_type, a_time.activity_type) AS activity_type,
   ss.scalar,
   ss.vector
-FROM fitness.sensor_sample ss
+FROM fitness.metric_stream ss
 LEFT JOIN fitness.activity a_direct ON a_direct.id = ss.activity_id
 LEFT JOIN LATERAL (
   SELECT a.id, a.activity_type
@@ -93,7 +93,7 @@ ORDER BY ss.recorded_at, ss.user_id, ss.provider_id, ss.channel
 """
 
 _COUNT_QUERY = """
-SELECT COUNT(*) FROM fitness.sensor_sample ss
+SELECT COUNT(*) FROM fitness.metric_stream ss
 {where_clause}
 """
 
@@ -159,8 +159,8 @@ def build_manifest(
     if row_count > 0:
         manifest["files"].append(
             {
-                "path": f"sensor_sample/{timestamp}.parquet",
-                "table": "sensor_sample",
+                "path": f"metric_stream/{timestamp}.parquet",
+                "table": "metric_stream",
                 "rowCount": row_count,
             }
         )
@@ -202,7 +202,7 @@ def export_to_parquet(
     until: str | None = None,
     on_progress: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
-    """Export sensor_sample data from Postgres to a Parquet file.
+    """Export metric_stream data from Postgres to a Parquet file.
 
     Uses a server-side cursor to stream rows in batches without loading the
     entire table into memory. Writes incrementally via PyArrow's ParquetWriter.
@@ -240,10 +240,10 @@ def export_to_parquet(
         report(100, "Training export complete")
         return manifest
 
-    report(5, f"Exporting {total_rows} sensor_sample rows...")
+    report(5, f"Exporting {total_rows} metric_stream rows...")
 
     # Prepare output directory
-    parquet_dir = output_dir / "sensor_sample"
+    parquet_dir = output_dir / "metric_stream"
     parquet_dir.mkdir(parents=True, exist_ok=True)
     parquet_path = parquet_dir / f"{timestamp}.parquet"
 
@@ -268,7 +268,7 @@ def export_to_parquet(
 
                 exported += len(rows)
                 percentage = min(90, 5 + round((exported / total_rows) * 85))
-                report(percentage, f"Exporting sensor_sample: {exported}/{total_rows} rows")
+                report(percentage, f"Exporting metric_stream: {exported}/{total_rows} rows")
     finally:
         if writer is not None:
             writer.close()
@@ -290,7 +290,7 @@ def export_to_parquet(
 def main() -> None:
     """CLI interface for exporting training data to Parquet.
 
-    Connects to PostgreSQL, streams sensor_sample rows, and writes Parquet.
+    Connects to PostgreSQL, streams metric_stream rows, and writes Parquet.
     Progress is printed as JSON lines to stdout for consumption by the
     BullMQ job wrapper.
 
@@ -311,7 +311,7 @@ def main() -> None:
     import os
 
     parser = argparse.ArgumentParser(
-        description="Export sensor_sample data from PostgreSQL to Parquet"
+        description="Export metric_stream data from PostgreSQL to Parquet"
     )
     parser.add_argument(
         "--database-url",

@@ -3,7 +3,7 @@ data_loading.py -- Data loading module for the fused CNN activity classifier.
 
 Reads training data from either local Parquet files or Cloudflare R2 (S3-compatible).
 The training data export job produces a single Parquet file from the unified
-sensor_sample table. Each row has a `channel` column identifying the measurement
+metric_stream table. Each row has a `channel` column identifying the measurement
 type (heart_rate, power, imu, orientation, etc.) and either a `scalar` value
 (for single-value channels) or a `vector` value (for multi-axis channels).
 
@@ -94,7 +94,7 @@ def load_manifest_local(base_path: Path) -> dict[str, Any]:
     """Load manifest.json from a local directory.
 
     The manifest describes which Parquet files are available, their types
-    (sensor_sample), and any metadata the export job attached.
+    (metric_stream), and any metadata the export job attached.
     """
     manifest_path: Path = base_path / "manifest.json"
     if not manifest_path.exists():
@@ -320,10 +320,10 @@ def expand_vector_channels(raw_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def load_from_local(base_path: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Load sensor_sample Parquet from a local directory and split into metric + device.
+    """Load metric_stream Parquet from a local directory and split into metric + device.
 
     Reads the manifest to discover which files exist, then loads and concatenates
-    all sensor_sample files. Scalar channels are pivoted into a wide metric
+    all metric_stream files. Scalar channels are pivoted into a wide metric
     DataFrame; vector channels are expanded into a device DataFrame.
 
     Returns:
@@ -331,24 +331,24 @@ def load_from_local(base_path: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     manifest: dict[str, Any] = load_manifest_local(base_path)
 
-    sensor_files: list[str] = [
-        f["path"] for f in manifest["files"] if f["table"] == "sensor_sample"
+    metric_stream_files: list[str] = [
+        f["path"] for f in manifest["files"] if f["table"] == "metric_stream"
     ]
 
-    if not sensor_files:
-        raise ValueError("No sensor_sample files listed in manifest")
+    if not metric_stream_files:
+        raise ValueError("No metric_stream files listed in manifest")
 
-    print(f"Loading {len(sensor_files)} sensor_sample file(s) from {base_path}")
-    raw_dfs: list[pd.DataFrame] = [read_parquet_local(base_path, f) for f in sensor_files]
+    print(f"Loading {len(metric_stream_files)} metric_stream file(s) from {base_path}")
+    raw_dfs: list[pd.DataFrame] = [read_parquet_local(base_path, f) for f in metric_stream_files]
     raw_df: pd.DataFrame = pd.concat(raw_dfs, ignore_index=True)
 
-    print(f"Raw sensor_sample: {len(raw_df)} rows, channels: {raw_df['channel'].unique().tolist()}")
+    print(f"Raw metric_stream: {len(raw_df)} rows, channels: {raw_df['channel'].unique().tolist()}")
 
     metric_df: pd.DataFrame = pivot_scalar_channels(raw_df)
     device_df: pd.DataFrame = expand_vector_channels(raw_df)
 
     if metric_df.empty:
-        raise ValueError("No scalar channel data found in sensor_sample export")
+        raise ValueError("No scalar channel data found in metric_stream export")
 
     print(f"Metric stream: {len(metric_df)} rows, columns: {list(metric_df.columns)}")
     if not device_df.empty:
@@ -360,7 +360,7 @@ def load_from_local(base_path: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 def load_from_r2() -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Load sensor_sample Parquet from Cloudflare R2 and split into metric + device.
+    """Load metric_stream Parquet from Cloudflare R2 and split into metric + device.
 
     Same logic as load_from_local but fetches files over the network.
     The R2_BUCKET env var specifies which bucket to read from.
@@ -375,24 +375,26 @@ def load_from_r2() -> tuple[pd.DataFrame, pd.DataFrame]:
     s3_client: Any = create_r2_client()
     manifest: dict[str, Any] = load_manifest_r2(s3_client, bucket)
 
-    sensor_files: list[str] = [
-        f["path"] for f in manifest["files"] if f["table"] == "sensor_sample"
+    metric_stream_files: list[str] = [
+        f["path"] for f in manifest["files"] if f["table"] == "metric_stream"
     ]
 
-    if not sensor_files:
-        raise ValueError("No sensor_sample files listed in manifest")
+    if not metric_stream_files:
+        raise ValueError("No metric_stream files listed in manifest")
 
-    print(f"Downloading {len(sensor_files)} sensor_sample file(s) from R2 bucket '{bucket}'")
-    raw_dfs: list[pd.DataFrame] = [read_parquet_r2(s3_client, bucket, f) for f in sensor_files]
+    print(f"Downloading {len(metric_stream_files)} metric_stream file(s) from R2 bucket '{bucket}'")
+    raw_dfs: list[pd.DataFrame] = [
+        read_parquet_r2(s3_client, bucket, f) for f in metric_stream_files
+    ]
     raw_df: pd.DataFrame = pd.concat(raw_dfs, ignore_index=True)
 
-    print(f"Raw sensor_sample: {len(raw_df)} rows, channels: {raw_df['channel'].unique().tolist()}")
+    print(f"Raw metric_stream: {len(raw_df)} rows, channels: {raw_df['channel'].unique().tolist()}")
 
     metric_df: pd.DataFrame = pivot_scalar_channels(raw_df)
     device_df: pd.DataFrame = expand_vector_channels(raw_df)
 
     if metric_df.empty:
-        raise ValueError("No scalar channel data found in sensor_sample export")
+        raise ValueError("No scalar channel data found in metric_stream export")
 
     print(f"Metric stream: {len(metric_df)} rows, columns: {list(metric_df.columns)}")
     if not device_df.empty:
