@@ -492,47 +492,43 @@ export default function ProvidersScreen() {
 
       {/* Data Sources */}
       <Text style={styles.sectionTitle}>Data Sources</Text>
-      {healthKitAvailable && (
+      <ProviderCard
+        provider={{
+          id: "apple_health",
+          label: "Apple Health",
+          enabled: healthKitAvailable && healthKitPermissionStatus === "unnecessary",
+          authStatus: healthKitAvailable
+            ? healthKitPermissionStatus === "unnecessary"
+              ? "connected"
+              : "not_connected"
+            : "connected",
+          authType: "none",
+          lastSyncAt: null,
+          importOnly: !healthKitAvailable,
+        }}
+        stats={statsMap.apple_health}
+        syncing={healthKitSyncing}
+        syncProgress={
+          healthKitSyncing || healthKitProgress ? { message: healthKitProgress } : undefined
+        }
+        onSync={() => handleHealthKitSync()}
+        onFullSync={() => handleHealthKitSync(true)}
+        onConnect={handleHealthKitConnect}
+        onPress={() => router.push("/providers/apple_health")}
+      />
+      {providerList.map((provider) => (
         <ProviderCard
-          provider={{
-            id: "apple_health",
-            label: "Apple Health",
-            enabled: healthKitPermissionStatus === "unnecessary",
-            authStatus: healthKitPermissionStatus === "unnecessary" ? "connected" : "not_connected",
-            authType: "none",
-            lastSyncAt: null,
-            importOnly: false,
-          }}
-          stats={statsMap.apple_health}
-          syncing={healthKitSyncing}
-          syncProgress={
-            healthKitSyncing || healthKitProgress ? { message: healthKitProgress } : undefined
-          }
-          onSync={() => handleHealthKitSync()}
-          onFullSync={() => handleHealthKitSync(true)}
-          onConnect={handleHealthKitConnect}
-          onPress={() => router.push("/providers/apple_health")}
+          key={provider.id}
+          provider={provider}
+          stats={statsMap[provider.id]}
+          syncing={syncingProviders.has(provider.id)}
+          syncProgress={syncProgress[provider.id]}
+          onSync={() => handleSyncProvider(provider.id)}
+          onFullSync={() => handleSyncProvider(provider.id, true)}
+          onConnect={() => handleConnect(provider)}
+          onPress={() => router.push(`/providers/${provider.id}`)}
         />
-      )}
-      {providerList.length === 0 && !healthKitAvailable ? (
-        <View style={styles.card}>
-          <Text style={styles.emptyText}>No data sources configured.</Text>
-        </View>
-      ) : (
-        providerList.map((provider) => (
-          <ProviderCard
-            key={provider.id}
-            provider={provider}
-            stats={statsMap[provider.id]}
-            syncing={syncingProviders.has(provider.id)}
-            syncProgress={syncProgress[provider.id]}
-            onSync={() => handleSyncProvider(provider.id)}
-            onFullSync={() => handleSyncProvider(provider.id, true)}
-            onConnect={() => handleConnect(provider)}
-            onPress={() => router.push(`/providers/${provider.id}`)}
-          />
-        ))
-      )}
+      ))}
 
       {/* Sync History */}
       <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Sync History</Text>
