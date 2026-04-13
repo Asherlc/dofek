@@ -275,32 +275,6 @@ export class ActivityRepository extends BaseRepository {
     return mapHrZones(rows);
   }
 
-  /** Count activities in the base table (not the materialized view) for this user within a time window. */
-  async baseTableCount(endDate: string, days: number): Promise<number> {
-    const rows = await this.query(
-      z.object({ count: z.coerce.number() }),
-      sql`SELECT count(*)::int AS count FROM fitness.activity
-          WHERE user_id = ${this.userId}
-            AND started_at > ${timestampWindowStart(endDate, days)}`,
-    );
-    return rows[0]?.count ?? 0;
-  }
-
-  /** Refresh the activity-related materialized views. */
-  async refreshActivityViews(): Promise<void> {
-    for (const view of [
-      "fitness.v_activity",
-      "fitness.deduped_sensor",
-      "fitness.activity_summary",
-    ]) {
-      try {
-        await this.db.execute(sql.raw(`REFRESH MATERIALIZED VIEW CONCURRENTLY ${view}`));
-      } catch {
-        await this.db.execute(sql.raw(`REFRESH MATERIALIZED VIEW ${view}`));
-      }
-    }
-  }
-
   /** Delete an activity by ID. */
   async delete(activityId: string): Promise<void> {
     await this.db.execute(sql`

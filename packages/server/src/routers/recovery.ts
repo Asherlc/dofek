@@ -7,6 +7,7 @@ import { computeSleepConsistencyScore } from "@dofek/recovery/sleep-consistency"
 import { StrainScore, zScoreToRecoveryScore } from "@dofek/scoring/scoring";
 import { computeStrainTarget } from "@dofek/scoring/strain-target";
 import { selectRecentDailyLoad } from "@dofek/training/training";
+import * as Sentry from "@sentry/node";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
@@ -19,6 +20,8 @@ import {
 } from "../lib/date-window.ts";
 import { sleepNightDate } from "../lib/sql-fragments.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import { logger } from "../logger.ts";
+import { TrainingRepository } from "../repositories/training-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export type { ReadinessComponents, ReadinessWeights };
@@ -300,6 +303,39 @@ export const recoveryRouter = router({
             row.workload_ratio != null ? Math.round(Number(row.workload_ratio) * 100) / 100 : null,
         };
       });
+
+      const hasAnyLoad = timeSeries.some((row) => row.dailyLoad > 0);
+
+      // Self-healing: if all daily loads are 0, the activity_summary
+      // materialized view may be stale. Check the base table and refresh.
+      // The parallel activityStats/weeklyVolume queries also self-heal,
+      // but this ensures strain data is corrected on the same request.
+      if (!hasAnyLoad) {
+        const repo = new TrainingRepository(ctx.db, ctx.userId, ctx.timezone);
+        const baseCount = await repo.baseActivityCount(input.endDate, input.days);
+        if (baseCount > 0) {
+          logger.warn(
+            `[recovery] Stale views detected for user ${ctx.userId}: ` +
+              `${baseCount} activities in base table but 0 load in workload ratio. Refreshing.`,
+          );
+          Sentry.captureMessage("Stale activity materialized views detected (workloadRatio)", {
+            level: "warning",
+            tags: { userId: ctx.userId },
+            extra: { baseCount },
+          });
+          try {
+            await repo.refreshActivityViews();
+          } catch (refreshError) {
+            Sentry.captureException(refreshError, {
+              tags: { userId: ctx.userId, context: "staleViewRefresh" },
+            });
+          }
+          // Views refreshed — data will appear on next pull-to-refresh.
+          // Returning stale (zero) data now rather than duplicating the
+          // complex SQL for a retry. The training queries that fire in
+          // parallel will also benefit from this refresh.
+        }
+      }
 
       const displayed = selectRecentDailyLoad(timeSeries);
       return {

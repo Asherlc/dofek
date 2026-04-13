@@ -56,7 +56,7 @@ export const activityRouter = router({
       // them and retry the query. Only check on the first page to avoid
       // expensive refreshes on legitimate empty later pages.
       if (input.offset === 0 && result.items.length === 0) {
-        const baseCount = await repo.baseTableCount(input.endDate, input.days);
+        const baseCount = await repo.baseActivityCount(input.endDate, input.days);
         if (baseCount > 0) {
           logger.warn(
             `[activity] Stale views detected for user ${ctx.userId}: ` +
