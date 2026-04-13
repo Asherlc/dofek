@@ -6,17 +6,23 @@ readme = "README.md"
 authors = [{ name = "Asher Cohen", email = "asherlc@asherlc.com" }]
 requires-python = ">=3.12"
 dependencies = [
-    "boto3>=1.35.0",
+    "bullmq>=2.9.3",
     "numpy>=2.1.0",
     "pandas>=2.2.3",
     "psycopg[binary]>=3.2.0",
     "pyarrow>=23.0.1",
+]
+
+[project.optional-dependencies]
+training = [
+    "boto3>=1.35.0",
     "scikit-learn>=1.5.2",
     "torch>=2.5.0",
 ]
 
 [project.scripts]
 dofek-export = "dofek_ml.export:main"
+dofek-worker = "dofek_ml.worker:main"
 
 [dependency-groups]
 dev = [
@@ -24,6 +30,7 @@ dev = [
     "mutmut>=3.2.0",
     "pandas-stubs>=2.2.3",
     "pytest>=8.3.3",
+    "pytest-asyncio>=0.25.0",
     "pytest-cov>=6.0.0",
     "ruff>=0.8.0",
 ]
@@ -57,7 +64,7 @@ select = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["ARG"]
+"tests/**" = ["ARG", "E402"]
 
 # ── mypy (type checker) ──
 
@@ -77,6 +84,7 @@ testpaths = ["tests"]
 
 [tool.coverage.run]
 source = ["src/dofek_ml"]
+omit = ["src/dofek_ml/training.py"]
 
 [tool.coverage.report]
 fail_under = 80

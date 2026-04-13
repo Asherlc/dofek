@@ -6,10 +6,10 @@ vi.mock("node:child_process", () => ({
 }));
 
 // Import after mock
-const { startWorker } = await import("./start-worker.ts");
+const { startWorker, startTrainingExportWorker } = await import("./start-worker.ts");
 
-function getCallback(): (err: Error | null, stdout: string, stderr: string) => void {
-  const call = mockExecFile.mock.calls[0];
+function getCallback(callIndex = 0): (err: Error | null, stdout: string, stderr: string) => void {
+  const call = mockExecFile.mock.calls[callIndex];
   if (!call) throw new Error("execFile was not called");
   return call[2];
 }
@@ -88,5 +88,21 @@ describe("startWorker", () => {
 
     expect(consoleErrorSpy).not.toHaveBeenCalled();
     consoleErrorSpy.mockRestore();
+  });
+});
+
+describe("startTrainingExportWorker", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("calls docker start dofek-training-export-worker", () => {
+    startTrainingExportWorker();
+
+    expect(mockExecFile).toHaveBeenCalledWith(
+      "docker",
+      ["start", "dofek-training-export-worker"],
+      expect.any(Function),
+    );
   });
 });
