@@ -81,6 +81,13 @@ function daysBetween(dateA: string, dateB: string): number {
 // Repository
 // ---------------------------------------------------------------------------
 
+/**
+ * Key metric columns to check for column-level staleness.
+ * If ALL values for any of these are null in the view result but non-null
+ * in the base table, the view is stale and needs a refresh.
+ */
+const KEY_METRICS = ["steps", "resting_hr", "hrv", "active_energy_kcal"] as const;
+
 /** Data access for daily health metrics (vitals, activity, body). */
 export class DailyMetricsRepository extends BaseRepository {
   /** Daily metrics within the given date window, ordered by date ascending. */
@@ -114,6 +121,14 @@ export class DailyMetricsRepository extends BaseRepository {
       (await this.#baseTableHasNewerData(latestViewDate, endDate))
     ) {
       const refreshed = await this.#tryRefreshView("newer data in base table");
+      if (refreshed) return listQuery();
+    }
+
+    // Column-level staleness: view has rows for recent dates but key metrics
+    // are all null — e.g., Garmin synced HRV but Apple Health steps arrived
+    // after the last view refresh.
+    if (await this.#viewMissingMetrics(result, days, endDate)) {
+      const refreshed = await this.#tryRefreshView("view missing metrics present in base table");
       if (refreshed) return listQuery();
     }
 
@@ -157,6 +172,38 @@ export class DailyMetricsRepository extends BaseRepository {
     cutoffDate.setDate(cutoffDate.getDate() - days);
     const cutoffStr = cutoffDate.toISOString().slice(0, 10);
     return rows.filter((row) => row.date >= cutoffStr);
+  }
+
+  /**
+   * Check if the view result is missing metrics that exist in the base table.
+   * Finds key metric columns that are ALL null in the view result, then checks
+   * whether the base table has non-null values for any of them. Returns false
+   * (no extra query) when all key metrics have at least one non-null value.
+   */
+  async #viewMissingMetrics(
+    result: DailyMetricsViewRow[],
+    days: number,
+    endDate: string,
+  ): Promise<boolean> {
+    const missingColumns: string[] = [];
+    for (const column of KEY_METRICS) {
+      if (result.every((row) => row[column] == null)) {
+        missingColumns.push(column);
+      }
+    }
+    if (missingColumns.length === 0) return false;
+
+    const conditions = missingColumns.map((column) => sql`${sql.identifier(column)} IS NOT NULL`);
+    const rows = await this.query(
+      z.object({ exists: z.coerce.number() }),
+      sql`SELECT 1 AS exists FROM fitness.daily_metrics
+          WHERE user_id = ${this.userId}
+            AND date > ${dateWindowStart(endDate, days)}
+            AND date <= ${dateWindowEnd(endDate)}
+            AND (${sql.join(conditions, sql` OR `)})
+          LIMIT 1`,
+    );
+    return rows.length > 0;
   }
 
   /** Check if the base table has rows newer than what the materialized view returned. */

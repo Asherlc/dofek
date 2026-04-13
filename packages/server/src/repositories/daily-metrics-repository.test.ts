@@ -197,6 +197,64 @@ describe("DailyMetricsRepository", () => {
       expect(result[0]?.date).toBe("2025-03-10");
     });
 
+    it("refreshes view when key metrics are all null but base table has data (column-level staleness)", async () => {
+      // Scenario: Garmin synced HRV for today, so view has recent dates,
+      // but Apple Health steps arrived after the last view refresh.
+      // Steps are null in the view but non-null in the base table.
+      const rowWithoutSteps = makeDailyMetricsRow({ date: "2025-03-15", steps: null, active_energy_kcal: null });
+      const rowWithSteps = makeDailyMetricsRow({ date: "2025-03-15", steps: 9200, active_energy_kcal: 420 });
+      const execute = vi
+        .fn()
+        // First call: list query — returns data but steps are null
+        .mockResolvedValueOnce([rowWithoutSteps])
+        // Second call: base table check for missing metrics — has step data
+        .mockResolvedValueOnce([{ exists: 1 }])
+        // Third call: REFRESH MATERIALIZED VIEW CONCURRENTLY
+        .mockResolvedValueOnce([])
+        // Fourth call: retry list query — now has steps
+        .mockResolvedValueOnce([rowWithSteps]);
+      const repo = new DailyMetricsRepository({ execute }, "user-1");
+      const result = await repo.list(30, "2025-03-15");
+      expect(result).toHaveLength(1);
+      expect(result[0]?.steps).toBe(9200);
+      expect(mockSentryCapture).toHaveBeenCalledWith(
+        expect.stringContaining("Stale daily metrics"),
+        expect.objectContaining({
+          extra: expect.objectContaining({
+            reason: expect.stringContaining("missing metrics"),
+          }),
+        }),
+      );
+    });
+
+    it("does not check missing metrics when key metrics have data in view", async () => {
+      // Steps are present in view — no column-level staleness check needed
+      const rowWithSteps = makeDailyMetricsRow({ date: "2025-03-15", steps: 8500 });
+      const { repo, execute } = makeRepository([rowWithSteps]);
+      const result = await repo.list(30, "2025-03-15");
+      expect(result).toHaveLength(1);
+      // Only one query — no base table check for missing metrics
+      expect(execute).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not refresh when key metrics are null in both view and base table", async () => {
+      // User has no step data at all — no false positive
+      const rowNoSteps = makeDailyMetricsRow({ date: "2025-03-15", steps: null, active_energy_kcal: null });
+      const execute = vi
+        .fn()
+        // First call: list query — steps null
+        .mockResolvedValueOnce([rowNoSteps])
+        // Second call: base table check for missing metrics — also no steps
+        .mockResolvedValueOnce([]);
+      const repo = new DailyMetricsRepository({ execute }, "user-1");
+      const result = await repo.list(30, "2025-03-15");
+      expect(result).toHaveLength(1);
+      expect(result[0]?.steps).toBeNull();
+      // No refresh attempted — only view query + base table check
+      expect(execute).toHaveBeenCalledTimes(2);
+      expect(mockSentryCapture).not.toHaveBeenCalled();
+    });
+
     it("returns empty when both view and base table are empty", async () => {
       const execute = vi
         .fn()
