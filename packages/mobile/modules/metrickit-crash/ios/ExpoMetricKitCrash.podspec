@@ -14,5 +14,13 @@ Pod::Spec.new do |s|
 
   s.dependency 'ExpoModulesCore'
   s.dependency 'Sentry'
-  s.frameworks     = 'MetricKit'
+  s.frameworks = 'MetricKit'
+
+  # Ensure Sentry's vendored XCFramework headers are visible during
+  # explicit module scanning. Without this, ScanDependencies can fail
+  # to resolve the Sentry module because the xcframework path isn't
+  # in the default header search paths for this pod target.
+  s.pod_target_xcconfig = {
+    'FRAMEWORK_SEARCH_PATHS' => '"${PODS_ROOT}/../native/sentry-pod"'
+  }
 end
