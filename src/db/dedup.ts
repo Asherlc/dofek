@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import { logger } from "../logger.ts";
 import type { SyncDatabase } from "./index.ts";
 
 const DEDUP_VIEWS = [
@@ -11,6 +12,23 @@ const DEDUP_VIEWS = [
 
 const ROLLUP_VIEWS = ["fitness.activity_summary"] as const;
 
+const ALL_VIEWS = [...DEDUP_VIEWS, ...ROLLUP_VIEWS] as const;
+
+/**
+ * Check whether a "relation does not exist" error occurred.
+ * Postgres error code 42P01 = undefined_table.
+ */
+function isRelationMissingError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if (
+    "code" in error &&
+    (error satisfies { code: unknown }).code === "42P01"
+  ) {
+    return true;
+  }
+  return error.message.includes("does not exist");
+}
+
 /**
  * Refresh all deduplication materialized views.
  * Call after every sync run to keep canonical data up-to-date.
@@ -20,29 +38,59 @@ const ROLLUP_VIEWS = ["fitness.activity_summary"] as const;
  *
  * Each view is refreshed independently — a failure in one view (e.g.
  * v_activity) must not prevent other views (e.g. v_daily_metrics) from
- * being refreshed. Collected errors are thrown as an AggregateError
- * after all views have been attempted.
+ * being refreshed.
+ *
+ * When a view is missing entirely (e.g. CASCADE-dropped or lost due to
+ * disk-full), triggers a full view sync to recreate it from the canonical
+ * SQL definitions before retrying.
  */
 export async function refreshDedupViews(db: SyncDatabase): Promise<void> {
   const errors: unknown[] = [];
+  let viewsMissing = false;
 
-  // Refresh dedup views first (activity_summary depends on base tables
-  // but is refreshed after dedup views as a convention)
-  for (const view of DEDUP_VIEWS) {
+  for (const view of [...DEDUP_VIEWS, ...ROLLUP_VIEWS]) {
     try {
       await refreshView(db, view);
     } catch (error) {
+      if (isRelationMissingError(error)) {
+        viewsMissing = true;
+      }
       errors.push(error);
     }
   }
 
-  // Refresh rollup views
-  for (const view of ROLLUP_VIEWS) {
-    try {
-      await refreshView(db, view);
-    } catch (error) {
-      errors.push(error);
+  // If any views were missing, recreate them all from canonical definitions
+  // and retry the refresh.
+  if (viewsMissing) {
+    const databaseUrl = process.env.DATABASE_URL;
+    if (!databaseUrl) {
+      throw new AggregateError(
+        errors,
+        "Views missing and DATABASE_URL not available for recreation",
+      );
     }
+
+    logger.warn("[views] Missing materialized views detected, running sync to recreate");
+    const { syncMaterializedViews } = await import("./sync-views.ts");
+    await syncMaterializedViews(databaseUrl);
+
+    // Retry refreshes after recreation
+    const retryErrors: unknown[] = [];
+    for (const view of ALL_VIEWS) {
+      try {
+        await refreshView(db, view);
+      } catch (error) {
+        retryErrors.push(error);
+      }
+    }
+
+    if (retryErrors.length > 0) {
+      throw new AggregateError(
+        retryErrors,
+        `Failed to refresh ${retryErrors.length} view(s) after recreation`,
+      );
+    }
+    return;
   }
 
   if (errors.length > 0) {
@@ -82,7 +130,7 @@ async function refreshView(db: SyncDatabase, view: string): Promise<void> {
     // blocking refresh rather than giving up entirely.
     try {
       await db.execute(sql.raw(`REFRESH MATERIALIZED VIEW ${view}`));
-    } catch (fallbackError) {
+    } catch {
       throw new Error(`Failed to refresh ${view} (both CONCURRENT and blocking)`, {
         cause: concurrentError,
       });

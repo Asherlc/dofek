@@ -114,6 +114,7 @@ export async function syncMaterializedViews(
     let synced = 0;
     let skipped = 0;
     const allViewNames: string[] = [];
+    const failedViews: Array<{ viewName: string; error: unknown }> = [];
 
     for (const file of files) {
       const content = readFileSync(join(dir, file), "utf-8");
@@ -146,24 +147,29 @@ export async function syncMaterializedViews(
       }
 
       // View definition changed (or new) — drop and recreate
-      logger.info(`[views] ${viewName} changed, recreating`);
-      await sql.unsafe(`DROP MATERIALIZED VIEW IF EXISTS ${viewName} CASCADE`);
+      try {
+        logger.info(`[views] ${viewName} changed, recreating`);
+        await sql.unsafe(`DROP MATERIALIZED VIEW IF EXISTS ${viewName} CASCADE`);
 
-      const statements = content
-        .split("--> statement-breakpoint")
-        .map((statement) => statement.trim())
-        .filter(Boolean);
-      for (const statement of statements) {
-        await sql.unsafe(statement);
+        const statements = content
+          .split("--> statement-breakpoint")
+          .map((statement) => statement.trim())
+          .filter(Boolean);
+        for (const statement of statements) {
+          await sql.unsafe(statement);
+        }
+
+        // Record the hash
+        await sql`
+          INSERT INTO drizzle.__view_hashes (view_name, hash, applied_at)
+          VALUES (${viewName}, ${hash}, NOW())
+          ON CONFLICT (view_name) DO UPDATE SET hash = ${hash}, applied_at = NOW()
+        `;
+        synced++;
+      } catch (error) {
+        logger.error(`[views] Failed to recreate ${viewName}: ${error}`);
+        failedViews.push({ viewName, error });
       }
-
-      // Record the hash
-      await sql`
-        INSERT INTO drizzle.__view_hashes (view_name, hash, applied_at)
-        VALUES (${viewName}, ${hash}, NOW())
-        ON CONFLICT (view_name) DO UPDATE SET hash = ${hash}, applied_at = NOW()
-      `;
-      synced++;
     }
 
     // Refresh any views that exist but are unpopulated (e.g., after a Postgres crash
@@ -172,10 +178,23 @@ export async function syncMaterializedViews(
     for (const viewName of allViewNames) {
       const populated = await isViewPopulated(sql, viewName);
       if (!populated) {
+        const exists = await viewExistsInCatalog(sql, viewName);
+        if (!exists) {
+          // View doesn't exist (failed creation earlier) — skip refresh
+          continue;
+        }
         logger.warn(`[views] ${viewName} exists but is not populated, refreshing`);
         await sql.unsafe(`REFRESH MATERIALIZED VIEW ${viewName}`);
         refreshed++;
       }
+    }
+
+    if (failedViews.length > 0) {
+      const names = failedViews.map(({ viewName }) => viewName).join(", ");
+      throw new AggregateError(
+        failedViews.map(({ error }) => error),
+        `Failed to recreate ${failedViews.length} view(s): ${names}`,
+      );
     }
 
     return { synced, skipped, refreshed };

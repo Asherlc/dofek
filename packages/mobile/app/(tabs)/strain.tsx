@@ -268,7 +268,9 @@ export default function StrainScreen() {
             {activitiesQuery.isLoading ? (
               <ActivityIndicator color={colors.accent} style={styles.activitiesLoader} />
             ) : activitiesQuery.isError || activitiesParsed.error ? (
-              <Text style={styles.errorText}>Failed to load activities.</Text>
+              <Text style={styles.errorText}>
+                {activitiesQuery.error?.message ?? "Failed to load activities."}
+              </Text>
             ) : activities.length > 0 ? (
               <View style={styles.activitiesStack}>
                 {activities.slice(0, 5).map((activity) => (

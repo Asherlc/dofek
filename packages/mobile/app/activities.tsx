@@ -85,7 +85,7 @@ export default function ActivitiesScreen() {
           query.isLoading ? (
             <ActivityIndicator color={colors.accent} style={styles.loader} />
           ) : query.isError || itemsParsed.error ? (
-            <Text style={styles.error}>Failed to load activities.</Text>
+            <Text style={styles.error}>{query.error?.message ?? "Failed to load activities."}</Text>
           ) : (
             <Text style={styles.empty}>No activities found</Text>
           )

@@ -20,6 +20,7 @@ interface ActivityListProps {
   activities: Activity[];
   loading?: boolean;
   error?: boolean;
+  errorMessage?: string;
   totalCount?: number;
   page?: number;
   pageSize?: number;
@@ -44,6 +45,7 @@ export function ActivityList({
   activities,
   loading,
   error,
+  errorMessage,
   totalCount,
   page,
   pageSize,
@@ -57,7 +59,9 @@ export function ActivityList({
   }
 
   if (error) {
-    return <p className="text-sm text-red-400 py-4">Failed to load activities.</p>;
+    return (
+      <p className="text-sm text-red-400 py-4">{errorMessage ?? "Failed to load activities."}</p>
+    );
   }
 
   if (activities.length === 0) {

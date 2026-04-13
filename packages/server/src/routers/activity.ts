@@ -46,7 +46,18 @@ export const activityRouter = router({
     )
     .query(async ({ ctx, input }) => {
       const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone);
-      return repo.list(input);
+      try {
+        return await repo.list(input);
+      } catch (error) {
+        if (error instanceof Error && error.message.includes("does not exist")) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "Activity data is temporarily unavailable — materialized views are being rebuilt. Try again in a few minutes.",
+          });
+        }
+        throw error;
+      }
     }),
 
   byId: cachedProtectedQuery(CacheTTL.MEDIUM)

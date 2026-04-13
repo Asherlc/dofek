@@ -188,8 +188,9 @@ describe("syncMaterializedViews", () => {
     mockSql.mockResolvedValueOnce([]); // pg_advisory_lock
     mockSql.mockResolvedValueOnce([]); // CREATE TABLE
     mockSql.mockResolvedValueOnce([{ hash: expectedHash }]); // SELECT hash — matches
-    mockSql.mockResolvedValueOnce([{ "?column?": 1 }]); // pg_matviews existence check — exists
-    mockSql.mockResolvedValueOnce([{ populated: false }]); // pg_matviews — not populated
+    mockSql.mockResolvedValueOnce([{ "?column?": 1 }]); // pg_matviews existence check — exists (skip check)
+    mockSql.mockResolvedValueOnce([{ populated: false }]); // isViewPopulated — not populated
+    mockSql.mockResolvedValueOnce([{ "?column?": 1 }]); // viewExistsInCatalog in refresh loop — exists
 
     const result = await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
 
@@ -335,6 +336,43 @@ describe("syncMaterializedViews", () => {
 
     // postgres() should NOT be called when there are no files
     expect(postgresDefault).not.toHaveBeenCalled();
+  });
+
+  it("continues to next view when one view creation fails", async () => {
+    const { syncMaterializedViews } = await import("./sync-views.ts");
+
+    mockReaddirSync.mockReturnValue(["01_v_first.sql", "02_v_second.sql"]);
+    mockReadFileSync
+      .mockReturnValueOnce("CREATE MATERIALIZED VIEW fitness.v_first AS SELECT 1")
+      .mockReturnValueOnce("CREATE MATERIALIZED VIEW fitness.v_second AS SELECT 2");
+    mockSql.mockResolvedValueOnce([]); // pg_advisory_lock
+    mockSql.mockResolvedValueOnce([]); // CREATE TABLE __view_hashes
+    mockSql.mockResolvedValueOnce([]); // SELECT hash for v_first — no rows (new)
+    // v_first: DROP succeeds, CREATE fails
+    mockSqlUnsafe
+      .mockResolvedValueOnce([]) // DROP v_first
+      .mockRejectedValueOnce(new Error("No space left on device")); // CREATE v_first fails
+
+    mockSql.mockResolvedValueOnce([]); // SELECT hash for v_second — no rows (new)
+    mockSqlUnsafe
+      .mockResolvedValueOnce([]) // DROP v_second
+      .mockResolvedValueOnce([]); // CREATE v_second succeeds
+    mockSql.mockResolvedValueOnce([]); // INSERT hash for v_second
+
+    // Refresh loop: v_first doesn't exist, v_second is populated
+    mockSql
+      .mockResolvedValueOnce([]) // viewExistsInCatalog v_first → false
+      .mockResolvedValueOnce([{ populated: true }]); // isViewPopulated v_second
+
+    // Should throw AggregateError but still have created v_second
+    await expect(syncMaterializedViews("postgres://localhost/test", "/tmp/views")).rejects.toThrow(
+      "Failed to recreate 1 view(s): fitness.v_first",
+    );
+
+    // v_second should have been created despite v_first failing
+    expect(mockSqlUnsafe).toHaveBeenCalledWith(
+      "DROP MATERIALIZED VIEW IF EXISTS fitness.v_second CASCADE",
+    );
   });
 
   it("always closes the connection in finally block", async () => {
