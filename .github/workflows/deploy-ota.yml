@@ -29,7 +29,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       commit_sha: ${{ steps.resolve.outputs.sha }}
-      should_deploy: ${{ steps.latest.outputs.should_deploy }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
@@ -50,23 +49,6 @@ jobs:
             SHA="$WORKFLOW_RUN_SHA"
           fi
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
-      - name: Check if latest main HEAD
-        id: latest
-        env:
-          SHA: ${{ steps.resolve.outputs.sha }}
-          EVENT_NAME: ${{ github.event_name }}
-        run: |
-          MAIN_HEAD=$(git ls-remote origin refs/heads/main | awk '{ print $1 }')
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
-            echo "Manual deploy requested for $SHA"
-          elif [ "$MAIN_HEAD" = "$SHA" ]; then
-            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
-            echo "Deploying latest main commit: $SHA"
-          else
-            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
-            echo "Skipping deploy for non-latest main commit"
-          fi
 
   deploy:
     name: Publish OTA
@@ -74,7 +56,7 @@ jobs:
     if: |
       always() && (
         github.event_name != 'workflow_run' ||
-        needs.check.outputs.should_deploy == 'true'
+        needs.check.result == 'success'
       )
     runs-on: ubuntu-latest
     steps:

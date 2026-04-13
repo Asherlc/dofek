@@ -56,23 +56,14 @@ jobs:
             echo "sha=$INPUT_SHA" >> "$GITHUB_OUTPUT"
           fi
           # For manual dispatch without commit_sha, SHA is resolved from CI run later
-      - name: Check if latest main HEAD and detect iOS changes
+      - name: Detect iOS native changes
         id: detect
         env:
-          SHA: ${{ steps.resolve.outputs.sha }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             echo "should_deploy=true" >> "$GITHUB_OUTPUT"
             echo "Manual deploy requested"
-            exit 0
-          fi
-
-          MAIN_HEAD=$(git ls-remote origin refs/heads/main | awk '{ print $1 }')
-
-          if [ "$MAIN_HEAD" != "$SHA" ]; then
-            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
-            echo "Skipping deploy for non-latest main commit"
             exit 0
           fi
 
