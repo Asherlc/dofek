@@ -53,14 +53,16 @@ jobs:
             SHA_TAG="$2"
             cd /opt/dofek
 
+            COMPOSE="docker compose --env-file .env.prod --env-file .env.deploy -f docker-compose.deploy.yml"
+
             echo "$GHCR_TOKEN" | docker login ghcr.io -u asherlc --password-stdin
 
             docker pull "ghcr.io/asherlc/dofek-ml:${SHA_TAG}"
 
             echo "IMAGE_TAG=${SHA_TAG}" > .env.deploy
 
-            docker compose \
-              --env-file .env.prod --env-file .env.deploy \
-              -f docker-compose.deploy.yml \
-              up -d --force-recreate training-export-worker
+            # Ensure db and redis are healthy before deploying
+            $COMPOSE up -d --wait db redis
+
+            $COMPOSE up -d --force-recreate training-export-worker
           DEPLOY
