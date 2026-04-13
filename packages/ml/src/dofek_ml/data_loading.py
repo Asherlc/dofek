@@ -331,15 +331,15 @@ def load_from_local(base_path: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     manifest: dict[str, Any] = load_manifest_local(base_path)
 
-    sensor_files: list[str] = [
+    metric_stream_files: list[str] = [
         f["path"] for f in manifest["files"] if f["table"] == "metric_stream"
     ]
 
-    if not sensor_files:
+    if not metric_stream_files:
         raise ValueError("No metric_stream files listed in manifest")
 
-    print(f"Loading {len(sensor_files)} metric_stream file(s) from {base_path}")
-    raw_dfs: list[pd.DataFrame] = [read_parquet_local(base_path, f) for f in sensor_files]
+    print(f"Loading {len(metric_stream_files)} metric_stream file(s) from {base_path}")
+    raw_dfs: list[pd.DataFrame] = [read_parquet_local(base_path, f) for f in metric_stream_files]
     raw_df: pd.DataFrame = pd.concat(raw_dfs, ignore_index=True)
 
     print(f"Raw metric_stream: {len(raw_df)} rows, channels: {raw_df['channel'].unique().tolist()}")
@@ -375,15 +375,15 @@ def load_from_r2() -> tuple[pd.DataFrame, pd.DataFrame]:
     s3_client: Any = create_r2_client()
     manifest: dict[str, Any] = load_manifest_r2(s3_client, bucket)
 
-    sensor_files: list[str] = [
+    metric_stream_files: list[str] = [
         f["path"] for f in manifest["files"] if f["table"] == "metric_stream"
     ]
 
-    if not sensor_files:
+    if not metric_stream_files:
         raise ValueError("No metric_stream files listed in manifest")
 
-    print(f"Downloading {len(sensor_files)} metric_stream file(s) from R2 bucket '{bucket}'")
-    raw_dfs: list[pd.DataFrame] = [read_parquet_r2(s3_client, bucket, f) for f in sensor_files]
+    print(f"Downloading {len(metric_stream_files)} metric_stream file(s) from R2 bucket '{bucket}'")
+    raw_dfs: list[pd.DataFrame] = [read_parquet_r2(s3_client, bucket, f) for f in metric_stream_files]
     raw_df: pd.DataFrame = pd.concat(raw_dfs, ignore_index=True)
 
     print(f"Raw metric_stream: {len(raw_df)} rows, channels: {raw_df['channel'].unique().tolist()}")

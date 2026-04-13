@@ -127,9 +127,9 @@ def training_export_dir(tmp_path: Path) -> Path:
     (tmp_path / "manifest.json").write_text(json.dumps(SAMPLE_MANIFEST))
 
     # Create the metric_stream subdirectory and Parquet file
-    sensor_dir: Path = tmp_path / "metric_stream"
-    sensor_dir.mkdir()
-    _write_sample_parquet(sensor_dir / "2024-01-01T00:00:00Z.parquet")
+    metric_stream_dir: Path = tmp_path / "metric_stream"
+    metric_stream_dir.mkdir()
+    _write_sample_parquet(metric_stream_dir / "2024-01-01T00:00:00Z.parquet")
 
     return tmp_path
 
