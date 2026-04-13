@@ -18,8 +18,8 @@ on:
   workflow_dispatch:
     inputs:
       ci_run_id:
-        description: "CI run ID with ios-xcarchive artifact"
-        required: true
+        description: "CI run ID with ios-xcarchive. Defaults to latest successful CI run."
+        required: false
         type: string
 
 permissions:
@@ -124,8 +124,22 @@ jobs:
             fi
           fi
 
-          echo "::error::Either ci_run_id or commit_sha must be provided"
-          exit 1
+          # Default to latest successful CI run on main
+          RUN_ID=$(gh run list \
+            --workflow=ci.yml \
+            --status=success \
+            --branch=main \
+            --limit=1 \
+            --json databaseId \
+            --jq '.[0].databaseId')
+
+          if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
+            echo "::error::No successful CI runs found on main"
+            exit 1
+          fi
+
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "Defaulting to latest successful CI run: $RUN_ID"
 
   deploy:
     name: Upload to TestFlight

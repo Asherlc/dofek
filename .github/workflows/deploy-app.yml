@@ -14,8 +14,9 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: "Docker image tag to deploy (e.g. sha-abc1234)"
-        required: true
+        description: "Docker image tag (e.g. sha-abc1234). Defaults to latest."
+        required: false
+        default: "latest"
         type: string
 
 concurrency:
