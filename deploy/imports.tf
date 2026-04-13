@@ -59,6 +59,11 @@ import {
 }
 
 import {
+  to = cloudflare_dns_record.dofek_asherlc
+  id = "17402b9a561d3ec6671998afa3439b68/54b62c7fe9c9e60cd5727620a852cce4"
+}
+
+import {
   to = cloudflare_dns_record.ota_dofek_asherlc
   id = "17402b9a561d3ec6671998afa3439b68/e5155b8f3ab1f1eadf1f596d8545db8d"
 }
