@@ -206,6 +206,9 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       JWT_SECRET: ${OTA_JWT_SECRET}
+      KEYS_STORAGE_TYPE: environment
+      PRIVATE_EXPO_KEY_B64: ${OTA_PRIVATE_KEY_B64}
+      PUBLIC_EXPO_KEY_B64: ${OTA_PUBLIC_KEY_B64}
       PORT: 3000
     depends_on:
       redis:

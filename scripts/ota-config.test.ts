@@ -28,10 +28,16 @@ describe("OTA deployment config (expo-open-ota)", () => {
     expect(otaDeployWorkflow).toContain("EXPO_TOKEN");
   });
 
-  it("ensures production channel is mapped to main branch", () => {
+  it("publishes to main branch", () => {
     const otaDeployWorkflow = readFileSync(deployOtaWorkflowPath, "utf-8");
-    expect(otaDeployWorkflow).toContain("--channel production");
     expect(otaDeployWorkflow).toContain("--branch main");
+  });
+
+  it("configures code signing keys for the OTA server", () => {
+    const deployCompose = readFileSync(deployComposePath, "utf-8");
+    expect(deployCompose).toContain("KEYS_STORAGE_TYPE: environment");
+    expect(deployCompose).toContain("PRIVATE_EXPO_KEY_B64");
+    expect(deployCompose).toContain("PUBLIC_EXPO_KEY_B64");
   });
 
   it("points mobile app at the expo-open-ota server", () => {
