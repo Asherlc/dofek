@@ -383,7 +383,9 @@ def load_from_r2() -> tuple[pd.DataFrame, pd.DataFrame]:
         raise ValueError("No metric_stream files listed in manifest")
 
     print(f"Downloading {len(metric_stream_files)} metric_stream file(s) from R2 bucket '{bucket}'")
-    raw_dfs: list[pd.DataFrame] = [read_parquet_r2(s3_client, bucket, f) for f in metric_stream_files]
+    raw_dfs: list[pd.DataFrame] = [
+        read_parquet_r2(s3_client, bucket, f) for f in metric_stream_files
+    ]
     raw_df: pd.DataFrame = pd.concat(raw_dfs, ignore_index=True)
 
     print(f"Raw metric_stream: {len(raw_df)} rows, channels: {raw_df['channel'].unique().tolist()}")
