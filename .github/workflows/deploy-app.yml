@@ -4,13 +4,17 @@ on:
   workflow_call:
     inputs:
       commit_sha:
-        description: "Commit SHA to deploy"
-        required: true
+        description: "Commit SHA to deploy (used to compute image tag if image_tag not provided)"
+        required: false
+        type: string
+      image_tag:
+        description: "Docker image tag to deploy directly (e.g. sha-abc1234)"
+        required: false
         type: string
   workflow_dispatch:
     inputs:
-      commit_sha:
-        description: "Commit SHA to deploy (defaults to workflow ref HEAD)"
+      image_tag:
+        description: "Docker image tag to deploy (e.g. sha-abc1234). Leave empty to deploy latest available."
         required: false
         type: string
 
@@ -23,9 +27,34 @@ jobs:
     name: Deploy App
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-        with:
-          ref: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
+      - name: Resolve image tag
+        id: resolve
+        env:
+          INPUT_TAG: ${{ inputs.image_tag }}
+          INPUT_SHA: ${{ inputs.commit_sha }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -n "$INPUT_TAG" ]; then
+            echo "tag=$INPUT_TAG" >> "$GITHUB_OUTPUT"
+            echo "Using provided image tag: $INPUT_TAG"
+          elif [ -n "$INPUT_SHA" ]; then
+            SHORT_SHA=$(echo "$INPUT_SHA" | head -c 7)
+            echo "tag=sha-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+            echo "Computed image tag from commit SHA: sha-${SHORT_SHA}"
+          else
+            echo "No tag or SHA specified. Finding latest available image..."
+
+            LATEST_TAG=$(gh api "/users/asherlc/packages/container/dofek/versions" \
+              --jq '[.[] | .metadata.container.tags[] | select(startswith("sha-"))] | .[0]')
+
+            if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" = "null" ]; then
+              echo "::error::No Docker images found in GHCR"
+              exit 1
+            fi
+
+            echo "tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
+            echo "Auto-selected latest available image: $LATEST_TAG"
+          fi
       - name: Setup SSH
         env:
           SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
@@ -39,8 +68,8 @@ jobs:
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          SHA_TAG: ${{ steps.resolve.outputs.tag }}
         run: |
-          SHA_TAG="sha-$(git rev-parse --short HEAD)"
           ssh "root@${SERVER_HOST}" bash -s -- "$GHCR_TOKEN" "$SHA_TAG" <<'DEPLOY'
             set -euo pipefail
             GHCR_TOKEN="$1"

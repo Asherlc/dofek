@@ -14,7 +14,7 @@ on:
     inputs:
       commit_sha:
         description: "Commit SHA to deploy"
-        required: true
+        required: false
         type: string
   workflow_dispatch:
     inputs:
