@@ -90,7 +90,7 @@ class TestBuildQuery:
 
     def test_no_filters(self) -> None:
         query, params = build_query(None, None)
-        assert "sensor_sample" in query
+        assert "metric_stream" in query
         assert "LATERAL" in query
         # No top-level time filter placeholders
         assert "ss.recorded_at >= %s" not in query
@@ -141,7 +141,7 @@ class TestBuildManifest:
         assert manifest["until"] is None
         assert manifest["totalRows"] == 5000
         assert len(manifest["files"]) == 1
-        assert manifest["files"][0]["table"] == "sensor_sample"
+        assert manifest["files"][0]["table"] == "metric_stream"
         assert manifest["files"][0]["rowCount"] == 5000
 
     def test_zero_rows(self) -> None:
@@ -159,7 +159,7 @@ class TestBuildManifest:
     def test_file_path_uses_timestamp(self) -> None:
         timestamp = "2026-03-30T15:30:00Z"
         manifest = build_manifest(timestamp, None, None, 100)
-        expected = f"sensor_sample/{timestamp}.parquet"
+        expected = f"metric_stream/{timestamp}.parquet"
         assert manifest["files"][0]["path"] == expected
 
 
@@ -303,7 +303,7 @@ class TestExportToParquet:
         saved = json.loads(manifest_path.read_text())
         assert saved["totalRows"] == 3
         assert len(saved["files"]) == 1
-        assert saved["files"][0]["table"] == "sensor_sample"
+        assert saved["files"][0]["table"] == "metric_stream"
 
     def test_returns_manifest(self, tmp_path: Path) -> None:
         conn = _mock_connection()

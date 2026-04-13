@@ -31,7 +31,7 @@ from dofek_ml.data_loading import (
 )
 
 # ---------------------------------------------------------------------------
-# Shared test data for the new sensor_sample format (Parquet)
+# Shared test data for the new metric_stream format (Parquet)
 # ---------------------------------------------------------------------------
 
 SAMPLE_MANIFEST: dict[str, Any] = {
@@ -40,8 +40,8 @@ SAMPLE_MANIFEST: dict[str, Any] = {
     "until": None,
     "files": [
         {
-            "path": "sensor_sample/2024-01-01T00:00:00Z.parquet",
-            "table": "sensor_sample",
+            "path": "metric_stream/2024-01-01T00:00:00Z.parquet",
+            "table": "metric_stream",
             "rowCount": 6,
         },
     ],
@@ -50,7 +50,7 @@ SAMPLE_MANIFEST: dict[str, Any] = {
 
 
 def _build_sample_parquet_table() -> pa.Table:
-    """Build a sample PyArrow table matching the sensor_sample export schema."""
+    """Build a sample PyArrow table matching the metric_stream export schema."""
     return pa.table(
         {
             "recorded_at": [
@@ -126,8 +126,8 @@ def training_export_dir(tmp_path: Path) -> Path:
     """Create a minimal training data export directory with manifest and Parquet."""
     (tmp_path / "manifest.json").write_text(json.dumps(SAMPLE_MANIFEST))
 
-    # Create the sensor_sample subdirectory and Parquet file
-    sensor_dir: Path = tmp_path / "sensor_sample"
+    # Create the metric_stream subdirectory and Parquet file
+    sensor_dir: Path = tmp_path / "metric_stream"
     sensor_dir.mkdir()
     _write_sample_parquet(sensor_dir / "2024-01-01T00:00:00Z.parquet")
 
@@ -143,7 +143,7 @@ class TestValidateParquetSchema:
     """Tests for validate_parquet_schema()."""
 
     def test_valid_schema_passes(self, training_export_dir: Path) -> None:
-        filepath: Path = training_export_dir / "sensor_sample" / "2024-01-01T00:00:00Z.parquet"
+        filepath: Path = training_export_dir / "metric_stream" / "2024-01-01T00:00:00Z.parquet"
         schema: pq.ParquetSchema = pq.read_schema(filepath)
         validate_parquet_schema(schema)  # should not raise
 
@@ -376,12 +376,12 @@ class TestLoadManifestLocal:
     def test_parses_file_table_type(self, training_export_dir: Path) -> None:
         manifest: dict[str, Any] = load_manifest_local(training_export_dir)
         tables: list[str] = [f["table"] for f in manifest["files"]]
-        assert "sensor_sample" in tables
+        assert "metric_stream" in tables
 
     def test_parses_file_paths(self, training_export_dir: Path) -> None:
         manifest: dict[str, Any] = load_manifest_local(training_export_dir)
         paths: list[str] = [f["path"] for f in manifest["files"]]
-        assert "sensor_sample/2024-01-01T00:00:00Z.parquet" in paths
+        assert "metric_stream/2024-01-01T00:00:00Z.parquet" in paths
 
 
 # ---------------------------------------------------------------------------
@@ -394,7 +394,7 @@ class TestReadParquetLocal:
 
     def test_reads_sensor_parquet(self, training_export_dir: Path) -> None:
         df: pd.DataFrame = read_parquet_local(
-            training_export_dir, "sensor_sample/2024-01-01T00:00:00Z.parquet"
+            training_export_dir, "metric_stream/2024-01-01T00:00:00Z.parquet"
         )
         assert len(df) == 6
         assert "recorded_at" in df.columns
@@ -403,7 +403,7 @@ class TestReadParquetLocal:
 
     def test_parses_timestamps(self, training_export_dir: Path) -> None:
         df: pd.DataFrame = read_parquet_local(
-            training_export_dir, "sensor_sample/2024-01-01T00:00:00Z.parquet"
+            training_export_dir, "metric_stream/2024-01-01T00:00:00Z.parquet"
         )
         assert pd.api.types.is_datetime64_any_dtype(df["recorded_at"])
 
@@ -414,7 +414,7 @@ class TestReadParquetLocal:
     def test_vector_column_is_native_list(self, training_export_dir: Path) -> None:
         """Verify that the vector column contains native arrays, not strings."""
         df: pd.DataFrame = read_parquet_local(
-            training_export_dir, "sensor_sample/2024-01-01T00:00:00Z.parquet"
+            training_export_dir, "metric_stream/2024-01-01T00:00:00Z.parquet"
         )
         # Find an IMU row (has non-null vector)
         imu_rows: pd.DataFrame = df[df["channel"] == "imu"]
@@ -469,7 +469,7 @@ class TestLoadFromLocal:
             "totalRows": 0,
         }
         (tmp_path / "manifest.json").write_text(json.dumps(manifest))
-        with pytest.raises(ValueError, match="No sensor_sample files"):
+        with pytest.raises(ValueError, match="No metric_stream files"):
             load_from_local(tmp_path)
 
 
@@ -527,7 +527,7 @@ class TestLoadManifestR2:
         )
         manifest: dict[str, Any] = load_manifest_r2(s3_client, "test-bucket")
         tables: list[str] = [f["table"] for f in manifest["files"]]
-        assert "sensor_sample" in tables
+        assert "metric_stream" in tables
 
 
 # ---------------------------------------------------------------------------
@@ -631,7 +631,7 @@ class TestLoadFromR2:
         return _make_s3_client(
             {
                 "manifest.json": json.dumps(SAMPLE_MANIFEST).encode(),
-                "sensor_sample/2024-01-01T00:00:00Z.parquet": _parquet_bytes(),
+                "metric_stream/2024-01-01T00:00:00Z.parquet": _parquet_bytes(),
             }
         )
 
@@ -673,7 +673,7 @@ class TestLoadFromR2:
         mock_create.return_value = _make_s3_client(
             {"manifest.json": json.dumps(manifest_empty).encode()}
         )
-        with pytest.raises(ValueError, match="No sensor_sample files"):
+        with pytest.raises(ValueError, match="No metric_stream files"):
             load_from_r2()
 
 
