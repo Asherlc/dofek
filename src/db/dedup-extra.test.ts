@@ -10,6 +10,17 @@ vi.mock("drizzle-orm", () => ({
   sql: mockSqlTaggedTemplate,
 }));
 
+vi.mock("@sentry/node", () => ({
+  captureException: vi.fn(),
+}));
+
+const mockSyncMaterializedViews = vi
+  .fn()
+  .mockResolvedValue({ synced: 0, skipped: 0, refreshed: 0 });
+vi.mock("./sync-views.ts", () => ({
+  syncMaterializedViews: (...args: unknown[]) => mockSyncMaterializedViews(...args),
+}));
+
 const mockExecute = vi.fn().mockResolvedValue(undefined);
 
 function createMockDb() {
@@ -87,6 +98,72 @@ describe("refreshDedupViews", () => {
 
     // First view: 1 failed + 1 fallback = 2; remaining 5 views: 1 each = 5; total = 7
     expect(mockExecute).toHaveBeenCalledTimes(7);
+  });
+
+  it("triggers view sync and retries when a view is missing", async () => {
+    const { refreshDedupViews } = await import("./dedup.ts");
+    const Sentry = await import("@sentry/node");
+    const mockDb = createMockDb();
+
+    const missingError = Object.assign(new Error('relation "fitness.v_activity" does not exist'), {
+      code: "42P01",
+    });
+    // First pass: v_activity fails with missing relation, rest succeed
+    mockExecute
+      .mockRejectedValueOnce(missingError) // v_activity CONCURRENTLY
+      .mockRejectedValueOnce(missingError) // v_activity blocking fallback
+      .mockResolvedValue(undefined); // all other views + retries succeed
+
+    process.env.DATABASE_URL = "postgres://test:test@localhost/test";
+    try {
+      await refreshDedupViews(mockDb);
+    } finally {
+      delete process.env.DATABASE_URL;
+    }
+
+    // Should have called syncMaterializedViews
+    expect(mockSyncMaterializedViews).toHaveBeenCalledWith("postgres://test:test@localhost/test");
+    // Should have reported to Sentry
+    expect(vi.mocked(Sentry.captureException)).toHaveBeenCalledWith(
+      expect.any(AggregateError),
+      expect.objectContaining({ tags: { context: "viewSelfHeal" } }),
+    );
+  });
+
+  it("throws when views are missing but DATABASE_URL is not set", async () => {
+    const { refreshDedupViews } = await import("./dedup.ts");
+    const mockDb = createMockDb();
+
+    const missingError = Object.assign(new Error("does not exist"), { code: "42P01" });
+    mockExecute.mockRejectedValue(missingError);
+
+    const savedUrl = process.env.DATABASE_URL;
+    delete process.env.DATABASE_URL;
+    try {
+      await expect(refreshDedupViews(mockDb)).rejects.toThrow(
+        "Views missing and DATABASE_URL not available",
+      );
+    } finally {
+      if (savedUrl) process.env.DATABASE_URL = savedUrl;
+    }
+  });
+
+  it("throws AggregateError when retry after recreation still fails", async () => {
+    const { refreshDedupViews } = await import("./dedup.ts");
+    const mockDb = createMockDb();
+
+    const missingError = Object.assign(new Error("does not exist"), { code: "42P01" });
+    // All calls fail — both initial and retry
+    mockExecute.mockRejectedValue(missingError);
+
+    process.env.DATABASE_URL = "postgres://test:test@localhost/test";
+    try {
+      await expect(refreshDedupViews(mockDb)).rejects.toThrow("after recreation");
+    } finally {
+      delete process.env.DATABASE_URL;
+    }
+
+    expect(mockSyncMaterializedViews).toHaveBeenCalled();
   });
 
   it("throws AggregateError with all failures after attempting all views", async () => {
