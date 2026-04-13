@@ -5,7 +5,11 @@ on:
     inputs:
       commit_sha:
         description: "Commit SHA to deploy"
-        required: true
+        required: false
+        type: string
+      ci_run_id:
+        description: "CI run ID with ios-xcarchive artifact"
+        required: false
         type: string
   workflow_run:
     workflows: [CI]
@@ -13,8 +17,8 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
-      commit_sha:
-        description: "Commit SHA to deploy (defaults to main HEAD)"
+      ci_run_id:
+        description: "CI run ID with ios-xcarchive. Leave empty to list available."
         required: false
         type: string
 
@@ -46,28 +50,25 @@ jobs:
           INPUT_SHA: ${{ inputs.commit_sha }}
           WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            SHA="$INPUT_SHA"
-            if [ -z "$SHA" ]; then
-              SHA=$(git ls-remote origin refs/heads/main | awk '{ print $1 }')
-            fi
-          else
-            SHA="$WORKFLOW_RUN_SHA"
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            echo "sha=$WORKFLOW_RUN_SHA" >> "$GITHUB_OUTPUT"
+          elif [ -n "$INPUT_SHA" ]; then
+            echo "sha=$INPUT_SHA" >> "$GITHUB_OUTPUT"
           fi
-          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          # For manual dispatch without commit_sha, SHA is resolved from CI run later
       - name: Check if latest main HEAD and detect iOS changes
         id: detect
         env:
           SHA: ${{ steps.resolve.outputs.sha }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
-          MAIN_HEAD=$(git ls-remote origin refs/heads/main | awk '{ print $1 }')
-
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             echo "should_deploy=true" >> "$GITHUB_OUTPUT"
-            echo "Manual deploy requested for $SHA"
+            echo "Manual deploy requested"
             exit 0
           fi
+
+          MAIN_HEAD=$(git ls-remote origin refs/heads/main | awk '{ print $1 }')
 
           if [ "$MAIN_HEAD" != "$SHA" ]; then
             echo "should_deploy=false" >> "$GITHUB_OUTPUT"
@@ -86,8 +87,10 @@ jobs:
           fi
       - name: Find CI run with archive
         id: find-run
+        if: steps.detect.outputs.should_deploy == 'true'
         env:
           EVENT_NAME: ${{ github.event_name }}
+          INPUT_RUN_ID: ${{ inputs.ci_run_id }}
           WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
           COMMIT_SHA: ${{ steps.resolve.outputs.sha }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -98,22 +101,64 @@ jobs:
             exit 0
           fi
 
-          # For workflow_dispatch and workflow_call, find CI run for the commit
-          RUN_ID=$(gh run list \
-            --workflow=ci.yml \
-            --commit="$COMMIT_SHA" \
-            --status=success \
-            --limit=1 \
-            --json databaseId \
-            --jq '.[0].databaseId')
+          if [ -n "$INPUT_RUN_ID" ]; then
+            # Manual deploy with explicit CI run ID
+            echo "run_id=$INPUT_RUN_ID" >> "$GITHUB_OUTPUT"
+            echo "Using provided CI run: $INPUT_RUN_ID"
+            exit 0
+          fi
 
-          if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
-            echo "::error::No successful CI run found for commit $COMMIT_SHA"
+          if [ -n "$COMMIT_SHA" ]; then
+            # workflow_call with commit_sha — find CI run for that commit
+            RUN_ID=$(gh run list \
+              --workflow=ci.yml \
+              --commit="$COMMIT_SHA" \
+              --status=success \
+              --limit=1 \
+              --json databaseId \
+              --jq '.[0].databaseId')
+
+            if [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ]; then
+              echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+              echo "Using CI run for commit ${COMMIT_SHA:0:10}: $RUN_ID"
+              exit 0
+            fi
+          fi
+
+          # No explicit run — list recent successful CI runs and pick latest
+          echo "No CI run specified. Querying recent successful CI runs..."
+
+          RUNS=$(gh run list \
+            --workflow=ci.yml \
+            --status=success \
+            --branch=main \
+            --limit=10 \
+            --json databaseId,headSha,createdAt)
+
+          {
+            echo "## Available CI Runs (with ios-xcarchive)"
+            echo ""
+            echo "| Run ID | Commit | Created |"
+            echo "|--------|--------|---------|"
+            echo "$RUNS" | jq -r '.[] | "| `\(.databaseId)` | `\(.headSha[:10])` | \(.createdAt) |"'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          LATEST_RUN=$(echo "$RUNS" | jq -r '.[0].databaseId')
+
+          if [ -z "$LATEST_RUN" ] || [ "$LATEST_RUN" = "null" ]; then
+            echo "::error::No successful CI runs found"
             exit 1
           fi
 
-          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
-          echo "Using CI run for commit ${COMMIT_SHA:0:10}: $RUN_ID"
+          {
+            echo ""
+            echo "**Auto-deploying from CI run: \`$LATEST_RUN\`**"
+            echo ""
+            echo "To deploy a specific build, re-run with the \`ci_run_id\` input."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "run_id=$LATEST_RUN" >> "$GITHUB_OUTPUT"
+          echo "Auto-selected latest CI run: $LATEST_RUN"
 
   deploy:
     name: Upload to TestFlight

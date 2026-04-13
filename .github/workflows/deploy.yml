@@ -17,6 +17,10 @@ on:
         description: "Commit SHA to deploy (defaults to workflow ref HEAD)"
         required: false
         type: string
+      image_tag:
+        description: "Docker image tag to deploy (e.g. sha-abc1234). Skips Docker build when provided."
+        required: false
+        type: string
 
 env:
   REGISTRY: ghcr.io
@@ -33,7 +37,7 @@ jobs:
 
   docker:
     name: Docker Build & Push
-    if: inputs.target == 'app' || inputs.target == 'web' || inputs.target == 'all'
+    if: inputs.image_tag == '' && (inputs.target == 'app' || inputs.target == 'web' || inputs.target == 'all')
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
@@ -88,7 +92,7 @@ jobs:
     if: always() && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (needs.docker.result == 'success' || needs.docker.result == 'skipped') && (inputs.target == 'app' || inputs.target == 'web' || inputs.target == 'all')
     uses: ./.github/workflows/deploy-app.yml
     with:
-      image_tag: ${{ needs.docker.outputs.image_tag }}
+      image_tag: ${{ inputs.image_tag != '' && inputs.image_tag || needs.docker.outputs.image_tag }}
     secrets: inherit
 
   ios:
@@ -96,7 +100,7 @@ jobs:
     if: inputs.target == 'ios' || inputs.target == 'all'
     uses: ./.github/workflows/deploy-ios.yml
     with:
-      commit_sha: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
+      commit_sha: ${{ inputs.commit_sha }}
     secrets: inherit
 
   ota:
