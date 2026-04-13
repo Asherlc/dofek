@@ -438,7 +438,9 @@
     "longitudedegrees",
     "altitudemeters",
     "strongapp",
-    "legendselectchanged"
+    "legendselectchanged",
+    "deauthorize",
+    "deauthorization"
   ],
   "flagWords": [],
   "useGitignore": false,

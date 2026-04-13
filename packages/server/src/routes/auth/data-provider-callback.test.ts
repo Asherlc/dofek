@@ -223,14 +223,16 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     mockRevokeExistingTokens.mockRejectedValue(new Error("401 Unauthorized"));
     mockRevokeToken.mockRejectedValue(new Error("Token revocation failed (503): Service error"));
 
-    // Exchange also fails
+    // Exchange also fails with the specific Wahoo "too many tokens" error
     mockExchangeCode.mockRejectedValue(new Error("Too many unrevoked access tokens"));
 
     const { req, res } = createMockReqRes({ code: "auth-code", state: "random-state" });
     await handleOAuth2Callback(req, res);
 
-    // User gets generic error
-    expect(res.status).toHaveBeenCalledWith(500);
+    // User gets actionable error with deauthorization instructions
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.send).toHaveBeenCalledWith(expect.stringContaining("orphaned tokens"));
+    expect(res.send).toHaveBeenCalledWith(expect.stringContaining("cloud.wahoo.com/settings"));
 
     // The final logged error includes both the exchange error and the revocation context
     const allErrorMessages: string[] = mockLogger.error.mock.calls.map((call: unknown[]) =>
@@ -241,5 +243,29 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     );
     expect(callbackError).toContain("Too many unrevoked access tokens");
     expect(callbackError).toContain("prior revocation");
+  });
+
+  it("shows deauthorization instructions when exchange fails with orphaned tokens and no stored tokens", async () => {
+    // No stored tokens — orphaned tokens only exist on Wahoo's side
+    mockLoadTokens.mockResolvedValue(null);
+
+    // Exchange fails with the specific Wahoo "too many tokens" error
+    mockExchangeCode.mockRejectedValue(
+      new Error(
+        'Token exchange failed (400): {"error":"Too many unrevoked access tokens exist for this app and user."}',
+      ),
+    );
+
+    const { req, res } = createMockReqRes({ code: "auth-code", state: "random-state" });
+    await handleOAuth2Callback(req, res);
+
+    // User gets actionable instructions instead of generic error
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.send).toHaveBeenCalledWith(expect.stringContaining("orphaned tokens"));
+    expect(res.send).toHaveBeenCalledWith(expect.stringContaining("cloud.wahoo.com/settings"));
+
+    // Revocation was not attempted (no stored tokens)
+    expect(mockRevokeExistingTokens).not.toHaveBeenCalled();
+    expect(mockRevokeToken).not.toHaveBeenCalled();
   });
 });
