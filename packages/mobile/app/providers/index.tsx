@@ -100,9 +100,21 @@ export default function ProvidersScreen() {
   }, []);
 
   const handleHealthKitConnect = useCallback(async () => {
-    await requestPermissions();
-    const status = await getRequestStatus();
-    setHealthKitPermissionStatus(status);
+    setHealthKitSyncing(true);
+    setHealthKitProgress("Requesting permissions...");
+    try {
+      await requestPermissions();
+      const status = await getRequestStatus();
+      setHealthKitPermissionStatus(status);
+      setHealthKitProgress(status === "unnecessary" ? "Connected" : undefined);
+    } catch (error: unknown) {
+      captureException(error, { context: "healthkit-connect" });
+      setHealthKitProgress(
+        error instanceof Error ? error.message : "Failed to connect to Apple Health",
+      );
+    } finally {
+      setHealthKitSyncing(false);
+    }
   }, []);
 
   const handleHealthKitSync = useCallback(
