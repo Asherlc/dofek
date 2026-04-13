@@ -20,10 +20,7 @@ const ALL_VIEWS = [...DEDUP_VIEWS, ...ROLLUP_VIEWS] as const;
  */
 function isRelationMissingError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
-  if (
-    "code" in error &&
-    (error satisfies { code: unknown }).code === "42P01"
-  ) {
+  if ("code" in error && (error satisfies { code: unknown }).code === "42P01") {
     return true;
   }
   return error.message.includes("does not exist");
