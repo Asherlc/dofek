@@ -29,7 +29,7 @@ write_files:
   - path: /etc/cron.d/docker-cleanup
     permissions: "0644"
     content: |
-      0 3 * * * root docker system prune -f --filter "until=72h" >> /var/log/docker-prune.log 2>&1
+      0 3 * * * root docker image prune -af --filter "until=24h" >> /var/log/docker-prune.log 2>&1
 
 runcmd:
   # Install Docker CE
