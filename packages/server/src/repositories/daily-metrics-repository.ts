@@ -66,6 +66,18 @@ const trendsRowSchema = z.object({
 export type TrendsRow = z.infer<typeof trendsRowSchema>;
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Number of calendar days between two YYYY-MM-DD date strings. */
+function daysBetween(dateA: string, dateB: string): number {
+  const msPerDay = 86_400_000;
+  const timestampA = new Date(`${dateA}T00:00:00Z`).getTime();
+  const timestampB = new Date(`${dateB}T00:00:00Z`).getTime();
+  return Math.abs(Math.round((timestampB - timestampA) / msPerDay));
+}
+
+// ---------------------------------------------------------------------------
 // Repository
 // ---------------------------------------------------------------------------
 
@@ -83,12 +95,29 @@ export class DailyMetricsRepository extends BaseRepository {
       );
 
     const result = await listQuery();
-    if (result.length > 0) return result;
 
     // View returned empty — check if base table has data (stale view)
-    const refreshed = await this.#refreshIfStale(days, endDate);
-    if (!refreshed) return result;
-    return listQuery();
+    if (result.length === 0) {
+      const refreshed = await this.#refreshIfStale(days, endDate);
+      if (!refreshed) return result;
+      return listQuery();
+    }
+
+    // View has data — check if it's stale (base table has newer rows).
+    // Only check when the view's latest date is >1 day behind endDate to avoid
+    // an extra query on every request when data is fresh.
+    const latestViewDate = result[result.length - 1]?.date;
+    if (
+      latestViewDate != null &&
+      latestViewDate < endDate &&
+      daysBetween(latestViewDate, endDate) > 1 &&
+      (await this.#baseTableHasNewerData(latestViewDate, endDate))
+    ) {
+      const refreshed = await this.#tryRefreshView("newer data in base table");
+      if (refreshed) return listQuery();
+    }
+
+    return result;
   }
 
   /** Most recent single daily metrics row, or null if none exist. */
@@ -130,29 +159,27 @@ export class DailyMetricsRepository extends BaseRepository {
     return rows.filter((row) => row.date >= cutoffStr);
   }
 
-  /**
-   * Check if the base table has data in the window and refresh the view if stale.
-   * Returns true if a refresh was performed, false otherwise.
-   */
-  async #refreshIfStale(days: number, endDate: string): Promise<boolean> {
-    const baseCount = await this.query(
-      z.object({ count: z.coerce.number() }),
-      sql`SELECT count(*)::int AS count FROM fitness.daily_metrics
+  /** Check if the base table has rows newer than what the materialized view returned. */
+  async #baseTableHasNewerData(latestViewDate: string, endDate: string): Promise<boolean> {
+    const rows = await this.query(
+      z.object({ exists: z.coerce.number() }),
+      sql`SELECT 1 AS exists FROM fitness.daily_metrics
           WHERE user_id = ${this.userId}
-            AND date > ${dateWindowStart(endDate, days)}
+            AND date > ${latestViewDate}::date
             AND date <= ${dateWindowEnd(endDate)}
           LIMIT 1`,
     );
-    if ((baseCount[0]?.count ?? 0) === 0) return false;
+    return rows.length > 0;
+  }
 
+  /** Try to refresh the materialized view. Returns true on success, false on failure. */
+  async #tryRefreshView(reason = "stale view"): Promise<boolean> {
     Sentry.captureMessage("Stale daily metrics materialized view detected", {
       level: "warning",
       tags: { userId: this.userId },
-      extra: { days, endDate, baseCount: baseCount[0]?.count },
+      extra: { reason },
     });
-    logger.warn(
-      `[daily-metrics] View stale for user ${this.userId} (days=${days}, endDate=${endDate}), refreshing`,
-    );
+    logger.warn(`[daily-metrics] View stale for user ${this.userId} (${reason}), refreshing`);
 
     try {
       try {
@@ -169,6 +196,24 @@ export class DailyMetricsRepository extends BaseRepository {
       return false;
     }
     return true;
+  }
+
+  /**
+   * Check if the base table has data in the window and refresh the view if stale.
+   * Returns true if a refresh was performed, false otherwise.
+   */
+  async #refreshIfStale(days: number, endDate: string): Promise<boolean> {
+    const baseRows = await this.query(
+      z.object({ exists: z.coerce.number() }),
+      sql`SELECT 1 AS exists FROM fitness.daily_metrics
+          WHERE user_id = ${this.userId}
+            AND date > ${dateWindowStart(endDate, days)}
+            AND date <= ${dateWindowEnd(endDate)}
+          LIMIT 1`,
+    );
+    if (baseRows.length === 0) return false;
+
+    return this.#tryRefreshView("view empty but base table has data");
   }
 
   /** Aggregate trends (averages, standard deviations) and latest values for the date window. */

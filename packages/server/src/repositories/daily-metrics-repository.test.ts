@@ -118,8 +118,8 @@ describe("DailyMetricsRepository", () => {
         .fn()
         // First call: list query returns empty (stale view)
         .mockResolvedValueOnce([])
-        // Second call: base table count check — has data
-        .mockResolvedValueOnce([{ count: 50 }])
+        // Second call: base table existence check — has data
+        .mockResolvedValueOnce([{ exists: 1 }])
         // Third call: REFRESH MATERIALIZED VIEW (succeeds)
         .mockResolvedValueOnce([])
         // Fourth call: retry list query — returns data
@@ -134,11 +134,74 @@ describe("DailyMetricsRepository", () => {
       );
     });
 
+    it("refreshes view when results are stale (base table has newer data)", async () => {
+      const staleRow = makeDailyMetricsRow({ date: "2025-03-10", steps: null });
+      const freshRow = makeDailyMetricsRow({ date: "2025-03-15", steps: 9200 });
+      const execute = vi
+        .fn()
+        // First call: list query returns stale data (5 days behind endDate)
+        .mockResolvedValueOnce([staleRow])
+        // Second call: base table existence check — has newer rows
+        .mockResolvedValueOnce([{ exists: 1 }])
+        // Third call: REFRESH MATERIALIZED VIEW (succeeds)
+        .mockResolvedValueOnce([])
+        // Fourth call: retry list query — returns fresh data
+        .mockResolvedValueOnce([staleRow, freshRow]);
+      const repo = new DailyMetricsRepository({ execute }, "user-1");
+      const result = await repo.list(30, "2025-03-15");
+      expect(result).toHaveLength(2);
+      expect(result[1]?.steps).toBe(9200);
+      expect(execute).toHaveBeenCalledTimes(4);
+    });
+
+    it("does not refresh when view data is recent (within 1 day of endDate)", async () => {
+      const recentRow = makeDailyMetricsRow({ date: "2025-03-14" });
+      const { repo, execute } = makeRepository([recentRow]);
+      const result = await repo.list(30, "2025-03-15");
+      expect(result).toHaveLength(1);
+      // Only one query — no base table check
+      expect(execute).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not refresh stale view when base table also has no newer data", async () => {
+      const staleRow = makeDailyMetricsRow({ date: "2025-03-10" });
+      const execute = vi
+        .fn()
+        // First call: list query returns stale data
+        .mockResolvedValueOnce([staleRow])
+        // Second call: base table existence check — no newer data
+        .mockResolvedValueOnce([]);
+      const repo = new DailyMetricsRepository({ execute }, "user-1");
+      const result = await repo.list(30, "2025-03-15");
+      expect(result).toHaveLength(1);
+      // No refresh attempted — only view query + base table check
+      expect(execute).toHaveBeenCalledTimes(2);
+    });
+
+    it("returns stale data when refresh fails on stale view", async () => {
+      const staleRow = makeDailyMetricsRow({ date: "2025-03-10" });
+      const execute = vi
+        .fn()
+        // First call: list query returns stale data
+        .mockResolvedValueOnce([staleRow])
+        // Second call: base table existence check — has newer rows
+        .mockResolvedValueOnce([{ exists: 1 }])
+        // Third call: CONCURRENT refresh fails
+        .mockRejectedValueOnce(new Error("CONCURRENT failed"))
+        // Fourth call: regular refresh also fails
+        .mockRejectedValueOnce(new Error("regular also failed"));
+      const repo = new DailyMetricsRepository({ execute }, "user-1");
+      const result = await repo.list(30, "2025-03-15");
+      // Returns the stale data rather than nothing
+      expect(result).toHaveLength(1);
+      expect(result[0]?.date).toBe("2025-03-10");
+    });
+
     it("returns empty when both view and base table are empty", async () => {
       const execute = vi
         .fn()
         .mockResolvedValueOnce([]) // view empty
-        .mockResolvedValueOnce([{ count: 0 }]); // base table empty
+        .mockResolvedValueOnce([]); // base table existence check — empty
       const repo = new DailyMetricsRepository({ execute }, "user-1");
       const result = await repo.list(30, "2025-03-15");
       expect(result).toEqual([]);
@@ -225,8 +288,8 @@ describe("DailyMetricsRepository", () => {
         .fn()
         // First call: trends query returns all nulls
         .mockResolvedValueOnce([allNullRow])
-        // Second call: base table count check — has data
-        .mockResolvedValueOnce([{ count: 50 }])
+        // Second call: base table existence check — has data
+        .mockResolvedValueOnce([{ exists: 1 }])
         // Third call: REFRESH MATERIALIZED VIEW
         .mockResolvedValueOnce([])
         // Fourth call: retry trends query (still null — view may still be stale)
@@ -240,7 +303,7 @@ describe("DailyMetricsRepository", () => {
       const execute = vi
         .fn()
         .mockResolvedValueOnce([makeTrendsRow({ avg_resting_hr: null, latest_date: null })])
-        .mockResolvedValueOnce([{ count: 0 }]); // no base data either
+        .mockResolvedValueOnce([]); // base table existence check — empty
       const repo = new DailyMetricsRepository({ execute }, "user-1");
       await repo.getTrends(30, "2025-03-15");
       expect(mockLoggerWarn).not.toHaveBeenCalled();
@@ -253,8 +316,8 @@ describe("DailyMetricsRepository", () => {
         .fn()
         // First call: trends query returns all-null (stale view)
         .mockResolvedValueOnce([allNullRow])
-        // Second call: base table count check — has data
-        .mockResolvedValueOnce([{ count: 50 }])
+        // Second call: base table existence check — has data
+        .mockResolvedValueOnce([{ exists: 1 }])
         // Third call: REFRESH MATERIALIZED VIEW (succeeds)
         .mockResolvedValueOnce([])
         // Fourth call: retry trends query — returns data
@@ -315,10 +378,7 @@ describe("DailyMetricsRepository", () => {
         latest_skin_temp: null,
         latest_date: null,
       });
-      const execute = vi
-        .fn()
-        .mockResolvedValueOnce([allNullTrends])
-        .mockResolvedValueOnce([{ count: 0 }]); // base table check (new user)
+      const execute = vi.fn().mockResolvedValueOnce([allNullTrends]).mockResolvedValueOnce([]); // base table existence check (new user — empty)
       const repo = new DailyMetricsRepository({ execute }, "user-1");
       const result = await repo.getTrends(30, "2025-03-15");
       expect(result).not.toBeNull();
