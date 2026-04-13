@@ -166,7 +166,7 @@ jobs:
           elif [ -n "$INPUT_SHA" ]; then
             echo "ref=$INPUT_SHA" >> "$GITHUB_OUTPUT"
           else
-            echo "ref=$(git ls-remote origin refs/heads/main | awk '{ print $1 }')" >> "$GITHUB_OUTPUT"
+            echo "ref=main" >> "$GITHUB_OUTPUT"
           fi
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
