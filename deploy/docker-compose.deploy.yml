@@ -226,7 +226,7 @@ services:
 
   # ── Portainer (Docker management UI) ──────────────────────
   portainer:
-    image: portainer/portainer-ce:2.25.1
+    image: portainer/portainer-ce:2.40.0
     container_name: dofek-portainer
     restart: unless-stopped
     volumes:
