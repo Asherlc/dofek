@@ -42,6 +42,46 @@ vi.mock("dofek/db/schema", () => ({
   },
 }));
 
+const {
+  mockLoadTokens,
+  mockGetAllProviders,
+  mockEnsureProvidersRegistered,
+  mockRevokeToken,
+  mockLoggerInfo,
+  mockLoggerWarn,
+} = vi.hoisted(() => ({
+  mockLoadTokens: vi.fn(),
+  mockGetAllProviders: vi.fn(),
+  mockEnsureProvidersRegistered: vi.fn(),
+  mockRevokeToken: vi.fn(),
+  mockLoggerInfo: vi.fn(),
+  mockLoggerWarn: vi.fn(),
+}));
+
+vi.mock("dofek/db/tokens", () => ({
+  loadTokens: (...args: unknown[]) => mockLoadTokens(...args),
+}));
+vi.mock("dofek/providers/registry", () => ({
+  getAllProviders: () => mockGetAllProviders(),
+}));
+vi.mock("./sync.ts", () => ({
+  ensureProvidersRegistered: () => mockEnsureProvidersRegistered(),
+}));
+vi.mock("dofek/auth/oauth", () => ({
+  revokeToken: (...args: unknown[]) => mockRevokeToken(...args),
+}));
+vi.mock("../logger.ts", () => ({
+  logger: {
+    info: (...args: unknown[]) => mockLoggerInfo(...args),
+    warn: (...args: unknown[]) => mockLoggerWarn(...args),
+    error: vi.fn(),
+    debug: vi.fn(),
+  },
+}));
+vi.mock("@sentry/node", () => ({
+  captureException: vi.fn(),
+}));
+
 import {
   DISCONNECT_CHILD_TABLES,
   dataTypeEnum,
@@ -674,6 +714,318 @@ describe("providerDetailRouter", () => {
 
       await expect(caller.disconnect({ providerId: "unknown" })).rejects.toThrow();
       expect(mockTransaction).not.toHaveBeenCalled();
+    });
+
+    it("calls revokeExistingTokens before deleting data when provider supports it", async () => {
+      const mockRevokeExisting = vi.fn().mockResolvedValue(undefined);
+      const storedTokens = {
+        accessToken: "access-123",
+        refreshToken: "refresh-456",
+        expiresAt: new Date("2026-12-31"),
+        scopes: "email workouts_read",
+      };
+      mockLoadTokens.mockResolvedValue(storedTokens);
+      mockEnsureProvidersRegistered.mockResolvedValue(undefined);
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          validate: () => null,
+          authSetup: () => ({
+            oauthConfig: { revokeUrl: "https://api.wahooligan.com/oauth/revoke" },
+            exchangeCode: vi.fn(),
+            revokeExistingTokens: mockRevokeExisting,
+          }),
+        },
+      ]);
+
+      const txExecute = vi.fn().mockResolvedValue([]);
+      const mockTransaction = vi
+        .fn()
+        .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<void>) => {
+          await fn({ execute: txExecute });
+        });
+      const mockExecute = vi.fn().mockResolvedValue([{ id: "wahoo" }]);
+
+      const caller = createCaller({
+        db: { execute: mockExecute, transaction: mockTransaction },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.disconnect({ providerId: "wahoo" });
+
+      expect(mockLoadTokens).toHaveBeenCalledWith(expect.anything(), "wahoo", "user-1");
+      expect(mockRevokeExisting).toHaveBeenCalledWith(storedTokens);
+      expect(mockTransaction).toHaveBeenCalledTimes(1);
+    });
+
+    it("uses standard OAuth revocation when provider has revokeUrl but no revokeExistingTokens", async () => {
+      const storedTokens = {
+        accessToken: "access-abc",
+        refreshToken: "refresh-def",
+        expiresAt: new Date("2026-12-31"),
+        scopes: null,
+      };
+      mockLoadTokens.mockResolvedValue(storedTokens);
+      mockEnsureProvidersRegistered.mockResolvedValue(undefined);
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "strava",
+          name: "Strava",
+          validate: () => null,
+          authSetup: () => ({
+            oauthConfig: {
+              clientId: "client-id",
+              clientSecret: "secret",
+              revokeUrl: "https://www.strava.com/oauth/deauthorize",
+            },
+            exchangeCode: vi.fn(),
+          }),
+        },
+      ]);
+      mockRevokeToken.mockResolvedValue(undefined);
+
+      const txExecute = vi.fn().mockResolvedValue([]);
+      const mockTransaction = vi
+        .fn()
+        .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<void>) => {
+          await fn({ execute: txExecute });
+        });
+      const mockExecute = vi.fn().mockResolvedValue([{ id: "strava" }]);
+
+      const caller = createCaller({
+        db: { execute: mockExecute, transaction: mockTransaction },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.disconnect({ providerId: "strava" });
+
+      expect(mockRevokeToken).toHaveBeenCalledTimes(2);
+      expect(mockRevokeToken).toHaveBeenCalledWith(
+        expect.objectContaining({ revokeUrl: "https://www.strava.com/oauth/deauthorize" }),
+        "access-abc",
+      );
+      expect(mockRevokeToken).toHaveBeenCalledWith(
+        expect.objectContaining({ revokeUrl: "https://www.strava.com/oauth/deauthorize" }),
+        "refresh-def",
+      );
+      expect(mockTransaction).toHaveBeenCalledTimes(1);
+    });
+
+    it("falls back to standard OAuth revocation when custom revocation fails", async () => {
+      mockLoadTokens.mockResolvedValue({
+        accessToken: "expired-token",
+        refreshToken: null,
+        expiresAt: new Date("2020-01-01"),
+        scopes: null,
+      });
+      mockEnsureProvidersRegistered.mockResolvedValue(undefined);
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          validate: () => null,
+          authSetup: () => ({
+            oauthConfig: { revokeUrl: "https://api.wahooligan.com/oauth/revoke" },
+            exchangeCode: vi.fn(),
+            revokeExistingTokens: vi.fn().mockRejectedValue(new Error("401 Unauthorized")),
+          }),
+        },
+      ]);
+      mockRevokeToken.mockResolvedValue(undefined);
+
+      const txExecute = vi.fn().mockResolvedValue([]);
+      const mockTransaction = vi
+        .fn()
+        .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<void>) => {
+          await fn({ execute: txExecute });
+        });
+      const mockExecute = vi.fn().mockResolvedValue([{ id: "wahoo" }]);
+
+      const caller = createCaller({
+        db: { execute: mockExecute, transaction: mockTransaction },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.disconnect({ providerId: "wahoo" });
+
+      expect(result).toEqual({ success: true });
+      expect(mockLoggerWarn).toHaveBeenCalledWith(
+        expect.stringContaining("Custom revocation failed for wahoo"),
+      );
+      // Falls back to standard OAuth revocation for the access token
+      expect(mockRevokeToken).toHaveBeenCalledWith(
+        expect.objectContaining({ revokeUrl: "https://api.wahooligan.com/oauth/revoke" }),
+        "expired-token",
+      );
+      expect(mockTransaction).toHaveBeenCalledTimes(1);
+      expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length);
+    });
+
+    it("still deletes data when all revocation methods fail", async () => {
+      mockLoadTokens.mockResolvedValue({
+        accessToken: "expired-token",
+        refreshToken: "expired-refresh",
+        expiresAt: new Date("2020-01-01"),
+        scopes: null,
+      });
+      mockEnsureProvidersRegistered.mockResolvedValue(undefined);
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          validate: () => null,
+          authSetup: () => ({
+            oauthConfig: { revokeUrl: "https://api.wahooligan.com/oauth/revoke" },
+            exchangeCode: vi.fn(),
+            revokeExistingTokens: vi.fn().mockRejectedValue(new Error("401 Unauthorized")),
+          }),
+        },
+      ]);
+      mockRevokeToken.mockRejectedValue(new Error("revocation endpoint down"));
+
+      const txExecute = vi.fn().mockResolvedValue([]);
+      const mockTransaction = vi
+        .fn()
+        .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<void>) => {
+          await fn({ execute: txExecute });
+        });
+      const mockExecute = vi.fn().mockResolvedValue([{ id: "wahoo" }]);
+
+      const caller = createCaller({
+        db: { execute: mockExecute, transaction: mockTransaction },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.disconnect({ providerId: "wahoo" });
+
+      expect(result).toEqual({ success: true });
+      expect(mockTransaction).toHaveBeenCalledTimes(1);
+      expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length);
+    });
+
+    it("skips revocation when no stored tokens exist", async () => {
+      const mockRevokeExistingNoTokens = vi.fn();
+      mockLoadTokens.mockResolvedValue(null);
+      mockEnsureProvidersRegistered.mockResolvedValue(undefined);
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          validate: () => null,
+          authSetup: () => ({
+            oauthConfig: { revokeUrl: "https://api.wahooligan.com/oauth/revoke" },
+            exchangeCode: vi.fn(),
+            revokeExistingTokens: mockRevokeExistingNoTokens,
+          }),
+        },
+      ]);
+
+      const txExecute = vi.fn().mockResolvedValue([]);
+      const mockTransaction = vi
+        .fn()
+        .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<void>) => {
+          await fn({ execute: txExecute });
+        });
+      const mockExecute = vi.fn().mockResolvedValue([{ id: "wahoo" }]);
+
+      const caller = createCaller({
+        db: { execute: mockExecute, transaction: mockTransaction },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.disconnect({ providerId: "wahoo" });
+
+      expect(mockRevokeExistingNoTokens).not.toHaveBeenCalled();
+      expect(mockTransaction).toHaveBeenCalledTimes(1);
+    });
+
+    it("skips revocation when provider has no authSetup", async () => {
+      mockLoadTokens.mockResolvedValue({
+        accessToken: "token",
+        refreshToken: null,
+        expiresAt: new Date(),
+        scopes: null,
+      });
+      mockEnsureProvidersRegistered.mockResolvedValue(undefined);
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "apple-health",
+          name: "Apple Health",
+          validate: () => null,
+          // No authSetup method
+        },
+      ]);
+
+      const txExecute = vi.fn().mockResolvedValue([]);
+      const mockTransaction = vi
+        .fn()
+        .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<void>) => {
+          await fn({ execute: txExecute });
+        });
+      const mockExecute = vi.fn().mockResolvedValue([{ id: "apple-health" }]);
+
+      const caller = createCaller({
+        db: { execute: mockExecute, transaction: mockTransaction },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.disconnect({ providerId: "apple-health" });
+
+      expect(result).toEqual({ success: true });
+      expect(mockRevokeToken).not.toHaveBeenCalled();
+      expect(mockTransaction).toHaveBeenCalledTimes(1);
+    });
+
+    it("only revokes access token when no refresh token exists", async () => {
+      mockLoadTokens.mockResolvedValue({
+        accessToken: "access-token",
+        refreshToken: null,
+        expiresAt: new Date(),
+        scopes: null,
+      });
+      mockEnsureProvidersRegistered.mockResolvedValue(undefined);
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "strava",
+          name: "Strava",
+          validate: () => null,
+          authSetup: () => ({
+            oauthConfig: { revokeUrl: "https://strava.com/revoke" },
+            exchangeCode: vi.fn(),
+          }),
+        },
+      ]);
+      mockRevokeToken.mockResolvedValue(undefined);
+
+      const txExecute = vi.fn().mockResolvedValue([]);
+      const mockTransaction = vi
+        .fn()
+        .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<void>) => {
+          await fn({ execute: txExecute });
+        });
+      const mockExecute = vi.fn().mockResolvedValue([{ id: "strava" }]);
+
+      const caller = createCaller({
+        db: { execute: mockExecute, transaction: mockTransaction },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.disconnect({ providerId: "strava" });
+
+      // Only access token revoked, no refresh token
+      expect(mockRevokeToken).toHaveBeenCalledTimes(1);
+      expect(mockRevokeToken).toHaveBeenCalledWith(
+        expect.objectContaining({ revokeUrl: "https://strava.com/revoke" }),
+        "access-token",
+      );
     });
   });
 });
