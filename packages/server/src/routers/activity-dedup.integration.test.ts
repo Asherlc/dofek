@@ -83,21 +83,14 @@ describe("Activity summary deduplication", () => {
         if (!actId) continue;
         for (let batchStart = 0; batchStart < durationSec; batchStart += 100) {
           const batchEnd = Math.min(batchStart + 100, durationSec);
-          const metricValues: string[] = [];
           const sensorValues: string[] = [];
           for (let s = batchStart; s < batchEnd; s++) {
             const hr = 155 + Math.round(Math.sin(s * 0.01) * 8);
             const ts = `CURRENT_TIMESTAMP - ${daysAgo} * INTERVAL '1 day' + ${s} * INTERVAL '1 second'`;
-            metricValues.push(`(${ts}, '${TEST_USER_ID}', '${actId}', '${providerId}', ${hr})`);
             sensorValues.push(
               `(${ts}, '${TEST_USER_ID}', '${providerId}', NULL, 'api', 'heart_rate', '${actId}', ${hr}, NULL)`,
             );
           }
-          await testCtx.db.execute(
-            sql.raw(`INSERT INTO fitness.metric_stream (
-              recorded_at, user_id, activity_id, provider_id, heart_rate
-            ) VALUES ${metricValues.join(",\n")}`),
-          );
           await testCtx.db.execute(
             sql.raw(`INSERT INTO fitness.metric_stream (
               recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector

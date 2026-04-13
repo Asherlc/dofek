@@ -407,7 +407,6 @@ describe("Router transformation logic", () => {
           const activityId = activityRows[0]?.id;
           if (activityId) {
             // Insert a few metric samples so activity_summary can compute stats
-            const metricValues: string[] = [];
             const sensorValues: string[] = [];
             for (let minute = 0; minute < 60; minute++) {
               const sampleTime = new Date(startedAt.getTime() + minute * 60 * 1000);
@@ -415,20 +414,12 @@ describe("Router transformation logic", () => {
               const power = 180 + Math.round(Math.random() * 40);
               const speed = 6.5 + Math.random();
               const ts = `'${sampleTime.toISOString()}'`;
-              metricValues.push(
-                `(${ts}, '${TEST_USER_ID}', '${activityId}', 'test-provider', ${hr}, ${power}, ${speed})`,
-              );
               sensorValues.push(
                 `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'heart_rate', '${activityId}', ${hr}, NULL)`,
                 `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'power', '${activityId}', ${power}, NULL)`,
                 `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'speed', '${activityId}', ${speed}, NULL)`,
               );
             }
-            await testCtx.db.execute(
-              sql.raw(`INSERT INTO fitness.metric_stream
-                  (recorded_at, user_id, activity_id, provider_id, heart_rate, power, speed)
-                  VALUES ${metricValues.join(",")}`),
-            );
             await testCtx.db.execute(
               sql.raw(`INSERT INTO fitness.metric_stream (
                   recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
@@ -815,7 +806,6 @@ describe("Router transformation logic", () => {
           // Simulate a straight-line hike heading north (~1.2 m/s for 90 minutes ≈ 6.5 km)
           const baseLat = 40.7;
           const baseLng = -74.0;
-          const metricValues: string[] = [];
           const sensorValues: string[] = [];
           for (let minute = 0; minute < 90; minute++) {
             const sampleTime = new Date(startedAt.getTime() + minute * 60 * 1000);
@@ -828,9 +818,6 @@ describe("Router transformation logic", () => {
             const grade = 5 + Math.random() * 3;
             const ts = `'${sampleTime.toISOString()}'`;
 
-            metricValues.push(
-              `(${ts}, '${TEST_USER_ID}', '${activityId}', 'test-provider', ${hr}, ${speed}, ${altitude}, ${grade}, ${lat}, ${baseLng})`,
-            );
             sensorValues.push(
               `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'heart_rate', '${activityId}', ${hr}, NULL)`,
               `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'speed', '${activityId}', ${speed}, NULL)`,
@@ -840,11 +827,6 @@ describe("Router transformation logic", () => {
               `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'lng', '${activityId}', ${baseLng}, NULL)`,
             );
           }
-          await testCtx.db.execute(
-            sql.raw(`INSERT INTO fitness.metric_stream
-                (recorded_at, user_id, activity_id, provider_id, heart_rate, speed, altitude, grade, lat, lng)
-                VALUES ${metricValues.join(",")}`),
-          );
           await testCtx.db.execute(
             sql.raw(`INSERT INTO fitness.metric_stream (
                 recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
@@ -928,7 +910,6 @@ describe("Router transformation logic", () => {
         if (activityId) {
           const baseLat = 40.7;
           const baseLng = -74.0;
-          const metricValues: string[] = [];
           const sensorValues: string[] = [];
           for (let minute = 0; minute < 75; minute++) {
             const sampleTime = new Date(startedAt.getTime() + minute * 60 * 1000);
@@ -939,9 +920,6 @@ describe("Router transformation logic", () => {
             const grade = 3 + Math.random() * 2;
             const ts = `'${sampleTime.toISOString()}'`;
 
-            metricValues.push(
-              `(${ts}, '${TEST_USER_ID}', '${activityId}', 'test-provider', ${hr}, ${speed}, ${altitude}, ${grade}, ${lat}, ${baseLng})`,
-            );
             sensorValues.push(
               `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'heart_rate', '${activityId}', ${hr}, NULL)`,
               `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'speed', '${activityId}', ${speed}, NULL)`,
@@ -951,11 +929,6 @@ describe("Router transformation logic", () => {
               `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'lng', '${activityId}', ${baseLng}, NULL)`,
             );
           }
-          await testCtx.db.execute(
-            sql.raw(`INSERT INTO fitness.metric_stream
-                (recorded_at, user_id, activity_id, provider_id, heart_rate, speed, altitude, grade, lat, lng)
-                VALUES ${metricValues.join(",")}`),
-          );
           await testCtx.db.execute(
             sql.raw(`INSERT INTO fitness.metric_stream (
                 recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
@@ -1019,7 +992,6 @@ describe("Router transformation logic", () => {
 
       // Insert metric_stream with alternating easy/hard segments
       // Easy: power ~150, Hard: power ~250 (>15% change)
-      const metricValues: string[] = [];
       const sensorValues: string[] = [];
       for (let minute = 0; minute < 40; minute++) {
         const sampleTime = new Date(startedAt.getTime() + minute * 60 * 1000);
@@ -1034,20 +1006,12 @@ describe("Router transformation logic", () => {
         const speed = 5.5 + Math.random();
         const ts = `'${sampleTime.toISOString()}'`;
 
-        metricValues.push(
-          `(${ts}, '${TEST_USER_ID}', '${intervalActivityId}', 'test-provider', ${hr}, ${power}, ${speed})`,
-        );
         sensorValues.push(
           `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'heart_rate', '${intervalActivityId}', ${hr}, NULL)`,
           `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'power', '${intervalActivityId}', ${power}, NULL)`,
           `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'speed', '${intervalActivityId}', ${speed}, NULL)`,
         );
       }
-      await testCtx.db.execute(
-        sql.raw(`INSERT INTO fitness.metric_stream
-            (recorded_at, user_id, activity_id, provider_id, heart_rate, power, speed)
-            VALUES ${metricValues.join(",")}`),
-      );
       await testCtx.db.execute(
         sql.raw(`INSERT INTO fitness.metric_stream (
             recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector

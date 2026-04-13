@@ -141,16 +141,6 @@ describe("Settings router", () => {
               ON CONFLICT DO NOTHING`,
         ),
         testCtx.db.execute(
-          sql`INSERT INTO fitness.metric_stream (recorded_at, user_id, activity_id, provider_id, heart_rate)
-              VALUES (
-                '2024-01-15T10:00:00Z',
-                ${TEST_USER_ID},
-                '22222222-2222-2222-2222-222222222222',
-                'settings-wipe-provider',
-                150
-              )`,
-        ),
-        testCtx.db.execute(
           sql`INSERT INTO fitness.metric_stream (recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector)
               VALUES (
                 '2024-01-15T10:00:00Z',

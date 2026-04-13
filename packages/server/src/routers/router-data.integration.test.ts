@@ -156,25 +156,16 @@ describe("Router data coverage", () => {
     if (runId) {
       for (let batchStart = 0; batchStart < runDurationSec; batchStart += 100) {
         const batchEnd = Math.min(batchStart + 100, runDurationSec);
-        const metricValues: string[] = [];
         const sensorValues: string[] = [];
         for (let s = batchStart; s < batchEnd; s++) {
           const speed = 3.0 + Math.sin(s * 0.005) * 0.5;
           const hr = 155 + Math.round(Math.sin(s * 0.01) * 8);
           const ts = `CURRENT_TIMESTAMP - INTERVAL '3 days' + ${s} * INTERVAL '1 second'`;
-          metricValues.push(
-            `(${ts}, '${TEST_USER_ID}', '${runId}', 'test_provider', ${speed}, ${hr})`,
-          );
           sensorValues.push(
             `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${runId}', ${hr}, NULL)`,
             `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'speed', '${runId}', ${speed}, NULL)`,
           );
         }
-        await testCtx.db.execute(
-          sql.raw(`INSERT INTO fitness.metric_stream (
-            recorded_at, user_id, activity_id, provider_id, speed, heart_rate
-          ) VALUES ${metricValues.join(",\n")}`),
-        );
         await testCtx.db.execute(
           sql.raw(`INSERT INTO fitness.metric_stream (
             recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector

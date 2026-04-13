@@ -1,7 +1,6 @@
 -- Drop the old wide-row metric_stream table (replaced by the per-channel
 -- sensor_sample table, which we rename to metric_stream below).
 -- CASCADE drops any views that depend on it.
--- squawk:ignore-next-statement
 DROP TABLE IF EXISTS fitness.metric_stream CASCADE;
 
 -- Rename sensor_sample → metric_stream
