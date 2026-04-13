@@ -267,8 +267,12 @@ function OverviewTab() {
               {refreshViews.isPending ? "Refreshing..." : "Refresh All Views"}
             </button>
             {refreshViews.isSuccess && (
-              <span className="text-xs text-green-400">
+              <span
+                className={`text-xs ${refreshViews.data.failed.length > 0 ? "text-amber-400" : "text-green-400"}`}
+              >
                 Refreshed {refreshViews.data.refreshed.length} views
+                {refreshViews.data.failed.length > 0 &&
+                  `, ${refreshViews.data.failed.length} failed`}
               </span>
             )}
             {refreshViews.isError && (
@@ -281,6 +285,15 @@ function OverviewTab() {
                 <span
                   key={view}
                   className="px-2 py-0.5 rounded bg-green-500/10 text-green-400 text-xs font-mono"
+                >
+                  {view}
+                </span>
+              ))}
+              {refreshViews.data.failed.map(({ view, error }) => (
+                <span
+                  key={view}
+                  title={error}
+                  className="px-2 py-0.5 rounded bg-red-500/10 text-red-400 text-xs font-mono"
                 >
                   {view}
                 </span>

@@ -1,5 +1,6 @@
 import * as Sentry from "@sentry/node";
 import type { Database } from "dofek/db";
+import { ACTIVITY_VIEWS } from "dofek/db/materialized-views";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import { timestampWindowStart } from "./date-window.ts";
@@ -10,12 +11,6 @@ import { executeWithSchema } from "./typed-sql.ts";
  * Repositories that need `transaction` or `select` widen this via the generic.
  */
 type ExecutableDatabase = Pick<Database, "execute">;
-
-const ACTIVITY_VIEWS = [
-  "fitness.v_activity",
-  "fitness.deduped_sensor",
-  "fitness.activity_summary",
-] as const;
 
 /**
  * Shared base for all data-access repositories.

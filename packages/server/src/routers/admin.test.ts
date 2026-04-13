@@ -450,10 +450,12 @@ describe("adminRouter", () => {
         "fitness.v_sleep",
         "fitness.v_body_measurement",
         "fitness.v_daily_metrics",
+        "fitness.deduped_sensor",
         "fitness.activity_summary",
       ]);
-      // 5 views × REFRESH MATERIALIZED VIEW CONCURRENTLY
-      expect(execute).toHaveBeenCalledTimes(5);
+      expect(result.failed).toEqual([]);
+      // 6 views × REFRESH MATERIALIZED VIEW CONCURRENTLY
+      expect(execute).toHaveBeenCalledTimes(6);
     });
 
     it("falls back to non-concurrent refresh on error", async () => {
@@ -464,9 +466,27 @@ describe("adminRouter", () => {
         .mockResolvedValue([]); // remaining views
       const caller = makeCaller(execute);
       const result = await caller.refreshViews();
+      expect(result.refreshed).toHaveLength(6);
+      expect(result.failed).toHaveLength(0);
+      // 1 failed concurrent + 1 fallback + 5 remaining = 7
+      expect(execute).toHaveBeenCalledTimes(7);
+    });
+
+    it("reports failed views without aborting the rest", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      // Make the 3rd view (v_body_measurement) fail both concurrent and fallback
+      execute.mockResolvedValueOnce([]); // v_activity concurrent OK
+      execute.mockResolvedValueOnce([]); // v_sleep concurrent OK
+      execute.mockRejectedValueOnce(new Error("does not exist")); // v_body concurrent fail
+      execute.mockRejectedValueOnce(new Error("does not exist")); // v_body fallback fail
+      // remaining 3 views succeed
+      execute.mockResolvedValue([]);
+      const caller = makeCaller(execute);
+      const result = await caller.refreshViews();
       expect(result.refreshed).toHaveLength(5);
-      // 1 failed concurrent + 1 fallback + 4 remaining = 6
-      expect(execute).toHaveBeenCalledTimes(6);
+      expect(result.failed).toEqual([
+        { view: "fitness.v_body_measurement", error: "does not exist" },
+      ]);
     });
   });
 

@@ -1,3 +1,4 @@
+import { ALL_MATERIALIZED_VIEWS } from "dofek/db/materialized-views";
 import { createTrainingExportQueue } from "dofek/jobs/queues";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -5,14 +6,6 @@ import { startTrainingExportWorker } from "../lib/start-worker.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import { adminProcedure, router } from "../trpc.ts";
-
-const ALL_MATERIALIZED_VIEWS = [
-  "fitness.v_activity",
-  "fitness.v_sleep",
-  "fitness.v_body_measurement",
-  "fitness.v_daily_metrics",
-  "fitness.activity_summary",
-] as const;
 
 const trainingExportQueue = createTrainingExportQueue();
 
@@ -458,16 +451,26 @@ export const adminRouter = router({
   refreshViews: adminProcedure.mutation(async ({ ctx }) => {
     logger.info("[admin] Refreshing all materialized views");
     const refreshed: string[] = [];
+    const failed: Array<{ view: string; error: string }> = [];
     for (const view of ALL_MATERIALIZED_VIEWS) {
       try {
-        await ctx.db.execute(sql.raw(`REFRESH MATERIALIZED VIEW CONCURRENTLY ${view}`));
-      } catch {
-        await ctx.db.execute(sql.raw(`REFRESH MATERIALIZED VIEW ${view}`));
+        try {
+          await ctx.db.execute(sql.raw(`REFRESH MATERIALIZED VIEW CONCURRENTLY ${view}`));
+        } catch {
+          await ctx.db.execute(sql.raw(`REFRESH MATERIALIZED VIEW ${view}`));
+        }
+        refreshed.push(view);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error(`[admin] Failed to refresh ${view}: ${message}`);
+        failed.push({ view, error: message });
       }
-      refreshed.push(view);
     }
-    logger.info(`[admin] Refreshed ${refreshed.length} materialized views`);
-    return { refreshed };
+    logger.info(
+      `[admin] Refreshed ${refreshed.length}/${ALL_MATERIALIZED_VIEWS.length} materialized views` +
+        (failed.length > 0 ? `, ${failed.length} failed` : ""),
+    );
+    return { refreshed, failed };
   }),
 
   /** Get training export watermark status */
