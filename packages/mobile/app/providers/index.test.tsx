@@ -1224,4 +1224,51 @@ describe("ProvidersScreen", () => {
       expect(mockRequestPermissions).toHaveBeenCalled();
     });
   });
+
+  it("reports error to Sentry when Apple Health connect fails", async () => {
+    const { captureException } = await import("../../lib/telemetry");
+    const mockCaptureException = vi.mocked(captureException);
+    mockCaptureException.mockClear();
+
+    const connectError = new Error("HealthKit authorization failed");
+    mockGetRequestStatus.mockResolvedValue("shouldRequest");
+    mockRequestPermissions.mockRejectedValue(connectError);
+
+    const { default: ProvidersScreen } = await import("./index");
+    render(<ProvidersScreen />);
+
+    await waitFor(() => {
+      const appleCard = within(screen.getByTestId("provider-card-apple_health"));
+      expect(appleCard.getByText("Connect")).toBeTruthy();
+    });
+
+    const appleCard = within(screen.getByTestId("provider-card-apple_health"));
+    fireEvent.click(appleCard.getByText("Connect"));
+
+    await waitFor(() => {
+      expect(mockCaptureException).toHaveBeenCalledWith(connectError, {
+        context: "healthkit-connect",
+      });
+    });
+  });
+
+  it("shows error message when Apple Health connect fails", async () => {
+    mockGetRequestStatus.mockResolvedValue("shouldRequest");
+    mockRequestPermissions.mockRejectedValue(new Error("Authorization denied"));
+
+    const { default: ProvidersScreen } = await import("./index");
+    render(<ProvidersScreen />);
+
+    await waitFor(() => {
+      const appleCard = within(screen.getByTestId("provider-card-apple_health"));
+      expect(appleCard.getByText("Connect")).toBeTruthy();
+    });
+
+    const appleCard = within(screen.getByTestId("provider-card-apple_health"));
+    fireEvent.click(appleCard.getByText("Connect"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Authorization denied")).toBeTruthy();
+    });
+  });
 });
