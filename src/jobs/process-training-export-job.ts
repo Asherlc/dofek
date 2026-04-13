@@ -37,6 +37,9 @@ export const TRAINING_EXPORT_LOCK_MS = 600_000;
 /** Interval (ms) between lock extension calls during the export subprocess. */
 const LOCK_EXTEND_INTERVAL_MS = 60_000;
 
+/** Maximum bytes of stderr to buffer before truncating. */
+const MAX_STDERR_BYTES = 64 * 1024;
+
 /**
  * Process a training data export job by spawning the Python export script.
  *
@@ -60,14 +63,7 @@ export async function processTrainingExportJob(job: TrainingExportJob): Promise<
     `[training-export] Starting training data export (since=${since ?? "all"}, until=${until ?? "now"})`,
   );
 
-  const args = [
-    "-m",
-    "dofek_ml.export",
-    "--database-url",
-    databaseUrl,
-    "--output-dir",
-    TRAINING_EXPORT_DIR,
-  ];
+  const args = ["-m", "dofek_ml.export", "--output-dir", TRAINING_EXPORT_DIR];
   if (since) {
     args.push("--since", since);
   }
@@ -84,9 +80,11 @@ export async function processTrainingExportJob(job: TrainingExportJob): Promise<
 
   try {
     await new Promise<void>((resolve, reject) => {
+      // Pass DATABASE_URL via env instead of CLI args so credentials
+      // aren't exposed in process listings or crash dumps.
       const child = spawn("python", args, {
         stdio: ["ignore", "pipe", "pipe"],
-        env: { ...process.env },
+        env: { ...process.env, DATABASE_URL: databaseUrl },
       });
 
       // Read progress from stdout (JSON lines)
@@ -105,23 +103,35 @@ export async function processTrainingExportJob(job: TrainingExportJob): Promise<
         }
       });
 
-      // Capture stderr for error reporting
+      // Capture stderr for error reporting (capped to prevent unbounded growth)
       let stderrOutput = "";
       const stderrReader = createInterface({ input: child.stderr });
       stderrReader.on("line", (line) => {
-        stderrOutput += `${line}\n`;
+        if (stderrOutput.length < MAX_STDERR_BYTES) {
+          stderrOutput += `${line}\n`;
+        }
         logger.warn(`[training-export] stderr: ${line}`);
       });
 
+      const cleanup = () => {
+        stdoutReader.close();
+        stderrReader.close();
+      };
+
       child.on("error", (error) => {
+        cleanup();
         reject(new Error(`Failed to spawn Python export process: ${error.message}`));
       });
 
-      child.on("close", (code) => {
+      child.on("close", (code, signal) => {
+        cleanup();
         if (code === 0) {
           resolve();
         } else {
-          const errorMessage = stderrOutput.trim() || `Python export exited with code ${code}`;
+          const fallback = signal
+            ? `Python export terminated by signal ${signal}`
+            : `Python export exited with code ${code}`;
+          const errorMessage = stderrOutput.trim() || fallback;
           reject(new Error(errorMessage));
         }
       });

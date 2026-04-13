@@ -405,13 +405,31 @@ class TestMain:
     """Tests for main() CLI entry point."""
 
     @patch("dofek_ml.export.psycopg")
-    def test_main_connects_and_exports(self, mock_psycopg: MagicMock, tmp_path: Path) -> None:
+    @patch.dict("os.environ", {"DATABASE_URL": "postgres://test@localhost/test"})
+    def test_main_reads_database_url_from_env(
+        self, mock_psycopg: MagicMock, tmp_path: Path
+    ) -> None:
         mock_conn = _mock_connection(count_result=0, rows=[])
         ctx = mock_psycopg.connect.return_value
         ctx.__enter__ = MagicMock(return_value=mock_conn)
         ctx.__exit__ = MagicMock(return_value=False)
 
-        db_url = "postgres://test@localhost/test"
+        with patch(
+            "sys.argv",
+            ["export", "--output-dir", str(tmp_path)],
+        ):
+            main()
+
+        mock_psycopg.connect.assert_called_once_with("postgres://test@localhost/test")
+
+    @patch("dofek_ml.export.psycopg")
+    def test_main_cli_arg_overrides_env(self, mock_psycopg: MagicMock, tmp_path: Path) -> None:
+        mock_conn = _mock_connection(count_result=0, rows=[])
+        ctx = mock_psycopg.connect.return_value
+        ctx.__enter__ = MagicMock(return_value=mock_conn)
+        ctx.__exit__ = MagicMock(return_value=False)
+
+        db_url = "postgres://override@localhost/test"
         with patch(
             "sys.argv",
             ["export", "--database-url", db_url, "--output-dir", str(tmp_path)],
@@ -421,6 +439,7 @@ class TestMain:
         mock_psycopg.connect.assert_called_once_with(db_url)
 
     @patch("dofek_ml.export.psycopg")
+    @patch.dict("os.environ", {"DATABASE_URL": "postgres://test@localhost/test"})
     def test_main_passes_since_until(self, mock_psycopg: MagicMock, tmp_path: Path) -> None:
         mock_conn = _mock_connection(count_result=0, rows=[])
         ctx = mock_psycopg.connect.return_value
@@ -431,8 +450,6 @@ class TestMain:
             "sys.argv",
             [
                 "export",
-                "--database-url",
-                "postgres://test@localhost/test",
                 "--output-dir",
                 str(tmp_path),
                 "--since",
@@ -452,6 +469,7 @@ class TestMain:
         assert exc_info.value.code == 0
 
     @patch("dofek_ml.export.psycopg")
+    @patch.dict("os.environ", {"DATABASE_URL": "postgres://test@localhost/test"})
     def test_main_outputs_progress_to_stdout(
         self,
         mock_psycopg: MagicMock,
@@ -465,13 +483,7 @@ class TestMain:
 
         with patch(
             "sys.argv",
-            [
-                "export",
-                "--database-url",
-                "postgres://test@localhost/test",
-                "--output-dir",
-                str(tmp_path),
-            ],
+            ["export", "--output-dir", str(tmp_path)],
         ):
             main()
 

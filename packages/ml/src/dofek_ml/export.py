@@ -267,7 +267,7 @@ def export_to_parquet(
                 writer.write_batch(batch)
 
                 exported += len(rows)
-                percentage = 5 + round((exported / total_rows) * 85)
+                percentage = min(90, 5 + round((exported / total_rows) * 85))
                 report(percentage, f"Exporting sensor_sample: {exported}/{total_rows} rows")
     finally:
         if writer is not None:
@@ -294,26 +294,29 @@ def main() -> None:
     Progress is printed as JSON lines to stdout for consumption by the
     BullMQ job wrapper.
 
+    The database URL is read from the DATABASE_URL environment variable
+    (preferred, avoids exposing credentials in process listings) or from
+    the --database-url CLI argument.
+
     Examples:
-        # Full export:
+        # Via env (preferred):
+        DATABASE_URL=postgres://health:pass@localhost:5432/health \\
+        python -m dofek_ml.export --output-dir ./training-export/
+
+        # Via CLI arg:
         python -m dofek_ml.export \\
             --database-url postgres://health:pass@localhost:5432/health \\
             --output-dir ./training-export/
-
-        # Time-bounded export:
-        python -m dofek_ml.export \\
-            --database-url postgres://health:pass@localhost:5432/health \\
-            --output-dir ./training-export/ \\
-            --since 2026-01-01T00:00:00Z \\
-            --until 2026-04-01T00:00:00Z
     """
+    import os
+
     parser = argparse.ArgumentParser(
         description="Export sensor_sample data from PostgreSQL to Parquet"
     )
     parser.add_argument(
         "--database-url",
-        required=True,
-        help="PostgreSQL connection URL (e.g., postgres://user:pass@host:5432/db)",
+        default=None,
+        help="PostgreSQL connection URL. Defaults to DATABASE_URL env var.",
     )
     parser.add_argument(
         "--output-dir",
@@ -332,10 +335,14 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    database_url = args.database_url or os.environ.get("DATABASE_URL")
+    if not database_url:
+        parser.error("DATABASE_URL env var or --database-url argument is required")
+
     def print_progress(info: dict[str, Any]) -> None:
         print(json.dumps(info), flush=True)
 
-    with psycopg.connect(args.database_url) as conn:
+    with psycopg.connect(database_url) as conn:
         export_to_parquet(
             conn,
             Path(args.output_dir),

@@ -98,25 +98,24 @@ describe("processTrainingExportJob", () => {
     await exportPromise;
 
     const spawnArgs = mockSpawn.mock.calls[0]?.[1];
-    const spawnOpts = mockSpawn.mock.calls[0]?.[2] as { env?: Record<string, string> };
 
     expect(mockSpawn).toHaveBeenCalledWith(
       "python",
-      expect.arrayContaining([
-        "-m",
-        "dofek_ml.export",
-        "--database-url",
-        "postgres://test:test@localhost/test",
-      ]),
-      expect.objectContaining({ stdio: ["ignore", "pipe", "pipe"] }),
+      expect.arrayContaining(["-m", "dofek_ml.export"]),
+      expect.objectContaining({
+        stdio: ["ignore", "pipe", "pipe"],
+        // Kill mutant: env: { ...process.env } → env: {}
+        // DATABASE_URL is passed via env, not CLI args (avoids credential exposure)
+        env: expect.objectContaining({
+          DATABASE_URL: "postgres://test:test@localhost/test",
+        }),
+      }),
     );
 
     // Kill mutant: if (since) → if (true) / if (until) → if (true)
+    expect(spawnArgs).not.toContain("--database-url");
     expect(spawnArgs).not.toContain("--since");
     expect(spawnArgs).not.toContain("--until");
-
-    // Kill mutant: env: { ...process.env } → env: {}
-    expect(spawnOpts.env).toHaveProperty("DATABASE_URL");
   });
 
   it("passes since and until as CLI args", async () => {
@@ -179,15 +178,30 @@ describe("processTrainingExportJob", () => {
 
     child.emit("close", 1);
 
-    // The error message should be trimmed (no trailing newline)
-    await expect(exportPromise).rejects.toThrow("Traceback: some error");
-    const thrownError = await exportPromise.catch((error: Error) => error);
-    expect(thrownError.message).toBe("Traceback: some error");
+    // The error message should be trimmed (no trailing newline).
+    // Kill mutant: stderrOutput.trim() → stderrOutput
+    // If trim() were removed, the message would be "Traceback: some error\n"
+    await expect(exportPromise).rejects.toThrow(/^Traceback: some error$/);
 
     // Kill mutant: Sentry tags { job: "training-export" } → {} or { tags: {} }
     expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
       tags: { job: "training-export" },
     });
+  });
+
+  it("includes signal name when process is killed by signal", async () => {
+    const job = createMockJob();
+    const child = spawnReturningChild();
+
+    const exportPromise = processTrainingExportJob(job);
+
+    child.stdout?.push(null);
+    child.stderr?.push(null);
+
+    // code=null, signal=SIGKILL
+    child.emit("close", null, "SIGKILL");
+
+    await expect(exportPromise).rejects.toThrow("Python export terminated by signal SIGKILL");
   });
 
   it("rejects when spawn fails", async () => {
