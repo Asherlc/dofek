@@ -1,5 +1,15 @@
-import { createDaysContext } from "./createDaysContext.ts";
+import { createContext, useContext } from "react";
 
-const { DaysContext: TrainingDaysContext, useDays: useTrainingDays } = createDaysContext(180);
+interface TrainingDaysContextValue {
+  days: number;
+  setDays: (days: number) => void;
+}
 
-export { TrainingDaysContext, useTrainingDays };
+export const TrainingDaysContext = createContext<TrainingDaysContextValue>({
+  days: 180,
+  setDays: () => {},
+});
+
+export function useTrainingDays(): TrainingDaysContextValue {
+  return useContext(TrainingDaysContext);
+}

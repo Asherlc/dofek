@@ -1,3 +1,15 @@
-import { createDaysContext } from "./createDaysContext.ts";
+import { createContext, useContext } from "react";
 
-export const { DaysContext: BodyDaysContext, useDays: useBodyDays } = createDaysContext(30);
+interface BodyDaysContextValue {
+  days: number;
+  setDays: (days: number) => void;
+}
+
+export const BodyDaysContext = createContext<BodyDaysContextValue>({
+  days: 30,
+  setDays: () => {},
+});
+
+export function useBodyDays(): BodyDaysContextValue {
+  return useContext(BodyDaysContext);
+}
