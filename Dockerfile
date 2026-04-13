@@ -82,6 +82,15 @@ RUN apk add --no-cache curl ca-certificates && \
       tar xz --strip-components=1 -C /usr/local/bin docker/docker && \
     apk del curl
 
+# Python 3 + export dependencies (psycopg for Postgres, pyarrow for Parquet).
+# The training export job spawns `python -m dofek_ml.export` via child_process.
+# Uses pure-Python psycopg (not [binary]) because musl/Alpine lacks glibc wheels;
+# libpq provides the native driver psycopg needs.
+RUN apk add --no-cache python3 py3-pip libpq && \
+    pip3 install --no-cache-dir --break-system-packages \
+      'psycopg>=3.2.0' 'pyarrow>=23.0.1' && \
+    ln -sf /usr/bin/python3 /usr/bin/python
+
 COPY --from=source --chown=node:node /app/src ./src
 COPY --from=source --chown=node:node /app/drizzle ./drizzle
 COPY --from=source --chown=node:node /app/package.json .
@@ -138,6 +147,10 @@ RUN ln -sf /app node_modules/dofek && \
     ln -sf /app/packages/providers-meta node_modules/@dofek/providers && \
     ln -sf /app/packages/recovery node_modules/@dofek/recovery && \
     ln -sf /app/packages/zones node_modules/@dofek/zones
+
+# Python ML package source (used by training export job: `python -m dofek_ml.export`)
+COPY --from=source --chown=node:node /app/packages/ml/src ./packages/ml/src
+ENV PYTHONPATH="/app/packages/ml/src"
 
 # Seed script for preview/dev environments
 COPY --from=source --chown=node:node /app/scripts ./scripts
