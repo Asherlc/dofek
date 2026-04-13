@@ -16,7 +16,7 @@ export const DEDUP_VIEWS = [
 
 export const ROLLUP_VIEWS = ["fitness.activity_summary"] as const;
 
-/** All materialized views in dependency order (dedup first, then rollups). */
+/** All materialized views in dependency order (dedup first, then rollup). */
 export const ALL_MATERIALIZED_VIEWS = [...DEDUP_VIEWS, ...ROLLUP_VIEWS] as const;
 
 /** Subset of views that depend on activity data and need refresh after activity syncs. */
