@@ -35,12 +35,6 @@ jobs:
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-      - name: Sync compose file
-        env:
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
-        run: |
-          scp deploy/docker-compose.deploy.yml "root@${SERVER_HOST}:/opt/dofek/docker-compose.deploy.yml"
-          scp deploy/otel-collector-config.yaml "root@${SERVER_HOST}:/opt/dofek/otel-collector-config.yaml"
       - name: Deploy web and worker
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
@@ -61,14 +55,6 @@ jobs:
 
             # Persist the image tag for future compose operations
             echo "IMAGE_TAG=${SHA_TAG}" > .env.deploy
-
-            # Reconcile infra services (pulls new images + restarts changed services)
-            docker compose --env-file .env.prod --env-file .env.deploy \
-              -f docker-compose.deploy.yml pull --ignore-pull-failures \
-              db redis collector ota databasus traefik portainer netdata
-            docker compose --env-file .env.prod --env-file .env.deploy \
-              -f docker-compose.deploy.yml up -d \
-              db redis collector ota databasus traefik portainer netdata
 
             # Zero-downtime rollout for both services
             docker rollout \

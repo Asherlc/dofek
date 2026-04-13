@@ -1,6 +1,15 @@
 name: Deploy Terraform
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - deploy/docker-compose.deploy.yml
+      - deploy/otel-collector-config.yaml
+      - deploy/server.tf
+      - deploy/main.tf
+      - deploy/variables.tf
+      - deploy/server/**
   workflow_call:
     inputs:
       commit_sha:
