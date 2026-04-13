@@ -20,33 +20,33 @@ const ROLLUP_VIEWS = ["fitness.activity_summary"] as const;
  *
  * Each view is refreshed independently — a failure in one view (e.g.
  * v_activity) must not prevent other views (e.g. v_daily_metrics) from
- * being refreshed. Collected errors are thrown as a single AggregateError
+ * being refreshed. Collected errors are thrown as an AggregateError
  * after all views have been attempted.
  */
 export async function refreshDedupViews(db: SyncDatabase): Promise<void> {
-  const errors: Array<{ view: string; error: unknown }> = [];
+  const errors: unknown[] = [];
 
-  // Refresh dedup views first (rollup views may depend on v_activity)
+  // Refresh dedup views first (activity_summary depends on base tables
+  // but is refreshed after dedup views as a convention)
   for (const view of DEDUP_VIEWS) {
     try {
       await refreshView(db, view);
     } catch (error) {
-      errors.push({ view, error });
+      errors.push(error);
     }
   }
 
-  // Refresh rollup views (depend on base tables, not dedup views)
+  // Refresh rollup views
   for (const view of ROLLUP_VIEWS) {
     try {
       await refreshView(db, view);
     } catch (error) {
-      errors.push({ view, error });
+      errors.push(error);
     }
   }
 
   if (errors.length > 0) {
-    const summary = errors.map(({ view, error }) => `${view}: ${error}`).join("; ");
-    throw new Error(`Failed to refresh ${errors.length} view(s): ${summary}`);
+    throw new AggregateError(errors, `Failed to refresh ${errors.length} view(s)`);
   }
 }
 
@@ -73,11 +73,17 @@ export async function updateUserMaxHr(db: SyncDatabase): Promise<void> {
 async function refreshView(db: SyncDatabase, view: string): Promise<void> {
   try {
     await db.execute(sql.raw(`REFRESH MATERIALIZED VIEW CONCURRENTLY ${view}`));
-  } catch {
+  } catch (concurrentError) {
     // CONCURRENTLY can fail for many reasons: view not populated, no unique
     // index, lock conflicts, resource limits, or Drizzle-wrapped errors where
     // the original Postgres message is obscured. Always fall back to a
     // blocking refresh rather than giving up entirely.
-    await db.execute(sql.raw(`REFRESH MATERIALIZED VIEW ${view}`));
+    try {
+      await db.execute(sql.raw(`REFRESH MATERIALIZED VIEW ${view}`));
+    } catch (fallbackError) {
+      throw new Error(`Failed to refresh ${view} (both CONCURRENT and blocking)`, {
+        cause: concurrentError,
+      });
+    }
   }
 }
