@@ -346,12 +346,12 @@ describe("ZwiftProvider.sync() (integration)", () => {
     expect(result.recordsSynced).toBe(0);
   });
 
-  it("returns error when athlete ID is missing from scopes", async () => {
+  it("returns error when athlete ID is missing from scopes and JWT has no sub", async () => {
     await saveTokens(ctx.db, "zwift", {
-      accessToken: FAKE_ACCESS_TOKEN,
+      accessToken: "not-a-jwt-token",
       refreshToken: "valid-refresh",
       expiresAt: new Date("2027-01-01T00:00:00Z"),
-      scopes: "", // no athleteId
+      scopes: "", // no athleteId, and access token is not a decodable JWT
     });
 
     const provider = new ZwiftProvider();
@@ -360,6 +360,31 @@ describe("ZwiftProvider.sync() (integration)", () => {
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("athlete ID not found");
     expect(result.recordsSynced).toBe(0);
+  });
+
+  it("self-heals missing athlete ID from JWT sub claim", async () => {
+    await saveTokens(ctx.db, "zwift", {
+      accessToken: FAKE_ACCESS_TOKEN,
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "", // missing athleteId — will be self-healed from JWT
+    });
+
+    server.use(...zwiftHandlers({ activities: [], paginateActivities: true }));
+
+    const provider = new ZwiftProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+
+    // Self-healing should allow sync to proceed without "athlete ID not found" error
+    const athleteIdErrors = result.errors.filter((error) =>
+      error.message.includes("athlete ID not found"),
+    );
+    expect(athleteIdErrors).toHaveLength(0);
+
+    // Verify scopes were persisted
+    const { loadTokens } = await import("../db/tokens.ts");
+    const tokens = await loadTokens(ctx.db, "zwift");
+    expect(tokens?.scopes).toBe("athleteId:42");
   });
 
   it("returns error when token is expired and no refresh token", async () => {
