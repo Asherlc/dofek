@@ -174,8 +174,6 @@ def create_r2_client() -> Any:
       - R2_ACCESS_KEY_ID:     R2 API token key ID
       - R2_SECRET_ACCESS_KEY: R2 API token secret
     """
-    import boto3
-
     endpoint: str | None = os.environ.get("R2_ENDPOINT")
     access_key: str | None = os.environ.get("R2_ACCESS_KEY_ID")
     secret_key: str | None = os.environ.get("R2_SECRET_ACCESS_KEY")
@@ -185,6 +183,8 @@ def create_r2_client() -> Any:
             "R2 credentials not fully configured. Required env vars: "
             "R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY"
         )
+
+    import boto3
 
     return boto3.client(
         "s3",

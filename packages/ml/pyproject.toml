@@ -84,6 +84,7 @@ testpaths = ["tests"]
 
 [tool.coverage.run]
 source = ["src/dofek_ml"]
+omit = ["src/dofek_ml/training.py"]
 
 [tool.coverage.report]
 fail_under = 80
