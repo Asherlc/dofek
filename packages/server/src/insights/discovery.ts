@@ -133,6 +133,8 @@ export function exhaustiveSweep(joined: JoinedDay[], existingIds: Set<string>): 
   };
   // Keys in the same category — skip intra-category correlations (e.g. calories↔carbs)
   const categoryMap: Record<string, string> = {
+    resting_hr: "cardiac",
+    hrv: "cardiac",
     calories: "nutrition",
     protein: "nutrition",
     carbs: "nutrition",
@@ -185,7 +187,9 @@ export function exhaustiveSweep(joined: JoinedDay[], existingIds: Set<string>): 
           lag === 0 ? my.label : `${lag === 1 ? "next day" : `${lag} days later`} ${my.label}`;
         if (
           existingIds.has(`${mx.label}::${lagLabel}`) ||
-          existingIds.has(`${mx.label}::${my.label}`)
+          existingIds.has(`${mx.label}::${my.label}`) ||
+          existingIds.has(`${lagLabel}::${mx.label}`) ||
+          existingIds.has(`${my.label}::${mx.label}`)
         )
           continue;
 
