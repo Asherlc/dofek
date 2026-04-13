@@ -1,13 +1,10 @@
+import type { ChildProcess } from "node:child_process";
+import { EventEmitter, Readable } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Mock fs before importing the module under test
-vi.mock("node:fs", () => ({
-  mkdirSync: vi.fn(),
-  writeFileSync: vi.fn(),
-}));
-
-vi.mock("../lib/typed-sql.ts", () => ({
-  executeWithSchema: vi.fn(),
+// Mock child_process.spawn before importing the module under test
+vi.mock("node:child_process", () => ({
+  spawn: vi.fn(),
 }));
 
 vi.mock("../logger.ts", () => ({
@@ -18,38 +15,15 @@ vi.mock("@sentry/node", () => ({
   captureException: vi.fn(),
 }));
 
-// Mock the DuckDB writeParquet function
-vi.mock("@duckdb/node-bindings", () => ({
-  open: vi.fn().mockResolvedValue({ __duckdb_type: "duckdb_database" }),
-  connect: vi.fn().mockResolvedValue({ __duckdb_type: "duckdb_connection" }),
-  query: vi.fn().mockResolvedValue({ __duckdb_type: "duckdb_result" }),
-  appender_create: vi.fn().mockReturnValue({ __duckdb_type: "duckdb_appender" }),
-  append_varchar: vi.fn(),
-  append_double: vi.fn(),
-  append_null: vi.fn(),
-  append_value: vi.fn(),
-  appender_end_row: vi.fn(),
-  appender_flush_sync: vi.fn(),
-  appender_close_sync: vi.fn(),
-  disconnect_sync: vi.fn(),
-  close_sync: vi.fn(),
-  create_varchar: vi.fn().mockReturnValue({ __duckdb_type: "duckdb_value" }),
-}));
-
-import { mkdirSync, writeFileSync } from "node:fs";
-import * as duckdb from "@duckdb/node-bindings";
+import { spawn } from "node:child_process";
 import * as Sentry from "@sentry/node";
-import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import { processTrainingExportJob } from "./process-training-export-job.ts";
 
-const mockExecuteWithSchema = vi.mocked(executeWithSchema);
-const mockWriteFileSync = vi.mocked(writeFileSync);
-const mockMkdirSync = vi.mocked(mkdirSync);
+const mockSpawn = vi.mocked(spawn);
 const mockLoggerInfo = vi.mocked(logger.info);
-const mockLoggerError = vi.mocked(logger.error);
 const mockLoggerWarn = vi.mocked(logger.warn);
-const mockDuckDb = vi.mocked(duckdb);
+const mockLoggerError = vi.mocked(logger.error);
 const mockCaptureException = vi.mocked(Sentry.captureException);
 
 function createMockJob(data: { since?: string; until?: string } = {}) {
@@ -60,428 +34,291 @@ function createMockJob(data: { since?: string; until?: string } = {}) {
   };
 }
 
-function createMockDb(): Parameters<typeof processTrainingExportJob>[1] {
-  // The DB is fully mocked via vi.mock("../lib/typed-sql.ts")
-  // so the actual object doesn't matter — executeWithSchema is intercepted.
-  return Object.create(null);
+/** Create a mock child process that satisfies ChildProcess for spawn. */
+function createMockChildProcess(): ChildProcess {
+  const emitter = new EventEmitter();
+  const stdout = new Readable({ read() {} });
+  const stderr = new Readable({ read() {} });
+  return Object.assign(emitter, {
+    stdout,
+    stderr,
+    stdin: null,
+    stdio: [null, stdout, stderr, null, null] satisfies [null, Readable, Readable, null, null],
+    pid: 12345,
+    connected: false,
+    exitCode: null,
+    signalCode: null,
+    spawnargs: [],
+    spawnfile: "python",
+    killed: false,
+    kill: vi.fn().mockReturnValue(true),
+    send: vi.fn(),
+    disconnect: vi.fn(),
+    unref: vi.fn(),
+    ref: vi.fn(),
+    [Symbol.dispose]: vi.fn(),
+  }) satisfies ChildProcess;
+}
+
+/** Set up mockSpawn to return a fresh mock child process. */
+function spawnReturningChild(): ChildProcess {
+  const child = createMockChildProcess();
+  mockSpawn.mockReturnValue(child);
+  return child;
 }
 
 describe("processTrainingExportJob", () => {
+  const originalEnv = process.env.DATABASE_URL;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useFakeTimers();
+    process.env.DATABASE_URL = "postgres://test:test@localhost/test";
   });
+
   afterEach(() => {
     vi.useRealTimers();
+    if (originalEnv !== undefined) {
+      process.env.DATABASE_URL = originalEnv;
+    } else {
+      delete process.env.DATABASE_URL;
+    }
   });
 
-  it("exports sensor_sample data when rows exist", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-03-30T15:00:00.123Z"));
-
+  it("spawns Python with correct arguments and does not include --since/--until when absent", async () => {
     const job = createMockJob();
-    const db = createMockDb();
+    const child = spawnReturningChild();
 
-    // Call sequence:
-    // 1. sensor_sample COUNT
-    // 2. sensor_sample rows batch (cursor-based, with LATERAL JOIN for activity matching)
-    mockExecuteWithSchema.mockResolvedValueOnce([{ count: "3" }]).mockResolvedValueOnce([
-      {
-        recorded_at: "2026-03-30T15:00:00Z",
-        user_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-        provider_id: "wahoo",
-        device_id: null,
-        source_type: "ble",
-        channel: "heart_rate",
-        activity_id: null,
-        activity_type: null,
-        scalar: 142,
-        vector: null,
-      },
-      {
-        recorded_at: "2026-03-30T15:00:00.020Z",
-        user_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-        provider_id: "apple_health",
-        device_id: "Apple Watch",
-        source_type: "ble",
-        channel: "imu",
-        activity_id: null,
-        activity_type: null,
-        scalar: null,
-        vector: [0.012, 0.138, -0.987],
-      },
-      {
-        recorded_at: "2026-03-30T15:00:00.040Z",
-        user_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-        provider_id: "wahoo",
-        device_id: null,
-        source_type: "ble",
-        channel: "power",
-        activity_id: "b2c3d4e5-f6a7-8901-bcde-f12345678901",
-        activity_type: "cycling",
-        scalar: 250,
-        vector: null,
-      },
-    ]);
+    const exportPromise = processTrainingExportJob(job);
 
-    await processTrainingExportJob(job, db);
+    child.stdout?.push(null);
+    child.stderr?.push(null);
+    child.emit("close", 0);
 
-    // Creates both the top-level training export directory and the sensor_sample folder
-    expect(mockMkdirSync).toHaveBeenNthCalledWith(1, expect.stringContaining("/training-export"), {
-      recursive: true,
-    });
-    expect(mockMkdirSync).toHaveBeenNthCalledWith(
-      2,
-      expect.stringContaining("/training-export/sensor_sample"),
-      { recursive: true },
+    await exportPromise;
+
+    const spawnArgs = mockSpawn.mock.calls[0]?.[1];
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      "python",
+      expect.arrayContaining(["-m", "dofek_ml.export"]),
+      expect.objectContaining({
+        stdio: ["ignore", "pipe", "pipe"],
+        // Kill mutant: env: { ...process.env } → env: {}
+        // DATABASE_URL is passed via env, not CLI args (avoids credential exposure)
+        env: expect.objectContaining({
+          DATABASE_URL: "postgres://test:test@localhost/test",
+        }),
+      }),
     );
 
-    // Should write manifest (Parquet is written by DuckDB, not writeFileSync)
-    expect(mockWriteFileSync).toHaveBeenCalledTimes(1); // manifest only
-    // 2 calls: COUNT + 1 batch (cursor-based, JOINs provide activity_type)
-    expect(mockExecuteWithSchema).toHaveBeenCalledTimes(2);
+    // Kill mutant: if (since) → if (true) / if (until) → if (true)
+    expect(spawnArgs).not.toContain("--database-url");
+    expect(spawnArgs).not.toContain("--since");
+    expect(spawnArgs).not.toContain("--until");
+  });
 
-    // DuckDB appender receives activity_type from LATERAL JOIN (row 3 has cycling)
-    expect(mockDuckDb.append_varchar).toHaveBeenCalledWith(expect.anything(), "cycling");
-    expect(mockDuckDb.create_varchar).toHaveBeenCalledWith("[0.012,0.138,-0.987]");
-    expect(mockDuckDb.append_value).toHaveBeenCalledTimes(1);
-    expect(mockDuckDb.disconnect_sync).toHaveBeenCalledTimes(1);
-    expect(mockDuckDb.close_sync).toHaveBeenCalledTimes(1);
+  it("passes since and until as CLI args", async () => {
+    const job = createMockJob({ since: "2026-03-01T00:00:00Z", until: "2026-03-31T00:00:00Z" });
+    const child = spawnReturningChild();
 
-    // DuckDB appender handles non-null device_id (row 2 has "Apple Watch")
-    expect(mockDuckDb.append_varchar).toHaveBeenCalledWith(expect.anything(), "Apple Watch");
-    // DuckDB appender handles non-null activity_id (row 3)
-    expect(mockDuckDb.append_varchar).toHaveBeenCalledWith(
-      expect.anything(),
-      "b2c3d4e5-f6a7-8901-bcde-f12345678901",
-    );
-    // DuckDB appender handles non-null scalar (row 1 has 142, row 3 has 250)
-    expect(mockDuckDb.append_double).toHaveBeenCalledWith(expect.anything(), 142);
-    expect(mockDuckDb.append_double).toHaveBeenCalledWith(expect.anything(), 250);
+    const exportPromise = processTrainingExportJob(job);
 
-    // Should update progress
+    child.stdout?.push(null);
+    child.stderr?.push(null);
+    child.emit("close", 0);
+
+    await exportPromise;
+
+    const spawnArgs = mockSpawn.mock.calls[0]?.[1];
+    expect(spawnArgs).toContain("--since");
+    expect(spawnArgs).toContain("2026-03-01T00:00:00Z");
+    expect(spawnArgs).toContain("--until");
+    expect(spawnArgs).toContain("2026-03-31T00:00:00Z");
+  });
+
+  it("forwards progress JSON lines to job.updateProgress", async () => {
+    const job = createMockJob();
+    const child = spawnReturningChild();
+
+    const exportPromise = processTrainingExportJob(job);
+
+    child.stdout?.push('{"percentage": 50, "message": "Exporting..."}\n');
+    child.stdout?.push('{"percentage": 100, "message": "Done"}\n');
+    child.stdout?.push(null);
+    child.stderr?.push(null);
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    child.emit("close", 0);
+    await exportPromise;
+
     expect(job.updateProgress).toHaveBeenCalledWith({
-      percentage: 0,
-      message: "Starting training data export...",
-    });
-    expect(job.updateProgress).toHaveBeenCalledWith({
-      percentage: 90,
-      message: "Exporting sensor_sample: 3/3 rows",
-    });
-    expect(job.updateProgress).toHaveBeenCalledWith({
-      percentage: 95,
-      message: "Writing manifest...",
+      percentage: 50,
+      message: "Exporting...",
     });
     expect(job.updateProgress).toHaveBeenCalledWith({
       percentage: 100,
-      message: "Training export complete",
+      message: "Done",
     });
+  });
 
-    // Manifest should be valid JSON with one file
-    const manifestCall = mockWriteFileSync.mock.calls.find((call) =>
-      String(call[0]).includes("manifest.json"),
+  it("rejects when Python process exits with non-zero code", async () => {
+    const job = createMockJob();
+    const child = spawnReturningChild();
+
+    const exportPromise = processTrainingExportJob(job);
+
+    // stderr has trailing whitespace — kill mutant: stderrOutput.trim() → stderrOutput
+    child.stderr?.push("Traceback: some error\n");
+    child.stdout?.push(null);
+    child.stderr?.push(null);
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    child.emit("close", 1);
+
+    // The error message should be trimmed (no trailing newline).
+    // Kill mutant: stderrOutput.trim() → stderrOutput
+    // If trim() were removed, the message would be "Traceback: some error\n"
+    await expect(exportPromise).rejects.toThrow(/^Traceback: some error$/);
+
+    // Kill mutant: Sentry tags { job: "training-export" } → {} or { tags: {} }
+    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { job: "training-export" },
+    });
+  });
+
+  it("includes signal name when process is killed by signal", async () => {
+    const job = createMockJob();
+    const child = spawnReturningChild();
+
+    const exportPromise = processTrainingExportJob(job);
+
+    child.stdout?.push(null);
+    child.stderr?.push(null);
+
+    // code=null, signal=SIGKILL
+    child.emit("close", null, "SIGKILL");
+
+    await expect(exportPromise).rejects.toThrow("Python export terminated by signal SIGKILL");
+  });
+
+  it("rejects when spawn fails", async () => {
+    const job = createMockJob();
+    const child = spawnReturningChild();
+
+    const exportPromise = processTrainingExportJob(job);
+
+    child.emit("error", new Error("ENOENT: python not found"));
+
+    await expect(exportPromise).rejects.toThrow("Failed to spawn Python export process");
+    expect(mockCaptureException).toHaveBeenCalledTimes(1);
+  });
+
+  it("throws when DATABASE_URL is not set", async () => {
+    delete process.env.DATABASE_URL;
+    const job = createMockJob();
+
+    await expect(processTrainingExportJob(job)).rejects.toThrow(
+      "DATABASE_URL environment variable is required",
     );
-    expect(manifestCall).toBeDefined();
-    const manifest = JSON.parse(String(manifestCall?.[1]));
-    expect(manifest.files).toHaveLength(1);
-    expect(manifest.files[0].table).toBe("sensor_sample");
-    expect(manifest.files[0].path).toBe("sensor_sample/2026-03-30T15:00:00Z.parquet");
-    expect(manifest.totalRows).toBe(3);
+  });
 
-    // Start and completion logs include user-facing context
+  it("logs start and completion with duration", async () => {
+    const job = createMockJob();
+    const child = spawnReturningChild();
+
+    const exportPromise = processTrainingExportJob(job);
+
+    child.stdout?.push(null);
+    child.stderr?.push(null);
+    child.emit("close", 0);
+
+    await exportPromise;
+
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       "[training-export] Starting training data export (since=all, until=now)",
     );
-    expect(mockLoggerInfo).toHaveBeenCalledWith(
-      expect.stringContaining(
-        "[training-export] Export complete: 3 total rows, 1 files, totalMs=0",
-      ),
+    // Kill mutant: Date.now() - jobStart → Date.now() + jobStart
+    // With fake timers (no advancement), duration must be 0ms.
+    // The mutant would produce a huge number instead of 0.
+    expect(mockLoggerInfo).toHaveBeenCalledWith("[training-export] Export complete in 0ms");
+  });
+
+  it("logs error on failure with duration", async () => {
+    const job = createMockJob();
+    const child = spawnReturningChild();
+
+    const exportPromise = processTrainingExportJob(job);
+
+    child.stdout?.push(null);
+    child.stderr?.push(null);
+    child.emit("close", 1);
+
+    await expect(exportPromise).rejects.toThrow();
+
+    // Kill mutant: Date.now() - jobStart → Date.now() + jobStart (error path)
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      expect.stringContaining("[training-export] Job failed after 0ms"),
     );
   });
 
-  it("extends the job lock after COUNT query and each batch to prevent stalling", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-03-30T15:00:00.123Z"));
-
+  it("warns but does not throw when updateProgress fails", async () => {
     const job = createMockJob();
-    const db = createMockDb();
+    job.updateProgress.mockRejectedValue(new Error("Redis down"));
+    const child = spawnReturningChild();
 
-    // 1 batch of 2 rows (below BATCH_SIZE, so only 1 fetch after COUNT)
-    mockExecuteWithSchema.mockResolvedValueOnce([{ count: "2" }]).mockResolvedValueOnce([
-      {
-        recorded_at: "2026-03-30T15:00:00Z",
-        user_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-        provider_id: "wahoo",
-        device_id: null,
-        source_type: "ble",
-        channel: "heart_rate",
-        activity_id: null,
-        activity_type: null,
-        scalar: 142,
-        vector: null,
-      },
-      {
-        recorded_at: "2026-03-30T15:00:01Z",
-        user_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-        provider_id: "wahoo",
-        device_id: null,
-        source_type: "ble",
-        channel: "power",
-        activity_id: null,
-        activity_type: null,
-        scalar: 250,
-        vector: null,
-      },
-    ]);
+    const exportPromise = processTrainingExportJob(job);
 
-    await processTrainingExportJob(job, db);
+    child.stdout?.push('{"percentage": 50, "message": "Exporting..."}\n');
+    child.stdout?.push(null);
+    child.stderr?.push(null);
 
-    // extendLock called 3 times: after COUNT, after batch, before finalize
-    expect(job.extendLock).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(0);
+
+    child.emit("close", 0);
+    await exportPromise;
+
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to update progress"),
+    );
+  });
+
+  it("extends lock periodically during export", async () => {
+    const job = createMockJob();
+    const child = spawnReturningChild();
+
+    const exportPromise = processTrainingExportJob(job);
+
+    // Advance time past the lock extend interval (60s)
+    await vi.advanceTimersByTimeAsync(60_000);
     expect(job.extendLock).toHaveBeenCalledWith(600_000);
+
+    child.stdout?.push(null);
+    child.stderr?.push(null);
+    child.emit("close", 0);
+
+    await exportPromise;
   });
 
-  it("handles zero rows gracefully", async () => {
+  it("clears lock interval after completion", async () => {
     const job = createMockJob();
-    const db = createMockDb();
+    const child = spawnReturningChild();
 
-    mockExecuteWithSchema.mockResolvedValueOnce([{ count: "0" }]);
+    const exportPromise = processTrainingExportJob(job);
 
-    await processTrainingExportJob(job, db);
+    child.stdout?.push(null);
+    child.stderr?.push(null);
+    child.emit("close", 0);
 
-    expect(mockExecuteWithSchema).toHaveBeenCalledTimes(1);
-    expect(mockDuckDb.query).not.toHaveBeenCalled();
-    expect(mockLoggerInfo).toHaveBeenCalledWith(
-      "[training-export] No sensor_sample rows to export",
-    );
+    await exportPromise;
 
-    const manifestCall = mockWriteFileSync.mock.calls.find((call) =>
-      String(call[0]).includes("manifest.json"),
-    );
-    const manifest = JSON.parse(String(manifestCall?.[1]));
-    expect(manifest.files).toHaveLength(0);
-    expect(manifest.totalRows).toBe(0);
-  });
+    const callsBefore = job.extendLock.mock.calls.length;
 
-  it("passes since and until to manifest", async () => {
-    const job = createMockJob({ since: "2026-03-01T00:00:00Z", until: "2026-03-31T00:00:00Z" });
-    const db = createMockDb();
+    // Advance time well past the interval — lock should NOT be extended
+    await vi.advanceTimersByTimeAsync(300_000);
 
-    mockExecuteWithSchema.mockResolvedValueOnce([{ count: "0" }]);
-
-    await processTrainingExportJob(job, db);
-
-    const manifestCall = mockWriteFileSync.mock.calls.find((call) =>
-      String(call[0]).includes("manifest.json"),
-    );
-    const manifest = JSON.parse(String(manifestCall?.[1]));
-    expect(manifest.since).toBe("2026-03-01T00:00:00Z");
-    expect(manifest.until).toBe("2026-03-31T00:00:00Z");
-    expect(mockLoggerInfo).toHaveBeenCalledWith(
-      "[training-export] Starting training data export (since=2026-03-01T00:00:00Z, until=2026-03-31T00:00:00Z)",
-    );
-  });
-
-  it("reports progress through the job", async () => {
-    const job = createMockJob();
-    const db = createMockDb();
-
-    mockExecuteWithSchema.mockResolvedValueOnce([{ count: "0" }]);
-
-    await processTrainingExportJob(job, db);
-
-    // Should report start and completion
-    expect(job.updateProgress).toHaveBeenCalledWith(expect.objectContaining({ percentage: 0 }));
-    expect(job.updateProgress).toHaveBeenCalledWith(expect.objectContaining({ percentage: 100 }));
-  });
-
-  it("logs memory at key phases during export", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-03-30T15:00:00.123Z"));
-
-    const job = createMockJob();
-    const db = createMockDb();
-
-    mockExecuteWithSchema.mockResolvedValueOnce([{ count: "1" }]).mockResolvedValueOnce([
-      {
-        recorded_at: "2026-03-30T15:00:00Z",
-        user_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-        provider_id: "wahoo",
-        device_id: null,
-        source_type: "ble",
-        channel: "heart_rate",
-        activity_id: null,
-        activity_type: null,
-        scalar: 142,
-        vector: null,
-      },
-    ]);
-
-    await processTrainingExportJob(job, db);
-
-    const infoCalls = mockLoggerInfo.mock.calls.map((call) => String(call[0]));
-
-    // Memory logged at: job-start, count-start, finalize-start, complete
-    expect(infoCalls.filter((msg) => msg.includes("memory phase="))).toHaveLength(4);
-    expect(infoCalls).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining("memory phase=job-start"),
-        expect.stringContaining("memory phase=count-start"),
-        expect.stringContaining("memory phase=finalize-start"),
-        expect.stringContaining("memory phase=complete"),
-        expect.stringContaining("heapUsedMb="),
-        expect.stringContaining("rssMb="),
-      ]),
-    );
-  });
-
-  it("logs per-batch timing and row counts", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-03-30T15:00:00.123Z"));
-
-    const job = createMockJob();
-    const db = createMockDb();
-
-    mockExecuteWithSchema.mockResolvedValueOnce([{ count: "1" }]).mockResolvedValueOnce([
-      {
-        recorded_at: "2026-03-30T15:00:00Z",
-        user_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-        provider_id: "wahoo",
-        device_id: null,
-        source_type: "ble",
-        channel: "heart_rate",
-        activity_id: null,
-        activity_type: null,
-        scalar: 142,
-        vector: null,
-      },
-    ]);
-
-    await processTrainingExportJob(job, db);
-
-    const infoCalls = mockLoggerInfo.mock.calls.map((call) => String(call[0]));
-
-    // With fake timers (no advancement), all durations are 0ms.
-    // This kills ArithmeticOperator mutants (Date.now() - start → Date.now() + start)
-    // because the mutant would produce a huge number instead of 0.
-    expect(infoCalls).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining("COUNT query completed in 0ms"),
-        expect.stringContaining("totalRows=1"),
-        expect.stringContaining("DuckDB writer initialized in 0ms"),
-        expect.stringContaining("batch=1 fetchMs=0 rows=1"),
-        expect.stringContaining("exported=1/1 appendMs=0 fetchMs=0"),
-        expect.stringContaining("Parquet finalize completed in 0ms"),
-        expect.stringContaining("in 0ms (1 batches)"),
-      ]),
-    );
-  });
-
-  it("captures exception to Sentry and logs error on failure", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-03-30T15:00:00.123Z"));
-
-    const job = createMockJob();
-    const db = createMockDb();
-    const testError = new Error("DB connection lost");
-
-    mockExecuteWithSchema.mockRejectedValueOnce(testError);
-
-    await expect(processTrainingExportJob(job, db)).rejects.toThrow("DB connection lost");
-
-    expect(mockCaptureException).toHaveBeenCalledWith(testError, {
-      tags: { job: "training-export" },
-    });
-
-    const errorCalls = mockLoggerError.mock.calls.map((call) => String(call[0]));
-    // With fake timers, duration is 0ms — kills ArithmeticOperator mutants
-    expect(errorCalls).toEqual(
-      expect.arrayContaining([expect.stringContaining("Job failed after 0ms: DB connection lost")]),
-    );
-  });
-
-  it("extends lock during batch append yield points to prevent stalling on large exports", async () => {
-    // No fake timers here — setImmediate (used by yieldToEventLoop) must
-    // actually fire or the appender loop hangs.
-    const job = createMockJob();
-    const db = createMockDb();
-
-    // Generate 10,001 rows to trigger at least one yield in appendRows
-    // (YIELD_INTERVAL is 10,000). This verifies the lock is extended at yield
-    // points inside batch append, not just after the full batch completes.
-    const rows = Array.from({ length: 10_001 }, (_, index) => ({
-      recorded_at: `2026-03-30T15:${String(Math.floor(index / 3600)).padStart(2, "0")}:${String(Math.floor((index % 3600) / 60)).padStart(2, "0")}Z`,
-      user_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-      provider_id: "wahoo",
-      device_id: null,
-      source_type: "ble",
-      channel: `ch_${index}`,
-      activity_id: null,
-      activity_type: null,
-      scalar: index,
-      vector: null,
-    }));
-
-    mockExecuteWithSchema
-      .mockResolvedValueOnce([{ count: String(rows.length) }])
-      .mockResolvedValueOnce(rows);
-
-    await processTrainingExportJob(job, db);
-
-    // extendLock should be called 4 times:
-    // 1. after COUNT query
-    // 2. during batch append (at the yield point after 10,000 rows)
-    // 3. after batch completes
-    // 4. before finalize
-    expect(job.extendLock).toHaveBeenCalledTimes(4);
-    expect(job.extendLock).toHaveBeenCalledWith(600_000);
-  }, 60_000);
-
-  it("warns but does not throw when extendLock fails", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-03-30T15:00:00.123Z"));
-
-    const job = createMockJob();
-    job.extendLock.mockRejectedValue(new Error("Redis connection lost"));
-    const db = createMockDb();
-
-    mockExecuteWithSchema.mockResolvedValueOnce([{ count: "1" }]).mockResolvedValueOnce([
-      {
-        recorded_at: "2026-03-30T15:00:00Z",
-        user_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-        provider_id: "wahoo",
-        device_id: null,
-        source_type: "ble",
-        channel: "heart_rate",
-        activity_id: null,
-        activity_type: null,
-        scalar: 142,
-        vector: null,
-      },
-    ]);
-
-    // Should complete without throwing despite extendLock failure
-    await processTrainingExportJob(job, db);
-
-    const warnCalls = mockLoggerWarn.mock.calls.map((call) => String(call[0]));
-    expect(warnCalls).toEqual(
-      expect.arrayContaining([expect.stringContaining("Failed to extend lock")]),
-    );
-  });
-
-  it("defaults count to zero when count query returns no rows", async () => {
-    const job = createMockJob();
-    const db = createMockDb();
-
-    mockExecuteWithSchema.mockResolvedValueOnce([]);
-
-    await processTrainingExportJob(job, db);
-
-    expect(mockExecuteWithSchema).toHaveBeenCalledTimes(1);
-    const manifestCall = mockWriteFileSync.mock.calls.find((call) =>
-      String(call[0]).includes("manifest.json"),
-    );
-    const manifest = JSON.parse(String(manifestCall?.[1]));
-    expect(manifest.totalRows).toBe(0);
-    expect(manifest.files).toHaveLength(0);
+    expect(job.extendLock.mock.calls.length).toBe(callsBefore);
   });
 });

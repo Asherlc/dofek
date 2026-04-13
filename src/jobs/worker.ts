@@ -108,14 +108,11 @@ const trainingExportWorker = new Worker<TrainingExportJobData>(
       throw error;
     }
     return jobContext.run(job, () =>
-      processTrainingExportJob(
-        {
-          data: job.data,
-          updateProgress: (data) => job.updateProgress(data),
-          extendLock: (duration) => job.extendLock(token, duration).then(() => {}),
-        },
-        db,
-      ),
+      processTrainingExportJob({
+        data: job.data,
+        updateProgress: (data) => job.updateProgress(data),
+        extendLock: (duration) => job.extendLock(token, duration).then(() => {}),
+      }),
     );
   },
   {
