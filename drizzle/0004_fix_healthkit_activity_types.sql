@@ -12,7 +12,7 @@
 -- would have failed the Postgres enum check and never been stored.
 
 UPDATE fitness.activity
-SET activity_type = CASE (raw->>'workoutType')
+SET activity_type = (CASE (raw->>'workoutType')
   WHEN '15' THEN 'dance'              -- was stored as 'elliptical' (danceInspiredTraining)
   WHEN '17' THEN 'equestrian'         -- was stored as 'fencing'
   WHEN '18' THEN 'fencing'            -- was stored as 'fishing'
@@ -36,7 +36,7 @@ SET activity_type = CASE (raw->>'workoutType')
   WHEN '47' THEN 'table_tennis'       -- was stored as 'tennis'
   WHEN '50' THEN 'strength_training'  -- was stored as 'volleyball'
   WHEN '51' THEN 'volleyball'         -- was stored as 'walking'
-END
+END)::fitness.activity_type
 WHERE provider_id = 'apple_health'
   AND raw->>'workoutType' IS NOT NULL
   AND (raw->>'workoutType') IN (
