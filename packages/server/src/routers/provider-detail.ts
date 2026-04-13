@@ -1,4 +1,7 @@
+import * as Sentry from "@sentry/node";
+import type { SyncDatabase } from "dofek/db";
 import { z } from "zod";
+import { logger } from "../logger.ts";
 import {
   DISCONNECT_CHILD_TABLES,
   dataTypeEnum,
@@ -11,6 +14,58 @@ import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../t
 export { DISCONNECT_CHILD_TABLES, dataTypeEnum, tableInfo };
 
 import { sanitizeErrorMessage } from "../lib/sanitize-error.ts";
+
+/**
+ * Attempt to revoke tokens remotely before disconnecting a provider.
+ * Best-effort: logs and captures errors but never throws.
+ */
+async function revokeTokensOnDisconnect(
+  db: SyncDatabase,
+  userId: string,
+  providerId: string,
+): Promise<void> {
+  try {
+    const { loadTokens } = await import("dofek/db/tokens");
+    const tokens = await loadTokens(db, providerId, userId);
+    if (!tokens) return;
+
+    const { getAllProviders } = await import("dofek/providers/registry");
+    const { ensureProvidersRegistered } = await import("./sync.ts");
+    await ensureProvidersRegistered();
+
+    const provider = getAllProviders().find(
+      (candidate: { id: string }) => candidate.id === providerId,
+    );
+    if (!provider?.authSetup) return;
+
+    const setup = provider.authSetup();
+    if (!setup) return;
+
+    // Provider-specific revocation (e.g., Wahoo's DELETE /v1/permissions
+    // which revokes ALL tokens for the app+user, including orphaned ones)
+    if (setup.revokeExistingTokens) {
+      await setup.revokeExistingTokens(tokens);
+      logger.info(`[disconnect] Remote token revocation succeeded for ${providerId}`);
+      return;
+    }
+
+    // Standard OAuth revocation via POST /oauth/revoke (RFC 7009)
+    if (setup.oauthConfig?.revokeUrl) {
+      const { revokeToken } = await import("dofek/auth/oauth");
+      if (tokens.accessToken) {
+        await revokeToken(setup.oauthConfig, tokens.accessToken);
+      }
+      if (tokens.refreshToken) {
+        await revokeToken(setup.oauthConfig, tokens.refreshToken);
+      }
+      logger.info(`[disconnect] Standard OAuth revocation succeeded for ${providerId}`);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn(`[disconnect] Remote token revocation failed for ${providerId}: ${message}`);
+    Sentry.captureException(error);
+  }
+}
 
 export const providerDetailRouter = router({
   /** Paginated sync logs for a specific provider */
@@ -75,7 +130,7 @@ export const providerDetailRouter = router({
       return repo.getRecordDetail(input.providerId, input.dataType, input.recordId);
     }),
 
-  /** Disconnect a provider — removes all user-scoped data and OAuth tokens */
+  /** Disconnect a provider — revokes remote tokens, then removes all user-scoped data */
   disconnect: protectedProcedure
     .input(z.object({ providerId: z.string() }))
     .mutation(async ({ ctx, input }) => {
@@ -85,6 +140,10 @@ export const providerDetailRouter = router({
       if (!isOwner) {
         throw new Error("Provider not found or not owned by user");
       }
+
+      // Revoke tokens remotely before deleting local data — prevents orphaned
+      // tokens on the provider side (e.g. Wahoo's active token limit).
+      await revokeTokensOnDisconnect(ctx.db, ctx.userId, input.providerId);
 
       await repo.deleteProviderData(input.providerId);
       return { success: true };
