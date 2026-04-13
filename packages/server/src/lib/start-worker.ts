@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 
 /**
  * Start a Docker container by name if it's not already running.
- * Uses `docker start` which is a no-op if the container is already running.
+ * Uses `docker start`, which may report "is already started" when the container is already running.
  */
 function startContainer(containerName: string): void {
   execFile("docker", ["start", containerName], (err, _stdout, stderr) => {

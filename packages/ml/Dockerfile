@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends libpq5 && \
 WORKDIR /app
 
 # Install Python dependencies (without training extras like torch/sklearn)
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
 RUN pip install --no-cache-dir .
 

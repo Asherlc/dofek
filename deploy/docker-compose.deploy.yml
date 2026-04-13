@@ -119,7 +119,7 @@ services:
   training-export-worker:
     image: ghcr.io/asherlc/dofek-ml:${IMAGE_TAG:-latest}
     container_name: dofek-training-export-worker
-    restart: unless-stopped
+    restart: on-failure
     environment:
       DATABASE_URL: postgres://health:${POSTGRES_PASSWORD}@db:5432/health
       REDIS_URL: redis://redis:6379

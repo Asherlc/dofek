@@ -32,8 +32,8 @@ class TestParseRedisUrl:
 
 
 class TestConstants:
-    def test_lock_duration_matches_node_worker(self) -> None:
-        """Lock duration must match the Node.js worker's TRAINING_EXPORT_LOCK_MS (600_000)."""
+    def test_lock_duration_matches_shared_queue_config(self) -> None:
+        """Lock duration must match the shared queue config for training exports."""
         assert LOCK_DURATION_MS == 600_000
 
     def test_stalled_interval_is_half_lock_duration(self) -> None:
@@ -47,20 +47,22 @@ class TestConstants:
 
 
 class TestProcessTrainingExport:
-    @pytest.fixture()
+    @pytest.fixture
     def mock_job(self) -> MagicMock:
         job = MagicMock()
         job.data = {"since": "2026-01-01T00:00:00Z", "until": "2026-04-01T00:00:00Z"}
         job.updateProgress = AsyncMock()
         return job
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_raises_without_database_url(self, mock_job: MagicMock) -> None:
-        with patch.dict("os.environ", {}, clear=True):
-            with pytest.raises(RuntimeError, match="DATABASE_URL"):
-                await process_training_export(mock_job, "token-123")
+        with (
+            patch.dict("os.environ", {}, clear=True),
+            pytest.raises(RuntimeError, match="DATABASE_URL"),
+        ):
+            await process_training_export(mock_job, "token-123")
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_calls_export_to_parquet(self, mock_job: MagicMock) -> None:
         fake_manifest: dict[str, Any] = {"totalRows": 42, "files": []}
 
@@ -84,7 +86,7 @@ class TestProcessTrainingExport:
         assert call_kwargs[1]["since"] == "2026-01-01T00:00:00Z"
         assert call_kwargs[1]["until"] == "2026-04-01T00:00:00Z"
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_passes_none_for_missing_since_until(self) -> None:
         job = MagicMock()
         job.data = {}
