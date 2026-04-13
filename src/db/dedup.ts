@@ -17,16 +17,36 @@ const ROLLUP_VIEWS = ["fitness.activity_summary"] as const;
  *
  * CONCURRENTLY allows reads during refresh (requires unique index).
  * Falls back to regular refresh if the view has never been populated.
+ *
+ * Each view is refreshed independently — a failure in one view (e.g.
+ * v_activity) must not prevent other views (e.g. v_daily_metrics) from
+ * being refreshed. Collected errors are thrown as a single AggregateError
+ * after all views have been attempted.
  */
 export async function refreshDedupViews(db: SyncDatabase): Promise<void> {
+  const errors: Array<{ view: string; error: unknown }> = [];
+
   // Refresh dedup views first (rollup views may depend on v_activity)
   for (const view of DEDUP_VIEWS) {
-    await refreshView(db, view);
+    try {
+      await refreshView(db, view);
+    } catch (error) {
+      errors.push({ view, error });
+    }
   }
 
   // Refresh rollup views (depend on base tables, not dedup views)
   for (const view of ROLLUP_VIEWS) {
-    await refreshView(db, view);
+    try {
+      await refreshView(db, view);
+    } catch (error) {
+      errors.push({ view, error });
+    }
+  }
+
+  if (errors.length > 0) {
+    const summary = errors.map(({ view, error }) => `${view}: ${error}`).join("; ");
+    throw new Error(`Failed to refresh ${errors.length} view(s): ${summary}`);
   }
 }
 
