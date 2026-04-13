@@ -42,9 +42,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            echo "image_tag=$INPUT_TAG" >> "$GITHUB_OUTPUT"
+            TAG="${INPUT_TAG:-latest}"
+            echo "image_tag=$TAG" >> "$GITHUB_OUTPUT"
             echo "should_deploy=true" >> "$GITHUB_OUTPUT"
-            echo "Deploying image: $INPUT_TAG"
+            echo "Deploying image: $TAG"
           else
             # Auto-trigger from CI workflow_run
             SHA="$WORKFLOW_RUN_SHA"
@@ -92,7 +93,7 @@ jobs:
   cleanup-images:
     name: Cleanup Images
     needs: [deploy-app, deploy-ml]
-    if: always() && needs.deploy-app.result == 'success'
+    if: always() && (needs.deploy-app.result == 'success' || needs.deploy-ml.result == 'success')
     runs-on: ubuntu-latest
     steps:
       - name: Setup SSH

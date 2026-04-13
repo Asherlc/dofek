@@ -11,6 +11,7 @@ on:
           - web
           - infra
           - app
+          - ml
           - ios
           - ota
       commit_sha:
@@ -97,11 +98,11 @@ jobs:
 
   ml:
     name: Deploy ML
-    needs: [terraform, docker]
-    if: always() && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (needs.docker.result == 'success' || needs.docker.result == 'skipped') && (inputs.target == 'app' || inputs.target == 'web' || inputs.target == 'all')
+    needs: [terraform]
+    if: always() && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (inputs.target == 'ml' || inputs.target == 'app' || inputs.target == 'web' || inputs.target == 'all')
     uses: ./.github/workflows/deploy-ml.yml
     with:
-      image_tag: ${{ inputs.image_tag != '' && inputs.image_tag || needs.docker.outputs.image_tag }}
+      image_tag: ${{ inputs.image_tag != '' && inputs.image_tag || 'latest' }}
     secrets: inherit
 
   ios:
