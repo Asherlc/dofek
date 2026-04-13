@@ -27,7 +27,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       image_tag: ${{ steps.resolve.outputs.image_tag }}
-      commit_sha: ${{ steps.resolve.outputs.commit_sha }}
       should_deploy: ${{ steps.resolve.outputs.should_deploy }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
@@ -100,25 +99,16 @@ jobs:
 
               {
                 echo "image_tag=$TAG"
-                echo "commit_sha=$SHA"
                 echo "should_deploy=true"
               } >> "$GITHUB_OUTPUT"
               echo "Deploying CI image: $TAG"
             fi
           fi
 
-  terraform:
-    name: Terraform Apply
-    needs: [check]
-    if: needs.check.outputs.should_deploy == 'true'
-    uses: ./.github/workflows/deploy-terraform.yml
-    with:
-      commit_sha: ${{ needs.check.outputs.commit_sha }}
-    secrets: inherit
-
   deploy-app:
     name: Deploy App
-    needs: [check, terraform]
+    needs: [check]
+    if: needs.check.outputs.should_deploy == 'true'
     uses: ./.github/workflows/deploy-app.yml
     with:
       image_tag: ${{ needs.check.outputs.image_tag }}
