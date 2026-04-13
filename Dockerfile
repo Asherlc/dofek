@@ -88,7 +88,7 @@ RUN apk add --no-cache curl ca-certificates && \
 # libpq provides the native driver psycopg needs.
 RUN apk add --no-cache python3 py3-pip libpq && \
     pip3 install --no-cache-dir --break-system-packages \
-      'psycopg>=3.2.0' 'pyarrow>=17.0.0' && \
+      'psycopg>=3.2.0' 'pyarrow>=23.0.1' && \
     ln -sf /usr/bin/python3 /usr/bin/python
 
 COPY --from=source --chown=node:node /app/src ./src
