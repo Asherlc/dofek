@@ -92,7 +92,6 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           INPUT_RUN_ID: ${{ inputs.ci_run_id }}
           WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
-          COMMIT_SHA: ${{ steps.resolve.outputs.sha }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ "$EVENT_NAME" = "workflow_run" ]; then
@@ -107,39 +106,17 @@ jobs:
             exit 0
           fi
 
-          if [ -n "$COMMIT_SHA" ]; then
-            # workflow_call with commit_sha — find CI run for that commit
-            RUN_ID=$(gh run list \
-              --workflow=ci.yml \
-              --commit="$COMMIT_SHA" \
-              --status=success \
-              --limit=1 \
-              --json databaseId \
-              --jq '.[0].databaseId')
-
-            if [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ]; then
-              echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
-              echo "Using CI run for commit ${COMMIT_SHA:0:10}: $RUN_ID"
-              exit 0
-            fi
-          fi
-
-          # Default to latest successful CI run on main
-          RUN_ID=$(gh run list \
-            --workflow=ci.yml \
-            --status=success \
-            --branch=main \
-            --limit=1 \
-            --json databaseId \
-            --jq '.[0].databaseId')
+          # Find the latest ios-xcarchive artifact
+          RUN_ID=$(gh api "repos/${{ github.repository }}/actions/artifacts?name=ios-xcarchive&per_page=1" \
+            --jq '.artifacts[0].workflow_run.id')
 
           if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
-            echo "::error::No successful CI runs found on main"
+            echo "::error::No ios-xcarchive artifact found"
             exit 1
           fi
 
           echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
-          echo "Defaulting to latest successful CI run: $RUN_ID"
+          echo "Using latest ios-xcarchive from CI run: $RUN_ID"
 
   deploy:
     name: Upload to TestFlight
