@@ -137,19 +137,24 @@ export interface NextWorkoutData {
 export class TrainingRepository extends BaseRepository {
   /** Weekly training volume grouped by activity type. */
   async getWeeklyVolume(days: number): Promise<WeeklyVolumeRow[]> {
-    return this.query(
-      weeklyVolumeRowSchema,
-      sql`SELECT
-            date_trunc('week', (started_at AT TIME ZONE ${this.timezone})::date)::date AS week,
-            activity_type,
-            COUNT(*)::int AS count,
-            ROUND(SUM(EXTRACT(EPOCH FROM (ended_at - started_at)) / 3600)::numeric, 2) AS hours
-          FROM fitness.v_activity
-          WHERE user_id = ${this.userId}
-            AND started_at > NOW() - ${days}::int * INTERVAL '1 day'
-            AND ended_at IS NOT NULL
-          GROUP BY 1, activity_type
-          ORDER BY week`,
+    return this.queryWithViewRefresh(
+      () =>
+        this.query(
+          weeklyVolumeRowSchema,
+          sql`SELECT
+                date_trunc('week', (started_at AT TIME ZONE ${this.timezone})::date)::date AS week,
+                activity_type,
+                COUNT(*)::int AS count,
+                ROUND(SUM(EXTRACT(EPOCH FROM (ended_at - started_at)) / 3600)::numeric, 2) AS hours
+              FROM fitness.v_activity
+              WHERE user_id = ${this.userId}
+                AND started_at > NOW() - ${days}::int * INTERVAL '1 day'
+                AND ended_at IS NOT NULL
+              GROUP BY 1, activity_type
+              ORDER BY week`,
+        ),
+      days,
+      "weeklyVolume",
     );
   }
 
@@ -192,27 +197,32 @@ export class TrainingRepository extends BaseRepository {
 
   /** Per-activity summary with HR and power stats. */
   async getActivityStats(days: number): Promise<ActivityStatsRow[]> {
-    return this.query(
-      activityStatsRowSchema,
-      sql`SELECT
-            a.id,
-            a.activity_type,
-            a.name,
-            a.started_at,
-            a.ended_at,
-            ROUND(s.avg_hr::numeric, 1) AS avg_hr,
-            s.max_hr,
-            ROUND(s.avg_power::numeric, 1) AS avg_power,
-            s.max_power,
-            ROUND(s.avg_cadence::numeric, 1) AS avg_cadence,
-            s.hr_sample_count AS hr_samples,
-            s.power_sample_count AS power_samples,
-            s.total_distance AS distance_meters
-          FROM fitness.v_activity a
-          LEFT JOIN fitness.activity_summary s ON s.activity_id = a.id
-          WHERE a.user_id = ${this.userId}
-            AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-          ORDER BY a.started_at DESC`,
+    return this.queryWithViewRefresh(
+      () =>
+        this.query(
+          activityStatsRowSchema,
+          sql`SELECT
+                a.id,
+                a.activity_type,
+                a.name,
+                a.started_at,
+                a.ended_at,
+                ROUND(s.avg_hr::numeric, 1) AS avg_hr,
+                s.max_hr,
+                ROUND(s.avg_power::numeric, 1) AS avg_power,
+                s.max_power,
+                ROUND(s.avg_cadence::numeric, 1) AS avg_cadence,
+                s.hr_sample_count AS hr_samples,
+                s.power_sample_count AS power_samples,
+                s.total_distance AS distance_meters
+              FROM fitness.v_activity a
+              LEFT JOIN fitness.activity_summary s ON s.activity_id = a.id
+              WHERE a.user_id = ${this.userId}
+                AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+              ORDER BY a.started_at DESC`,
+        ),
+      days,
+      "activityStats",
     );
   }
 

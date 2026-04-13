@@ -1,10 +1,8 @@
 import { zScoreToRecoveryScore } from "@dofek/scoring/scoring";
-import * as Sentry from "@sentry/node";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { z } from "zod";
 import { endDateSchema } from "../lib/date-window.ts";
-import { logger } from "../logger.ts";
 import { TrainingRepository } from "../repositories/training-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
@@ -51,33 +49,7 @@ export const trainingRouter = router({
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       const repo = new TrainingRepository(ctx.db, ctx.userId, ctx.timezone);
-      const result = await repo.getWeeklyVolume(input.days);
-
-      if (result.length === 0) {
-        const today = new Date().toLocaleDateString("en-CA");
-        const baseCount = await repo.baseActivityCount(today, input.days);
-        if (baseCount > 0) {
-          logger.warn(
-            `[training] Stale views detected for user ${ctx.userId}: ` +
-              `${baseCount} activities in base table but 0 in weekly volume view. Refreshing.`,
-          );
-          Sentry.captureMessage("Stale activity materialized views detected (weeklyVolume)", {
-            level: "warning",
-            tags: { userId: ctx.userId },
-            extra: { baseCount },
-          });
-          try {
-            await repo.refreshActivityViews();
-            return repo.getWeeklyVolume(input.days);
-          } catch (refreshError) {
-            Sentry.captureException(refreshError, {
-              tags: { userId: ctx.userId, context: "staleViewRefresh" },
-            });
-          }
-        }
-      }
-
-      return result;
+      return repo.getWeeklyVolume(input.days);
     }),
 
   hrZones: cachedProtectedQuery(CacheTTL.LONG)
@@ -91,35 +63,7 @@ export const trainingRouter = router({
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       const repo = new TrainingRepository(ctx.db, ctx.userId, ctx.timezone);
-      const result = await repo.getActivityStats(input.days);
-
-      // Self-healing: if the materialized views return no activities but the
-      // base table has data, the views are stale. Refresh and retry.
-      if (result.length === 0) {
-        const today = new Date().toLocaleDateString("en-CA");
-        const baseCount = await repo.baseActivityCount(today, input.days);
-        if (baseCount > 0) {
-          logger.warn(
-            `[training] Stale views detected for user ${ctx.userId}: ` +
-              `${baseCount} activities in base table but 0 in materialized view. Refreshing.`,
-          );
-          Sentry.captureMessage("Stale activity materialized views detected (training)", {
-            level: "warning",
-            tags: { userId: ctx.userId },
-            extra: { baseCount },
-          });
-          try {
-            await repo.refreshActivityViews();
-            return repo.getActivityStats(input.days);
-          } catch (refreshError) {
-            Sentry.captureException(refreshError, {
-              tags: { userId: ctx.userId, context: "staleViewRefresh" },
-            });
-          }
-        }
-      }
-
-      return result;
+      return repo.getActivityStats(input.days);
     }),
 
   nextWorkout: cachedProtectedQuery(CacheTTL.SHORT)

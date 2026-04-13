@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/node";
 import type { Database } from "dofek/db";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -46,8 +47,41 @@ export abstract class BaseRepository<TDb extends ExecutableDatabase = Executable
     return executeWithSchema(this.db, schema, sqlQuery);
   }
 
-  /** Count activities in the base table (not materialized views) for this user within a time window. */
-  async baseActivityCount(endDate: string, days: number): Promise<number> {
+  /**
+   * Run a query that depends on materialized views with stale-view self-healing.
+   *
+   * If the query returns no rows but the base `fitness.activity` table has data
+   * in the same time window, the views are stale. Refreshes them and retries.
+   */
+  protected async queryWithViewRefresh<TResult>(
+    queryFn: () => Promise<TResult[]>,
+    days: number,
+    label: string,
+  ): Promise<TResult[]> {
+    const result = await queryFn();
+    if (result.length > 0) return result;
+
+    const today = new Date().toLocaleDateString("en-CA");
+    const baseCount = await this.#baseActivityCount(today, days);
+    if (baseCount === 0) return result;
+
+    Sentry.captureMessage(`Stale activity materialized views detected (${label})`, {
+      level: "warning",
+      tags: { userId: this.userId },
+      extra: { baseCount },
+    });
+    try {
+      await this.#refreshActivityViews();
+      return queryFn();
+    } catch (refreshError) {
+      Sentry.captureException(refreshError, {
+        tags: { userId: this.userId, context: "staleViewRefresh" },
+      });
+      return result;
+    }
+  }
+
+  async #baseActivityCount(endDate: string, days: number): Promise<number> {
     const rows = await this.query(
       z.object({ count: z.coerce.number() }),
       sql`SELECT count(*)::int AS count FROM fitness.activity
@@ -57,8 +91,7 @@ export abstract class BaseRepository<TDb extends ExecutableDatabase = Executable
     return rows[0]?.count ?? 0;
   }
 
-  /** Refresh the activity-related materialized views in dependency order. */
-  async refreshActivityViews(): Promise<void> {
+  async #refreshActivityViews(): Promise<void> {
     for (const view of ACTIVITY_VIEWS) {
       try {
         await this.db.execute(sql.raw(`REFRESH MATERIALIZED VIEW CONCURRENTLY ${view}`));
