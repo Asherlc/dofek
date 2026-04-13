@@ -114,9 +114,16 @@ describe("ActivityRepository", () => {
       expect(result.items[0]).toHaveProperty("id", "abc-123");
     });
 
-    it("calls execute once", async () => {
+    it("checks base table for staleness when first page is empty", async () => {
       const { repo, execute } = makeRepository([]);
       await repo.list({ days: 30, endDate: "2024-02-01", limit: 20, offset: 0 });
+      // list query + base table count check (self-healing staleness detection)
+      expect(execute).toHaveBeenCalledTimes(2);
+    });
+
+    it("skips staleness check on non-first pages", async () => {
+      const { repo, execute } = makeRepository([]);
+      await repo.list({ days: 30, endDate: "2024-02-01", limit: 20, offset: 20 });
       expect(execute).toHaveBeenCalledTimes(1);
     });
 
@@ -126,7 +133,7 @@ describe("ActivityRepository", () => {
         days: 30,
         endDate: "2024-02-01",
         limit: 20,
-        offset: 0,
+        offset: 20,
         activityTypes: ["cycling", "running"],
       });
       expect(execute).toHaveBeenCalledTimes(1);

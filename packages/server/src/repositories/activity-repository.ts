@@ -128,27 +128,21 @@ export class ActivityRepository extends BaseRepository {
   async list(
     input: ListInput,
   ): Promise<{ items: Array<Record<string, unknown>>; totalCount: number }> {
-    const result = await this.#listQuery(input);
+    const queryFn = () => this.#listRawRows(input);
 
     // Only check staleness on the first page to avoid expensive refreshes on
     // legitimate empty later pages.
-    if (input.offset === 0 && result.items.length === 0) {
-      const refreshed = await this.queryWithViewRefresh(
-        () => this.#listQuery(input).then((res) => res.items),
-        input.days,
-        "activityList",
-      );
-      if (refreshed.length > 0) {
-        return this.#listQuery(input);
-      }
-    }
+    const rows =
+      input.offset === 0
+        ? await this.queryWithViewRefresh(queryFn, input.days, "activityList")
+        : await queryFn();
 
-    return result;
+    const totalCount = rows.length > 0 ? (rows[0]?.total_count ?? 0) : 0;
+    const items = rows.map(({ total_count, ...rest }) => rest);
+    return { items, totalCount };
   }
 
-  #listQuery(
-    input: ListInput,
-  ): Promise<{ items: Array<Record<string, unknown>>; totalCount: number }> {
+  #listRawRows(input: ListInput) {
     const typeFilter =
       input.activityTypes && input.activityTypes.length > 0
         ? sql`AND a.activity_type = ANY(${input.activityTypes})`
@@ -175,11 +169,7 @@ export class ActivityRepository extends BaseRepository {
             ${typeFilter}
           ORDER BY a.started_at DESC
           LIMIT ${input.limit} OFFSET ${input.offset}`,
-    ).then((rows) => {
-      const totalCount = rows.length > 0 ? (rows[0]?.total_count ?? 0) : 0;
-      const items = rows.map(({ total_count, ...rest }) => rest);
-      return { items, totalCount };
-    });
+    );
   }
 
   /** Single activity with full detail row. Returns null when not found. */
