@@ -3,8 +3,15 @@ import { DailyMetricsRepository } from "./daily-metrics-repository.ts";
 
 const mockLoggerWarn = vi.hoisted(() => vi.fn());
 
+const mockSentryCapture = vi.hoisted(() => vi.fn());
+
 vi.mock("../logger.ts", () => ({
   logger: { warn: mockLoggerWarn, info: vi.fn(), error: vi.fn() },
+}));
+
+vi.mock("@sentry/node", () => ({
+  captureMessage: mockSentryCapture,
+  captureException: vi.fn(),
 }));
 
 // ---------------------------------------------------------------------------
@@ -95,10 +102,43 @@ describe("DailyMetricsRepository", () => {
       expect(result[0]?.source_providers).toEqual(["apple_health", "whoop"]);
     });
 
-    it("calls execute once", async () => {
-      const { repo, execute } = makeRepository([]);
+    it("calls execute once when view has data", async () => {
+      const { repo, execute } = makeRepository([makeDailyMetricsRow()]);
       await repo.list(30, "2025-03-15");
       expect(execute).toHaveBeenCalledTimes(1);
+    });
+
+    it("refreshes view and retries when view returns empty but base table has data", async () => {
+      const execute = vi
+        .fn()
+        // First call: list query returns empty (stale view)
+        .mockResolvedValueOnce([])
+        // Second call: base table count check — has data
+        .mockResolvedValueOnce([{ count: 50 }])
+        // Third call: REFRESH MATERIALIZED VIEW (succeeds)
+        .mockResolvedValueOnce([])
+        // Fourth call: retry list query — returns data
+        .mockResolvedValueOnce([makeDailyMetricsRow()]);
+      const repo = new DailyMetricsRepository({ execute }, "user-1");
+      const result = await repo.list(30, "2025-03-15");
+      expect(result).toHaveLength(1);
+      expect(result[0]?.steps).toBe(8500);
+      expect(mockSentryCapture).toHaveBeenCalledWith(
+        expect.stringContaining("Stale daily metrics"),
+        expect.anything(),
+      );
+    });
+
+    it("returns empty when both view and base table are empty", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([]) // view empty
+        .mockResolvedValueOnce([{ count: 0 }]); // base table empty
+      const repo = new DailyMetricsRepository({ execute }, "user-1");
+      const result = await repo.list(30, "2025-03-15");
+      expect(result).toEqual([]);
+      // Should NOT attempt refresh
+      expect(execute).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -176,13 +216,20 @@ describe("DailyMetricsRepository", () => {
 
     it("logs warning when trends returns all nulls but base table has data (stale view)", async () => {
       mockLoggerWarn.mockClear();
+      const allNullRow = makeTrendsRow({ avg_resting_hr: null, latest_date: null });
       const execute = vi
         .fn()
-        .mockResolvedValueOnce([makeTrendsRow({ avg_resting_hr: null, latest_date: null })])
-        .mockResolvedValueOnce([{ count: 50 }]); // base table has data
+        // First call: trends query returns all nulls
+        .mockResolvedValueOnce([allNullRow])
+        // Second call: base table count check — has data
+        .mockResolvedValueOnce([{ count: 50 }])
+        // Third call: REFRESH MATERIALIZED VIEW
+        .mockResolvedValueOnce([])
+        // Fourth call: retry trends query (still null — view may still be stale)
+        .mockResolvedValueOnce([allNullRow]);
       const repo = new DailyMetricsRepository({ execute }, "user-1");
       await repo.getTrends(30, "2025-03-15");
-      expect(mockLoggerWarn).toHaveBeenCalledWith(expect.stringContaining("base table has data"));
+      expect(mockLoggerWarn).toHaveBeenCalledWith(expect.stringContaining("View stale"));
     });
 
     it("does not log warning when trends returns all nulls and base table is empty (new user)", async () => {
@@ -194,6 +241,30 @@ describe("DailyMetricsRepository", () => {
       const repo = new DailyMetricsRepository({ execute }, "user-1");
       await repo.getTrends(30, "2025-03-15");
       expect(mockLoggerWarn).not.toHaveBeenCalled();
+    });
+
+    it("refreshes view and retries when trends all null but base table has data", async () => {
+      mockLoggerWarn.mockClear();
+      const allNullRow = makeTrendsRow({ avg_resting_hr: null, latest_date: null });
+      const populatedRow = makeTrendsRow();
+      const execute = vi
+        .fn()
+        // First call: trends query returns all-null (stale view)
+        .mockResolvedValueOnce([allNullRow])
+        // Second call: base table count check — has data
+        .mockResolvedValueOnce([{ count: 50 }])
+        // Third call: REFRESH MATERIALIZED VIEW (succeeds)
+        .mockResolvedValueOnce([])
+        // Fourth call: retry trends query — returns data
+        .mockResolvedValueOnce([populatedRow]);
+      const repo = new DailyMetricsRepository({ execute }, "user-1");
+      const result = await repo.getTrends(30, "2025-03-15");
+      expect(result?.avg_resting_hr).toBe(57.2);
+      expect(result?.latest_date).toBe("2025-03-15");
+      expect(mockSentryCapture).toHaveBeenCalledWith(
+        expect.stringContaining("Stale daily metrics"),
+        expect.anything(),
+      );
     });
 
     it("does not log warning when trends has data", async () => {
