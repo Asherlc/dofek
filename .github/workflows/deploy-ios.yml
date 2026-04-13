@@ -68,12 +68,26 @@ jobs:
             exit 0
           fi
 
-          # Find the commit from the last successful iOS deploy.
-          # HEAD~1 misses native changes in merge commits that bundle
-          # multiple PR commits — we need to diff against the last
-          # commit that actually triggered a deploy.
-          LAST_DEPLOY_SHA=$(gh api "repos/${{ github.repository }}/actions/workflows/deploy-ios.yml/runs?status=success&per_page=10" \
-            --jq '[.workflow_runs[] | select(.conclusion == "success" and .name == "Deploy iOS" and (.head_sha != "${{ github.sha }}"))] | .[0].head_sha // empty')
+          # Find the commit from the last iOS deploy that actually
+          # uploaded to TestFlight. HEAD~1 misses native changes in
+          # merge commits that bundle multiple PR commits — we need
+          # to diff against the last commit that triggered a real deploy.
+          #
+          # Runs where should_deploy was false still show conclusion=success
+          # (the deploy job is skipped, not failed), so we check that the
+          # "Upload to TestFlight" job completed successfully.
+          LAST_DEPLOY_SHA=""
+          RUNS=$(gh api "repos/${{ github.repository }}/actions/workflows/deploy-ios.yml/runs?status=success&per_page=20" \
+            --jq '[.workflow_runs[] | select(.head_sha != "${{ github.sha }}")] | .[0:10] | .[].id' 2>/dev/null || true)
+          for RUN_ID in $RUNS; do
+            DEPLOY_JOB=$(gh api "repos/${{ github.repository }}/actions/runs/$RUN_ID/jobs" \
+              --jq '.jobs[] | select(.name == "Upload to TestFlight" and .conclusion == "success") | .id' 2>/dev/null || true)
+            if [ -n "$DEPLOY_JOB" ]; then
+              LAST_DEPLOY_SHA=$(gh api "repos/${{ github.repository }}/actions/runs/$RUN_ID" --jq '.head_sha' 2>/dev/null || true)
+              echo "Last actual deploy: run $RUN_ID (commit $LAST_DEPLOY_SHA)"
+              break
+            fi
+          done
 
           if [ -z "$LAST_DEPLOY_SHA" ]; then
             echo "No previous successful deploy found — deploying"
