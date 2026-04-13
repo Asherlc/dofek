@@ -9,7 +9,7 @@ vi.mock("dofek/jobs/queues", () => ({
 }));
 
 vi.mock("../lib/start-worker.ts", () => ({
-  startWorker: vi.fn(),
+  startTrainingExportWorker: vi.fn(),
 }));
 
 vi.mock("../logger.ts", () => ({

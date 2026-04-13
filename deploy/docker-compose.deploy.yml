@@ -115,6 +115,29 @@ services:
       retries: 3
       start_period: 15s
 
+  # ── Training Export Worker (Python BullMQ) ──────────────────
+  training-export-worker:
+    image: ghcr.io/asherlc/dofek-ml:${IMAGE_TAG:-latest}
+    container_name: dofek-training-export-worker
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://health:${POSTGRES_PASSWORD}@db:5432/health
+      REDIS_URL: redis://redis:6379
+      JOB_FILES_DIR: /app/job-files
+    volumes:
+      - job_files:/app/job-files
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f worker || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
   # ── Database ───────────────────────────────────────────────
   db:
     image: timescale/timescaledb:2.26.2-pg18

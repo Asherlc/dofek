@@ -7,10 +7,6 @@ import { processImportJob } from "./process-import-job.ts";
 import { processPostSyncJob } from "./process-post-sync-job.ts";
 import { processScheduledSyncJob } from "./process-scheduled-sync-job.ts";
 import { processSyncJob } from "./process-sync-job.ts";
-import {
-  processTrainingExportJob,
-  TRAINING_EXPORT_LOCK_MS,
-} from "./process-training-export-job.ts";
 import { getConfiguredProviderIds, getProviderQueueConfig } from "./provider-queue-config.ts";
 import {
   EXPORT_QUEUE,
@@ -25,8 +21,6 @@ import {
   type ScheduledSyncJobData,
   SYNC_QUEUE,
   type SyncJobData,
-  TRAINING_EXPORT_QUEUE,
-  type TrainingExportJobData,
 } from "./queues.ts";
 import { setupScheduledSync } from "./scheduled-sync.ts";
 
@@ -96,32 +90,8 @@ const postSyncWorker = new Worker<PostSyncJobData>(
   (job) => jobContext.run(job, () => processPostSyncJob(job, db)),
   { connection, concurrency: 1 },
 );
-const trainingExportWorker = new Worker<TrainingExportJobData>(
-  TRAINING_EXPORT_QUEUE,
-  (job, token) => {
-    if (!token) {
-      const error = new Error(`Training export job started without BullMQ token (job ${job.id})`);
-      logger.error(
-        `[worker] Training export job ${job.id} started with no token — failing fast because extendLock cannot succeed`,
-      );
-      Sentry.captureException(error);
-      throw error;
-    }
-    return jobContext.run(job, () =>
-      processTrainingExportJob({
-        data: job.data,
-        updateProgress: (data) => job.updateProgress(data),
-        extendLock: (duration) => job.extendLock(token, duration).then(() => {}),
-      }),
-    );
-  },
-  {
-    connection,
-    lockDuration: TRAINING_EXPORT_LOCK_MS,
-    stalledInterval: TRAINING_EXPORT_LOCK_MS / 2,
-    maxStalledCount: 3,
-  },
-);
+// Training export jobs are processed by the standalone Python BullMQ worker
+// (packages/ml) — not by this Node.js worker.
 
 // ── Idle spin-down ──
 
@@ -150,7 +120,6 @@ const allWorkers: Worker[] = [
   exportWorker,
   scheduledSyncWorker,
   postSyncWorker,
-  trainingExportWorker,
 ];
 
 for (const worker of allWorkers) {

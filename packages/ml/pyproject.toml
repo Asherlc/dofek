@@ -6,17 +6,23 @@ readme = "README.md"
 authors = [{ name = "Asher Cohen", email = "asherlc@asherlc.com" }]
 requires-python = ">=3.12"
 dependencies = [
-    "boto3>=1.35.0",
+    "bullmq>=2.9.3",
     "numpy>=2.1.0",
     "pandas>=2.2.3",
     "psycopg[binary]>=3.2.0",
     "pyarrow>=23.0.1",
+]
+
+[project.optional-dependencies]
+training = [
+    "boto3>=1.35.0",
     "scikit-learn>=1.5.2",
     "torch>=2.5.0",
 ]
 
 [project.scripts]
 dofek-export = "dofek_ml.export:main"
+dofek-worker = "dofek_ml.worker:main"
 
 [dependency-groups]
 dev = [

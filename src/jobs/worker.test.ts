@@ -35,11 +35,6 @@ vi.mock("./process-post-sync-job.ts", () => ({
   processPostSyncJob: vi.fn(),
 }));
 
-vi.mock("./process-training-export-job.ts", () => ({
-  processTrainingExportJob: vi.fn(),
-  TRAINING_EXPORT_LOCK_MS: 600_000,
-}));
-
 vi.mock("./scheduled-sync.ts", () => ({
   setupScheduledSync: vi.fn(() => Promise.resolve()),
 }));
@@ -61,7 +56,6 @@ vi.mock("./queues.ts", () => ({
   EXPORT_QUEUE: "export-queue",
   SCHEDULED_SYNC_QUEUE: "scheduled-sync-queue",
   POST_SYNC_QUEUE: "post-sync-queue",
-  TRAINING_EXPORT_QUEUE: "training-export-queue",
 }));
 
 vi.mock("@sentry/node", () => ({
@@ -97,8 +91,9 @@ describe("worker module", () => {
     await import("./worker.ts");
   });
 
-  // 2 per-provider workers (strava, garmin) + 1 legacy sync + 1 import + 1 export + 1 scheduled-sync + 1 post-sync + 1 training-export = 8
-  const EXPECTED_WORKER_COUNT = 8;
+  // 2 per-provider workers (strava, garmin) + 1 legacy sync + 1 import + 1 export + 1 scheduled-sync + 1 post-sync = 7
+  // Training export is handled by the standalone Python BullMQ worker (packages/ml).
+  const EXPECTED_WORKER_COUNT = 7;
 
   it("creates per-provider workers plus standard workers", async () => {
     const { Worker } = await import("bullmq");
@@ -118,11 +113,6 @@ describe("worker module", () => {
     );
     expect(Worker).toHaveBeenCalledWith(
       "post-sync-queue",
-      expect.any(Function),
-      expect.any(Object),
-    );
-    expect(Worker).toHaveBeenCalledWith(
-      "training-export-queue",
       expect.any(Function),
       expect.any(Object),
     );
@@ -319,53 +309,5 @@ describe("worker module", () => {
     await invokeProcessor("post-sync-queue", { userId: "u" });
 
     expect(processPostSyncJob).toHaveBeenCalled();
-  });
-
-  it("training-export processor delegates to processTrainingExportJob with token", async () => {
-    const { processTrainingExportJob } = await import("./process-training-export-job.ts");
-    vi.mocked(processTrainingExportJob).mockClear();
-
-    await invokeProcessor("training-export-queue", {}, "test-token-123");
-
-    expect(processTrainingExportJob).toHaveBeenCalled();
-  });
-
-  it("training-export extendLock calls job.extendLock when token is present", async () => {
-    const { processTrainingExportJob } = await import("./process-training-export-job.ts");
-    const mockExtendLock = vi.fn().mockResolvedValue(undefined);
-
-    // Make the mock call extendLock on the passed-in job object
-    vi.mocked(processTrainingExportJob).mockImplementationOnce(async (job) => {
-      await job.extendLock(60_000);
-    });
-
-    await invokeProcessor("training-export-queue", {}, "test-token-456", {
-      id: "test-job-2",
-      extendLock: mockExtendLock,
-      updateProgress: vi.fn(),
-    });
-
-    expect(mockExtendLock).toHaveBeenCalledWith("test-token-456", 60_000);
-  });
-
-  it("training-export processor throws when token is missing", async () => {
-    const Sentry = await import("@sentry/node");
-    const { logger } = await import("../logger.ts");
-    vi.mocked(Sentry.captureException).mockClear();
-    vi.mocked(logger.error).mockClear();
-
-    // Invoke without token (undefined) — processor should fail fast
-    await expect(invokeProcessor("training-export-queue", {})).rejects.toThrow(
-      "without BullMQ token",
-    );
-
-    expect(logger.error).toHaveBeenCalledWith(
-      expect.stringContaining("failing fast because extendLock cannot succeed"),
-    );
-    expect(Sentry.captureException).toHaveBeenCalledWith(
-      expect.objectContaining({
-        message: expect.stringContaining("without BullMQ token"),
-      }),
-    );
   });
 });
