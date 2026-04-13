@@ -14,13 +14,9 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: "Docker image tag to deploy (e.g. sha-abc1234). Leave empty to deploy latest available."
-        required: false
+        description: "Docker image tag to deploy (e.g. sha-abc1234)"
+        required: true
         type: string
-
-permissions:
-  contents: read
-  packages: read
 
 concurrency:
   group: deploy-app
@@ -36,7 +32,6 @@ jobs:
         env:
           INPUT_TAG: ${{ inputs.image_tag }}
           INPUT_SHA: ${{ inputs.commit_sha }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ -n "$INPUT_TAG" ]; then
             echo "tag=$INPUT_TAG" >> "$GITHUB_OUTPUT"
@@ -46,18 +41,8 @@ jobs:
             echo "tag=sha-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
             echo "Computed image tag from commit SHA: sha-${SHORT_SHA}"
           else
-            echo "No tag or SHA specified. Finding latest available image..."
-
-            LATEST_TAG=$(gh api "/users/asherlc/packages/container/dofek/versions" \
-              --jq '[.[] | .metadata.container.tags[] | select(startswith("sha-"))] | .[0]')
-
-            if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" = "null" ]; then
-              echo "::error::No Docker images found in GHCR"
-              exit 1
-            fi
-
-            echo "tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
-            echo "Auto-selected latest available image: $LATEST_TAG"
+            echo "::error::Either image_tag or commit_sha must be provided"
+            exit 1
           fi
       - name: Setup SSH
         env:

@@ -8,8 +8,8 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: "Docker image tag to deploy (e.g. sha-abc1234). Leave empty to list available."
-        required: false
+        description: "Docker image tag to deploy (e.g. sha-abc1234)"
+        required: true
         type: string
 
 permissions:
@@ -41,44 +41,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            if [ -n "$INPUT_TAG" ]; then
-              # Manual deploy with explicit image tag
-              echo "image_tag=$INPUT_TAG" >> "$GITHUB_OUTPUT"
-              echo "should_deploy=true" >> "$GITHUB_OUTPUT"
-              echo "Deploying image: $INPUT_TAG"
-            else
-              # Manual deploy — list available images and deploy latest
-              echo "No image tag specified. Querying GHCR for available images..."
-
-              IMAGES=$(gh api "/users/asherlc/packages/container/dofek/versions" \
-                --jq '[.[] | select(.metadata.container.tags | any(startswith("sha-"))) | {tag: (.metadata.container.tags[] | select(startswith("sha-"))), created: .created_at}] | .[0:20]')
-
-              {
-                echo "## Available Docker Images"
-                echo ""
-                echo "| Tag | Created |"
-                echo "|-----|---------|"
-                echo "$IMAGES" | jq -r '.[] | "| `\(.tag)` | \(.created) |"'
-              } >> "$GITHUB_STEP_SUMMARY"
-
-              LATEST_TAG=$(echo "$IMAGES" | jq -r '.[0].tag')
-
-              if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" = "null" ]; then
-                echo "::error::No Docker images found in GHCR"
-                exit 1
-              fi
-
-              {
-                echo ""
-                echo "**Auto-deploying latest: \`$LATEST_TAG\`**"
-                echo ""
-                echo "To deploy a specific version, re-run with the \`image_tag\` input."
-              } >> "$GITHUB_STEP_SUMMARY"
-
-              echo "image_tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
-              echo "should_deploy=true" >> "$GITHUB_OUTPUT"
-              echo "Auto-selected latest available image: $LATEST_TAG"
-            fi
+            echo "image_tag=$INPUT_TAG" >> "$GITHUB_OUTPUT"
+            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+            echo "Deploying image: $INPUT_TAG"
           else
             # Auto-trigger from CI workflow_run
             SHA="$WORKFLOW_RUN_SHA"

@@ -18,8 +18,8 @@ on:
   workflow_dispatch:
     inputs:
       ci_run_id:
-        description: "CI run ID with ios-xcarchive. Leave empty to list available."
-        required: false
+        description: "CI run ID with ios-xcarchive artifact"
+        required: true
         type: string
 
 permissions:
@@ -102,7 +102,6 @@ jobs:
           fi
 
           if [ -n "$INPUT_RUN_ID" ]; then
-            # Manual deploy with explicit CI run ID
             echo "run_id=$INPUT_RUN_ID" >> "$GITHUB_OUTPUT"
             echo "Using provided CI run: $INPUT_RUN_ID"
             exit 0
@@ -125,40 +124,8 @@ jobs:
             fi
           fi
 
-          # No explicit run — list recent successful CI runs and pick latest
-          echo "No CI run specified. Querying recent successful CI runs..."
-
-          RUNS=$(gh run list \
-            --workflow=ci.yml \
-            --status=success \
-            --branch=main \
-            --limit=10 \
-            --json databaseId,headSha,createdAt)
-
-          {
-            echo "## Available CI Runs (with ios-xcarchive)"
-            echo ""
-            echo "| Run ID | Commit | Created |"
-            echo "|--------|--------|---------|"
-            echo "$RUNS" | jq -r '.[] | "| `\(.databaseId)` | `\(.headSha[:10])` | \(.createdAt) |"'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          LATEST_RUN=$(echo "$RUNS" | jq -r '.[0].databaseId')
-
-          if [ -z "$LATEST_RUN" ] || [ "$LATEST_RUN" = "null" ]; then
-            echo "::error::No successful CI runs found"
-            exit 1
-          fi
-
-          {
-            echo ""
-            echo "**Auto-deploying from CI run: \`$LATEST_RUN\`**"
-            echo ""
-            echo "To deploy a specific build, re-run with the \`ci_run_id\` input."
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          echo "run_id=$LATEST_RUN" >> "$GITHUB_OUTPUT"
-          echo "Auto-selected latest CI run: $LATEST_RUN"
+          echo "::error::Either ci_run_id or commit_sha must be provided"
+          exit 1
 
   deploy:
     name: Upload to TestFlight
