@@ -15,6 +15,7 @@ import { HrvBaselineChart } from "../components/HrvBaselineChart.tsx";
 import { PageSection } from "../components/PageSection.tsx";
 import { SmoothedWeightChart } from "../components/SmoothedWeightChart.tsx";
 import { StressChart } from "../components/StressChart.tsx";
+import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { TimeSeriesChart } from "../components/TimeSeriesChart.tsx";
 import { WeightPredictionSummary } from "../components/WeightPredictionSummary.tsx";
 import { useBodyDays } from "../lib/bodyDaysContext.ts";
@@ -83,7 +84,7 @@ function buildSkinTempSeries(
 
 export function BodyPage() {
   const units = useUnitConverter();
-  const { days } = useBodyDays();
+  const { days, setDays } = useBodyDays();
   const endDate = useMemo(() => formatDateForQuery(), []);
 
   const trends = trpc.dailyMetrics.trends.useQuery({ days, endDate });
@@ -189,6 +190,10 @@ export function BodyPage() {
 
   return (
     <>
+      <div className="flex justify-end">
+        <TimeRangeSelector days={days} onChange={setDays} />
+      </div>
+
       {/* Health Status Bar */}
       <HealthStatusBar metrics={healthMetrics} loading={trends.isLoading} />
 

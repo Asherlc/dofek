@@ -1,7 +1,6 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { useState } from "react";
 import { PageLayout } from "../components/PageLayout.tsx";
-import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { BodyDaysContext } from "../lib/bodyDaysContext.ts";
 
 const subtabs = [
@@ -21,7 +20,6 @@ function BodyLayout() {
       <PageLayout
         title="Body"
         subtitle="Recovery metrics, vitals, and body composition"
-        headerChildren={<TimeRangeSelector days={days} onChange={setDays} />}
         tabs={subtabs}
       >
         <Outlet />
