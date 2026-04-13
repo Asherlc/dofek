@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DailyMetricsRepository } from "./daily-metrics-repository.ts";
 
 const mockLoggerWarn = vi.hoisted(() => vi.fn());
@@ -87,6 +87,11 @@ function makeTrendsRow(overrides: Record<string, unknown> = {}): Record<string, 
 // ---------------------------------------------------------------------------
 
 describe("DailyMetricsRepository", () => {
+  beforeEach(() => {
+    mockLoggerWarn.mockClear();
+    mockSentryCapture.mockClear();
+  });
+
   describe("list", () => {
     it("returns empty array when no data", async () => {
       const { repo } = makeRepository([]);
@@ -215,7 +220,6 @@ describe("DailyMetricsRepository", () => {
     });
 
     it("logs warning when trends returns all nulls but base table has data (stale view)", async () => {
-      mockLoggerWarn.mockClear();
       const allNullRow = makeTrendsRow({ avg_resting_hr: null, latest_date: null });
       const execute = vi
         .fn()
@@ -233,7 +237,6 @@ describe("DailyMetricsRepository", () => {
     });
 
     it("does not log warning when trends returns all nulls and base table is empty (new user)", async () => {
-      mockLoggerWarn.mockClear();
       const execute = vi
         .fn()
         .mockResolvedValueOnce([makeTrendsRow({ avg_resting_hr: null, latest_date: null })])
@@ -244,7 +247,6 @@ describe("DailyMetricsRepository", () => {
     });
 
     it("refreshes view and retries when trends all null but base table has data", async () => {
-      mockLoggerWarn.mockClear();
       const allNullRow = makeTrendsRow({ avg_resting_hr: null, latest_date: null });
       const populatedRow = makeTrendsRow();
       const execute = vi
@@ -268,7 +270,6 @@ describe("DailyMetricsRepository", () => {
     });
 
     it("does not log warning when trends has data", async () => {
-      mockLoggerWarn.mockClear();
       const { repo } = makeRepository([makeTrendsRow()]);
       await repo.getTrends(30, "2025-03-15");
       expect(mockLoggerWarn).not.toHaveBeenCalled();

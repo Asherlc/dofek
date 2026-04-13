@@ -140,6 +140,7 @@ export class DailyMetricsRepository extends BaseRepository {
       sql`SELECT count(*)::int AS count FROM fitness.daily_metrics
           WHERE user_id = ${this.userId}
             AND date > ${dateWindowStart(endDate, days)}
+            AND date <= ${dateWindowEnd(endDate)}
           LIMIT 1`,
     );
     if ((baseCount[0]?.count ?? 0) === 0) return false;
@@ -154,11 +155,18 @@ export class DailyMetricsRepository extends BaseRepository {
     );
 
     try {
-      await this.db.execute(
-        sql.raw("REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_daily_metrics"),
-      );
-    } catch {
-      await this.db.execute(sql.raw("REFRESH MATERIALIZED VIEW fitness.v_daily_metrics"));
+      try {
+        await this.db.execute(
+          sql.raw("REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_daily_metrics"),
+        );
+      } catch {
+        await this.db.execute(sql.raw("REFRESH MATERIALIZED VIEW fitness.v_daily_metrics"));
+      }
+    } catch (refreshError) {
+      Sentry.captureException(refreshError, {
+        tags: { userId: this.userId, context: "staleDailyMetricsRefresh" },
+      });
+      return false;
     }
     return true;
   }
