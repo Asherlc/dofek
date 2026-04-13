@@ -64,7 +64,7 @@ select = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["ARG"]
+"tests/**" = ["ARG", "E402"]
 
 # ── mypy (type checker) ──
 
