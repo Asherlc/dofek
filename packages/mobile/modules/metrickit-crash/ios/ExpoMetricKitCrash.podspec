@@ -13,13 +13,14 @@ Pod::Spec.new do |s|
   s.source_files   = '**/*.swift'
 
   s.dependency 'ExpoModulesCore'
-  s.dependency 'Sentry'
   s.frameworks = 'MetricKit'
 
-  # Ensure Sentry's vendored XCFramework headers are visible during
-  # explicit module scanning. Without this, ScanDependencies can fail
-  # to resolve the Sentry module because the xcframework path isn't
-  # in the default header search paths for this pod target.
+  # Sentry is resolved via FRAMEWORK_SEARCH_PATHS pointing at the vendored
+  # XCFramework, NOT via a pod dependency. Adding `s.dependency 'Sentry'`
+  # changes how CocoaPods generates module maps for the local prebuilt
+  # Sentry pod, which breaks RNSentry compilation (PrivateSentrySDKOnly
+  # becomes undeclared because the module map changes visibility of
+  # internal headers). The xcframework path is enough for `import Sentry`.
   s.pod_target_xcconfig = {
     'FRAMEWORK_SEARCH_PATHS' => '"${PODS_ROOT}/../native/sentry-pod"'
   }
