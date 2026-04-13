@@ -66,6 +66,8 @@ jobs:
             SHA_TAG="$2"
             cd /opt/dofek
 
+            COMPOSE="docker compose --env-file .env.prod --env-file .env.deploy -f docker-compose.deploy.yml"
+
             # Authenticate with GHCR
             echo "$GHCR_TOKEN" | docker login ghcr.io -u asherlc --password-stdin
 
@@ -74,6 +76,14 @@ jobs:
 
             # Persist the image tag for future compose operations
             echo "IMAGE_TAG=${SHA_TAG}" > .env.deploy
+
+            # Ensure db and redis are healthy before rolling out
+            if ! $COMPOSE up -d --wait --wait-timeout 180 db redis; then
+              echo "::error::Timed out waiting for db/redis to become healthy"
+              $COMPOSE ps
+              $COMPOSE logs --tail=100 db redis || true
+              exit 1
+            fi
 
             # Zero-downtime rollout for both services
             docker rollout \

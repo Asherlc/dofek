@@ -124,7 +124,7 @@ jobs:
   cleanup:
     name: Cleanup Images
     needs: [app, ml]
-    if: always() && (needs.app.result == 'success' || needs.ml.result == 'success')
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Setup SSH
@@ -141,5 +141,5 @@ jobs:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
         run: |
           ssh "root@${SERVER_HOST}" \
-            'docker image prune -af --filter "until=72h"' \
+            'docker image prune -af' \
             || echo "Image cleanup failed (non-fatal)"
