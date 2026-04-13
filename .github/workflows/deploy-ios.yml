@@ -60,6 +60,7 @@ jobs:
         id: detect
         env:
           EVENT_NAME: ${{ github.event_name }}
+          SHA: ${{ steps.resolve.outputs.sha }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
@@ -76,14 +77,25 @@ jobs:
           # Runs where should_deploy was false still show conclusion=success
           # (the deploy job is skipped, not failed), so we check that the
           # "Upload to TestFlight" job completed successfully.
+          #
+          # If the GitHub API is unavailable, fall back to deploying
+          # rather than silently skipping a needed deploy.
           LAST_DEPLOY_SHA=""
-          RUNS=$(gh api "repos/${{ github.repository }}/actions/workflows/deploy-ios.yml/runs?status=success&per_page=20" \
-            --jq '[.workflow_runs[] | select(.head_sha != "${{ github.sha }}")] | .[0:10] | .[].id' 2>/dev/null || true)
+          if ! RUNS=$(gh api "repos/${{ github.repository }}/actions/workflows/deploy-ios.yml/runs?status=success&per_page=100" \
+            --jq '[.workflow_runs[] | select(.head_sha != "'"$SHA"'")] | .[].id' 2>/dev/null); then
+            echo "GitHub API unavailable — deploying to avoid blocking releases"
+            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           for RUN_ID in $RUNS; do
             DEPLOY_JOB=$(gh api "repos/${{ github.repository }}/actions/runs/$RUN_ID/jobs" \
               --jq '.jobs[] | select(.name == "Upload to TestFlight" and .conclusion == "success") | .id' 2>/dev/null || true)
-            if [ -n "$DEPLOY_JOB" ]; then
-              LAST_DEPLOY_SHA=$(gh api "repos/${{ github.repository }}/actions/runs/$RUN_ID" --jq '.head_sha' 2>/dev/null || true)
+            if [ -z "$DEPLOY_JOB" ]; then
+              continue
+            fi
+            LAST_DEPLOY_SHA=$(gh api "repos/${{ github.repository }}/actions/runs/$RUN_ID" --jq '.head_sha' 2>/dev/null || true)
+            if [ -n "$LAST_DEPLOY_SHA" ]; then
               echo "Last actual deploy: run $RUN_ID (commit $LAST_DEPLOY_SHA)"
               break
             fi
@@ -95,8 +107,11 @@ jobs:
             exit 0
           fi
 
-          echo "Comparing against last deploy: $LAST_DEPLOY_SHA"
-          DIFF=$(git diff --name-only "$LAST_DEPLOY_SHA"...HEAD)
+          # Diff against the resolved SHA (not HEAD) so the comparison
+          # matches the commit being deployed, even if main has advanced.
+          DIFF_SHA="${SHA:-HEAD}"
+          echo "Comparing $LAST_DEPLOY_SHA...$DIFF_SHA"
+          DIFF=$(git diff --name-only "$LAST_DEPLOY_SHA"..."$DIFF_SHA")
           echo "$DIFF"
           if echo "$DIFF" | grep -qE '^packages/mobile/(app\.json|app\.config\.ts|plugins/|targets/|native/|modules/.*/ios/)'; then
             echo "should_deploy=true" >> "$GITHUB_OUTPUT"
