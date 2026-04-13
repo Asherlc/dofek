@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   mapPolarSport,
   parsePolarDailyActivity,
@@ -251,6 +251,142 @@ describe("parsePolarDailyActivity — with null recharge fields", () => {
     expect(result.respiratoryRateAvg).toBe(16.2);
     expect(result.restingHr).toBe(50);
     expect(result.hrv).toBe(70);
+  });
+});
+
+describe("PolarProvider — exchangeCode AccessLink registration", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("deregisters old user then registers with new token on exchangeCode", async () => {
+    process.env.POLAR_CLIENT_ID = "test-id";
+    process.env.POLAR_CLIENT_SECRET = "test-secret";
+
+    const fetchCalls: { url: string; method: string }[] = [];
+    const mockFetch: typeof globalThis.fetch = vi.fn(async (url, init) => {
+      const urlStr = String(url);
+      const method = init?.method ?? "GET";
+      fetchCalls.push({ url: urlStr, method });
+
+      // Token exchange
+      if (urlStr.includes("oauth2/token")) {
+        return new Response(
+          JSON.stringify({
+            access_token: "new-token",
+            refresh_token: "new-refresh",
+            expires_in: 31536000,
+            x_user_id: "polar-user-123",
+            scope: "accesslink.read_all",
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+
+      // Deregister (DELETE /v3/users/{id})
+      if (urlStr.includes("/v3/users/polar-user-123") && method === "DELETE") {
+        return new Response(null, { status: 204 });
+      }
+
+      // Register (POST /v3/users)
+      if (urlStr.includes("/v3/users") && method === "POST") {
+        return new Response(null, { status: 200 });
+      }
+
+      return new Response("Not found", { status: 404 });
+    });
+
+    const provider = new PolarProvider(mockFetch);
+    const setup = provider.authSetup();
+    expect(setup.exchangeCode).toBeDefined();
+    const tokens = await setup.exchangeCode("auth-code");
+
+    expect(tokens.accessToken).toBe("new-token");
+
+    // Verify deregister was called before register
+    const deregisterIndex = fetchCalls.findIndex(
+      (call) => call.method === "DELETE" && call.url.includes("/v3/users/"),
+    );
+    const registerIndex = fetchCalls.findIndex(
+      (call) => call.method === "POST" && call.url.includes("/v3/users"),
+    );
+    expect(deregisterIndex).toBeGreaterThan(-1);
+    expect(registerIndex).toBeGreaterThan(-1);
+    expect(deregisterIndex).toBeLessThan(registerIndex);
+  });
+
+  it("throws when AccessLink registration fails with non-409 error", async () => {
+    process.env.POLAR_CLIENT_ID = "test-id";
+    process.env.POLAR_CLIENT_SECRET = "test-secret";
+
+    const mockFetch: typeof globalThis.fetch = vi.fn(async (url, init) => {
+      const urlStr = String(url);
+
+      if (urlStr.includes("oauth2/token")) {
+        return new Response(
+          JSON.stringify({
+            access_token: "new-token",
+            x_user_id: "polar-user-123",
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+
+      // Deregister succeeds
+      if (init?.method === "DELETE") {
+        return new Response(null, { status: 204 });
+      }
+
+      // Register fails with 500
+      if (init?.method === "POST" && urlStr.includes("/v3/users")) {
+        return new Response("Internal Server Error", { status: 500 });
+      }
+
+      return new Response("Not found", { status: 404 });
+    });
+
+    const provider = new PolarProvider(mockFetch);
+    const setup = provider.authSetup();
+    expect(setup.exchangeCode).toBeDefined();
+    await expect(setup.exchangeCode("auth-code")).rejects.toThrow("registration failed");
+  });
+
+  it("succeeds when registration returns 409 (already registered)", async () => {
+    process.env.POLAR_CLIENT_ID = "test-id";
+    process.env.POLAR_CLIENT_SECRET = "test-secret";
+
+    const mockFetch: typeof globalThis.fetch = vi.fn(async (url, init) => {
+      const urlStr = String(url);
+
+      if (urlStr.includes("oauth2/token")) {
+        return new Response(
+          JSON.stringify({
+            access_token: "new-token",
+            x_user_id: "polar-user-123",
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+
+      if (init?.method === "DELETE") {
+        return new Response(null, { status: 204 });
+      }
+
+      // 409 = already registered — should succeed
+      if (init?.method === "POST" && urlStr.includes("/v3/users")) {
+        return new Response(null, { status: 409 });
+      }
+
+      return new Response("Not found", { status: 404 });
+    });
+
+    const provider = new PolarProvider(mockFetch);
+    const setup = provider.authSetup();
+    expect(setup.exchangeCode).toBeDefined();
+    const tokens = await setup.exchangeCode("auth-code");
+    expect(tokens.accessToken).toBe("new-token");
   });
 });
 

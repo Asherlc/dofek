@@ -104,24 +104,29 @@ export class PolarProvider implements WebhookProvider {
         // Polar AccessLink requires user registration (POST /v3/users)
         // after OAuth before data endpoints will work. The x_user_id from
         // the token response identifies the Polar user.
+        //
+        // Deregister first (with the NEW token) to clear any stale registration
+        // from a previous authorization — Polar limits one active token per
+        // app+user, and stale registrations cause all data endpoints to 401.
         const polarUserId = data.x_user_id != null ? String(data.x_user_id) : null;
-        try {
-          const client = new PolarClient(tokens.accessToken, fetchFn);
-          if (polarUserId) {
-            await client.registerUser(polarUserId);
-            logger.info(`[polar] Registered user ${polarUserId} with Polar AccessLink`);
-          } else {
-            logger.warn(
-              "[polar] Token response missing x_user_id — skipping AccessLink registration",
-            );
-          }
-        } catch (registrationError) {
-          // Registration is best-effort — log but don't fail the auth flow.
-          // The user may already be registered from a previous authorization.
-          logger.warn(
-            `[polar] Post-auth user registration failed: ${registrationError instanceof Error ? registrationError.message : String(registrationError)}`,
+        if (!polarUserId) {
+          throw new Error(
+            "Polar token response missing x_user_id — cannot complete AccessLink registration",
           );
         }
+        const client = new PolarClient(tokens.accessToken, fetchFn);
+        try {
+          await client.deregisterUser(polarUserId);
+          logger.info(`[polar] Deregistered user ${polarUserId} to clear stale AccessLink state`);
+        } catch (deregisterError) {
+          // Deregistration failure is non-fatal — the user may not have been
+          // registered yet, or the old registration may already be gone.
+          logger.warn(
+            `[polar] Pre-registration deregister failed (continuing): ${deregisterError instanceof Error ? deregisterError.message : String(deregisterError)}`,
+          );
+        }
+        await client.registerUser(polarUserId);
+        logger.info(`[polar] Registered user ${polarUserId} with Polar AccessLink`);
 
         return tokens;
       },
