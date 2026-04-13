@@ -30,11 +30,11 @@ vi.mock("./trpc", () => ({
 }));
 
 const mockIsAvailable = vi.fn().mockReturnValue(false);
-const mockGetRequestStatus = vi.fn();
+const mockHasEverAuthorized = vi.fn().mockReturnValue(false);
 
 vi.mock("../modules/health-kit", () => ({
   isAvailable: (...args: unknown[]) => mockIsAvailable(...args),
-  getRequestStatus: (...args: unknown[]) => mockGetRequestStatus(...args),
+  hasEverAuthorized: (...args: unknown[]) => mockHasEverAuthorized(...args),
   queryDailyStatistics: vi.fn(),
   queryQuantitySamples: vi.fn(),
   queryWorkouts: vi.fn(),
@@ -207,7 +207,7 @@ describe("useAutoSync", () => {
   describe("HealthKit sync", () => {
     beforeEach(() => {
       mockIsAvailable.mockReturnValue(true);
-      mockGetRequestStatus.mockResolvedValue("unnecessary");
+      mockHasEverAuthorized.mockReturnValue(true);
       mockSyncHealthKitToServer.mockResolvedValue({
         inserted: 5,
         errors: [],
@@ -224,13 +224,26 @@ describe("useAutoSync", () => {
       expect(mockInvalidate).toHaveBeenCalled();
     });
 
-    it("skips HealthKit sync when status is not unnecessary", async () => {
-      mockGetRequestStatus.mockResolvedValue("determined");
+    it("skips HealthKit sync when never authorized", async () => {
+      mockHasEverAuthorized.mockReturnValue(false);
 
       renderHook(() => useAutoSync("2026-03-21"));
       await act(() => vi.runAllTimersAsync());
 
       expect(mockSyncHealthKitToServer).not.toHaveBeenCalled();
+    });
+
+    it("syncs even when new types need permission (shouldRequest)", async () => {
+      // hasEverAuthorized is true — sync should proceed regardless of
+      // what getRequestStatus would return for new types
+      mockHasEverAuthorized.mockReturnValue(true);
+
+      renderHook(() => useAutoSync("2026-03-21"));
+      await act(() => vi.runAllTimersAsync());
+
+      expect(mockSyncHealthKitToServer).toHaveBeenCalledWith(
+        expect.objectContaining({ syncRangeDays: 1 }),
+      );
     });
 
     it("skips HealthKit sync when not available", async () => {
@@ -239,7 +252,6 @@ describe("useAutoSync", () => {
       renderHook(() => useAutoSync("2026-03-21"));
       await act(() => vi.runAllTimersAsync());
 
-      expect(mockGetRequestStatus).not.toHaveBeenCalled();
       expect(mockSyncHealthKitToServer).not.toHaveBeenCalled();
     });
 

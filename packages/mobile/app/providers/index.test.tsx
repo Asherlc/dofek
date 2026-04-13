@@ -186,11 +186,13 @@ vi.mock("../../lib/telemetry", () => ({
 
 const mockIsHealthKitAvailable = vi.fn().mockReturnValue(true);
 const mockGetRequestStatus = vi.fn().mockResolvedValue("unnecessary");
+const mockHasEverAuthorized = vi.fn().mockReturnValue(true);
 const mockRequestPermissions = vi.fn().mockResolvedValue(true);
 
 vi.mock("../../modules/health-kit", () => ({
   isAvailable: () => mockIsHealthKitAvailable(),
   getRequestStatus: (...args: unknown[]) => mockGetRequestStatus(...args),
+  hasEverAuthorized: (...args: unknown[]) => mockHasEverAuthorized(...args),
   requestPermissions: (...args: unknown[]) => mockRequestPermissions(...args),
   queryDailyStatistics: vi.fn().mockResolvedValue([]),
   queryQuantitySamples: vi.fn().mockResolvedValue([]),
@@ -1201,8 +1203,8 @@ describe("ProvidersScreen", () => {
     });
   });
 
-  it("shows Connect button when HealthKit permissions not granted", async () => {
-    mockGetRequestStatus.mockResolvedValue("shouldRequest");
+  it("shows Connect button when HealthKit was never authorized", async () => {
+    mockHasEverAuthorized.mockReturnValue(false);
 
     const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
@@ -1214,7 +1216,7 @@ describe("ProvidersScreen", () => {
   });
 
   it("calls requestPermissions when Connect is clicked on Apple Health", async () => {
-    mockGetRequestStatus.mockResolvedValue("shouldRequest");
+    mockHasEverAuthorized.mockReturnValue(false);
 
     const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
@@ -1238,7 +1240,7 @@ describe("ProvidersScreen", () => {
     mockCaptureException.mockClear();
 
     const connectError = new Error("HealthKit authorization failed");
-    mockGetRequestStatus.mockResolvedValue("shouldRequest");
+    mockHasEverAuthorized.mockReturnValue(false);
     mockRequestPermissions.mockRejectedValue(connectError);
 
     const { default: ProvidersScreen } = await import("./index");
@@ -1260,7 +1262,7 @@ describe("ProvidersScreen", () => {
   });
 
   it("shows error message when Apple Health connect fails", async () => {
-    mockGetRequestStatus.mockResolvedValue("shouldRequest");
+    mockHasEverAuthorized.mockReturnValue(false);
     mockRequestPermissions.mockRejectedValue(new Error("Authorization denied"));
 
     const { default: ProvidersScreen } = await import("./index");

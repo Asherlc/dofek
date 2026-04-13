@@ -17,6 +17,29 @@ public class HealthKitModule: Module {
             return HKHealthStore.isHealthDataAvailable()
         }
 
+        /// Returns true if the user has ever completed the HealthKit authorization flow.
+        /// Uses a UserDefaults flag set by requestPermissions, with a one-time migration
+        /// that checks write-type authorization status for users who authorized before
+        /// this flag was introduced.
+        Function("hasEverAuthorized") {
+            let key = "healthkit_has_ever_authorized"
+            if UserDefaults.standard.bool(forKey: key) {
+                return true
+            }
+            // Migration: check if any write type was previously authorized.
+            // Apple exposes authorization status for write types (not read types).
+            // If a write type is .sharingAuthorized or .sharingDenied, the user
+            // has been through the authorization flow before.
+            for writeType in writeTypes {
+                let status = self.healthStore.authorizationStatus(for: writeType)
+                if status == .sharingAuthorized || status == .sharingDenied {
+                    UserDefaults.standard.set(true, forKey: key)
+                    return true
+                }
+            }
+            return false
+        }
+
         AsyncFunction("getRequestStatus") { (promise: Promise) in
             guard HKHealthStore.isHealthDataAvailable() else {
                 promise.resolve("unavailable")
@@ -47,6 +70,7 @@ public class HealthKitModule: Module {
             Task {
                 do {
                     try await self.healthStore.requestAuthorization(toShare: writeTypes, read: readTypes)
+                    UserDefaults.standard.set(true, forKey: "healthkit_has_ever_authorized")
                     promise.resolve(true)
                 } catch {
                     promise.reject("HEALTHKIT_AUTH_ERROR", error.localizedDescription)

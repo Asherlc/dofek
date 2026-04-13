@@ -318,4 +318,21 @@ export const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textSecondary,
   },
+
+  // HealthKit permission update banner
+  permissionBanner: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginTop: -4,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: colors.accent,
+  },
+  permissionBannerText: {
+    fontSize: 13,
+    color: colors.accent,
+    textAlign: "center",
+  },
 });
