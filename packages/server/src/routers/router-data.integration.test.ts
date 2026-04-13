@@ -128,6 +128,7 @@ describe("Router data coverage", () => {
             if (hasAltitude) {
               sensorValues.push(
                 `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'altitude', '${actId}', ${300 + (s / durationSec) * 200}, NULL)`,
+                `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'grade', '${actId}', ${4 + (s % 7) * 0.5}, NULL)`,
               );
             }
           }
@@ -547,8 +548,8 @@ describe("Router data coverage", () => {
         }[]
       >("cyclingAdvanced.verticalAscentRate", { days: 90 });
 
-      // We inserted altitude/grade data for activities with i < 30
-      expect(Array.isArray(result)).toBe(true);
+      // We inserted altitude + grade sensor data for the first 2 activities
+      expect(result.length).toBeGreaterThan(0);
 
       for (const row of result) {
         expect(row.date).toBeTruthy();
