@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server";
+import { isRelationMissingError } from "dofek/db/dedup";
 import { getProvider } from "dofek/providers/registry";
 import { z } from "zod";
 import { endDateSchema } from "../lib/date-window.ts";
@@ -49,7 +50,7 @@ export const activityRouter = router({
       try {
         return await repo.list(input);
       } catch (error) {
-        if (error instanceof Error && error.message.includes("does not exist")) {
+        if (isRelationMissingError(error)) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
             message:

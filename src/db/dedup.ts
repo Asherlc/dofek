@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/node";
 import { sql } from "drizzle-orm";
 import { logger } from "../logger.ts";
 import type { SyncDatabase } from "./index.ts";
@@ -18,12 +19,11 @@ const ALL_VIEWS = [...DEDUP_VIEWS, ...ROLLUP_VIEWS] as const;
  * Check whether a "relation does not exist" error occurred.
  * Postgres error code 42P01 = undefined_table.
  */
-function isRelationMissingError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  if ("code" in error && (error satisfies { code: unknown }).code === "42P01") {
-    return true;
-  }
-  return error.message.includes("does not exist");
+export function isRelationMissingError(error: unknown): boolean {
+  if (error == null || typeof error !== "object") return false;
+  if ("code" in error && error.code === "42P01") return true;
+  if (error instanceof Error && error.message.includes("does not exist")) return true;
+  return false;
 }
 
 /**
@@ -67,7 +67,15 @@ export async function refreshDedupViews(db: SyncDatabase): Promise<void> {
       );
     }
 
-    logger.warn("[views] Missing materialized views detected, running sync to recreate");
+    const missingViews = errors
+      .filter(isRelationMissingError)
+      .map((error) => (error instanceof Error ? error.message : String(error)));
+    logger.warn(`[views] Missing materialized views detected: ${missingViews.join("; ")}`);
+    Sentry.captureException(
+      new AggregateError(errors, `Missing materialized views triggered self-heal`),
+      { tags: { context: "viewSelfHeal" }, extra: { missingViews } },
+    );
+
     const { syncMaterializedViews } = await import("./sync-views.ts");
     await syncMaterializedViews(databaseUrl);
 
@@ -127,10 +135,11 @@ async function refreshView(db: SyncDatabase, view: string): Promise<void> {
     // blocking refresh rather than giving up entirely.
     try {
       await db.execute(sql.raw(`REFRESH MATERIALIZED VIEW ${view}`));
-    } catch {
-      throw new Error(`Failed to refresh ${view} (both CONCURRENT and blocking)`, {
-        cause: concurrentError,
-      });
+    } catch (blockingError) {
+      throw new AggregateError(
+        [concurrentError, blockingError],
+        `Failed to refresh ${view} (both CONCURRENT and blocking)`,
+      );
     }
   }
 }
