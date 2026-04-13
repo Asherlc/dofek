@@ -43,4 +43,32 @@ WHERE provider_id = 'apple_health'
     '15','17','18','20','21','22','23','24','25','26',
     '30','32','33','34','35','36','39','40','41','44',
     '47','50','51'
+  )
+  -- Only update rows that still hold the known wrong activity_type from the
+  -- old mapping. This avoids overwriting any manually corrected values and
+  -- narrows the scan to rows that actually need fixing.
+  AND activity_type IN (
+    'elliptical',   -- was wrong for rawValue 15 (danceInspiredTraining)
+    'fencing',      -- was wrong for rawValues 17, 18
+    'fishing',
+    'golf',         -- was wrong for rawValues 20, 21
+    'gymnastics',
+    'handball',     -- was wrong for rawValues 22, 23
+    'hiking',
+    'hockey',       -- was wrong for rawValues 24, 25
+    'hunting',
+    'lacrosse',     -- was wrong for rawValue 26
+    'play',         -- was wrong for rawValues 30, 32
+    'racquetball',
+    'rowing',       -- was wrong for rawValues 33, 35
+    'rugby',
+    'running',
+    'sailing',      -- was wrong for rawValue 36
+    'soccer',       -- was wrong for rawValues 39, 41
+    'softball',
+    'squash',
+    'swimming',     -- was wrong for rawValue 44
+    'tennis',       -- was wrong for rawValue 47
+    'volleyball',   -- was wrong for rawValues 50, 51
+    'walking'
   );
