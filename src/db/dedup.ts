@@ -73,18 +73,11 @@ export async function updateUserMaxHr(db: SyncDatabase): Promise<void> {
 async function refreshView(db: SyncDatabase, view: string): Promise<void> {
   try {
     await db.execute(sql.raw(`REFRESH MATERIALIZED VIEW CONCURRENTLY ${view}`));
-  } catch (err) {
-    // CONCURRENTLY fails when:
-    // 1. View has not been populated yet (first refresh)
-    // 2. View has no unique index (e.g., some views)
-    // Fall back to non-concurrent refresh in both cases
-    if (
-      err instanceof Error &&
-      (err.message.includes("has not been populated") || err.message.includes("concurrently"))
-    ) {
-      await db.execute(sql.raw(`REFRESH MATERIALIZED VIEW ${view}`));
-    } else {
-      throw err;
-    }
+  } catch {
+    // CONCURRENTLY can fail for many reasons: view not populated, no unique
+    // index, lock conflicts, resource limits, or Drizzle-wrapped errors where
+    // the original Postgres message is obscured. Always fall back to a
+    // blocking refresh rather than giving up entirely.
+    await db.execute(sql.raw(`REFRESH MATERIALIZED VIEW ${view}`));
   }
 }
