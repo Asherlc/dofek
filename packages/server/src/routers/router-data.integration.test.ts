@@ -101,7 +101,6 @@ describe("Router data coverage", () => {
         activityIds.push(actId);
         for (let batchStart = 0; batchStart < durationSec; batchStart += 100) {
           const batchEnd = Math.min(batchStart + 100, durationSec);
-          const metricValues: string[] = [];
           const sensorValues: string[] = [];
           for (let s = batchStart; s < batchEnd; s++) {
             const hr = avgHr + Math.round(Math.sin(s * 0.01) * 8);
@@ -115,31 +114,23 @@ describe("Router data coverage", () => {
             const lps = 18 + (s % 4);
             const rps = 17 + (s % 4);
             const ts = `CURRENT_TIMESTAMP - ${daysAgo} * INTERVAL '1 day' + ${s} * INTERVAL '1 second'`;
-            metricValues.push(
-              `(${ts}, '${TEST_USER_ID}', '${actId}', 'test_provider',
-                ${hr}, ${power}, ${speed}, ${alt}, ${grd},
-                ${balance}, ${lte}, ${rte}, ${lps}, ${rps})`,
-            );
             sensorValues.push(
               `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${actId}', ${hr}, NULL)`,
               `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'power', '${actId}', ${power}, NULL)`,
               `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'speed', '${actId}', ${speed}, NULL)`,
+              `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'left_right_balance', '${actId}', ${balance}, NULL)`,
+              `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'left_torque_effectiveness', '${actId}', ${lte}, NULL)`,
+              `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'right_torque_effectiveness', '${actId}', ${rte}, NULL)`,
+              `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'left_pedal_smoothness', '${actId}', ${lps}, NULL)`,
+              `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'right_pedal_smoothness', '${actId}', ${rps}, NULL)`,
             );
             if (hasAltitude) {
               sensorValues.push(
-                `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'altitude', '${actId}', ${300 + (s / durationSec) * 200}, NULL)`,
-                `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'grade', '${actId}', ${4 + (s % 7) * 0.5}, NULL)`,
+                `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'altitude', '${actId}', ${alt}, NULL)`,
+                `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'grade', '${actId}', ${grd}, NULL)`,
               );
             }
           }
-          await testCtx.db.execute(
-            sql.raw(`INSERT INTO fitness.metric_stream (
-              recorded_at, user_id, activity_id, provider_id,
-              heart_rate, power, speed, altitude, grade,
-              left_right_balance, left_torque_effectiveness, right_torque_effectiveness,
-              left_pedal_smoothness, right_pedal_smoothness
-            ) VALUES ${metricValues.join(",\n")}`),
-          );
           await testCtx.db.execute(
             sql.raw(`INSERT INTO fitness.metric_stream (
               recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
