@@ -847,13 +847,13 @@ describe("MAX_SLEEP_SESSION_GAP_MS (90 minutes)", () => {
 });
 
 describe("workoutActivityTypeMap (via processWorkouts)", () => {
-  it("maps type 35 to running", async () => {
+  it("maps type 37 to running", async () => {
     const execute = vi.fn().mockResolvedValue([]);
     const repo = new HealthKitSyncRepository({ execute }, "user-1");
     await repo.processWorkouts([
       {
         uuid: "w-1",
-        workoutType: "35",
+        workoutType: "37",
         startDate: "2024-01-15T10:00:00Z",
         endDate: "2024-01-15T11:00:00Z",
         duration: 3600,
@@ -886,13 +886,13 @@ describe("workoutActivityTypeMap (via processWorkouts)", () => {
     expect(queryString).toContain("cycling");
   });
 
-  it("maps type 23 to hiking", async () => {
+  it("maps type 24 to hiking", async () => {
     const execute = vi.fn().mockResolvedValue([]);
     const repo = new HealthKitSyncRepository({ execute }, "user-1");
     await repo.processWorkouts([
       {
         uuid: "w-hike",
-        workoutType: "23",
+        workoutType: "24",
         startDate: "2024-01-15T10:00:00Z",
         endDate: "2024-01-15T11:00:00Z",
         duration: 3600,
@@ -905,13 +905,13 @@ describe("workoutActivityTypeMap (via processWorkouts)", () => {
     expect(queryString).toContain("hiking");
   });
 
-  it("maps type 44 to swimming", async () => {
+  it("maps type 46 to swimming", async () => {
     const execute = vi.fn().mockResolvedValue([]);
     const repo = new HealthKitSyncRepository({ execute }, "user-1");
     await repo.processWorkouts([
       {
         uuid: "w-swim",
-        workoutType: "44",
+        workoutType: "46",
         startDate: "2024-01-15T10:00:00Z",
         endDate: "2024-01-15T11:00:00Z",
         duration: 3600,
