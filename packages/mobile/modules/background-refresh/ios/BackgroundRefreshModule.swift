@@ -16,14 +16,6 @@ public class BackgroundRefreshModule: Module {
 
         Events("onBackgroundRefresh")
 
-        /// Register the BGAppRefreshTask with the system.
-        /// Must be called once during app startup (before the end of
-        /// `application(_:didFinishLaunchingWithOptions:)`).
-        /// The Expo module system calls OnCreate early enough for this.
-        OnCreate {
-            self.registerBackgroundTask()
-        }
-
         /// Schedule the next background refresh.
         /// Call this after each foreground sync to keep the schedule rolling.
         Function("scheduleRefresh") {
@@ -38,20 +30,20 @@ public class BackgroundRefreshModule: Module {
 
     // MARK: - BGTaskScheduler
 
-    private func registerBackgroundTask() {
+    /// Called by BackgroundRefreshAppDelegateSubscriber during
+    /// application(_:didFinishLaunchingWithOptions:) — the only safe
+    /// time to call BGTaskScheduler.register.
+    static func registerBackgroundTask(handler: @escaping (BGAppRefreshTask) -> Void) {
         BGTaskScheduler.shared.register(
-            forTaskWithIdentifier: Self.taskIdentifier,
+            forTaskWithIdentifier: taskIdentifier,
             using: nil
-        ) { [weak self] task in
+        ) { task in
             guard let refreshTask = task as? BGAppRefreshTask else {
                 task.setTaskCompleted(success: false)
                 return
             }
-            self?.handleBackgroundRefresh(refreshTask)
+            handler(refreshTask)
         }
-
-        // Schedule the first refresh
-        scheduleAppRefresh()
     }
 
     private func scheduleAppRefresh() {
@@ -65,27 +57,6 @@ public class BackgroundRefreshModule: Module {
         } catch {
             // Submission can fail if called too early or too often — non-fatal
             print("[BackgroundRefresh] Failed to schedule: \(error.localizedDescription)")
-        }
-    }
-
-    private func handleBackgroundRefresh(_ task: BGAppRefreshTask) {
-        // Schedule the next refresh before doing work
-        scheduleAppRefresh()
-
-        // Set expiration handler (system gives us ~30 seconds)
-        task.expirationHandler = {
-            task.setTaskCompleted(success: false)
-        }
-
-        // Emit event to JS layer — the JS side will restart Watch recording,
-        // reconnect WHOOP BLE, and sync accelerometer data.
-        sendEvent("onBackgroundRefresh", [:])
-
-        // Give JS ~10 seconds to do its work, then mark complete.
-        // The JS side should call scheduleRefresh() when done for more accuracy,
-        // but this timeout ensures we don't hold the task open forever.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
-            task.setTaskCompleted(success: true)
         }
     }
 }

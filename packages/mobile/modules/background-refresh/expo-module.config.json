@@ -1,6 +1,7 @@
 {
   "platforms": ["ios"],
   "ios": {
-    "modules": ["BackgroundRefreshModule"]
+    "modules": ["BackgroundRefreshModule"],
+    "appDelegateSubscribers": ["BackgroundRefreshAppDelegateSubscriber"]
   }
 }
