@@ -42,27 +42,34 @@ vi.mock("dofek/db/schema", () => ({
   },
 }));
 
-const mockLoadTokens = vi.fn();
+const {
+  mockLoadTokens,
+  mockGetAllProviders,
+  mockEnsureProvidersRegistered,
+  mockRevokeToken,
+  mockLoggerInfo,
+  mockLoggerWarn,
+} = vi.hoisted(() => ({
+  mockLoadTokens: vi.fn(),
+  mockGetAllProviders: vi.fn(),
+  mockEnsureProvidersRegistered: vi.fn(),
+  mockRevokeToken: vi.fn(),
+  mockLoggerInfo: vi.fn(),
+  mockLoggerWarn: vi.fn(),
+}));
+
 vi.mock("dofek/db/tokens", () => ({
   loadTokens: (...args: unknown[]) => mockLoadTokens(...args),
 }));
-
-const mockGetAllProviders = vi.fn();
-const mockEnsureProvidersRegistered = vi.fn();
 vi.mock("dofek/providers/registry", () => ({
   getAllProviders: () => mockGetAllProviders(),
 }));
 vi.mock("./sync.ts", () => ({
   ensureProvidersRegistered: () => mockEnsureProvidersRegistered(),
 }));
-
-const mockRevokeToken = vi.fn();
 vi.mock("dofek/auth/oauth", () => ({
   revokeToken: (...args: unknown[]) => mockRevokeToken(...args),
 }));
-
-const mockLoggerInfo = vi.fn();
-const mockLoggerWarn = vi.fn();
 vi.mock("../logger.ts", () => ({
   logger: {
     info: (...args: unknown[]) => mockLoggerInfo(...args),
@@ -71,7 +78,6 @@ vi.mock("../logger.ts", () => ({
     debug: vi.fn(),
   },
 }));
-
 vi.mock("@sentry/node", () => ({
   captureException: vi.fn(),
 }));
@@ -808,7 +814,7 @@ describe("providerDetailRouter", () => {
       expect(mockTransaction).toHaveBeenCalledTimes(1);
     });
 
-    it("still deletes data when remote revocation fails", async () => {
+    it("falls back to standard OAuth revocation when custom revocation fails", async () => {
       mockLoadTokens.mockResolvedValue({
         accessToken: "expired-token",
         refreshToken: null,
@@ -828,6 +834,58 @@ describe("providerDetailRouter", () => {
           }),
         },
       ]);
+      mockRevokeToken.mockResolvedValue(undefined);
+
+      const txExecute = vi.fn().mockResolvedValue([]);
+      const mockTransaction = vi
+        .fn()
+        .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<void>) => {
+          await fn({ execute: txExecute });
+        });
+      const mockExecute = vi.fn().mockResolvedValue([{ id: "wahoo" }]);
+
+      const caller = createCaller({
+        db: { execute: mockExecute, transaction: mockTransaction },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.disconnect({ providerId: "wahoo" });
+
+      expect(result).toEqual({ success: true });
+      expect(mockLoggerWarn).toHaveBeenCalledWith(
+        expect.stringContaining("Custom revocation failed for wahoo"),
+      );
+      // Falls back to standard OAuth revocation for the access token
+      expect(mockRevokeToken).toHaveBeenCalledWith(
+        expect.objectContaining({ revokeUrl: "https://api.wahooligan.com/oauth/revoke" }),
+        "expired-token",
+      );
+      expect(mockTransaction).toHaveBeenCalledTimes(1);
+      expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length);
+    });
+
+    it("still deletes data when all revocation methods fail", async () => {
+      mockLoadTokens.mockResolvedValue({
+        accessToken: "expired-token",
+        refreshToken: "expired-refresh",
+        expiresAt: new Date("2020-01-01"),
+        scopes: null,
+      });
+      mockEnsureProvidersRegistered.mockResolvedValue(undefined);
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          validate: () => null,
+          authSetup: () => ({
+            oauthConfig: { revokeUrl: "https://api.wahooligan.com/oauth/revoke" },
+            exchangeCode: vi.fn(),
+            revokeExistingTokens: vi.fn().mockRejectedValue(new Error("401 Unauthorized")),
+          }),
+        },
+      ]);
+      mockRevokeToken.mockRejectedValue(new Error("revocation endpoint down"));
 
       const txExecute = vi.fn().mockResolvedValue([]);
       const mockTransaction = vi
@@ -848,12 +906,10 @@ describe("providerDetailRouter", () => {
       expect(result).toEqual({ success: true });
       expect(mockTransaction).toHaveBeenCalledTimes(1);
       expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length);
-      expect(mockLoggerWarn).toHaveBeenCalledWith(
-        expect.stringContaining("Remote token revocation failed for wahoo"),
-      );
     });
 
     it("skips revocation when no stored tokens exist", async () => {
+      const mockRevokeExistingNoTokens = vi.fn();
       mockLoadTokens.mockResolvedValue(null);
       mockEnsureProvidersRegistered.mockResolvedValue(undefined);
       mockGetAllProviders.mockReturnValue([
@@ -864,7 +920,7 @@ describe("providerDetailRouter", () => {
           authSetup: () => ({
             oauthConfig: { revokeUrl: "https://api.wahooligan.com/oauth/revoke" },
             exchangeCode: vi.fn(),
-            revokeExistingTokens: vi.fn(),
+            revokeExistingTokens: mockRevokeExistingNoTokens,
           }),
         },
       ]);
@@ -885,8 +941,7 @@ describe("providerDetailRouter", () => {
 
       await caller.disconnect({ providerId: "wahoo" });
 
-      const authSetupResult = mockGetAllProviders()[0].authSetup();
-      expect(authSetupResult.revokeExistingTokens).not.toHaveBeenCalled();
+      expect(mockRevokeExistingNoTokens).not.toHaveBeenCalled();
       expect(mockTransaction).toHaveBeenCalledTimes(1);
     });
 
@@ -928,7 +983,7 @@ describe("providerDetailRouter", () => {
       expect(mockTransaction).toHaveBeenCalledTimes(1);
     });
 
-    it("skips standard revocation for access token when only refresh token exists", async () => {
+    it("only revokes access token when no refresh token exists", async () => {
       mockLoadTokens.mockResolvedValue({
         accessToken: "access-token",
         refreshToken: null,

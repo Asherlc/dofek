@@ -43,22 +43,44 @@ async function revokeTokensOnDisconnect(
 
     // Provider-specific revocation (e.g., Wahoo's DELETE /v1/permissions
     // which revokes ALL tokens for the app+user, including orphaned ones)
+    let customRevocationSucceeded = false;
     if (setup.revokeExistingTokens) {
-      await setup.revokeExistingTokens(tokens);
-      logger.info(`[disconnect] Remote token revocation succeeded for ${providerId}`);
-      return;
+      try {
+        await setup.revokeExistingTokens(tokens);
+        logger.info(`[disconnect] Remote token revocation succeeded for ${providerId}`);
+        customRevocationSucceeded = true;
+      } catch (customError) {
+        const message = customError instanceof Error ? customError.message : String(customError);
+        logger.warn(
+          `[disconnect] Custom revocation failed for ${providerId}, falling back to standard OAuth revocation: ${message}`,
+        );
+        Sentry.captureException(customError);
+      }
     }
 
-    // Standard OAuth revocation via POST /oauth/revoke (RFC 7009)
-    if (setup.oauthConfig?.revokeUrl) {
+    // Standard OAuth revocation via POST /oauth/revoke (RFC 7009).
+    // Used as primary when no custom handler, or as fallback when custom fails.
+    if (!customRevocationSucceeded && setup.oauthConfig?.revokeUrl) {
       const { revokeToken } = await import("dofek/auth/oauth");
       if (tokens.accessToken) {
-        await revokeToken(setup.oauthConfig, tokens.accessToken);
+        try {
+          await revokeToken(setup.oauthConfig, tokens.accessToken);
+        } catch (accessError) {
+          const message = accessError instanceof Error ? accessError.message : String(accessError);
+          logger.warn(`[disconnect] Access token revocation failed for ${providerId}: ${message}`);
+          Sentry.captureException(accessError);
+        }
       }
       if (tokens.refreshToken) {
-        await revokeToken(setup.oauthConfig, tokens.refreshToken);
+        try {
+          await revokeToken(setup.oauthConfig, tokens.refreshToken);
+        } catch (refreshError) {
+          const message =
+            refreshError instanceof Error ? refreshError.message : String(refreshError);
+          logger.warn(`[disconnect] Refresh token revocation failed for ${providerId}: ${message}`);
+          Sentry.captureException(refreshError);
+        }
       }
-      logger.info(`[disconnect] Standard OAuth revocation succeeded for ${providerId}`);
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
