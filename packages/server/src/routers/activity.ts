@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server";
+import { isRelationMissingError } from "dofek/db/dedup";
 import { getProvider } from "dofek/providers/registry";
 import { z } from "zod";
 import { endDateSchema } from "../lib/date-window.ts";
@@ -46,7 +47,18 @@ export const activityRouter = router({
     )
     .query(async ({ ctx, input }) => {
       const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone);
-      return repo.list(input);
+      try {
+        return await repo.list(input);
+      } catch (error) {
+        if (isRelationMissingError(error)) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "Activity data is temporarily unavailable — materialized views are being rebuilt. Try again in a few minutes.",
+          });
+        }
+        throw error;
+      }
     }),
 
   byId: cachedProtectedQuery(CacheTTL.MEDIUM)

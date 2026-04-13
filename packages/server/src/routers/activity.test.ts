@@ -46,6 +46,11 @@ vi.mock("./sync.ts", () => ({
   ensureProvidersRegistered: vi.fn(async () => {}),
 }));
 
+vi.mock("dofek/db/dedup", async (importOriginal) => {
+  const original = await importOriginal<typeof import("dofek/db/dedup")>();
+  return { ...original };
+});
+
 vi.mock("dofek/providers/registry", () => ({
   getProvider: vi.fn((id: string) => {
     const providers: Record<string, { name: string; activityUrl: (externalId: string) => string }> =
@@ -219,6 +224,33 @@ describe("activityRouter", () => {
       expect(result).toEqual({ items: [], totalCount: 0 });
       // Only the list query — no base table check on offset > 0
       expect(execute).toHaveBeenCalledTimes(1);
+    });
+
+    it("throws PRECONDITION_FAILED when materialized view is missing", async () => {
+      const missingViewError = Object.assign(
+        new Error('relation "fitness.v_activity" does not exist'),
+        { code: "42P01" },
+      );
+      const execute = vi.fn().mockRejectedValue(missingViewError);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+      await expect(caller.list({ days: 30 })).rejects.toThrow(TRPCError);
+      await expect(caller.list({ days: 30 })).rejects.toThrow(
+        "materialized views are being rebuilt",
+      );
+    });
+
+    it("re-throws non-relation errors from list", async () => {
+      const execute = vi.fn().mockRejectedValue(new Error("connection refused"));
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+      await expect(caller.list({ days: 30 })).rejects.toThrow("connection refused");
     });
 
     it("uses default limit of 20 and offset of 0", async () => {

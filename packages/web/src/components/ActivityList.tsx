@@ -19,7 +19,7 @@ export interface Activity {
 interface ActivityListProps {
   activities: Activity[];
   loading?: boolean;
-  error?: boolean;
+  error?: string;
   totalCount?: number;
   page?: number;
   pageSize?: number;
@@ -57,7 +57,7 @@ export function ActivityList({
   }
 
   if (error) {
-    return <p className="text-sm text-red-400 py-4">Failed to load activities.</p>;
+    return <p className="text-sm text-red-400 py-4">{error}</p>;
   }
 
   if (activities.length === 0) {

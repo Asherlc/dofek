@@ -41,7 +41,7 @@ export function RecentActivitiesSection({ activityTypes }: RecentActivitiesSecti
     <ActivityList
       activities={assertRows(activities.data?.items, activityRowSchema)}
       loading={activities.isLoading}
-      error={activities.isError}
+      error={activities.error?.message}
       totalCount={activities.data?.totalCount}
       page={page}
       pageSize={PAGE_SIZE}
