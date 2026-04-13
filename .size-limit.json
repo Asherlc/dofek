@@ -1,7 +1,10 @@
 [
   {
-    "path": "packages/web/dist/assets/*.js",
-    "limit": "713 kB",
+    "path": [
+      "packages/web/dist/assets/*.js",
+      "!packages/web/dist/assets/*.lazy-*.js"
+    ],
+    "limit": "697 kB",
     "gzip": true,
     "name": "Web JS (gzipped)"
   },
