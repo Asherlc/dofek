@@ -46,7 +46,10 @@ async function readBlobFromFileUri(fileUri: string): Promise<Blob> {
     throw error;
   }
   const bytes = await file.bytes();
-  return new Blob([bytes], { type: file.type || "application/octet-stream" });
+  const blob = new Blob([bytes], { type: file.type || "application/octet-stream" });
+  // Clean up the Inbox copy now that the data is in memory
+  file.delete();
+  return blob;
 }
 
 export default function ProvidersScreen() {

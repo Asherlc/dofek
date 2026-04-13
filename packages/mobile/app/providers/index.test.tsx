@@ -142,6 +142,7 @@ vi.mock("../../lib/auth-context", () => ({
   }),
 }));
 
+const mockFileDelete = vi.fn();
 vi.mock("expo-file-system", () => ({
   File: class MockFile {
     uri: string;
@@ -158,6 +159,9 @@ vi.mock("expo-file-system", () => ({
       return new TextEncoder().encode(
         "Date,Workout Name,Duration,Exercise Name\n2026-03-10,Leg Day,00:45:00,Squat",
       );
+    }
+    delete() {
+      mockFileDelete(this.uri);
     }
     get type() {
       return "text/csv";
@@ -897,6 +901,9 @@ describe("ProvidersScreen", () => {
     expect(blob.size).toBeGreaterThan(0);
     const text = await blob.text();
     expect(text).toContain("Workout Name");
+
+    // Should clean up the Inbox copy after reading
+    expect(mockFileDelete).toHaveBeenCalledWith("file:///tmp/strong.csv");
   });
 
   it("shows Expired status when provider needsReauth", async () => {
