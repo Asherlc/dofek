@@ -113,7 +113,7 @@ export class DailyMetricsRepository extends BaseRepository {
       daysBetween(latestViewDate, endDate) > 1 &&
       (await this.#baseTableHasNewerData(latestViewDate, endDate))
     ) {
-      const refreshed = await this.#tryRefreshView();
+      const refreshed = await this.#tryRefreshView("newer data in base table");
       if (refreshed) return listQuery();
     }
 
@@ -162,25 +162,24 @@ export class DailyMetricsRepository extends BaseRepository {
   /** Check if the base table has rows newer than what the materialized view returned. */
   async #baseTableHasNewerData(latestViewDate: string, endDate: string): Promise<boolean> {
     const rows = await this.query(
-      z.object({ count: z.coerce.number() }),
-      sql`SELECT count(*)::int AS count FROM fitness.daily_metrics
+      z.object({ exists: z.coerce.number() }),
+      sql`SELECT 1 AS exists FROM fitness.daily_metrics
           WHERE user_id = ${this.userId}
             AND date > ${latestViewDate}::date
             AND date <= ${dateWindowEnd(endDate)}
           LIMIT 1`,
     );
-    return (rows[0]?.count ?? 0) > 0;
+    return rows.length > 0;
   }
 
   /** Try to refresh the materialized view. Returns true on success, false on failure. */
-  async #tryRefreshView(): Promise<boolean> {
-    Sentry.captureMessage("Stale daily metrics materialized view detected (non-empty)", {
+  async #tryRefreshView(reason = "stale view"): Promise<boolean> {
+    Sentry.captureMessage("Stale daily metrics materialized view detected", {
       level: "warning",
       tags: { userId: this.userId },
+      extra: { reason },
     });
-    logger.warn(
-      `[daily-metrics] View stale for user ${this.userId} (newer data in base table), refreshing`,
-    );
+    logger.warn(`[daily-metrics] View stale for user ${this.userId} (${reason}), refreshing`);
 
     try {
       try {
@@ -204,17 +203,17 @@ export class DailyMetricsRepository extends BaseRepository {
    * Returns true if a refresh was performed, false otherwise.
    */
   async #refreshIfStale(days: number, endDate: string): Promise<boolean> {
-    const baseCount = await this.query(
-      z.object({ count: z.coerce.number() }),
-      sql`SELECT count(*)::int AS count FROM fitness.daily_metrics
+    const baseRows = await this.query(
+      z.object({ exists: z.coerce.number() }),
+      sql`SELECT 1 AS exists FROM fitness.daily_metrics
           WHERE user_id = ${this.userId}
             AND date > ${dateWindowStart(endDate, days)}
             AND date <= ${dateWindowEnd(endDate)}
           LIMIT 1`,
     );
-    if ((baseCount[0]?.count ?? 0) === 0) return false;
+    if (baseRows.length === 0) return false;
 
-    return this.#tryRefreshView();
+    return this.#tryRefreshView("view empty but base table has data");
   }
 
   /** Aggregate trends (averages, standard deviations) and latest values for the date window. */
