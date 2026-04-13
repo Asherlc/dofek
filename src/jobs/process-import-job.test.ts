@@ -424,15 +424,15 @@ describe("processImportJob", () => {
 
       expect(job.updateProgress).toHaveBeenCalledWith({
         percentage: 92,
-        message: "Updating max heart rate...",
+        message: "Refreshing views...",
       });
       expect(job.updateProgress).toHaveBeenCalledWith({
         percentage: 95,
-        message: "Syncing provider priorities...",
+        message: "Updating max heart rate...",
       });
       expect(job.updateProgress).toHaveBeenCalledWith({
         percentage: 97,
-        message: "Refreshing views...",
+        message: "Syncing provider priorities...",
       });
     });
 

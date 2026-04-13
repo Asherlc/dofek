@@ -31,8 +31,10 @@ export async function refreshDedupViews(db: SyncDatabase): Promise<void> {
 }
 
 /**
- * Update user_profile.max_hr from the highest observed heart rate in metric_stream.
- * Called after syncs that touch metric_stream data.
+ * Update user_profile.max_hr from the highest observed heart rate across all activities.
+ * Reads from activity_summary (which derives from deduped_sensor, covering both
+ * sensor_sample and legacy metric_stream data).
+ * Called after syncs that touch activity data.
  */
 export async function updateUserMaxHr(db: SyncDatabase): Promise<void> {
   await db.execute(sql`
@@ -40,9 +42,9 @@ export async function updateUserMaxHr(db: SyncDatabase): Promise<void> {
     SET max_hr = sub.observed_max_hr,
         updated_at = NOW()
     FROM (
-      SELECT user_id, MAX(scalar)::SMALLINT AS observed_max_hr
-      FROM fitness.sensor_sample
-      WHERE channel = 'heart_rate' AND activity_id IS NOT NULL
+      SELECT user_id, MAX(max_hr)::SMALLINT AS observed_max_hr
+      FROM fitness.activity_summary
+      WHERE max_hr IS NOT NULL
       GROUP BY user_id
     ) sub
     WHERE up.id = sub.user_id

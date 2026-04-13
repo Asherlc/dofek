@@ -16,6 +16,15 @@ export async function processPostSyncJob(job: PostSyncJob, db: SyncDatabase) {
   const { userId } = job.data;
   logger.info(`[post-sync] Running post-sync work for user ${userId}`);
 
+  // Refresh materialized views first — updateUserMaxHr reads from activity_summary
+  try {
+    const { refreshDedupViews } = await import("../db/dedup.ts");
+    await refreshDedupViews(db);
+  } catch (err) {
+    logger.error(`[post-sync] Failed to refresh views: ${err}`);
+    Sentry.captureException(err, { tags: { postSyncStep: "refreshDedupViews" } });
+  }
+
   try {
     const { updateUserMaxHr } = await import("../db/dedup.ts");
     await updateUserMaxHr(db);
@@ -35,14 +44,6 @@ export async function processPostSyncJob(job: PostSyncJob, db: SyncDatabase) {
   } catch (err) {
     logger.error(`[post-sync] Failed to sync provider priorities: ${err}`);
     Sentry.captureException(err, { tags: { postSyncStep: "syncProviderPriorities" } });
-  }
-
-  try {
-    const { refreshDedupViews } = await import("../db/dedup.ts");
-    await refreshDedupViews(db);
-  } catch (err) {
-    logger.error(`[post-sync] Failed to refresh views: ${err}`);
-    Sentry.captureException(err, { tags: { postSyncStep: "refreshDedupViews" } });
   }
 
   try {

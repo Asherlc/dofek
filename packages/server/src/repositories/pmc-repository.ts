@@ -50,11 +50,17 @@ export class PmcRepository extends BaseRepository {
     const minHistoryDays = 365;
     const queryDays = Math.max(days, minHistoryDays) + chronicTrainingLoadDays;
 
-    // QUERY 1: activities with max HR, resting HR
+    // QUERY 1: activities with HR data.
+    // Use COALESCE to fall back to the highest observed HR across all activities
+    // when user_profile.max_hr hasn't been populated yet.
     const activityRows = await this.query(
       combinedActivityRowSchema,
       sql`SELECT
-            up.max_hr AS global_max_hr,
+            COALESCE(up.max_hr, (
+              SELECT MAX(a2.max_hr)
+              FROM fitness.activity_summary a2
+              WHERE a2.user_id = ${this.userId} AND a2.max_hr IS NOT NULL
+            )) AS global_max_hr,
             COALESCE(up.resting_hr, (
               SELECT resting_hr FROM fitness.v_daily_metrics
               WHERE user_id = ${this.userId} AND resting_hr IS NOT NULL ORDER BY date DESC LIMIT 1
@@ -70,7 +76,6 @@ export class PmcRepository extends BaseRepository {
           FROM fitness.activity_summary asum
           JOIN fitness.user_profile up ON up.id = asum.user_id
           WHERE up.id = ${this.userId}
-            AND up.max_hr IS NOT NULL
             AND asum.started_at > NOW() - ${queryDays}::int * INTERVAL '1 day'
             AND asum.ended_at IS NOT NULL
             AND asum.hr_sample_count > 0`,
