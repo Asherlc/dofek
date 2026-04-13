@@ -540,7 +540,7 @@ export default function ProvidersScreen() {
         healthKitPermissionStatus === "shouldRequest" && (
           <TouchableOpacity style={styles.permissionBanner} onPress={handleHealthKitConnect}>
             <Text style={styles.permissionBannerText}>
-              New health data types available — tap to update permissions
+              Apple Health permissions need updating — tap to review
             </Text>
           </TouchableOpacity>
         )}
