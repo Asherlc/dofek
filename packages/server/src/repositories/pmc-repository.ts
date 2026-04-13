@@ -89,7 +89,7 @@ export class PmcRepository extends BaseRepository {
       queryDays,
       "pmcChart",
       sql`SELECT count(*)::int AS count
-          FROM fitness.sensor_sample
+          FROM fitness.metric_stream
           WHERE user_id = ${this.userId}
             AND channel = 'heart_rate'
             AND recorded_at > NOW() - ${queryDays}::int * INTERVAL '1 day'

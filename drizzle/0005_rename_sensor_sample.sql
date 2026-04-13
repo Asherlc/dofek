@@ -13,6 +13,8 @@ ALTER INDEX IF EXISTS fitness.sensor_sample_user_channel_time_idx
   RENAME TO metric_stream_user_channel_time_idx;
 ALTER INDEX IF EXISTS fitness.sensor_sample_provider_time_idx
   RENAME TO metric_stream_provider_time_idx;
+ALTER INDEX IF EXISTS fitness.sensor_sample_recorded_at_idx
+  RENAME TO metric_stream_recorded_at_idx;
 
 -- Clear stored view hashes so syncMaterializedViews() recreates all views
 -- that referenced the old table names.
