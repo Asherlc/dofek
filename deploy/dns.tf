@@ -69,6 +69,15 @@ data "cloudflare_zone" "asherlc_com" {
   }
 }
 
+resource "cloudflare_dns_record" "dofek_asherlc" {
+  zone_id = data.cloudflare_zone.asherlc_com.zone_id
+  type    = "A"
+  name    = "dofek.asherlc.com"
+  content = hcloud_server.dofek.ipv4_address
+  proxied = true
+  ttl     = 1
+}
+
 resource "cloudflare_dns_record" "ota_dofek_asherlc" {
   zone_id = data.cloudflare_zone.asherlc_com.zone_id
   type    = "A"
