@@ -11,14 +11,26 @@ const { withInfoPlist } = require("@expo/config-plugins");
 
 const REQUIRED_MODES = ["bluetooth-central", "fetch", "location"];
 
+/**
+ * Merge required background modes into the existing array, deduplicating.
+ * Validates that the input is an array of strings before spreading.
+ * @param {unknown} existing - The current UIBackgroundModes value
+ * @returns {string[]}
+ */
+function mergeBackgroundModes(existing) {
+  const safe = Array.isArray(existing) ? existing.filter((mode) => typeof mode === "string") : [];
+  return [...new Set([...safe, ...REQUIRED_MODES])];
+}
+
 /** @type {import('@expo/config-plugins').ConfigPlugin} */
 function withBackgroundModes(config) {
   return withInfoPlist(config, (modConfig) => {
-    const existing = modConfig.modResults.UIBackgroundModes ?? [];
-    const merged = [...new Set([...existing, ...REQUIRED_MODES])];
-    modConfig.modResults.UIBackgroundModes = merged;
+    modConfig.modResults.UIBackgroundModes = mergeBackgroundModes(
+      modConfig.modResults.UIBackgroundModes,
+    );
     return modConfig;
   });
 }
 
 module.exports = withBackgroundModes;
+module.exports.mergeBackgroundModes = mergeBackgroundModes;

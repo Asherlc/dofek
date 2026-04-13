@@ -1,15 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-/**
- * Extracted merge logic from the plugin for direct testing.
- * The plugin itself just calls withInfoPlist and mutates modResults;
- * what matters is that the merge logic works correctly.
- */
-const REQUIRED_MODES = ["bluetooth-central", "fetch", "location"];
-
-function mergeBackgroundModes(existing: string[]): string[] {
-  return [...new Set([...existing, ...REQUIRED_MODES])];
-}
+const { mergeBackgroundModes } = require("./with-background-modes");
 
 describe("withBackgroundModes", () => {
   it("adds missing bluetooth-central and fetch when only location present", () => {
@@ -38,5 +29,20 @@ describe("withBackgroundModes", () => {
     expect(result).toContain("fetch");
     expect(result).toContain("location");
     expect(result).toHaveLength(4);
+  });
+
+  it("handles non-array input defensively", () => {
+    expect(mergeBackgroundModes(undefined)).toHaveLength(3);
+    expect(mergeBackgroundModes(null)).toHaveLength(3);
+    expect(mergeBackgroundModes("location")).toHaveLength(3);
+    expect(mergeBackgroundModes(42)).toHaveLength(3);
+  });
+
+  it("filters non-string entries from existing modes", () => {
+    const result = mergeBackgroundModes(["location", 42, null, "audio"]);
+    expect(result).toContain("location");
+    expect(result).toContain("audio");
+    expect(result).not.toContain(42);
+    expect(result).not.toContain(null);
   });
 });
