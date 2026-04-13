@@ -55,6 +55,8 @@ export class PmcRepository extends BaseRepository {
     // when user_profile.max_hr hasn't been populated yet.
     // Wrapped in queryWithViewRefresh so stale materialized views are detected
     // and refreshed automatically — without this, the chart silently shows empty.
+    // Custom base count SQL checks for activities with HR sensor data specifically,
+    // avoiding false-positive refreshes for users who have activities but no HR data.
     const activityRows = await this.queryWithViewRefresh(
       () =>
         this.query(
@@ -86,6 +88,12 @@ export class PmcRepository extends BaseRepository {
         ),
       queryDays,
       "pmcChart",
+      sql`SELECT count(*)::int AS count
+          FROM fitness.sensor_sample
+          WHERE user_id = ${this.userId}
+            AND channel = 'heart_rate'
+            AND recorded_at > NOW() - ${queryDays}::int * INTERVAL '1 day'
+          LIMIT 1`,
     );
 
     const globalMaxHr = activityRows.length > 0 ? Number(activityRows[0]?.global_max_hr) : null;
