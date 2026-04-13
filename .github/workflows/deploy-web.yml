@@ -19,7 +19,7 @@ permissions:
 
 concurrency:
   group: deploy-web
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   check:
@@ -30,9 +30,6 @@ jobs:
       image_tag: ${{ steps.resolve.outputs.image_tag }}
       should_deploy: ${{ steps.resolve.outputs.should_deploy }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-        with:
-          fetch-depth: 1
       - name: Resolve deploy target
         id: resolve
         env:
@@ -49,27 +46,21 @@ jobs:
           else
             # Auto-trigger from CI workflow_run
             SHA="$WORKFLOW_RUN_SHA"
-            MAIN_HEAD=$(git ls-remote origin refs/heads/main | awk '{ print $1 }')
             SHORT_SHA=$(echo "$SHA" | head -c 7)
             TAG="sha-${SHORT_SHA}"
 
-            if [ "$MAIN_HEAD" != "$SHA" ]; then
-              echo "should_deploy=false" >> "$GITHUB_OUTPUT"
-              echo "Skipping deploy — not latest main (CI SHA: $SHA, main HEAD: $MAIN_HEAD)"
-            else
-              # Verify image exists (CI just built it, but confirm)
-              if ! gh api "/users/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/packages/container/dofek/versions" \
-                  --jq ".[].metadata.container.tags[]" 2>/dev/null | grep -q "$TAG"; then
-                echo "::error::Docker image $TAG not found. CI may not have pushed it."
-                exit 1
-              fi
-
-              {
-                echo "image_tag=$TAG"
-                echo "should_deploy=true"
-              } >> "$GITHUB_OUTPUT"
-              echo "Deploying CI image: $TAG"
+            # Verify image exists (CI just built it, but confirm)
+            if ! gh api "/users/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/packages/container/dofek/versions" \
+                --jq ".[].metadata.container.tags[]" 2>/dev/null | grep -q "$TAG"; then
+              echo "::error::Docker image $TAG not found. CI may not have pushed it."
+              exit 1
             fi
+
+            {
+              echo "image_tag=$TAG"
+              echo "should_deploy=true"
+            } >> "$GITHUB_OUTPUT"
+            echo "Deploying CI image: $TAG"
           fi
 
   deploy-app:
