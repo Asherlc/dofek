@@ -50,9 +50,10 @@ vi.mock("../modules/whoop-ble", () => ({
   isBluetoothAvailable: () => false,
   findWhoop: () => Promise.resolve(null),
   connect: () => Promise.resolve(true),
-  disconnect: vi.fn(),
   startRealtimeHr: () => Promise.resolve(true),
-  getBufferedRealtimeData: () => Promise.resolve([]),
+  peekBufferedRealtimeData: () => Promise.resolve([]),
+  getConnectionState: () => "idle",
+  addConnectionStateListener: () => ({ remove: vi.fn() }),
 }));
 
 vi.mock("../lib/telemetry", () => ({
@@ -78,7 +79,7 @@ vi.mock("./_layout", () => ({
 }));
 
 describe("HeartRateVisualizationScreen", () => {
-  it("renders initial disconnected state", async () => {
+  it("renders initial state and auto-connects", async () => {
     const { default: HeartRateVisualizationScreen } = await import("./heart-rate-visualization");
 
     render(<HeartRateVisualizationScreen />);
@@ -86,15 +87,27 @@ describe("HeartRateVisualizationScreen", () => {
     expect(screen.getByText("Heart Rate")).toBeTruthy();
     expect(screen.getByText("--")).toBeTruthy();
     expect(screen.getByText("bpm")).toBeTruthy();
-    expect(screen.getByText("Start Streaming")).toBeTruthy();
-    expect(screen.getByText("disconnected")).toBeTruthy();
+    // No manual "Start Streaming" button — screen auto-connects
+    expect(screen.queryByText("Start Streaming")).toBeNull();
   });
 
-  it("shows placeholder text before streaming", async () => {
+  it("shows connecting placeholder before data arrives", async () => {
     const { default: HeartRateVisualizationScreen } = await import("./heart-rate-visualization");
 
     render(<HeartRateVisualizationScreen />);
 
-    expect(screen.getByText("Start streaming to see heart rate")).toBeTruthy();
+    expect(screen.getByText("Connecting to WHOOP...")).toBeTruthy();
+  });
+
+  it("starts in streaming state when BLE is already connected", async () => {
+    const whoopBle = await import("../modules/whoop-ble");
+    vi.spyOn(whoopBle, "getConnectionState").mockReturnValue("streaming");
+
+    const { default: HeartRateVisualizationScreen } = await import("./heart-rate-visualization");
+
+    render(<HeartRateVisualizationScreen />);
+
+    expect(screen.getByText("streaming")).toBeTruthy();
+    expect(screen.getByText("Waiting for data...")).toBeTruthy();
   });
 });
