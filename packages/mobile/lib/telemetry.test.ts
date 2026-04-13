@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => {
   const mockInit = vi.fn();
   const mockCaptureException = vi.fn();
+  const mockCaptureMessage = vi.fn();
   const mockEmit = vi.fn();
   const mockGetLogger = vi.fn().mockReturnValue({ emit: mockEmit });
   const mockAddLogRecordProcessor = vi.fn();
@@ -10,6 +11,7 @@ const mocks = vi.hoisted(() => {
   return {
     mockInit,
     mockCaptureException,
+    mockCaptureMessage,
     mockEmit,
     mockGetLogger,
     mockAddLogRecordProcessor,
@@ -20,6 +22,7 @@ const mocks = vi.hoisted(() => {
 vi.mock("@sentry/react-native", () => ({
   init: mocks.mockInit,
   captureException: mocks.mockCaptureException,
+  captureMessage: mocks.mockCaptureMessage,
 }));
 
 vi.mock("@opentelemetry/sdk-logs", () => ({
@@ -89,7 +92,7 @@ describe("ios telemetry", () => {
     );
   });
 
-  it("initializes Sentry once with DSN", async () => {
+  it("initializes Sentry once with DSN and sends a verification message", async () => {
     process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
 
     const mod = await import("./telemetry");
@@ -99,7 +102,9 @@ describe("ios telemetry", () => {
     expect(mocks.mockInit).toHaveBeenCalledTimes(1);
     expect(mocks.mockInit).toHaveBeenCalledWith({
       dsn: "https://key@sentry.example/789",
+      debug: true,
     });
+    expect(mocks.mockCaptureMessage).toHaveBeenCalledWith("Sentry initialized on iOS", "info");
   });
 
   it("delegates captureException to Sentry with extra context", async () => {

@@ -32,7 +32,10 @@ export function initTelemetry() {
   if (SENTRY_DSN) {
     Sentry.init({
       dsn: SENTRY_DSN,
+      debug: __DEV__,
     });
+    // Verify the Sentry pipeline is working end-to-end
+    Sentry.captureMessage("Sentry initialized on iOS", "info");
   }
 
   if (OTEL_ENDPOINT) {

@@ -23,6 +23,7 @@ console.error = (...args: unknown[]) => {
 vi.mock("@sentry/react-native", () => ({
   init: vi.fn(),
   captureException: vi.fn(),
+  captureMessage: vi.fn(),
   addBreadcrumb: vi.fn(),
   withScope: vi.fn(),
   setTag: vi.fn(),

@@ -1,6 +1,9 @@
 import { defineProject } from "vitest/config";
 
 export default defineProject({
+  define: {
+    __DEV__: "true",
+  },
   esbuild: {
     jsx: "automatic",
     jsxImportSource: "react",
