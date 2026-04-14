@@ -233,12 +233,6 @@ services:
       KEYS_STORAGE_TYPE: environment
       PRIVATE_EXPO_KEY_B64: ${OTA_PRIVATE_KEY_B64}
       PUBLIC_EXPO_KEY_B64: ${OTA_PUBLIC_KEY_B64}
-      # expo-open-ota calls api.expo.dev/graphql to resolve expo-channel-name
-      # → branch mappings. EXPO_TOKEN (from Infisical) is mapped here because
-      # the server reads EXPO_ACCESS_TOKEN, not EXPO_TOKEN.
-      # EXPO_APP_ID must also be added to Infisical (EAS project app ID).
-      EXPO_ACCESS_TOKEN: ${EXPO_TOKEN}
-      EXPO_APP_ID: ${EXPO_APP_ID}
       PORT: 3000
     depends_on:
       redis:
