@@ -23,9 +23,9 @@ config.resolver.unstable_enableSymlinks = true;
 // Set condition names so Metro can resolve package.json "exports" subpaths
 config.resolver.unstable_conditionNames = ["react-native", "import", "require", "default"];
 
-// Exclude test files from the bundle (colocated tests in app/ would
-// otherwise be picked up as Expo Router routes)
-config.resolver.blockList = [/\.test\.[jt]sx?$/];
+// Exclude test and story files from the bundle (colocated files in app/
+// would otherwise be picked up as Expo Router routes)
+config.resolver.blockList = [/\.test\.[jt]sx?$/, /\.stories\.[jt]sx?$/];
 
 // Fix package.json "exports" resolution for pnpm-symlinked workspace
 // packages. Metro's built-in getPackageForModule doesn't follow pnpm
