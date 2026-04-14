@@ -1,5 +1,4 @@
 import { createHash, randomBytes } from "node:crypto";
-import { logger } from "../logger.ts";
 
 const DEFAULT_REDIRECT_URI = "https://dofek.asherlc.com/callback";
 
