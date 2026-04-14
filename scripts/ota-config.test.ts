@@ -40,6 +40,14 @@ describe("OTA deployment config (expo-open-ota)", () => {
     expect(deployCompose).toContain("PUBLIC_EXPO_KEY_B64");
   });
 
+  it("maps EXPO_TOKEN to EXPO_ACCESS_TOKEN and provides EXPO_APP_ID for channel resolution", () => {
+    const deployCompose = readFileSync(deployComposePath, "utf-8");
+    // expo-open-ota reads EXPO_ACCESS_TOKEN (not EXPO_TOKEN) to call api.expo.dev/graphql
+    // for channel→branch mapping. EXPO_APP_ID identifies the EAS project.
+    expect(deployCompose).toContain("EXPO_ACCESS_TOKEN: ${EXPO_TOKEN}");
+    expect(deployCompose).toContain("EXPO_APP_ID: ${EXPO_APP_ID}");
+  });
+
   it("points mobile app at the expo-open-ota server", () => {
     const appJson = JSON.parse(readFileSync(appJsonPath, "utf-8"));
     expect(appJson.expo.updates.url).toBe("https://ota.dofek.asherlc.com/manifest");
