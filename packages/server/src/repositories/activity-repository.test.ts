@@ -146,6 +146,26 @@ describe("ActivityRepository", () => {
       expect(sqlString).toContain("running");
     });
 
+    it("uses ARRAY syntax for activityTypes to avoid row-expression bug", async () => {
+      const { repo, execute } = makeRepository([]);
+      await repo.list({
+        days: 30,
+        endDate: "2024-02-01",
+        limit: 20,
+        offset: 20,
+        activityTypes: [
+          "strength",
+          "strength_training",
+          "functional_strength",
+          "functional_fitness",
+        ],
+      });
+      const sqlObject = execute.mock.calls[0]?.[0];
+      const sqlString = JSON.stringify(sqlObject);
+      // ANY(($4,$5,...)) is a row-expression and silently fails; must be ANY(ARRAY[$4,$5,...])
+      expect(sqlString).toContain("ARRAY[");
+    });
+
     it("does not include activityTypes filter when not provided", async () => {
       const { repo, execute } = makeRepository([]);
       await repo.list({ days: 30, endDate: "2024-02-01", limit: 20, offset: 0 });
