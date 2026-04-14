@@ -6,6 +6,12 @@ vi.mock("@sentry/react-native", () => ({
   wrap: vi.fn((component: unknown) => component),
 }));
 
+vi.mock("../lib/telemetry", () => ({
+  initTelemetry: vi.fn(),
+  captureException: vi.fn(),
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}));
+
 import { rootStackScreenOptions } from "./_layout";
 
 describe("rootStackScreenOptions", () => {
