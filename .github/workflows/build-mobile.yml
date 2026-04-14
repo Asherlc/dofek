@@ -37,6 +37,9 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - uses: ./.github/actions/setup-node-pnpm
+      - uses: ./.github/actions/load-expo-secrets
+        with:
+          infisical-token: ${{ secrets.INFISICAL_TOKEN }}
       - name: Export iOS bundle
         run: cd packages/mobile && pnpm expo export --platform ios --clear
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -60,6 +63,9 @@ jobs:
       - uses: ./.github/actions/setup-ccache
         with:
           cache-key-prefix: ccache-ios
+      - uses: ./.github/actions/load-expo-secrets
+        with:
+          infisical-token: ${{ secrets.INFISICAL_TOKEN }}
       - name: Generate native project
         working-directory: packages/mobile
         run: npx expo prebuild --clean --platform ios

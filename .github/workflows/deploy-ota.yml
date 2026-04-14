@@ -77,6 +77,9 @@ jobs:
         with:
           ref: ${{ steps.sha.outputs.ref }}
       - uses: ./.github/actions/setup-node-pnpm
+      - uses: ./.github/actions/load-expo-secrets
+        with:
+          infisical-token: ${{ secrets.INFISICAL_TOKEN }}
       - name: Wait for OTA server
         run: |
           for attempt in $(seq 1 30); do
