@@ -32,7 +32,6 @@ jobs:
         run: |
           npx eoas@2.3.16 publish \
             --branch "pr-$PR_NUMBER" \
-            --channel "pr-$PR_NUMBER" \
             --platform ios \
             --nonInteractive \
             --packageRunner npx
