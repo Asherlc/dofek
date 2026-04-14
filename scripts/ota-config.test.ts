@@ -6,6 +6,7 @@ const repoRoot = join(import.meta.dirname, "..");
 const deployComposePath = join(repoRoot, "deploy", "docker-compose.deploy.yml");
 const deployWorkflowPath = join(repoRoot, ".github", "workflows", "deploy.yml");
 const deployOtaWorkflowPath = join(repoRoot, ".github", "workflows", "deploy-ota.yml");
+const secretSyncWorkflowPath = join(repoRoot, ".github", "workflows", "secret-sync.yml");
 const appJsonPath = join(repoRoot, "packages", "mobile", "app.json");
 
 describe("OTA deployment config (expo-open-ota)", () => {
@@ -38,6 +39,14 @@ describe("OTA deployment config (expo-open-ota)", () => {
     expect(deployCompose).toContain("KEYS_STORAGE_TYPE: environment");
     expect(deployCompose).toContain("PRIVATE_EXPO_KEY_B64");
     expect(deployCompose).toContain("PUBLIC_EXPO_KEY_B64");
+  });
+
+  it("fails secret sync if OTA signing keys are not set", () => {
+    const secretSyncWorkflow = readFileSync(secretSyncWorkflowPath, "utf-8");
+    expect(secretSyncWorkflow).toContain("OTA_PRIVATE_KEY_B64");
+    expect(secretSyncWorkflow).toContain("OTA_PUBLIC_KEY_B64");
+    expect(secretSyncWorkflow).toMatch(/OTA_PRIVATE_KEY_B64.*exit 1|exit 1.*OTA_PRIVATE_KEY_B64/s);
+    expect(secretSyncWorkflow).toMatch(/OTA_PUBLIC_KEY_B64.*exit 1|exit 1.*OTA_PUBLIC_KEY_B64/s);
   });
 
   it("points mobile app at the expo-open-ota server", () => {
