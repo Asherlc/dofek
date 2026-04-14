@@ -256,15 +256,55 @@ describe("DailyMetricsRepository", () => {
         .fn()
         // First call: list query — steps null
         .mockResolvedValueOnce([rowNoSteps])
-        // Second call: base table check for missing metrics — also no steps
+        // Second call: latest-date check — also no steps
+        .mockResolvedValueOnce([])
+        // Third call: full-window check — also no steps
         .mockResolvedValueOnce([]);
       const repo = new DailyMetricsRepository({ execute }, "user-1");
       const result = await repo.list(30, "2025-03-15");
       expect(result).toHaveLength(1);
       expect(result[0]?.steps).toBeNull();
-      // No refresh attempted — only view query + base table check
-      expect(execute).toHaveBeenCalledTimes(2);
+      // No refresh attempted — view query + latest-date check + window check
+      expect(execute).toHaveBeenCalledTimes(3);
       expect(mockSentryCapture).not.toHaveBeenCalled();
+    });
+
+    it("refreshes view when the latest row is missing steps but the base table has steps for that date", async () => {
+      const olderRowWithSteps = makeDailyMetricsRow({
+        date: "2025-03-14",
+        steps: 7800,
+        active_energy_kcal: 390,
+      });
+      const latestRowWithoutSteps = makeDailyMetricsRow({
+        date: "2025-03-15",
+        steps: null,
+        active_energy_kcal: null,
+      });
+      const refreshedLatestRow = makeDailyMetricsRow({
+        date: "2025-03-15",
+        steps: 9200,
+        active_energy_kcal: 430,
+      });
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([olderRowWithSteps, latestRowWithoutSteps])
+        .mockResolvedValueOnce([{ exists: 1 }])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([olderRowWithSteps, refreshedLatestRow]);
+      const repo = new DailyMetricsRepository({ execute }, "user-1");
+
+      const result = await repo.list(30, "2025-03-15");
+
+      expect(result).toHaveLength(2);
+      expect(result[1]?.steps).toBe(9200);
+      expect(mockSentryCapture).toHaveBeenCalledWith(
+        expect.stringContaining("Stale daily metrics"),
+        expect.objectContaining({
+          extra: expect.objectContaining({
+            reason: expect.stringContaining("latest row"),
+          }),
+        }),
+      );
     });
 
     it("returns empty when both view and base table are empty", async () => {
@@ -406,6 +446,40 @@ describe("DailyMetricsRepository", () => {
       const { repo } = makeRepository([makeTrendsRow()]);
       await repo.getTrends(30, "2025-03-15");
       expect(mockLoggerWarn).not.toHaveBeenCalled();
+    });
+
+    it("refreshes trends when latest steps are null but the base table has steps for the latest date", async () => {
+      const staleRow = makeTrendsRow({
+        avg_steps: "8200",
+        latest_steps: null,
+        latest_active_energy: null,
+        latest_date: "2025-03-15",
+      });
+      const refreshedRow = makeTrendsRow({
+        avg_steps: "8300",
+        latest_steps: "9400",
+        latest_active_energy: "460",
+        latest_date: "2025-03-15",
+      });
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([staleRow])
+        .mockResolvedValueOnce([{ exists: 1 }])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([refreshedRow]);
+      const repo = new DailyMetricsRepository({ execute }, "user-1");
+
+      const result = await repo.getTrends(30, "2025-03-15");
+
+      expect(result?.latest_steps).toBe(9400);
+      expect(mockSentryCapture).toHaveBeenCalledWith(
+        expect.stringContaining("Stale daily metrics"),
+        expect.objectContaining({
+          extra: expect.objectContaining({
+            reason: expect.stringContaining("latest trends"),
+          }),
+        }),
+      );
     });
 
     it("returns latest values from most recent day in window when endDate has no data", async () => {
