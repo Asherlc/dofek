@@ -28,9 +28,10 @@ describe("OTA deployment config (expo-open-ota)", () => {
     expect(otaDeployWorkflow).toContain("EXPO_TOKEN");
   });
 
-  it("publishes to main branch", () => {
+  it("publishes to main branch with production channel mapping", () => {
     const otaDeployWorkflow = readFileSync(deployOtaWorkflowPath, "utf-8");
     expect(otaDeployWorkflow).toContain("--branch main");
+    expect(otaDeployWorkflow).toContain("--channel production");
   });
 
   it("configures code signing keys for the OTA server", () => {
