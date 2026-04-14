@@ -40,7 +40,6 @@ describe("OTA deployment config (expo-open-ota)", () => {
     expect(deployCompose).toContain("PUBLIC_EXPO_KEY_B64");
   });
 
-
   it("points mobile app at the expo-open-ota server", () => {
     const appJson = JSON.parse(readFileSync(appJsonPath, "utf-8"));
     expect(appJson.expo.updates.url).toBe("https://ota.dofek.asherlc.com/manifest");
