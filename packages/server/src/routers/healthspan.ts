@@ -182,7 +182,19 @@ export const healthspanRouter = router({
               SELECT
                 ${sleepNightDate(ctx.timezone)} AS date,
                 duration_minutes,
-                EXTRACT(HOUR FROM started_at AT TIME ZONE ${ctx.timezone}) * 60 + EXTRACT(MINUTE FROM started_at AT TIME ZONE ${ctx.timezone}) AS bedtime_minutes
+                -- Normalize bedtime to a continuous scale to avoid midnight wraparound.
+                -- Raw minutes-of-day (0-1439) cause huge stddev when bedtimes straddle midnight
+                -- (e.g. 11 PM = 1380 and 1 AM = 60 appear 1320 min apart instead of 120 min).
+                -- Adding 1440 to any time before noon (< 720 min) places all typical sleep
+                -- start times in a continuous 1200-2160 range (8 PM to 12 PM next day).
+                CASE
+                  WHEN EXTRACT(HOUR FROM started_at AT TIME ZONE ${ctx.timezone}) * 60
+                       + EXTRACT(MINUTE FROM started_at AT TIME ZONE ${ctx.timezone}) < 720
+                  THEN EXTRACT(HOUR FROM started_at AT TIME ZONE ${ctx.timezone}) * 60
+                       + EXTRACT(MINUTE FROM started_at AT TIME ZONE ${ctx.timezone}) + 1440
+                  ELSE EXTRACT(HOUR FROM started_at AT TIME ZONE ${ctx.timezone}) * 60
+                       + EXTRACT(MINUTE FROM started_at AT TIME ZONE ${ctx.timezone})
+                END AS bedtime_minutes
               FROM fitness.v_sleep
               WHERE user_id = ${ctx.userId}
                 AND is_nap = false
