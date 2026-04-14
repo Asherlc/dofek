@@ -219,7 +219,7 @@ export default function StrainScreen() {
             <View style={styles.card}>
               <ChartTitleWithTooltip
                 title="Vertical Ascent Rate"
-                description="Climbing speed on grade >3% segments. Bubble size indicates elevation gain."
+                description="Climbing speed — meters gained per hour while ascending. Bubble size indicates elevation gain."
                 textStyle={styles.cardTitle}
               />
               <VerticalAscentChart data={verticalAscentQuery.data ?? []} units={units} />

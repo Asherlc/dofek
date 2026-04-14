@@ -571,16 +571,15 @@ export class CyclingAdvancedRepository {
     };
   }
 
-  /** Vertical ascent rate (VAM) for climbing segments (grade > 3%). */
+  /** Vertical ascent rate (VAM) for climbing segments (positive altitude gain). */
   async getVerticalAscentRates(days: number): Promise<VerticalAscentModel[]> {
     const rows = await executeWithSchema(
       this.#db,
       vamRowSchema,
-      sql`WITH climbing_segments AS (
+      sql`WITH altitude_samples AS (
             SELECT
               alt.activity_id,
               alt.scalar AS altitude,
-              grd.scalar AS grade,
               alt.recorded_at,
               LAG(alt.scalar) OVER (
                 PARTITION BY alt.activity_id ORDER BY alt.recorded_at
@@ -589,30 +588,26 @@ export class CyclingAdvancedRepository {
                 PARTITION BY alt.activity_id ORDER BY alt.recorded_at
               ) AS prev_recorded_at
             FROM fitness.deduped_sensor alt
-            JOIN fitness.deduped_sensor grd
-              ON grd.activity_id = alt.activity_id
-              AND grd.recorded_at = alt.recorded_at
-              AND grd.channel = 'grade'
             JOIN fitness.v_activity a ON a.id = alt.activity_id
             WHERE a.user_id = ${this.#userId}
               AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
               AND ${enduranceTypeFilter("a")}
               AND alt.channel = 'altitude'
-              AND grd.scalar > 3
           )
           SELECT
             (a.started_at AT TIME ZONE ${this.#timezone})::date AS date,
             a.name,
             ROUND(SUM(
-              GREATEST(cs.altitude - cs.prev_altitude, 0)
+              cs.altitude - cs.prev_altitude
             )::numeric, 1) AS elevation_gain,
             SUM(
               EXTRACT(EPOCH FROM (cs.recorded_at - cs.prev_recorded_at))
             )::int AS climbing_seconds
-          FROM climbing_segments cs
+          FROM altitude_samples cs
           JOIN fitness.v_activity a ON a.id = cs.activity_id
           WHERE cs.prev_altitude IS NOT NULL
             AND cs.prev_recorded_at IS NOT NULL
+            AND cs.altitude > cs.prev_altitude
           GROUP BY a.id, a.started_at, a.name
           HAVING SUM(EXTRACT(EPOCH FROM (cs.recorded_at - cs.prev_recorded_at))) > 60
           ORDER BY a.started_at`,

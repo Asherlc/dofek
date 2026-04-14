@@ -169,7 +169,10 @@ function CyclingTab() {
           />
         </Section>
 
-        <Section title="Vertical Ascent Rate" subtitle="Climbing speed on grade >3% segments">
+        <Section
+          title="Vertical Ascent Rate"
+          subtitle="Climbing speed — meters gained per hour while ascending"
+        >
           <VerticalAscentChart
             data={verticalAscent.data ?? []}
             loading={verticalAscent.isLoading}
