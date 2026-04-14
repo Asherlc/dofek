@@ -24,12 +24,8 @@ config.resolver.unstable_enableSymlinks = true;
 config.resolver.unstable_conditionNames = ["react-native", "import", "require", "default"];
 
 // Exclude test and story files from the bundle (colocated files in app/
-// would otherwise be picked up as Expo Router routes). Story files are
-// only needed in Storybook mode, which uses its own entry point.
-config.resolver.blockList =
-  process.env.EXPO_PUBLIC_STORYBOOK_ENABLED === "true"
-    ? [/\.test\.[jt]sx?$/]
-    : [/\.test\.[jt]sx?$/, /\.stories\.[jt]sx?$/];
+// would otherwise be picked up as Expo Router routes)
+config.resolver.blockList = [/\.test\.[jt]sx?$/, /\.stories\.[jt]sx?$/];
 
 // Fix package.json "exports" resolution for pnpm-symlinked workspace
 // packages. Metro's built-in getPackageForModule doesn't follow pnpm
