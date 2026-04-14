@@ -64,13 +64,17 @@ export class SleepRepository extends BaseRepository {
    * The winning session in v_sleep may come from a provider that doesn't store
    * individual stage transitions (e.g. WHOOP only stores aggregate minutes).
    * When that happens, we fall back to any overlapping raw session that does
-   * have stages — e.g. from Apple Health or Garmin.
+   * have stages — e.g. from Apple Health or Garmin. Providers can disagree by
+   * multiple hours on when the night started, so match on overlapping session
+   * windows instead of only comparing start times.
    */
   async getLatestStages() {
     return this.query(
       sleepStageRowSchema,
       sql`WITH latest_sleep AS (
-						SELECT started_at, ended_at
+						SELECT
+							started_at,
+							COALESCE(ended_at, started_at + interval '12 hours') AS ended_at
 						FROM fitness.v_sleep
 						WHERE user_id = ${this.userId} AND is_nap = false
 						ORDER BY started_at DESC
@@ -80,10 +84,12 @@ export class SleepRepository extends BaseRepository {
 						SELECT ss.id
 						FROM fitness.sleep_session ss, latest_sleep ls
 						WHERE ss.user_id = ${this.userId}
-							AND ss.started_at BETWEEN ls.started_at - interval '2 hours'
-								AND COALESCE(ls.ended_at, ls.started_at + interval '12 hours')
+							AND ss.started_at <= ls.ended_at + interval '2 hours'
+							AND COALESCE(ss.ended_at, ss.started_at + interval '12 hours') >= ls.started_at - interval '2 hours'
 							AND EXISTS (SELECT 1 FROM fitness.sleep_stage s2 WHERE s2.session_id = ss.id)
-						ORDER BY (SELECT count(*) FROM fitness.sleep_stage s3 WHERE s3.session_id = ss.id) DESC
+						ORDER BY
+							(SELECT count(*) FROM fitness.sleep_stage s3 WHERE s3.session_id = ss.id) DESC,
+							ss.started_at DESC
 						LIMIT 1
 					)
 					SELECT

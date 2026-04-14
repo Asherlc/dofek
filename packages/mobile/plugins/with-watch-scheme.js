@@ -40,12 +40,6 @@ function withWatchScheme(config) {
         }
         const targetId = targetMatch[1];
 
-        // Find the DofekWatch.app product reference
-        const productMatch = pbxproj.match(
-          /(\w+)\s+\/\*\s*DofekWatch\.app\s*\*\/\s*=\s*\{\s*isa\s*=\s*PBXFileReference/,
-        );
-        const productId = productMatch ? productMatch[1] : targetId;
-
         const schemesDir = path.join(platformRoot, "Dofek.xcodeproj", "xcshareddata", "xcschemes");
         const schemePath = path.join(schemesDir, "DofekWatch.xcscheme");
 
