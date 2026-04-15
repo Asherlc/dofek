@@ -46,11 +46,24 @@ async function readBlobFromFileUri(fileUri: string): Promise<Blob> {
     const error = new Error(`Shared file does not exist: ${fileUri} (resolved: ${file.uri})`);
     throw error;
   }
-  const bytes = await file.bytes();
-  const blob = new Blob([bytes], { type: file.type || "application/octet-stream" });
+  const response = await fetch(file.uri);
+  if (!response.ok) {
+    throw new Error(`Failed to read shared file (${response.status})`);
+  }
+  const blob = await response.blob();
   // Clean up the Inbox copy now that the data is in memory
   file.delete();
   return blob;
+}
+
+function getHealthKitConnectErrorMessage(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return "Failed to connect to Apple Health";
+  }
+  if (error.message.includes("com.apple.developer.healthkit entitlement")) {
+    return "This app build is missing Apple Health capability. Please contact support or check for updates.";
+  }
+  return error.message;
 }
 
 export default function ProvidersScreen() {
@@ -116,9 +129,7 @@ export default function ProvidersScreen() {
       setHealthKitProgress(status === "unnecessary" ? "Connected" : undefined);
     } catch (error: unknown) {
       captureException(error, { context: "healthkit-connect" });
-      setHealthKitProgress(
-        error instanceof Error ? error.message : "Failed to connect to Apple Health",
-      );
+      setHealthKitProgress(getHealthKitConnectErrorMessage(error));
     } finally {
       setHealthKitSyncing(false);
     }

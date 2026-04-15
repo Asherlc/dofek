@@ -879,7 +879,7 @@ describe("ProvidersScreen", () => {
     expect(screen.queryByText("Sync All")).toBeNull();
   });
 
-  it("passes readBlob that returns a standard Blob with file data", async () => {
+  it("passes readBlob that uses fetch and cleans up the shared file", async () => {
     mockImportSharedFile.mockResolvedValue({ providerId: "strong-csv", jobId: "job-share" });
     mockUseLocalSearchParams.mockReturnValue({
       sharedFile: "file:///tmp/strong.csv",
@@ -896,9 +896,18 @@ describe("ProvidersScreen", () => {
     expect(callArgs).toBeDefined();
     expect(callArgs?.[1]).toHaveProperty("readBlob");
     const readBlob: (uri: string) => Promise<Blob> = callArgs[1].readBlob;
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      blob: async () =>
+        new Blob(["Date,Workout Name,Duration,Exercise Name\n2026-03-10,Leg Day,00:45:00,Squat"], {
+          type: "text/csv",
+        }),
+    } satisfies Pick<Response, "ok" | "blob">);
+    vi.stubGlobal("fetch", fetchMock);
+
     const blob = await readBlob("file:///tmp/strong.csv");
 
-    // Must be a real Blob, not a raw ExpoFile reference
+    expect(fetchMock).toHaveBeenCalledWith("file:///tmp/strong.csv");
     expect(blob).toBeInstanceOf(Blob);
     expect(blob.size).toBeGreaterThan(0);
     const text = await blob.text();
@@ -906,6 +915,7 @@ describe("ProvidersScreen", () => {
 
     // Should clean up the Inbox copy after reading
     expect(mockFileDelete).toHaveBeenCalledWith("file:///tmp/strong.csv");
+    vi.unstubAllGlobals();
   });
 
   it("shows Expired status when provider needsReauth", async () => {
@@ -1278,6 +1288,32 @@ describe("ProvidersScreen", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Authorization denied")).toBeTruthy();
+    });
+  });
+
+  it("shows actionable message when Apple Health entitlement is missing", async () => {
+    mockHasEverAuthorized.mockReturnValue(false);
+    mockRequestPermissions.mockRejectedValue(
+      new Error("Missing com.apple.developer.healthkit entitlement."),
+    );
+
+    const { default: ProvidersScreen } = await import("./index");
+    render(<ProvidersScreen />);
+
+    await waitFor(() => {
+      const appleCard = within(screen.getByTestId("provider-card-apple_health"));
+      expect(appleCard.getByText("Connect")).toBeTruthy();
+    });
+
+    const appleCard = within(screen.getByTestId("provider-card-apple_health"));
+    fireEvent.click(appleCard.getByText("Connect"));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          "This app build is missing Apple Health capability. Please contact support or check for updates.",
+        ),
+      ).toBeTruthy();
     });
   });
 });
