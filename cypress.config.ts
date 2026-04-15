@@ -39,7 +39,30 @@ export default defineConfig({
         async cleanTestData({ userId }) {
           // Delete in dependency order
           await sql`DELETE FROM fitness.session WHERE user_id = ${userId}`;
+          await sql`DELETE FROM fitness.daily_metrics WHERE user_id = ${userId}`;
+          await sql`DELETE FROM fitness.provider WHERE user_id = ${userId}`;
           await sql`DELETE FROM fitness.user_profile WHERE id = ${userId}`;
+          return null;
+        },
+
+        async seedDailyMetricsWithSteps({ userId, providerId, rows }) {
+          await sql`
+            INSERT INTO fitness.provider (id, name, user_id)
+            VALUES (${providerId}, 'E2E Test Provider', ${userId})
+            ON CONFLICT (id) DO NOTHING
+          `;
+          for (const row of rows) {
+            await sql`
+              INSERT INTO fitness.daily_metrics (date, provider_id, user_id, steps)
+              VALUES (${row.date}, ${providerId}, ${userId}, ${row.steps})
+              ON CONFLICT DO NOTHING
+            `;
+          }
+          return null;
+        },
+
+        async refreshDailyMetricsView() {
+          await sql`REFRESH MATERIALIZED VIEW fitness.v_daily_metrics`;
           return null;
         },
 
