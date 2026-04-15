@@ -52,8 +52,9 @@ describe("Dashboard – Daily Steps chart", () => {
   });
 
   it("renders the Daily Steps chart when step data is present", () => {
-    // Intercept the tRPC dailyMetrics.list call so we can wait for it to resolve
-    cy.intercept("GET", /trpc\/dailyMetrics\.list/).as("dailyMetricsList");
+    // Intercept the tRPC dailyMetrics.list call so we can wait for it to resolve.
+    // We match POST because the tRPC client uses methodOverride: "POST" for batching.
+    cy.intercept("POST", "**/api/trpc/**dailyMetrics.list**").as("dailyMetricsList");
 
     cy.visit("/dashboard");
 
