@@ -1,3 +1,4 @@
+import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import { ActivityRepository, StreamPoint } from "./activity-repository.ts";
 
@@ -75,6 +76,8 @@ describe("StreamPoint", () => {
 // ---------------------------------------------------------------------------
 
 describe("ActivityRepository", () => {
+  const dialect = new PgDialect();
+
   function makeRepository(rows: Record<string, unknown>[] = []) {
     const execute = vi.fn().mockResolvedValue(rows);
     const database = { execute };
@@ -127,7 +130,7 @@ describe("ActivityRepository", () => {
       expect(execute).toHaveBeenCalledTimes(1);
     });
 
-    it("includes activityTypes filter as a bound parameter when provided", async () => {
+    it("builds activityTypes as a Postgres array filter when provided", async () => {
       const { repo, execute } = makeRepository([]);
       await repo.list({
         days: 30,
@@ -138,12 +141,10 @@ describe("ActivityRepository", () => {
       });
       expect(execute).toHaveBeenCalledTimes(1);
       const sqlObject = execute.mock.calls[0]?.[0];
-      // Drizzle SQL objects have queryChunks containing the SQL template pieces
-      // and bound parameter values. Verify the activity types array is passed as
-      // a bound parameter (not interpolated as raw SQL).
-      const sqlString = JSON.stringify(sqlObject);
-      expect(sqlString).toContain("cycling");
-      expect(sqlString).toContain("running");
+      const compiledQuery = dialect.sqlToQuery(sqlObject);
+      expect(compiledQuery.sql).toContain("a.activity_type IN (");
+      expect(compiledQuery.sql).not.toContain("ANY(($");
+      expect(compiledQuery.params).toEqual(expect.arrayContaining(["cycling", "running"]));
     });
 
     it("does not include activityTypes filter when not provided", async () => {

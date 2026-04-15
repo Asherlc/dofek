@@ -60,10 +60,10 @@ function withPodfilePostInstall(config) {
       const postInstallEndPattern = /(post_install\s+do\s+\|installer\|[\s\S]*?)(^\s*end\s*$)/m;
       const match = podfile.match(postInstallEndPattern);
       if (match) {
-        podfile = podfile.replace(postInstallEndPattern, "$1\n" + POST_INSTALL_SNIPPET + "\n$2");
+        podfile = podfile.replace(postInstallEndPattern, `$1\n${POST_INSTALL_SNIPPET}\n$2`);
       } else {
         // Fallback: append a standalone post_install block
-        podfile += "\n\npost_install do |installer|\n" + POST_INSTALL_SNIPPET + "\nend\n";
+        podfile += `\n\npost_install do |installer|\n${POST_INSTALL_SNIPPET}\nend\n`;
       }
 
       fs.writeFileSync(podfilePath, podfile);

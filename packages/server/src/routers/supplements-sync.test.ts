@@ -31,7 +31,10 @@ vi.mock("drizzle-orm", () => ({
   eq: vi.fn((col: string, val: string) => ({ col, val })),
   sql: Object.assign(
     (strings: TemplateStringsArray, ...values: unknown[]) => ({ strings, values }),
-    { raw: (s: string) => s },
+    {
+      raw: (s: string) => s,
+      join: (fragments: unknown[], separator: unknown) => ({ fragments, separator }),
+    },
   ),
 }));
 

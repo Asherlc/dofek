@@ -11,6 +11,8 @@ describe("Activity router", () => {
   let testCtx: TestContext;
   let sessionCookie: string;
   let metricOnlyActivityId: string;
+  let cyclingActivityId: string;
+  let walkingActivityId: string;
 
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
@@ -47,6 +49,40 @@ describe("Activity router", () => {
       throw new Error("Failed to insert test activity");
     }
     metricOnlyActivityId = activityId;
+
+    const filteredActivities = await testCtx.db.execute<{ id: string; activity_type: string }>(
+      sql`INSERT INTO fitness.activity (
+            provider_id, user_id, activity_type, started_at, ended_at, name
+          ) VALUES
+          (
+            'test_provider',
+            ${TEST_USER_ID},
+            'cycling',
+            CURRENT_TIMESTAMP - INTERVAL '1 day',
+            CURRENT_TIMESTAMP - INTERVAL '1 day' + INTERVAL '75 minutes',
+            'Filtered Cycling Activity'
+          ),
+          (
+            'test_provider',
+            ${TEST_USER_ID},
+            'walking',
+            CURRENT_TIMESTAMP - INTERVAL '12 hours',
+            CURRENT_TIMESTAMP - INTERVAL '12 hours' + INTERVAL '40 minutes',
+            'Filtered Walking Activity'
+          )
+          RETURNING id, activity_type`,
+    );
+    const cyclingActivity = filteredActivities.find(
+      (activity) => activity.activity_type === "cycling",
+    );
+    const walkingActivity = filteredActivities.find(
+      (activity) => activity.activity_type === "walking",
+    );
+    if (!cyclingActivity || !walkingActivity) {
+      throw new Error("Failed to insert filtered test activities");
+    }
+    cyclingActivityId = cyclingActivity.id;
+    walkingActivityId = walkingActivity.id;
 
     await testCtx.db.execute(
       sql`INSERT INTO fitness.metric_stream (
@@ -129,6 +165,24 @@ describe("Activity router", () => {
       const insertedActivity = items.find((item) => item.id === metricOnlyActivityId);
       expect(insertedActivity).toBeDefined();
       expect(insertedActivity?.avg_hr).toBeCloseTo(152.3333, 4);
+    });
+
+    it("filters by activityTypes without raising a SQL error", async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      const result = await query("activity.list", {
+        days: 30,
+        endDate: today,
+        limit: 20,
+        offset: 0,
+        activityTypes: ["cycling"],
+      });
+      expect(result.error).toBeUndefined();
+      const items: Array<{ id: string; activity_type: string }> = result.result?.data?.items ?? [];
+      expect(items).toHaveLength(1);
+      expect(items[0]?.id).toBe(cyclingActivityId);
+      expect(items[0]?.activity_type).toBe("cycling");
+      expect(items.some((item) => item.id === metricOnlyActivityId)).toBe(false);
+      expect(items.some((item) => item.id === walkingActivityId)).toBe(false);
     });
   });
 

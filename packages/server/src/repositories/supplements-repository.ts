@@ -110,7 +110,12 @@ export class SupplementsRepository {
         .map((row) => row.nutritionDataId)
         .filter((id): id is string => id != null);
       if (nutritionIds.length > 0) {
-        await tx.delete(nutritionData).where(sql`id = ANY(${nutritionIds})`);
+        await tx.delete(nutritionData).where(
+          sql`id IN (${sql.join(
+            nutritionIds.map((id) => sql`${id}`),
+            sql`, `,
+          )})`,
+        );
       }
 
       if (supplements.length > 0) {
