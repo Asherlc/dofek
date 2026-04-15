@@ -110,6 +110,7 @@ export class DailyMetricsRepository extends BaseRepository {
         sql`SELECT * FROM fitness.v_daily_metrics
             WHERE user_id = ${this.userId}
               AND date > ${dateWindowStart(endDate, days)}
+              AND date <= ${dateWindowEnd(endDate)}
             ORDER BY date ASC`,
       );
 
